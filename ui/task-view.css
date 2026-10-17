@@ -1,0 +1,61 @@
+/* Task layout uses the application's existing theme and spacing tokens. */
+.app { width:100%; height:100dvh; }
+#view-chat [hidden] { display:none !important; }
+#view-chat { min-width:0; }
+.chat-head { flex-wrap:wrap; }
+.chat-head > div:first-child { min-width:0; flex:1; }
+.chat-title,.chat-meta { overflow-wrap:anywhere; }
+.task-main { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
+.task-toolbar,.task-summary-row,.task-section-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.task-toolbar { padding:12px 20px; border-bottom:1px solid var(--border); }
+.task-toolbar [role=tablist] { display:flex; gap:8px; }
+.task-toolbar [role=tab] { padding:10px 12px; border-radius:8px; background:transparent; color:var(--muted); border:1px solid transparent; }
+.task-toolbar [aria-selected=true] { color:var(--text); background:var(--panel-2); border-color:var(--border); }
+#taskOverview { flex:1; min-height:0; overflow:auto; padding:24px; scrollbar-gutter:stable; }
+#taskOverview > * { max-width:900px; margin-inline:auto; }
+.task-summary-row { margin-bottom:20px; }
+.task-section { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:20px; margin-bottom:16px; overflow-wrap:anywhere; }
+.task-section h2 { font-size:16px; margin:0 0 12px; }
+.task-section p { line-height:1.8; }
+.task-section summary { cursor:pointer; font-weight:600; }
+#taskRequest { white-space:pre-wrap; }
+.task-section pre { max-width:100%; overflow:auto; }
+.task-section table { display:block; max-width:100%; overflow:auto; }
+.task-section img { max-width:100%; }
+#taskPlan ol { padding-inline-start:24px; margin:0; }
+#taskPlan li { padding-block:12px; border-bottom:1px solid var(--border); }
+#taskPlan li:last-child { border:0; }
+.task-step-title { line-height:1.8; }
+.task-step-title .pill { white-space:normal; margin-inline-start:8px; }
+.task-output { display:flex; width:100%; text-align:start; align-items:center; justify-content:space-between; gap:12px; padding:12px; margin-block:8px; border:1px solid var(--border); border-radius:8px; color:var(--text); background:var(--panel-2); }
+.task-output span:first-child { overflow-wrap:anywhere; min-width:0; }
+.task-output span:last-child { flex-shrink:0; color:var(--muted); }
+#taskRecovery:not(:empty) { margin-bottom:16px; }
+#taskRecovery .card { padding:16px; border:1px solid var(--warn); border-radius:var(--radius); background:var(--panel); color:var(--text); }
+#view-chat .btn { background:var(--panel); color:var(--text); border:1px solid var(--border); }
+#view-chat .btn.primary { background:var(--accent); color:white; }
+[data-theme=light] .task-toolbar [aria-selected=true] { background:#e7eef9; color:#18365c; }
+#view-chat button:focus-visible,#view-chat summary:focus-visible,#view-chat [tabindex]:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.tool button.head { width:100%; text-align:start; color:inherit; font:inherit; background:transparent; border:0; }
+#view-chat .sidepanel { width:36%; min-width:280px; }
+@media (max-width:1100px) {
+  #view-chat .chat-body { position:relative; }
+  #view-chat .sidepanel { position:absolute; inset:0; width:100%; max-width:none; min-width:0; z-index:5; background:var(--bg); border:0; }
+  #view-chat .sidepanel::before { content:'مساحة العمل — لإغلاقها اضغط زر اللوحة أعلى الشاشة'; display:block; padding:12px; font-size:12px; color:var(--muted); }
+}
+@media (max-width:720px) {
+  .sidebar { width:56px !important; min-width:56px !important; }
+  .sidebar > .panel { display:none !important; }
+  .sidebar .rail { width:56px; min-width:56px; }
+  .topbar .hud-pills,.topbar .credits-chip,.topbar #verPill { display:none; }
+  .topbar { padding-inline:8px; gap:4px; }
+  #taskOverview { padding:12px; }
+  .task-section { padding:12px; }
+  .task-toolbar { padding:8px; gap:8px; }
+  .task-toolbar [role=tab] { padding:8px; }
+  .chat-head { padding:12px; }
+  #view-chat .timeline { padding:12px; }
+  #view-chat .composer { padding:8px; }
+  #view-chat textarea { min-width:0; }
+  .task-output { flex-wrap:wrap; }
+}

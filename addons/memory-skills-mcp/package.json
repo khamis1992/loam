@@ -1,0 +1,11 @@
+{
+  "name": "memory-skills-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Persistent memory (episodic/semantic/procedural) + self-improving skill library, exposed as an MCP stdio server for manus-local and any MCP client.",
+  "main": "dist/server.cjs",
+  "engines": {
+    "node": ">=22.5"
+  }
+}

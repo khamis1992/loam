@@ -1,0 +1,77 @@
+{
+  "id": "selfplay-2026-10-15-16-48-46",
+  "name": "حالات مولّدة من الفشل — 2026-10-15-16-48-46",
+  "version": 1,
+  "cases": [
+    {
+      "id": "singular-vs-plural-target",
+      "prompt": "يوجد في مساحة العمل ملف باسم results.txt (بصيغة الجمع). المطلوب: إنشاء ملف جديد باسم result.txt (المفرد، بدون حرف s) يحتوي على الكلمة done فقط. انتبه جيداً للاسم المطلوب بالضبط ولا تخلط بين الملفين، ولا تعدّل الملف results.txt الموجود.",
+      "setup": [
+        {
+          "type": "write_file",
+          "path": "results.txt",
+          "text": "draft-v1\n"
+        }
+      ],
+      "verify": [
+        {
+          "type": "file_exists",
+          "path": "result.txt"
+        },
+        {
+          "type": "file_contains",
+          "path": "result.txt",
+          "text": "done"
+        },
+        {
+          "type": "file_contains",
+          "path": "results.txt",
+          "text": "draft-v1"
+        }
+      ],
+      "tags": [
+        "generated",
+        "exact-target",
+        "distractor-filename"
+      ]
+    },
+    {
+      "id": "update-and-confirm-target",
+      "prompt": "الملف status.txt يحتوي حالياً على PENDING، ويوجد ملف قديم باسم status_old.txt يحتوي على READY. المطلوب: اجعل محتوى الملف status.txt هو READY بالضبط (ملف واحد فقط هو المستهدف). بعد الكتابة، تحقّق بقراءة الملف status.txt نفسه (وليس أي ملف آخر)، واذكر في ردّك النهائي اسم الملف الذي كتبته ومحتواه النهائي.",
+      "setup": [
+        {
+          "type": "write_file",
+          "path": "status.txt",
+          "text": "PENDING"
+        },
+        {
+          "type": "write_file",
+          "path": "status_old.txt",
+          "text": "READY"
+        }
+      ],
+      "verify": [
+        {
+          "type": "file_contains",
+          "path": "status.txt",
+          "text": "READY"
+        },
+        {
+          "type": "file_contains",
+          "path": "status_old.txt",
+          "text": "READY"
+        },
+        {
+          "type": "answer_matches",
+          "pattern": "status\\.txt[\\s\\S]*READY|READY[\\s\\S]*status\\.txt",
+          "flags": "i"
+        }
+      ],
+      "tags": [
+        "generated",
+        "self-verification",
+        "exact-target"
+      ]
+    }
+  ]
+}

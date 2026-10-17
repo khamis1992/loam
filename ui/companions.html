@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="/theme.js"></script>
+    <title>رفقاء Loam — Loam</title>
+    <style>
+      /* ===== Approved Loam system colors (same tokens as ui/styles.css; theme-aware) ===== */
+      :root {
+        --bg: #0f1115;
+        --bg-2: #14161c;
+        --panel: #171a21;
+        --panel-2: #1e222b;
+        --panel-3: #232834;
+        --text: #e8eaf0;
+        --muted: #8b93a7;
+        --accent: #6ea8fe;
+        --accent-2: #3b82f6;
+        --ok: #3fb950;
+        --err: #f85149;
+        --warn: #d29922;
+        --border: #272c37;
+        --radius: 12px;
+      }
+      html[data-theme="light"] {
+        --bg: #f6f7f9;
+        --bg-2: #ffffff;
+        --panel: #ffffff;
+        --panel-2: #f1f3f7;
+        --panel-3: #e8ebf1;
+        --text: #16181d;
+        --muted: #6b7280;
+        --border: #e2e5ea;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Segoe UI", Tahoma, system-ui, -apple-system, sans-serif;
+        font-size: 14px;
+        display: flex;
+        overflow: hidden;
+      }
+      *::-webkit-scrollbar { width: 8px; height: 8px; }
+      *::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text) 22%, transparent); border-radius: 8px; }
+      button { font-family: inherit; cursor: pointer; color: inherit; }
+
+      /* ================= sidebar (agents = bots) ================= */
+      .rk-sidebar {
+        width: 300px;
+        min-width: 300px;
+        background: var(--bg-2);
+        border-inline-end: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .rk-side-head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 15px 16px 11px 16px;
+      }
+      .rk-side-head .brand { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; }
+      .rk-side-head .brand small { color: var(--muted); font-size: 11px; font-weight: 400; }
+      .rk-add {
+        width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2);
+        color: var(--text); font-size: 17px; line-height: 1; display: grid; place-items: center; padding: 0;
+      }
+      .rk-add:hover { border-color: var(--accent); background: var(--panel-3); }
+      .rk-bots { flex: 1; overflow-y: auto; padding: 0 10px 10px 10px; display: flex; flex-direction: column; gap: 3px; }
+      .rk-bot {
+        display: flex; align-items: center; gap: 10px; width: 100%;
+        border: 1px solid transparent; background: transparent; color: var(--text);
+        border-radius: 10px; padding: 8px 10px; text-align: start;
+      }
+      .rk-bot:hover { background: var(--panel-2); border-color: var(--border); }
+      .rk-bot.active {
+        background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+        border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+      }
+      .rk-bot .av {
+        width: 28px; height: 28px; min-width: 28px; border-radius: 999px;
+        background: var(--panel-2); border: 1px solid var(--border);
+        display: grid; place-items: center; font-size: 15px;
+      }
+      .rk-bot .nm { flex: 1; min-width: 0; }
+      .rk-bot .nm .t { display: block; font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .rk-bot .nm .s { display: block; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .rk-bot .ed { opacity: 0; color: var(--muted); font-size: 12px; padding: 2px 5px; border-radius: 6px; border: 1px solid transparent; background: transparent; }
+      .rk-bot:hover .ed { opacity: .9; }
+      .rk-bot .ed:hover { color: var(--text); background: var(--panel-3); border-color: var(--border); }
+      .rk-newbot {
+        display: flex; align-items: center; gap: 10px; width: 100%;
+        border: 1px dashed var(--border); background: transparent; color: var(--muted);
+        border-radius: 10px; padding: 9px 10px; margin-top: 3px; font-size: 13px;
+      }
+      .rk-newbot:hover { color: var(--text); border-color: var(--accent); }
+      .rk-side-foot {
+        border-top: 1px solid var(--border);
+        padding: 9px 12px; display: flex; align-items: center; gap: 6px;
+      }
+      .rk-foot-btn {
+        display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted);
+        background: transparent; border: 1px solid transparent; padding: 5px 8px; border-radius: 8px;
+      }
+      .rk-foot-btn:hover { color: var(--text); background: var(--panel-2); border-color: var(--border); }
+      .rk-foot-btn svg { width: 15px; height: 15px; }
+
+      /* ================= main ================= */
+      .rk-main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg); }
+      .rk-header {
+        display: flex; align-items: center; gap: 11px;
+        padding: 13px 20px; border-bottom: 1px solid var(--border);
+      }
+      .rk-header .av {
+        width: 30px; height: 30px; min-width: 30px; border-radius: 999px;
+        background: var(--panel-2); border: 1px solid var(--border);
+        display: grid; place-items: center; font-size: 16px;
+      }
+      .rk-header .who { min-width: 0; }
+      .rk-header .who .t { display: block; font-size: 15.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .rk-header .who .s { display: block; font-size: 11.5px; color: var(--muted); }
+      .rk-header .grow { flex: 1; }
+      .rk-hbtn {
+        width: 32px; height: 32px; display: grid; place-items: center;
+        border-radius: 9px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); padding: 0;
+      }
+      .rk-hbtn:hover { border-color: var(--accent); background: var(--panel-3); }
+      .rk-hbtn svg { width: 17px; height: 17px; }
+
+      .rk-thread { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 9px; padding: 22px 26px; }
+      .rk-welcome { margin: auto; text-align: center; color: var(--muted); max-width: 440px; }
+      .rk-welcome .big { font-size: 21px; margin-bottom: 8px; color: var(--text); font-weight: 700; }
+      .rk-welcome .sub { font-size: 13.5px; line-height: 1.9; }
+
+      .rk-msg { display: flex; }
+      .rk-msg.user { justify-content: flex-end; }
+      .rk-msg.assistant { justify-content: flex-start; }
+      .rk-bubble {
+        max-width: min(88%, 720px);
+        border-radius: 14px;
+        padding: 10px 14px;
+        font-size: 14.5px;
+        line-height: 1.65;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .rk-msg.user .rk-bubble {
+        background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+        border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+        color: var(--text);
+      }
+      .rk-msg.assistant .rk-bubble {
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        color: var(--text);
+      }
+
+      /* tool activity (system styled cards) */
+      .rk-tools { display: flex; flex-direction: column; gap: 5px; }
+      .rk-tool {
+        display: flex; flex-direction: column; gap: 4px; max-width: 680px;
+        font-size: 12.5px; color: var(--muted);
+        background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius);
+        padding: 7px 11px; cursor: pointer;
+      }
+      .rk-tool:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); }
+      .rk-tool .rk-tool-head { display: flex; align-items: center; gap: 8px; }
+      .rk-tool .nm { color: var(--accent); font-family: ui-monospace, Consolas, monospace; font-size: 12px; font-weight: 600; }
+      .rk-tool .st { margin-inline-start: auto; width: 8px; height: 8px; border-radius: 999px; background: var(--muted); flex: 0 0 auto; }
+      .rk-tool.ok .st { background: var(--ok); }
+      .rk-tool.err .st { background: var(--err); }
+      .rk-tool pre { display: none; margin: 2px 0 0 0; font-size: 11px; white-space: pre-wrap; max-height: 220px; overflow: auto; }
+      .rk-tool.open pre { display: block; }
+      .rk-note { font-size: 12.5px; color: var(--muted); padding-inline-start: 3px; }
+      .rk-note.err { color: var(--err); }
+      .rk-note.ok { color: var(--ok); }
+      .rk-plan {
+        border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel-2);
+        padding: 10px 14px; font-size: 13px; color: var(--muted); max-width: 680px;
+      }
+      .rk-plan .h { color: var(--accent); font-weight: 600; margin-bottom: 6px; font-size: 13px; }
+      .rk-plan .st { margin-top: 3px; }
+      .rk-plan .st.done { color: var(--ok); }
+
+      /* ================= composer ================= */
+      .rk-composer { padding: 8px 16px 13px 16px; }
+      .rk-bar {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: end;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--panel);
+        padding: 8px 10px 8px 11px;
+        transition: border-color .15s;
+      }
+      .rk-bar:focus-within { border-color: var(--accent); }
+      .rk-attach {
+        width: 34px; height: 34px; min-width: 34px; border-radius: 10px;
+        border: 1px solid var(--border); background: var(--panel-2);
+        color: var(--text); font-size: 17px; line-height: 1; display: grid; place-items: center; padding: 0;
+      }
+      .rk-attach:hover { border-color: var(--accent); background: var(--panel-3); }
+      .rk-ta {
+        min-width: 8rem; min-height: 26px; max-height: 200px; flex: 1; resize: none;
+        background: transparent; border: none; outline: none; color: var(--text);
+        font-family: inherit; font-size: 14.5px; line-height: 24px; padding: 5px 12px;
+        overflow-y: auto;
+      }
+      .rk-ta::placeholder { color: var(--muted); }
+      .rk-actions { display: flex; align-items: center; gap: 7px; }
+      .rk-icon-btn {
+        width: 34px; height: 34px; min-width: 34px; border-radius: 10px;
+        border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+        display: grid; place-items: center; padding: 0;
+      }
+      .rk-icon-btn:hover { border-color: var(--accent); background: var(--panel-3); }
+      .rk-icon-btn svg { width: 17px; height: 17px; }
+      .rk-send {
+        width: 34px; height: 34px; min-width: 34px; border-radius: 50%;
+        border: 1px solid var(--accent-2); background: var(--accent-2); color: #fff;
+        display: grid; place-items: center; padding: 0; transition: background .12s, transform .1s;
+      }
+      .rk-send:hover { background: var(--accent); border-color: var(--accent); }
+      .rk-send:active { transform: scale(.95); }
+      .rk-send:disabled { background: var(--panel-2); border-color: var(--border); color: var(--muted); }
+      .rk-send svg { width: 17px; height: 17px; }
+      .rk-stop {
+        width: 34px; height: 34px; min-width: 34px; border-radius: 10px;
+        border: 1px solid var(--err); background: color-mix(in srgb, var(--err) 14%, var(--panel)); color: var(--err);
+        display: grid; place-items: center; padding: 0;
+      }
+      .rk-stop:hover { background: color-mix(in srgb, var(--err) 22%, var(--panel)); }
+      .rk-stop svg { width: 12px; height: 12px; }
+      .rk-rec { background: var(--err) !important; border-color: var(--err) !important; color: #fff !important; }
+      .rk-toast { margin: 7px auto 0; max-width: 720px; font-size: 12.5px; color: var(--muted); }
+      .rk-toast:not([hidden]) { display: block; }
+      .rk-chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 4px 7px 4px; }
+      .rk-chip {
+        display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px;
+        background: color-mix(in srgb, var(--accent) 12%, var(--panel)); color: var(--text);
+        border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
+        border-radius: 999px; padding: 4px 10px;
+      }
+      .rk-chip button { border: none; background: transparent; color: var(--muted); font-size: 12px; padding: 0 2px; }
+      .rk-chip button:hover { color: var(--err); }
+
+      /* ================= modal ================= */
+      .rk-modal { position: fixed; inset: 0; background: rgba(15, 17, 21, 0.55); display: flex; align-items: center; justify-content: center; z-index: 50; }
+      html[data-theme="light"] .rk-modal { background: rgba(15, 17, 21, 0.35); }
+      .rk-modal[hidden] { display: none; }
+      .rk-card {
+        width: min(620px, 94vw); max-height: 90vh; overflow-y: auto;
+        background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+        box-shadow: var(--shadow, 0 8px 30px rgba(0,0,0,.35));
+        padding: 18px; display: flex; flex-direction: column; gap: 10px;
+      }
+      .rk-card h3 { margin: 0 0 2px 0; font-size: 15px; font-weight: 700; }
+      .rk-card label { font-size: 12px; color: var(--muted); margin-bottom: -6px; }
+      .rk-card input, .rk-card textarea, .rk-card select {
+        width: 100%; background: var(--panel-2); border: 1px solid var(--border);
+        border-radius: 10px; color: var(--text); padding: 8px 10px; font-size: 13.5px;
+        outline: none; font-family: inherit;
+      }
+      .rk-card input:focus, .rk-card textarea:focus, .rk-card select:focus { border-color: var(--accent); }
+      .rk-card textarea { min-height: 110px; resize: vertical; line-height: 1.6; }
+      .rk-row { display: flex; gap: 9px; align-items: center; }
+      .rk-row .grow { flex: 1; }
+      .rk-btn {
+        border-radius: 10px; border: 1px solid var(--border); background: var(--panel-2);
+        color: var(--text); font-size: 13.5px; padding: 8px 14px;
+      }
+      .rk-btn:hover { border-color: var(--accent); background: var(--panel-3); }
+      .rk-btn.primary { background: var(--accent-2); border-color: var(--accent-2); color: #fff; font-weight: 600; }
+      .rk-btn.primary:hover { background: var(--accent); border-color: var(--accent); }
+      .rk-btn.danger { color: var(--err); }
+      .rk-btn.danger:hover { border-color: var(--err); background: color-mix(in srgb, var(--err) 12%, var(--panel)); }
+      .rk-hint { font-size: 11.5px; color: var(--muted); }
+
+      /* system tools section */
+      .rk-tools-box { border: 1px solid var(--border); border-radius: 10px; background: var(--bg-2); padding: 10px; }
+      .rk-tools-master {
+        display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text);
+        font-weight: 600; margin-bottom: 8px;
+      }
+      .rk-tools-master input { width: auto; margin: 0; }
+      .rk-tools-master button { margin-inline-start: auto; border: 1px solid var(--border); background: var(--panel-2); color: var(--muted); border-radius: 8px; font-size: 11.5px; padding: 3px 8px; }
+      .rk-tools-master button:hover { color: var(--text); border-color: var(--accent); }
+      .rk-tools-list { max-height: 210px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+      .rk-tool-row {
+        display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 8px;
+        font-size: 12.5px; color: var(--text);
+      }
+      .rk-tool-row:hover { background: var(--panel-2); }
+      .rk-tool-row input { width: auto; margin: 0; accent-color: var(--accent-2); }
+      .rk-tool-row .tn { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--accent); }
+      .rk-tool-row .td { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+      .rk-tools-count { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+      @media (max-width: 640px) {
+        body { flex-direction: column; }
+        .rk-sidebar { width: 100%; min-width: 0; max-height: 160px; border-inline-end: 0; border-bottom: 1px solid var(--border); }
+        .rk-bots { flex-direction: row; overflow-x: auto; }
+        .rk-bot { width: auto; min-width: 140px; }
+        .rk-side-foot { display: none; }
+        .rk-main { min-height: 0; }
+        .rk-thread { padding: 16px; }
+        .rk-composer { padding: 8px; }
+        .rk-bar { gap: 4px; padding: 6px; }
+        .rk-ta { min-width: 0; padding-inline: 4px; }
+      }
+      button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    </style>
+    <link rel="stylesheet" href="/loam.css" />
+  </head>
+  <body class="loam-secondary">
+    <!-- ============ sidebar: agents ============ -->
+    <aside class="rk-sidebar">
+      <div class="rk-side-head">
+        <span class="brand">🤖 رفقاء Loam <small>Loam</small></span>
+        <button class="rk-add" id="rkAddAgent" title="إنشاء وكيل">＋</button>
+      </div>
+      <div class="rk-bots" id="rkBots"></div>
+      <div class="rk-side-foot">
+        <a class="rk-foot-btn" href="/">← مساحة Loam</a>
+        <span style="flex:1"></span>
+      </div>
+    </aside>
+
+    <!-- ============ main ============ -->
+    <main class="rk-main">
+      <header class="rk-header">
+        <span class="av" id="rkHeadAv">🤖</span>
+        <span class="who">
+          <span class="t" id="rkHeadName">رفقاء Loam</span>
+          <span class="s" id="rkHeadSub">الوكيل العام — Loam</span>
+        </span>
+        <span class="grow"></span>
+        <button class="rk-hbtn" id="rkNewChat" title="محادثة جديدة">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </header>
+
+      <div class="rk-thread" id="rkThread">
+        <div class="rk-welcome" id="rkWel">
+          <div class="big">🤖 رفقاء Loam</div>
+          <div class="sub">
+            وكلاء دائمون كلٌّ بمحادثته وتعليماته ونموذجه وأدواته.<br />
+            اختر رفيقك وتعليماته، ثم ابدأ مهمة بمساحة ملفات مستقلة. تتحدد الأدوات حسب النمط والإعدادات.
+          </div>
+        </div>
+      </div>
+
+      <div class="rk-composer">
+        <div class="rk-chips" id="rkChips" hidden></div>
+        <div class="rk-bar">
+          <button class="rk-attach" id="rkAttach" title="إرفاق ملف">＋</button>
+          <textarea class="rk-ta" id="rkPrompt" rows="1" placeholder="راسل الوكيل…"></textarea>
+          <div class="rk-actions">
+            <button class="rk-icon-btn" id="rkMic" title="الصوت" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            </button>
+            <button class="rk-send" id="rkSend" title="إرسال" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 19V6M6 12l6-6 6 6"/></svg>
+            </button>
+            <button class="rk-stop" id="rkStop" title="إيقاف" hidden>
+              <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="rk-toast" id="rkToast" hidden></div>
+      </div>
+    </main>
+
+    <!-- ============ agent create/edit modal ============ -->
+    <div class="rk-modal" id="rkModal" hidden>
+      <div class="rk-card">
+        <h3 id="rkModalTitle">وكيل جديد</h3>
+        <div class="rk-row">
+          <input id="rkEmoji" value="🤖" style="width:64px;text-align:center" />
+          <input id="rkName" class="grow" placeholder="اسم الوكيل (مثال: مراجع الكود)" />
+        </div>
+        <label>وصف قصير</label>
+        <input id="rkDesc" placeholder="ماذا يفعل هذا الوكيل؟" />
+        <label>التعليمات — تُحقن في كل تشغيل</label>
+        <textarea id="rkInstr" placeholder="مثال: راجع أي كود بفحص RTL والأخطاء المحتملة، وأعد دائمًا ثلاث ملاحظات مرتبة…"></textarea>
+        <div class="rk-row">
+          <div style="flex:1">
+            <label>النموذج</label>
+            <select id="rkModelSel" style="direction:ltr;margin-top:6px"></select>
+          </div>
+          <div style="flex:1">
+            <label>السلوك</label>
+            <select id="rkModeSel" style="margin-top:6px">
+              <option value="build">إنجاز — ينفّذ المهمة</option>
+              <option value="ask">استكشاف — يجيب فقط</option>
+            </select>
+          </div>
+          <div style="flex:1">
+            <label>المجهود</label>
+            <select id="rkEffortSel" style="margin-top:6px">
+              <option value="">افتراضي</option>
+              <option value="max">Max</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+        </div>
+
+        <label>أدوات الرفيق — ضمن صلاحيات نمط المهمة</label>
+        <div class="rk-tools-box">
+          <div class="rk-tools-master">
+            <input type="checkbox" id="rkToolsAll" checked />
+            <span>كل أدوات النمط</span>
+            <button type="button" id="rkToolsReload" title="تحديث قائمة الأدوات">↻ تحديث</button>
+          </div>
+          <div class="rk-tools-list" id="rkToolsList"></div>
+          <div class="rk-tools-count" id="rkToolsCount"></div>
+        </div>
+
+        <div class="rk-row">
+          <button class="rk-btn primary" id="rkSave">حفظ</button>
+          <button class="rk-btn" id="rkCancel">إلغاء</button>
+          <span class="grow"></span>
+          <button class="rk-btn danger" id="rkDelete" hidden>🗑 حذف الوكيل</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/companions.js"></script>
+  </body>
+</html>

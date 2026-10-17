@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="/theme.js"></script>
+    <title>Loam — الشاشة الحيّة</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%233b82f6'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      body { height: 100vh; display: flex; flex-direction: column; }
+      #bar { display: flex; gap: 10px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+      #stage { flex: 1; display: flex; align-items: center; justify-content: center; background: var(--stage); min-height: 0; padding: 8px; }
+      #view { max-width: 100%; max-height: 100%; border: 1px solid var(--border); border-radius: 8px; }
+      .status { font-size: 12px; color: var(--muted); }
+      a.back { color: var(--accent); text-decoration: none; font-size: 13px; }
+    </style>
+    <link rel="stylesheet" href="/loam.css" />
+  </head>
+  <body class="loam-secondary">
+    <div id="bar">
+      <a class="back" href="/">← مساحة Loam</a>
+      <button id="start">مشاركة شاشة الجهاز</button>
+      <button id="stop" class="ghost">إيقاف</button>
+      <label>FPS <input id="fps" type="number" min="0.2" max="10" step="0.5" value="1" style="width:70px" /></label>
+      <span class="status" id="status">...</span>
+    </div>
+    <p class="status" style="padding-inline:12px">هذه شاشة الجهاز المشتركة وليست مساحة ملفات المهمة. ابدأ المشاركة لعرض محتويات الشاشة هنا.</p>
+    <div id="stage"><img id="view" alt="معاينة شاشة الجهاز بعد بدء المشاركة" /></div>
+    <script src="/screen.js"></script>
+  </body>
+</html>
+

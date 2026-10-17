@@ -1,0 +1,50 @@
+# electron-builder config for Loam.
+# Strips ~90 MB of redundant bundled packages (@napi-rs, pdfjs-dist, pdf-parse),
+# source maps, TS declarations, and non-x64-Windows prebuilds while keeping
+# runtime node_modules unified so Node subpath exports (e.g. zod/v3) work reliably.
+
+appId: app.loam.desktop
+productName: Loam
+directories:
+  output: release
+files:
+  - electron/**/*
+  - dist/**/*
+  - ui/**/*
+  - skills/**/*
+  - agents/**/*
+  - evals/**/*
+  - addons/**/*
+  - scripts/**/*
+  - config.json
+  - package.json
+  # Already bundled inside dist/server.cjs (+ dist/pdf.worker.mjs):
+  - "!node_modules/@napi-rs/**/*"
+  - "!node_modules/pdfjs-dist/**/*"
+  - "!node_modules/pdf-parse/**/*"
+  # Strip source maps, TS declarations, and non-x64-Windows prebuilds:
+  - "!node_modules/**/*.map"
+  - "!node_modules/**/*.d.ts"
+  - "!node_modules/**/prebuilds/darwin-*/**/*"
+  - "!node_modules/**/prebuilds/linux-*/**/*"
+  - "!node_modules/**/prebuilds/win32-arm64/**/*"
+  - "!node_modules/**/win10-arm64/**/*"
+asar: false
+npmRebuild: false
+
+# Update feed (generic): overridable at runtime via MANUS_LOCAL_UPDATE_URL,
+# MANUS_GITHUB_REPO, or POST /api/updater (settings.json updateFeedUrl / githubRepo).
+publish:
+  provider: generic
+  url: "http://127.0.0.1:8788/"
+
+win:
+  icon: electron/assets/loam.ico
+  target:
+    - nsis
+
+nsis:
+  oneClick: true
+  perMachine: false
+  deleteAppDataOnUninstall: false
+  artifactName: "Loam-Setup-${version}.${ext}"
