@@ -22,3 +22,5 @@ TestSprite was unavailable (CLI not installed); use testsprite setup to configur
 ## Release evidence
 
 The packaged Electron app passed identity/version checks, native PTY execution, all five MCP connections, live editor rendering for each kind, and DOCX/PPTX/XLSX download checks. Screenshots: release/loam-packaged-studio-document.png, release/loam-packaged-studio-presentation.png, release/loam-packaged-studio-spreadsheet.png. Final installer: release/Loam-Setup-0.5.3.exe (143,457,886 bytes); feed/hash/size/blockmap checks passed5/5.
+
+Installed version0.5.3 verified:11/11 previous tasks retained, five MCP servers connected, installed source hashes match. Evidence: release/installed-verification-0.5.3.json.
