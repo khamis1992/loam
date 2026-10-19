@@ -1,23 +1,22 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-export interface Project {
+interface Project {
   uid: string;
   name: string;
   description?: string;
-  sessionCount: number;
+  instruction?: string;
+  isPinned?: boolean;
+  isFavorite?: boolean;
 }
 
-export interface ProjectState {
+interface ProjectState {
   list: Project[];
   activeUid: string | null;
 }
 
-const initialState: ProjectState = {
-  list: [],
-  activeUid: null,
-};
+const initialState: ProjectState = { list: [], activeUid: null };
 
-export const projectSlice = createSlice({
+const projectSlice = createSlice({
   name: 'project',
   initialState,
   reducers: {
@@ -31,3 +30,4 @@ export const projectSlice = createSlice({
 });
 
 export const { setProjects, selectProject } = projectSlice.actions;
+export default projectSlice.reducer;

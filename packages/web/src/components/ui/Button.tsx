@@ -1,10 +1,8 @@
-'use client';
-
 import { forwardRef, type ButtonHTMLAttributes } from 'react';
 import clsx from 'clsx';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
-type Size = 'sm' | 'md' | 'lg'; // 32 / 36 / 40px
+type Size = 'sm' | 'md' | 'lg';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;

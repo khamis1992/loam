@@ -1,42 +1,51 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
-
-export interface ChatMessage {
-  id: string;
-  sender: 'user' | 'assistant';
-  content: string;
-}
+import type { ChatEvent, ChatMessageEvent, ChatDeltaEvent, StatusUpdateEvent, ToolUsedEvent } from '@shared/socket';
 
 export interface ChatState {
-  messages: ChatMessage[];
-  running: boolean;
-  statusText: string;
+  eventsBySession: Record<string, ChatEvent[]>;
+  deltasByTarget: Record<string, string>;
+  statusBySession: Record<string, StatusUpdateEvent['agentStatus']>;
+  running: Record<string, boolean>;
 }
 
-const initialState: ChatState = {
-  messages: [],
-  running: false,
-  statusText: '',
-};
+const initialState: ChatState = { eventsBySession: {}, deltasByTarget: {}, statusBySession: {}, running: {} };
 
-export const chatSlice = createSlice({
+function ensureEvents(state: ChatState, sessionId: string) {
+  if (!state.eventsBySession[sessionId]) state.eventsBySession[sessionId] = [];
+}
+
+const chatSlice = createSlice({
   name: 'chat',
   initialState,
   reducers: {
-    addMessage(state, action: PayloadAction<ChatMessage>) {
-      state.messages.push(action.payload);
+    appendEvent(state, action: PayloadAction<{ sessionId: string; event: ChatEvent }>) {
+      const { sessionId, event } = action.payload;
+      ensureEvents(state, sessionId);
+      const list = state.eventsBySession[sessionId];
+      const idx = list.findIndex((e) => e.id === event.id);
+      if (idx >= 0) list[idx] = event;
+      else list.push(event);
     },
-    setRunning(state, action: PayloadAction<boolean>) {
-      state.running = action.payload;
+    applyDelta(state, action: PayloadAction<{ sessionId: string; delta: ChatDeltaEvent }>) {
+      const { sessionId, delta } = action.payload;
+      ensureEvents(state, sessionId);
+      state.deltasByTarget[delta.targetEventId] = (state.deltasByTarget[delta.targetEventId] ?? '') + delta.delta.content;
     },
-    setStatusText(state, action: PayloadAction<string>) {
-      state.statusText = action.payload;
+    setStatus(state, action: PayloadAction<{ sessionId: string; status: StatusUpdateEvent['agentStatus'] }>) {
+      const { sessionId, status } = action.payload;
+      state.statusBySession[sessionId] = status;
+      state.running[sessionId] = status === 'running';
     },
-    resetChat(state) {
-      state.messages = [];
-      state.running = false;
-      state.statusText = '';
+    replaceEvents(state, action: PayloadAction<{ sessionId: string; events: ChatEvent[] }>) {
+      state.eventsBySession[action.payload.sessionId] = action.payload.events;
+    },
+    clearSession(state, action: PayloadAction<string>) {
+      delete state.eventsBySession[action.payload];
     },
   },
 });
 
-export const { addMessage, setRunning, setStatusText, resetChat } = chatSlice.actions;
+export const { appendEvent, applyDelta, setStatus, replaceEvents, clearSession } = chatSlice.actions;
+export default chatSlice.reducer;
+
+export type { ChatEvent, ChatMessageEvent, ChatDeltaEvent, StatusUpdateEvent, ToolUsedEvent };

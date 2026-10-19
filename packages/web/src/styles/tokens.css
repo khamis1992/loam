@@ -203,7 +203,6 @@
   --text-onblack: #fff;
   --text-primary: #1a1a1a;
   --text-quaternary: #8c8c8c;
-  --text-remote-computer-access: #34322d;
   --text-secondary: #4d4d4d;
   --text-shining: #e5e5e5;
   --text-tertiary: #737373;
@@ -312,7 +311,6 @@
   --logo-color: #dadada;
   --overlay-card-bar-from: #47474766;
   --overlay-card-bar-to: #20202066;
-  --ring-video-campaign-artwork: #fefefe52;
   --shadow-Highlight: #ffffff24;
   --shadow-L: #0006;
   --shadow-M: #00000047;
@@ -355,9 +353,7 @@
   --text-white-tsp: #fff9;
   --theme-text-primary: #dbdbdb;
 }
-/* NOTE(a03): the original contained an attribute selector `[--ui-density-nav-icon-scale\:1\]` here.
-   It is omitted because PostCSS/Tailwind cannot parse that generated quirk. The default value
-   is already declared inside `:root` below, so no visual change occurs. */
+/* The original spec contained an escaped attribute selector `[--ui-density-nav-icon-scale\:1\]` which is invalid CSS. The default value is already present in :root below. */
 :root {
   --ui-font-size-xs: 12px;
   --ui-line-height-xs: 16px;

@@ -1,6 +1,5 @@
-import type { Metadata, Viewport } from 'next';
-import { StoreProvider } from '@/store';
-import { DialogRegistryProvider } from '@/components/ui/DialogRegistry';
+import type { Metadata } from 'next';
+import { Providers } from './providers';
 import '@/styles/globals.css';
 
 export const metadata: Metadata = {
@@ -8,26 +7,13 @@ export const metadata: Metadata = {
   description: 'Desktop AI agent workspace',
 };
 
-export const viewport: Viewport = {
-  width: 'device-width',
-  initialScale: 1,
-  themeColor: '#f8f8f7',
-};
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html
-      lang="en"
-      dir="ltr"
-      className="light is-desktop"
+    <html lang="en" dir="ltr" className="light is-desktop" data-interface-density="compact"
       data-accent-color="default"
-      data-interface-density="compact"
-      style={{ '--ui-font-scale': '1' } as React.CSSProperties}
     >
-      <body className="min-h-screen overflow-hidden">
-        <StoreProvider>
-          <DialogRegistryProvider>{children}</DialogRegistryProvider>
-        </StoreProvider>
+      <body className="h-screen w-screen overflow-hidden">
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

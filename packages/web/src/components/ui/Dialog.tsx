@@ -1,7 +1,6 @@
-'use client';
-
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { t } from '@/i18n/t';
 
 export function Dialog({ open, onClose, title, children, width = 480 }: {
   open: boolean; onClose: () => void; title: string; children: ReactNode; width?: number;
@@ -26,7 +25,7 @@ export function Dialog({ open, onClose, title, children, width = 480 }: {
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-title-lg text-text-primary">{title}</h2>
-          <button aria-label="Close" onClick={onClose} className="rounded-control p-1 hover:bg-fill-hover">✕</button>
+          <button aria-label={t('Close')} onClick={onClose} className="rounded-control p-1 hover:bg-fill-hover">✕</button>
         </div>
         {children}
       </div>

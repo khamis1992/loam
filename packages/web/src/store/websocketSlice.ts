@@ -1,32 +1,31 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-export interface WebsocketState {
+interface WebsocketState {
   connected: boolean;
-  reconnecting: boolean;
-  lastError: string | null;
+  offline: boolean;
+  offlineAt?: number;
+  socketId?: string;
 }
 
-const initialState: WebsocketState = {
-  connected: false,
-  reconnecting: false,
-  lastError: null,
-};
+const initialState: WebsocketState = { connected: false, offline: false };
 
-export const websocketSlice = createSlice({
+const websocketSlice = createSlice({
   name: 'websocket',
   initialState,
   reducers: {
     setConnected(state, action: PayloadAction<boolean>) {
       state.connected = action.payload;
-      if (action.payload) state.reconnecting = false;
+      if (action.payload) {
+        state.offline = false;
+        state.offlineAt = undefined;
+      }
     },
-    setReconnecting(state, action: PayloadAction<boolean>) {
-      state.reconnecting = action.payload;
-    },
-    setError(state, action: PayloadAction<string | null>) {
-      state.lastError = action.payload;
+    setOffline(state, action: PayloadAction<boolean>) {
+      state.offline = action.payload;
+      state.offlineAt = action.payload ? Date.now() : undefined;
     },
   },
 });
 
-export const { setConnected, setReconnecting, setError } = websocketSlice.actions;
+export const { setConnected, setOffline } = websocketSlice.actions;
+export default websocketSlice.reducer;

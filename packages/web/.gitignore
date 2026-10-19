@@ -1,3 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build outputs
 .next/
 dist/
-node_modules/
+out/
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+
+# TypeScript
+*.tsbuildinfo
+
+# Misc
+.DS_Store
+*.log
