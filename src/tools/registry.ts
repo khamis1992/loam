@@ -161,3 +161,9 @@ export function bool(args: Record<string, unknown>, key: string, def = false): b
   if (typeof v === "string") return v.toLowerCase() === "true";
   return def;
 }
+
+export function strs(args: Record<string, unknown>, key: string): string[] {
+  const v = args[key];
+  if (!Array.isArray(v)) return [];
+  return v.filter((item): item is string => typeof item === "string");
+}
