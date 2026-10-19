@@ -1,5 +1,5 @@
-import { en } from './en';
-import { ar } from './ar';
+import en from './en.json';
+import ar from './ar.json';
 import { createElement, Fragment, type ReactNode } from 'react';
 
 export type Locale = 'en' | 'ar';
@@ -8,6 +8,11 @@ export const PRODUCT = 'Agent Studio';
 export const isRtl = (l: Locale) => l === 'ar';
 
 let current: Locale = 'en';
+
+export function getLocale(): Locale {
+  return current;
+}
+
 export function setLocale(l: Locale) {
   current = l;
   if (typeof document !== 'undefined') {
@@ -15,10 +20,8 @@ export function setLocale(l: Locale) {
     document.documentElement.dir = isRtl(l) ? 'rtl' : 'ltr';
   }
 }
-export function getLocale(): Locale {
-  return current;
-}
 
+/** Keys are English source strings (matches the original catalog design). */
 export function t(key: string, vars: Record<string, string | number> = {}): string {
   const template = catalogs[current][key] ?? key;
   return template.replace(/\{(\w+)\}/g, (_, name) =>
@@ -26,6 +29,7 @@ export function t(key: string, vars: Record<string, string | number> = {}): stri
   );
 }
 
+/** Rich variant: <tag>text</tag> segments are rendered by `tags[tag]`. */
 export function tRich(
   key: string,
   tags: Record<string, (children: string) => ReactNode>,
@@ -35,7 +39,8 @@ export function tRich(
   const re = /<(\w+)>(.*?)<\/\1>/g;
   const text = t(key, vars);
   let last = 0;
-  for (let m: RegExpExecArray | null; (m = re.exec(text)); ) {
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
     parts.push(text.slice(last, m.index));
     const render = tags[m[1]];
     parts.push(render ? createElement(Fragment, { key: m.index }, render(m[2])) : m[2]);
