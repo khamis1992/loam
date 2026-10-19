@@ -26,6 +26,7 @@ import { ROOT, UI_DIR, DATA_DIR, type Config } from "../config.js";
 import type { OllamaClient } from "../ollama.js";
 import type { AgentEvent, Emit } from "../agent/events.js";
 import { log, redact } from "../log.js";
+import { validateLocalToken } from "../security/localAuth.js";
 import { isInside, resolveRead, resolveWrite } from "../policy/paths.js";
 import type { MemoryStore } from "../memory/store.js";
 import { getPending, listPending, removePending, type PendingItem } from "./pending.js";
@@ -358,6 +359,22 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
 
     void (async (): Promise<void> => {
       try {
+        // Public endpoints are exempt from the install token; everything else on the
+        // loopback server must carry the token injected by the Electron main process.
+        const localAuthDir = process.env.LOAM_LOCAL_TOKEN_DIR || DATA_DIR;
+        const publicPaths = new Set(["/api/health", "/api/identity"]);
+        const isStatic = req.method === "GET" && (p === "/" || MIME[path.extname(p).toLowerCase()] !== undefined);
+        if (!isStatic && !publicPaths.has(p)) {
+          const token =
+            typeof req.headers["x-loam-local-token"] === "string"
+              ? req.headers["x-loam-local-token"]
+              : undefined;
+          if (!validateLocalToken(localAuthDir, token)) {
+            sendJson(res, 401, { error: "unauthenticated", message: "missing or invalid local auth token" });
+            return;
+          }
+        }
+
         if (await timeline.handle(req, res, url)) return;
         if (p === '/api/integrations') {
           res.setHeader('cache-control', 'no-store');
@@ -500,8 +517,25 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (req.method === "GET" && p === "/api/models") {
-          const models = await ollama.listModels();
-          sendJson(res, 200, { models });
+          try {
+            const models = await ollama.listModels();
+            sendJson(res, 200, { models });
+          } catch (err) {
+            log.warn(`models list failed: ${err instanceof Error ? err.message : String(err)}`);
+            sendJson(res, 200, { models: [], providerError: "model provider unavailable" });
+          }
+          return;
+        }
+
+        if (req.method === "GET" && p === "/api/health") {
+          sendJson(res, 200, {
+            ok: true,
+            provider: cfg.model.endsWith(":cloud") ? "cloud" : "ollama",
+            model: cfg.model,
+            tools: registry?.names().length ?? 0,
+            sessions: listTasks().length,
+            version: process.env.npm_package_version ?? "0.0.0",
+          });
           return;
         }
 
@@ -2266,6 +2300,14 @@ loadAgents();
           const emit = (event: AgentEvent): void => {
             if (!res.destroyed && !res.writableEnded) res.write(`data: ${redact(JSON.stringify(event))}\n\n`);
           };
+
+          const chosenModel = model && model.trim().length > 0 ? model : cfg.model;
+          if (String(chosenModel).endsWith(":cloud") && (!cfg.cloudModel?.apiKey || cfg.cloudModel.apiKey.trim().length === 0)) {
+            emit({ type: "error", message: "No cloud API key configured. Add cloudModel.apiKey to config.json to use cloud models." });
+            stopHeartbeat();
+            if (!res.destroyed && !res.writableEnded) res.end();
+            return;
+          }
 
           try {
             if (!taskId) taskId = createTask(prompt, title, projectId, agentId).id;

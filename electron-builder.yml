@@ -29,7 +29,10 @@ files:
   - "!node_modules/**/prebuilds/linux-*/**/*"
   - "!node_modules/**/prebuilds/win32-arm64/**/*"
   - "!node_modules/**/win10-arm64/**/*"
-asar: false
+asar: true
+asarUnpack:
+  - "**/*.node"
+afterPack: ./electron/afterPack.cjs
 # electron-builder's dependency collector excludes directories named examples.
 # Three.js ships its runtime controls/loaders/exporters in examples/jsm.
 extraResources:

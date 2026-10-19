@@ -50,7 +50,8 @@ async function main(): Promise<void> {
   const recovered = recoverInterruptedTasks();
   if (recovered) log.info(`recovery: ${recovered} interrupted task(s) awaiting resume`);
   const bootSettings = loadSettings();
-  if (bootSettings.workspace && fs.existsSync(bootSettings.workspace) && fs.statSync(bootSettings.workspace).isDirectory()) {
+  const envRoot = process.env.LOAM_ROOT || process.env.MANUS_LOCAL_ROOT;
+  if (!envRoot && bootSettings.workspace && fs.existsSync(bootSettings.workspace) && fs.statSync(bootSettings.workspace).isDirectory()) {
     cfg.workspace = path.resolve(bootSettings.workspace);
   } else {
     cfg.workspace = path.resolve(cfg.workspace);

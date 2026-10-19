@@ -6,6 +6,7 @@ const { createHash } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const updater = require("./updater.cjs");
 const mcpBridge = require("./mcp-bridge.cjs");
+const { IPC_INVOKE, IPC_EVENT_PREFIX, IPC_META, IPC_SYNC, NAMESPACES } = require("./ipc-constants.cjs");
 
 const ASAR_ROOT = path.resolve(__dirname, "..");
 const ROOT =
@@ -33,6 +34,8 @@ const EXPECTED_VERSION = require(path.join(ROOT, "package.json")).version;
 let serverChild = null;
 let win = null;
 let tray = null;
+let localAuthToken = "";
+let localAuthUserData = "";
 
 // Keep user data (skills, data, workspace) out of the app folder so updates
 // never overwrite it. Packaged builds use %APPDATA%/manus-local; dev builds
@@ -114,7 +117,7 @@ function ping() {
   const dataPath = path.resolve(process.env.LOAM_DATA_DIR || process.env.MANUS_LOCAL_DATA_DIR || path.join(ROOT, "data"));
   const profileId = createHash("sha256").update(process.platform === "win32" ? dataPath.toLowerCase() : dataPath).digest("hex");
   return new Promise((resolve) => {
-    const req = http.get(BASE + "/api/identity", (res) => {
+    const req = http.get(BASE + "/api/identity", { headers: authHeader(localAuthToken) }, (res) => {
       let body = "";
       res.on("data", chunk => { body += chunk; });
       res.on("end", () => {
@@ -265,6 +268,169 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+// ---------------------------------------------------------------------------
+// Spec IPC registry (BUILD_SPEC §8.3 / §10.3).  MVP namespaces are implemented
+// here; the rest are stubbed so the channel surface is complete and the sender
+// is always validated before any handler runs.
+// ---------------------------------------------------------------------------
+const TRUSTED_EXTERNAL_SCHEMES = new Set(["https:", "mailto:"]);
+function isTrustedExternalUrl(url) {
+  try {
+    const u = new URL(url);
+    return TRUSTED_EXTERNAL_SCHEMES.has(u.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function localStoragePath() {
+  return path.join(app.getPath("userData"), "localStorage.json");
+}
+function readLocalStorage() {
+  try { return JSON.parse(fs.readFileSync(localStoragePath(), "utf8")); } catch { return {}; }
+}
+function writeLocalStorage(data) {
+  fs.writeFileSync(localStoragePath(), JSON.stringify(data, null, 2), "utf8");
+}
+
+function currentWindow() {
+  return BrowserWindow.getFocusedWindow() ?? win;
+}
+
+function isValidIpcSender(frame) {
+  const url = frame?.url ?? "";
+  // The renderer is served from the local loopback origin; treat that as the
+  // privileged app://agent/ equivalent for this stage of the rebuild.
+  return url.startsWith(BASE + "/") || url === BASE + "/";
+}
+
+let currentTheme = "system";
+
+const ipcHandlers = {
+  auth: {
+    getToken: () => "",
+    setToken: (_sender, _token) => undefined,
+    removeToken: () => undefined,
+    notifyLoginSuccess: () => undefined,
+  },
+  window: {
+    minimize: () => { currentWindow()?.minimize(); },
+    maximize: () => { currentWindow()?.maximize(); },
+    close: () => { currentWindow()?.close(); },
+    isMaximized: () => currentWindow()?.isMaximized() ?? false,
+    toggleFullscreen: () => {
+      const w = currentWindow();
+      if (!w) return false;
+      w.setFullScreen(!w.isFullScreen());
+      return w.isFullScreen();
+    },
+    isFullscreen: () => currentWindow()?.isFullScreen() ?? false,
+    openTaskInNewWindow: (_sender, _opts) => { throw new Error("not implemented"); },
+  },
+  system: {
+    openExternal: (_sender, url) => {
+      if (!isTrustedExternalUrl(url)) throw new Error("disallowed external URL");
+      shell.openExternal(url);
+    },
+    showFolderDialog: async (_sender, opts = {}) => {
+      const result = await dialog.showOpenDialog(currentWindow() ?? undefined, {
+        properties: ["openDirectory", "createDirectory"],
+        defaultPath: opts.defaultPath,
+      });
+      return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
+    },
+    notifyNetworkOnline: () => undefined,
+    notifyNetworkOffline: () => undefined,
+  },
+  updater: {
+    getStatus: () => updater.getStatus(),
+    checkForUpdates: () => { void updater.check(); return updater.getStatus(); },
+    restartNow: () => updater.installNow(),
+  },
+  theme: {
+    broadcastConfig: (_sender, { theme }) => {
+      if (typeof theme === "string") currentTheme = theme;
+      return { theme: currentTheme };
+    },
+  },
+  appearance: {
+    broadcastConfig: (_sender, cfg) => cfg,
+  },
+  desktopOperator: {
+    listWorkspaceDirectory: (_sender, _opts) => ({ entries: [] }),
+    searchWorkspaceFiles: (_sender, _opts) => ({ results: [] }),
+    watchWorkspaceFiles: (_sender, _opts) => undefined,
+    unwatchWorkspaceFiles: (_sender, _opts) => undefined,
+    getState: () => ({}),
+  },
+  terminal: {
+    create: (_sender, _opts) => { throw new Error("terminal not implemented in this build"); },
+    write: (_sender, _id, _data) => undefined,
+    resize: (_sender, _id, _cols, _rows) => undefined,
+    close: (_sender, _id) => undefined,
+  },
+  desktopActivityIndicator: {
+    getState: () => ({}),
+    rendererReady: () => undefined,
+    setEnabled: (_sender, _enabled) => undefined,
+    setExpanded: (_sender, _expanded) => undefined,
+  },
+  keepAwake: {
+    getState: () => ({ enabled: false }),
+    setEnabled: (_sender, _enabled) => undefined,
+  },
+  shortcut: {
+    getConfig: () => ({}),
+    getCapabilities: () => ({}),
+    setEnabled: (_sender, _enabled) => undefined,
+  },
+  env: {
+    setOverrideAndRelaunch: (_sender, _opts) => { throw new Error("not implemented"); },
+  },
+  diagnosticLogs: {
+    collect: () => ({ path: "" }),
+  },
+  storage: {
+    getItem: (_sender, key) => {
+      if (typeof key !== "string") throw new Error("key must be a string");
+      return readLocalStorage()[key] ?? null;
+    },
+    setItem: (_sender, key, value) => {
+      if (typeof key !== "string") throw new Error("key must be a string");
+      const data = readLocalStorage();
+      data[key] = value;
+      writeLocalStorage(data);
+    },
+    removeItem: (_sender, key) => {
+      if (typeof key !== "string") throw new Error("key must be a string");
+      const data = readLocalStorage();
+      delete data[key];
+      writeLocalStorage(data);
+    },
+  },
+};
+
+ipcMain.handle(IPC_INVOKE, (event, { ns, method, args }) => {
+  if (!isValidIpcSender(event.senderFrame)) throw new Error("invalid IPC sender");
+  const handler = ipcHandlers[ns]?.[method];
+  if (!handler) throw new Error(`unknown IPC call ${ns}.${method}`);
+  return handler(event.sender, ...args);
+});
+
+ipcMain.handle(IPC_META, () => ({
+  handlers: NAMESPACES.map((ns) => [ns, Object.keys(ipcHandlers[ns] ?? {})]),
+  events: [],
+}));
+
+ipcMain.on(IPC_SYNC, (event) => {
+  event.returnValue = {
+    platform: process.platform,
+    appVersion: app.getVersion(),
+    windowId: currentWindow()?.id ?? 0,
+    locale: app.getLocale(),
+  };
+});
+
 app.setAppUserModelId("app.loam.desktop");
 
 // Native folder picker for choosing the working repo/folder.
@@ -281,6 +447,26 @@ ipcMain.handle("pick-folder", async () => {
   }
 });
 
+function getLocalAuthToken() {
+  const userData = app.getPath("userData");
+  const tokenFile = path.join(userData, ".loam-local-auth-token");
+  try {
+    if (fs.existsSync(tokenFile)) {
+      const token = fs.readFileSync(tokenFile, "utf8").trim();
+      if (token.length > 0) return { userData, token };
+    }
+  } catch {}
+  const token = require("node:crypto").randomBytes(32).toString("hex");
+  fs.mkdirSync(userData, { recursive: true });
+  fs.writeFileSync(tokenFile, token, "utf8");
+  try { fs.chmodSync(tokenFile, 0o600); } catch {}
+  return { userData, token };
+}
+
+function authHeader(token) {
+  return { "x-loam-local-token": token };
+}
+
 const ownsInstance = app.requestSingleInstanceLock();
 ipcMain.handle('loam-updates', async (event, action) => {
   if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || new URL(event.senderFrame.url).origin !== BASE) throw new Error('غير مسموح.');
@@ -295,18 +481,31 @@ app.on("second-instance", () => { if (win) { if (win.isMinimized()) win.restore(
 app.whenReady().then(async () => {
   if (!ownsInstance) return;
   prepareUserData();
+  const localAuth = getLocalAuthToken();
+  localAuthToken = localAuth.token;
+  localAuthUserData = localAuth.userData;
+  process.env.LOAM_LOCAL_TOKEN = localAuthToken;
+  process.env.LOAM_LOCAL_TOKEN_DIR = localAuthUserData;
   buildMenu();
   createTray();
   await mcpBridge.start(ROOT, BRIDGE_PORT);
   try { console.log("[electron] server mode: " + (await ensureServer())); }
   catch (err) { console.error("[electron] " + err.message); dialog.showErrorBox("Loam — تعذّر بدء التشغيل", err.message); app.quit(); return; }
   createWindow();
+  // Inject the install token into all renderer requests to the local API.
+  if (win) {
+    const filter = { urls: [`${BASE}/api/*`] };
+    win.webContents.session.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
+      details.requestHeaders["x-loam-local-token"] = localAuthToken;
+      callback({ requestHeaders: details.requestHeaders });
+    });
+  }
   startServerWatchdog();
   const localUpdates = await require("./local-updates.cjs").startLocalUpdates(path.join(app.getPath("userData"), "updates"));
   updater.init({
     localFeed: localUpdates.url,
     canInstall: async () => {
-      const response = await fetch(BASE + "/api/tasks", { signal: AbortSignal.timeout(5000) });
+      const response = await fetch(BASE + "/api/tasks", { headers: authHeader(localAuthToken), signal: AbortSignal.timeout(5000) });
       if (!response.ok) throw new Error("تعذّر التحقق من المهام الجارية. أعد المحاولة.");
       const data = await response.json();
       return !data.tasks.some(task => ["running", "queued", "pending"].includes(task.status));
