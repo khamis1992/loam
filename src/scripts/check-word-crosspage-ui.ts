@@ -57,7 +57,7 @@ try{
  const output=await exportStudio(afterResize,work);
  await fs.writeFile(out+'/crosspage-edited.docx',output.buffer);
  await fs.writeFile(out+'/crosspage-edited.pdf',await renderWordPreview(output.buffer));
- for(let i=0;i<3;i++){const data=await frame().locator('canvas').nth(i).evaluate(e=>e.toDataURL());await fs.writeFile(`${out}/page-${i+1}.png`,Buffer.from(data.split(',')[1]!,'base64'));}
+ for(let i=0;i<3;i++){const data=await frame().locator('canvas').nth(i).evaluate(e=>(e as HTMLCanvasElement).toDataURL());await fs.writeFile(`${out}/page-${i+1}.png`,Buffer.from(data.split(',')[1]!,'base64'));}
  assert.deepEqual(errors,[]);
  console.log('PASS cross-page drag re-anchors on the target page, corner handle resizes, native Word export regenerated');
 }finally{await browser.close();server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));}

@@ -52,10 +52,9 @@ export const webTools: Tool[] = [
         const signal = ctx.signal ? AbortSignal.any([ctx.signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000);
         const response = await fetch('https://html.duckduckgo.com/html/?' + new URLSearchParams({ q: query }), { signal, headers: { 'user-agent': 'Loam/0.5' } });
         if (!response.ok) throw Error(`Search provider HTTP ${response.status}`);
-        let size = 0; const chunks: Uint8Array[] = [];
-        if (!response.body) throw Error('Search provider returned no body');
-        for await (const chunk of response.body) { size += chunk.length; if (size > 2_000_000) throw Error('Search response too large'); chunks.push(chunk); }
-        const results = parseSearchPage(Buffer.concat(chunks).toString('utf8'), Math.max(1, Math.min(10, Math.floor(num(args, 'limit', 5)))));
+        const ab = await response.arrayBuffer();
+        if (ab.byteLength > 2_000_000) throw Error('Search response too large');
+        const results = parseSearchPage(Buffer.from(ab).toString('utf8'), Math.max(1, Math.min(10, Math.floor(num(args, 'limit', 5)))));
         return { ok: true, content: JSON.stringify({ query, provider: 'DuckDuckGo', results, ...(results.length ? {} : { message: 'No search results returned. Try another query.' }) }) };
       } catch (error) { return { ok: false, content: `Search unavailable: ${error instanceof Error ? error.message : String(error)}` }; }
     },

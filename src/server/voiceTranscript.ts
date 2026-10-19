@@ -27,7 +27,7 @@ function fileFor(agentId: string): string {
 export async function transcribeAudio(audio: Buffer): Promise<Array<{ start: number; end: number; text: string; speaker: string }> | { error: string }> {
   const url = process.env.LOAM_STT_URL || "http://127.0.0.1:3947";
   try {
-    const res = await fetch(url + "/transcribe", { method: "POST", headers: { "content-type": "application/octet-stream" }, body: audio, signal: AbortSignal.timeout(60_000) });
+    const res = await fetch(url + "/transcribe", { method: "POST", headers: { "content-type": "application/octet-stream" }, body: new Uint8Array(audio), signal: AbortSignal.timeout(60_000) });
     if (!res.ok) return { error: "STT server error: " + res.status };
     const data = (await res.json()) as { segments?: Array<{ start: number; end: number; text: string }> };
     return (data.segments ?? []).map((s, i) => ({ ...s, speaker: i % 2 === 0 ? "speaker-1" : "speaker-2" }));

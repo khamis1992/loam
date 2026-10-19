@@ -3,7 +3,7 @@ import { inflateRawSync } from "node:zlib";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import { StudioError } from "./store.js";
 export const W='http://schemas.openxmlformats.org/wordprocessingml/2006/main', A='http://schemas.openxmlformats.org/drawingml/2006/main', P='http://schemas.openxmlformats.org/presentationml/2006/main', S='http://schemas.openxmlformats.org/spreadsheetml/2006/main', R='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
-export function xml(raw:string): any { if (/<!DOCTYPE|<!ENTITY/i.test(raw) || raw.length>15_000_000) throw new StudioError('Unsupported or oversized XML'); try { let failed=false; const doc=new DOMParser({onError:(level:string)=>{if(level!=='warning')failed=true;}}).parseFromString(raw,'application/xml'); if(failed)throw new StudioError('Invalid Office XML'); return doc; } catch { throw new StudioError('Invalid Office XML'); } }
+export function xml(raw:string): any { if (/<!DOCTYPE|<!ENTITY/i.test(raw) || raw.length>15_000_000) throw new StudioError('Unsupported or oversized XML'); try { let failed=false; const doc=new DOMParser({onError:(level:string)=>{if(level!=='warning')failed=true;}} as unknown as ConstructorParameters<typeof DOMParser>[0]).parseFromString(raw,'application/xml'); if(failed)throw new StudioError('Invalid Office XML'); return doc; } catch { throw new StudioError('Invalid Office XML'); } }
 export const serialize=(node:any):string=>new XMLSerializer().serializeToString(node);
 export const all=(node:any,ns:string,name:string):any[]=>Array.from(node.getElementsByTagNameNS(ns,name));
 export const first=(node:any,ns:string,name:string):any=>all(node,ns,name)[0];

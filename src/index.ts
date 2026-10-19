@@ -37,6 +37,7 @@ import { closeBrowser, closeBrowserSession, setBrowserSessionResolver } from "./
 import { setTaskMode } from "./server/db.js";
 import { log } from "./log.js";
 import { recoverInterruptedTasks, getSavedRun, saveRun, queueTaskRun, completeTaskRun, closeDb } from "./server/db.js";
+import { startProtocolAdapter } from "./protocol/adapter.js";
 import { executionQueue } from "./server/executionQueue.js";
 import { requiresReplayConfirmation, type SavedRun } from "./server/recovery.js";
 import { acquireRuntimeLease, releaseRuntimeLease, backupDatabase } from "./server/sqliteStore.js";
@@ -432,6 +433,9 @@ async function main(): Promise<void> {
     mcp,
   });
 
+  // A1: Start the Manus-style protocol adapter (Connect RPC + socket.io) on top of Loam.
+  const protocolAdapter = await startProtocolAdapter({ cfg, runTask, getTask });
+
   // Event-driven routines (16): file watchers reuse the scheduled-run path so a
   // triggered routine runs under its companion exactly like a cron routine.
   const scheduledRun = async (prompt: string, scheduleId: string, agentId?: string, workMode?: string): Promise<string> => {
@@ -497,6 +501,7 @@ async function main(): Promise<void> {
     executionQueue.stop();
     for (const id of listRunningSignals()) cancelRunSignal(id);
     await rt.dispose();
+    await protocolAdapter.close();
     server.close();
     releaseRuntimeLease();
     closeDb();
