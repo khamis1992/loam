@@ -23,3 +23,7 @@ Thumbs.db
 /graphify-out/
 /.testsprite/runs/
 /.github/workflows/release.yml
+/packages/web/e2e/report/
+/packages/web/e2e/results/
+/packages/web/e2e/visual/
+/packages/web/e2e/snapshots/
