@@ -1,19 +1,17 @@
-# Dependencies
+# dependencies
 node_modules/
 
-# Build outputs
+# build outputs
 .next/
-dist/
 out/
+dist/
 
-# Playwright
+# test artifacts
 test-results/
-playwright-report/
-blob-report/
+coverage/
 
-# TypeScript
+# lockfile (managed at workspace root when monorepo is wired)
+package-lock.json
+
+# ts cache
 *.tsbuildinfo
-
-# Misc
-.DS_Store
-*.log

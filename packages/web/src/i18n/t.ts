@@ -1,5 +1,5 @@
-import en from '@shared/i18n/en.json';
-import ar from '@shared/i18n/ar.json';
+import { en } from './en';
+import { ar } from './ar';
 import { createElement, Fragment, type ReactNode } from 'react';
 
 export type Locale = 'en' | 'ar';
@@ -15,7 +15,6 @@ export function setLocale(l: Locale) {
     document.documentElement.dir = isRtl(l) ? 'rtl' : 'ltr';
   }
 }
-
 export function getLocale(): Locale {
   return current;
 }

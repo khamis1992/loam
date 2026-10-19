@@ -1,4 +1,12 @@
-export default function RootPage() {
-  if (typeof window !== 'undefined') window.location.href = '/app';
+'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
+export default function IndexPage() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace('/login');
+  }, [router]);
   return null;
 }

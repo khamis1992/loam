@@ -4,7 +4,7 @@ const v = (name: string) => `var(--${name})`;
 
 export default {
   darkMode: 'class',
-  content: ['./app/**/*.{ts,tsx}', './src/**/*.{ts,tsx}'],
+  content: ['./src/app/**/*.{ts,tsx}', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       fontSize: Object.fromEntries(
@@ -15,7 +15,7 @@ export default {
       ),
       borderRadius: { row: '10px', control: '8px', card: '12px', composer: '22px' },
       colors: {
-        bg: { main: v('background-gray-main'), menu: v('background-menu-white'), nav: v('background-nav') },
+        bg: { main: v('background-gray-main'), menu: v('background-menu-white'), nav: v('background-nav'), login: v('background-gray-login') },
         text: {
           primary: v('text-primary'), secondary: v('text-secondary'),
           tertiary: v('text-tertiary'), disable: v('text-disable'), onblack: v('text-onblack'),
