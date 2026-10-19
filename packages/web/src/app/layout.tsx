@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { StoreProvider } from '@/store';
+import { DialogRegistryProvider } from '@/components/ui/DialogRegistry';
 import '@/styles/globals.css';
 
 export const metadata: Metadata = {
@@ -24,7 +25,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       style={{ '--ui-font-scale': '1' } as React.CSSProperties}
     >
       <body className="min-h-screen overflow-hidden">
-        <StoreProvider>{children}</StoreProvider>
+        <StoreProvider>
+          <DialogRegistryProvider>{children}</DialogRegistryProvider>
+        </StoreProvider>
       </body>
     </html>
   );
