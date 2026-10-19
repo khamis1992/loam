@@ -1,8 +1,15 @@
+interface AgentStudioEnv {
+  apiBase?: string;
+  socketBase?: string;
+}
+
+function readEnv(): AgentStudioEnv {
+  if (typeof window === 'undefined') return {};
+  const globalWindow = window as unknown as { __AGENT_STUDIO_ENV__?: AgentStudioEnv };
+  return globalWindow.__AGENT_STUDIO_ENV__ ?? {};
+}
+
 export const env = {
-  apiBase: typeof window !== 'undefined'
-    ? (window as unknown as { __AGENT_STUDIO_ENV__?: { apiBase?: string } }).__AGENT_STUDIO_ENV__?.apiBase ?? '/api'
-    : '/api',
-  socketBase: typeof window !== 'undefined'
-    ? (window as unknown as { __AGENT_STUDIO_ENV__?: { socketBase?: string } }).__AGENT_STUDIO_ENV__?.socketBase ?? '/',
-    : '/',
+  apiBase: readEnv().apiBase ?? '/api',
+  socketBase: readEnv().socketBase ?? '/',
 };

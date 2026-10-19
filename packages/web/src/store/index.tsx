@@ -4,33 +4,67 @@ import { configureStore } from '@reduxjs/toolkit';
 import { Provider } from 'react-redux';
 import { useMemo } from 'react';
 import { useSelector as useReduxSelector, useDispatch as useReduxDispatch, type TypedUseSelectorHook } from 'react-redux';
-import { authSlice } from './authSlice';
-import { sessionsSlice } from './sessionsSlice';
-import { websocketSlice } from './websocketSlice';
-import { chatSlice } from './chatSlice';
-import { projectSlice } from './projectSlice';
-import { uiSlice } from './uiSlice';
+import authReducer, { setUser, setToken, logout } from './authSlice';
+import sessionsReducer, { setSessions, addSession, selectSession, startNewTask, updateSession, setFilter } from './sessionsSlice';
+import websocketReducer, { setConnected, setOffline } from './websocketSlice';
+import chatReducer, { appendEvent, applyDelta, setStatus, replaceEvents, clearSession } from './chatSlice';
+import projectReducer, { setProjects, selectProject } from './projectSlice';
+import uiReducer, {
+  setTheme,
+  setLocale,
+  setDensity,
+  toggleSidebar,
+  setSidebarOpen,
+  openSettings,
+  closeSettings,
+  setSettingsTab,
+  setUpdateStatus,
+  setActivityIndicatorOpen,
+  type UpdateState,
+} from './uiSlice';
 
-export type RootState = ReturnType<ReturnType<typeof makeStore>['getState']>;
-export type AppDispatch = ReturnType<typeof makeStore>['dispatch'];
+export type RootState = ReturnType<typeof store.getState>;
+export type AppDispatch = typeof store.dispatch;
+
+export const store = configureStore({
+  reducer: {
+    auth: authReducer,
+    sessions: sessionsReducer,
+    websocket: websocketReducer,
+    chat: chatReducer,
+    project: projectReducer,
+    ui: uiReducer,
+  },
+});
 
 export function makeStore() {
   return configureStore({
     reducer: {
-      auth: authSlice.reducer,
-      sessions: sessionsSlice.reducer,
-      websocket: websocketSlice.reducer,
-      chat: chatSlice.reducer,
-      project: projectSlice.reducer,
-      ui: uiSlice.reducer,
+      auth: authReducer,
+      sessions: sessionsReducer,
+      websocket: websocketReducer,
+      chat: chatReducer,
+      project: projectReducer,
+      ui: uiReducer,
     },
   });
 }
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const store = useMemo(() => makeStore(), []);
-  return <Provider store={store}>{children}</Provider>;
+  const s = useMemo(() => makeStore(), []);
+  return <Provider store={s}>{children}</Provider>;
 }
 
 export const useAppSelector: TypedUseSelectorHook<RootState> = useReduxSelector;
 export const useAppDispatch = () => useReduxDispatch<AppDispatch>();
+
+export {
+  setUser, setToken, logout,
+  setSessions, addSession, selectSession, startNewTask, updateSession, setFilter,
+  setConnected, setOffline,
+  appendEvent, applyDelta, setStatus, replaceEvents, clearSession,
+  setProjects, selectProject,
+  setTheme, setLocale, setDensity, toggleSidebar, setSidebarOpen,
+  openSettings, closeSettings, setSettingsTab, setUpdateStatus, setActivityIndicatorOpen,
+  type UpdateState,
+};

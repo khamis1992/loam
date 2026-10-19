@@ -27,9 +27,10 @@ function findExecutable(opts: AppLaunchOptions): string {
 export async function launchApp(opts: AppLaunchOptions): Promise<ElectronApplication> {
   const executable = findExecutable(opts);
   const isMainScript = executable.endsWith(".cjs") || executable.endsWith(".js") || executable.endsWith(".ts");
-  const args = isMainScript ? [executable, ...(opts.args ?? [])] : opts.args ?? [];
+  const extraArgs = opts.args ?? [];
+  const args = isMainScript ? [executable, ...extraArgs] : [executable, ...extraArgs];
   const app = await _electron.launch({
-    args: isMainScript ? [executable] : [executable, ...args],
+    args,
     env: {
       ...process.env,
       NODE_ENV: "test",
@@ -38,6 +39,7 @@ export async function launchApp(opts: AppLaunchOptions): Promise<ElectronApplica
       SOCKET_BASE: process.env.SOCKET_BASE ?? `http://localhost:${process.env.MOCK_PORT ?? "8787"}`,
       WEB_LOGIN_BASE: process.env.WEB_LOGIN_BASE ?? `http://localhost:${process.env.MOCK_PORT ?? "8787"}`,
       UPDATE_FEED_URL: "",
+      LOAM_DISABLE_BRIDGE: "1",
       ...(opts.env ?? {}),
     },
   });
@@ -45,8 +47,7 @@ export async function launchApp(opts: AppLaunchOptions): Promise<ElectronApplica
 }
 
 export async function firstWindow(app: ElectronApplication): Promise<Page> {
-  const [page] = await Promise.all([app.waitForEvent("window"), app.firstWindow()]);
-  return page ?? app.firstWindow();
+  return app.firstWindow({ timeout: 45_000 });
 }
 
 export async function closeApp(app: ElectronApplication): Promise<void> {

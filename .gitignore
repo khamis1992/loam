@@ -23,3 +23,5 @@ Thumbs.db
 /graphify-out/
 /.testsprite/runs/
 /.github/workflows/release.yml
+
+nul

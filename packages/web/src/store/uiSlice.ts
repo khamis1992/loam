@@ -1,8 +1,18 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
-import { setLocale, type Locale } from '@/i18n/t';
+import { setLocale as setDocumentLocale, type Locale } from '@/i18n/t';
 
 export type Theme = 'light' | 'dark' | 'system';
 export type Density = 'standard' | 'compact';
+
+export type UpdateState =
+  | { state: 'idle' }
+  | { state: 'checking' }
+  | { state: 'available'; version?: string }
+  | { state: 'downloading'; progress: number }
+  | { state: 'downloaded'; version?: string }
+  | { state: 'restarting' }
+  | { state: 'error'; message?: string }
+  | { state: 'store-managed'; store?: string };
 
 interface UIState {
   theme: Theme;
@@ -10,6 +20,10 @@ interface UIState {
   locale: Locale;
   density: Density;
   sidebarOpen: boolean;
+  settingsOpen: boolean;
+  settingsTab: string;
+  updateStatus: UpdateState;
+  activityIndicatorOpen: boolean;
 }
 
 const initialState: UIState = {
@@ -18,6 +32,10 @@ const initialState: UIState = {
   locale: 'en',
   density: 'compact',
   sidebarOpen: true,
+  settingsOpen: false,
+  settingsTab: 'General',
+  updateStatus: { state: 'idle' },
+  activityIndicatorOpen: false,
 };
 
 const uiSlice = createSlice({
@@ -30,9 +48,9 @@ const uiSlice = createSlice({
         ? (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
         : action.payload;
     },
-    setLocaleState(state, action: PayloadAction<Locale>) {
+    setLocale(state, action: PayloadAction<Locale>) {
       state.locale = action.payload;
-      setLocale(action.payload);
+      setDocumentLocale(action.payload);
     },
     setDensity(state, action: PayloadAction<Density>) {
       state.density = action.payload;
@@ -43,8 +61,35 @@ const uiSlice = createSlice({
     setSidebarOpen(state, action: PayloadAction<boolean>) {
       state.sidebarOpen = action.payload;
     },
+    openSettings(state, action: PayloadAction<string | undefined>) {
+      state.settingsOpen = true;
+      if (action.payload) state.settingsTab = action.payload;
+    },
+    closeSettings(state) {
+      state.settingsOpen = false;
+    },
+    setSettingsTab(state, action: PayloadAction<string>) {
+      state.settingsTab = action.payload;
+    },
+    setUpdateStatus(state, action: PayloadAction<UpdateState>) {
+      state.updateStatus = action.payload;
+    },
+    setActivityIndicatorOpen(state, action: PayloadAction<boolean>) {
+      state.activityIndicatorOpen = action.payload;
+    },
   },
 });
 
-export const { setTheme, setLocaleState, setDensity, toggleSidebar, setSidebarOpen } = uiSlice.actions;
+export const {
+  setTheme,
+  setLocale,
+  setDensity,
+  toggleSidebar,
+  setSidebarOpen,
+  openSettings,
+  closeSettings,
+  setSettingsTab,
+  setUpdateStatus,
+  setActivityIndicatorOpen,
+} = uiSlice.actions;
 export default uiSlice.reducer;
