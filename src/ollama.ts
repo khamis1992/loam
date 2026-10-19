@@ -108,6 +108,7 @@ export class OllamaClient {
   }
 
   private async listCloudModels(): Promise<string[]> {
+    if (!this.hasCloudKey()) return [];
     const res = await fetch(`${this.cloud!.baseUrl.replace(/\/+$/, "")}/models`, { headers: this.cloudHeaders(), signal: AbortSignal.timeout(15_000) });
     if (!res.ok) throw new Error(`cloud /models HTTP ${res.status}`);
     const data = (await res.json()) as { data?: Array<{ id?: string }> };
@@ -116,8 +117,18 @@ export class OllamaClient {
 
   private cloudHeaders(): Record<string, string> {
     const headers: Record<string, string> = { "content-type": "application/json" };
-    if (this.cloud?.apiKey) headers.authorization = `Bearer ${this.cloud.apiKey}`;
+    const key = typeof this.cloud?.apiKey === "string" ? this.cloud.apiKey.trim() : "";
+    if (key.length > 0) {
+      // HTTP header values must be printable ASCII; strip anything outside that range
+      // to avoid Node's "Cannot convert argument to a ByteString" error on non-Latin-1 characters.
+      const safeKey = key.replace(/[^\x20-\x7E]/g, "");
+      if (safeKey.length > 0) headers.authorization = `Bearer ${safeKey}`;
+    }
     return headers;
+  }
+
+  private hasCloudKey(): boolean {
+    return typeof this.cloud?.apiKey === "string" && this.cloud.apiKey.trim().length > 0;
   }
 
   async chat(opts: ChatOptions): Promise<ChatResult> {
@@ -129,6 +140,11 @@ export class OllamaClient {
 
   /** OpenAI-compatible chat completions (OpenRouter and friends) with Ollama-style streaming and tool calls. */
   private async chatCloud(opts: ChatOptions): Promise<ChatResult> {
+    if (!this.hasCloudKey()) {
+      throw new Error(
+        "No cloud API key configured. Add cloudModel.apiKey to config.json to use cloud models."
+      );
+    }
     const stripped = opts.model.slice(0, -":cloud".length);
     // OpenAI needs tool_call ids; assign them in order and match following tool messages by name/index.
     const pendingIds: string[] = [];

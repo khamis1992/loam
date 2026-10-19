@@ -222,6 +222,14 @@ export function loadConfig(): Config {
   const cfg = merge(DEFAULTS, raw);
   if (process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT) cfg.server.port = Number(process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT);
   if (process.env.LOAM_HOST || process.env.MANUS_LOCAL_HOST) cfg.server.host = (process.env.LOAM_HOST || process.env.MANUS_LOCAL_HOST)!;
+  const envRoot = process.env.LOAM_ROOT || process.env.MANUS_LOCAL_ROOT;
+  if (envRoot) {
+    const root = path.resolve(envRoot);
+    // LOAM_ROOT is the install/user-data root: keep workspace and screenshots under it
+    // rather than letting config.json silently override them back into the source tree.
+    cfg.workspace = path.resolve(root, "workspace");
+    cfg.computerUse.screenshotDir = path.resolve(root, "workspace", ".screenshots");
+  }
   cfg.workspace = path.resolve(cfg.workspace);
   cfg.computerUse.screenshotDir = path.resolve(cfg.computerUse.screenshotDir);
   cfg.memory.file = path.resolve(cfg.memory.file);
