@@ -8,13 +8,23 @@ import { loadPending } from "./server/pending.js";
 import { getSettings, loadSettings } from "./server/settings.js";
 import { createRunSignal, clearRunSignal, isCancelledError, cancelRunSignal, listRunningSignals, activateRunSignal } from "./server/runControl.js";
 import { agentSystemSuffix, getAgent, loadAgents } from "./server/agents.js";
+import { getWorkMode, normalizeWorkMode, resolveCompanionCapabilities, COMPANION_DYNAMIC_TOOL_NAMES } from "./server/companionGateway.js";
+import { deviceManager, getDeviceByAgent, loadCompanionDevices, type CompanionDeviceRecord } from "./server/companionDevices.js";
+import { createDeviceTools } from "./tools/deviceTools.js";
+import { createCompanionMemoryTools } from "./tools/companionMemoryTools.js";
+import { memoryContext, setMemoryEmbedder } from "./server/companionMemory.js";
+import { createCompanionTeamTools } from "./tools/companionTeamTools.js";
+import { setDelegationRunner } from "./server/companionTeam.js";
+import { createApproval, waitForDecision } from "./server/approvals.js";
+import type { Tool } from "./tools/registry.js";
+import { OllamaEmbedder } from "./memory/embeddings.js";
 import { publishTaskEvent } from "./server/streams.js";
 import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { runAgent } from "./agent/loop.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
 import type { Emit } from "./agent/events.js";
 import { startServer, type RunTaskOptions } from "./server/http.js";
-import { appendMessage, appendStep, createTask, getProject, getTask, loadDb, setTaskStatus } from "./server/db.js";
+import { appendMessage, appendStep, createTask, getProject, getTask, loadDb, setTaskStatus, listSchedules, setTaskDelegator } from "./server/db.js";
 import { conversationHistory } from "./agent/history.js";
 import { startScheduler } from "./server/scheduler.js";
 import { appendLearning } from "./server/learning.js";
@@ -23,7 +33,7 @@ import { loadSuite } from "./eval/suites.js";
 import { evalBusy, runSuiteLocked } from "./eval/service.js";
 import { lastRunForSuite } from "./eval/store.js";
 import { getLoamMode } from "./modes/catalog.js";
-import { closeBrowser } from "./tools/browser.js";
+import { closeBrowser, closeBrowserSession, setBrowserSessionResolver } from "./tools/browser.js";
 import { setTaskMode } from "./server/db.js";
 import { log } from "./log.js";
 import { recoverInterruptedTasks, getSavedRun, saveRun, queueTaskRun, completeTaskRun, closeDb } from "./server/db.js";
@@ -47,6 +57,20 @@ async function main(): Promise<void> {
   fs.mkdirSync(cfg.workspace, { recursive: true });
   loadPending();
   loadAgents();
+  loadCompanionDevices();
+  // Browser isolation (section 7): every companion browses in its OWN persistent
+  // session (profile under DATA_DIR/browser-profiles/agent-<id>); anonymous runs
+  // get ephemeral per-task sessions instead of one shared context.
+  setBrowserSessionResolver((ctx) => {
+    if (!ctx.taskId) return "shared";
+    const owner = getTask(ctx.taskId)?.agentId;
+    return owner ? `agent:${owner}` : `task:${ctx.taskId}`;
+  });
+  // Semantic companion-memory search: active only when the memory stack (and its
+  // embedding model) is enabled; otherwise search stays honestly text-only.
+  if (cfg.memory.enabled && cfg.memory.model) {
+    setMemoryEmbedder(new OllamaEmbedder(cfg.ollamaUrl, cfg.memory.model));
+  }
 
   const encodingIssues = scanEncoding(ROOT);
   if (encodingIssues.length > 0) {
@@ -120,6 +144,56 @@ async function main(): Promise<void> {
     const effectiveEffort = String(opts.effort ?? agent?.effort ?? "").toLowerCase();
     const effortMaxSteps = effortBudgets[effectiveEffort];
     const runSignal = opts.signal;
+
+    // Companion gateway: the work mode decides where the run executes and which
+    // services it may touch; the resolver output is the only tool allowlist.
+    const effectiveWorkMode = normalizeWorkMode(opts.savedRun.workMode ?? agent?.workMode);
+    const workModeDefinition = getWorkMode(effectiveWorkMode);
+
+    // Own-device mode (stage 2): the run executes inside the companion's real
+    // isolated environment. No device / not ready → honest refusal, never a
+    // silent fallback to the user's machine.
+    let deviceRecord: CompanionDeviceRecord | undefined;
+    let deviceToolInstances: ReturnType<typeof createDeviceTools> = [];
+    if (workModeDefinition.requiresDevice) {
+      if (!agentId || !agent) {
+        throw new Error("وضع «جهاز المساعد المستقل» يتطلب مساعدًا محددًا — اختر رفيقًا له جهاز قبل تشغيله.");
+      }
+      deviceRecord = getDeviceByAgent(agentId);
+      if (!deviceRecord) {
+        throw new Error(`لا يوجد جهاز للمساعد «${agent.name}» — أنشئ جهازه من لوحة الجهاز في صفحة الرفقاء ثم أعد المحاولة.`);
+      }
+      if (deviceRecord.state === "provisioning") {
+        throw new Error(`جهاز المساعد «${deviceRecord.name}» قيد التجهيز — انتظر اكتماله من لوحة الجهاز.`);
+      }
+      if (deviceRecord.state !== "running") {
+        throw new Error(`جهاز المساعد «${deviceRecord.name}» حالته ${deviceRecord.state} — شغّله من لوحة الجهاز ثم أعد المحاولة.`);
+      }
+      const readiness = await deviceManager.isReady(deviceRecord.id);
+      if (!readiness.ready) {
+        deviceRecord.state = "error";
+        deviceRecord.lastError = readiness.detail;
+        throw new Error(`فحص جاهزية جهاز المساعد «${deviceRecord.name}» فشل: ${readiness.detail}`);
+      }
+      deviceToolInstances = createDeviceTools(deviceManager, deviceRecord, agentId);
+    }
+
+    // Companion personal memory (stage 4a): tools bound to THIS agent only, plus
+    // a bounded context of its saved preferences/instructions.
+    const memoryToolInstances = agentId ? createCompanionMemoryTools(agentId) : [];
+    const teamToolInstances = agentId ? createCompanionTeamTools(agentId) : [];
+    const memoryContextEntries = agentId ? memoryContext(agentId) : [];
+    const memoryContextSuffix =
+      memoryContextEntries.length > 0
+        ? [`ذاكرة «${agent?.name ?? agentId}» الشخصية (احترمها وراجعها مع المستخدم عند التعارض):`, ...memoryContextEntries.map((e) => `- (${e.source === "user" ? "قاله المستخدم" : "استنتاج"} | ثقة ${e.confidence.toFixed(2)}) ${e.text}`)].join("\n")
+        : undefined;
+    const capabilities = resolveCompanionCapabilities({
+      mode: effectiveMode,
+      workMode: effectiveWorkMode,
+      allowedServices: agent?.allowedServices,
+      disabledTools: agent?.disabledTools,
+      registeredTools: [...registry.names(), ...COMPANION_DYNAMIC_TOOL_NAMES],
+    });
     const askModeSuffix =
       effectiveMode === "ask"
         ? "وضع السؤال (Ask): أجب بالقراءة والتحليل فقط — لا تعدّل الملفات، لا تنفّذ أوامر نظام، ولا تبدأ مهام تنفيذية؛ إن أحبّت اقترح الخطوات دون تنفيذها."
@@ -144,18 +218,61 @@ async function main(): Promise<void> {
 
     // Task isolation: never silently inject memories or execute background tools from other tasks.
     const memories: Array<{ text: string; score: number }> = [];
+    // Shared resources reset ONLY for runs that will actually use them — the
+    // execution queue serializes browser-lane runs among themselves, so a
+    // parallel own-device/office run never kills another run's browser/preview.
+    const usesBrowser = capabilities.allow.some((t) => t.startsWith("browser_"));
+    const usesPreview = capabilities.allow.some((t) => t === "preview_serve" || t === "preview_stop" || t === "preview_status");
     try {
-      // The application has a serial queue; close the previous browser session before this task.
-      await closeBrowser();
-      rt.preview.stop();
+      if (usesBrowser) {
+        // Companion browser sessions PERSIST between runs (durable logins);
+        // only anonymous per-task sessions are reset for isolation.
+        const browserOwner = agentId ? null : getTask(task)?.agentId ?? null;
+        if (!browserOwner) await closeBrowserSession(`task:${task}`);
+      }
+      if (usesPreview) rt.preview.stop();
       const verdicts: VerdictRecord[] = [];
       wrappedEmit({ type: "mode", mode: effectiveMode, label: modeDefinition.label, labelAr: modeDefinition.labelAr, reason: "selected task mode" });
+      wrappedEmit({
+        type: "workmode",
+        workMode: effectiveWorkMode,
+        labelAr: workModeDefinition.labelAr,
+        deviceRequired: workModeDefinition.requiresDevice,
+        ...(deviceRecord ? { deviceId: deviceRecord.id, deviceName: deviceRecord.name } : {}),
+        reason: "selected work mode",
+      });
       const agentSuffix = agent ? agentSystemSuffix(agent) : undefined;
       const suffix = [
         `You are Loam. Active mode: ${modeDefinition.labelAr}. ${modeDefinition.description} Only use the provided tool capabilities.`,
+        workModeDefinition.policy,
+        memoryContextSuffix,
         agentSuffix, askModeSuffix,
       ].filter(Boolean).join("\n\n");
-      const agentTools = registry.forMode(effectiveMode).cloneFiltered({ deny: agent?.disabledTools ?? [] });
+      // The gateway's resolved allowlist is the ONLY tool set for this run: mode ∪
+      // work-mode grants − revoked services − agent service/tool denials. In
+      // own-device mode the device_* tools are bound to the companion's device;
+      // companion-memory tools are bound to this agent in every mode.
+      const dynamicAllow = new Set(capabilities.allow);
+      const agentTools = registry.forAllowlist(capabilities.allow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name)));
+
+      // Sensitive host-input actions need an explicit user decision first (section 18).
+      const SENSITIVE_HOST_INPUT = new Set(["computer_click", "computer_type", "computer_key", "computer_ui_click", "computer_ui_set_text"]);
+      for (const name of agentTools.names()) {
+        if (!SENSITIVE_HOST_INPUT.has(name)) continue;
+        const original = agentTools.get(name)!;
+        agentTools.replaceTool({
+          ...original,
+          async run(args, ctx) {
+            const approval = createApproval({ taskId: task, tool: name, summary: `إجراء تحكم حساس بجهازك (${name}) في انتظار موافقتك`, argsPreview: JSON.stringify(args ?? {}) });
+            wrappedEmit({ type: "approval_required", approvalId: approval.id, tool: name, summary: approval.summary });
+            const decision = await waitForDecision(approval.id, runSignal);
+            if (decision !== "approved") {
+              return { ok: false, content: decision === "denied" ? "رفض المستخدم هذا الإجراء — لم يُنفّذ." : `انتهت مهلة الموافقة (${decision}) — لم يُنفّذ.` };
+            }
+            return original.run(args, ctx);
+          },
+        } satisfies Tool);
+      }
       const agentOpts = {
         cfg: effectiveCfg,
         ollama,
@@ -176,6 +293,7 @@ async function main(): Promise<void> {
       // The orchestrator can swallow an abort (it reports a failed step instead),
       // so treat a cancelled run explicitly — never as success.
       if (runSignal.aborted) throw new Error("cancelled by user");
+      if (result.verified !== true) throw new Error("task incomplete: mandatory final verification missing");
       completeTaskRun(task, result.text, result.model);
       if (doneEvent) {
         appendStep(task, { at: new Date().toISOString(), type: doneEvent.type, data: doneEvent });
@@ -242,6 +360,7 @@ async function main(): Promise<void> {
         history: conversationHistory(previous?.messages ?? []), workspace: cfg.workspace,
         model: opts.model || agent?.model || getSettings().model || cfg.model,
         projectId, agentId, mode: getLoamMode(opts.mode ?? previous?.mode ?? agent?.mode).id, effort: opts.effort ?? agent?.effort ?? "",
+        workMode: normalizeWorkMode(opts.workMode ?? agent?.workMode),
         orchestrated: cfg.orchestrator.enabled, started: false,
       };
     }
@@ -250,6 +369,26 @@ async function main(): Promise<void> {
     setTaskMode(task.id, saved.mode);
     saved.workspace = ensureTaskWorkspace(task.id, cfg.workspace);
     queueTaskRun(task.id, saved, opts.resume === true, opts.scheduleId, opts.title);
+    // Resource locks (parallel lanes): browser/preview are the only shared
+    // runtime states a run may reset — everything else (own devices, files,
+    // office/data) is per-run and runs fully in parallel.
+    const laneAgent = saved.agentId ? getAgent(saved.agentId) : undefined;
+    const laneCaps = resolveCompanionCapabilities({
+      mode: saved.mode,
+      workMode: normalizeWorkMode(saved.workMode ?? laneAgent?.workMode),
+      allowedServices: laneAgent?.allowedServices,
+      disabledTools: laneAgent?.disabledTools,
+      registeredTools: [...registry.names(), ...COMPANION_DYNAMIC_TOOL_NAMES],
+    });
+    // Browser runs no longer lock: each run browses in its own isolated session.
+    const locks: string[] = [];
+    if (laneCaps.allow.some((t) => t === "preview_serve" || t === "preview_stop" || t === "preview_status")) locks.push("preview");
+    // user_device runs share the single user-desktop resource; parallel runs must not fight over mouse/keyboard.
+    // EVERY computer_* tool touches the same desktop, so the lock covers them all.
+    if (laneCaps.allow.some((t) => t.startsWith("computer_"))) locks.push("user-desktop");
+    // Each companion device is one machine: runs targeting the same device serialize on it.
+    const laneDevice = saved.agentId ? getDeviceByAgent(saved.agentId) : undefined;
+    if (laneCaps.allow.some((t) => t.startsWith("device_")) && laneDevice) locks.push(`device:${laneDevice.id}`);
     const signal = createRunSignal(task.id, false);
     opts.emit({ type: "task", taskId: task.id });
     opts.emit({ type: "task-status", status: "queued" });
@@ -257,7 +396,7 @@ async function main(): Promise<void> {
     try {
       return await executionQueue.enqueue(task.id, () => executeTask({
         ...opts, ...saved, taskId: task.id, savedRun: saved, signal,
-      }), signal);
+      }), signal, locks);
     } catch (error) {
       if (getTask(task.id)?.status === "queued" || getTask(task.id)?.status === "running") {
         const message = error instanceof Error ? error.message : String(error);
@@ -268,6 +407,19 @@ async function main(): Promise<void> {
       throw error;
     } finally { clearRunSignal(task.id); }
   };
+
+  // Companion-to-companion delegation: the delegate task is created and queued
+  // under the TARGET companion; we return its id immediately — the execution
+  // queue is serial, so awaiting completion here would deadlock the delegating run.
+  setDelegationRunner((req) => {
+    const target = getAgent(req.toAgentId);
+    const task = createTask(req.brief, req.title ?? `تفويض → ${target?.name ?? req.toAgentId}`, null, req.toAgentId);
+    setTaskDelegator(task.id, req.fromAgentId);
+    if (req.mode) setTaskMode(task.id, req.mode);
+    void runTask({ taskId: task.id, prompt: req.brief, agentId: req.toAgentId, ...(req.mode ? { mode: req.mode } : {}), emit: () => {} })
+      .catch((error) => log.warn(`delegation run ${task.id}: ${String(error)}`));
+    return Promise.resolve({ taskId: task.id, queued: true });
+  });
 
   const server = await startServer({
     cfg,
@@ -280,19 +432,33 @@ async function main(): Promise<void> {
     mcp,
   });
 
-  const stopScheduler = startScheduler({
-    runScheduled: async (prompt: string, scheduleId: string) => {
-      const res = await runTask({
-        prompt,
-        scheduleId,
-        emit: () => {
-          /* scheduled runs are persisted in db, no SSE consumer */
-        },
-      });
-      log.info(`scheduled run finished: ${res.taskId}`);
-      return res.taskId;
-    },
+  // Event-driven routines (16): file watchers reuse the scheduled-run path so a
+  // triggered routine runs under its companion exactly like a cron routine.
+  const scheduledRun = async (prompt: string, scheduleId: string, agentId?: string, workMode?: string): Promise<string> => {
+    const res = await runTask({
+      prompt,
+      scheduleId,
+      ...(agentId ? { agentId } : {}),
+      ...(workMode ? { workMode } : {}),
+      emit: () => {
+        /* triggered runs are persisted in db, no SSE consumer */
+      },
+    });
+    return res.taskId;
+  };
+  const { startFileWatchers, stopAllWatchers } = await import("./server/fileWatchers.js");
+  type ScheduledRun = (o: { prompt: string; scheduleId: string; agentId?: string; workMode?: string }) => Promise<string>;
+  const scheduledRunObj: ScheduledRun = (o) => scheduledRun(o.prompt, o.scheduleId, o.agentId, o.workMode);
+  startFileWatchers(scheduledRunObj);
+  const { startServiceWatch } = await import("./server/serviceWatch.js");
+  const stopServiceWatch = startServiceWatch({
+    probe: () => fetch(cfg.ollamaUrl.replace(/\/+$/, "") + "/api/tags", { signal: AbortSignal.timeout(5000) }).then((r) => r.ok).catch(() => false),
+    run: scheduledRunObj,
+    watches: () => listSchedules().filter((s2) => s2.kind === "service-watch").map((s2) => ({ id: s2.id, prompt: s2.prompt, agentId: s2.agentId, workMode: s2.workMode })),
   });
+  (globalThis as { __loamScheduledRun?: ScheduledRun }).__loamScheduledRun = scheduledRunObj;
+
+  const stopScheduler = startScheduler({ runScheduled: scheduledRun });
 
   let evalTimer: NodeJS.Timeout | null = null;
   if (cfg.evaluation.enabled) {
@@ -325,6 +491,8 @@ async function main(): Promise<void> {
   const shutdown = async (): Promise<void> => {
     log.info("shutting down...");
     stopScheduler();
+    stopAllWatchers();
+    stopServiceWatch();
     if (evalTimer) clearInterval(evalTimer);
     executionQueue.stop();
     for (const id of listRunningSignals()) cancelRunSignal(id);

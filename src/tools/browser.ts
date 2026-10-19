@@ -2,15 +2,41 @@ import fs from "node:fs";
 import path from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import type { Config } from "../config.js";
+import { DATA_DIR } from "../config.js";
 import { log } from "../log.js";
 import { resolveWrite } from "../policy/paths.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { bool, num, str } from "./registry.js";
 
 let browser: Browser | null = null;
-let context: BrowserContext | null = null;
-const pages = new Map<string, Page>();
+/** Per-companion isolated browser sessions (frontier section 7): each session
+ *  owns a separate context (cookies/localStorage/accounts) plus a persistent
+ *  storage profile under DATA_DIR/browser-profiles/<session>. */
+interface BrowserSession {
+  context: BrowserContext;
+  pages: Map<string, Page>;
+}
+const sessions = new Map<string, BrowserSession>();
 let counter = 0;
+let sessionResolver: ((ctx: ToolContext) => string) | null = null;
+
+/** Wired by index.ts: task → its companion's session (agent:<id>) or an
+ *  ephemeral per-task session; anonymous runs share "shared". */
+export function setBrowserSessionResolver(resolver: (ctx: ToolContext) => string): void {
+  sessionResolver = resolver;
+}
+
+export function browserSessionFor(ctx: ToolContext): string {
+  try {
+    return sessionResolver?.(ctx) ?? "shared";
+  } catch {
+    return "shared";
+  }
+}
+
+export function browserSessionsInfo(): Array<{ session: string; pages: number }> {
+  return [...sessions.entries()].map(([session, s2]) => ({ session, pages: s2.pages.size })).sort((a, b) => a.session.localeCompare(b.session));
+}
 
 /* ---------- session tracing / recording state ---------- */
 let recording = false;
@@ -33,6 +59,7 @@ export function getBrowserState(): {
   traceName: string | null;
   traceStartedAt: string | null;
   pages: Array<{ id: string; url: string }>;
+  sessions: Array<{ session: string; pages: number }>;
   lastTable: typeof lastTable;
   actions: typeof actionLog;
   lastVideoPath: string | null;
@@ -40,10 +67,11 @@ export function getBrowserState(): {
 } {
   return {
     running: browser !== null,
+  sessions: browserSessionsInfo(),
     recording,
     traceName,
     traceStartedAt,
-    pages: [...pages.entries()].map(([id, page]) => ({ id, url: page.url() })),
+    pages: [...sessions.values()].flatMap((s2) => [...s2.pages.entries()].map(([id, page]) => ({ id, url: page.url() }))),
     lastTable,
     actions: actionLog.slice(-40),
     lastVideoPath,
@@ -51,23 +79,61 @@ export function getBrowserState(): {
   };
 }
 
-async function ensureContext(cfg: Config): Promise<BrowserContext> {
-  if (context) return context;
+function profileDir(session: string): string {
+  return path.join(DATA_DIR, "browser-profiles", session.replace(/[^\w.-]/g, "_"));
+}
+
+function profileStateFile(session: string): string {
+  return path.join(profileDir(session), "storage.json");
+}
+
+async function ensureContextFor(cfg: Config, session: string): Promise<BrowserContext> {
+  const existing = sessions.get(session);
+  if (existing) return existing.context;
   const b = await ensureBrowser(cfg);
-  context = await b.newContext({
+  const stateFile = profileStateFile(session);
+  fs.mkdirSync(profileDir(session), { recursive: true });
+  const context = await b.newContext({
     viewport: cfg.browser.viewport,
+    ...(fs.existsSync(stateFile) ? { storageState: stateFile } : {}),
     ...(recording && videoDir ? { recordVideo: { dir: videoDir, size: { width: 1280, height: 800 } } } : {}),
   });
+  sessions.set(session, { context, pages: new Map() });
+  log.info(`browser session "${session}" ready (isolated context${fs.existsSync(stateFile) ? " + restored profile" : ""})`);
   return context;
 }
 
-async function newPage(cfg: Config): Promise<{ id: string; page: Page }> {
-  const ctx = await ensureContext(cfg);
+async function newPage(cfg: Config, session = "shared"): Promise<{ id: string; page: Page }> {
+  const ctx = await ensureContextFor(cfg, session);
   const page = await ctx.newPage();
   const id = `page_${++counter}`;
-  pages.set(id, page);
-  page.on("close", () => pages.delete(id));
+  sessions.get(session)!.pages.set(id, page);
+  page.on("close", () => sessions.get(session)?.pages.delete(id));
   return { id, page };
+}
+
+/** Persist a session's storage (cookies + origin storage) to its profile dir. */
+export async function persistBrowserSession(session: string): Promise<void> {
+  const entry = sessions.get(session);
+  if (!entry) return;
+  try {
+    await entry.context.storageState({ path: profileStateFile(session) });
+  } catch {
+    /* best effort */
+  }
+}
+
+/** Close one isolated session (persisting its profile). */
+export async function closeBrowserSession(session: string): Promise<void> {
+  const entry = sessions.get(session);
+  if (!entry) return;
+  await persistBrowserSession(session);
+  try {
+    await entry.context.close();
+  } catch {
+    /* ignore */
+  }
+  sessions.delete(session);
 }
 
 const SNAPSHOT_JS = `(() => {
@@ -120,9 +186,11 @@ async function ensureBrowser(cfg: Config): Promise<Browser> {
 }
 
 function getPage(id: string): Page {
-  const p = pages.get(id);
-  if (!p) throw new Error(`no such page: ${id} (open one with browser_open)`);
-  return p;
+  for (const s2 of sessions.values()) {
+    const p = s2.pages.get(id);
+    if (p) return p;
+  }
+  throw new Error(`no such page: ${id} (open one with browser_open)`);
 }
 
 function sel(args: Record<string, unknown>): string {
@@ -210,7 +278,7 @@ export async function buildTable(page: Page): Promise<{ result: TableResult; tex
   await ensureFocusEmulation(page);
   const result = (await page.evaluate(TABLE_JS)) as TableResult;
   const id = ++snapshotCounter;
-  const pageId = [...pages.entries()].find(([, p]) => p === page)?.[0] ?? "unknown";
+  const pageId = [...sessions.values()].flatMap((s2) => [...s2.pages.entries()]).find(([, p]) => p === page)?.[0] ?? "unknown";
   snapshots.set(page, { id, pageId, url: result.url });
   const lines: string[] = [
     `snapshot #${id}  ${result.title || "(no title)"}`.slice(0, 140),
@@ -330,15 +398,7 @@ export async function performAct(
 }
 
 export async function closeBrowser(): Promise<void> {
-  pages.clear();
-  if (context) {
-    try {
-      await context.close();
-    } catch {
-      /* ignore */
-    }
-    context = null;
-  }
+  for (const session of [...sessions.keys()]) await closeBrowserSession(session);
   if (browser) {
     try {
       await browser.close();
@@ -371,7 +431,9 @@ export const browserTools: Tool[] = [
       }
       const url = str(args, "url").trim();
       if (url && !/^https?:\/\//i.test(url)) return { ok: false, content: "browser navigation requires an http(s) URL" };
-      const { id, page } = await newPage(ctx.cfg);
+      const session = browserSessionFor(ctx);
+      const { id, page } = await newPage(ctx.cfg, session);
+      if (session.startsWith("agent:")) void persistBrowserSession(session);
       if (url) await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 });
       const snap = (await page.evaluate(SNAPSHOT_JS)) as unknown;
       return { ok: true, content: `pageId=${id}\n${JSON.stringify(snap, null, 1)}` };
@@ -528,8 +590,9 @@ export const browserTools: Tool[] = [
     description: "List open browser pages.",
     parameters: { type: "object", properties: {} },
     async run(): Promise<ToolResult> {
-      if (pages.size === 0) return { ok: true, content: "(no open pages)" };
-      return { ok: true, content: [...pages.entries()].map(([id, p]) => `${id}\t${p.url()}`).join("\n") };
+      const all = [...sessions.values()].flatMap((s2) => [...s2.pages.entries()]);
+      if (all.length === 0) return { ok: true, content: "(no open pages)" };
+      return { ok: true, content: all.map(([id, p]) => `${id}\t${p.url()}`).join("\n") };
     },
   },
   {
@@ -538,10 +601,12 @@ export const browserTools: Tool[] = [
     parameters: { type: "object", properties: { pageId: { type: "string" } }, required: ["pageId"] },
     async run(args: Record<string, unknown>): Promise<ToolResult> {
       const id = str(args, "pageId");
-      const page = pages.get(id);
+      let owner: { pages: Map<string, Page> } | undefined;
+      for (const s2 of sessions.values()) if (s2.pages.has(id)) owner = s2;
+      const page = owner?.pages.get(id);
       if (!page) return { ok: false, content: `no such page: ${id}` };
       await page.close();
-      pages.delete(id);
+      owner?.pages.delete(id);
       return { ok: true, content: `closed ${id}` };
     },
   },
@@ -554,22 +619,17 @@ export const browserTools: Tool[] = [
       const dir = path.join(ctx.cfg.workspace, ".browser-recordings");
       fs.mkdirSync(dir, { recursive: true });
       let closed = 0;
-      for (const [, page] of [...pages]) {
+      // Recording restarts pages: close pages in THIS RUN's session (isolation
+      // preserved — other companions' sessions keep their pages).
+      const session = browserSessionFor(ctx);
+      for (const [id, page] of [...(sessions.get(session)?.pages ?? [])]) {
         try {
           await page.close();
           closed += 1;
         } catch {
           /* ignore */
         }
-      }
-      pages.clear();
-      if (context) {
-        try {
-          await context.close();
-        } catch {
-          /* ignore */
-        }
-        context = null;
+        sessions.get(session)?.pages.delete(id);
       }
       recording = true;
       videoDir = dir;
@@ -588,7 +648,8 @@ export const browserTools: Tool[] = [
       const name = traceName ?? `trace_${Date.now()}`;
       const dir = videoDir ?? path.join(ctx.cfg.workspace, ".browser-recordings");
       const rawVideos: string[] = [];
-      for (const [id, page] of [...pages]) {
+      const session = browserSessionFor(ctx);
+      for (const [id, page] of [...(sessions.get(session)?.pages ?? [])]) {
         const video = page.video();
         try {
           await page.close();
@@ -603,14 +664,9 @@ export const browserTools: Tool[] = [
             /* ignore */
           }
         }
-        pages.delete(id);
+        sessions.get(session)?.pages.delete(id);
       }
-      try {
-        await context?.close();
-      } catch {
-        /* ignore */
-      }
-      context = null;
+      await closeBrowserSession(session);
       recording = false;
       const kept: string[] = [];
       rawVideos.forEach((src, i) => {
@@ -671,7 +727,7 @@ export const browserTools: Tool[] = [
       },
     },
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
-      const targetId = str(args, "pageId") || [...pages.keys()].pop() || "";
+      const targetId = str(args, "pageId") || [...sessions.values()].flatMap((s2) => [...s2.pages.keys()]).pop() || "";
       if (!targetId) return { ok: false, content: "no open browser page (call browser_open first)" };
       const page = getPage(targetId);
       const somItems = (await page.evaluate(`(() => {

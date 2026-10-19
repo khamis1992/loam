@@ -21,6 +21,8 @@ export interface ToolResult {
 }
 
 export interface Tool {
+  /** Explicit external integration, available only after a task-specific grant. */
+  integration?: boolean;
   name: string;
   description: string;
   parameters: Record<string, unknown>;
@@ -35,10 +37,13 @@ export class ToolRegistry {
   private readonly tools = new Map<string, Tool>();
   private readOnly = false;
 
-  /** Each task receives an immutable capability subset. Hooks cannot bypass it. */
-  forMode(modeId: string): ToolRegistry {
+  /** Each task receives an immutable capability subset. Hooks cannot bypass it.
+   *  `extraAllow` carries gateway-granted tools beyond the mode set (e.g. computer
+   *  use under the user-device work mode); they are still vetted by the caller. */
+  forMode(modeId: string, extraAllow: string[] = []): ToolRegistry {
     const mode = getLoamMode(modeId);
-    const sub = this.cloneFiltered({ allow: mode.tools });
+    const allow = extraAllow.length > 0 ? [...new Set([...mode.tools, ...extraAllow])] : mode.tools;
+    const sub = this.cloneFiltered({ allow });
     sub.readOnly = true;
     return sub;
   }
@@ -46,6 +51,31 @@ export class ToolRegistry {
   /** Explicit allowlist: unknown/MCP/browser/shell tools cannot execute in Ask mode. */
   forAskMode(): ToolRegistry {
     return this.forMode("ask");
+  }
+
+  /** Gateway-scoped subset: forMode semantics (immutable, hook-free) for an
+   *  arbitrary allowlist — the companion gateway's resolved tool set. */
+  forAllowlist(allow: string[]): ToolRegistry {
+    const sub = this.cloneFiltered({ allow });
+    sub.readOnly = true;
+    return sub;
+  }
+
+  /** Copy of this registry plus extra tool instances bound at run start
+   *  (companion device tools); readOnly semantics are preserved. */
+  withTools(extra: Tool[]): ToolRegistry {
+    const sub = this.cloneFiltered({});
+    // Extras are bound AFTER allowlist resolution; the CALLER pre-filters them
+    // against the same capability allowlist (index.ts does) so a revoked
+    // device/memory/team tool never reaches this point.
+    for (const t of extra) sub.register(t);
+    return sub;
+  }
+
+  /** Replace an existing tool in place (approval wrapping at run start). */
+  replaceTool(tool: Tool): void {
+    if (!this.tools.has(tool.name)) throw new Error(`unknown tool: ${tool.name}`);
+    this.tools.set(tool.name, tool);
   }
 
   register(tool: Tool): void {

@@ -1,0 +1,44 @@
+{
+  "at": "2026-10-19T00:14:20.407Z",
+  "workspace": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-critic-live-14TA2D",
+  "results": [
+    {
+      "conditional": true,
+      "source": "import { createServer } from 'node:http';\nconst server = createServer((req, res) => res.end('ok'));\nserver.listen(3000, '127.0.0.1');\nfunction shutdown() {\nserver.close(() => process.exit(0));\nsetTimeout(() => process.exit(0), 2000).unref();\n}\nprocess.on('SIGTERM', shutdown);\n",
+      "reads": 1,
+      "verdict": {
+        "verdict": "pass",
+        "reason": "قرأت server.mjs كاملًا: يستمع عبر server.listen(3000, '127.0.0.1')، والمؤقت setTimeout(...2000) موجود حصريًا داخل دالة shutdown المسجلة لـ SIGTERM فقط، فلا يوجد أي مسار إنهاء تلقائي أثناء التشغيل العادي (المقتطف السابق كان بلا سياق).",
+        "fixes": [],
+        "parsed": true,
+        "model": "glm-5.3-flash",
+        "usage": {
+          "promptTokens": 1742,
+          "completionTokens": 710,
+          "durationMs": 5495
+        }
+      }
+    },
+    {
+      "conditional": false,
+      "source": "import { createServer } from 'node:http';\nconst server = createServer((req, res) => res.end('ok'));\nserver.listen(3000, '127.0.0.1');\nsetTimeout(() => process.exit(0), 2000);\n",
+      "reads": 1,
+      "verdict": {
+        "verdict": "revise",
+        "reason": "قرأت server.mjs كاملًا: الاستماع صحيح على 127.0.0.1:3000، لكن setTimeout(() => process.exit(0), 2000) موجود في المستوى الأعلى خارج أي معالج SIGTERM، أي أن العملية تُنهى تلقائيًا بعد ثانيتين أثناء التشغيل العادي، ولا يوجد أي معالج SIGTERM أصلًا.",
+        "fixes": [
+          "احذف السطر setTimeout(() => process.exit(0), 2000) من المستوى الأعلى في server.mjs",
+          "أضف معالج process.on('SIGTERM', ...) يستدعي server.close()، ويُسمح بمؤقت إجباري للخروج داخل هذا المعالج فقط (مثل setTimeout(() => process.exit(0), 2000) داخل المعالج)"
+        ],
+        "parsed": true,
+        "model": "glm-5.3-flash",
+        "usage": {
+          "promptTokens": 1717,
+          "completionTokens": 774,
+          "durationMs": 5067
+        }
+      }
+    }
+  ],
+  "pass": true
+}

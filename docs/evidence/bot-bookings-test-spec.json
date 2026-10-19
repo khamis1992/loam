@@ -1,0 +1,395 @@
+{
+  "prompt": "أنشئ تطبيق حجز غرف عربي RTL بتصميم سماوي وبنفسجي متجاوب. الملفات index.html وserver.mjs وapp-verification.json في جذر مساحة المهمة بمسارات نسبية. استخدم Node المدمج فقط وخادم 127.0.0.1:3000 وقاعدة SQLite حقيقية داخل الحاوية /tmp/bookings.sqlite وجدول bookings(id INTEGER PRIMARY KEY, room TEXT NOT NULL, start TEXT NOT NULL, end TEXT NOT NULL). تبدأ القاعدة فارغة.\nGET /api/bookings يعيد {items:[{id,room,start,end}]} من قاعدة البيانات. POST /api/bookings يقبل {room,start,end}؛ room نص غير فارغ والتاريخان نصان UTC بالصيغة YYYY-MM-DDTHH:mm:ssZ يمثلان تاريخًا صالحًا فعليًا وstart<end، وإلا 400. ينشئ الحجز ويرجع 201. إذا تعارض مع حجز في نفس الغرفة يعيد 409 دون تغيير البيانات. حدود الفترات نصف مفتوحة: بداية حجز جديد تساوي نهاية السابق مسموحة. غرف مختلفة مستقلة. الفحص والإدخال داخل معاملة واحدة لمنع قبول طلبين متعارضين متزامنين؛ استخدم SQL بمعاملات ربط.\nواجهة تحتوي حقول نصية #room و#start و#end وزر #save ورسالة عربية #error وصفوف .booking تعرض الغرفة والبداية والنهاية. استعمل حقول نص عادية لتقبل صيغة UTC المذكورة، دون قيود HTML تخفي رسالة الخطأ. حدّث الجدول من الخادم بعد كل عملية وعند التحميل. عالج ردود fetch وأظهر تعارض الحجز وانعكاس الوقت. لا تستخدم localStorage أو ذاكرة بديلة عن SQLite، ولا نوافذ تأكيد أو مكتبات خارجية.\nاحفظ عقد الاختبار التالي دون تغيير: {\"entry\":\"index.html\",\"runtime\":{\"type\":\"node\",\"entry\":\"server.mjs\"},\"scenarios\":[{\"name\":\"Create booking\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#room\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#start\",\"value\":\"2026-11-01T10:00:00Z\"},{\"action\":\"fill\",\"selector\":\"#end\",\"value\":\"2026-11-01T11:00:00Z\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"count\",\"selector\":\".booking\",\"count\":1}],\"sqliteChecks\":[{\"database\":\"/tmp/bookings.sqlite\",\"table\":\"bookings\",\"columns\":[\"room\",\"start\",\"end\"],\"rows\":[[\"A\",\"2026-11-01T10:00:00Z\",\"2026-11-01T11:00:00Z\"]]}]},{\"name\":\"Reject overlapping room\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#room\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#start\",\"value\":\"2026-11-01T10:00:00Z\"},{\"action\":\"fill\",\"selector\":\"#end\",\"value\":\"2026-11-01T11:00:00Z\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"count\",\"selector\":\".booking\",\"count\":1},{\"action\":\"fill\",\"selector\":\"#room\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#start\",\"value\":\"2026-11-01T10:00:00Z\"},{\"action\":\"fill\",\"selector\":\"#end\",\"value\":\"2026-11-01T12:00:00Z\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"count\",\"selector\":\".booking\",\"count\":1}],\"expectedResponses\":[{\"method\":\"POST\",\"path\":\"/api/bookings\",\"status\":409,\"count\":1}],\"sqliteChecks\":[{\"database\":\"/tmp/bookings.sqlite\",\"table\":\"bookings\",\"columns\":[\"room\",\"start\",\"end\"],\"rows\":[[\"A\",\"2026-11-01T10:00:00Z\",\"2026-11-01T11:00:00Z\"]]}]},{\"name\":\"Allow adjacent time\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#room\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#start\",\"value\":\"2026-11-01T10:00:00Z\"},{\"action\":\"fill\",\"selector\":\"#end\",\"value\":\"2026-11-01T11:00:00Z\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"count\",\"selector\":\".booking\",\"count\":1},{\"action\":\"fill\",\"selector\":\"#room\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#start\",\"value\":\"2026-11-01T11:00:00Z\"},{\"action\":\"fill\",\"selector\":\"#end\",\"value\":\"2026-11-01T12:00:00Z\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"count\",\"selector\":\".booking\",\"count\":2}],\"sqliteChecks\":[{\"database\":\"/tmp/bookings.sqlite\",\"table\":\"bookings\",\"columns\":[\"room\",\"start\",\"end\"],\"rows\":[[\"A\",\"2026-11-01T10:00:00Z\",\"2026-11-01T11:00:00Z\"],[\"A\",\"2026-11-01T11:00:00Z\",\"2026-11-01T12:00:00Z\"]]}]},{\"name\":\"Independent rooms\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#room\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#start\",\"value\":\"2026-11-01T10:00:00Z\"},{\"action\":\"fill\",\"selector\":\"#end\",\"value\":\"2026-11-01T11:00:00Z\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"count\",\"selector\":\".booking\",\"count\":1},{\"action\":\"fill\",\"selector\":\"#room\",\"value\":\"B\"},{\"action\":\"fill\",\"selector\":\"#start\",\"value\":\"2026-11-01T10:00:00Z\"},{\"action\":\"fill\",\"selector\":\"#end\",\"value\":\"2026-11-01T11:00:00Z\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"count\",\"selector\":\".booking\",\"count\":2}],\"sqliteChecks\":[{\"database\":\"/tmp/bookings.sqlite\",\"table\":\"bookings\",\"columns\":[\"room\",\"start\",\"end\"],\"rows\":[[\"A\",\"2026-11-01T10:00:00Z\",\"2026-11-01T11:00:00Z\"],[\"B\",\"2026-11-01T10:00:00Z\",\"2026-11-01T11:00:00Z\"]]}]},{\"name\":\"Reject reversed time\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#room\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#start\",\"value\":\"2026-11-01T12:00:00Z\"},{\"action\":\"fill\",\"selector\":\"#end\",\"value\":\"2026-11-01T10:00:00Z\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"count\",\"selector\":\".booking\",\"count\":0}],\"sqliteChecks\":[{\"database\":\"/tmp/bookings.sqlite\",\"table\":\"bookings\",\"columns\":[\"room\",\"start\",\"end\"],\"rows\":[]}]},{\"name\":\"Reload persistence\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#room\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#start\",\"value\":\"2026-11-01T10:00:00Z\"},{\"action\":\"fill\",\"selector\":\"#end\",\"value\":\"2026-11-01T11:00:00Z\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"count\",\"selector\":\".booking\",\"count\":1},{\"action\":\"reload\"},{\"action\":\"count\",\"selector\":\".booking\",\"count\":1}],\"sqliteChecks\":[{\"database\":\"/tmp/bookings.sqlite\",\"table\":\"bookings\",\"columns\":[\"room\",\"start\",\"end\"],\"rows\":[[\"A\",\"2026-11-01T10:00:00Z\",\"2026-11-01T11:00:00Z\"]]}]}]}.\nاستخدم أدوات الملفات فقط، ولا تشغل الخادم على Windows. المنظومة تشغله داخل Docker وتتحقق بصريًا ووظيفيًا ومن قاعدة البيانات. لا تدّع دوام البيانات بعد حذف الحاوية.",
+  "contract": {
+    "entry": "index.html",
+    "runtime": {
+      "type": "node",
+      "entry": "server.mjs"
+    },
+    "scenarios": [
+      {
+        "name": "Create booking",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#room",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#start",
+            "value": "2026-11-01T10:00:00Z"
+          },
+          {
+            "action": "fill",
+            "selector": "#end",
+            "value": "2026-11-01T11:00:00Z"
+          },
+          {
+            "action": "click",
+            "selector": "#save"
+          },
+          {
+            "action": "count",
+            "selector": ".booking",
+            "count": 1
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/bookings.sqlite",
+            "table": "bookings",
+            "columns": [
+              "room",
+              "start",
+              "end"
+            ],
+            "rows": [
+              [
+                "A",
+                "2026-11-01T10:00:00Z",
+                "2026-11-01T11:00:00Z"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Reject overlapping room",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#room",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#start",
+            "value": "2026-11-01T10:00:00Z"
+          },
+          {
+            "action": "fill",
+            "selector": "#end",
+            "value": "2026-11-01T11:00:00Z"
+          },
+          {
+            "action": "click",
+            "selector": "#save"
+          },
+          {
+            "action": "count",
+            "selector": ".booking",
+            "count": 1
+          },
+          {
+            "action": "fill",
+            "selector": "#room",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#start",
+            "value": "2026-11-01T10:00:00Z"
+          },
+          {
+            "action": "fill",
+            "selector": "#end",
+            "value": "2026-11-01T12:00:00Z"
+          },
+          {
+            "action": "click",
+            "selector": "#save"
+          },
+          {
+            "action": "visible",
+            "selector": "#error"
+          },
+          {
+            "action": "count",
+            "selector": ".booking",
+            "count": 1
+          }
+        ],
+        "expectedResponses": [
+          {
+            "method": "POST",
+            "path": "/api/bookings",
+            "status": 409,
+            "count": 1
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/bookings.sqlite",
+            "table": "bookings",
+            "columns": [
+              "room",
+              "start",
+              "end"
+            ],
+            "rows": [
+              [
+                "A",
+                "2026-11-01T10:00:00Z",
+                "2026-11-01T11:00:00Z"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Allow adjacent time",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#room",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#start",
+            "value": "2026-11-01T10:00:00Z"
+          },
+          {
+            "action": "fill",
+            "selector": "#end",
+            "value": "2026-11-01T11:00:00Z"
+          },
+          {
+            "action": "click",
+            "selector": "#save"
+          },
+          {
+            "action": "count",
+            "selector": ".booking",
+            "count": 1
+          },
+          {
+            "action": "fill",
+            "selector": "#room",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#start",
+            "value": "2026-11-01T11:00:00Z"
+          },
+          {
+            "action": "fill",
+            "selector": "#end",
+            "value": "2026-11-01T12:00:00Z"
+          },
+          {
+            "action": "click",
+            "selector": "#save"
+          },
+          {
+            "action": "count",
+            "selector": ".booking",
+            "count": 2
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/bookings.sqlite",
+            "table": "bookings",
+            "columns": [
+              "room",
+              "start",
+              "end"
+            ],
+            "rows": [
+              [
+                "A",
+                "2026-11-01T10:00:00Z",
+                "2026-11-01T11:00:00Z"
+              ],
+              [
+                "A",
+                "2026-11-01T11:00:00Z",
+                "2026-11-01T12:00:00Z"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Independent rooms",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#room",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#start",
+            "value": "2026-11-01T10:00:00Z"
+          },
+          {
+            "action": "fill",
+            "selector": "#end",
+            "value": "2026-11-01T11:00:00Z"
+          },
+          {
+            "action": "click",
+            "selector": "#save"
+          },
+          {
+            "action": "count",
+            "selector": ".booking",
+            "count": 1
+          },
+          {
+            "action": "fill",
+            "selector": "#room",
+            "value": "B"
+          },
+          {
+            "action": "fill",
+            "selector": "#start",
+            "value": "2026-11-01T10:00:00Z"
+          },
+          {
+            "action": "fill",
+            "selector": "#end",
+            "value": "2026-11-01T11:00:00Z"
+          },
+          {
+            "action": "click",
+            "selector": "#save"
+          },
+          {
+            "action": "count",
+            "selector": ".booking",
+            "count": 2
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/bookings.sqlite",
+            "table": "bookings",
+            "columns": [
+              "room",
+              "start",
+              "end"
+            ],
+            "rows": [
+              [
+                "A",
+                "2026-11-01T10:00:00Z",
+                "2026-11-01T11:00:00Z"
+              ],
+              [
+                "B",
+                "2026-11-01T10:00:00Z",
+                "2026-11-01T11:00:00Z"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Reject reversed time",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#room",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#start",
+            "value": "2026-11-01T12:00:00Z"
+          },
+          {
+            "action": "fill",
+            "selector": "#end",
+            "value": "2026-11-01T10:00:00Z"
+          },
+          {
+            "action": "click",
+            "selector": "#save"
+          },
+          {
+            "action": "visible",
+            "selector": "#error"
+          },
+          {
+            "action": "count",
+            "selector": ".booking",
+            "count": 0
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/bookings.sqlite",
+            "table": "bookings",
+            "columns": [
+              "room",
+              "start",
+              "end"
+            ],
+            "rows": []
+          }
+        ]
+      },
+      {
+        "name": "Reload persistence",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#room",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#start",
+            "value": "2026-11-01T10:00:00Z"
+          },
+          {
+            "action": "fill",
+            "selector": "#end",
+            "value": "2026-11-01T11:00:00Z"
+          },
+          {
+            "action": "click",
+            "selector": "#save"
+          },
+          {
+            "action": "count",
+            "selector": ".booking",
+            "count": 1
+          },
+          {
+            "action": "reload"
+          },
+          {
+            "action": "count",
+            "selector": ".booking",
+            "count": 1
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/bookings.sqlite",
+            "table": "bookings",
+            "columns": [
+              "room",
+              "start",
+              "end"
+            ],
+            "rows": [
+              [
+                "A",
+                "2026-11-01T10:00:00Z",
+                "2026-11-01T11:00:00Z"
+              ]
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "status": "prepared, not executed"
+}

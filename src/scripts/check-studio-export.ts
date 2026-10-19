@@ -10,6 +10,22 @@ assert.match(doc.filename, /\.docx$/); assert.match(doc.contentType, /wordproces
 const docZip = await JSZip.loadAsync(doc.buffer), documentXml = await docZip.file("word/document.xml")!.async("string");
 assert.ok(documentXml.includes("النتائج")); assert.ok(documentXml.includes("&lt;&amp;&gt;"));
 assert.match(documentXml, /w:b\b/); assert.match(documentXml, /w:i\b/); assert.match(documentXml, /w:numPr/); assert.match(documentXml, /w:bidi/);
+assert.match(documentXml, /w:keepNext/); assert.match(documentXml, /w:widowControl/);
+assert.match(documentXml, /w:szCs w:val="30"/); assert.match(documentXml, /w:bCs/);
+assert.match(documentXml, /w:fill="EAF5F5"/); assert.match(documentXml, /w:pgSz w:w="11906" w:h="16838"/);
+const headerXml = await docZip.file("word/header1.xml")!.async("string");
+const footerXml = await docZip.file("word/footer1.xml")!.async("string");
+assert.ok(headerXml.includes("تقرير Loam")); assert.match(footerXml, /NUMPAGES/); assert.match(footerXml, /PAGE/);
+const multiline = await exportStudio({ kind: "document", revision: 1, title: "English report", content: { blocks: [
+  { type: "paragraph", text: "First line\nSecond line" }, { type: "bullet", text: "English bullet" },
+] } });
+const multilineZip = await JSZip.loadAsync(multiline.buffer);
+assert.match(await multilineZip.file("word/document.xml")!.async("string"), /w:br/);
+const repeated = await exportStudio({ kind: "document", revision: 1, title: "Repeated title", content: { blocks: [
+  { type: "heading", text: "Repeated title" }, { type: "paragraph", text: "Actual content" },
+] } });
+const repeatedZip = await JSZip.loadAsync(repeated.buffer);
+assert.equal((await repeatedZip.file("word/document.xml")!.async("string")).split("Repeated title").length - 1, 1);
 
 const deck = await exportStudio({ kind: "presentation", revision: 3, title: "عرض Loam", content: { slides: [
   { id: "one", title: "المقدمة", body: "محتوى مباشر", notes: "ملاحظة المتحدث", background: "#101827", accent: "#00bbdd" },

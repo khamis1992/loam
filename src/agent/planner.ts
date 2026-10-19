@@ -23,6 +23,7 @@ export interface PlannerOptions {
   ollama: OllamaClient;
   prompt: string;
   history?: ChatMessage[];
+  availableTools?: string[];
   maxPlanSteps: number;
   /** Planner model override ("" = main model). */
   model?: string;
@@ -38,7 +39,12 @@ export const PLANNER_SYSTEM = [
   "- Reply with JSON only, no markdown fences, no commentary.",
   '- Schema: {"goal": "<one sentence>", "trivial": <true|false>, "steps": [{"id": "s1", "title": "<short>", "instruction": "<what the executor must do>", "success_criteria": "<observable evidence of completion>"}]}',
   "- Use 2 to 6 steps for real tasks; never more than needed.",
+  "- Plan only operations possible with AVAILABLE TOOLS. Do not require shell, grep, browser actions, or external services when those tools are absent.",
+  "- Source files and app-verification.json belong in the TASK WORKSPACE. File tools resolve relative paths there. Do not invent another project root or write source files to a container path on the host.",
+  "- For isolated Node application verification, /app is the readonly copy of workspace source INSIDE Docker; /tmp is writable runtime data INSIDE Docker, not the host project directory. A requested /tmp database path belongs in generated server code, not in file_write paths. Use workspace-relative index.html, server.mjs and app-verification.json for creation.",
+  "- Generated browser apps receive mandatory independent runtime and visual checks from app-verification.json after execution. Include an acceptance contract covering the requested workflows; do not substitute exhaustive line-by-line source narration for these checks.",
   "- The LAST step must produce the complete final answer for the user (result, files, paths).",
+  '- A loam_mobile request limited to the supported screen schema (text, inputs, toggles, navigation) is one coherent studio edit: set trivial=true and use one step that reads the current revision, replaces the project once, and checks the returned project. Preserve the requested display language. Do not split each screen or each read/write into separate steps. Requests for native builds, backend services or advanced application logic still need a normal implementation and verification plan.',
   '- Set "trivial": true and use exactly ONE step only when the request is a simple single-action task (a greeting, one quick answer, reading one value) OR when the request invokes a self-contained studio/builder tool (super_swarm, office_craft, rork_build, lovable_studio, metagpt_company, studio_blender, game_build, presentation_build, mirofish_chat) to generate a new package/app from scratch.',
   '- When calling a studio/builder tool (like office_craft, super_swarm, rork_build, lovable_studio), do NOT add preliminary steps to search the disk or inspect files first — call the studio tool directly in step s1.',
   '- Instructions must be concrete: files, commands, sources. No meta-work like "understand the task".',
@@ -122,7 +128,7 @@ export function normalizePlan(value: unknown, prompt: string, maxPlanSteps: numb
   return { goal, trivial, steps: capped, source: "model" };
 }
 
-/** Single-step fallback plan: run the original request directly, skip critique/verify. */
+/** Single-step fallback plan; subject to the same mandatory verification. */
 export function fallbackPlan(prompt: string): Plan {
   return {
     goal: (prompt.split(/\r?\n/)[0] ?? "").slice(0, 120) || prompt.slice(0, 120),
@@ -142,8 +148,12 @@ export function fallbackPlan(prompt: string): Plan {
 /** Plan a task with one model call; degrades to a single-step fallback plan on any failure. */
 export async function planTask(o: PlannerOptions): Promise<PlanResult> {
   const user = [
+    "TASK WORKSPACE (host source files):",
+    o.cfg.workspace,
+    "",
     "USER REQUEST:",
-    o.prompt.slice(0, 4000),
+    o.prompt,
+    ...(o.availableTools ? ["", "AVAILABLE TOOLS:", o.availableTools.join(", ")] : []),
     ...(o.memories && o.memories.length > 0
       ? ["", "USEFUL MEMORIES:", ...o.memories.map((m) => `- ${m.text.slice(0, 300)}`)]
       : []),

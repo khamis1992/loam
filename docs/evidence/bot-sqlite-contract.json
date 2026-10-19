@@ -1,0 +1,261 @@
+{
+  "at": "2026-10-19T00:38:05.554Z",
+  "workspace": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-sqlite-contract-jtM2WY",
+  "scope": "Real Docker/SQLite/browser; visual model fixture",
+  "good": {
+    "pass": true,
+    "reason": "fixture visual approval",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-sqlite-contract-jtM2WY\\.verification\\266e4136-1263-46b9-8a5b-50ce061a5561\\report.json",
+    "elapsedMs": 9304,
+    "usage": {
+      "promptTokens": 1,
+      "completionTokens": 1,
+      "durationMs": 1
+    },
+    "checks": [
+      {
+        "viewport": "desktop",
+        "scenario": "real stock",
+        "pass": true,
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/add",
+            "status": 200
+          }
+        ],
+        "databases": [
+          {
+            "database": "/tmp/stock.sqlite",
+            "table": "stock",
+            "columns": [
+              "sku",
+              "quantity"
+            ],
+            "rows": [
+              [
+                "book",
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "real stock",
+        "pass": true,
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/add",
+            "status": 200
+          }
+        ],
+        "databases": [
+          {
+            "database": "/tmp/stock.sqlite",
+            "table": "stock",
+            "columns": [
+              "sku",
+              "quantity"
+            ],
+            "rows": [
+              [
+                "book",
+                1
+              ]
+            ]
+          }
+        ]
+      }
+    ],
+    "screenshots": [
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-sqlite-contract-jtM2WY\\.verification\\266e4136-1263-46b9-8a5b-50ce061a5561\\desktop-0.png",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-sqlite-contract-jtM2WY\\.verification\\266e4136-1263-46b9-8a5b-50ce061a5561\\mobile-0.png"
+    ],
+    "errors": [],
+    "runtime": {
+      "type": "node",
+      "isolation": "docker-network-none",
+      "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+      "freshBackendPerScenario": true
+    },
+    "visual": {
+      "model": "fixture",
+      "verdict": {
+        "verdict": "pass",
+        "reason": "fixture visual approval",
+        "issues": []
+      },
+      "response": "{\"verdict\":\"pass\",\"reason\":\"fixture visual approval\",\"issues\":[]}",
+      "attempts": 1
+    },
+    "sourceHashes": {
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-sqlite-contract-jtM2WY\\app-verification.json": "10407d52fe89e12f2c28973a37d778214cd17d47975f3a5cc18da2b22bb6a0bb",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-sqlite-contract-jtM2WY\\index.html": "6dcc658374cb714d47c693bc5f4d61ff713495fb412cd52462900ab42afaacd1",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-sqlite-contract-jtM2WY\\server.mjs": "c1616ccc9bb96778ba89e54be5c230a3bb5d981fcb1c61e751e26008f88f3ad8"
+    }
+  },
+  "decoy": {
+    "pass": false,
+    "reason": "Error: Application interaction/runtime checks failed; inspect report and repair",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-sqlite-contract-jtM2WY\\.verification\\2e88a029-cb80-4dfc-ac50-94490520daa7\\report.json",
+    "elapsedMs": 9103,
+    "usage": {
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "durationMs": 0
+    },
+    "checks": [
+      {
+        "viewport": "desktop",
+        "scenario": "real stock",
+        "pass": false,
+        "error": "Error: SQLite rows mismatch for stock: expected [[\"book\",1]], observed []",
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/add",
+            "status": 200
+          }
+        ],
+        "databases": [
+          {
+            "database": "/tmp/stock.sqlite",
+            "table": "stock",
+            "columns": [
+              "sku",
+              "quantity"
+            ],
+            "rows": []
+          }
+        ]
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "real stock",
+        "pass": false,
+        "error": "Error: SQLite rows mismatch for stock: expected [[\"book\",1]], observed []",
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/add",
+            "status": 200
+          }
+        ],
+        "databases": [
+          {
+            "database": "/tmp/stock.sqlite",
+            "table": "stock",
+            "columns": [
+              "sku",
+              "quantity"
+            ],
+            "rows": []
+          }
+        ]
+      }
+    ],
+    "screenshots": [
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-sqlite-contract-jtM2WY\\.verification\\2e88a029-cb80-4dfc-ac50-94490520daa7\\desktop-0.png",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-sqlite-contract-jtM2WY\\.verification\\2e88a029-cb80-4dfc-ac50-94490520daa7\\mobile-0.png"
+    ],
+    "errors": [
+      "Error: SQLite rows mismatch for stock: expected [[\"book\",1]], observed []",
+      "Error: SQLite rows mismatch for stock: expected [[\"book\",1]], observed []"
+    ],
+    "runtime": {
+      "type": "node",
+      "isolation": "docker-network-none",
+      "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+      "freshBackendPerScenario": true
+    }
+  },
+  "missing": {
+    "pass": false,
+    "reason": "Error: Application interaction/runtime checks failed; inspect report and repair",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-sqlite-contract-jtM2WY\\.verification\\a7f62fc7-fd83-4711-856c-5dd66cc68664\\report.json",
+    "elapsedMs": 9272,
+    "usage": {
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "durationMs": 0
+    },
+    "checks": [
+      {
+        "viewport": "desktop",
+        "scenario": "real stock",
+        "pass": false,
+        "error": "Error: Docker operation failed (1): (node:61) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[eval]:11\nif(c.columns.some(k=>!columns.has(k)))throw Error('SQLite column missing');\n                                      ^\n\nError: SQLite column missing\n    at Socket.<anonymous> ([eval]:11:45)\n    at Socket.emit (node:events:531:35)\n    at endReadableNT (node:internal/streams/readable:1698:12)\n    at process.processTicksAndRejections (node:internal/process/task_queues:89:21)\n\nNode.js v22.23.1\n",
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/add",
+            "status": 200
+          }
+        ],
+        "databases": []
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "real stock",
+        "pass": false,
+        "error": "Error: Docker operation failed (1): (node:61) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[eval]:11\nif(c.columns.some(k=>!columns.has(k)))throw Error('SQLite column missing');\n                                      ^\n\nError: SQLite column missing\n    at Socket.<anonymous> ([eval]:11:45)\n    at Socket.emit (node:events:531:35)\n    at endReadableNT (node:internal/streams/readable:1698:12)\n    at process.processTicksAndRejections (node:internal/process/task_queues:89:21)\n\nNode.js v22.23.1\n",
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/add",
+            "status": 200
+          }
+        ],
+        "databases": []
+      }
+    ],
+    "screenshots": [
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-sqlite-contract-jtM2WY\\.verification\\a7f62fc7-fd83-4711-856c-5dd66cc68664\\desktop-0.png",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-sqlite-contract-jtM2WY\\.verification\\a7f62fc7-fd83-4711-856c-5dd66cc68664\\mobile-0.png"
+    ],
+    "errors": [
+      "Error: Docker operation failed (1): (node:61) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[eval]:11\nif(c.columns.some(k=>!columns.has(k)))throw Error('SQLite column missing');\n                                      ^\n\nError: SQLite column missing\n    at Socket.<anonymous> ([eval]:11:45)\n    at Socket.emit (node:events:531:35)\n    at endReadableNT (node:internal/streams/readable:1698:12)\n    at process.processTicksAndRejections (node:internal/process/task_queues:89:21)\n\nNode.js v22.23.1\n",
+      "Error: Docker operation failed (1): (node:61) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[eval]:11\nif(c.columns.some(k=>!columns.has(k)))throw Error('SQLite column missing');\n                                      ^\n\nError: SQLite column missing\n    at Socket.<anonymous> ([eval]:11:45)\n    at Socket.emit (node:events:531:35)\n    at endReadableNT (node:internal/streams/readable:1698:12)\n    at process.processTicksAndRejections (node:internal/process/task_queues:89:21)\n\nNode.js v22.23.1\n"
+    ],
+    "runtime": {
+      "type": "node",
+      "isolation": "docker-network-none",
+      "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+      "freshBackendPerScenario": true
+    }
+  },
+  "pass": true
+}

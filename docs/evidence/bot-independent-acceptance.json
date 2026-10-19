@@ -1,0 +1,304 @@
+{
+  "at": "2026-10-19T15:33:43.659Z",
+  "workspace": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3",
+  "good": {
+    "pass": true,
+    "reason": "fixture",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\58c48b7d-16a9-48a7-ace7-abe4b3ba871b\\report.json",
+    "elapsedMs": 1001,
+    "usage": {
+      "promptTokens": 1,
+      "completionTokens": 1,
+      "durationMs": 1
+    },
+    "checks": [
+      {
+        "viewport": "desktop",
+        "scenario": "One click increments once",
+        "pass": true,
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": []
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "One click increments once",
+        "pass": true,
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": []
+      }
+    ],
+    "screenshots": [
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\58c48b7d-16a9-48a7-ace7-abe4b3ba871b\\desktop-0.png",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\58c48b7d-16a9-48a7-ace7-abe4b3ba871b\\mobile-0.png"
+    ],
+    "errors": [],
+    "contractOrigin": "runtime-owned-independent",
+    "executedContract": {
+      "entry": "index.html",
+      "scenarios": [
+        {
+          "name": "One click increments once",
+          "steps": [
+            {
+              "action": "click",
+              "selector": "#add"
+            },
+            {
+              "action": "textExact",
+              "selector": "#count",
+              "value": "1"
+            }
+          ]
+        }
+      ]
+    },
+    "visual": {
+      "complete": true,
+      "model": "vision-fixture",
+      "verdict": {
+        "verdict": "pass",
+        "reason": "fixture",
+        "issues": []
+      },
+      "response": "{\"verdict\":\"pass\",\"reason\":\"fixture\",\"issues\":[]}",
+      "attempts": 1,
+      "batches": [
+        {
+          "screenshots": [
+            "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\58c48b7d-16a9-48a7-ace7-abe4b3ba871b\\desktop-0.png",
+            "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\58c48b7d-16a9-48a7-ace7-abe4b3ba871b\\mobile-0.png"
+          ],
+          "model": "vision-fixture",
+          "verdict": {
+            "verdict": "pass",
+            "reason": "fixture",
+            "issues": []
+          },
+          "response": "{\"verdict\":\"pass\",\"reason\":\"fixture\",\"issues\":[]}",
+          "attempts": 1
+        }
+      ],
+      "batchRuns": [
+        {
+          "batch": 1,
+          "screenshots": [
+            "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\58c48b7d-16a9-48a7-ace7-abe4b3ba871b\\desktop-0.png",
+            "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\58c48b7d-16a9-48a7-ace7-abe4b3ba871b\\mobile-0.png"
+          ],
+          "startedAt": "2026-10-19T15:33:31.593Z",
+          "elapsedMs": 2,
+          "status": "response",
+          "attempts": 1
+        }
+      ],
+      "reviewedScreenshots": [
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\58c48b7d-16a9-48a7-ace7-abe4b3ba871b\\desktop-0.png",
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\58c48b7d-16a9-48a7-ace7-abe4b3ba871b\\mobile-0.png"
+      ]
+    },
+    "sourceHashes": {
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\app-verification.json": "00aab3626817ff698528847972f923ce4f49bd0cdf18a31453bcc596db500a49",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\index.html": "e8990506e047b4e447ab5a4ae0c81f764c76fa085e9c5e7b0636a8a308a0901d"
+    }
+  },
+  "weak": {
+    "pass": true,
+    "reason": "fixture",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\d59cd089-88ec-4008-b14e-6e7306002797\\report.json",
+    "elapsedMs": 957,
+    "usage": {
+      "promptTokens": 1,
+      "completionTokens": 1,
+      "durationMs": 1
+    },
+    "checks": [
+      {
+        "viewport": "desktop",
+        "scenario": "Title only",
+        "pass": true,
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": []
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "Title only",
+        "pass": true,
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": []
+      }
+    ],
+    "screenshots": [
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\d59cd089-88ec-4008-b14e-6e7306002797\\desktop-0.png",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\d59cd089-88ec-4008-b14e-6e7306002797\\mobile-0.png"
+    ],
+    "errors": [],
+    "contractOrigin": "workspace",
+    "visual": {
+      "complete": true,
+      "model": "vision-fixture",
+      "verdict": {
+        "verdict": "pass",
+        "reason": "fixture",
+        "issues": []
+      },
+      "response": "{\"verdict\":\"pass\",\"reason\":\"fixture\",\"issues\":[]}",
+      "attempts": 1,
+      "batches": [
+        {
+          "screenshots": [
+            "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\d59cd089-88ec-4008-b14e-6e7306002797\\desktop-0.png",
+            "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\d59cd089-88ec-4008-b14e-6e7306002797\\mobile-0.png"
+          ],
+          "model": "vision-fixture",
+          "verdict": {
+            "verdict": "pass",
+            "reason": "fixture",
+            "issues": []
+          },
+          "response": "{\"verdict\":\"pass\",\"reason\":\"fixture\",\"issues\":[]}",
+          "attempts": 1
+        }
+      ],
+      "batchRuns": [
+        {
+          "batch": 1,
+          "screenshots": [
+            "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\d59cd089-88ec-4008-b14e-6e7306002797\\desktop-0.png",
+            "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\d59cd089-88ec-4008-b14e-6e7306002797\\mobile-0.png"
+          ],
+          "startedAt": "2026-10-19T15:33:32.524Z",
+          "elapsedMs": 2,
+          "status": "response",
+          "attempts": 1
+        }
+      ],
+      "reviewedScreenshots": [
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\d59cd089-88ec-4008-b14e-6e7306002797\\desktop-0.png",
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\d59cd089-88ec-4008-b14e-6e7306002797\\mobile-0.png"
+      ]
+    },
+    "sourceHashes": {
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\app-verification.json": "00aab3626817ff698528847972f923ce4f49bd0cdf18a31453bcc596db500a49",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\index.html": "ce58d37e9252952da5e80062cd9e91f4b37e91095aaa931500ec2364608c70d8"
+    }
+  },
+  "bad": {
+    "pass": false,
+    "reason": "Error: Application interaction/runtime checks failed; inspect report and repair",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\55ac4631-34c8-46f7-af8e-972c34825b6d\\report.json",
+    "elapsedMs": 10883,
+    "usage": {
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "durationMs": 0
+    },
+    "checks": [
+      {
+        "viewport": "desktop",
+        "scenario": "One click increments once",
+        "pass": false,
+        "error": "Error: Unexpected exact text for #count",
+        "failureScreenshot": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\55ac4631-34c8-46f7-af8e-972c34825b6d\\desktop-0-failed.png",
+        "failedStep": {
+          "index": 1,
+          "action": "textExact",
+          "selector": "#count",
+          "value": "1"
+        },
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": []
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "One click increments once",
+        "pass": false,
+        "error": "Error: Unexpected exact text for #count",
+        "failureScreenshot": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-acceptance-2BDkh3\\.verification\\55ac4631-34c8-46f7-af8e-972c34825b6d\\mobile-0-failed.png",
+        "failedStep": {
+          "index": 1,
+          "action": "textExact",
+          "selector": "#count",
+          "value": "1"
+        },
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": []
+      }
+    ],
+    "screenshots": [],
+    "errors": [
+      "Error: Unexpected exact text for #count",
+      "Error: Unexpected exact text for #count"
+    ],
+    "contractOrigin": "runtime-owned-independent",
+    "executedContract": {
+      "entry": "index.html",
+      "scenarios": [
+        {
+          "name": "One click increments once",
+          "steps": [
+            {
+              "action": "click",
+              "selector": "#add"
+            },
+            {
+              "action": "textExact",
+              "selector": "#count",
+              "value": "1"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "authorModelIsFixture": true,
+  "visionModelIsFixture": true,
+  "runtimeGateWired": false
+}

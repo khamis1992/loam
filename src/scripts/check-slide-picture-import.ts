@@ -1,0 +1,21 @@
+import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import {importStudio} from '../studio/import.js';
+import {exportStudio} from '../studio/export.js';
+import {safeZip,part,first,A,P,serialize} from '../studio/ooxml.js';
+const zip=await safeZip(await fs.readFile('output/office-frontier/slides-with-image.pptx'));
+const doc=await part(zip,'ppt/slides/slide1.xml'),pic=first(doc,P,'pic'),transform=first(first(pic,P,'spPr'),A,'xfrm');
+transform.setAttribute('rot','300000');transform.setAttribute('flipH','1');
+zip.file('ppt/slides/slide1.xml',serialize(doc));const source=await zip.generateAsync({type:'nodebuffer'});
+const work=await fs.mkdtemp('output/office-frontier/picture-import-'),a=await importStudio(work,source,'picture.pptx',0);
+if(a.kind!=='presentation')throw Error();assert.deepEqual((await exportStudio(a,work)).buffer,source);
+const picture=a.content.slides[0]!.sourcePictures![0]!;assert.ok(picture);
+Object.assign(picture,{x:20,y:30,w:25,h:30,text:'Updated description'});
+const result=await exportStudio(a,work),after=await safeZip(result.buffer),edited=first(await part(after,'ppt/slides/slide1.xml'),P,'pic');
+assert.equal(first(edited,P,'cNvPr').getAttribute('descr'),'Updated description');
+assert.equal(first(first(edited,P,'spPr'),A,'xfrm').getAttribute('rot'),'300000');
+assert.equal(first(first(edited,P,'spPr'),A,'xfrm').getAttribute('flipH'),'1');
+assert.equal(serialize(first(pic,P,'blipFill')),serialize(first(edited,P,'blipFill')));
+for(const name of Object.keys(zip.files)){if(zip.files[name]!.dir||['ppt/slides/slide1.xml','ppt/presentation.xml'].includes(name))continue;assert.deepEqual(await zip.file(name)!.async('nodebuffer'),await after.file(name)!.async('nodebuffer'));}
+picture.x=99;await assert.rejects(()=>exportStudio(a,work));picture.x=20;picture.id='unknown';await assert.rejects(()=>exportStudio(a,work));
+console.log('PASS picture no-op, geometry patch, preserved rotation/flip/fill/media/supporting parts, bounds and identity rejection');

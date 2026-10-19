@@ -1,0 +1,14 @@
+import fs from 'node:fs';
+import sharp from 'sharp';
+import {iconPaths} from '../ui/icons.js';
+const dir='ui/assets/icons';fs.mkdirSync(dir,{recursive:true});
+const vector=(body,size='32')=>`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" fill="none" stroke="#99d6b5" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter"><style>.li-accent{color:#cda77a}path{color:#99d6b5}</style>${body}</svg>`;
+for(const [name,body] of Object.entries(iconPaths))fs.writeFileSync(`${dir}/${name}.svg`,vector(body));
+const symbol=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M12 2h40l10 10v40L52 62H12L2 52V12z" fill="#101d19" stroke="#426853" stroke-width="1.5"/><g transform="translate(10 9) scale(1.4)" color="#99d6b5"><style>.li-accent{color:#cda77a}</style>${iconPaths.brand}</g></svg>`;
+fs.writeFileSync('ui/assets/loam-symbol.svg',symbol);
+fs.mkdirSync('output/brand',{recursive:true});
+const names=Object.keys(iconPaths),cols=9,rows=Math.ceil(names.length/cols);
+const sheet=`<svg xmlns="http://www.w3.org/2000/svg" width="1536" height="${270+rows*155}" viewBox="0 0 1536 ${270+rows*155}"><rect width="100%" height="100%" fill="#101d19"/><style>.li-accent{color:#cda77a}text{font-family:Arial,sans-serif}</style><g transform="translate(65 48) scale(2.2)" color="#99d6b5">${iconPaths.brand}</g><text x="170" y="92" fill="#e4eee6" font-size="46" font-weight="700" letter-spacing="10">LOAM / STRATA</text><text x="172" y="128" fill="#cda77a" font-size="16" letter-spacing="4">ORIGINAL INTERFACE ICONS · 32 UNIT GRID</text><path d="M65 180H1470" stroke="#335041"/>${names.map((name,i)=>{const x=65+(i%cols)*157,y=220+Math.floor(i/cols)*155;return `<g transform="translate(${x} ${y})"><rect width="142" height="135" rx="12" fill="#16281f"/><g transform="translate(46 23) scale(1.6)" fill="none" color="#99d6b5" stroke="#99d6b5" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter">${iconPaths[name]}</g><text x="71" y="111" text-anchor="middle" fill="#bad2c2" font-size="13" letter-spacing="1">${name.toUpperCase()}</text></g>`;}).join('')}</svg>`;
+fs.writeFileSync('output/brand/loam-strata-icon-sheet.svg',sheet);
+await sharp(Buffer.from(sheet)).png().toFile('output/brand/loam-strata-icon-sheet.png');
+console.log(`Generated ${names.length} original SVG icons, app mark and brand sheet.`);

@@ -1,0 +1,86 @@
+// Local studio management. The capability stays in this module closure and is
+// never sent to the generated application, source files, or model context.
+import {createLocalClient} from './mobile-local-client.js';
+const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
+const action=(label,run)=>{const b=el('button',label);b.type='button';b.onclick=run;return b;};
+const field=(form,title,type='text')=>{const label=el('label',title),input=el('input');input.type=type;input.required=true;input.setAttribute('aria-label',title);label.append(input);form.append(label);return input;};
+const time=value=>value?new Date(value).toLocaleString('ar'):'';
+const empty=(root,text)=>root.append(el('p',text,'service-empty'));
+const events={'auth.register':'إنشاء حساب','auth.login':'تسجيل دخول','policy.change':'تغيير سياسة البيانات','files.upload':'رفع ملف','files.delete':'حذف ملف','secrets.set':'حفظ سر','secrets.delete':'حذف سر','user.disable':'تعطيل حساب','user.enable':'تفعيل حساب','user.revoke':'إنهاء جلسات','records.save':'حفظ سجل','records.delete':'حذف سجل','records.restore':'استعادة سجل','import':'استيراد البيانات','values':'حفظ بيانات الشاشة'};
+
+export function createLocalServiceManager({context,onChanged=()=>{}}){
+ let task='',capability='',capAt=0,epoch=0,host,service='',summary,session;const knowledgeDrafts=new Map();
+ async function request(path,body,{raw=false,retried=false}={}){
+  const taskId=context().taskId;if(!taskId)throw Error('احفظ التطبيق أولًا لتفعيل خدماته المحلية.');
+  if(task!==taskId){task=taskId;capability='';session=undefined;}
+  if(!capability||Date.now()-capAt>3300000){const response=await fetch('/api/mobile/local/admin?taskId='+encodeURIComponent(taskId),{headers:{'X-Loam-Mobile-Admin':'1'}});const data=await response.json();if(!response.ok)throw Error(data.error||'تعذر فتح خدمات المشروع');if(taskId!==context().taskId)throw Error('تغيّر المشروع');capability=data.capability;capAt=Date.now();}
+  const headers={'X-Loam-Mobile-Capability':capability};
+  if(body)headers['content-type']='application/json';
+  const url='/api/mobile/local/admin/'+path+(path.includes('?')?'&':'?')+'taskId='+encodeURIComponent(taskId);
+  const response=await fetch(url,{method:body?'POST':'GET',headers,body:body?JSON.stringify({...body,taskId}):undefined});
+  if(response.status===403&&!retried){capability='';return request(path,body,{raw,retried:true});}
+  if(raw&&response.ok)return response;
+  const data=await response.json();if(!response.ok)throw Error(data.error||'تعذر تنفيذ العملية');return data;
+ }
+ function status(root,message,error=false){const out=root.querySelector(':scope > output');if(!out)return;out.textContent=message;out.setAttribute('role',error?'alert':'status');}
+ async function perform(root,work,message){const operationTask=context().taskId;root.setAttribute('aria-busy','true');root.querySelectorAll('button').forEach(b=>b.disabled=true);status(root,'جارٍ تنفيذ العملية…');try{await work();if(context().taskId!==operationTask)return;onChanged();if(root===host&&root.isConnected){await render();status(root,message);}}catch(error){if(root===host)status(root,error.message,true);}finally{root.removeAttribute('aria-busy');root.querySelectorAll('button').forEach(b=>b.disabled=false);}}
+ function section(root,title,description){const box=el('section');box.append(el('h3',title));if(description)box.append(el('p',description,'help'));root.append(box);return box;}
+ function row(root,title,detail){const item=el('article',undefined,'service-row'),body=el('div');body.append(el('strong',title),el('small',detail));item.append(body);root.append(item);return item;}
+ function notify(){window.dispatchEvent(new CustomEvent('loam-local-services-changed',{detail:{taskId:task}}));}
+
+ function drawPolicy(root){
+  const box=section(root,'صلاحية الوصول إلى بيانات التطبيق','تغيير السياسة يحافظ على بيانات كل نطاق؛ لا ينقل البيانات المشتركة إلى المستخدمين.'),form=el('form'),label=el('label','سياسة البيانات'),select=el('select');select.setAttribute('aria-label','سياسة البيانات');select.append(new Option('مشتركة داخل التطبيق','shared'),new Option('خاصة بكل مستخدم مسجل','owner'));select.value=summary.policy;label.append(select);form.append(label,action('حفظ سياسة الوصول',()=>perform(root,async()=>{await request('policy',{policy:select.value});notify();},'حُفظت سياسة الوصول.')));box.append(form,el('p','النمط الخاص يتطلب تسجيل الدخول. الحسابات المعطلة والجلسات المنتهية تُرفض من الخادم.','help'));
+ }
+ function drawAuth(root){
+  const box=section(root,'حساب مستخدم التطبيق','حسابات هذا التطبيق مستقلة عن حساب Loam. تسجيل الدخول هنا يستخدم جلسة المعاينة نفسها.'),form=el('form'),email=field(form,'البريد الإلكتروني','email'),password=field(form,'كلمة المرور','password');password.maxLength=200;password.autocomplete='current-password';email.autocomplete='username';email.placeholder='name@example.com';
+  form.append(el('p','عند إنشاء حساب استخدم كلمة مرور من 10 أحرف على الأقل.','help'));
+  const controls=el('div',undefined,'actions');for(const [label,operation]of [['إنشاء حساب','register'],['تسجيل الدخول','login']])controls.append(action(label,()=>{if(!form.reportValidity())return;if(operation==='register'&&password.value.length<10){status(root,'استخدم كلمة مرور من 10 أحرف على الأقل.',true);return;}const credentials={action:operation,email:email.value,password:password.value};void perform(root,async()=>{session=await createLocalClient(task).auth(credentials);password.value='';notify();},operation==='register'?'أُنشئ الحساب وسُجل الدخول.':'تم تسجيل الدخول.');}));form.append(controls);form.onsubmit=e=>e.preventDefault();box.append(form);
+  if(session?.user){const current=section(root,'الجلسة الحالية');current.append(el('p',session.user.email,'help'));if(session.expiresAt)current.append(el('p','تنتهي: '+time(session.expiresAt),'help'));current.append(action('تسجيل الخروج',()=>perform(root,async()=>{await createLocalClient(task).auth({action:'logout'});session=undefined;},'أُغلقت الجلسة.')));}
+  root.append(el('p','مفتاح إدارة الاستوديو منفصل عن جلسة المستخدم ولا يُرسل إلى التطبيق.','help'));
+ }
+ function drawUsers(root){
+  if(!summary.users.length){empty(root,'لا توجد حسابات. أنشئ حسابًا من تبويب المصادقة أو من التطبيق.');return;}
+  const list=el('div',undefined,'service-list');root.append(list);
+  for(const user of summary.users){const item=row(list,user.email,(user.disabled?'معطّل':'نشط')+' · '+time(user.createdAt)),controls=el('div',undefined,'actions');controls.append(action(user.disabled?'تفعيل':'تعطيل',()=>perform(root,async()=>{await request('users',{action:user.disabled?'enable':'disable',userId:user.id});notify();},'حُدثت حالة الحساب.')),action('إنهاء الجلسات',()=>perform(root,async()=>{await request('users',{action:'revoke',userId:user.id});notify();},'أُلغيت جلسات هذا الحساب.')));item.append(controls);}
+ }
+ function drawFiles(root){
+  const box=section(root,'رفع ملف إلى مساحة التطبيق','الحد الأقصى 2 MB للملف و50 MB لهذا التطبيق. الملفات المرفوعة هنا ضمن النطاق المشترك.'),form=el('form'),file=field(form,'اختر ملفًا','file');form.append(action('رفع الملف',()=>{if(!form.reportValidity())return;const selected=file.files?.[0],uploadTask=task;if(!selected)return;if(selected.size>2_000_000){status(root,'حجم الملف أكبر من 2 MB.',true);return;}void perform(root,async()=>{const bytes=new Uint8Array(await selected.arrayBuffer());let encoded='';for(let start=0;start<bytes.length;start+=0x4000)encoded+=String.fromCharCode(...bytes.subarray(start,start+0x4000));if(context().taskId!==uploadTask)throw Error('تغيّر المشروع أثناء قراءة الملف؛ أعد الرفع في المشروع الصحيح.');await request('files',{action:'upload',name:selected.name,type:selected.type||'application/octet-stream',data:btoa(encoded)});},'رُفع الملف.');}));form.onsubmit=e=>e.preventDefault();box.append(form);
+  const list=el('div',undefined,'service-list');root.append(list);if(!summary.files.length)empty(list,'لا توجد ملفات مرفوعة.');
+  for(const file of summary.files){const item=row(list,file.name,Math.ceil(file.size/1000)+' KB · '+(file.owner==='shared'?'مشترك':file.owner)+' · '+time(file.createdAt)),controls=el('div',undefined,'actions');controls.append(action('تنزيل',()=>void perform(root,async()=>{const response=await request('files?id='+encodeURIComponent(file.id),undefined,{raw:true}),url=URL.createObjectURL(await response.blob()),link=el('a');link.href=url;link.download=file.name;link.click();setTimeout(()=>URL.revokeObjectURL(url),10000);},'بدأ تنزيل الملف.')),action('حذف',()=>{if(confirm('حذف الملف «'+file.name+'»؟'))void perform(root,()=>request('files',{action:'delete',id:file.id}),'حُذف الملف.');}));item.append(controls);}
+ }
+ function drawSecrets(root){
+  const box=section(root,'خزنة أسرار التطبيق','تُشفّر القيم على الخادم ولا تظهر في المصدر أو المعاينة أو سياق النموذج. الخزنة محلية على هذا الجهاز.'),form=el('form'),name=field(form,'اسم السر'),value=field(form,'قيمة السر','password');name.pattern='[A-Z][A-Z0-9_]*';name.maxLength=80;name.placeholder='API_KEY';name.dir='ltr';value.maxLength=10000;value.autocomplete='new-password';form.append(action('حفظ السر',()=>{if(!form.reportValidity())return;const secret={action:'set',name:name.value,value:value.value};void perform(root,async()=>{await request('secrets',secret);value.value='';},'حُفظ السر مشفرًا.');}));form.onsubmit=e=>e.preventDefault();box.append(form);
+  const list=el('div',undefined,'service-list');root.append(list);if(!summary.secrets.length)empty(list,'الخزنة فارغة.');for(const secret of summary.secrets){const item=row(list,secret.name,'آخر تحديث: '+time(secret.updatedAt));item.append(action('حذف',()=>{if(confirm('حذف السر «'+secret.name+'»؟'))void perform(root,()=>request('secrets',{action:'delete',name:secret.name}),'حُذف السر.');}));}
+ }
+ function drawLogs(root){const list=el('div',undefined,'service-list');root.append(list);if(!summary.logs.length)empty(list,'لا توجد عمليات مسجلة بعد.');for(const log of summary.logs){const item=row(list,events[log.event]||log.event,time(log.at)+' · '+log.actor);if(log.detail)item.append(el('small',log.detail));}}
+ async function drawKnowledge(root,serial){
+  const data=await request('knowledge');if(root!==host||serial!==epoch)return;
+  const box=section(root,'تعليمات المشروع','تُحفظ مع هذا التطبيق ويستخدمها النموذج في طلبات بنائه التالية. لا تضع كلمات المرور أو مفاتيح الخدمات هنا؛ استخدم خزنة الأسرار.'),form=el('form'),label=el('label','معرفة المشروع وتعليماته'),input=el('textarea'),count=el('small');input.id='project-knowledge';input.maxLength=16000;input.rows=9;input.setAttribute('aria-label','معرفة المشروع وتعليماته');input.placeholder='الجمهور المستهدف، نبرة المحتوى، قواعد العمل، وما يجب أن يحافظ عليه التطبيق…';input.value=knowledgeDrafts.get(task)??data.text;label.append(input);form.append(label,count);
+  const refreshCount=()=>{count.textContent=input.value.length.toLocaleString('ar')+' / ١٦٬٠٠٠'+(input.value!==data.text?' · مسودة غير محفوظة':'');};input.oninput=()=>{if(input.value===data.text)knowledgeDrafts.delete(task);else knowledgeDrafts.set(task,input.value);refreshCount();};refreshCount();
+  const controls=el('div',undefined,'actions');controls.append(action('حفظ معرفة المشروع',()=>{const text=input.value,knowledgeTask=task;void perform(root,async()=>{await request('knowledge',{text});knowledgeDrafts.delete(knowledgeTask);},'حُفظت معرفة المشروع للطلبات التالية.');}),action('إلغاء المسودة',()=>{knowledgeDrafts.delete(task);input.value=data.text;refreshCount();}));form.append(controls);form.onsubmit=e=>e.preventDefault();box.append(form,el('p',data.updatedAt?'آخر حفظ: '+time(data.updatedAt):'لم تُحفظ تعليمات خاصة لهذا المشروع بعد.','help'));
+ }
+ function drawAnalytics(root){
+  const data=summary.analytics;if(!data){empty(root,'لا تتوفر بيانات التحليل لهذا التطبيق بعد.');return;}
+  const box=section(root,'حالة الخدمات المحلية','هذه أعداد البيانات الحالية وعمليات الخادم المسجلة. لا نقيس الزيارات أو مشاهدات الصفحات أو مدة الاستخدام.'),stats=el('div',undefined,'service-stats');for(const [title,value]of [['السجلات الحالية',data.records],['الحسابات',data.users],['الحسابات المفعّلة',data.activeUsers],['الملفات',data.files],['حجم الملفات KB',Math.ceil(data.fileBytes/1000)]])stats.append(el('span',title+' · '+Number(value||0).toLocaleString('ar')));box.append(stats);
+  const activity=section(root,'نشاط الخدمات المسجل','الأعداد ضمن نافذة السجل المحتفظ بها وليست إجماليات مدى الحياة.');activity.append(el('p','العمليات المحتفظ بها: '+Number(data.window?.retainedEvents||0).toLocaleString('ar')+' · الحد: '+Number(data.window?.maxEvents||0).toLocaleString('ar'),'help'));if(data.window?.from)activity.append(el('p','من '+time(data.window.from)+' إلى '+time(data.window.to),'help'));
+  const list=el('div',undefined,'service-list');activity.append(list);if(!data.activity?.length)empty(list,'لم يُسجل نشاط خدمات بعد.');for(const day of data.activity||[])row(list,day.day,Number(day.events).toLocaleString('ar')+' عملية');
+  const operations=section(root,'العمليات حسب النوع'),types=el('div',undefined,'service-list');operations.append(types);if(!data.operations?.length)empty(types,'لا توجد عمليات مسجلة.');for(const operation of data.operations||[])row(types,events[operation.event]||operation.event,Number(operation.count).toLocaleString('ar'));
+ }
+ function drawFunctions(root){const box=section(root,'عمليات الخادم المتاحة','عمليات محددة ومتحقق منها على الخادم؛ ليست بيئة لتشغيل شيفرة عشوائية.');for(const operation of summary.operations)box.append(el('p',operation,'help'));box.append(el('p','جرّب الحفظ والحذف والاستعادة من الجداول. تظهر نتائج كل عملية في سجل الخدمة.','help'));
+  if(summary.collections.length){const label=el('label','مجموعة البيانات'),select=el('select'),result=el('pre');select.setAttribute('aria-label','مجموعة عملية الخادم');for(const c of summary.collections)select.append(new Option(c.title,c.id));label.append(select);const run=action('تشغيل records.list',async()=>{run.disabled=true;status(root,'جارٍ تشغيل العملية…');try{const data=await createLocalClient(task).service('functions',{name:'records.list',args:{collectionId:select.value}});if(root!==host)return;result.textContent=JSON.stringify(data,null,2);status(root,'نُفذت العملية بصلاحيات الجلسة الحالية.');}catch(error){if(root===host)status(root,error.message,true);}finally{run.disabled=false;}});box.append(label,run,result);}
+ }
+ async function drawTables(root){
+  const stats=el('div',undefined,'service-stats');for(const c of summary.collections)stats.append(el('span',c.title+' · '+c.count));root.append(el('p','الإجمالي عبر نطاقات التطبيق. القائمة أدناه تعرض بيانات الجلسة الحالية.','help'),stats);
+  const client=createLocalClient(task);try{await client.read();}catch(error){if(error.status!==401)throw error;}
+  if(root!==host||service!=='tables')return;
+  if(client.hasLegacy()){const card=section(root,'بيانات سابقة على هذا المتصفح','يمكن استيرادها صراحة إلى قاعدة البيانات المحلية إذا كان النطاق المشترك فارغًا. تبقى النسخة السابقة محفوظة في المتصفح.');card.classList.add('service-import');card.append(action('استيراد بيانات المتصفح السابقة',()=>{if(!confirm('استيراد النسخة السابقة إلى النطاق المشترك؟ لن تُستبدل أي بيانات موجودة على الخادم.'))return;void perform(root,async()=>{await client.importLegacy();notify();},'استُوردت البيانات؛ النسخة السابقة ما زالت محفوظة.');}));}
+ }
+ async function render(){
+  const serial=++epoch,root=host;if(!root)return;root.replaceChildren(el('output','جارٍ قراءة الخدمات المحلية…'));root.querySelector('output').setAttribute('aria-live','polite');
+  try{summary=await request('summary');if(serial!==epoch||root!==host||!root.isConnected)return;root.replaceChildren(el('output',''));root.querySelector('output').setAttribute('aria-live','polite');
+   if(service==='tables')await drawTables(root);else if(service==='knowledge')await drawKnowledge(root,serial);else if(service==='analytics')drawAnalytics(root);else if(service==='security')drawPolicy(root);else if(service==='authentication'){try{session=await createLocalClient(task).auth();}catch(error){if(error.status!==401)throw error;session=undefined;}if(serial!==epoch||root!==host)return;drawAuth(root);}else if(service==='users')drawUsers(root);else if(service==='storage')drawFiles(root);else if(service==='secrets')drawSecrets(root);else if(service==='logs')drawLogs(root);else if(service==='functions')drawFunctions(root);else if(service==='advanced'){root.append(el('p','SQLite · إصدار الترحيل '+summary.migration+' · '+summary.collections.length+' مجموعات بيانات','help'));drawPolicy(root);}
+   if(serial!==epoch||root!==host)return;const refresh=action('تحديث',()=>void render());refresh.className='service-refresh';root.append(refresh);
+  }catch(error){if(serial===epoch&&root===host){status(root,error.message,true);root.append(action('إعادة المحاولة',()=>void render()));}}
+ }
+ return{mount(root,next){host=root;service=next;root.classList.add('local-service');void render();},dispose(){epoch++;host=undefined;},refresh(){return render();},hasDraft:()=>knowledgeDrafts.size>0,confirmLeave(){if(!knowledgeDrafts.size)return true;if(!confirm('معرفة المشروع تحتوي على مسودة غير محفوظة. هل تريد تجاهلها؟'))return false;knowledgeDrafts.clear();return true;},reset(){epoch++;task='';capability='';session=undefined;host=undefined;knowledgeDrafts.clear();}};
+}

@@ -1,0 +1,21 @@
+# Bounded repair and actionable failure evidence
+
+The installed ticket trial `task_mveumcvtdbf76a7e226c` remained incomplete on runtime `9B774FC4158AF21534E20FA955041A3853109FB01FA591A15D75C0C024213898`. Observation `docs/evidence/bot-installed-tickets-fresh-full-gate-1792394086306.json` records terminal failure. The independent mobile scenario for trimmed titles and ascending IDs still failed at step 9 (`count`, `.ticket`). Baseline success did not override this failure. This is a recovery of the same task, not a fresh independent trial.
+
+Pending runtime changes allow at most two final repair attempts, persist the attempt count across recovery, and migrate an older used-repair checkpoint to one consumed attempt. Independent contracts remain frozen. Unavailable infrastructure does not consume a code repair. Every repair requires fresh final verification; exhausted attempts cannot release completion.
+
+Failure feedback now includes the report, exact failed step, and failure screenshot directly, selects failed checks only, and bounds diagnostic text. These fields are labelled untrusted data. The worker must preserve assertions and investigate the cause instead of weakening tests or inserting sleeps.
+
+Suspected application defect: a delayed create response clears input fields even if a later interaction has changed them. This is a hypothesis for the agent to investigate, not an established diagnosis. Generated application source was not manually repaired by the operator.
+
+Validation completed: `npm run verify` and `npm run build:server` passed, with the full log in `output/verification/bot-two-repair-verify-local.log`. The first sandbox run could not access Docker; it is retained separately and is not counted as a pass. The explicit final-repair resume suite also passed, including exhausted-budget recovery and legacy checkpoint migration.
+
+Installed runtime SHA256: `815A3286C0E4A9D6B0302DC88719B6033668CD333AE855D67606C05247207D4E`. Installer evidence: `output/verification/bot-install-20261019-103703/verification.json`, preserving the profile and 148 tasks. The same isolated ticket task is being resumed against its unchanged frozen acceptance checks; its real outcome remains pending.
+
+No world-class or external-agent parity claim follows from these changes. A pinned repeated cohort and direct reference comparison remain outstanding.
+
+The first resumed observation on this build (`bot-installed-tickets-fresh-full-gate-1792395455746.json`) ended at 07:41:57 UTC with `VisualReviewUnavailable`: two attempts for a screenshot batch timed out. All fourteen baseline interaction checks passed, but only twelve screenshots received a completed visual review. The runtime correctly withheld completion and did not consume a code-repair attempt. The remaining independent mobile defect therefore remains unresolved; this observation cannot establish either its repair or a regression. No screenshot was omitted from the required gate to obtain a pass.
+
+One subsequent recovery (`bot-installed-tickets-fresh-full-gate-1792395796648.json`) passed the complete baseline including all fourteen images at 07:46:02 UTC. Frozen independent acceptance again rejected mobile sequential creation at step 9. At 07:46:58 UTC the installed runtime emitted `revise` attempt 2 with the compact failure diagnostic and exact failed screenshot, then started the repair worker. This proves the deployed recovery policy reaches the second repair without resetting its budget or regenerating tests; it does not yet prove the application is repaired. Observer session 98533 remains active at this update.
+
+Terminal update: observer 98533 exited 1; task errored at 07:54:56 UTC after the second repair worker exhausted 24 steps. The last `file_edit` returned `find string not present`. Generated source had changed, but no final proof was obtained: archived index SHA256 `6201517C0FF6EB5AFED73461727E8656DB1115BF172081FC08BC79328C3C1933`. Archive `output/verification/bot-tickets-second-repair-exhausted-20261019` preserves the files and failed observation. No further recovery or extra repair allowance is being granted to this task. Filter continuation remains ineligible without a passing report.

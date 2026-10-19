@@ -1,0 +1,77 @@
+{
+ "suite": "companions-bench v1 (2026-10-18)",
+ "at": "2026-10-19T16:23:36.699Z",
+ "total": 6,
+ "passed": 6,
+ "failed": 0,
+ "completionRate": 1,
+ "userInterventions": 0,
+ "wallMs": 1178,
+ "toolCalls": 14,
+ "byLanguage": {
+  "ar": {
+   "total": 3,
+   "passed": 3
+  },
+  "en": {
+   "total": 3,
+   "passed": 3
+  }
+ },
+ "results": [
+  {
+   "id": "doc-ar",
+   "lang": "ar",
+   "pass": true,
+   "reason": "ok",
+   "ms": 171,
+   "toolCalls": 2,
+   "taskDone": true
+  },
+  {
+   "id": "memory-ar",
+   "lang": "ar",
+   "pass": true,
+   "reason": "ok",
+   "ms": 156,
+   "toolCalls": 2,
+   "taskDone": true
+  },
+  {
+   "id": "task-en",
+   "lang": "en",
+   "pass": true,
+   "reason": "ok",
+   "ms": 160,
+   "toolCalls": 2,
+   "taskDone": true
+  },
+  {
+   "id": "data-en",
+   "lang": "en",
+   "pass": true,
+   "reason": "ok",
+   "ms": 166,
+   "toolCalls": 3,
+   "taskDone": true
+  },
+  {
+   "id": "device-ar",
+   "lang": "ar",
+   "pass": true,
+   "reason": "ok",
+   "ms": 156,
+   "toolCalls": 3,
+   "taskDone": true
+  },
+  {
+   "id": "delegate-en",
+   "lang": "en",
+   "pass": true,
+   "reason": "ok",
+   "ms": 369,
+   "toolCalls": 2,
+   "taskDone": true
+  }
+ ]
+}

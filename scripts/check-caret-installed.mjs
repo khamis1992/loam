@@ -1,0 +1,33 @@
+import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import {chromium} from 'playwright';
+const expectedVersion=JSON.parse(await fs.readFile('package.json','utf8')).version;
+const base='http://127.0.0.1:3939',out=`output/word-caret-preview/${expectedVersion}`;
+await fs.mkdir(out,{recursive:true});
+const identity=await (await fetch(base+'/api/identity')).json();assert.equal(identity.version,expectedVersion);
+const {task}=await (await fetch(base+'/api/tasks/draft',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({mode:'write',title:'التعديل داخل معاينة Word — اختبار النسخة '+expectedVersion})})).json();
+const imported=await fetch(base+'/api/studio/import?taskId='+task.id+'&name=complex-inline.docx&expectedRevision=0',{method:'POST',headers:{'content-type':'application/octet-stream'},body:await fs.readFile('output/word-native-preview/complex-source.docx')});assert.ok(imported.ok,await imported.clone().text());
+await fs.writeFile(out+'/installed-task.json',JSON.stringify({taskId:task.id,version:identity.version},null,2));
+const browser=await chromium.launch({channel:'msedge',headless:true});
+
+try{
+ const page=await browser.newPage({viewport:{width:1500,height:1100}});await page.goto(base+'/#/tasks/'+task.id);await page.locator('[data-action=read-document]').click();
+ const frame=()=>page.frameLocator('iframe.office-file-preview');const ready=async()=>{await frame().locator('.word-page').first().waitFor({timeout:150000});await frame().locator('#status').waitFor({state:'hidden',timeout:150000});};await ready();let revision=1;
+ const previewTimings=[];const saved=async()=>{const started=Date.now();revision++;await page.locator('[data-status]').filter({hasText:'الإصدار '+revision}).waitFor({timeout:150000});await ready();previewTimings.push({revision,milliseconds:Date.now()-started});console.log('Word preview ready at revision '+revision+' in '+(Date.now()-started)+' ms');};
+ await frame().locator('[data-target="0/text"]').first().click();await frame().getByRole('textbox',{name:'الكتابة داخل السطر'}).fill('Annual operating report — direct caret editing');await frame().locator('[data-caret-save]').click();await saved();
+ await frame().locator('[data-target="2/stat/0/value"]').first().click();await frame().getByRole('textbox',{name:'الكتابة داخل السطر'}).fill('98%');await frame().locator('[data-caret-save]').click();await saved();
+ await frame().locator('[data-target="4/cell/23/2"]').first().click();await frame().getByRole('textbox',{name:'الكتابة داخل السطر'}).fill('Caret verified');await frame().locator('[data-caret-save]').click();await saved();
+ await frame().locator('[data-target="6/text"]').first().click();const caret=frame().getByRole('textbox',{name:'الكتابة داخل السطر'});await caret.fill('Landscape dashboard — revised cells and illustration');await frame().locator('[data-caret-insert]').click();await frame().locator('[data-cancel]').last().click();assert.equal(await caret.innerText(),'Landscape dashboard — revised cells and illustration');await caret.press('Home');for(let i=0;i<10;i++)await caret.press('ArrowRight');await frame().locator('[data-caret-insert]').click();await frame().locator('[data-inline-text]').fill('INSERTED AT THE TEXT CARET');await frame().locator('[data-commit]').click();await saved();
+ const drag=async(index,dx,dy)=>{const handle=frame().locator(`[data-drag-index="${index}"]`);await handle.scrollIntoViewIfNeeded();const box=(await handle.boundingBox());await page.mouse.move(box.x+10,box.y+10);await page.mouse.down();await page.mouse.move(box.x+10+dx,box.y+10+dy,{steps:8});await page.mouse.up();await saved();};
+ const cancelHandle=frame().locator('[data-drag-index="10"]');await cancelHandle.scrollIntoViewIfNeeded();const cancelBox=await cancelHandle.boundingBox();await page.mouse.move(cancelBox.x+10,cancelBox.y+10);await page.mouse.down();await page.mouse.move(cancelBox.x+80,cancelBox.y+70,{steps:4});await page.keyboard.press('Escape');await page.mouse.up();assert.equal(await frame().locator('.word-drag-ghost').count(),0);const cancelled=await (await fetch(base+'/api/studio?taskId='+task.id)).json();assert.equal(cancelled.artifact.revision,revision);
+ await drag(10,130,70);await drag(2,8,45);
+ const keyboardImage=frame().locator('[data-drag-index="10"]');await keyboardImage.scrollIntoViewIfNeeded();await keyboardImage.press('ArrowRight');await keyboardImage.press('Escape');assert.equal(await frame().locator('.word-drag-ghost').count(),0);await keyboardImage.press('ArrowRight');await keyboardImage.press('Shift+ArrowDown');await keyboardImage.press('Enter');await saved();
+ const landscape=frame().locator('.word-page[data-page="4"] canvas');await landscape.scrollIntoViewIfNeeded();const landscapeBox=(await landscape.boundingBox());await landscape.dblclick({position:{x:landscapeBox.width*.67,y:landscapeBox.height*.65}});await frame().locator('[data-new-type]').selectOption('stats');await frame().locator('[data-commit]').click();await saved();
+ const {artifact:a}=await (await fetch(base+'/api/studio?taskId='+task.id)).json();if(a.kind!=='document')throw Error();assert.match(a.content.blocks[0].text,/direct caret/);assert.equal(a.content.blocks[2].items[0].value,'98%');assert.ok(a.content.blocks[2].position);assert.ok(a.content.blocks.find(b=>b.type==='image').position);assert.equal(a.content.blocks[7].text,'INSERTED AT THE TEXT CARET');assert.equal(a.content.blocks[6].text+a.content.blocks[8].text,'Landscape dashboard — revised cells and illustration');assert.equal(a.content.blocks.filter(b=>b.position).length,3);
+ for(const [endpoint,ext] of [['export','docx'],['preview','pdf']]){const response=await fetch(base+'/api/studio/'+endpoint+'?taskId='+task.id);assert.ok(response.ok);await fs.writeFile(out+'/installed-caret.'+ext,Buffer.from(await response.arrayBuffer()));}
+ await fs.writeFile(out+'/installed-artifact.json',JSON.stringify(a,null,2));
+ for(let i=0;i<await frame().locator('canvas').count();i++){const data=await frame().locator('canvas').nth(i).evaluate(e=>e.toDataURL());await fs.writeFile(`${out}/installed-page-${i+1}.png`,Buffer.from(data.split(',')[1],'base64'));}
+ await fs.writeFile(out+'/installed-result.json',JSON.stringify({version:identity.version,taskId:task.id,revision:a.revision,pages:await frame().locator('.word-page').count(),previewTimings},null,2));
+ await frame().locator('[data-target="0/text"]').first().click();await page.screenshot({path:out+'/installed-browser-caret.png'});await frame().locator('[data-caret-cancel]').click();
+ console.log('PASS installed direct text/card/cell caret, mid-paragraph insertion, native Word image/card coordinates, regenerated preview');
+}finally{await browser.close();}

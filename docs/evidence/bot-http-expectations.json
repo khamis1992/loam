@@ -1,0 +1,260 @@
+{
+  "at": "2026-10-18T23:48:15.593Z",
+  "workspace": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-http-expectations-MbDhis",
+  "visualJudgment": "fixture; browser and Node backend are real",
+  "good": {
+    "pass": true,
+    "reason": "fixture visual approval",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-http-expectations-MbDhis\\.verification\\2c2387f8-b9ee-4de3-9813-9fd8a2b4f591\\report.json",
+    "elapsedMs": 9700,
+    "usage": {
+      "promptTokens": 1,
+      "completionTokens": 1,
+      "durationMs": 1
+    },
+    "checks": [
+      {
+        "viewport": "desktop",
+        "scenario": "Overdraw rejected",
+        "pass": true,
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/withdraw",
+            "status": 409
+          }
+        ]
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "Overdraw rejected",
+        "pass": true,
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/withdraw",
+            "status": 409
+          }
+        ]
+      }
+    ],
+    "screenshots": [
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-http-expectations-MbDhis\\.verification\\2c2387f8-b9ee-4de3-9813-9fd8a2b4f591\\desktop-0.png",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-http-expectations-MbDhis\\.verification\\2c2387f8-b9ee-4de3-9813-9fd8a2b4f591\\mobile-0.png"
+    ],
+    "errors": [],
+    "runtime": {
+      "type": "node",
+      "isolation": "docker-network-none",
+      "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+      "freshBackendPerScenario": true
+    },
+    "visual": {
+      "model": "fixture",
+      "verdict": {
+        "verdict": "pass",
+        "reason": "fixture visual approval",
+        "issues": []
+      },
+      "response": "{\"verdict\":\"pass\",\"reason\":\"fixture visual approval\",\"issues\":[]}",
+      "attempts": 1
+    },
+    "sourceHashes": {
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-http-expectations-MbDhis\\app-verification.json": "ba45155e76913e8d5183ef572e7e4da3f7ab93f3dbb88967a5234c02eedbbd34",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-http-expectations-MbDhis\\index.html": "c4466fb0191afef53e993e5ec2e96772261fc1502f86acdd6944782d7da482e3",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-http-expectations-MbDhis\\server.mjs": "3dbad1445f328338fbb965cead5b16122455667ed1126e4f3157742bfa2bf52f"
+    }
+  },
+  "serverFailure": {
+    "pass": false,
+    "reason": "Error: Application interaction/runtime checks failed; inspect report and repair",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-http-expectations-MbDhis\\.verification\\0778f533-10ba-4514-a658-b1468d2abc40\\report.json",
+    "elapsedMs": 18722,
+    "usage": {
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "durationMs": 0
+    },
+    "checks": [
+      {
+        "viewport": "desktop",
+        "scenario": "Overdraw rejected",
+        "pass": false,
+        "error": "Error: Expected HTTP responses were not observed with exact counts",
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/withdraw",
+            "status": 500
+          }
+        ]
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "Overdraw rejected",
+        "pass": false,
+        "error": "Error: Expected HTTP responses were not observed with exact counts",
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/withdraw",
+            "status": 500
+          }
+        ]
+      }
+    ],
+    "screenshots": [],
+    "errors": [
+      "HTTP 500 http://127.0.0.1:58528/api/withdraw",
+      "Error: Expected HTTP responses were not observed with exact counts",
+      "HTTP 500 http://127.0.0.1:58528/api/withdraw",
+      "Error: Expected HTTP responses were not observed with exact counts"
+    ],
+    "runtime": {
+      "type": "node",
+      "isolation": "docker-network-none",
+      "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+      "freshBackendPerScenario": true
+    }
+  },
+  "missingRejection": {
+    "pass": false,
+    "reason": "Error: Application interaction/runtime checks failed; inspect report and repair",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-http-expectations-MbDhis\\.verification\\2bb9acbf-4571-4dee-b8ee-46e443d40032\\report.json",
+    "elapsedMs": 18548,
+    "usage": {
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "durationMs": 0
+    },
+    "checks": [
+      {
+        "viewport": "desktop",
+        "scenario": "Overdraw rejected",
+        "pass": false,
+        "error": "Error: Expected HTTP responses were not observed with exact counts",
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/withdraw",
+            "status": 200
+          }
+        ]
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "Overdraw rejected",
+        "pass": false,
+        "error": "Error: Expected HTTP responses were not observed with exact counts",
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/withdraw",
+            "status": 200
+          }
+        ]
+      }
+    ],
+    "screenshots": [],
+    "errors": [
+      "Error: Expected HTTP responses were not observed with exact counts",
+      "Error: Expected HTTP responses were not observed with exact counts"
+    ],
+    "runtime": {
+      "type": "node",
+      "isolation": "docker-network-none",
+      "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+      "freshBackendPerScenario": true
+    }
+  },
+  "wrongCount": {
+    "pass": false,
+    "reason": "Error: Application interaction/runtime checks failed; inspect report and repair",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-http-expectations-MbDhis\\.verification\\c63b8af7-215d-4c35-b95a-bd4eecc45f46\\report.json",
+    "elapsedMs": 18759,
+    "usage": {
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "durationMs": 0
+    },
+    "checks": [
+      {
+        "viewport": "desktop",
+        "scenario": "Overdraw rejected",
+        "pass": false,
+        "error": "Error: Expected HTTP responses were not observed with exact counts",
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/withdraw",
+            "status": 409
+          }
+        ]
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "Overdraw rejected",
+        "pass": false,
+        "error": "Error: Expected HTTP responses were not observed with exact counts",
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/withdraw",
+            "status": 409
+          }
+        ]
+      }
+    ],
+    "screenshots": [],
+    "errors": [
+      "Error: Expected HTTP responses were not observed with exact counts",
+      "Error: Expected HTTP responses were not observed with exact counts"
+    ],
+    "runtime": {
+      "type": "node",
+      "isolation": "docker-network-none",
+      "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+      "freshBackendPerScenario": true
+    }
+  }
+}

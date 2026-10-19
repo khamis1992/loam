@@ -1,0 +1,9 @@
+import fs from 'node:fs/promises';import assert from 'node:assert/strict';import JSZip from 'jszip';
+import {part,first,all,serialize,A} from '../studio/ooxml.js';import {importStudio} from '../studio/import.js';import {exportStudio} from '../studio/export.js';import {renderSlidePreview} from '../studio/slide-preview.js';
+const out='output/office-frontier',zip=await JSZip.loadAsync(await fs.readFile(out+'/slides-with-table.pptx')),doc=await part(zip,'ppt/slides/slide1.xml'),cells=all(first(doc,A,'tbl'),A,'tc');
+cells[0].setAttribute('gridSpan','2');cells[1].setAttribute('hMerge','1');for(const t of all(cells[1],A,'t'))t.textContent='';
+const empty=cells[cells.length-1];for(const run of all(empty,A,'r'))run.parentNode.removeChild(run);
+zip.file('ppt/slides/slide1.xml',serialize(doc));const source=await zip.generateAsync({type:'nodebuffer'}),workspace=await fs.mkdtemp(out+'/complex-slide-table-');
+const artifact=await importStudio(workspace,source,'merged-empty.pptx',0);if(artifact.kind!=='presentation')throw Error();const targets=artifact.content.slides[0]!.tableCells!;assert.equal(targets.length,cells.length-1);assert.ok(Number(targets[0]!.w)>Number(targets[1]!.w)*1.9);assert.equal(targets.at(-1)!.text,'');
+targets[0]!.text='ملخص المؤشرات';targets.at(-1)!.text='تمت المراجعة';const output=await exportStudio(artifact,workspace);await fs.writeFile(out+'/original-table-merged-edited.pptx',output.buffer);const result=await part(await JSZip.loadAsync(output.buffer),'ppt/slides/slide1.xml'),after=all(first(result,A,'tbl'),A,'tc');assert.equal(after[0].getAttribute('gridSpan'),'2');assert.equal(after[1].getAttribute('hMerge'),'1');assert.equal(first(after.at(-1),A,'t').textContent,'تمت المراجعة');
+await fs.writeFile(out+'/original-table-merged-native.png',await renderSlidePreview(output.buffer,1));console.log('PASS merged target geometry, continuation exclusion, empty-cell insertion, preserved merge and native PowerPoint render');

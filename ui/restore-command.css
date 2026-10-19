@@ -699,3 +699,40 @@ body { line-height:normal; }
 .studio-task-context{padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--panel)}
 .studio-task-context a{font-size:13px;color:var(--accent)}
 .studio-task-context p{font-size:12px;color:var(--muted);margin:8px 0 0}
+/* One navigation column: destinations, tools, then recent work. */
+.loam-shell .sidebar{width:280px;min-width:280px;flex-direction:column}
+.loam-shell .sidebar .sidebar-panel{width:100%;padding:16px 14px 12px;gap:12px;overflow-y:auto;display:flex}
+.loam-shell .sidebar.collapsed{display:none}
+.loam-shell .sidebar .side-top{min-height:36px;flex-shrink:0}
+.loam-shell .sidebar .logo-title{font-size:20px;letter-spacing:0}
+.loam-shell .sidebar .logo-sub{font-family:inherit;font-size:10px;letter-spacing:0;line-height:1.6;margin-top:2px}
+.loam-shell .sidebar #navBack,.loam-shell .sidebar #navFwd{display:none}
+.loam-shell .sidebar #collapseBtn{display:inline-flex;min-width:32px;min-height:32px}
+.workspace-nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
+.workspace-nav a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:10px 4px;border-radius:9px;color:var(--muted);font-size:12px;min-height:58px}
+.workspace-nav a:hover,.workspace-nav a.active,.workspace-tools a:hover,.workspace-tools a.active{background:var(--panel-2);color:var(--accent)}
+.workspace-tools{flex-shrink:0;border-block:1px solid var(--border);padding-block:6px}
+.workspace-tools summary{display:flex;align-items:center;gap:9px;cursor:pointer;padding:8px 5px;color:var(--muted);font-size:12px;list-style:none;min-height:36px}
+.workspace-tools summary::-webkit-details-marker{display:none}
+.workspace-tools summary::after{content:'⌄';margin-inline-start:auto}
+.workspace-tools[open] summary::after{content:'⌃'}
+.workspace-tools nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;padding-bottom:6px}
+.workspace-tools a{display:flex;align-items:center;gap:8px;border-radius:7px;padding:9px 6px;font-size:12px;color:var(--muted)}
+.workspace-nav a:focus-visible,.workspace-tools summary:focus-visible,.workspace-tools a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.loam-shell .sidebar .side-section{min-height:110px}
+.loam-shell .sidebar .side-list .item{min-height:37px;flex-shrink:0;background:transparent;padding:8px 6px;font-weight:500}
+.loam-shell .sidebar .side-list .item:hover,.loam-shell .sidebar .side-list .item.active{background:var(--panel-2)}
+.loam-shell .sidebar .side-list .pill{font-size:10px;padding:1px 6px}
+.loam-shell .sidebar .side-foot{border-top:1px solid var(--border);padding-top:10px;flex-shrink:0}
+.loam-shell .sidebar .side-foot select{min-width:0;flex:1;width:100%;font-size:11px}
+.loam-shell .sidebar .user-chip{flex-shrink:0}
+@media(max-width:900px){.loam-shell .sidebar{display:none}.loam-shell .sidebar.open{display:flex;width:min(280px,100vw)!important;min-width:0;position:fixed;inset-block:0;inset-inline-start:0;z-index:40}.loam-shell .sidebar.open .sidebar-panel{display:flex;width:100%}}
+/* A persistent route back/home path, independent of the side panel and iframe. */
+.journey-nav{display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-shrink:0;min-height:48px;padding:7px 24px;border-bottom:1px solid var(--border);font-size:12px;background:var(--bg-2)}
+.journey-nav[hidden]{display:none}
+.journey-nav button{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:5px 12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);font:inherit;cursor:pointer}
+.journey-nav a{color:var(--accent);padding-block:7px}.journey-nav [aria-current]{color:var(--muted);overflow-wrap:anywhere;min-width:0}
+.journey-nav [data-journey-parent]:empty{display:none}.journey-nav [aria-current]::before,.journey-nav [data-journey-parent]:not(:empty)::before{content:'/';margin-inline-end:12px;color:var(--muted)}
+.journey-nav a:focus-visible,.journey-nav button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media(max-width:720px){.journey-nav{padding:6px 12px;gap:9px;font-size:11px}.journey-nav [aria-current]{flex-basis:100%}.journey-nav [aria-current]::before{content:none}}
+.app-updates h2{margin:0;font-size:18px}.update-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.update-heading [data-update-badge]{color:var(--accent);font-size:12px}.update-actions{display:flex;gap:10px;flex-wrap:wrap}.app-updates progress{width:100%;accent-color:var(--accent);height:10px}.app-updates [hidden]{display:none}.app-updates [data-update-status]{min-height:24px;overflow-wrap:anywhere}

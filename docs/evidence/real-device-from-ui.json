@@ -1,0 +1,32 @@
+{
+ "at": "2026-10-19T16:10:50.628Z",
+ "title": "جهاز مستقل حقيقي من الواجهة + جولة حية",
+ "device": {
+  "id": "dev_mvfg52s375dc4a",
+  "agent": "مطور تطبيقات (from developer template)",
+  "template": "coding",
+  "provider": "wsl2-real"
+ },
+ "golden": {
+  "path": "AppData/Roaming/manus-local/data/devices/golden-linux.tar",
+  "size": "265MB",
+  "preparedVia": "POST /api/companion-devices/golden (wsl --export Ubuntu-24.04)"
+ },
+ "flow": [
+  "POST /api/agents/from-template (developer) → companion created",
+  "POST /api/companion-devices/golden → golden prepared (265MB)",
+  "POST /api/companion-devices → device provisioning → running (13s)",
+  "POST /api/chat (own_device, glm-5.3-flash:cloud) → LIVE run",
+  "device_write_file → proof.md written inside the ISOLATED WSL2 device",
+  "device_read_file → content verified: «جهاز المساعد يعمل فعليًا — دليل حي»",
+  "device_pull_file → artifact delivered to the task workspace"
+ ],
+ "verified": {
+  "done": true,
+  "deviceIdMatch": true,
+  "wrote": true,
+  "read": true,
+  "pulled": true,
+  "model": "glm-5.3-flash:cloud"
+ }
+}

@@ -37,6 +37,8 @@ export interface Task {
   projectId?: string | null;
   /** Owning agent (bot) for one-thread-per-agent continuity; null/undefined = base agent. */
   agentId?: string | null;
+  /** Delegator agent id when this task was created by companion_delegate. */
+  delegatedByAgentId?: string;
   createdAt: string;
   updatedAt: string;
   messages: TaskMessage[];
@@ -51,6 +53,13 @@ export interface Schedule {
   nextRunAt: string;
   lastRunAt?: string;
   lastTaskId?: string;
+  /** Frontier stage 4: routines belong to a companion (continuous mode). */
+  agentId?: string;
+  /** Where the routine executes: app workspace or the companion's own device. */
+  workMode?: string;
+  /** Frontier 16: event-driven routines. */
+  kind?: "cron" | "file-watch" | "service-watch";
+  watchPath?: string;
 }
 
 
@@ -78,6 +87,7 @@ export function createTask(prompt: string, title?: string, projectId?: string | 
   const task: Task = { id: newId("task"), title: (title ?? prompt).slice(0, 80), prompt, status: "queued", projectId: projectId ?? null, agentId: agentId ?? null, createdAt: now, updatedAt: now, messages: [], steps: [] };
   put("tasks", task); return task;
 }
+export function setTaskDelegator(id: string, delegatedByAgentId: string): void { editTask(id, t => { t.delegatedByAgentId = delegatedByAgentId; }); }
 export function getTask(id: string): Task | undefined { return get<Task>("tasks", id); }
 export function setTaskMode(id: string, mode: string): void { editTask(id, t => { t.mode = mode; }); }
 export function setTaskWorkspace(id: string, workspace: string): void { editTask(id, t => { if (t.workspace && t.workspace !== workspace) throw new Error("task workspace is immutable"); t.workspace = workspace; }); }
@@ -85,6 +95,10 @@ export function listTasks(projectId?: string | null): Task[] { return all<Task>(
 export function setTaskProject(id: string, projectId: string | null): void { editTask(id, (t) => { t.projectId = projectId; }); }
 export function appendStep(id: string, step: StepRecord): void { editTask(id, (t) => { t.steps.push(step); }); }
 export function appendMessage(id: string, role: TaskMessage["role"], content: string): void { editTask(id, (t) => { t.messages.push({role, content, at: new Date().toISOString()}); }); }
+export function setTaskAgent(id: string, agentId: string | null): void {
+  editTask(id, (t) => { if (agentId) t.agentId = agentId; else delete t.agentId; });
+}
+
 export function setTaskStatus(id: string, status: TaskStatus, extra?: {model?: string; error?: string}): void {
   editTask(id, (t) => { t.status = status; if (["queued", "running", "done"].includes(status)) delete t.error; if (extra?.model) t.model = extra.model; if (extra?.error) t.error = extra.error; });
 }
@@ -99,9 +113,16 @@ export function updateProject(id: string, patch: {name?: string; instruction?: s
 export function deleteProjectR(id: string): boolean {
   return transaction(() => { const removed = remove("projects",id); for (const t of listTasks(id)) { t.projectId = null; put("tasks",t); } return removed; });
 }
-export function addSchedule(prompt: string, intervalSeconds: number): Schedule {
+export function addSchedule(prompt: string, intervalSeconds: number, agentId?: string, workMode?: string, kind?: "cron" | "file-watch" | "service-watch", watchPath?: string, enabled = true): Schedule {
   const interval = Math.max(30, Math.floor(intervalSeconds));
-  const s: Schedule = {id:newId("sched"),prompt,intervalSeconds:interval,enabled:true,nextRunAt:new Date(Date.now()+interval*1000).toISOString()}; put("schedules",s); return s;
+  const s: Schedule = {id:newId("sched"),prompt,intervalSeconds:interval,enabled,nextRunAt:new Date(Date.now()+interval*1000).toISOString(),...(agentId?{agentId}:{}),...(workMode?{workMode}:{}),...(kind?{kind}:{}),...(watchPath?{watchPath}:{})}; put("schedules",s); return s;
+}
+export function setScheduleEnabled(id: string, enabled: boolean): boolean {
+  return transaction(() => { const s = get<Schedule>("schedules", id); if (!s) return false; s.enabled = enabled; if (enabled && s.nextRunAt && Date.parse(s.nextRunAt) < Date.now()) s.nextRunAt = new Date(Date.now() + s.intervalSeconds * 1000).toISOString(); put("schedules", s); return true; });
+}
+/** Test helper: force a schedule's next run time (scheduler gates). */
+export function setScheduleNextRunAt(id: string, at: string): boolean {
+  return transaction(() => { const s = get<Schedule>("schedules", id); if (!s) return false; s.nextRunAt = at; put("schedules", s); return true; });
 }
 export function listSchedules(): Schedule[] { return all<Schedule>("schedules"); }
 export function deleteSchedule(id: string): boolean { return remove("schedules",id); }

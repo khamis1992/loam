@@ -1,4 +1,9 @@
 import { createLoamTools } from "../tools/loam.js";
+import { createLoamServiceTools } from "../tools/loamServices.js";
+import { createCreativeTools } from "../tools/creative.js";
+import { createCreativeStudioTools } from "../tools/creativeStudio.js";
+import { createOfficeTools } from "../tools/officeTools.js";
+import { createMobileTools } from "../tools/mobile.js";
 import path from "node:path";
 import type { Config } from "../config.js";
 import { log } from "../log.js";
@@ -28,6 +33,7 @@ import { createPreviewTools } from "../tools/preview.js";
 import { createRorkTools } from "../tools/rork.js";
 import { createFrontierBridgeTools } from "../tools/frontierBridge.js";
 import { writeGate } from "../server/pending.js";
+import { createIntegrationTools } from '../tools/integrations.js';
 
 export interface Runtime {
   cfg: Config;
@@ -43,12 +49,13 @@ export interface Runtime {
 }
 
 export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): Promise<Runtime> {
-  const ollama = new OllamaClient(cfg.ollamaUrl);
+  const ollama = new OllamaClient(cfg.ollamaUrl, cfg.cloudModel);
   await initPty();
   log.info(`pty: ${ptyStatus()}`);
 
   const registry = new ToolRegistry();
-  registry.registerAll([...fileTools, ...shellTools, ...ptyTools, ...webTools, ...browserTools, ...computerUseTools, ...attachmentTools(), ...symbolTools(), ...pentestTools(), ...mirofishTools()]);
+  registry.registerAll([...fileTools, ...shellTools, ...ptyTools, ...webTools, ...browserTools, ...computerUseTools, ...attachmentTools(), ...symbolTools(), ...pentestTools()]);
+  registry.registerAll(mirofishTools().map(tool => ({ ...tool, integration: true })));
 
   const embedder = new OllamaEmbedder(cfg.ollamaUrl, cfg.memory.model);
   const memory = cfg.memory.enabled
@@ -66,14 +73,20 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createSkillTools({ gate }));
   registry.registerAll(sessionTools);
   registry.registerAll(createLoamTools());
+  registry.registerAll(createLoamServiceTools());
+  registry.registerAll(createCreativeTools());
+  registry.registerAll(createCreativeStudioTools());
+  registry.registerAll(createOfficeTools());
+  registry.registerAll(createMobileTools());
   if (cfg.screen.enabled) registry.registerAll(createScreenTools(screenLive, cfg));
   const preview = new PreviewService();
   registry.registerAll(createPreviewTools(preview));
-  registry.registerAll(createRorkTools(preview));
-  registry.registerAll(createFrontierBridgeTools(preview));
+  registry.registerAll(createRorkTools(preview).map(tool => ({ ...tool, integration: true })));
+  registry.registerAll(createFrontierBridgeTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createSubagentTools(ollama, registry));
 
   const mcp = opts.mcp === false ? null : await registerMcpTools(registry, cfg.mcpServers, cfg.workspace);
+  registry.registerAll(createIntegrationTools(registry));
 
   return {
     cfg,

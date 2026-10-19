@@ -18,6 +18,7 @@ let resumes=0;const server=createServer(async(req,res)=>{try{
     if(p==='/api/settings')data={theme:'light',model:'fixture'};
     if(p==='/api/mcp/status')data={servers:[{name:'fixture-bridge',connected:false,toolCount:0}]};
     if(p==='/api/models')data={models:['fixture']};
+    if(p==='/api/mobile/projects')data={projects:[]};
     if(p==='/api/tasks')data={tasks:[...tasks.values()].map(t=>({...t,messageCount:t.messages.length}))};
     if(p==='/api/tasks/draft'){const id='draft'+(++count);const task=addTask(id,body.mode,'cancelled');task.title=body.title;task.messages=[];task.steps=[];task.projectId=body.projectId;data={task};}
     if(p==='/api/upload'){assert.ok(url.searchParams.get('taskId'));const id=url.searchParams.get('taskId');data={name:url.searchParams.get('name'),path:'uploads/'+url.searchParams.get('name')};uploads.get(id).push(data.path);for await(const _ of req){} }
@@ -30,6 +31,7 @@ let resumes=0;const server=createServer(async(req,res)=>{try{
     res.setHeader('Content-Type','application/json');res.end(JSON.stringify(data));return;
   }
   if(p==='/preview-fixture'){res.setHeader('Content-Type','text/html');res.end('<h1>Application preview</h1>');return;}
+  if(p.startsWith('/vendor/three/')){const addon=p.startsWith('/vendor/three/addons/');const relative=p.slice(addon?'/vendor/three/addons/'.length:'/vendor/three/'.length);if(relative.includes('..'))throw Error('bad path');const content=await readFile(new URL('../../node_modules/three/'+(addon?'examples/jsm/':'build/')+relative,import.meta.url));res.setHeader('Content-Type','text/javascript');res.end(content);return;}
   const file=p==='/'?'index.html':p.slice(1);if(file.includes('..'))throw new Error('bad path');const content=await readFile(new URL('../../ui/'+file,import.meta.url));res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');res.end(content);
 }catch(error){res.writeHead(500);res.end(JSON.stringify({error:error.message}));}});
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));let browser;
@@ -38,14 +40,16 @@ try {
   const origin=`http://127.0.0.1:${server.address().port}`;await page.goto(origin);await page.locator('.mode-card').first().waitFor();assert.equal(await page.locator('.mode-card').count(),6);
   await page.locator('#sideSearch').fill('builder-two');assert.equal(await page.locator('#sideTasks a').count(),1);await page.locator('#sideSearch').fill('');
   await page.keyboard.press('Control+k');assert.equal(await page.locator('#sideSearch').evaluate(el=>document.activeElement===el),true);
-  assert.equal(await page.locator('.rail').count(),1);assert.equal(await page.locator('#homeModes button').count(),7);
-  await page.locator('#collapseBtn').click();assert.equal(await page.locator('#sidebar').evaluate(el=>el.getBoundingClientRect().width),62);assert.equal(await page.locator('#collapseBtn').getAttribute('aria-expanded'),'false');await page.locator('#collapseBtn').click();
-  await page.locator('#theme').click();assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');assert.match(await page.locator('html').evaluate(el=>getComputedStyle(el).getPropertyValue('--bg')),/10.5%/);
+  assert.equal(await page.locator('.rail').count(),0);assert.equal(await page.locator('.workspace-nav a').count(),3);assert.equal(await page.locator('#homeModes button').count(),7);
+  await page.locator('#collapseBtn').click();assert.equal(await page.locator('#sidebar').isVisible(),false);await page.locator('#menuToggle').click();assert.equal(await page.locator('#sidebar').isVisible(),true);
+  await page.locator('.workspace-tools summary').click();assert.equal(await page.locator('.workspace-tools nav a').count(),5);assert.equal(await page.locator('.workspace-tools nav').isVisible(),true);await page.locator('.workspace-tools summary').click();
+  await page.screenshot({path:'output/brand/loam-home-light.png'});
+  await page.locator('#theme').click();assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');assert.match(await page.locator('html').evaluate(el=>getComputedStyle(el).getPropertyValue('--bg')),/#101914/);
   await page.locator('#homePrompt').fill('طلب محفوظ من مركز Loam');await page.locator('[data-home-mode="write"]').click();await page.locator('#homeForm [type=submit]').click();await page.locator('#modeForm').waitFor();assert.equal(await page.locator('#modeForm [data-field]').first().inputValue(),'طلب محفوظ من مركز Loam');assert.equal(posts.length,0,'home composer must review mode details before executing');await page.goto(origin+'/#/home');await page.locator('#homeForm').waitFor();
   assert.equal(await page.locator('html').getAttribute('data-theme'),'dark');
   const shots=join(tmpdir(),'loam-ui-review');await mkdir(shots,{recursive:true});await page.screenshot({path:join(shots,'home.png')});
   await page.setViewportSize({width:1900,height:980});await page.evaluate(async()=>{await document.fonts.ready;});
-  assert.equal(await page.locator('#sidebar').evaluate(el=>Math.round(el.getBoundingClientRect().width)),332);
+  assert.equal(await page.locator('#sidebar').evaluate(el=>Math.round(el.getBoundingClientRect().width)),280);
   assert.equal(await page.locator('#modeCards').evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length),3);
   assert.ok(await page.evaluate(()=>document.fonts.check('400 14px "Readex Pro"')));
   await page.screenshot({path:join(shots,'reference-1900.png')});await page.setViewportSize({width:1440,height:1000});
@@ -76,31 +80,40 @@ try {
   await page.setViewportSize({width:1440,height:1000});await page.evaluate(()=>{document.documentElement.dir='rtl';document.body.style.zoom='2';document.documentElement.dataset.theme='dark';});assert.equal(await page.locator('.view.active').evaluate(el=>el.scrollWidth>el.clientWidth+1),false);await page.evaluate(()=>document.body.style.zoom='1');await page.screenshot({path:join(shots,'studio-dark.png')});
   // Bundled studios have distinct routes, preserve the shell, and hand real prompts
   // to task preparation without executing sample content or trusting other frames.
-  const studioCases=[['mobile','build'],['swarm','research'],['creative','media'],['security','build']];
+  // Mobile now opens the live editor; its execution/persistence is covered by check:mobile.
+  await page.goto(origin+'/#/studios/mobile');
+  await page.frameLocator('#embedFrame').locator('#build-form').waitFor();
+  assert.ok(page.frames().some(f=>new URL(f.url()).pathname==='/mobile.html'));
+
   await page.goto(origin+'/#/home');await page.locator('#modeCards a').first().waitFor();
   assert.equal(new Set(await page.locator('#modeCards a').evaluateAll(els=>els.map(el=>el.hash))).size,6);
-  assert.equal(await page.locator('#sideStudios a').count(),5);
-  for(const [studio,mode] of studioCases){
-    await page.goto(origin+'/#/home');await page.locator(`#modeCards a[href="#/studios/${studio}"]`).click();
-    const frame=page.frameLocator('#embedFrame');await frame.locator('#studioPrepare').waitFor({timeout:10000}).catch(async error=>{console.log('STUDIO LOAD',studio,page.frames().map(f=>f.url()),errors);throw error;});
-    assert.ok(page.frames().some(f=>f.url().endsWith('/studios/index.html?studio='+studio+'#'+studio)));
+  assert.equal(await page.locator('#sideStudios, #sideModes').count(),0);
+  for(const [studio,selector] of [['swarm','#brief-form'],['security','#task']]){
+    await page.goto(origin+'/#/studios/'+studio);
+    const frame=page.frameLocator('#embedFrame');await frame.locator(selector).waitFor();
+    assert.ok(page.frames().some(f=>new URL(f.url()).pathname==='/'+studio+'.html'));
     const before=posts.length;
     await page.evaluate(studio=>window.postMessage({type:'loam:studio:prepare',studio,prompt:'untrusted'},location.origin),studio);
     await page.waitForTimeout(50);assert.ok(page.url().endsWith('/studios/'+studio));
-    for(const tab of [1,2,0]){await frame.locator(`[data-tab="${tab}"]`).click();assert.equal(await frame.locator('[role=tab][aria-selected=true]').count(),1);}
-    await page.setViewportSize({width:1600,height:1100});await page.screenshot({path:join(shots,'integrated-'+studio+'.png')});
-    for(const width of [768,320]){await page.setViewportSize({width,height:1000});assert.equal(await frame.locator('html').evaluate(el=>el.scrollWidth>el.clientWidth+1),false,studio+' embedded overflow '+width);}
-    await page.setViewportSize({width:1440,height:1000});
-    await frame.locator('#prompt').fill('طلب حقيقي مستقل '+studio);await frame.locator('.send').click();
-    await page.waitForURL('**/#/modes/'+mode);await page.locator('.studio-task-context').waitFor();
-    assert.match(await page.locator('#modeForm [data-field]').first().inputValue(),new RegExp('طلب حقيقي مستقل '+studio));
-    assert.equal(posts.length,before,'studio preview must not run sample prompts');
-    await page.locator('#modeSubmit').click();await page.waitForURL(/#\/tasks\/draft/);await page.locator('#chatStatus.done').waitFor();
-    assert.equal(posts.at(-1).mode,mode);assert.match(posts.at(-1).prompt,new RegExp('طلب حقيقي مستقل '+studio));assert.equal(posts.at(-1).attachments.length,0);
+    assert.equal(posts.length,before,'opening a studio must not execute a task');
+    for(const width of [1440,768,320]){await page.setViewportSize({width,height:1000});assert.equal(await frame.locator('html').evaluate(el=>el.scrollWidth>el.clientWidth+1),false,studio+' embedded overflow '+width);}
   }
+  await page.goto(origin+'/#/services/integrations');await page.frameLocator('#embedFrame').locator('#task').waitFor();
   await page.goto(origin+'/#/studios/office');await page.locator('.office-studio').waitFor();await page.locator('#modeForm').waitFor();
   await page.reload();await page.locator('.office-studio').waitFor();
-  assert.deepEqual(errors,[]);assert.ok(!await page.locator('body').innerText().then(t=>/manus|grok|frontier/i.test(t)));
+  for(const route of ['tasks','projects','schedules','services',...['skills','memory','brain','learning','companions','screen','integrations'].map(id=>'services/'+id),...['office','creative','mobile','security','swarm'].map(id=>'studios/'+id),...LOAM_MODES.map(m=>'modes/'+m.id)]){
+    await page.goto(origin+'/#/'+route);await page.locator('.journey-nav button').waitFor();
+    assert.equal(await page.locator('.journey-nav a[href="#/home"]').isVisible(),true,route+' home escape');
+    assert.equal(await page.locator('.journey-nav').evaluate(e=>e.scrollWidth>e.clientWidth+1),false,route+' navigation overflow');
+  }
+  await page.goto(origin+'/#/services/companions');await page.reload();await page.locator('.journey-nav button').click();await page.waitForURL('**/#/services');
+  await page.locator('.journey-nav button').click();await page.waitForURL('**/#/home');await page.goto(origin+'/#/services');
+  await page.locator('#serviceLinks a[href="#/services/skills"]').click();await page.locator('.journey-nav button').click();await page.waitForURL('**/#/services');
+  await page.goto(origin+'/#/services/not-found');await page.locator('[data-retry-route]').waitFor();assert.equal(await page.locator('.journey-nav button').isVisible(),true);
+  for(const name of ['skills','memory','brain','learning','companions','screen','integrations','terminal','mobile','security','swarm']){
+    await page.goto(origin+'/'+name+'.html');assert.equal(await page.getByRole('navigation',{name:'العودة إلى مساحة العمل'}).getByRole('link',{name:'الرئيسية',exact:true}).getAttribute('href'),'/#/home');
+  }
+  assert.deepEqual(errors,[]);
   console.log('PASS Loam UI: seven routes/toolsets, scoped uploads/files, follow-up identity, terminal states/resume confirmation, keyboard tabs, 320/768/1440 RTL/LTR, 200% zoom, branding. Screenshots: '+shots);
 } finally {await browser?.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 

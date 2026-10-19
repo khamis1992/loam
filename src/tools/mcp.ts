@@ -104,6 +104,7 @@ export async function registerMcpTools(
         const toolName = `mcp__${name}__${tool.name}`;
         const inputSchema = (tool.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>;
         registry.register({
+          integration: true,
           name: toolName,
           description: `[MCP:${name}] ${tool.description ?? tool.name}`,
           parameters: inputSchema,

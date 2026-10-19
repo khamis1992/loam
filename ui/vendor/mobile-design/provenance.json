@@ -1,0 +1,17 @@
+{
+  "lovable": {
+    "file": "core/lovable/design-system.mjs",
+    "sha256": "2cf633ba355b82f0ea9b3b93fece457609256dd90054b5eef626dd3ce74457b9",
+    "conversion": "Light semantic OKLCH tokens converted to clipped sRGB; no CSS engine or remote fonts"
+  },
+  "uiUxProMax": {
+    "url": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+    "commit": "56ea9cf174ed86786187daa9de0e6247cb0747e4",
+    "files": [
+      "data/colors.csv row 16",
+      "data/app-interface.csv rows 1-12",
+      "data/ux-guidelines.csv rows 9,28,36,39,100"
+    ],
+    "integration": "Curated mobile subset; not the Python search engine"
+  }
+}

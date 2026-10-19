@@ -90,7 +90,7 @@ function caseDetails(cases) {
   return failing
     .map((c) => {
       const checkpoints = (c.checkpoints || [])
-        .map((p) => `${p.ok ? "✓" : "✗"} ${esc(p.type)}: ${esc(p.detail)}`)
+        .map((p) => `${p.ok ? 'نجح' : 'فشل'} ${esc(p.type)}: ${esc(p.detail)}`)
         .join("<br>");
       const critique = c.critique
         ? `<div class="meta">نقد: ${esc((c.critique.failureCauses || []).join("؛ "))}${c.critique.betterPlan ? ` — ${esc(c.critique.betterPlan)}` : ""}</div>`

@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';import path from 'node:path';import {createRequire} from 'node:module';
+import {enrichFinding,sarif} from '../security/findings.js';
+const source=(target:string)=>enrichFinding({id:'fixture',check:'source_sql',verdict:'finding',severity:'medium',target,title:'SQL review',detail:'Dynamic query text omitted',remediation:'Review parameter binding'},['R1']);
+const locations=['src/query.ts:12','src/my file.ts:2','src/بيانات.ts:5','src\\query.ts:3','src/a#b%?.ts:7'];
+const malformed=['../outside.ts:1','/absolute.ts:1','C:\\private\\file.ts:2','https://example.test/a.ts:4','//server/a.ts:2','src/./a.ts:1','src/a.ts:0','src/a.ts:9007199254740992','src//a.ts:1'];
+const network=enrichFinding({id:'http',check:'security_headers',verdict:'finding',severity:'high',target:'https://example.test:443/',title:'HTTP review',detail:'Transport finding'});
+const findings=[...locations.map(source),...malformed.map(source),network];
+const log=sarif(findings),results=log.runs[0]!.results;
+assert.equal(results[0]!.locations![0]!.physicalLocation.region.startLine,12);
+assert.equal(results[0]!.locations![0]!.physicalLocation.artifactLocation.uriBaseId,'SRCROOT');
+assert.equal(results[1]!.locations![0]!.physicalLocation.artifactLocation.uri,'src/my%20file.ts');
+assert.equal(decodeURIComponent(results[2]!.locations![0]!.physicalLocation.artifactLocation.uri),'src/بيانات.ts');
+assert.equal(results[3]!.locations![0]!.physicalLocation.artifactLocation.uri,'src/query.ts');
+assert.equal(results[4]!.locations![0]!.physicalLocation.artifactLocation.uri,'src/a%23b%25%3F.ts');
+for(const result of results.slice(locations.length))assert.equal(result.locations,undefined);
+assert.equal(results[0]!.properties.confidence,'review');assert.deepEqual(results[0]!.properties.evidence,['R1']);
+assert.equal(results[0]!.partialFingerprints.loamFingerprint,findings[0]!.fingerprint);
+for(const result of results)assert.equal(log.runs[0]!.tool.driver.rules[result.ruleIndex]!.id,result.ruleId);
+assert.equal(sarif([{...source('src/a.ts:1'),verdict:'error'}]).runs[0]!.results.length,0);
+const incomplete=sarif([{...source('src/a.ts:1'),verdict:'error'}]);
+assert.equal(incomplete.runs[0]!.invocations[0]!.executionSuccessful,false);
+assert.equal(incomplete.runs[0]!.invocations[0]!.toolExecutionNotifications[0]!.descriptor.id,'source_sql');
+fs.mkdirSync('output/verification',{recursive:true});fs.writeFileSync('output/verification/security-sarif.json',JSON.stringify(log,null,2));
+const schemaPath=process.argv[2];
+if(schemaPath){
+  const require=createRequire(path.resolve(process.argv[3]??'.','package.json')),Ajv=require('ajv-draft-04'),formats=require('ajv-formats');
+  const ajv=new Ajv({strict:false,allErrors:true});formats(ajv);
+  const validate=ajv.compile(JSON.parse(fs.readFileSync(schemaPath,'utf8')));
+  assert.equal(validate(log),true,JSON.stringify(validate.errors));assert.equal(validate(sarif([])),true,JSON.stringify(validate.errors));
+  assert.equal(validate(incomplete),true,JSON.stringify(validate.errors));
+  console.log('PASS: SARIF 2.1.0 schema and formats validation');
+}
+console.log('PASS: relative file/line locations, Unicode/reserved escaping, rejected unsafe paths, HTTP separation, rule indices, confidence and fingerprint preservation');

@@ -1,0 +1,361 @@
+{
+  "at": "2026-10-19T01:56:26.433Z",
+  "workspace": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-contract-fWMTve",
+  "scope": "Actual Docker/browser/SQLite; fixture visual verdict",
+  "reports": {
+    "good": {
+      "pass": true,
+      "reason": "fixture visual approval",
+      "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-contract-fWMTve\\.verification\\ec48c19b-601a-4aaf-910d-fcfc202f6c48\\report.json",
+      "elapsedMs": 10307,
+      "usage": {
+        "promptTokens": 1,
+        "completionTokens": 1,
+        "durationMs": 1
+      },
+      "checks": [
+        {
+          "viewport": "desktop",
+          "scenario": "API validation and replay",
+          "pass": true,
+          "responses": [
+            {
+              "method": "GET",
+              "path": "/index.html",
+              "status": 200
+            }
+          ],
+          "databases": [
+            {
+              "database": "/tmp/api.sqlite",
+              "table": "effects",
+              "columns": [
+                "id"
+              ],
+              "rows": [
+                [
+                  "one"
+                ]
+              ]
+            }
+          ],
+          "api": [
+            {
+              "group": 0,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 400
+            },
+            {
+              "group": 1,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 400
+            },
+            {
+              "group": 2,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 200
+            },
+            {
+              "group": 2,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 201
+            }
+          ]
+        },
+        {
+          "viewport": "mobile",
+          "scenario": "API validation and replay",
+          "pass": true,
+          "responses": [
+            {
+              "method": "GET",
+              "path": "/index.html",
+              "status": 200
+            }
+          ],
+          "databases": [
+            {
+              "database": "/tmp/api.sqlite",
+              "table": "effects",
+              "columns": [
+                "id"
+              ],
+              "rows": [
+                [
+                  "one"
+                ]
+              ]
+            }
+          ],
+          "api": [
+            {
+              "group": 0,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 400
+            },
+            {
+              "group": 1,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 400
+            },
+            {
+              "group": 2,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 200
+            },
+            {
+              "group": 2,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 201
+            }
+          ]
+        }
+      ],
+      "screenshots": [
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-contract-fWMTve\\.verification\\ec48c19b-601a-4aaf-910d-fcfc202f6c48\\desktop-0.png",
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-contract-fWMTve\\.verification\\ec48c19b-601a-4aaf-910d-fcfc202f6c48\\mobile-0.png"
+      ],
+      "errors": [],
+      "runtime": {
+        "type": "node",
+        "isolation": "docker-network-none",
+        "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+        "freshBackendPerScenario": true
+      },
+      "visual": {
+        "model": "fixture",
+        "verdict": {
+          "verdict": "pass",
+          "reason": "fixture visual approval",
+          "issues": []
+        },
+        "response": "{\"verdict\":\"pass\",\"reason\":\"fixture visual approval\",\"issues\":[]}",
+        "attempts": 1
+      },
+      "sourceHashes": {
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-contract-fWMTve\\app-verification.json": "0abea073d7a7076ed8f176c693c0d5e90391b4c076b0bb5c9b28e2e495e16cd2",
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-contract-fWMTve\\index.html": "09ee8831ce8722f1e9e36f3e375a2e01282f7af728d38a66891eefbe3f634a1a",
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-contract-fWMTve\\server.mjs": "d8aecf71327adca7440aeb8bd242a87bf2f5089e19277402c315209e81ffa11f"
+      }
+    },
+    "blank-accepted": {
+      "pass": false,
+      "reason": "Error: Application interaction/runtime checks failed; inspect report and repair",
+      "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-contract-fWMTve\\.verification\\ecf0020c-3b9a-4cf6-92fb-9f8827035c8a\\report.json",
+      "elapsedMs": 8480,
+      "usage": {
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "durationMs": 0
+      },
+      "checks": [
+        {
+          "viewport": "desktop",
+          "scenario": "API validation and replay",
+          "pass": false,
+          "error": "Error: API group 0 mismatch: expected statuses [400], observed [{\"group\":0,\"method\":\"POST\",\"path\":\"/api/add\",\"status\":201}]",
+          "responses": [
+            {
+              "method": "GET",
+              "path": "/index.html",
+              "status": 200
+            }
+          ],
+          "databases": [],
+          "api": [
+            {
+              "group": 0,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 201
+            }
+          ]
+        },
+        {
+          "viewport": "mobile",
+          "scenario": "API validation and replay",
+          "pass": false,
+          "error": "Error: API group 0 mismatch: expected statuses [400], observed [{\"group\":0,\"method\":\"POST\",\"path\":\"/api/add\",\"status\":201}]",
+          "responses": [
+            {
+              "method": "GET",
+              "path": "/index.html",
+              "status": 200
+            }
+          ],
+          "databases": [],
+          "api": [
+            {
+              "group": 0,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 201
+            }
+          ]
+        }
+      ],
+      "screenshots": [
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-contract-fWMTve\\.verification\\ecf0020c-3b9a-4cf6-92fb-9f8827035c8a\\desktop-0.png",
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-contract-fWMTve\\.verification\\ecf0020c-3b9a-4cf6-92fb-9f8827035c8a\\mobile-0.png"
+      ],
+      "errors": [
+        "Error: API group 0 mismatch: expected statuses [400], observed [{\"group\":0,\"method\":\"POST\",\"path\":\"/api/add\",\"status\":201}]",
+        "Error: API group 0 mismatch: expected statuses [400], observed [{\"group\":0,\"method\":\"POST\",\"path\":\"/api/add\",\"status\":201}]"
+      ],
+      "runtime": {
+        "type": "node",
+        "isolation": "docker-network-none",
+        "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+        "freshBackendPerScenario": true
+      }
+    },
+    "duplicate-effect": {
+      "pass": false,
+      "reason": "Error: Application interaction/runtime checks failed; inspect report and repair",
+      "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-contract-fWMTve\\.verification\\02278b3a-1ff7-45ae-8372-c2f58caed80b\\report.json",
+      "elapsedMs": 10449,
+      "usage": {
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "durationMs": 0
+      },
+      "checks": [
+        {
+          "viewport": "desktop",
+          "scenario": "API validation and replay",
+          "pass": false,
+          "error": "Error: SQLite rows mismatch for effects: expected [[\"one\"]], observed [[\"one\"],[\"one\"]]",
+          "responses": [
+            {
+              "method": "GET",
+              "path": "/index.html",
+              "status": 200
+            }
+          ],
+          "databases": [
+            {
+              "database": "/tmp/api.sqlite",
+              "table": "effects",
+              "columns": [
+                "id"
+              ],
+              "rows": [
+                [
+                  "one"
+                ],
+                [
+                  "one"
+                ]
+              ]
+            }
+          ],
+          "api": [
+            {
+              "group": 0,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 400
+            },
+            {
+              "group": 1,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 400
+            },
+            {
+              "group": 2,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 201
+            },
+            {
+              "group": 2,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "viewport": "mobile",
+          "scenario": "API validation and replay",
+          "pass": false,
+          "error": "Error: SQLite rows mismatch for effects: expected [[\"one\"]], observed [[\"one\"],[\"one\"]]",
+          "responses": [
+            {
+              "method": "GET",
+              "path": "/index.html",
+              "status": 200
+            }
+          ],
+          "databases": [
+            {
+              "database": "/tmp/api.sqlite",
+              "table": "effects",
+              "columns": [
+                "id"
+              ],
+              "rows": [
+                [
+                  "one"
+                ],
+                [
+                  "one"
+                ]
+              ]
+            }
+          ],
+          "api": [
+            {
+              "group": 0,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 400
+            },
+            {
+              "group": 1,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 400
+            },
+            {
+              "group": 2,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 200
+            },
+            {
+              "group": 2,
+              "method": "POST",
+              "path": "/api/add",
+              "status": 201
+            }
+          ]
+        }
+      ],
+      "screenshots": [
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-contract-fWMTve\\.verification\\02278b3a-1ff7-45ae-8372-c2f58caed80b\\desktop-0.png",
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-contract-fWMTve\\.verification\\02278b3a-1ff7-45ae-8372-c2f58caed80b\\mobile-0.png"
+      ],
+      "errors": [
+        "Error: SQLite rows mismatch for effects: expected [[\"one\"]], observed [[\"one\"],[\"one\"]]",
+        "Error: SQLite rows mismatch for effects: expected [[\"one\"]], observed [[\"one\"],[\"one\"]]"
+      ],
+      "runtime": {
+        "type": "node",
+        "isolation": "docker-network-none",
+        "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+        "freshBackendPerScenario": true
+      }
+    }
+  },
+  "pass": true
+}

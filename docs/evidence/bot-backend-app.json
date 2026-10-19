@@ -1,0 +1,276 @@
+{
+  "at": "2026-10-19T04:14:57.143Z",
+  "workspace": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-backend-app-NHCcv0",
+  "good": {
+    "pass": true,
+    "reason": "visible counter",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-backend-app-NHCcv0\\.verification\\627b0baa-5ba5-4a8c-8514-33e8412bd8e4\\report.json",
+    "elapsedMs": 20153,
+    "usage": {
+      "promptTokens": 1,
+      "completionTokens": 1,
+      "durationMs": 1
+    },
+    "checks": [
+      {
+        "viewport": "desktop",
+        "scenario": "Server state survives page reload",
+        "pass": true,
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/count",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/count",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/count",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": []
+      },
+      {
+        "viewport": "desktop",
+        "scenario": "Independent server state",
+        "pass": true,
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/count",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": []
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "Server state survives page reload",
+        "pass": true,
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/count",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/count",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/count",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": []
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "Independent server state",
+        "pass": true,
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/count",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": []
+      }
+    ],
+    "screenshots": [
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-backend-app-NHCcv0\\.verification\\627b0baa-5ba5-4a8c-8514-33e8412bd8e4\\desktop-0.png",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-backend-app-NHCcv0\\.verification\\627b0baa-5ba5-4a8c-8514-33e8412bd8e4\\desktop-1.png",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-backend-app-NHCcv0\\.verification\\627b0baa-5ba5-4a8c-8514-33e8412bd8e4\\mobile-0.png",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-backend-app-NHCcv0\\.verification\\627b0baa-5ba5-4a8c-8514-33e8412bd8e4\\mobile-1.png"
+    ],
+    "errors": [],
+    "runtime": {
+      "type": "node",
+      "isolation": "docker-network-none",
+      "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+      "freshBackendPerScenario": true
+    },
+    "visual": {
+      "model": "visual-fixture",
+      "verdict": {
+        "verdict": "pass",
+        "reason": "visible counter",
+        "issues": []
+      },
+      "response": "{\"verdict\":\"pass\",\"reason\":\"visible counter\",\"issues\":[]}",
+      "attempts": 1
+    },
+    "sourceHashes": {
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-backend-app-NHCcv0\\app-verification.json": "5e568fd81759dbe821d1e0e1d7d92b2d17cea0d8dfa8f9a351bd713f16328b58",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-backend-app-NHCcv0\\index.html": "66b4ab9d3d56998348ac59de0f66f0ec20263fbd0b45ca505faa505b1461f657",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-backend-app-NHCcv0\\server.mjs": "59e7100c53974d122f7fd794cbfab61c5452765e5f1f55b87898b570a35bd3c2"
+    }
+  },
+  "bad": {
+    "pass": false,
+    "reason": "Error: Application interaction/runtime checks failed; inspect report and repair",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-backend-app-NHCcv0\\.verification\\8894ad22-c121-45d9-8044-1c33789497cd\\report.json",
+    "elapsedMs": 27358,
+    "usage": {
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "durationMs": 0
+    },
+    "checks": [
+      {
+        "viewport": "desktop",
+        "scenario": "Server state survives page reload",
+        "pass": false,
+        "error": "Error: Unexpected exact text for #count",
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/count",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/count",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": []
+      },
+      {
+        "viewport": "desktop",
+        "scenario": "Independent server state",
+        "pass": true,
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/count",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": []
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "Server state survives page reload",
+        "pass": false,
+        "error": "Error: Unexpected exact text for #count",
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/count",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/count",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": []
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "Independent server state",
+        "pass": true,
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/count",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": []
+      }
+    ],
+    "screenshots": [
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-backend-app-NHCcv0\\.verification\\8894ad22-c121-45d9-8044-1c33789497cd\\desktop-1.png",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-backend-app-NHCcv0\\.verification\\8894ad22-c121-45d9-8044-1c33789497cd\\mobile-1.png"
+    ],
+    "errors": [
+      "Error: Unexpected exact text for #count",
+      "Error: Unexpected exact text for #count"
+    ],
+    "runtime": {
+      "type": "node",
+      "isolation": "docker-network-none",
+      "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+      "freshBackendPerScenario": true
+    }
+  },
+  "cleanup": true,
+  "visualModelIsFixture": true
+}

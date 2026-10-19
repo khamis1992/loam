@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { buildMobile } from '../mobile/build.js';
+import { checkPolishedCopy } from '../mobile/polish.js';
+import { saveMobile, readMobile, travelMobile } from '../mobile/store.js';
+import type { ChatOptions, OllamaClient } from '../ollama.js';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'loam-polish-'));
+const start=saveMobile(root,{version:1,title:'App',accent:'#267965',direction:'rtl',screens:[{id:'main',title:'Home',kind:'primary',group:'Group',blocks:[{id:'go',type:'button',text:'Open',target:'detail'}]},{id:'detail',title:'Detail',kind:'detail',group:'Group',parentId:'main',blocks:[{id:'note',type:'input',text:'Note'},{id:'done',type:'toggle',text:'Done'},{id:'save',type:'button',text:'Save'}]}]},0);
+const design={eyebrow:'خطوتك اليوم',description:'اختر خطوة صغيرة يمكنك إنجازها اليوم.',guidance:'ابدأ بعشر دقائق من التركيز على مهمة واحدة.',icon:'target'};
+const result=(o:ChatOptions)=>{const input=JSON.parse(o.messages[1]!.content as string);return {design,blocks:input.screen.blocks.map((b:{id:string;type:string})=>({id:b.id,text:b.type==='toggle'?'أنجزت هذه الخطوة':b.type==='input'?'الخطوة التالية':b.id==='go'?'افتح الخطوة':'حفظ الخطوة',...(b.type==='input'?{help:'اكتب خطوة واضحة.',placeholder:'مثال: مراجعة فصل واحد'}:{}),target:'malicious_target',type:'heading'}))};};
+const client=(fn:(o:ChatOptions)=>unknown)=>({chat:async(o:ChatOptions)=>({content:JSON.stringify(fn(o)),model:o.model,toolCalls:[],usage:{promptTokens:0,completionTokens:0,durationMs:0}})}) as Pick<OllamaClient,'chat'>;
+let calls=0;const events:Record<string,unknown>[]=[];
+const base={root,model:'local-fixture',brief:'حسّن التصميم والمحتوى مع حفظ البيانات',operation:'polish' as const,expectedRevision:1,signal:new AbortController().signal,emit:(e:Record<string,unknown>)=>events.push(e)};
+for(const bad of [{type:'button',text:'حفظ'},{type:'button',text:'حفظ الخطة',target:'detail'},{type:'toggle',text:'مكتملة'},{type:'input',text:'الخطوة',help:'أكمل التoggle'}])assert.throws(()=>checkPolishedCopy({title:'صفحة',design,blocks:[bad]},true));
+checkPolishedCopy({title:'تعلم Git',design,blocks:[{type:'input',text:'أمر Git الذي تعلمته'}]},true);
+await buildMobile({...base,ollama:client(o=>{calls++;if(calls===1)return {...result(o),blocks:[{id:'wrong',text:'Wrong'}]};if(calls===2)assert.ok(o.messages.some(m=>m.role==='assistant'&&String(m.content).includes('wrong')),'Repair must include the rejected response');return result(o);})});
+assert.equal(calls,3);assert.ok(events.some(e=>e.type==='repair'));
+const after=readMobile(root)!;assert.equal(after.revision,2);assert.ok(after.screens.every(s=>s.design));
+for(const [i,s]of start.screens.entries()){const next=after.screens[i]!;assert.equal(next.id,s.id);assert.equal(next.parentId,s.parentId);assert.equal(next.title,s.title);assert.deepEqual(next.blocks.map(b=>[b.id,b.type,b.target]),s.blocks.map(b=>[b.id,b.type,b.target]));}
+assert.equal(after.screens[1]!.blocks[0]!.placeholder,'مثال: مراجعة فصل واحد');
+travelMobile(root,2,'undo');assert.equal(readMobile(root)!.screens[0]!.design,undefined);travelMobile(root,3,'redo');assert.deepEqual(readMobile(root)!.screens[0]!.design,design);
+const revision=readMobile(root)!.revision;calls=0;await assert.rejects(buildMobile({...base,expectedRevision:revision,ollama:client(()=>{calls++;return {};})}),/بقي المشروع/);assert.equal(calls,3);assert.equal(readMobile(root)!.revision,revision);
+const abort=new AbortController();await assert.rejects(buildMobile({...base,expectedRevision:revision,signal:abort.signal,ollama:client(o=>{abort.abort();return result(o);})}));assert.equal(readMobile(root)!.revision,revision);
+calls=0;await assert.rejects(buildMobile({...base,expectedRevision:revision,ollama:client(o=>{if(++calls===1)saveMobile(root,{...readMobile(root)!,title:'Concurrent'},revision);return result(o);})}),/جلسة أخرى/);assert.equal(readMobile(root)!.title,'Concurrent');
+console.log('PASS polish: all-screen atomicity, exact ID/type/navigation preservation, repair, labels/help/examples, cancellation, conflict protection, persisted undo/redo');

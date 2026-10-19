@@ -1,0 +1,1285 @@
+{
+  "task": {
+    "id": "task_mvehw22oae6adc7cc379",
+    "title": "اختبار BOT — مخزون SQLite",
+    "prompt": "أنشئ تطبيق مخزون عربي RTL بتصميم سماوي وبنفسجي متجاوب: index.html وserver.mjs، دون مكتبات خارجية. احفظ ملفات المصدر والعقد في جذر مساحة عمل المهمة بمسارات نسبية للأدوات؛ لا تنشئ مجلد مشروع آخر. خادم Node على 127.0.0.1:3000 باستخدام node:http وnode:sqlite. قاعدة SQLite فعلية في /tmp/inventory.sqlite داخل حاوية Docker فقط، وجدول stock(sku TEXT PRIMARY KEY, quantity INTEGER NOT NULL CHECK(quantity>=0)). لا تستخدم مصفوفة ذاكرة أو localStorage بدل القاعدة. تبدأ القاعدة بلا أصناف. قيد الكتابة في /tmp يخص بيانات الخادم أثناء تشغيله داخل الحاوية؛ لا يخص مسارات إنشاء ملفات المصدر على جهاز المستخدم.\nAPI ثابت: GET /api/stock يعيد {items:[{sku,quantity}]}؛ POST /api/stock يستقبل JSON {sku,quantity} وينشئ صنفًا برصيد صحيح موجب ويرجع 201، ويعيد 409 إذا تكرر الرمز؛ POST /api/withdraw يستقبل {sku,quantity} ويسحب كمية صحيحة موجبة ويرجع 200، ويعيد 409 إذا لم يوجد الصنف أو لم يكف الرصيد دون تغيير البيانات. الإدخال غير الصالح يعيد 400. استخدم معاملات وSQL بمعاملات ربط، ولا تدمج الرمز داخل SQL.\nالواجهة: حقلا #sku و#quantity وزر #save للإضافة؛ #withdraw-sku و#withdraw-quantity وزر #withdraw للسحب؛ رسالة خطأ عربية #error ظاهرة عند رفض العملية، وجدول #items كل صف بيانات فيه .stock-item وخلية الرصيد تحمل data-quantity وتعرض الرقم وحده. تستدعي الواجهة API وتعرض البيانات من الخادم بعد كل عملية وعند تحميل الصفحة. لا تترك ردود fetch بلا معالجة. أظهر أخطاء الإدخال حتى عند العدد السالب (لا تعتمد على منع HTML وحده الذي لا يُظهر #error). لا تستخدم نافذة تأكيد تعطل الاختبار.\nاحفظ app-verification.json بهذا العقد بالضبط: {\"entry\":\"index.html\",\"runtime\":{\"type\":\"node\",\"entry\":\"server.mjs\"},\"scenarios\":[{\"name\":\"Add stock\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":1},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Server persistence on reload\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"reload\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":1},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Valid withdrawal\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"},{\"action\":\"fill\",\"selector\":\"#withdraw-sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#withdraw-quantity\",\"value\":\"3\"},{\"action\":\"click\",\"selector\":\"#withdraw\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"7\"}]},{\"name\":\"Overdraw rejected without changing stock\",\"expectedResponses\":[{\"method\":\"POST\",\"path\":\"/api/withdraw\",\"status\":409,\"count\":1}],\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"},{\"action\":\"fill\",\"selector\":\"#withdraw-sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#withdraw-quantity\",\"value\":\"11\"},{\"action\":\"click\",\"selector\":\"#withdraw\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Duplicate SKU rejected\",\"expectedResponses\":[{\"method\":\"POST\",\"path\":\"/api/stock\",\"status\":409,\"count\":1}],\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"},{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"99\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":1},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Negative amount rejected\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"-1\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":0}]}]}.\nاستخدم أدوات الملفات فقط، ولا تشغل الخادم على Windows؛ النظام سيشغله داخل Docker المعزول. الهدف تطبيق يعمل وتتحقق منه المنظومة، لا إجابة نصية. لا تدّع دوام البيانات بعد حذف الحاوية؛ التخزين هنا يبقى خلال سيناريو الاختبار فقط.",
+    "status": "error",
+    "projectId": null,
+    "agentId": null,
+    "createdAt": "2026-10-19T00:07:18.144Z",
+    "updatedAt": "2026-10-19T00:18:51.17Z",
+    "messages": [
+      {
+        "role": "user",
+        "content": "أنشئ تطبيق مخزون عربي RTL بتصميم سماوي وبنفسجي متجاوب: index.html وserver.mjs، دون مكتبات خارجية. احفظ ملفات المصدر والعقد في جذر مساحة عمل المهمة بمسارات نسبية للأدوات؛ لا تنشئ مجلد مشروع آخر. خادم Node على 127.0.0.1:3000 باستخدام node:http وnode:sqlite. قاعدة SQLite فعلية في /tmp/inventory.sqlite داخل حاوية Docker فقط، وجدول stock(sku TEXT PRIMARY KEY, quantity INTEGER NOT NULL CHECK(quantity>=0)). لا تستخدم مصفوفة ذاكرة أو localStorage بدل القاعدة. تبدأ القاعدة بلا أصناف. قيد الكتابة في /tmp يخص بيانات الخادم أثناء تشغيله داخل الحاوية؛ لا يخص مسارات إنشاء ملفات المصدر على جهاز المستخدم.\nAPI ثابت: GET /api/stock يعيد {items:[{sku,quantity}]}؛ POST /api/stock يستقبل JSON {sku,quantity} وينشئ صنفًا برصيد صحيح موجب ويرجع 201، ويعيد 409 إذا تكرر الرمز؛ POST /api/withdraw يستقبل {sku,quantity} ويسحب كمية صحيحة موجبة ويرجع 200، ويعيد 409 إذا لم يوجد الصنف أو لم يكف الرصيد دون تغيير البيانات. الإدخال غير الصالح يعيد 400. استخدم معاملات وSQL بمعاملات ربط، ولا تدمج الرمز داخل SQL.\nالواجهة: حقلا #sku و#quantity وزر #save للإضافة؛ #withdraw-sku و#withdraw-quantity وزر #withdraw للسحب؛ رسالة خطأ عربية #error ظاهرة عند رفض العملية، وجدول #items كل صف بيانات فيه .stock-item وخلية الرصيد تحمل data-quantity وتعرض الرقم وحده. تستدعي الواجهة API وتعرض البيانات من الخادم بعد كل عملية وعند تحميل الصفحة. لا تترك ردود fetch بلا معالجة. أظهر أخطاء الإدخال حتى عند العدد السالب (لا تعتمد على منع HTML وحده الذي لا يُظهر #error). لا تستخدم نافذة تأكيد تعطل الاختبار.\nاحفظ app-verification.json بهذا العقد بالضبط: {\"entry\":\"index.html\",\"runtime\":{\"type\":\"node\",\"entry\":\"server.mjs\"},\"scenarios\":[{\"name\":\"Add stock\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":1},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Server persistence on reload\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"reload\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":1},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Valid withdrawal\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"},{\"action\":\"fill\",\"selector\":\"#withdraw-sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#withdraw-quantity\",\"value\":\"3\"},{\"action\":\"click\",\"selector\":\"#withdraw\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"7\"}]},{\"name\":\"Overdraw rejected without changing stock\",\"expectedResponses\":[{\"method\":\"POST\",\"path\":\"/api/withdraw\",\"status\":409,\"count\":1}],\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"},{\"action\":\"fill\",\"selector\":\"#withdraw-sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#withdraw-quantity\",\"value\":\"11\"},{\"action\":\"click\",\"selector\":\"#withdraw\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Duplicate SKU rejected\",\"expectedResponses\":[{\"method\":\"POST\",\"path\":\"/api/stock\",\"status\":409,\"count\":1}],\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"},{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"99\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":1},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Negative amount rejected\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"-1\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":0}]}]}.\nاستخدم أدوات الملفات فقط، ولا تشغل الخادم على Windows؛ النظام سيشغله داخل Docker المعزول. الهدف تطبيق يعمل وتتحقق منه المنظومة، لا إجابة نصية. لا تدّع دوام البيانات بعد حذف الحاوية؛ التخزين هنا يبقى خلال سيناريو الاختبار فقط.",
+        "at": "2026-10-19T00:07:18.152Z"
+      }
+    ],
+    "steps": [
+      {
+        "at": "2026-10-19T00:07:18.157Z",
+        "type": "mode",
+        "data": {
+          "type": "mode",
+          "mode": "build",
+          "label": "Loam Build",
+          "labelAr": "ابنِ",
+          "reason": "selected task mode"
+        }
+      },
+      {
+        "at": "2026-10-19T00:07:18.159Z",
+        "type": "workmode",
+        "data": {
+          "type": "workmode",
+          "workMode": "loam",
+          "labelAr": "تنفيذ داخل Loam",
+          "deviceRequired": false,
+          "reason": "selected work mode"
+        }
+      },
+      {
+        "at": "2026-10-19T00:07:31.432Z",
+        "type": "plan",
+        "data": {
+          "type": "plan",
+          "goal": "إنشاء تطبيق مخزون عربي RTL بتصميم سماوي/بنفسجي متجاوب (index.html + server.mjs) بخادم Node على 127.0.0.1:3000 وقاعدة SQLite فعلية في /tmp/inventory.sqlite داخل حاوية Docker، مع حفظ عقد التحقق app-verification.json في جذر مساحة عمل المهمة.",
+          "trivial": false,
+          "steps": [
+            {
+              "id": "s1",
+              "title": "إنشاء server.mjs",
+              "instruction": "باستخدام file_write اكتب الملف server.mjs (مسار نسبي في جذر مساحة العمل) بخادم node:http يستمع على 127.0.0.1:3000 مع node:sqlite وقاعدة فعلية في /tmp/inventory.sqlite داخل الحاوية فقط، وأنشئ جدول stock(sku TEXT PRIMARY KEY, quantity INTEGER NOT NULL CHECK(quantity>=0)) عند بدء التشغيل دون أي أصناف مبدئية، دون مصفوفة ذاكرة أو localStorage. استخدم استعلامات SQL بمعاملات ربط (لا تدمج الرمز داخل SQL) ومعاملات transactions لعملية السحب. نقاط النهاية: GET /api/stock يعيد {items:[{sku,quantity}]}؛ POST /api/stock يقبل JSON {sku,quantity} وينشئ صنفًا برصيد صحيح موجب ويرجع 201 ويرجع 409 عند تكرار الرمز؛ POST /api/withdraw يقبل {sku,quantity} ويسحب كمية صحيحة موجبة ويرجع 200 ويرجع 409 عند عدم وجود الصنف أو عدم كفاية الرصيد دون تغيير البيانات؛ أي إدخال غير صالح يرجع 400. اعرض index.html كصفحة رئيسية.",
+              "successCriteria": "يوجد الملف server.mjs في جذر مساحة العمل ويحتوي node:http وnode:sqlite ومسار /tmp/inventory.sqlite وجدول stock والنقاط الثلاث مع رموز الحالة 201/200/409/400 واستعلامات بمعاملات ربط ومعاملة للسحب."
+            },
+            {
+              "id": "s2",
+              "title": "إنشاء index.html",
+              "instruction": "باستخدام file_write اكتب index.html (مسار نسبي) بواجهة عربية RTL متجاوبة بتصميم سماوي وبنفسجي دون مكتبات خارجية، تحتوي حقلي #sku و#quantity وزر #save للإضافة، و#withdraw-sku و#withdraw-quantity وزر #withdraw للسحب، ورسالة خطأ عربية #error تظهر عند رفض أي عملية بما فيها الأعداد السالبة (تحقق JS من المدخلات ولا تعتمد على منع HTML وحده)، وجدول #items كل صف بيانات فيه .stock-item وخلية الرصيد تحمل data-quantity وتعرض الرقم وحده. تستدعي الواجهة API عبر fetch وتعرض البيانات من الخادم عند تحميل الصفحة وبعد كل عملية، مع معالجة جميع ردود fetch (catch وحالات غير ناجحة تظهر في #error) ودون أي نافذة تأكيد.",
+              "successCriteria": "يوجد index.html في جذر مساحة العمل ويحتوي كل المعرفات المطلوبة (#sku,#quantity,#save,#withdraw-sku,#withdraw-quantity,#withdraw,#error,#items,.stock-item,[data-quantity]) واتجاه dir=rtl وتصميمًا سماويًا/بنفسجيًا متجاوبًا ومعالجة أخطاء fetch وإظهار #error عند الأعداد السالبة."
+            },
+            {
+              "id": "s3",
+              "title": "حفظ عقد التحقق app-verification.json",
+              "instruction": "باستخدام file_write اكتب app-verification.json (مسار نسبي) بالعقد المطلوب حرفيًا كما ورد في الطلب دون أي تغيير: entry=index.html، runtime {\"type\":\"node\",\"entry\":\"server.mjs\"}، والسيناريوهات الستة: Add stock، Server persistence on reload، Valid withdrawal، Overdraw rejected without changing stock (مع expectedResponses لـ POST /api/withdraw بحالة 409 وcount 1)، Duplicate SKU rejected (مع expectedResponses لـ POST /api/stock بحالة 409 وcount 1)، Negative amount rejected، بجميع خطواتها وانتقائها (fill/click/count/textExact/reload/visible) كما وردت.",
+              "successCriteria": "يوجد app-verification.json في جذر مساحة العمل ومحتواه يطابق العقد المحدد في الطلب حرفيًا (entry، runtime، 6 سيناريوهات بأسمائها وخطواتها وexpectedResponses)."
+            },
+            {
+              "id": "s4",
+              "title": "التحقق النهائي والتسليم",
+              "instruction": "باستخدام file_list وfile_stat تحقق من وجود الملفات الثلاثة index.html وserver.mjs وapp-verification.json في جذر مساحة العمل فقط (دون إنشاء مجلد مشروع إضافي)، واقرأ مقتطفًا من كل ملف بـ file_read للتأكد من سلامة المحتوى والمسارات النسبية، ثم قدّم للمستخدم الملخص النهائي: مسارات الملفات الثلاثة، وأن الخادم سيُشغَّل داخل Docker المعزول على 127.0.0.1:3000 بقاعدة /tmp/inventory.sqlite، وأن التحقق سيتم تلقائيًا عبر app-verification.json.",
+              "successCriteria": "تظهر الملفات الثلاثة في جذر مساحة العمل بقراءة سليمة، مع ملخص نهائي للمستخدم يذكر مساراتها وأن التحقق سيُجرى داخل Docker عبر العقد."
+            }
+          ],
+          "source": "model"
+        }
+      },
+      {
+        "at": "2026-10-19T00:07:31.435Z",
+        "type": "plan_step",
+        "data": {
+          "type": "plan_step",
+          "id": "s1",
+          "index": 1,
+          "total": 4,
+          "title": "إنشاء server.mjs",
+          "phase": "start"
+        }
+      },
+      {
+        "at": "2026-10-19T00:07:31.442Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:08:37.777Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_write",
+          "args": {
+            "content": "/**\n * server.mjs — خادم تطبيق المخزون العربي (RTL)\n * -------------------------------------------------------------\n * • يعمل بـ node:http فقط، دون أي مكتبات خارجية.\n * • قاعدة بيانات فعلية عبر node:sqlite في /tmp/inventory.sqlite\n *   (داخل حاوية Docker فقط) — لا مصفوفة في الذاكرة ولا localStorage.\n * • الجدول: stock(sku TEXT PRIMARY KEY, quantity INTEGER NOT NULL CHECK(quantity >= 0))\n * • تبدأ القاعدة فارغة تمامًا (بلا أصناف مبدئية).\n * • كل استعلامات SQL تستخدم معاملات ربط (?) ولا تُدمج القيم داخل نص SQL.\n * • عملية السحب تُنفَّذ داخل معاملة (BEGIN IMMEDIATE / COMMIT / ROLLBACK)\n *   بحيث لا يتغير أي صف إذا لم يوجد الصنف أو لم يكفِ الرصيد.\n */\n\nimport { createServer } from 'node:http';\nimport { DatabaseSync } from 'node:sqlite';\nimport { readFileSync, mkdirSync } from 'node:fs';\nimport { dirname, join } from 'node:path';\nimport { fileURLToPath } from 'node:url';\n\nconst __dirname = dirname(fileURLToPath(import.meta.url));\n\n/* ----------------------------- الإعدادات ----------------------------- */\nconst DB_PATH = process.env.DB_PATH || '/tmp/inventory.sqlite'; // قاعدة فعلية داخل الحاوية\nconst HOST = '127.0.0.1';\nconst PORT = Number(process.env.PORT) || 3000;\nconst INDEX_PATH = join(__dirname, 'index.html');\nconst MAX_BODY_BYTES = 1024 * 1024; // حد أقصى لحجم الجسم: 1MB\n\n/* ------------------------ تهيئة قاعدة البيانات ------------------------ */\nmkdirSync(dirname(DB_PATH), { recursive: true });\n\nconst db = new DatabaseSync(DB_PATH);\n\ndb.exec(`\n  CREATE TABLE IF NOT EXISTS stock (\n    sku      TEXT PRIMARY KEY,\n    quantity INTEGER NOT NULL CHECK(quantity >= 0)\n  );\n`);\n\n/* ---------- استعلامات مُعدّة مسبقًا بمعاملات ربط (?) فقط ---------- */\nconst stmtListStock = db.prepare('SELECT sku, quantity FROM stock ORDER BY sku');\nconst stmtGetBySku = db.prepare('SELECT quantity FROM stock WHERE sku = ?');\nconst stmtInsert = db.prepare('INSERT INTO stock (sku, quantity) VALUES (?, ?)');\nconst stmtDecrease = db.prepare('UPDATE stock SET quantity = quantity - ? WHERE sku = ?');\n\n/* ---------------------------- أدوات مساعدة ---------------------------- */\n\n/** إرسال استجابة JSON مع ترميز UTF-8 */\nfunction sendJSON(res, status, payload) {\n  const body = JSON.stringify(payload);\n  res.writeHead(status, {\n    'Content-Type': 'application/json; charset=utf-8',\n    'Content-Length': Buffer.byteLength(body),\n    'Cache-Control': 'no-store',\n  });\n  res.end(body);\n}\n\n/** قراءة جسم الطلب مع حد أقصى للحجم */\nfunction readBody(req) {\n  return new Promise((resolve, reject) => {\n    const chunks = [];\n    let size = 0;\n    req.on('data', (chunk) => {\n      size += chunk.length;\n      if (size > MAX_BODY_BYTES) {\n        req.pause();\n        reject(Object.assign(new Error('حجم الطلب كبير جدًا'), { statusCode: 413 }));\n        return;\n      }\n      chunks.push(chunk);\n    });\n    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));\n    req.on('error', reject);\n  });\n}\n\n/**\n * التحقق من صحة المدخلات:\n * sku نص غير فارغ، quantity عدد صحيح موجب (> 0).\n * أي إدخال غير صالح (نص فارغ، كمية 0 أو سالبة أو عشرية أو غير رقمية) ⇒ 400.\n */\nfunction validatePayload(raw) {\n  let data;\n  try {\n    data = JSON.parse(raw);\n  } catch {\n    return { error: 'صيغة JSON غير صالحة' };\n  }\n  if (data === null || typeof data !== 'object' || Array.isArray(data)) {\n    return { error: 'الجسم المرسل يجب أن يكون كائن JSON بالشكل {sku, quantity}' };\n  }\n  const { sku, quantity } = data;\n  if (typeof sku !== 'string' || sku.trim().length === 0) {\n    return { error: 'حقل sku مطلوب ويجب أن يكون نصًا غير فارغ' };\n  }\n  if (typeof quantity !== 'number' || !Number.isInteger(quantity) || quantity <= 0) {\n    return { error: 'حقل quantity يجب أن يكون عددًا صحيحًا موجبًا' };\n  }\n  return { sku: sku.trim(), quantity };\n}\n\n/* --------------------------- عمليات المخزون --------------------------- */\n\n/** إضافة صنف جديد داخل معاملة لمنع تكرار الرمز في حالة التزامن */\nfunction addStockItem(sku, quantity) {\n  db.exec('BEGIN IMMEDIATE');\n  try {\n    const existing = stmtGetBySku.get(sku);\n    if (existing) {\n      db.exec('ROLLBACK');\n      return { ok: false, status: 409, error: `الرمز «${sku}» موجود مسبقًا في المخزون` };\n    }\n    stmtInsert.run(sku, quantity);\n    db.exec('COMMIT');\n    return { ok: true, status: 201 };\n  } catch (error) {\n    try { db.exec('ROLLBACK'); } catch { /* لا شيء */ }\n    throw error;\n  }\n}\n\n/**\n * سحب كمية داخل معاملة: فحص الوجود والرصيد ثم التحديث،\n * وإرجاع 409 دون أي تغيير في البيانات عند الفشل.\n */\nfunction withdrawStockItem(sku, quantity) {\n  db.exec('BEGIN IMMEDIATE');\n  try {\n    const row = stmtGetBySku.get(sku);\n    if (!row) {\n      db.exec('ROLLBACK');\n      return { ok: false, status: 409, error: `الصنف «${sku}» غير موجود في المخزون` };\n    }\n    if (row.quantity < quantity) {\n      db.exec('ROLLBACK');\n      return {\n        ok: false,\n        status: 409,\n        error: `الرصيد غير كافٍ للصنف «${sku}» (المتاح: ${row.quantity}، المطلوب: ${quantity})`,\n      };\n    }\n    stmtDecrease.run(quantity, sku);\n    db.exec('COMMIT');\n    return { ok: true, status: 200 };\n  } catch (error) {\n    try { db.exec('ROLLBACK'); } catch { /* لا شيء */ }\n    throw error;\n  }\n}\n\n/** إرجاع كل الأصناف من قاعدة البيانات الفعلية */\nfunction listStock() {\n  return stmtListStock.all();\n}\n\n/* ------------------------ تقديم الصفحة الرئيسية ------------------------ */\n\nfunction serveIndexPage(res) {\n  try {\n    const html = readFileSync(INDEX_PATH);\n    res.writeHead(200, {\n      'Content-Type': 'text/html; charset=utf-8',\n      'Cache-Control': 'no-store',\n    });\n    res.end(html);\n  } catch {\n    sendJSON(res, 404, { error: 'ملف index.html غير موجود بجوار server.mjs' });\n  }\n}\n\n/* ------------------------------ التوجيه ------------------------------ */\n\nconst server = createServer(async (req, res) => {\n  try {\n    const { pathname } = new URL(req.url, `http://${req.headers.host || 'localhost'}`);\n\n    // الصفحة الرئيسية: index.html\n    if (req.method === 'GET' && (pathname === '/' || pathname === '/index.html')) {\n      serveIndexPage(res);\n      return;\n    }\n\n    /* ----- GET /api/stock : قائمة الأصناف من قاعدة البيانات ----- */\n    if (pathname === '/api/stock') {\n      if (req.method === 'GET') {\n        sendJSON(res, 200, { items: listStock() });\n        return;\n      }\n      if (req.method === 'POST') {\n        const parsed = validatePayload(await readBody(req));\n        if (parsed.error) {\n          sendJSON(res, 400, { error: parsed.error });\n          return;\n        }\n        const result = addStockItem(parsed.sku, parsed.quantity);\n        if (!result.ok) {\n          sendJSON(res, result.status, { error: result.error });\n          return;\n        }\n        sendJSON(res, 201, { message: 'تمت إضافة الصنف بنجاح', items: listStock() });\n        return;\n      }\n      sendJSON(res, 405, { error: 'الطريقة غير مسموحة لهذا المسار' });\n      return;\n    }\n\n    /* ----- POST /api/withdraw : سحب كمية داخل معاملة ----- */\n    if (pathname === '/api/withdraw') {\n      if (req.method === 'POST') {\n        const parsed = validatePayload(await readBody(req));\n        if (parsed.error) {\n          sendJSON(res, 400, { error: parsed.error });\n          return;\n        }\n        const result = withdrawStockItem(parsed.sku, parsed.quantity);\n        if (!result.ok) {\n          sendJSON(res, result.status, { error: result.error });\n          return;\n        }\n        sendJSON(res, 200, { message: 'تم السحب بنجاح', items: listStock() });\n        return;\n      }\n      sendJSON(res, 405, { error: 'الطريقة غير مسموحة لهذا المسار' });\n      return;\n    }\n\n    sendJSON(res, 404, { error: 'المسار غير موجود' });\n  } catch (error) {\n    console.error('خطأ غير متوقع:', error);\n    if (error && error.statusCode === 413) {\n      req.resume();\n      sendJSON(res, 413, { error: 'حجم الطلب كبير جدًا' });\n      return;\n    }\n    if (!res.headersSent) {\n      sendJSON(res, 500, { error: 'خطأ داخلي في الخادم' });\n    } else {\n      res.end();\n    }\n  }\n});\n\nserver.listen(PORT, HOST, () => {\n  console.log(`✅ خادم المخزون يعمل على http://${HOST}:${PORT}`);\n  console.log(`🗄️  قاعدة البيانات الفعلية: ${DB_PATH}`);\n});\n\n/* --------------------------- إيقاف نظيف --------------------------- */\nfunction shutdown() {\n  server.close(() => {\n    try { db.close(); } catch { /* لا شيء */ }\n    process.exit(0);\n  });\n  setTimeout(() => process.exit(0), 2000).unref();\n}\nprocess.on('SIGINT', shutdown);\nprocess.on('SIGTERM', shutdown);",
+            "path": "server.mjs"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:08:37.785Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_write",
+          "ok": true,
+          "summary": "wrote 9626 bytes to C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs",
+          "ms": 2
+        }
+      },
+      {
+        "at": "2026-10-19T00:08:37.786Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 2
+        }
+      },
+      {
+        "at": "2026-10-19T00:08:40.97Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_search",
+          "args": {
+            "glob": "server.mjs",
+            "pattern": "node:http|node:sqlite|/tmp/inventory\\.sqlite|CREATE TABLE|BEGIN IMMEDIATE|ROLLBACK|COMMIT|201|409|400|200"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:08:40.977Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_search",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:4: * • يعمل بـ node:http فقط، دون أي مكتبات خارجية.\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:5: * • قاعدة بيانات فعلية عبر node:sqlite في /tmp/inventory.sqlite\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:10: * • عملية السحب تُنفَّذ داخل معاملة (BEGIN IMMEDIATE / COMMIT / ROLLBACK)\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:14: import { createServer } from 'node:http';\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\ser",
+          "ms": 2
+        }
+      },
+      {
+        "at": "2026-10-19T00:08:40.978Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 3
+        }
+      },
+      {
+        "at": "2026-10-19T00:09:14.691Z",
+        "type": "critique",
+        "data": {
+          "type": "critique",
+          "id": "s1",
+          "verdict": "revise",
+          "reason": "كتابة server.mjs في جذر مساحة العمل مؤكدة، والأدلة تغطي الاستيرادات ومسار /tmp/inventory.sqlite والمعاملة (BEGIN IMMEDIATE/COMMIT/ROLLBACK) ورموز الحالة 201/200/409/400، لكن الأدلة صامتة عن عناصر جوهرية في معايير النجاح: استعلامات بمعاملات الربط (?)، ونص CREATE TABLE الكامل، وربط المسارات /api/stock و/api/withdraw، والاستماع على 127.0.0.1:3000 وتقديم index.html."
+        }
+      },
+      {
+        "at": "2026-10-19T00:09:14.696Z",
+        "type": "revise",
+        "data": {
+          "type": "revise",
+          "id": "s1",
+          "attempt": 2,
+          "fixes": [
+            "شغّل file_search على server.mjs بنمط prepare\\(|INSERT INTO stock|UPDATE stock SET|SELECT sku.*FROM stock وأرفق النتائج لإثبات أن كل الاستعلامات تستخدم معاملات ربط (?) دون دمج قيم داخل نص SQL.",
+            "أرفق دليل بحث بنمط sku TEXT PRIMARY KEY|quantity INTEGER NOT NULL CHECK يُظهر تعريف جدول stock الكامل مطابقًا للمخطط المطلوب.",
+            "أرفق دليل بحث بنمط /api/stock|/api/withdraw|\\.listen\\(|127\\.0\\.0\\.1|3000|index\\.html يُظهر ربط النقاط الثلاث بمساراتها الصحيحة والاستماع على 127.0.0.1:3000 وتقديم index.html كصفحة رئيسية، وصحّح أي خلل تُظهره النتائج."
+          ]
+        }
+      },
+      {
+        "at": "2026-10-19T00:09:14.701Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:09:55.591Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_write",
+          "args": {
+            "content": "/**\n * server.mjs — خادم تطبيق المخزون العربي (RTL)\n * مكتبات مدمجة فقط: node:http + node:sqlite (+ node:fs / node:url للقراءة)\n * يستمع على 127.0.0.1:3000 ويقدّم index.html كصفحة رئيسية.\n * قاعدة SQLite فعلية في /tmp/inventory.sqlite (بيانات التشغيل داخل حاوية Docker فقط).\n * لا مصفوفة ذاكرة ولا localStorage — القاعدة هي مصدر الحقيقة الوحيد.\n */\n\nimport { createServer } from 'node:http';\nimport { DatabaseSync } from 'node:sqlite';\nimport { readFile } from 'node:fs/promises';\nimport { mkdirSync } from 'node:fs';\nimport { fileURLToPath } from 'node:url';\n\nconst HOST = '127.0.0.1';\nconst PORT = 3000;\nconst DB_PATH = '/tmp/inventory.sqlite';\n\n// التأكد من وجود مجلد بيانات التشغيل (داخل الحاوية: /tmp) — لا يمس ملفات المصدر\nmkdirSync('/tmp', { recursive: true });\n\n// فتح قاعدة SQLite فعلية على القرص\nconst db = new DatabaseSync(DB_PATH);\n\n// إنشاء جدول stock عند بدء التشغيل — يبدأ بلا أي أصناف مبدئية\ndb.exec(`\n  CREATE TABLE IF NOT EXISTS stock (\n    sku TEXT PRIMARY KEY,\n    quantity INTEGER NOT NULL CHECK(quantity >= 0)\n  )\n`);\n\n// استعلامات مُجهّزة بمعاملات ربط (?) — لا تُدمج أي قيمة داخل نص SQL مطلقًا\nconst stmtList = db.prepare('SELECT sku, quantity FROM stock ORDER BY sku');\nconst stmtGet = db.prepare('SELECT sku, quantity FROM stock WHERE sku = ?');\nconst stmtInsert = db.prepare('INSERT INTO stock (sku, quantity) VALUES (?, ?)');\nconst stmtWithdraw = db.prepare('UPDATE stock SET quantity = quantity - ? WHERE sku = ?');\n\n/* ---------- أدوات مساعدة ---------- */\n\nfunction sendJson(res, status, payload) {\n  const body = JSON.stringify(payload);\n  res.writeHead(status, {\n    'Content-Type': 'application/json; charset=utf-8',\n    'Cache-Control': 'no-store'\n  });\n  res.end(body);\n}\n\nfunction readJsonBody(req) {\n  return new Promise((resolve, reject) => {\n    let raw = '';\n    req.on('data', (chunk) => {\n      raw += chunk;\n      if (raw.length > 100000) {\n        reject(new Error('payload-too-large'));\n        req.destroy();\n      }\n    });\n    req.on('end', () => {\n      if (raw.trim() === '') {\n        resolve(undefined);\n        return;\n      }\n      try {\n        resolve(JSON.parse(raw));\n      } catch {\n        reject(new Error('invalid-json'));\n      }\n    });\n    req.on('error', reject);\n  });\n}\n\n// التحقق من الإدخال: رمز نصي غير فارغ + كمية عدد صحيح موجب، وإلا null (=> 400)\nfunction parseInput(body) {\n  if (body === undefined || body === null || typeof body !== 'object' || Array.isArray(body)) return null;\n  const { sku, quantity } = body;\n  if (typeof sku !== 'string') return null;\n  const skuTrimmed = sku.trim();\n  if (skuTrimmed.length === 0) return null;\n  if (!Number.isInteger(quantity) || quantity <= 0) return null;\n  return { sku: skuTrimmed, quantity };\n}\n\nfunction isUniqueViolation(err) {\n  return Boolean(err) && (\n    err.code === 'SQLITE_CONSTRAINT_PRIMARYKEY' ||\n    (typeof err.message === 'string' && err.message.includes('UNIQUE constraint failed'))\n  );\n}\n\n/* ---------- نقاط النهاية ---------- */\n\nasync function handleApi(req, res, pathname) {\n  // GET /api/stock — يعيد {items:[{sku,quantity}]} من القاعدة\n  if (pathname === '/api/stock' && req.method === 'GET') {\n    const items = stmtList.all();\n    sendJson(res, 200, { items });\n    return;\n  }\n\n  // POST /api/stock — ينشئ صنفًا برصيد صحيح موجب ويرجع 201، و409 عند تكرار الرمز\n  if (pathname === '/api/stock' && req.method === 'POST') {\n    let body;\n    try {\n      body = await readJsonBody(req);\n    } catch {\n      sendJson(res, 400, { error: 'صيغة الطلب غير صالحة' });\n      return;\n    }\n\n    const input = parseInput(body);\n    if (!input) {\n      sendJson(res, 400, { error: 'الرمز مطلوب، والكمية يجب أن تكون عددًا صحيحًا موجبًا' });\n      return;\n    }\n\n    if (stmtGet.get(input.sku)) {\n      sendJson(res, 409, { error: 'الرمز موجود مسبقًا في المخزون' });\n      return;\n    }\n\n    try {\n      stmtInsert.run(input.sku, input.quantity);\n    } catch (err) {\n      if (isUniqueViolation(err)) {\n        sendJson(res, 409, { error: 'الرمز موجود مسبقًا في المخزون' });\n      } else {\n        sendJson(res, 500, { error: 'خطأ في الخادم' });\n      }\n      return;\n    }\n    sendJson(res, 201, { sku: input.sku, quantity: input.quantity });\n    return;\n  }\n\n  // POST /api/withdraw — سحب كمية داخل معاملة (transaction)؛ 409 عند عدم وجود الصنف\n  // أو عدم كفاية الرصيد، دون أي تغيير في البيانات (ROLLBACK).\n  if (pathname === '/api/withdraw' && req.method === 'POST') {\n    let body;\n    try {\n      body = await readJsonBody(req);\n    } catch {\n      sendJson(res, 400, { error: 'صيغة الطلب غير صالحة' });\n      return;\n    }\n\n    const input = parseInput(body);\n    if (!input) {\n      sendJson(res, 400, { error: 'الرمز مطلوب، والكمية يجب أن تكون عددًا صحيحًا موجبًا' });\n      return;\n    }\n\n    try {\n      db.exec('BEGIN IMMEDIATE');\n      const row = stmtGet.get(input.sku);\n      if (!row || row.quantity < input.quantity) {\n        db.exec('ROLLBACK'); // رفض العملية دون تغيير البيانات\n        sendJson(res, 409, {\n          error: !row ? 'الصنف غير موجود في المخزون' : 'الرصيد غير كافٍ لإتمام السحب'\n        });\n        return;\n      }\n      stmtWithdraw.run(input.quantity, input.sku);\n      db.exec('COMMIT');\n      const updated = stmtGet.get(input.sku);\n      sendJson(res, 200, { sku: updated.sku, quantity: updated.quantity });\n    } catch (err) {\n      try { db.exec('ROLLBACK'); } catch { /* لا معاملة مفتوحة */ }\n      sendJson(res, 500, { error: 'خطأ في الخادم' });\n    }\n    return;\n  }\n\n  if (pathname === '/api/stock' || pathname === '/api/withdraw') {\n    sendJson(res, 405, { error: 'الطريقة غير مدعومة لهذا المسار' });\n    return;\n  }\n  sendJson(res, 404, { error: 'المسار غير موجود' });\n}\n\n/* ---------- تقديم index.html كصفحة رئيسية ---------- */\n\nconst INDEX_PATH = fileURLToPath(new URL('./index.html', import.meta.url));\n\nasync function serveIndex(res) {\n  try {\n    const html = await readFile(INDEX_PATH);\n    res.writeHead(200, {\n      'Content-Type': 'text/html; charset=utf-8',\n      'Cache-Control': 'no-store'\n    });\n    res.end(html);\n  } catch {\n    res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });\n    res.end('index.html غير موجود بجانب server.mjs');\n  }\n}\n\n/* ---------- الخادم ---------- */\n\nconst server = createServer(async (req, res) => {\n  let pathname;\n  try {\n    pathname = new URL(req.url, `http://${HOST}:${PORT}`).pathname;\n  } catch {\n    sendJson(res, 400, { error: 'طلب غير صالح' });\n    return;\n  }\n\n  try {\n    if (pathname.startsWith('/api/')) {\n      await handleApi(req, res, pathname);\n      return;\n    }\n    if (req.method === 'GET' && (pathname === '/' || pathname === '/index.html')) {\n      await serveIndex(res);\n      return;\n    }\n    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });\n    res.end('غير موجود');\n  } catch {\n    if (!res.headersSent) sendJson(res, 500, { error: 'خطأ في الخادم' });\n    else res.end();\n  }\n});\n\nserver.listen(PORT, HOST, () => {\n  console.log(`خادم المخزون يعمل على http://${HOST}:${PORT} — قاعدة البيانات: ${DB_PATH}`);\n});",
+            "path": "server.mjs"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:09:55.597Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_write",
+          "ok": true,
+          "summary": "wrote 7944 bytes to C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs",
+          "ms": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:09:55.599Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 2
+        }
+      },
+      {
+        "at": "2026-10-19T00:09:59.236Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_search",
+          "args": {
+            "glob": "server.mjs",
+            "pattern": "/api/stock|/api/withdraw|\\.listen\\(|127\\.0\\.0\\.1|3000|index\\.html"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:09:59.24Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_search",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:4: * يستمع على 127.0.0.1:3000 ويقدّم index.html كصفحة رئيسية.\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:15: const HOST = '127.0.0.1';\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:16: const PORT = 3000;\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:96: // GET /api/stock — يعيد {items:[{sku,quantity}]} من القاعدة\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:97: if (pathname === '/api/stock' && req.method === 'GE",
+          "ms": 0
+        }
+      },
+      {
+        "at": "2026-10-19T00:09:59.241Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 3
+        }
+      },
+      {
+        "at": "2026-10-19T00:10:00.694Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_search",
+          "args": {
+            "glob": "server.mjs",
+            "pattern": "prepare\\(|INSERT INTO stock|UPDATE stock SET|SELECT sku.*FROM stock"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:10:00.698Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_search",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:34: const stmtList = db.prepare('SELECT sku, quantity FROM stock ORDER BY sku');\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:35: const stmtGet = db.prepare('SELECT sku, quantity FROM stock WHERE sku = ?');\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:36: const stmtInsert = db.prepare('INSERT INTO stock (sku, quantity) VALUES (?, ?)');\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:37: const stmtWithdraw = db.prepare('UPDATE stock SET quanti",
+          "ms": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:10:00.7Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 4
+        }
+      },
+      {
+        "at": "2026-10-19T00:10:02.245Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_search",
+          "args": {
+            "glob": "server.mjs",
+            "pattern": "sku TEXT PRIMARY KEY|quantity INTEGER NOT NULL CHECK"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:10:02.249Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_search",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:28: sku TEXT PRIMARY KEY,\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:29: quantity INTEGER NOT NULL CHECK(quantity >= 0)",
+          "ms": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:10:02.25Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 5
+        }
+      },
+      {
+        "at": "2026-10-19T00:10:04.068Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_stat",
+          "args": {
+            "path": "server.mjs"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:10:04.074Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_stat",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs\ntype=file\nsize=7944\nmtime=2026-10-19T00:09:55.597Z",
+          "ms": 0
+        }
+      },
+      {
+        "at": "2026-10-19T00:10:04.076Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 6
+        }
+      },
+      {
+        "at": "2026-10-19T00:11:44.752Z",
+        "type": "critique",
+        "data": {
+          "type": "critique",
+          "id": "s1",
+          "verdict": "revise",
+          "reason": "البنية الأساسية للنسخة النهائية (7944 بايت) مؤكدة بالبحث: مخطط stock الصحيح، استعلامات مُجهّزة بـ ?، النقاط الثلاث، الاستماع على 127.0.0.1:3000، وتقديم index.html؛ لكن أدلة رموز الحالة 201/409/400 والمعاملة BEGIN IMMEDIATE/COMMIT/ROLLBACK جاءت من بحث نُفِّذ على النسخة السابقة قبل إعادة الكتابة فقط، فلا دليل مباشر عليهما في الملف المكتوب على القرص، كما لم يُثبت غياب مؤقت الإنهاء الذاتي process.exit الموجود في النسخة السابقة (سطر 256) الذي يقتل الخادم بعد ثانيتين."
+        }
+      },
+      {
+        "at": "2026-10-19T00:11:44.754Z",
+        "type": "replan",
+        "data": {
+          "type": "replan",
+          "round": 1,
+          "reason": "إنشاء server.mjs: البنية الأساسية للنسخة النهائية (7944 بايت) مؤكدة بالبحث: مخطط stock الصحيح، استعلامات مُجهّزة بـ ?، النقاط الثلاث، الاستماع على 127.0.0.1:3000، وتقديم index.html؛ لكن أدلة رموز الحالة 201/409/400 والمعاملة BEGIN IMMEDIATE/COMMIT/ROLLBACK جاءت من بحث نُفِّذ على النسخة السابقة قبل إعادة الكتابة فقط، فلا دليل مباشر عليهما في الملف المكتوب على القرص، كما لم يُثبت غياب مؤقت الإنهاء الذاتي process.exit الموجود في النسخة السابقة (سطر 256) الذي يقتل الخادم بعد ثانيتين."
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:14.168Z",
+        "type": "plan",
+        "data": {
+          "type": "plan",
+          "goal": "تطبيق مخزون عربي RTL بتصميم سماوي وبنفسجي متجاوب في جذر مساحة عمل المهمة: index.html وserver.mjs (Node على 127.0.0.1:3000 مع SQLite في /tmp داخل Docker) وapp-verification.json بالعقد الحرفي، جاهز للتشغيل والتحقق داخل Docker.",
+          "trivial": false,
+          "steps": [
+            {
+              "id": "s1",
+              "title": "جرد مساحة العمل وقراءة server.mjs الحالي",
+              "instruction": "استخدم file_list على جذر مساحة عمل المهمة (المسار النسبي '.') ثم file_read لملف server.mjs كاملًا كما هو على القرص، وسجّل هل يوجد index.html وapp-verification.json. الهدف معرفة الحالة الفعلية قبل أي كتابة.",
+              "successCriteria": "قائمة ملفات الجذر والنص الكامل لـ server.mjs على القرص، مع تحديد وجود أو غياب index.html وapp-verification.json."
+            },
+            {
+              "id": "s2",
+              "title": "تثبيت النسخة النهائية الكاملة من server.mjs",
+              "instruction": "لأن الأدلة على 201/409/400 والمعاملة وغياب مؤقت الإنهاء الذاتي غير مثبتة في النسخة على القرص، اكتب عبر file_write نسخة نهائية كاملة من server.mjs في جذر مساحة العمل تتضمن: استيراد node:http وnode:sqlite فقط؛ فتح قاعدة /tmp/inventory.sqlite وإنشاء الجدول stock(sku TEXT PRIMARY KEY, quantity INTEGER NOT NULL CHECK(quantity>=0)) دون إدخال أي أصناف؛ GET /api/stock يعيد 200 مع {items:[{sku,quantity}]}؛ POST /api/stock يتحقق من الإدخال (sku نص غير فارغ وquantity عدد صحيح أكبر من صفر) وإلا 400، وينشئ الصنف ويعيد 201، ويعيد 409 عند تكرار الرمز؛ POST /api/withdraw بنفس التحقق (400)، وداخل معاملة BEGIN IMMEDIATE يفحص وجود الصنف وكفاية الرصيد فإن فشل يعيد 409 مع ROLLBACK دون أي تغيير في البيانات، وإلا UPDATE ثم COMMIT ويعيد 200؛ كل عبارات SQL بمعاملات ربط ? دون دمج sku في نص الاستعلام؛ تقديم index.html على المسار /؛ الاستماع على 127.0.0.1:3000؛ ولا يوجد أي process.exit أو setTimeout لإنهاء ذاتي، الخادم يعمل باستمرار.",
+              "successCriteria": "تأكيد file_write لكتابة server.mjs في جذر مساحة العمل، ويُثبت المحتوى نصيًا في خطوة التحقق النهائية."
+            },
+            {
+              "id": "s3",
+              "title": "كتابة index.html بالواجهة العربية RTL",
+              "instruction": "اكتب عبر file_write ملف index.html في جذر مساحة العمل: صفحة عربية dir=rtl lang=ar بتصميم سماوي وبنفسجي متجاوب بـ CSS داخلي فقط دون أي مكتبات أو CDN؛ نمط إضافة بحقلي #sku و#quantity وزر #save، ونمط سحب بحقلي #withdraw-sku و#withdraw-quantity وزر #withdraw؛ عنصر #error لرسالة خطأ عربية يظهر عند رفض أي عملية (سحب أكثر من الرصيد، رمز مكرر، كمية سالبة أو غير صحيحة) ويُخفى عند النجاح؛ جدول #items تُملأ صفوفه بالصنف stock-item وخلية الرصيد تحمل data-quantity وتعرض الرقم وحده؛ JS داخلي يستدعي GET /api/stock عند تحميل الصفحة وبعد كل عملية ويعيد الرسم من بيانات الخادم؛ كل استدعاء fetch داخل try/catch أو then/catch مع فحص res.ok وقراءة رسالة الخطأ من الخادم وعرضها في #error دون أي رد بلا معالجة؛ تحقق JS من القيم قبل الإرسال (رمز غير فارغ وكمية عدد صحيح موجب) بحيث تظهر رسالة الخطأ حتى للقيمة السالبة ولا يعتمد على منع HTML وحده (استخدم type=text أو تجاوز قيود الإدخال)؛ دون alert أو confirm.",
+              "successCriteria": "تأكيد file_write لكتابة index.html في جذر مساحة العمل، ويُثبت المحتوى والمعرفات في خطوة التحقق النهائية."
+            },
+            {
+              "id": "s4",
+              "title": "كتابة app-verification.json بالعقد الحرفي",
+              "instruction": "اكتب عبر file_write ملف app-verification.json في جذر مساحة العمل يحتوي حرفيًا العقد المحدد في طلب المستخدم دون أي تعديل أو إضافة مفاتيح: entry=index.html، runtime={type:node, entry:server.mjs}، وستة سيناريوهات بنصوصها وخطواتها وexpectedResponses كما وردت حرفيًا: Add stock، Server persistence on reload، Valid withdrawal، Overdraw rejected without changing stock، Duplicate SKU rejected، Negative amount rejected.",
+              "successCriteria": "تأكيد file_write لكتابة app-verification.json في جذر مساحة العمل، ويُثبت تطابقه الحرفي في خطوة التحقق النهائية."
+            },
+            {
+              "id": "s5",
+              "title": "تحقق نهائي من الملفات الثلاثة وتسليم الجواب",
+              "instruction": "اقرأ الملفات الثلاثة بـ file_read (server.mjs وindex.html وapp-verification.json) وتحقق نصيًا من كل بند: في server.mjs وجود 201 عند الإنشاء و409 عند التكرار و409 عند فشل السحب و400 للإدخال غير الصالح، وBEGIN IMMEDIATE مع COMMIT/ROLLBACK في السحب، وغياب تام لـ process.exit وأي مؤقت إنهاء ذاتي، وغياب localStorage أو مصفوفة ذاكرة بديلة، ومسار /tmp/inventory.sqlite داخل الكود فقط، والاستماع على 127.0.0.1:3000، واستخدام ? في كل الاستعلامات؛ وفي index.html وجود dir=rtl وكل المعرفات #sku و#quantity و#save و#withdraw-sku و#withdraw-quantity و#withdraw و#error و#items وصفوف stock-item وdata-quantity، ودون alert/confirm ودون مكتبات خارجية؛ وفي app-verification.json مطابقة العقد حرفيًا بالسيناريوهات الستة. ثم قدّم الجواب النهائي الكامل: الملفات الثلاثة في جذر مساحة العمل بمسارات نسبية (index.html وserver.mjs وapp-verification.json)، ووصف مختصر لواجهة API وسلوك التحقق، مع التنبيه أن التشغيل يتم داخل Docker فقط وأن قاعدة /tmp/inventory.sqlite تبقى خلال سيناريو الاختبار فقط.",
+              "successCriteria": "قراءات الملفات الثلاثة تؤكد كل البنود (رموز الحالة، المعاملة، غياب process.exit وlocalStorage، المعرفات، RTL، مطابقة العقد حرفيًا)، والجواب النهائي يذكر الملفات ومساراتها النسبية وكيفية عمل النظام."
+            }
+          ],
+          "source": "model"
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:14.174Z",
+        "type": "plan_step",
+        "data": {
+          "type": "plan_step",
+          "id": "s1",
+          "index": 1,
+          "total": 5,
+          "title": "جرد مساحة العمل وقراءة server.mjs الحالي",
+          "phase": "start"
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:14.18Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:16.473Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_stat",
+          "args": {
+            "path": "app-verification.json"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:16.476Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_stat",
+          "ok": false,
+          "summary": "not found: C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\app-verification.json",
+          "ms": 0
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:16.478Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 2
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:17.766Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_list",
+          "args": {
+            "maxEntries": 300,
+            "path": ".",
+            "recursive": true
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:17.776Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_list",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs (7944 bytes)",
+          "ms": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:17.778Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 3
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:19.309Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 400,
+            "path": "server.mjs"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:19.315Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs (231 lines)\n1: /**\n2:  * server.mjs — خادم تطبيق المخزون العربي (RTL)\n3:  * مكتبات مدمجة فقط: node:http + node:sqlite (+ node:fs / node:url للقراءة)\n4:  * يستمع على 127.0.0.1:3000 ويقدّم index.html كصفحة رئيسية.\n5:  * قاعدة SQLite فعلية في /tmp/inventory.sqlite (بيانات التشغيل داخل حاوية Docker فقط).\n6:  * لا مصفوفة ذاكرة ولا localStorage — القاعدة هي مصدر الحقيقة الوحيد.\n7:  */\n8: \n9: import { createServer } from 'node:http';",
+          "ms": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:19.317Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 4
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:36.506Z",
+        "type": "critique",
+        "data": {
+          "type": "critique",
+          "id": "s1",
+          "verdict": "pass",
+          "reason": "الأدلة تؤكد اكتمال الجرد: file_list التكراري على الجذر أظهر server.mjs فقط (7944 بايت) بما يعني غياب index.html، وfile_stat أكّد غياب app-verification.json صراحةً، وfile_read أعاد النص الكامل لـ server.mjs (231 سطرًا) المطابق تمامًا لما وثّقه المنفذ من نقاط نهاية ورموز حالات ومعاملات ربط."
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:36.509Z",
+        "type": "plan_step",
+        "data": {
+          "type": "plan_step",
+          "id": "s1",
+          "index": 1,
+          "total": 5,
+          "title": "جرد مساحة العمل وقراءة server.mjs الحالي",
+          "phase": "done",
+          "summary": "اكتمل جرد مساحة العمل. إليك النتائج الموثقة: ## 1. قائمة ملفات جذر مساحة العمل (استدعاء `file_list` على `.` بشكل تكراري) | الملف | الحجم | الحالة | |---|---|---| | `server.mjs` | 7944 بايت | موجود (الملف الوحيد في الجذر) | | `index.html` | — | **غير موجود** ❌ | | `app-verification.json` | — | **غير ..."
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:36.514Z",
+        "type": "plan_step",
+        "data": {
+          "type": "plan_step",
+          "id": "s2",
+          "index": 2,
+          "total": 5,
+          "title": "تثبيت النسخة النهائية الكاملة من server.mjs",
+          "phase": "start"
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:36.519Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:38.089Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "server.mjs"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:38.095Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs (231 lines)\n1: /**\n2:  * server.mjs — خادم تطبيق المخزون العربي (RTL)\n3:  * مكتبات مدمجة فقط: node:http + node:sqlite (+ node:fs / node:url للقراءة)\n4:  * يستمع على 127.0.0.1:3000 ويقدّم index.html كصفحة رئيسية.\n5:  * قاعدة SQLite فعلية في /tmp/inventory.sqlite (بيانات التشغيل داخل حاوية Docker فقط).\n6:  * لا مصفوفة ذاكرة ولا localStorage — القاعدة هي مصدر الحقيقة الوحيد.\n7:  */\n8: \n9: import { createServer } from 'node:http';",
+          "ms": 0
+        }
+      },
+      {
+        "at": "2026-10-19T00:12:38.098Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 2
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:02.245Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_write",
+          "args": {
+            "content": "/**\n * server.mjs — خادم تطبيق المخزون العربي (RTL)\n *\n * • وحدات Node المدمجة فقط (لا مكتبات خارجية إطلاقًا):\n *   node:http لتشغيل الخادم، node:sqlite لقاعدة البيانات، node:fs لقراءة index.html من القرص.\n * • يستمع على 127.0.0.1:3000 ويعمل باستمرار (لا process.exit ولا setTimeout لإنهاء ذاتي).\n * • قاعدة SQLite فعلية على القرص في /tmp/inventory.sqlite — بيانات التشغيل داخل حاوية\n *   Docker فقط، ولا علاقة لها بمسارات إنشاء ملفات المصدر على جهاز المستخدم.\n * • لا مصفوفة في الذاكرة ولا localStorage: قاعدة البيانات هي مصدر الحقيقة الوحيد.\n * • كل عبارات SQL تستخدم معاملات ربط (?) — لا تُدمج أي قيمة (مثل sku) داخل نص الاستعلام.\n */\n\nimport { createServer } from 'node:http';\nimport { DatabaseSync } from 'node:sqlite';\nimport { readFileSync, mkdirSync } from 'node:fs';\n\nconst HOST = '127.0.0.1';\nconst PORT = 3000;\nconst DB_PATH = '/tmp/inventory.sqlite';\nconst MAX_BODY_BYTES = 100_000; // حد أقصى لحجم جسم الطلب (حماية بسيطة)\n\n/* ============================================================\n * قاعدة البيانات: SQLite فعلية في /tmp داخل الحاوية\n * ============================================================ */\n\n// /tmp موجود دائمًا داخل حاوية Linux؛ الإنشاء الاحتياطي لا يمس ملفات المصدر إطلاقًا.\ntry {\n  mkdirSync('/tmp', { recursive: true });\n} catch {\n  // المجلد موجود مسبقًا أو أنشأته بيئة التشغيل — لا شيء مطلوب.\n}\n\nlet db;\ntry {\n  db = new DatabaseSync(DB_PATH);\n} catch (err) {\n  // فشل تهيئة البيئة (مثل عدم توفر /tmp) — رسالة واضحة ثم انهيار صريح عند الإقلاع،\n  // بلا أي إنهاء ذاتي صامت أثناء التشغيل الطبيعي.\n  console.error(`تعذر فتح قاعدة البيانات في ${DB_PATH}: ${err && err.message ? err.message : err}`);\n  throw err;\n}\n\n// إنشاء الجدول إن لم يوجد — تبدأ القاعدة بلا أي أصناف مبدئية (لا INSERT إطلاقًا).\ndb.exec(`\n  CREATE TABLE IF NOT EXISTS stock (\n    sku TEXT PRIMARY KEY,\n    quantity INTEGER NOT NULL CHECK(quantity >= 0)\n  )\n`);\n\n// استعلامات مُجهّزة بمعاملات ربط (?) — لا دمج لأي قيمة داخل نص SQL مطلقًا.\nconst stmtList = db.prepare('SELECT sku, quantity FROM stock ORDER BY sku');\nconst stmtGet = db.prepare('SELECT sku, quantity FROM stock WHERE sku = ?');\nconst stmtInsert = db.prepare('INSERT INTO stock (sku, quantity) VALUES (?, ?)');\nconst stmtWithdraw = db.prepare('UPDATE stock SET quantity = quantity - ? WHERE sku = ?');\n\n/* ============================================================\n * أدوات مساعدة\n * ============================================================ */\n\nfunction sendJson(res, status, payload) {\n  const body = JSON.stringify(payload);\n  res.writeHead(status, {\n    'Content-Type': 'application/json; charset=utf-8',\n    'Cache-Control': 'no-store'\n  });\n  res.end(body);\n}\n\n// قراءة جسم الطلب كاملًا (كمخازن ثنائية لتفادي تلف الأحرف العربية المقسومة بين\n// الحزم) ثم تحليله كـ JSON. الجسم الفارغ => undefined => يُرفض لاحقًا بـ 400.\nfunction readJsonBody(req) {\n  return new Promise((resolve, reject) => {\n    const chunks = [];\n    let total = 0;\n    let tooLarge = false;\n\n    req.on('data', (chunk) => {\n      if (tooLarge) return; // تجاهل بقية البث؛ يُرفض الطلب عند انتهائه\n      total += chunk.length;\n      if (total > MAX_BODY_BYTES) {\n        tooLarge = true;\n        return;\n      }\n      chunks.push(chunk);\n    });\n\n    req.on('end', () => {\n      if (tooLarge) {\n        reject(new Error('payload-too-large'));\n        return;\n      }\n      const text = Buffer.concat(chunks).toString('utf8').trim();\n      if (text === '') {\n        resolve(undefined);\n        return;\n      }\n      try {\n        resolve(JSON.parse(text));\n      } catch {\n        reject(new Error('invalid-json'));\n      }\n    });\n\n    req.on('error', reject);\n  });\n}\n\n// التحقق من الإدخال: sku نص غير فارغ + quantity عدد صحيح أكبر من صفر، وإلا null (=> 400).\nfunction parseInput(body) {\n  if (body === null || typeof body !== 'object' || Array.isArray(body)) return null;\n  const sku = body.sku;\n  const quantity = body.quantity;\n  if (typeof sku !== 'string') return null;\n  const skuTrimmed = sku.trim();\n  if (skuTrimmed === '') return null;\n  if (!Number.isInteger(quantity) || quantity <= 0) return null;\n  return { sku: skuTrimmed, quantity };\n}\n\n// تمييز خطأ تكرار المفتاح PRIMARY KEY عبر أشكال الأخطاء المختلفة لإصدارات node:sqlite.\nfunction isUniqueViolation(err) {\n  if (!err) return false;\n  const code = String(err.code ?? err.errcode ?? '');\n  const message = String(err.message ?? '');\n  return code === 'SQLITE_CONSTRAINT_PRIMARYKEY' || /UNIQUE constraint failed/i.test(message);\n}\n\n/* ============================================================\n * نقاط النهاية (API ثابت)\n * ============================================================ */\n\nasync function handleApi(req, res, pathname) {\n  // GET /api/stock — يعيد 200 مع {items:[{sku,quantity}]} من قاعدة البيانات.\n  if (pathname === '/api/stock' && req.method === 'GET') {\n    sendJson(res, 200, { items: stmtList.all() });\n    return;\n  }\n\n  // POST /api/stock — إنشاء صنف جديد برصيد صحيح موجب: 201، وتكرار الرمز: 409،\n  // وإدخال غير صالح (JSON تالف/ناقص/كمية غير صحيحة): 400.\n  if (pathname === '/api/stock' && req.method === 'POST') {\n    let body;\n    try {\n      body = await readJsonBody(req);\n    } catch {\n      sendJson(res, 400, { error: 'صيغة الطلب غير صالحة (JSON مطلوب)' });\n      return;\n    }\n\n    const input = parseInput(body);\n    if (!input) {\n      sendJson(res, 400, { error: 'الرمز مطلوب، والكمية يجب أن تكون عددًا صحيحًا موجبًا' });\n      return;\n    }\n\n    // فحص مسبق للتكرار، مع شبكة أمان عند قيد PRIMARY KEY (في حال سباق بين طلبين).\n    if (stmtGet.get(input.sku)) {\n      sendJson(res, 409, { error: 'الرمز موجود مسبقًا في المخزون' });\n      return;\n    }\n\n    try {\n      stmtInsert.run(input.sku, input.quantity); // معاملات ربط فقط — لا دمج في SQL\n    } catch (err) {\n      if (isUniqueViolation(err)) {\n        sendJson(res, 409, { error: 'الرمز موجود مسبقًا في المخزون' });\n      } else {\n        sendJson(res, 500, { error: 'خطأ في الخادم أثناء الإضافة' });\n      }\n      return;\n    }\n\n    sendJson(res, 201, { sku: input.sku, quantity: input.quantity });\n    return;\n  }\n\n  // POST /api/withdraw — سحب كمية داخل معاملة BEGIN IMMEDIATE:\n  // صنف غير موجود أو رصيد غير كافٍ => ROLLBACK و409 دون أي تغيير في البيانات؛\n  // وإلا UPDATE ثم COMMIT و200. الإدخال غير الصالح => 400.\n  if (pathname === '/api/withdraw' && req.method === 'POST') {\n    let body;\n    try {\n      body = await readJsonBody(req);\n    } catch {\n      sendJson(res, 400, { error: 'صيغة الطلب غير صالحة (JSON مطلوب)' });\n      return;\n    }\n\n    const input = parseInput(body);\n    if (!input) {\n      sendJson(res, 400, { error: 'الرمز مطلوب، والكمية يجب أن تكون عددًا صحيحًا موجبًا' });\n      return;\n    }\n\n    // المعاملة تبدأ بعد اكتمال قراءة الجسم، وكل خطواتها متزامنة بلا أي await\n    // حتى لا يتداخل طلب آخر داخل نطاقها (حلقة الأحداث أحادية الخيط).\n    try {\n      db.exec('BEGIN IMMEDIATE');\n\n      const row = stmtGet.get(input.sku); // معامل ربط ? — لا دمج للرمز في SQL\n      if (!row) {\n        db.exec('ROLLBACK'); // رفض دون أي تغيير في البيانات\n        sendJson(res, 409, { error: 'الصنف غير موجود في المخزون' });\n        return;\n      }\n      if (row.quantity < input.quantity) {\n        db.exec('ROLLBACK'); // رفض دون أي تغيير في البيانات\n        sendJson(res, 409, { error: 'الرصيد غير كافٍ لإتمام عملية السحب' });\n        return;\n      }\n\n      stmtWithdraw.run(input.quantity, input.sku); // معاملات ربط فقط — لا دمج في SQL\n      db.exec('COMMIT');\n\n      const updated = stmtGet.get(input.sku);\n      sendJson(res, 200, { sku: updated.sku, quantity: updated.quantity });\n    } catch (err) {\n      try {\n        db.exec('ROLLBACK');\n      } catch {\n        // لا معاملة مفتوحة — لا شيء مطلوب.\n      }\n      if (!res.headersSent) {\n        sendJson(res, 500, { error: 'خطأ في الخادم أثناء السحب' });\n      }\n    }\n    return;\n  }\n\n  // طرق غير مدعومة على مسارات API المعروفة.\n  if (pathname === '/api/stock' || pathname === '/api/withdraw') {\n    sendJson(res, 405, { error: 'الطريقة غير مدعومة لهذا المسار' });\n    return;\n  }\n\n  sendJson(res, 404, { error: 'المسار غير موجود' });\n}\n\n/* ============================================================\n * تقديم index.html على المسار /\n * ============================================================ */\n\nconst INDEX_URL = new URL('./index.html', import.meta.url);\n\nfunction serveIndex(res) {\n  let html;\n  try {\n    html = readFileSync(INDEX_URL);\n  } catch {\n    res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });\n    res.end('index.html غير موجود بجانب server.mjs');\n    return;\n  }\n  res.writeHead(200, {\n    'Content-Type': 'text/html; charset=utf-8',\n    'Cache-Control': 'no-store'\n  });\n  res.end(html);\n}\n\n/* ============================================================\n * الخادم — يعمل باستمرار (لا process.exit ولا setTimeout إنهائي)\n * ============================================================ */\n\nconst server = createServer(async (req, res) => {\n  let pathname;\n  try {\n    pathname = new URL(req.url, `http://${HOST}:${PORT}`).pathname;\n  } catch {\n    sendJson(res, 400, { error: 'طلب غير صالح' });\n    return;\n  }\n\n  try {\n    if (pathname.startsWith('/api/')) {\n      await handleApi(req, res, pathname);\n      return;\n    }\n\n    if ((req.method === 'GET' || req.method === 'HEAD') && (pathname === '/' || pathname === '/index.html')) {\n      serveIndex(res); // بالنسبة لـ HEAD يتجاهل Node جسم الاستجابة تلقائيًا\n      return;\n    }\n\n    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });\n    res.end('غير موجود');\n  } catch {\n    if (!res.headersSent) {\n      sendJson(res, 500, { error: 'خطأ في الخادم' });\n    } else {\n      res.end();\n    }\n  }\n});\n\nserver.listen(PORT, HOST, () => {\n  console.log(`خادم المخزون يعمل على http://${HOST}:${PORT} — قاعدة البيانات: ${DB_PATH}`);\n});",
+            "path": "server.mjs"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:02.253Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_write",
+          "ok": true,
+          "summary": "wrote 11707 bytes to C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs",
+          "ms": 0
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:02.256Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 3
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:04.225Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_stat",
+          "args": {
+            "path": "server.mjs"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:04.228Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_stat",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs\ntype=file\nsize=11707\nmtime=2026-10-19T00:14:02.253Z",
+          "ms": 0
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:04.23Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 4
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:05.791Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "server.mjs"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:05.797Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs (299 lines)\n1: /**\n2:  * server.mjs — خادم تطبيق المخزون العربي (RTL)\n3:  *\n4:  * • وحدات Node المدمجة فقط (لا مكتبات خارجية إطلاقًا):\n5:  *   node:http لتشغيل الخادم، node:sqlite لقاعدة البيانات، node:fs لقراءة index.html من القرص.\n6:  * • يستمع على 127.0.0.1:3000 ويعمل باستمرار (لا process.exit ولا setTimeout لإنهاء ذاتي).\n7:  * • قاعدة SQLite فعلية على القرص في /tmp/inventory.sqlite — بيانات التشغيل داخل حاوية\n8:  *   Docker فقط، ولا علاقة لها بمسارات إنشاء ملفات المصدر على جهاز المستخدم.\n9:  * • لا مصفوفة في الذاكرة و",
+          "ms": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:05.8Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 5
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:08.265Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_search",
+          "args": {
+            "glob": "server.mjs",
+            "pattern": "(SELECT|INSERT|UPDATE|DELETE|BEGIN|COMMIT|ROLLBACK)[^;]*\\$\\{|`[^`]*\\$\\{[^}]*\\}[^`]*FROM|`[^`]*\\$\\{[^}]*\\}[^`]*INTO"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:08.272Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_search",
+          "ok": true,
+          "summary": "no matches for (SELECT|INSERT|UPDATE|DELETE|BEGIN|COMMIT|ROLLBACK)[^;]*\\$\\{|`[^`]*\\$\\{[^}]*\\}[^`]*FROM|`[^`]*\\$\\{[^}]*\\}[^`]*INTO",
+          "ms": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:08.274Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 6
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:09.809Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_search",
+          "args": {
+            "glob": "server.mjs",
+            "pattern": "process\\.exit|setTimeout|setInterval|localStorage"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:09.812Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_search",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:6: * • يستمع على 127.0.0.1:3000 ويعمل باستمرار (لا process.exit ولا setTimeout لإنهاء ذاتي).\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:9: * • لا مصفوفة في الذاكرة ولا localStorage: قاعدة البيانات هي مصدر الحقيقة الوحيد.\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs:263: * الخادم — يعمل باستمرار (لا process.exit ولا setTimeout إنهائي)",
+          "ms": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:09.814Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 7
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:37.256Z",
+        "type": "critique",
+        "data": {
+          "type": "critique",
+          "id": "s2",
+          "verdict": "pass",
+          "reason": "الأدلة تؤكد كتابة server.mjs (11707 بايت، 299 سطرًا) في جذر مساحة العمل عبر file_write مع إعادة قراءة كاملة للمحتوى مطابقة، ويتضمن كل المطلوب: قاعدة /tmp/inventory.sqlite وجدول stock بالقيد الصحيح دون أي INSERT، وGET /api/stock بـ 200 مع {items}، وPOST /api/stock بـ 400/201/409، وPOST /api/withdraw بـ 400 ومعاملة BEGIN IMMEDIATE مع ROLLBACK و409 دون تغيير البيانات أو UPDATE+COMMIT و200، وكل SQL بمعاملات ربط ? (فحص regex أثبت عدم وجود دمج)، وتقديم index.html على /، والاستماع على 127.0.0.1:3000، وغياب process.exit/setTimeout إنهائي (التطابقات الوحيدة في تعليقات توثيقية)."
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:37.259Z",
+        "type": "plan_step",
+        "data": {
+          "type": "plan_step",
+          "id": "s2",
+          "index": 2,
+          "total": 5,
+          "title": "تثبيت النسخة النهائية الكاملة من server.mjs",
+          "phase": "done",
+          "summary": "اكتملت الخطوة بنجاح. إليك الأدلة الموثقة: ## ✅ الخطوة 2/5: تثبيت النسخة النهائية الكاملة من server.mjs ### 1. الكتابة عبر file_write (مؤكدة) - **المسار:** `C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs` (جذر مساحة العمل، مسار نسبي `server.mjs`) - **الحجم:** 11707 بايت — **..."
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:37.265Z",
+        "type": "plan_step",
+        "data": {
+          "type": "plan_step",
+          "id": "s3",
+          "index": 3,
+          "total": 5,
+          "title": "كتابة index.html بالواجهة العربية RTL",
+          "phase": "start"
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:37.271Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:38.876Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_list",
+          "args": {
+            "path": "."
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:38.879Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_list",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs (11707 bytes)",
+          "ms": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:38.881Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 2
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:40.458Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "server.mjs"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:40.464Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\server.mjs (299 lines)\n1: /**\n2:  * server.mjs — خادم تطبيق المخزون العربي (RTL)\n3:  *\n4:  * • وحدات Node المدمجة فقط (لا مكتبات خارجية إطلاقًا):\n5:  *   node:http لتشغيل الخادم، node:sqlite لقاعدة البيانات، node:fs لقراءة index.html من القرص.\n6:  * • يستمع على 127.0.0.1:3000 ويعمل باستمرار (لا process.exit ولا setTimeout لإنهاء ذاتي).\n7:  * • قاعدة SQLite فعلية على القرص في /tmp/inventory.sqlite — بيانات التشغيل داخل حاوية\n8:  *   Docker فقط، ولا علاقة لها بمسارات إنشاء ملفات المصدر على جهاز المستخدم.\n9:  * • لا مصفوفة في الذاكرة و",
+          "ms": 0
+        }
+      },
+      {
+        "at": "2026-10-19T00:14:40.466Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 3
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:02.426Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_write",
+          "args": {
+            "content": "<!DOCTYPE html>\n<html lang=\"ar\" dir=\"rtl\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>مخزوني — نظام إدارة المخزون</title>\n  <style>\n    /* ============================================================\n       تصميم سماوي/بنفسجي متجاوب — CSS داخلي بالكامل دون أي مكتبات\n       ============================================================ */\n    :root {\n      --cyan-600: #0891b2;\n      --cyan-500: #06b6d4;\n      --cyan-400: #22d3ee;\n      --cyan-50: #ecfeff;\n      --purple-700: #6d28d9;\n      --purple-600: #7c3aed;\n      --purple-500: #a855f7;\n      --purple-50: #f5f3ff;\n      --ink: #0f172a;\n      --body-color: #334155;\n      --muted: #64748b;\n      --line: #e2e8f0;\n      --card: #ffffff;\n      --danger-bg: #fef2f2;\n      --danger-border: #fca5a5;\n      --danger-text: #b91c1c;\n      --radius: 16px;\n      --shadow: 0 12px 32px rgba(15, 23, 42, .08);\n    }\n\n    * { box-sizing: border-box; }\n\n    body {\n      margin: 0;\n      min-height: 100vh;\n      display: flex;\n      flex-direction: column;\n      font-family: \"Segoe UI\", Tahoma, \"Noto Sans Arabic\", \"Noto Kufi Arabic\", Arial, sans-serif;\n      color: var(--body-color);\n      background:\n        radial-gradient(1100px 480px at 88% -12%, rgba(168, 85, 247, .16), transparent 60%),\n        radial-gradient(1000px 480px at 8% -12%, rgba(34, 211, 238, .20), transparent 60%),\n        linear-gradient(160deg, #f0fdff 0%, #f8fafc 45%, #f5f3ff 100%);\n      background-attachment: fixed;\n    }\n\n    /* ---------- الترويسة ---------- */\n    .site-header {\n      background: linear-gradient(120deg, var(--cyan-600) 0%, var(--purple-600) 100%);\n      color: #fff;\n      padding: 26px 20px;\n      box-shadow: 0 8px 28px rgba(124, 58, 237, .28);\n    }\n    .brand {\n      max-width: 960px;\n      margin: 0 auto;\n      display: flex;\n      align-items: center;\n      gap: 14px;\n    }\n    .brand-icon {\n      flex: none;\n      width: 52px;\n      height: 52px;\n      display: grid;\n      place-items: center;\n      font-size: 1.55rem;\n      background: rgba(255, 255, 255, .16);\n      border: 1px solid rgba(255, 255, 255, .35);\n      border-radius: 14px;\n    }\n    .site-header h1 { margin: 0; font-size: 1.55rem; letter-spacing: .3px; }\n    .site-header p { margin: 4px 0 0; font-size: .92rem; opacity: .92; }\n\n    /* ---------- الحاوية واللوحات ---------- */\n    .container {\n      width: 100%;\n      max-width: 960px;\n      margin: 0 auto;\n      padding: 22px 16px 40px;\n      flex: 1;\n    }\n    .panels {\n      display: grid;\n      grid-template-columns: repeat(2, minmax(0, 1fr));\n      gap: 16px;\n      margin-bottom: 16px;\n    }\n    .panel {\n      background: var(--card);\n      border: 1px solid var(--line);\n      border-radius: var(--radius);\n      padding: 20px;\n      box-shadow: var(--shadow);\n    }\n    .panel-add { border-top: 4px solid var(--cyan-400); }\n    .panel-withdraw { border-top: 4px solid var(--purple-500); }\n    .panel-table { position: relative; }\n    .panel-table::before {\n      content: \"\";\n      position: absolute;\n      top: 0;\n      right: 0;\n      left: 0;\n      height: 4px;\n      border-radius: var(--radius) var(--radius) 0 0;\n      background: linear-gradient(120deg, var(--cyan-400), var(--purple-500));\n    }\n    .panel-title {\n      margin: 0 0 16px;\n      font-size: 1.08rem;\n      color: var(--ink);\n      display: flex;\n      align-items: center;\n      gap: 8px;\n    }\n\n    /* ---------- الحقول ---------- */\n    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }\n    .field label { font-size: .88rem; font-weight: 700; color: var(--ink); }\n    .field input {\n      width: 100%;\n      padding: 11px 12px;\n      font-size: 1rem;\n      font-family: inherit;\n      color: var(--ink);\n      background: #f8fafc;\n      border: 1.5px solid #cbd5e1;\n      border-radius: 10px;\n      transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;\n    }\n    .field input::placeholder { color: #94a3b8; }\n    .field input:focus { outline: none; background: #fff; }\n    .panel-add .field input:focus {\n      border-color: var(--cyan-500);\n      box-shadow: 0 0 0 4px rgba(6, 182, 212, .18);\n    }\n    .panel-withdraw .field input:focus {\n      border-color: var(--purple-500);\n      box-shadow: 0 0 0 4px rgba(168, 85, 247, .18);\n    }\n\n    /* ---------- الأزرار ---------- */\n    .btn {\n      width: 100%;\n      padding: 12px 16px;\n      font-size: 1rem;\n      font-weight: 700;\n      font-family: inherit;\n      color: #fff;\n      border: none;\n      border-radius: 10px;\n      cursor: pointer;\n      box-shadow: 0 6px 16px rgba(15, 23, 42, .12);\n      transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;\n    }\n    .btn:hover { transform: translateY(-1px); filter: brightness(1.06); }\n    .btn:active { transform: translateY(0); filter: brightness(.97); }\n    .btn:focus-visible { outline: 3px solid rgba(124, 58, 237, .4); outline-offset: 2px; }\n    .btn-save { background: linear-gradient(120deg, var(--cyan-600), var(--cyan-400)); }\n    .btn-withdraw { background: linear-gradient(120deg, var(--purple-600), var(--purple-500)); }\n\n    /* ---------- صندوق رسالة الخطأ #error ---------- */\n    .error-box {\n      display: none; /* مخفي افتراضيًا ويظهر فقط عند رفض عملية */\n      margin: 0 0 16px;\n      padding: 13px 16px;\n      border-radius: 12px;\n      background: var(--danger-bg);\n      border: 1.5px solid var(--danger-border);\n      color: var(--danger-text);\n      font-weight: 700;\n      font-size: .95rem;\n      line-height: 1.7;\n      align-items: flex-start;\n      gap: 10px;\n    }\n    .error-box.show { display: flex; }\n    .error-box::before { content: \"⚠️\"; flex: none; font-size: 1.05rem; line-height: 1.5; }\n\n    /* ---------- جدول الأصناف #items ---------- */\n    .table-head {\n      display: flex;\n      align-items: center;\n      justify-content: space-between;\n      gap: 10px;\n      flex-wrap: wrap;\n      margin-bottom: 12px;\n    }\n    .table-head .panel-title { margin: 0; }\n    .summary {\n      font-size: .85rem;\n      font-weight: 700;\n      color: var(--purple-600);\n      background: var(--purple-50);\n      border: 1px solid #ddd6fe;\n      padding: 5px 12px;\n      border-radius: 999px;\n    }\n    .table-wrap {\n      overflow-x: auto;\n      border: 1px solid var(--line);\n      border-radius: 12px;\n    }\n    table { width: 100%; border-collapse: collapse; min-width: 380px; }\n    thead th {\n      background: linear-gradient(120deg, rgba(8, 145, 178, .10), rgba(124, 58, 237, .10));\n      color: var(--ink);\n      font-size: .88rem;\n      text-align: right;\n      padding: 11px 14px;\n      border-bottom: 2px solid var(--line);\n    }\n    tbody td {\n      padding: 11px 14px;\n      border-bottom: 1px solid var(--line);\n      text-align: right;\n      font-size: .95rem;\n    }\n    tbody tr:last-child td { border-bottom: none; }\n    tbody tr:nth-child(even) { background: #f8fafc; }\n    tbody tr:hover { background: var(--cyan-50); }\n    td.cell-sku { font-weight: 700; color: var(--ink); }\n    td.cell-qty {\n      font-weight: 800;\n      color: var(--purple-600);\n      font-variant-numeric: tabular-nums;\n    }\n\n    /* ---------- حالة الفراغ والتذييل ---------- */\n    .empty {\n      margin: 14px 0 0;\n      padding: 18px 12px;\n      text-align: center;\n      color: var(--muted);\n      font-size: .92rem;\n      border: 1.5px dashed #cbd5e1;\n      border-radius: 12px;\n      background: #f8fafc;\n    }\n    .site-footer {\n      text-align: center;\n      padding: 18px 16px 26px;\n      color: var(--muted);\n      font-size: .82rem;\n    }\n    .site-footer p { margin: 0; }\n\n    /* ---------- التجاوب ---------- */\n    @media (max-width: 720px) {\n      .panels { grid-template-columns: 1fr; }\n      .site-header { padding: 20px 16px; }\n      .site-header h1 { font-size: 1.3rem; }\n      .panel { padding: 16px; }\n    }\n    @media (max-width: 420px) {\n      .container { padding: 16px 10px 30px; }\n      thead th, tbody td { padding: 9px 10px; }\n    }\n    @media (prefers-reduced-motion: reduce) {\n      * { transition: none !important; }\n    }\n  </style>\n</head>\n<body>\n  <header class=\"site-header\">\n    <div class=\"brand\">\n      <span class=\"brand-icon\" aria-hidden=\"true\">📦</span>\n      <div>\n        <h1>مخزوني</h1>\n        <p>نظام إدارة المخزون — إضافة وسحب الأصناف مباشرة من قاعدة بيانات الخادم</p>\n      </div>\n    </div>\n  </header>\n\n  <main class=\"container\">\n    <!-- رسالة الخطأ العربية: مخفية افتراضيًا وتظهر عند رفض أي عملية -->\n    <div id=\"error\" class=\"error-box\" role=\"alert\" aria-live=\"assertive\"></div>\n\n    <div class=\"panels\">\n      <!-- نمط الإضافة -->\n      <section class=\"panel panel-add\" aria-labelledby=\"add-title\">\n        <h2 id=\"add-title\" class=\"panel-title\">➕ إضافة صنف جديد</h2>\n        <form id=\"add-form\" novalidate>\n          <div class=\"field\">\n            <label for=\"sku\">رمز الصنف (SKU)</label>\n            <!-- type=text عمدًا: حتى القيم السالبة تُكتب ويظهر خطأ JS بدل منع المتصفح الصامت -->\n            <input type=\"text\" id=\"sku\" name=\"sku\" placeholder=\"مثال: كتاب\" autocomplete=\"off\">\n          </div>\n          <div class=\"field\">\n            <label for=\"quantity\">الكمية</label>\n            <input type=\"text\" id=\"quantity\" name=\"quantity\" inputmode=\"numeric\" placeholder=\"مثال: 10\" autocomplete=\"off\">\n          </div>\n          <button type=\"submit\" id=\"save\" class=\"btn btn-save\">إضافة إلى المخزون</button>\n        </form>\n      </section>\n\n      <!-- نمط السحب -->\n      <section class=\"panel panel-withdraw\" aria-labelledby=\"withdraw-title\">\n        <h2 id=\"withdraw-title\" class=\"panel-title\">➖ سحب من المخزون</h2>\n        <form id=\"withdraw-form\" novalidate>\n          <div class=\"field\">\n            <label for=\"withdraw-sku\">رمز الصنف (SKU)</label>\n            <input type=\"text\" id=\"withdraw-sku\" name=\"withdraw-sku\" placeholder=\"مثال: كتاب\" autocomplete=\"off\">\n          </div>\n          <div class=\"field\">\n            <label for=\"withdraw-quantity\">الكمية المطلوب سحبها</label>\n            <input type=\"text\" id=\"withdraw-quantity\" name=\"withdraw-quantity\" inputmode=\"numeric\" placeholder=\"مثال: 3\" autocomplete=\"off\">\n          </div>\n          <button type=\"submit\" id=\"withdraw\" class=\"btn btn-withdraw\">سحب الكمية</button>\n        </form>\n      </section>\n    </div>\n\n    <!-- جدول الأصناف: يُملأ دائمًا من بيانات الخادم -->\n    <section class=\"panel panel-table\" aria-labelledby=\"table-title\">\n      <div class=\"table-head\">\n        <h2 id=\"table-title\" class=\"panel-title\">📋 الأصناف الحالية</h2>\n        <span id=\"summary\" class=\"summary\"></span>\n      </div>\n      <div class=\"table-wrap\">\n        <table id=\"items\">\n          <thead>\n            <tr>\n              <th scope=\"col\">رمز الصنف (SKU)</th>\n              <th scope=\"col\">الرصيد المتوفر</th>\n            </tr>\n          </thead>\n          <tbody id=\"items-body\"></tbody>\n        </table>\n      </div>\n      <p id=\"empty-message\" class=\"empty\" hidden>لا توجد أصناف في المخزون بعد — أضف أول صنف من النموذج أعلاه.</p>\n    </section>\n  </main>\n\n  <footer class=\"site-footer\">\n    <p>البيانات تُقرأ وتُكتب في قاعدة SQLite على الخادم — تُحدَّث الواجهة من الخادم بعد كل عملية وعند تحميل الصفحة.</p>\n  </footer>\n\n  <script>\n    (function () {\n      'use strict';\n\n      /* ---------- عناصر الواجهة ---------- */\n      var skuInput = document.getElementById('sku');\n      var quantityInput = document.getElementById('quantity');\n      var addForm = document.getElementById('add-form');\n      var withdrawSkuInput = document.getElementById('withdraw-sku');\n      var withdrawQuantityInput = document.getElementById('withdraw-quantity');\n      var withdrawForm = document.getElementById('withdraw-form');\n      var errorBox = document.getElementById('error');\n      var itemsBody = document.getElementById('items-body');\n      var emptyMessage = document.getElementById('empty-message');\n      var summary = document.getElementById('summary');\n\n      /* ---------- إظهار/إخفاء رسالة الخطأ العربية ---------- */\n      function showError(message) {\n        errorBox.textContent = message;\n        errorBox.classList.add('show');\n      }\n\n      function hideError() {\n        errorBox.textContent = '';\n        errorBox.classList.remove('show');\n      }\n\n      /* ---------- نقطة عبور واحدة لكل استدعاءات الشبكة ----------\n         لا يوجد أي رد fetch بلا معالجة: أخطاء الشبكة، وJSON التالف،\n         ورموز الحالة غير الناجحة كلها تُلتقط وتُعرض في #error. */\n      async function requestJson(url, options) {\n        var res;\n        try {\n          res = await fetch(url, options);\n        } catch (networkError) {\n          throw new Error('تعذر الاتصال بالخادم. تأكد من تشغيله ثم أعد المحاولة.');\n        }\n\n        var data = null;\n        try {\n          data = await res.json();\n        } catch (parseError) {\n          data = null; // استجابة بلا JSON — تُعالج كخطأ عام أدناه عند فشل res.ok\n        }\n\n        if (!res.ok) {\n          var serverMessage = (data && typeof data.error === 'string' && data.error.trim() !== '')\n            ? data.error\n            : 'تعذر إتمام العملية (رمز الحالة ' + res.status + ')';\n          throw new Error(serverMessage);\n        }\n        return data;\n      }\n\n      /* ---------- إعادة الرسم من بيانات الخادم حصريًا ---------- */\n      function render(items) {\n        var list = Array.isArray(items) ? items : [];\n        itemsBody.textContent = '';\n\n        if (list.length === 0) {\n          emptyMessage.hidden = false;\n          summary.textContent = '';\n          return;\n        }\n        emptyMessage.hidden = true;\n\n        var totalUnits = 0;\n        var fragment = document.createDocumentFragment();\n\n        list.forEach(function (item) {\n          var quantityText = String(item.quantity);\n          var quantityNumber = Number(item.quantity);\n          if (Number.isFinite(quantityNumber)) { totalUnits += quantityNumber; }\n\n          var row = document.createElement('tr');\n          row.className = 'stock-item';\n\n          var skuCell = document.createElement('td');\n          skuCell.className = 'cell-sku';\n          skuCell.textContent = String(item.sku);\n\n          // خلية الرصيد: تحمل data-quantity وتعرض الرقم وحده دون أي نص إضافي\n          var qtyCell = document.createElement('td');\n          qtyCell.className = 'cell-qty';\n          qtyCell.setAttribute('data-quantity', quantityText);\n          qtyCell.textContent = quantityText;\n\n          row.appendChild(skuCell);\n          row.appendChild(qtyCell);\n          fragment.appendChild(row);\n        });\n\n        itemsBody.appendChild(fragment);\n        summary.textContent = 'عدد الأصناف: ' + list.length + ' • إجمالي الوحدات: ' + totalUnits;\n      }\n\n      /* جلب حالة المخزون من الخادم وإعادة الرسم منها */\n      async function refreshFromServer() {\n        try {\n          var data = await requestJson('/api/stock', {\n            method: 'GET',\n            headers: { 'Accept': 'application/json' }\n          });\n          render(data && Array.isArray(data.items) ? data.items : []);\n        } catch (err) {\n          showError(err && err.message ? err.message : 'حدث خطأ غير متوقع أثناء جلب البيانات.');\n        }\n      }\n\n      /* ---------- تحقق JS قبل الإرسال ----------\n         يظهر الخطأ حتى للقيمة السالبة لأن الحقول type=text\n         ولا نعتمد على منع HTML وحده أبدًا. */\n      function validate(skuValue, quantityValue) {\n        var sku = String(skuValue == null ? '' : skuValue).trim();\n        if (sku === '') {\n          return { message: 'يرجى إدخال رمز الصنف (SKU) أولًا.' };\n        }\n        var rawQuantity = String(quantityValue == null ? '' : quantityValue).trim();\n        if (rawQuantity === '') {\n          return { message: 'يرجى إدخال الكمية.' };\n        }\n        if (!/^-?\\d+$/.test(rawQuantity)) {\n          return { message: 'الكمية يجب أن تكون رقمًا صحيحًا دون فواصل عشرية أو رموز.' };\n        }\n        var quantity = Number(rawQuantity);\n        if (!Number.isSafeInteger(quantity)) {\n          return { message: 'الكمية خارج النطاق المسموح به.' };\n        }\n        if (quantity <= 0) {\n          return { message: 'الكمية يجب أن تكون عددًا صحيحًا موجبًا أكبر من صفر.' };\n        }\n        return { sku: sku, quantity: quantity };\n      }\n\n      /* ---------- عمليات الإضافة والسحب ---------- */\n      async function performAdd() {\n        var check = validate(skuInput.value, quantityInput.value);\n        if (check.message) {\n          showError(check.message);\n          return;\n        }\n        try {\n          await requestJson('/api/stock', {\n            method: 'POST',\n            headers: { 'Content-Type': 'application/json; charset=utf-8' },\n            body: JSON.stringify({ sku: check.sku, quantity: check.quantity })\n          });\n          hideError(); // النجاح يخفي رسالة الخطأ\n          skuInput.value = '';\n          quantityInput.value = '';\n        } catch (err) {\n          // رفض الخادم (409 تكرار / 400 إدخال غير صالح) أو أي فشل آخر: رسالة الخادم تُعرض\n          showError(err && err.message ? err.message : 'حدث خطأ غير متوقع أثناء الإضافة.');\n        }\n        // بعد كل عملية (نجاحًا أو رفضًا) تُقرأ الحالة من الخادم وتُعاد الرسم منها\n        await refreshFromServer();\n      }\n\n      async function performWithdraw() {\n        var check = validate(withdrawSkuInput.value, withdrawQuantityInput.value);\n        if (check.message) {\n          showError(check.message);\n          return;\n        }\n        try {\n          await requestJson('/api/withdraw', {\n            method: 'POST',\n            headers: { 'Content-Type': 'application/json; charset=utf-8' },\n            body: JSON.stringify({ sku: check.sku, quantity: check.quantity })\n          });\n          hideError();\n          withdrawSkuInput.value = '';\n          withdrawQuantityInput.value = '';\n        } catch (err) {\n          // 409 (صنف غير موجود أو رصيد غير كافٍ) أو 400: تُعرض رسالة الخادم دون تغيير البيانات\n          showError(err && err.message ? err.message : 'حدث خطأ غير متوقع أثناء السحب.');\n        }\n        await refreshFromServer();\n      }\n\n      /* ---------- ربط الأحداث مع حارس طلبات متزامنة ---------- */\n      var inFlight = false;\n\n      function withGuard(handler) {\n        return function (event) {\n          event.preventDefault(); // لا إرسال صفحات ولا نوافذ alert/confirm إطلاقًا\n          if (inFlight) { return; }\n          inFlight = true;\n          Promise.resolve(handler(event))\n            .catch(function (err) {\n              // شبكة أمان أخيرة: لا وعد مرفوض يبقى بلا معالجة\n              showError(err && err.message ? err.message : 'حدث خطأ غير متوقع.');\n            })\n            .finally(function () {\n              inFlight = false;\n            });\n        };\n      }\n\n      addForm.addEventListener('submit', withGuard(performAdd));\n      withdrawForm.addEventListener('submit', withGuard(performWithdraw));\n\n      /* عند تحميل الصفحة: عرض البيانات من الخادم */\n      refreshFromServer();\n    })();\n  </script>\n</body>\n</html>",
+            "path": "index.html"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:02.433Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_write",
+          "ok": true,
+          "summary": "wrote 20623 bytes to C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\index.html",
+          "ms": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:02.435Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 4
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:04.906Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_search",
+          "args": {
+            "glob": "index.html",
+            "pattern": "(stock-item|data-quantity|dir=\"rtl\"|lang=\"ar\"|novalidate|type=\"text\")"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:04.91Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_search",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\index.html:2: <html lang=\"ar\" dir=\"rtl\">\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\index.html:285: <form id=\"add-form\" novalidate>\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\index.html:289: <input type=\"text\" id=\"sku\" name=\"sku\" placeholder=\"مثال: كتاب\" autocomplete=\"off\">\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\index.html:293: <input type=\"text\" id=\"quantity\" name=\"quantity\" inputmode=\"numeric\" placeholder=\"مثال: 10\" autocomplete=\"off\">\nC:\\Users\\khamis\\Desktop\\.loam-tasks",
+          "ms": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:04.912Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 5
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:06.9Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_search",
+          "args": {
+            "glob": "index.html",
+            "pattern": "(id=\"error\"|id=\"items\"|id=\"save\"|id=\"withdraw\"|/api/stock|/api/withdraw|alert\\(|confirm\\()"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:06.907Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_search",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\index.html:279: <div id=\"error\" class=\"error-box\" role=\"alert\" aria-live=\"assertive\"></div>\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\index.html:295: <button type=\"submit\" id=\"save\" class=\"btn btn-save\">إضافة إلى المخزون</button>\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\index.html:311: <button type=\"submit\" id=\"withdraw\" class=\"btn btn-withdraw\">سحب الكمية</button>\nC:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\index.html:323: <table id=\"items\">\nC:\\Users\\khamis\\Desktop\\.loam-ta",
+          "ms": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:06.909Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 6
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:08.332Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_stat",
+          "args": {
+            "path": "index.html"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:08.34Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_stat",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\index.html\ntype=file\nsize=20623\nmtime=2026-10-19T00:16:02.433Z",
+          "ms": 0
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:08.342Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 7
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:27.233Z",
+        "type": "critique",
+        "data": {
+          "type": "critique",
+          "id": "s3",
+          "verdict": "pass",
+          "reason": "تأكيد file_write بكتابة index.html (20,623 بايت) في جذر مساحة العمل مع تأكيد file_stat، ونتائج file_search تثبت وجود جميع المعرفات المطلوبة (dir=rtl lang=ar، #error، #sku/#quantity/#save، #withdraw-sku/#withdraw-quantity/#withdraw، #items، .stock-item، data-quantity، type=text مع novalidate) وغياب alert/confirm، مع ظهور متغيرات الألوان السماوية والبنفسجية في بداية الملف؛ وإثبات المحتوى الكامل وسلوك JS مؤجل لخطوة التحقق النهائية وفق معايير هذه الخطوة."
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:27.239Z",
+        "type": "plan_step",
+        "data": {
+          "type": "plan_step",
+          "id": "s3",
+          "index": 3,
+          "total": 5,
+          "title": "كتابة index.html بالواجهة العربية RTL",
+          "phase": "done",
+          "summary": "اكتملت الخطوة 3/5 بنجاح. إليك الأدلة الموثقة: ## ✅ الخطوة 3/5: كتابة index.html بالواجهة العربية RTL ### 1. الكتابة عبر file_write (مؤكدة) - **المسار:** `C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\index.html` (جذر مساحة العمل، مسار نسبي `index.html`) - **الحجم:** 20,623 بايت — مؤك..."
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:27.247Z",
+        "type": "plan_step",
+        "data": {
+          "type": "plan_step",
+          "id": "s4",
+          "index": 4,
+          "total": 5,
+          "title": "كتابة app-verification.json بالعقد الحرفي",
+          "phase": "start"
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:27.257Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:32.462Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_write",
+          "args": {
+            "content": "{\"entry\":\"index.html\",\"runtime\":{\"type\":\"node\",\"entry\":\"server.mjs\"},\"scenarios\":[{\"name\":\"Add stock\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":1},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Server persistence on reload\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"reload\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":1},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Valid withdrawal\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"},{\"action\":\"fill\",\"selector\":\"#withdraw-sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#withdraw-quantity\",\"value\":\"3\"},{\"action\":\"click\",\"selector\":\"#withdraw\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"7\"}]},{\"name\":\"Overdraw rejected without changing stock\",\"expectedResponses\":[{\"method\":\"POST\",\"path\":\"/api/withdraw\",\"status\":409,\"count\":1}],\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"},{\"action\":\"fill\",\"selector\":\"#withdraw-sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#withdraw-quantity\",\"value\":\"11\"},{\"action\":\"click\",\"selector\":\"#withdraw\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Duplicate SKU rejected\",\"expectedResponses\":[{\"method\":\"POST\",\"path\":\"/api/stock\",\"status\":409,\"count\":1}],\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"},{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"99\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":1},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Negative amount rejected\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"-1\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":0}]}]}",
+            "path": "app-verification.json"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:32.466Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_write",
+          "ok": true,
+          "summary": "wrote 2863 bytes to C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\app-verification.json",
+          "ms": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:32.469Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 2
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:33.887Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_stat",
+          "args": {
+            "path": "app-verification.json"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:33.894Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_stat",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\app-verification.json\ntype=file\nsize=2863\nmtime=2026-10-19T00:16:32.467Z",
+          "ms": 0
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:33.896Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 3
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:35.099Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "app-verification.json"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:35.103Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\app-verification.json (1 lines)\n1: {\"entry\":\"index.html\",\"runtime\":{\"type\":\"node\",\"entry\":\"server.mjs\"},\"scenarios\":[{\"name\":\"Add stock\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":1},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Server persistence on reload\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",",
+          "ms": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:16:35.105Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 4
+        }
+      },
+      {
+        "at": "2026-10-19T00:18:14.146Z",
+        "type": "critique",
+        "data": {
+          "type": "critique",
+          "id": "s4",
+          "verdict": "revise",
+          "reason": "(unverified: invalid verifier output) {\"verdict\": \"pass\", \"reason\": \"الأدوات تؤكد الكتابة: file_write كتب app-verification.json (2863 بايت) في جذر مساحة العمل، وfile_stat يؤكد وجوده بالمسار النسبي، وfile_read يُظهر محتوى مطابقًا حرفيًا لل"
+        }
+      },
+      {
+        "at": "2026-10-19T00:18:14.15Z",
+        "type": "revise",
+        "data": {
+          "type": "revise",
+          "id": "s4",
+          "attempt": 2,
+          "fixes": []
+        }
+      },
+      {
+        "at": "2026-10-19T00:18:14.161Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:18:19.614Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 50,
+            "path": "app-verification.json"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:18:19.619Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\app-verification.json (1 lines)\n1: {\"entry\":\"index.html\",\"runtime\":{\"type\":\"node\",\"entry\":\"server.mjs\"},\"scenarios\":[{\"name\":\"Add stock\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":1},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Server persistence on reload\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",",
+          "ms": 0
+        }
+      },
+      {
+        "at": "2026-10-19T00:18:19.622Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 2
+        }
+      },
+      {
+        "at": "2026-10-19T00:18:27.313Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_write",
+          "args": {
+            "append": false,
+            "content": "{\"entry\":\"index.html\",\"runtime\":{\"type\":\"node\",\"entry\":\"server.mjs\"},\"scenarios\":[{\"name\":\"Add stock\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":1},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Server persistence on reload\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"reload\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":1},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Valid withdrawal\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"},{\"action\":\"fill\",\"selector\":\"#withdraw-sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#withdraw-quantity\",\"value\":\"3\"},{\"action\":\"click\",\"selector\":\"#withdraw\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"7\"}]},{\"name\":\"Overdraw rejected without changing stock\",\"expectedResponses\":[{\"method\":\"POST\",\"path\":\"/api/withdraw\",\"status\":409,\"count\":1}],\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"},{\"action\":\"fill\",\"selector\":\"#withdraw-sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#withdraw-quantity\",\"value\":\"11\"},{\"action\":\"click\",\"selector\":\"#withdraw\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Duplicate SKU rejected\",\"expectedResponses\":[{\"method\":\"POST\",\"path\":\"/api/stock\",\"status\":409,\"count\":1}],\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"},{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"99\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":1},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Negative amount rejected\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"-1\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":0}]}]}",
+            "path": "app-verification.json"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:18:27.32Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_write",
+          "ok": true,
+          "summary": "wrote 2863 bytes to C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\app-verification.json",
+          "ms": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:18:27.323Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 3
+        }
+      },
+      {
+        "at": "2026-10-19T00:18:29.198Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_stat",
+          "args": {
+            "path": "app-verification.json"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:18:29.202Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_stat",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\app-verification.json\ntype=file\nsize=2863\nmtime=2026-10-19T00:18:27.320Z",
+          "ms": 1
+        }
+      },
+      {
+        "at": "2026-10-19T00:18:29.204Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 4
+        }
+      },
+      {
+        "at": "2026-10-19T00:18:30.494Z",
+        "type": "tool_call",
+        "data": {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 10,
+            "path": "app-verification.json"
+          }
+        }
+      },
+      {
+        "at": "2026-10-19T00:18:30.499Z",
+        "type": "tool_result",
+        "data": {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379\\app-verification.json (1 lines)\n1: {\"entry\":\"index.html\",\"runtime\":{\"type\":\"node\",\"entry\":\"server.mjs\"},\"scenarios\":[{\"name\":\"Add stock\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"10\"},{\"action\":\"click\",\"selector\":\"#save\"},{\"action\":\"count\",\"selector\":\".stock-item\",\"count\":1},{\"action\":\"textExact\",\"selector\":\".stock-item [data-quantity]\",\"value\":\"10\"}]},{\"name\":\"Server persistence on reload\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#sku\",\"value\":\"كتاب\"},{\"action\":\"fill\",",
+          "ms": 0
+        }
+      },
+      {
+        "at": "2026-10-19T00:18:30.502Z",
+        "type": "step",
+        "data": {
+          "type": "step",
+          "index": 5
+        }
+      },
+      {
+        "at": "2026-10-19T00:18:51.162Z",
+        "type": "critique",
+        "data": {
+          "type": "critique",
+          "id": "s4",
+          "verdict": "revise",
+          "reason": "(unverified: invalid verifier output) {\"verdict\": \"pass\", \"reason\": \"الدليل ملموس: ناتج file_write يؤكد كتابة app-verification.json في جذر مساحة العمل (2863 بايت)، وfile_stat يؤكد وجود الملف بحجم مطابق، وfile_read يُظهر المحتوى كاملًا مطا"
+        }
+      },
+      {
+        "at": "2026-10-19T00:18:51.169Z",
+        "type": "error",
+        "data": {
+          "type": "error",
+          "message": "orchestrator: task incomplete: كتابة app-verification.json بالعقد الحرفي: (unverified: invalid verifier output) {\"verdict\": \"pass\", \"reason\": \"الدليل ملموس: ناتج file_write يؤكد كتابة app-verification.json في جذر مساحة العمل (2863 بايت)، وfile_stat يؤكد وجود الملف بحجم مطابق، وfile_read يُظهر المحتوى كاملًا مطا"
+        }
+      }
+    ],
+    "workspace": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvehw22oae6adc7cc379",
+    "mode": "build",
+    "error": "orchestrator: task incomplete: كتابة app-verification.json بالعقد الحرفي: (unverified: invalid verifier output) {\"verdict\": \"pass\", \"reason\": \"الدليل ملموس: ناتج file_write يؤكد كتابة app-verification.json في جذر مساحة العمل (2863 بايت)، وfile_stat يؤكد وجود الملف بحجم مطابق، وfile_read يُظهر المحتوى كاملًا مطا"
+  },
+  "recovery": {
+    "resumable": true,
+    "requiresConfirmation": true,
+    "completedSteps": 3
+  }
+}

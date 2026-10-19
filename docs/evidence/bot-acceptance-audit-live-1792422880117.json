@@ -1,0 +1,192 @@
+{
+  "startedAt": "2026-10-19T15:14:40.117Z",
+  "sourceHash": "934ee948ce4639e7641edb68d4a5547303e9ed902b09473a55e13668b4761b43",
+  "model": "glm-5.3-flash:cloud",
+  "pass": true,
+  "rows": [
+    {
+      "name": "observed-wrong-expectation",
+      "expected": "revise",
+      "elapsedMs": 76900,
+      "result": {
+        "contractSha256": "934ee948ce4639e7641edb68d4a5547303e9ed902b09473a55e13668b4761b43",
+        "requestSha256": "e5ae937e1f1c676d0a62f75793c6b0c5d05f7262780b50d6dbd8deabd8b16148",
+        "model": "glm-5.3-flash",
+        "usage": {
+          "promptTokens": 7222,
+          "completionTokens": 9963,
+          "durationMs": 76603
+        },
+        "verdict": "revise",
+        "reason": "Scenario index 2 is defective: it sends 100 items each with unitPriceCents 10000000 and quantity 100, so the true subtotal is 100 × (10,000,000 × 100) = 100,000,000,000 cents, which exceeds the request's cap of 1,000,000,000 cents ('يجب ألا يزيد عن 1000000000 سنت'). A conforming server must return 400 {error:\"invalid\"}, yet the scenario expects 200 with subtotalCents 1000000000 / discountCents 1000000000 / totalCents 1000000. Those expected values would only be correct if quantity were 1 per item (100 × 10,000,000 × 1 = 1,000,000,000, exactly at the cap). All other scenarios' arithmetic and expectations were recomputed and match the request (e.g., 3000×25%=750, total 2750; 333×50%=166.5 → half-up 167, total 166; 1,000,000,000+1 > cap → 400; boundary rejections 0/10001/101/-1, string/null/1.5/-5 unit price, 101 items, duplicate/blank skus, broken JSON).",
+        "scenarios": [
+          {
+            "index": 0,
+            "verdict": "pass",
+            "requestQuote": "احسب subtotalCents بجمع سعر الوحدة مضروبًا بالكمية. discountCents هو تقريب subtotalCents*discountPercent/100 إلى أقرب سنت والنصف للأعلى. totalCents=subtotalCents-discountCents+shippingCents. الرد الناجح 200 بكائن هذه الحقول الأربعة فقط: subtotalCents وdiscountCents وshippingCents وtotalCents.",
+            "reason": "1000×3=3000; 3000×25/100=750 exact; 3000−750+500=2750. Response contains exactly the four required fields with status 200. Matches the request."
+          },
+          {
+            "index": 1,
+            "verdict": "pass",
+            "requestQuote": "discountCents هو تقريب subtotalCents*discountPercent/100 إلى أقرب سنت والنصف للأعلى.",
+            "reason": "333×50/100=166.5 → half-up rounds to 167; total=333−167+0=166. Correctly exercises the half-up rounding rule with status 200."
+          },
+          {
+            "index": 2,
+            "verdict": "revise",
+            "requestQuote": "مجموع الأسعار قبل الخصم يجب ألا يزيد عن 1000000000 سنت وإلا الطلب غير صالح.",
+            "reason": "Each line is 10,000,000×100=1,000,000,000 cents; with 100 items subtotal=100,000,000,000 cents, far above the 1,000,000,000 cap, so the correct expectation is 400 {error:\"invalid\"}. The expected 200 with subtotalCents 1000000000 is arithmetically impossible for these inputs (it would require quantity 1 per item). Wrong expectation is a contract defect."
+          },
+          {
+            "index": 3,
+            "verdict": "pass",
+            "requestQuote": "sku نص غير فارغ بعد trim ولا يتكرر",
+            "reason": "Empty sku, whitespace-only sku (empty after trim), exact duplicate \"A-1\", and trim-duplicate \"X9\"/\" X9 \" are all violations; 400 {error:\"invalid\"} for each is supported by the request."
+          },
+          {
+            "index": 4,
+            "verdict": "pass",
+            "requestQuote": "الأصناف 1 إلى 100؛ sku نص غير فارغ بعد trim ولا يتكرر؛ unitPriceCents عدد صحيح آمن من 0 إلى 10000000؛ quantity عدد صحيح من 1 إلى 10000",
+            "reason": "101 unique items D-1..D-101 exceeds the 1–100 items range; subtotal 101 is within the cap so rejection is solely on item count. 400 {error:\"invalid\"} is correct."
+          },
+          {
+            "index": 5,
+            "verdict": "pass",
+            "requestQuote": "unitPriceCents عدد صحيح آمن من 0 إلى 10000000؛ quantity عدد صحيح من 1 إلى 10000؛ discountPercent عدد صحيح من 0 إلى 100؛ shippingCents عدد صحيح من 0 إلى 1000000. لا تحول النصوص أو null إلى أرقام.",
+            "reason": "String \"5\", null, non-integer 1.5, and negative -5 all violate the safe-integer 0..10000000 rule and the no-coercion rule; 400 {error:\"invalid\"} for each is supported."
+          },
+          {
+            "index": 6,
+            "verdict": "pass",
+            "requestQuote": "quantity عدد صحيح من 1 إلى 10000؛ discountPercent عدد صحيح من 0 إلى 100؛ shippingCents عدد صحيح من 0 إلى 1000000.",
+            "reason": "quantity 0 and 10001 fall outside 1..10000; discountPercent 101 outside 0..100; shippingCents -1 outside 0..1000000. All four 400 {error:\"invalid\"} expectations are supported."
+          },
+          {
+            "index": 7,
+            "verdict": "pass",
+            "requestQuote": "مجموع الأسعار قبل الخصم يجب ألا يزيد عن 1000000000 سنت وإلا الطلب غير صالح.",
+            "reason": "CAP-A line = 10,000,000×100 = 1,000,000,000 plus CAP-B 1×1 = 1 gives 1,000,000,001 > cap → 400 is correct. Broken JSON \"{items:}\" must also yield 400 {error:\"invalid\"} per the request. Both expectations supported."
+          },
+          {
+            "index": 8,
+            "verdict": "pass",
+            "requestQuote": "أنشئ تطبيق عروض أسعار عربي RTL متجاوب بالتدرجات السماوية والبنفسجية",
+            "reason": "Arabic labels for SKU, unit price in cents, discount percent, and shipping in cents plus visible form/empty-state match the requested Arabic UI. Note: the steps assert text/visibility only and do not directly assert dir=rtl or the gradient colors, but no expectation conflicts with the request."
+          },
+          {
+            "index": 9,
+            "verdict": "pass",
+            "requestQuote": "يضيف المستخدم أصنافًا ويحذفها ويحدد سعر الوحدة بالسنت والكمية ونسبة الخصم ورسوم الشحن بالسنت",
+            "reason": "Add two items (list count 2, counter \"2\"), delete the first (KB-001), then count 1 with remaining KB-002 — directly exercises the required add/delete behavior; no conflicting expectation."
+          },
+          {
+            "index": 10,
+            "verdict": "pass",
+            "requestQuote": "ثم يحسب الخادم المجاميع وتعرضها الواجهة بوضوح ورسائل خطأ مفهومة.",
+            "reason": "Same inputs as the verified API case: 1000×3=3000, 25% → 750, shipping 500, total 2750; expects exactly one POST /api/quote with status 200 and displays the four required totals. Consistent with the request."
+          },
+          {
+            "index": 11,
+            "verdict": "pass",
+            "requestQuote": "تعرضها الواجهة بوضوح ورسائل خطأ مفهومة.",
+            "reason": "Calculating with no items shows an understandable Arabic error (\"أضف صنفًا واحدًا على الأقل\"), and discount 150 (outside 0..100) shows an error referencing \"نسبة الخصم\". Both support the understandable-error-messages requirement without conflict."
+          }
+        ]
+      }
+    },
+    {
+      "name": "corrected-control-copy",
+      "expected": "pass",
+      "elapsedMs": 79093,
+      "result": {
+        "contractSha256": "be1811784192b6a07f2b263555497faeed9175608d02a5da6d4a9d1ed1fcc7b5",
+        "requestSha256": "e5ae937e1f1c676d0a62f75793c6b0c5d05f7262780b50d6dbd8deabd8b16148",
+        "model": "glm-5.3-flash",
+        "usage": {
+          "promptTokens": 7188,
+          "completionTokens": 11457,
+          "durationMs": 78791
+        },
+        "verdict": "pass",
+        "reason": "جميع السيناريوهات الـ12 تدعمها المتطلبات: الحسابات صحيحة (3000/750/2750، والتقريب 166.5→167 نصف للأعلى، والسقف ≤1000000000 مقبول عند التساوي ومرفوض عند 1000000001)، وحدود الحقول والرفض 400 مع {error:\"invalid\"} وحقول الرد الأربعة فقط كلها مطابقة للنص الأصلي.",
+        "scenarios": [
+          {
+            "index": 0,
+            "verdict": "pass",
+            "requestQuote": "احسب subtotalCents بجمع سعر الوحدة مضروبًا بالكمية. discountCents هو تقريب subtotalCents*discountPercent/100 إلى أقرب سنت والنصف للأعلى. totalCents=subtotalCents-discountCents+shippingCents.",
+            "reason": "1000×3=3000؛ 3000×25/100=750 بالضبط؛ 3000−750+500=2750. الرد 200 بالحقول الأربعة فقط كما يطلب النص."
+          },
+          {
+            "index": 1,
+            "verdict": "pass",
+            "requestQuote": "discountCents هو تقريب subtotalCents*discountPercent/100 إلى أقرب سنت والنصف للأعلى. totalCents=subtotalCents-discountCents+shippingCents.",
+            "reason": "333×50/100=166.5 → النصف للأعلى يعطي 167؛ total=333−167+0=166. توقع صحيح يتحقق من قاعدة التقريب المطلوبة."
+          },
+          {
+            "index": 2,
+            "verdict": "pass",
+            "requestQuote": "مجموع الأسعار قبل الخصم يجب ألا يزيد عن 1000000000 سنت وإلا الطلب غير صالح.",
+            "reason": "100 صنف × 10000000 = 1000000000 بالضبط وهو مسموح لأن الشرط 'لا يزيد عن' (≤). خصم 100% = 1000000000؛ total=1000000000−1000000000+1000000=1000000. جميع القيم ضمن الحدود (unitPrice 10000000، shipping 1000000، discount 100، عدد الأصناف 100) → 200 صحيح."
+          },
+          {
+            "index": 3,
+            "verdict": "pass",
+            "requestQuote": "الأصناف 1 إلى 100؛ sku نص غير فارغ بعد trim ولا يتكرر؛",
+            "reason": "sku فارغ أو مسافات فقط يخالف 'غير فارغ بعد trim'، و'A-1' مكرر و'X9' مقابل ' X9 ' مكرر بعد trim يخالفان 'لا يتكرر' → 400 {error:\"invalid\"} في الحالات الأربع صحيح."
+          },
+          {
+            "index": 4,
+            "verdict": "pass",
+            "requestQuote": "الأصناف 1 إلى 100",
+            "reason": "الحد الأقصى 100 صنف؛ الجسم يحتوي فعلاً 101 صنفًا (D-1 إلى D-101 بلا فجوات) → 400 غير صالح توقع صحيح."
+          },
+          {
+            "index": 5,
+            "verdict": "pass",
+            "requestQuote": "unitPriceCents عدد صحيح آمن من 0 إلى 10000000؛ quantity عدد صحيح من 1 إلى 10000؛ discountPercent عدد صحيح من 0 إلى 100؛ shippingCents عدد صحيح من 0 إلى 1000000. لا تحول النصوص أو null إلى أرقام.",
+            "reason": "النص \"5\" وnull مرفوضان صراحة ('لا تحول النصوص أو null إلى أرقام')، و1.5 ليس عددًا صحيحًا، و−5 خارج 0–10000000 → 400 في الحالات الأربع صحيح."
+          },
+          {
+            "index": 6,
+            "verdict": "pass",
+            "requestQuote": "quantity عدد صحيح من 1 إلى 10000؛ discountPercent عدد صحيح من 0 إلى 100؛ shippingCents عدد صحيح من 0 إلى 1000000.",
+            "reason": "quantity 0<1 و10001>10000، وdiscountPercent 101>100، وshippingCents −1<0 → كلها خارج النطاقات المحددة → 400 {error:\"invalid\"} صحيح."
+          },
+          {
+            "index": 7,
+            "verdict": "pass",
+            "requestQuote": "مجموع الأسعار قبل الخصم يجب ألا يزيد عن 1000000000 سنت وإلا الطلب غير صالح.",
+            "reason": "10000000×100 + 1×1 = 1000000001 > 1000000000 → تجاوز السقف → 400 صحيح. أما '{items:}' فهو JSON معطوب والنص يطلب: 'المدخلات المخالفة وJSON المعطوب ترجع 400 مع {error:\"invalid\"}' → توقع 400 صحيح."
+          },
+          {
+            "index": 8,
+            "verdict": "pass",
+            "requestQuote": "أنشئ تطبيق عروض أسعار عربي RTL متجاوب بالتدرجات السماوية والبنفسجية",
+            "reason": "تحقق من عناوين وتسميات عربية للحقول المطلوبة (sku، سعر الوحدة بالسنت، نسبة الخصم، رسوم الشحن بالسنت) ونموذج الإضافة والزر؛ لا تعارض مع طلب واجهة عربية RTL بنموذج الإدخال."
+          },
+          {
+            "index": 9,
+            "verdict": "pass",
+            "requestQuote": "يضيف المستخدم أصنافًا ويحذفها ويحدد سعر الوحدة بالسنت والكمية ونسبة الخصم ورسوم الشحن بالسنت",
+            "reason": "السيناريو يختبر الإضافة (صنفان) ثم الحذف مع تحديث القائمة والعدّاد (2→1) كما يطلب النص حرفيًا؛ لا توقع حسابي هنا ولا تعارض."
+          },
+          {
+            "index": 10,
+            "verdict": "pass",
+            "requestQuote": "الرد الناجح 200 بكائن هذه الحقول الأربعة فقط: subtotalCents وdiscountCents وshippingCents وtotalCents.",
+            "reason": "نفس مدخلات السيناريو 0 عبر الواجهة: 1000×3=3000، خصم 25%=750، شحن 500، total=2750؛ عرض القيم الأربعة مع طلب POST واحد بحالة 200 مطابق."
+          },
+          {
+            "index": 11,
+            "verdict": "pass",
+            "requestQuote": "ثم يحسب الخادم المجاميع وتعرضها الواجهة بوضوح ورسائل خطأ مفهومة.",
+            "reason": "رسالة عربية مفهومة عند الحساب بلا أصناف ('أضف صنفًا واحدًا على الأقل') وعند خصم 150 خارج نطاق 0–100 ('نسبة الخصم')؛ تطبيق من جانب الواجهة لرسائل خطأ مفهومة لا يتعارض مع التحقق على الخادم."
+          }
+        ]
+      }
+    }
+  ],
+  "caveat": "Two diagnostic cases, not a reliability benchmark. Control is an in-memory copy; original task and frozen tests unchanged.",
+  "finishedAt": "2026-10-19T15:17:16.114Z"
+}

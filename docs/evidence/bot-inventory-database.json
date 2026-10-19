@@ -1,0 +1,30 @@
+{
+  "at": "2026-10-19T00:05:59.919Z",
+  "workspace": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-reverify-EtJMmn",
+  "sourceHashes": {
+    "index.html": "986c478c90c02791da0d29276da125d1295bc81d457141081deb2f3b7a7cf648",
+    "server.mjs": "840b0e167ca5ef254691e2e4bd90351dd2a99261985e6e0ef30b15067762d1c5",
+    "app-verification.json": "aa83286fe0ae2061c05e64886fbb08a2bd32d8a3961dcb3a706dd354bc373abf"
+  },
+  "pass": true,
+  "probe": {
+    "pass": true,
+    "rows": [
+      {
+        "sku": "probe",
+        "quantity": 2
+      },
+      {
+        "sku": "x' OR 1=1 --",
+        "quantity": 4
+      }
+    ],
+    "overdrawRejected": true,
+    "duplicateRejected": true,
+    "invalidInputRejected": true,
+    "quotedSku": true,
+    "competingWithdrawals": true,
+    "cleanup": true,
+    "scope": "SQLite file inside one ephemeral sandbox; no cross-container durability claim"
+  }
+}

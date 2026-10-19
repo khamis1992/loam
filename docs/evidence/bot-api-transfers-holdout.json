@@ -1,0 +1,98 @@
+{
+  "at": "2026-10-19T01:43:10.123Z",
+  "source": "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-transfers-initial-20261019",
+  "workspace": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-transfers-holdout-FlFMvA",
+  "pass": true,
+  "meaning": "new gate rejects unchanged defective generated application; original trial remains failed",
+  "result": {
+    "pass": false,
+    "reason": "Error: Application interaction/runtime checks failed; inspect report and repair",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-transfers-holdout-FlFMvA\\.verification\\23ec18fd-84e8-4734-a0ad-f2c5622857c9\\report.json",
+    "elapsedMs": 8898,
+    "usage": {
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "durationMs": 0
+    },
+    "checks": [
+      {
+        "viewport": "desktop",
+        "scenario": "Reject whitespace-only request id",
+        "pass": false,
+        "error": "Error: API group 0 mismatch: expected statuses [400], observed [{\"group\":0,\"method\":\"POST\",\"path\":\"/api/transfers\",\"status\":201}]",
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/stock",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/transfers",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [
+          {
+            "group": 0,
+            "method": "POST",
+            "path": "/api/transfers",
+            "status": 201
+          }
+        ]
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "Reject whitespace-only request id",
+        "pass": false,
+        "error": "Error: API group 0 mismatch: expected statuses [400], observed [{\"group\":0,\"method\":\"POST\",\"path\":\"/api/transfers\",\"status\":201}]",
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/stock",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/transfers",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [
+          {
+            "group": 0,
+            "method": "POST",
+            "path": "/api/transfers",
+            "status": 201
+          }
+        ]
+      }
+    ],
+    "screenshots": [
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-transfers-holdout-FlFMvA\\.verification\\23ec18fd-84e8-4734-a0ad-f2c5622857c9\\desktop-0.png",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-transfers-holdout-FlFMvA\\.verification\\23ec18fd-84e8-4734-a0ad-f2c5622857c9\\mobile-0.png"
+    ],
+    "errors": [
+      "Error: API group 0 mismatch: expected statuses [400], observed [{\"group\":0,\"method\":\"POST\",\"path\":\"/api/transfers\",\"status\":201}]",
+      "Error: API group 0 mismatch: expected statuses [400], observed [{\"group\":0,\"method\":\"POST\",\"path\":\"/api/transfers\",\"status\":201}]"
+    ],
+    "runtime": {
+      "type": "node",
+      "isolation": "docker-network-none",
+      "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+      "freshBackendPerScenario": true
+    }
+  }
+}

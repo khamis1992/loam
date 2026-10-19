@@ -1,0 +1,26 @@
+﻿{
+    "capabilities":  {
+                         "revision":  2,
+                         "mandatoryFinalVerification":  true,
+                         "bufferedCompletion":  true,
+                         "applicationVerification":  {
+                                                         "contract":  "app-verification.json",
+                                                         "runtime":  "isolated-playwright",
+                                                         "viewports":  [
+                                                                           "desktop",
+                                                                           "mobile"
+                                                                       ],
+                                                         "visualReview":  true,
+                                                         "network":  "local-static-only",
+                                                         "backendApplications":  false
+                                                     },
+                         "visualModel":  "glm-5.3-flash:cloud"
+                     },
+    "at":  "2026-10-19T01:30:17.7654080+03:00",
+    "runtimeHash":  "A275FFA9703E5E5F9DEFFD31D918F37CF48FE8BC4800AF397BC2C7C5A70DF252",
+    "backup":  "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-install-20261019-013010\\previous-server.cjs",
+    "version":  "0.5.25",
+    "candidate":  "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-install-20261019-013010\\candidate-server.cjs",
+    "profilePreserved":  true,
+    "tasksPreserved":  133
+}

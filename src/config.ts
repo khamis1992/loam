@@ -57,6 +57,10 @@ export interface Config {
   model: string;
   fallbackModel: string;
   ollamaUrl: string;
+  /** Optional OpenAI-compatible cloud provider (OpenRouter, vLLM, LM Studio, ...).
+   *  Models whose name ends with ":cloud" are routed here; the suffix is stripped
+   *  before the call. The user's own key stays in config.json — never in the repo. */
+  cloudModel?: { baseUrl: string; apiKey?: string };
   server: { host: string; port: number };
   agent: { maxSteps: number; temperature: number; requestTimeoutMs: number };
   workspace: string;
@@ -81,7 +85,7 @@ export interface Config {
     quality: number;
     maxWidth: number;
   };
-  vision: { enabled: boolean; maxImagesPerStep: number };
+  vision: { enabled: boolean; maxImagesPerStep: number; model?: string };
   selfImprove: {
     /** Run the background learning review after a task. */
     enabled: boolean;
@@ -129,6 +133,7 @@ export interface Config {
     /** How many times the plan may be rebuilt after a "fail" verdict. */
     maxReplans: number;
     /** Run the end-to-end verification pass after the plan completes. */
+    /** Legacy configuration field; final verification is mandatory regardless. */
     verifyFinal: boolean;
   };
   mcpServers: Record<string, McpServerConfig>;

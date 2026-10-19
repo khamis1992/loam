@@ -5,6 +5,7 @@ let term = null;
 let fit = null;
 let sessionId = null;
 let stream = null;
+if(new URLSearchParams(location.search).get('embedded')==='1')document.body.dataset.embedded='true';
 
 function setStatus(text) {
   $("status").textContent = text;
@@ -84,12 +85,14 @@ function attachStream() {
 async function startSession() {
   if (!taskId) return setStatus("افتح الطرفية من مهمة لتحديد مساحتها المعزولة.");
   if (sessionId) await killSession();
+  $("start").disabled=true;
+  try{
   const shell = $("shell").value;
   setStatus("...جارٍ التشغيل");
   const res = await fetch("/api/pty", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ taskId, shell, cols: term ? term.cols : 120, rows: term ? term.rows : 30 }),
+    body: JSON.stringify({ taskId, shell, cwd:new URLSearchParams(location.search).get('cwd')||'.', cols: term ? term.cols : 120, rows: term ? term.rows : 30 }),
   });
   const data = await res.json();
   if (!res.ok || data.error) {
@@ -97,11 +100,13 @@ async function startSession() {
     return;
   }
   sessionId = data.id;
+  parent.postMessage({type:'loam-terminal-session',sessionId},location.origin);
   term.reset();
   term.write(`\x1b[90m[Loam] started ${shell} session ${sessionId}\x1b[0m\r\n`);
   attachStream();
   setStatus(`جلسة ${sessionId} (${shell})`);
   term.focus();
+  }catch(error){setStatus(error.message);}finally{$('start').disabled=false;}
 }
 
 async function killSession() {
@@ -109,6 +114,7 @@ async function killSession() {
   await fetch(scoped(`/api/pty/${encodeURIComponent(sessionId)}`), { method: "DELETE" });
   setStatus("أُوقفت الجلسة");
   sessionId = null;
+  parent.postMessage({type:'loam-terminal-session',sessionId:null},location.origin);
   if (stream) {
     stream.close();
     stream = null;
@@ -117,14 +123,16 @@ async function killSession() {
 
 $("start").onclick = () => void startSession();
 $("kill").onclick = () => void killSession();
+window.addEventListener('beforeunload',()=>{if(sessionId)void fetch(scoped(`/api/pty/${encodeURIComponent(sessionId)}`),{method:'DELETE',keepalive:true});});
 
 (async () => {
   if (!taskId) { $("start").disabled = true; setStatus("افتح الطرفية من داخل مهمة في Loam."); return; }
   const ok = initTerminal();
   if (!ok) return;
+  $('start').disabled=true;
   try {
     const st = await (await fetch("/api/pty/status")).json();
-    setStatus(st.available ? st.status : `PTY غير متاح: ${st.status}`);
+    setStatus(st.available ? st.status : `PTY غير متاح: ${st.status}`);$('start').disabled=!st.available;
   } catch {
     setStatus("تعذّر قراءة حالة PTY");
   }

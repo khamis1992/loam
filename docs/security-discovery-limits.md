@@ -1,0 +1,11 @@
+# Discovery completeness — revision 29
+
+Static discovery previously skipped parsing links at the configured depth boundary. It could therefore report no truncation even when the last visited page linked to additional in-scope pages. Duplicate queued links could also consume queue capacity and prevent another distinct URL from being scheduled.
+
+Discovery now deduplicates queued URLs and records known, still-unvisited URLs by depth, page-count or queue-capacity limits. Counts use distinct URLs; a URL subsequently visited through another seed/path no longer remains missing. Evidence retains up to 100 URL samples plus full counts. Excluded/out-of-scope/action-like/query URLs remain skipped, not fetched or promoted into approved scope.
+
+Known omitted URLs make the campaign partial and produce a `discovery_coverage` error finding. This propagates to reports and SARIF execution notifications, instead of appearing only as an event. Diagnostics and the assets UI show counts, reasons and the bounded URL sample. A complete queue does not establish that all application routes were discovered; this remains static HTML/OpenAPI discovery, with separate browser coverage.
+
+Tests: `check-security-discovery-limits.ts` covers depth/page/queue boundaries, duplicate crowding, cycles, alternative seeds, exclusions and sample limits. The campaign regression confirms partial status, a coverage finding and unsuccessful SARIF execution for a depth-limited run. Full typecheck/build passed. The HTTP/UI suite includes a dedicated depth-boundary target and verifies its unvisited child and diagnostic reason through the interface.
+
+Deployment: revision 29 installed on Loam 0.5.19 with profile and 86 tasks preserved; installed file hashes matched the validated build/UI. Backup: `output/verification/security-runtime-backup-20261018-124547`. Source-server and installed-runtime UI integration passed, including the dedicated depth-boundary case. Screenshots: `C:/Users/khamis/AppData/Local/Temp/loam-security-http-15x4cV` (source) and `C:/Users/khamis/AppData/Local/Temp/loam-security-http-wA1NWM` (installed); each includes `security-discovery-limits.png`. Existing HTTP-body completeness and campaign regressions also passed.

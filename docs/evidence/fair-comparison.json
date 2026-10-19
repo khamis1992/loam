@@ -1,0 +1,96 @@
+{
+ "suite": "loam-fair-comparison v1",
+ "at": "2026-10-18T21:07:13.343Z",
+ "loam": {
+  "evidence": "docs/evidence/companions-bench-live.json",
+  "model": "qwen2.5:14b",
+  "passRate": 1,
+  "totalInterventions": 0
+ },
+ "reference": {
+  "results": "C:\\Users\\khamis/AppData/Local/Temp/ref-filled.csv",
+  "passRate": 0.167,
+  "totalInterventions": 1
+ },
+ "perTask": [
+  {
+   "task": "csv-en",
+   "loam": null,
+   "reference": {
+    "pass": false,
+    "completionPercent": null,
+    "interventions": null,
+    "seconds": null,
+    "notes": ""
+   }
+  },
+  {
+   "task": "delegate-en",
+   "loam": null,
+   "reference": {
+    "pass": false,
+    "completionPercent": null,
+    "interventions": null,
+    "seconds": null,
+    "notes": ""
+   }
+  },
+  {
+   "task": "device-ar",
+   "loam": null,
+   "reference": {
+    "pass": false,
+    "completionPercent": null,
+    "interventions": null,
+    "seconds": null,
+    "notes": ""
+   }
+  },
+  {
+   "task": "doc-ar",
+   "loam": {
+    "pass": true,
+    "interventions": 0,
+    "seconds": 29.8
+   },
+   "reference": {
+    "pass": false,
+    "completionPercent": 40,
+    "interventions": 1,
+    "seconds": 180,
+    "notes": "reference could not save the file"
+   }
+  },
+  {
+   "task": "memory-ar",
+   "loam": {
+    "pass": true,
+    "interventions": 0,
+    "seconds": 17.3
+   },
+   "reference": {
+    "pass": false,
+    "completionPercent": null,
+    "interventions": null,
+    "seconds": null,
+    "notes": ""
+   }
+  },
+  {
+   "task": "task-en",
+   "loam": {
+    "pass": true,
+    "interventions": 0,
+    "seconds": 18.7
+   },
+   "reference": {
+    "pass": true,
+    "completionPercent": 100,
+    "interventions": 0,
+    "seconds": 95,
+    "notes": ""
+   }
+  }
+ ],
+ "fairnessContract": "نفس الأوامر حرفيًا، صلاحيات مكافئة، 10 دقائق/مهمة، صحة ضد الآثار الجانبية لا الادعاءات، وتسجيل حالات فشل كل طرف."
+}

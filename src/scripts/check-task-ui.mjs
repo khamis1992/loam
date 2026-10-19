@@ -24,5 +24,14 @@ assert.equal(next.result,''); assert.equal(next.verification,null); assert.equal
 applyTaskEvent(next,{type:'tool_call',name:'file_write',args:{path:'failed.md'}});
 applyTaskEvent(next,{type:'tool_result',name:'file_write',ok:false});
 assert.equal(next.files.size,0);
+applyTaskEvent(next,{type:'verification_progress',stage:'independent_application'});
+assert.equal(next.verificationProgress,'independent_application');
+assert.equal(next.verification,null,'progress is not a successful verdict');
+assert.equal(next.status,'running');
+for (const type of ['verify','error','cancelled','done']) {
+  applyTaskEvent(next,{type:'verification_progress',stage:'final_review'});
+  applyTaskEvent(next,{type,verdict:'revise'});
+  assert.equal(next.verificationProgress,null);
+}
 
 console.log('PASS task view model: latest-turn isolation, verified steps, successful file outputs');

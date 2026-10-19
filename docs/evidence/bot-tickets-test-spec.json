@@ -1,0 +1,679 @@
+{
+  "prompt": "أنشئ تطبيق إدارة تذاكر عربي RTL سماوي وبنفسجي متجاوب، يمنع ضياع التعديلات المتزامنة باستخدام رقم إصدار لكل سجل. ملفات index.html وserver.mjs وapp-verification.json في جذر المهمة. Node المدمج فقط، خادم 127.0.0.1:3000، SQLite حقيقي داخل الحاوية /tmp/tickets.sqlite وجدول tickets(id TEXT PRIMARY KEY,title TEXT NOT NULL,status TEXT NOT NULL,version INTEGER NOT NULL)، يبدأ فارغًا.\nAPI بعقود JSON دقيقة لا تضف حقولًا أخرى: GET /api/tickets يرجع {items:[{id,title,status,version}]} مرتبًا تصاعديًا حسب id. POST /api/tickets يقبل {id,title} ويُنشئ status=open وversion=1، ويرجع 201 {item:{id,title,status,version}}؛ المعرف مكوّن من 1–40 حرف ASCII أبجدي/رقمي أو _ أو -، والعنوان نص يحوي محارف غير بيضاء، خزّن title بعد trim. المعرف المكرر يرجع 409 {error:\"duplicate\"} دون تعديل السجل السابق.\nPATCH /api/tickets/<id> يقبل {title,status,version}؛ title كما سبق، status إما open أو closed فقط، وversion عدد صحيح آمن موجب من نوع number. طلب غير صالح أو JSON معطوب يرجع 400 {error:\"invalid\"}. سجل غير موجود يرجع 404 {error:\"not_found\"}. إذا version لا يطابق الإصدار الحالي يرجع 409 {error:\"version_conflict\"} دون تغيير. عند التطابق حدّث العنوان والحالة وزد version بمقدار واحد وأعد 200 {item:{id,title,status,version}}. المقارنة والتحديث ذرّيان داخل معاملة مع استعلامات مربوطة؛ طلبان متزامنان بإصدار قديم نفسه يسمحان بتحديث واحد فقط.\nواجهة إنشاء #id و#title وزر #create، وواجهة تعديل بحقول نص عادية #editId و#editTitle و#editStatus و#editVersion وزر #update. حوّل رقم الإصدار الصحيح إلى number قبل الإرسال. لكل سجل صف .ticket[data-id=\"a\"] بحسب المعرف وداخله [data-title] و[data-status] و[data-version]، الأخير يعرض العدد فقط. لا تكتب فوق حقول التعديل تلقائيًا أثناء تعبئتها، حتى نختبر تقديم إصدار قديم صراحة. اعرض رسالة عربية #error عند التعارض أو الخطأ وتختفي بعد النجاح، وحدّث الجدول من الخادم عند التحميل وبعد كل طلب. لا تستخدم localStorage أو ذاكرة بديلة أو مكتبات خارجية أو نوافذ تأكيد.\nاحفظ عقد الاختبار التالي دون تغيير: {\"entry\":\"index.html\",\"runtime\":{\"type\":\"node\",\"entry\":\"server.mjs\"},\"scenarios\":[{\"name\":\"Create and inspect JSON\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#id\",\"value\":\"a\"},{\"action\":\"fill\",\"selector\":\"#title\",\"value\":\"الأولى\"},{\"action\":\"click\",\"selector\":\"#create\"},{\"action\":\"count\",\"selector\":\".ticket\",\"count\":1}],\"apiChecks\":[{\"requests\":[{\"method\":\"GET\",\"path\":\"/api/tickets\",\"expectedJson\":{\"items\":[{\"id\":\"a\",\"title\":\"الأولى\",\"status\":\"open\",\"version\":1}]}}],\"statuses\":[200]}],\"sqliteChecks\":[{\"database\":\"/tmp/tickets.sqlite\",\"table\":\"tickets\",\"columns\":[\"id\",\"title\",\"status\",\"version\"],\"rows\":[[\"a\",\"الأولى\",\"open\",1]]}]},{\"name\":\"Update version\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#id\",\"value\":\"a\"},{\"action\":\"fill\",\"selector\":\"#title\",\"value\":\"الأولى\"},{\"action\":\"click\",\"selector\":\"#create\"},{\"action\":\"count\",\"selector\":\".ticket\",\"count\":1},{\"action\":\"fill\",\"selector\":\"#editId\",\"value\":\"a\"},{\"action\":\"fill\",\"selector\":\"#editTitle\",\"value\":\"محدثة\"},{\"action\":\"fill\",\"selector\":\"#editStatus\",\"value\":\"closed\"},{\"action\":\"fill\",\"selector\":\"#editVersion\",\"value\":\"1\"},{\"action\":\"click\",\"selector\":\"#update\"},{\"action\":\"textExact\",\"selector\":\".ticket[data-id=\\\"a\\\"] [data-version]\",\"value\":\"2\"},{\"action\":\"textExact\",\"selector\":\".ticket[data-id=\\\"a\\\"] [data-title]\",\"value\":\"محدثة\"}],\"apiChecks\":[{\"requests\":[{\"method\":\"GET\",\"path\":\"/api/tickets\",\"expectedJson\":{\"items\":[{\"id\":\"a\",\"title\":\"محدثة\",\"status\":\"closed\",\"version\":2}]}}],\"statuses\":[200]}],\"sqliteChecks\":[{\"database\":\"/tmp/tickets.sqlite\",\"table\":\"tickets\",\"columns\":[\"id\",\"title\",\"status\",\"version\"],\"rows\":[[\"a\",\"محدثة\",\"closed\",2]]}]},{\"name\":\"Reject stale edit\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#id\",\"value\":\"a\"},{\"action\":\"fill\",\"selector\":\"#title\",\"value\":\"الأولى\"},{\"action\":\"click\",\"selector\":\"#create\"},{\"action\":\"count\",\"selector\":\".ticket\",\"count\":1},{\"action\":\"fill\",\"selector\":\"#editId\",\"value\":\"a\"},{\"action\":\"fill\",\"selector\":\"#editTitle\",\"value\":\"محدثة\"},{\"action\":\"fill\",\"selector\":\"#editStatus\",\"value\":\"closed\"},{\"action\":\"fill\",\"selector\":\"#editVersion\",\"value\":\"1\"},{\"action\":\"click\",\"selector\":\"#update\"},{\"action\":\"textExact\",\"selector\":\".ticket[data-id=\\\"a\\\"] [data-version]\",\"value\":\"2\"},{\"action\":\"fill\",\"selector\":\"#editId\",\"value\":\"a\"},{\"action\":\"fill\",\"selector\":\"#editTitle\",\"value\":\"قديمة\"},{\"action\":\"fill\",\"selector\":\"#editStatus\",\"value\":\"open\"},{\"action\":\"fill\",\"selector\":\"#editVersion\",\"value\":\"1\"},{\"action\":\"click\",\"selector\":\"#update\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"textExact\",\"selector\":\".ticket[data-id=\\\"a\\\"] [data-title]\",\"value\":\"محدثة\"}],\"expectedResponses\":[{\"method\":\"PATCH\",\"path\":\"/api/tickets/a\",\"status\":409,\"count\":1}],\"apiChecks\":[{\"requests\":[{\"method\":\"GET\",\"path\":\"/api/tickets\",\"expectedJson\":{\"items\":[{\"id\":\"a\",\"title\":\"محدثة\",\"status\":\"closed\",\"version\":2}]}}],\"statuses\":[200]}],\"sqliteChecks\":[{\"database\":\"/tmp/tickets.sqlite\",\"table\":\"tickets\",\"columns\":[\"id\",\"title\",\"status\",\"version\"],\"rows\":[[\"a\",\"محدثة\",\"closed\",2]]}]},{\"name\":\"Reload retains version\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#id\",\"value\":\"a\"},{\"action\":\"fill\",\"selector\":\"#title\",\"value\":\"الأولى\"},{\"action\":\"click\",\"selector\":\"#create\"},{\"action\":\"count\",\"selector\":\".ticket\",\"count\":1},{\"action\":\"fill\",\"selector\":\"#editId\",\"value\":\"a\"},{\"action\":\"fill\",\"selector\":\"#editTitle\",\"value\":\"محدثة\"},{\"action\":\"fill\",\"selector\":\"#editStatus\",\"value\":\"closed\"},{\"action\":\"fill\",\"selector\":\"#editVersion\",\"value\":\"1\"},{\"action\":\"click\",\"selector\":\"#update\"},{\"action\":\"textExact\",\"selector\":\".ticket[data-id=\\\"a\\\"] [data-version]\",\"value\":\"2\"},{\"action\":\"reload\"},{\"action\":\"textExact\",\"selector\":\".ticket[data-id=\\\"a\\\"] [data-version]\",\"value\":\"2\"}],\"apiChecks\":[{\"requests\":[{\"method\":\"GET\",\"path\":\"/api/tickets\",\"expectedJson\":{\"items\":[{\"id\":\"a\",\"title\":\"محدثة\",\"status\":\"closed\",\"version\":2}]}}],\"statuses\":[200]}],\"sqliteChecks\":[{\"database\":\"/tmp/tickets.sqlite\",\"table\":\"tickets\",\"columns\":[\"id\",\"title\",\"status\",\"version\"],\"rows\":[[\"a\",\"محدثة\",\"closed\",2]]}]},{\"name\":\"Concurrent updates have one winner\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#id\",\"value\":\"a\"},{\"action\":\"fill\",\"selector\":\"#title\",\"value\":\"الأولى\"},{\"action\":\"click\",\"selector\":\"#create\"},{\"action\":\"count\",\"selector\":\".ticket\",\"count\":1}],\"apiChecks\":[{\"requests\":[{\"method\":\"PATCH\",\"path\":\"/api/tickets/a\",\"body\":\"{\\\"title\\\":\\\"متزامنة\\\",\\\"status\\\":\\\"closed\\\",\\\"version\\\":1}\"},{\"method\":\"PATCH\",\"path\":\"/api/tickets/a\",\"body\":\"{\\\"title\\\":\\\"متزامنة\\\",\\\"status\\\":\\\"closed\\\",\\\"version\\\":1}\"}],\"statuses\":[200,409]},{\"requests\":[{\"method\":\"GET\",\"path\":\"/api/tickets\",\"expectedJson\":{\"items\":[{\"id\":\"a\",\"title\":\"متزامنة\",\"status\":\"closed\",\"version\":2}]}}],\"statuses\":[200]},{\"requests\":[{\"method\":\"PATCH\",\"path\":\"/api/tickets/a\",\"body\":\"{\\\"title\\\":\\\"قديمة\\\",\\\"status\\\":\\\"open\\\",\\\"version\\\":1}\",\"expectedJson\":{\"error\":\"version_conflict\"}}],\"statuses\":[409]}],\"sqliteChecks\":[{\"database\":\"/tmp/tickets.sqlite\",\"table\":\"tickets\",\"columns\":[\"id\",\"title\",\"status\",\"version\"],\"rows\":[[\"a\",\"متزامنة\",\"closed\",2]]}]},{\"name\":\"Invalid API inputs leave state unchanged\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#id\",\"value\":\"a\"},{\"action\":\"fill\",\"selector\":\"#title\",\"value\":\"الأولى\"},{\"action\":\"click\",\"selector\":\"#create\"},{\"action\":\"count\",\"selector\":\".ticket\",\"count\":1}],\"apiChecks\":[{\"requests\":[{\"method\":\"PATCH\",\"path\":\"/api/tickets/a\",\"body\":\"{\\\"title\\\":\\\" \\\",\\\"status\\\":\\\"open\\\",\\\"version\\\":1}\",\"expectedJson\":{\"error\":\"invalid\"}}],\"statuses\":[400]},{\"requests\":[{\"method\":\"PATCH\",\"path\":\"/api/tickets/a\",\"body\":\"{\\\"title\\\":\\\"x\\\",\\\"status\\\":\\\"bad\\\",\\\"version\\\":1}\",\"expectedJson\":{\"error\":\"invalid\"}}],\"statuses\":[400]},{\"requests\":[{\"method\":\"PATCH\",\"path\":\"/api/tickets/a\",\"body\":\"{\\\"title\\\":\\\"x\\\",\\\"status\\\":\\\"open\\\",\\\"version\\\":\\\"1\\\"}\",\"expectedJson\":{\"error\":\"invalid\"}}],\"statuses\":[400]},{\"requests\":[{\"method\":\"PATCH\",\"path\":\"/api/tickets/a\",\"body\":\"{\\\"title\\\":\\\"x\\\",\\\"status\\\":\\\"open\\\",\\\"version\\\":1.5}\",\"expectedJson\":{\"error\":\"invalid\"}}],\"statuses\":[400]},{\"requests\":[{\"method\":\"PATCH\",\"path\":\"/api/tickets/a\",\"body\":\"{broken\",\"expectedJson\":{\"error\":\"invalid\"}}],\"statuses\":[400]},{\"requests\":[{\"method\":\"PATCH\",\"path\":\"/api/tickets/missing\",\"body\":\"{\\\"title\\\":\\\"x\\\",\\\"status\\\":\\\"open\\\",\\\"version\\\":1}\",\"expectedJson\":{\"error\":\"not_found\"}}],\"statuses\":[404]},{\"requests\":[{\"method\":\"GET\",\"path\":\"/api/tickets\",\"expectedJson\":{\"items\":[{\"id\":\"a\",\"title\":\"الأولى\",\"status\":\"open\",\"version\":1}]}}],\"statuses\":[200]}],\"sqliteChecks\":[{\"database\":\"/tmp/tickets.sqlite\",\"table\":\"tickets\",\"columns\":[\"id\",\"title\",\"status\",\"version\"],\"rows\":[[\"a\",\"الأولى\",\"open\",1]]}]}]}.\nاستخدم أدوات الملفات فقط ولا تشغّل الخادم على Windows. المنظومة تختبر المتصفح والصور وطلبات API ومحتوى expectedJson الدقيق وقاعدة البيانات داخل Docker. لا تدع دوام البيانات بعد حذف الحاوية.",
+  "contract": {
+    "entry": "index.html",
+    "runtime": {
+      "type": "node",
+      "entry": "server.mjs"
+    },
+    "scenarios": [
+      {
+        "name": "Create and inspect JSON",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#id",
+            "value": "a"
+          },
+          {
+            "action": "fill",
+            "selector": "#title",
+            "value": "الأولى"
+          },
+          {
+            "action": "click",
+            "selector": "#create"
+          },
+          {
+            "action": "count",
+            "selector": ".ticket",
+            "count": 1
+          }
+        ],
+        "apiChecks": [
+          {
+            "requests": [
+              {
+                "method": "GET",
+                "path": "/api/tickets",
+                "expectedJson": {
+                  "items": [
+                    {
+                      "id": "a",
+                      "title": "الأولى",
+                      "status": "open",
+                      "version": 1
+                    }
+                  ]
+                }
+              }
+            ],
+            "statuses": [
+              200
+            ]
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/tickets.sqlite",
+            "table": "tickets",
+            "columns": [
+              "id",
+              "title",
+              "status",
+              "version"
+            ],
+            "rows": [
+              [
+                "a",
+                "الأولى",
+                "open",
+                1
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Update version",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#id",
+            "value": "a"
+          },
+          {
+            "action": "fill",
+            "selector": "#title",
+            "value": "الأولى"
+          },
+          {
+            "action": "click",
+            "selector": "#create"
+          },
+          {
+            "action": "count",
+            "selector": ".ticket",
+            "count": 1
+          },
+          {
+            "action": "fill",
+            "selector": "#editId",
+            "value": "a"
+          },
+          {
+            "action": "fill",
+            "selector": "#editTitle",
+            "value": "محدثة"
+          },
+          {
+            "action": "fill",
+            "selector": "#editStatus",
+            "value": "closed"
+          },
+          {
+            "action": "fill",
+            "selector": "#editVersion",
+            "value": "1"
+          },
+          {
+            "action": "click",
+            "selector": "#update"
+          },
+          {
+            "action": "textExact",
+            "selector": ".ticket[data-id=\"a\"] [data-version]",
+            "value": "2"
+          },
+          {
+            "action": "textExact",
+            "selector": ".ticket[data-id=\"a\"] [data-title]",
+            "value": "محدثة"
+          }
+        ],
+        "apiChecks": [
+          {
+            "requests": [
+              {
+                "method": "GET",
+                "path": "/api/tickets",
+                "expectedJson": {
+                  "items": [
+                    {
+                      "id": "a",
+                      "title": "محدثة",
+                      "status": "closed",
+                      "version": 2
+                    }
+                  ]
+                }
+              }
+            ],
+            "statuses": [
+              200
+            ]
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/tickets.sqlite",
+            "table": "tickets",
+            "columns": [
+              "id",
+              "title",
+              "status",
+              "version"
+            ],
+            "rows": [
+              [
+                "a",
+                "محدثة",
+                "closed",
+                2
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Reject stale edit",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#id",
+            "value": "a"
+          },
+          {
+            "action": "fill",
+            "selector": "#title",
+            "value": "الأولى"
+          },
+          {
+            "action": "click",
+            "selector": "#create"
+          },
+          {
+            "action": "count",
+            "selector": ".ticket",
+            "count": 1
+          },
+          {
+            "action": "fill",
+            "selector": "#editId",
+            "value": "a"
+          },
+          {
+            "action": "fill",
+            "selector": "#editTitle",
+            "value": "محدثة"
+          },
+          {
+            "action": "fill",
+            "selector": "#editStatus",
+            "value": "closed"
+          },
+          {
+            "action": "fill",
+            "selector": "#editVersion",
+            "value": "1"
+          },
+          {
+            "action": "click",
+            "selector": "#update"
+          },
+          {
+            "action": "textExact",
+            "selector": ".ticket[data-id=\"a\"] [data-version]",
+            "value": "2"
+          },
+          {
+            "action": "fill",
+            "selector": "#editId",
+            "value": "a"
+          },
+          {
+            "action": "fill",
+            "selector": "#editTitle",
+            "value": "قديمة"
+          },
+          {
+            "action": "fill",
+            "selector": "#editStatus",
+            "value": "open"
+          },
+          {
+            "action": "fill",
+            "selector": "#editVersion",
+            "value": "1"
+          },
+          {
+            "action": "click",
+            "selector": "#update"
+          },
+          {
+            "action": "visible",
+            "selector": "#error"
+          },
+          {
+            "action": "textExact",
+            "selector": ".ticket[data-id=\"a\"] [data-title]",
+            "value": "محدثة"
+          }
+        ],
+        "expectedResponses": [
+          {
+            "method": "PATCH",
+            "path": "/api/tickets/a",
+            "status": 409,
+            "count": 1
+          }
+        ],
+        "apiChecks": [
+          {
+            "requests": [
+              {
+                "method": "GET",
+                "path": "/api/tickets",
+                "expectedJson": {
+                  "items": [
+                    {
+                      "id": "a",
+                      "title": "محدثة",
+                      "status": "closed",
+                      "version": 2
+                    }
+                  ]
+                }
+              }
+            ],
+            "statuses": [
+              200
+            ]
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/tickets.sqlite",
+            "table": "tickets",
+            "columns": [
+              "id",
+              "title",
+              "status",
+              "version"
+            ],
+            "rows": [
+              [
+                "a",
+                "محدثة",
+                "closed",
+                2
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Reload retains version",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#id",
+            "value": "a"
+          },
+          {
+            "action": "fill",
+            "selector": "#title",
+            "value": "الأولى"
+          },
+          {
+            "action": "click",
+            "selector": "#create"
+          },
+          {
+            "action": "count",
+            "selector": ".ticket",
+            "count": 1
+          },
+          {
+            "action": "fill",
+            "selector": "#editId",
+            "value": "a"
+          },
+          {
+            "action": "fill",
+            "selector": "#editTitle",
+            "value": "محدثة"
+          },
+          {
+            "action": "fill",
+            "selector": "#editStatus",
+            "value": "closed"
+          },
+          {
+            "action": "fill",
+            "selector": "#editVersion",
+            "value": "1"
+          },
+          {
+            "action": "click",
+            "selector": "#update"
+          },
+          {
+            "action": "textExact",
+            "selector": ".ticket[data-id=\"a\"] [data-version]",
+            "value": "2"
+          },
+          {
+            "action": "reload"
+          },
+          {
+            "action": "textExact",
+            "selector": ".ticket[data-id=\"a\"] [data-version]",
+            "value": "2"
+          }
+        ],
+        "apiChecks": [
+          {
+            "requests": [
+              {
+                "method": "GET",
+                "path": "/api/tickets",
+                "expectedJson": {
+                  "items": [
+                    {
+                      "id": "a",
+                      "title": "محدثة",
+                      "status": "closed",
+                      "version": 2
+                    }
+                  ]
+                }
+              }
+            ],
+            "statuses": [
+              200
+            ]
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/tickets.sqlite",
+            "table": "tickets",
+            "columns": [
+              "id",
+              "title",
+              "status",
+              "version"
+            ],
+            "rows": [
+              [
+                "a",
+                "محدثة",
+                "closed",
+                2
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Concurrent updates have one winner",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#id",
+            "value": "a"
+          },
+          {
+            "action": "fill",
+            "selector": "#title",
+            "value": "الأولى"
+          },
+          {
+            "action": "click",
+            "selector": "#create"
+          },
+          {
+            "action": "count",
+            "selector": ".ticket",
+            "count": 1
+          }
+        ],
+        "apiChecks": [
+          {
+            "requests": [
+              {
+                "method": "PATCH",
+                "path": "/api/tickets/a",
+                "body": "{\"title\":\"متزامنة\",\"status\":\"closed\",\"version\":1}"
+              },
+              {
+                "method": "PATCH",
+                "path": "/api/tickets/a",
+                "body": "{\"title\":\"متزامنة\",\"status\":\"closed\",\"version\":1}"
+              }
+            ],
+            "statuses": [
+              200,
+              409
+            ]
+          },
+          {
+            "requests": [
+              {
+                "method": "GET",
+                "path": "/api/tickets",
+                "expectedJson": {
+                  "items": [
+                    {
+                      "id": "a",
+                      "title": "متزامنة",
+                      "status": "closed",
+                      "version": 2
+                    }
+                  ]
+                }
+              }
+            ],
+            "statuses": [
+              200
+            ]
+          },
+          {
+            "requests": [
+              {
+                "method": "PATCH",
+                "path": "/api/tickets/a",
+                "body": "{\"title\":\"قديمة\",\"status\":\"open\",\"version\":1}",
+                "expectedJson": {
+                  "error": "version_conflict"
+                }
+              }
+            ],
+            "statuses": [
+              409
+            ]
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/tickets.sqlite",
+            "table": "tickets",
+            "columns": [
+              "id",
+              "title",
+              "status",
+              "version"
+            ],
+            "rows": [
+              [
+                "a",
+                "متزامنة",
+                "closed",
+                2
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Invalid API inputs leave state unchanged",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#id",
+            "value": "a"
+          },
+          {
+            "action": "fill",
+            "selector": "#title",
+            "value": "الأولى"
+          },
+          {
+            "action": "click",
+            "selector": "#create"
+          },
+          {
+            "action": "count",
+            "selector": ".ticket",
+            "count": 1
+          }
+        ],
+        "apiChecks": [
+          {
+            "requests": [
+              {
+                "method": "PATCH",
+                "path": "/api/tickets/a",
+                "body": "{\"title\":\" \",\"status\":\"open\",\"version\":1}",
+                "expectedJson": {
+                  "error": "invalid"
+                }
+              }
+            ],
+            "statuses": [
+              400
+            ]
+          },
+          {
+            "requests": [
+              {
+                "method": "PATCH",
+                "path": "/api/tickets/a",
+                "body": "{\"title\":\"x\",\"status\":\"bad\",\"version\":1}",
+                "expectedJson": {
+                  "error": "invalid"
+                }
+              }
+            ],
+            "statuses": [
+              400
+            ]
+          },
+          {
+            "requests": [
+              {
+                "method": "PATCH",
+                "path": "/api/tickets/a",
+                "body": "{\"title\":\"x\",\"status\":\"open\",\"version\":\"1\"}",
+                "expectedJson": {
+                  "error": "invalid"
+                }
+              }
+            ],
+            "statuses": [
+              400
+            ]
+          },
+          {
+            "requests": [
+              {
+                "method": "PATCH",
+                "path": "/api/tickets/a",
+                "body": "{\"title\":\"x\",\"status\":\"open\",\"version\":1.5}",
+                "expectedJson": {
+                  "error": "invalid"
+                }
+              }
+            ],
+            "statuses": [
+              400
+            ]
+          },
+          {
+            "requests": [
+              {
+                "method": "PATCH",
+                "path": "/api/tickets/a",
+                "body": "{broken",
+                "expectedJson": {
+                  "error": "invalid"
+                }
+              }
+            ],
+            "statuses": [
+              400
+            ]
+          },
+          {
+            "requests": [
+              {
+                "method": "PATCH",
+                "path": "/api/tickets/missing",
+                "body": "{\"title\":\"x\",\"status\":\"open\",\"version\":1}",
+                "expectedJson": {
+                  "error": "not_found"
+                }
+              }
+            ],
+            "statuses": [
+              404
+            ]
+          },
+          {
+            "requests": [
+              {
+                "method": "GET",
+                "path": "/api/tickets",
+                "expectedJson": {
+                  "items": [
+                    {
+                      "id": "a",
+                      "title": "الأولى",
+                      "status": "open",
+                      "version": 1
+                    }
+                  ]
+                }
+              }
+            ],
+            "statuses": [
+              200
+            ]
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/tickets.sqlite",
+            "table": "tickets",
+            "columns": [
+              "id",
+              "title",
+              "status",
+              "version"
+            ],
+            "rows": [
+              [
+                "a",
+                "الأولى",
+                "open",
+                1
+              ]
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "status": "prepared, not executed"
+}

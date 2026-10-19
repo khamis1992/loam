@@ -1,0 +1,28 @@
+{
+  "at": "2026-10-19T07:09:10.062Z",
+  "scope": "Actual Docker test of restart while a request is provably in flight",
+  "pass": true,
+  "restart": {
+    "previousPid": 14,
+    "currentPid": 86
+  },
+  "request": {
+    "status": "fulfilled",
+    "response": {
+      "status": 200,
+      "headers": {
+        "connection": "keep-alive",
+        "content-length": "22",
+        "content-type": "application/json",
+        "date": "Mon, 19 Oct 2026 07:09:11 GMT",
+        "keep-alive": "timeout=5"
+      },
+      "body": "eyJwaWQiOjE0LCJkb25lIjp0cnVlfQ=="
+    }
+  },
+  "queuedRequest": {
+    "pid": 86
+  },
+  "queuedCancellation": true,
+  "concurrentRestartRejected": true
+}

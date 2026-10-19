@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import {buildMobile} from '../mobile/build.js';
+import {saveMobile,readMobile} from '../mobile/store.js';
+import {recordsFixture} from './mobile-records-fixture.js';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'loam-record-repair-')),fixture=recordsFixture;
+const initial=saveMobile(root,fixture,0),bad=structuredClone(initial);bad.collections!.find(c=>c.id==='tasks')!.fields.find(f=>f.id==='hours')!.type='text';let calls=0;const repairs:string[]=[];
+await buildMobile({root,model:'fixture',brief:'حسّن وصف التطبيق مع الحفاظ على حقول البيانات الحالية',expectedRevision:initial.revision,signal:new AbortController().signal,emit:e=>{if(e.type==='repair')repairs.push(String(e.reason));},ollama:{chat:async()=>({model:'fixture',content:JSON.stringify(++calls===1?bad:initial),toolCalls:[],usage:{promptTokens:0,completionTokens:0,durationMs:0}})}});
+assert.equal(calls,2);assert.match(repairs[0]!,/ترحيل/);assert.deepEqual(readMobile(root)?.collections,initial.collections);console.log('PASS model repair rejects destructive field type changes and preserves saved schema');

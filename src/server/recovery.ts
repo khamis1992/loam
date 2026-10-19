@@ -11,6 +11,7 @@ export interface SavedRun {
   agentId?: string;
   mode?: string;
   effort?: string;
+  workMode?: string;
   orchestrated: boolean;
   started: boolean;
   checkpoint?: ExecutionCheckpoint;

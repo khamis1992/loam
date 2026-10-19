@@ -1,0 +1,720 @@
+{
+  "prompt": "أنشئ تطبيقًا عربيًا RTL لنقل مخزون بين ثلاثة مستودعات A وB وC، بتصميم سماوي وبنفسجي متجاوب. الملفات index.html وserver.mjs وapp-verification.json في جذر المهمة. Node المدمج فقط، خادم 127.0.0.1:3000 وSQLite حقيقي /tmp/transfers.sqlite داخل الحاوية. جدول stock(warehouse TEXT PRIMARY KEY, quantity INTEGER NOT NULL) يبدأ A=10,B=0,C=0، وجدول transfers(requestId TEXT PRIMARY KEY, source TEXT NOT NULL, destination TEXT NOT NULL, quantity INTEGER NOT NULL) يبدأ فارغًا. لا تعيد تهيئة البيانات عند القراءة أو reload.\nGET /api/stock يعيد {items:[{warehouse,quantity}]} وGET /api/transfers يعيد {items:[{requestId,source,destination,quantity}]} من SQLite. POST /api/transfers يقبل {requestId,from,to,quantity}. المعرف نص غير فارغ، from وto مختلفان ومن A/B/C، quantity عدد صحيح آمن موجب من نوع number؛ المفقود أو النصي أو الكسري أو السلبي أو غير الصالح يرجع 400 دون أي أثر. نقل ناجح يرجع 201. نفّذ الخصم والإضافة وتسجيل النقل داخل معاملة واحدة، مع منع الرصيد السالب حتى مع الطلبات المتزامنة. نقص المخزون يرجع 409 دون تعديل أي جدول.\nطلب بنفس requestId ونفس البيانات يعيد 200 دون تكرار أي أثر، حتى لو أصبح المخزون غير كافٍ لتنفيذ نقل جديد. نفس المعرف مع بيانات مختلفة يعيد 409. قارن هوية الطلب قبل فحص كفاية المخزون الجديد. استخدم معاملات ربط SQL. JSON معطوب يرجع 400 والخادم يستمر.\nالواجهة: حقول نص عادية #requestId و#from و#to و#quantity وزر #transfer. صف لكل مستودع .stock[data-warehouse=\"A\"] (وكذلك B/C)، داخله عنصر [data-quantity] يحتوي العدد فقط. صفوف النقل .transfer ورسالة خطأ عربية #error تظهر عند الرفض وتختفي بعد النجاح. تحقق بالواجهة من نفس المستودع والكمية غير الصالحة قبل الإرسال، وحوّل الكمية الصالحة إلى number. حدّث المخزون والسجل من الخادم بعد العملية وعند تحميل الصفحة. لا تستخدم localStorage أو بيانات وهمية أو مكتبات خارجية أو نوافذ تأكيد.\nاحفظ عقد الاختبار التالي دون تغيير: {\"entry\":\"index.html\",\"runtime\":{\"type\":\"node\",\"entry\":\"server.mjs\"},\"scenarios\":[{\"name\":\"Atomic transfer\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#requestId\",\"value\":\"one\"},{\"action\":\"fill\",\"selector\":\"#from\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#to\",\"value\":\"B\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"3\"},{\"action\":\"click\",\"selector\":\"#transfer\"},{\"action\":\"textExact\",\"selector\":\".stock[data-warehouse=\\\"A\\\"] [data-quantity]\",\"value\":\"7\"},{\"action\":\"textExact\",\"selector\":\".stock[data-warehouse=\\\"B\\\"] [data-quantity]\",\"value\":\"3\"},{\"action\":\"count\",\"selector\":\".transfer\",\"count\":1}],\"sqliteChecks\":[{\"database\":\"/tmp/transfers.sqlite\",\"table\":\"stock\",\"columns\":[\"warehouse\",\"quantity\"],\"rows\":[[\"A\",7],[\"B\",3],[\"C\",0]]},{\"database\":\"/tmp/transfers.sqlite\",\"table\":\"transfers\",\"columns\":[\"requestId\",\"source\",\"destination\",\"quantity\"],\"rows\":[[\"one\",\"A\",\"B\",3]]}]},{\"name\":\"Idempotent replay\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#requestId\",\"value\":\"one\"},{\"action\":\"fill\",\"selector\":\"#from\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#to\",\"value\":\"B\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"3\"},{\"action\":\"click\",\"selector\":\"#transfer\"},{\"action\":\"count\",\"selector\":\".transfer\",\"count\":1},{\"action\":\"fill\",\"selector\":\"#requestId\",\"value\":\"one\"},{\"action\":\"fill\",\"selector\":\"#from\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#to\",\"value\":\"B\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"3\"},{\"action\":\"click\",\"selector\":\"#transfer\"},{\"action\":\"textExact\",\"selector\":\".stock[data-warehouse=\\\"A\\\"] [data-quantity]\",\"value\":\"7\"},{\"action\":\"textExact\",\"selector\":\".stock[data-warehouse=\\\"B\\\"] [data-quantity]\",\"value\":\"3\"},{\"action\":\"count\",\"selector\":\".transfer\",\"count\":1}],\"sqliteChecks\":[{\"database\":\"/tmp/transfers.sqlite\",\"table\":\"stock\",\"columns\":[\"warehouse\",\"quantity\"],\"rows\":[[\"A\",7],[\"B\",3],[\"C\",0]]},{\"database\":\"/tmp/transfers.sqlite\",\"table\":\"transfers\",\"columns\":[\"requestId\",\"source\",\"destination\",\"quantity\"],\"rows\":[[\"one\",\"A\",\"B\",3]]}]},{\"name\":\"Conflicting request id\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#requestId\",\"value\":\"one\"},{\"action\":\"fill\",\"selector\":\"#from\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#to\",\"value\":\"B\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"3\"},{\"action\":\"click\",\"selector\":\"#transfer\"},{\"action\":\"count\",\"selector\":\".transfer\",\"count\":1},{\"action\":\"fill\",\"selector\":\"#requestId\",\"value\":\"one\"},{\"action\":\"fill\",\"selector\":\"#from\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#to\",\"value\":\"B\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"4\"},{\"action\":\"click\",\"selector\":\"#transfer\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"textExact\",\"selector\":\".stock[data-warehouse=\\\"A\\\"] [data-quantity]\",\"value\":\"7\"},{\"action\":\"count\",\"selector\":\".transfer\",\"count\":1}],\"expectedResponses\":[{\"method\":\"POST\",\"path\":\"/api/transfers\",\"status\":409,\"count\":1}],\"sqliteChecks\":[{\"database\":\"/tmp/transfers.sqlite\",\"table\":\"stock\",\"columns\":[\"warehouse\",\"quantity\"],\"rows\":[[\"A\",7],[\"B\",3],[\"C\",0]]},{\"database\":\"/tmp/transfers.sqlite\",\"table\":\"transfers\",\"columns\":[\"requestId\",\"source\",\"destination\",\"quantity\"],\"rows\":[[\"one\",\"A\",\"B\",3]]}]},{\"name\":\"Insufficient stock rollback\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#requestId\",\"value\":\"large\"},{\"action\":\"fill\",\"selector\":\"#from\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#to\",\"value\":\"B\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"11\"},{\"action\":\"click\",\"selector\":\"#transfer\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"textExact\",\"selector\":\".stock[data-warehouse=\\\"A\\\"] [data-quantity]\",\"value\":\"10\"},{\"action\":\"textExact\",\"selector\":\".stock[data-warehouse=\\\"B\\\"] [data-quantity]\",\"value\":\"0\"},{\"action\":\"count\",\"selector\":\".transfer\",\"count\":0}],\"expectedResponses\":[{\"method\":\"POST\",\"path\":\"/api/transfers\",\"status\":409,\"count\":1}],\"sqliteChecks\":[{\"database\":\"/tmp/transfers.sqlite\",\"table\":\"stock\",\"columns\":[\"warehouse\",\"quantity\"],\"rows\":[[\"A\",10],[\"B\",0],[\"C\",0]]},{\"database\":\"/tmp/transfers.sqlite\",\"table\":\"transfers\",\"columns\":[\"requestId\",\"source\",\"destination\",\"quantity\"],\"rows\":[]}]},{\"name\":\"Reject same warehouse\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#requestId\",\"value\":\"self\"},{\"action\":\"fill\",\"selector\":\"#from\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#to\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"2\"},{\"action\":\"click\",\"selector\":\"#transfer\"},{\"action\":\"visible\",\"selector\":\"#error\"},{\"action\":\"textExact\",\"selector\":\".stock[data-warehouse=\\\"A\\\"] [data-quantity]\",\"value\":\"10\"},{\"action\":\"count\",\"selector\":\".transfer\",\"count\":0}],\"sqliteChecks\":[{\"database\":\"/tmp/transfers.sqlite\",\"table\":\"stock\",\"columns\":[\"warehouse\",\"quantity\"],\"rows\":[[\"A\",10],[\"B\",0],[\"C\",0]]},{\"database\":\"/tmp/transfers.sqlite\",\"table\":\"transfers\",\"columns\":[\"requestId\",\"source\",\"destination\",\"quantity\"],\"rows\":[]}]},{\"name\":\"Reverse transfer\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#requestId\",\"value\":\"one\"},{\"action\":\"fill\",\"selector\":\"#from\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#to\",\"value\":\"B\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"3\"},{\"action\":\"click\",\"selector\":\"#transfer\"},{\"action\":\"count\",\"selector\":\".transfer\",\"count\":1},{\"action\":\"fill\",\"selector\":\"#requestId\",\"value\":\"two\"},{\"action\":\"fill\",\"selector\":\"#from\",\"value\":\"B\"},{\"action\":\"fill\",\"selector\":\"#to\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"2\"},{\"action\":\"click\",\"selector\":\"#transfer\"},{\"action\":\"textExact\",\"selector\":\".stock[data-warehouse=\\\"A\\\"] [data-quantity]\",\"value\":\"9\"},{\"action\":\"textExact\",\"selector\":\".stock[data-warehouse=\\\"B\\\"] [data-quantity]\",\"value\":\"1\"},{\"action\":\"count\",\"selector\":\".transfer\",\"count\":2}],\"sqliteChecks\":[{\"database\":\"/tmp/transfers.sqlite\",\"table\":\"stock\",\"columns\":[\"warehouse\",\"quantity\"],\"rows\":[[\"A\",9],[\"B\",1],[\"C\",0]]},{\"database\":\"/tmp/transfers.sqlite\",\"table\":\"transfers\",\"columns\":[\"requestId\",\"source\",\"destination\",\"quantity\"],\"rows\":[[\"one\",\"A\",\"B\",3],[\"two\",\"B\",\"A\",2]]}]},{\"name\":\"Reload persists both sides\",\"steps\":[{\"action\":\"fill\",\"selector\":\"#requestId\",\"value\":\"one\"},{\"action\":\"fill\",\"selector\":\"#from\",\"value\":\"A\"},{\"action\":\"fill\",\"selector\":\"#to\",\"value\":\"B\"},{\"action\":\"fill\",\"selector\":\"#quantity\",\"value\":\"3\"},{\"action\":\"click\",\"selector\":\"#transfer\"},{\"action\":\"count\",\"selector\":\".transfer\",\"count\":1},{\"action\":\"reload\"},{\"action\":\"textExact\",\"selector\":\".stock[data-warehouse=\\\"A\\\"] [data-quantity]\",\"value\":\"7\"},{\"action\":\"textExact\",\"selector\":\".stock[data-warehouse=\\\"B\\\"] [data-quantity]\",\"value\":\"3\"},{\"action\":\"count\",\"selector\":\".transfer\",\"count\":1}],\"sqliteChecks\":[{\"database\":\"/tmp/transfers.sqlite\",\"table\":\"stock\",\"columns\":[\"warehouse\",\"quantity\"],\"rows\":[[\"A\",7],[\"B\",3],[\"C\",0]]},{\"database\":\"/tmp/transfers.sqlite\",\"table\":\"transfers\",\"columns\":[\"requestId\",\"source\",\"destination\",\"quantity\"],\"rows\":[[\"one\",\"A\",\"B\",3]]}]}]}.\nاستخدم أدوات الملفات فقط، ولا تشغّل الخادم على Windows. المنظومة تختبره داخل Docker بصريًا ووظيفيًا وتقرأ SQLite. لا تدع دوام البيانات بعد حذف الحاوية.",
+  "contract": {
+    "entry": "index.html",
+    "runtime": {
+      "type": "node",
+      "entry": "server.mjs"
+    },
+    "scenarios": [
+      {
+        "name": "Atomic transfer",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#requestId",
+            "value": "one"
+          },
+          {
+            "action": "fill",
+            "selector": "#from",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#to",
+            "value": "B"
+          },
+          {
+            "action": "fill",
+            "selector": "#quantity",
+            "value": "3"
+          },
+          {
+            "action": "click",
+            "selector": "#transfer"
+          },
+          {
+            "action": "textExact",
+            "selector": ".stock[data-warehouse=\"A\"] [data-quantity]",
+            "value": "7"
+          },
+          {
+            "action": "textExact",
+            "selector": ".stock[data-warehouse=\"B\"] [data-quantity]",
+            "value": "3"
+          },
+          {
+            "action": "count",
+            "selector": ".transfer",
+            "count": 1
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/transfers.sqlite",
+            "table": "stock",
+            "columns": [
+              "warehouse",
+              "quantity"
+            ],
+            "rows": [
+              [
+                "A",
+                7
+              ],
+              [
+                "B",
+                3
+              ],
+              [
+                "C",
+                0
+              ]
+            ]
+          },
+          {
+            "database": "/tmp/transfers.sqlite",
+            "table": "transfers",
+            "columns": [
+              "requestId",
+              "source",
+              "destination",
+              "quantity"
+            ],
+            "rows": [
+              [
+                "one",
+                "A",
+                "B",
+                3
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Idempotent replay",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#requestId",
+            "value": "one"
+          },
+          {
+            "action": "fill",
+            "selector": "#from",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#to",
+            "value": "B"
+          },
+          {
+            "action": "fill",
+            "selector": "#quantity",
+            "value": "3"
+          },
+          {
+            "action": "click",
+            "selector": "#transfer"
+          },
+          {
+            "action": "count",
+            "selector": ".transfer",
+            "count": 1
+          },
+          {
+            "action": "fill",
+            "selector": "#requestId",
+            "value": "one"
+          },
+          {
+            "action": "fill",
+            "selector": "#from",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#to",
+            "value": "B"
+          },
+          {
+            "action": "fill",
+            "selector": "#quantity",
+            "value": "3"
+          },
+          {
+            "action": "click",
+            "selector": "#transfer"
+          },
+          {
+            "action": "textExact",
+            "selector": ".stock[data-warehouse=\"A\"] [data-quantity]",
+            "value": "7"
+          },
+          {
+            "action": "textExact",
+            "selector": ".stock[data-warehouse=\"B\"] [data-quantity]",
+            "value": "3"
+          },
+          {
+            "action": "count",
+            "selector": ".transfer",
+            "count": 1
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/transfers.sqlite",
+            "table": "stock",
+            "columns": [
+              "warehouse",
+              "quantity"
+            ],
+            "rows": [
+              [
+                "A",
+                7
+              ],
+              [
+                "B",
+                3
+              ],
+              [
+                "C",
+                0
+              ]
+            ]
+          },
+          {
+            "database": "/tmp/transfers.sqlite",
+            "table": "transfers",
+            "columns": [
+              "requestId",
+              "source",
+              "destination",
+              "quantity"
+            ],
+            "rows": [
+              [
+                "one",
+                "A",
+                "B",
+                3
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Conflicting request id",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#requestId",
+            "value": "one"
+          },
+          {
+            "action": "fill",
+            "selector": "#from",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#to",
+            "value": "B"
+          },
+          {
+            "action": "fill",
+            "selector": "#quantity",
+            "value": "3"
+          },
+          {
+            "action": "click",
+            "selector": "#transfer"
+          },
+          {
+            "action": "count",
+            "selector": ".transfer",
+            "count": 1
+          },
+          {
+            "action": "fill",
+            "selector": "#requestId",
+            "value": "one"
+          },
+          {
+            "action": "fill",
+            "selector": "#from",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#to",
+            "value": "B"
+          },
+          {
+            "action": "fill",
+            "selector": "#quantity",
+            "value": "4"
+          },
+          {
+            "action": "click",
+            "selector": "#transfer"
+          },
+          {
+            "action": "visible",
+            "selector": "#error"
+          },
+          {
+            "action": "textExact",
+            "selector": ".stock[data-warehouse=\"A\"] [data-quantity]",
+            "value": "7"
+          },
+          {
+            "action": "count",
+            "selector": ".transfer",
+            "count": 1
+          }
+        ],
+        "expectedResponses": [
+          {
+            "method": "POST",
+            "path": "/api/transfers",
+            "status": 409,
+            "count": 1
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/transfers.sqlite",
+            "table": "stock",
+            "columns": [
+              "warehouse",
+              "quantity"
+            ],
+            "rows": [
+              [
+                "A",
+                7
+              ],
+              [
+                "B",
+                3
+              ],
+              [
+                "C",
+                0
+              ]
+            ]
+          },
+          {
+            "database": "/tmp/transfers.sqlite",
+            "table": "transfers",
+            "columns": [
+              "requestId",
+              "source",
+              "destination",
+              "quantity"
+            ],
+            "rows": [
+              [
+                "one",
+                "A",
+                "B",
+                3
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Insufficient stock rollback",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#requestId",
+            "value": "large"
+          },
+          {
+            "action": "fill",
+            "selector": "#from",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#to",
+            "value": "B"
+          },
+          {
+            "action": "fill",
+            "selector": "#quantity",
+            "value": "11"
+          },
+          {
+            "action": "click",
+            "selector": "#transfer"
+          },
+          {
+            "action": "visible",
+            "selector": "#error"
+          },
+          {
+            "action": "textExact",
+            "selector": ".stock[data-warehouse=\"A\"] [data-quantity]",
+            "value": "10"
+          },
+          {
+            "action": "textExact",
+            "selector": ".stock[data-warehouse=\"B\"] [data-quantity]",
+            "value": "0"
+          },
+          {
+            "action": "count",
+            "selector": ".transfer",
+            "count": 0
+          }
+        ],
+        "expectedResponses": [
+          {
+            "method": "POST",
+            "path": "/api/transfers",
+            "status": 409,
+            "count": 1
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/transfers.sqlite",
+            "table": "stock",
+            "columns": [
+              "warehouse",
+              "quantity"
+            ],
+            "rows": [
+              [
+                "A",
+                10
+              ],
+              [
+                "B",
+                0
+              ],
+              [
+                "C",
+                0
+              ]
+            ]
+          },
+          {
+            "database": "/tmp/transfers.sqlite",
+            "table": "transfers",
+            "columns": [
+              "requestId",
+              "source",
+              "destination",
+              "quantity"
+            ],
+            "rows": []
+          }
+        ]
+      },
+      {
+        "name": "Reject same warehouse",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#requestId",
+            "value": "self"
+          },
+          {
+            "action": "fill",
+            "selector": "#from",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#to",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#quantity",
+            "value": "2"
+          },
+          {
+            "action": "click",
+            "selector": "#transfer"
+          },
+          {
+            "action": "visible",
+            "selector": "#error"
+          },
+          {
+            "action": "textExact",
+            "selector": ".stock[data-warehouse=\"A\"] [data-quantity]",
+            "value": "10"
+          },
+          {
+            "action": "count",
+            "selector": ".transfer",
+            "count": 0
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/transfers.sqlite",
+            "table": "stock",
+            "columns": [
+              "warehouse",
+              "quantity"
+            ],
+            "rows": [
+              [
+                "A",
+                10
+              ],
+              [
+                "B",
+                0
+              ],
+              [
+                "C",
+                0
+              ]
+            ]
+          },
+          {
+            "database": "/tmp/transfers.sqlite",
+            "table": "transfers",
+            "columns": [
+              "requestId",
+              "source",
+              "destination",
+              "quantity"
+            ],
+            "rows": []
+          }
+        ]
+      },
+      {
+        "name": "Reverse transfer",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#requestId",
+            "value": "one"
+          },
+          {
+            "action": "fill",
+            "selector": "#from",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#to",
+            "value": "B"
+          },
+          {
+            "action": "fill",
+            "selector": "#quantity",
+            "value": "3"
+          },
+          {
+            "action": "click",
+            "selector": "#transfer"
+          },
+          {
+            "action": "count",
+            "selector": ".transfer",
+            "count": 1
+          },
+          {
+            "action": "fill",
+            "selector": "#requestId",
+            "value": "two"
+          },
+          {
+            "action": "fill",
+            "selector": "#from",
+            "value": "B"
+          },
+          {
+            "action": "fill",
+            "selector": "#to",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#quantity",
+            "value": "2"
+          },
+          {
+            "action": "click",
+            "selector": "#transfer"
+          },
+          {
+            "action": "textExact",
+            "selector": ".stock[data-warehouse=\"A\"] [data-quantity]",
+            "value": "9"
+          },
+          {
+            "action": "textExact",
+            "selector": ".stock[data-warehouse=\"B\"] [data-quantity]",
+            "value": "1"
+          },
+          {
+            "action": "count",
+            "selector": ".transfer",
+            "count": 2
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/transfers.sqlite",
+            "table": "stock",
+            "columns": [
+              "warehouse",
+              "quantity"
+            ],
+            "rows": [
+              [
+                "A",
+                9
+              ],
+              [
+                "B",
+                1
+              ],
+              [
+                "C",
+                0
+              ]
+            ]
+          },
+          {
+            "database": "/tmp/transfers.sqlite",
+            "table": "transfers",
+            "columns": [
+              "requestId",
+              "source",
+              "destination",
+              "quantity"
+            ],
+            "rows": [
+              [
+                "one",
+                "A",
+                "B",
+                3
+              ],
+              [
+                "two",
+                "B",
+                "A",
+                2
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Reload persists both sides",
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#requestId",
+            "value": "one"
+          },
+          {
+            "action": "fill",
+            "selector": "#from",
+            "value": "A"
+          },
+          {
+            "action": "fill",
+            "selector": "#to",
+            "value": "B"
+          },
+          {
+            "action": "fill",
+            "selector": "#quantity",
+            "value": "3"
+          },
+          {
+            "action": "click",
+            "selector": "#transfer"
+          },
+          {
+            "action": "count",
+            "selector": ".transfer",
+            "count": 1
+          },
+          {
+            "action": "reload"
+          },
+          {
+            "action": "textExact",
+            "selector": ".stock[data-warehouse=\"A\"] [data-quantity]",
+            "value": "7"
+          },
+          {
+            "action": "textExact",
+            "selector": ".stock[data-warehouse=\"B\"] [data-quantity]",
+            "value": "3"
+          },
+          {
+            "action": "count",
+            "selector": ".transfer",
+            "count": 1
+          }
+        ],
+        "sqliteChecks": [
+          {
+            "database": "/tmp/transfers.sqlite",
+            "table": "stock",
+            "columns": [
+              "warehouse",
+              "quantity"
+            ],
+            "rows": [
+              [
+                "A",
+                7
+              ],
+              [
+                "B",
+                3
+              ],
+              [
+                "C",
+                0
+              ]
+            ]
+          },
+          {
+            "database": "/tmp/transfers.sqlite",
+            "table": "transfers",
+            "columns": [
+              "requestId",
+              "source",
+              "destination",
+              "quantity"
+            ],
+            "rows": [
+              [
+                "one",
+                "A",
+                "B",
+                3
+              ]
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "status": "prepared, not executed"
+}

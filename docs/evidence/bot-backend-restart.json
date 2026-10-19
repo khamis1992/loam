@@ -1,0 +1,336 @@
+{
+  "at": "2026-10-19T15:33:29.976Z",
+  "good": {
+    "pass": true,
+    "reason": "fixture",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-restart-check-MYMj0P\\.verification\\6ce611e0-8d3d-4f92-89e6-22b7117de607\\report.json",
+    "elapsedMs": 13825,
+    "usage": {
+      "promptTokens": 1,
+      "completionTokens": 1,
+      "durationMs": 1
+    },
+    "checks": [
+      {
+        "viewport": "desktop",
+        "scenario": "Persist across process replacement",
+        "pass": true,
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/count",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/count",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/count",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/count",
+            "status": 200
+          }
+        ],
+        "databases": [
+          {
+            "database": "/tmp/state.sqlite",
+            "table": "counter",
+            "columns": [
+              "n"
+            ],
+            "rows": [
+              [
+                1
+              ]
+            ]
+          }
+        ],
+        "api": [],
+        "restarts": [
+          {
+            "previousPid": 14,
+            "currentPid": 86
+          },
+          {
+            "previousPid": 86,
+            "currentPid": 145
+          }
+        ]
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "Persist across process replacement",
+        "pass": true,
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/count",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/count",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/count",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/count",
+            "status": 200
+          }
+        ],
+        "databases": [
+          {
+            "database": "/tmp/state.sqlite",
+            "table": "counter",
+            "columns": [
+              "n"
+            ],
+            "rows": [
+              [
+                1
+              ]
+            ]
+          }
+        ],
+        "api": [],
+        "restarts": [
+          {
+            "previousPid": 14,
+            "currentPid": 87
+          },
+          {
+            "previousPid": 87,
+            "currentPid": 146
+          }
+        ]
+      }
+    ],
+    "screenshots": [
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-restart-check-MYMj0P\\.verification\\6ce611e0-8d3d-4f92-89e6-22b7117de607\\desktop-0.png",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-restart-check-MYMj0P\\.verification\\6ce611e0-8d3d-4f92-89e6-22b7117de607\\mobile-0.png"
+    ],
+    "errors": [],
+    "contractOrigin": "workspace",
+    "runtime": {
+      "type": "node",
+      "isolation": "docker-network-none",
+      "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+      "freshBackendPerScenario": true
+    },
+    "visual": {
+      "complete": true,
+      "model": "fixture",
+      "verdict": {
+        "verdict": "pass",
+        "reason": "fixture",
+        "issues": []
+      },
+      "response": "{\"verdict\":\"pass\",\"reason\":\"fixture\",\"issues\":[]}",
+      "attempts": 1,
+      "batches": [
+        {
+          "screenshots": [
+            "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-restart-check-MYMj0P\\.verification\\6ce611e0-8d3d-4f92-89e6-22b7117de607\\desktop-0.png",
+            "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-restart-check-MYMj0P\\.verification\\6ce611e0-8d3d-4f92-89e6-22b7117de607\\mobile-0.png"
+          ],
+          "model": "fixture",
+          "verdict": {
+            "verdict": "pass",
+            "reason": "fixture",
+            "issues": []
+          },
+          "response": "{\"verdict\":\"pass\",\"reason\":\"fixture\",\"issues\":[]}",
+          "attempts": 1
+        }
+      ],
+      "batchRuns": [
+        {
+          "batch": 1,
+          "screenshots": [
+            "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-restart-check-MYMj0P\\.verification\\6ce611e0-8d3d-4f92-89e6-22b7117de607\\desktop-0.png",
+            "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-restart-check-MYMj0P\\.verification\\6ce611e0-8d3d-4f92-89e6-22b7117de607\\mobile-0.png"
+          ],
+          "startedAt": "2026-10-19T15:32:54.866Z",
+          "elapsedMs": 3,
+          "status": "response",
+          "attempts": 1
+        }
+      ],
+      "reviewedScreenshots": [
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-restart-check-MYMj0P\\.verification\\6ce611e0-8d3d-4f92-89e6-22b7117de607\\desktop-0.png",
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-restart-check-MYMj0P\\.verification\\6ce611e0-8d3d-4f92-89e6-22b7117de607\\mobile-0.png"
+      ]
+    },
+    "sourceHashes": {
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-restart-check-MYMj0P\\app-verification.json": "7225ad571dde5ee459bf1301cc9963facb9af8308b2571317935325f6832a4ed",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-restart-check-MYMj0P\\index.html": "f38d9327ba4ec5ddaa106483dca738fa2687e42606f8940e9bcf74b4dc015fd0",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-restart-check-MYMj0P\\server.mjs": "e09cb77b5394d47a1b2fcabca08fa792fd89de74ad92c1b2e0120c4694795d97"
+    }
+  },
+  "bad": {
+    "pass": false,
+    "reason": "Error: Application interaction/runtime checks failed; inspect report and repair",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-restart-check-MYMj0P\\.verification\\e135b6b6-452b-4c02-8012-cb0ca92b4bb4\\report.json",
+    "elapsedMs": 20658,
+    "usage": {
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "durationMs": 0
+    },
+    "checks": [
+      {
+        "viewport": "desktop",
+        "scenario": "Persist across process replacement",
+        "pass": false,
+        "error": "Error: Unexpected exact text for #count",
+        "failureScreenshot": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-restart-check-MYMj0P\\.verification\\e135b6b6-452b-4c02-8012-cb0ca92b4bb4\\desktop-0-failed.png",
+        "failedStep": {
+          "index": 3,
+          "action": "textExact",
+          "selector": "#count",
+          "value": "1"
+        },
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/count",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/count",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/count",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": [
+          {
+            "previousPid": 14,
+            "currentPid": 86
+          }
+        ]
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "Persist across process replacement",
+        "pass": false,
+        "error": "Error: Unexpected exact text for #count",
+        "failureScreenshot": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-restart-check-MYMj0P\\.verification\\e135b6b6-452b-4c02-8012-cb0ca92b4bb4\\mobile-0-failed.png",
+        "failedStep": {
+          "index": 3,
+          "action": "textExact",
+          "selector": "#count",
+          "value": "1"
+        },
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/count",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/count",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/count",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": [
+          {
+            "previousPid": 14,
+            "currentPid": 86
+          }
+        ]
+      }
+    ],
+    "screenshots": [],
+    "errors": [
+      "Error: Unexpected exact text for #count",
+      "Error: Unexpected exact text for #count"
+    ],
+    "contractOrigin": "workspace",
+    "runtime": {
+      "type": "node",
+      "isolation": "docker-network-none",
+      "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+      "freshBackendPerScenario": true
+    }
+  },
+  "sameContainerVerified": true,
+  "cancellationPreservesAllowance": true,
+  "lifetimeNotExtended": true,
+  "visualModelIsFixture": true
+}

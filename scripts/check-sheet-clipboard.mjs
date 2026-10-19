@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {clipboardRows,pasteSheetRange} from '../ui/studio-sheet-clipboard.js';
+assert.deepEqual(clipboardRows('A\t"two\nlines"\r\n"a""b"\t3\r\n'),[['A','two\nlines'],['a"b','3']]);
+assert.deepEqual(clipboardRows('A\tB\nC'),[['A','B'],['C','']]);
+assert.deepEqual(clipboardRows('""'),[['']]);
+assert.throws(()=>clipboardRows('"open'),/اقتباس/);
+const sheet={cells:[['a','hidden','c'],['hidden row'],['d','secret','f']],hiddenRows:[false,true,false],hiddenColumns:[false,true,false]};
+pasteSheetRange(sheet,[0,0],'1\t2\n3\t=SUM(A1:C1)');assert.deepEqual(sheet.cells,[['1','hidden','2'],['hidden row'],['3','secret','=SUM(A1:C1)']]);
+const before=structuredClone(sheet);assert.throws(()=>pasteSheetRange(sheet,[1999,0],'1\n2'));assert.deepEqual(sheet,before);
+const merged={cells:[['title',''],['','']],merges:['A1:B1']},original=structuredClone(merged);assert.throws(()=>pasteSheetRange(merged,[0,0],'one\ttwo'),/مدمجة/);assert.deepEqual(merged,original);pasteSheetRange(merged,[0,0],'new title');assert.equal(merged.cells[0][0],'new title');
+assert.throws(()=>pasteSheetRange(sheet,[0,99],'a\tb'));assert.throws(()=>clipboardRows('x'.repeat(10001)));assert.throws(()=>pasteSheetRange(sheet,[-1,0],'x'));
+console.log('PASS quoted TSV, multiline cells, formulas, hidden-cell preservation, atomic merge/bounds rejection');

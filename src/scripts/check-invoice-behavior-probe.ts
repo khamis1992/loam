@@ -1,0 +1,12 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import {probeInvoice} from './invoice-behavior-probe.js';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'loam-invoice-fixture-'));
+const good=`export function total(items){if(items.some(x=>x.quantity<0||x.price<0))throw new RangeError('negative');return Math.round(items.reduce((sum,x)=>sum+x.quantity*x.price,0)*100)/100;}`;
+fs.writeFileSync(path.join(root,'invoice.mjs'),good);
+assert.equal((await probeInvoice(root)).assertions,4);
+fs.writeFileSync(path.join(root,'invoice.mjs'),good.replace("throw new RangeError('negative')","return 0"));
+await assert.rejects(probeInvoice(root),/deep-equal/);
+console.log('PASS real Docker invoice probe: correct behavior passes; invalid negative-input handling fails; generated module never imported on host');

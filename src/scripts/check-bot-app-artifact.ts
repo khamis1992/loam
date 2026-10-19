@@ -1,0 +1,22 @@
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import assert from "node:assert/strict";
+import { loadConfig } from "../config.js";
+import { OllamaClient } from "../ollama.js";
+import { verifyApplication } from "../agent/appVerification.js";
+const source = process.argv[2];
+if (!source) throw new Error("Pass the generated application's workspace path");
+const blank = process.argv.includes("--blank");
+const cfg = loadConfig();
+cfg.workspace = fs.mkdtempSync(path.join(os.tmpdir(), "loam-artifact-review-"));
+cfg.model = "glm-5.3-flash:cloud"; cfg.vision.model = cfg.model;
+fs.cpSync(source, cfg.workspace, { recursive: true, filter: f => !f.split(path.sep).includes(".verification") });
+const contract = JSON.parse(fs.readFileSync(path.join(cfg.workspace, "app-verification.json"), "utf8"));
+if (blank) fs.appendFileSync(path.join(cfg.workspace, contract.entry), '<style>body{opacity:0!important}</style>');
+const result = await verifyApplication({ cfg, ollama: new OllamaClient(cfg.ollamaUrl), request: "تطبيق مصروفات عربي RTL بتصميم سماوي وبنفسجي متجاوب. إضافة عنوان ومبلغ موجب وفئة، حفظ البيانات بعد إعادة التحميل، حذف العناصر وتحديث المجموع، رفض القيم غير الصالحة. يجب أن تكون جميع الواجهة والنصوص والأزرار مرئية وواضحة على الجوال وسطح المكتب." });
+const output = path.resolve(`docs/evidence/bot-app-artifact${blank ? "-blank" : ""}.json`);
+fs.writeFileSync(output, JSON.stringify(result, null, 2));
+console.log(JSON.stringify({ pass: result.pass, reason: result.reason, checks: result.checks, screenshots: result.screenshots, output }));
+if (blank) { assert.equal(result.pass, false); assert.ok(result.checks.every(c => c.pass)); assert.ok(result.visual, "must reject via actual visual observation, not a tool/model outage"); }
+else assert.equal(result.pass, true, result.reason);

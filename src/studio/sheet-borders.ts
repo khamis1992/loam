@@ -1,0 +1,5 @@
+import type ExcelJS from 'exceljs';
+export const borderSides=['Top','Right','Bottom','Left'] as const;
+export const borderStyles=['none','thin','medium','thick','dashed','dotted','double','hair','dashDot','dashDotDot','mediumDashed','mediumDashDot','mediumDashDotDot','slantDashDot'];
+export function importBorders(border:Partial<ExcelJS.Borders>|undefined){const result:Record<string,string>={};for(const side of borderSides){const edge=border?.[side.toLowerCase() as 'top'];if(!edge?.style)continue;result['border'+side]=edge.style;if(edge.color?.argb)result['border'+side+'Color']='#'+edge.color.argb.slice(-6);}return result;}
+export function applyBorders(cell:ExcelJS.Cell,style:Record<string,string|number|boolean>){const borders={...cell.border};for(const side of borderSides){const key='border'+side,colorKey=key+'Color',edge=side.toLowerCase() as 'top';if(style[key]===undefined&&style[colorKey]===undefined)continue;if(style[key]==='none'){delete borders[edge];continue;}borders[edge]={...borders[edge],...(style[key]?{style:style[key] as ExcelJS.BorderStyle}:{}),...(style[colorKey]?{color:{argb:'FF'+String(style[colorKey]).slice(1)}}:{})};}cell.border=borders;}

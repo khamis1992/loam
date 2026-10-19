@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+export async function checkEditingUI(page){
+ const idle=()=>page.waitForFunction(()=>!document.querySelector('.creative-timeline-editor fieldset').disabled);
+ const json=async()=>{const pending=page.waitForEvent('download');await page.locator('[data-tl-download]').click();const file=await pending;await idle();return fs.readFileSync(await file.path());};
+ const baseline=await json();
+ const seek=async code=>{await page.locator('[data-tl-timecode]').fill(code);await page.locator('[data-tl-timecode]').press('Tab');await idle();};
+ await seek('00:00:00:00');await page.locator('[data-tl-next-frame]').click();await idle();assert.equal(await page.locator('[data-tl-timecode]').inputValue(),'00:00:00:01');await page.locator('[data-tl-next-frame]').focus();await page.keyboard.press('ArrowRight');await idle();assert.equal(await page.locator('[data-tl-timecode]').inputValue(),'00:00:00:02');await page.keyboard.press('ArrowLeft');await idle();assert.equal(await page.locator('[data-tl-timecode]').inputValue(),'00:00:00:01');
+ await seek('00:00:00:30');assert.match(await page.locator('[data-tl-status]').innerText(),/توقيت/);
+ await page.locator('[data-clip]').filter({hasText:'clip.webm'}).click();await seek('00:00:01:00');await page.locator('[data-tl-trim-start]').click();await idle();let clip=JSON.parse(await json()).clips.find(c=>c.name==='clip.webm');assert.equal(clip.start,1);assert.equal(clip.in,1);assert.ok(clip.duration>1&&clip.duration<1.3);
+ await seek('00:00:01:24');await page.locator('[data-tl-trim-end]').click();await idle();clip=JSON.parse(await json()).clips.find(c=>c.name==='clip.webm');assert.ok(Math.abs(clip.duration-.8)<1e-8);await page.locator('[data-tl-undo]').click();await idle();await page.locator('[data-tl-undo]').click();await idle();assert.equal(JSON.parse(await json()).clips.find(c=>c.name==='clip.webm').in,0);
+ await seek('00:00:00:00');await page.locator('[data-tl-add-visual]').click();await idle();await page.locator('[data-tl-title-add]').click();await idle();await page.locator('[data-tl-clone]').click();await idle();await page.locator('[data-tl-clone]').click();await idle();const lane=page.locator('[data-track]').last();await lane.locator('[data-clip]').nth(1).click();await page.locator('[data-tl-ripple-delete]').click();await idle();let p=JSON.parse(await json());let clips=p.clips.filter(c=>c.trackId===p.tracks.at(-1).id);assert.deepEqual(clips.map(c=>c.start),[0,3]);assert.equal(p.clips.find(c=>c.name==='red.png').start,1,'other tracks unchanged');await page.locator('[data-tl-undo]').click();await idle();assert.equal(await lane.locator('[data-clip]').count(),3);
+ await page.screenshot({path:'output/verification/creative-editing.png'});
+ await page.locator('[data-tl-project]').setInputFiles({name:'baseline.json',mimeType:'application/json',buffer:baseline});await idle();console.log('PASS editing UI: frame stepping/keyboard/timecode validation, source-aware trim/undo, ripple delete/undo and track isolation');
+}

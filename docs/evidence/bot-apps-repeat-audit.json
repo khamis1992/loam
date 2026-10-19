@@ -1,0 +1,38 @@
+{
+  "at": "2026-10-18T23:40:53.9664165Z",
+  "source": "docs/evidence/bot-apps-repeat-live.json",
+  "totalExperimentMs": 671416.0,
+  "turns": [
+    {
+      "turn": 0,
+      "reportedSteps": 22,
+      "eventDerivedSteps": 22,
+      "excludedWorkerAttempts": 0,
+      "reportedUsageIsLowerBound": false,
+      "pass": true,
+      "ms": 246640
+    },
+    {
+      "turn": 1,
+      "reportedSteps": 33,
+      "eventDerivedSteps": 45,
+      "excludedWorkerAttempts": 12,
+      "reportedUsageIsLowerBound": true,
+      "pass": true,
+      "ms": 346146
+    }
+  ],
+  "durableArtifacts": "output/verification/bot-apps-repeat-20261019",
+  "holdouts": [
+    {
+      "id": "broken-control-holdout",
+      "pass": true,
+      "ms": 64354
+    },
+    {
+      "id": "blank-render-visual-holdout",
+      "pass": true,
+      "ms": 14276
+    }
+  ]
+}

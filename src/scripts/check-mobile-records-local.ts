@@ -1,0 +1,14 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import assert from 'node:assert/strict';
+import {buildMobile} from '../mobile/build.js';
+import {saveMobile,readMobile} from '../mobile/store.js';
+import {OllamaClient} from '../ollama.js';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'loam-local-records-'));const out='release/mobile-live/records';fs.mkdirSync(out,{recursive:true});
+const initial=saveMobile(root,{version:1,title:'مساحة الإنجاز',accent:'#267965',direction:'rtl',screens:[{id:'home',title:'الرئيسية',kind:'primary',blocks:[]}]},0);
+const events:unknown[]=[];
+await buildMobile({root,model:'qwen2.5:14b',expectedRevision:initial.revision,signal:AbortSignal.timeout(540000),ollama:new OllamaClient('http://127.0.0.1:11434'),brief:'أنشئ تطبيق مساحة الإنجاز بالعربية من قسمين رئيسيين فقط، projects_home وtasks_home، ولا صفحات فرعية. أريد بيانات فعلية بقوائم بحث وإضافة وتعديل وحذف واستعادة، وليس حقولا ثابتة. مجموعة projects اسمها المشاريع والمفرد مشروع، titleField=name وفيها name نص مطلوب بعنوان اسم المشروع. مجموعة tasks اسمها المهام والمفرد مهمة، titleField=name وفيها name نص مطلوب بعنوان عنوان المهمة، hours رقم اختياري بعنوان الساعات، due تاريخ اختياري بعنوان الموعد، done اختيار نعم/لا بعنوان أُنجزت المهمة، priority خيارات منخفضة ومتوسطة وعالية بعنوان الأولوية، project ارتباط اختياري إلى مجموعة projects بعنوان المشروع. ضع collection block بمعرف projects_list في projects_home مرتبطا بprojects وtasks_list في tasks_home مرتبطا بtasks. استخدم بالضبط معرفات المجموعات والحقول المذكورة. لا تضف بيانات وهمية أو عناصر إضافية. صمم هوية جميلة ونصوصا مختصرة محددة لكل قسم.',emit:e=>{events.push(e);console.log(JSON.stringify(e.type==='done'?{type:e.type,attempt:e.attempt}:e));}});
+const project=readMobile(root)!;assert.equal(project.collections?.length,2);assert.equal(project.screens.length,2);for(const id of ['projects','tasks'])assert.ok(project.collections.find(c=>c.id===id));
+assert.deepEqual(project.collections.find(c=>c.id==='tasks')!.fields.map(f=>f.id).sort(),['name','hours','due','done','priority','project'].sort());
+fs.writeFileSync(out+'/local-project.json',JSON.stringify(project,null,2));fs.writeFileSync(out+'/local-generation.json',JSON.stringify({root,model:'qwen2.5:14b',events},null,2));console.log('PASS local model created real record schemas and collection screens: '+root);

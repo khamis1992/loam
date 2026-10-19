@@ -1,0 +1,25 @@
+import {richMarkup,richTypes} from './studio-rich.js';
+const esc = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+export function documentMarkup(a, reading, styleText) {
+  const blocks=a.content.blocks;
+  const headings=blocks.map((b,i)=>({...b,index:i})).filter(b=>b.type==='heading');
+  return `<div class="office-document-tools"><div class="office-view-toggle" role="group" aria-label="عرض المستند"><button type="button" data-action="edit-document" aria-pressed="${!reading}">تحرير</button><button type="button" data-action="read-document" aria-pressed="${reading}">قراءة</button></div>${!reading?'<button type="button" data-action="heading"><loam-icon name="plus"></loam-icon> عنوان</button><button type="button" data-action="paragraph"><loam-icon name="plus"></loam-icon> فقرة</button><button type="button" data-action="bullet"><loam-icon name="plus"></loam-icon> نقطة</button>':''}${!reading?'<button type="button" data-action="stats">بطاقات إحصاءات</button><button type="button" data-action="table">جدول</button><button type="button" data-action="image">صورة</button><input type="file" data-document-image accept="image/png,image/jpeg" hidden>':''}<span data-document-count></span></div>
+  ${!reading?`<label class="office-insert-position">موضع الإدراج<select data-insert-position aria-label="موضع إدراج العنصر">${Array.from({length:blocks.length+1},(_,i)=>`<option value="${i}" ${i===blocks.length?'selected':''}>${i===0?'بداية المستند':i===blocks.length?'نهاية المستند':'قبل العنصر '+(i+1)+' · '+esc(blocks[i]?.text?.slice(0,35)||blocks[i]?.type)}</option>`).join('')}</select></label>`:''}
+  <details class="office-outline"><summary>أقسام المستند · ${headings.length}</summary><nav aria-label="أقسام المستند">${headings.length?headings.map(b=>`<button type="button" data-jump-block="${b.index}">${esc(b.text||'عنوان جديد')}</button>`).join(''):'<p>أضف عناوين لتنظيم المستند والتنقل بين أقسامه.</p>'}</nav></details>
+  ${!reading&&a.sourceId&&a.content.regions?.length?`<details class="office-regions"><summary>الرأس والتذييل ومربعات النص · ${a.content.regions.length}</summary>${a.content.regions.map((region,i)=>`<label class="office-region">${esc(region.label)}<textarea dir="auto" rows="2" data-region-text="${i}" maxlength="20000" aria-label="${esc(region.label)}">${esc(region.text)}</textarea></label>`).join('')}</details>`:''}
+  <article class="office-paper ${reading?'office-reading':''}" aria-label="صفحة المستند">
+  ${!a.sourceId?`<div class="office-paper-meta"><span>LOAM / DOCUMENT</span><span>A4 · Word</span></div><h1 data-document-title dir="${/[\u0590-\u08ff]/u.test(a.title)?'rtl':'ltr'}">${esc(a.title)}</h1>`:''}
+  ${blocks.map((b,i)=>richTypes.includes(b.type)?richMarkup(b,i,reading):reading?`<div data-block="${i}" tabindex="-1" class="office-read-block block-${b.type} ${b.bold?'is-bold':''} ${b.italic?'is-italic':''}" style="${esc(styleText(b.style))}" dir="auto">${!a.sourceId&&i===0&&b.type==='heading'&&b.text.trim()===a.title.trim()?'':b.type==='heading'?`<h2>${esc(b.text)}</h2>`:`<p>${b.type==='bullet'?'<span aria-hidden="true" class="office-bullet">•</span>':''}${esc(b.text)}</p>`}</div>`:
+  `<div class="office-block" data-block="${i}"><div class="office-block-tools"><select data-style="type" aria-label="نوع الفقرة ${i+1}">${['heading','paragraph','bullet'].map(k=>`<option value="${k}" ${b.type===k?'selected':''}>${{heading:'عنوان',paragraph:'فقرة',bullet:'نقطة'}[k]}</option>`).join('')}</select><button type="button" data-format="bold" aria-label="غامق ${i+1}" aria-pressed="${!!b.bold}">B</button><button type="button" data-format="italic" aria-label="مائل ${i+1}" aria-pressed="${!!b.italic}">I</button><button type="button" data-delete-block="${i}" aria-label="حذف الفقرة ${i+1}"><loam-icon name="close"></loam-icon></button></div><textarea dir="auto" style="${esc(styleText(b.style))}" data-block-text="${i}" aria-label="محتوى الفقرة ${i+1}" class="block-${b.type} ${b.bold?'is-bold':''} ${b.italic?'is-italic':''}" placeholder="اكتب هنا…" rows="1">${esc(b.text)}</textarea></div>`).join('')}
+  ${!blocks.length?'<p class="office-document-empty">ابدأ بإضافة فقرة أو اطلب من Loam كتابة المسودة.</p>':''}
+  </article><p class="office-preview-note">عرض متصل للمحتوى؛ تُحدَّد فواصل الصفحات النهائية في Word.</p>`;
+}
+
+export function refreshDocument(root,a) {
+  if(a.kind!=='document')return;
+  const title=root.querySelector('[data-document-title]');if(title){title.textContent=a.title;title.dir=/[\u0590-\u08ff]/u.test(a.title)?'rtl':'ltr';}
+  const count=root.querySelector('[data-document-count]');if(count)count.textContent=`${a.content.blocks.reduce((n,b)=>{const text=[b.text,...(b.items||[]).flatMap(s=>[s.value,s.label]),...(b.columns||[]),...(b.rows||[]).flat()].join(' ').trim();return n+(text?text.split(/\s+/u).length:0);},0)} كلمة`;
+  root.querySelectorAll('textarea[data-block-text]').forEach(e=>{e.style.height='auto';e.style.height=Math.max(44,e.scrollHeight+2)+'px';});
+  root.querySelectorAll('[data-jump-block]').forEach(e=>{e.textContent=a.content.blocks[Number(e.dataset.jumpBlock)]?.text||'عنوان جديد';});
+}

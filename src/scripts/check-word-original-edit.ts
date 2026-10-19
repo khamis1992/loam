@@ -1,0 +1,34 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import sharp from 'sharp';
+import JSZip from 'jszip';
+import {importStudio} from '../studio/import.js';
+import {saveStudio} from '../studio/store.js';
+import {exportStudio} from '../studio/export.js';
+import {part,first,all,serialize,attr,W,A,R} from '../studio/ooxml.js';
+import {children} from '../studio/word-import.js';
+const out='output/word-original-edit';fs.mkdirSync(out,{recursive:true});
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'loam-original-edit-'));
+const source=fs.readFileSync('output/word-import-review/loam-imported-rich-final.docx');
+const imported=await importStudio(root,source,'original-rich.docx',0);assert.equal(imported.kind,'document');if(imported.kind!=='document')throw Error();
+assert.equal(imported.content.blocks.filter(b=>b.type==='stats').length,1);assert.equal(imported.content.blocks.filter(b=>b.type==='table').length,2);assert.equal(imported.content.blocks.filter(b=>b.type==='image').length,2);
+assert.deepEqual((await exportStudio(imported,root)).buffer,source,'Unedited import exact bytes');
+const edit=structuredClone(imported),stats=edit.content.blocks.find(b=>b.type==='stats')!,table=edit.content.blocks.filter(b=>b.type==='table').at(-1)!,img=edit.content.blocks.filter(b=>b.type==='image').at(-1)!;
+if(stats.type!=='stats'||table.type!=='table'||img.type!=='image')throw Error();
+stats.items[0]!.value='98%';stats.items[1]!.label='مهام معتمدة';table.rows[1]![2]='مكتملة';
+const png=await sharp({create:{width:480,height:160,channels:3,background:'#087f8c'}}).png().toBuffer();fs.writeFileSync(out+'/replacement.png',png);img.src='data:image/png;base64,'+png.toString('base64');img.alt='صورة بديلة داخل الإطار الأصلي';
+const position=edit.content.blocks.indexOf(table);edit.content.blocks.splice(position,0,{type:'paragraph',text:'فقرة أُدرجت بين البطاقات والجدول الأصلي.'});
+const saved=saveStudio(root,edit,1),result=await exportStudio(saved,root);fs.writeFileSync(out+'/edited-original-elements.docx',result.buffer);fs.writeFileSync(out+'/source.docx',source);
+const before=await JSZip.loadAsync(source),after=await JSZip.loadAsync(result.buffer),bd=await part(before,'word/document.xml'),ad=await part(after,'word/document.xml');
+for(const name of Object.keys(before.files).filter(n=>!before.files[n]!.dir&&!['word/document.xml','word/_rels/document.xml.rels','[Content_Types].xml'].includes(n)))assert.deepEqual(await after.file(name)!.async('nodebuffer'),await before.file(name)!.async('nodebuffer'),name);
+const oldNodes=children(first(bd,W,'body')),newNodes=children(first(ad,W,'body'));
+assert.equal(newNodes.length,oldNodes.length+1);assert.equal(serialize(first(bd,W,'sectPr')),serialize(first(ad,W,'sectPr')));
+assert.ok(serialize(ad).includes('98%'));assert.ok(serialize(ad).includes('مهام معتمدة'));
+for(const b of imported.content.blocks){if([stats.sourceNode,table.sourceNode,img.sourceNode].includes(b.sourceNode))continue;const index=edit.content.blocks.findIndex(n=>n.sourceNode===b.sourceNode);assert.equal(serialize(newNodes[index]),serialize(oldNodes[b.sourceNode!]),'Unedited element must be identical');}
+const oldImg=oldNodes[img.sourceNode!],newImg=newNodes[edit.content.blocks.indexOf(img)];assert.equal(serialize(first(oldImg,'*','extent')),serialize(first(newImg,'*','extent')),'Original image frame preserved');
+const id=first(newImg,A,'blip').getAttributeNS(R,'embed'),rels=await part(after,'word/_rels/document.xml.rels');assert.ok(all(rels,'*','Relationship').some(r=>attr(r,'Id')===id));
+// Structural editing clones the original grid styles rather than rebuilding the table.
+const more=structuredClone(saved);if(more.kind!=='document')throw Error();const tb=more.content.blocks.find(b=>b.sourceNode===table.sourceNode);if(tb?.type!=='table')throw Error();tb.rows.push(['مرحلة إضافية','مخرج جديد','مجدولة']);const expanded=await exportStudio(saveStudio(root,more,2),root);assert.ok(expanded.buffer.length>0);
+console.log('PASS original cards/table/image edits, inline insertion, exact unchanged XML and supporting parts, image frame, grid extension, no-op byte roundtrip');

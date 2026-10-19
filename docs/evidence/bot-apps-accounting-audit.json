@@ -1,0 +1,21 @@
+{
+  "at": "2026-10-18T23:38:43.5471135Z",
+  "source": "docs/evidence/bot-apps-live.json",
+  "scope": "Original clean trial: worker step events plus plan/critique/verify events; not number of individual model requests",
+  "turns": [
+    {
+      "turn": 0,
+      "reportedSteps": 31,
+      "eventDerivedSteps": 31,
+      "excludedWorkerAttempts": 0,
+      "reportedUsageIsLowerBound": false
+    },
+    {
+      "turn": 1,
+      "reportedSteps": 31,
+      "eventDerivedSteps": 43,
+      "excludedWorkerAttempts": 12,
+      "reportedUsageIsLowerBound": true
+    }
+  ]
+}

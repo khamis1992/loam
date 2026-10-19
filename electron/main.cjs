@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, shell, screen, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -33,7 +33,6 @@ const EXPECTED_VERSION = require(path.join(ROOT, "package.json")).version;
 let serverChild = null;
 let win = null;
 let tray = null;
-let indicator = null;
 
 // Keep user data (skills, data, workspace) out of the app folder so updates
 // never overwrite it. Packaged builds use %APPDATA%/manus-local; dev builds
@@ -234,52 +233,14 @@ function createTray() {
     { label: "الذاكرة", click: () => openPage("/memory.html") },
     { label: "المهارات", click: () => openPage("/skills.html") },
     { type: "separator" },
-    { label: "مؤشر النشاط", type: "checkbox", checked: true, click: (item) => (item.checked ? createIndicator() : destroyIndicator()) },
     { type: "separator" },
     { label: "التحقق من التحديثات…", click: () => { void updater.checkInteractive(); } },
-    { label: "تثبيت التحديث وإعادة التشغيل", click: () => { if (!updater.installNow()) void updater.checkInteractive(); } },
+    { label: "تثبيت التحديث وإعادة التشغيل", click: () => { void updater.installNow().then(ok => { if (!ok) return updater.checkInteractive(); }).catch(error => dialog.showErrorBox("التحديث", error.message)); } },
     { type: "separator" },
     { label: "خروج", click: () => app.quit() },
   ]);
   tray.setContextMenu(menu);
   tray.on("click", showWindow);
-}
-
-function indicatorHtml() {
-  const css = 'html,body{margin:0;height:100%;overflow:hidden;background:transparent;font-family:"Segoe UI",Tahoma,sans-serif}'
-    + '.box{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:14px;background:rgba(20,22,28,.92);color:#e8eaf0;border:1px solid #2a2f3a;box-shadow:0 8px 30px rgba(0,0,0,.4);font-size:12px}'
-    + '.dot{width:8px;height:8px;border-radius:50%;background:#6ea8fe;flex:0 0 auto}'
-    + '.dot.idle{background:#3fb950}.dot.err{background:#f85149}'
-    + '.t{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
-    + '.c{color:#8b93a7;flex:0 0 auto}';
-  const js = 'async function tick(){try{const r=await fetch("' + BASE + '/api/tasks");const d=await r.json();'
-    + 'const running=(d.tasks||[]).filter(t=>t.status==="running");const latest=(d.tasks||[])[0];'
-    + 'document.getElementById("dot").className="dot"+(running.length?"":" idle");'
-    + 'document.getElementById("txt").textContent=running.length?running[0].title:(latest?"آخر مهمة: "+latest.title:"لا مهام");'
-    + 'document.getElementById("cnt").textContent=running.length?("("+running.length+" جارية)"):"";'
-    + '}catch(e){document.getElementById("txt").textContent="تعذّر الاتصال";}}'
-    + 'setInterval(tick,2500);tick();';
-  return '<!doctype html><html dir="rtl"><head><meta charset="utf-8"><style>' + css + '</style></head><body>'
-    + '<div class="box"><span class="dot idle" id="dot"></span><span class="t" id="txt">لا مهام جارية</span><span class="c" id="cnt"></span></div>'
-    + '<script>' + js + '</script></body></html>';
-}
-
-function createIndicator() {
-  if (indicator) return;
-  const wa = screen.getPrimaryDisplay().workAreaSize;
-  indicator = new BrowserWindow({
-    width: 380, height: 46, x: Math.max(0, wa.width - 396), y: Math.max(0, wa.height - 62),
-    frame: false, transparent: true, alwaysOnTop: true, resizable: false,
-    skipTaskbar: true, focusable: false, hasShadow: false, show: false,
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
-  });
-  void indicator.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(indicatorHtml()));
-  indicator.once("ready-to-show", () => { if (indicator) indicator.showInactive(); });
-  indicator.on("closed", () => { indicator = null; });
-}
-
-function destroyIndicator() {
-  if (indicator) { indicator.destroy(); indicator = null; }
 }
 
 function buildMenu() {
@@ -321,6 +282,13 @@ ipcMain.handle("pick-folder", async () => {
 });
 
 const ownsInstance = app.requestSingleInstanceLock();
+ipcMain.handle('loam-updates', async (event, action) => {
+  if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || new URL(event.senderFrame.url).origin !== BASE) throw new Error('غير مسموح.');
+  if (action === 'status') return updater.getStatus();
+  if (action === 'check') { void updater.check();return updater.getStatus(); }
+  if (action === 'install') { if (!await updater.installNow()) throw new Error('لم يكتمل تنزيل التحديث بعد.');return { state: 'installing' }; }
+  throw new Error('إجراء غير صالح.');
+});
 if (!ownsInstance) app.quit();
 app.on("second-instance", () => { if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } });
 
@@ -333,9 +301,16 @@ app.whenReady().then(async () => {
   try { console.log("[electron] server mode: " + (await ensureServer())); }
   catch (err) { console.error("[electron] " + err.message); dialog.showErrorBox("Loam — تعذّر بدء التشغيل", err.message); app.quit(); return; }
   createWindow();
-  createIndicator();
   startServerWatchdog();
+  const localUpdates = await require("./local-updates.cjs").startLocalUpdates(path.join(app.getPath("userData"), "updates"));
   updater.init({
+    localFeed: localUpdates.url,
+    canInstall: async () => {
+      const response = await fetch(BASE + "/api/tasks", { signal: AbortSignal.timeout(5000) });
+      if (!response.ok) throw new Error("تعذّر التحقق من المهام الجارية. أعد المحاولة.");
+      const data = await response.json();
+      return !data.tasks.some(task => ["running", "queued", "pending"].includes(task.status));
+    },
     onStatus: (s) => {
       const label = s && s.state === "downloaded" ? "تحديث جاهز" : s && s.state ? s.state : "idle";
       if (tray) tray.setToolTip("Loam — " + label);
@@ -381,7 +356,6 @@ app.on("before-quit", (event) => {
     event.preventDefault(); quitting = true;
     void mcpBridge.stop().finally(() => app.quit());
   }
-  destroyIndicator();
   if (tray) { tray.destroy(); tray = null; }
   if (serverChild) { try { serverChild.kill(); } catch (e) {} }
 });
