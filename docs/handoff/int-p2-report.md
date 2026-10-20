@@ -1,9 +1,10 @@
 # int-p2 Handoff Report
 
-## Commits
+## Commit
 
 - `bd660f1` — `int-p2: home starters, composer + menu, mode chip, settings panes`
-- `b32a157` — `int-p2: handoff report`
+
+The handoff report itself is tracked in `docs/handoff/int-p2-report.md`.
 
 ## Scope
 
