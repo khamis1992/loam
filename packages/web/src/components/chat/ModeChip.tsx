@@ -58,8 +58,9 @@ export function ModeChip({ resolved, value, onChange }: ModeChipProps) {
     return t('Standard');
   };
 
-  const trailingLabel = currentLabel();
-  const safeLabel = trailingLabel && trailingLabel !== PRODUCT ? trailingLabel : t('Standard');
+  const label = currentLabel();
+  const hasMode = !!(value || resolved);
+  const displayLabel = label.startsWith(PRODUCT) ? label : label && label !== PRODUCT ? label : t('Standard');
 
   return (
     <div className="relative" ref={ref}>
@@ -73,8 +74,8 @@ export function ModeChip({ resolved, value, onChange }: ModeChipProps) {
           value && 'text-text-primary',
         )}
       >
-        <span className="text-icon-blue">{PRODUCT}</span>
-        <span className="max-w-[120px] truncate">{safeLabel}</span>
+        {!hasMode && <span className="text-icon-blue">{PRODUCT}</span>}
+        <span className="max-w-[120px] truncate">{displayLabel}</span>
         <ChevronDown className={clsx('size-3 transition-transform', open && 'rotate-180')} />
       </button>
       {open && (

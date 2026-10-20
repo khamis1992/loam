@@ -12,6 +12,8 @@ const TOOL_LABEL: Record<string, ToolLabel> = {
   file_edit: { verb: 'Edited', noun: 'file' },
   file_search: { verb: 'Searched', noun: 'file' },
   file_list: { verb: 'Listed', noun: 'file' },
+  file_view_image: { verb: 'Viewed', noun: 'image' },
+  file_extract_text: { verb: 'Extracted', noun: 'text' },
   shell_run: { verb: 'Ran', noun: 'command' },
   shell: { verb: 'Ran', noun: 'command' },
   terminal: { verb: 'Ran', noun: 'command' },
@@ -47,15 +49,17 @@ const TOOL_LABEL: Record<string, ToolLabel> = {
 };
 
 export function getToolLabel(tool: string): ToolLabel {
-  return TOOL_LABEL[tool] ?? TOOL_LABEL[tool.replace(/^\w+_/, '')] ?? { verb: tool.replace(/_/g, ' '), noun: 'time' };
+  return TOOL_LABEL[tool] ?? TOOL_LABEL[tool.replace(/^\w+_/, '')] ?? { verb: tool.replace(/_/g, ' '), noun: '' };
 }
 
 export function humanizeToolName(tool: string): string {
   const label = getToolLabel(tool);
+  if (!label.noun) return label.verb;
   return `${label.verb} ${label.noun}`;
 }
 
 export function pluralizeNoun(noun: string, count: number): string {
+  if (!noun) return '';
   if (count === 1) return noun;
   if (noun.endsWith('y') && !/[aeiou]y$/i.test(noun)) return `${noun.slice(0, -1)}ies`;
   if (/s$|x$|z$|ch$|sh$/i.test(noun)) return `${noun}es`;
@@ -68,6 +72,7 @@ export function formatToolSummary(tool: string, count: number): string {
 }
 
 export function formatToolSummaryByLabel(label: ToolLabel, count: number): string {
+  if (!label.noun) return `${label.verb} ${count}`;
   return `${label.verb} ${count} ${pluralizeNoun(label.noun, count)}`;
 }
 
