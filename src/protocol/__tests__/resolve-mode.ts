@@ -44,17 +44,24 @@ detect("media / video", "edit this video", "media");
 detect("media / mp4 trim", "trim the mp4", "media");
 detect("media / image logo svg", "create an svg logo", "media");
 detect("media / design poster", "design a poster", "media");
+detect("media / video trim seconds", "trim the first 2 seconds of a video", "media");
 detect("write / pptx", "make a pptx", "write");
 detect("write / docx memo", "write a memo in docx", "write");
+detect("write / pptx slides deck", "create a powerpoint deck with slides", "write");
 detect("data / csv", "analyze this csv dataset", "data");
 detect("data / spreadsheet", "build an excel spreadsheet with charts", "data");
+detect("data / excel bar chart", "excel with a bar chart", "data");
 detect("security / pentest", "run a pentest", "security");
 detect("security / tls headers", "scan tls headers", "security");
+detect("security / port vulnerability scan", "port and vulnerability scan on 127.0.0.1", "security");
 detect("research / open website", "open a website for me", "research");
 detect("research / browse url", "browse this url http://example.com", "research");
+detect("research / open https", "open https://example.com and summarize", "research");
+detect("research / web search", "web search the latest news", "research");
 detect("research / search", "search for info", "research");
 detect("research / look up", "look up the answer", "research");
 detect("build / app", "build a mobile app", "build");
+detect("build / web app", "build a small todo web app", "build");
 detect("build / default", "hello", "build");
 
 // resolveLoamMode precedence and fallbacks.

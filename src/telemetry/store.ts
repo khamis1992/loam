@@ -164,13 +164,15 @@ export function telemetrySummary(): TelemetrySummary {
   for (const r of records) {
     if (r.kind === "task") tasks += 1;
     if (r.kind === "eval-case") evalCases += 1;
-    promptTokens += r.usage?.promptTokens ?? 0;
-    completionTokens += r.usage?.completionTokens ?? 0;
-    for (const t of r.toolCalls ?? []) {
-      toolCalls += 1;
-      if (!t.ok) {
-        toolFailures += 1;
-        failsByTool.set(t.name, (failsByTool.get(t.name) ?? 0) + 1);
+    if (r.kind !== "mode") {
+      promptTokens += r.usage?.promptTokens ?? 0;
+      completionTokens += r.usage?.completionTokens ?? 0;
+      for (const t of r.toolCalls ?? []) {
+        toolCalls += 1;
+        if (!t.ok) {
+          toolFailures += 1;
+          failsByTool.set(t.name, (failsByTool.get(t.name) ?? 0) + 1);
+        }
       }
     }
     if (r.at && (!lastAt || r.at > lastAt)) lastAt = r.at;

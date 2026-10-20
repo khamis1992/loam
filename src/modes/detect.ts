@@ -6,14 +6,15 @@ import type { UserMessage } from "../protocol/types.js";
 import { normalizeModeId, getLoamMode, LOAM_MODES } from "./catalog.js";
 
 // Ordered keyword rules. First match wins.
+// Use word boundaries for single tokens and phrase patterns for multi-word
+// terms so that partial matches (e.g. "app" inside "application") do not win.
 const DETECTION_RULES: Array<[string, RegExp]> = [
-  ["media", /ffmpeg|video|trim|mp4|image|logo|svg|design|poster/i],
-  ["write", /pptx|powerpoint|slides|presentation|docx|word|document|memo/i],
-  ["data", /xlsx|excel|spreadsheet|chart|csv|dataset/i],
-  ["security", /pentest|vulnerab|security|tls|headers\s+scan/i],
-  ["research", /open\s+a\s+website|browse|scrape|navigate|url|http:\/\//i],
-  ["research", /search|research|find\s+info|look\s+up/i],
-  ["build", /build|app|website|code|program/i],
+  ["media", /\b(ffmpeg|video|mp4|trim|clip|image|png|logo|svg|poster|design|thumbnail|icon|banner)\b/i],
+  ["write", /\b(powerpoint|pptx|slides|deck|presentation|word|docx|doc|memo|letter|report|resume|cv)\b/i],
+  ["data", /\b(excel|xlsx|spreadsheet|sheet|csv|chart|charts|graph|graphs|pivot|dataset|datasets)\b|\bdata\s+analysis\b/i],
+  ["security", /\b(pentest|pentesting|vulnerability|vulnerabilities|tls|ssl|headers|header|nmap|cve)\b|\b(security\s+scan|port\s+scan|header\s+scan)\b/i],
+  ["research", /\b(search|research|browse|scrape)\b|\b(search\s+(?:the\s+)?web|web\s+search|look\s+up|find\s+information|open\s+(?:a\s+|an\s+|the\s+)?website|navigate\s+(?:a\s+|an\s+|the\s+)?website)\b|https?:\/\//i],
+  ["build", /\b(build|app|website|program|code|implement|component)\b|\bedit\s+(?:a\s+|an\s+|the\s+)?file\b/i],
 ];
 
 export function detectModeFromText(text: string): string {

@@ -115,14 +115,24 @@ function buildToolDetail(name: string, args: unknown, result?: { ok: boolean; su
 
 export function makeBrief(name: string, args: unknown): string {
   const a = (args as Record<string, unknown>) ?? {};
-  if (name.startsWith("shell_") || name.startsWith("pty_")) return typeof a.command === "string" ? a.command.slice(0, 60) : "Run command";
-  if (name === "file_read") return `Read ${a.path ?? ""}`;
-  if (name === "file_write") return `Write ${a.path ?? ""}`;
-  if (name === "file_edit") return `Edit ${a.path ?? ""}`;
-  if (name === "web_search") return `Search: ${a.query ?? ""}`;
-  if (name === "web_fetch") return `Fetch ${a.url ?? ""}`;
-  if (name.startsWith("browser_")) return `Browser ${name.replace("browser_", "")}`;
-  return name;
+  if (name.startsWith("shell_") || name.startsWith("pty_")) {
+    return typeof a.command === "string" ? a.command.slice(0, 60) : "";
+  }
+  if (name === "file_read" || name === "file_write" || name === "file_edit") {
+    return typeof a.path === "string" ? a.path : "";
+  }
+  if (name === "web_search") {
+    if (typeof a.query === "string") return a.query;
+    if (Array.isArray(a.query)) return a.query.map(String).join(", ");
+    return "";
+  }
+  if (name === "web_fetch") {
+    return typeof a.url === "string" ? a.url : "";
+  }
+  if (name.startsWith("browser_")) {
+    return typeof a.url === "string" ? a.url : typeof a.target === "string" ? a.target : "";
+  }
+  return "";
 }
 
 export interface MappedEvents {

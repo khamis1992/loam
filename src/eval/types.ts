@@ -91,7 +91,7 @@ export interface EvalRun extends EvalRunSummary {
 
 export interface TelemetryRecord {
   at: string;
-  kind: "task" | "eval-case";
+  kind: "task" | "eval-case" | "mode";
   taskId?: string;
   runId?: string;
   caseId?: string;
@@ -106,6 +106,11 @@ export interface TelemetryRecord {
   passed?: boolean;
   score?: number;
   error?: string;
+  // Mode-only fields (optional; present when kind === "mode").
+  mode?: string;
+  toolset?: string[];
+  dedicatedTools?: string[];
+  source?: "explicit" | "detected";
 }
 
 export interface VerifyContext {

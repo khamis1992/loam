@@ -12,6 +12,8 @@ import type { RunTaskOptions } from "../server/http.js";
 import { log } from "../log.js";
 import { mapAgentEvent, shortUid, baseId, createEventMapperState, makeBrief, mapToolName } from "./events.js";
 import { resolveLoamMode, modeEventInfo } from "../modes/detect.js";
+import { getLoamMode, normalizeModeId, LOAM_MODES } from "../modes/catalog.js";
+import { appendTelemetry } from "../telemetry/store.js";
 import { getBlob } from "./blobStore.js";
 import type {
   ClientMessage,
@@ -515,6 +517,31 @@ export function createChatSocket(deps: SocketDeps): Server {
 
           try {
             const resolvedMode = resolveLoamMode(um, prompt);
+
+            const explicitRaw = (um.extData.loamMode ?? "").trim();
+            const explicitValid = explicitRaw && LOAM_MODES.some((m) => m.id === normalizeModeId(explicitRaw));
+            const modeDef = getLoamMode(resolvedMode);
+            const dedicatedToolPattern = /^(office_|loam_document|loam_studio|loam_creative|loam_canvas|loam_dataset|data_chart|pentest_|security_|browser_|web_search)$/;
+            appendTelemetry({
+              at: now(),
+              kind: "mode",
+              taskId,
+              mode: resolvedMode,
+              toolset: modeDef.tools,
+              dedicatedTools: modeDef.tools.filter((name) => dedicatedToolPattern.test(name)),
+              source: explicitValid ? "explicit" : "detected",
+              // TelemetryRecord keeps task/eval-case fields required; fill with
+              // neutral values for mode-only rows so existing consumers compile.
+              model: "",
+              status: "done",
+              steps: 0,
+              durationMs: 0,
+              usage: { promptTokens: 0, completionTokens: 0 },
+              toolCalls: [],
+              promptHash: "",
+              promptChars: prompt.length,
+            });
+
             emit({ type: "mode", ...modeEventInfo(resolvedMode) });
 
             const result = await runTask({
@@ -607,6 +634,7 @@ export function createChatSocket(deps: SocketDeps): Server {
             // Finalize any tool rows still running so the timeline shows green checks.
             for (const name of Array.from(session.mapperState.runningTool)) {
               const actionId = session.mapperState.toolActionIds.get(`${name}:0`) ?? baseId();
+              const brief = makeBrief(name, {});
               const toolUsed: ServerEnvelope = {
                 id: baseId(),
                 type: "event",
@@ -619,7 +647,7 @@ export function createChatSocket(deps: SocketDeps): Server {
                   tool: mapToolName(name),
                   actionId,
                   status: "success",
-                  brief: makeBrief(name, {}),
+                  brief: brief === name ? "" : brief,
                 },
               };
               store.appendEvent(um.sessionId, toolUsed);
