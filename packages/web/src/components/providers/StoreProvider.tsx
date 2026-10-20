@@ -25,6 +25,13 @@ function readStoredLocale(): 'en' | 'ar' | null {
   return null;
 }
 
+function LocaleWrapper({ children }: { children: ReactNode }) {
+  const locale = useAppSelector((s) => s.ui.locale);
+  // Remount the entire app tree when the locale changes so that every t() call
+  // is re-evaluated against the new catalog.
+  return <div key={locale}>{children}</div>;
+}
+
 function ShellSync() {
   const dispatch = useAppDispatch();
   const theme = useAppSelector((s) => s.ui.theme);
@@ -93,7 +100,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   return (
     <Provider store={store}>
       <ShellSync />
-      {children}
+      <LocaleWrapper>{children}</LocaleWrapper>
     </Provider>
   );
 }

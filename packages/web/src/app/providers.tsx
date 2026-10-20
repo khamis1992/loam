@@ -13,6 +13,7 @@ function LocaleInit({ children }: { children: React.ReactNode }) {
       store.dispatch(setLocale(forced));
     }
   }, []);
+  // Remount the entire app tree when the locale changes so t() is re-evaluated.
   return <div key={locale}>{children}</div>;
 }
 
