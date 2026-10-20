@@ -19,6 +19,7 @@ import { setDelegationRunner } from "./server/companionTeam.js";
 import { createApproval, waitForDecision } from "./server/approvals.js";
 import type { Tool } from "./tools/registry.js";
 import { createScratchpadTools } from "./tools/scratchpadTools.js";
+import { mergeAlwaysOnTools } from "./server/runTools.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
 import { publishTaskEvent } from "./server/streams.js";
 import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
@@ -254,12 +255,15 @@ async function main(): Promise<void> {
         memoryContextSuffix,
         agentSuffix, askModeSuffix,
       ].filter(Boolean).join("\n\n");
-      // The gateway's resolved allowlist is the ONLY tool set for this run: mode ∪
-      // work-mode grants − revoked services − agent service/tool denials. In
-      // own-device mode the device_* tools are bound to the companion's device;
-      // companion-memory tools are bound to this agent in every mode.
+      // The gateway's resolved allowlist is the base tool set for this run: mode ∪
+      // work-mode grants − revoked services − agent service/tool denials. Always-on
+      // core tools (per-agent scratchpad — low-risk, approval-free) are merged in on
+      // top; the agent's tool denials still remove them. In own-device mode the
+      // device_* tools are bound to the companion's device; companion-memory tools
+      // are bound to this agent in every mode.
       const dynamicAllow = new Set(capabilities.allow);
-      const agentTools = registry.forAllowlist(capabilities.allow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name)));
+      const runAllow = mergeAlwaysOnTools({ resolvedAllow: capabilities.allow, registeredTools: registry.names(), disabledTools: agent?.disabledTools });
+      const agentTools = registry.forAllowlist(runAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name)));
 
       // Sensitive host-input actions need an explicit user decision first (section 18).
       const SENSITIVE_HOST_INPUT = new Set(["computer_click", "computer_type", "computer_key", "computer_ui_click", "computer_ui_set_text"]);
