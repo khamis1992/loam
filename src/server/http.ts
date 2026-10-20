@@ -76,6 +76,8 @@ import { createAgent, deleteAgent, getAgent, listAgents, setAgentArchived, updat
 import { handleScratchpadRoutes } from "./routes/scratchpad.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
+import { handleInstructionsRoutes } from "./routes/instructions.js";
+import { handleAgentSpawnRoutes } from "./routes/agentSpawn.js";
 import { isValidTimezone } from "./scheduleTime.js";
 import { getWorkModesUi, normalizeWorkMode, resolveCompanionCapabilities } from "./companionGateway.js";
 import { DEVICE_TEMPLATES, deviceManager, getDevice, listDevices, readJournal } from "./companionDevices.js";
@@ -1629,6 +1631,8 @@ loadAgents();
         }
 
         if (await handleScratchpadRoutes(req, res, p)) return;
+        if (await handleInstructionsRoutes(req, res, p)) return;
+        if (await handleAgentSpawnRoutes(req, res, p)) return;
         if (await handleAgentThreadRoutes(req, res, p)) return;
         if (await handleSchedulesRoutes(req, res, p)) return;
 
