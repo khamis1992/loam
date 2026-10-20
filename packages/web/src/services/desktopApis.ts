@@ -1,3 +1,6 @@
+import { useRouter } from 'next/navigation';
+import { logout, closeSettings, type AppDispatch } from '@/store';
+
 export interface DesktopSyncInfo {
   platform: string;
   appVersion: string;
@@ -20,6 +23,7 @@ const noOpSync = () => undefined;
 
 export const desktopApis = {
   auth: {
+    getToken: () => invoke('auth', 'getToken') as Promise<string | null>,
     setToken: (token: string) => invoke('auth', 'setToken', [token]),
     removeToken: () => invoke('auth', 'removeToken'),
     notifyLoginSuccess: () => invoke('auth', 'notifyLoginSuccess'),
@@ -27,6 +31,13 @@ export const desktopApis = {
   system: {
     openExternal: (url: string) => invoke('system', 'openExternal', [url]),
     showFolderDialog: (opts?: { defaultPath?: string }) => invoke('system', 'showFolderDialog', [opts]),
+    showOpenFileDialog: (opts?: {
+      defaultPath?: string;
+      filters?: { name: string; extensions: string[] }[];
+      multiple?: boolean;
+    }) => invoke('system', 'showOpenFileDialog', [opts]) as Promise<string[] | null>,
+    readFile: (filePath: string) =>
+      invoke('system', 'readFile', [filePath]) as Promise<{ name: string; base64: string; mime: string }>,
   },
   updater: {
     getStatus: () => invoke('updater', 'getStatus') as Promise<{ state: string; version?: string; progress?: number; error?: string; storeManaged?: boolean; store?: string }>,
@@ -59,6 +70,13 @@ export const desktopEvents = {
     onEvent: (cb: (ev: { id: string; kind: string; data?: string; code?: number }) => void) => subscribe('terminal', 'onEvent', cb),
   },
 };
+
+export async function logoutAndRedirect(router: ReturnType<typeof useRouter>, dispatch: AppDispatch) {
+  await desktopApis.auth.removeToken();
+  dispatch(logout());
+  dispatch(closeSettings());
+  router.replace('/login');
+}
 
 function invoke(ns: string, method: string, args: unknown[] = []): Promise<unknown> {
   const apis = (typeof window !== 'undefined' ? (window as any).__apis : undefined) as

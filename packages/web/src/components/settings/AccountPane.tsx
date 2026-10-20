@@ -1,10 +1,13 @@
-import { useAppSelector, useAppDispatch, logout } from '@/store';
+import { useRouter } from 'next/navigation';
+import { useAppSelector, useAppDispatch } from '@/store';
 import { t, PRODUCT } from '@/i18n/t';
 import { Row, Section } from './SettingsDialog';
 import { Button } from '@/components/ui/Button';
+import { logoutAndRedirect } from '@/services/desktopApis';
 
 export function AccountPane() {
   const user = useAppSelector((s) => s.auth.user);
+  const router = useRouter();
   const dispatch = useAppDispatch();
   const name = user?.displayname || 'Demo User';
   const email = user?.email || 'demo@example.com';
@@ -28,7 +31,7 @@ export function AccountPane() {
 
       <Section title={t('Danger zone')}>
         <Row label={t('Log out')} description={t('Sign out of {product}.', { product: PRODUCT })}>
-          <Button variant="ghost" size="sm" onClick={() => dispatch(logout())}>{t('Log out')}</Button>
+          <Button variant="ghost" size="sm" onClick={() => { void logoutAndRedirect(router, dispatch); }}>{t('Log out')}</Button>
         </Row>
         <Row label={t('Delete account')} description={t('Permanently remove your account.')}>
           <Button variant="danger" size="sm">{t('Delete account')}</Button>

@@ -378,6 +378,24 @@ const ipcHandlers = {
       });
       return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
     },
+    showOpenFileDialog: async (_sender, opts = {}) => {
+      const properties = ["openFile"];
+      if (opts?.multiple) properties.push("multiSelections");
+      const result = await dialog.showOpenDialog(currentWindow() ?? undefined, {
+        properties,
+        defaultPath: opts.defaultPath,
+        filters: opts.filters,
+      });
+      return result.canceled || result.filePaths.length === 0 ? null : result.filePaths;
+    },
+    readFile: async (_sender, filePath) => {
+      if (typeof filePath !== "string") throw new Error("path must be a string");
+      const resolved = path.resolve(filePath);
+      const data = await fs.promises.readFile(resolved);
+      const ext = path.extname(resolved).toLowerCase();
+      const mime = MIME_TYPES[ext] || "application/octet-stream";
+      return { name: path.basename(resolved), base64: data.toString("base64"), mime };
+    },
     notifyNetworkOnline: () => undefined,
     notifyNetworkOffline: () => undefined,
   },
@@ -606,6 +624,34 @@ app.whenReady().then(async () => {
   registerAgentStudioProtocol();
 
   // Serve the Next.js static export over the privileged custom app:// protocol.
+  const staticRoot = path.resolve(WEB_OUT) + path.sep;
+  function toSafeFile(relPath) {
+    // Strip the leading slash and join under WEB_OUT so the same code works on
+    // Windows, macOS and Linux (path.resolve would mis-handle "/app/..." on
+    // Windows as a drive-root absolute path).
+    const cleaned = relPath.replace(/^\/+/, "").split(path.sep).join(path.sep);
+    const filePath = path.normalize(path.join(WEB_OUT, cleaned));
+    if (!filePath.startsWith(staticRoot)) return null;
+    return fs.existsSync(filePath) && fs.statSync(filePath).isFile() ? filePath : null;
+  }
+  // Next.js only pre-renders /app/demo-running and /app/demo-completed. Any
+  // other /app/<id> (including its RSC payloads) should fall back to the
+  // demo-running page so the client can read the real id from the URL.
+  function appDynamicFallback(relPath) {
+    const m = /^\/app\/([^/]+)(?:\/(.*))?$/.exec(relPath);
+    if (!m) return null;
+    const uid = m[1];
+    if (uid === "demo-running" || uid === "demo-completed") return null;
+    const rest = m[2];
+    if (rest === undefined) {
+      const ext = path.extname(uid).toLowerCase();
+      if (ext === ".html" || ext === ".htm") return "/app/demo-running.html";
+      if (ext === ".txt") return "/app/demo-running.txt";
+      return "/app/demo-running";
+    }
+    if (rest === "") return "/app/demo-running";
+    return "/app/demo-running/" + rest;
+  }
   protocol.handle("app", async (request) => {
     const url = new URL(request.url);
     if (url.host !== "agent") return new Response("Not Found", { status: 404 });
@@ -614,13 +660,21 @@ app.whenReady().then(async () => {
     else if (pathname.endsWith("/")) pathname += "index.html";
     else if (!path.extname(pathname)) {
       const htmlPath = pathname + ".html";
-      if (fs.existsSync(path.join(WEB_OUT, htmlPath))) pathname = htmlPath;
+      if (toSafeFile(htmlPath)) pathname = htmlPath;
       else pathname += "/index.html";
     }
-    const root = path.resolve(WEB_OUT) + path.sep;
-    const filePath = path.resolve(WEB_OUT, "." + pathname);
-    if (!filePath.startsWith(root)) return new Response("Forbidden", { status: 403 });
-    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    let filePath = toSafeFile(pathname);
+    if (!filePath) {
+      const fbRel = appDynamicFallback(pathname);
+      if (fbRel) {
+        if (!path.extname(fbRel)) {
+          filePath = toSafeFile(fbRel + ".html") || toSafeFile(fbRel + "/index.html");
+        } else {
+          filePath = toSafeFile(fbRel) || (fbRel.endsWith("/index.html") ? toSafeFile(fbRel.replace(/\/index\.html$/, ".html")) : null);
+        }
+      }
+    }
+    if (!filePath) {
       const fallback = path.join(WEB_OUT, "404.html");
       if (fs.existsSync(fallback)) {
         return new Response(fs.readFileSync(fallback), { status: 404, headers: { "Content-Type": "text/html" } });

@@ -5,9 +5,12 @@ import { useRouter } from 'next/navigation';
 import { t, tRich, PRODUCT } from '@/i18n/t';
 import { Button, Spinner } from '@/components/ui/Button';
 import { desktopApis, desktopEvents } from '@/services/desktopApis';
+import { useAppDispatch } from '@/store';
+import { setToken } from '@/store/authSlice';
 
 export default function LoginPage() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showEnv, setShowEnv] = useState(false);
@@ -17,6 +20,19 @@ export default function LoginPage() {
     const unsubErr = desktopEvents.auth.onLoginError((err) => setError(err.error));
     return () => { unsub(); unsubErr(); };
   }, [router]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const token = await desktopApis.auth.getToken();
+      if (!mounted) return;
+      if (token) {
+        dispatch(setToken(token));
+        router.replace('/app');
+      }
+    })();
+    return () => { mounted = false; };
+  }, [router, dispatch]);
 
   const signIn = useCallback(async (type: 'signIn' | 'signUp' = 'signIn') => {
     setLoading(true);

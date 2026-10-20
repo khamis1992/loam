@@ -31,6 +31,8 @@ const apis = {
   system: {
     openExternal: (...args) => invoke("system", "openExternal", args),
     showFolderDialog: (...args) => invoke("system", "showFolderDialog", args),
+    showOpenFileDialog: (...args) => invoke("system", "showOpenFileDialog", args),
+    readFile: (...args) => invoke("system", "readFile", args),
     notifyNetworkOnline: (...args) => invoke("system", "notifyNetworkOnline", args),
     notifyNetworkOffline: (...args) => invoke("system", "notifyNetworkOffline", args),
   },
