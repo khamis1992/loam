@@ -8,6 +8,7 @@ import {
   Folder,
   Globe,
   Maximize2,
+  Palette,
   RotateCcw,
   Terminal,
   FileText,
@@ -19,7 +20,12 @@ import { t } from '@/i18n/t';
 import { desktopEvents } from '@/services/desktopApis';
 import { getApiBase } from '@/services/rpc';
 
-type TabId = 'terminal' | 'editor' | 'browser' | 'preview' | 'files';
+// int-p6: legacy studio URLs are assumed to be served from the backend UI dir.
+// Creative and office studios both live under /studios/index.html with a route hash.
+const STUDIO_BASE_PATH = '/studios/index.html';
+
+type TabId = 'terminal' | 'editor' | 'browser' | 'preview' | 'files' | 'studio';
+type StudioMode = 'media' | 'office';
 
 interface ComputerPanelProps {
   event: ToolUsedEvent;
@@ -59,8 +65,25 @@ const TABS: { id: TabId; label: string; icon: typeof Terminal }[] = [
   { id: 'files', label: 'Files', icon: Folder },
 ];
 
+const STUDIO_TAB = { id: 'studio' as const, label: 'Open in studio', icon: Palette };
+
+// Remember inferred studio mode per session so the tab stays visible after the first studio tool.
+const studioModeBySession = new Map<string, StudioMode>();
+
 export function ComputerPanel({ event, sessionId, onClose }: ComputerPanelProps) {
   const activeTab = useMemo(() => getToolFamily(event.tool), [event.tool]);
+  const studioMode = useMemo(() => {
+    const fromTool = getStudioMode(event.tool);
+    if (fromTool) {
+      studioModeBySession.set(sessionId, fromTool);
+      return fromTool;
+    }
+    return studioModeBySession.get(sessionId) ?? null;
+  }, [event.tool, sessionId]);
+  const visibleTabs = useMemo(() => {
+    if (!studioMode) return TABS;
+    return [...TABS, STUDIO_TAB];
+  }, [studioMode]);
   const isDriving = !isFinalStatus(event.status) && activeTab === 'browser';
 
   return (
@@ -85,7 +108,7 @@ export function ComputerPanel({ event, sessionId, onClose }: ComputerPanelProps)
       </div>
 
       <div className="flex h-[40px] shrink-0 items-center border-b border-border-main">
-        {TABS.map((tab) => {
+        {visibleTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           return (
@@ -106,13 +129,23 @@ export function ComputerPanel({ event, sessionId, onClose }: ComputerPanelProps)
       </div>
 
       <div className="flex-1 overflow-hidden">
-        <TabContent event={event} sessionId={sessionId} tab={activeTab} />
+        <TabContent event={event} sessionId={sessionId} tab={activeTab} studioMode={studioMode} />
       </div>
     </div>
   );
 }
 
-function TabContent({ event, sessionId, tab }: { event: ToolUsedEvent; sessionId: string; tab: TabId }) {
+function TabContent({
+  event,
+  sessionId,
+  tab,
+  studioMode,
+}: {
+  event: ToolUsedEvent;
+  sessionId: string;
+  tab: TabId;
+  studioMode: StudioMode | null;
+}) {
   switch (tab) {
     case 'terminal':
       return <TerminalContent event={event} />;
@@ -122,10 +155,34 @@ function TabContent({ event, sessionId, tab }: { event: ToolUsedEvent; sessionId
       return <BrowserContent event={event} sessionId={sessionId} />;
     case 'preview':
       return <PreviewContent event={event} sessionId={sessionId} />;
+    case 'studio':
+      if (!studioMode) return <FilesContent event={event} sessionId={sessionId} />;
+      return <StudioContent sessionId={sessionId} mode={studioMode} />;
     case 'files':
     default:
       return <FilesContent event={event} sessionId={sessionId} />;
   }
+}
+
+function StudioContent({ sessionId, mode }: { sessionId: string; mode: StudioMode }) {
+  const apiBase = useMemo(() => getApiBase(), []);
+  const src = useMemo(() => {
+    const hash = mode === 'media' ? '#creative' : '#office';
+    return `${apiBase}${STUDIO_BASE_PATH}?taskId=${encodeURIComponent(sessionId)}${hash}`;
+  }, [apiBase, mode, sessionId]);
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex h-row-sm shrink-0 items-center gap-2 border-b border-border-main px-3 text-xs text-text-secondary">
+        <Palette className="size-3.5" />
+        <span className="truncate">{src}</span>
+        <a href={src} target="_blank" rel="noreferrer" className="ms-auto rounded-control p-1 text-text-tertiary hover:bg-fill-hover">
+          <ExternalLink className="size-3.5" />
+        </a>
+      </div>
+      <iframe src={src} title={t('Studio')} className="flex-1 border-0" sandbox="allow-scripts allow-same-origin" />
+    </div>
+  );
 }
 
 function TerminalContent({ event }: { event: ToolUsedEvent }) {
@@ -406,8 +463,28 @@ function FilesContent({ event, sessionId }: { event: ToolUsedEvent; sessionId: s
   );
 }
 
+function getStudioMode(tool: string): StudioMode | null {
+  const name = tool.toLowerCase();
+  if (
+    name.startsWith('creative_') ||
+    name === 'loam_creative' ||
+    name === 'loam_canvas'
+  )
+    return 'media';
+  if (
+    name.startsWith('office_') ||
+    name === 'loam_studio' ||
+    name === 'loam_document' ||
+    name === 'loam_dataset' ||
+    name === 'data_chart'
+  )
+    return 'office';
+  return null;
+}
+
 function getToolFamily(tool: string): TabId {
   const name = tool.toLowerCase();
+  if (getStudioMode(tool)) return 'studio';
   if (name === 'terminal' || name.startsWith('shell_') || name.startsWith('pty_')) return 'terminal';
   if (name === 'text_editor' || name.startsWith('file_')) return 'editor';
   if (name.startsWith('browser_') || name === 'browser' || name === 'web_fetch' || name === 'webpage_extract') return 'browser';
