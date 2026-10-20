@@ -74,6 +74,7 @@ export function SettingsDialog() {
                 {tabs.map((tab) => (
                   <li key={tab.id}>
                     <button
+                      type="button"
                       onClick={() => dispatch(setSettingsTab(tab.id))}
                       aria-current={activeTab === tab.id ? 'page' : undefined}
                       className={clsx(
@@ -90,10 +91,10 @@ export function SettingsDialog() {
             </section>
           ))}
         </nav>
-        <main className="flex-1 overflow-y-auto px-8 py-6">
+        <main key={activeTab} className="flex-1 overflow-y-auto px-8 py-6">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-headline-sm text-text-primary">{t(activeTab)}</h2>
-            <button aria-label={t('Close')} onClick={() => dispatch(closeSettings())} className="rounded-control p-1 hover:bg-fill-hover text-text-secondary">✕</button>
+            <button type="button" aria-label={t('Close')} onClick={() => dispatch(closeSettings())} className="rounded-control p-1 hover:bg-fill-hover text-text-secondary">✕</button>
           </div>
           <hr className="mb-6 border-border-main" />
           <SettingsContent tab={activeTab} />

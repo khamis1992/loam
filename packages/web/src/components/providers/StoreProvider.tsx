@@ -66,6 +66,14 @@ function ShellSync() {
       window.localStorage.setItem(THEME_KEY, theme);
     } catch {}
 
+    // Notify the Electron main process when running under the desktop shell
+    try {
+      const themeApi = (window as any).__apis?.theme;
+      if (typeof themeApi?.setTheme === 'function') {
+        themeApi.setTheme(theme);
+      }
+    } catch {}
+
     // Recompute system theme when the media query changes
     if (theme !== 'system') return;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');

@@ -29,10 +29,10 @@ export function GeneralPane() {
 
       <Section title={t('Chat preferences')}>
         <Row label={t('Default action while a task is running')} description={t('How new messages are delivered.')}>
-          <select className="h-row-sm rounded-control border border-border-main bg-fill-tsp px-3 text-sm text-text-primary">
-            <option>{t('Send without interrupting')}</option>
-            <option>{t('Queued')}</option>
-            <option>{t('Interrupting')}</option>
+          <select className="h-row-sm rounded-control border border-border-main bg-fill-tsp px-3 text-sm text-text-primary" defaultValue="send-without-interrupting">
+            <option value="send-without-interrupting">{t('Send without interrupting')}</option>
+            <option value="queued">{t('Queued')}</option>
+            <option value="interrupting">{t('Interrupting')}</option>
           </select>
         </Row>
       </Section>

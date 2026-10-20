@@ -1,12 +1,33 @@
-import { useState } from 'react';
+'use client';
+
+import { useState, useEffect } from 'react';
 import { useAppSelector, useAppDispatch, setTheme, setDensity } from '@/store';
 import { t } from '@/i18n/t';
 import { Row, Section } from './SettingsDialog';
 
+const THEME_KEY = 'agent-studio:theme';
+
+function persistTheme(theme: 'light' | 'dark' | 'system') {
+  try {
+    window.localStorage.setItem(THEME_KEY, theme);
+  } catch {}
+  try {
+    const themeApi = (window as any).__apis?.theme;
+    if (typeof themeApi?.setTheme === 'function') {
+      themeApi.setTheme(theme);
+    }
+  } catch {}
+}
+
 export function AppearancePane() {
   const theme = useAppSelector((s) => s.ui.theme);
+  const effectiveTheme = useAppSelector((s) => s.ui.effectiveTheme);
   const density = useAppSelector((s) => s.ui.density);
   const dispatch = useAppDispatch();
+
+  useEffect(() => {
+    persistTheme(theme);
+  }, [theme]);
 
   return (
     <div className="space-y-2">
@@ -17,6 +38,9 @@ export function AppearancePane() {
             value={theme === 'light' ? t('Light') : theme === 'dark' ? t('Dark') : t('Auto')}
             onChange={(v) => dispatch(setTheme(v === t('Light') ? 'light' : v === t('Dark') ? 'dark' : 'system'))}
           />
+        </Row>
+        <Row label={t('Effective theme')} description={effectiveTheme}>
+          <span className="text-sm text-text-secondary">{theme === 'system' ? `${t('Auto')} (${effectiveTheme})` : effectiveTheme}</span>
         </Row>
       </Section>
 
@@ -30,7 +54,7 @@ export function AppearancePane() {
           <select className="h-row-sm rounded-control border border-border-main bg-fill-tsp px-3 text-sm text-text-primary">
             <option>14px</option>
             <option>15px</option>
-            <option selected>16px</option>
+            <option defaultValue="16px">16px</option>
           </select>
         </Row>
         <Row label={t('Interface density')} description={t('Adjust the spacing and size of interface elements.')}>
@@ -56,6 +80,7 @@ function SegmentedControl({ options, value, onChange }: { options: string[]; val
     <div className="inline-flex rounded-control border border-border-main bg-fill-tsp p-0.5">
       {options.map((opt) => (
         <button
+          type="button"
           key={opt}
           onClick={() => onChange(opt)}
           className={`h-row-sm px-3 text-sm rounded-[6px] ${opt === value ? 'bg-fill-white text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'}`}
@@ -71,6 +96,7 @@ function Switch({ defaultOn = false }: { defaultOn?: boolean }) {
   const [on, setOn] = useState(defaultOn);
   return (
     <button
+      type="button"
       role="switch"
       aria-checked={on}
       onClick={() => setOn(!on)}
