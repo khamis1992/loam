@@ -2,16 +2,17 @@
 
 import { cloneElement, useEffect, useRef, useState, type ReactElement } from 'react';
 
-interface StarterItem {
+export interface StarterItem {
   label: string;
   prompt: string;
   icon?: string;
+  loamMode?: string;
 }
 
 interface StarterMenuProps {
   items: StarterItem[];
   children: ReactElement<{ onClick?: () => void; 'aria-expanded'?: boolean; 'aria-haspopup'?: boolean }>;
-  onSelect: (prompt: string) => void;
+  onSelect: (item: StarterItem) => void;
 }
 
 export function StarterMenu({ items, children, onSelect }: StarterMenuProps) {
@@ -52,7 +53,7 @@ export function StarterMenu({ items, children, onSelect }: StarterMenuProps) {
               key={item.label}
               type="button"
               role="menuitem"
-              onClick={() => { onSelect(item.prompt); setOpen(false); }}
+              onClick={() => { onSelect(item); setOpen(false); }}
               className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-start text-sm text-text-primary hover:bg-fill-hover"
             >
               {item.icon && <span className="text-base" aria-hidden>{item.icon}</span>}

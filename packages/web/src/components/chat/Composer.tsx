@@ -1,3 +1,5 @@
+'use client';
+
 import {
   forwardRef,
   useEffect,
@@ -9,13 +11,16 @@ import {
 } from 'react';
 import {
   ArrowUp, Plus, ShieldCheck, Laptop, FolderGit, Folder, GitBranch, Square, X, ChevronDown,
-  Mic, Github, Mail, Calendar,
+  Mic, Github, Mail, Calendar, Loader2, Wrench, Plug, Bot,
 } from 'lucide-react';
 import { VoiceIcon } from '@/components/home/VoiceIcon';
 import clsx from 'clsx';
 import { t } from '@/i18n/t';
 import { IconButton } from '@/components/ui/Button';
 import { desktopApis } from '@/services/desktopApis';
+import { getApiBase, getApiHeaders } from '@/services/rpc';
+import { useRouter } from 'next/navigation';
+import { ModeChip, type ModeChipResolved } from './ModeChip';
 import type { TaskMode } from '@shared/socket';
 
 export interface ComposerHandle {
@@ -26,22 +31,32 @@ export interface ComposerHandle {
 }
 
 interface ComposerProps {
-  onSend: (text: string, mode: TaskMode, files: File[]) => void | Promise<void>;
+  onSend: (text: string, mode: TaskMode, files: File[], extData?: Record<string, unknown>) => void | Promise<void>;
   onStop?: () => void;
   running?: boolean;
   home?: boolean;
   onAddFolder?: (path: string) => void;
+  defaultLoamMode?: string;
+  resolvedLoamMode?: ModeChipResolved | null;
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { onSend, onStop, running, home, onAddFolder }: ComposerProps,
+  { onSend, onStop, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode }: ComposerProps,
   ref: Ref<ComposerHandle>,
 ) {
+  const router = useRouter();
   const [text, setText] = useState('');
   const [mode, setMode] = useState<TaskMode>('standard');
   const [files, setFiles] = useState<File[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [selectedLoamMode, setSelectedLoamMode] = useState<string | undefined>(defaultLoamMode);
+  const [attachedSkills, setAttachedSkills] = useState<string[]>([]);
+  const [attachedConnectors, setAttachedConnectors] = useState<string[]>([]);
+  const [availableSkills, setAvailableSkills] = useState<string[]>([]);
+  const [availableConnectors, setAvailableConnectors] = useState<string[]>([]);
+  const [attachLoading, setAttachLoading] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -55,6 +70,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   }));
 
   useEffect(() => {
+    setSelectedLoamMode(defaultLoamMode);
+  }, [defaultLoamMode]);
+
+  useEffect(() => {
     if (!menuOpen) return;
     const onClick = (e: MouseEvent) => {
       if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
@@ -63,12 +82,48 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     return () => document.removeEventListener('mousedown', onClick);
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    let mounted = true;
+    setAttachLoading(true);
+    setAttachError(null);
+    (async () => {
+      try {
+        const headers = await getApiHeaders();
+        const [skillsRes, mcpRes] = await Promise.all([
+          fetch(`${getApiBase()}/api/skills`, { headers }),
+          fetch(`${getApiBase()}/api/mcp/status`, { headers }),
+        ]);
+        if (!skillsRes.ok) throw new Error(`skills ${skillsRes.status}`);
+        if (!mcpRes.ok) throw new Error(`mcp ${mcpRes.status}`);
+        const skillsData = (await skillsRes.json()) as { skills?: Array<{ name: string }> };
+        const mcpData = (await mcpRes.json()) as { servers?: Array<{ name: string }> };
+        if (!mounted) return;
+        setAvailableSkills((skillsData.skills ?? []).map((s) => s.name));
+        setAvailableConnectors((mcpData.servers ?? []).map((s) => s.name));
+      } catch (e) {
+        if (!mounted) return;
+        setAttachError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (mounted) setAttachLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [menuOpen]);
+
   const submit = async () => {
     if (!canSend) return;
-    await onSend(text.trim(), mode, files);
+    const extData: Record<string, unknown> = {};
+    if (selectedLoamMode) extData.loamMode = selectedLoamMode;
+    if (attachedSkills.length > 0) extData.skills = attachedSkills;
+    if (attachedConnectors.length > 0) extData.connectors = attachedConnectors;
+    await onSend(text.trim(), mode, files, Object.keys(extData).length > 0 ? extData : undefined);
     setText('');
     setFiles([]);
     setMenuOpen(false);
+    setAttachedSkills([]);
+    setAttachedConnectors([]);
+    setSelectedLoamMode(defaultLoamMode);
   };
 
   const onKey = async (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -105,6 +160,29 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     addFiles(e.dataTransfer.files);
   };
 
+  const toggleSkill = (name: string) => {
+    setAttachedSkills((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
+    );
+  };
+
+  const toggleConnector = (name: string) => {
+    setAttachedConnectors((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
+    );
+  };
+
+  const navigateToAgents = () => {
+    setMenuOpen(false);
+    router.push('/app/agents');
+  };
+
+  const attachments = [
+    ...files.map((f) => ({ type: 'file' as const, value: f })),
+    ...attachedSkills.map((name) => ({ type: 'skill' as const, value: name })),
+    ...attachedConnectors.map((name) => ({ type: 'connector' as const, value: name })),
+  ];
+
   return (
     <div
       onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -126,7 +204,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           : 'Message {product}')}
         className="chat-input-editor w-full resize-none bg-transparent text-base leading-snug text-text-primary outline-none placeholder:text-text-disable"
       />
-      {files.length > 0 && (
+      {attachments.length > 0 && (
         <ul className="mt-1 flex flex-wrap gap-1.5">
           {files.map((f) => (
             <li
@@ -139,6 +217,40 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 onClick={() => removeFile(f)}
                 aria-label={t('Remove file')}
                 title={t('Remove file')}
+                className="text-text-tertiary hover:text-text-primary"
+              >
+                <X className="size-3" />
+              </button>
+            </li>
+          ))}
+          {attachedSkills.map((name) => (
+            <li
+              key={`skill-${name}`}
+              className="inline-flex max-w-full items-center gap-1 rounded-control bg-blue-50 px-2 py-1 text-xs text-icon-blue dark:bg-blue-950"
+            >
+              <Wrench className="size-3" />
+              <span className="truncate">{name}</span>
+              <button
+                type="button"
+                onClick={() => toggleSkill(name)}
+                aria-label={t('Remove file')}
+                className="text-text-tertiary hover:text-text-primary"
+              >
+                <X className="size-3" />
+              </button>
+            </li>
+          ))}
+          {attachedConnectors.map((name) => (
+            <li
+              key={`connector-${name}`}
+              className="inline-flex max-w-full items-center gap-1 rounded-control bg-green-50 px-2 py-1 text-xs text-green-600 dark:bg-green-950"
+            >
+              <Plug className="size-3" />
+              <span className="truncate">{name}</span>
+              <button
+                type="button"
+                onClick={() => toggleConnector(name)}
+                aria-label={t('Remove file')}
                 className="text-text-tertiary hover:text-text-primary"
               >
                 <X className="size-3" />
@@ -169,7 +281,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               <ChevronDown className="size-3" />
             </button>
             {menuOpen && (
-              <div className="absolute bottom-full start-0 z-50 mb-1 min-w-[160px] max-w-[calc(100vw-32px)] rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
+              <div className="absolute bottom-full start-0 z-50 mb-1 min-w-[200px] max-w-[calc(100vw-32px)] max-h-[60vh] overflow-y-auto rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
                 <button
                   type="button"
                   onClick={() => { fileRef.current?.click(); setMenuOpen(false); }}
@@ -185,6 +297,69 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 >
                   <FolderGit className="size-4" />
                   {t('Add folder')}
+                </button>
+                <div className="my-1 border-t border-border-main" />
+                <p className="px-3 py-1 text-xs font-medium text-text-tertiary">{t('Skills')}</p>
+                {attachLoading ? (
+                  <div className="flex items-center gap-2 px-3 py-2 text-sm text-text-secondary">
+                    <Loader2 className="size-4 animate-spin" /> {t('Loading')}
+                  </div>
+                ) : attachError ? (
+                  <p className="px-3 py-2 text-xs text-function-error">{attachError}</p>
+                ) : availableSkills.length === 0 ? (
+                  <p className="px-3 py-2 text-sm text-text-tertiary">{t('No skills registered.')}</p>
+                ) : (
+                  availableSkills.map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => toggleSkill(name)}
+                      className={clsx(
+                        'flex w-full items-center gap-2 rounded-control px-3 py-2 text-sm text-text-primary hover:bg-fill-hover',
+                        attachedSkills.includes(name) && 'bg-fill-hover',
+                      )}
+                    >
+                      <Wrench className="size-4" />
+                      <span className="truncate">{name}</span>
+                      {attachedSkills.includes(name) && <span className="ms-auto text-icon-blue">✓</span>}
+                    </button>
+                  ))
+                )}
+                <div className="my-1 border-t border-border-main" />
+                <p className="px-3 py-1 text-xs font-medium text-text-tertiary">{t('Connectors')}</p>
+                {attachLoading ? (
+                  <div className="flex items-center gap-2 px-3 py-2 text-sm text-text-secondary">
+                    <Loader2 className="size-4 animate-spin" /> {t('Loading')}
+                  </div>
+                ) : attachError ? (
+                  <p className="px-3 py-2 text-xs text-function-error">{attachError}</p>
+                ) : availableConnectors.length === 0 ? (
+                  <p className="px-3 py-2 text-sm text-text-tertiary">{t('No MCP servers connected.')}</p>
+                ) : (
+                  availableConnectors.map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => toggleConnector(name)}
+                      className={clsx(
+                        'flex w-full items-center gap-2 rounded-control px-3 py-2 text-sm text-text-primary hover:bg-fill-hover',
+                        attachedConnectors.includes(name) && 'bg-fill-hover',
+                      )}
+                    >
+                      <Plug className="size-4" />
+                      <span className="truncate">{name}</span>
+                      {attachedConnectors.includes(name) && <span className="ms-auto text-icon-blue">✓</span>}
+                    </button>
+                  ))
+                )}
+                <div className="my-1 border-t border-border-main" />
+                <button
+                  type="button"
+                  onClick={navigateToAgents}
+                  className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-sm text-text-primary hover:bg-fill-hover"
+                >
+                  <Bot className="size-4" />
+                  {t('Agents')}
                 </button>
               </div>
             )}
@@ -203,7 +378,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               <ChevronDown className="size-3" />
             </IconButton>
             {menuOpen && (
-              <div className="absolute bottom-full start-0 z-50 mb-1 min-w-[160px] max-w-[calc(100vw-32px)] rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
+              <div className="absolute bottom-full start-0 z-50 mb-1 min-w-[200px] max-w-[calc(100vw-32px)] max-h-[60vh] overflow-y-auto rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
                 <button
                   type="button"
                   onClick={() => { fileRef.current?.click(); setMenuOpen(false); }}
@@ -219,6 +394,69 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 >
                   <FolderGit className="size-4" />
                   {t('Add folder')}
+                </button>
+                <div className="my-1 border-t border-border-main" />
+                <p className="px-3 py-1 text-xs font-medium text-text-tertiary">{t('Skills')}</p>
+                {attachLoading ? (
+                  <div className="flex items-center gap-2 px-3 py-2 text-sm text-text-secondary">
+                    <Loader2 className="size-4 animate-spin" /> {t('Loading')}
+                  </div>
+                ) : attachError ? (
+                  <p className="px-3 py-2 text-xs text-function-error">{attachError}</p>
+                ) : availableSkills.length === 0 ? (
+                  <p className="px-3 py-2 text-sm text-text-tertiary">{t('No skills registered.')}</p>
+                ) : (
+                  availableSkills.map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => toggleSkill(name)}
+                      className={clsx(
+                        'flex w-full items-center gap-2 rounded-control px-3 py-2 text-sm text-text-primary hover:bg-fill-hover',
+                        attachedSkills.includes(name) && 'bg-fill-hover',
+                      )}
+                    >
+                      <Wrench className="size-4" />
+                      <span className="truncate">{name}</span>
+                      {attachedSkills.includes(name) && <span className="ms-auto text-icon-blue">✓</span>}
+                    </button>
+                  ))
+                )}
+                <div className="my-1 border-t border-border-main" />
+                <p className="px-3 py-1 text-xs font-medium text-text-tertiary">{t('Connectors')}</p>
+                {attachLoading ? (
+                  <div className="flex items-center gap-2 px-3 py-2 text-sm text-text-secondary">
+                    <Loader2 className="size-4 animate-spin" /> {t('Loading')}
+                  </div>
+                ) : attachError ? (
+                  <p className="px-3 py-2 text-xs text-function-error">{attachError}</p>
+                ) : availableConnectors.length === 0 ? (
+                  <p className="px-3 py-2 text-sm text-text-tertiary">{t('No MCP servers connected.')}</p>
+                ) : (
+                  availableConnectors.map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => toggleConnector(name)}
+                      className={clsx(
+                        'flex w-full items-center gap-2 rounded-control px-3 py-2 text-sm text-text-primary hover:bg-fill-hover',
+                        attachedConnectors.includes(name) && 'bg-fill-hover',
+                      )}
+                    >
+                      <Plug className="size-4" />
+                      <span className="truncate">{name}</span>
+                      {attachedConnectors.includes(name) && <span className="ms-auto text-icon-blue">✓</span>}
+                    </button>
+                  ))
+                )}
+                <div className="my-1 border-t border-border-main" />
+                <button
+                  type="button"
+                  onClick={navigateToAgents}
+                  className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-sm text-text-primary hover:bg-fill-hover"
+                >
+                  <Bot className="size-4" />
+                  {t('Agents')}
                 </button>
               </div>
             )}
@@ -260,6 +498,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           <option value="lite">{t('Lite')}</option>
           <option value="max">{t('Max')}</option>
         </select>
+
+        <ModeChip
+          resolved={resolvedLoamMode}
+          value={selectedLoamMode}
+          onChange={setSelectedLoamMode}
+        />
 
         {!home && (
           <span className="ms-2 flex items-center gap-1 text-xs text-text-secondary">
@@ -314,6 +558,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             </IconButton>
           )}
       </div>
+      <input
+        ref={fileRef}
+        type="file"
+        multiple
+        hidden
+        onChange={(e) => { addFiles(e.target.files); e.currentTarget.value = ''; }}
+      />
     </div>
   );
 });

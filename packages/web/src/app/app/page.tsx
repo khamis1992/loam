@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  PanelRight, Hammer, Pencil, AppWindow, Video, Presentation, LayoutGrid,
+  PanelRight, Hammer, Pencil, AppWindow, Video, LayoutGrid, Database, Shield,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAppDispatch } from '@/store';
@@ -15,7 +15,7 @@ import { CreditsPopover } from '@/components/home/CreditsPopover';
 import { TemplateCard } from '@/components/home/TemplateCard';
 import { ModelMenu, type AgentModel } from '@/components/home/ModelMenu';
 import { StartFromFileCard } from '@/components/home/StartFromFileCard';
-import { StarterMenu } from '@/components/home/StarterMenu';
+import { StarterMenu, type StarterItem } from '@/components/home/StarterMenu';
 import { SidePanel } from '@/components/home/SidePanel';
 import { PromoBanner } from '@/components/home/PromoBanner';
 import { LogoMark } from '@/components/home/LogoMark';
@@ -64,6 +64,7 @@ export default function HomePage() {
   const [downloadsPath, setDownloadsPath] = useState<string | null>(null);
   const [credits, setCredits] = useState<number | null>(null);
   const [update, setUpdate] = useState<{ title: string; subtitle: string; version?: string; available: boolean } | null>(null);
+  const [defaultLoamMode, setDefaultLoamMode] = useState<string | undefined>(undefined);
 
   const branch = useBranch();
 
@@ -147,9 +148,10 @@ export default function HomePage() {
     setActiveFolder('downloads');
   };
 
-  const prefillComposer = (prompt: string) => {
+  const prefillComposer = (prompt: string, loamMode?: string) => {
     composerRef.current?.setText(prompt);
     composerRef.current?.focus();
+    setDefaultLoamMode(loamMode);
   };
 
   const addFilesToComposer = (files: File[]) => {
@@ -181,7 +183,7 @@ export default function HomePage() {
     }
   };
 
-  const navigateToTask = async (text: string, mode: TaskMode, files: File[]) => {
+  const navigateToTask = async (text: string, mode: TaskMode, files: File[], extData?: Record<string, unknown>) => {
     const uid = shortUid();
     let attachments: Attachment[] = [];
     if (files.length > 0) {
@@ -207,23 +209,39 @@ export default function HomePage() {
     params.set('mode', mode);
     if (cwd) params.set('cwd', cwd);
     if (attachments.length > 0) params.set('attachments', JSON.stringify(attachments));
+    if (extData && Object.keys(extData).length > 0) params.set('extData', JSON.stringify(extData));
     router.push(`/app/${uid}/?${params.toString()}`);
   };
 
-  const handleSend = async (text: string, mode: TaskMode, files: File[]) => {
-    await navigateToTask(text, mode, files);
+  const handleSend = async (text: string, mode: TaskMode, files: File[], extData?: Record<string, unknown>) => {
+    await navigateToTask(text, mode, files, extData);
   };
 
-  const buildItems = [
-    { label: t('Websites'), prompt: t('Website starter'), icon: '🔧' },
-    { label: t('Apps'), prompt: t('App starter'), icon: '📱' },
-    { label: t('Games'), prompt: t('Game starter'), icon: '🎮' },
+  const onStarterSelect = (item: StarterItem) => {
+    prefillComposer(item.prompt, item.loamMode);
+  };
+
+  const buildItems: StarterItem[] = [
+    { label: t('Websites'), prompt: t('Website starter'), icon: '🔧', loamMode: 'build' },
+    { label: t('Apps'), prompt: t('App starter'), icon: '📱', loamMode: 'build' },
+    { label: t('Games'), prompt: t('Game starter'), icon: '🎮', loamMode: 'build' },
   ];
 
-  const createItems = [
-    { label: t('Slides'), prompt: t('Slides starter'), icon: '📊' },
-    { label: t('Images'), prompt: t('Images starter'), icon: '🖼️' },
-    { label: t('Videos'), prompt: t('Videos starter'), icon: '🎬' },
+  const createItems: StarterItem[] = [
+    { label: t('Slides'), prompt: t('Slides starter'), icon: '📊', loamMode: 'write' },
+    { label: t('Docs'), prompt: t('Docs starter'), icon: '📝', loamMode: 'write' },
+    { label: t('Images'), prompt: t('Images starter'), icon: '🖼️', loamMode: 'media' },
+    { label: t('Videos'), prompt: t('Videos starter'), icon: '🎬', loamMode: 'media' },
+  ];
+
+  const dataItems: StarterItem[] = [
+    { label: t('Sheets'), prompt: t('Sheets starter'), icon: '📑', loamMode: 'data' },
+    { label: t('Research'), prompt: t('Research starter'), icon: '🔍', loamMode: 'research' },
+  ];
+
+  const secureItems: StarterItem[] = [
+    { label: t('Security scan'), prompt: t('Security scan starter'), icon: '🛡️', loamMode: 'security' },
+    { label: t('Automation'), prompt: t('Automation starter'), icon: '⚡', loamMode: 'automate' },
   ];
 
   const templates = [
@@ -286,13 +304,13 @@ export default function HomePage() {
                 <span className="font-serif text-[#888888]">{t('studio')}</span>
               </h1>
             </div>
-            <PromoBanner onSelect={prefillComposer} />
+            <PromoBanner onSelect={(prompt) => prefillComposer(prompt)} />
           </div>
 
-          {/* Cards grid */}
+          {/* Starter cards */}
           <div className="mb-3 grid grid-cols-1 gap-[10px] md:grid-cols-[390px_215px]">
             <div className="flex w-[390px] flex-col gap-[10px]">
-              <StarterMenu items={buildItems} onSelect={prefillComposer}>
+              <StarterMenu items={buildItems} onSelect={onStarterSelect}>
                 <HomeCard
                   className="w-full"
                   icon={<Hammer className="size-5 text-[#0081f2]" />}
@@ -301,13 +319,29 @@ export default function HomePage() {
                   illustration={<BuildIllustration />}
                 />
               </StarterMenu>
-              <StarterMenu items={createItems} onSelect={prefillComposer}>
+              <StarterMenu items={createItems} onSelect={onStarterSelect}>
                 <HomeCard
                   className="w-full"
                   icon={<Pencil className="size-5 text-[#efa201]" />}
                   title={t('Create')}
-                  subtitle={t('Slides, images, and videos')}
+                  subtitle={t('Slides, docs, images, and videos')}
                   illustration={<CreateIllustration />}
+                />
+              </StarterMenu>
+              <StarterMenu items={dataItems} onSelect={onStarterSelect}>
+                <HomeCard
+                  className="w-full"
+                  icon={<Database className="size-5 text-[#22c55e]" />}
+                  title={t('Data')}
+                  subtitle={t('Sheets and research')}
+                />
+              </StarterMenu>
+              <StarterMenu items={secureItems} onSelect={onStarterSelect}>
+                <HomeCard
+                  className="w-full"
+                  icon={<Shield className="size-5 text-[#ef4444]" />}
+                  title={t('Secure')}
+                  subtitle={t('Security scans and automations')}
                 />
               </StarterMenu>
             </div>
@@ -344,6 +378,7 @@ export default function HomePage() {
               onSend={handleSend}
               home
               onAddFolder={handleAddFolder}
+              defaultLoamMode={defaultLoamMode}
             />
           </div>
         </div>

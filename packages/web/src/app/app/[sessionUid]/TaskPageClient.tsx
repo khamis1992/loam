@@ -32,6 +32,7 @@ import type {
   Attachment,
   ToolUsedEvent,
   AttachmentEvent,
+  ModeEvent,
 } from '@shared/socket';
 import { formatDuration, formatTime } from '@/utils/format';
 
@@ -69,14 +70,27 @@ function parseAttachments(raw: string | null): Attachment[] {
   }
 }
 
-function makeExtData(cwd?: string): Record<string, unknown> | undefined {
-  if (!cwd) return undefined;
-  return {
-    desktopBinding: {
+function makeExtData(cwd?: string, extra?: Record<string, unknown>): Record<string, unknown> | undefined {
+  const out: Record<string, unknown> = { ...extra };
+  if (cwd) {
+    out.desktopBinding = {
       deviceId: 'desktop',
       folderPath: cwd,
-    },
-  };
+    };
+  }
+  if (Object.keys(out).length === 0) return undefined;
+  return out;
+}
+
+function parseExtData(raw: string | null): Record<string, unknown> | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+  } catch {
+    // ignore malformed extData
+  }
+  return undefined;
 }
 
 export default function TaskPageClient(_props: { params: Promise<{ sessionUid: string }> }) {
@@ -97,7 +111,10 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const draftMode = (searchParams.get('mode') as TaskMode) || 'standard';
   const cwd = searchParams.get('cwd') || undefined;
   const attachmentsParam = searchParams.get('attachments');
+  const extDataParam = searchParams.get('extData');
   const draftAttachments = useMemo(() => parseAttachments(attachmentsParam), [attachmentsParam]);
+  const draftExtData = useMemo(() => parseExtData(extDataParam), [extDataParam]);
+  const draftLoamMode = typeof draftExtData?.loamMode === 'string' ? draftExtData.loamMode : undefined;
   const socketRef = useRef<ChatSocket | null>(null);
   const sentDraft = useRef<{ uid: string; sent: boolean }>({ uid: '', sent: false });
   if (sentDraft.current.uid !== sessionUid) {
@@ -167,7 +184,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
         const cwd = searchParams.get('cwd') || undefined;
         const attachmentsParam = searchParams.get('attachments');
         const draftAttachments = attachmentsParam ? parseAttachments(attachmentsParam) : [];
-        socket.sendText(sessionUid, draft, mode, draftAttachments, makeExtData(cwd));
+        socket.sendText(sessionUid, draft, mode, draftAttachments, makeExtData(cwd, draftExtData));
         dispatch(addSession({
           uid: sessionUid,
           title: existingSession?.title ?? draft.slice(0, 60),
@@ -264,7 +281,12 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     }
   }, [events, sessionUid, selectedTool]);
 
-  const handleSend = async (text: string, mode: TaskMode, files: File[]) => {
+  const resolvedLoamMode = useMemo(() => {
+    const ev = [...events].reverse().find((e): e is ModeEvent => e.type === 'mode');
+    return ev ? { mode: ev.mode, label: ev.label, labelAr: ev.labelAr } : null;
+  }, [events]);
+
+  const handleSend = async (text: string, mode: TaskMode, files: File[], extData?: Record<string, unknown>) => {
     const socket = socketRef.current;
     if (!socket) return;
     dispatch(setStatus({ sessionId: sessionUid, status: 'running' }));
@@ -273,7 +295,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
       const uploaded = await Promise.all(files.map((f) => uploadFile(apiBase, f)));
       attachments = [...attachments, ...uploaded];
     }
-    socket.sendText(sessionUid, text, mode, attachments, makeExtData(cwd));
+    socket.sendText(sessionUid, text, mode, attachments, makeExtData(cwd, extData));
   };
 
   const handleStop = () => {
@@ -380,7 +402,13 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               </span>
               {running ? t('Working') : wasStoppedByUser ? t('Stopped') : hasResult && hasClockClosed ? t('Task completed') : t('Thinking')}
             </div>
-            <Composer onSend={handleSend} onStop={handleStop} running={running} />
+            <Composer
+              onSend={handleSend}
+              onStop={handleStop}
+              running={running}
+              defaultLoamMode={draftLoamMode}
+              resolvedLoamMode={resolvedLoamMode}
+            />
           </div>
         </div>
         {selectedTool && <ComputerPanel sessionId={sessionUid} event={selectedTool} onClose={() => setSelectedTool(null)} />}

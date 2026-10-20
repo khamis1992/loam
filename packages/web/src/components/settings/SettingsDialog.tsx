@@ -12,6 +12,9 @@ import { DataControlsPane } from './DataControlsPane';
 import { MyComputerPane } from './MyComputerPane';
 import { UsagePane } from './UsagePane';
 import { AboutPane } from './AboutPane';
+import { ConnectorsPane } from './ConnectorsPane';
+import { SkillsPane } from './SkillsPane';
+import { MemoryPane } from './MemoryPane';
 import { EmptyState } from './EmptyState';
 
 const TABS = [
@@ -24,6 +27,7 @@ const TABS = [
   { id: 'Personalization', group: 'Capabilities', icon: 'Blocks' },
   { id: 'Connectors', group: 'Capabilities', icon: 'Unplug' },
   { id: 'Skills', group: 'Capabilities', icon: 'Blocks' },
+  { id: 'Memory', group: 'Capabilities', icon: 'Database' },
   { id: 'Integrations', group: 'Data', icon: 'Unplug' },
   { id: 'Developers', group: 'Data', icon: 'Blocks' },
   { id: 'My Computer', group: 'Computers', icon: 'Monitor' },
@@ -34,7 +38,7 @@ const TABS = [
   { id: 'About', group: 'About', icon: 'Info' },
 ];
 
-const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Data controls', 'My Computer', 'Usage', 'About']);
+const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Data controls', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Memory']);
 
 const GROUP_ORDER = ['Account', 'Settings', 'Capabilities', 'Computers', 'Data', 'Assets', 'About'];
 
@@ -127,6 +131,9 @@ function SettingsContent({ tab }: { tab: string }) {
     case 'Data controls': return <DataControlsPane />;
     case 'My Computer': return <MyComputerPane />;
     case 'Usage': return <UsagePane />;
+    case 'Connectors': return <ConnectorsPane />;
+    case 'Skills': return <SkillsPane />;
+    case 'Memory': return <MemoryPane />;
     case 'About': return <AboutPane />;
     default: return null;
   }
@@ -135,7 +142,7 @@ function SettingsContent({ tab }: { tab: string }) {
 function glyphFor(icon: string) {
   const map: Record<string, string> = {
     SlidersHorizontal: '⚙', User: '👤', Sparkles: '✨', Palette: '🎨', Keyboard: '⌨',
-    Blocks: '▦', Unplug: '🔌', Monitor: '🖥', Globe: '🌐', Mail: '✉', Phone: '📞',
+    Blocks: '▦', Unplug: '🔌', Database: '🗄', Monitor: '🖥', Globe: '🌐', Mail: '✉', Phone: '📞',
     Wallet: '👛', Info: 'ℹ',
   };
   return map[icon] || '•';
