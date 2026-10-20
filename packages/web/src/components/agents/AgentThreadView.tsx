@@ -56,9 +56,32 @@ export interface AgentThreadViewProps {
   onTaskCreated?: (uid: string) => void;
 }
 
+export async function persistAgentThread(agentId: string, threadUid: string): Promise<void> {
+  try {
+    await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/thread`, {
+      method: 'PUT',
+      headers: await getApiHeaders(),
+      body: JSON.stringify({ threadUid }),
+    });
+  } catch {}
+}
+
 export async function resolveAgentThread(agentId: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/thread`, {
+      headers: await getApiHeaders(),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { item?: { threadUid?: string } };
+      if (data.item?.threadUid) return data.item.threadUid;
+    }
+  } catch {}
   const stored = typeof window !== 'undefined' ? localStorage.getItem(`${AGENT_THREAD_KEY}.${agentId}`) : null;
-  if (stored) return stored;
+  if (stored) {
+    void persistAgentThread(agentId, stored);
+    localStorage.removeItem(`${AGENT_THREAD_KEY}.${agentId}`);
+    return stored;
+  }
   try {
     const res = await fetch(`${getApiBase()}/api/tasks?agentId=${encodeURIComponent(agentId)}`, {
       headers: await getApiHeaders(),
@@ -148,10 +171,8 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
     setLocalError(null);
     resolveAgentThread(agent.id).then((uid) => {
       if (!mounted) return;
-      if (uid && typeof window !== 'undefined') {
-        localStorage.setItem(`${AGENT_THREAD_KEY}.${agent.id}`, uid);
-      }
       setThreadUid(uid);
+      if (uid) void persistAgentThread(agent.id, uid);
       setResolving(false);
     });
     return () => { mounted = false; };
@@ -231,8 +252,8 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
 
     if (!uid) {
       uid = shortUid();
-      localStorage.setItem(`${AGENT_THREAD_KEY}.${agent.id}`, uid);
       setThreadUid(uid);
+      void persistAgentThread(agent.id, uid);
       onTaskCreated?.(uid);
     }
 
