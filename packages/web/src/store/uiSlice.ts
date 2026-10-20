@@ -44,9 +44,12 @@ const uiSlice = createSlice({
   reducers: {
     setTheme(state, action: PayloadAction<Theme>) {
       state.theme = action.payload;
-      state.effectiveTheme = action.payload === 'system'
-        ? (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-        : action.payload;
+      if (action.payload !== 'system') {
+        state.effectiveTheme = action.payload;
+      }
+    },
+    setEffectiveTheme(state, action: PayloadAction<'light' | 'dark'>) {
+      state.effectiveTheme = action.payload;
     },
     setLocale(state, action: PayloadAction<Locale>) {
       state.locale = action.payload;
@@ -82,6 +85,7 @@ const uiSlice = createSlice({
 
 export const {
   setTheme,
+  setEffectiveTheme,
   setLocale,
   setDensity,
   toggleSidebar,

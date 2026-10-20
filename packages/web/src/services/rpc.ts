@@ -37,6 +37,24 @@ export function getApiBase(): string {
   return DEFAULT_API_BASE;
 }
 
+const DEFAULT_LOAM_PORT = '3939';
+
+export function getLoamBase(): string {
+  if (typeof window === 'undefined') return `http://127.0.0.1:${DEFAULT_LOAM_PORT}`;
+  const injected = (window as unknown as { __AGENT_STUDIO_ENV__?: { loamBase?: string } }).__AGENT_STUDIO_ENV__;
+  if (injected?.loamBase) return injected.loamBase;
+  const sync = (window as unknown as { desktopSync?: { env?: Record<string, string> } }).desktopSync;
+  const port = sync?.env?.LOAM_PORT || sync?.env?.MANUS_LOCAL_PORT || DEFAULT_LOAM_PORT;
+  return `http://127.0.0.1:${port}`;
+}
+
+export function getLoamAuthHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  const injected = (window as unknown as { __AGENT_STUDIO_ENV__?: { loamToken?: string } }).__AGENT_STUDIO_ENV__;
+  const token = injected?.loamToken || (window as unknown as { desktopSync?: { env?: Record<string, string> } }).desktopSync?.env?.LOAM_LOCAL_TOKEN;
+  return token ? { 'x-loam-local-token': token } : {};
+}
+
 export async function getSessionToken(): Promise<string> {
   const apis = (typeof window !== 'undefined'
     ? (window as unknown as { __apis?: { auth?: { getToken?: () => Promise<string> } } }).__apis

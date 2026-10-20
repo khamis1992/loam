@@ -3,7 +3,7 @@
 import { ReactNode, useEffect } from 'react';
 import { Provider } from 'react-redux';
 import { store, useAppSelector, useAppDispatch } from '@/store';
-import { setTheme, setLocale, openSettings } from '@/store';
+import { setTheme, setEffectiveTheme, setLocale, openSettings } from '@/store';
 import { setLocale as setDocumentLocale } from '@/i18n/t';
 
 const THEME_KEY = 'agent-studio:theme';
@@ -73,19 +73,24 @@ function ShellSync() {
         themeApi.setTheme(theme);
       }
     } catch {}
+  }, [theme, effectiveTheme, density]);
 
-    // Recompute system theme when the media query changes
-    if (theme !== 'system') return;
+  // Recompute system theme when the media query changes; the class is the single
+  // source of truth for CSS, and we sync the derived value back to Redux.
+  useEffect(() => {
+    if (typeof window === 'undefined' || theme !== 'system') return;
+    const html = document.documentElement;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const applySystem = () => {
       const next = mq.matches ? 'dark' : 'light';
       html.classList.remove('light', 'dark');
       html.classList.add(next);
+      dispatch(setEffectiveTheme(next));
     };
     applySystem();
     mq.addEventListener('change', applySystem);
     return () => mq.removeEventListener('change', applySystem);
-  }, [theme, effectiveTheme, density]);
+  }, [theme, dispatch]);
 
   // Apply locale attributes and persist
   useEffect(() => {

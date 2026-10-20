@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, MonitorSmartphone } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { getSessionToken, getApiBase } from '@/services/rpc';
+import { getLoamBase, getLoamAuthHeaders } from '@/services/rpc';
 
 interface DesktopDevice {
   id: string;
@@ -20,14 +20,13 @@ export default function DevicesPage() {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const token = await getSessionToken();
       try {
-        const res = await fetch(`${getApiBase()}/desktop.v1.DesktopService/GetDesktopDevices`, {
+        const res = await fetch(`${getLoamBase()}/desktop.v1.DesktopService/GetDesktopDevices`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Connect-Protocol-Version': '1',
-            'Authorization': `Bearer ${token}`,
+            'Authorization': `Bearer ${getLoamAuthHeaders()['x-loam-local-token'] ?? ''}`,
           },
           body: '{}',
         });

@@ -15,18 +15,6 @@ import { AccountPopover } from '@/components/dialogs/AccountPopover';
 import { SearchDialog } from '@/components/dialogs/SearchDialog';
 import { SidebarTaskItem } from './SidebarTaskItem';
 
-const BUCKETS = ['Today', 'Yesterday', 'Last 7 days', 'Last 30 days', 'Older'] as const;
-
-export function bucketOf(ms: number, now = Date.now()): (typeof BUCKETS)[number] {
-  const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);
-  const day = 86_400_000;
-  if (ms >= +startOfToday) return 'Today';
-  if (ms >= +startOfToday - day) return 'Yesterday';
-  if (ms >= +startOfToday - 7 * day) return 'Last 7 days';
-  if (ms >= +startOfToday - 30 * day) return 'Last 30 days';
-  return 'Older';
-}
-
 type NavItem = {
   id: string;
   label: string;
@@ -74,16 +62,10 @@ export function Sidebar() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const groups = useMemo(() => {
+  const visible = useMemo(() => {
     const base = filter === 'favorites' ? list.filter((s) => s.isFollowed) : list;
     const q = query.trim().toLowerCase();
-    const visible = q ? base.filter((s) => (s.title || '').toLowerCase().includes(q)) : base;
-    const map = new Map<string, AgentSession[]>();
-    for (const s of visible) {
-      const b = bucketOf(s.lastMessageTime ?? 0);
-      (map.get(b) ?? map.set(b, []).get(b)!).push(s);
-    }
-    return BUCKETS.filter((b) => map.has(b)).map((b) => [b, map.get(b)!] as const);
+    return q ? base.filter((s) => (s.title || '').toLowerCase().includes(q)) : base;
   }, [list, filter, query]);
 
   const name = user?.displayname || 'Demo User';
@@ -98,7 +80,7 @@ export function Sidebar() {
   };
 
   return (
-    <nav aria-label={t('Sidebar')} className="flex h-full w-[192px] flex-col bg-bg-nav px-2 pb-3">
+    <nav aria-label={t('Sidebar')} className="flex h-full w-[192px] shrink-0 flex-col bg-bg-nav px-2 pb-3">
       <div className="flex flex-col gap-0.5 py-1.5">
         {NAV.map((item) => (
           <button
@@ -139,20 +121,17 @@ export function Sidebar() {
 
       <div className="flex-1 overflow-y-auto">
         <h3 className="px-2 py-1 text-xs text-text-tertiary">{t('Tasks')}</h3>
-        {groups.length === 0 && <p className="px-2 text-sm text-text-tertiary">{t('No content')}</p>}
-        {groups.map(([bucket, items]) => (
-          <section key={bucket} className="mb-2">
-            <h3 className="px-2 py-1 text-xs text-text-tertiary">{t(bucket)}</h3>
-            {items.map((s) => (
-              <SidebarTaskItem
-                key={s.uid}
-                s={s}
-                active={s.uid === activeUid}
-                onClick={() => { dispatch(selectSession(s.uid)); router.push(`/app/${s.uid}`); }}
-              />
-            ))}
-          </section>
-        ))}
+        {visible.length === 0 && <p className="px-2 text-sm text-text-tertiary">{t('No content')}</p>}
+        <ul className="flex flex-col gap-0.5">
+          {visible.map((s) => (
+            <SidebarTaskItem
+              key={s.uid}
+              s={s}
+              active={s.uid === activeUid}
+              onClick={() => { dispatch(selectSession(s.uid)); router.push(`/app/${s.uid}`); }}
+            />
+          ))}
+        </ul>
       </div>
 
       <div className="mt-2 shrink-0 space-y-2">

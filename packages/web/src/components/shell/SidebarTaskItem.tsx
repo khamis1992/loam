@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Pencil, Trash2, FileText, MessageSquare, Code, ImageIcon, FileVideo, Presentation, Globe, Terminal } from 'lucide-react';
 import { useAppDispatch } from '@/store';
 import { renameSession, deleteSession, loadSessions, type AgentSession } from '@/store/sessionsSlice';
 import { t } from '@/i18n/t';
@@ -38,9 +38,22 @@ async function apiDelete(uid: string) {
   if (!res.ok) throw new Error(`DeleteSession ${res.status}`);
 }
 
+function taskIconFor(s: AgentSession) {
+  const title = (s.title || '').toLowerCase();
+  if (title.includes('image') || title.includes('photo') || title.includes('logo')) return ImageIcon;
+  if (title.includes('video')) return FileVideo;
+  if (title.includes('slide') || title.includes('deck') || title.includes('presentation')) return Presentation;
+  if (title.includes('website') || title.includes('site') || title.includes('web')) return Globe;
+  if (title.includes('code') || title.includes('app') || title.includes('build')) return Code;
+  if (title.includes('command') || title.includes('terminal') || title.includes('shell')) return Terminal;
+  if (title.includes('file') || title.includes('doc')) return FileText;
+  return MessageSquare;
+}
+
 export function SidebarTaskItem({ s, active, onClick }: { s: AgentSession; active: boolean; onClick: () => void }) {
   const dispatch = useAppDispatch();
   const running = s.status === 6;
+  const TaskIcon = taskIconFor(s);
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState(s.title);
@@ -105,7 +118,7 @@ export function SidebarTaskItem({ s, active, onClick }: { s: AgentSession; activ
           active ? 'bg-fill-hover text-text-primary' : 'text-text-secondary hover:bg-fill-hover',
         )}
       >
-        <span aria-hidden className="w-4 shrink-0 text-center">{s.icon || '•'}</span>
+        <TaskIcon className="size-3.5 shrink-0 text-text-tertiary" aria-hidden />
         {editing ? (
           <input
             value={draftTitle}

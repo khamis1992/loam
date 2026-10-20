@@ -54,7 +54,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-bg-main">
-      {sidebarOpen && <Sidebar />}
+      {sidebarOpen && <div className="shrink-0"><Sidebar /></div>}
       <div className="flex flex-1 flex-col overflow-hidden">
         <TitleBar>{null}</TitleBar>
         <main className="flex flex-1 flex-col overflow-hidden">{children}</main>

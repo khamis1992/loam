@@ -11,6 +11,7 @@ import chatReducer, { appendEvent, applyDelta, setStatus, replaceEvents, clearSe
 import projectReducer, { setProjects, selectProject } from './projectSlice';
 import uiReducer, {
   setTheme,
+  setEffectiveTheme,
   setLocale,
   setDensity,
   toggleSidebar,
@@ -64,7 +65,7 @@ export {
   setConnected, setOffline,
   appendEvent, applyDelta, setStatus, replaceEvents, clearSession, setError,
   setProjects, selectProject,
-  setTheme, setLocale, setDensity, toggleSidebar, setSidebarOpen,
+  setTheme, setEffectiveTheme, setLocale, setDensity, toggleSidebar, setSidebarOpen,
   openSettings, closeSettings, setSettingsTab, setUpdateStatus, setActivityIndicatorOpen,
   type UpdateState,
 };

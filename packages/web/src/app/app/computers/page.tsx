@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { getSessionToken, getApiBase } from '@/services/rpc';
+import { getLoamBase, getLoamAuthHeaders } from '@/services/rpc';
 
 interface Device {
   id: string;
@@ -21,10 +21,9 @@ export default function ComputersPage() {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const token = await getSessionToken();
       try {
-        const res = await fetch(`${getApiBase()}/api/companion-devices`, {
-          headers: { Authorization: `Bearer ${token}` },
+        const res = await fetch(`${getLoamBase()}/api/companion-devices`, {
+          headers: getLoamAuthHeaders(),
         });
         if (!res.ok) throw new Error(`status ${res.status}`);
         const data = (await res.json()) as { devices?: Device[] };

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, ImageIcon, FileVideo, Presentation } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { getSessionToken, getApiBase } from '@/services/rpc';
+import { getLoamBase, getLoamAuthHeaders } from '@/services/rpc';
 
 interface Creation {
   id: string;
@@ -21,14 +21,14 @@ export default function CreationsPage() {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const token = await getSessionToken();
       try {
+        const headers = getLoamAuthHeaders();
         const [creative, media]: [{ items?: Creation[] }, { items?: Creation[] }] = await Promise.all([
-          fetch(`${getApiBase()}/api/creative`, { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.ok ? r.json() : { items: [] }),
-          fetch(`${getApiBase()}/api/media`, { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.ok ? r.json() : { items: [] }),
+          fetch(`${getLoamBase()}/api/creative`, { headers }).then((r) => r.ok ? (r.json() as Promise<{ items?: Creation[] }>) : { items: [] }),
+          fetch(`${getLoamBase()}/api/media`, { headers }).then((r) => r.ok ? (r.json() as Promise<{ items?: Creation[] }>) : { items: [] }),
         ]);
-        const creativeItems = (creative.items ?? []).map((c) => ({ ...c, kind: c.kind || 'image' }));
-        const mediaItems = (media.items ?? []).map((m) => ({ ...m, kind: m.kind || 'video' }));
+        const creativeItems = (creative.items ?? []).map((c: Creation) => ({ ...c, kind: c.kind || 'image' }));
+        const mediaItems = (media.items ?? []).map((m: Creation) => ({ ...m, kind: m.kind || 'video' }));
         if (mounted) setItems([...creativeItems, ...mediaItems]);
       } catch (e) {
         // eslint-disable-next-line no-console

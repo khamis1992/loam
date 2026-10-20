@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Puzzle } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { getSessionToken, getApiBase } from '@/services/rpc';
+import { getLoamBase, getLoamAuthHeaders } from '@/services/rpc';
 
 interface McpServer {
   name: string;
@@ -26,11 +26,11 @@ export default function PluginsPage() {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const token = await getSessionToken();
       try {
+        const headers = getLoamAuthHeaders();
         const [mcpRes, toolsRes] = await Promise.all([
-          fetch(`${getApiBase()}/api/mcp/status`, { headers: { Authorization: `Bearer ${token}` } }),
-          fetch(`${getApiBase()}/api/tools`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${getLoamBase()}/api/mcp/status`, { headers }),
+          fetch(`${getLoamBase()}/api/tools`, { headers }),
         ]);
         const mcpData = mcpRes.ok ? (await mcpRes.json()) as { servers?: McpServer[] } : null;
         const toolsData = toolsRes.ok ? (await toolsRes.json()) as { tools?: ToolSummary[] } : null;

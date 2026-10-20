@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, ArrowLeft, Loader2 } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { getSessionToken, getApiBase } from '@/services/rpc';
+import { getLoamBase, getLoamAuthHeaders } from '@/services/rpc';
 
 interface Agent {
   id: string;
@@ -24,10 +24,9 @@ export default function AgentsPage() {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const token = await getSessionToken();
       try {
-        const res = await fetch(`${getApiBase()}/api/agents`, {
-          headers: { Authorization: `Bearer ${token}` },
+        const res = await fetch(`${getLoamBase()}/api/agents`, {
+          headers: getLoamAuthHeaders(),
         });
         if (!res.ok) throw new Error(`status ${res.status}`);
         const data = (await res.json()) as { agents?: Agent[] };
