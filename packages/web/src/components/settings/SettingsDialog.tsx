@@ -11,6 +11,7 @@ import { AppearancePane } from './AppearancePane';
 import { DataControlsPane } from './DataControlsPane';
 import { MyComputerPane } from './MyComputerPane';
 import { UsagePane } from './UsagePane';
+import { AboutPane } from './AboutPane';
 import { EmptyState } from './EmptyState';
 
 const TABS = [
@@ -33,7 +34,7 @@ const TABS = [
   { id: 'About', group: 'About', icon: 'Info' },
 ];
 
-const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Data controls', 'My Computer', 'Usage']);
+const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Data controls', 'My Computer', 'Usage', 'About']);
 
 const GROUP_ORDER = ['Account', 'Settings', 'Capabilities', 'Computers', 'Data', 'Assets', 'About'];
 
@@ -125,6 +126,7 @@ function SettingsContent({ tab }: { tab: string }) {
     case 'Data controls': return <DataControlsPane />;
     case 'My Computer': return <MyComputerPane />;
     case 'Usage': return <UsagePane />;
+    case 'About': return <AboutPane />;
     default: return null;
   }
 }

@@ -5,9 +5,20 @@ import { Row, Section } from './SettingsDialog';
 export function UsagePane() {
   const user = useAppSelector((s) => s.auth.user);
   const credits = { totalCredits: 18100, freeCredits: 300, refreshCredits: 300, maxRefreshCredits: 300 };
+  const name = user?.displayname || 'Demo User';
+  const email = user?.email || 'demo@example.com';
 
   return (
     <div className="space-y-2">
+      <Section title={t('Account')}>
+        <Row label={t('Name')} description={name}>
+          <span className="text-sm text-text-secondary">{name}</span>
+        </Row>
+        <Row label={t('Email')} description={email}>
+          <span className="text-sm text-text-secondary">{email}</span>
+        </Row>
+      </Section>
+
       <Section title={t('Credits')}>
         <Row label={t('Total credits')} description={t('Credits available to use across all tasks.')}>
           <span className="text-sm font-medium text-text-primary">{credits.totalCredits.toLocaleString()}</span>
