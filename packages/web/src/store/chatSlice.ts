@@ -30,6 +30,26 @@ const chatSlice = createSlice({
       const { sessionId, delta } = action.payload;
       ensureEvents(state, sessionId);
       state.deltasByTarget[delta.targetEventId] = (state.deltasByTarget[delta.targetEventId] ?? '') + delta.delta.content;
+      const list = state.eventsBySession[sessionId];
+      const idx = list.findIndex((e) => e.id === delta.targetEventId);
+      if (idx >= 0) {
+        const existing = list[idx];
+        if (existing.type === 'chat' && existing.sender === 'assistant') {
+          existing.content = state.deltasByTarget[delta.targetEventId];
+          if (delta.finished) existing.deliveryKind = 'result';
+        }
+      } else {
+        list.push({
+          id: delta.targetEventId,
+          type: 'chat',
+          timestamp: delta.timestamp,
+          sender: 'assistant',
+          messageType: 'text',
+          content: state.deltasByTarget[delta.targetEventId],
+          attachments: [],
+          deliveryKind: delta.finished ? 'result' : 'provisional',
+        });
+      }
     },
     setStatus(state, action: PayloadAction<{ sessionId: string; status: StatusUpdateEvent['agentStatus'] }>) {
       const { sessionId, status } = action.payload;

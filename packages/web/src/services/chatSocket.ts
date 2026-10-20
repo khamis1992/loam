@@ -7,20 +7,21 @@
  */
 
 import { io, type Socket } from 'socket.io-client';
-import { env } from '@agent-studio/shared';
 import type {
   Attachment,
   ClientMessage,
   ServerMessage,
   TaskMode,
-} from '@agent-studio/shared';
+} from '@shared/socket';
+
+const DEFAULT_SOCKET_BASE = '/';
 
 export interface ChatSocketOptions {
   /** Async token getter; may return an empty string for unauthenticated dev. */
   getToken: () => Promise<string>;
   /** Called for every server frame. */
   onMessage: (m: ServerMessage) => void;
-  /** Optional socket.io base URL; defaults to env.socketBase. */
+  /** Optional socket.io base URL; defaults to '/'. */
   socketBase?: string;
   clientVersion?: string;
 }
@@ -35,7 +36,7 @@ export class ChatSocket {
   async connect() {
     if (this.disposed) return;
     const token = await this.options.getToken();
-    this.socket = io(this.options.socketBase ?? env.socketBase, {
+    this.socket = io(this.options.socketBase ?? DEFAULT_SOCKET_BASE, {
       transports: ['websocket'],
       withCredentials: true,
       reconnection: true,
@@ -107,6 +108,7 @@ export class ChatSocket {
     content: string,
     taskMode: TaskMode,
     attachments: Attachment[] = [],
+    extraExtData?: Record<string, unknown>,
   ) {
     this.emit({
       type: 'user_message',
@@ -125,6 +127,7 @@ export class ChatSocket {
           connectorAccounts: [],
           enabledConnectors: [],
         },
+        ...extraExtData,
       },
     });
   }
@@ -136,6 +139,36 @@ export class ChatSocket {
       timestamp: Date.now(),
       sessionId,
     });
+  }
+
+  resolveLocalExecutionApproval(
+    sessionId: string,
+    requestId: string,
+    resolution: 'approve' | 'deny',
+  ) {
+    this.emit({
+      type: 'resolve_local_execution_approval',
+      id: shortUid(),
+      timestamp: Date.now(),
+      sessionId,
+      requestId,
+      resolution,
+    } as unknown as ClientMessage);
+  }
+
+  submitWorkspaceDirectoryAccess(
+    sessionId: string,
+    requestActionId: string,
+    accept: boolean,
+  ) {
+    this.emit({
+      type: 'submit_workspace_directory_access',
+      id: shortUid(),
+      timestamp: Date.now(),
+      sessionId,
+      requestActionId,
+      accept,
+    } as unknown as ClientMessage);
   }
 
   isConnected() {

@@ -5,7 +5,7 @@ import { Provider } from 'react-redux';
 import { useMemo } from 'react';
 import { useSelector as useReduxSelector, useDispatch as useReduxDispatch, type TypedUseSelectorHook } from 'react-redux';
 import authReducer, { setUser, setToken, logout } from './authSlice';
-import sessionsReducer, { setSessions, addSession, selectSession, startNewTask, updateSession, setFilter } from './sessionsSlice';
+import sessionsReducer, { setSessions, addSession, selectSession, startNewTask, updateSession, setFilter, loadSessions } from './sessionsSlice';
 import websocketReducer, { setConnected, setOffline } from './websocketSlice';
 import chatReducer, { appendEvent, applyDelta, setStatus, replaceEvents, clearSession } from './chatSlice';
 import projectReducer, { setProjects, selectProject } from './projectSlice';
@@ -60,7 +60,7 @@ export const useAppDispatch = () => useReduxDispatch<AppDispatch>();
 
 export {
   setUser, setToken, logout,
-  setSessions, addSession, selectSession, startNewTask, updateSession, setFilter,
+  setSessions, addSession, selectSession, startNewTask, updateSession, setFilter, loadSessions,
   setConnected, setOffline,
   appendEvent, applyDelta, setStatus, replaceEvents, clearSession,
   setProjects, selectProject,

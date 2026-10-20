@@ -5,15 +5,15 @@
  * strings match the spec; the component does not perform side effects.
  */
 import { Terminal, FileText, Folder, Laptop, Cloud, Smartphone, ShieldAlert } from "lucide-react";
+import { t } from "@/i18n/t";
 import type { LocalExecutionApprovalRequested } from "./types";
 
 export interface ExecutionApprovalCardProps {
   request: LocalExecutionApprovalRequested;
-  t: (key: string, vars?: Record<string, string | number>) => string;
   onResolve: (resolution: "approve" | "deny") => void;
 }
 
-export function ExecutionApprovalCard({ request, t, onResolve }: ExecutionApprovalCardProps) {
+export function ExecutionApprovalCard({ request, onResolve }: ExecutionApprovalCardProps) {
   const { detail } = request;
 
   const headerTitle =

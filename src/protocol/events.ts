@@ -170,9 +170,9 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
     }
 
     case "assistant_message": {
-      state.assistantBubbleTarget = baseId();
+      if (!state.assistantBubbleTarget) state.assistantBubbleTarget = baseId();
       const chat: ChatMessageEvent = {
-        id: baseId(),
+        id: state.assistantBubbleTarget,
         type: "chat",
         timestamp: ts,
         sender: "assistant",
@@ -182,6 +182,7 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
         deliveryKind: "result",
         taskMode: "standard",
       };
+      state.assistantBubbleTarget = undefined;
       out.push(chat);
       break;
     }

@@ -4,15 +4,15 @@
  * Strings match §5.8 exactly. The card is rendered inside the chat event list.
  */
 import { Folder, Lock } from "lucide-react";
+import { t } from "@/i18n/t";
 import type { FolderAccessRequestEvent } from "./types";
 
 export interface ApprovalCardProps {
   request: FolderAccessRequestEvent;
-  t: (key: string, vars?: Record<string, string | number>) => string;
   onRespond: (decision: "deny" | "once" | "always") => void;
 }
 
-export function ApprovalCard({ request, t, onRespond }: ApprovalCardProps) {
+export function ApprovalCard({ request, onRespond }: ApprovalCardProps) {
   return (
     <div
       role="group"

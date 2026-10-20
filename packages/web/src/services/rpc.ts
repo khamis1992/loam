@@ -7,7 +7,6 @@
  *          Authorization: Bearer <token>, plus locale/timezone headers.
  */
 
-import { env } from '@agent-studio/shared';
 import type {
   AgentSession,
   DeleteSessionRequest,
@@ -25,7 +24,26 @@ import type {
   Project,
   UpdateSessionRequest,
   UserInfoResponse,
-} from '@agent-studio/shared';
+} from '@shared/proto';
+
+export const PROTOCOL_API_BASE = 'http://localhost:8787';
+const DEFAULT_API_BASE = '/api';
+
+export function getApiBase(): string {
+  if (typeof window === 'undefined') return DEFAULT_API_BASE;
+  const injected = (window as unknown as { __AGENT_STUDIO_ENV__?: { apiBase?: string } }).__AGENT_STUDIO_ENV__;
+  if (injected?.apiBase) return injected.apiBase;
+  if ((window as unknown as { __apis?: unknown }).__apis) return PROTOCOL_API_BASE;
+  return DEFAULT_API_BASE;
+}
+
+export async function getSessionToken(): Promise<string> {
+  const apis = (typeof window !== 'undefined'
+    ? (window as unknown as { __apis?: { auth?: { getToken?: () => Promise<string> } } }).__apis
+    : undefined);
+  const token = await apis?.auth?.getToken?.();
+  return token ?? '';
+}
 
 export interface RpcError {
   code: string;
@@ -55,7 +73,7 @@ export class RpcClient {
   private readonly clientVersion: string;
 
   constructor(private readonly options: RpcClientOptions) {
-    this.apiBase = options.apiBase ?? env.apiBase;
+    this.apiBase = options.apiBase ?? DEFAULT_API_BASE;
     this.deviceId = options.deviceId ?? 'unknown-device';
     this.clientVersion = options.clientVersion ?? '0.0.0';
   }

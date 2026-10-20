@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk, type PayloadAction } from '@reduxjs/toolkit';
-
-const STORAGE_KEY = 'agent-studio:sessions';
+import type { AgentSession as ApiSession, Timestamp, SessionStatus } from '@shared/proto';
+import { RpcClient, getApiBase, getSessionToken } from '@/services/rpc';
 
 export interface AgentSession {
   uid: string;
@@ -17,20 +17,58 @@ interface SessionsState {
   activeUid: string | null;
   filter: 'all' | 'favorites';
   loading: boolean;
+  error: string | null;
 }
 
-const initialState: SessionsState = { list: [], activeUid: null, filter: 'all', loading: false };
+const initialState: SessionsState = { list: [], activeUid: null, filter: 'all', loading: false, error: null };
 
-export const loadSessions = createAsyncThunk('sessions/loadSessions', async () => {
-  if (typeof window === 'undefined') return [] as AgentSession[];
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [] as AgentSession[];
-    const parsed = JSON.parse(raw) as AgentSession[];
-    return Array.isArray(parsed) ? parsed : ([] as AgentSession[]);
-  } catch {
-    return [] as AgentSession[];
+function statusToNumber(status: SessionStatus | string | number | undefined): number {
+  if (typeof status === 'number') return status;
+  if (typeof status === 'string') {
+    const n = Number(status);
+    if (!Number.isNaN(n)) return n;
+    const map: Record<string, number> = {
+      SESSION_STATUS_UNSPECIFIED: 0,
+      SESSION_STATUS_CREATED: 1,
+      SESSION_STATUS_ARCHIVED: 2,
+      SESSION_STATUS_DELETED: 3,
+      SESSION_STATUS_WAITING: 5,
+      SESSION_STATUS_RUNNING: 6,
+      SESSION_STATUS_STOPPED: 7,
+      SESSION_STATUS_ERROR: 8,
+      SESSION_STATUS_IN_QUEUE: 9,
+    };
+    if (map[status] !== undefined) return map[status];
   }
+  return 1;
+}
+
+function timestampToMs(ts: Timestamp | string | number | undefined): number | undefined {
+  if (!ts) return undefined;
+  if (typeof ts === 'number') return ts;
+  if (typeof ts === 'string') return Date.parse(ts) || undefined;
+  const seconds = Number(ts.seconds ?? 0);
+  const nanos = Number(ts.nanos ?? 0);
+  return seconds * 1000 + Math.floor(nanos / 1_000_000);
+}
+
+function apiSessionToLocal(s: ApiSession): AgentSession {
+  return {
+    uid: s.uid,
+    title: s.title || 'New task',
+    icon: s.icon || '•',
+    status: statusToNumber(s.status),
+    lastMessageTime: timestampToMs(s.lastMessageTime),
+    lastDisplayMessage: s.lastDisplayMessage,
+    isFollowed: s.isFollowed,
+  };
+}
+
+/** Load the sidebar task list from the backend. The shell layer dispatches this. */
+export const loadSessions = createAsyncThunk('sessions/loadSessions', async () => {
+  const client = new RpcClient({ getToken: getSessionToken, apiBase: getApiBase() });
+  const res = await client.listSessions({ limit: 100, offset: 0, isArchived: false });
+  return (res.sessions ?? []).map(apiSessionToLocal);
 });
 
 const sessionsSlice = createSlice({
@@ -73,13 +111,15 @@ const sessionsSlice = createSlice({
     builder
       .addCase(loadSessions.pending, (state) => {
         state.loading = true;
+        state.error = null;
       })
       .addCase(loadSessions.fulfilled, (state, action) => {
+        state.loading = false;
         state.list = action.payload;
-        state.loading = false;
       })
-      .addCase(loadSessions.rejected, (state) => {
+      .addCase(loadSessions.rejected, (state, action) => {
         state.loading = false;
+        state.error = action.error.message ?? 'failed to load sessions';
       });
   },
 });

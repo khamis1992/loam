@@ -42,6 +42,13 @@ function mapTaskMode(mode?: string): TaskMode {
   return "standard";
 }
 
+function mapTaskModeToLoam(mode?: string): string {
+  const m = (mode ?? "").trim().toLowerCase();
+  if (m === "lite" || m === "discuss") return "ask";
+  if (m === "max" || m === "standard" || m === "cascade") return "build";
+  return "build";
+}
+
 export function createChatSocket(deps: SocketDeps): Server {
   const { httpServer, store, runTask } = deps;
 
@@ -205,7 +212,7 @@ export function createChatSocket(deps: SocketDeps): Server {
               emit,
               taskId,
               title: text.slice(0, 80),
-              mode: um.extData.mode ?? um.taskMode,
+              mode: mapTaskModeToLoam(um.extData.mode ?? um.taskMode),
               projectId: um.extData.projectId ?? null,
             });
 

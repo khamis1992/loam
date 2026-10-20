@@ -1,22 +1,73 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useRef } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
 import {
   Share, FileChartColumn, MoreHorizontal, PanelRight, CircleCheck, Copy, Repeat2,
   Star,
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector, type AppDispatch } from '@/store';
-import { appendEvent, setStatus } from '@/store/chatSlice';
+import { appendEvent, applyDelta, setStatus } from '@/store/chatSlice';
 import { addSession, selectSession } from '@/store/sessionsSlice';
 import { t, PRODUCT } from '@/i18n/t';
 import { Composer } from '@/components/chat/Composer';
 import { EventList } from '@/components/chat/EventList';
-import type { TaskMode, ChatMessageEvent, StatusUpdateEvent, ToolUsedEvent, CascadeTaskClockEvent, ChatDeltaEvent } from '@shared/socket';
+import { ChatSocket } from '@/services/chatSocket';
+import { RpcClient, getApiBase, getSessionToken } from '@/services/rpc';
+import { uploadFile } from '@/services/upload';
+import type {
+  TaskMode,
+  ChatMessageEvent,
+  StatusUpdateEvent,
+  CascadeTaskClockEvent,
+  ChatDeltaEvent,
+  ServerMessage,
+  Attachment,
+} from '@shared/socket';
 import { formatDuration, formatTime } from '@/utils/format';
 
+function getSocketBase(): string {
+  if (typeof window === 'undefined') return '/';
+  const injected = (window as unknown as { __AGENT_STUDIO_ENV__?: { socketBase?: string } }).__AGENT_STUDIO_ENV__;
+  if (injected?.socketBase) return injected.socketBase;
+  if ((window as unknown as { __apis?: unknown }).__apis) return 'http://localhost:8787';
+  return '/';
+}
+
+function parseAttachments(raw: string | null): Attachment[] {
+  if (!raw) return [];
+  try {
+    const list = JSON.parse(raw) as Array<{ id?: string; url?: string; name?: string; contentType?: string }>;
+    return list.map((a) => ({
+      id: String(a.id ?? ''),
+      filename: String(a.name ?? 'attachment'),
+      type: 'file' as const,
+      url: String(a.url ?? ''),
+      contentType: String(a.contentType ?? 'application/octet-stream'),
+      fileMetaData: { tag: 'upload' as const, uploadStatus: 'success' as const, uploadProgress: 100 },
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function makeExtData(cwd?: string): Record<string, unknown> | undefined {
+  if (!cwd) return undefined;
+  return {
+    desktopBinding: {
+      deviceId: 'desktop',
+      folderPath: cwd,
+    },
+  };
+}
+
 export default function TaskPageClient(_props: { params: Promise<{ sessionUid: string }> }) {
-  const { sessionUid } = useParams() as { sessionUid: string };
+  const pathname = usePathname();
+  const sessionUid = useMemo(() => {
+    const parts = pathname.split('/').filter(Boolean);
+    return parts[parts.length - 1] ?? 'demo-running';
+  }, [pathname]);
+
   const searchParams = useSearchParams();
   const dispatch = useAppDispatch();
   const events = useAppSelector((s) => s.chat.eventsBySession[sessionUid] ?? []);
@@ -24,51 +75,95 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const running = useAppSelector((s) => s.chat.running[sessionUid] ?? false);
   const draftText = searchParams.get('draft') || '';
   const draftMode = (searchParams.get('mode') as TaskMode) || 'standard';
+  const cwd = searchParams.get('cwd') || undefined;
+  const attachmentsParam = searchParams.get('attachments');
+  const draftAttachments = useMemo(() => parseAttachments(attachmentsParam), [attachmentsParam]);
+  const sentDraft = useRef(false);
+
+  const socketRef = useRef<ChatSocket | null>(null);
+  const apiBase = useMemo(() => getApiBase(), []);
 
   useEffect(() => {
-    if (draftText) {
-      const userEvent: ChatMessageEvent = {
-        id: `draft-${sessionUid}`,
-        type: 'chat',
-        timestamp: Date.now(),
-        sender: 'user',
-        messageType: 'text',
-        content: draftText,
-        attachments: [],
-      };
-      dispatch(appendEvent({ sessionId: sessionUid, event: userEvent }));
-      dispatch(addSession({
-        uid: sessionUid, title: draftText.slice(0, 60), status: 6,
-        lastMessageTime: Date.now(), lastDisplayMessage: draftText, icon: '•',
-      }));
-      dispatch(selectSession(sessionUid));
-      dispatch(setStatus({ sessionId: sessionUid, status: 'running' }));
-      setTimeout(() => completeDemo(sessionUid, dispatch), 1200);
-    }
-  }, [sessionUid, draftText, dispatch]);
+    const rpc = new RpcClient({ getToken: getSessionToken, apiBase });
+    const socket = new ChatSocket({
+      getToken: getSessionToken,
+      socketBase: getSocketBase(),
+      onMessage: (m: ServerMessage) => handleServerMessage(m, sessionUid, dispatch),
+    });
+    socketRef.current = socket;
+    let mounted = true;
+
+    (async () => {
+      await socket.connect();
+      if (!mounted) return;
+      socket.join(sessionUid);
+      if (draftText && !sentDraft.current) {
+        sentDraft.current = true;
+        socket.sendText(sessionUid, draftText, draftMode, draftAttachments, makeExtData(cwd));
+        dispatch(addSession({
+          uid: sessionUid,
+          title: draftText.slice(0, 60),
+          status: 6,
+          lastMessageTime: Date.now(),
+          lastDisplayMessage: draftText,
+          icon: '•',
+        }));
+        dispatch(selectSession(sessionUid));
+      }
+
+      // Hydrate existing session metadata (title etc.) from RPC if available.
+      if (!draftText) {
+        try {
+          const res = await rpc.getSession({ sessionUid });
+          if (res?.session?.title) {
+            dispatch(addSession({
+              uid: sessionUid,
+              title: res.session.title,
+              status: 1,
+              lastMessageTime: Date.now(),
+              lastDisplayMessage: res.session.lastDisplayMessage ?? '',
+              icon: res.session.icon || '•',
+            }));
+            dispatch(selectSession(sessionUid));
+          }
+        } catch {
+          // New sessions may not exist in RPC yet; user_message creates them.
+        }
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [sessionUid, draftText, draftMode, draftAttachments, cwd, apiBase, dispatch]);
 
   const clockEvent = useMemo(() =>
     [...events].reverse().find((e): e is CascadeTaskClockEvent => e.type === 'cascadeTaskClock'),
   [events]);
 
   const assistantText = useMemo(() => {
-    const final = [...events].reverse().find((e): e is ChatMessageEvent => e.type === 'chat' && e.sender === 'assistant');
+    const final = [...events].reverse().find((e): e is ChatMessageEvent => e.type === 'chat' && e.sender === 'assistant' && e.deliveryKind === 'result');
     return final?.content ?? '';
   }, [events]);
 
-  const handleSend = (text: string, mode: TaskMode, _files: File[]) => {
-    const userEvent: ChatMessageEvent = {
-      id: `msg-${Date.now()}`,
-      type: 'chat',
-      timestamp: Date.now(),
-      sender: 'user',
-      messageType: 'text',
-      content: text,
-      attachments: [],
-    };
-    dispatch(appendEvent({ sessionId: sessionUid, event: userEvent }));
+  const handleSend = async (text: string, mode: TaskMode, files: File[]) => {
+    const socket = socketRef.current;
+    if (!socket) return;
     dispatch(setStatus({ sessionId: sessionUid, status: 'running' }));
-    setTimeout(() => completeDemo(sessionUid, dispatch, text), 1200);
+    let attachments = draftAttachments;
+    if (files.length > 0) {
+      const uploaded = await Promise.all(files.map((f) => uploadFile(apiBase, f)));
+      attachments = [...attachments, ...uploaded];
+    }
+    socket.sendText(sessionUid, text, mode, attachments, makeExtData(cwd));
+  };
+
+  const handleStop = () => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    socket.stop(sessionUid);
   };
 
   return (
@@ -94,7 +189,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               {t('Worked for {duration}', { duration: formatDuration(clockEvent.clock.accumulatedMs) })} ›
             </div>
           )}
-          <EventList events={events} />
+          <EventList events={events} sessionId={sessionUid} socket={socketRef.current} />
 
           {assistantText && !running && (
             <div className="mx-auto w-full max-w-[768px] px-[var(--ui-content-padding-x,24px)]">
@@ -122,70 +217,21 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
           </span>
           {running ? t('Working') : status === 'stopped' ? t('Stopped') : t('Task completed')}
         </div>
-        <Composer onSend={handleSend} onStop={() => dispatch(setStatus({ sessionId: sessionUid, status: 'stopped' }))} running={running} />
+        <Composer onSend={handleSend} onStop={handleStop} running={running} />
       </div>
     </div>
   );
 }
 
-function completeDemo(sessionId: string, dispatch: AppDispatch, text = 'hello') {
-  const delta: ChatDeltaEvent = {
-    id: `delta-${Date.now()}`,
-    type: 'chatDelta',
-    timestamp: Date.now(),
-    sender: 'assistant',
-    taskMode: 'standard',
-    qualityMode: 'standard',
-    deliveryKind: 'provisional',
-    delta: { content: `Received: ${text}` },
-    finished: true,
-    rollback: false,
-    targetEventId: `assistant-${sessionId}`,
-  };
-  dispatch(appendEvent({ sessionId, event: delta }));
-  const assistant: ChatMessageEvent = {
-    id: `assistant-${sessionId}`,
-    type: 'chat',
-    timestamp: Date.now(),
-    sender: 'assistant',
-    messageType: 'text',
-    content: `Received: ${text}`,
-    attachments: [],
-  };
-  dispatch(appendEvent({ sessionId, event: assistant }));
-  const clock: CascadeTaskClockEvent = {
-    id: `clock-${Date.now()}`,
-    type: 'cascadeTaskClock',
-    timestamp: Date.now(),
-    clock: {
-      sessionId, taskId: sessionId,
-      startedAt: Date.now() - 1200,
-      accumulatedMs: 1200,
-      phase: 'closed',
-      revision: 1,
-    },
-  };
-  dispatch(appendEvent({ sessionId, event: clock }));
-  const suggestion: ToolUsedEvent = {
-    id: `sugg-${Date.now()}`,
-    type: 'toolUsed',
-    timestamp: Date.now(),
-    tool: 'suggestion',
-    actionId: 'call_suggestion',
-    status: 'success',
-    detail: { suggestion: { commands: [
-      { content: 'Follow up one', commandType: 'followup_requirement' },
-      { content: 'Follow up two', commandType: 'followup_requirement' },
-    ] } },
-  };
-  dispatch(appendEvent({ sessionId, event: suggestion }));
-  const statusEvt: StatusUpdateEvent = {
-    id: `status-${Date.now()}`,
-    type: 'statusUpdate',
-    timestamp: Date.now(),
-    agentStatus: 'stopped',
-    brief: `${PRODUCT} finished working`,
-  };
-  dispatch(appendEvent({ sessionId, event: statusEvt }));
-  dispatch(setStatus({ sessionId, status: 'stopped' }));
+function handleServerMessage(m: ServerMessage, sessionId: string, dispatch: AppDispatch) {
+  if (m.type !== 'event') return;
+  const ev = m.event;
+  if (ev.type === 'chatDelta') {
+    dispatch(applyDelta({ sessionId, delta: ev as ChatDeltaEvent }));
+    return;
+  }
+  if (ev.type === 'statusUpdate') {
+    dispatch(setStatus({ sessionId, status: (ev as StatusUpdateEvent).agentStatus }));
+  }
+  dispatch(appendEvent({ sessionId, event: ev }));
 }
