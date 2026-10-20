@@ -115,7 +115,7 @@ export function AgentInfoPane({ agent, threadUid, onClose, onEdit }: AgentInfoPa
         {activeTab === 'routines' && <RoutinesTab agentId={agent.id} />}
         {activeTab === 'media' && <MediaTab threadUid={threadUid} />}
         {activeTab === 'computer' && <ComputerTab threadUid={threadUid} />}
-        {activeTab === 'members' && <MembersTab />}
+        {activeTab === 'members' && <MembersTab agentId={agent.id} />}
       </div>
     </aside>
   );
@@ -626,10 +626,84 @@ function ComputerTab({ threadUid }: { threadUid: string | null }) {
   );
 }
 
-function MembersTab() {
+function MembersTab({ agentId }: { agentId: string }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <ChildrenSection agentId={agentId} />
+      <TeamRunsList />
+    </div>
+  );
+}
+
+interface ChildAgent {
+  childId: string;
+  spawnKey: string;
+  name: string;
+  emoji: string;
+  description: string;
+  mode?: string;
+  archived: boolean;
+  createdAt: string;
+}
+
+/** MF6: the child agents this companion spawned (persistent, reusable). */
+function ChildrenSection({ agentId }: { agentId: string }) {
+  const [children, setChildren] = useState<ChildAgent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    setError(null);
+    (async () => {
+      try {
+        const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/children`, {
+          headers: await getApiHeaders(),
+        });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const data = (await res.json()) as { children?: ChildAgent[] };
+        if (mounted) setChildren(data.children ?? []);
+      } catch (e) {
+        if (mounted) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [agentId]);
+
   return (
     <div className="flex flex-col gap-2">
-      <TeamRunsList />
+      <span className="text-xs font-medium text-text-tertiary">{t('Child agents')}</span>
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-text-secondary">
+          <Spinner className="size-4" /> {t('Loading')}
+        </div>
+      ) : error ? (
+        <p className="text-xs text-function-error">{t('Failed to load children')} {error}</p>
+      ) : children.length === 0 ? (
+        <p className="text-sm text-text-tertiary">{t('No child agents yet.')}</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {children.map((child) => (
+            <li key={child.childId} className="flex items-start gap-2 rounded-card border border-border-main bg-bg-main p-2">
+              <div className="flex size-7 shrink-0 items-center justify-center rounded-control bg-fill-tsp text-base">
+                {child.emoji || '🤖'}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm text-text-primary">{child.name}</p>
+                {child.description && (
+                  <p className="truncate text-xs text-text-secondary">{child.description}</p>
+                )}
+                <p className="text-[11px] text-text-tertiary">
+                  {t('Spawn key')}: {child.spawnKey} · {new Date(child.createdAt).toLocaleString()}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
