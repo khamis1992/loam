@@ -306,5 +306,16 @@
   "gets a presigned upload URL": "gets a presigned upload URL",
   "PUTs a blob": "PUTs a blob",
   "completes the upload": "completes the upload",
-  "uploads a file end-to-end and returns a spec attachment": "uploads a file end-to-end and returns a spec attachment"
+  "uploads a file end-to-end and returns a spec attachment": "uploads a file end-to-end and returns a spec attachment",
+  "studio": "studio",
+  "Create your Video": "Create your Video",
+  "Make ideas come alive": "Make ideas come alive",
+  "Build an App": "Build an App",
+  "Turn ideas into products": "Turn ideas into products",
+  "Design a Deck": "Design a Deck",
+  "Pitch with confidence": "Pitch with confidence",
+  "Try now": "Try now",
+  "Voice mode": "Voice mode",
+  "Microphone": "Microphone",
+  "Website": "Website"
 }

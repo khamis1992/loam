@@ -8,7 +8,7 @@ import {
 import clsx from 'clsx';
 import { useAppDispatch } from '@/store';
 import { addSession, loadSessions } from '@/store/sessionsSlice';
-import { t } from '@/i18n/t';
+import { t, PRODUCT } from '@/i18n/t';
 import { Composer, ComposerContextBar, type ComposerHandle } from '@/components/chat/Composer';
 import { HomeCard } from '@/components/home/HomeCard';
 import { CreditsPopover } from '@/components/home/CreditsPopover';
@@ -17,6 +17,9 @@ import { ModelMenu, type AgentModel } from '@/components/home/ModelMenu';
 import { StartFromFileCard } from '@/components/home/StartFromFileCard';
 import { StarterMenu } from '@/components/home/StarterMenu';
 import { SidePanel } from '@/components/home/SidePanel';
+import { PromoBanner } from '@/components/home/PromoBanner';
+import { LogoMark } from '@/components/home/LogoMark';
+import { BuildIllustration, CreateIllustration } from '@/components/home/BuildIllustration';
 import { useBranch } from '@/components/home/useBranch';
 import { uploadFile, type Attachment } from '@/services/upload';
 import { desktopApis, isDesktop } from '@/services/desktopApis';
@@ -184,8 +187,10 @@ export default function HomePage() {
     if (files.length > 0) {
       try {
         attachments = await Promise.all(files.map((file) => uploadFile(UPLOAD_BASE, file)));
-      } catch {
+      } catch (e) {
         // Proceed without attachments if upload fails.
+        // eslint-disable-next-line no-console
+        console.error('attachment upload failed', e);
       }
     }
     dispatch(addSession({
@@ -223,21 +228,27 @@ export default function HomePage() {
 
   const templates = [
     {
-      label: t('App'),
+      label: t('Website'),
       labelIcon: <AppWindow className="size-3" />,
       title: t('Personal website'),
+      imageSrc: '/templates/website.svg',
+      imageAlt: t('Personal website'),
       prompt: t('Personal website prompt'),
     },
     {
       label: t('Slides'),
       labelIcon: <Presentation className="size-3" />,
       title: t('Product launch deck'),
+      imageSrc: '/templates/deck.svg',
+      imageAlt: t('Product launch deck'),
       prompt: t('Product launch deck prompt'),
     },
     {
       label: t('Video'),
       labelIcon: <Video className="size-3" />,
       title: t('Browser game'),
+      imageSrc: '/templates/game.svg',
+      imageAlt: t('Browser game'),
       prompt: t('Browser game prompt'),
     },
   ];
@@ -268,25 +279,14 @@ export default function HomePage() {
         <div className="mx-auto w-full max-w-[768px] flex-1 px-6 pb-6">
           {/* Hero */}
           <div className="mb-5 flex items-center justify-between">
-            <div>
-              <h1 className="text-[28px] font-semibold leading-[34px] text-text-primary">
-                {t('Hi, I\'m {product}')}
+            <div className="flex items-center gap-3">
+              <LogoMark className="size-9 text-text-primary" />
+              <h1 className="flex items-baseline gap-1 text-headline-lg text-text-primary">
+                <span className="font-semibold">{PRODUCT}</span>
+                <span className="font-serif text-text-tertiary">{t('studio')}</span>
               </h1>
-              <p className="text-lg text-text-secondary">{t('What can I do for you?')}</p>
             </div>
-            {update && (
-              <button
-                type="button"
-                onClick={handleUpdateClick}
-                className="flex h-11 w-[200px] shrink-0 items-center gap-2 rounded-control bg-[#1a1a1a] px-3 text-start text-white hover:opacity-90"
-              >
-                <div className="size-7 shrink-0 rounded bg-white/10" aria-hidden />
-                <div className="min-w-0">
-                  <p className="truncate text-[13px] font-medium">{update.title}</p>
-                  <p className="truncate text-[11px] text-[#a3a3a3]">{update.subtitle}</p>
-                </div>
-              </button>
-            )}
+            <PromoBanner onSelect={prefillComposer} />
           </div>
 
           {/* Cards grid */}
@@ -297,6 +297,7 @@ export default function HomePage() {
                   icon={<Hammer className="size-5 text-[#0081f2]" />}
                   title={t('Build')}
                   subtitle={t('Websites, apps, and games')}
+                  illustration={<BuildIllustration />}
                 />
               </StarterMenu>
               <StarterMenu items={createItems} onSelect={prefillComposer}>
@@ -304,6 +305,7 @@ export default function HomePage() {
                   icon={<Pencil className="size-5 text-[#efa201]" />}
                   title={t('Create')}
                   subtitle={t('Slides, images, and videos')}
+                  illustration={<CreateIllustration />}
                 />
               </StarterMenu>
             </div>
@@ -318,6 +320,8 @@ export default function HomePage() {
                 label={tpl.label}
                 labelIcon={tpl.labelIcon}
                 title={tpl.title}
+                imageSrc={tpl.imageSrc}
+                imageAlt={tpl.imageAlt}
                 onClick={() => prefillComposer(tpl.prompt)}
               />
             ))}

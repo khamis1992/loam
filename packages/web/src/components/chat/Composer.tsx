@@ -9,6 +9,7 @@ import {
 } from 'react';
 import {
   ArrowUp, Plus, ShieldCheck, Laptop, FolderGit, Folder, GitBranch, Square, X, ChevronDown,
+  Mic, Volume2, Github, Mail, Calendar,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { t } from '@/i18n/t';
@@ -179,13 +180,27 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             </div>
           )}
         </div>
-        <input
-          ref={fileRef}
-          type="file"
-          multiple
-          hidden
-          onChange={(e) => { addFiles(e.target.files); e.currentTarget.value = ''; }}
-        />
+
+        <div className="hidden items-center -space-x-1 rounded-full border border-border-main bg-bg-menu px-2 py-1 sm:flex">
+          <span className="flex size-5 items-center justify-center rounded-full bg-black text-white">
+            <Github className="size-3" />
+          </span>
+          <span className="flex size-5 items-center justify-center rounded-full bg-[#ea4335] text-white">
+            <Mail className="size-3" />
+          </span>
+          <span className="flex size-5 items-center justify-center rounded-full bg-[#4285f4] text-white">
+            <Calendar className="size-3" />
+          </span>
+          <span className="ms-1 text-[11px] font-medium text-text-secondary">+4</span>
+        </div>
+
+        <button
+          type="button"
+          className="hidden items-center gap-1 rounded-full border border-border-main px-2 py-1 text-xs text-text-secondary hover:bg-fill-hover sm:flex"
+        >
+          <ShieldCheck className="size-3.5" /> {t('Approve for me')}
+        </button>
+
         <select
           value={mode}
           onChange={(e) => setMode(e.target.value as TaskMode)}
@@ -195,17 +210,28 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           <option value="lite">{t('Lite')}</option>
           <option value="max">{t('Max')}</option>
         </select>
+
         {!home && (
           <>
-            <span className="ms-2 flex items-center gap-1 text-xs text-text-secondary">
-              <ShieldCheck className="size-3.5" /> {t('Approve for me')}
-            </span>
             <span className="ms-2 flex items-center gap-1 text-xs text-text-secondary">
               <Laptop className="size-3.5" /> {t('This PC')}
             </span>
           </>
         )}
+
         <div className="flex-1" />
+
+        {home && (
+          <>
+            <IconButton label={t('Voice mode')} className="hidden sm:flex">
+              <Volume2 className="size-4" />
+            </IconButton>
+            <IconButton label={t('Microphone')} className="hidden sm:flex">
+              <Mic className="size-4" />
+            </IconButton>
+          </>
+        )}
+
         {running
           ? (
             <IconButton
@@ -287,11 +313,9 @@ export function ComposerContextBar({
           <GitBranch className="size-3.5" /> {branch}
         </span>
       )}
-      {!home && (
-        <label className="flex items-center gap-1">
-          <input type="checkbox" className="size-3.5" /> {t('Worktree')}
-        </label>
-      )}
+      <label className="flex items-center gap-1">
+        <input type="checkbox" className="size-3.5" /> {t('Worktree')}
+      </label>
     </div>
   );
 }

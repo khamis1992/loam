@@ -306,5 +306,16 @@
   "completes the upload": "completes the upload",
   "uploads a file end-to-end and returns a spec attachment": "uploads a file end-to-end and returns a spec attachment",
   "Session expired. Please sign in again.": "انتهت الجلسة. يرجى تسجيل الدخول مرة أخرى.",
-  "An error occurred": "حدث خطأ"
+  "An error occurred": "حدث خطأ",
+  "studio": "استوديو",
+  "Create your Video": "أنشئ فيديوك",
+  "Make ideas come alive": "أحيِ الأفكار",
+  "Build an App": "ابنِ تطبيقًا",
+  "Turn ideas into products": "حوّل الأفكار إلى منتجات",
+  "Design a Deck": "صمّم عرضًا تقديميًا",
+  "Pitch with confidence": "قدّم بثقة",
+  "Try now": "جرب الآن",
+  "Voice mode": "الوضع الصوتي",
+  "Microphone": "الميكروفون",
+  "Website": "موقع"
 }
