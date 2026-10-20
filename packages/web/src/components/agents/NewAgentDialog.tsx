@@ -59,6 +59,7 @@ const EFFORT_LEVELS = [
 
 const CUSTOM_MODEL_VALUE = '__custom__';
 const DEFAULT_MODEL_VALUE = '';
+const BLANK_TEMPLATE_ID = '__blank__';
 
 export function NewAgentDialog({ open, onClose, onCreated }: NewAgentDialogProps) {
   const [templates, setTemplates] = useState<AgentTemplate[]>([]);
@@ -171,9 +172,9 @@ export function NewAgentDialog({ open, onClose, onCreated }: NewAgentDialogProps
 
   const handleSelectTemplate = (id: string | null) => {
     setSelectedTemplateId(id);
-    if (id === null) {
+    if (id === BLANK_TEMPLATE_ID) {
       resetForm();
-    } else {
+    } else if (id !== null) {
       const tpl = templates.find((t) => t.id === id);
       if (tpl) applyTemplate(tpl);
     }
@@ -270,7 +271,7 @@ export function NewAgentDialog({ open, onClose, onCreated }: NewAgentDialogProps
 
   const starterOptions = [
     {
-      id: null,
+      id: BLANK_TEMPLATE_ID,
       emoji: '✨',
       labelAr: agentLabel('blankAgent'),
       description: agentLabel('blankAgentDescription'),
