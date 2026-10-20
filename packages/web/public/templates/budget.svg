@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="112" viewBox="0 0 200 112" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#111827"/>
+      <stop offset="100%" stop-color="#1f2937"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#60a5fa"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="112" fill="url(#bg)"/>
+  <rect x="16" y="14" width="168" height="84" rx="8" fill="#1f2937" stroke="#374151" stroke-width="1"/>
+  <text x="28" y="32" font-family="system-ui, sans-serif" font-size="8" font-weight="600" fill="#e5e7eb">Budget Overview</text>
+  <text x="28" y="44" font-family="system-ui, sans-serif" font-size="6" fill="#9ca3af">Monthly savings</text>
+  <text x="28" y="58" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#10b981">$2,450</text>
+  <rect x="110" y="36" width="12" height="40" rx="2" fill="url(#bar)" opacity="0.9"/>
+  <rect x="128" y="48" width="12" height="28" rx="2" fill="url(#bar)" opacity="0.7"/>
+  <rect x="146" y="42" width="12" height="34" rx="2" fill="url(#bar)" opacity="0.85"/>
+  <rect x="164" y="56" width="12" height="20" rx="2" fill="url(#bar)" opacity="0.6"/>
+  <path d="M28 82 L56 70 L84 78 L112 62 L140 74 L168 60" stroke="url(#line)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="28" cy="82" r="2" fill="#60a5fa"/>
+  <circle cx="56" cy="70" r="2" fill="#60a5fa"/>
+  <circle cx="84" cy="78" r="2" fill="#60a5fa"/>
+  <circle cx="112" cy="62" r="2" fill="#60a5fa"/>
+  <circle cx="140" cy="74" r="2" fill="#60a5fa"/>
+  <circle cx="168" cy="60" r="2" fill="#60a5fa"/>
+</svg>

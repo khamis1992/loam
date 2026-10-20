@@ -29,7 +29,7 @@ export function StartFromFileCard({ onFilesAdd }: StartFromFileCardProps) {
       aria-label={t('Start from a local file')}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') inputRef.current?.click(); }}
       className={clsx(
-        'flex h-[216px] flex-col cursor-pointer items-center justify-center rounded-card border border-dashed p-4 text-center transition-colors hover:bg-fill-hover',
+        'flex h-[218px] flex-col cursor-pointer items-center justify-center rounded-card border border-dashed p-4 text-center transition-colors hover:bg-fill-hover',
         dragOver ? 'border-[#0081f2] dark:border-[#1a93fe] bg-[var(--fill-blue)]' : 'border-[#0081f2] dark:border-[#1a93fe]',
       )}
     >

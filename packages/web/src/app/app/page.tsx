@@ -3,12 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  PanelRight, Hammer, Pencil, AppWindow, Video, Presentation,
+  PanelRight, Hammer, Pencil, AppWindow, Video, Presentation, LayoutGrid,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAppDispatch } from '@/store';
 import { addSession, loadSessions } from '@/store/sessionsSlice';
-import { t, PRODUCT } from '@/i18n/t';
+import { t } from '@/i18n/t';
 import { Composer, ComposerContextBar, type ComposerHandle } from '@/components/chat/Composer';
 import { HomeCard } from '@/components/home/HomeCard';
 import { CreditsPopover } from '@/components/home/CreditsPopover';
@@ -228,28 +228,28 @@ export default function HomePage() {
 
   const templates = [
     {
-      label: t('Website'),
-      labelIcon: <AppWindow className="size-3" />,
-      title: t('Personal website'),
-      imageSrc: '/templates/website.svg',
-      imageAlt: t('Personal website'),
-      prompt: t('Personal website prompt'),
+      label: t('Video'),
+      labelIcon: <Video className="size-3" />,
+      title: t('Browser game'),
+      imageSrc: '/templates/anime.svg',
+      imageAlt: t('Browser game'),
+      prompt: t('Browser game prompt'),
     },
     {
-      label: t('Slides'),
-      labelIcon: <Presentation className="size-3" />,
+      label: t('App'),
+      labelIcon: <LayoutGrid className="size-3" />,
       title: t('Product launch deck'),
-      imageSrc: '/templates/deck.svg',
+      imageSrc: '/templates/budget.svg',
       imageAlt: t('Product launch deck'),
       prompt: t('Product launch deck prompt'),
     },
     {
-      label: t('Video'),
-      labelIcon: <Video className="size-3" />,
-      title: t('Browser game'),
-      imageSrc: '/templates/game.svg',
-      imageAlt: t('Browser game'),
-      prompt: t('Browser game prompt'),
+      label: t('Website'),
+      labelIcon: <AppWindow className="size-3" />,
+      title: t('Personal website'),
+      imageSrc: '/templates/hero.svg',
+      imageAlt: t('Personal website'),
+      prompt: t('Personal website prompt'),
     },
   ];
 
@@ -281,16 +281,16 @@ export default function HomePage() {
           <div className="mb-5 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <LogoMark className="size-9 text-text-primary" />
-              <h1 className="flex items-baseline gap-1 text-headline-lg text-text-primary">
-                <span className="font-semibold">{PRODUCT}</span>
-                <span className="font-serif text-text-tertiary">{t('studio')}</span>
+              <h1 className="flex items-baseline gap-1 text-[34px] font-bold leading-none text-text-primary">
+                <span className="font-serif">{t('agent')}</span>
+                <span className="font-serif text-[#888888]">{t('studio')}</span>
               </h1>
             </div>
             <PromoBanner onSelect={prefillComposer} />
           </div>
 
           {/* Cards grid */}
-          <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-[1fr_216px]">
+          <div className="mb-5 grid grid-cols-1 gap-[10px] md:grid-cols-[390px_215px]">
             <div className="space-y-3">
               <StarterMenu items={buildItems} onSelect={prefillComposer}>
                 <HomeCard

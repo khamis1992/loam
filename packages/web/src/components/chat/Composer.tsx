@@ -9,8 +9,9 @@ import {
 } from 'react';
 import {
   ArrowUp, Plus, ShieldCheck, Laptop, FolderGit, Folder, GitBranch, Square, X, ChevronDown,
-  Mic, Volume2, Github, Mail, Calendar,
+  Mic, Github, Mail, Calendar,
 } from 'lucide-react';
+import { VoiceIcon } from '@/components/home/VoiceIcon';
 import clsx from 'clsx';
 import { t } from '@/i18n/t';
 import { IconButton } from '@/components/ui/Button';
@@ -147,48 +148,91 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         </ul>
       )}
       <div className="mt-2 flex items-center gap-1.5">
-        <div className="relative flex items-center gap-1" ref={menuRef}>
-          <IconButton label={t('Add files')} onClick={() => fileRef.current?.click()}>
-            <Plus className="size-4" />
-          </IconButton>
-          <IconButton
-            label={t('Add files and more')}
-            onClick={() => setMenuOpen((v) => !v)}
-            className="hidden sm:flex"
-          >
-            <Plus className="size-4" />
-            <ChevronDown className="size-3" />
-          </IconButton>
-          {menuOpen && (
-            <div className="absolute bottom-full start-0 z-50 mb-1 min-w-[160px] max-w-[calc(100vw-32px)] rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
-              <button
-                type="button"
-                onClick={() => { fileRef.current?.click(); setMenuOpen(false); }}
-                className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-sm text-text-primary hover:bg-fill-hover"
-              >
-                <Folder className="size-4" />
-                {t('Add files')}
-              </button>
-              <button
-                type="button"
-                onClick={chooseFolder}
-                className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-sm text-text-primary hover:bg-fill-hover"
-              >
-                <FolderGit className="size-4" />
-                {t('Add folder')}
-              </button>
-            </div>
-          )}
-        </div>
+        {home ? (
+          <div className="relative flex items-center gap-1" ref={menuRef}>
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="flex h-6 w-6 items-center justify-center rounded-full border border-border-main text-text-secondary transition-colors hover:bg-fill-hover"
+              aria-label={t('Add files')}
+              title={t('Add files')}
+            >
+              <Plus className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              className="hidden h-6 w-6 items-center justify-center rounded-full border border-border-main text-text-secondary transition-colors hover:bg-fill-hover sm:flex"
+              aria-label={t('Add files and more')}
+              title={t('Add files and more')}
+            >
+              <ChevronDown className="size-3" />
+            </button>
+            {menuOpen && (
+              <div className="absolute bottom-full start-0 z-50 mb-1 min-w-[160px] max-w-[calc(100vw-32px)] rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => { fileRef.current?.click(); setMenuOpen(false); }}
+                  className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-sm text-text-primary hover:bg-fill-hover"
+                >
+                  <Folder className="size-4" />
+                  {t('Add files')}
+                </button>
+                <button
+                  type="button"
+                  onClick={chooseFolder}
+                  className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-sm text-text-primary hover:bg-fill-hover"
+                >
+                  <FolderGit className="size-4" />
+                  {t('Add folder')}
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="relative flex items-center gap-1" ref={menuRef}>
+            <IconButton label={t('Add files')} onClick={() => fileRef.current?.click()}>
+              <Plus className="size-4" />
+            </IconButton>
+            <IconButton
+              label={t('Add files and more')}
+              onClick={() => setMenuOpen((v) => !v)}
+              className="hidden sm:flex"
+            >
+              <Plus className="size-4" />
+              <ChevronDown className="size-3" />
+            </IconButton>
+            {menuOpen && (
+              <div className="absolute bottom-full start-0 z-50 mb-1 min-w-[160px] max-w-[calc(100vw-32px)] rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => { fileRef.current?.click(); setMenuOpen(false); }}
+                  className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-sm text-text-primary hover:bg-fill-hover"
+                >
+                  <Folder className="size-4" />
+                  {t('Add files')}
+                </button>
+                <button
+                  type="button"
+                  onClick={chooseFolder}
+                  className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-sm text-text-primary hover:bg-fill-hover"
+                >
+                  <FolderGit className="size-4" />
+                  {t('Add folder')}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="hidden items-center -space-x-1 rounded-full border border-border-main bg-bg-menu px-2 py-1 sm:flex">
-          <span className="flex size-5 items-center justify-center rounded-full bg-black text-white">
+          <span className="z-30 flex size-5 items-center justify-center rounded-full border border-white bg-black text-white dark:border-[#1f1f1f]">
             <Github className="size-3" />
           </span>
-          <span className="flex size-5 items-center justify-center rounded-full bg-[#ea4335] text-white">
+          <span className="z-20 flex size-5 items-center justify-center rounded-full border border-white bg-[#ea4335] text-white dark:border-[#1f1f1f]">
             <Mail className="size-3" />
           </span>
-          <span className="flex size-5 items-center justify-center rounded-full bg-[#4285f4] text-white">
+          <span className="z-10 flex size-5 items-center justify-center rounded-full border border-white bg-[#4285f4] text-white dark:border-[#1f1f1f]">
             <Calendar className="size-3" />
           </span>
           <span className="ms-1 text-[11px] font-medium text-text-secondary">+4</span>
@@ -212,23 +256,31 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         </select>
 
         {!home && (
-          <>
-            <span className="ms-2 flex items-center gap-1 text-xs text-text-secondary">
-              <Laptop className="size-3.5" /> {t('This PC')}
-            </span>
-          </>
+          <span className="ms-2 flex items-center gap-1 text-xs text-text-secondary">
+            <Laptop className="size-3.5" /> {t('This PC')}
+          </span>
         )}
 
         <div className="flex-1" />
 
         {home && (
           <>
-            <IconButton label={t('Voice mode')} className="hidden sm:flex">
-              <Volume2 className="size-4" />
-            </IconButton>
-            <IconButton label={t('Microphone')} className="hidden sm:flex">
+            <button
+              type="button"
+              className="hidden h-8 w-8 items-center justify-center rounded-full border border-border-main text-text-secondary transition-colors hover:bg-fill-hover sm:flex"
+              aria-label={t('Voice mode')}
+              title={t('Voice mode')}
+            >
+              <VoiceIcon className="size-4" />
+            </button>
+            <button
+              type="button"
+              className="hidden h-8 w-8 items-center justify-center rounded-full border border-border-main text-text-secondary transition-colors hover:bg-fill-hover sm:flex"
+              aria-label={t('Microphone')}
+              title={t('Microphone')}
+            >
               <Mic className="size-4" />
-            </IconButton>
+            </button>
           </>
         )}
 
@@ -249,7 +301,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               onClick={submit}
               className={clsx(
                 'rounded-full',
-                canSend ? 'bg-text-primary text-text-onblack hover:opacity-90' : 'opacity-50',
+                canSend ? 'bg-text-primary text-text-onblack hover:opacity-90' : 'bg-fill-tsp text-text-secondary',
               )}
             >
               <ArrowUp className="size-4" />
@@ -272,6 +324,11 @@ interface ComposerContextBarProps {
 function basename(p?: string | null): string {
   if (!p) return '';
   return p.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? p;
+}
+
+function truncateBranch(b: string): string {
+  if (b.length <= 24) return b;
+  return b.slice(0, 22) + '…';
 }
 
 export function ComposerContextBar({
@@ -309,12 +366,15 @@ export function ComposerContextBar({
         <Folder className="size-3.5" /> {t('Downloads')}
       </button>
       {branch && (
-        <span className="flex items-center gap-1">
-          <GitBranch className="size-3.5" /> {branch}
+        <span className="flex max-w-[180px] items-center gap-1 truncate"
+          title={branch}
+        >
+          <GitBranch className="size-3.5 shrink-0" />
+          <span className="truncate">{truncateBranch(branch)}</span>
         </span>
       )}
-      <label className="flex items-center gap-1">
-        <input type="checkbox" className="size-3.5" /> {t('Worktree')}
+      <label className="flex cursor-not-allowed items-center gap-1 text-text-disable">
+        <input type="checkbox" disabled className="size-3.5" /> {t('Worktree')}
       </label>
     </div>
   );
