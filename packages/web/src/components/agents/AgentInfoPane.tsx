@@ -30,10 +30,16 @@ interface Schedule {
   prompt: string;
   intervalSeconds: number;
   enabled: boolean;
-  nextRunAt?: string;
-  lastRunAt?: string;
-  lastTaskId?: string;
-  agentId?: string;
+  cron?: string | null;
+  runAt?: string | null;
+  timezone?: string | null;
+  nextRunAt?: string | null;
+  lastRunAt?: string | null;
+  lastTaskId?: string | null;
+  lastStatus?: 'ok' | 'retrying' | 'failed' | null;
+  attempts?: number | null;
+  lastError?: string | null;
+  agentId?: string | null;
 }
 
 type TabId = 'overview' | 'routines' | 'media' | 'computer' | 'members';
@@ -379,10 +385,12 @@ function RoutinesTab({ agentId }: { agentId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${getApiBase()}/api/schedules`, { headers: await getApiHeaders() });
+      const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/schedules`, {
+        headers: await getApiHeaders(),
+      });
       if (!res.ok) throw new Error(`status ${res.status}`);
       const data = (await res.json()) as { schedules?: Schedule[] };
-      setSchedules((data.schedules ?? []).filter((s) => s.agentId === agentId));
+      setSchedules(data.schedules ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -394,10 +402,12 @@ function RoutinesTab({ agentId }: { agentId: string }) {
     let mounted = true;
     (async () => {
       try {
-        const res = await fetch(`${getApiBase()}/api/schedules`, { headers: await getApiHeaders() });
+        const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/schedules`, {
+          headers: await getApiHeaders(),
+        });
         if (!res.ok) throw new Error(`status ${res.status}`);
         const data = (await res.json()) as { schedules?: Schedule[] };
-        if (mounted) setSchedules((data.schedules ?? []).filter((s) => s.agentId === agentId));
+        if (mounted) setSchedules(data.schedules ?? []);
       } catch (e) {
         if (mounted) setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -458,12 +468,27 @@ function RoutinesTab({ agentId }: { agentId: string }) {
       {schedules.map((s) => (
         <div key={s.id} className="flex flex-col gap-2 rounded-card border border-border-main bg-bg-main p-3">
           <p className="text-sm font-medium text-text-primary">{s.prompt.slice(0, 120)}{s.prompt.length > 120 ? '…' : ''}</p>
-          <div className="flex items-center gap-2 text-xs text-text-tertiary">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-text-tertiary">
             <span className={`rounded-full px-2 py-0.5 ${s.enabled ? 'bg-function-success-tsp text-function-success' : 'bg-fill-tsp text-text-tertiary'}`}>
               {s.enabled ? t('Enabled') : t('Disabled')}
             </span>
-            <span>{formatInterval(s.intervalSeconds)}</span>
+            <span>{cadenceLabel(s)}</span>
           </div>
+          {(s.cron || s.runAt) && s.timezone && (
+            <p className="text-[11px] text-text-tertiary">{t('Time zone: {tz}', { tz: s.timezone })}</p>
+          )}
+          {s.nextRunAt && (
+            <p className="text-[11px] text-text-tertiary">{t('Next run')} · {formatDateTime(s.nextRunAt)}</p>
+          )}
+          {s.lastRunAt && (
+            <p className="text-[11px] text-text-tertiary">{t('Last run')} · {formatDateTime(s.lastRunAt)}</p>
+          )}
+          {statusLabel(s) && (
+            <p className={`text-[11px] ${s.lastStatus === 'ok' ? 'text-text-tertiary' : 'text-function-error'}`}>{statusLabel(s)}</p>
+          )}
+          {s.lastStatus === 'failed' && s.lastError && (
+            <p className="text-[11px] text-function-error">{s.lastError}</p>
+          )}
           <Button
             type="button"
             variant="secondary"
@@ -487,6 +512,25 @@ function formatInterval(seconds: number): string {
   if (seconds < 3600) return t('{m}m', { m: Math.floor(seconds / 60) });
   if (seconds < 86400) return t('{h}h', { h: Math.floor(seconds / 3600) });
   return t('{d}d', { d: Math.floor(seconds / 86400) });
+}
+
+function formatDateTime(value: string): string {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString();
+}
+
+function cadenceLabel(s: Schedule): string {
+  if (s.cron) return t('Cron: {cron}', { cron: s.cron });
+  if (s.runAt) return t('At {time}', { time: formatDateTime(s.runAt) });
+  return formatInterval(s.intervalSeconds);
+}
+
+function statusLabel(s: Schedule): string | null {
+  if (s.lastStatus === 'ok') return t('Last run ok');
+  if (s.lastStatus === 'retrying') return t('Retrying · attempt {n}', { n: s.attempts ?? 1 });
+  if (s.lastStatus === 'failed') return t('Failed · attempt {n}', { n: s.attempts ?? 1 });
+  return null;
 }
 
 function MediaTab({ threadUid }: { threadUid: string | null }) {
