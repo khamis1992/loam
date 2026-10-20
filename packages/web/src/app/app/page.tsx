@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Sparkles, PanelRight, Hammer, Pencil, AppWindow, Video, Presentation,
+  PanelRight, Hammer, Pencil, AppWindow, Video, Presentation,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAppDispatch } from '@/store';
@@ -11,6 +11,7 @@ import { addSession, loadSessions } from '@/store/sessionsSlice';
 import { t } from '@/i18n/t';
 import { Composer, ComposerContextBar, type ComposerHandle } from '@/components/chat/Composer';
 import { HomeCard } from '@/components/home/HomeCard';
+import { CreditsPopover } from '@/components/home/CreditsPopover';
 import { TemplateCard } from '@/components/home/TemplateCard';
 import { ModelMenu, type AgentModel } from '@/components/home/ModelMenu';
 import { StartFromFileCard } from '@/components/home/StartFromFileCard';
@@ -58,7 +59,7 @@ export default function HomePage() {
   const [activeFolder, setActiveFolder] = useState<'project' | 'downloads' | null>(null);
   const [projectPath, setProjectPath] = useState<string | null>(null);
   const [downloadsPath, setDownloadsPath] = useState<string | null>(null);
-  const [credits, setCredits] = useState<string | null>(null);
+  const [credits, setCredits] = useState<number | null>(null);
   const [update, setUpdate] = useState<{ title: string; subtitle: string; version?: string; available: boolean } | null>(null);
 
   const branch = useBranch();
@@ -88,7 +89,7 @@ export default function HomePage() {
         })
         .then((total) => {
           if (total && total > 0) {
-            setCredits(new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(total));
+            setCredits(total);
           } else {
             setCredits(null);
           }
@@ -248,11 +249,7 @@ export default function HomePage() {
         <div className="flex h-row items-center justify-between px-6">
           <ModelMenu value={model} onChange={setModel} />
           <div className="flex items-center gap-2">
-            {credits && (
-              <span className="flex h-7 items-center gap-1 rounded-control border border-border-main px-2 text-xs font-medium text-text-secondary">
-                <Sparkles className="size-3.5" /> {credits}
-              </span>
-            )}
+            {credits && <CreditsPopover total={credits} />}
             <button
               type="button"
               onClick={() => setPanelOpen((v) => !v)}

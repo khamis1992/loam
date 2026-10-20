@@ -13,6 +13,7 @@ import { t, PRODUCT } from '@/i18n/t';
 import { Composer } from '@/components/chat/Composer';
 import { EventList } from '@/components/chat/EventList';
 import { ComputerPanel } from '@/components/computer/ComputerPanel';
+import { ShareDialog } from '@/components/dialogs/ShareDialog';
 import { ChatSocket } from '@/services/chatSocket';
 import { RpcClient, getApiBase, getSessionToken, handleAuthFailure } from '@/services/rpc';
 import { uploadFile } from '@/services/upload';
@@ -90,6 +91,8 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     sentDraft.current = { uid: sessionUid, sent: false };
   }
   const apiBase = useMemo(() => getApiBase(), []);
+  const [shareOpen, setShareOpen] = useState(false);
+  const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
 
   const onAuthFailure = useMemo(() => () => {
     dispatch(setError({ sessionId: sessionUid, error: t('Session expired. Please sign in again.') }));
@@ -227,7 +230,11 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex h-row items-center justify-end gap-2 px-6">
-        <button className="flex h-row-sm items-center gap-1 rounded-control px-2 text-sm text-text-secondary hover:bg-fill-hover">
+        <button
+          type="button"
+          onClick={() => setShareOpen(true)}
+          className="flex h-row-sm items-center gap-1 rounded-control px-2 text-sm text-text-secondary hover:bg-fill-hover"
+        >
           <Share className="size-4" /> {t('Share')}
         </button>
         <button className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><FileChartColumn className="size-4" /></button>
@@ -295,8 +302,9 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
             <Composer onSend={handleSend} onStop={handleStop} running={running} />
           </div>
         </div>
-        {selectedTool && <ComputerPanel event={selectedTool} onClose={() => setSelectedTool(null)} />}
       </div>
+      {selectedTool && <ComputerPanel event={selectedTool} onClose={() => setSelectedTool(null)} />}
+      <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} url={shareUrl} />
     </div>
   );
 }
