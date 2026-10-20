@@ -46,6 +46,7 @@ import { startProtocolAdapter } from "./protocol/adapter.js";
 import { executionQueue } from "./server/executionQueue.js";
 import { requiresReplayConfirmation, type SavedRun } from "./server/recovery.js";
 import { acquireRuntimeLease, releaseRuntimeLease, backupDatabase } from "./server/sqliteStore.js";
+import { claimRunLease, releaseRunLease, startLeaseHeartbeat, type LeaseHeartbeat, type RunLease } from "./server/runLease.js";
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
@@ -94,7 +95,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createAgentSpawnTools());
   const { ollama, registry, memory, mcp } = rt;
 
-  const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal }): Promise<{ taskId: string; text: string }> => {
+  const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal; lease?: RunLease }): Promise<{ taskId: string; text: string }> => {
     const { prompt, emit } = opts;
     const settings = getSettings();
     const previous = opts.taskId ? getTask(opts.taskId) : undefined;
@@ -110,10 +111,10 @@ async function main(): Promise<void> {
 
     const effectivePrompt = opts.savedRun.effectivePrompt;
 
-    setTaskStatus(task, "running");
+    setTaskStatus(task, "running", undefined, opts.lease);
     activateRunSignal(task);
     opts.savedRun.started = true;
-    saveRun(task, opts.savedRun);
+    saveRun(task, opts.savedRun, opts.lease);
     publishTaskEvent(task, { type: "task-status", status: "running" });
     // Announce the id immediately so the UI can cancel while the run is alive.
     emit({ type: "task", taskId: task });
@@ -303,13 +304,13 @@ async function main(): Promise<void> {
       };
       const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
         ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint,
-        saveCheckpoint: (checkpoint) => { opts.savedRun.checkpoint = checkpoint; saveRun(task, opts.savedRun); },
+        saveCheckpoint: (checkpoint) => { opts.savedRun.checkpoint = checkpoint; saveRun(task, opts.savedRun, opts.lease); },
       }) : await runAgent(agentOpts);
       // The orchestrator can swallow an abort (it reports a failed step instead),
       // so treat a cancelled run explicitly — never as success.
       if (runSignal.aborted) throw new Error("cancelled by user");
       if (result.verified !== true) throw new Error("task incomplete: mandatory final verification missing");
-      completeTaskRun(task, result.text, result.model);
+      completeTaskRun(task, result.text, result.model, opts.lease);
       if (doneEvent) {
         appendStep(task, { at: new Date().toISOString(), type: doneEvent.type, data: doneEvent });
         emit(doneEvent);
@@ -340,9 +341,17 @@ async function main(): Promise<void> {
       }
       const message = err instanceof Error ? err.message : String(err);
       const cancelled = runSignal.aborted || isCancelledError(err);
-      setTaskStatus(task, cancelled ? "cancelled" : "error", { error: cancelled ? "cancelled by user" : message });
-      publishTaskEvent(task, cancelled ? { type: "cancelled" } : { type: "error", message });
-      wrappedEmit({ type: "error", message: cancelled ? "⏹ أُوقفت المهمة بناءً على طلبك" : message });
+      let statusWritten = true;
+      try {
+        setTaskStatus(task, cancelled ? "cancelled" : "error", { error: cancelled ? "cancelled by user" : message }, opts.lease);
+      } catch (writeError) {
+        statusWritten = false;
+        log.warn(`lease-fenced status write rejected for ${task}: ${String(writeError)}`);
+      }
+      if (statusWritten) {
+        publishTaskEvent(task, cancelled ? { type: "cancelled" } : { type: "error", message });
+        wrappedEmit({ type: "error", message: cancelled ? "⏹ أُوقفت المهمة بناءً على طلبك" : message });
+      }
       recordTelemetry("error", { model: effectiveCfg.model, steps: 0, usage: { promptTokens: 0, completionTokens: 0 }, error: cancelled ? "cancelled by user" : message });
       if (!cancelled) throw err;
       return { taskId: task, text: "" };
@@ -408,19 +417,28 @@ async function main(): Promise<void> {
     opts.emit({ type: "task", taskId: task.id });
     opts.emit({ type: "task-status", status: "queued" });
     publishTaskEvent(task.id, { type: "task-status", status: "queued" });
+    let lease: RunLease | undefined;
+    let heartbeat: LeaseHeartbeat | undefined;
     try {
+      const claimed = claimRunLease(task.id);
+      lease = claimed;
+      heartbeat = startLeaseHeartbeat(claimed, () => cancelRunSignal(task.id));
       return await executionQueue.enqueue(task.id, () => executeTask({
-        ...opts, ...saved, taskId: task.id, savedRun: saved, signal,
+        ...opts, ...saved, taskId: task.id, savedRun: saved, signal, lease: claimed,
       }), signal, locks);
     } catch (error) {
       if (getTask(task.id)?.status === "queued" || getTask(task.id)?.status === "running") {
         const message = error instanceof Error ? error.message : String(error);
-        setTaskStatus(task.id, isCancelledError(error) ? "cancelled" : "error", { error: message });
+        try {
+          setTaskStatus(task.id, isCancelledError(error) ? "cancelled" : "error", { error: message }, lease);
+        } catch (writeError) {
+          log.warn(`lease-fenced status write rejected for ${task.id}: ${String(writeError)}`);
+        }
         const event = { type: "error" as const, message };
         opts.emit(event); publishTaskEvent(task.id, event);
       }
       throw error;
-    } finally { clearRunSignal(task.id); }
+    } finally { clearRunSignal(task.id); heartbeat?.stop(); if (lease) releaseRunLease(lease); }
   };
 
   // Companion-to-companion delegation: the delegate task is created and queued
