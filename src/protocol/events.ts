@@ -346,7 +346,7 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
         type: "statusUpdate",
         timestamp: ts,
         agentStatus: cancelled ? "stopped" : "error",
-        brief: event.message,
+        brief: cancelled ? "Task stopped at your request" : event.message,
       };
       out.push(status);
       if (!cancelled) {
