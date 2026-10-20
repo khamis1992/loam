@@ -99,7 +99,11 @@ export class ChatSocket {
    * is replayed.
    */
   join(sessionId: string, lastMessageId?: string, getLastId?: () => string | undefined) {
-    this.rejoin = () => this.emitJoin(sessionId, getLastId?.() ?? lastMessageId);
+    this.rejoin = () => {
+      // On reconnect only ask for events we have not already rendered.
+      const id = getLastId?.() ?? lastMessageId;
+      this.emitJoin(sessionId, id);
+    };
     this.emitJoin(sessionId, lastMessageId);
   }
 

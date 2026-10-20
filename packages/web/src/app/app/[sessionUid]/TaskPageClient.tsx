@@ -113,46 +113,53 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     let mounted = true;
 
     (async () => {
+      // For a brand-new session the URL carries ?draft=... ; GetSession will 404
+      // because there is no Loam task yet. Treat that as expected and skip
+      // metadata hydration for new drafts.
+      const isNewDraft = Boolean(draftText);
+      let existingSession: { title: string; lastDisplayMessage?: string; icon?: string } | undefined;
+      if (!isNewDraft) {
+        try {
+          const res = await rpc.getSession({ sessionUid });
+          existingSession = res.session;
+        } catch (e) {
+          // Only show an error for reloads of real sessions; new drafts may 404.
+          if (!isNewDraft) onRpcError(e instanceof Error ? e.message : String(e));
+        }
+      }
+
       await socket.connect();
       if (!mounted) return;
+      // Join before sending so the first message is received on this socket.
       socket.join(sessionUid);
+
       if (draftText && !sentDraft.current) {
         sentDraft.current = true;
         socket.sendText(sessionUid, draftText, draftMode, draftAttachments, makeExtData(cwd));
         dispatch(addSession({
           uid: sessionUid,
-          title: draftText.slice(0, 60),
+          title: existingSession?.title ?? draftText.slice(0, 60),
           status: 6,
           lastMessageTime: Date.now(),
-          lastDisplayMessage: draftText,
-          icon: '•',
+          lastDisplayMessage: existingSession?.lastDisplayMessage ?? draftText,
+          icon: existingSession?.icon || '•',
         }));
         dispatch(selectSession(sessionUid));
         // Remove draft from the URL so a reload does not re-send it.
         const cleanParams = new URLSearchParams(searchParams.toString());
         cleanParams.delete('draft');
         const qs = cleanParams.toString();
-        router.replace(`/app/${sessionUid}${qs ? `?${qs}` : ''}`);
-      }
-
-      // Hydrate existing session metadata (title etc.) from RPC if available.
-      if (!draftText) {
-        try {
-          const res = await rpc.getSession({ sessionUid });
-          if (res?.session?.title) {
-            dispatch(addSession({
-              uid: sessionUid,
-              title: res.session.title,
-              status: 1,
-              lastMessageTime: Date.now(),
-              lastDisplayMessage: res.session.lastDisplayMessage ?? '',
-              icon: res.session.icon || '•',
-            }));
-            dispatch(selectSession(sessionUid));
-          }
-        } catch (e) {
-          onRpcError(e instanceof Error ? e.message : String(e));
-        }
+        router.replace(`/app/${sessionUid}${qs ? `?${qs}` : ''}`, { scroll: false });
+      } else if (existingSession?.title) {
+        dispatch(addSession({
+          uid: sessionUid,
+          title: existingSession.title,
+          status: 1,
+          lastMessageTime: Date.now(),
+          lastDisplayMessage: existingSession.lastDisplayMessage ?? '',
+          icon: existingSession.icon || '•',
+        }));
+        dispatch(selectSession(sessionUid));
       }
     })();
 
@@ -172,7 +179,14 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     return final?.content ?? '';
   }, [events]);
 
+  const userText = useMemo(() => {
+    const latest = [...events].reverse().find((e): e is ChatMessageEvent => e.type === 'chat' && e.sender === 'user');
+    return latest?.content ?? '';
+  }, [events]);
+
   const wasStoppedByUser = useMemo(() => events.some((e) => e.type === 'userStop'), [events]);
+
+  const hasRunningOrResult = useMemo(() => running || events.some((e) => e.type === 'chat' && e.sender === 'assistant' && e.deliveryKind === 'result'), [running, events]);
 
   const handleSend = async (text: string, mode: TaskMode, files: File[]) => {
     const socket = socketRef.current;
@@ -215,14 +229,19 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               {t('Worked for {duration}', { duration: formatDuration(clockEvent.clock.accumulatedMs) })} ›
             </div>
           )}
-          {error && (
+          {userText && !assistantText && !running && !wasStoppedByUser && !error && (
+            <div className="mb-2 text-sm text-text-tertiary">
+              {t('{name} is thinking', { name: PRODUCT })}…
+            </div>
+          )}
+          {error && !draftText && (
             <div className="mb-2 rounded-control bg-function-error-tsp px-3 py-2 text-sm text-function-error">
               {error}
             </div>
           )}
           <EventList events={events} sessionId={sessionUid} socket={socketRef.current} />
 
-          {assistantText && !running && !wasStoppedByUser && (
+          {hasRunningOrResult && !running && !wasStoppedByUser && (
             <div className="mx-auto w-full max-w-[768px] px-[var(--ui-content-padding-x,24px)]">
               <div className="mb-2 flex items-center gap-2 text-sm text-func-success">
                 <CircleCheck className="size-4" /> {t('Task completed')}
