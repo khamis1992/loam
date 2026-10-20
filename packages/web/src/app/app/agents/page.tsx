@@ -138,7 +138,7 @@ export default function AgentsPage() {
                     className="mt-2"
                     onClick={() => setNewOpen(true)}
                   >
-                    {t('New agent from template')}
+                    {t('New agent')}
                   </Button>
                 </div>
               ) : (
