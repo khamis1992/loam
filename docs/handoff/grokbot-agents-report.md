@@ -16,7 +16,7 @@ Status: implemented and type-checked; static export builds successfully.
 ## Commits
 
 - `01b74a9` — `feat(agents-gb): rebuild agents page into 3-column Grok Bot-style layout`
-- `2ff59e1` — `feat(agents-gb): add implementation report`
+- `681cf3a` — `feat(agents-gb): add implementation report`
 
 ## Verification
 
