@@ -7,6 +7,7 @@ import type { Server as HttpServer } from "node:http";
 import type { AgentEvent, Emit } from "../agent/events.js";
 import { cancelRunSignal } from "../server/runControl.js";
 import { createTask, type Task, type TaskMessage, type StepRecord } from "../server/db.js";
+import { setThread, touchMessage } from "../server/agentThreads.js";
 import { requireTaskWorkspace, taskPath } from "../server/taskWorkspace.js";
 import type { RunTaskOptions } from "../server/http.js";
 import { log } from "../log.js";
@@ -435,6 +436,12 @@ export function createChatSocket(deps: SocketDeps): Server {
             }
             session.taskId = taskId;
             store.setTaskId(um.sessionId, taskId);
+          }
+
+          // Persist the agent -> thread mapping so unread state survives restarts.
+          if (um.extData.agentId) {
+            setThread(um.extData.agentId, taskId);
+            touchMessage(um.extData.agentId);
           }
 
           // Forward the UI locale to Loam. Because Loam has no per-request locale
