@@ -19,3 +19,10 @@ const handleSend = (text: string, mode: TaskMode, _files: File[]) => {
 ```
 
 The shell layer already calls `loadSessions()` in `Sidebar` on mount and exposes the thunk, so the only missing piece is the post-create refresh.
+
+## Task-stream agent: fix TS error blocking `npm run build`
+
+**File:** `packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx` (not owned by shell)
+**Error:** `src/app/app/[sessionUid]/TaskPageClient.tsx(265,7): error TS2367: This comparison appears to be unintentional because the types ... and '"error"' have no overlap.`
+**Impact:** `npx tsc -p packages/web --noEmit` and `npm run build` inside `packages/web` both fail because of this single type error.
+**What:** Adjust the event-type handling so the `"error"` branch compiles against the current event union.
