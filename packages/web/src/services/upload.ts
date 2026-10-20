@@ -53,6 +53,7 @@ export async function putFile(uploadUrl: string, file: Blob, contentType: string
     method: 'PUT',
     headers: { 'content-type': contentType },
     body: file,
+    keepalive: true,
   });
   if (!res.ok) {
     throw new Error(`PUT upload failed: ${res.status}`);

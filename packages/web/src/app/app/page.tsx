@@ -204,8 +204,8 @@ export default function HomePage() {
     router.push(`/app/${uid}/?${params.toString()}`);
   };
 
-  const handleSend = (text: string, mode: TaskMode, files: File[]) => {
-    navigateToTask(text, mode, files);
+  const handleSend = async (text: string, mode: TaskMode, files: File[]) => {
+    await navigateToTask(text, mode, files);
   };
 
   const buildItems = [

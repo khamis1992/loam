@@ -8,6 +8,7 @@ import { ProtocolStore } from "./store.js";
 import { createChatSocket } from "./socket.js";
 import { makeRpcHandlers, rpcError, tokenToUserUid, consumeLoginToken, issueLoginToken } from "./rpc.js";
 import { shortUid } from "./events.js";
+import { storeBlob, getBlob, hasBlob } from "./blobStore.js";
 
 export interface ProtocolAdapterDeps {
   cfg: Config;
@@ -66,7 +67,6 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
 export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<ProtocolAdapter> {
   const store = new ProtocolStore();
   const handlers = makeRpcHandlers(store);
-  const blobs = new Map<string, Buffer>();
   const publicPaths = new Set(["user.v1.UserAuthPublicService/ExchangeTokenByCode"]);
 
   const server = http.createServer((req, res) => {
@@ -102,24 +102,29 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
           const id = p.slice(6);
           const chunks: Buffer[] = [];
           for await (const chunk of req) chunks.push(chunk as Buffer);
-          blobs.set(id, Buffer.concat(chunks));
+          storeBlob(id, Buffer.concat(chunks));
           res.writeHead(200).end();
           return;
         }
         if (req.method === "GET" && p.startsWith("/blob/")) {
-          const b = blobs.get(p.slice(6));
+          const b = getBlob(p.slice(6));
           if (b) { res.writeHead(200).end(b); } else { res.writeHead(404).end(); }
           return;
         }
         if (req.method === "POST" && (p === "/api/chat/getPresignedUploadUrl" || p === "/api/chat/uploadComplete")) {
           const body = (await readBody(req)) as Record<string, unknown>;
-          const base = `http://localhost:${deps.port ?? 8787}/blob/`;
+          const base = `http://localhost:${port}/blob/`;
           if (p === "/api/chat/getPresignedUploadUrl") {
             const id = shortUid();
-            blobs.set(id, Buffer.alloc(0));
+            storeBlob(id, Buffer.alloc(0));
             sendJson(res, 200, { data: { uploadUrl: base + id, id } });
           } else {
             const id = String(body.id ?? "");
+            // Verify the blob was actually uploaded before completing.
+            if (!hasBlob(id) || getBlob(id)!.length === 0) {
+              sendJson(res, 400, { code: "upload_missing", message: "blob not uploaded or empty" });
+              return;
+            }
             sendJson(res, 200, { data: { fileUrl: base + id } });
           }
           return;
@@ -163,7 +168,7 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
     })();
   });
 
-  const io = createChatSocket({ httpServer: server, store, runTask: deps.runTask, getTask: deps.getTask });
+  const io = createChatSocket({ httpServer: server, store, runTask: deps.runTask, getTask: deps.getTask, workspace: deps.cfg.workspace });
 
   let port = deps.port ?? (Number(process.env.AS_PROTOCOL_PORT) || 8787);
 

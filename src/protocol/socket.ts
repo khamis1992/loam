@@ -1,13 +1,17 @@
 /** socket.io chat channel: "message" event in both directions. */
 
+import fs from "node:fs";
+import path from "node:path";
 import { Server, type Socket } from "socket.io";
 import type { Server as HttpServer } from "node:http";
 import type { AgentEvent, Emit } from "../agent/events.js";
 import { cancelRunSignal } from "../server/runControl.js";
 import { createTask, type Task, type TaskMessage, type StepRecord } from "../server/db.js";
+import { requireTaskWorkspace, taskPath } from "../server/taskWorkspace.js";
 import type { RunTaskOptions } from "../server/http.js";
 import { log } from "../log.js";
 import { mapAgentEvent, shortUid, baseId, createEventMapperState, makeBrief, mapToolName } from "./events.js";
+import { getBlob } from "./blobStore.js";
 import type {
   ClientMessage,
   ServerEnvelope,
@@ -17,6 +21,7 @@ import type {
   ResolveLocalExecutionApproval,
   TaskMode,
   ChatEvent,
+  ServerAttachment,
 } from "./types.js";
 import type { ProtocolStore } from "./store.js";
 import { tokenToUserUid } from "./rpc.js";
@@ -29,6 +34,7 @@ export interface SocketDeps {
   store: ProtocolStore;
   runTask: (opts: RunTaskOptions) => Promise<{ taskId: string; text: string }>;
   getTask: (id: string) => Task | undefined;
+  workspace: string;
 }
 
 function now(): string {
@@ -48,6 +54,47 @@ function mapTaskModeToLoam(mode?: string): string {
   if (m === "lite" || m === "discuss") return "ask";
   if (m === "max" || m === "standard" || m === "cascade") return "build";
   return "build";
+}
+
+function blobIdFromUrl(url: string): string | undefined {
+  try {
+    const u = new URL(url);
+    if (u.pathname.startsWith("/blob/")) return u.pathname.slice(6);
+  } catch {
+    if (url.startsWith("/blob/")) return url.slice(6);
+  }
+  return undefined;
+}
+
+function sanitizeFilename(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
+}
+
+/** Copy uploaded blobs into the task workspace and return a prompt block that
+ *  points the agent at the files. */
+function stageAttachments(
+  attachments: ServerAttachment[],
+  taskId: string,
+  workspace: string,
+): { files: { name: string; rel: string; abs: string }[]; promptBlock: string } {
+  const root = requireTaskWorkspace(taskId, workspace);
+  const files: { name: string; rel: string; abs: string }[] = [];
+  for (const a of attachments.slice(0, 8)) {
+    const id = blobIdFromUrl(a.url);
+    if (!id) continue;
+    const data = getBlob(id);
+    if (!data || data.length === 0) continue;
+    const name = sanitizeFilename(a.filename || a.id || "attachment");
+    const rel = path.join("attachments", name);
+    const abs = taskPath(root, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, data);
+    files.push({ name, rel, abs });
+  }
+  if (files.length === 0) return { files, promptBlock: "" };
+  const list = files.map((f) => `• "${f.name}" — already in the task workspace at \`${f.rel}\``).join("\n");
+  const block = `【Attachments】The following files are attached to this task and are available in the workspace:\n${list}\nRead and analyze them as needed.`;
+  return { files, promptBlock: block };
 }
 
 function stepToAgentEvent(step: StepRecord): AgentEvent | undefined {
@@ -166,7 +213,7 @@ export function buildHistoryFromTask(task: Task, sessionId: string): ChatEvent[]
 }
 
 export function createChatSocket(deps: SocketDeps): Server {
-  const { httpServer, store, runTask, getTask } = deps;
+  const { httpServer, store, runTask, getTask, workspace } = deps;
 
   const io = new Server(httpServer, {
     transports: ["websocket"],
@@ -321,6 +368,20 @@ export function createChatSocket(deps: SocketDeps): Server {
             prompt = `${text}\n\n(Locale: en — reply in English.)`;
           } else if (locale.startsWith("ar")) {
             prompt = `${text}\n\n(Locale: ar — رد بالعربية.)`;
+          }
+
+          // Stage uploaded attachments into the task workspace so the agent can read them.
+          const serverAttachments = (um.attachments ?? []).map((a) => ({
+            id: a.id,
+            filename: a.filename,
+            type: a.type,
+            url: a.url,
+            contentType: a.contentType,
+            contentLength: a.fileMetaData?.uploadProgress ? Number(a.fileMetaData.uploadProgress) : 0,
+          }));
+          const { promptBlock } = stageAttachments(serverAttachments, taskId, workspace);
+          if (promptBlock) {
+            prompt = `${prompt}\n\n${promptBlock}`;
           }
 
           // Echo user message.

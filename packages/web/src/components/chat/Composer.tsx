@@ -24,7 +24,7 @@ export interface ComposerHandle {
 }
 
 interface ComposerProps {
-  onSend: (text: string, mode: TaskMode, files: File[]) => void;
+  onSend: (text: string, mode: TaskMode, files: File[]) => void | Promise<void>;
   onStop?: () => void;
   running?: boolean;
   home?: boolean;
@@ -61,18 +61,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     return () => document.removeEventListener('mousedown', onClick);
   }, [menuOpen]);
 
-  const submit = () => {
+  const submit = async () => {
     if (!canSend) return;
-    onSend(text.trim(), mode, files);
+    await onSend(text.trim(), mode, files);
     setText('');
     setFiles([]);
     setMenuOpen(false);
   };
 
-  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+  const onKey = async (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      submit();
+      await submit();
     }
   };
 
