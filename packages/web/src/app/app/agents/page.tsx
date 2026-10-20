@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { getApiBase, getLoamAuthHeaders } from '@/services/rpc';
+import { getApiBase, getApiHeaders } from '@/services/rpc';
 
 interface Agent {
   id: string;
@@ -27,7 +27,7 @@ export default function AgentsPage() {
     (async () => {
       try {
         const res = await fetch(`${getApiBase()}/api/agents`, {
-          headers: getLoamAuthHeaders(),
+          headers: await getApiHeaders(),
         });
         if (!res.ok) throw new Error(`status ${res.status}`);
         const data = (await res.json()) as { agents?: Agent[] };

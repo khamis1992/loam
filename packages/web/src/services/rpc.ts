@@ -60,13 +60,42 @@ export async function getSessionToken(): Promise<string> {
     ? (window as unknown as { __apis?: { auth?: { getToken?: () => Promise<string> } } }).__apis
     : undefined);
   const token = await apis?.auth?.getToken?.();
-  return token ?? '';
+  if (token) return token;
+  // Electron stores the session token in desktopLocalStorage under session_token
+  // (written by the main process during deep-link callback), but the auth API
+  // returns it only after login. Fall back to storage so nav pages can auth.
+  const storage = (typeof window !== 'undefined'
+    ? (window as unknown as { desktopLocalStorage?: { getItem?: (key: string) => Promise<string | null> } }).desktopLocalStorage
+    : undefined);
+  if (storage?.getItem) {
+    const stored = await storage.getItem('session_token');
+    if (stored) return stored;
+  }
+  return '';
 }
 
 export function handleAuthFailure() {
   if (typeof window === 'undefined') return;
   (window as unknown as { __apis?: { auth?: { removeToken?: () => Promise<unknown> } } }).__apis?.auth?.removeToken?.();
   window.location.href = '/login';
+}
+
+/** Return the current session token synchronously from Electron's injected API
+ *  or from desktopLocalStorage if available. */
+export function getCurrentSessionToken(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const apis = (window as unknown as { __apis?: { auth?: { getToken?: () => string | null | Promise<string | null> } } }).__apis;
+  const token = apis?.auth?.getToken?.();
+  if (typeof token === 'string' && token) return token;
+  return undefined;
+}
+
+export async function getApiHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { ...getLoamAuthHeaders() };
+  let token = getCurrentSessionToken();
+  if (!token && typeof window !== 'undefined') token = await getSessionToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
 }
 
 export interface RpcError {

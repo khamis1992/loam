@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Puzzle, AlertCircle } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { getApiBase, getLoamAuthHeaders } from '@/services/rpc';
+import { getApiBase, getApiHeaders } from '@/services/rpc';
 
 interface McpServer {
   name: string;
@@ -28,7 +28,7 @@ export default function PluginsPage() {
     let mounted = true;
     (async () => {
       try {
-        const headers = getLoamAuthHeaders();
+        const headers = await getApiHeaders();
         const [mcpRes, toolsRes] = await Promise.all([
           fetch(`${getApiBase()}/api/mcp/status`, { headers }),
           fetch(`${getApiBase()}/api/tools`, { headers }),

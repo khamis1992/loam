@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Clock, Zap, AlertCircle } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { getApiBase, getLoamAuthHeaders } from '@/services/rpc';
+import { getApiBase, getApiHeaders } from '@/services/rpc';
 
 interface Schedule {
   id: string;
@@ -25,7 +25,7 @@ export default function AutomationsPage() {
     (async () => {
       try {
         const res = await fetch(`${getApiBase()}/api/schedules`, {
-          headers: getLoamAuthHeaders(),
+          headers: await getApiHeaders(),
         });
         if (!res.ok) throw new Error(`status ${res.status}`);
         const data = (await res.json()) as { schedules?: Schedule[] };

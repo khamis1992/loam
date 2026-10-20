@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, ImageIcon, FileVideo, Presentation, AlertCircle } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { getApiBase, getLoamAuthHeaders } from '@/services/rpc';
+import { getApiBase, getApiHeaders } from '@/services/rpc';
 
 interface Creation {
   id: string;
@@ -23,7 +23,7 @@ export default function CreationsPage() {
     let mounted = true;
     (async () => {
       try {
-        const headers = getLoamAuthHeaders();
+        const headers = await getApiHeaders();
         const [creativeRes, mediaRes] = await Promise.all([
           fetch(`${getApiBase()}/api/creative`, { headers }),
           fetch(`${getApiBase()}/api/media`, { headers }),

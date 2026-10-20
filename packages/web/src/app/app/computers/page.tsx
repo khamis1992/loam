@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { getApiBase, getLoamAuthHeaders } from '@/services/rpc';
+import { getApiBase, getApiHeaders } from '@/services/rpc';
 
 interface Device {
   id: string;
@@ -24,7 +24,7 @@ export default function ComputersPage() {
     (async () => {
       try {
         const res = await fetch(`${getApiBase()}/api/companion-devices`, {
-          headers: getLoamAuthHeaders(),
+          headers: await getApiHeaders(),
         });
         if (!res.ok) throw new Error(`status ${res.status}`);
         const data = (await res.json()) as { devices?: Device[] };
