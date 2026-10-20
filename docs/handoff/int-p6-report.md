@@ -7,9 +7,7 @@ Added an **"Open in studio"** right-panel tab to the existing `ComputerPanel` in
 - `packages/web/src/components/computer/ComputerPanel.tsx`
 
 ## Commits
-```
-int-p6: add Open in studio tab for legacy media/office studios
-```
+- `d61e5060e423af829d3ae78333c1643cff64c889` — int-p6: add Open in studio tab for legacy media/office studios
 
 ## What was implemented
 1. **Studio URL constant**: `STUDIO_BASE_PATH = '/studios/index.html'` (top of file). Media uses `#creative`, write/data/office use `#office`.
