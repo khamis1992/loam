@@ -1,35 +1,124 @@
-import { useRef, useState, type KeyboardEvent } from 'react';
 import {
-  ArrowUp, Plus, Mic, ShieldCheck, Laptop, FolderGit, Folder, GitBranch, Square,
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type Ref,
+} from 'react';
+import {
+  ArrowUp, Plus, ShieldCheck, Laptop, FolderGit, Folder, GitBranch, Square, X, ChevronDown,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { t } from '@/i18n/t';
 import { IconButton } from '@/components/ui/Button';
+import { desktopApis } from '@/services/desktopApis';
 import type { TaskMode } from '@shared/socket';
 
-export function Composer({ onSend, onStop, running, home }: {
+export interface ComposerHandle {
+  focus: () => void;
+  setText: (text: string) => void;
+  setFiles: (files: File[]) => void;
+  addFiles: (files: File[]) => void;
+}
+
+interface ComposerProps {
   onSend: (text: string, mode: TaskMode, files: File[]) => void;
-  onStop?: () => void; running?: boolean; home?: boolean;
-}) {
+  onStop?: () => void;
+  running?: boolean;
+  home?: boolean;
+  onAddFolder?: (path: string) => void;
+}
+
+export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
+  { onSend, onStop, running, home, onAddFolder }: ComposerProps,
+  ref: Ref<ComposerHandle>,
+) {
   const [text, setText] = useState('');
   const [mode, setMode] = useState<TaskMode>('standard');
   const [files, setFiles] = useState<File[]>([]);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const canSend = text.trim().length > 0 || files.length > 0;
+
+  useImperativeHandle(ref, () => ({
+    focus: () => textareaRef.current?.focus(),
+    setText: (v) => setText(v),
+    setFiles: (v) => setFiles(v),
+    addFiles: (incoming) => setFiles((prev) => [...prev, ...incoming]),
+  }));
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [menuOpen]);
 
   const submit = () => {
     if (!canSend) return;
     onSend(text.trim(), mode, files);
-    setText(''); setFiles([]);
+    setText('');
+    setFiles([]);
+    setMenuOpen(false);
   };
+
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); }
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      submit();
+    }
+  };
+
+  const addFiles = (incoming: FileList | null) => {
+    if (!incoming) return;
+    setFiles((prev) => [...prev, ...Array.from(incoming)]);
+  };
+
+  const removeFile = (target: File) => {
+    setFiles((prev) => prev.filter((f) => f !== target));
+  };
+
+  const chooseFolder = async () => {
+    setMenuOpen(false);
+    try {
+      const res = await desktopApis.system.showFolderDialog();
+      if (res && typeof res === 'object' && 'path' in res && typeof (res as { path?: unknown }).path === 'string') {
+        onAddFolder?.((res as { path: string }).path);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+    addFiles(e.dataTransfer.files);
   };
 
   return (
-    <div className="rounded-composer bg-bg-menu p-3 border border-[#e5e7eb] dark:border-white/[0.08] shadow-card">
+    <div
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={handleDrop}
+      className={clsx(
+        'rounded-composer bg-bg-menu p-3 border border-[#e5e7eb] dark:border-white/[0.08] shadow-card transition-colors',
+        dragOver && 'border-[#0081f2] dark:border-[#1a93fe] bg-[var(--fill-blue)]',
+      )}
+    >
       <textarea
-        value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} rows={home ? 3 : 1}
+        ref={textareaRef}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={onKey}
+        rows={home ? 3 : 1}
         placeholder={t(files.length ? 'Tell {product} what to do with the file'
           : home ? 'Assign a task or type / for more'
           : 'Message {product}')}
@@ -37,15 +126,71 @@ export function Composer({ onSend, onStop, running, home }: {
       />
       {files.length > 0 && (
         <ul className="mt-2 flex flex-wrap gap-1.5">
-          {files.map((f) => <li key={f.name} className="rounded-control bg-fill-tsp px-2 py-1 text-xs">{f.name}</li>)}
+          {files.map((f) => (
+            <li
+              key={`${f.name}-${f.lastModified}`}
+              className="inline-flex max-w-full items-center gap-1 rounded-control bg-fill-tsp px-2 py-1 text-xs"
+            >
+              <span className="truncate">{f.name}</span>
+              <button
+                type="button"
+                onClick={() => removeFile(f)}
+                aria-label={t('Remove file')}
+                title={t('Remove file')}
+                className="text-text-tertiary hover:text-text-primary"
+              >
+                <X className="size-3" />
+              </button>
+            </li>
+          ))}
         </ul>
       )}
       <div className="mt-2 flex items-center gap-1.5">
-        <IconButton label={t('Add files')} onClick={() => fileRef.current?.click()}><Plus className="size-4" /></IconButton>
-        <input ref={fileRef} type="file" multiple hidden
-          onChange={(e) => setFiles([...files, ...Array.from(e.target.files ?? [])])} />
-        <select value={mode} onChange={(e) => setMode(e.target.value as TaskMode)}
-          className="h-row-sm rounded-control bg-transparent px-2 text-sm text-text-secondary outline-none">
+        <div className="relative flex items-center gap-1" ref={menuRef}>
+          <IconButton label={t('Add files')} onClick={() => fileRef.current?.click()}>
+            <Plus className="size-4" />
+          </IconButton>
+          <IconButton
+            label={t('Add files and more')}
+            onClick={() => setMenuOpen((v) => !v)}
+            className="hidden sm:flex"
+          >
+            <Plus className="size-4" />
+            <ChevronDown className="size-3" />
+          </IconButton>
+          {menuOpen && (
+            <div className="absolute bottom-full start-0 z-50 mb-1 min-w-[160px] max-w-[calc(100vw-32px)] rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
+              <button
+                type="button"
+                onClick={() => { fileRef.current?.click(); setMenuOpen(false); }}
+                className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-sm text-text-primary hover:bg-fill-hover"
+              >
+                <Folder className="size-4" />
+                {t('Add files')}
+              </button>
+              <button
+                type="button"
+                onClick={chooseFolder}
+                className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-sm text-text-primary hover:bg-fill-hover"
+              >
+                <FolderGit className="size-4" />
+                {t('Add folder')}
+              </button>
+            </div>
+          )}
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => { addFiles(e.target.files); e.currentTarget.value = ''; }}
+        />
+        <select
+          value={mode}
+          onChange={(e) => setMode(e.target.value as TaskMode)}
+          className="h-row-sm rounded-control bg-transparent px-2 text-sm text-text-secondary outline-none"
+        >
           <option value="standard">{t('Standard')}</option>
           <option value="lite">{t('Lite')}</option>
           <option value="max">{t('Max')}</option>
@@ -61,27 +206,92 @@ export function Composer({ onSend, onStop, running, home }: {
           </>
         )}
         <div className="flex-1" />
-        <IconButton label={t('Add files and more')} className="hidden"><span /></IconButton>
-        <IconButton label={t('Add files and more')} onClick={() => {}} className="hidden sm:flex"><Mic className="size-4" /></IconButton>
         {running
-          ? <IconButton label={t('Stop')} onClick={onStop} className="rounded-full bg-text-primary text-text-onblack hover:opacity-90"><Square className="size-4 fill-current" /></IconButton>
-          : <IconButton label={t('Send')} disabled={!canSend} onClick={submit}
-              className={clsx('rounded-full', canSend ? 'bg-text-primary text-text-onblack hover:opacity-90' : 'opacity-50')}>
+          ? (
+            <IconButton
+              label={t('Stop')}
+              onClick={onStop}
+              className="rounded-full bg-text-primary text-text-onblack hover:opacity-90"
+            >
+              <Square className="size-4 fill-current" />
+            </IconButton>
+          )
+          : (
+            <IconButton
+              label={t('Send')}
+              disabled={!canSend}
+              onClick={submit}
+              className={clsx(
+                'rounded-full',
+                canSend ? 'bg-text-primary text-text-onblack hover:opacity-90' : 'opacity-50',
+              )}
+            >
               <ArrowUp className="size-4" />
-            </IconButton>}
+            </IconButton>
+          )}
       </div>
     </div>
   );
+});
+
+interface ComposerContextBarProps {
+  home?: boolean;
+  projectPath?: string | null;
+  activeFolder?: 'project' | 'downloads' | null;
+  onChooseProject?: () => void;
+  onSelectDownloads?: () => void;
+  branch?: string | null;
 }
 
-export function ComposerContextBar({ home }: { home?: boolean }) {
+function basename(p?: string | null): string {
+  if (!p) return '';
+  return p.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? p;
+}
+
+export function ComposerContextBar({
+  home,
+  projectPath,
+  activeFolder,
+  onChooseProject,
+  onSelectDownloads,
+  branch,
+}: ComposerContextBarProps) {
   return (
     <div className="mb-2 flex flex-wrap items-center gap-4 text-xs text-text-secondary">
-      <span className="flex items-center gap-1"><Laptop className="size-3.5" /> {t('This PC')}</span>
-      <span className="flex items-center gap-1"><FolderGit className="size-3.5" /> {t('Choose project')}</span>
-      <span className="flex items-center gap-1"><Folder className="size-3.5" /> Downloads</span>
-      <span className="flex items-center gap-1"><GitBranch className="size-3.5" /> main</span>
-      {!home && <label className="flex items-center gap-1"><input type="checkbox" className="size-3.5" /> {t('Worktree')}</label>}
+      <span className="flex items-center gap-1">
+        <Laptop className="size-3.5" /> {t('This PC')}
+      </span>
+      <button
+        type="button"
+        onClick={onChooseProject}
+        className={clsx(
+          'flex items-center gap-1 rounded-control px-1 transition-colors hover:bg-fill-hover',
+          activeFolder === 'project' && 'bg-fill-hover text-text-primary',
+        )}
+      >
+        <FolderGit className="size-3.5" />
+        {projectPath ? basename(projectPath) : t('Choose project')}
+      </button>
+      <button
+        type="button"
+        onClick={onSelectDownloads}
+        className={clsx(
+          'flex items-center gap-1 rounded-control px-1 transition-colors hover:bg-fill-hover',
+          activeFolder === 'downloads' && 'bg-fill-hover text-text-primary',
+        )}
+      >
+        <Folder className="size-3.5" /> {t('Downloads')}
+      </button>
+      {branch && (
+        <span className="flex items-center gap-1">
+          <GitBranch className="size-3.5" /> {branch}
+        </span>
+      )}
+      {!home && (
+        <label className="flex items-center gap-1">
+          <input type="checkbox" className="size-3.5" /> {t('Worktree')}
+        </label>
+      )}
     </div>
   );
 }
