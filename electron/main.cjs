@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain, protocol } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -31,11 +31,27 @@ process.env.LOAM_ROOT = ROOT;
 process.env.LOAM_PORT = String(PORT);
 const EXPECTED_VERSION = require(path.join(ROOT, "package.json")).version;
 
+const WEB_OUT = path.join(ROOT, "packages", "web", "out");
+const APP_ORIGIN = "app://agent";
+const AGENT_STUDIO_BACKEND = "http://127.0.0.1:8787";
+const MIME_TYPES = {
+  ".html": "text/html", ".txt": "text/plain", ".css": "text/css", ".js": "application/javascript",
+  ".mjs": "application/javascript", ".json": "application/json", ".png": "image/png",
+  ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".svg": "image/svg+xml",
+  ".ico": "image/x-icon", ".webp": "image/webp", ".woff": "font/woff", ".woff2": "font/woff2",
+  ".ttf": "font/ttf", ".otf": "font/otf", ".eot": "application/vnd.ms-fontobject",
+  ".wasm": "application/wasm",
+};
+
 let serverChild = null;
 let win = null;
 let tray = null;
 let localAuthToken = "";
 let localAuthUserData = "";
+let pendingLoginNonce = "";
+let sessionToken = "";
+let loamServerReady = false;
+let pendingDeepLink = null;
 
 // Keep user data (skills, data, workspace) out of the app folder so updates
 // never overwrite it. Packaged builds use %APPDATA%/manus-local; dev builds
@@ -184,10 +200,19 @@ async function ensureServer() {
   return "unknown";
 }
 
+function isAgentStudioUI() {
+  return process.env.AGENT_STUDIO_LEGACY_UI !== "1";
+}
+
+function startUrl() {
+  return isAgentStudioUI() ? APP_ORIGIN + "/" : BASE + "/";
+}
+
 function createWindow() {
+  const legacy = !isAgentStudioUI();
   win = new BrowserWindow({
     width: 1440, height: 920, minWidth: 900, minHeight: 600,
-    title: "Loam", backgroundColor: "#080b12", autoHideMenuBar: false,
+    title: legacy ? "Loam" : "Agent Studio", backgroundColor: "#080b12", autoHideMenuBar: false,
     icon: path.join(__dirname, "assets", "loam.png"),
     webPreferences: {
       contextIsolation: true,
@@ -196,15 +221,16 @@ function createWindow() {
       preload: path.join(__dirname, "preload.cjs"),
     },
   });
+  const url = startUrl();
   let reloadAttempts = 0;
   win.webContents.on("did-fail-load", () => {
     if (reloadAttempts >= 10) return;
     reloadAttempts += 1;
     setTimeout(() => {
-      if (win) void win.loadURL(BASE + "/");
+      if (win) void win.loadURL(url);
     }, 2000);
   });
-  void win.loadURL(BASE + "/");
+  void win.loadURL(url);
   win.webContents.setWindowOpenHandler((arg) => { void shell.openExternal(arg.url); return { action: "deny" }; });
   win.on("closed", () => { win = null; });
 }
@@ -218,7 +244,14 @@ function showWindow() {
 
 function openPage(p) {
   showWindow();
-  if (win) void win.loadURL(BASE + p);
+  if (!win) return;
+  // In the new Agent Studio UI there is only the single-page app root; legacy
+  // mode keeps the old Loam page navigation.
+  if (isAgentStudioUI()) {
+    void win.loadURL(startUrl());
+  } else {
+    void win.loadURL(BASE + p);
+  }
 }
 
 function createTray() {
@@ -274,9 +307,11 @@ function buildMenu() {
 // is always validated before any handler runs.
 // ---------------------------------------------------------------------------
 const TRUSTED_EXTERNAL_SCHEMES = new Set(["https:", "mailto:"]);
+const TRUSTED_EXTERNAL_HOSTS = new Set(["localhost:8787", "127.0.0.1:8787"]);
 function isTrustedExternalUrl(url) {
   try {
     const u = new URL(url);
+    if (u.protocol === "http:" && TRUSTED_EXTERNAL_HOSTS.has(u.host)) return true;
     return TRUSTED_EXTERNAL_SCHEMES.has(u.protocol);
   } catch {
     return false;
@@ -299,18 +334,22 @@ function currentWindow() {
 
 function isValidIpcSender(frame) {
   const url = frame?.url ?? "";
-  // The renderer is served from the local loopback origin; treat that as the
-  // privileged app://agent/ equivalent for this stage of the rebuild.
-  return url.startsWith(BASE + "/") || url === BASE + "/";
+  // Trust the legacy Loam loopback origin and the new Agent Studio app origin.
+  return url.startsWith(BASE + "/") || url === BASE + "/" || url.startsWith(APP_ORIGIN + "/");
 }
 
 let currentTheme = "system";
 
 const ipcHandlers = {
   auth: {
-    getToken: () => "",
-    setToken: (_sender, _token) => undefined,
-    removeToken: () => undefined,
+    getToken: () => sessionToken,
+    setToken: (_sender, token) => { pendingLoginNonce = String(token ?? ""); },
+    removeToken: () => {
+      sessionToken = "";
+      const data = readLocalStorage();
+      delete data["session_token"];
+      writeLocalStorage(data);
+    },
     notifyLoginSuccess: () => undefined,
   },
   window: {
@@ -433,6 +472,11 @@ ipcMain.on(IPC_SYNC, (event) => {
 
 app.setAppUserModelId("app.loam.desktop");
 
+// Register the privileged custom protocol used to serve the Agent Studio UI.
+protocol.registerSchemesAsPrivileged([
+  { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
+]);
+
 // Native folder picker for choosing the working repo/folder.
 ipcMain.handle("pick-folder", async () => {
   try {
@@ -467,6 +511,68 @@ function authHeader(token) {
   return { "x-loam-local-token": token };
 }
 
+function findDeepLinkArg(argv) {
+  for (const arg of argv) {
+    if (typeof arg === "string" && arg.startsWith("agentstudio://")) return arg;
+  }
+  return null;
+}
+
+async function exchangeAgentStudioSession(loginToken) {
+  const gen = await fetch(AGENT_STUDIO_BACKEND + "/user.v1.UserAuthService/GenerateTempAuthCode", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${loginToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!gen.ok) throw new Error(`GenerateTempAuthCode failed: ${gen.status}`);
+  const genData = await gen.json();
+  if (!genData.token) throw new Error("no temp auth code returned");
+  const exch = await fetch(AGENT_STUDIO_BACKEND + "/user.v1.UserAuthPublicService/ExchangeTokenByCode", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: genData.token }),
+  });
+  if (!exch.ok) throw new Error(`ExchangeTokenByCode failed: ${exch.status}`);
+  const exchData = await exch.json();
+  if (!exchData.token) throw new Error("no session token returned");
+  return exchData.token;
+}
+
+async function handleDeepLinkCallback(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "agentstudio:" || u.host !== "auth" || u.pathname !== "/callback") return;
+    const loginToken = u.searchParams.get("token");
+    const nonce = u.searchParams.get("nonce");
+    if (!loginToken || !nonce) throw new Error("missing token or nonce");
+    if (nonce !== pendingLoginNonce) throw new Error("nonce mismatch");
+
+    sessionToken = await exchangeAgentStudioSession(loginToken);
+    const data = readLocalStorage();
+    data["session_token"] = sessionToken;
+    writeLocalStorage(data);
+
+    if (win) {
+      win.webContents.send("desktop-ipc-event:auth:onLoginSuccess", {});
+      showWindow();
+    }
+    console.log("[electron] Agent Studio sign-in complete");
+  } catch (err) {
+    console.error("[electron] deep link callback error: " + err.message);
+    if (win) win.webContents.send("desktop-ipc-event:auth:onLoginError", { error: err.message });
+  }
+}
+
+function registerAgentStudioProtocol() {
+  if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+      return app.setAsDefaultProtocolClient("agentstudio", process.execPath, [path.resolve(process.argv[1])]);
+    }
+    return false;
+  }
+  return app.setAsDefaultProtocolClient("agentstudio");
+}
+
 const ownsInstance = app.requestSingleInstanceLock();
 ipcMain.handle('loam-updates', async (event, action) => {
   if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || new URL(event.senderFrame.url).origin !== BASE) throw new Error('غير مسموح.');
@@ -476,7 +582,16 @@ ipcMain.handle('loam-updates', async (event, action) => {
   throw new Error('إجراء غير صالح.');
 });
 if (!ownsInstance) app.quit();
-app.on("second-instance", () => { if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } });
+app.on("second-instance", (_event, argv) => {
+  const deepLink = findDeepLinkArg(argv);
+  if (deepLink) { void handleDeepLinkCallback(deepLink); return; }
+  if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
+});
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  pendingDeepLink = url;
+  if (app.isReady()) void handleDeepLinkCallback(url);
+});
 
 app.whenReady().then(async () => {
   if (!ownsInstance) return;
@@ -486,35 +601,92 @@ app.whenReady().then(async () => {
   localAuthUserData = localAuth.userData;
   process.env.LOAM_LOCAL_TOKEN = localAuthToken;
   process.env.LOAM_LOCAL_TOKEN_DIR = localAuthUserData;
+  sessionToken = readLocalStorage()["session_token"] || "";
+
+  registerAgentStudioProtocol();
+
+  // Serve the Next.js static export over the privileged custom app:// protocol.
+  protocol.handle("app", async (request) => {
+    const url = new URL(request.url);
+    if (url.host !== "agent") return new Response("Not Found", { status: 404 });
+    let pathname = decodeURIComponent(url.pathname);
+    if (pathname === "/") pathname = "/index.html";
+    else if (pathname.endsWith("/")) pathname += "index.html";
+    else if (!path.extname(pathname)) {
+      const htmlPath = pathname + ".html";
+      if (fs.existsSync(path.join(WEB_OUT, htmlPath))) pathname = htmlPath;
+      else pathname += "/index.html";
+    }
+    const root = path.resolve(WEB_OUT) + path.sep;
+    const filePath = path.resolve(WEB_OUT, "." + pathname);
+    if (!filePath.startsWith(root)) return new Response("Forbidden", { status: 403 });
+    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+      const fallback = path.join(WEB_OUT, "404.html");
+      if (fs.existsSync(fallback)) {
+        return new Response(fs.readFileSync(fallback), { status: 404, headers: { "Content-Type": "text/html" } });
+      }
+      return new Response("Not Found", { status: 404 });
+    }
+    const ext = path.extname(filePath).toLowerCase();
+    const mime = MIME_TYPES[ext] || "application/octet-stream";
+    return new Response(fs.readFileSync(filePath), { headers: { "Content-Type": mime } });
+  });
+
+  // Health-check the Agent Studio backend; do not block the UI if it is down.
+  try {
+    const health = await fetch(AGENT_STUDIO_BACKEND + "/api/health", { signal: AbortSignal.timeout(3000) });
+    if (!health.ok) console.warn("[electron] Agent Studio backend health returned " + health.status);
+    else console.log("[electron] Agent Studio backend ready");
+  } catch (err) {
+    console.warn("[electron] Agent Studio backend not reachable at " + AGENT_STUDIO_BACKEND + "/api/health: " + err.message);
+  }
+
   buildMenu();
   createTray();
   await mcpBridge.start(ROOT, BRIDGE_PORT);
-  try { console.log("[electron] server mode: " + (await ensureServer())); }
-  catch (err) { console.error("[electron] " + err.message); dialog.showErrorBox("Loam — تعذّر بدء التشغيل", err.message); app.quit(); return; }
+  try {
+    console.log("[electron] server mode: " + (await ensureServer()));
+    loamServerReady = true;
+  } catch (err) {
+    console.error("[electron] Loam server unavailable: " + err.message);
+    if (isAgentStudioUI()) {
+      console.warn("[electron] continuing without Loam server (Agent Studio UI)");
+    } else {
+      dialog.showErrorBox("Loam — تعذّر بدء التشغيل", err.message);
+      app.quit();
+      return;
+    }
+  }
   createWindow();
-  // Inject the install token into all renderer requests to the local API.
-  if (win) {
+  if (loamServerReady && win) {
+    // Inject the install token into all renderer requests to the local API.
     const filter = { urls: [`${BASE}/api/*`] };
     win.webContents.session.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
       details.requestHeaders["x-loam-local-token"] = localAuthToken;
       callback({ requestHeaders: details.requestHeaders });
     });
   }
-  startServerWatchdog();
-  const localUpdates = await require("./local-updates.cjs").startLocalUpdates(path.join(app.getPath("userData"), "updates"));
-  updater.init({
-    localFeed: localUpdates.url,
-    canInstall: async () => {
-      const response = await fetch(BASE + "/api/tasks", { headers: authHeader(localAuthToken), signal: AbortSignal.timeout(5000) });
-      if (!response.ok) throw new Error("تعذّر التحقق من المهام الجارية. أعد المحاولة.");
-      const data = await response.json();
-      return !data.tasks.some(task => ["running", "queued", "pending"].includes(task.status));
-    },
-    onStatus: (s) => {
-      const label = s && s.state === "downloaded" ? "تحديث جاهز" : s && s.state ? s.state : "idle";
-      if (tray) tray.setToolTip("Loam — " + label);
-    },
-  });
+  if (loamServerReady) startServerWatchdog();
+  if (loamServerReady) {
+    const localUpdates = await require("./local-updates.cjs").startLocalUpdates(path.join(app.getPath("userData"), "updates"));
+    updater.init({
+      localFeed: localUpdates.url,
+      canInstall: async () => {
+        const response = await fetch(BASE + "/api/tasks", { headers: authHeader(localAuthToken), signal: AbortSignal.timeout(5000) });
+        if (!response.ok) throw new Error("تعذّر التحقق من المهام الجارية. أعد المحاولة.");
+        const data = await response.json();
+        return !data.tasks.some(task => ["running", "queued", "pending"].includes(task.status));
+      },
+      onStatus: (s) => {
+        const label = s && s.state === "downloaded" ? "تحديث جاهز" : s && s.state ? s.state : "idle";
+        if (tray) tray.setToolTip("Loam — " + label);
+      },
+    });
+  }
+
+  // Handle any deep link passed at startup or queued before the app was ready.
+  const startupDeepLink = pendingDeepLink ?? findDeepLinkArg(process.argv);
+  if (startupDeepLink) void handleDeepLinkCallback(startupDeepLink);
 });
 
 // ---------------------------------------------------------------------------
