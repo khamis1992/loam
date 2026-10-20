@@ -26,7 +26,7 @@ import { ROOT, UI_DIR, DATA_DIR, type Config } from "../config.js";
 import type { OllamaClient } from "../ollama.js";
 import type { AgentEvent, Emit } from "../agent/events.js";
 import { log, redact } from "../log.js";
-import { validateLocalToken } from "../security/localAuth.js";
+import { validateLocalToken, setLocalAuthUserDataDir } from "../security/localAuth.js";
 import { isInside, resolveRead, resolveWrite } from "../policy/paths.js";
 import type { MemoryStore } from "../memory/store.js";
 import { getPending, listPending, removePending, type PendingItem } from "./pending.js";
@@ -174,6 +174,21 @@ function parseWorktrees(porcelainOut: string): Array<{ path: string; head: strin
   }
   if (cur) out.push(cur);
   return out;
+}
+
+/** A ":cloud"-suffixed model may be served verbatim by the local Ollama (router
+ *  setups register the full name); only demand a cloudModel.apiKey when Ollama
+ *  does not actually have it — otherwise the request dies before it starts. */
+const ollamaTagCache = new Map<string, { names: string[]; at: number }>();
+async function cloudSuffixedModelServedByOllama(model: string): Promise<boolean> {
+  const baseUrl = process.env.OLLAMA_HOST && /^http/.test(process.env.OLLAMA_HOST) ? process.env.OLLAMA_HOST : "http://127.0.0.1:11434";
+  const cached = ollamaTagCache.get(baseUrl);
+  const names = cached && Date.now() - cached.at < 60_000 ? cached.names : await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(4_000) })
+    .then((r) => (r.ok ? r.json() : { models: [] }))
+    .then((d: { models?: Array<{ name?: string }> }) => (d.models ?? []).map((m) => (m.name ?? "").trim()))
+    .catch(() => [] as string[]);
+  if (!cached || Date.now() - cached.at >= 60_000) ollamaTagCache.set(baseUrl, { names, at: Date.now() });
+  return names.includes(model);
 }
 
 async function readBody(req: http.IncomingMessage, maxBytes = 1_000_000): Promise<unknown> {
@@ -362,6 +377,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         // Public endpoints are exempt from the install token; everything else on the
         // loopback server must carry the token injected by the Electron main process.
         const localAuthDir = process.env.LOAM_LOCAL_TOKEN_DIR || DATA_DIR;
+        setLocalAuthUserDataDir(localAuthDir);
         const publicPaths = new Set(["/api/health", "/api/identity"]);
         const isStatic = req.method === "GET" && (p === "/" || MIME[path.extname(p).toLowerCase()] !== undefined);
         if (!isStatic && !publicPaths.has(p)) {
@@ -369,7 +385,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             typeof req.headers["x-loam-local-token"] === "string"
               ? req.headers["x-loam-local-token"]
               : undefined;
-          if (!validateLocalToken(localAuthDir, token)) {
+          if (process.env.LOAM_AUTH_DISABLED !== "true" && !validateLocalToken(localAuthDir, token)) {
             sendJson(res, 401, { error: "unauthenticated", message: "missing or invalid local auth token" });
             return;
           }
@@ -2302,7 +2318,7 @@ loadAgents();
           };
 
           const chosenModel = model && model.trim().length > 0 ? model : cfg.model;
-          if (String(chosenModel).endsWith(":cloud") && (!cfg.cloudModel?.apiKey || cfg.cloudModel.apiKey.trim().length === 0)) {
+          if (String(chosenModel).endsWith(":cloud") && (!cfg.cloudModel?.apiKey || cfg.cloudModel.apiKey.trim().length === 0) && !(await cloudSuffixedModelServedByOllama(String(chosenModel)))) {
             emit({ type: "error", message: "No cloud API key configured. Add cloudModel.apiKey to config.json to use cloud models." });
             stopHeartbeat();
             if (!res.destroyed && !res.writableEnded) res.end();

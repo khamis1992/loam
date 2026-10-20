@@ -7,6 +7,7 @@ import { log } from "../log.js";
 import { ProtocolStore } from "./store.js";
 import { createChatSocket } from "./socket.js";
 import { makeRpcHandlers, rpcError, tokenToUserUid, consumeLoginToken, issueLoginToken } from "./rpc.js";
+import { getCurrentLocalToken } from "../security/localAuth.js";
 import { shortUid } from "./events.js";
 import { storeBlob, getBlob, hasBlob } from "./blobStore.js";
 
@@ -156,8 +157,14 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
         // shell.
         const loamPort = Number(process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT || 3939);
         if (req.method === "GET" && p.startsWith("/api/")) {
+          const auth = req.headers.authorization?.replace(/^Bearer /, "");
+          const userUid = auth ? tokenToUserUid(auth) ?? (consumeLoginToken(auth) ? "u_1" : null) : null;
+          if (!userUid) {
+            sendJson(res, 401, { code: "unauthenticated", message: "login required" });
+            return;
+          }
           const target = `http://127.0.0.1:${loamPort}${p}${url.search}`;
-          const loamToken = process.env.LOAM_LOCAL_TOKEN;
+          const loamToken = getCurrentLocalToken();
           const proxyReq = http.request(
             target,
             {

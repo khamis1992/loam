@@ -49,3 +49,16 @@ export function validateLocalToken(userDataDir: string, token: string | undefine
   if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(a, b);
 }
+
+let resolvedUserDataDir: string | undefined;
+
+/** Tell localAuth which DATA_DIR/userDataDir this process is using. */
+export function setLocalAuthUserDataDir(dir: string): void {
+  resolvedUserDataDir = dir;
+}
+
+/** Read the local token for the current in-process Loam instance, if known. */
+export function getCurrentLocalToken(): string | undefined {
+  if (!resolvedUserDataDir) return undefined;
+  return readLocalToken(resolvedUserDataDir);
+}
