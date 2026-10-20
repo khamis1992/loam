@@ -33,6 +33,17 @@ export interface UnreadInfo {
   lastAt?: string;
 }
 
+interface ChildAgent {
+  childId: string;
+  spawnKey: string;
+  name: string;
+  emoji: string;
+  description: string;
+  mode?: string;
+  archived: boolean;
+  createdAt: string;
+}
+
 interface AgentSidebarListProps {
   agents: AgentWithMeta[];
   selectedId?: string;
@@ -84,6 +95,7 @@ export function AgentSidebarList({
     y: number;
     agent: AgentWithMeta;
   } | null>(null);
+  const [childrenByParent, setChildrenByParent] = useState<Record<string, ChildAgent[]>>({});
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -96,6 +108,46 @@ export function AgentSidebarList({
       (a.description ?? '').toLowerCase().includes(normalizedSearch),
     );
   }, [agents, normalizedSearch]);
+
+  // MF6: child agents live under their parent, not as top-level entries.
+  const agentIdsKey = useMemo(() => agents.map((a) => a.id).join(','), [agents]);
+
+  useEffect(() => {
+    let mounted = true;
+    const ids = agentIdsKey ? agentIdsKey.split(',') : [];
+    if (ids.length === 0) {
+      setChildrenByParent({});
+      return;
+    }
+    (async () => {
+      const entries = await Promise.all(
+        ids.map(async (id): Promise<[string, ChildAgent[]]> => {
+          try {
+            const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(id)}/children`, {
+              headers: await getApiHeaders(),
+            });
+            if (!res.ok) return [id, []];
+            const data = (await res.json()) as { children?: ChildAgent[] };
+            return [id, data.children ?? []];
+          } catch {
+            return [id, []];
+          }
+        }),
+      );
+      if (mounted) setChildrenByParent(Object.fromEntries(entries));
+    })();
+    return () => { mounted = false; };
+  }, [agentIdsKey]);
+
+  const childAgentIds = useMemo(
+    () => new Set(Object.values(childrenByParent).flat().map((c) => c.childId)),
+    [childrenByParent],
+  );
+
+  const topLevelAgents = useMemo(
+    () => filteredAgents.filter((a) => !childAgentIds.has(a.id)),
+    [filteredAgents, childAgentIds],
+  );
 
   const builtInAgents = useMemo(() => getBuiltInAgents(), []);
 
@@ -203,24 +255,45 @@ export function AgentSidebarList({
       <div className="flex-1 overflow-y-auto px-2 pb-4">
         <SectionHeader
           label={t('My agents')}
-          count={filteredAgents.length}
+          count={topLevelAgents.length}
           expanded={!!sections[SECTIONS.myAgents]}
           onToggle={() => toggleSection(SECTIONS.myAgents)}
         />
         {sections[SECTIONS.myAgents] && (
           <div className="flex flex-col gap-0.5">
-            {filteredAgents.length === 0 ? (
+            {topLevelAgents.length === 0 ? (
               <p className="px-2 py-3 text-xs text-text-tertiary">{t('No agents yet.')}</p>
             ) : (
-              filteredAgents.map((agent) => (
-                <AgentRow
-                  key={agent.id}
-                  agent={agent}
-                  selected={selectedId === agent.id}
-                  unread={unreadById?.[agent.id]?.count ?? 0}
-                  onClick={() => onSelect(agent)}
-                  onContextMenu={(e) => handleContextMenu(e, agent)}
-                />
+              topLevelAgents.map((agent) => (
+                <div key={agent.id} className="flex flex-col gap-0.5">
+                  <AgentRow
+                    agent={agent}
+                    selected={selectedId === agent.id}
+                    unread={unreadById?.[agent.id]?.count ?? 0}
+                    onClick={() => onSelect(agent)}
+                    onContextMenu={(e) => handleContextMenu(e, agent)}
+                  />
+                  {(childrenByParent[agent.id] ?? []).map((child) => {
+                    const childAgent: AgentWithMeta = {
+                      id: child.childId,
+                      name: child.name,
+                      emoji: child.emoji,
+                      description: child.description,
+                      mode: child.mode,
+                    };
+                    return (
+                      <AgentRow
+                        key={child.childId}
+                        agent={childAgent}
+                        selected={selectedId === child.childId}
+                        unread={unreadById?.[child.childId]?.count ?? 0}
+                        indent
+                        onClick={() => onSelect(childAgent)}
+                        onContextMenu={(e) => handleContextMenu(e, childAgent)}
+                      />
+                    );
+                  })}
+                </div>
               ))
             )}
           </div>
@@ -337,12 +410,14 @@ function AgentRow({
   agent,
   selected,
   unread,
+  indent,
   onClick,
   onContextMenu,
 }: {
   agent: AgentCardAgent;
   selected: boolean;
   unread?: number;
+  indent?: boolean;
   onClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }) {
@@ -353,6 +428,7 @@ function AgentRow({
       onContextMenu={onContextMenu}
       className={[
         'group flex h-row items-center gap-2 rounded-control px-2 text-start transition-colors',
+        indent ? 'ps-6' : '',
         selected ? 'bg-fill-hover' : 'hover:bg-fill-hover',
       ].join(' ')}
     >

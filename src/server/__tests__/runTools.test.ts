@@ -34,6 +34,7 @@ let mergeAlwaysOnTools: (input: {
 }) => string[];
 let ALWAYS_ON_TOOLS: readonly string[];
 let createScratchpadTools: () => Tool[];
+let createAgentSpawnTools: () => Tool[];
 
 function dummy(name: string): Tool {
   return {
@@ -76,6 +77,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     closeDb = sqlite.closeDb;
     const registryMod = await import("../../tools/registry.js");
     const scratchpadToolsMod = await import("../../tools/scratchpadTools.js");
+    const agentSpawnToolsMod = await import("../../tools/agentSpawnTools.js");
     const gatewayMod = await import("../companionGateway.js");
     const catalogMod = await import("../../modes/catalog.js");
     const runToolsMod = await import("../runTools.js");
@@ -83,12 +85,14 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     ({ LOAM_MODES } = catalogMod);
     ({ mergeAlwaysOnTools, ALWAYS_ON_TOOLS } = runToolsMod);
     createScratchpadTools = scratchpadToolsMod.createScratchpadTools;
+    createAgentSpawnTools = agentSpawnToolsMod.createAgentSpawnTools;
     const { ToolRegistry: Registry } = registryMod;
     registry = new Registry();
     // Register a few real build-mode staples plus the real scratchpad tools,
     // like buildRuntime + index.ts do at startup.
     for (const name of ["file_read", "file_write", "shell_run", "web_fetch", "loam_mobile"]) registry.register(dummy(name));
     registry.registerAll(createScratchpadTools());
+    registry.registerAll(createAgentSpawnTools());
   });
 
   after(() => {
@@ -116,6 +120,36 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     for (const name of ["file_read", "file_write", "shell_run"]) {
       assert.ok(tools.names().includes(name), `build-mode tool ${name} must survive the merge`);
     }
+  });
+
+  it("a build-mode agent task exposes the MF6 child-agent tools to the model", () => {
+    const { tools } = buildRunToolSet();
+    for (const name of ["spawn_agent", "delegate_to_child", "list_children"]) {
+      assert.ok(tools.names().includes(name), `effective tool list must include ${name}`);
+    }
+    const modelToolNames = tools.toOllama().map((t) => t.function.name);
+    assert.ok(modelToolNames.includes("spawn_agent"), "the model's function list must include spawn_agent");
+  });
+
+  it("the child-agent tools are available in every Loam mode and work mode", () => {
+    for (const mode of LOAM_MODES) {
+      const names = buildRunToolSet(mode.id).tools.names();
+      for (const name of ["spawn_agent", "delegate_to_child", "list_children"]) {
+        assert.ok(names.includes(name), `mode ${mode.id} must expose ${name}`);
+      }
+    }
+    for (const workMode of WORK_MODES) {
+      const names = buildRunToolSet("build", workMode.id).tools.names();
+      for (const name of ["spawn_agent", "delegate_to_child", "list_children"]) {
+        assert.ok(names.includes(name), `work mode ${workMode.id} must expose ${name}`);
+      }
+    }
+  });
+
+  it("per-agent disabledTools still removes a child-agent tool", () => {
+    const { tools } = buildRunToolSet("build", "loam", { disabledTools: ["delegate_to_child"] });
+    assert.ok(!tools.names().includes("delegate_to_child"), "agent tool denial must win over the always-on grant");
+    assert.ok(tools.names().includes("spawn_agent"), "non-denied child-agent tools must remain");
   });
 
   it("scratchpad_add is available in every Loam mode and work mode", () => {
