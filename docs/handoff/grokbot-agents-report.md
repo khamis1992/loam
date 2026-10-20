@@ -17,6 +17,7 @@ Status: implemented and type-checked; static export builds successfully.
 
 - `01b74a9` — `feat(agents-gb): rebuild agents page into 3-column Grok Bot-style layout`
 - `681cf3a` — `feat(agents-gb): add implementation report`
+- `90ecb52` — `fix(agents-gb): suppress inline computer panel, custom placeholder, persist thread uid, chat min-width`
 
 ## Verification
 
@@ -39,3 +40,10 @@ Status: implemented and type-checked; static export builds successfully.
 - **Unread counts**: computed by reading each agent's resolved thread and comparing assistant message timestamps to `loam.agentSeen.<id>`; this is correct but loads threads eagerly on mount.
 - **Archive restore**: only soft-archive is implemented (via `/api/agents/:id/archive`), matching Loam semantics; there is no hard delete.
 - **Team Runs sidebar section**: shows a compact inline list; full details remain in the existing `TeamRunsList` component under the Members tab.
+
+## Follow-up fixes
+
+- Suppressed the embedded “Loam's computer” side panel inside `AgentThreadView` (info pane Computer tab covers it); messages now use full center width.
+- `Composer` gained an optional `placeholder` prop; agent thread composer now reads “Message {agent name}”.
+- Resolved and lazily-created thread uids are now persisted to `localStorage['loam.agentThread.'+agentId]`.
+- Center chat column has `min-w-[360px]` so it stays usable when the 340px info pane is open below 1200px.
