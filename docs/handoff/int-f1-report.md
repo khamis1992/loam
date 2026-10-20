@@ -58,6 +58,14 @@ f5c7585
      - Everything else: `""`.
    - In `src/protocol/socket.ts`, the history-rebuild path at the end of a run now computes the brief and explicitly replaces it with `""` when it equals the raw tool name.
 
+## Follow-up fix: protocol adapter write-method proxy
+
+Additional commit: `2f9eba4 int-f1: proxy write methods through protocol adapter`
+
+- File: `src/protocol/adapter.ts`.
+- Problem: the pass-through proxy to the Loam server on port 3939 only handled `GET /api/*`, so `POST /api/agents` and `PUT /api/agents/:id` (companion create/edit) fell through and returned 404.
+- Fix: extended the proxy condition to accept `POST`, `PUT`, `PATCH`, and `DELETE` for paths starting with `/api/` (still excluding `/api/health`). For write methods the incoming request body is now piped into the proxy request via `req.pipe(proxyReq)`. `GET` and `DELETE` keep the existing no-body behavior (`proxyReq.end()`). Existing forwarding of request headers (authorization, content-type, x-loam-local-token, etc.) is preserved.
+
 ## Verification
 
 - `npx tsc --noEmit -p .` – 0 errors.
