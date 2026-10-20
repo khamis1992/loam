@@ -238,7 +238,7 @@ export function AgentEditDrawer({ agent, open, onClose, onSaved }: AgentEditDraw
       if (effectiveModel) patch.model = effectiveModel;
       else patch.model = null;
       const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agent.id)}`, {
-        method: 'PUT',
+        method: 'POST',
         headers: {
           ...(await getApiHeaders()),
           'Content-Type': 'application/json',
