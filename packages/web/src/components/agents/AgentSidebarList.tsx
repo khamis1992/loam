@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Plus,
   Search,
@@ -13,6 +14,7 @@ import {
   ExternalLink,
   Loader2,
   AlertCircle,
+  Store,
 } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { Button, Spinner } from '@/components/ui/Button';
@@ -70,6 +72,7 @@ export function AgentSidebarList({
   onStartBuiltIn,
   unreadById,
 }: AgentSidebarListProps) {
+  const router = useRouter();
   const [search, setSearch] = useState('');
   const [sections, setSections] = useState<Record<(string), boolean>>(() => {
     if (typeof window === 'undefined') return {};
@@ -198,6 +201,14 @@ export function AgentSidebarList({
             className="flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-tertiary"
           />
         </div>
+        <button
+          type="button"
+          onClick={() => router.push('/app/marketplace')}
+          className="mt-1 flex h-row-sm w-full items-center gap-2 rounded-control px-2 text-sm text-text-secondary hover:bg-fill-hover"
+        >
+          <Store className="size-4" />
+          <span className="flex-1 truncate text-start">{t('Marketplace')}</span>
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 pb-4">
