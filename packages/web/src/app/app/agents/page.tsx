@@ -53,9 +53,7 @@ export default function AgentsPage() {
           <ArrowLeft className="size-4" />
         </button>
         <h1 className="text-title-lg text-text-primary">{t('Agent Loam')}</h1>
-        <span className="ms-auto rounded-full bg-fill-tsp px-2 py-0.5 text-[10px] font-medium text-text-tertiary">
-          {t('Cue!')}
-        </span>
+
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">

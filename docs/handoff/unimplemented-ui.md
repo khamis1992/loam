@@ -16,7 +16,6 @@ Owned file: `packages/web/src/app/app/page.tsx`, `packages/web/src/components/ch
 | Top bar search icon | `TitleBar.tsx` | Opens Settings instead of a global command palette | UI-only placeholder |
 | Sidebar nav rows without dedicated backends | `Sidebar.tsx`: Library, Creations, Automations, Plugins, More, Projects, Devices | `/api/files`, `/api/creative`, `/api/media`, `/api/schedules`, `/api/mcp/status`, `/api/tools`, `/api/projects`, `/app/more`, `/api/companion-devices` have partial endpoints but no full UI parity backend for create/edit/delete/actions | Navigates to placeholder pages that read backend lists when available |
 | Notifications bell | `Sidebar.tsx` user row | No notification feed API | Opens Settings › General |
-| Agent Loam "Cue!" badge | `Sidebar.tsx` | Decorative badge only; no cue-trigger backend | UI-only badge |
 
 Wired to real backend:
 - Model dropdown selection persists to `localStorage`.

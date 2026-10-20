@@ -40,7 +40,7 @@ type NavItem = {
 const NAV: NavItem[] = [
   { id: 'new-task', label: t('New task'), icon: SquarePen, href: '/app' },
   { id: 'computers', label: t('Computers'), icon: Monitor, href: '/app/computers' },
-  { id: 'agent-loam', label: t('Agent Loam'), icon: AgentLoamIcon, badge: t('Cue!'), href: '/app/agents' },
+  { id: 'agent-loam', label: t('Agent Loam'), icon: AgentLoamIcon, href: '/app/agents' },
   { id: 'search', label: t('Search'), icon: Search, shortcut: t('Ctrl+K'), onClick: 'search' },
   { id: 'library', label: t('Library'), icon: BookOpen, href: '/app/library' },
   { id: 'creations', label: t('Creations'), icon: Sparkles, href: '/app/creations' },

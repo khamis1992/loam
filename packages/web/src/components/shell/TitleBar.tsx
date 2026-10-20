@@ -1,13 +1,16 @@
 'use client';
 
+import { useState } from 'react';
 import { PanelLeft, ArrowLeft, ArrowRight, Search } from 'lucide-react';
 import { isDesktop } from '@/services/desktopApis';
 import { useAppDispatch } from '@/store';
-import { toggleSidebar, openSettings } from '@/store';
+import { toggleSidebar } from '@/store';
 import { t } from '@/i18n/t';
+import { SearchDialog } from '@/components/dialogs/SearchDialog';
 
 export function TitleBar({ children }: { children?: React.ReactNode }) {
   const dispatch = useAppDispatch();
+  const [searchOpen, setSearchOpen] = useState(false);
   return (
     <header
       className="flex h-titlebar shrink-0 items-center gap-1 pe-2"
@@ -45,13 +48,14 @@ export function TitleBar({ children }: { children?: React.ReactNode }) {
           type="button"
           aria-label={t('Search')}
           title={t('Search')}
-          onClick={() => dispatch(openSettings('General'))}
+          onClick={() => setSearchOpen(true)}
           className="flex h-7 w-7 items-center justify-center rounded-control text-text-tertiary hover:bg-fill-hover"
         >
           <Search className="size-4" />
         </button>
         {children}
       </div>
+      <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} />
     </header>
   );
 }
