@@ -55,8 +55,11 @@ export function ModeChip({ resolved, value, onChange }: ModeChipProps) {
     if (resolved) {
       return getLocale() === 'ar' ? resolved.labelAr : resolved.label;
     }
-    return PRODUCT;
+    return t('Standard');
   };
+
+  const trailingLabel = currentLabel();
+  const safeLabel = trailingLabel && trailingLabel !== PRODUCT ? trailingLabel : t('Standard');
 
   return (
     <div className="relative" ref={ref}>
@@ -71,7 +74,7 @@ export function ModeChip({ resolved, value, onChange }: ModeChipProps) {
         )}
       >
         <span className="text-icon-blue">{PRODUCT}</span>
-        <span className="max-w-[120px] truncate">{currentLabel()}</span>
+        <span className="max-w-[120px] truncate">{safeLabel}</span>
         <ChevronDown className={clsx('size-3 transition-transform', open && 'rotate-180')} />
       </button>
       {open && (

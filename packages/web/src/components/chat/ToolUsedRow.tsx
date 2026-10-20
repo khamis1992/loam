@@ -9,6 +9,17 @@ function StatusIcon({ s }: { s: ToolUsedEvent['status'] }) {
   return <span aria-label={s} className={s === 'success' ? 'text-func-success' : 'text-text-tertiary'}>{glyph}</span>;
 }
 
+function briefDuplicatesLabel(tool: string, brief: string): boolean {
+  const label = t(humanizeToolName(tool)).toLowerCase();
+  const raw = tool.toLowerCase();
+  const value = brief.trim().toLowerCase();
+  if (!value) return true;
+  if (value === raw || value.replace(/[ _-]/g, '') === raw.replace(/_/g, '')) return true;
+  const labelWords = new Set(label.split(/\s+/).filter(Boolean));
+  const briefWords = value.split(/[^a-z0-9]+/).filter(Boolean);
+  return briefWords.length > 0 && briefWords.every((word) => labelWords.has(word));
+}
+
 export function ToolUsedRow({ e }: { e: ToolUsedEvent }) {
   const commands = e.detail?.suggestion?.commands;
   if (e.tool === 'suggestion' && commands && commands.length > 0) {
@@ -23,10 +34,11 @@ export function ToolUsedRow({ e }: { e: ToolUsedEvent }) {
       </div>
     );
   }
+  const showBrief = e.brief && !briefDuplicatesLabel(e.tool, e.brief);
   return (
     <div className="flex h-row-sm w-full items-center gap-2 rounded-control bg-fill-tsp px-2 text-start text-sm text-text-secondary hover:bg-fill-hover"
     >
-      <span className="truncate">{t(humanizeToolName(e.tool))} {e.brief && <code className="text-xs">{e.brief}</code>}</span>
+      <span className="truncate">{t(humanizeToolName(e.tool))} {showBrief && <code className="text-xs">{e.brief}</code>}</span>
       <span className="ms-auto"><StatusIcon s={e.status} /></span>
     </div>
   );
