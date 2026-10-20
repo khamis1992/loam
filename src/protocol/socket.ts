@@ -7,7 +7,7 @@ import { cancelRunSignal } from "../server/runControl.js";
 import { createTask, type Task, type TaskMessage, type StepRecord } from "../server/db.js";
 import type { RunTaskOptions } from "../server/http.js";
 import { log } from "../log.js";
-import { mapAgentEvent, shortUid, baseId, createEventMapperState } from "./events.js";
+import { mapAgentEvent, shortUid, baseId, createEventMapperState, makeBrief, mapToolName } from "./events.js";
 import type {
   ClientMessage,
   ServerEnvelope,
@@ -407,6 +407,29 @@ export function createChatSocket(deps: SocketDeps): Server {
             }
 
             // Mark the run as finished in the UI.
+            // Finalize any tool rows still running so the timeline shows green checks.
+            for (const name of Array.from(session.mapperState.runningTool)) {
+              const actionId = session.mapperState.toolActionIds.get(`${name}:0`) ?? baseId();
+              const toolUsed: ServerEnvelope = {
+                id: baseId(),
+                type: "event",
+                sessionId: um.sessionId,
+                timestamp: Date.now(),
+                event: {
+                  id: baseId(),
+                  type: "toolUsed",
+                  timestamp: Date.now(),
+                  tool: mapToolName(name),
+                  actionId,
+                  status: "success",
+                  brief: makeBrief(name, {}),
+                },
+              };
+              store.appendEvent(um.sessionId, toolUsed);
+              io.to(um.sessionId).emit("message", toolUsed);
+            }
+            session.mapperState.runningTool.clear();
+
             const stopStatus: ServerEnvelope = {
               id: baseId(),
               type: "event",

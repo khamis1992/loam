@@ -235,64 +235,68 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
         <button className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><PanelRight className="size-4" /></button>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[768px] px-6 py-4">
-          <div className="mb-2 flex items-center gap-2">
-            <span className="text-lg">◉</span>
-            <span className="text-base font-semibold text-text-primary">{PRODUCT}</span>
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-[768px] px-6 py-4">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-lg">◉</span>
+                <span className="text-base font-semibold text-text-primary">{PRODUCT}</span>
+              </div>
+              {running && <div className="mb-2 text-sm text-text-tertiary">{t('{name} is thinking', { name: PRODUCT })}…</div>}
+              {clockEvent && !running && (
+                <div className="mb-2 text-sm text-text-tertiary">
+                  {t('Worked for {duration}', { duration: formatDuration(clockEvent.clock.accumulatedMs) })} ›
+                </div>
+              )}
+              {userText && !assistantText && !running && !wasStoppedByUser && !error && (
+                <div className="mb-2 text-sm text-text-tertiary">
+                  {t('{name} is thinking', { name: PRODUCT })}…
+                </div>
+              )}
+              {error && !draftText && (
+                <div className="mb-2 rounded-control bg-function-error-tsp px-3 py-2 text-sm text-function-error">
+                  {error}
+                </div>
+              )}
+              <EventList
+                events={events}
+                sessionId={sessionUid}
+                socket={socketRef.current}
+                onOpenComputer={(e) => setSelectedTool(e)}
+              />
+
+              {hasResult && hasClockClosed && !running && !wasStoppedByUser && (
+                <div className="mx-auto w-full max-w-[768px] px-[var(--ui-content-padding-x,24px)]">
+                  <div className="mb-2 flex items-center gap-2 text-sm text-func-success">
+                    <CircleCheck className="size-4" /> {t('Task completed')}
+                  </div>
+                  <div className="mb-4 flex items-center gap-2 text-sm text-text-tertiary">
+                    <button className="rounded-control p-1 hover:bg-fill-hover"><Copy className="size-4" /></button>
+                    <button className="rounded-control p-1 hover:bg-fill-hover"><Repeat2 className="size-4" /></button>
+                    <span className="ms-auto">{formatTime(Date.now())}</span>
+                  </div>
+                  <div className="mb-2 flex items-center gap-2 text-sm text-text-secondary">
+                    <span className="ms-auto">{t('How was this result?')}</span>
+                    {[0, 1, 2, 3, 4].map((i) => <Star key={i} className="size-4 text-[#d4d4d4]" />)}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-          {running && <div className="mb-2 text-sm text-text-tertiary">{t('{name} is thinking', { name: PRODUCT })}…</div>}
-          {clockEvent && !running && (
-            <div className="mb-2 text-sm text-text-tertiary">
-              {t('Worked for {duration}', { duration: formatDuration(clockEvent.clock.accumulatedMs) })} ›
-            </div>
-          )}
-          {userText && !assistantText && !running && !wasStoppedByUser && !error && (
-            <div className="mb-2 text-sm text-text-tertiary">
-              {t('{name} is thinking', { name: PRODUCT })}…
-            </div>
-          )}
-          {error && !draftText && (
-            <div className="mb-2 rounded-control bg-function-error-tsp px-3 py-2 text-sm text-function-error">
-              {error}
-            </div>
-          )}
-          <EventList
-            events={events}
-            sessionId={sessionUid}
-            socket={socketRef.current}
-            onOpenComputer={(e) => setSelectedTool(e)}
-          />
 
-          {hasResult && hasClockClosed && !running && !wasStoppedByUser && (
-            <div className="mx-auto w-full max-w-[768px] px-[var(--ui-content-padding-x,24px)]">
-              <div className="mb-2 flex items-center gap-2 text-sm text-func-success">
-                <CircleCheck className="size-4" /> {t('Task completed')}
-              </div>
-              <div className="mb-4 flex items-center gap-2 text-sm text-text-tertiary">
-                <button className="rounded-control p-1 hover:bg-fill-hover"><Copy className="size-4" /></button>
-                <button className="rounded-control p-1 hover:bg-fill-hover"><Repeat2 className="size-4" /></button>
-                <span className="ms-auto">{formatTime(Date.now())}</span>
-              </div>
-              <div className="mb-2 flex items-center gap-2 text-sm text-text-secondary">
-                <span className="ms-auto">{t('How was this result?')}</span>
-                {[0, 1, 2, 3, 4].map((i) => <Star key={i} className="size-4 text-[#d4d4d4]" />)}
-              </div>
+          <div className="mx-auto w-full max-w-[768px] px-6 pb-4">
+            <div className="mb-2 flex h-row-sm items-center gap-2 rounded-control bg-fill-tsp px-2 text-sm text-text-secondary">
+              <span className={running ? 'animate-pulse text-icon-blue' : wasStoppedByUser ? 'text-function-warning' : hasResult && hasClockClosed ? 'text-func-success' : 'text-text-tertiary'}>
+                {running ? '●' : wasStoppedByUser ? '◼' : hasResult && hasClockClosed ? '✓' : '○'}
+              </span>
+              {running ? t('Working') : wasStoppedByUser ? t('Stopped') : hasResult && hasClockClosed ? t('Task completed') : t('Thinking')}
             </div>
-          )}
+            <Composer onSend={handleSend} onStop={handleStop} running={running} />
+          </div>
         </div>
+        {selectedTool && <ComputerPanel event={selectedTool} onClose={() => setSelectedTool(null)} />}
       </div>
-
-      <div className="mx-auto w-full max-w-[768px] px-6 pb-4">
-        <div className="mb-2 flex h-row-sm items-center gap-2 rounded-control bg-fill-tsp px-2 text-sm text-text-secondary">
-          <span className={running ? 'animate-pulse text-icon-blue' : wasStoppedByUser ? 'text-function-warning' : hasResult && hasClockClosed ? 'text-func-success' : 'text-text-tertiary'}>
-            {running ? '●' : wasStoppedByUser ? '◼' : hasResult && hasClockClosed ? '✓' : '○'}
-          </span>
-          {running ? t('Working') : wasStoppedByUser ? t('Stopped') : hasResult && hasClockClosed ? t('Task completed') : t('Thinking')}
-        </div>
-        <Composer onSend={handleSend} onStop={handleStop} running={running} />
-      </div>
-      {selectedTool && <ComputerPanel event={selectedTool} onClose={() => setSelectedTool(null)} />}
     </div>
   );
 }

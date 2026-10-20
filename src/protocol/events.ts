@@ -112,7 +112,7 @@ function buildToolDetail(name: string, args: unknown, result?: { ok: boolean; su
   return undefined;
 }
 
-function makeBrief(name: string, args: unknown): string {
+export function makeBrief(name: string, args: unknown): string {
   const a = (args as Record<string, unknown>) ?? {};
   if (name.startsWith("shell_") || name.startsWith("pty_")) return typeof a.command === "string" ? a.command.slice(0, 60) : "Run command";
   if (name === "file_read") return `Read ${a.path ?? ""}`;
@@ -199,8 +199,10 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
     }
 
     case "tool_call": {
-      const actionId = makeActionId(event.name);
-      state.toolActionIds.set(`${event.name}:${state.seq ?? 0}`, actionId);
+      const callSeq = state.seq ?? 0;
+      const existingActionId = state.toolActionIds.get(`${event.name}:${callSeq}`);
+      const actionId = existingActionId ?? makeActionId(event.name);
+      state.toolActionIds.set(`${event.name}:${callSeq}`, actionId);
       state.runningTool.add(event.name);
       const brief = makeBrief(event.name, event.args);
       const argumentsFinished: ToolUsedEvent = {
