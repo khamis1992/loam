@@ -21,6 +21,10 @@ export interface ChatSocketOptions {
   getToken: () => Promise<string>;
   /** Called for every server frame. */
   onMessage: (m: ServerMessage) => void;
+  /** Called when the handshake is rejected as unauthenticated. */
+  onAuthFailure?: () => void;
+  /** Called on transport/connection errors. */
+  onError?: (message: string) => void;
   /** Optional socket.io base URL; defaults to '/'. */
   socketBase?: string;
   clientVersion?: string;
@@ -38,7 +42,7 @@ export class ChatSocket {
     const token = await this.options.getToken();
     this.socket = io(this.options.socketBase ?? DEFAULT_SOCKET_BASE, {
       transports: ['websocket'],
-      withCredentials: true,
+      withCredentials: false,
       reconnection: true,
       reconnectionDelay: 1_000,
       reconnectionDelayMax: 10_000,
@@ -56,6 +60,14 @@ export class ChatSocket {
     });
 
     this.socket.on('connect', () => this.rejoin?.());
+    this.socket.on('connect_error', (err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.toLowerCase().includes('unauthenticated')) {
+        this.options.onAuthFailure?.();
+        return;
+      }
+      this.options.onError?.(msg);
+    });
     this.socket.on('message', (m: ServerMessage) => this.options.onMessage(m));
   }
 

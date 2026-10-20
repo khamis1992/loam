@@ -1,19 +1,19 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import {
   Share, FileChartColumn, MoreHorizontal, PanelRight, CircleCheck, Copy, Repeat2,
   Star,
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector, type AppDispatch } from '@/store';
-import { appendEvent, applyDelta, setStatus } from '@/store/chatSlice';
+import { appendEvent, applyDelta, setStatus, setError } from '@/store/chatSlice';
 import { addSession, selectSession } from '@/store/sessionsSlice';
 import { t, PRODUCT } from '@/i18n/t';
 import { Composer } from '@/components/chat/Composer';
 import { EventList } from '@/components/chat/EventList';
 import { ChatSocket } from '@/services/chatSocket';
-import { RpcClient, getApiBase, getSessionToken } from '@/services/rpc';
+import { RpcClient, getApiBase, getSessionToken, handleAuthFailure } from '@/services/rpc';
 import { uploadFile } from '@/services/upload';
 import type {
   TaskMode,
@@ -63,6 +63,7 @@ function makeExtData(cwd?: string): Record<string, unknown> | undefined {
 
 export default function TaskPageClient(_props: { params: Promise<{ sessionUid: string }> }) {
   const pathname = usePathname();
+  const router = useRouter();
   const sessionUid = useMemo(() => {
     const parts = pathname.split('/').filter(Boolean);
     return parts[parts.length - 1] ?? 'demo-running';
@@ -73,6 +74,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const events = useAppSelector((s) => s.chat.eventsBySession[sessionUid] ?? []);
   const status = useAppSelector((s) => s.chat.statusBySession[sessionUid]);
   const running = useAppSelector((s) => s.chat.running[sessionUid] ?? false);
+  const error = useAppSelector((s) => s.chat.errorsBySession[sessionUid]);
   const draftText = searchParams.get('draft') || '';
   const draftMode = (searchParams.get('mode') as TaskMode) || 'standard';
   const cwd = searchParams.get('cwd') || undefined;
@@ -83,12 +85,27 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const socketRef = useRef<ChatSocket | null>(null);
   const apiBase = useMemo(() => getApiBase(), []);
 
+  const onAuthFailure = useMemo(() => () => {
+    dispatch(setError({ sessionId: sessionUid, error: t('Session expired. Please sign in again.') }));
+    handleAuthFailure();
+  }, [dispatch, sessionUid]);
+
+  const onRpcError = (message: string) => {
+    dispatch(setError({ sessionId: sessionUid, error: message }));
+  };
+
   useEffect(() => {
-    const rpc = new RpcClient({ getToken: getSessionToken, apiBase });
+    const rpc = new RpcClient({
+      getToken: getSessionToken,
+      apiBase,
+      onUnauthorized: onAuthFailure,
+    });
     const socket = new ChatSocket({
       getToken: getSessionToken,
       socketBase: getSocketBase(),
       onMessage: (m: ServerMessage) => handleServerMessage(m, sessionUid, dispatch),
+      onAuthFailure,
+      onError: onRpcError,
     });
     socketRef.current = socket;
     let mounted = true;
@@ -109,6 +126,11 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
           icon: '•',
         }));
         dispatch(selectSession(sessionUid));
+        // Remove draft from the URL so a reload does not re-send it.
+        const cleanParams = new URLSearchParams(searchParams.toString());
+        cleanParams.delete('draft');
+        const qs = cleanParams.toString();
+        router.replace(`/app/${sessionUid}${qs ? `?${qs}` : ''}`);
       }
 
       // Hydrate existing session metadata (title etc.) from RPC if available.
@@ -126,8 +148,8 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
             }));
             dispatch(selectSession(sessionUid));
           }
-        } catch {
-          // New sessions may not exist in RPC yet; user_message creates them.
+        } catch (e) {
+          onRpcError(e instanceof Error ? e.message : String(e));
         }
       }
     })();
@@ -137,7 +159,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [sessionUid, draftText, draftMode, draftAttachments, cwd, apiBase, dispatch]);
+  }, [sessionUid, draftText, draftMode, draftAttachments, cwd, apiBase, dispatch, onAuthFailure, searchParams, router]);
 
   const clockEvent = useMemo(() =>
     [...events].reverse().find((e): e is CascadeTaskClockEvent => e.type === 'cascadeTaskClock'),
@@ -147,6 +169,8 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     const final = [...events].reverse().find((e): e is ChatMessageEvent => e.type === 'chat' && e.sender === 'assistant' && e.deliveryKind === 'result');
     return final?.content ?? '';
   }, [events]);
+
+  const wasStoppedByUser = useMemo(() => events.some((e) => e.type === 'userStop'), [events]);
 
   const handleSend = async (text: string, mode: TaskMode, files: File[]) => {
     const socket = socketRef.current;
@@ -189,6 +213,11 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               {t('Worked for {duration}', { duration: formatDuration(clockEvent.clock.accumulatedMs) })} ›
             </div>
           )}
+          {error && (
+            <div className="mb-2 rounded-control bg-function-error-tsp px-3 py-2 text-sm text-function-error">
+              {error}
+            </div>
+          )}
           <EventList events={events} sessionId={sessionUid} socket={socketRef.current} />
 
           {assistantText && !running && (
@@ -212,10 +241,10 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
 
       <div className="mx-auto w-full max-w-[768px] px-6 pb-4">
         <div className="mb-2 flex h-row-sm items-center gap-2 rounded-control bg-fill-tsp px-2 text-sm text-text-secondary">
-          <span className={running ? 'animate-pulse text-icon-blue' : status === 'stopped' ? 'text-function-warning' : 'text-func-success'}>
-            {running ? '●' : status === 'stopped' ? '◼' : '✓'}
+          <span className={running ? 'animate-pulse text-icon-blue' : wasStoppedByUser ? 'text-function-warning' : 'text-func-success'}>
+            {running ? '●' : wasStoppedByUser ? '◼' : '✓'}
           </span>
-          {running ? t('Working') : status === 'stopped' ? t('Stopped') : t('Task completed')}
+          {running ? t('Working') : wasStoppedByUser ? t('Stopped') : t('Task completed')}
         </div>
         <Composer onSend={handleSend} onStop={handleStop} running={running} />
       </div>
@@ -232,6 +261,10 @@ function handleServerMessage(m: ServerMessage, sessionId: string, dispatch: AppD
   }
   if (ev.type === 'statusUpdate') {
     dispatch(setStatus({ sessionId, status: (ev as StatusUpdateEvent).agentStatus }));
+  }
+  const errorLike = ev as unknown as { type?: string; message?: string };
+  if (errorLike.type === 'error') {
+    dispatch(setError({ sessionId, error: errorLike.message ?? t('An error occurred') }));
   }
   dispatch(appendEvent({ sessionId, event: ev }));
 }

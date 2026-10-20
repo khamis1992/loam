@@ -45,6 +45,12 @@ export async function getSessionToken(): Promise<string> {
   return token ?? '';
 }
 
+export function handleAuthFailure() {
+  if (typeof window === 'undefined') return;
+  (window as unknown as { __apis?: { auth?: { removeToken?: () => Promise<unknown> } } }).__apis?.auth?.removeToken?.();
+  window.location.href = '/login';
+}
+
 export interface RpcError {
   code: string;
   message: string;
@@ -104,10 +110,9 @@ export class RpcClient {
       method: 'POST',
       headers: this.headers(auth),
       body: JSON.stringify(body),
-      credentials: 'include',
     });
     if (res.status === 401) {
-      this.options.onUnauthorized?.();
+      (this.options.onUnauthorized ?? handleAuthFailure)();
     }
     const data = (await res.json().catch(() => ({}))) as T | RpcError;
     if (!res.ok) {

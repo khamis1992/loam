@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import type { ChatEvent, ToolUsedEvent } from '@shared/socket';
 import { t, PRODUCT } from '@/i18n/t';
 import { Markdown } from './Markdown';
@@ -72,10 +72,37 @@ const Row = memo(function Row({ e, sessionId, socket }: { e: RenderableEvent; se
 });
 
 export function EventList({ events, sessionId, socket }: EventListProps) {
-  const renderable = events as unknown as RenderableEvent[];
+  const collapsed = useMemo(() => collapseEvents(events as unknown as RenderableEvent[]), [events]);
   return (
     <ol className="mx-auto flex w-full max-w-[768px] flex-col gap-2 px-[var(--ui-content-padding-x,24px)] py-6">
-      {renderable.map((e) => <li key={e.id}><Row e={e} sessionId={sessionId} socket={socket} /></li>)}
+      {collapsed.map((e) => <li key={e.id}><Row e={e} sessionId={sessionId} socket={socket} /></li>)}
     </ol>
   );
+}
+
+/** Merge toolUsed argument/start/finish frames for the same action into a single event. */
+function collapseEvents(events: RenderableEvent[]): RenderableEvent[] {
+  const out: RenderableEvent[] = [];
+  const toolByAction = new Map<string, ToolUsedEvent>();
+  for (const e of events) {
+    if (e.type === 'toolUsed') {
+      const t = e as ToolUsedEvent;
+      const existing = toolByAction.get(t.actionId);
+      if (existing) {
+        // Update status and merge details, preferring the later (usually final) frame.
+        toolByAction.set(t.actionId, {
+          ...existing,
+          ...t,
+          detail: t.detail ?? existing.detail,
+          argumentsDetail: t.argumentsDetail ?? existing.argumentsDetail,
+        });
+        continue;
+      }
+      toolByAction.set(t.actionId, t);
+      out.push(t);
+      continue;
+    }
+    out.push(e);
+  }
+  return out;
 }

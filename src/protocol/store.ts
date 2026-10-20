@@ -14,6 +14,7 @@ export interface ProtocolSession {
 
 export class ProtocolStore {
   private sessions = new Map<string, ProtocolSession>();
+  private taskIdToSessionId = new Map<string, string>();
 
   ensureSession(sessionId: string, taskId: string, title = "New task"): ProtocolSession {
     let s = this.sessions.get(sessionId);
@@ -40,7 +41,20 @@ export class ProtocolStore {
 
   setTaskId(sessionId: string, taskId: string): void {
     const s = this.sessions.get(sessionId);
-    if (s) s.taskId = taskId;
+    if (s) {
+      s.taskId = taskId;
+      this.taskIdToSessionId.set(taskId, sessionId);
+    }
+  }
+
+  bindTask(sessionId: string, taskId: string): void {
+    this.taskIdToSessionId.set(taskId, sessionId);
+  }
+
+  getSessionByTaskId(taskId: string): ProtocolSession | undefined {
+    const sessionId = this.taskIdToSessionId.get(taskId);
+    if (sessionId) return this.sessions.get(sessionId);
+    return undefined;
   }
 
   setTitle(sessionId: string, title: string): void {

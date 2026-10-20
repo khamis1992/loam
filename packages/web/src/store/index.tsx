@@ -7,7 +7,7 @@ import { useSelector as useReduxSelector, useDispatch as useReduxDispatch, type 
 import authReducer, { setUser, setToken, logout } from './authSlice';
 import sessionsReducer, { setSessions, addSession, selectSession, startNewTask, updateSession, setFilter, loadSessions } from './sessionsSlice';
 import websocketReducer, { setConnected, setOffline } from './websocketSlice';
-import chatReducer, { appendEvent, applyDelta, setStatus, replaceEvents, clearSession } from './chatSlice';
+import chatReducer, { appendEvent, applyDelta, setStatus, replaceEvents, clearSession, setError } from './chatSlice';
 import projectReducer, { setProjects, selectProject } from './projectSlice';
 import uiReducer, {
   setTheme,
@@ -62,7 +62,7 @@ export {
   setUser, setToken, logout,
   setSessions, addSession, selectSession, startNewTask, updateSession, setFilter, loadSessions,
   setConnected, setOffline,
-  appendEvent, applyDelta, setStatus, replaceEvents, clearSession,
+  appendEvent, applyDelta, setStatus, replaceEvents, clearSession, setError,
   setProjects, selectProject,
   setTheme, setLocale, setDensity, toggleSidebar, setSidebarOpen,
   openSettings, closeSettings, setSettingsTab, setUpdateStatus, setActivityIndicatorOpen,

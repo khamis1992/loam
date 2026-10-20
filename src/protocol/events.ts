@@ -271,9 +271,13 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
 
     case "task-status": {
       const statusText = String(event.status).toLowerCase();
+      // "queued" is a transient state; the UI should stay as-is until "running" arrives.
+      if (statusText !== "running" && statusText !== "waiting" && statusText !== "error") {
+        break;
+      }
       const agentStatus: StatusUpdateEvent["agentStatus"] =
-        statusText === "running" ? "running" : statusText === "waiting" ? "waiting" : statusText === "error" ? "error" : "stopped";
-      const brief = agentStatus === "running" ? "Agent is running" : agentStatus === "stopped" ? "Agent finished working" : `Agent ${agentStatus}`;
+        statusText === "running" ? "running" : statusText === "waiting" ? "waiting" : "error";
+      const brief = agentStatus === "running" ? "Agent is running" : `Agent ${agentStatus}`;
       const statusUpdate: StatusUpdateEvent = {
         id: baseId(),
         type: "statusUpdate",

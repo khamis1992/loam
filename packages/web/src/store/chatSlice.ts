@@ -6,9 +6,10 @@ export interface ChatState {
   deltasByTarget: Record<string, string>;
   statusBySession: Record<string, StatusUpdateEvent['agentStatus']>;
   running: Record<string, boolean>;
+  errorsBySession: Record<string, string>;
 }
 
-const initialState: ChatState = { eventsBySession: {}, deltasByTarget: {}, statusBySession: {}, running: {} };
+const initialState: ChatState = { eventsBySession: {}, deltasByTarget: {}, statusBySession: {}, running: {}, errorsBySession: {} };
 
 function ensureEvents(state: ChatState, sessionId: string) {
   if (!state.eventsBySession[sessionId]) state.eventsBySession[sessionId] = [];
@@ -61,11 +62,15 @@ const chatSlice = createSlice({
     },
     clearSession(state, action: PayloadAction<string>) {
       delete state.eventsBySession[action.payload];
+      delete state.errorsBySession[action.payload];
+    },
+    setError(state, action: PayloadAction<{ sessionId: string; error: string }>) {
+      state.errorsBySession[action.payload.sessionId] = action.payload.error;
     },
   },
 });
 
-export const { appendEvent, applyDelta, setStatus, replaceEvents, clearSession } = chatSlice.actions;
+export const { appendEvent, applyDelta, setStatus, replaceEvents, clearSession, setError } = chatSlice.actions;
 export default chatSlice.reducer;
 
 export type { ChatEvent, ChatMessageEvent, ChatDeltaEvent, StatusUpdateEvent, ToolUsedEvent };

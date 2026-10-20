@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { listTasks, getTask, createTask, updateProject, deleteProjectR, listProjects, getProject, createProject, type Task } from "../server/db.js";
 import { log } from "../log.js";
 import type { ProtocolStore } from "./store.js";
@@ -36,6 +38,42 @@ const tokens = new Map<string, string>(); // sessionToken -> userUid
 const tempCodes = new Set<string>();
 const loginTokens = new Map<string, string>(); // deep-link loginToken -> nonce
 
+function getDataDir(): string {
+  const dir = process.env.LOAM_DATA_DIR || process.env.MANUS_LOCAL_DATA_DIR;
+  if (dir) return path.resolve(dir);
+  return path.resolve("data");
+}
+
+const TOKEN_FILE = path.join(getDataDir(), "protocol-tokens.json");
+
+function loadTokens(): void {
+  try {
+    if (!fs.existsSync(TOKEN_FILE)) return;
+    const raw = fs.readFileSync(TOKEN_FILE, "utf8");
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      for (const [t, u] of Object.entries(parsed)) {
+        if (typeof u === "string") tokens.set(t, u);
+      }
+      log.info(`protocol loaded ${tokens.size} persisted session token(s)`);
+    }
+  } catch (err) {
+    log.warn(`protocol token load failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+function saveTokens(): void {
+  try {
+    fs.mkdirSync(path.dirname(TOKEN_FILE), { recursive: true });
+    const obj = Object.fromEntries(tokens);
+    fs.writeFileSync(TOKEN_FILE, JSON.stringify(obj, null, 2), "utf8");
+  } catch (err) {
+    log.warn(`protocol token save failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+loadTokens();
+
 function taskStatusToProto(status: Task["status"]): string {
   switch (status) {
     case "queued":
@@ -55,9 +93,9 @@ function taskStatusToProto(status: Task["status"]): string {
 }
 
 function loamTaskToAgentSession(task: Task, store: ProtocolStore): Record<string, unknown> {
-  const proto = store.getSession(task.id);
+  const proto = store.getSessionByTaskId(task.id) ?? store.getSession(task.id);
   return {
-    uid: task.id,
+    uid: proto?.sessionId ?? task.id,
     user_id: DEMO_USER.user_id,
     title: proto?.title ?? task.title,
     icon: "",
@@ -99,6 +137,7 @@ export function makeRpcHandlers(store: ProtocolStore): Record<string, (body: Rec
       if (!tempCodes.delete(String(token))) throw rpcError("invalid code", "unauthenticated");
       const t = randomUUID();
       tokens.set(t, DEMO_USER.uid);
+      saveTokens();
       return { token: t };
     },
     "user.v1.UserAuthService/EnsureDeviceIdentity": ({ deviceId, deviceCredential }) => {
@@ -118,7 +157,9 @@ export function makeRpcHandlers(store: ProtocolStore): Record<string, (body: Rec
     },
     "user.v1.UserAuthService/Logout": (_body, ctx) => {
       const uid = requireAuth(ctx);
-      for (const [t, u] of tokens) if (u === uid) tokens.delete(t);
+      let changed = false;
+      for (const [t, u] of tokens) if (u === uid) { tokens.delete(t); changed = true; }
+      if (changed) saveTokens();
       return {};
     },
 

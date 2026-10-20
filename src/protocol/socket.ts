@@ -163,6 +163,7 @@ export function createChatSocket(deps: SocketDeps): Server {
             const task = createTask(text, text.slice(0, 80), um.extData.projectId ?? null, null);
             taskId = task.id;
             session.taskId = taskId;
+            store.bindTask(um.sessionId, taskId);
           }
 
           // Echo user message.
@@ -192,6 +193,7 @@ export function createChatSocket(deps: SocketDeps): Server {
           io.to(um.sessionId).emit("message", userFrame);
 
           // Run the Loam task and stream mapped events.
+          let assistantResultEmitted = false;
           const emit: Emit = (event: AgentEvent) => {
             for (const chatEvent of mapAgentEvent(event, session.mapperState, um.sessionId)) {
               const frame: ServerEnvelope = {
@@ -201,6 +203,13 @@ export function createChatSocket(deps: SocketDeps): Server {
                 timestamp: Date.now(),
                 event: chatEvent,
               };
+              if (
+                chatEvent.type === "chat" &&
+                chatEvent.sender === "assistant" &&
+                chatEvent.deliveryKind === "result"
+              ) {
+                assistantResultEmitted = true;
+              }
               store.appendEvent(um.sessionId, frame);
               io.to(um.sessionId).emit("message", frame);
             }
@@ -216,8 +225,8 @@ export function createChatSocket(deps: SocketDeps): Server {
               projectId: um.extData.projectId ?? null,
             });
 
-            // Final assistant result if not already emitted.
-            if (result.text) {
+            // Final assistant result if the agent stream did not already emit one.
+            if (result.text && !assistantResultEmitted) {
               const finalChat: ChatMessageEvent = {
                 id: baseId(),
                 type: "chat",
@@ -239,6 +248,23 @@ export function createChatSocket(deps: SocketDeps): Server {
               store.appendEvent(um.sessionId, finalFrame);
               io.to(um.sessionId).emit("message", finalFrame);
             }
+
+            // Mark the run as finished in the UI.
+            const stopStatus: ServerEnvelope = {
+              id: baseId(),
+              type: "event",
+              sessionId: um.sessionId,
+              timestamp: Date.now(),
+              event: {
+                id: baseId(),
+                type: "statusUpdate",
+                timestamp: Date.now(),
+                agentStatus: "stopped",
+                brief: "Agent finished working",
+              },
+            };
+            store.appendEvent(um.sessionId, stopStatus);
+            io.to(um.sessionId).emit("message", stopStatus);
 
             // Cascade clock for "Worked for Ns".
             const started = session.createdAt;
