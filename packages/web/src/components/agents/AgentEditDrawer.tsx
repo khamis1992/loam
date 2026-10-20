@@ -7,6 +7,7 @@ import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { agentLabel } from './agentLabels';
 import type { AgentCardAgent } from './AgentCard';
+import { InstructionHistoryList, recordInstructionEdit } from './InstructionHistory';
 
 interface WorkMode {
   id: string;
@@ -68,6 +69,7 @@ export function AgentEditDrawer({ agent, open, onClose, onSaved }: AgentEditDraw
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedInstructions, setSavedInstructions] = useState('');
 
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('🤖');
@@ -133,7 +135,9 @@ export function AgentEditDrawer({ agent, open, onClose, onSaved }: AgentEditDraw
       setName(agent.name || '');
       setEmoji(agent.emoji || '🤖');
       setDescription(agent.description || '');
-      setInstructions((agent as unknown as { instructions?: string }).instructions || '');
+      const existingInstructions = (agent as unknown as { instructions?: string }).instructions || '';
+      setInstructions(existingInstructions);
+      setSavedInstructions(existingInstructions);
       setMode(agent.mode || 'build');
       setWorkMode(agent.workMode || 'loam');
       const agentModel = agent.model || '';
@@ -249,6 +253,10 @@ export function AgentEditDrawer({ agent, open, onClose, onSaved }: AgentEditDraw
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error ?? `status ${res.status}`);
       }
+      const nextInstructions = instructions.trim();
+      if (nextInstructions !== savedInstructions) {
+        await recordInstructionEdit(agent.id, savedInstructions, nextInstructions).catch(() => undefined);
+      }
       onSaved();
       onClose();
     } catch (e) {
@@ -283,6 +291,11 @@ export function AgentEditDrawer({ agent, open, onClose, onSaved }: AgentEditDraw
           </div>
         ) : (
           <div className="flex flex-col gap-4">
+            {agent.id && (
+              <div className="flex flex-col gap-2">
+                <InstructionHistoryList agentId={agent.id} />
+              </div>
+            )}
             <label className="flex flex-col gap-1 text-sm text-text-secondary">
               {t('Name')}
               <input

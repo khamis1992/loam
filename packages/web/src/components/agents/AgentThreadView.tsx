@@ -25,6 +25,7 @@ import type {
   Attachment,
 } from '@shared/socket';
 import type { AgentCardAgent } from './AgentCard';
+import { InstructionProposalCard, useInstructionProposals } from './InstructionHistory';
 
 function getSocketBase(): string {
   if (typeof window === 'undefined') return '/';
@@ -151,6 +152,8 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
   const events = useAppSelector((s) => (threadUid ? s.chat.eventsBySession[threadUid] ?? [] : []));
   const running = useAppSelector((s) => (threadUid ? s.chat.running[threadUid] ?? false : false));
   const status = useAppSelector((s) => (threadUid ? s.chat.statusBySession[threadUid] : undefined));
+
+  const { proposals, refresh: refreshProposals } = useInstructionProposals(agent.id);
 
   const onAuthFailure = useMemo(
     () => () => {
@@ -361,6 +364,18 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-[768px] px-4 py-4">
+              {!resolving && proposals.length > 0 && (
+                <div className="mb-4 flex flex-col gap-2">
+                  {proposals.map((p) => (
+                    <InstructionProposalCard
+                      key={p.id}
+                      proposal={p}
+                      agentName={agent.name}
+                      onDone={refreshProposals}
+                    />
+                  ))}
+                </div>
+              )}
               {resolving ? (
                 <div className="flex h-full items-center justify-center text-text-secondary">
                   <Loader2 className="mr-2 size-5 animate-spin" /> {t('Loading')}
