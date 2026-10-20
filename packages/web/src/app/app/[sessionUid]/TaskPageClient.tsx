@@ -6,7 +6,7 @@ const sentDraftSessions = new Set<string>();
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import {
   Share, FileChartColumn, MoreHorizontal, PanelRight, CircleCheck, Copy, Repeat2,
-  Star,
+  Star, Loader2,
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector, type AppDispatch } from '@/store';
 import { appendEvent, applyDelta, setStatus, setError } from '@/store/chatSlice';
@@ -14,10 +14,11 @@ import { addSession, selectSession } from '@/store/sessionsSlice';
 import { t, PRODUCT } from '@/i18n/t';
 import { Composer } from '@/components/chat/Composer';
 import { EventList } from '@/components/chat/EventList';
+import { AttachmentCard, kindFromName, type AttachmentKind } from '@/components/chat/AttachmentCard';
 import { ComputerPanel } from '@/components/computer/ComputerPanel';
 import { ShareDialog } from '@/components/dialogs/ShareDialog';
 import { ChatSocket } from '@/services/chatSocket';
-import { RpcClient, getApiBase, getSessionToken, handleAuthFailure } from '@/services/rpc';
+import { RpcClient, getApiBase, getApiHeaders, getSessionToken, handleAuthFailure } from '@/services/rpc';
 import { uploadFile } from '@/services/upload';
 import type {
   TaskMode,
@@ -30,6 +31,7 @@ import type {
   ServerMessage,
   Attachment,
   ToolUsedEvent,
+  AttachmentEvent,
 } from '@shared/socket';
 import { formatDuration, formatTime } from '@/utils/format';
 
@@ -220,7 +222,37 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const hasResult = useMemo(() => events.some((e) => e.type === 'chat' && e.sender === 'assistant' && e.deliveryKind === 'result'), [events]);
   const hasClockClosed = useMemo(() => events.some((e) => e.type === 'cascadeTaskClock' && e.clock.phase === 'closed'), [events]);
   const [selectedTool, setSelectedTool] = useState<ToolUsedEvent | null>(null);
+  const [filesOpen, setFilesOpen] = useState(false);
+  const [taskFiles, setTaskFiles] = useState<Array<{ name: string; path: string; size: number; kind: AttachmentKind }>>([]);
+  const [taskFilesLoading, setTaskFilesLoading] = useState(false);
   const autoOpenedRef = useRef<Set<string>>(new Set());
+
+  const taskId = useMemo(() => {
+    const fromAttachment = events.find((e): e is AttachmentEvent => e.type === 'attachment');
+    const fromClock = events.find((e): e is CascadeTaskClockEvent => e.type === 'cascadeTaskClock');
+    return fromAttachment?.taskId ?? fromClock?.clock.taskId;
+  }, [events]);
+
+  const attachmentEvents = useMemo(() => events.filter((e): e is AttachmentEvent => e.type === 'attachment'), [events]);
+
+  const loadTaskFiles = async () => {
+    if (!taskId) return;
+    setTaskFilesLoading(true);
+    try {
+      const headers = await getApiHeaders();
+      const params = new URLSearchParams({ taskId, path: '', max: '300' });
+      const res = await fetch(`${apiBase}/api/files?${params.toString()}`, { headers });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data = (await res.json()) as { entries?: Array<{ name: string; path: string; size: number; dir?: boolean }> };
+      const entries = (data.entries ?? []).filter((e) => !e.dir);
+      setTaskFiles(entries.map((e) => ({ ...e, kind: kindFromName(e.name) })));
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('failed to load task files', e);
+    } finally {
+      setTaskFilesLoading(false);
+    }
+  };
 
   // Auto-open Loam's computer panel on the first tool/computer activity event.
   useEffect(() => {
@@ -301,6 +333,32 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                   <div className="mb-2 flex items-center gap-2 text-sm text-func-success">
                     <CircleCheck className="size-4" /> {t('Task completed')}
                   </div>
+                  {attachmentEvents.length > 0 && (
+                    <div className="mb-3 grid gap-2 sm:grid-cols-2">
+                      {attachmentEvents.map((a) => (
+                        <AttachmentCard
+                          key={a.id}
+                          name={a.name}
+                          mime={a.mime}
+                          size={a.sizeBytes}
+                          taskId={a.taskId}
+                          path={a.path}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {taskId && (
+                    <div className="mb-4">
+                      <button
+                        type="button"
+                        onClick={() => { setFilesOpen(true); void loadTaskFiles(); }}
+                        className="flex items-center gap-1.5 rounded-control px-2 py-1 text-sm font-medium text-text-secondary hover:bg-fill-hover"
+                      >
+                        <FileChartColumn className="size-4" />
+                        {t('View all files in this task')}
+                      </button>
+                    </div>
+                  )}
                   <div className="mb-4 flex items-center gap-2 text-sm text-text-tertiary">
                     <button className="rounded-control p-1 hover:bg-fill-hover"><Copy className="size-4" /></button>
                     <button className="rounded-control p-1 hover:bg-fill-hover"><Repeat2 className="size-4" /></button>
@@ -328,6 +386,46 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
         {selectedTool && <ComputerPanel sessionId={sessionUid} event={selectedTool} onClose={() => setSelectedTool(null)} />}
       </div>
       <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} url={shareUrl} />
+
+      {filesOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="flex max-h-[80vh] w-full max-w-[640px] flex-col rounded-card border border-border-main bg-bg-menu shadow-lg">
+            <div className="flex h-row items-center justify-between border-b border-border-main px-4">
+              <h2 className="text-title-sm text-text-primary">{t('Files in this task')}</h2>
+              <button
+                type="button"
+                onClick={() => setFilesOpen(false)}
+                className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {taskFilesLoading ? (
+                <div className="flex items-center justify-center py-8 text-text-secondary">
+                  <Loader2 className="mr-2 size-5 animate-spin" /> {t('Loading')}
+                </div>
+              ) : taskFiles.length === 0 ? (
+                <p className="py-8 text-center text-sm text-text-tertiary">{t('No files found in this task.')}</p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {taskFiles.map((f) => (
+                    <li key={f.path}>
+                      <AttachmentCard
+                        name={f.name}
+                        kind={f.kind}
+                        size={f.size}
+                        taskId={taskId}
+                        path={f.path}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

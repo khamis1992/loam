@@ -1,5 +1,5 @@
 import { memo, useMemo, Fragment } from 'react';
-import type { ChatEvent, ToolUsedEvent, CascadeTaskClockEvent } from '@shared/socket';
+import type { ChatEvent, ToolUsedEvent, CascadeTaskClockEvent, AttachmentEvent, ModeEvent } from '@shared/socket';
 import { t, PRODUCT } from '@/i18n/t';
 import { Markdown } from './Markdown';
 import { UserBubble } from './ChatBubble';
@@ -7,6 +7,7 @@ import { ToolUsedRow } from './ToolUsedRow';
 import { StatusUpdateRow } from './StatusUpdateRow';
 import { PlanStepRow, PlanUpdateRow } from './PlanStep';
 import { ApprovalCard, ExecutionApprovalCard, type LocalExecutionApprovalRequested } from '@/components/approval';
+import { AttachmentCard } from './AttachmentCard';
 import { summarizeTools } from './toolLabels';
 import type { ChatSocket } from '@/services/chatSocket';
 
@@ -35,6 +36,19 @@ const Row = memo(function Row({ e, sessionId, socket }: { e: RenderableEvent; se
       return <StatusUpdateRow e={e} />;
     case 'explanation':
       return <p className="text-sm text-text-secondary">{e.content}</p>;
+    case 'mode': {
+      const mode = e as ModeEvent;
+      return (
+        <div className="inline-flex items-center gap-1.5 rounded-full bg-fill-tsp px-2.5 py-1 text-xs text-text-secondary">
+          <span className="font-medium">{mode.label}</span>
+          {mode.reason && <span className="text-text-tertiary">· {mode.reason}</span>}
+        </div>
+      );
+    }
+    case 'attachment': {
+      const a = e as AttachmentEvent;
+      return <AttachmentCard name={a.name} mime={a.mime} size={a.sizeBytes} taskId={a.taskId} path={a.path} />;
+    }
     case 'liveStatus':
       return <div className="text-sm text-text-tertiary">{t('{name} is thinking', { name: PRODUCT })}…</div>;
     case 'userStop':

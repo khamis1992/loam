@@ -23,6 +23,8 @@ import type {
   TaskMode,
   ChatEvent,
   ServerAttachment,
+  AttachmentEvent,
+  ToolUsedEvent,
 } from "./types.js";
 import type { ProtocolStore } from "./store.js";
 import { tokenToUserUid } from "./rpc.js";
@@ -89,6 +91,85 @@ function stageAttachments(
   const list = files.map((f) => `• "${f.name}" — already in the task workspace at \`${f.rel}\``).join("\n");
   const block = `【Attachments】The following files are attached to this task and are available in the workspace:\n${list}\nRead and analyze them as needed.`;
   return { files, promptBlock: block };
+}
+
+interface WorkspaceFileSnapshot {
+  rel: string;
+  size: number;
+  mtimeMs: number;
+}
+
+const SKIP_WALK_DIRS = new Set([
+  "node_modules",
+  ".git",
+  ".loam",
+  "__pycache__",
+  ".next",
+  ".expo",
+  ".screenshots",
+  ".browser-recordings",
+  ".browser-profile",
+]);
+
+/** Recursively list files under a task workspace, returning paths relative to the root. */
+function snapshotWorkspaceFiles(root: string): WorkspaceFileSnapshot[] {
+  const files: WorkspaceFileSnapshot[] = [];
+  const walk = (dir: string) => {
+    let items: fs.Dirent[] = [];
+    try {
+      items = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const item of items) {
+      if (item.name === "." || item.name === "..") continue;
+      const full = path.join(dir, item.name);
+      if (item.isDirectory()) {
+        if (SKIP_WALK_DIRS.has(item.name)) continue;
+        walk(full);
+        continue;
+      }
+      try {
+        const st = fs.statSync(full);
+        files.push({ rel: path.relative(root, full).split(path.sep).join("/"), size: st.size, mtimeMs: st.mtimeMs });
+      } catch {
+        /* ignore stat failures */
+      }
+    }
+  };
+  walk(root);
+  return files;
+}
+
+function mimeFromExt(name: string): string {
+  const ext = path.extname(name).toLowerCase();
+  const map: Record<string, string> = {
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".doc": "application/msword",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xls": "application/vnd.ms-excel",
+    ".csv": "text/csv",
+    ".pdf": "application/pdf",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
+    ".webm": "video/webm",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+  };
+  return map[ext] ?? "application/octet-stream";
+}
+
+/** True if the mapped tool category is terminal/shell. */
+function isTerminalToolName(name: string): boolean {
+  return name.startsWith("shell_") || name.startsWith("pty_");
 }
 
 function stepToAgentEvent(step: StepRecord): AgentEvent | undefined {
@@ -378,6 +459,11 @@ export function createChatSocket(deps: SocketDeps): Server {
             prompt = `${prompt}\n\n${promptBlock}`;
           }
 
+          // Snapshot the workspace after staging user uploads so we can diff
+          // the files produced by this run at the end.
+          const taskRoot = requireTaskWorkspace(taskId, workspace);
+          const beforeFiles = snapshotWorkspaceFiles(taskRoot);
+
           // Echo user message.
           const userChat: ChatMessageEvent = {
             id: baseId(),
@@ -464,6 +550,57 @@ export function createChatSocket(deps: SocketDeps): Server {
               };
               store.appendEvent(um.sessionId, finalFrame);
               io.to(um.sessionId).emit("message", finalFrame);
+            }
+
+            // Emit attachment events for files produced during this run.
+            const afterFiles = snapshotWorkspaceFiles(taskRoot);
+            const beforeSet = new Set(beforeFiles.map((f) => f.rel));
+            for (const file of afterFiles) {
+              if (beforeSet.has(file.rel)) continue;
+              const attachment: AttachmentEvent = {
+                id: baseId(),
+                type: "attachment",
+                timestamp: Date.now(),
+                name: path.basename(file.rel),
+                path: file.rel,
+                mime: mimeFromExt(file.rel),
+                sizeBytes: file.size,
+                taskId,
+              };
+              const frame: ServerEnvelope = {
+                id: baseId(),
+                type: "event",
+                sessionId: um.sessionId,
+                timestamp: attachment.timestamp,
+                event: attachment,
+              };
+              store.appendEvent(um.sessionId, frame);
+              io.to(um.sessionId).emit("message", frame);
+            }
+
+            // Add a terminal "run complete" marker if no terminal tool was used.
+            const hasTerminal =
+              Array.from(session.mapperState.runningTool).some(isTerminalToolName) ||
+              Array.from(session.mapperState.toolActionIds.keys()).some((key) => isTerminalToolName(key.split(":")[0] ?? ""));
+            if (!hasTerminal) {
+              const marker: ToolUsedEvent = {
+                id: baseId(),
+                type: "toolUsed",
+                timestamp: Date.now(),
+                tool: "terminal",
+                actionId: baseId(),
+                status: "success",
+                brief: "Run complete",
+              };
+              const frame: ServerEnvelope = {
+                id: baseId(),
+                type: "event",
+                sessionId: um.sessionId,
+                timestamp: marker.timestamp,
+                event: marker,
+              };
+              store.appendEvent(um.sessionId, frame);
+              io.to(um.sessionId).emit("message", frame);
             }
 
             // Mark the run as finished in the UI.

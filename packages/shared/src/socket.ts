@@ -49,7 +49,10 @@ export interface UserMessage extends Base {
       enabledSkills?: string[];
     };
     mode?: TaskMode;
+    loamMode?: string;
     projectId?: string;
+    agentId?: string;
+    workMode?: string;
     executionTarget?: { kind: 'sandbox' | 'desktop' };
     desktopBinding?: { deviceId: string; folderPath: string };
   };
@@ -129,6 +132,23 @@ export interface NewPlanStepEvent extends ChatEventBase {
 export interface LiveStatusEvent extends ChatEventBase {
   type: 'liveStatus';
   text: string;
+}
+
+export interface ModeEvent extends ChatEventBase {
+  type: 'mode';
+  mode: string;
+  label: string;
+  labelAr: string;
+  reason?: string;
+}
+
+export interface AttachmentEvent extends ChatEventBase {
+  type: 'attachment';
+  name: string;
+  path: string;
+  mime: string;
+  sizeBytes: number;
+  taskId: string;
 }
 
 export interface ToolUsedEvent extends ChatEventBase {
@@ -215,6 +235,8 @@ export type ChatEvent =
   | PlanUpdateEvent
   | NewPlanStepEvent
   | LiveStatusEvent
+  | ModeEvent
+  | AttachmentEvent
   | ToolUsedEvent
   | UserStopEvent
   | CascadeTaskClockEvent

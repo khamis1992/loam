@@ -166,6 +166,15 @@ export interface ModeEvent extends ChatEventBase {
   reason?: string;
 }
 
+export interface AttachmentEvent extends ChatEventBase {
+  type: "attachment";
+  name: string;
+  path: string;
+  mime: string;
+  sizeBytes: number;
+  taskId: string;
+}
+
 export type ToolDetail =
   | { terminal: { shellId: string; action: "execute"; command: string; output?: string[]; outputType?: "append"; finished?: boolean } }
   | { textEditor: { action: "read" | "write" | "update"; path: string; content?: string; oldContent?: string } }
@@ -312,6 +321,7 @@ export type ChatEvent =
   | NewPlanStepEvent
   | LiveStatusEvent
   | ModeEvent
+  | AttachmentEvent
   | ToolUsedEvent
   | UserStopEvent
   | CascadeTaskClockEvent

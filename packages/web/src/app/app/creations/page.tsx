@@ -2,15 +2,34 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, ImageIcon, FileVideo, Presentation, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertCircle, ImageIcon, FileVideo, Presentation, FileCode } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
+import { kindFromName, type AttachmentKind } from '@/components/chat/AttachmentCard';
+import { formatBytes } from '@/utils/format';
 
 interface Creation {
   id: string;
-  kind: 'image' | 'video' | 'slide' | string;
-  title?: string;
-  thumbnailUrl?: string;
+  taskId: string;
+  path: string;
+  name: string;
+  kind: AttachmentKind;
+  size: number;
+  updatedAt: string;
+}
+
+const CREATION_KINDS: AttachmentKind[] = ['video', 'image', 'svg'];
+
+function isCreationFile(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  return ['mp4', 'mov', 'webm', 'mkv', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext);
+}
+
+function iconForKind(kind: AttachmentKind) {
+  if (kind === 'video') return <FileVideo className="size-8 text-text-tertiary" />;
+  if (kind === 'svg') return <FileCode className="size-8 text-text-tertiary" />;
+  if (kind === 'slide') return <Presentation className="size-8 text-text-tertiary" />;
+  return <ImageIcon className="size-8 text-text-tertiary" />;
 }
 
 export default function CreationsPage() {
@@ -24,35 +43,49 @@ export default function CreationsPage() {
     (async () => {
       try {
         const headers = await getApiHeaders();
-        // The creative endpoint requires a real media-mode task workspace and
-        // media requires a path. Find a media task; without one the page is
-        // simply empty. If the workspace has no scene/media yet, 404s are
-        // expected and we show the empty state.
-        const tasksRes = await fetch(`${getApiBase()}/api/tasks`, { headers });
+        const tasksRes = await fetch(`${getApiBase()}/api/tasks?limit=50`, { headers });
         if (!tasksRes.ok) throw new Error(`tasks ${tasksRes.status}`);
-        const tasks = (await tasksRes.json()) as { tasks?: Array<{ id: string; mode: string }> };
-        const mediaTask = tasks.tasks?.find((t) => t.mode === 'media');
-        if (!mediaTask) {
+        const tasks = (await tasksRes.json()) as { tasks?: Array<{ id: string; updatedAt: string }> };
+        const taskIds = (tasks.tasks ?? []).map((t) => t.id);
+        if (taskIds.length === 0) {
           if (mounted) setItems([]);
           return;
         }
-        const [creativeRes, mediaRes] = await Promise.all([
-          fetch(`${getApiBase()}/api/creative?taskId=${mediaTask.id}`, { headers }),
-          fetch(`${getApiBase()}/api/media?taskId=${mediaTask.id}&path=.`, { headers }),
-        ]);
-        if (!creativeRes.ok) {
-          if (creativeRes.status === 404 || creativeRes.status === 403) {
-            if (mounted) setItems([]);
-            return;
-          }
-          throw new Error(`creative ${creativeRes.status}`);
-        }
-        if (!mediaRes.ok && mediaRes.status !== 404) {
-          throw new Error(`media ${mediaRes.status}`);
-        }
-        const creative = (await creativeRes.json()) as { items?: Creation[] };
-        const creativeItems = (creative.items ?? []).map((c: Creation) => ({ ...c, kind: c.kind || 'image' }));
-        if (mounted) setItems(creativeItems);
+
+        const collected: Creation[] = [];
+        await Promise.all(
+          taskIds.map(async (taskId) => {
+            try {
+              const params = new URLSearchParams({ taskId, path: '', max: '200' });
+              const res = await fetch(`${getApiBase()}/api/files?${params.toString()}`, { headers });
+              if (!res.ok) return;
+              const data = (await res.json()) as {
+                entries?: Array<{ name: string; path: string; size: number; mtime?: string; dir?: boolean }>;
+              };
+              for (const e of data.entries ?? []) {
+                if (e.dir) continue;
+                if (!isCreationFile(e.name)) continue;
+                const kind = kindFromName(e.name);
+                if (!CREATION_KINDS.includes(kind)) continue;
+                collected.push({
+                  id: `${taskId}:${e.path}`,
+                  taskId,
+                  path: e.path,
+                  name: e.name,
+                  kind,
+                  size: e.size,
+                  updatedAt: e.mtime ?? '',
+                });
+              }
+            } catch (e) {
+              // eslint-disable-next-line no-console
+              console.error('failed to list task files', taskId, e);
+            }
+          }),
+        );
+
+        collected.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+        if (mounted) setItems(collected);
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         if (mounted) setError(message);
@@ -64,12 +97,6 @@ export default function CreationsPage() {
     })();
     return () => { mounted = false; };
   }, []);
-
-  const iconFor = (kind?: string) => {
-    if (kind === 'video') return <FileVideo className="size-5 text-text-tertiary" />;
-    if (kind === 'slide') return <Presentation className="size-5 text-text-tertiary" />;
-    return <ImageIcon className="size-5 text-text-tertiary" />;
-  };
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-bg-main">
@@ -100,18 +127,31 @@ export default function CreationsPage() {
             <p className="max-w-[320px] text-center text-xs">{t('Generated images, videos, and slides will appear here.')}</p>
           </div>
         ) : (
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <ul className="mx-auto grid w-full max-w-[1024px] grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {items.map((c) => (
               <li key={c.id} className="rounded-card border border-border-main bg-bg-menu p-3">
-                <div className="mb-2 flex h-24 items-center justify-center rounded-control bg-fill-tsp">
-                  {c.thumbnailUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={c.thumbnailUrl} alt="" className="h-full w-full rounded-control object-cover" />
-                  ) : (
-                    iconFor(c.kind)
-                  )}
-                </div>
-                <p className="truncate text-sm text-text-primary">{c.title || c.id}</p>
+                <a
+                  href={`${getApiBase()}/api/media?taskId=${encodeURIComponent(c.taskId)}&path=${encodeURIComponent(c.path)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block"
+                >
+                  <div className="mb-2 flex h-24 items-center justify-center rounded-control bg-fill-tsp">
+                    {c.kind === 'image' || c.kind === 'svg' ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`${getApiBase()}/api/media?taskId=${encodeURIComponent(c.taskId)}&path=${encodeURIComponent(c.path)}`}
+                        alt={c.name}
+                        className="h-full w-full rounded-control object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      iconForKind(c.kind)
+                    )}
+                  </div>
+                  <p className="truncate text-sm text-text-primary">{c.name}</p>
+                  <p className="truncate text-xs text-text-tertiary">{formatBytes(c.size)}</p>
+                </a>
               </li>
             ))}
           </ul>

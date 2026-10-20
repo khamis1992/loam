@@ -2,20 +2,29 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, FileText, Loader2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertCircle, FileText, ExternalLink } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
+import { kindFromName, type AttachmentKind } from '@/components/chat/AttachmentCard';
+import { formatBytes } from '@/utils/format';
 
-interface FileItem {
+interface LibraryFile {
   name: string;
-  path?: string;
-  size?: number;
-  updatedAt?: string;
+  path: string;
+  size: number;
+  updatedAt: string;
+  taskId: string;
+  kind: AttachmentKind;
+}
+
+function isLibraryFile(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  return ['docx', 'doc', 'pdf', 'txt', 'md', 'pptx', 'ppt', 'xlsx', 'xls', 'csv'].includes(ext);
 }
 
 export default function LibraryPage() {
   const router = useRouter();
-  const [files, setFiles] = useState<FileItem[]>([]);
+  const [files, setFiles] = useState<LibraryFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,33 +33,51 @@ export default function LibraryPage() {
     (async () => {
       try {
         const headers = await getApiHeaders();
-        // The Loam /api/files endpoint requires a real taskId to locate the
-        // workspace and an optional path. Pick any existing task and list its
-        // workspace root. If there are no tasks, show the empty state.
-        const tasksRes = await fetch(`${getApiBase()}/api/tasks?limit=1`, { headers });
+        const tasksRes = await fetch(`${getApiBase()}/api/tasks?limit=50`, { headers });
         if (!tasksRes.ok) throw new Error(`tasks ${tasksRes.status}`);
-        const tasks = (await tasksRes.json()) as { tasks?: Array<{ id: string }> };
-        const taskId = tasks.tasks?.[0]?.id;
-        if (!taskId) {
+        const tasks = (await tasksRes.json()) as { tasks?: Array<{ id: string; updatedAt: string }> };
+        const taskIds = (tasks.tasks ?? []).map((t) => t.id);
+        if (taskIds.length === 0) {
           if (mounted) setFiles([]);
           return;
         }
-        const params = new URLSearchParams({ taskId, path: '' });
-        const res = await fetch(`${getApiBase()}/api/files?${params.toString()}`, { headers });
-        if (!res.ok) {
-          if (res.status === 404) {
-            if (mounted) setFiles([]);
-            return;
-          }
-          throw new Error(`status ${res.status}`);
-        }
-        const data = (await res.json()) as { entries?: FileItem[] };
-        if (mounted) setFiles((data.entries ?? []).map((e) => ({ ...e, updatedAt: (e as unknown as { mtime?: string }).mtime })));
+
+        const collected: LibraryFile[] = [];
+        await Promise.all(
+          taskIds.map(async (taskId) => {
+            try {
+              const params = new URLSearchParams({ taskId, path: '', max: '200' });
+              const res = await fetch(`${getApiBase()}/api/files?${params.toString()}`, { headers });
+              if (!res.ok) return;
+              const data = (await res.json()) as {
+                entries?: Array<{ name: string; path: string; size: number; mtime?: string; dir?: boolean }>;
+              };
+              for (const e of data.entries ?? []) {
+                if (e.dir) continue;
+                if (!isLibraryFile(e.name)) continue;
+                collected.push({
+                  name: e.name,
+                  path: e.path,
+                  size: e.size,
+                  updatedAt: e.mtime ?? '',
+                  taskId,
+                  kind: kindFromName(e.name),
+                });
+              }
+            } catch (e) {
+              // eslint-disable-next-line no-console
+              console.error('failed to list task files', taskId, e);
+            }
+          }),
+        );
+
+        collected.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+        if (mounted) setFiles(collected);
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         if (mounted) setError(message);
         // eslint-disable-next-line no-console
-        console.error('failed to load library files', e);
+        console.error('failed to load library', e);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -87,11 +114,26 @@ export default function LibraryPage() {
             <p className="max-w-[320px] text-center text-xs">{t('Task outputs and uploads will appear here once the backend indexes them.')}</p>
           </div>
         ) : (
-          <ul className="flex flex-col gap-1">
-            {files.map((f, i) => (
-              <li key={i} className="flex items-center gap-2 rounded-control px-2 py-1.5 hover:bg-fill-hover">
-                <FileText className="size-4 text-text-tertiary" />
-                <span className="flex-1 truncate text-sm text-text-primary">{f.name}</span>
+          <ul className="mx-auto flex w-full max-w-[768px] flex-col gap-2">
+            {files.map((f) => (
+              <li key={`${f.taskId}:${f.path}`} className="flex items-center gap-3 rounded-card border border-border-main bg-bg-menu p-3 hover:bg-fill-hover">
+                <FileText className="size-5 shrink-0 text-text-tertiary" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-text-primary">{f.name}</p>
+                  <p className="text-xs text-text-tertiary">
+                    {f.path}
+                    {f.size !== undefined && ` · ${formatBytes(f.size)}`}
+                  </p>
+                </div>
+                <a
+                  href={`${getApiBase()}/api/media?taskId=${encodeURIComponent(f.taskId)}&path=${encodeURIComponent(f.path)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 rounded-control px-2 py-1 text-xs font-medium text-text-secondary hover:bg-fill-hover"
+                >
+                  <ExternalLink className="size-3.5" />
+                  {t('Open')}
+                </a>
               </li>
             ))}
           </ul>

@@ -381,5 +381,13 @@
   "Microphone": "الميكروفون",
   "Website": "موقع",
   "agent": "agent",
-  "loam": "loam"
+  "loam": "loam",
+  "Document": "مستند",
+  "Spreadsheet": "جدول بيانات",
+  "Slide": "شريحة",
+  "Image": "صورة",
+  "File": "ملف",
+  "View all files in this task": "عرض جميع ملفات هذه المهمة",
+  "Files in this task": "ملفات هذه المهمة",
+  "No files found in this task.": "لم يتم العثور على ملفات في هذه المهمة."
 }

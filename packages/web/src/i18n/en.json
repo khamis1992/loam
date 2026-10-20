@@ -381,5 +381,13 @@
   "Microphone": "Microphone",
   "Website": "Website",
   "agent": "agent",
-  "loam": "loam"
+  "loam": "loam",
+  "Document": "Document",
+  "Spreadsheet": "Spreadsheet",
+  "Slide": "Slide",
+  "Image": "Image",
+  "File": "File",
+  "View all files in this task": "View all files in this task",
+  "Files in this task": "Files in this task",
+  "No files found in this task.": "No files found in this task."
 }
