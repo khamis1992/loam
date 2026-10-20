@@ -1,8 +1,8 @@
 'use client';
 
-import { ReactNode, useEffect, useMemo } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { Provider } from 'react-redux';
-import { store, makeStore, useAppSelector, useAppDispatch } from '@/store';
+import { store, useAppSelector, useAppDispatch } from '@/store';
 import { setTheme, setLocale, openSettings } from '@/store';
 import { setLocale as setDocumentLocale } from '@/i18n/t';
 
@@ -84,7 +84,6 @@ function ShellSync() {
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const s = useMemo(() => makeStore(), []);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     (window as any).__testOpenSettings = (tab?: string) => {
@@ -92,7 +91,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
   }, []);
   return (
-    <Provider store={s}>
+    <Provider store={store}>
       <ShellSync />
       {children}
     </Provider>
