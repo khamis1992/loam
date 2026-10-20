@@ -12,6 +12,7 @@ import { createTask, getTask, listTasks, setTaskStatus } from "../server/db.js";
 import { addSchedule, listSchedules, deleteSchedule } from "../server/db.js";
 import { cancelRunSignal } from "../server/runControl.js";
 import { createWatchRoutine, watchSchedules } from "../server/fileWatchers.js";
+import { DEFAULT_TIMEZONE, isValidTimezone } from "../server/scheduleTime.js";
 
 const json = (value: unknown): string => JSON.stringify(value, null, 1);
 
@@ -96,34 +97,78 @@ export function createLoamServiceTools(): Tool[] {
     },
     {
       name: "schedule_create",
-      description: "أنشئ روتينًا مجدولًا (الأتمتة): يُشغّل أمرًا دوريًا على أحدث نموذج. يُربط الروتين تلقائيًا بهذا المساعد إن كانت الجولة لمساعد. اعرض دائمًا الفاصل ومعرّف الروتين للمستخدم.",
+      description: "أنشئ روتينًا مجدولًا (الأتمتة): يُشغّل أمرًا دوريًا (everyMinutes) أو حسب تعبير cron أو مرة واحدة في وقت محدد (at). يُربط الروتين تلقائيًا بهذا المساعد إن كانت الجولة لمساعد. اعرض دائمًا التوقيت ومعرّف الروتين للمستخدم.",
       parameters: {
         type: "object",
         properties: {
           prompt: { type: "string", description: "الأمر الذي يُنفّذ كل مرة (وصف مهمة كامل)" },
-          everyMinutes: { type: "number", minimum: 1, description: "الفاصل بالدقائق (الحد الأدنى الفعلي 30 ثانية)" },
+          everyMinutes: { type: "number", minimum: 1, description: "الفاصل بالدقائق (الحد الأدنى الفعلي 30 ثانية) — استخدمه للروتين الدوري البسيط" },
+          cron: { type: "string", description: "تعبير cron من 5 حقول (دقيقة ساعة يوم-الشهر شهر يوم-الأسبوع) — بديل عن everyMinutes" },
+          at: { type: "string", description: "توقيت ISO 8601 لتشغيل واحد فقط (مثال 2026-11-01T18:00:00+03:00) — بديل عن everyMinutes" },
+          timezone: { type: "string", description: "منطقة IANA الزمنية لتفسير cron/at (افتراضيًا Asia/Qatar)" },
           agentId: { type: "string", description: "إسناد الروتين لمساعد محدد (افتراضيًا: مساعد هذه الجولة)" },
           workMode: { type: "string", enum: ["loam", "own_device"], description: "أين يُنفّذ الروتين: داخل التطبيق أو على جهاز المساعد المستقل (يتطلب جهازًا جاهزًا)" },
         },
-        required: ["prompt", "everyMinutes"],
+        required: ["prompt"],
       },
       async run(args, ctx) {
         const prompt = str(args, "prompt").trim().slice(0, 4000);
         const everyMinutes = num(args, "everyMinutes", 0);
+        const cron = str(args, "cron").trim();
+        const at = str(args, "at").trim();
+        const timezone = str(args, "timezone").trim() || DEFAULT_TIMEZONE;
         if (!prompt) return { ok: false, content: "prompt مطلوب" };
-        if (!(everyMinutes > 0)) return { ok: false, content: "everyMinutes يجب أن يكون رقمًا موجبًا" };
+        if (cron && at) return { ok: false, content: "لا يمكن الجمع بين cron وat — اختر واحدًا" };
+        if (!isValidTimezone(timezone)) return { ok: false, content: `منطقة زمنية غير معروفة: ${timezone}` };
+        if (!cron && !at && !(everyMinutes > 0)) return { ok: false, content: "everyMinutes يجب أن يكون رقمًا موجبًا (أو مرّر cron أو at)" };
+        const intervalSeconds = everyMinutes > 0 ? Math.round(everyMinutes * 60) : 0;
         const owner = str(args, "agentId").trim() || (ctx.taskId ? (getTask(ctx.taskId)?.agentId ?? "") : "");
         const workMode = str(args, "workMode").trim() || undefined;
-        const s = addSchedule(prompt, Math.round(everyMinutes * 60), owner || undefined, workMode === "own_device" || workMode === "loam" ? workMode : undefined);
-        return { ok: true, content: `أُنشئ الروتين (المعرف ${s.id}) — يُنفّذ كل ${everyMinutes} دقيقة بدءًا من ${s.nextRunAt}${s.agentId ? ` ويعمل باسم هذا المساعد (${s.agentId}) — تظهر نتائجه في محادثته` : ""}${s.workMode === "own_device" ? " على جهازه المستقل" : ""}. أوقفه بـ schedule_delete بنفس المعرف.` };
+        let s;
+        try {
+          s = addSchedule(
+            prompt,
+            intervalSeconds,
+            owner || undefined,
+            workMode === "own_device" || workMode === "loam" ? workMode : undefined,
+            cron || at ? "cron" : undefined,
+            undefined,
+            true,
+            { cron: cron || undefined, runAt: at || undefined, timezone },
+          );
+        } catch (error) {
+          return { ok: false, content: `تعذّر إنشاء الروتين: ${(error as Error).message}` };
+        }
+        const cadence = cron
+          ? `يُشغّل حسب cron «${cron}» (${timezone})`
+          : at
+            ? `يُشغّل مرة واحدة عند ${s.nextRunAt}`
+            : `يُنفّذ كل ${everyMinutes} دقيقة بدءًا من ${s.nextRunAt}`;
+        return { ok: true, content: `أُنشئ الروتين (المعرف ${s.id}) — ${cadence}${s.agentId ? ` ويعمل باسم هذا المساعد (${s.agentId}) — تظهر نتائجه في محادثته` : ""}${s.workMode === "own_device" ? " على جهازه المستقل" : ""}. أوقفه بـ schedule_delete بنفس المعرف.` };
       },
     },
     {
       name: "schedule_list",
-      description: "اعرض روتينات الأتمتة المجدولة: المعرف، الفاصل، حالة التمكين، آخر تشغيل.",
+      description: "اعرض روتينات الأتمتة المجدولة: المعرف، الفاصل أو cron، المنطقة الزمنية، التمكين، آخر تشغيل وحالته.",
       parameters: { type: "object", properties: {} },
       async run() {
-        const rows = listSchedules().map((s) => ({ id: s.id, everyMinutes: Math.round(s.intervalSeconds / 60), enabled: s.enabled, prompt: s.prompt.slice(0, 120), agentId: s.agentId ?? null, lastRunAt: s.lastRunAt ?? null, lastTaskId: s.lastTaskId ?? null }));
+        const rows = listSchedules().map((s) => ({
+          id: s.id,
+          everyMinutes: Math.round(s.intervalSeconds / 60),
+          intervalSeconds: s.intervalSeconds,
+          cron: s.cron ?? null,
+          runAt: s.runAt ?? null,
+          timezone: s.timezone ?? DEFAULT_TIMEZONE,
+          nextRunAt: s.nextRunAt ?? null,
+          enabled: s.enabled,
+          prompt: s.prompt.slice(0, 120),
+          agentId: s.agentId ?? null,
+          lastRunAt: s.lastRunAt ?? null,
+          lastTaskId: s.lastTaskId ?? null,
+          lastStatus: s.lastStatus ?? null,
+          attempts: s.attempts ?? 0,
+          lastError: s.lastError ?? null,
+        }));
         return { ok: true, content: rows.length > 0 ? json(rows) : "لا روتينات مجدولة" };
       },
     },

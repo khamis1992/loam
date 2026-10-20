@@ -74,6 +74,8 @@ import { getSettings, updateSettings } from "./settings.js";
 import { cancelRunSignal } from "./runControl.js";
 import { createAgent, deleteAgent, getAgent, listAgents, setAgentArchived, updateAgent } from "./agents.js";
 import { handleScratchpadRoutes } from "./routes/scratchpad.js";
+import { handleSchedulesRoutes } from "./routes/schedules.js";
+import { isValidTimezone } from "./scheduleTime.js";
 import { getWorkModesUi, normalizeWorkMode, resolveCompanionCapabilities } from "./companionGateway.js";
 import { DEVICE_TEMPLATES, deviceManager, getDevice, listDevices, readJournal } from "./companionDevices.js";
 import { remember, listMemory, editMemory, supersedeMemory, forget, exportMemory, importMemory } from "./companionMemory.js";
@@ -1626,6 +1628,7 @@ loadAgents();
         }
 
         if (await handleScratchpadRoutes(req, res, p)) return;
+        if (await handleSchedulesRoutes(req, res, p)) return;
 
         if (p.startsWith("/api/agents/")) {
           const id = decodeURIComponent(p.slice("/api/agents/".length));
@@ -2207,16 +2210,26 @@ loadAgents();
         }
 
         if (req.method === "POST" && p === "/api/schedules") {
-          const body = (await readBody(req)) as { prompt?: unknown; intervalSeconds?: unknown; agentId?: unknown; workMode?: unknown; enabled?: unknown };
+          const body = (await readBody(req)) as { prompt?: unknown; intervalSeconds?: unknown; agentId?: unknown; workMode?: unknown; enabled?: unknown; cron?: unknown; at?: unknown; runAt?: unknown; timezone?: unknown };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
           const intervalSeconds = Number(body.intervalSeconds ?? 0);
           const agentId = typeof body.agentId === "string" && body.agentId ? body.agentId : undefined;
           const workMode = body.workMode === "own_device" || body.workMode === "loam" ? body.workMode : undefined;
+          const cron = typeof body.cron === "string" && body.cron.trim() ? body.cron.trim() : undefined;
+          const runAt = typeof body.at === "string" && body.at.trim() ? body.at.trim() : typeof body.runAt === "string" && body.runAt.trim() ? body.runAt.trim() : undefined;
+          const timezone = typeof body.timezone === "string" && body.timezone.trim() ? body.timezone.trim() : undefined;
           if (!prompt) return sendJson(res, 400, { error: "prompt required" });
-          if (!Number.isFinite(intervalSeconds) || intervalSeconds < 30) return sendJson(res, 400, { error: "intervalSeconds must be >= 30" });
+          if (cron && runAt) return sendJson(res, 400, { error: "cron and at are mutually exclusive" });
+          if (timezone && !isValidTimezone(timezone)) return sendJson(res, 400, { error: `منطقة زمنية غير معروفة: ${timezone}` });
+          if (runAt && Number.isNaN(Date.parse(runAt))) return sendJson(res, 400, { error: "at must be an ISO timestamp" });
+          if (!cron && !runAt && (!Number.isFinite(intervalSeconds) || intervalSeconds < 30)) return sendJson(res, 400, { error: "intervalSeconds must be >= 30" });
           if (agentId && !getAgent(agentId)) return sendJson(res, 400, { error: "الوكيل غير موجود" });
-          const schedule = addSchedule(prompt, intervalSeconds, agentId, workMode, undefined, undefined, body.enabled !== false);
-          sendJson(res, 200, { schedule });
+          try {
+            const schedule = addSchedule(prompt, Number.isFinite(intervalSeconds) ? intervalSeconds : 0, agentId, workMode, cron || runAt ? "cron" : undefined, undefined, body.enabled !== false, { cron, runAt, timezone });
+            sendJson(res, 200, { schedule });
+          } catch (err) {
+            sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+          }
           return;
         }
 
