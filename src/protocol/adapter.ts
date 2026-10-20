@@ -149,6 +149,12 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
           return;
         }
 
+        // Health check used by clients and tests — must stay on the adapter.
+        if (req.method === "GET" && p === "/api/health") {
+          sendJson(res, 200, { ok: true, service: "protocol-adapter" });
+          return;
+        }
+
         // Pass-through proxy to the Loam server for /api/* GET routes that live
         // on port 3939 (agents, devices, schedules, tools, files, creative, media,
         // projects, etc.). The renderer cannot call 127.0.0.1:3939 directly because
@@ -156,7 +162,7 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
         // own permissive CORS headers and any x-loam-local-token supplied by the
         // shell.
         const loamPort = Number(process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT || 3939);
-        if (req.method === "GET" && p.startsWith("/api/")) {
+        if (req.method === "GET" && p.startsWith("/api/") && p !== "/api/health") {
           const auth = req.headers.authorization?.replace(/^Bearer /, "");
           const userUid = auth ? tokenToUserUid(auth) ?? (consumeLoginToken(auth) ? "u_1" : null) : null;
           if (!userUid) {
@@ -194,12 +200,6 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
             }
           });
           proxyReq.end();
-          return;
-        }
-
-        // Health check used by clients and tests.
-        if (req.method === "GET" && p === "/api/health") {
-          sendJson(res, 200, { ok: true, service: "protocol-adapter" });
           return;
         }
 

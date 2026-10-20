@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { DATA_DIR } from "../config.js";
 
 /** Per-install token that protects the loopback HTTP server.
  *  It is stored in the Electron user-data directory, never in the renderer,
@@ -57,8 +58,18 @@ export function setLocalAuthUserDataDir(dir: string): void {
   resolvedUserDataDir = dir;
 }
 
-/** Read the local token for the current in-process Loam instance, if known. */
+function getDataDir(): string | undefined {
+  if (resolvedUserDataDir) return resolvedUserDataDir;
+  const fromEnv = process.env.LOAM_LOCAL_TOKEN_DIR || process.env.LOAM_DATA_DIR || process.env.MANUS_LOCAL_DATA_DIR;
+  if (fromEnv) return path.resolve(fromEnv);
+  return DATA_DIR;
+}
+
+/** Read (or create) the local token for the current in-process Loam instance.
+ *  Creating on demand guarantees the adapter can always proxy to the Loam server,
+ *  even when no Electron main process has written a token yet. */
 export function getCurrentLocalToken(): string | undefined {
-  if (!resolvedUserDataDir) return undefined;
-  return readLocalToken(resolvedUserDataDir);
+  const dir = getDataDir();
+  if (!dir) return undefined;
+  return getOrCreateLocalToken(dir);
 }

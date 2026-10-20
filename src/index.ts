@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import { ensureTaskWorkspace } from "./server/taskWorkspace.js";
 import path from "node:path";
-import { loadConfig, ROOT } from "./config.js";
+import { loadConfig, ROOT, DATA_DIR } from "./config.js";
+import { setLocalAuthUserDataDir } from "./security/localAuth.js";
 import { buildRuntime } from "./setup/runtime.js";
 import { type ToolTraceItem } from "./agent/reflect.js";
 import { loadPending } from "./server/pending.js";
@@ -44,6 +45,7 @@ import { acquireRuntimeLease, releaseRuntimeLease, backupDatabase } from "./serv
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
+  setLocalAuthUserDataDir(process.env.LOAM_LOCAL_TOKEN_DIR || DATA_DIR);
   loadDb();
   acquireRuntimeLease();
   backupDatabase();
