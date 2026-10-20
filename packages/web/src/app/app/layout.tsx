@@ -6,8 +6,8 @@ import { Sidebar } from '@/components/shell/Sidebar';
 import { TitleBar } from '@/components/shell/TitleBar';
 import { Spinner } from '@/components/ui/Button';
 import { useAppSelector, useAppDispatch } from '@/store';
-import { setToken } from '@/store/authSlice';
-import { desktopApis } from '@/services/desktopApis';
+import { setToken, setUser } from '@/store/authSlice';
+import { desktopApis, validateSessionToken, logoutAndRedirect } from '@/services/desktopApis';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -25,7 +25,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           router.replace('/login');
           return;
         }
+        const user = await validateSessionToken(token);
+        if (!mounted) return;
+        if (!user) {
+          await logoutAndRedirect(router, dispatch);
+          return;
+        }
         dispatch(setToken(token));
+        dispatch(setUser({
+          displayname: user.displayname || `${user.firstname} ${user.lastname}`.trim() || user.email,
+          email: user.email,
+          avatar: user.avatar,
+        }));
       } finally {
         if (mounted) setChecking(false);
       }

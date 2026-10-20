@@ -3,14 +3,17 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Settings, ExternalLink, LogOut, CreditCard, User } from 'lucide-react';
-import { useAppSelector, useAppDispatch, logout } from '@/store';
+import { useAppSelector, useAppDispatch } from '@/store';
 import { openSettings } from '@/store';
 import { t } from '@/i18n/t';
 import { Button } from '@/components/ui/Button';
+import { useRouter } from 'next/navigation';
+import { logoutAndRedirect } from '@/services/desktopApis';
 
 export function AccountPopover({ open, onClose, anchor }: { open: boolean; onClose: () => void; anchor?: HTMLElement | null }) {
   const user = useAppSelector((s) => s.auth.user);
   const dispatch = useAppDispatch();
+  const router = useRouter();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -33,10 +36,8 @@ export function AccountPopover({ open, onClose, anchor }: { open: boolean; onClo
     : { position: 'fixed', top: '50%', left: '50%', width: 260 };
 
   const handleSignOut = () => {
-    (window as any).__apis?.auth?.removeToken?.();
-    dispatch(logout());
     onClose();
-    window.location.href = '/login';
+    void logoutAndRedirect(router, dispatch);
   };
 
   return createPortal(

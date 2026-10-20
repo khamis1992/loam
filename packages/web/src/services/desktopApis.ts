@@ -1,5 +1,7 @@
 import { useRouter } from 'next/navigation';
 import { logout, closeSettings, type AppDispatch } from '@/store';
+import { PROTOCOL_API_BASE } from './rpc';
+import type { UserInfoResponse } from '@shared/proto';
 
 export interface DesktopSyncInfo {
   platform: string;
@@ -70,6 +72,24 @@ export const desktopEvents = {
     onEvent: (cb: (ev: { id: string; kind: string; data?: string; code?: number }) => void) => subscribe('terminal', 'onEvent', cb),
   },
 };
+
+export async function validateSessionToken(token: string): Promise<UserInfoResponse | null> {
+  try {
+    const res = await fetch(`${PROTOCOL_API_BASE}/user.v1.UserService/UserInfo`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Connect-Protocol-Version': '1',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as UserInfoResponse;
+  } catch {
+    return null;
+  }
+}
 
 export async function logoutAndRedirect(router: ReturnType<typeof useRouter>, dispatch: AppDispatch) {
   await desktopApis.auth.removeToken();

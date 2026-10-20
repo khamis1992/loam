@@ -4,9 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { t, tRich, PRODUCT } from '@/i18n/t';
 import { Button, Spinner } from '@/components/ui/Button';
-import { desktopApis, desktopEvents } from '@/services/desktopApis';
+import { desktopApis, desktopEvents, validateSessionToken, logoutAndRedirect } from '@/services/desktopApis';
 import { useAppDispatch } from '@/store';
-import { setToken } from '@/store/authSlice';
+import { setToken, setUser } from '@/store/authSlice';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,10 +26,20 @@ export default function LoginPage() {
     (async () => {
       const token = await desktopApis.auth.getToken();
       if (!mounted) return;
-      if (token) {
-        dispatch(setToken(token));
-        router.replace('/app');
+      if (!token) return;
+      const user = await validateSessionToken(token);
+      if (!mounted) return;
+      if (!user) {
+        await logoutAndRedirect(router, dispatch);
+        return;
       }
+      dispatch(setToken(token));
+      dispatch(setUser({
+        displayname: user.displayname || `${user.firstname} ${user.lastname}`.trim() || user.email,
+        email: user.email,
+        avatar: user.avatar,
+      }));
+      router.replace('/app');
     })();
     return () => { mounted = false; };
   }, [router, dispatch]);

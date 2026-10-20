@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation';
 import { Search, Settings, LogOut } from 'lucide-react';
 import { useAppSelector, useAppDispatch } from '@/store';
 import { selectSession, startNewTask, loadSessions, type AgentSession } from '@/store/sessionsSlice';
-import { openSettings, logout } from '@/store';
+import { openSettings } from '@/store';
 import { t } from '@/i18n/t';
+import { logoutAndRedirect } from '@/services/desktopApis';
 import clsx from 'clsx';
 import { AccountPopover } from '@/components/dialogs/AccountPopover';
 import { SearchDialog } from '@/components/dialogs/SearchDialog';
@@ -121,11 +122,7 @@ export function Sidebar() {
         </button>
         <button
           aria-label={t('Sign out')}
-          onClick={() => {
-            (window as any).__apis?.auth?.removeToken?.();
-            dispatch(logout());
-            window.location.href = '/login';
-          }}
+          onClick={() => { void logoutAndRedirect(router, dispatch); }}
           className="flex h-7 w-7 items-center justify-center rounded-control text-text-secondary hover:bg-fill-hover"
         >
           <LogOut className="size-4" />
