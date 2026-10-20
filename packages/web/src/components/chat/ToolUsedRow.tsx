@@ -1,12 +1,7 @@
 import type { ToolUsedEvent } from '@shared/socket';
 import { t } from '@/i18n/t';
 import { Spinner } from '@/components/ui/Button';
-
-const TOOL_VERB: Record<string, string> = {
-  terminal: 'Executing command', browser: 'Browsing', search: 'Searching',
-  text_editor: 'Editing file', webdev: 'Building website', map_reduce: 'Running parallel subtasks',
-  webpage_extract: 'Extracting webpage', mcp: 'MCP tool', suggestion: 'Suggestion',
-};
+import { humanizeToolName } from './toolLabels';
 
 function StatusIcon({ s }: { s: ToolUsedEvent['status'] }) {
   if (s === 'running' || s === 'pending' || s === 'streaming' || s === 'argumentsFinished') return <Spinner className="size-3.5" />;
@@ -31,7 +26,7 @@ export function ToolUsedRow({ e }: { e: ToolUsedEvent }) {
   return (
     <div className="flex h-row-sm w-full items-center gap-2 rounded-control bg-fill-tsp px-2 text-start text-sm text-text-secondary hover:bg-fill-hover"
     >
-      <span className="truncate">{t(TOOL_VERB[e.tool] ?? e.tool)} {e.brief && <code className="text-xs">{e.brief}</code>}</span>
+      <span className="truncate">{t(humanizeToolName(e.tool))} {e.brief && <code className="text-xs">{e.brief}</code>}</span>
       <span className="ms-auto"><StatusIcon s={e.status} /></span>
     </div>
   );

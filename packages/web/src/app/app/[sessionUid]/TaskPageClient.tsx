@@ -41,6 +41,15 @@ function getSocketBase(): string {
   return '/';
 }
 
+function computeClockDuration(clockEvent: CascadeTaskClockEvent): number {
+  const { clock, timestamp } = clockEvent;
+  const end = clock.phase === 'open' ? Date.now() : timestamp;
+  if (clock.startedAt && end > clock.startedAt) return end - clock.startedAt;
+  // Fall back to the backend accumulated value, guarding against values stored in seconds.
+  const ms = clock.accumulatedMs ?? 0;
+  return ms > 1_000_000_000 ? Math.floor(ms / 1000) : ms;
+}
+
 function parseAttachments(raw: string | null): Attachment[] {
   if (!raw) return [];
   try {
@@ -211,6 +220,17 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const hasResult = useMemo(() => events.some((e) => e.type === 'chat' && e.sender === 'assistant' && e.deliveryKind === 'result'), [events]);
   const hasClockClosed = useMemo(() => events.some((e) => e.type === 'cascadeTaskClock' && e.clock.phase === 'closed'), [events]);
   const [selectedTool, setSelectedTool] = useState<ToolUsedEvent | null>(null);
+  const autoOpenedRef = useRef<Set<string>>(new Set());
+
+  // Auto-open Loam's computer panel on the first tool/computer activity event.
+  useEffect(() => {
+    if (selectedTool || autoOpenedRef.current.has(sessionUid)) return;
+    const firstTool = events.find((e): e is ToolUsedEvent => e.type === 'toolUsed');
+    if (firstTool) {
+      setSelectedTool(firstTool);
+      autoOpenedRef.current.add(sessionUid);
+    }
+  }, [events, sessionUid, selectedTool]);
 
   const handleSend = async (text: string, mode: TaskMode, files: File[]) => {
     const socket = socketRef.current;
@@ -256,7 +276,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               {running && <div className="mb-2 text-sm text-text-tertiary">{t('{name} is thinking', { name: PRODUCT })}…</div>}
               {clockEvent && !running && (
                 <div className="mb-2 text-sm text-text-tertiary">
-                  {t('Worked for {duration}', { duration: formatDuration(clockEvent.clock.accumulatedMs) })} ›
+                  {t('Worked for {duration}', { duration: formatDuration(computeClockDuration(clockEvent)) })} ›
                 </div>
               )}
               {userText && !assistantText && !running && !wasStoppedByUser && !error && (
@@ -305,7 +325,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
             <Composer onSend={handleSend} onStop={handleStop} running={running} />
           </div>
         </div>
-        {selectedTool && <ComputerPanel event={selectedTool} onClose={() => setSelectedTool(null)} />}
+        {selectedTool && <ComputerPanel sessionId={sessionUid} event={selectedTool} onClose={() => setSelectedTool(null)} />}
       </div>
       <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} url={shareUrl} />
     </div>

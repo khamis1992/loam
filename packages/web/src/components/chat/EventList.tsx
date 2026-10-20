@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, Fragment } from 'react';
 import type { ChatEvent, ToolUsedEvent, CascadeTaskClockEvent } from '@shared/socket';
 import { t, PRODUCT } from '@/i18n/t';
 import { Markdown } from './Markdown';
@@ -7,6 +7,7 @@ import { ToolUsedRow } from './ToolUsedRow';
 import { StatusUpdateRow } from './StatusUpdateRow';
 import { PlanStepRow, PlanUpdateRow } from './PlanStep';
 import { ApprovalCard, ExecutionApprovalCard, type LocalExecutionApprovalRequested } from '@/components/approval';
+import { summarizeTools } from './toolLabels';
 import type { ChatSocket } from '@/services/chatSocket';
 
 type RenderableEvent = ChatEvent | LocalExecutionApprovalRequested;
@@ -74,11 +75,17 @@ const Row = memo(function Row({ e, sessionId, socket }: { e: RenderableEvent; se
 
 export function EventList({ events, sessionId, socket, onOpenComputer }: EventListProps) {
   const collapsed = useMemo(() => collapseEvents(events as unknown as RenderableEvent[]), [events]);
+  const summary = useMemo(() => {
+    const tools = collapsed.filter((e): e is ToolUsedEvent => e.type === 'toolUsed');
+    return tools.length > 0 ? summarizeTools(tools) : '';
+  }, [collapsed]);
+  const firstToolIndex = useMemo(() => collapsed.findIndex((e) => e.type === 'toolUsed'), [collapsed]);
+
   return (
     <ol className="mx-auto flex w-full max-w-[768px] flex-col gap-2 px-[var(--ui-content-padding-x,24px)] py-6">
-      {collapsed.map((e) => {
+      {collapsed.map((e, i) => {
         const isTool = e.type === 'toolUsed';
-        return (
+        const row = (
           <li
             key={e.id}
             className={isTool ? 'ms-5 cursor-pointer' : undefined}
@@ -87,38 +94,57 @@ export function EventList({ events, sessionId, socket, onOpenComputer }: EventLi
             <Row e={e} sessionId={sessionId} socket={socket} />
           </li>
         );
+        if (i === firstToolIndex && summary) {
+          return (
+            <Fragment key={`summary-${e.id}`}>
+              <li className="text-sm text-text-tertiary">
+                {summary} <span aria-hidden="true">›</span>
+              </li>
+              {row}
+            </Fragment>
+          );
+        }
+        return row;
       })}
     </ol>
   );
 }
 
+const FINAL_TOOL_STATUSES = new Set<ToolUsedEvent['status']>(['success', 'error', 'failed', 'cancelled', 'stopped', 'rollback']);
+
 /** Merge toolUsed argument/start/finish frames for the same action into a single event. */
 function collapseEvents(events: RenderableEvent[]): RenderableEvent[] {
   const out: RenderableEvent[] = [];
-  const toolByAction = new Map<string, ToolUsedEvent>();
+  const indexByAction = new Map<string, number>();
   const hasClosedClock = events.some((e) => e.type === 'cascadeTaskClock' && (e as unknown as CascadeTaskClockEvent).clock?.phase === 'closed');
+
   for (const e of events) {
     if (e.type === 'toolUsed') {
       const t = e as ToolUsedEvent;
-      const existing = toolByAction.get(t.actionId);
-      if (existing) {
+      const idx = indexByAction.get(t.actionId);
+      if (idx !== undefined) {
+        const existing = out[idx] as ToolUsedEvent;
         // Update status and merge details, preferring the later (usually final) frame.
-        toolByAction.set(t.actionId, {
+        out[idx] = {
           ...existing,
           ...t,
           detail: t.detail ?? existing.detail,
           argumentsDetail: t.argumentsDetail ?? existing.argumentsDetail,
-        });
+        };
+        // If a final result has arrived, force the row out of a spinning state.
+        if (FINAL_TOOL_STATUSES.has(t.status)) {
+          out[idx] = { ...out[idx], status: t.status };
+        }
         continue;
       }
       // If the task is complete and a tool frame never reached a final state, treat it as success
       // so stale spinners are not left behind when the backend finalization event is missed.
-      if (hasClosedClock && (t.status === 'running' || t.status === 'argumentsFinished')) {
-        toolByAction.set(t.actionId, { ...t, status: 'success' });
+      if (hasClosedClock && (t.status === 'running' || t.status === 'argumentsFinished' || t.status === 'streaming' || t.status === 'pending')) {
+        out.push({ ...t, status: 'success' });
       } else {
-        toolByAction.set(t.actionId, t);
+        out.push(t);
       }
-      out.push(toolByAction.get(t.actionId)!);
+      indexByAction.set(t.actionId, out.length - 1);
       continue;
     }
     out.push(e);
