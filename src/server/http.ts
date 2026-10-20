@@ -73,6 +73,7 @@ import {
 import { getSettings, updateSettings } from "./settings.js";
 import { cancelRunSignal } from "./runControl.js";
 import { createAgent, deleteAgent, getAgent, listAgents, setAgentArchived, updateAgent } from "./agents.js";
+import { handleScratchpadRoutes } from "./routes/scratchpad.js";
 import { getWorkModesUi, normalizeWorkMode, resolveCompanionCapabilities } from "./companionGateway.js";
 import { DEVICE_TEMPLATES, deviceManager, getDevice, listDevices, readJournal } from "./companionDevices.js";
 import { remember, listMemory, editMemory, supersedeMemory, forget, exportMemory, importMemory } from "./companionMemory.js";
@@ -1623,6 +1624,8 @@ loadAgents();
           }
           return;
         }
+
+        if (await handleScratchpadRoutes(req, res, p)) return;
 
         if (p.startsWith("/api/agents/")) {
           const id = decodeURIComponent(p.slice("/api/agents/".length));
