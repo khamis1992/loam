@@ -20,9 +20,9 @@ import { t } from '@/i18n/t';
 import { desktopEvents } from '@/services/desktopApis';
 import { getApiBase } from '@/services/rpc';
 
-// int-p6: legacy studio URLs are assumed to be served from the backend UI dir.
-// Creative and office studios both live under /studios/index.html with a route hash.
-const STUDIO_BASE_PATH = '/studios/index.html';
+// int-f3: studio iframes load real backend UI pages served from the same origin used for /api/* calls.
+const OFFICE_PREVIEW_PATH = '/office-preview.html';
+const CREATIVE_RENDER_PATH = '/creative-render.html';
 
 type TabId = 'terminal' | 'editor' | 'browser' | 'preview' | 'files' | 'studio';
 type StudioMode = 'media' | 'office';
@@ -167,8 +167,8 @@ function TabContent({
 function StudioContent({ sessionId, mode }: { sessionId: string; mode: StudioMode }) {
   const apiBase = useMemo(() => getApiBase(), []);
   const src = useMemo(() => {
-    const hash = mode === 'media' ? '#creative' : '#office';
-    return `${apiBase}${STUDIO_BASE_PATH}?taskId=${encodeURIComponent(sessionId)}${hash}`;
+    const path = mode === 'media' ? CREATIVE_RENDER_PATH : OFFICE_PREVIEW_PATH;
+    return `${apiBase}${path}?taskId=${encodeURIComponent(sessionId)}`;
   }, [apiBase, mode, sessionId]);
 
   return (
