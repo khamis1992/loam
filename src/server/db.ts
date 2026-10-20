@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import { database, transaction, putEntity as put, getEntity as get, allEntities as all, removeEntity as remove } from "./sqliteStore.js";
 export { closeDb } from "./sqliteStore.js";
 import type { SavedRun } from "./recovery.js";
+import { initialNextRunAt, isValidTimezone, nextOccurrenceAfter, parseCron, DEFAULT_RETRY_DELAY_MS } from "./scheduleTime.js";
+export { DEFAULT_TIMEZONE, DEFAULT_RETRY_DELAY_MS } from "./scheduleTime.js";
 
 export type TaskStatus = "queued" | "running" | "done" | "error" | "interrupted" | "cancelled";
 
@@ -60,6 +62,25 @@ export interface Schedule {
   /** Frontier 16: event-driven routines. */
   kind?: "cron" | "file-watch" | "service-watch";
   watchPath?: string;
+  /** MF2: 5-field cron expression evaluated in `timezone`. */
+  cron?: string;
+  /** MF2: one-shot ISO instant (offset-less strings read in `timezone`). */
+  runAt?: string;
+  /** MF2: IANA timezone for cron/at wall times (default Asia/Qatar). */
+  timezone?: string;
+  /** MF2: run attempts since the last success (retry policy: one retry). */
+  attempts?: number;
+  /** MF2: last run failure message. */
+  lastError?: string;
+  /** MF2: last run outcome; "retrying" means the single retry is pending. */
+  lastStatus?: "ok" | "retrying" | "failed";
+}
+
+/** MF2: timing spec for a schedule (cron / one-shot at / recurring interval). */
+export interface ScheduleSpec {
+  cron?: string;
+  runAt?: string;
+  timezone?: string;
 }
 
 
@@ -113,9 +134,13 @@ export function updateProject(id: string, patch: {name?: string; instruction?: s
 export function deleteProjectR(id: string): boolean {
   return transaction(() => { const removed = remove("projects",id); for (const t of listTasks(id)) { t.projectId = null; put("tasks",t); } return removed; });
 }
-export function addSchedule(prompt: string, intervalSeconds: number, agentId?: string, workMode?: string, kind?: "cron" | "file-watch" | "service-watch", watchPath?: string, enabled = true): Schedule {
+export function addSchedule(prompt: string, intervalSeconds: number, agentId?: string, workMode?: string, kind?: "cron" | "file-watch" | "service-watch", watchPath?: string, enabled = true, spec?: ScheduleSpec): Schedule {
   const interval = Math.max(30, Math.floor(intervalSeconds));
-  const s: Schedule = {id:newId("sched"),prompt,intervalSeconds:interval,enabled,nextRunAt:new Date(Date.now()+interval*1000).toISOString(),...(agentId?{agentId}:{}),...(workMode?{workMode}:{}),...(kind?{kind}:{}),...(watchPath?{watchPath}:{})}; put("schedules",s); return s;
+  // Reject invalid cron/timezone specs eagerly so a bad routine never persists.
+  if (spec?.cron) parseCron(spec.cron);
+  if (spec?.timezone?.trim() && !isValidTimezone(spec.timezone.trim())) throw new Error(`منطقة زمنية غير معروفة: ${spec.timezone}`);
+  const timing = { intervalSeconds: interval, ...(spec?.cron ? { cron: spec.cron } : {}), ...(spec?.runAt && !spec?.cron ? { runAt: spec.runAt } : {}), ...(spec?.timezone?.trim() ? { timezone: spec.timezone.trim() } : {}) };
+  const s: Schedule = {id:newId("sched"),prompt,intervalSeconds:interval,enabled,nextRunAt:initialNextRunAt(timing,new Date()),...(agentId?{agentId}:{}),...(workMode?{workMode}:{}),...(kind?{kind}:{}),...(watchPath?{watchPath}:{}),...(timing.cron?{cron:timing.cron}:{}),...(timing.runAt?{runAt:timing.runAt}:{}),...(timing.timezone?{timezone:timing.timezone}:{})}; put("schedules",s); return s;
 }
 export function setScheduleEnabled(id: string, enabled: boolean): boolean {
   return transaction(() => { const s = get<Schedule>("schedules", id); if (!s) return false; s.enabled = enabled; if (enabled && s.nextRunAt && Date.parse(s.nextRunAt) < Date.now()) s.nextRunAt = new Date(Date.now() + s.intervalSeconds * 1000).toISOString(); put("schedules", s); return true; });
@@ -125,10 +150,57 @@ export function setScheduleNextRunAt(id: string, at: string): boolean {
   return transaction(() => { const s = get<Schedule>("schedules", id); if (!s) return false; s.nextRunAt = at; put("schedules", s); return true; });
 }
 export function listSchedules(): Schedule[] { return all<Schedule>("schedules"); }
+/** MF2: schedules owned by one agent, soonest next run first. */
+export function listSchedulesByAgent(agentId: string): Schedule[] { return listSchedules().filter((s) => s.agentId === agentId).sort((a, b) => (a.nextRunAt ?? "").localeCompare(b.nextRunAt ?? "")); }
 export function deleteSchedule(id: string): boolean { return remove("schedules",id); }
 export function dueSchedules(now = new Date()): Schedule[] { return listSchedules().filter((s) => s.enabled && Date.parse(s.nextRunAt) <= now.getTime()); }
+
+export interface ScheduleOutcome {
+  ok: boolean;
+  taskId?: string;
+  error?: string;
+  /** Delay before the single retry of a failed run. */
+  retryDelayMs?: number;
+  now?: Date;
+}
+
+/**
+ * MF2 retry policy: a failed run retries exactly once after a short delay,
+ * then stops (recurring routines resume their normal cadence, spent one-shots
+ * disable). Records attempt count and lastError/lastStatus either way.
+ */
+export function recordScheduleOutcome(id: string, outcome: ScheduleOutcome): Schedule | undefined {
+  return transaction(() => {
+    const s = get<Schedule>("schedules", id);
+    if (!s) return undefined;
+    const now = outcome.now ?? new Date();
+    s.lastRunAt = now.toISOString();
+    if (outcome.taskId) s.lastTaskId = outcome.taskId;
+    const advance = (): string | null => nextOccurrenceAfter({ cron: s.cron, runAt: s.runAt, intervalSeconds: s.intervalSeconds, timezone: s.timezone }, now);
+    if (outcome.ok) {
+      s.attempts = 0;
+      delete s.lastError;
+      s.lastStatus = "ok";
+      const next = advance();
+      if (next) s.nextRunAt = next; else s.enabled = false; // spent one-shot
+    } else {
+      s.attempts = (s.attempts ?? 0) + 1;
+      s.lastError = String(outcome.error ?? "run failed").slice(0, 500);
+      if (s.attempts < 2) {
+        s.lastStatus = "retrying";
+        s.nextRunAt = new Date(now.getTime() + (outcome.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS)).toISOString();
+      } else {
+        s.lastStatus = "failed";
+        const next = advance();
+        if (next) s.nextRunAt = next; else s.enabled = false; // failed one-shot stops
+      }
+    }
+    put("schedules", s);
+    return s;
+  });
+}
 export function markScheduleRun(id: string, taskId: string): void {
-  transaction(() => { const s=get<Schedule>("schedules",id); if (!s) return; s.lastRunAt=new Date().toISOString(); s.lastTaskId=taskId; s.nextRunAt=new Date(Date.now()+s.intervalSeconds*1000).toISOString(); put("schedules",s); });
+  recordScheduleOutcome(id, { ok: true, taskId });
 }
 export function saveRun(taskId: string, run: SavedRun): void { put("runs", { ...run, id: taskId }); }
 export function getSavedRun(taskId: string): SavedRun | undefined { return get<SavedRun>("runs",taskId); }
@@ -150,7 +222,9 @@ export function queueTaskRun(taskId: string, run: SavedRun, resume: boolean, sch
       if (schedule) {
         schedule.lastTaskId = taskId;
         schedule.lastRunAt = task.updatedAt;
-        schedule.nextRunAt = new Date(Date.now() + schedule.intervalSeconds * 1000).toISOString();
+        // MF2: cron-aware cadence. A one-shot keeps its (past) nextRunAt — the
+        // in-flight gate protects the running task and the outcome disables it.
+        schedule.nextRunAt = nextOccurrenceAfter({ cron: schedule.cron, runAt: schedule.runAt, intervalSeconds: schedule.intervalSeconds, timezone: schedule.timezone }, new Date()) ?? schedule.nextRunAt;
         put("schedules", schedule);
       }
     }

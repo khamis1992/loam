@@ -1,14 +1,18 @@
-import { dueSchedules, markScheduleRun, getTask } from "./db.js";
+import { dueSchedules, getTask, recordScheduleOutcome } from "./db.js";
 import { getAgent } from "./agents.js";
 import { log } from "../log.js";
+import { DEFAULT_RETRY_DELAY_MS } from "./scheduleTime.js";
 
 export interface SchedulerDeps {
   runScheduled: (prompt: string, scheduleId: string, agentId?: string, workMode?: string) => Promise<string>;
   intervalMs?: number;
+  /** MF2: delay before the single retry of a failed run (default 2 minutes). */
+  retryDelayMs?: number;
 }
 
 export function startScheduler(deps: SchedulerDeps): () => void {
   const intervalMs = deps.intervalMs ?? 20_000;
+  const retryDelayMs = deps.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
   let busy = false;
 
   const tick = async (): Promise<void> => {
@@ -23,11 +27,13 @@ export function startScheduler(deps: SchedulerDeps): () => void {
         log.info(`scheduler: running ${schedule.id} -> ${schedule.prompt.slice(0, 60)}`);
         try {
           const taskId = await deps.runScheduled(schedule.prompt, schedule.id, schedule.agentId, schedule.workMode);
-          markScheduleRun(schedule.id, taskId);
+          recordScheduleOutcome(schedule.id, { ok: true, taskId });
         } catch (err) {
-          log.warn(`scheduler: task failed for ${schedule.id}: ${err instanceof Error ? err.message : String(err)}`);
-          // queueTaskRun records the actual task id atomically before dispatch.
-          // Do not replace it with the previous invocation's id on failure.
+          const message = err instanceof Error ? err.message : String(err);
+          log.warn(`scheduler: task failed for ${schedule.id}: ${message}`);
+          // MF2 retry policy: exactly one retry after a short delay, then stop.
+          // The routine keeps its cadence; lastStatus/attempts/lastError record why.
+          recordScheduleOutcome(schedule.id, { ok: false, error: message, retryDelayMs });
         }
       }
     } finally {
