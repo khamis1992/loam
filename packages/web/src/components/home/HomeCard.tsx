@@ -9,13 +9,17 @@ interface HomeCardProps {
   illustration?: React.ReactNode;
   onClick?: () => void;
   className?: string;
+  'aria-expanded'?: boolean;
+  'aria-haspopup'?: boolean | 'menu' | 'dialog' | 'true' | 'false';
 }
 
-export function HomeCard({ icon, title, subtitle, illustration, onClick, className }: HomeCardProps) {
+export function HomeCard({ icon, title, subtitle, illustration, onClick, className, 'aria-expanded': ariaExpanded, 'aria-haspopup': ariaHasPopup }: HomeCardProps) {
   return (
     <button
       type="button"
       onClick={onClick}
+      aria-expanded={ariaExpanded}
+      aria-haspopup={ariaHasPopup}
       className={clsx(
         'relative flex h-[104px] w-full items-start justify-between overflow-hidden rounded-card bg-fill-tsp p-4 text-start transition-colors hover:bg-fill-hover',
         className,

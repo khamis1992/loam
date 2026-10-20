@@ -6,17 +6,17 @@ import { t } from '@/i18n/t';
 import { openSettings } from '@/store';
 import { useAppDispatch } from '@/store';
 
-const LINKS = [
-  { label: t('Settings'), icon: Settings, action: 'settings' },
-  { label: t('Keyboard shortcuts'), icon: Keyboard, href: '/app/shortcuts' },
-  { label: t('Usage & Billing'), icon: CreditCard, href: '/app/usage' },
-  { label: t('Docs'), icon: FileText, href: '/docs' },
-  { label: t('Get help'), icon: HelpCircle, href: '/help' },
-];
-
 export default function MorePage() {
   const router = useRouter();
   const dispatch = useAppDispatch();
+
+  const links = [
+    { label: t('Settings'), icon: Settings, action: 'settings' },
+    { label: t('Keyboard shortcuts'), icon: Keyboard, href: '/app/shortcuts' },
+    { label: t('Usage & Billing'), icon: CreditCard, href: '/app/usage' },
+    { label: t('Docs'), icon: FileText, href: '/docs' },
+    { label: t('Get help'), icon: HelpCircle, href: '/help' },
+  ];
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-bg-main">
@@ -32,7 +32,7 @@ export default function MorePage() {
       </div>
       <div className="flex-1 overflow-y-auto p-4">
         <ul className="flex flex-col gap-1">
-          {LINKS.map((link) => (
+          {links.map((link) => (
             <li key={link.label}>
               <button
                 type="button"

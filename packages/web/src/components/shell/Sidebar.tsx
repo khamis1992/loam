@@ -25,18 +25,6 @@ type NavItem = {
   onClick?: string;
 };
 
-const NAV: NavItem[] = [
-  { id: 'new-task', label: t('New task'), icon: SquarePen, href: '/app' },
-  { id: 'computers', label: t('Computers'), icon: Monitor, href: '/app/computers' },
-  { id: 'agent-loam', label: t('Agent Loam'), icon: AgentLoamIcon, href: '/app/agents' },
-  { id: 'search', label: t('Search'), icon: Search, shortcut: t('Ctrl+K'), onClick: 'search' },
-  { id: 'library', label: t('Library'), icon: BookOpen, href: '/app/library' },
-  { id: 'creations', label: t('Creations'), icon: Sparkles, href: '/app/creations' },
-  { id: 'automations', label: t('Automations'), icon: Workflow, href: '/app/automations' },
-  { id: 'plugins', label: t('Plugins'), icon: LayoutGrid, href: '/app/plugins' },
-  { id: 'more', label: t('More'), icon: MoreHorizontal, href: '/app/more' },
-];
-
 export function Sidebar() {
   const dispatch = useAppDispatch();
   const router = useRouter();
@@ -46,6 +34,18 @@ export function Sidebar() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const accountAnchorRef = useRef<HTMLButtonElement>(null);
+
+  const nav: NavItem[] = [
+    { id: 'new-task', label: t('New task'), icon: SquarePen, href: '/app' },
+    { id: 'computers', label: t('Computers'), icon: Monitor, href: '/app/computers' },
+    { id: 'agent-loam', label: t('Agent Loam'), icon: AgentLoamIcon, href: '/app/agents' },
+    { id: 'search', label: t('Search'), icon: Search, shortcut: t('Ctrl+K'), onClick: 'search' },
+    { id: 'library', label: t('Library'), icon: BookOpen, href: '/app/library' },
+    { id: 'creations', label: t('Creations'), icon: Sparkles, href: '/app/creations' },
+    { id: 'automations', label: t('Automations'), icon: Workflow, href: '/app/automations' },
+    { id: 'plugins', label: t('Plugins'), icon: LayoutGrid, href: '/app/plugins' },
+    { id: 'more', label: t('More'), icon: MoreHorizontal, href: '/app/more' },
+  ];
 
   useEffect(() => {
     dispatch(loadSessions());
@@ -71,7 +71,7 @@ export function Sidebar() {
   const name = user?.displayname || 'Demo User';
   const initial = (name[0] || 'U').toUpperCase();
 
-  const navAction = (item: typeof NAV[number]) => {
+  const navAction = (item: NavItem) => {
     if (item.onClick === 'search') {
       setSearchOpen(true);
     } else if (item.href) {
@@ -82,7 +82,7 @@ export function Sidebar() {
   return (
     <nav aria-label={t('Sidebar')} className="flex h-full w-[192px] shrink-0 flex-col bg-bg-nav px-2 pb-3">
       <div className="flex flex-col gap-0.5 py-1.5">
-        {NAV.map((item) => (
+        {nav.map((item) => (
           <button
             key={item.id}
             type="button"
