@@ -11,6 +11,7 @@ import { requireTaskWorkspace, taskPath } from "../server/taskWorkspace.js";
 import type { RunTaskOptions } from "../server/http.js";
 import { log } from "../log.js";
 import { mapAgentEvent, shortUid, baseId, createEventMapperState, makeBrief, mapToolName } from "./events.js";
+import { resolveLoamMode, modeEventInfo } from "../modes/detect.js";
 import { getBlob } from "./blobStore.js";
 import type {
   ClientMessage,
@@ -47,13 +48,6 @@ function mapTaskMode(mode?: string): TaskMode {
   if (mode === "discuss") return "discuss";
   if (mode === "cascade") return "cascade";
   return "standard";
-}
-
-function mapTaskModeToLoam(mode?: string): string {
-  const m = (mode ?? "").trim().toLowerCase();
-  if (m === "lite" || m === "discuss") return "ask";
-  if (m === "max" || m === "standard" || m === "cascade") return "build";
-  return "build";
 }
 
 function blobIdFromUrl(url: string): string | undefined {
@@ -434,13 +428,18 @@ export function createChatSocket(deps: SocketDeps): Server {
           };
 
           try {
+            const resolvedMode = resolveLoamMode(um, prompt);
+            emit({ type: "mode", ...modeEventInfo(resolvedMode) });
+
             const result = await runTask({
               prompt,
               emit,
               taskId,
               title: text.slice(0, 80),
-              mode: mapTaskModeToLoam(um.extData.mode ?? um.taskMode),
+              mode: resolvedMode,
               projectId: um.extData.projectId ?? null,
+              agentId: um.extData.agentId ?? undefined,
+              workMode: um.extData.workMode ?? undefined,
             });
 
             // Final assistant result if the agent stream did not already emit one.

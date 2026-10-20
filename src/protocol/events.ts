@@ -9,6 +9,7 @@ import type {
   PlanUpdateEvent,
   NewPlanStepEvent,
   LiveStatusEvent,
+  ModeEvent,
   UserStopEvent,
   ToolName,
   ToolStatus,
@@ -398,10 +399,23 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
       break;
     }
 
+    case "mode": {
+      const modeEv: ModeEvent = {
+        id: baseId(),
+        type: "mode",
+        timestamp: ts,
+        mode: event.mode,
+        label: event.label,
+        labelAr: event.labelAr,
+        reason: event.reason,
+      };
+      out.push(modeEv);
+      break;
+    }
+
     // State-only Loam events that do not have a chat-row rendering equivalent.
     case "task":
     case "step":
-    case "mode":
     case "workmode":
     case "critique":
     case "revise":

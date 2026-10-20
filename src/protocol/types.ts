@@ -55,7 +55,10 @@ export interface UserMessage extends Base {
       enabledSkills?: string[];
     };
     mode?: TaskMode;
+    loamMode?: string;
     projectId?: string;
+    agentId?: string;
+    workMode?: string;
     executionTarget?: { kind: "sandbox" | "desktop" };
     desktopBinding?: { deviceId: string; folderPath: string };
     localPermissionMode?: "ask_for_approval" | "approve_for_me" | "full_access";
@@ -153,6 +156,14 @@ export interface NewPlanStepEvent extends ChatEventBase {
 export interface LiveStatusEvent extends ChatEventBase {
   type: "liveStatus";
   text: string;
+}
+
+export interface ModeEvent extends ChatEventBase {
+  type: "mode";
+  mode: string;
+  label: string;
+  labelAr: string;
+  reason?: string;
 }
 
 export type ToolDetail =
@@ -300,6 +311,7 @@ export type ChatEvent =
   | PlanUpdateEvent
   | NewPlanStepEvent
   | LiveStatusEvent
+  | ModeEvent
   | ToolUsedEvent
   | UserStopEvent
   | CascadeTaskClockEvent
