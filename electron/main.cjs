@@ -212,7 +212,7 @@ function createWindow() {
   const legacy = !isAgentStudioUI();
   win = new BrowserWindow({
     width: 1440, height: 920, minWidth: 900, minHeight: 600,
-    title: legacy ? "Loam" : "Agent Studio", backgroundColor: "#080b12", autoHideMenuBar: false,
+    title: "Loam", backgroundColor: "#080b12", autoHideMenuBar: false,
     icon: path.join(__dirname, "assets", "loam.png"),
     webPreferences: {
       contextIsolation: true,

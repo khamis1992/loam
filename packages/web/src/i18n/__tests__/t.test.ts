@@ -5,7 +5,7 @@ import { createElement, Fragment } from 'react';
 describe('i18n t()', () => {
   it('interpolates variables and {product}', () => {
     setLocale('en');
-    expect(t('Sign in to {product}', { product: PRODUCT })).toBe('Sign in to Agent Studio');
+    expect(t('Sign in to {product}', { product: PRODUCT })).toBe('Sign in to Loam');
     expect(t('Worked for {duration}', { duration: '12s' })).toBe('Worked for 12s');
   });
 
@@ -16,7 +16,7 @@ describe('i18n t()', () => {
 
   it('renders Arabic with correct placeholder', () => {
     setLocale('ar');
-    expect(t('Sign in to {product}', { product: PRODUCT })).toBe('تسجيل الدخول إلى Agent Studio');
+    expect(t('Sign in to {product}', { product: PRODUCT })).toBe('تسجيل الدخول إلى Loam');
     setLocale('en');
   });
 

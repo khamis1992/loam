@@ -100,7 +100,7 @@
   "End of the presentation": "End of the presentation",
   "Enter your presentation speaker notes": "Enter your presentation speaker notes",
   "Computer": "Computer",
-  "Agent Studio's computer": "Agent Studio's computer",
+  "Loam's computer": "Loam's computer",
   "Could not open remote control. Open it again from My computers.": "Could not open remote control. Open it again from My computers.",
   "Message {product}": "Message {product}",
   "Tell {product} what to do with the file": "Tell {product} what to do with the file",
@@ -125,7 +125,7 @@
   "More": "More",
   "Share {product} with friends and get 500 credits each!": "Share {product} with a friend and get 500 credits each!",
   "Agent Loam": "Agent Loam",
-  "Share Agent Studio": "Share Agent Studio",
+  "Share Loam with a friend": "Share Loam with a friend",
   "500 credits": "500 credits",
   "New task": "New task",
   "Ctrl+K": "Ctrl+K",
@@ -136,7 +136,7 @@
   "Back": "Back",
   "Forward": "Forward",
   "Toggle sidebar": "Toggle sidebar",
-  "Agent Studio 2.0": "Agent Studio 2.0",
+  "Loam 2.0": "Loam 2.0",
   "Referral": "Referral",
   "Copy link": "Copy link",
   "Copied": "Copied",
@@ -332,5 +332,6 @@
   "Voice mode": "Voice mode",
   "Microphone": "Microphone",
   "Website": "Website",
-  "agent": "agent"
+  "agent": "agent",
+  "loam": "loam"
 }

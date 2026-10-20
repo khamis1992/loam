@@ -55,7 +55,7 @@ export class ChatSocket {
         tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
         clientType: 'desktop',
         clientVersion: this.options.clientVersion ?? '0.0.0',
-        'x-product-name': 'Agent Studio',
+        'x-product-name': 'Loam',
       },
     });
 

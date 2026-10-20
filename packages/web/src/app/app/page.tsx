@@ -282,7 +282,7 @@ export default function HomePage() {
             <div className="flex items-center gap-3">
               <LogoMark className="size-9 text-text-primary" />
               <h1 className="flex items-baseline gap-1 text-[34px] font-bold leading-none text-text-primary">
-                <span className="font-serif">{t('agent')}</span>
+                <span className="font-serif">{t('loam')}</span>
                 <span className="font-serif text-[#888888]">{t('studio')}</span>
               </h1>
             </div>

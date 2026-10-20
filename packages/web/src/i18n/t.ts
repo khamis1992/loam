@@ -4,7 +4,7 @@ import { createElement, Fragment, type ReactNode } from 'react';
 
 export type Locale = 'en' | 'ar';
 const catalogs: Record<Locale, Record<string, string>> = { en, ar };
-export const PRODUCT = 'Agent Studio';
+export const PRODUCT = 'Loam';
 export const isRtl = (l: Locale) => l === 'ar';
 
 let current: Locale = 'en';

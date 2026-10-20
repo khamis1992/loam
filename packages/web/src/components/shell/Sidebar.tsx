@@ -142,7 +142,7 @@ export function Sidebar() {
         >
           <Share2 className="size-4 shrink-0 text-text-secondary" aria-hidden />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm text-text-primary">{t('Share Agent Studio')}</p>
+            <p className="truncate text-sm text-text-primary">{t('Share Loam with a friend')}</p>
             <p className="truncate text-xs text-text-tertiary">{t('Get 500 credits each')}</p>
           </div>
           <ChevronRight className="size-3.5 shrink-0 text-text-tertiary" aria-hidden />

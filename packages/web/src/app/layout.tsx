@@ -5,7 +5,7 @@ import '@/styles/tokens.css';
 import '@/styles/globals.css';
 
 export const metadata: Metadata = {
-  title: 'Agent Studio',
+  title: 'Loam',
   description: 'Desktop AI-agent workspace',
 };
 

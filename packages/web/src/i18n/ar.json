@@ -100,7 +100,7 @@
   "End of the presentation": "نهاية العرض التقديمي",
   "Enter your presentation speaker notes": "أدخل ملاحظاتك التقديمية",
   "Computer": "جهاز الكمبيوتر",
-  "Agent Studio's computer": "كمبيوتر Agent Studio",
+  "Loam's computer": "كمبيوتر Loam",
   "Could not open remote control. Open it again from My computers.": "تعذر فتح التحكم عن بُعد. افتحه مرة أخرى من أجهزة الكمبيوتر الخاصة بي.",
   "Message {product}": "أرسل رسالة إلى {product}",
   "Tell {product} what to do with the file": "أخبر {product} بما يجب فعله بالملف",
@@ -125,7 +125,7 @@
   "More": "المزيد",
   "Share {product} with friends and get 500 credits each!": "شارك {product} مع صديق واحصل كليكما على 500 رصيد!",
   "Agent Loam": "وكيل لوم",
-  "Share Agent Studio": "شارك Agent Studio",
+  "Share Loam with a friend": "شارك Loam مع صديق",
   "500 credits": "500 رصيد",
   "New task": "مهمة جديدة",
   "Ctrl+K": "Ctrl+K",
@@ -136,7 +136,7 @@
   "Back": "رجوع",
   "Forward": "تقدم",
   "Toggle sidebar": "تبديل الشريط الجانبي",
-  "Agent Studio 2.0": "Agent Studio 2.0",
+  "Loam 2.0": "Loam 2.0",
   "Referral": "الإحالة",
   "Copy link": "نسخ الرابط",
   "Copied": "تم النسخ",
@@ -332,5 +332,6 @@
   "Voice mode": "الوضع الصوتي",
   "Microphone": "الميكروفون",
   "Website": "موقع",
-  "agent": "agent"
+  "agent": "agent",
+  "loam": "loam"
 }

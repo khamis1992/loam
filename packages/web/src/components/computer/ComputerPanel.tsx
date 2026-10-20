@@ -54,7 +54,7 @@ export function ComputerPanel({ event, onClose }: ComputerPanelProps) {
   return (
     <div className="flex h-full w-[360px] shrink-0 flex-col border-s border-border-main bg-bg-menu">
       <div className="flex h-row items-center justify-between border-b border-border-main px-3">
-        <span className="text-sm font-semibold text-text-primary">{t("Agent Studio's computer")}</span>
+        <span className="text-sm font-semibold text-text-primary">{t("Loam's computer")}</span>
         <button aria-label={t('Close')} onClick={onClose} className="rounded-control p-1 hover:bg-fill-hover">✕</button>
       </div>
       <div className="flex-1 overflow-auto p-3">
