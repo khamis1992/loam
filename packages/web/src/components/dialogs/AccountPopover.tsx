@@ -43,22 +43,24 @@ export function AccountPopover({ open, onClose, anchor }: { open: boolean; onClo
   return createPortal(
     <div
       ref={ref}
+      role="menu"
+      aria-label={t('Account')}
       className="z-50 rounded-card bg-bg-menu p-1.5 shadow-menu outline-none"
       style={style}
     >
-      <div className="px-3 py-2">
+      <div className="px-3 py-2" role="none">
         <div className="text-sm font-medium text-text-primary">{name}</div>
         <div className="text-xs text-text-tertiary">{t('Free plan')}</div>
       </div>
 
-      <div className="mb-1 rounded-[10px] bg-fill-tsp p-2">
+      <div className="mb-1 rounded-[10px] bg-fill-tsp p-2" role="none">
         <div className="flex items-center justify-between">
           <span className="text-sm font-semibold text-text-primary">{t('Free plan')}</span>
           <Button variant="primary" size="sm">{t('Upgrade')}</Button>
         </div>
       </div>
 
-      <ul className="flex flex-col gap-0.5">
+      <ul className="flex flex-col gap-0.5" role="group" aria-label={t('Account')}>
         <MenuRow icon={<CreditCard className="size-4" />} label={t('Credits ›')} onClick={onClose} />
         <MenuRow icon={<User className="size-4" />} label={t('Account')} onClick={onClose} />
         <MenuRow
@@ -71,8 +73,9 @@ export function AccountPopover({ open, onClose, anchor }: { open: boolean; onClo
         <MenuRow icon={<ExternalLink className="size-4" />} label={t('Docs ↗')} onClick={onClose} />
       </ul>
 
-      <hr className="my-1 border-border-main" />
+      <hr className="my-1 border-border-main" role="none" />
       <button
+        role="menuitem"
         onClick={handleSignOut}
         className="flex h-row-sm w-full items-center gap-2 px-3 text-sm text-func-error hover:bg-fill-hover rounded-control"
       >
@@ -85,11 +88,14 @@ export function AccountPopover({ open, onClose, anchor }: { open: boolean; onClo
 
 function MenuRow({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      className="flex h-row-sm w-full items-center gap-2 px-3 text-sm text-text-primary hover:bg-fill-hover rounded-control"
-    >
-      <span className="text-text-tertiary">{icon}</span> {label}
-    </button>
+    <li role="none">
+      <button
+        role="menuitem"
+        onClick={onClick}
+        className="flex h-row-sm w-full items-center gap-2 px-3 text-sm text-text-primary hover:bg-fill-hover rounded-control"
+      >
+        <span className="text-text-tertiary">{icon}</span> {label}
+      </button>
+    </li>
   );
 }

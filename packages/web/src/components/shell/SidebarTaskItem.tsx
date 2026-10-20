@@ -3,10 +3,40 @@
 import { useState, useRef, useEffect } from 'react';
 import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { useAppDispatch } from '@/store';
-import { renameSession, deleteSession } from '@/store/sessionsSlice';
+import { renameSession, deleteSession, loadSessions, type AgentSession } from '@/store/sessionsSlice';
 import { t } from '@/i18n/t';
-import type { AgentSession } from '@/store/sessionsSlice';
+import { getSessionToken, getApiBase, handleAuthFailure } from '@/services/rpc';
 import clsx from 'clsx';
+
+async function apiRename(uid: string, title: string) {
+  const token = await getSessionToken();
+  const res = await fetch(`${getApiBase()}/session.v1.SessionService/UpdateSession`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Connect-Protocol-Version': '1',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ sessionUid: uid, title }),
+  });
+  if (res.status === 401) handleAuthFailure();
+  if (!res.ok) throw new Error(`UpdateSession ${res.status}`);
+}
+
+async function apiDelete(uid: string) {
+  const token = await getSessionToken();
+  const res = await fetch(`${getApiBase()}/session.v1.SessionService/DeleteSession`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Connect-Protocol-Version': '1',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ sessionUid: uid }),
+  });
+  if (res.status === 401) handleAuthFailure();
+  if (!res.ok) throw new Error(`DeleteSession ${res.status}`);
+}
 
 export function SidebarTaskItem({ s, active, onClick }: { s: AgentSession; active: boolean; onClick: () => void }) {
   const dispatch = useAppDispatch();
@@ -14,8 +44,13 @@ export function SidebarTaskItem({ s, active, onClick }: { s: AgentSession; activ
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState(s.title);
+  const [busy, setBusy] = useState(false);
   const rowRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setDraftTitle(s.title);
+  }, [s.title]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -28,14 +63,35 @@ export function SidebarTaskItem({ s, active, onClick }: { s: AgentSession; activ
     return () => window.removeEventListener('mousedown', onClickOutside);
   }, [menuOpen]);
 
-  const saveRename = () => {
+  const saveRename = async () => {
     const trimmed = draftTitle.trim();
-    if (trimmed && trimmed !== s.title) {
-      dispatch(renameSession({ uid: s.uid, title: trimmed }));
-    } else {
+    if (!trimmed || trimmed === s.title) {
       setDraftTitle(s.title);
+      setEditing(false);
+      return;
     }
-    setEditing(false);
+    setBusy(true);
+    try {
+      await apiRename(s.uid, trimmed);
+      dispatch(renameSession({ uid: s.uid, title: trimmed }));
+      dispatch(loadSessions());
+    } catch {
+      setDraftTitle(s.title);
+    } finally {
+      setBusy(false);
+      setEditing(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setBusy(true);
+    try {
+      await apiDelete(s.uid);
+      dispatch(deleteSession(s.uid));
+      dispatch(loadSessions());
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -60,7 +116,8 @@ export function SidebarTaskItem({ s, active, onClick }: { s: AgentSession; activ
               if (e.key === 'Escape') { setDraftTitle(s.title); setEditing(false); }
             }}
             autoFocus
-            className="flex-1 rounded bg-bg-menu px-1 text-sm text-text-primary outline-none ring-1 ring-border-main"
+            disabled={busy}
+            className="flex-1 rounded bg-bg-menu px-1 text-sm text-text-primary outline-none ring-1 ring-border-main disabled:opacity-50"
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
@@ -86,16 +143,21 @@ export function SidebarTaskItem({ s, active, onClick }: { s: AgentSession; activ
         <div
           ref={menuRef}
           className="absolute end-1 top-7 z-20 w-36 rounded-card bg-bg-menu p-1 shadow-menu"
+          role="menu"
+          aria-label={t('More')}
         >
           <button
+            role="menuitem"
             onClick={(e) => { e.stopPropagation(); setMenuOpen(false); setEditing(true); setDraftTitle(s.title); }}
             className="flex h-row-sm w-full items-center gap-2 rounded-row px-2 text-sm text-text-primary hover:bg-fill-hover"
           >
             <Pencil className="size-3.5" /> {t('Rename')}
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); setMenuOpen(false); dispatch(deleteSession(s.uid)); }}
-            className="flex h-row-sm w-full items-center gap-2 rounded-row px-2 text-sm text-func-error hover:bg-fill-hover"
+            role="menuitem"
+            disabled={busy}
+            onClick={(e) => { e.stopPropagation(); setMenuOpen(false); void handleDelete(); }}
+            className="flex h-row-sm w-full items-center gap-2 rounded-row px-2 text-sm text-func-error hover:bg-fill-hover disabled:opacity-50"
           >
             <Trash2 className="size-3.5" /> {t('Delete')}
           </button>
