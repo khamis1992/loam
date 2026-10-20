@@ -14,7 +14,7 @@ function StatusIcon({ s }: { s: ToolUsedEvent['status'] }) {
   return <span aria-label={s} className={s === 'success' ? 'text-func-success' : 'text-text-tertiary'}>{glyph}</span>;
 }
 
-export function ToolUsedRow({ e, onClick }: { e: ToolUsedEvent; onClick?: () => void }) {
+export function ToolUsedRow({ e }: { e: ToolUsedEvent }) {
   const commands = e.detail?.suggestion?.commands;
   if (e.tool === 'suggestion' && commands && commands.length > 0) {
     return (
@@ -29,13 +29,10 @@ export function ToolUsedRow({ e, onClick }: { e: ToolUsedEvent; onClick?: () => 
     );
   }
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="ms-5 flex h-row-sm w-full items-center gap-2 rounded-control bg-fill-tsp px-2 text-start text-sm text-text-secondary hover:bg-fill-hover"
+    <div className="flex h-row-sm w-full items-center gap-2 rounded-control bg-fill-tsp px-2 text-start text-sm text-text-secondary hover:bg-fill-hover"
     >
       <span className="truncate">{t(TOOL_VERB[e.tool] ?? e.tool)} {e.brief && <code className="text-xs">{e.brief}</code>}</span>
       <span className="ms-auto"><StatusIcon s={e.status} /></span>
-    </button>
+    </div>
   );
 }

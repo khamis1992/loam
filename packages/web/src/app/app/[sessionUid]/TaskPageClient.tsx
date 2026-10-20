@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+
+const sentDraftSessions = new Set<string>();
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import {
   Share, FileChartColumn, MoreHorizontal, PanelRight, CircleCheck, Copy, Repeat2,
@@ -88,7 +90,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const socketRef = useRef<ChatSocket | null>(null);
   const sentDraft = useRef<{ uid: string; sent: boolean }>({ uid: '', sent: false });
   if (sentDraft.current.uid !== sessionUid) {
-    sentDraft.current = { uid: sessionUid, sent: false };
+    sentDraft.current = { uid: sessionUid, sent: sentDraftSessions.has(sessionUid) };
   }
   const apiBase = useMemo(() => getApiBase(), []);
   const [shareOpen, setShareOpen] = useState(false);
@@ -149,6 +151,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
 
       if (draft && !sentDraft.current.sent) {
         sentDraft.current.sent = true;
+        sentDraftSessions.add(sessionUid);
         const mode = (searchParams.get('mode') as TaskMode) || 'standard';
         const cwd = searchParams.get('cwd') || undefined;
         const attachmentsParam = searchParams.get('attachments');
@@ -302,8 +305,8 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
             <Composer onSend={handleSend} onStop={handleStop} running={running} />
           </div>
         </div>
+        {selectedTool && <ComputerPanel event={selectedTool} onClose={() => setSelectedTool(null)} />}
       </div>
-      {selectedTool && <ComputerPanel event={selectedTool} onClose={() => setSelectedTool(null)} />}
       <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} url={shareUrl} />
     </div>
   );

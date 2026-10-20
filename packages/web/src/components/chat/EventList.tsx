@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import type { ChatEvent, ToolUsedEvent } from '@shared/socket';
+import type { ChatEvent, ToolUsedEvent, CascadeTaskClockEvent } from '@shared/socket';
 import { t, PRODUCT } from '@/i18n/t';
 import { Markdown } from './Markdown';
 import { UserBubble } from './ChatBubble';
@@ -18,7 +18,7 @@ interface EventListProps {
   onOpenComputer?: (e: ToolUsedEvent) => void;
 }
 
-const Row = memo(function Row({ e, sessionId, socket, onOpenComputer }: { e: RenderableEvent; sessionId: string; socket?: ChatSocket | null; onOpenComputer?: (e: ToolUsedEvent) => void }) {
+const Row = memo(function Row({ e, sessionId, socket }: { e: RenderableEvent; sessionId: string; socket?: ChatSocket | null }) {
   switch (e.type) {
     case 'chat':
       return e.sender === 'user'
@@ -29,7 +29,7 @@ const Row = memo(function Row({ e, sessionId, socket, onOpenComputer }: { e: Ren
     case 'planUpdate':
       return <PlanUpdateRow e={e} />;
     case 'toolUsed':
-      return <ToolUsedRow e={e as ToolUsedEvent} onClick={() => onOpenComputer?.(e as ToolUsedEvent)} />;
+      return <ToolUsedRow e={e as ToolUsedEvent} />;
     case 'statusUpdate':
       return <StatusUpdateRow e={e} />;
     case 'explanation':
@@ -76,7 +76,18 @@ export function EventList({ events, sessionId, socket, onOpenComputer }: EventLi
   const collapsed = useMemo(() => collapseEvents(events as unknown as RenderableEvent[]), [events]);
   return (
     <ol className="mx-auto flex w-full max-w-[768px] flex-col gap-2 px-[var(--ui-content-padding-x,24px)] py-6">
-      {collapsed.map((e) => <li key={e.id}><Row e={e} sessionId={sessionId} socket={socket} onOpenComputer={onOpenComputer} /></li>)}
+      {collapsed.map((e) => {
+        const isTool = e.type === 'toolUsed';
+        return (
+          <li
+            key={e.id}
+            className={isTool ? 'ms-5 cursor-pointer' : undefined}
+            onClick={isTool ? () => onOpenComputer?.(e as ToolUsedEvent) : undefined}
+          >
+            <Row e={e} sessionId={sessionId} socket={socket} />
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -85,6 +96,7 @@ export function EventList({ events, sessionId, socket, onOpenComputer }: EventLi
 function collapseEvents(events: RenderableEvent[]): RenderableEvent[] {
   const out: RenderableEvent[] = [];
   const toolByAction = new Map<string, ToolUsedEvent>();
+  const hasClosedClock = events.some((e) => e.type === 'cascadeTaskClock' && (e as unknown as CascadeTaskClockEvent).clock?.phase === 'closed');
   for (const e of events) {
     if (e.type === 'toolUsed') {
       const t = e as ToolUsedEvent;
@@ -99,8 +111,14 @@ function collapseEvents(events: RenderableEvent[]): RenderableEvent[] {
         });
         continue;
       }
-      toolByAction.set(t.actionId, t);
-      out.push(t);
+      // If the task is complete and a tool frame never reached a final state, treat it as success
+      // so stale spinners are not left behind when the backend finalization event is missed.
+      if (hasClosedClock && (t.status === 'running' || t.status === 'argumentsFinished')) {
+        toolByAction.set(t.actionId, { ...t, status: 'success' });
+      } else {
+        toolByAction.set(t.actionId, t);
+      }
+      out.push(toolByAction.get(t.actionId)!);
       continue;
     }
     out.push(e);

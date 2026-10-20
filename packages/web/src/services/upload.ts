@@ -49,12 +49,17 @@ export async function getPresignedUploadUrl(
 }
 
 export async function putFile(uploadUrl: string, file: Blob, contentType: string): Promise<void> {
-  const res = await fetch(uploadUrl, {
+  const attempt = async () => fetch(uploadUrl, {
     method: 'PUT',
     headers: { 'content-type': contentType },
     body: file,
     keepalive: true,
   });
+  let res = await attempt();
+  if (!res.ok && res.status >= 500) {
+    await new Promise((r) => setTimeout(r, 300));
+    res = await attempt();
+  }
   if (!res.ok) {
     throw new Error(`PUT upload failed: ${res.status}`);
   }
@@ -82,7 +87,11 @@ export async function uploadFile(apiBase: string, file: File): Promise<Attachmen
     fileSize: file.size,
   });
 
-  await putFile(presign.data.uploadUrl, file, file.type || 'application/octet-stream');
+  // Read the file into memory before uploading. Some renderer environments (Electron
+  // set via CDP file inputs) cannot stream native File objects directly in fetch.
+  const buffer = await file.arrayBuffer();
+  const blob = new Blob([buffer], { type: file.type || 'application/octet-stream' });
+  await putFile(presign.data.uploadUrl, blob, file.type || 'application/octet-stream');
 
   const complete = await uploadComplete(apiBase, {
     filename: file.name,
