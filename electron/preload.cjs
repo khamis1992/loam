@@ -6,58 +6,114 @@ const IPC_INVOKE = "desktop-ipc-api";
 const IPC_EVENT_PREFIX = "desktop-ipc-event";
 const IPC_META = "desktop-ipc-meta";
 const IPC_SYNC = "desktop-sync-info";
-const NAMESPACES = [
-  "auth",
-  "window",
-  "system",
-  "updater",
-  "theme",
-  "appearance",
-  "desktopOperator",
-  "terminal",
-  "keepAwake",
-  "shortcut",
-  "env",
-  "diagnosticLogs",
-  "desktopActivityIndicator",
-  "storage",
-];
 
-/** __apis.<ns>.<method>(...args) → ipcRenderer.invoke('desktop-ipc-api', { ns, method, args }) */
-const apis = Object.fromEntries(
-  NAMESPACES.map((ns) => [
-    ns,
-    new Proxy({}, {
-      get: (_, method) => (...args) => ipcRenderer.invoke(IPC_INVOKE, { ns, method, args }),
-    }),
-  ]),
-);
+function invoke(ns, method, args) {
+  return ipcRenderer.invoke(IPC_INVOKE, { ns, method, args });
+}
 
-/** __events.<ns>.<event>(cb) → unsubscribe */
-const events = Object.fromEntries(
-  NAMESPACES.map((ns) => [
-    ns,
-    new Proxy({}, {
-      get: (_, evt) => (cb) => {
-        const channel = `${IPC_EVENT_PREFIX}:${ns}:${evt}`;
-        const listener = (_event, payload) => cb(payload);
-        ipcRenderer.on(channel, listener);
-        return () => ipcRenderer.removeListener(channel, listener);
-      },
-    }),
-  ]),
-);
+// Plain objects only — contextBridge cannot clone Proxy objects.
+const apis = {
+  auth: {
+    getToken: (...args) => invoke("auth", "getToken", args),
+    setToken: (...args) => invoke("auth", "setToken", args),
+    removeToken: (...args) => invoke("auth", "removeToken", args),
+    notifyLoginSuccess: (...args) => invoke("auth", "notifyLoginSuccess", args),
+  },
+  window: {
+    minimize: (...args) => invoke("window", "minimize", args),
+    maximize: (...args) => invoke("window", "maximize", args),
+    close: (...args) => invoke("window", "close", args),
+    isMaximized: (...args) => invoke("window", "isMaximized", args),
+    toggleFullscreen: (...args) => invoke("window", "toggleFullscreen", args),
+    isFullscreen: (...args) => invoke("window", "isFullscreen", args),
+    openTaskInNewWindow: (...args) => invoke("window", "openTaskInNewWindow", args),
+  },
+  system: {
+    openExternal: (...args) => invoke("system", "openExternal", args),
+    showFolderDialog: (...args) => invoke("system", "showFolderDialog", args),
+    notifyNetworkOnline: (...args) => invoke("system", "notifyNetworkOnline", args),
+    notifyNetworkOffline: (...args) => invoke("system", "notifyNetworkOffline", args),
+  },
+  updater: {
+    getStatus: (...args) => invoke("updater", "getStatus", args),
+    checkForUpdates: (...args) => invoke("updater", "checkForUpdates", args),
+    restartNow: (...args) => invoke("updater", "restartNow", args),
+    getPolicyContext: (...args) => invoke("updater", "getPolicyContext", args),
+  },
+  theme: {
+    broadcastConfig: (...args) => invoke("theme", "broadcastConfig", args),
+  },
+  appearance: {
+    broadcastConfig: (...args) => invoke("appearance", "broadcastConfig", args),
+  },
+  desktopOperator: {
+    listWorkspaceDirectory: (...args) => invoke("desktopOperator", "listWorkspaceDirectory", args),
+    searchWorkspaceFiles: (...args) => invoke("desktopOperator", "searchWorkspaceFiles", args),
+    watchWorkspaceFiles: (...args) => invoke("desktopOperator", "watchWorkspaceFiles", args),
+    unwatchWorkspaceFiles: (...args) => invoke("desktopOperator", "unwatchWorkspaceFiles", args),
+    getState: (...args) => invoke("desktopOperator", "getState", args),
+    respondFolderAccess: (...args) => invoke("desktopOperator", "respondFolderAccess", args),
+  },
+  terminal: {
+    create: (...args) => invoke("terminal", "create", args),
+    write: (...args) => invoke("terminal", "write", args),
+    resize: (...args) => invoke("terminal", "resize", args),
+    close: (...args) => invoke("terminal", "close", args),
+  },
+  keepAwake: {
+    getState: (...args) => invoke("keepAwake", "getState", args),
+    setEnabled: (...args) => invoke("keepAwake", "setEnabled", args),
+  },
+  shortcut: {
+    getConfig: (...args) => invoke("shortcut", "getConfig", args),
+    getCapabilities: (...args) => invoke("shortcut", "getCapabilities", args),
+    setEnabled: (...args) => invoke("shortcut", "setEnabled", args),
+  },
+  env: {
+    setOverrideAndRelaunch: (...args) => invoke("env", "setOverrideAndRelaunch", args),
+  },
+  diagnosticLogs: {
+    collect: (...args) => invoke("diagnosticLogs", "collect", args),
+  },
+  desktopActivityIndicator: {
+    getState: (...args) => invoke("desktopActivityIndicator", "getState", args),
+    rendererReady: (...args) => invoke("desktopActivityIndicator", "rendererReady", args),
+    setEnabled: (...args) => invoke("desktopActivityIndicator", "setEnabled", args),
+    setExpanded: (...args) => invoke("desktopActivityIndicator", "setExpanded", args),
+  },
+  storage: {
+    getItem: (...args) => invoke("storage", "getItem", args),
+    setItem: (...args) => invoke("storage", "setItem", args),
+    removeItem: (...args) => invoke("storage", "removeItem", args),
+  },
+};
+
+function subscribe(ns, evt, cb) {
+  const channel = `${IPC_EVENT_PREFIX}:${ns}:${evt}`;
+  const listener = (_event, payload) => cb(payload);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+}
+
+const events = {
+  auth: {
+    onLoginSuccess: (cb) => subscribe("auth", "onLoginSuccess", cb),
+    onLoginError: (cb) => subscribe("auth", "onLoginError", cb),
+  },
+  updater: {
+    onStatusChanged: (cb) => subscribe("updater", "onStatusChanged", cb),
+  },
+  terminal: {
+    onEvent: (cb) => subscribe("terminal", "onEvent", cb),
+  },
+};
 
 const syncInfo = ipcRenderer.sendSync(IPC_SYNC);
 
 contextBridge.exposeInMainWorld("desktopSync", syncInfo);
 contextBridge.exposeInMainWorld("__apis", apis);
 contextBridge.exposeInMainWorld("__events", events);
-contextBridge.exposeInMainWorld("desktopLocalStorage", {
-  getItem: (k) => ipcRenderer.invoke(IPC_INVOKE, { ns: "storage", method: "getItem", args: [k] }),
-  setItem: (k, v) => ipcRenderer.invoke(IPC_INVOKE, { ns: "storage", method: "setItem", args: [k, v] }),
-  removeItem: (k) => ipcRenderer.invoke(IPC_INVOKE, { ns: "storage", method: "removeItem", args: [k] }),
-});
+contextBridge.exposeInMainWorld("desktopLocalStorage", apis.storage);
 
 // Legacy bridge kept for the existing vanilla UI during the transition.
 contextBridge.exposeInMainWorld("loam", {
