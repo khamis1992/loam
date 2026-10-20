@@ -10,6 +10,7 @@ import { SKILLS_DIR } from "../config.js";
 import type { WorkerCheckpoint } from "./checkpoint.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { chatWithFallback } from "./model.js";
+import { createStallGuard } from "./stallGuard.js";
 import { throwIfCancelled } from "../server/runControl.js";
 
 export interface RunOptions {
@@ -89,6 +90,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   const trace: ToolTraceItem[] = [];
   let verificationAttempts = 0;
   let emptyAnswerRecoveries = 0;
+  const stallGuard = createStallGuard();
   const restored = opts.resumeWorker;
   if (restored) {
     if (!opts.suppressFinal || restored.prompt !== opts.prompt) throw new Error("Worker checkpoint does not match this execution");
@@ -178,6 +180,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     ]);
 
     const pendingImages: string[] = [];
+    const stallNotices: string[] = [];
     const canBatchParallel =
       result.toolCalls.length > 1 &&
       result.toolCalls.every((c) => PARALLEL_READ_TOOLS.has(c.function?.name ?? ""));
@@ -206,6 +209,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         const evidence = { name: item.name, args: item.args, ok: toolResult.ok, summary: toolResult.content };
         trace.push(evidence);
         opts.onToolEvidence?.(evidence);
+        const notice = stallGuard(item.name, item.args, toolResult.ok);
+        if (notice) stallNotices.push(notice);
         opts.emit({
           type: "tool_result",
           name: item.name,
@@ -236,6 +241,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         const evidence = { name, args, ok: toolResult.ok, summary: toolResult.content };
         trace.push(evidence);
         opts.onToolEvidence?.(evidence);
+        const notice = stallGuard(name, args, toolResult.ok);
+        if (notice) stallNotices.push(notice);
         messages.push({ role: "tool", tool_name: name, content: toolResult.content });
         // Cancel pressed while the tool ran? Stop before the next tool/step.
         throwIfCancelled(opts.signal, opts.taskId);
@@ -246,6 +253,10 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           }
         }
       }
+    }
+
+    if (stallNotices.length > 0) {
+      messages.push({ role: "user", content: stallNotices.join("\n\n") });
     }
 
     if (pendingImages.length > 0) {

@@ -251,6 +251,7 @@ async function main(): Promise<void> {
       const agentSuffix = agent ? agentSystemSuffix(agent) : undefined;
       const suffix = [
         `You are Loam. Active mode: ${modeDefinition.labelAr}. ${modeDefinition.description} Only use the provided tool capabilities.`,
+        modeDefinition.outputHint,
         workModeDefinition.policy,
         memoryContextSuffix,
         agentSuffix, askModeSuffix,
