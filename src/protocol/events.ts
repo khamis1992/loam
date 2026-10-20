@@ -324,6 +324,10 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
 
     case "error": {
       const cancelled = event.message.includes("cancelled") || event.message.includes("أُوقفت");
+      if (cancelled) {
+        const userStop: UserStopEvent = { id: baseId(), type: "userStop", timestamp: ts };
+        out.push(userStop);
+      }
       const status: StatusUpdateEvent = {
         id: baseId(),
         type: "statusUpdate",

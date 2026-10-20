@@ -124,6 +124,10 @@ function requireAuth(ctx: RpcContext): string {
   return ctx.userUid;
 }
 
+function sessionUid(body: Record<string, unknown>): string {
+  return String(body.session_uid ?? body.sessionUid ?? "");
+}
+
 export function makeRpcHandlers(store: ProtocolStore): Record<string, (body: Record<string, unknown>, ctx: RpcContext) => Record<string, unknown>> {
   return {
     // Auth
@@ -176,53 +180,61 @@ export function makeRpcHandlers(store: ProtocolStore): Record<string, (body: Rec
       const end = start + Number(limit);
       return { sessions: all.slice(start, end), has_next: end < all.length, total: String(all.length), next_cursor: "" };
     },
-    "session.v1.SessionService/GetSession": ({ session_uid }, ctx) => {
+    "session.v1.SessionService/GetSession": (body, ctx) => {
       requireAuth(ctx);
-      const task = getTask(String(session_uid ?? ""));
+      const id = sessionUid(body);
+      let session = store.getSession(id);
+      let task = session?.taskId ? getTask(session.taskId) : undefined;
+      if (!task) task = getTask(id);
       if (!task) throw rpcError("not found", "not_found");
+      if (!session) {
+        session = store.ensureSession(id, task.id, task.title);
+      } else if (!session.taskId) {
+        store.setTaskId(id, task.id);
+      }
       return { session: loamTaskToAgentSession(task, store) };
     },
-    "session.v1.SessionService/UpdateSession": ({ session_uid, title, icon, status }, ctx) => {
+    "session.v1.SessionService/UpdateSession": (body, ctx) => {
       requireAuth(ctx);
-      const task = getTask(String(session_uid ?? ""));
+      const task = getTask(sessionUid(body));
       if (!task) throw rpcError("not found", "not_found");
+      const { title, icon, status } = body;
       if (typeof title === "string" && title.trim()) task.title = title.trim().slice(0, 80);
       // Loam Task has no icon/status fields; status is driven by the run.
       void icon;
       void status;
       return {};
     },
-    "session.v1.SessionService/DeleteSession": ({ session_uid }, ctx) => {
+    "session.v1.SessionService/DeleteSession": (body, ctx) => {
       requireAuth(ctx);
       // Loam does not have a deleteTask export; mark as deleted conceptually.
-      log.info(`protocol delete session ${String(session_uid)} (Loam has no deleteTask)`);
+      log.info(`protocol delete session ${sessionUid(body)} (Loam has no deleteTask)`);
       return {};
     },
-    "session.v1.SessionService/FavoriteSession": ({ session_uid }, ctx) => {
+    "session.v1.SessionService/FavoriteSession": (body, ctx) => {
       requireAuth(ctx);
-      const task = getTask(String(session_uid ?? ""));
+      const task = getTask(sessionUid(body));
       if (!task) throw rpcError("not found", "not_found");
       // No favorite field on Loam Task; stub.
       return {};
     },
-    "session.v1.SessionService/UnFavoriteSession": ({ session_uid }, ctx) => {
+    "session.v1.SessionService/UnFavoriteSession": (body, ctx) => {
       requireAuth(ctx);
-      void session_uid;
+      void sessionUid(body);
       return {};
     },
-    "session.v1.SessionService/ArchiveSession": ({ session_uid }, ctx) => {
+    "session.v1.SessionService/ArchiveSession": (body, ctx) => {
       requireAuth(ctx);
-      void session_uid;
+      void sessionUid(body);
       return {};
     },
-    "session.v1.SessionService/UnarchiveSession": ({ session_uid }, ctx) => {
+    "session.v1.SessionService/UnarchiveSession": (body, ctx) => {
       requireAuth(ctx);
-      void session_uid;
+      void sessionUid(body);
       return {};
     },
-    "session.v1.SessionService/UpdateReadPosition": ({ session_uid, last_read_at }, ctx) => {
+    "session.v1.SessionService/UpdateReadPosition": ({ last_read_at }, ctx) => {
       requireAuth(ctx);
-      void session_uid;
       void last_read_at;
       return {};
     },

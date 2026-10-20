@@ -17,10 +17,12 @@ import { RpcClient, getApiBase, getSessionToken, handleAuthFailure } from '@/ser
 import { uploadFile } from '@/services/upload';
 import type {
   TaskMode,
+  ChatEvent,
   ChatMessageEvent,
   StatusUpdateEvent,
   CascadeTaskClockEvent,
   ChatDeltaEvent,
+  EventsNotifyEventsAfterEvent,
   ServerMessage,
   Attachment,
 } from '@shared/socket';
@@ -220,7 +222,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
           )}
           <EventList events={events} sessionId={sessionUid} socket={socketRef.current} />
 
-          {assistantText && !running && (
+          {assistantText && !running && !wasStoppedByUser && (
             <div className="mx-auto w-full max-w-[768px] px-[var(--ui-content-padding-x,24px)]">
               <div className="mb-2 flex items-center gap-2 text-sm text-func-success">
                 <CircleCheck className="size-4" /> {t('Task completed')}
@@ -255,6 +257,25 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
 function handleServerMessage(m: ServerMessage, sessionId: string, dispatch: AppDispatch) {
   if (m.type !== 'event') return;
   const ev = m.event;
+  if (ev.type === 'eventsNotifyEventsAfter') {
+    const notify = ev as unknown as EventsNotifyEventsAfterEvent;
+    for (const rawInner of notify.events) {
+      const inner = rawInner as ChatEvent;
+      if (inner.type === 'chatDelta') {
+        dispatch(applyDelta({ sessionId, delta: inner as ChatDeltaEvent }));
+      } else {
+        if (inner.type === 'statusUpdate') {
+          dispatch(setStatus({ sessionId, status: (inner as StatusUpdateEvent).agentStatus }));
+        }
+        const errorLike = inner as unknown as { type?: string; message?: string };
+        if (errorLike.type === 'error') {
+          dispatch(setError({ sessionId, error: errorLike.message ?? t('An error occurred') }));
+        }
+        dispatch(appendEvent({ sessionId, event: inner }));
+      }
+    }
+    return;
+  }
   if (ev.type === 'chatDelta') {
     dispatch(applyDelta({ sessionId, delta: ev as ChatDeltaEvent }));
     return;

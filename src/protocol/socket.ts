@@ -63,6 +63,7 @@ export function createChatSocket(deps: SocketDeps): Server {
     const token = socket.handshake.auth?.token ?? socket.handshake.query?.token;
     if (typeof token === "string" && tokenToUserUid(token)) {
       socket.data.userUid = tokenToUserUid(token);
+      socket.data.locale = String(socket.handshake.query?.locale ?? "en");
       return next();
     }
     next(new Error("unauthenticated"));
@@ -160,10 +161,24 @@ export function createChatSocket(deps: SocketDeps): Server {
 
           let taskId = session.taskId;
           if (!taskId || !getTask(taskId)) {
-            const task = createTask(text, text.slice(0, 80), um.extData.projectId ?? null, null);
-            taskId = task.id;
+            if (getTask(um.sessionId)) {
+              taskId = um.sessionId;
+            } else {
+              const task = createTask(text, text.slice(0, 80), um.extData.projectId ?? null, null);
+              taskId = task.id;
+            }
             session.taskId = taskId;
-            store.bindTask(um.sessionId, taskId);
+            store.setTaskId(um.sessionId, taskId);
+          }
+
+          // Forward the UI locale to Loam. Because Loam has no per-request locale
+          // channel, append a short locale marker to the user prompt.
+          const locale = String((socket as unknown as { data: { locale?: string } }).data.locale ?? "en");
+          let prompt = text;
+          if (locale.startsWith("en")) {
+            prompt = `${text}\n\n(Locale: en — reply in English.)`;
+          } else if (locale.startsWith("ar")) {
+            prompt = `${text}\n\n(Locale: ar — رد بالعربية.)`;
           }
 
           // Echo user message.
@@ -217,7 +232,7 @@ export function createChatSocket(deps: SocketDeps): Server {
 
           try {
             const result = await runTask({
-              prompt: text,
+              prompt,
               emit,
               taskId,
               title: text.slice(0, 80),

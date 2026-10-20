@@ -78,56 +78,84 @@ async function run() {
   // Wait briefly for join ack, then send the task.
   await new Promise((r) => setTimeout(r, 200));
 
-  socket.emit("message", {
-    type: "user_message",
-    id: shortUid(),
-    sessionId,
-    timestamp: Date.now(),
-    messageStatus: "pending",
-    messageType: "text",
-    taskMode: TASK_MODE,
-    content: "",
-    contents: [{ type: "text", value: PROMPT }],
-    attachments: [],
-    extData: { capabilities: { enabledAddons: [], connectorAccounts: [], enabledConnectors: [] } },
-  });
+  function sendMessage(text) {
+    socket.emit("message", {
+      type: "user_message",
+      id: shortUid(),
+      sessionId,
+      timestamp: Date.now(),
+      messageStatus: "pending",
+      messageType: "text",
+      taskMode: TASK_MODE,
+      content: "",
+      contents: [{ type: "text", value: text }],
+      attachments: [],
+      extData: { capabilities: { enabledAddons: [], connectorAccounts: [], enabledConnectors: [] } },
+    });
+    console.log(`sent user_message: ${text}`);
+  }
 
-  console.log(`sent user_message for session ${sessionId}`);
+  sendMessage("write hello world in python to a file named hello.py in the workspace");
 
-  let done = false;
   const events = [];
+  let resultCount = 0;
+  let followUpSent = false;
+  let followUpResult = null;
 
-  socket.on("message", (frame) => {
-    events.push(frame);
-    const ev = frame.event || {};
-    const summary = ev.type === "chat" && ev.sender === "assistant" && ev.deliveryKind === "result"
-      ? ` -> assistant result: ${ev.content.slice(0, 120).replace(/\n/g, " ")}`
-      : ev.type === "chat" && ev.sender === "user"
-        ? " -> user"
-        : ev.type === "toolUsed"
-          ? ` -> tool ${ev.tool} ${ev.status}`
-          : ev.type === "statusUpdate"
-            ? ` -> status ${ev.agentStatus}`
-            : ` -> ${ev.type}`;
-    console.log(`[${new Date().toISOString()}]${summary}`);
+  const donePromise = new Promise((resolve, reject) => {
+    socket.on("message", (frame) => {
+      events.push(frame);
+      const ev = frame.event || {};
+      const summary = ev.type === "chat" && ev.sender === "assistant" && ev.deliveryKind === "result"
+        ? ` -> assistant result: ${ev.content.slice(0, 120).replace(/\n/g, " ")}`
+        : ev.type === "chat" && ev.sender === "user"
+          ? " -> user"
+          : ev.type === "toolUsed"
+            ? ` -> tool ${ev.tool} ${ev.status}`
+            : ev.type === "statusUpdate"
+              ? ` -> status ${ev.agentStatus}`
+              : ` -> ${ev.type}`;
+      console.log(`[${new Date().toISOString()}]${summary}`);
 
-    if (ev.type === "chat" && ev.sender === "assistant" && ev.deliveryKind === "result") {
-      done = true;
-      console.log("\n✓ final assistant answer received");
-      console.log(ev.content);
-      socket.disconnect();
-      process.exit(0);
-    }
+      if (ev.type === "chat" && ev.sender === "assistant" && ev.deliveryKind === "result") {
+        resultCount += 1;
+        console.log(`\n✓ assistant answer #${resultCount} received`);
+        console.log(ev.content);
+        if (resultCount === 1 && !followUpSent) {
+          // Give the agent a moment to finish bookkeeping, then ask a follow-up
+          // that only works if it continues in the same workspace.
+          setTimeout(() => {
+            followUpSent = true;
+            sendMessage("read the hello.py file in the workspace and report its exact contents");
+          }, 500);
+        } else if (resultCount === 2) {
+          followUpResult = ev.content;
+          socket.disconnect();
+          resolve();
+        }
+      }
+    });
+
+    setTimeout(() => {
+      reject(new Error(`timed out waiting for follow-up answer (got ${resultCount} results)`));
+    }, 180_000);
   });
 
-  // Timeout safety.
-  setTimeout(() => {
-    if (done) return;
-    console.error("\n✗ timed out waiting for final assistant answer");
+  try {
+    await donePromise;
+    if (!followUpResult || !/hello/i.test(followUpResult) || !/hello\.py/i.test(followUpResult)) {
+      console.error("\n✗ follow-up did not reference the hello.py file from the first turn");
+      console.error("follow-up answer:", followUpResult);
+      process.exit(1);
+    }
+    console.log("\n✓ follow-up continued in the same workspace and referenced hello.py");
+    process.exit(0);
+  } catch (err) {
+    console.error("\n✗", err.message);
     console.error("events received:", events.length);
     socket.disconnect();
     process.exit(1);
-  }, 120_000);
+  }
 }
 
 run().catch((err) => {
