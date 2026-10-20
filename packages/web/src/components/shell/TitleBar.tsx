@@ -1,12 +1,55 @@
+'use client';
+
+import { PanelLeft, ArrowLeft, ArrowRight, Search } from 'lucide-react';
 import { isDesktop } from '@/services/desktopApis';
+import { useAppDispatch } from '@/store';
+import { toggleSidebar, openSettings } from '@/store';
+import { t } from '@/i18n/t';
 
 export function TitleBar({ children }: { children?: React.ReactNode }) {
+  const dispatch = useAppDispatch();
   return (
     <header
       className="flex h-titlebar shrink-0 items-center gap-1 pe-2"
-      style={{ paddingInlineStart: isDesktop() ? 80 : 8, WebkitAppRegion: 'drag' } as React.CSSProperties}
+      style={{ paddingInlineStart: isDesktop() ? 80 : 12, WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        <button
+          type="button"
+          aria-label={t('Toggle sidebar')}
+          title={t('Toggle sidebar')}
+          onClick={() => dispatch(toggleSidebar())}
+          className="flex h-7 w-7 items-center justify-center rounded-control text-text-secondary hover:bg-fill-hover"
+        >
+          <PanelLeft className="size-4" />
+        </button>
+        <button
+          type="button"
+          aria-label={t('Back')}
+          title={t('Back')}
+          onClick={() => window.history.back()}
+          className="flex h-7 w-7 items-center justify-center rounded-control text-text-tertiary hover:bg-fill-hover disabled:opacity-30"
+        >
+          <ArrowLeft className="size-4" />
+        </button>
+        <button
+          type="button"
+          aria-label={t('Forward')}
+          title={t('Forward')}
+          onClick={() => window.history.forward()}
+          className="flex h-7 w-7 items-center justify-center rounded-control text-text-tertiary hover:bg-fill-hover disabled:opacity-30"
+        >
+          <ArrowRight className="size-4" />
+        </button>
+        <button
+          type="button"
+          aria-label={t('Search')}
+          title={t('Search')}
+          onClick={() => dispatch(openSettings('General'))}
+          className="flex h-7 w-7 items-center justify-center rounded-control text-text-tertiary hover:bg-fill-hover"
+        >
+          <Search className="size-4" />
+        </button>
         {children}
       </div>
     </header>

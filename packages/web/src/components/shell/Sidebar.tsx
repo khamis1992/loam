@@ -1,13 +1,15 @@
 'use client';
 
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef, type ComponentType } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Settings, LogOut } from 'lucide-react';
-import { useAppSelector, useAppDispatch } from '@/store';
+import {
+  SquarePen, Monitor, Search, BookOpen, Sparkles, Workflow, LayoutGrid, MoreHorizontal,
+  ChevronRight, Share2, Bell, MonitorSmartphone,
+} from 'lucide-react';
+import { useAppSelector, useAppDispatch, toggleSidebar } from '@/store';
 import { selectSession, startNewTask, loadSessions, type AgentSession } from '@/store/sessionsSlice';
 import { openSettings } from '@/store';
 import { t } from '@/i18n/t';
-import { logoutAndRedirect } from '@/services/desktopApis';
 import clsx from 'clsx';
 import { AccountPopover } from '@/components/dialogs/AccountPopover';
 import { SearchDialog } from '@/components/dialogs/SearchDialog';
@@ -24,6 +26,28 @@ export function bucketOf(ms: number, now = Date.now()): (typeof BUCKETS)[number]
   if (ms >= +startOfToday - 30 * day) return 'Last 30 days';
   return 'Older';
 }
+
+type NavItem = {
+  id: string;
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+  href?: string;
+  badge?: string;
+  shortcut?: string;
+  onClick?: string;
+};
+
+const NAV: NavItem[] = [
+  { id: 'new-task', label: t('New task'), icon: SquarePen, href: '/app' },
+  { id: 'computers', label: t('Computers'), icon: Monitor, href: '/app/computers' },
+  { id: 'agent-loam', label: t('Agent Loam'), icon: AgentLoamIcon, badge: t('Cue!'), href: '/app/agents' },
+  { id: 'search', label: t('Search'), icon: Search, shortcut: t('Ctrl+K'), onClick: 'search' },
+  { id: 'library', label: t('Library'), icon: BookOpen, href: '/app/library' },
+  { id: 'creations', label: t('Creations'), icon: Sparkles, href: '/app/creations' },
+  { id: 'automations', label: t('Automations'), icon: Workflow, href: '/app/automations' },
+  { id: 'plugins', label: t('Plugins'), icon: LayoutGrid, href: '/app/plugins' },
+  { id: 'more', label: t('More'), icon: MoreHorizontal, href: '/app/more' },
+];
 
 export function Sidebar() {
   const dispatch = useAppDispatch();
@@ -63,29 +87,58 @@ export function Sidebar() {
   }, [list, filter, query]);
 
   const name = user?.displayname || 'Demo User';
+  const initial = (name[0] || 'U').toUpperCase();
+
+  const navAction = (item: typeof NAV[number]) => {
+    if (item.onClick === 'search') {
+      setSearchOpen(true);
+    } else if (item.href) {
+      router.push(item.href);
+    }
+  };
 
   return (
-    <nav aria-label="Sidebar" className="flex h-full w-[240px] flex-col bg-bg-nav px-1.5 pb-2 border-e border-border-main">
-      <button
-        onClick={() => dispatch(startNewTask())}
-        className="mt-1 flex h-row items-center gap-2 rounded-row px-2 text-sm text-text-primary hover:bg-fill-hover"
-      >
-        ＋ {t('New task')}
-      </button>
-
-      <div className="mt-1 flex h-row-sm items-center gap-2 rounded-control bg-fill-tsp px-2">
-        <Search className="size-4 text-text-tertiary" aria-hidden />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={t('Search tasks...')}
-          aria-label={t('Search')}
-          className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-tertiary outline-none"
-        />
-        <kbd className="hidden rounded px-1 text-[11px] text-text-tertiary border border-border-main sm:inline">Ctrl K</kbd>
+    <nav aria-label={t('Sidebar')} className="flex h-full w-[192px] flex-col bg-bg-nav px-2 pb-3">
+      <div className="flex flex-col gap-0.5 py-1.5">
+        {NAV.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => navAction(item)}
+            className={clsx(
+              'group flex h-[26px] w-full items-center gap-2 rounded-[8px] px-2 text-sm',
+              item.id === 'search' ? 'bg-fill-hover text-text-primary' : 'text-text-secondary hover:bg-fill-hover',
+            )}
+          >
+            {item.id === 'agent-loam' ? (
+              <item.icon className="size-4 shrink-0" />
+            ) : (
+              <item.icon className="size-4 shrink-0" aria-hidden />
+            )}
+            <span className="flex-1 truncate text-start">{item.label}</span>
+            {item.badge && (
+              <span className="shrink-0 rounded-full bg-fill-tsp px-1.5 py-0 text-[10px] font-medium text-text-tertiary">
+                {item.badge}
+              </span>
+            )}
+            {item.shortcut && (
+              <span className="shrink-0 text-[11px] text-text-tertiary">{item.shortcut}</span>
+            )}
+          </button>
+        ))}
       </div>
 
-      <div className="mt-3 flex-1 overflow-y-auto">
+      <button
+        type="button"
+        onClick={() => router.push('/app/projects')}
+        className="mb-1 flex h-[26px] w-full items-center justify-between rounded-[8px] px-2 text-xs text-text-tertiary hover:bg-fill-hover"
+      >
+        {t('Projects ›')}
+        <ChevronRight className="size-3" aria-hidden />
+      </button>
+
+      <div className="flex-1 overflow-y-auto">
+        <h3 className="px-2 py-1 text-xs text-text-tertiary">{t('Tasks')}</h3>
         {groups.length === 0 && <p className="px-2 text-sm text-text-tertiary">{t('No content')}</p>}
         {groups.map(([bucket, items]) => (
           <section key={bucket} className="mb-2">
@@ -102,31 +155,51 @@ export function Sidebar() {
         ))}
       </div>
 
-      <div className="mt-2 flex items-center justify-between gap-1 border-t border-border-main pt-2">
+      <div className="mt-2 shrink-0 space-y-2">
         <button
-          ref={accountAnchorRef}
-          onClick={() => setAccountOpen((v) => !v)}
-          className="flex flex-1 items-center gap-2 rounded-row px-1.5 py-1 hover:bg-fill-hover"
-        >
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-fill-tsp text-xs text-text-primary">
-            {(name[0] || 'U').toUpperCase()}
-          </div>
-          <span className="flex-1 truncate text-left text-sm text-text-primary">{name}</span>
-        </button>
-        <button
-          aria-label={t('Settings')}
+          type="button"
           onClick={() => dispatch(openSettings('General'))}
-          className="flex h-7 w-7 items-center justify-center rounded-control text-text-secondary hover:bg-fill-hover"
+          className="flex w-full items-center gap-2 rounded-card border border-border-main bg-bg-menu px-2.5 py-2 text-start hover:bg-fill-hover"
         >
-          <Settings className="size-4" />
+          <Share2 className="size-4 shrink-0 text-text-secondary" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm text-text-primary">{t('Share Agent Studio')}</p>
+            <p className="truncate text-xs text-text-tertiary">{t('Get 500 credits each')}</p>
+          </div>
+          <ChevronRight className="size-3.5 shrink-0 text-text-tertiary" aria-hidden />
         </button>
-        <button
-          aria-label={t('Sign out')}
-          onClick={() => { void logoutAndRedirect(router, dispatch); }}
-          className="flex h-7 w-7 items-center justify-center rounded-control text-text-secondary hover:bg-fill-hover"
-        >
-          <LogOut className="size-4" />
-        </button>
+
+        <div className="flex items-center justify-between gap-1">
+          <button
+            ref={accountAnchorRef}
+            type="button"
+            onClick={() => setAccountOpen((v) => !v)}
+            className="flex flex-1 items-center gap-2 rounded-[8px] px-1.5 py-1 hover:bg-fill-hover"
+          >
+            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-text-primary text-[11px] font-semibold text-text-onblack">
+              {initial}
+            </div>
+            <span className="flex-1 truncate text-start text-[13px] font-medium text-text-primary">{name}</span>
+          </button>
+          <button
+            type="button"
+            aria-label={t('Devices')}
+            title={t('Devices')}
+            onClick={() => router.push('/app/devices')}
+            className="flex h-7 w-7 items-center justify-center rounded-control text-text-secondary hover:bg-fill-hover"
+          >
+            <MonitorSmartphone className="size-4" />
+          </button>
+          <button
+            type="button"
+            aria-label={t('Notifications')}
+            title={t('Notifications')}
+            onClick={() => dispatch(openSettings('General'))}
+            className="flex h-7 w-7 items-center justify-center rounded-control text-text-secondary hover:bg-fill-hover"
+          >
+            <Bell className="size-4" />
+          </button>
+        </div>
       </div>
 
       <AccountPopover
@@ -138,3 +211,13 @@ export function Sidebar() {
     </nav>
   );
 }
+
+function AgentLoamIcon({ className }: { className?: string }) {
+  return (
+    <div className={clsx('relative flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0081f2] to-[#64b5f6]', className)}>
+      <span className="text-[10px] font-semibold text-white">L</span>
+    </div>
+  );
+}
+
+export { toggleSidebar };

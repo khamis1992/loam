@@ -14,6 +14,7 @@ export default {
         ]),
       ),
       borderRadius: { row: '10px', control: '8px', card: '12px', composer: '22px' },
+      fontFamily: { serif: ['Georgia', 'Times New Roman', 'Times', 'serif'] },
       colors: {
         bg: { main: v('background-gray-main'), menu: v('background-menu-white'), nav: v('background-nav'), login: v('background-gray-login') },
         text: {

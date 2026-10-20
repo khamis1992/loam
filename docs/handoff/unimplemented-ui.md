@@ -13,6 +13,11 @@ Owned file: `packages/web/src/app/app/page.tsx`, `packages/web/src/components/ch
 | Git branch chip | Composer context row | `/api/worktree` returns 410; Loam git branches are task-scoped via Swarm | Reads `desktopSync.env.GIT_BRANCH` / `__AGENT_STUDIO_ENV__.gitBranch` / `__apis.system.getGitBranch()` if injected |
 | Worktree checkbox | Composer context row | `/api/worktree` returns 410; Loam uses isolated task workspaces, not shared worktrees | UI-only checkbox |
 
+| Top bar search icon | `TitleBar.tsx` | Opens Settings instead of a global command palette | UI-only placeholder |
+| Sidebar nav rows without dedicated backends | `Sidebar.tsx`: Library, Creations, Automations, Plugins, More, Projects, Devices | `/api/files`, `/api/creative`, `/api/media`, `/api/schedules`, `/api/mcp/status`, `/api/tools`, `/api/projects`, `/app/more`, `/api/companion-devices` have partial endpoints but no full UI parity backend for create/edit/delete/actions | Navigates to placeholder pages that read backend lists when available |
+| Notifications bell | `Sidebar.tsx` user row | No notification feed API | Opens Settings › General |
+| Agent Loam "Cue!" badge | `Sidebar.tsx` | Decorative badge only; no cue-trigger backend | UI-only badge |
+
 Wired to real backend:
 - Model dropdown selection persists to `localStorage`.
 - Credits pill fetches `POST http://localhost:8787/user.v1.UserService/GetAvailableCredits` with Bearer token from `window.__apis.auth.getToken()`.
@@ -20,3 +25,11 @@ Wired to real backend:
 - "Downloads" chip reads `__apis.system.getDownloadsPath()` or `desktopSync.env.DOWNLOADS_PATH`.
 - "Start from a local file" uses hidden file input + drag/drop; files are uploaded via `services/upload.ts` before task navigation.
 - After creating a task, `dispatch(loadSessions())` refreshes the sidebar.
+- `/app/agents` fetches `GET /api/agents` (Loam companion list).
+- `/app/computers` fetches `GET /api/companion-devices`.
+- `/app/devices` fetches `POST /desktop.v1.DesktopService/GetDesktopDevices`.
+- `/app/projects` fetches `GET /api/projects`.
+- `/app/automations` fetches `GET /api/schedules`.
+- `/app/plugins` fetches `GET /api/mcp/status` and `GET /api/tools`.
+- `/app/library` fetches `GET /api/files`.
+- `/app/creations` fetches `GET /api/creative` and `GET /api/media`.
