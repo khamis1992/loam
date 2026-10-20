@@ -38,10 +38,11 @@ interface ComposerProps {
   onAddFolder?: (path: string) => void;
   defaultLoamMode?: string;
   resolvedLoamMode?: ModeChipResolved | null;
+  placeholder?: string;
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { onSend, onStop, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode }: ComposerProps,
+  { onSend, onStop, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode, placeholder }: ComposerProps,
   ref: Ref<ComposerHandle>,
 ) {
   const router = useRouter();
@@ -199,7 +200,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKey}
         rows={home ? 1 : 1}
-        placeholder={t(files.length ? 'Tell {product} what to do with the file'
+        placeholder={placeholder ?? t(files.length ? 'Tell {product} what to do with the file'
           : home ? 'Assign a task or type / for more'
           : 'Message {product}')}
         className="chat-input-editor w-full resize-none bg-transparent text-base leading-snug text-text-primary outline-none placeholder:text-text-disable"

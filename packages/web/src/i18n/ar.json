@@ -103,6 +103,7 @@
   "Loam's computer": "كمبيوتر Loam",
   "Could not open remote control. Open it again from My computers.": "تعذر فتح التحكم عن بُعد. افتحه مرة أخرى من أجهزة الكمبيوتر الخاصة بي.",
   "Message {product}": "أرسل رسالة إلى {product}",
+  "Message {name}": "أرسل رسالة إلى {name}",
   "Tell {product} what to do with the file": "أخبر {product} بما يجب فعله بالملف",
   "{name} is thinking": "{name} يفكر",
   "Worked for {duration}": "عمل لمدة {duration}",

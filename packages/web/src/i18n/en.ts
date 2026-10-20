@@ -95,6 +95,7 @@ export const en = {
   "Close": "Close",
   "Error": "Error",
   "Message {product}": "Message {product}",
+  "Message {name}": "Message {name}",
   "Tell {product} what to do with the file": "Tell {product} what to do with the file",
   "{name} is thinking": "{name} is thinking",
   "{productName} stopped — send message to continue": "{productName} stopped — send message to continue",

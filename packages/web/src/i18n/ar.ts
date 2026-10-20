@@ -95,6 +95,7 @@ export const ar = {
   "Close": "إغلاق",
   "Error": "خطأ",
   "Message {product}": "أرسل رسالة إلى {product}",
+  "Message {name}": "أرسل رسالة إلى {name}",
   "Tell {product} what to do with the file": "أخبر {product} بما يجب فعله بالملف",
   "{name} is thinking": "{name} يفكر",
   "{productName} stopped — send message to continue": "{productName} توقف — أرسل رسالة للمتابعة",

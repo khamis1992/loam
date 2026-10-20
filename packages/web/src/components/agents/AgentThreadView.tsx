@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Info, PanelRight, Loader2, AlertCircle, ExternalLink } from 'lucide-react';
+import clsx from 'clsx';
 import { useAppDispatch, useAppSelector, type AppDispatch } from '@/store';
 import { appendEvent, applyDelta, setStatus, setError, replaceEvents } from '@/store/chatSlice';
 import { addSession } from '@/store/sessionsSlice';
@@ -21,7 +22,6 @@ import type {
   ChatDeltaEvent,
   EventsNotifyEventsAfterEvent,
   ServerMessage,
-  ToolUsedEvent,
   Attachment,
 } from '@shared/socket';
 import type { AgentCardAgent } from './AgentCard';
@@ -141,13 +141,16 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
     setLocalError(message);
   };
 
-  // Resolve thread uid when agent changes.
+  // Resolve thread uid when agent changes and persist discovered/created uids.
   useEffect(() => {
     let mounted = true;
     setResolving(true);
     setLocalError(null);
     resolveAgentThread(agent.id).then((uid) => {
       if (!mounted) return;
+      if (uid && typeof window !== 'undefined') {
+        localStorage.setItem(`${AGENT_THREAD_KEY}.${agent.id}`, uid);
+      }
       setThreadUid(uid);
       setResolving(false);
     });
@@ -222,18 +225,6 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
     [events],
   );
 
-  const [selectedTool, setSelectedTool] = useState<ToolUsedEvent | null>(null);
-  const autoOpenedRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (!threadUid || selectedTool || autoOpenedRef.current.has(threadUid)) return;
-    const firstTool = events.find((e): e is ToolUsedEvent => e.type === 'toolUsed');
-    if (firstTool) {
-      setSelectedTool(firstTool);
-      autoOpenedRef.current.add(threadUid);
-    }
-  }, [events, threadUid, selectedTool]);
-
   const handleSend = async (text: string, mode: TaskMode, files: File[], extData?: Record<string, unknown>) => {
     let uid = threadUid;
     let socket = socketRef.current;
@@ -303,7 +294,7 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
   };
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden bg-bg-main">
+    <div className={clsx('flex flex-1 flex-col overflow-hidden bg-bg-main', infoOpen && 'min-w-[360px]')}>
       <header className="flex h-row shrink-0 items-center justify-between border-b border-border-main px-4">
         <div className="flex min-w-0 items-center gap-2">
           <button
@@ -384,7 +375,7 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
                     events={events}
                     sessionId={threadUid ?? ''}
                     socket={socketRef.current}
-                    onOpenComputer={(e) => setSelectedTool(e)}
+                    onOpenComputer={() => {}}
                   />
                   {hasResult && hasClockClosed && !running && !wasStoppedByUser && (
                     <div className="mt-2 text-sm text-func-success">{t('Task completed')}</div>
@@ -417,17 +408,11 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
               onStop={handleStop}
               running={running || sending}
               defaultLoamMode={agent.mode}
+              placeholder={t('Message {name}', { name: agent.name })}
             />
           </div>
         </div>
 
-        {selectedTool && threadUid && (
-          <div className="hidden shrink-0 border-s border-border-main lg:flex">
-            <div className="w-[340px]">
-              <ComputerPlaceholder onClose={() => setSelectedTool(null)} />
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
