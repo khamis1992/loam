@@ -1,5 +1,27 @@
 const { contextBridge, ipcRenderer } = require("electron");
-const { IPC_INVOKE, IPC_EVENT_PREFIX, IPC_SYNC, NAMESPACES } = require("./ipc-constants.cjs");
+
+// NOTE: keep in sync with electron/ipc-constants.cjs. These constants must be
+// inlined because sandboxed preload scripts cannot require local files.
+const IPC_INVOKE = "desktop-ipc-api";
+const IPC_EVENT_PREFIX = "desktop-ipc-event";
+const IPC_META = "desktop-ipc-meta";
+const IPC_SYNC = "desktop-sync-info";
+const NAMESPACES = [
+  "auth",
+  "window",
+  "system",
+  "updater",
+  "theme",
+  "appearance",
+  "desktopOperator",
+  "terminal",
+  "keepAwake",
+  "shortcut",
+  "env",
+  "diagnosticLogs",
+  "desktopActivityIndicator",
+  "storage",
+];
 
 /** __apis.<ns>.<method>(...args) → ipcRenderer.invoke('desktop-ipc-api', { ns, method, args }) */
 const apis = Object.fromEntries(
