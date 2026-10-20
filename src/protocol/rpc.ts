@@ -94,6 +94,7 @@ function taskStatusToProto(status: Task["status"]): string {
 
 function loamTaskToAgentSession(task: Task, store: ProtocolStore): Record<string, unknown> {
   const proto = store.getSessionByTaskId(task.id) ?? store.getSession(task.id);
+  const deleted = store.isDeleted(task.id);
   return {
     uid: proto?.sessionId ?? task.id,
     user_id: DEMO_USER.user_id,
@@ -102,7 +103,7 @@ function loamTaskToAgentSession(task: Task, store: ProtocolStore): Record<string
     last_message_time: proto?.updatedAt ? new Date(proto.updatedAt).toISOString() : task.updatedAt,
     last_display_message: task.messages.at(-1)?.content ?? task.prompt,
     last_read_at: task.updatedAt,
-    status: taskStatusToProto(task.status),
+    status: deleted ? "SESSION_STATUS_DELETED" : taskStatusToProto(task.status),
     created_at: task.createdAt,
     updated_at: task.updatedAt,
     unread_message_count: 0,
@@ -170,7 +171,9 @@ export function makeRpcHandlers(store: ProtocolStore): Record<string, (body: Rec
     // Sessions
     "session.v1.SessionService/ListSessions": ({ limit = 50, offset = 0, is_favorite, project_uid, is_archived }, ctx) => {
       requireAuth(ctx);
-      let all = listTasks().map((t) => loamTaskToAgentSession(t, store));
+      let all = listTasks()
+        .filter((t) => !store.isDeleted(t.id))
+        .map((t) => loamTaskToAgentSession(t, store));
       if (is_favorite === true) all = all.filter((s) => s.is_favorite);
       if (is_favorite === false) all = all.filter((s) => !s.is_favorite);
       if (typeof project_uid === "string") all = all.filter((s) => s.project_uid === project_uid);
@@ -196,10 +199,20 @@ export function makeRpcHandlers(store: ProtocolStore): Record<string, (body: Rec
     },
     "session.v1.SessionService/UpdateSession": (body, ctx) => {
       requireAuth(ctx);
-      const task = getTask(sessionUid(body));
-      if (!task) throw rpcError("not found", "not_found");
+      const id = sessionUid(body);
+      const session = store.getSession(id) ?? store.getSessionByTaskId(id);
+      const task = session?.taskId ? getTask(session.taskId) : getTask(id);
+      if (!task && !session) throw rpcError("not found", "not_found");
       const { title, icon, status } = body;
-      if (typeof title === "string" && title.trim()) task.title = title.trim().slice(0, 80);
+      if (typeof title === "string" && title.trim()) {
+        const trimmed = title.trim().slice(0, 80);
+        if (session) store.setTitle(session.sessionId, trimmed);
+        else if (task) {
+          // Ensure a protocol session exists to hold the title override.
+          const sid = store.ensureSession(task.id, task.id, task.title).sessionId;
+          store.setTitle(sid, trimmed);
+        }
+      }
       // Loam Task has no icon/status fields; status is driven by the run.
       void icon;
       void status;
@@ -207,8 +220,16 @@ export function makeRpcHandlers(store: ProtocolStore): Record<string, (body: Rec
     },
     "session.v1.SessionService/DeleteSession": (body, ctx) => {
       requireAuth(ctx);
-      // Loam does not have a deleteTask export; mark as deleted conceptually.
-      log.info(`protocol delete session ${sessionUid(body)} (Loam has no deleteTask)`);
+      const id = sessionUid(body);
+      const session = store.getSession(id) ?? store.getSessionByTaskId(id);
+      const task = session?.taskId ? getTask(session.taskId) : getTask(id);
+      const taskId = session?.taskId ?? task?.id;
+      if (taskId) {
+        store.deleteTask(taskId);
+        log.info(`protocol delete session ${id} -> task ${taskId} (soft-deleted in protocol store)`);
+      } else {
+        log.info(`protocol delete session ${id} (no matching task)`);
+      }
       return {};
     },
     "session.v1.SessionService/FavoriteSession": (body, ctx) => {

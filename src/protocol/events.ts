@@ -136,10 +136,12 @@ export interface EventMapperState {
   lastPlanStepId?: string;
   runningTool: Set<string>;
   assistantBubbleTarget?: string;
+  /** Sequence number for synthetic ids when rebuilding history from a DB task. */
+  seq?: number;
 }
 
 export function createEventMapperState(): EventMapperState {
-  return { toolActionIds: new Map(), runningTool: new Set(), assistantBubbleTarget: undefined };
+  return { toolActionIds: new Map(), runningTool: new Set(), assistantBubbleTarget: undefined, seq: 0 };
 }
 
 /** Map one Loam AgentEvent to zero or more Manus ChatEvents.
@@ -147,6 +149,15 @@ export function createEventMapperState(): EventMapperState {
 export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessionId: string): ChatEvent[] {
   const ts = Date.now();
   const out: ChatEvent[] = [];
+
+  // When rebuilding history from a DB task, use deterministic synthetic ids.
+  const synthId = () => {
+    if (state.seq !== undefined) {
+      state.seq += 1;
+      return `hist_${state.seq.toString().padStart(6, "0")}`;
+    }
+    return baseId();
+  };
 
   switch (event.type) {
     case "assistant_token": {
@@ -170,7 +181,7 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
     }
 
     case "assistant_message": {
-      if (!state.assistantBubbleTarget) state.assistantBubbleTarget = baseId();
+      if (!state.assistantBubbleTarget) state.assistantBubbleTarget = synthId();
       const chat: ChatMessageEvent = {
         id: state.assistantBubbleTarget,
         type: "chat",
@@ -189,7 +200,7 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
 
     case "tool_call": {
       const actionId = makeActionId(event.name);
-      state.toolActionIds.set(event.name, actionId);
+      state.toolActionIds.set(`${event.name}:${state.seq ?? 0}`, actionId);
       state.runningTool.add(event.name);
       const brief = makeBrief(event.name, event.args);
       const argumentsFinished: ToolUsedEvent = {
@@ -219,7 +230,7 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
     }
 
     case "tool_result": {
-      const actionId = state.toolActionIds.get(event.name) ?? makeActionId(event.name);
+      const actionId = state.toolActionIds.get(`${event.name}:${state.seq ?? 0}`) ?? state.toolActionIds.get(event.name) ?? makeActionId(event.name);
       state.runningTool.delete(event.name);
       const status: ToolStatus = event.ok ? "success" : "error";
       const detail = buildToolDetail(event.name, undefined, { ok: event.ok, summary: event.summary });

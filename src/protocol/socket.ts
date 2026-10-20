@@ -4,10 +4,10 @@ import { Server, type Socket } from "socket.io";
 import type { Server as HttpServer } from "node:http";
 import type { AgentEvent, Emit } from "../agent/events.js";
 import { cancelRunSignal } from "../server/runControl.js";
-import { createTask, getTask, type Task } from "../server/db.js";
+import { createTask, type Task, type TaskMessage, type StepRecord } from "../server/db.js";
 import type { RunTaskOptions } from "../server/http.js";
 import { log } from "../log.js";
-import { mapAgentEvent, shortUid, baseId } from "./events.js";
+import { mapAgentEvent, shortUid, baseId, createEventMapperState } from "./events.js";
 import type {
   ClientMessage,
   ServerEnvelope,
@@ -16,6 +16,7 @@ import type {
   SubmitWorkspaceDirectoryAccess,
   ResolveLocalExecutionApproval,
   TaskMode,
+  ChatEvent,
 } from "./types.js";
 import type { ProtocolStore } from "./store.js";
 import { tokenToUserUid } from "./rpc.js";
@@ -49,8 +50,123 @@ function mapTaskModeToLoam(mode?: string): string {
   return "build";
 }
 
+function stepToAgentEvent(step: StepRecord): AgentEvent | undefined {
+  const data = (step.data ?? {}) as Record<string, unknown>;
+  const type = String(data.type ?? step.type ?? "");
+  if (type === "plan") {
+    const goal = String(data.goal ?? "");
+    const steps = Array.isArray(data.steps)
+      ? data.steps.map((s: Record<string, unknown>) => ({
+          id: String(s.id ?? ""),
+          title: String(s.title ?? ""),
+          instruction: String(s.instruction ?? ""),
+          successCriteria: String(s.successCriteria ?? ""),
+        }))
+      : [];
+    return { type: "plan", goal, trivial: Boolean(data.trivial), steps, source: String(data.source ?? "fallback") as "model" | "fallback" };
+  }
+  if (type === "plan_step") {
+    return {
+      type: "plan_step",
+      id: String(data.id ?? ""),
+      index: Number(data.index ?? 0),
+      total: Number(data.total ?? 1),
+      title: String(data.title ?? ""),
+      phase: String(data.phase ?? "start") as "start" | "done",
+      summary: typeof data.summary === "string" ? data.summary : undefined,
+    };
+  }
+  if (type === "tool_call") {
+    return { type: "tool_call", name: String(data.name ?? ""), args: data.args ?? {} };
+  }
+  if (type === "tool_result") {
+    return { type: "tool_result", name: String(data.name ?? ""), ok: Boolean(data.ok), summary: String(data.summary ?? ""), ms: typeof data.ms === "number" ? data.ms : undefined };
+  }
+  if (type === "assistant_message") {
+    return { type: "assistant_message", text: String(data.text ?? "") };
+  }
+  if (type === "assistant_token") {
+    return { type: "assistant_token", text: String(data.text ?? "") };
+  }
+  if (type === "done") {
+    return { type: "done", text: String(data.text ?? ""), steps: Number(data.steps ?? 0), model: String(data.model ?? "") };
+  }
+  if (type === "error") {
+    return { type: "error", message: String(data.message ?? "") };
+  }
+  if (type === "cancelled") {
+    return { type: "cancelled" };
+  }
+  if (type === "task-status") {
+    return { type: "task-status", status: String(data.status ?? "") };
+  }
+  if (type === "mode") {
+    return { type: "mode", mode: String(data.mode ?? ""), label: String(data.label ?? ""), labelAr: String(data.labelAr ?? ""), reason: typeof data.reason === "string" ? data.reason : undefined };
+  }
+  return undefined;
+}
+
+function messageToChatEvent(msg: TaskMessage, timestamp: number, taskMode: TaskMode = "standard"): ChatMessageEvent {
+  return {
+    id: baseId(),
+    type: "chat",
+    timestamp,
+    sender: msg.role === "user" ? "user" : "assistant",
+    messageType: "text",
+    content: msg.content,
+    attachments: [],
+    deliveryKind: msg.role === "user" ? "opening" : "result",
+    taskMode,
+  };
+}
+
+export function buildHistoryFromTask(task: Task, sessionId: string): ChatEvent[] {
+  const state = createEventMapperState();
+  const out: ChatEvent[] = [];
+  // Persisted user/assistant messages give the conversation skeleton.
+  for (const msg of task.messages ?? []) {
+    const ts = Date.parse(msg.at) || Date.now();
+    if (msg.role === "user") {
+      out.push(messageToChatEvent(msg, ts, "standard"));
+    } else if (msg.role === "assistant") {
+      out.push(messageToChatEvent(msg, ts, "standard"));
+    }
+  }
+  // Tool/plan events from steps enrich the timeline between messages.
+  for (const step of task.steps ?? []) {
+    const ev = stepToAgentEvent(step);
+    if (!ev) continue;
+    const mapped = mapAgentEvent(ev, state, sessionId);
+    out.push(...mapped);
+  }
+  // Final status/clock so the page shows "Task completed" and "Worked for ...".
+  const finalTs = Date.now();
+  out.push({
+    id: baseId(),
+    type: "statusUpdate",
+    timestamp: finalTs,
+    agentStatus: task.status === "error" ? "error" : task.status === "cancelled" || task.status === "interrupted" ? "stopped" : "stopped",
+    brief: "Agent finished working",
+  });
+  const started = Date.parse(task.createdAt) || finalTs;
+  out.push({
+    id: baseId(),
+    type: "cascadeTaskClock",
+    timestamp: finalTs,
+    clock: {
+      sessionId,
+      taskId: task.id,
+      startedAt: started,
+      accumulatedMs: finalTs - started,
+      phase: "closed",
+      revision: 1,
+    },
+  });
+  return out;
+}
+
 export function createChatSocket(deps: SocketDeps): Server {
-  const { httpServer, store, runTask } = deps;
+  const { httpServer, store, runTask, getTask } = deps;
 
   const io = new Server(httpServer, {
     transports: ["websocket"],
@@ -76,7 +192,33 @@ export function createChatSocket(deps: SocketDeps): Server {
       try {
         if (m.type === "join_session") {
           await socket.join(m.sessionId);
-          const replay = store.eventsAfter(m.sessionId, m.lastMessageId);
+          let replay = store.eventsAfter(m.sessionId, m.lastMessageId);
+          // If the protocol store has no events for this session but the Loam task
+          // has persisted messages/steps, synthesize the conversation history.
+          if (replay.length === 0) {
+            let session = store.getSession(m.sessionId) ?? store.getSessionByTaskId(m.sessionId);
+            let task = session?.taskId ? getTask(session.taskId) : getTask(m.sessionId);
+            // If we still have no task, try to find any Loam task whose id matches a
+            // known short session id from the protocol store.
+            if (!task && session?.sessionId) {
+              task = getTask(session.sessionId);
+            }
+            if (task && (task.messages?.length || task.steps?.length)) {
+              if (!session) {
+                session = store.ensureSession(m.sessionId, task.id, task.title);
+              } else if (!session.taskId) {
+                store.setTaskId(m.sessionId, task.id);
+              }
+              const synthesized = buildHistoryFromTask(task, m.sessionId);
+              replay = synthesized.map((event) => ({
+                id: baseId(),
+                type: "event" as const,
+                sessionId: m.sessionId,
+                timestamp: event.timestamp,
+                event,
+              }));
+            }
+          }
           const ts = Date.now();
           const frame: ServerEnvelope = {
             id: baseId(),

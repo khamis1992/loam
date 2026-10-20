@@ -30,11 +30,14 @@ export interface PersistedSession {
   createdAt: number;
   updatedAt: number;
   events: ServerEnvelope[];
+  deleted?: boolean;
+  deletedAt?: number;
 }
 
 export class ProtocolStore {
   private sessions = new Map<string, ProtocolSession>();
   private taskIdToSessionId = new Map<string, string>();
+  private deletedTasks = new Set<string>();
   private saveTimer?: NodeJS.Timeout;
 
   constructor() {
@@ -125,13 +128,39 @@ export class ProtocolStore {
   }
 
   listSessions(): ProtocolSession[] {
-    return [...this.sessions.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+    return [...this.sessions.values()]
+      .filter((s) => !this.deletedTasks.has(s.taskId))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  isDeleted(taskId: string): boolean {
+    return this.deletedTasks.has(taskId);
+  }
+
+  deleteTask(taskId: string): void {
+    if (!taskId) return;
+    this.deletedTasks.add(taskId);
+    const sessionId = this.taskIdToSessionId.get(taskId);
+    if (sessionId) {
+      const s = this.sessions.get(sessionId);
+      if (s) {
+        s.status = "SESSION_STATUS_DELETED";
+        s.updatedAt = Date.now();
+      }
+    }
+    this.scheduleSave();
+  }
+
+  undeleteTask(taskId: string): void {
+    this.deletedTasks.delete(taskId);
+    this.scheduleSave();
   }
 
   /** Test helper: drop all state. */
   clear(): void {
     this.sessions.clear();
     this.taskIdToSessionId.clear();
+    this.deletedTasks.clear();
     this.save();
   }
 
@@ -154,6 +183,7 @@ export class ProtocolStore {
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,
         events: s.events.filter((e) => !e.event.noPersistent),
+        deleted: this.deletedTasks.has(s.taskId) || undefined,
       }));
       fs.writeFileSync(SESSIONS_FILE, JSON.stringify(entries, null, 2), "utf8");
     } catch {
@@ -180,7 +210,10 @@ export class ProtocolStore {
           events: Array.isArray(p.events) ? p.events.filter((e) => !e.event?.noPersistent) : [],
         };
         this.sessions.set(s.sessionId, s);
-        if (s.taskId) this.taskIdToSessionId.set(s.taskId, s.sessionId);
+        if (s.taskId) {
+          this.taskIdToSessionId.set(s.taskId, s.sessionId);
+          if (p.deleted) this.deletedTasks.add(s.taskId);
+        }
       }
     } catch {
       /* a corrupted cache is not fatal */
