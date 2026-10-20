@@ -44,10 +44,10 @@ function getSocketBase(): string {
 function parseAttachments(raw: string | null): Attachment[] {
   if (!raw) return [];
   try {
-    const list = JSON.parse(raw) as Array<{ id?: string; url?: string; name?: string; contentType?: string }>;
+    const list = JSON.parse(raw) as Array<{ id?: string; url?: string; name?: string; filename?: string; contentType?: string }>;
     return list.map((a) => ({
       id: String(a.id ?? ''),
-      filename: String(a.name ?? 'attachment'),
+      filename: String(a.filename ?? a.name ?? 'attachment'),
       type: 'file' as const,
       url: String(a.url ?? ''),
       contentType: String(a.contentType ?? 'application/octet-stream'),

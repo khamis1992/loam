@@ -20,8 +20,10 @@ export function ComputerPanel({ event, onClose }: ComputerPanelProps) {
     if (!detail) return;
     if (event.tool === 'terminal') {
       const d = detail as { terminal?: { command?: string; output?: string[]; shellId?: string } };
+      const command = d.terminal?.command ?? '';
       const lines = d.terminal?.output ?? [];
-      setOutput(lines.join('\n'));
+      const text = command ? [`$ ${command}`, ...lines] : lines;
+      setOutput(text.join('\n'));
     } else if (event.tool === 'text_editor') {
       const d = detail as { textEditor?: { path?: string; content?: string; oldContent?: string } };
       setOutput(`${d.textEditor?.path ?? ''}\n---\n${d.textEditor?.content ?? ''}`);
