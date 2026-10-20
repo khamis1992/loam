@@ -23,6 +23,15 @@ interface Agent extends AgentCardAgent {
   allowedServices?: string[];
 }
 
+interface AgentThreadSummary {
+  agentId: string;
+  threadUid: string;
+  updatedAt: string;
+  lastSeenAt: string | null;
+  lastMessageAt: string | null;
+  unread: boolean;
+}
+
 export default function AgentsPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -40,6 +49,17 @@ export default function AgentsPageClient() {
     () => agents.find((a) => a.id === selectedId),
     [agents, selectedId],
   );
+  const [infoThreadUid, setInfoThreadUid] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    setInfoThreadUid(null);
+    if (!selectedAgent) return;
+    resolveAgentThread(selectedAgent.id).then((uid) => {
+      if (mounted) setInfoThreadUid(uid);
+    });
+    return () => { mounted = false; };
+  }, [selectedAgent]);
 
   const loadAgents = async () => {
     try {
@@ -68,31 +88,21 @@ export default function AgentsPageClient() {
   // Compute unread counts from agent threads.
   useEffect(() => {
     let mounted = true;
-    setUnreadById({});
     (async () => {
-      const next: Record<string, { count: number; lastAt?: string }> = {};
-      await Promise.all(
-        agents.map(async (a) => {
-          const seenAt = typeof window !== 'undefined' ? localStorage.getItem(`loam.agentSeen.${a.id}`) : null;
-          const uid = await resolveAgentThread(a.id);
-          if (!uid) return;
-          try {
-            const res = await fetch(`${getApiBase()}/api/tasks/${encodeURIComponent(uid)}`, {
-              headers: await getApiHeaders(),
-            });
-            if (!res.ok) return;
-            const data = (await res.json()) as { task?: { messages?: Array<{ role: string; content: string; at: string }> } };
-            const messages = data.task?.messages ?? [];
-            const newMessages = seenAt
-              ? messages.filter((m) => m.role === 'assistant' && m.at && m.at > seenAt)
-              : messages.filter((m) => m.role === 'assistant');
-            next[a.id] = { count: newMessages.length, lastAt: newMessages.at(-1)?.at };
-          } catch {
-            // ignore per-agent errors
-          }
-        }),
-      );
-      if (mounted) setUnreadById(next);
+      try {
+        const res = await fetch(`${getApiBase()}/api/agent-threads`, {
+          headers: await getApiHeaders(),
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { threads?: AgentThreadSummary[] };
+        const next: Record<string, { count: number; lastAt?: string }> = {};
+        for (const item of data.threads ?? []) {
+          if (item.unread) next[item.agentId] = { count: 1, lastAt: item.lastMessageAt ?? undefined };
+        }
+        if (mounted) setUnreadById(next);
+      } catch {
+        // ignore list fetch errors
+      }
     })();
     return () => { mounted = false; };
   }, [agents]);
@@ -111,14 +121,22 @@ export default function AgentsPageClient() {
 
   // Update seen timestamp when selected agent changes.
   useEffect(() => {
-    if (selectedId && typeof window !== 'undefined') {
-      localStorage.setItem(`loam.agentSeen.${selectedId}`, new Date().toISOString());
-      setUnreadById((prev) => {
-        const next = { ...prev };
-        delete next[selectedId];
-        return next;
-      });
-    }
+    if (!selectedId) return;
+    (async () => {
+      try {
+        await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(selectedId)}/thread/seen`, {
+          method: 'POST',
+          headers: await getApiHeaders(),
+        });
+      } catch {
+        // ignore seen-marking errors
+      }
+    })();
+    setUnreadById((prev) => {
+      const next = { ...prev };
+      delete next[selectedId];
+      return next;
+    });
   }, [selectedId]);
 
   const selectAgent = (agent: Agent) => {
@@ -220,7 +238,7 @@ export default function AgentsPageClient() {
       {selectedAgent && infoOpen && (
         <AgentInfoPane
           agent={selectedAgent}
-          threadUid={typeof window !== 'undefined' ? localStorage.getItem(`loam.agentThread.${selectedAgent.id}`) : null}
+          threadUid={infoThreadUid}
           onClose={() => setInfoOpen(false)}
           onEdit={() => setEditAgent(selectedAgent)}
         />
