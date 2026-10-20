@@ -430,7 +430,7 @@ export function createChatSocket(deps: SocketDeps): Server {
             if (getTask(um.sessionId)) {
               taskId = um.sessionId;
             } else {
-              const task = createTask(text, text.slice(0, 80), um.extData.projectId ?? null, null);
+              const task = createTask(text, text.slice(0, 80), um.extData.projectId ?? null, um.extData.agentId ?? null);
               taskId = task.id;
             }
             session.taskId = taskId;
