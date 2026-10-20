@@ -69,6 +69,20 @@ export class ChatSocket {
       this.options.onError?.(msg);
     });
     this.socket.on('message', (m: ServerMessage) => this.options.onMessage(m));
+
+    // Wait for the initial websocket handshake so callers can emit immediately.
+    return new Promise<void>((resolve, reject) => {
+      const onConnect = () => {
+        this.socket?.off('connect_error', onError);
+        resolve();
+      };
+      const onError = (err: Error) => {
+        this.socket?.off('connect', onConnect);
+        reject(err);
+      };
+      this.socket?.once('connect', onConnect);
+      this.socket?.once('connect_error', onError);
+    });
   }
 
   disconnect() {

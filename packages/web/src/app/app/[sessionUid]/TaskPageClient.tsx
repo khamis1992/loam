@@ -82,9 +82,11 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const cwd = searchParams.get('cwd') || undefined;
   const attachmentsParam = searchParams.get('attachments');
   const draftAttachments = useMemo(() => parseAttachments(attachmentsParam), [attachmentsParam]);
-  const sentDraft = useRef(false);
-
   const socketRef = useRef<ChatSocket | null>(null);
+  const sentDraft = useRef<{ uid: string; sent: boolean }>({ uid: '', sent: false });
+  if (sentDraft.current.uid !== sessionUid) {
+    sentDraft.current = { uid: sessionUid, sent: false };
+  }
   const apiBase = useMemo(() => getApiBase(), []);
 
   const onAuthFailure = useMemo(() => () => {
@@ -113,10 +115,11 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     let mounted = true;
 
     (async () => {
-      // For a brand-new session the URL carries ?draft=... ; GetSession will 404
-      // because there is no Loam task yet. Treat that as expected and skip
-      // metadata hydration for new drafts.
-      const isNewDraft = Boolean(draftText);
+      // Read the pending prompt once from the URL when this session first mounts.
+      // We intentionally do not list searchParams/router as effect deps so a URL
+      // cleanup after sending does not tear down the socket and replay history.
+      const draft = searchParams.get('draft') || '';
+      const isNewDraft = Boolean(draft);
       let existingSession: { title: string; lastDisplayMessage?: string; icon?: string } | undefined;
       if (!isNewDraft) {
         try {
@@ -124,24 +127,34 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
           existingSession = res.session;
         } catch (e) {
           // Only show an error for reloads of real sessions; new drafts may 404.
-          if (!isNewDraft) onRpcError(e instanceof Error ? e.message : String(e));
+          onRpcError(e instanceof Error ? e.message : String(e));
         }
       }
 
-      await socket.connect();
+      try {
+        await socket.connect();
+      } catch {
+        if (!mounted) return;
+        onAuthFailure();
+        return;
+      }
       if (!mounted) return;
       // Join before sending so the first message is received on this socket.
       socket.join(sessionUid);
 
-      if (draftText && !sentDraft.current) {
-        sentDraft.current = true;
-        socket.sendText(sessionUid, draftText, draftMode, draftAttachments, makeExtData(cwd));
+      if (draft && !sentDraft.current.sent) {
+        sentDraft.current.sent = true;
+        const mode = (searchParams.get('mode') as TaskMode) || 'standard';
+        const cwd = searchParams.get('cwd') || undefined;
+        const attachmentsParam = searchParams.get('attachments');
+        const draftAttachments = attachmentsParam ? parseAttachments(attachmentsParam) : [];
+        socket.sendText(sessionUid, draft, mode, draftAttachments, makeExtData(cwd));
         dispatch(addSession({
           uid: sessionUid,
-          title: existingSession?.title ?? draftText.slice(0, 60),
+          title: existingSession?.title ?? draft.slice(0, 60),
           status: 6,
           lastMessageTime: Date.now(),
-          lastDisplayMessage: existingSession?.lastDisplayMessage ?? draftText,
+          lastDisplayMessage: existingSession?.lastDisplayMessage ?? draft,
           icon: existingSession?.icon || '•',
         }));
         dispatch(selectSession(sessionUid));
@@ -168,7 +181,8 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [sessionUid, draftText, draftMode, draftAttachments, cwd, apiBase, dispatch, onAuthFailure, searchParams, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionUid, apiBase, dispatch, onAuthFailure]);
 
   const clockEvent = useMemo(() =>
     [...events].reverse().find((e): e is CascadeTaskClockEvent => e.type === 'cascadeTaskClock'),
