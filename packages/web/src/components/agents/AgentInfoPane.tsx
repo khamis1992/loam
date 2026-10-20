@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { X, Settings, Play, Loader2, AlertCircle, FileText, Folder } from 'lucide-react';
+import { X, Settings, Play, Loader2, AlertCircle, FileText, Folder, Plus } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { Button, Spinner } from '@/components/ui/Button';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
@@ -202,6 +202,8 @@ function OverviewTab({ agent }: { agent: AgentWithMeta }) {
           </ul>
         )}
       </div>
+
+      <ScratchpadSection agentId={agent.id} />
     </div>
   );
 }
@@ -211,6 +213,158 @@ function Field({ label, value }: { label: string; value: string }) {
     <div className="flex flex-col gap-1">
       <span className="text-xs font-medium text-text-tertiary">{label}</span>
       <p className="text-sm text-text-primary">{value}</p>
+    </div>
+  );
+}
+
+interface ScratchpadItem {
+  id: string;
+  text: string;
+  status: 'open' | 'done';
+  createdAt: string;
+  doneAt?: string;
+}
+
+function ScratchpadSection({ agentId }: { agentId: string }) {
+  const [items, setItems] = useState<ScratchpadItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [text, setText] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [completingIds, setCompletingIds] = useState<Set<string>>(new Set());
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/scratchpad`, {
+        headers: await getApiHeaders(),
+      });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data = (await res.json()) as { items?: ScratchpadItem[] };
+      setItems(data.items ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/scratchpad`, {
+          headers: await getApiHeaders(),
+        });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const data = (await res.json()) as { items?: ScratchpadItem[] };
+        if (mounted) setItems(data.items ?? []);
+      } catch (e) {
+        if (mounted) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [agentId]);
+
+  const handleAdd = async () => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setAdding(true);
+    try {
+      const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/scratchpad`, {
+        method: 'POST',
+        headers: { ...(await getApiHeaders()), 'content-type': 'application/json' },
+        body: JSON.stringify({ text: trimmed }),
+      });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      setText('');
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleComplete = async (id: string) => {
+    setCompletingIds((prev) => new Set(prev).add(id));
+    try {
+      const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/scratchpad/${encodeURIComponent(id)}/complete`, {
+        method: 'POST',
+        headers: await getApiHeaders(),
+      });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCompletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-xs font-medium text-text-tertiary">{t('To-do')}</span>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') void handleAdd(); }}
+          placeholder={t('Add to-do')}
+          className="min-w-0 flex-1 rounded-control border border-border-main bg-bg-main px-2 py-1 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-text-primary"
+        />
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          loading={adding}
+          disabled={adding || !text.trim()}
+          onClick={() => void handleAdd()}
+          aria-label={t('Add')}
+          title={t('Add')}
+        >
+          <Plus className="size-4" />
+        </Button>
+      </div>
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-text-secondary">
+          <Spinner className="size-4" /> {t('Loading')}
+        </div>
+      ) : error ? (
+        <p className="text-xs text-function-error">{t('Failed to load to-do')} {error}</p>
+      ) : items.length === 0 ? (
+        <p className="text-sm text-text-tertiary">{t('No to-do items yet.')}</p>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {items.map((item) => (
+            <li key={item.id} className="flex items-start gap-2 rounded-card border border-border-main bg-bg-main p-2">
+              <input
+                type="checkbox"
+                checked={item.status === 'done'}
+                disabled={completingIds.has(item.id) || item.status === 'done'}
+                onChange={() => void handleComplete(item.id)}
+                aria-label={t('Mark as done')}
+                title={t('Mark as done')}
+                className="mt-0.5 size-4 shrink-0 accent-text-primary"
+              />
+              <div className="min-w-0 flex-1">
+                <p className={`text-sm text-text-primary ${item.status === 'done' ? 'line-through text-text-tertiary' : ''}`}>{item.text}</p>
+                <p className="text-[11px] text-text-tertiary">
+                  {item.status === 'done' ? t('Done') : t('Open to-do')} · {new Date(item.createdAt).toLocaleString()}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
