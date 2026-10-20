@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import {
   Share, FileChartColumn, MoreHorizontal, PanelRight, CircleCheck, Copy, Repeat2,
@@ -12,6 +12,7 @@ import { addSession, selectSession } from '@/store/sessionsSlice';
 import { t, PRODUCT } from '@/i18n/t';
 import { Composer } from '@/components/chat/Composer';
 import { EventList } from '@/components/chat/EventList';
+import { ComputerPanel } from '@/components/computer/ComputerPanel';
 import { ChatSocket } from '@/services/chatSocket';
 import { RpcClient, getApiBase, getSessionToken, handleAuthFailure } from '@/services/rpc';
 import { uploadFile } from '@/services/upload';
@@ -25,6 +26,7 @@ import type {
   EventsNotifyEventsAfterEvent,
   ServerMessage,
   Attachment,
+  ToolUsedEvent,
 } from '@shared/socket';
 import { formatDuration, formatTime } from '@/utils/format';
 
@@ -200,7 +202,9 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
 
   const wasStoppedByUser = useMemo(() => events.some((e) => e.type === 'userStop'), [events]);
 
-  const hasRunningOrResult = useMemo(() => running || events.some((e) => e.type === 'chat' && e.sender === 'assistant' && e.deliveryKind === 'result'), [running, events]);
+  const hasResult = useMemo(() => events.some((e) => e.type === 'chat' && e.sender === 'assistant' && e.deliveryKind === 'result'), [events]);
+  const hasClockClosed = useMemo(() => events.some((e) => e.type === 'cascadeTaskClock' && e.clock.phase === 'closed'), [events]);
+  const [selectedTool, setSelectedTool] = useState<ToolUsedEvent | null>(null);
 
   const handleSend = async (text: string, mode: TaskMode, files: File[]) => {
     const socket = socketRef.current;
@@ -253,9 +257,14 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               {error}
             </div>
           )}
-          <EventList events={events} sessionId={sessionUid} socket={socketRef.current} />
+          <EventList
+            events={events}
+            sessionId={sessionUid}
+            socket={socketRef.current}
+            onOpenComputer={(e) => setSelectedTool(e)}
+          />
 
-          {hasRunningOrResult && !running && !wasStoppedByUser && (
+          {hasResult && hasClockClosed && !running && !wasStoppedByUser && (
             <div className="mx-auto w-full max-w-[768px] px-[var(--ui-content-padding-x,24px)]">
               <div className="mb-2 flex items-center gap-2 text-sm text-func-success">
                 <CircleCheck className="size-4" /> {t('Task completed')}
@@ -276,13 +285,14 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
 
       <div className="mx-auto w-full max-w-[768px] px-6 pb-4">
         <div className="mb-2 flex h-row-sm items-center gap-2 rounded-control bg-fill-tsp px-2 text-sm text-text-secondary">
-          <span className={running ? 'animate-pulse text-icon-blue' : wasStoppedByUser ? 'text-function-warning' : 'text-func-success'}>
-            {running ? '●' : wasStoppedByUser ? '◼' : '✓'}
+          <span className={running ? 'animate-pulse text-icon-blue' : wasStoppedByUser ? 'text-function-warning' : hasResult && hasClockClosed ? 'text-func-success' : 'text-text-tertiary'}>
+            {running ? '●' : wasStoppedByUser ? '◼' : hasResult && hasClockClosed ? '✓' : '○'}
           </span>
-          {running ? t('Working') : wasStoppedByUser ? t('Stopped') : t('Task completed')}
+          {running ? t('Working') : wasStoppedByUser ? t('Stopped') : hasResult && hasClockClosed ? t('Task completed') : t('Thinking')}
         </div>
         <Composer onSend={handleSend} onStop={handleStop} running={running} />
       </div>
+      {selectedTool && <ComputerPanel event={selectedTool} onClose={() => setSelectedTool(null)} />}
     </div>
   );
 }
