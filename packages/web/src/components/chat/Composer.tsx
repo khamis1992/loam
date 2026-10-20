@@ -120,14 +120,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKey}
-        rows={home ? 3 : 1}
+        rows={home ? 1 : 1}
         placeholder={t(files.length ? 'Tell {product} what to do with the file'
           : home ? 'Assign a task or type / for more'
           : 'Message {product}')}
-        className="chat-input-editor w-full resize-none bg-transparent text-base text-text-primary outline-none placeholder:text-text-disable"
+        className="chat-input-editor w-full resize-none bg-transparent text-base leading-snug text-text-primary outline-none placeholder:text-text-disable"
       />
       {files.length > 0 && (
-        <ul className="mt-2 flex flex-wrap gap-1.5">
+        <ul className="mt-1 flex flex-wrap gap-1.5">
           {files.map((f) => (
             <li
               key={`${f.name}-${f.lastModified}`}
@@ -147,7 +147,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ))}
         </ul>
       )}
-      <div className="mt-2 flex items-center gap-1.5">
+      <div className="mt-1 flex items-center gap-1.5">
         {home ? (
           <div className="relative flex items-center gap-1" ref={menuRef}>
             <button
@@ -318,7 +318,7 @@ interface ComposerContextBarProps {
   activeFolder?: 'project' | 'downloads' | null;
   onChooseProject?: () => void;
   onSelectDownloads?: () => void;
-  branch?: string | null;
+  branch?: string;
 }
 
 function basename(p?: string | null): string {

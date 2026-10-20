@@ -17,7 +17,7 @@ export function HomeCard({ icon, title, subtitle, illustration, onClick, classNa
       type="button"
       onClick={onClick}
       className={clsx(
-        'relative flex h-[104px] items-start justify-between overflow-hidden rounded-card bg-fill-tsp p-4 text-start transition-colors hover:bg-fill-hover',
+        'relative flex h-[104px] w-full items-start justify-between overflow-hidden rounded-card bg-fill-tsp p-4 text-start transition-colors hover:bg-fill-hover',
         className,
       )}
     >

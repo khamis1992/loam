@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 
-export function useBranch(): string | null {
-  const [branch, setBranch] = useState<string | null>(null);
+export function useBranch(): string {
+  const [branch, setBranch] = useState<string>('main');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -19,7 +19,7 @@ export function useBranch(): string | null {
     }
     const getter = w.__apis?.system?.getGitBranch;
     if (getter) {
-      Promise.resolve(getter()).then((b) => setBranch(b || null)).catch(() => setBranch(null));
+      Promise.resolve(getter()).then((b) => setBranch(b || 'main')).catch(() => setBranch('main'));
     }
   }, []);
 

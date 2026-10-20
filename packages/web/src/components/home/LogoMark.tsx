@@ -1,25 +1,25 @@
 'use client';
 
-import { PRODUCT } from '@/i18n/t';
-
 export function LogoMark({ className }: { className?: string }) {
   return (
     <svg
-      viewBox="0 0 32 32"
+      viewBox="0 0 36 36"
       fill="none"
       className={className}
-      aria-label={PRODUCT}
+      aria-hidden
     >
-      <rect width="32" height="32" rx="8" fill="currentColor" />
+      <rect width="36" height="36" rx="9" fill="currentColor" />
       <path
-        d="M8 12c0-1.1.9-2 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2v-8Z"
-        fill="#fff"
-        fillOpacity="0.2"
+        d="M10 14.5C10 12.6 11.6 11 13.5 11h9c1.9 0 3.5 1.6 3.5 3.5v7c0 1.9-1.6 3.5-3.5 3.5h-9C11.6 25 10 23.4 10 21.5v-7Z"
+        stroke="#fff"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+        fill="none"
       />
       <path
-        d="M10 16.5l3.5-3.5 3 3 4-5 3 3.5"
+        d="M14 18.5l3-3.5 2.5 2.5 3.5-4 2.5 2.5"
         stroke="#fff"
-        strokeWidth="1.5"
+        strokeWidth="1.6"
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"

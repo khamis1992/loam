@@ -32,7 +32,7 @@ export function PromoBanner({ onSelect }: { onSelect?: (prompt: string) => void 
         </svg>
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[14px] font-semibold leading-tight">{t(slide.titleKey)}</p>
+        <p className="truncate text-[14px] font-semibold leading-tight text-white">{t(slide.titleKey)}</p>
         <p className="truncate text-[11px] text-[#a3a3a3]">{t(slide.subtitleKey)}</p>
       </div>
       <div className="flex shrink-0 flex-col items-center justify-center gap-[3px] ps-1">

@@ -276,9 +276,9 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="mx-auto w-full max-w-[768px] flex-1 px-6 pb-6">
+        <div className="mx-auto w-full max-w-[615px] flex-1 px-0 pb-2">
           {/* Hero */}
-          <div className="mb-5 flex items-center justify-between">
+          <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <LogoMark className="size-9 text-text-primary" />
               <h1 className="flex items-baseline gap-1 text-[34px] font-bold leading-none text-text-primary">
@@ -290,10 +290,11 @@ export default function HomePage() {
           </div>
 
           {/* Cards grid */}
-          <div className="mb-5 grid grid-cols-1 gap-[10px] md:grid-cols-[390px_215px]">
-            <div className="space-y-3">
+          <div className="mb-3 grid grid-cols-1 gap-[10px] md:grid-cols-[390px_215px]">
+            <div className="flex w-[390px] flex-col gap-[10px]">
               <StarterMenu items={buildItems} onSelect={prefillComposer}>
                 <HomeCard
+                  className="w-full"
                   icon={<Hammer className="size-5 text-[#0081f2]" />}
                   title={t('Build')}
                   subtitle={t('Websites, apps, and games')}
@@ -302,6 +303,7 @@ export default function HomePage() {
               </StarterMenu>
               <StarterMenu items={createItems} onSelect={prefillComposer}>
                 <HomeCard
+                  className="w-full"
                   icon={<Pencil className="size-5 text-[#efa201]" />}
                   title={t('Create')}
                   subtitle={t('Slides, images, and videos')}
@@ -313,7 +315,7 @@ export default function HomePage() {
           </div>
 
           {/* Template row */}
-          <div className="mb-5 grid grid-cols-3 gap-3">
+          <div className="mb-3 grid grid-cols-3 gap-[10px]">
             {templates.map((tpl) => (
               <TemplateCard
                 key={tpl.title}
