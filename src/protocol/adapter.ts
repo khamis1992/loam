@@ -148,6 +148,48 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
           return;
         }
 
+        // Pass-through proxy to the Loam server for /api/* GET routes that live
+        // on port 3939 (agents, devices, schedules, tools, files, creative, media,
+        // projects, etc.). The renderer cannot call 127.0.0.1:3939 directly because
+        // of CORS from the app://agent origin, so the adapter forwards with its
+        // own permissive CORS headers and any x-loam-local-token supplied by the
+        // shell.
+        const loamPort = Number(process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT || 3939);
+        if (req.method === "GET" && p.startsWith("/api/")) {
+          const target = `http://127.0.0.1:${loamPort}${p}${url.search}`;
+          const loamToken = process.env.LOAM_LOCAL_TOKEN;
+          const proxyReq = http.request(
+            target,
+            {
+              method: req.method,
+              headers: {
+                ...req.headers,
+                host: `127.0.0.1:${loamPort}`,
+                ...(loamToken ? { "x-loam-local-token": loamToken } : {}),
+              },
+            },
+            (proxyRes) => {
+              res.writeHead(proxyRes.statusCode ?? 502, {
+                ...proxyRes.headers,
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+                "Access-Control-Allow-Headers": "authorization, content-type, connect-protocol-version, x-client-id, x-client-type, x-client-version, x-client-locale, x-client-timezone, x-client-timezone-offset, x-loam-local-token",
+              });
+              proxyRes.pipe(res);
+            },
+          );
+          proxyReq.on("error", (err) => {
+            log.error(`protocol adapter proxy error ${req.method} ${p}: ${err.message}`);
+            if (!res.headersSent) {
+              sendJson(res, 502, { code: "proxy_error", message: err.message });
+            } else {
+              res.end();
+            }
+          });
+          proxyReq.end();
+          return;
+        }
+
         // Health check used by clients and tests.
         if (req.method === "GET" && p === "/api/health") {
           sendJson(res, 200, { ok: true, service: "protocol-adapter" });

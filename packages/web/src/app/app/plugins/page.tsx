@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, Puzzle } from 'lucide-react';
+import { ArrowLeft, Loader2, Puzzle, AlertCircle } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { getLoamBase, getLoamAuthHeaders } from '@/services/rpc';
+import { getApiBase, getLoamAuthHeaders } from '@/services/rpc';
 
 interface McpServer {
   name: string;
@@ -22,6 +22,7 @@ export default function PluginsPage() {
   const [mcp, setMcp] = useState<{ servers?: McpServer[] } | null>(null);
   const [tools, setTools] = useState<ToolSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -29,16 +30,20 @@ export default function PluginsPage() {
       try {
         const headers = getLoamAuthHeaders();
         const [mcpRes, toolsRes] = await Promise.all([
-          fetch(`${getLoamBase()}/api/mcp/status`, { headers }),
-          fetch(`${getLoamBase()}/api/tools`, { headers }),
+          fetch(`${getApiBase()}/api/mcp/status`, { headers }),
+          fetch(`${getApiBase()}/api/tools`, { headers }),
         ]);
-        const mcpData = mcpRes.ok ? (await mcpRes.json()) as { servers?: McpServer[] } : null;
-        const toolsData = toolsRes.ok ? (await toolsRes.json()) as { tools?: ToolSummary[] } : null;
+        if (!mcpRes.ok) throw new Error(`mcp/status ${mcpRes.status}`);
+        if (!toolsRes.ok) throw new Error(`tools ${toolsRes.status}`);
+        const mcpData = (await mcpRes.json()) as { servers?: McpServer[] };
+        const toolsData = (await toolsRes.json()) as { tools?: ToolSummary[] };
         if (mounted) {
           setMcp(mcpData);
           setTools(toolsData?.tools ?? []);
         }
       } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        if (mounted) setError(message);
         // eslint-disable-next-line no-console
         console.error('failed to load plugins', e);
       } finally {
@@ -64,6 +69,12 @@ export default function PluginsPage() {
         {loading ? (
           <div className="flex h-full items-center justify-center text-text-secondary">
             <Loader2 className="mr-2 size-5 animate-spin" /> {t('Loading')}
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-12 text-function-error">
+            <AlertCircle className="size-6" />
+            <p className="text-sm">{t('Failed to load plugins')}</p>
+            <p className="max-w-[320px] text-center text-xs">{error}</p>
           </div>
         ) : (
           <div className="space-y-4">

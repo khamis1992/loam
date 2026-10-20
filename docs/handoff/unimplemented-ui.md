@@ -13,8 +13,7 @@ Owned file: `packages/web/src/app/app/page.tsx`, `packages/web/src/components/ch
 | Git branch chip | Composer context row | `/api/worktree` returns 410; Loam git branches are task-scoped via Swarm | Reads `desktopSync.env.GIT_BRANCH` / `__AGENT_STUDIO_ENV__.gitBranch` / `__apis.system.getGitBranch()` if injected |
 | Worktree checkbox | Composer context row | `/api/worktree` returns 410; Loam uses isolated task workspaces, not shared worktrees | UI-only checkbox |
 
-| Top bar search icon | `TitleBar.tsx` | Opens Settings instead of a global command palette | UI-only placeholder |
-| Sidebar nav rows without dedicated backends | `Sidebar.tsx`: Library, Creations, Automations, Plugins, More, Projects, Devices | `/api/files`, `/api/creative`, `/api/media`, `/api/schedules`, `/api/mcp/status`, `/api/tools`, `/api/projects`, `/app/more`, `/api/companion-devices` have partial endpoints but no full UI parity backend for create/edit/delete/actions | Navigates to placeholder pages that read backend lists when available |
+| Sidebar nav rows (list pages) | `Sidebar.tsx` / `/app/*` pages | Create/edit/delete/actions not implemented; list pages are read-only | Navigate to list pages that proxy `GET /api/*` from the adapter to the Loam server |
 | Notifications bell | `Sidebar.tsx` user row | No notification feed API | Opens Settings › General |
 
 Wired to real backend:
@@ -24,11 +23,12 @@ Wired to real backend:
 - "Downloads" chip reads `__apis.system.getDownloadsPath()` or `desktopSync.env.DOWNLOADS_PATH`.
 - "Start from a local file" uses hidden file input + drag/drop; files are uploaded via `services/upload.ts` before task navigation.
 - After creating a task, `dispatch(loadSessions())` refreshes the sidebar.
-- `/app/agents` fetches `GET /api/agents` (Loam companion list).
-- `/app/computers` fetches `GET /api/companion-devices`.
-- `/app/devices` fetches `POST /desktop.v1.DesktopService/GetDesktopDevices`.
-- `/app/projects` fetches `GET /api/projects`.
-- `/app/automations` fetches `GET /api/schedules`.
-- `/app/plugins` fetches `GET /api/mcp/status` and `GET /api/tools`.
-- `/app/library` fetches `GET /api/files`.
-- `/app/creations` fetches `GET /api/creative` and `GET /api/media`.
+- The protocol adapter (`src/protocol/adapter.ts`) proxies `GET /api/*` to `http://127.0.0.1:3939/api/*` with CORS headers so the renderer can read Loam data.
+- `/app/agents` fetches `GET http://localhost:8787/api/agents` (proxied to Loam companion list).
+- `/app/computers` fetches `GET http://localhost:8787/api/companion-devices`.
+- `/app/devices` fetches `POST http://localhost:8787/desktop.v1.DesktopService/GetDesktopDevices`.
+- `/app/projects` fetches `GET http://localhost:8787/api/projects`.
+- `/app/automations` fetches `GET http://localhost:8787/api/schedules`.
+- `/app/plugins` fetches `GET http://localhost:8787/api/mcp/status` and `GET http://localhost:8787/api/tools`.
+- `/app/library` fetches `GET http://localhost:8787/api/files`.
+- `/app/creations` fetches `GET http://localhost:8787/api/creative` and `GET http://localhost:8787/api/media`.

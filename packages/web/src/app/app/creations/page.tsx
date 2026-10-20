@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, ImageIcon, FileVideo, Presentation } from 'lucide-react';
+import { ArrowLeft, Loader2, ImageIcon, FileVideo, Presentation, AlertCircle } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { getLoamBase, getLoamAuthHeaders } from '@/services/rpc';
+import { getApiBase, getLoamAuthHeaders } from '@/services/rpc';
 
 interface Creation {
   id: string;
@@ -17,20 +17,29 @@ export default function CreationsPage() {
   const router = useRouter();
   const [items, setItems] = useState<Creation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         const headers = getLoamAuthHeaders();
+        const [creativeRes, mediaRes] = await Promise.all([
+          fetch(`${getApiBase()}/api/creative`, { headers }),
+          fetch(`${getApiBase()}/api/media`, { headers }),
+        ]);
+        if (!creativeRes.ok) throw new Error(`creative ${creativeRes.status}`);
+        if (!mediaRes.ok) throw new Error(`media ${mediaRes.status}`);
         const [creative, media]: [{ items?: Creation[] }, { items?: Creation[] }] = await Promise.all([
-          fetch(`${getLoamBase()}/api/creative`, { headers }).then((r) => r.ok ? (r.json() as Promise<{ items?: Creation[] }>) : { items: [] }),
-          fetch(`${getLoamBase()}/api/media`, { headers }).then((r) => r.ok ? (r.json() as Promise<{ items?: Creation[] }>) : { items: [] }),
+          creativeRes.json() as Promise<{ items?: Creation[] }>,
+          mediaRes.json() as Promise<{ items?: Creation[] }>,
         ]);
         const creativeItems = (creative.items ?? []).map((c: Creation) => ({ ...c, kind: c.kind || 'image' }));
         const mediaItems = (media.items ?? []).map((m: Creation) => ({ ...m, kind: m.kind || 'video' }));
         if (mounted) setItems([...creativeItems, ...mediaItems]);
       } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        if (mounted) setError(message);
         // eslint-disable-next-line no-console
         console.error('failed to load creations', e);
       } finally {
@@ -62,6 +71,12 @@ export default function CreationsPage() {
         {loading ? (
           <div className="flex h-full items-center justify-center text-text-secondary">
             <Loader2 className="mr-2 size-5 animate-spin" /> {t('Loading')}
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-12 text-function-error">
+            <AlertCircle className="size-6" />
+            <p className="text-sm">{t('Failed to load creations')}</p>
+            <p className="max-w-[320px] text-center text-xs">{error}</p>
           </div>
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-text-tertiary">

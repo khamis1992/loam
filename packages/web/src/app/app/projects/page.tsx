@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, Folder } from 'lucide-react';
+import { ArrowLeft, Loader2, Folder, AlertCircle } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { getSessionToken, getApiBase } from '@/services/rpc';
+import { getApiBase, getLoamAuthHeaders } from '@/services/rpc';
 
 interface Project {
   uid: string;
@@ -16,19 +16,21 @@ export default function ProjectsPage() {
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const token = await getSessionToken();
       try {
         const res = await fetch(`${getApiBase()}/api/projects`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: getLoamAuthHeaders(),
         });
         if (!res.ok) throw new Error(`status ${res.status}`);
         const data = (await res.json()) as { projects?: Project[] };
         if (mounted) setProjects(data.projects ?? []);
       } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        if (mounted) setError(message);
         // eslint-disable-next-line no-console
         console.error('failed to load projects', e);
       } finally {
@@ -54,6 +56,12 @@ export default function ProjectsPage() {
         {loading ? (
           <div className="flex h-full items-center justify-center text-text-secondary">
             <Loader2 className="mr-2 size-5 animate-spin" /> {t('Loading')}
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-12 text-function-error">
+            <AlertCircle className="size-6" />
+            <p className="text-sm">{t('Failed to load projects')}</p>
+            <p className="max-w-[320px] text-center text-xs">{error}</p>
           </div>
         ) : projects.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-text-tertiary">

@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, MonitorSmartphone } from 'lucide-react';
+import { ArrowLeft, Loader2, MonitorSmartphone, AlertCircle } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { getLoamBase, getLoamAuthHeaders } from '@/services/rpc';
+import { getApiBase, getSessionToken } from '@/services/rpc';
 
 interface DesktopDevice {
   id: string;
@@ -16,17 +16,19 @@ export default function DevicesPage() {
   const router = useRouter();
   const [devices, setDevices] = useState<DesktopDevice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
+      const token = await getSessionToken();
       try {
-        const res = await fetch(`${getLoamBase()}/desktop.v1.DesktopService/GetDesktopDevices`, {
+        const res = await fetch(`${getApiBase()}/desktop.v1.DesktopService/GetDesktopDevices`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Connect-Protocol-Version': '1',
-            'Authorization': `Bearer ${getLoamAuthHeaders()['x-loam-local-token'] ?? ''}`,
+            'Authorization': `Bearer ${token}`,
           },
           body: '{}',
         });
@@ -34,6 +36,8 @@ export default function DevicesPage() {
         const data = (await res.json()) as { devices?: DesktopDevice[] };
         if (mounted) setDevices(data.devices ?? []);
       } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        if (mounted) setError(message);
         // eslint-disable-next-line no-console
         console.error('failed to load desktop devices', e);
       } finally {
@@ -59,6 +63,12 @@ export default function DevicesPage() {
         {loading ? (
           <div className="flex h-full items-center justify-center text-text-secondary">
             <Loader2 className="mr-2 size-5 animate-spin" /> {t('Loading')}
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-12 text-function-error">
+            <AlertCircle className="size-6" />
+            <p className="text-sm">{t('Failed to load devices')}</p>
+            <p className="max-w-[320px] text-center text-xs">{error}</p>
           </div>
         ) : devices.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-text-tertiary">

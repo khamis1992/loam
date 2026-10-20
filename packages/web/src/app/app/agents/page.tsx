@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { getLoamBase, getLoamAuthHeaders } from '@/services/rpc';
+import { getApiBase, getLoamAuthHeaders } from '@/services/rpc';
 
 interface Agent {
   id: string;
@@ -20,18 +20,21 @@ export default function AgentsPage() {
   const router = useRouter();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const res = await fetch(`${getLoamBase()}/api/agents`, {
+        const res = await fetch(`${getApiBase()}/api/agents`, {
           headers: getLoamAuthHeaders(),
         });
         if (!res.ok) throw new Error(`status ${res.status}`);
         const data = (await res.json()) as { agents?: Agent[] };
         if (mounted) setAgents((data.agents ?? []).filter((a) => !a.archivedAt));
       } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        if (mounted) setError(message);
         // eslint-disable-next-line no-console
         console.error('failed to load agents', e);
       } finally {
@@ -52,13 +55,18 @@ export default function AgentsPage() {
           <ArrowLeft className="size-4" />
         </button>
         <h1 className="text-title-lg text-text-primary">{t('Agent Loam')}</h1>
-
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
         {loading ? (
           <div className="flex h-full items-center justify-center text-text-secondary">
             <Loader2 className="mr-2 size-5 animate-spin" /> {t('Loading')}
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-12 text-function-error">
+            <AlertCircle className="size-6" />
+            <p className="text-sm">{t('Failed to load agents')}</p>
+            <p className="max-w-[320px] text-center text-xs">{error}</p>
           </div>
         ) : agents.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-text-tertiary">
