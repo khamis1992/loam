@@ -34,6 +34,7 @@ let mergeAlwaysOnTools: (input: {
 }) => string[];
 let ALWAYS_ON_TOOLS: readonly string[];
 let createScratchpadTools: () => Tool[];
+let createInstructionHistoryTools: () => Tool[];
 
 function dummy(name: string): Tool {
   return {
@@ -76,6 +77,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     closeDb = sqlite.closeDb;
     const registryMod = await import("../../tools/registry.js");
     const scratchpadToolsMod = await import("../../tools/scratchpadTools.js");
+    const instructionToolsMod = await import("../../tools/instructionTools.js");
     const gatewayMod = await import("../companionGateway.js");
     const catalogMod = await import("../../modes/catalog.js");
     const runToolsMod = await import("../runTools.js");
@@ -83,12 +85,14 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     ({ LOAM_MODES } = catalogMod);
     ({ mergeAlwaysOnTools, ALWAYS_ON_TOOLS } = runToolsMod);
     createScratchpadTools = scratchpadToolsMod.createScratchpadTools;
+    createInstructionHistoryTools = instructionToolsMod.createInstructionHistoryTools;
     const { ToolRegistry: Registry } = registryMod;
     registry = new Registry();
     // Register a few real build-mode staples plus the real scratchpad tools,
     // like buildRuntime + index.ts do at startup.
     for (const name of ["file_read", "file_write", "shell_run", "web_fetch", "loam_mobile"]) registry.register(dummy(name));
     registry.registerAll(createScratchpadTools());
+    registry.registerAll(createInstructionHistoryTools());
   });
 
   after(() => {
@@ -110,8 +114,10 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     for (const name of ["scratchpad_add", "scratchpad_list", "scratchpad_complete"]) {
       assert.ok(tools.names().includes(name), `effective tool list must include ${name}`);
     }
+    assert.ok(tools.names().includes("propose_instructions_update"), "effective tool list must include propose_instructions_update");
     const modelToolNames = tools.toOllama().map((t) => t.function.name);
     assert.ok(modelToolNames.includes("scratchpad_add"), "the model's function list must include scratchpad_add");
+    assert.ok(modelToolNames.includes("propose_instructions_update"), "the model's function list must include propose_instructions_update");
     // The merge must not disturb the gateway's vetted build-mode tools.
     for (const name of ["file_read", "file_write", "shell_run"]) {
       assert.ok(tools.names().includes(name), `build-mode tool ${name} must survive the merge`);
@@ -124,6 +130,15 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     }
     for (const workMode of WORK_MODES) {
       assert.ok(buildRunToolSet("build", workMode.id).tools.names().includes("scratchpad_add"), `work mode ${workMode.id} must expose scratchpad_add`);
+    }
+  });
+
+  it("propose_instructions_update is available in every Loam mode and work mode", () => {
+    for (const mode of LOAM_MODES) {
+      assert.ok(buildRunToolSet(mode.id).tools.names().includes("propose_instructions_update"), `mode ${mode.id} must expose propose_instructions_update`);
+    }
+    for (const workMode of WORK_MODES) {
+      assert.ok(buildRunToolSet("build", workMode.id).tools.names().includes("propose_instructions_update"), `work mode ${workMode.id} must expose propose_instructions_update`);
     }
   });
 
