@@ -23,12 +23,29 @@ export default function LibraryPage() {
     let mounted = true;
     (async () => {
       try {
-        const res = await fetch(`${getApiBase()}/api/files`, {
-          headers: await getApiHeaders(),
-        });
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const data = (await res.json()) as { files?: FileItem[] };
-        if (mounted) setFiles(data.files ?? []);
+        const headers = await getApiHeaders();
+        // The Loam /api/files endpoint requires a real taskId to locate the
+        // workspace and an optional path. Pick any existing task and list its
+        // workspace root. If there are no tasks, show the empty state.
+        const tasksRes = await fetch(`${getApiBase()}/api/tasks?limit=1`, { headers });
+        if (!tasksRes.ok) throw new Error(`tasks ${tasksRes.status}`);
+        const tasks = (await tasksRes.json()) as { tasks?: Array<{ id: string }> };
+        const taskId = tasks.tasks?.[0]?.id;
+        if (!taskId) {
+          if (mounted) setFiles([]);
+          return;
+        }
+        const params = new URLSearchParams({ taskId, path: '' });
+        const res = await fetch(`${getApiBase()}/api/files?${params.toString()}`, { headers });
+        if (!res.ok) {
+          if (res.status === 404) {
+            if (mounted) setFiles([]);
+            return;
+          }
+          throw new Error(`status ${res.status}`);
+        }
+        const data = (await res.json()) as { entries?: FileItem[] };
+        if (mounted) setFiles((data.entries ?? []).map((e) => ({ ...e, updatedAt: (e as unknown as { mtime?: string }).mtime })));
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         if (mounted) setError(message);

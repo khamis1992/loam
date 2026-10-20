@@ -24,19 +24,35 @@ export default function CreationsPage() {
     (async () => {
       try {
         const headers = await getApiHeaders();
+        // The creative endpoint requires a real media-mode task workspace and
+        // media requires a path. Find a media task; without one the page is
+        // simply empty. If the workspace has no scene/media yet, 404s are
+        // expected and we show the empty state.
+        const tasksRes = await fetch(`${getApiBase()}/api/tasks`, { headers });
+        if (!tasksRes.ok) throw new Error(`tasks ${tasksRes.status}`);
+        const tasks = (await tasksRes.json()) as { tasks?: Array<{ id: string; mode: string }> };
+        const mediaTask = tasks.tasks?.find((t) => t.mode === 'media');
+        if (!mediaTask) {
+          if (mounted) setItems([]);
+          return;
+        }
         const [creativeRes, mediaRes] = await Promise.all([
-          fetch(`${getApiBase()}/api/creative`, { headers }),
-          fetch(`${getApiBase()}/api/media`, { headers }),
+          fetch(`${getApiBase()}/api/creative?taskId=${mediaTask.id}`, { headers }),
+          fetch(`${getApiBase()}/api/media?taskId=${mediaTask.id}&path=.`, { headers }),
         ]);
-        if (!creativeRes.ok) throw new Error(`creative ${creativeRes.status}`);
-        if (!mediaRes.ok) throw new Error(`media ${mediaRes.status}`);
-        const [creative, media]: [{ items?: Creation[] }, { items?: Creation[] }] = await Promise.all([
-          creativeRes.json() as Promise<{ items?: Creation[] }>,
-          mediaRes.json() as Promise<{ items?: Creation[] }>,
-        ]);
+        if (!creativeRes.ok) {
+          if (creativeRes.status === 404 || creativeRes.status === 403) {
+            if (mounted) setItems([]);
+            return;
+          }
+          throw new Error(`creative ${creativeRes.status}`);
+        }
+        if (!mediaRes.ok && mediaRes.status !== 404) {
+          throw new Error(`media ${mediaRes.status}`);
+        }
+        const creative = (await creativeRes.json()) as { items?: Creation[] };
         const creativeItems = (creative.items ?? []).map((c: Creation) => ({ ...c, kind: c.kind || 'image' }));
-        const mediaItems = (media.items ?? []).map((m: Creation) => ({ ...m, kind: m.kind || 'video' }));
-        if (mounted) setItems([...creativeItems, ...mediaItems]);
+        if (mounted) setItems(creativeItems);
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         if (mounted) setError(message);
