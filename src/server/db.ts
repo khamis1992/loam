@@ -4,6 +4,7 @@ export { closeDb } from "./sqliteStore.js";
 import type { SavedRun } from "./recovery.js";
 import { initialNextRunAt, isValidTimezone, nextOccurrenceAfter, parseCron, DEFAULT_RETRY_DELAY_MS } from "./scheduleTime.js";
 export { DEFAULT_TIMEZONE, DEFAULT_RETRY_DELAY_MS } from "./scheduleTime.js";
+import { assertRunLease, expireAllRunLeases, type RunLease } from "./runLease.js";
 
 export type TaskStatus = "queued" | "running" | "done" | "error" | "interrupted" | "cancelled";
 
@@ -91,7 +92,7 @@ export function newId(prefix: string): string { return prefix + "_" + Date.now()
 export function loadDb(): void { database(); }
 /** Server boot only. Opening the database for a reader must not interrupt tasks. */
 export function recoverInterruptedTasks(): number {
-  return transaction(() => {
+  const count = transaction(() => {
     let count = 0;
     for (const task of listTasks()) {
       if (task.status !== "running" && task.status !== "queued") continue;
@@ -102,6 +103,8 @@ export function recoverInterruptedTasks(): number {
     }
     return count;
   });
+  expireAllRunLeases();
+  return count;
 }
 export function createTask(prompt: string, title?: string, projectId?: string | null, agentId?: string | null): Task {
   const now = new Date().toISOString();
@@ -120,8 +123,8 @@ export function setTaskAgent(id: string, agentId: string | null): void {
   editTask(id, (t) => { if (agentId) t.agentId = agentId; else delete t.agentId; });
 }
 
-export function setTaskStatus(id: string, status: TaskStatus, extra?: {model?: string; error?: string}): void {
-  editTask(id, (t) => { t.status = status; if (["queued", "running", "done"].includes(status)) delete t.error; if (extra?.model) t.model = extra.model; if (extra?.error) t.error = extra.error; });
+export function setTaskStatus(id: string, status: TaskStatus, extra?: {model?: string; error?: string}, expectLease?: RunLease): void {
+  editTask(id, (t) => { if (expectLease) assertRunLease(expectLease); t.status = status; if (["queued", "running", "done"].includes(status)) delete t.error; if (extra?.model) t.model = extra.model; if (extra?.error) t.error = extra.error; });
 }
 export function createProject(name: string, instruction?: string): Project {
   const now = new Date().toISOString(); const project: Project = { id: newId("proj"), name: name.slice(0,80), instruction, createdAt: now, updatedAt: now }; put("projects", project); return project;
@@ -202,7 +205,10 @@ export function recordScheduleOutcome(id: string, outcome: ScheduleOutcome): Sch
 export function markScheduleRun(id: string, taskId: string): void {
   recordScheduleOutcome(id, { ok: true, taskId });
 }
-export function saveRun(taskId: string, run: SavedRun): void { put("runs", { ...run, id: taskId }); }
+export function saveRun(taskId: string, run: SavedRun, expectLease?: RunLease): void {
+  if (!expectLease) { put("runs", { ...run, id: taskId }); return; }
+  transaction(() => { assertRunLease(expectLease); put("runs", { ...run, id: taskId }); });
+}
 export function getSavedRun(taskId: string): SavedRun | undefined { return get<SavedRun>("runs",taskId); }
 export function clearSavedRun(taskId: string): void { remove("runs",taskId); }
 
@@ -230,8 +236,9 @@ export function queueTaskRun(taskId: string, run: SavedRun, resume: boolean, sch
     }
   });
 }
-export function completeTaskRun(taskId: string, text: string, model: string): void {
+export function completeTaskRun(taskId: string, text: string, model: string, expectLease?: RunLease): void {
   transaction(() => {
+    if (expectLease) assertRunLease(expectLease);
     const task = getTask(taskId);
     if (!task) throw new Error("task not found");
     task.status = "done";
