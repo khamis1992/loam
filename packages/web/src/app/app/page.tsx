@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAppDispatch } from '@/store';
-import { addSession } from '@/store/sessionsSlice';
+import { addSession, loadSessions } from '@/store/sessionsSlice';
 import { t } from '@/i18n/t';
 import { Composer, ComposerContextBar, type ComposerHandle } from '@/components/chat/Composer';
 import { HomeCard } from '@/components/home/HomeCard';
@@ -19,6 +19,7 @@ import { SidePanel } from '@/components/home/SidePanel';
 import { useBranch } from '@/components/home/useBranch';
 import { uploadFile, type Attachment } from '@/services/upload';
 import { desktopApis, isDesktop } from '@/services/desktopApis';
+import { getSessionToken } from '@/services/rpc';
 import { shortUid } from '@/utils/uid';
 import type { TaskMode } from '@shared/socket';
 
@@ -65,6 +66,36 @@ export default function HomePage() {
   useEffect(() => {
     localStorage.setItem(MODEL_KEY, model);
   }, [model]);
+
+  useEffect(() => {
+    getSessionToken().then((token) => {
+      if (!token) return;
+      fetch(`${UPLOAD_BASE}/user.v1.UserService/GetAvailableCredits`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Connect-Protocol-Version': '1',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: '{}',
+      })
+        .then(async (res) => {
+          if (!res.ok) return null;
+          const data = await res.json();
+          return typeof data.total_credits === 'number' ? data.total_credits
+            : typeof data.totalCredits === 'number' ? data.totalCredits
+            : 0;
+        })
+        .then((total) => {
+          if (total && total > 0) {
+            setCredits(new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(total));
+          } else {
+            setCredits(null);
+          }
+        })
+        .catch(() => setCredits(null));
+    });
+  }, []);
 
   useEffect(() => {
     if (!isDesktop()) return;
@@ -164,6 +195,7 @@ export default function HomePage() {
       lastDisplayMessage: text,
       icon: '•',
     }));
+    dispatch(loadSessions());
     const params = new URLSearchParams();
     if (text) params.set('draft', text);
     params.set('mode', mode);
