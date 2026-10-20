@@ -155,14 +155,15 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
           return;
         }
 
-        // Pass-through proxy to the Loam server for /api/* GET routes that live
+        // Pass-through proxy to the Loam server for /api/* routes that live
         // on port 3939 (agents, devices, schedules, tools, files, creative, media,
         // projects, etc.). The renderer cannot call 127.0.0.1:3939 directly because
         // of CORS from the app://agent origin, so the adapter forwards with its
         // own permissive CORS headers and any x-loam-local-token supplied by the
         // shell.
         const loamPort = Number(process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT || 3939);
-        if (req.method === "GET" && p.startsWith("/api/") && p !== "/api/health") {
+        const writeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+        if (p.startsWith("/api/") && p !== "/api/health" && (req.method === "GET" || writeMethods.has(req.method ?? ""))) {
           const auth = req.headers.authorization?.replace(/^Bearer /, "");
           const userUid = auth ? tokenToUserUid(auth) ?? (consumeLoginToken(auth) ? "u_1" : null) : null;
           if (!userUid) {
@@ -185,7 +186,7 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
               res.writeHead(proxyRes.statusCode ?? 502, {
                 ...proxyRes.headers,
                 "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
                 "Access-Control-Allow-Headers": "authorization, content-type, connect-protocol-version, x-client-id, x-client-type, x-client-version, x-client-locale, x-client-timezone, x-client-timezone-offset, x-loam-local-token",
               });
               proxyRes.pipe(res);
@@ -199,7 +200,11 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
               res.end();
             }
           });
-          proxyReq.end();
+          if (req.method === "GET" || req.method === "DELETE") {
+            proxyReq.end();
+          } else {
+            req.pipe(proxyReq);
+          }
           return;
         }
 
