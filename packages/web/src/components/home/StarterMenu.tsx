@@ -5,6 +5,7 @@ import { cloneElement, useEffect, useRef, useState, type ReactElement } from 're
 interface StarterItem {
   label: string;
   prompt: string;
+  icon?: string;
 }
 
 interface StarterMenuProps {
@@ -28,9 +29,7 @@ export function StarterMenu({ items, children, onSelect }: StarterMenuProps) {
 
   return (
     <div className="relative" ref={ref}>
-      {cloneElement(children, {
-        onClick: () => setOpen((v) => !v),
-      })}
+      {cloneElement(children, { onClick: () => setOpen((v) => !v) })}
       {open && (
         <div className="absolute start-0 top-full z-40 mt-1 min-w-[200px] max-w-[calc(100vw-32px)] rounded-card border border-border-main bg-bg-menu p-1 shadow-lg">
           {items.map((item) => (
@@ -38,8 +37,9 @@ export function StarterMenu({ items, children, onSelect }: StarterMenuProps) {
               key={item.label}
               type="button"
               onClick={() => { onSelect(item.prompt); setOpen(false); }}
-              className="w-full rounded-control px-3 py-2 text-start text-sm text-text-primary hover:bg-fill-hover"
+              className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-start text-sm text-text-primary hover:bg-fill-hover"
             >
+              {item.icon && <span className="text-base">{item.icon}</span>}
               {item.label}
             </button>
           ))}

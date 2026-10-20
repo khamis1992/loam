@@ -226,13 +226,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         )}
 
         <div className="hidden items-center -space-x-1 rounded-full border border-border-main bg-bg-menu px-2 py-1 sm:flex">
-          <span className="z-30 flex size-5 items-center justify-center rounded-full border border-white bg-black text-white dark:border-[#1f1f1f]">
+          <span className="z-30 flex size-5 items-center justify-center rounded-full border border-white bg-black text-white dark:border-[#1f1f1f]"
+            title={t('Github')}
+          >
             <Github className="size-3" />
           </span>
-          <span className="z-20 flex size-5 items-center justify-center rounded-full border border-white bg-[#ea4335] text-white dark:border-[#1f1f1f]">
+          <span className="z-20 flex size-5 items-center justify-center rounded-full border border-white bg-[#ea4335] text-white dark:border-[#1f1f1f]"
+            title={t('Gmail')}
+          >
             <Mail className="size-3" />
           </span>
-          <span className="z-10 flex size-5 items-center justify-center rounded-full border border-white bg-[#4285f4] text-white dark:border-[#1f1f1f]">
+          <span className="z-10 flex size-5 items-center justify-center rounded-full border border-white bg-[#4285f4] text-white dark:border-[#1f1f1f]"
+            title={t('Google Calendar')}
+          >
             <Calendar className="size-3" />
           </span>
           <span className="ms-1 text-[11px] font-medium text-text-secondary">+4</span>

@@ -215,15 +215,15 @@ export default function HomePage() {
   };
 
   const buildItems = [
-    { label: t('Websites'), prompt: t('Website starter') },
-    { label: t('Apps'), prompt: t('App starter') },
-    { label: t('Games'), prompt: t('Game starter') },
+    { label: t('Websites'), prompt: t('Website starter'), icon: '🔧' },
+    { label: t('Apps'), prompt: t('App starter'), icon: '📱' },
+    { label: t('Games'), prompt: t('Game starter'), icon: '🎮' },
   ];
 
   const createItems = [
-    { label: t('Slides'), prompt: t('Slides starter') },
-    { label: t('Images'), prompt: t('Images starter') },
-    { label: t('Videos'), prompt: t('Videos starter') },
+    { label: t('Slides'), prompt: t('Slides starter'), icon: '📊' },
+    { label: t('Images'), prompt: t('Images starter'), icon: '🖼️' },
+    { label: t('Videos'), prompt: t('Videos starter'), icon: '🎬' },
   ];
 
   const templates = [
