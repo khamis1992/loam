@@ -510,5 +510,10 @@
   "Failed to load channels": "فشل تحميل القنوات.",
   "Chat id": "معرّف المحادثة",
   "Email address": "البريد الإلكتروني",
-  "Bind": "ربط"
+  "Bind": "ربط",
+  "Loam Video": "فيديو Loam",
+  "Import from URL": "استيراد من رابط",
+  "Export": "تصدير",
+  "Ready": "جاهز",
+  "Unavailable": "غير متوفر"
 }

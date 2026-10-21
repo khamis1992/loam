@@ -510,5 +510,10 @@
   "Failed to load channels": "Failed to load channels.",
   "Chat id": "Chat id",
   "Email address": "Email address",
-  "Bind": "Bind"
+  "Bind": "Bind",
+  "Loam Video": "Loam Video",
+  "Import from URL": "Import from URL",
+  "Export": "Export",
+  "Ready": "Ready",
+  "Unavailable": "Unavailable"
 }
