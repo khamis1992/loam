@@ -143,7 +143,8 @@ function drawtextFilters(edl: VideoEdl): string[] {
 export function buildFfmpegArgs(edl: VideoEdl, sourceAbs: string, outAbs: string, hasAudio: boolean): string[] {
   const clips = edl.clips;
   const total = edlDuration(edl);
-  const args: string[] = ["-hide_banner", "-loglevel", "error", "-y", "-i", sourceAbs];
+  // -progress keeps machine-readable progress on stderr even at loglevel error.
+  const args: string[] = ["-hide_banner", "-loglevel", "error", "-nostats", "-progress", "pipe:2", "-y", "-i", sourceAbs];
 
   const parts: string[] = [];
   const videoLabels = clips.map((_, i) => `v${i}`);
@@ -284,8 +285,13 @@ export function chooseOutputPath(relSource: string, taskRoot: string): string {
 }
 
 const TIME_RE = /time=\s*(\d+):(\d+):(\d+(?:\.\d+)?)/;
+const PROGRESS_RE = /out_time_ms=(\d+)/g;
 
-function parseTime(stderr: string): number | undefined {
+/** Recover the rendered offset from `-progress pipe:2` (fallback: a stats line). */
+export function parseProgress(stderr: string): number | undefined {
+  const matches = [...stderr.matchAll(PROGRESS_RE)];
+  const last = matches.at(-1);
+  if (last) return Number(last[1]) / 1_000_000;
   const m = TIME_RE.exec(stderr);
   if (!m) return undefined;
   return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
@@ -371,7 +377,7 @@ function runFfmpeg(item: QueuedRender): Promise<void> {
     children.set(job.id, child);
     child.stderr?.on("data", (data: Buffer) => {
       stderrTail = (stderrTail + data).slice(-4000);
-      const t = parseTime(stderrTail);
+      const t = parseProgress(stderrTail);
       if (t != null && job.status === "running") {
         const total = edlDuration(edl);
         if (total > 0) {
