@@ -510,5 +510,10 @@
   "Failed to load channels": "Failed to load channels.",
   "Chat id": "Chat id",
   "Email address": "Email address",
-  "Bind": "Bind"
+  "Bind": "Bind",
+  "Workspace": "Workspace",
+  "Running {tool}": "Running {tool}",
+  "Last tool: {tool}": "Last tool: {tool}",
+  "The workspace is empty. Files the task creates or edits will open here.": "The workspace is empty. Files the task creates or edits will open here.",
+  "Select a file to edit": "Select a file to edit"
 }

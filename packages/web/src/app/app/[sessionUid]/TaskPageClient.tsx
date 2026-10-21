@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 const sentDraftSessions = new Set<string>();
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
@@ -16,6 +16,14 @@ import { Composer } from '@/components/chat/Composer';
 import { EventList } from '@/components/chat/EventList';
 import { AttachmentCard, kindFromName, type AttachmentKind } from '@/components/chat/AttachmentCard';
 import { ComputerPanel } from '@/components/computer/ComputerPanel';
+import {
+  WorkspacePanel,
+  latestWorkspaceDecision,
+  subscribeWorkspaceEditors,
+  workspaceEditorsVersion,
+  type WorkspaceFile,
+  type WorkspaceOpenTarget,
+} from '@/components/workspace';
 import { ShareDialog } from '@/components/dialogs/ShareDialog';
 import { ChatSocket } from '@/services/chatSocket';
 import { RpcClient, getApiBase, getApiHeaders, getSessionToken, handleAuthFailure } from '@/services/rpc';
@@ -239,6 +247,9 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const hasResult = useMemo(() => events.some((e) => e.type === 'chat' && e.sender === 'assistant' && e.deliveryKind === 'result'), [events]);
   const hasClockClosed = useMemo(() => events.some((e) => e.type === 'cascadeTaskClock' && e.clock.phase === 'closed'), [events]);
   const [selectedTool, setSelectedTool] = useState<ToolUsedEvent | null>(null);
+  const [workspaceTarget, setWorkspaceTarget] = useState<WorkspaceOpenTarget | null>(null);
+  const workspaceOpenActionRef = useRef<string>('');
+  const editorsVersion = useSyncExternalStore(subscribeWorkspaceEditors, workspaceEditorsVersion, workspaceEditorsVersion);
   const [filesOpen, setFilesOpen] = useState(false);
   const [taskFiles, setTaskFiles] = useState<Array<{ name: string; path: string; size: number; kind: AttachmentKind }>>([]);
   const [taskFilesLoading, setTaskFilesLoading] = useState(false);
@@ -281,6 +292,19 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     }
   }, [events, sessionUid, selectedTool]);
 
+  // Auto-open the right panel on the Workspace tab when a tool touches a file
+  // that a registered editor can open, or an office_*/video tool runs.
+  const wsDecision = useMemo(() => latestWorkspaceDecision(events), [events, editorsVersion]);
+  useEffect(() => {
+    if (!wsDecision) return;
+    const { event, target } = wsDecision;
+    if (workspaceOpenActionRef.current === event.actionId) return;
+    workspaceOpenActionRef.current = event.actionId;
+    setSelectedTool(event);
+    setWorkspaceTarget(target);
+    autoOpenedRef.current.add(sessionUid);
+  }, [wsDecision, sessionUid]);
+
   const resolvedLoamMode = useMemo(() => {
     const ev = [...events].reverse().find((e): e is ModeEvent => e.type === 'mode');
     return ev ? { mode: ev.mode, label: ev.label, labelAr: ev.labelAr } : null;
@@ -302,6 +326,13 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     const socket = socketRef.current;
     if (!socket) return;
     socket.stop(sessionUid);
+  };
+
+  const handleWorkspaceChatEdit = (instruction: string, file: WorkspaceFile) => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    const mode = (resolvedLoamMode?.mode as TaskMode) || 'standard';
+    socket.sendText(sessionUid, `Edit ${file.path}: ${instruction}`, mode, [], makeExtData(cwd));
   };
 
   return (
@@ -347,7 +378,10 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                 events={events}
                 sessionId={sessionUid}
                 socket={socketRef.current}
-                onOpenComputer={(e) => setSelectedTool(e)}
+                onOpenComputer={(e) => {
+                  setSelectedTool(e);
+                  if (e.actionId !== workspaceOpenActionRef.current) setWorkspaceTarget(null);
+                }}
               />
 
               {hasResult && hasClockClosed && !running && !wasStoppedByUser && (
@@ -411,7 +445,28 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
             />
           </div>
         </div>
-        {selectedTool && <ComputerPanel sessionId={sessionUid} event={selectedTool} onClose={() => setSelectedTool(null)} />}
+        {selectedTool && (
+          <ComputerPanel
+            sessionId={sessionUid}
+            event={selectedTool}
+            onClose={() => {
+              setSelectedTool(null);
+              setWorkspaceTarget(null);
+            }}
+            focusWorkspace={Boolean(workspaceTarget)}
+            workspaceSlot={
+              taskId ? (
+                <WorkspacePanel
+                  taskId={taskId}
+                  live={running}
+                  events={events}
+                  requestedPath={workspaceTarget?.path ?? null}
+                  onChatEdit={handleWorkspaceChatEdit}
+                />
+              ) : null
+            }
+          />
+        )}
       </div>
       <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} url={shareUrl} />
 

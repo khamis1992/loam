@@ -47,11 +47,8 @@ export function getEditorForPath(filePath: string): WorkspaceEditorDef | null {
 }
 
 export function getEditorForFile(file: WorkspaceFile): WorkspaceEditorDef | null {
-  const byPath = getEditorForPath(file.path);
-  if (byPath && byPath.kind === file.kind) return byPath;
-  const byKind = getEditorForKind(file.kind);
-  if (byKind) return byKind; // kind matches even when the extension drifted (e.g. renamed file)
-  return byPath;
+  // The path extension is the stronger signal; the declared kind is the fallback.
+  return getEditorForPath(file.path) ?? getEditorForKind(file.kind);
 }
 
 /** Subscribe to late registrations (dynamic imports). Returns an unsubscribe fn. */

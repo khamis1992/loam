@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
   ExternalLink,
   Folder,
+  FolderOpen,
   Globe,
   Maximize2,
   Palette,
@@ -24,13 +25,17 @@ import { getApiBase } from '@/services/rpc';
 const OFFICE_PREVIEW_PATH = '/office-preview.html';
 const CREATIVE_RENDER_PATH = '/creative-render.html';
 
-type TabId = 'terminal' | 'editor' | 'browser' | 'preview' | 'files' | 'studio';
+type TabId = 'terminal' | 'editor' | 'browser' | 'preview' | 'files' | 'studio' | 'workspace';
 type StudioMode = 'media' | 'office';
 
 interface ComputerPanelProps {
   event: ToolUsedEvent;
   sessionId: string;
   onClose: () => void;
+  /** Workspace tab content provided by the task view; tab is hidden when absent. */
+  workspaceSlot?: ReactNode;
+  /** When true the panel focuses the Workspace tab (auto-open from file events). */
+  focusWorkspace?: boolean;
 }
 
 interface TerminalDetail {
@@ -70,8 +75,17 @@ const STUDIO_TAB = { id: 'studio' as const, label: 'Open in studio', icon: Palet
 // Remember inferred studio mode per session so the tab stays visible after the first studio tool.
 const studioModeBySession = new Map<string, StudioMode>();
 
-export function ComputerPanel({ event, sessionId, onClose }: ComputerPanelProps) {
-  const activeTab = useMemo(() => getToolFamily(event.tool), [event.tool]);
+export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusWorkspace }: ComputerPanelProps) {
+  const derivedTab = useMemo(() => getToolFamily(event.tool), [event.tool]);
+  const [userTab, setUserTab] = useState<TabId | null>(null);
+  useEffect(() => {
+    setUserTab(null);
+  }, [event]);
+  const activeTab = useMemo<TabId>(() => {
+    if (userTab) return userTab;
+    if (workspaceSlot && focusWorkspace) return 'workspace';
+    return derivedTab;
+  }, [userTab, workspaceSlot, focusWorkspace, derivedTab]);
   const studioMode = useMemo(() => {
     const fromTool = getStudioMode(event.tool);
     if (fromTool) {
@@ -81,9 +95,11 @@ export function ComputerPanel({ event, sessionId, onClose }: ComputerPanelProps)
     return studioModeBySession.get(sessionId) ?? null;
   }, [event.tool, sessionId]);
   const visibleTabs = useMemo(() => {
-    if (!studioMode) return TABS;
-    return [...TABS, STUDIO_TAB];
-  }, [studioMode]);
+    const tabs = [...TABS];
+    if (workspaceSlot) tabs.push({ id: 'workspace' as const, label: 'Workspace', icon: FolderOpen });
+    if (studioMode) tabs.push(STUDIO_TAB);
+    return tabs;
+  }, [studioMode, workspaceSlot]);
   const isDriving = !isFinalStatus(event.status) && activeTab === 'browser';
 
   return (
@@ -114,6 +130,8 @@ export function ComputerPanel({ event, sessionId, onClose }: ComputerPanelProps)
           return (
             <button
               key={tab.id}
+              type="button"
+              onClick={() => setUserTab(tab.id)}
               className={[
                 'flex h-full flex-1 items-center justify-center gap-1.5 border-b-2 px-2 text-xs font-medium',
                 isActive
@@ -129,7 +147,7 @@ export function ComputerPanel({ event, sessionId, onClose }: ComputerPanelProps)
       </div>
 
       <div className="flex-1 overflow-hidden">
-        <TabContent event={event} sessionId={sessionId} tab={activeTab} studioMode={studioMode} />
+        <TabContent event={event} sessionId={sessionId} tab={activeTab} studioMode={studioMode} workspaceSlot={workspaceSlot} />
       </div>
     </div>
   );
@@ -140,11 +158,13 @@ function TabContent({
   sessionId,
   tab,
   studioMode,
+  workspaceSlot,
 }: {
   event: ToolUsedEvent;
   sessionId: string;
   tab: TabId;
   studioMode: StudioMode | null;
+  workspaceSlot?: ReactNode;
 }) {
   switch (tab) {
     case 'terminal':
@@ -155,6 +175,9 @@ function TabContent({
       return <BrowserContent event={event} sessionId={sessionId} />;
     case 'preview':
       return <PreviewContent event={event} sessionId={sessionId} />;
+    case 'workspace':
+      if (!workspaceSlot) return <FilesContent event={event} sessionId={sessionId} />;
+      return <>{workspaceSlot}</>;
     case 'studio':
       if (!studioMode) return <FilesContent event={event} sessionId={sessionId} />;
       return <StudioContent sessionId={sessionId} mode={studioMode} />;

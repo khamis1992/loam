@@ -510,5 +510,10 @@
   "Failed to load channels": "فشل تحميل القنوات.",
   "Chat id": "معرّف المحادثة",
   "Email address": "البريد الإلكتروني",
-  "Bind": "ربط"
+  "Bind": "ربط",
+  "Workspace": "مساحة العمل",
+  "Running {tool}": "قيد التنفيذ: {tool}",
+  "Last tool: {tool}": "أحدث أداة: {tool}",
+  "The workspace is empty. Files the task creates or edits will open here.": "مساحة العمل فارغة. ستفتح هنا الملفات التي ينشئها المهمة أو يعدّلها.",
+  "Select a file to edit": "اختر ملفاً للتعديل"
 }
