@@ -62,14 +62,16 @@ interface AgentSidebarListProps {
   onDuplicate: (agent: AgentWithMeta) => void;
   onArchive: (agent: AgentWithMeta) => void;
   onHideAgent?: (agent: AgentWithMeta, hidden: boolean) => void;
+  /** Toggles the agent's pinned state (Pinned section at the top). */
+  onTogglePin?: (agent: AgentWithMeta) => void;
+  /** Persists a new pinned order (ids from first to last). */
+  onReorderPinned?: (ids: string[]) => void;
   /** Opens the info pane for the agent. */
   onInfo?: (agent: AgentWithMeta) => void;
   /** Opens the rename dialog for the agent. */
   onRename?: (agent: AgentWithMeta) => void;
   /** Permanently deletes the agent (confirm is shown by the context menu). */
   onDeleteAgent?: (agent: AgentWithMeta) => void;
-  /** Optional pin handler; without it the menu item stays a stub. */
-  onTogglePin?: (agent: AgentWithMeta) => void;
   onStartBuiltIn?: (agent: AgentCardAgent) => void;
   unreadById?: Record<string, UnreadInfo>;
   teamRunsLoading?: boolean;
@@ -81,6 +83,7 @@ interface AgentSidebarListProps {
 }
 
 const SECTIONS = {
+  pinned: 'pinned',
   myAgents: 'my-agents',
   groups: 'groups',
   builtIn: 'built-in',
@@ -103,10 +106,11 @@ export function AgentSidebarList({
   onDuplicate,
   onArchive,
   onHideAgent,
+  onTogglePin,
+  onReorderPinned,
   onInfo,
   onRename,
   onDeleteAgent,
-  onTogglePin,
   onStartBuiltIn,
   unreadById,
   groups = [],
@@ -119,6 +123,7 @@ export function AgentSidebarList({
   const [sections, setSections] = useState<Record<(string), boolean>>(() => {
     if (typeof window === 'undefined') return {};
     const out: Record<(string), boolean> = {};
+    out[SECTIONS.pinned] = localStorage.getItem(storageKey(SECTIONS.pinned)) !== 'false';
     out[SECTIONS.myAgents] = localStorage.getItem(storageKey(SECTIONS.myAgents)) !== 'false';
     out[SECTIONS.groups] = localStorage.getItem(storageKey(SECTIONS.groups)) !== 'false';
     out[SECTIONS.builtIn] = localStorage.getItem(storageKey(SECTIONS.builtIn)) !== 'false';
@@ -206,13 +211,164 @@ export function AgentSidebarList({
     [searchVisibleAgents, childAgentIds],
   );
 
+  // Pinned agents float above My agents, ordered by user-defined sortOrder.
+  const rankedPinned = useMemo(
+    () => topLevelAgents
+      .filter((a) => typeof a.pinnedAt === 'number')
+      .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity)),
+    [topLevelAgents],
+  );
+  const myAgents = useMemo(
+    () => topLevelAgents.filter((a) => typeof a.pinnedAt !== 'number'),
+    [topLevelAgents],
+  );
+
+  const pinnedById = useMemo(() => new Map(rankedPinned.map((a) => [a.id, a])), [rankedPinned]);
+
+  const [pinnedOrder, setPinnedOrder] = useState<string[]>([]);
+  useEffect(() => {
+    setPinnedOrder(rankedPinned.map((a) => a.id));
+  }, [rankedPinned]);
+
+  const orderMatches = rankedPinned.length === pinnedOrder.length
+    && pinnedOrder.every((id) => pinnedById.has(id));
+  const displayPinned = orderMatches ? pinnedOrder.map((id) => pinnedById.get(id)!) : rankedPinned;
+
+  const [dragOrder, setDragOrder] = useState<string[] | null>(null);
+  const dragOrderRef = useRef<string[]>([]);
+  const dragRef = useRef<{ id: string; startX: number; startY: number; moved: boolean; order: string[] } | null>(null);
+  const suppressClickRef = useRef(false);
+
+  const commitPinnedOrder = (ids: string[]) => {
+    setPinnedOrder(ids);
+    onReorderPinned?.(ids);
+  };
+  const commitPinnedOrderRef = useRef(commitPinnedOrder);
+  commitPinnedOrderRef.current = commitPinnedOrder;
+
+  useEffect(() => {
+    if (!onReorderPinned) return;
+    const onPointerMove = (e: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      if (!drag.moved) {
+        const dx = e.clientX - drag.startX;
+        const dy = e.clientY - drag.startY;
+        if (dx * dx + dy * dy < 36) return;
+        drag.moved = true;
+        dragOrderRef.current = [...drag.order];
+        setDragOrder([...drag.order]);
+      }
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const overId = el?.closest('[data-pinned-id]')?.getAttribute('data-pinned-id') ?? null;
+      if (!overId || overId === drag.id) return;
+      const order = [...dragOrderRef.current];
+      const from = order.indexOf(drag.id);
+      const to = order.indexOf(overId);
+      if (from === -1 || to === -1 || from === to) return;
+      order.splice(from, 1);
+      order.splice(to, 0, drag.id);
+      dragOrderRef.current = order;
+      setDragOrder(order);
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      dragRef.current = null;
+      setDragOrder(null);
+      if (drag.moved && e.type === 'pointerup') {
+        suppressClickRef.current = true;
+        commitPinnedOrderRef.current(dragOrderRef.current.length ? dragOrderRef.current : drag.order);
+      }
+      dragOrderRef.current = [];
+    };
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+    };
+  }, [onReorderPinned]);
+
+  const handlePinnedPointerDown = (e: React.PointerEvent<HTMLButtonElement>, id: string) => {
+    if (e.button !== 0 || !onReorderPinned) return;
+    dragRef.current = { id, startX: e.clientX, startY: e.clientY, moved: false, order: displayPinned.map((a) => a.id) };
+  };
+
+  const handlePinnedKeyDown = (e: React.KeyboardEvent, id: string) => {
+    if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+    const order = displayPinned.map((a) => a.id);
+    const from = order.indexOf(id);
+    const to = e.key === 'ArrowUp' ? from - 1 : from + 1;
+    if (from === -1 || to < 0 || to >= order.length) return;
+    e.preventDefault();
+    order.splice(to, 0, order.splice(from, 1)[0]);
+    commitPinnedOrder(order);
+  };
+
+  // Swallow the click that follows a drag so it does not select a new agent.
+  const guardSelect = (agent: AgentWithMeta) => () => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    onSelect(agent);
+  };
+
+  const renderAgentTree = (agent: AgentWithMeta, pinned = false) => (
+    <div key={agent.id} className="flex flex-col gap-0.5">
+      <AgentRow
+        agent={agent}
+        selected={selectedId === agent.id}
+        unread={unreadById?.[agent.id]?.count ?? 0}
+        onClick={pinned ? guardSelect(agent) : () => onSelect(agent)}
+        onContextMenu={(e) => handleContextMenu(e, agent)}
+        drag={pinned ? {
+          'data-pinned-id': agent.id,
+          onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => handlePinnedPointerDown(e, agent.id),
+          onKeyDown: (e: React.KeyboardEvent) => handlePinnedKeyDown(e, agent.id),
+        } : undefined}
+      />
+      {(childrenByParent[agent.id] ?? []).map((child) => {
+        const childAgent: AgentWithMeta = {
+          id: child.childId,
+          name: child.name,
+          emoji: child.emoji,
+          description: child.description,
+          mode: child.mode,
+        };
+        return (
+          <AgentRow
+            key={child.childId}
+            agent={childAgent}
+            selected={selectedId === child.childId}
+            unread={unreadById?.[child.childId]?.count ?? 0}
+            indent
+            onClick={() => onSelect(childAgent)}
+            onContextMenu={(e) => handleContextMenu(e, childAgent)}
+          />
+        );
+      })}
+    </div>
+  );
+
   // Section-header unread sums; sumUnread stubs to 0 when no unread source is wired.
+  const pinnedAgentIds = useMemo(
+    () => [
+      ...rankedPinned.map((a) => a.id),
+      ...rankedPinned.flatMap((a) => (childrenByParent[a.id] ?? []).map((c) => c.childId)),
+    ],
+    [rankedPinned, childrenByParent],
+  );
+  const pinnedUnread = sumUnread(pinnedAgentIds, unreadById);
   const myAgentIds = useMemo(
     () => [
-      ...topLevelAgents.map((a) => a.id),
-      ...topLevelAgents.flatMap((a) => (childrenByParent[a.id] ?? []).map((c) => c.childId)),
+      ...myAgents.map((a) => a.id),
+      ...myAgents.flatMap((a) => (childrenByParent[a.id] ?? []).map((c) => c.childId)),
     ],
-    [topLevelAgents, childrenByParent],
+    [myAgents, childrenByParent],
   );
   const myAgentsUnread = sumUnread(myAgentIds, unreadById);
   const hiddenUnread = sumUnread(searchHiddenAgents.map((a) => a.id), unreadById);
@@ -311,50 +467,38 @@ export function AgentSidebarList({
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 pb-4">
+        {rankedPinned.length > 0 && (
+          <AgentSection
+            id={SECTIONS.pinned}
+            label={t('Pinned')}
+            count={rankedPinned.length}
+            expanded={!!sections[SECTIONS.pinned]}
+            onToggle={() => toggleSection(SECTIONS.pinned)}
+            unread={pinnedUnread}
+          >
+            {(dragOrder
+              ? dragOrder
+                  .map((id) => pinnedById.get(id))
+                  .filter((a): a is AgentWithMeta => Boolean(a))
+              : displayPinned
+            ).map((agent) => renderAgentTree(agent, true))}
+          </AgentSection>
+        )}
+
         <AgentSection
           id={SECTIONS.myAgents}
           label={t('My agents')}
-          count={topLevelAgents.length}
+          count={myAgents.length}
           expanded={!!sections[SECTIONS.myAgents]}
           onToggle={() => toggleSection(SECTIONS.myAgents)}
           unread={myAgentsUnread}
         >
-          {topLevelAgents.length === 0 ? (
+          {myAgents.length === 0 ? (
             <p className="px-2 py-3 text-xs text-text-tertiary">
               {searchActive ? EMPTY_SEARCH_TEXT : t('No agents yet.')}
             </p>
           ) : (
-            topLevelAgents.map((agent) => (
-              <div key={agent.id} className="flex flex-col gap-0.5">
-                <AgentRow
-                  agent={agent}
-                  selected={selectedId === agent.id}
-                  unread={unreadById?.[agent.id]?.count ?? 0}
-                  onClick={() => onSelect(agent)}
-                  onContextMenu={(e) => handleContextMenu(e, agent)}
-                />
-                {(childrenByParent[agent.id] ?? []).map((child) => {
-                  const childAgent: AgentWithMeta = {
-                    id: child.childId,
-                    name: child.name,
-                    emoji: child.emoji,
-                    description: child.description,
-                    mode: child.mode,
-                  };
-                  return (
-                    <AgentRow
-                      key={child.childId}
-                      agent={childAgent}
-                      selected={selectedId === child.childId}
-                      unread={unreadById?.[child.childId]?.count ?? 0}
-                      indent
-                      onClick={() => onSelect(childAgent)}
-                      onContextMenu={(e) => handleContextMenu(e, childAgent)}
-                    />
-                  );
-                })}
-              </div>
-            ))
+            myAgents.map((agent) => renderAgentTree(agent))
           )}
         </AgentSection>
 
@@ -477,6 +621,7 @@ export function AgentSidebarList({
           x={contextMenu.x}
           y={contextMenu.y}
           agentName={contextMenu.agent.name}
+          pinned={typeof contextMenu.agent.pinnedAt === 'number'}
           hidden={!!contextMenu.agent.hiddenAt}
           onOpen={() => onSelect(contextMenu.agent)}
           onInfo={() => onInfo?.(contextMenu.agent)}
@@ -572,6 +717,13 @@ function AgentSection({
   );
 }
 
+/** Pointer/keyboard drag handles attached to pinned AgentRow buttons. */
+interface DragRowProps {
+  'data-pinned-id': string;
+  onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => void;
+  onKeyDown: (e: React.KeyboardEvent) => void;
+}
+
 function AgentRow({
   agent,
   selected,
@@ -580,6 +732,7 @@ function AgentRow({
   dim,
   onClick,
   onContextMenu,
+  drag,
 }: {
   agent: AgentCardAgent;
   selected: boolean;
@@ -588,6 +741,7 @@ function AgentRow({
   dim?: boolean;
   onClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  drag?: DragRowProps;
 }) {
   return (
     <button
@@ -595,12 +749,15 @@ function AgentRow({
       onClick={onClick}
       onContextMenu={onContextMenu}
       aria-current={selected ? 'true' : undefined}
+      {...(drag ?? {})}
       className={[
         'group relative flex h-row items-center gap-2 rounded-control px-2 text-start transition-colors',
         indent ? 'ps-6' : '',
         dim ? 'opacity-60' : '',
         selected ? 'bg-fill-hover' : 'hover:bg-fill-hover',
+        drag ? 'cursor-grab select-none active:cursor-grabbing' : '',
       ].join(' ')}
+      aria-label={drag ? t('Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder.', { name: agent.name }) : undefined}
     >
       {selected && <RowAccent />}
       <AgentAvatar

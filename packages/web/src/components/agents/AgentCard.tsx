@@ -20,6 +20,10 @@ export interface AgentCardAgent {
   avatarShape?: string;
   avatarColor?: string;
   avatarImage?: string;
+  /** Pin timestamp (epoch ms); set = pinned, shown in the Pinned section. */
+  pinnedAt?: number;
+  /** Position among pinned agents (smaller = higher). */
+  sortOrder?: number;
 }
 
 interface AgentCardProps {
