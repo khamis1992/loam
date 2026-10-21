@@ -118,6 +118,7 @@ export function extractWatchText(raw: string, selector?: string): string {
     }
     const picked = pickElement(input, sel);
     if (picked !== null && picked.length > 0) return picked.slice(0, MAX_WATCH_TEXT);
+    return ""; // a scoped read that matched nothing is empty, never the whole page
   }
   return stripHtml(input).slice(0, MAX_WATCH_TEXT);
 }
@@ -263,6 +264,8 @@ export interface UrlWatchDeps {
   fetcher?: WatchContentFetcher;
   intervalMs?: number;
   timeoutMs?: number;
+  /** Test seam: replaces the per-schedule interval gate of the due check. */
+  dueEverySeconds?: number;
 }
 
 /** Active url watches (id, url, interval, optional selector). */
@@ -281,7 +284,8 @@ async function pollOnce(deps: UrlWatchDeps): Promise<void> {
     if (s.kind !== "url-watch" || !s.enabled) continue;
     if (s.agentId && getAgent(s.agentId)?.archivedAt) continue;
     const last = s.lastWatchCheckedAt ? Date.parse(s.lastWatchCheckedAt) : Number.NaN;
-    if (!Number.isNaN(last) && now.getTime() - last < s.intervalSeconds * 1000) continue;
+    const gateSeconds = Math.max(0, deps.dueEverySeconds ?? s.intervalSeconds);
+    if (!Number.isNaN(last) && now.getTime() - last < gateSeconds * 1000) continue;
     if (!s.watchPath) continue;
 
     let raw: string | null = null;

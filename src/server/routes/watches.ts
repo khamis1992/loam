@@ -1,8 +1,7 @@
 import http from "node:http";
 import { getAgent } from "../agents.js";
 import { listSchedulesByAgent, getSchedule, listSchedules } from "../db.js";
-import { createUrlWatch, deleteUrlWatch } from "../urlWatch.js";
-import { MIN_URL_WATCH_INTERVAL_SECONDS } from "../urlWatch.js";
+import { createUrlWatch, deleteUrlWatch, MIN_URL_WATCH_INTERVAL_SECONDS } from "../urlWatch.js";
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
