@@ -58,21 +58,22 @@ describe('inAppBrowser bridge', () => {
   });
 
   it('subscribes to pushed state changes through the events bridge', () => {
-    let listener: ((s: unknown) => void) | null = null;
+    const holder: { current: ((s: unknown) => void) | null } = { current: null };
     withBridge(
       {},
       { onStateChanged: (cb: (s: unknown) => void) => {
-        listener = cb;
+        holder.current = cb;
         return () => {
-          listener = null;
+          holder.current = null;
         };
       } },
     );
     const cb = vi.fn();
     const off = iabOnStateChanged(cb);
-    listener?.(state);
+    expect(holder.current).not.toBeNull();
+    holder.current?.(state);
     expect(cb).toHaveBeenCalledWith(state);
     off();
-    expect(listener).toBeNull();
+    expect(holder.current).toBeNull();
   });
 });
