@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect, useRef, type ComponentType } from 'react'
 import { useRouter } from 'next/navigation';
 import {
   SquarePen, Monitor, Search, BookOpen, Sparkles, Workflow, LayoutGrid, MoreHorizontal,
-  ChevronRight, Share2, Bell, MonitorSmartphone,
+  ChevronRight, Share2, MonitorSmartphone,
 } from 'lucide-react';
 import { useAppSelector, useAppDispatch, toggleSidebar } from '@/store';
 import { selectSession, startNewTask, loadSessions, type AgentSession } from '@/store/sessionsSlice';
@@ -13,6 +13,7 @@ import { t } from '@/i18n/t';
 import clsx from 'clsx';
 import { AccountPopover } from '@/components/dialogs/AccountPopover';
 import { SearchDialog } from '@/components/dialogs/SearchDialog';
+import { NotificationBell } from '@/components/shell/NotificationBell';
 import { SidebarTaskItem } from './SidebarTaskItem';
 
 type NavItem = {
@@ -164,20 +165,12 @@ export function Sidebar() {
             type="button"
             aria-label={t('Devices')}
             title={t('Devices')}
-            onClick={() => router.push('/app/devices')}
+            onClick={() => router.push('/app/computers')}
             className="flex h-7 w-7 items-center justify-center rounded-control text-text-secondary hover:bg-fill-hover"
           >
             <MonitorSmartphone className="size-4" />
           </button>
-          <button
-            type="button"
-            aria-label={t('Notifications')}
-            title={t('Notifications')}
-            onClick={() => dispatch(openSettings('General'))}
-            className="flex h-7 w-7 items-center justify-center rounded-control text-text-secondary hover:bg-fill-hover"
-          >
-            <Bell className="size-4" />
-          </button>
+          <NotificationBell />
         </div>
       </div>
 
