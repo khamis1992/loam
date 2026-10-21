@@ -127,6 +127,7 @@ export async function handleWorkspaceVideoRoutes(
       const root = taskRoot(ctx, taskId);
       const abs = taskPath(root, rel);
       if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) throw new HttpError(404, "file not found");
+      if (!ffmpegAvailable()) throw new HttpError(503, "ffmpeg is not available on this server");
       let probe: VideoMeta | undefined;
       try { probe = await probeVideo(abs); } catch { /* not a video or ffmpeg missing: give container facts only */ }
       const st = fs.statSync(abs);
@@ -144,6 +145,7 @@ export async function handleWorkspaceVideoRoutes(
       const root = taskRoot(ctx, taskId);
       const abs = taskPath(root, rel);
       if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) throw new HttpError(404, "file not found");
+      if (!ffmpegAvailable()) throw new HttpError(503, "ffmpeg is not available on this server");
       let meta: VideoMeta | undefined;
       try { meta = await probeVideo(abs); } catch { /* fall through to a stub */ }
       const persisted = savedEdl(root, rel, meta);

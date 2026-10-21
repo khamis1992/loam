@@ -103,6 +103,43 @@ describe("workspace video render", () => {
   it("returns no job for unknown ids", () => {
     assert.equal(mod.getRenderJob("job_none"), undefined);
   });
+
+  it("renders a real cut + overlay through the job queue when ffmpeg is installed", { timeout: 120_000 }, async () => {
+    const video = await import("../workspace/videoRender.js");
+    if (!video.ffmpegAvailable()) return; // unit-only environment
+    const { execFileSync } = await import("node:child_process");
+    const src = path.join(tmpDir, "live-src.mp4");
+    execFileSync(video.ffmpegPath(), [
+      "-v", "error", "-y",
+      "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30:duration=3",
+      "-f", "lavfi", "-i", "sine=frequency=600:duration=3",
+      "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "aac",
+      src,
+    ], { windowsHide: true });
+    const meta = await video.probeVideo(src);
+    assert.equal(Math.round(meta.duration ?? 0), 3);
+    assert.equal(meta.hasAudio, true);
+    const edl = video.normalizeEdl({
+      version: 1, clips: [{ in: 0, out: 1 }, { in: 2, out: 3 }],
+      overlays: [{ text: "Hello", start: 0, end: 1.5, x: 30, y: 30 }],
+    }, meta.duration);
+    const job = video.startRender("task_live", "live-src.mp4", edl, tmpDir, meta.hasAudio);
+    for (let i = 0; i < 200; i++) {
+      await new Promise((r) => setTimeout(r, 250));
+      const now = video.getRenderJob(job.id);
+      if (now && now.status !== "queued" && now.status !== "running") {
+        assert.equal(now.status, "done", now.error ?? "");
+        break;
+      }
+    }
+    const done = video.getRenderJob(job.id);
+    assert.equal(done?.status, "done");
+    const outAbs = path.join(tmpDir, done!.output ?? "");
+    assert.ok(fs.statSync(outAbs).size > 0, "rendered file has bytes");
+    const outMeta = await video.probeVideo(outAbs);
+    assert.equal(Math.round(outMeta.duration ?? 0), 2, "cut length 1+1s");
+    assert.equal(outMeta.hasAudio, true, "audio kept");
+  });
 });
 
 function stringComplexSafe(args: string[]): string {
