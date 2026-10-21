@@ -17,6 +17,7 @@ import { SkillsPane } from './SkillsPane';
 import { ShortcutsPane } from './ShortcutsPane';
 import { MemoryPane } from './MemoryPane';
 import { InAppBrowserPane } from './InAppBrowserPane';
+import { PersonalizationPane } from './PersonalizationPane';
 import { AssetsPane } from './AssetsPane';
 import { EmptyState } from './EmptyState';
 
@@ -41,7 +42,7 @@ const TABS = [
   { id: 'About', group: 'About', icon: 'Info' },
 ];
 
-const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Memory', 'In-App Browser', 'Email', 'Phone', 'Wallet']);
+const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'Personalization', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Memory', 'In-App Browser', 'Email', 'Phone', 'Wallet']);
 
 const GROUP_ORDER = ['Account', 'Settings', 'Capabilities', 'Computers', 'Data', 'Assets', 'About'];
 
@@ -133,6 +134,7 @@ function SettingsContent({ tab }: { tab: string }) {
     case 'Appearance': return <AppearancePane />;
     case 'Shortcuts': return <ShortcutsPane />;
     case 'Data controls': return <DataControlsPane />;
+    case 'Personalization': return <PersonalizationPane />;
     case 'My Computer': return <MyComputerPane />;
     case 'Usage': return <UsagePane />;
     case 'Connectors': return <ConnectorsPane />;
