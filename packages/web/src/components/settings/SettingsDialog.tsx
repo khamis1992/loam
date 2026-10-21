@@ -18,6 +18,7 @@ import { ShortcutsPane } from './ShortcutsPane';
 import { MemoryPane } from './MemoryPane';
 import { InAppBrowserPane } from './InAppBrowserPane';
 import { AssetsPane } from './AssetsPane';
+import { ApiKeysPane } from './ApiKeysPane';
 import { EmptyState } from './EmptyState';
 
 const TABS = [
@@ -41,7 +42,7 @@ const TABS = [
   { id: 'About', group: 'About', icon: 'Info' },
 ];
 
-const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Memory', 'In-App Browser', 'Email', 'Phone', 'Wallet']);
+const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Memory', 'In-App Browser', 'Email', 'Phone', 'Wallet', 'Integrations', 'Developers']);
 
 const GROUP_ORDER = ['Account', 'Settings', 'Capabilities', 'Computers', 'Data', 'Assets', 'About'];
 
@@ -142,6 +143,8 @@ function SettingsContent({ tab }: { tab: string }) {
     case 'Email': return <AssetsPane kind="Email" />;
     case 'Phone': return <AssetsPane kind="Phone" />;
     case 'Wallet': return <AssetsPane kind="Wallet" />;
+    case 'Integrations':
+    case 'Developers': return <ApiKeysPane />;
     case 'About': return <AboutPane />;
     default: return null;
   }
