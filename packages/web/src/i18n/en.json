@@ -743,5 +743,22 @@
   "Search templates...": "Search templates...",
   "Stop recording": "Stop recording",
   "Stop voice mode": "Stop voice mode",
-  "Template gallery": "Template gallery"
+  "Template gallery": "Template gallery",
+  "Export your data": "Export your data",
+  "Export all data": "Export all data",
+  "Download a full copy of your tasks, projects, agents and memory.": "Download a full copy of your tasks, projects, agents and memory.",
+  "Export started": "Export started",
+  "Could not export your data": "Could not export your data",
+  "Delete your data": "Delete your data",
+  "Delete all data": "Delete all data",
+  "Permanently remove all tasks, projects, agents and memory from this device.": "Permanently remove all tasks, projects, agents and memory from this device.",
+  "Delete all data?": "Delete all data?",
+  "This permanently deletes all tasks, projects, agents and memory. This cannot be undone.": "This permanently deletes all tasks, projects, agents and memory. This cannot be undone.",
+  "Type DELETE to confirm.": "Type DELETE to confirm.",
+  "Your data was deleted.": "Your data was deleted.",
+  "Could not delete your data": "Could not delete your data",
+  "Training": "Training",
+  "Help improve Loam": "Help improve Loam",
+  "Allow Loam to use my conversations to improve its models.": "Allow Loam to use my conversations to improve its models.",
+  "Could not save your preference": "Could not save your preference"
 }

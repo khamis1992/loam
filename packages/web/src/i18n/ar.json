@@ -734,5 +734,22 @@
   "Click for full screen": "انقر للعرض بملء الشاشة",
   "Open full screen": "فتح بملء الشاشة",
   "Live preview placeholder": "بديل المعاينة المباشرة",
-  "The computer stream will appear here once the agent connects to a computer.": "ستظهر صورة الكمبيوتر هنا عندما يتصل الوكيل بجهاز."
+  "The computer stream will appear here once the agent connects to a computer.": "ستظهر صورة الكمبيوتر هنا عندما يتصل الوكيل بجهاز.",
+  "Export your data": "تصدير بياناتك",
+  "Export all data": "تصدير كل البيانات",
+  "Download a full copy of your tasks, projects, agents and memory.": "تنزيل نسخة كاملة من مهامك ومشاريعك والوكلاء والذاكرة.",
+  "Export started": "بدأ التصدير",
+  "Could not export your data": "تعذّر تصدير بياناتك",
+  "Delete your data": "حذف بياناتك",
+  "Delete all data": "حذف كل البيانات",
+  "Permanently remove all tasks, projects, agents and memory from this device.": "إزالة كل المهام والمشاريع والوكلاء والذاكرة نهائيًا من هذا الجهاز.",
+  "Delete all data?": "حذف كل البيانات؟",
+  "This permanently deletes all tasks, projects, agents and memory. This cannot be undone.": "سيؤدي هذا إلى حذف كل المهام والمشاريع والوكلاء والذاكرة نهائيًا. لا يمكن التراجع عن هذا الإجراء.",
+  "Type DELETE to confirm.": "اكتب DELETE للتأكيد.",
+  "Your data was deleted.": "تم حذف بياناتك.",
+  "Could not delete your data": "تعذّر حذف بياناتك",
+  "Training": "التدريب",
+  "Help improve Loam": "ساعد في تحسين Loam",
+  "Allow Loam to use my conversations to improve its models.": "السماح لـ Loam باستخدام محادثاتي لتحسين نماذجه.",
+  "Could not save your preference": "تعذّر حفظ تفضيلك"
 }
