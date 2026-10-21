@@ -119,6 +119,8 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll(createDesignStudioTools());
     // MF7: watch_url ships as an always-on tool, so it must be registered too.
     registry.registerAll(createLoamServiceTools().filter((tool) => tool.name === "watch_url"));
+    const videoEditToolsMod = await import("../../tools/videoEditAgent.js");
+    registry.registerAll(videoEditToolsMod.createVideoEditTools());
     const deployToolsMod = await import("../../tools/deploy.js");
     registry.registerAll(deployToolsMod.createDeployTools({ workspace: tmpDir }));
     registry.register(dummy("loam_design")); // W3 build-phase design tool (always-on grant)
