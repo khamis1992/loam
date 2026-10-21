@@ -78,6 +78,7 @@ import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleInstructionsRoutes } from "./routes/instructions.js";
 import { handleAgentSpawnRoutes } from "./routes/agentSpawn.js";
+import { handleAutoVideoRoutes } from "./routes/autoVideo.js";
 import { isValidTimezone } from "./scheduleTime.js";
 import { getWorkModesUi, normalizeWorkMode, resolveCompanionCapabilities } from "./companionGateway.js";
 import { DEVICE_TEMPLATES, deviceManager, getDevice, listDevices, readJournal } from "./companionDevices.js";
@@ -1635,6 +1636,7 @@ loadAgents();
         if (await handleAgentSpawnRoutes(req, res, p)) return;
         if (await handleAgentThreadRoutes(req, res, p)) return;
         if (await handleSchedulesRoutes(req, res, p)) return;
+        if (await handleAutoVideoRoutes(req, res, p)) return;
 
         if (p.startsWith("/api/agents/")) {
           const id = decodeURIComponent(p.slice("/api/agents/".length));
