@@ -7,6 +7,7 @@ import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { kindFromName, type AttachmentKind } from '@/components/chat/AttachmentCard';
 import { formatBytes } from '@/utils/format';
+import { isTaskId } from '@/utils/taskIds';
 
 interface LibraryFile {
   name: string;
@@ -36,7 +37,7 @@ export default function LibraryPage() {
         const tasksRes = await fetch(`${getApiBase()}/api/tasks?limit=50`, { headers });
         if (!tasksRes.ok) throw new Error(`tasks ${tasksRes.status}`);
         const tasks = (await tasksRes.json()) as { tasks?: Array<{ id: string; updatedAt: string }> };
-        const taskIds = (tasks.tasks ?? []).map((t) => t.id);
+        const taskIds = (tasks.tasks ?? []).map((t) => t.id).filter(isTaskId);
         if (taskIds.length === 0) {
           if (mounted) setFiles([]);
           return;
