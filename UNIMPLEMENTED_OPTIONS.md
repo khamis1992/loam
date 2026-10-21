@@ -12,7 +12,7 @@ Size: S = under 1 day, M = 1–3 days, L = more than 3 days.
 | 4 | Settings › Skills | Settings ("Coming soon") | Skill CRUD UI. A memory-skills MCP already exists in the backend and could be surfaced | M |
 | 5 | Settings › In-App Browser | Settings ("Coming soon") | Electron WebContentsView driven by the agent's browser tool | L |
 | 6 | Settings › Data controls | Settings ("Coming soon") | Export/delete-all endpoints and a training opt-out flag | S–M |
-| 7 | Settings › Integrations / Developers | Settings ("Coming soon") | API keys page and a public API on the adapter | M |
+| 7 | Settings › Integrations / Developers | Settings ("Coming soon") | Fixed (OpenCode): API keys page (ApiKeysPane) over /api/api-keys CRUD; keys generated server-side, listed masked, revocable. Public API on the adapter still open | ✅ |
 | 8 | Settings › Email / Phone / Wallet | Settings › Assets ("Coming soon") | Inbound email, telephony and billing. No backend at all | L each |
 | 9 | Credits "1K", Free plan / Upgrade, referral card ("Share Loam with a friend / Get 500 credits each") | Home header, account menu, sidebar | A credit ledger and billing. The value is static today | M |
 | 10 | Update button / updater | Settings › General | Fixed (OpenCode): electron-updater generic feed (LOAM_UPDATE_FEED_URL + local channel, scripts/updater-test-feed.mjs); Settings check/download/restart via the `updater` IPC namespace | ✅ |
