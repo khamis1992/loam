@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ChevronDown, Check, KeyRound, Loader2, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { t } from '@/i18n/t';
-import { getApiBase, getApiHeaders } from '@/services/rpc';
+import { fetchFlexConfig, saveFlexConfig, removeFlexKey, type FlexConfig } from '@/services/modelTiersApi';
 
 export type AgentModel = 'max' | 'standard' | 'lite' | 'flex';
 
@@ -24,12 +24,6 @@ const ITEMS: ModelItem[] = [
 interface ModelMenuProps {
   value: AgentModel;
   onChange: (value: AgentModel) => void;
-}
-
-interface FlexState {
-  baseUrl: string;
-  model: string;
-  hasKey: boolean;
 }
 
 export function ModelMenu({ value, onChange }: ModelMenuProps) {
@@ -82,7 +76,7 @@ export function ModelMenu({ value, onChange }: ModelMenuProps) {
 /** Option 18 Flex (BYOK): the key is stored encrypted in the Loam secrets
  *  vault and is never fetched or displayed; leave it blank to keep it. */
 function FlexForm({ onClose }: { onClose: () => void }) {
-  const [flex, setFlex] = useState<FlexState | null>(null);
+  const [flex, setFlex] = useState<FlexConfig | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [key, setKey] = useState('');
@@ -91,19 +85,12 @@ function FlexForm({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      try {
-        const res = await fetch(`${getApiBase()}/api/model-tiers`, { headers: await getApiHeaders() });
-        if (!res.ok) return;
-        const data = (await res.json()) as { flex?: FlexState };
-        if (!mounted || !data.flex) return;
-        setFlex(data.flex);
-        setBaseUrl(data.flex.baseUrl);
-        setModel(data.flex.model);
-      } catch {
-        // server unreachable: the form still allows a fresh save attempt
-      }
-    })();
+    fetchFlexConfig().then((data) => {
+      if (!mounted || !data) return;
+      setFlex(data);
+      setBaseUrl(data.baseUrl);
+      setModel(data.model);
+    });
     return () => { mounted = false; };
   }, []);
 
@@ -112,17 +99,10 @@ function FlexForm({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      const body: Record<string, string> = { baseUrl, model };
-      if (key.trim()) body.key = key.trim();
-      const res = await fetch(`${getApiBase()}/api/model-tiers/flex`, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json', ...(await getApiHeaders()) },
-        body: JSON.stringify(body),
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string; flex?: FlexState };
-      if (!res.ok) throw new Error(data.error ?? `status ${res.status}`);
+      const result = await saveFlexConfig({ baseUrl, model, key });
+      if (result.error) throw new Error(result.error);
       setKey('');
-      if (data.flex) setFlex(data.flex);
+      if (result.flex) setFlex(result.flex);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -134,10 +114,9 @@ function FlexForm({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`${getApiBase()}/api/model-tiers/flex/key`, { method: 'DELETE', headers: await getApiHeaders() });
-      const data = (await res.json().catch(() => ({}))) as { flex?: FlexState };
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      if (data.flex) setFlex(data.flex);
+      const result = await removeFlexKey();
+      if (result.error) throw new Error(result.error);
+      if (result.flex) setFlex(result.flex);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
