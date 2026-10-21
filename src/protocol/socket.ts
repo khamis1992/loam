@@ -6,9 +6,12 @@ import { Server, type Socket } from "socket.io";
 import type { Server as HttpServer } from "node:http";
 import type { AgentEvent, Emit } from "../agent/events.js";
 import { cancelRunSignal } from "../server/runControl.js";
-import { createTask, type Task, type TaskMessage, type StepRecord } from "../server/db.js";
+import { createTask, setTaskWorkspace, type Task, type TaskMessage, type StepRecord } from "../server/db.js";
 import { setThread, touchMessage } from "../server/agentThreads.js";
 import { requireTaskWorkspace, taskPath } from "../server/taskWorkspace.js";
+import { createWorktree } from "../server/worktrees.js";
+import { isModelTier, resolveTierModel } from "../server/modelTiers.js";
+import { loadConfig } from "../config.js";
 import type { RunTaskOptions } from "../server/http.js";
 import { log } from "../log.js";
 import { mapAgentEvent, shortUid, baseId, createEventMapperState, makeBrief, mapToolName } from "./events.js";
@@ -436,6 +439,20 @@ export function createChatSocket(deps: SocketDeps): Server {
             }
             session.taskId = taskId;
             store.setTaskId(um.sessionId, taskId);
+            // Option 17: bind the composer folder (or a fresh git worktree under it) to the new task.
+            const composerFolder = (um.extData.desktopBinding?.folderPath ?? "").trim();
+            if (composerFolder && fs.existsSync(composerFolder)) {
+              try {
+                if (um.extData.worktreeEnabled) {
+                  const wt = await createWorktree(composerFolder, taskId);
+                  setTaskWorkspace(taskId, "ok" in wt ? wt.path : composerFolder);
+                } else {
+                  setTaskWorkspace(taskId, composerFolder);
+                }
+              } catch (err) {
+                log.warn(`composer folder bind failed for ${taskId}: ${err instanceof Error ? err.message : String(err)}`);
+              }
+            }
           }
 
           // Persist the agent -> thread mapping so unread state survives restarts.
@@ -551,6 +568,9 @@ export function createChatSocket(deps: SocketDeps): Server {
 
             emit({ type: "mode", ...modeEventInfo(resolvedMode) });
 
+            // Option 18: the composer's model tier resolves to a concrete model id.
+            const tierModel = isModelTier(um.extData.modelTier) ? resolveTierModel(loadConfig(), um.extData.modelTier).model : undefined;
+
             const result = await runTask({
               prompt,
               emit,
@@ -560,6 +580,7 @@ export function createChatSocket(deps: SocketDeps): Server {
               projectId: um.extData.projectId ?? null,
               agentId: um.extData.agentId ?? undefined,
               workMode: um.extData.workMode ?? undefined,
+              ...(tierModel ? { model: tierModel } : {}),
             });
 
             // Final assistant result if the agent stream did not already emit one.

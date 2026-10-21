@@ -63,6 +63,8 @@ export interface UserMessage extends Base {
     desktopBinding?: { deviceId: string; folderPath: string };
     localPermissionMode?: "ask_for_approval" | "approve_for_me" | "full_access";
     worktreeEnabled?: boolean;
+    /** Option 18: composer model tier ("max" | "standard" | "lite" | "flex"). */
+    modelTier?: string;
   };
 }
 
