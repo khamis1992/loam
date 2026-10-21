@@ -431,5 +431,19 @@
   "Secure": "آمن",
   "Sheets and research": "جداول البيانات والبحث",
   "Security scans and automations": "فحوصات الأمان والأتمتة",
-  "Slides, docs, images, and videos": "شرائح، ومستندات، وصور، وفيديوهات"
+  "Slides, docs, images, and videos": "شرائح، ومستندات، وصور، وفيديوهات",
+  "More templates": "المزيد من القوالب",
+  "Template gallery": "معرض القوالب",
+  "Search templates...": "ابحث في القوالب...",
+  "All": "الكل",
+  "Stop voice mode": "إيقاف الوضع الصوتي",
+  "Stop recording": "إيقاف التسجيل",
+  "Mark all read": "وضع علامة مقروء للكل",
+  "No notifications": "لا توجد إشعارات",
+  "Open computers": "فتح الأجهزة",
+  "Completed": "مكتملة",
+  "Failed": "فاشلة",
+  "Routine": "روتين",
+  "Approval": "موافقة",
+  "Notification": "إشعار"
 }
