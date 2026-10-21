@@ -16,10 +16,13 @@ import {
 } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
+import { useAppSelector } from '@/store';
 import { Button, Spinner } from '@/components/ui/Button';
+import { grokBotNoteText } from '@/components/chat/GrokBotNote';
+import type { ChatEvent } from '@shared/socket';
 import type { AgentCardAgent } from './AgentCard';
 import { AgentContextMenu } from './AgentContextMenu';
-import { GrokBotBadge, isGrokBotAgent } from './GrokBotBadge';
+import { isGrokBotAgent } from './GrokBotBadge';
 import { AgentAvatar } from './AgentAvatar';
 import { getBuiltInAgents } from './BuiltInAgentCard';
 import type { GroupChat } from './groupTypes';
@@ -94,6 +97,27 @@ const SECTIONS = {
 const storageKey = (id: string) => `loam.agents.section.${id}`;
 
 const EMPTY_SEARCH_TEXT = t('No matches');
+
+/** Character cap for the gray preview line; CSS truncation clips the rest. */
+const SUBTITLE_MAX_CHARS = 96;
+
+/** One-line, whitespace-collapsed preview of a message or description. */
+function previewLine(text: string): string {
+  const flat = grokBotNoteText(text).trim().replace(/\s+/g, ' ');
+  return flat.length > SUBTITLE_MAX_CHARS ? `${flat.slice(0, SUBTITLE_MAX_CHARS)}…` : flat;
+}
+
+/** Latest user/assistant chat message of a thread as a preview line ('' when none). */
+function lastThreadPreview(events: ChatEvent[] | undefined): string {
+  if (!events) return '';
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (e.type !== 'chat') continue;
+    const line = previewLine(e.content ?? '');
+    if (line) return line;
+  }
+  return '';
+}
 
 export function AgentSidebarList({
   agents,
@@ -200,6 +224,31 @@ export function AgentSidebarList({
     })();
     return () => { mounted = false; };
   }, [agentIdsKey]);
+
+  // Grok Bot parity: agentId -> thread uid map so rows can preview the last message.
+  const eventsBySession = useAppSelector((s) => s.chat.eventsBySession);
+  const [threadUidByAgent, setThreadUidByAgent] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch(`${getApiBase()}/api/agent-threads`, {
+          headers: await getApiHeaders(),
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { threads?: Array<{ agentId?: string; threadUid?: string }> };
+        if (!mounted) return;
+        const next: Record<string, string> = {};
+        for (const item of data.threads ?? []) {
+          if (item?.agentId && item?.threadUid) next[item.agentId] = item.threadUid;
+        }
+        setThreadUidByAgent(next);
+      } catch {
+        // Subtitle falls back to the agent description.
+      }
+    })();
+    return () => { mounted = false; };
+  }, [agentIdsKey, selectedId]);
 
   const childAgentIds = useMemo(
     () => new Set(Object.values(childrenByParent).flat().map((c) => c.childId)),
@@ -317,12 +366,20 @@ export function AgentSidebarList({
     onSelect(agent);
   };
 
+  // Gray preview line: latest thread message when the store has one, else description.
+  const threadPreview = (agent: AgentCardAgent): string => {
+    const uid = threadUidByAgent[agent.id];
+    const fromThread = uid ? lastThreadPreview(eventsBySession[uid]) : '';
+    return fromThread || (agent.description ? previewLine(agent.description) : '');
+  };
+
   const renderAgentTree = (agent: AgentWithMeta, pinned = false) => (
     <div key={agent.id} className="flex flex-col gap-0.5">
       <AgentRow
         agent={agent}
         selected={selectedId === agent.id}
         unread={unreadById?.[agent.id]?.count ?? 0}
+        subtitle={threadPreview(agent)}
         onClick={pinned ? guardSelect(agent) : () => onSelect(agent)}
         onContextMenu={(e) => handleContextMenu(e, agent)}
         drag={pinned ? {
@@ -345,6 +402,7 @@ export function AgentSidebarList({
             agent={childAgent}
             selected={selectedId === child.childId}
             unread={unreadById?.[child.childId]?.count ?? 0}
+            subtitle={threadPreview(childAgent)}
             indent
             onClick={() => onSelect(childAgent)}
             onContextMenu={(e) => handleContextMenu(e, childAgent)}
@@ -567,6 +625,7 @@ export function AgentSidebarList({
                 key={agent.id}
                 agent={agent}
                 selected={false}
+                subtitle={threadPreview(agent)}
                 onClick={() => onStartBuiltIn?.(agent)}
                 onContextMenu={() => {}}
               />
@@ -600,6 +659,7 @@ export function AgentSidebarList({
                 agent={agent}
                 selected={selectedId === agent.id}
                 unread={unreadById?.[agent.id]?.count ?? 0}
+                subtitle={threadPreview(agent)}
                 indent
                 dim
                 onClick={() => onSelect(agent)}
@@ -730,6 +790,7 @@ function AgentRow({
   unread,
   indent,
   dim,
+  subtitle,
   onClick,
   onContextMenu,
   drag,
@@ -737,6 +798,8 @@ function AgentRow({
   agent: AgentCardAgent;
   selected: boolean;
   unread?: number;
+  /** Gray preview line under the name: latest thread message or description. */
+  subtitle?: string;
   indent?: boolean;
   dim?: boolean;
   onClick: () => void;
@@ -751,7 +814,7 @@ function AgentRow({
       aria-current={selected ? 'true' : undefined}
       {...(drag ?? {})}
       className={[
-        'group relative flex h-row items-center gap-2 rounded-control px-2 text-start transition-colors',
+        'group relative flex min-h-[44px] items-center gap-2 rounded-control px-2 py-1 text-start transition-colors',
         indent ? 'ps-6' : '',
         dim ? 'opacity-60' : '',
         selected ? 'bg-fill-hover' : 'hover:bg-fill-hover',
@@ -765,11 +828,22 @@ function AgentRow({
         avatarShape={agent.avatarShape}
         avatarColor={agent.avatarColor}
         avatarImage={agent.avatarImage}
-        size={28}
+        size={32}
         selected={selected}
       />
-      <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{agent.name}</span>
-      {isGrokBotAgent(agent.source) && <GrokBotBadge />}
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="min-w-0 truncate text-sm text-text-primary">{agent.name}</span>
+        {subtitle ? (
+          <span className="min-w-0 truncate text-xs text-text-tertiary">{subtitle}</span>
+        ) : null}
+      </span>
+      {isGrokBotAgent(agent.source) && (
+        <span
+          className="size-1.5 shrink-0 rounded-full opacity-60"
+          style={{ backgroundColor: 'var(--text-tertiary)' }}
+          title={t('Imported from Grok Bot')}
+        />
+      )}
       {!!unread && unread > 0 && (
         <span
           className="size-2 shrink-0 rounded-full"
