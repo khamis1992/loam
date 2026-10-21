@@ -5,11 +5,23 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Folder, AlertCircle } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
+import { isCorruptedPlaceholder } from '@/utils/placeholders';
 
+/** HTTP /api/projects returns raw db rows; accept both shapes defensively. */
 interface Project {
-  uid: string;
+  uid?: string;
+  id?: string;
   name: string;
   description?: string;
+  instruction?: string;
+}
+
+function projectKey(p: Project): string {
+  return p.uid ?? p.id ?? p.name;
+}
+
+function projectDescription(p: Project): string {
+  return p.description ?? p.instruction ?? '';
 }
 
 export default function ProjectsPage() {
@@ -70,15 +82,20 @@ export default function ProjectsPage() {
           </div>
         ) : (
           <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {projects.map((p) => (
-              <li key={p.uid} className="rounded-card border border-border-main bg-bg-menu p-3">
-                <div className="mb-2 flex items-center gap-2">
-                  <Folder className="size-4 text-text-tertiary" />
-                  <p className="truncate text-sm font-medium text-text-primary">{p.name}</p>
-                </div>
-                {p.description && <p className="line-clamp-2 text-xs text-text-tertiary">{p.description}</p>}
-              </li>
-            ))}
+            {projects.map((p) => {
+              const shownName = isCorruptedPlaceholder(p.name ?? '') ? t('Untitled project') : p.name;
+              const description = projectDescription(p);
+              const shownDescription = isCorruptedPlaceholder(description) ? '' : description;
+              return (
+                <li key={projectKey(p)} className="rounded-card border border-border-main bg-bg-menu p-3">
+                  <div className="mb-2 flex items-center gap-2">
+                    <Folder className="size-4 text-text-tertiary" />
+                    <p className="truncate text-sm font-medium text-text-primary">{shownName}</p>
+                  </div>
+                  {shownDescription && <p className="line-clamp-2 text-xs text-text-tertiary">{shownDescription}</p>}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

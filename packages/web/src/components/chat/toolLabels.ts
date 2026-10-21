@@ -1,4 +1,5 @@
 import type { ToolUsedEvent } from '@shared/socket';
+import { isCorruptedPlaceholder } from '../../utils/placeholders';
 
 export interface ToolLabel {
   verb: string;
@@ -265,9 +266,4 @@ export function summarizeTools(events: ToolUsedEvent[]): string {
     .join(' · ');
 }
 
-/** A brief of pure question-marks means the string was decoded with a lossy
- *  charset upstream; it is never valid human text. */
-export function isCorruptedPlaceholder(value: string): boolean {
-  const trimmed = value.trim();
-  return trimmed.length > 0 && /^[?؟\s]+$/.test(trimmed);
-}
+export { isCorruptedPlaceholder };
