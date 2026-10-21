@@ -58,6 +58,37 @@ class FakeSurface implements OperatorSurface {
   }
 }
 
+/**
+ * Scripted surface for the deepened loop: state-changing actions advance the
+ * observation script while plain waits do not (they do not touch the page),
+ * unless advanceOnWait is set to model a page that finishes loading late.
+ */
+class ScriptedSurface implements OperatorSurface {
+  readonly acts: OperatorAction[] = [];
+  private step = 0;
+
+  constructor(
+    private readonly script: Partial<OperatorObservation>[],
+    private readonly options: { advanceOnWait?: boolean } = {},
+  ) {}
+
+  async open(): Promise<{ pageId: string }> {
+    return { pageId: "page_scripted" };
+  }
+
+  async observe(): Promise<OperatorObservation> {
+    const entry = this.script[Math.min(this.step, this.script.length - 1)];
+    if (!entry) throw new Error("scripted surface has no observation");
+    return observation(entry);
+  }
+
+  async act(_pageId: string, action: OperatorAction): Promise<{ ok: boolean; message: string }> {
+    this.acts.push(action);
+    if (action.kind !== "wait" || this.options.advanceOnWait === true) this.step += 1;
+    return { ok: true, message: "ok" };
+  }
+}
+
 describe("browser_operator planning", () => {
   it("parses the browser_table observation format including input values", () => {
     const parsed = parseObservationTable([
@@ -253,5 +284,165 @@ describe("browser_operator verification", () => {
     });
     assert.equal(goalSatisfied("click Sign in", current), false);
     assert.equal(goalSatisfied("click Sign in", current, parseIntent("click Sign in"), { requireAction: true }), true);
+  });
+});
+
+describe("browser_operator deepen", () => {
+  it("captures per-element ops from the observation table", () => {
+    const parsed = parseObservationTable([
+      "snapshot #3  Settings",
+      "url: https://app.test/settings",
+      "scrollY=0 (bottom)",
+      "elements (3):",
+      '  [1] combobox   "Region"   ops:CLICK,TYPE_TEXT,SELECT',
+      '  [2] link       "Docs"   ops:CLICK',
+      '  [3] button     "Save"   ops:CLICK',
+    ].join("\n"));
+    assert.deepEqual(parsed.elements[0]?.ops, ["CLICK", "TYPE_TEXT", "SELECT"]);
+    assert.deepEqual(parsed.elements[1]?.ops, ["CLICK"]);
+    assert.deepEqual(parsed.elements[2]?.ops, ["CLICK"]);
+  });
+
+  it("parses select goals with an optional field qualifier", () => {
+    const withField = parseIntent("select Germany in the country dropdown");
+    assert.equal(withField.kind, "select");
+    if (withField.kind === "select") {
+      assert.equal(withField.option, "Germany");
+      assert.equal(withField.field, "country dropdown");
+    }
+    const bare = parseIntent("choose Red");
+    assert.equal(bare.kind, "select");
+    if (bare.kind === "select") {
+      assert.equal(bare.option, "Red");
+      assert.equal(bare.field, undefined);
+    }
+  });
+
+  it("drives a native <select> to the requested option and verifies by value", async () => {
+    const surface = new ScriptedSurface([
+      {
+        url: "https://shop.test/checkout",
+        title: "Checkout",
+        elements: [
+          { index: 1, role: "combobox", name: "Country", value: "", ops: ["CLICK", "TYPE_TEXT", "SELECT"] },
+          { index: 2, role: "button", name: "Pay", value: "", ops: ["CLICK"] },
+        ],
+      },
+      {
+        url: "https://shop.test/checkout",
+        title: "Checkout",
+        elements: [{ index: 1, role: "combobox", name: "Country", value: "Germany", ops: ["CLICK", "TYPE_TEXT", "SELECT"] }],
+      },
+    ]);
+
+    const result = await runBrowserOperatorLoop({ goal: "select Germany in the country dropdown", surface });
+
+    assert.equal(result.status, "goal-reached");
+    assert.deepEqual(surface.acts, [{ kind: "select", index: 1, label: "Germany" }]);
+  });
+
+  it("skips select candidates that never reported the SELECT capability", () => {
+    const current = observation({
+      elements: [
+        { index: 1, role: "combobox", name: "Country", value: "", ops: ["CLICK", "TYPE_TEXT"] },
+        { index: 2, role: "button", name: "Pay", value: "", ops: ["CLICK"] },
+      ],
+    });
+    const action = planOperatorAction("select Germany in the country dropdown", current);
+    // No SELECT-capable element: the click fallback opens the dropdown itself.
+    assert.equal(action.kind, "click");
+    if (action?.kind === "click") assert.equal(action.index, 1);
+  });
+
+  it("does not claim select success from a matching element name without acting", () => {
+    const current = observation({
+      elements: [{ index: 1, role: "button", name: "Sign in", value: "", ops: ["CLICK"] }],
+      bodyText: "Sign in",
+    });
+    // The button shares the option label but has no value; only a acted-on
+    // value or a URL change can satisfy the select goal.
+    assert.equal(goalSatisfied("choose Sign in", current), false);
+  });
+
+  it("falls back to click ranking when the page has no native select", async () => {
+    const surface = new ScriptedSurface([
+      { url: "https://app.test/", title: "App", bodyText: "App home", elements: [{ index: 1, role: "button", name: "Sign in", value: "", ops: ["CLICK"] }] },
+      { url: "https://app.test/home", title: "Home", bodyText: "Signed in" },
+    ]);
+
+    const result = await runBrowserOperatorLoop({ goal: "choose Sign in", surface });
+
+    assert.equal(result.status, "goal-reached");
+    assert.deepEqual(surface.acts[0], { kind: "click", index: 1, label: "Sign in" });
+  });
+
+  it("does not type into elements that did not report TYPE_TEXT", () => {
+    const weightCurrent = observation({
+      elements: [
+        { index: 1, role: "link", name: "hiking boots", value: "", ops: ["CLICK"] },
+        { index: 2, role: "textbox", name: "Search", value: "", ops: ["CLICK", "TYPE_TEXT"] },
+      ],
+    });
+    const action = planOperatorAction('search for "hiking boots"', weightCurrent);
+    assert.equal(action.kind, "type");
+    if (action?.kind === "type") assert.equal(action.index, 2);
+  });
+
+  it("settles after state-changing actions before verifying", async () => {
+    const surface = new ScriptedSurface([
+      { url: "https://app.test/list", title: "List", bodyText: "load next items", elements: [{ index: 1, role: "button", name: "Load next", value: "", ops: ["CLICK"] }] },
+      { url: "https://app.test/list?page=2", title: "Page 2", bodyText: "page two contents" },
+    ]);
+
+    const result = await runBrowserOperatorLoop({ goal: "click Load next", surface, settleMs: 300 });
+
+    assert.equal(result.status, "goal-reached");
+    assert.equal(surface.acts.length, 2);
+    assert.equal(surface.acts[0]?.kind, "click");
+    assert.equal(surface.acts[1]?.kind, "wait");
+    if (surface.acts[1]?.kind === "wait") assert.equal(surface.acts[1].ms, 300);
+  });
+
+  it("waits for a late-loading page then proceeds once content appears", async () => {
+    const surface = new ScriptedSurface([
+      { url: "https://app.test/", title: "" },
+      { url: "https://app.test/", title: "Loaded", bodyText: "signed in area", elements: [{ index: 1, role: "button", name: "Continue", value: "", ops: ["CLICK"] }] },
+      { url: "https://app.test/next", title: "Next", bodyText: "next page" },
+    ], { advanceOnWait: true });
+
+    const result = await runBrowserOperatorLoop({ goal: "click Continue", surface });
+
+    assert.equal(result.status, "goal-reached");
+    assert.equal(surface.acts.length, 2);
+    assert.equal(surface.acts[0]?.kind, "wait");
+    assert.equal(surface.acts[1]?.kind, "click");
+  });
+
+  it("stops scrolling once the scroll budget is exhausted", async () => {
+    const surface = new ScriptedSurface([
+      { url: "https://app.test/feed", title: "Feed", bodyText: "feed content", canScrollDown: true, scrollY: 0 },
+      { url: "https://app.test/feed", title: "Feed", bodyText: "feed content", canScrollDown: true, scrollY: 600 },
+    ], { advanceOnWait: true });
+
+    const result = await runBrowserOperatorLoop({ goal: "search for the secret widget", surface, maxScrolls: 1 });
+
+    assert.equal(result.status, "blocked");
+    assert.deepEqual(surface.acts.map((action) => action.kind), ["scroll"]);
+  });
+
+  it("requires expectText to appear before claiming success", async () => {
+    const missing = new ScriptedSurface([
+      { url: "https://app.test/login", title: "Login", bodyText: "Sign in", elements: [{ index: 1, role: "button", name: "Sign in", value: "", ops: ["CLICK"] }] },
+      { url: "https://app.test/home", title: "Home", bodyText: "dashboard" },
+    ]);
+    const guarded = await runBrowserOperatorLoop({ goal: "click Sign in", surface: missing, expectText: "welcome back" });
+    assert.notEqual(guarded.status, "goal-reached");
+
+    const present = new ScriptedSurface([
+      { url: "https://app.test/login", title: "Login", bodyText: "Sign in", elements: [{ index: 1, role: "button", name: "Sign in", value: "", ops: ["CLICK"] }] },
+      { url: "https://app.test/home", title: "Home", bodyText: "Welcome back" },
+    ]);
+    const verified = await runBrowserOperatorLoop({ goal: "click Sign in", surface: present, expectText: "welcome back" });
+    assert.equal(verified.status, "goal-reached");
   });
 });

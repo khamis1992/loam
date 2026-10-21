@@ -245,12 +245,14 @@ export function goalSatisfied(
       return observation.elements.some((element) => element.value.toLowerCase().includes(intent.text.toLowerCase()));
     }
     case "select": {
+      // Only the element VALUE proves a native selection was made; matching the
+      // element name would let a button that shares the option label pre-satisfy.
       const wanted = tokens(intent.option);
-      if (wanted.length > 0 && observation.elements.some((element) => wanted.every((token) => elementHaystack(element).includes(token)))) {
+      if (wanted.length > 0 && observation.elements.some((element) => wanted.every((token) => element.value.toLowerCase().includes(token)))) {
         return true;
       }
       if (!requireAction) return false;
-      // A select that resolved through a click fallback may land on a new page
+      // A select resolved through the click fallback may land on a new page
       // whose copy does not repeat the option label.
       return opts.before !== undefined && opts.before.url !== observation.url;
     }
@@ -351,7 +353,7 @@ export function planOperatorAction(
   if (intent.kind === "search" || intent.kind === "type") {
     const payload = intent.kind === "search" ? intent.query : intent.text;
     const wantsInput = rankElements(observation.elements, tokens(payload), "type").filter(isTextInput).filter((element) => supports(element, "TYPE_TEXT"));
-    const input = wantsInput[0] ?? observation.elements.find(isTextInput);
+    const input = wantsInput[0] ?? observation.elements.find((element) => isTextInput(element) && supports(element, "TYPE_TEXT"));
     if (input && !input.value.toLowerCase().includes(payload.toLowerCase())) {
       const action: OperatorAction = {
         kind: "type",
