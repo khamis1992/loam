@@ -83,6 +83,9 @@ import { handleAutoVideoRoutes } from "./routes/autoVideo.js";
 import { handleLiveViewRoutes } from "./routes/liveView.js";
 import { handleTranscriptRoutes } from "./routes/transcript.js";
 import { handleMarketplaceRoutes } from "./routes/marketplace.js";
+import { handlePersonalizationRoutes } from "./routes/personalization.js";
+import { handleApiKeysRoutes } from "./routes/apiKeys.js";
+import { handleDataControlsRoutes } from "./routes/dataControls.js";
 import { isValidTimezone } from "./scheduleTime.js";
 import { getWorkModesUi, normalizeWorkMode, resolveCompanionCapabilities } from "./companionGateway.js";
 import { DEVICE_TEMPLATES, deviceManager, getDevice, listDevices, readJournal } from "./companionDevices.js";
@@ -1647,6 +1650,9 @@ loadAgents();
         // Bots marketplace: must precede the /api/agents/:id prefix block so
         // /api/agents/from-catalog is matched by the exact-path handler.
         if (await handleMarketplaceRoutes(req, res, p)) return;
+        if (await handlePersonalizationRoutes(req, res, p)) return;
+        if (await handleApiKeysRoutes(req, res, p)) return;
+        if (await handleDataControlsRoutes(req, res, p)) return;
 
         if (p.startsWith("/api/agents/")) {
           const id = decodeURIComponent(p.slice("/api/agents/".length));
