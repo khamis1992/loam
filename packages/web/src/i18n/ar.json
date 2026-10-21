@@ -708,5 +708,18 @@
   "Failed": "فاشلة",
   "Routine": "روتين",
   "Approval": "موافقة",
-  "Notification": "إشعار"
+  "Notification": "إشعار",
+  "Info": "معلومات",
+  "Pin": "تثبيت",
+  "Unpin": "إلغاء التثبيت",
+  "Hide": "إخفاء",
+  "Unhide": "إظهار",
+  "Rename agent": "إعادة تسمية الوكيل",
+  "Delete {name} permanently? This cannot be undone.": "حذف {name} نهائيًا؟ لا يمكن التراجع عن هذا الإجراء.",
+  "Computer preview": "معاينة الكمبيوتر",
+  "No live preview yet": "لا توجد معاينة مباشرة بعد",
+  "Click for full screen": "انقر للعرض بملء الشاشة",
+  "Open full screen": "فتح بملء الشاشة",
+  "Live preview placeholder": "بديل المعاينة المباشرة",
+  "The computer stream will appear here once the agent connects to a computer.": "ستظهر صورة الكمبيوتر هنا عندما يتصل الوكيل بجهاز."
 }

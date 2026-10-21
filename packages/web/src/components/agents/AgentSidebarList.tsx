@@ -8,22 +8,17 @@ import {
   ChevronRight,
   Users,
   MoreHorizontal,
-  Copy,
-  Pencil,
-  Archive,
-  ExternalLink,
   Loader2,
   AlertCircle,
   Store,
   Kanban,
   MessageSquare,
-  Eye,
-  EyeOff,
 } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { Button, Spinner } from '@/components/ui/Button';
 import type { AgentCardAgent } from './AgentCard';
+import { AgentContextMenu } from './AgentContextMenu';
 import { GrokBotBadge, isGrokBotAgent } from './GrokBotBadge';
 import { AgentAvatar } from './AgentAvatar';
 import { getBuiltInAgents } from './BuiltInAgentCard';
@@ -67,6 +62,14 @@ interface AgentSidebarListProps {
   onDuplicate: (agent: AgentWithMeta) => void;
   onArchive: (agent: AgentWithMeta) => void;
   onHideAgent?: (agent: AgentWithMeta, hidden: boolean) => void;
+  /** Opens the info pane for the agent. */
+  onInfo?: (agent: AgentWithMeta) => void;
+  /** Opens the rename dialog for the agent. */
+  onRename?: (agent: AgentWithMeta) => void;
+  /** Permanently deletes the agent (confirm is shown by the context menu). */
+  onDeleteAgent?: (agent: AgentWithMeta) => void;
+  /** Optional pin handler; without it the menu item stays a stub. */
+  onTogglePin?: (agent: AgentWithMeta) => void;
   onStartBuiltIn?: (agent: AgentCardAgent) => void;
   unreadById?: Record<string, UnreadInfo>;
   teamRunsLoading?: boolean;
@@ -100,6 +103,10 @@ export function AgentSidebarList({
   onDuplicate,
   onArchive,
   onHideAgent,
+  onInfo,
+  onRename,
+  onDeleteAgent,
+  onTogglePin,
   onStartBuiltIn,
   unreadById,
   groups = [],
@@ -125,7 +132,6 @@ export function AgentSidebarList({
     agent: AgentWithMeta;
   } | null>(null);
   const [childrenByParent, setChildrenByParent] = useState<Record<string, ChildAgent[]>>({});
-  const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const trimmedSearch = search.trim();
@@ -210,22 +216,6 @@ export function AgentSidebarList({
   );
   const myAgentsUnread = sumUnread(myAgentIds, unreadById);
   const hiddenUnread = sumUnread(searchHiddenAgents.map((a) => a.id), unreadById);
-
-  useEffect(() => {
-    if (!contextMenu) return;
-    const onClick = (e: MouseEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setContextMenu(null);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setContextMenu(null);
-    };
-    document.addEventListener('mousedown', onClick);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [contextMenu]);
 
   const toggleSection = (id: string) => {
     setSections((prev) => {
@@ -483,62 +473,22 @@ export function AgentSidebarList({
       </div>
 
       {contextMenu && (
-        <div
-          ref={menuRef}
-          className="fixed z-50 min-w-[160px] rounded-card border border-border-main bg-bg-menu py-1 shadow-menu"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-        >
-          <ContextItem
-            icon={<ExternalLink className="size-4" />}
-            label={t('Open')}
-            onClick={() => {
-              onSelect(contextMenu.agent);
-              setContextMenu(null);
-            }}
-          />
-          <ContextItem
-            icon={<Pencil className="size-4" />}
-            label={t('Edit')}
-            onClick={() => {
-              onEdit(contextMenu.agent);
-              setContextMenu(null);
-            }}
-          />
-          <ContextItem
-            icon={<Copy className="size-4" />}
-            label={t('Duplicate')}
-            onClick={() => {
-              onDuplicate(contextMenu.agent);
-              setContextMenu(null);
-            }}
-          />
-          {contextMenu.agent.hiddenAt ? (
-            <ContextItem
-              icon={<Eye className="size-4" />}
-              label={t('Unhide')}
-              onClick={() => {
-                onHideAgent?.(contextMenu.agent, false);
-                setContextMenu(null);
-              }}
-            />
-          ) : (
-            <ContextItem
-              icon={<EyeOff className="size-4" />}
-              label={t('Hide')}
-              onClick={() => {
-                onHideAgent?.(contextMenu.agent, true);
-                setContextMenu(null);
-              }}
-            />
-          )}
-          <div className="my-1 border-t border-border-main" />
-          <ContextItem
-            icon={<Archive className="size-4" />}
-            label={t('Archive')}
-            className="text-function-error"
-            onClick={() => handleArchive(contextMenu.agent)}
-          />
-        </div>
+        <AgentContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          agentName={contextMenu.agent.name}
+          hidden={!!contextMenu.agent.hiddenAt}
+          onOpen={() => onSelect(contextMenu.agent)}
+          onInfo={() => onInfo?.(contextMenu.agent)}
+          onRename={() => onRename?.(contextMenu.agent)}
+          onTogglePin={() => onTogglePin?.(contextMenu.agent)}
+          onToggleHide={() => onHideAgent?.(contextMenu.agent, !contextMenu.agent.hiddenAt)}
+          onEdit={() => onEdit(contextMenu.agent)}
+          onDuplicate={() => onDuplicate(contextMenu.agent)}
+          onArchive={() => handleArchive(contextMenu.agent)}
+          onDelete={() => onDeleteAgent?.(contextMenu.agent)}
+          onClose={() => setContextMenu(null)}
+        />
       )}
     </aside>
   );
@@ -682,32 +632,6 @@ function RowAccent() {
       style={{ backgroundColor: 'var(--activity-indicator-running)' }}
       aria-hidden
     />
-  );
-}
-
-function ContextItem({
-  icon,
-  label,
-  onClick,
-  className,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-  className?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[
-        'flex w-full items-center gap-2 px-3 py-2 text-sm text-text-primary hover:bg-fill-hover',
-        className ?? '',
-      ].join(' ')}
-    >
-      <span className="text-text-secondary">{icon}</span>
-      {label}
-    </button>
   );
 }
 
