@@ -88,3 +88,105 @@ export async function patchSlideCharts(zip:JSZip,file:string,slide:any,current:S
   const types=await part(zip,'[Content_Types].xml');for(const [name,type]of [[chartFile,'application/vnd.openxmlformats-officedocument.drawingml.chart+xml'],[bookFile,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']]){const n=types.createElementNS('http://schemas.openxmlformats.org/package/2006/content-types','Override');n.setAttribute('PartName','/'+name);n.setAttribute('ContentType',type);types.documentElement.appendChild(n);}zip.file('[Content_Types].xml',serialize(types));
  }
 }
+
+// NOTICE: The bullet parsing section below is an original clean-room TypeScript
+// model inspired by DeckCraft-style "bullets to native charts/diagrams" flows.
+// It turns plain bullet lists into the same series/categories data model used
+// above (see SourceChart), plus a simple node/edge diagram model.
+// No third-party code is copied.
+
+export type ChartKind='bar'|'line'|'pie'|'area';
+export type BulletChart={kind:ChartKind;title:string;categories:string[];series:Array<{name:string;values:number[]}>};
+const CHART_KINDS=new Set<ChartKind>(['bar','line','pie','area']);
+const BULLET_MARKER=/^\s*(?:[-*•–—]|\d+[.)])\s+/;
+const chartFail=(message:string):never=>{throw new StudioError(message);};
+function chartLines(input:unknown):string[]{
+  const raw=typeof input==='string'?input.split(/\r?\n/):Array.isArray(input)?input:chartFail('Expected bullet lines as a string or string array');
+  const lines:string[]=[];
+  for(const line of raw){if(typeof line!=='string'||line.length>1000)chartFail('Invalid bullet line');const text=line.trim();if(text)lines.push(text);}
+  if(!lines.length||lines.length>400)chartFail('Expected 1..400 non-empty bullet lines');
+  return lines;
+}
+function chartValue(token:string):number{
+  const clean=token.trim().replace(/%$/,'').replace(/^\+/,'');
+  if(!clean)chartFail('Empty chart value');
+  const value=Number(clean);
+  if(!Number.isFinite(value)||Math.abs(value)>1e12)chartFail('Invalid chart value: '+token);
+  return value;
+}
+export function parseBulletChartData(input:unknown,opts?:{kind?:ChartKind;title?:string;seriesName?:string}):BulletChart{
+  if(opts?.kind!==undefined&&!CHART_KINDS.has(opts.kind))chartFail('Invalid chart kind');
+  let kind:ChartKind=opts?.kind??'bar',title=opts?.title??'',categories:string[]|null=null;
+  const rows:Array<{name:string;values:number[]}>=[];
+  for(const line of chartLines(input)){
+    const body=line.replace(BULLET_MARKER,'');
+    const colon=body.indexOf(':');
+    if(colon<0){rows.push({name:body.trim(),values:[chartValue(body.trim())]});continue;}
+    const head=body.slice(0,colon).trim(),headKey=head.toLowerCase(),tail=body.slice(colon+1).trim();
+    if(!head||!tail)chartFail('Invalid chart bullet: '+line);
+    if(headKey==='title'){if(title)chartFail('Duplicate chart title');title=tail;if(tail.length>300)chartFail('Chart title too long');continue;}
+    if(headKey==='type'||headKey==='chart'){if(!CHART_KINDS.has(tail.toLowerCase() as ChartKind))chartFail('Unknown chart type: '+tail);kind=tail.toLowerCase() as ChartKind;continue;}
+    if(headKey==='categories'||headKey==='labels'||headKey==='x'){if(categories)chartFail('Duplicate chart categories');categories=tail.split(',').map(v=>v.trim());if(!categories.length||categories.some(v=>!v||v.length>500))chartFail('Invalid chart categories');continue;}
+    const values=tail.split(',').map(chartValue);
+    if(!values.length||values.length>200||head.length>500)chartFail('Invalid chart series: '+line);
+    rows.push({name:head,values});
+  }
+  if(!rows.length)chartFail('No chart data in bullets');
+  const names=new Set(rows.map(r=>r.name));if(names.size!==rows.length)chartFail('Duplicate chart series names');
+  const single=rows.every(r=>r.values.length===1);
+  const result:BulletChart=single&&!categories
+    ?{kind,title,categories:rows.map(r=>r.name),series:[{name:opts?.seriesName||title||'Values',values:rows.map(r=>r.values[0]!)}]}
+    :(()=>{const length=rows[0]!.values.length;
+      if(rows.some(r=>r.values.length!==length))chartFail('Chart series must have equal lengths');
+      if(categories&&categories.length!==length)chartFail('Categories/series length mismatch');
+      return {kind,title,categories:categories??Array.from({length},(_,i)=>String(i+1)),series:rows.map(r=>({name:r.name,values:r.values}))};})();
+  if(result.kind==='pie'&&result.series.length>1)chartFail('Pie charts support one series');
+  if(result.categories.length>200||result.series.length>12)chartFail('Chart dimensions exceed limits');
+  return result;
+}
+
+export type DiagramLayout='flow'|'hierarchy'|'sequential';
+export type DiagramNode={id:string;label:string};
+export type DiagramEdge={from:string;to:string};
+export type BulletDiagram={title:string;layout:DiagramLayout;nodes:DiagramNode[];edges:DiagramEdge[]};
+const ARROW=/(?:=>|->|→|⟶)/;
+export function parseBulletDiagram(input:unknown,opts?:{title?:string}):BulletDiagram{
+  let title=opts?.title??'';
+  const items=chartLines(input).map(line=>{
+    const indent=/^\s*/.exec(line)![0].replace(/\t/g,'  ').length;
+    const label=(BULLET_MARKER.test(line)?line.replace(BULLET_MARKER,''):line).trim();
+    if(!label)chartFail('Empty diagram step');
+    if(label.length>300)chartFail('Diagram label too long');
+    if(/^title:/i.test(label)){if(title)chartFail('Duplicate diagram title');title=label.slice(6).trim();if(!title)chartFail('Missing diagram title');return null;}
+    return {depth:Math.floor(indent/2),label};
+  }).filter((l):l is {depth:number;label:string}=>l!==null);
+  if(!items.length)chartFail('No diagram steps');
+  const nodes:DiagramNode[]=[],edges:DiagramEdge[]=[];
+  const flow=items.some(i=>ARROW.test(i.label)),hierarchy=!flow&&new Set(items.map(i=>i.depth)).size>1;
+  const addItem=(label:string):string=>{
+    if(nodes.length>=60)chartFail('Diagram exceeds 60 nodes');
+    const id='n'+(nodes.length+1);nodes.push({id,label});return id;
+  };
+  if(flow){
+    const byLabel=new Map<string,string>();
+    const nodeFor=(label:string):string=>{const found=byLabel.get(label);if(found)return found;const id=addItem(label);byLabel.set(label,id);return id;};
+    for(const item of items){
+      const parts=item.label.split(ARROW).map(p=>p.trim());
+      if(parts.length===1)nodeFor(item.label);
+      else for(let i=0;i+1<parts.length;i++){const from=nodeFor(parts[i]!),to=nodeFor(parts[i+1]!);if(from!==to)edges.push({from,to});}
+    }
+  }else if(hierarchy){
+    const stack:Array<{depth:number;id:string}>=[];
+    for(const item of items){
+      while(stack.length&&stack[stack.length-1]!.depth>=item.depth)stack.pop();
+      const id=addItem(item.label);
+      if(stack.length)edges.push({from:stack[stack.length-1]!.id,to:id});
+      stack.push({depth:item.depth,id});
+    }
+  }else{
+    let prev:string|null=null;
+    for(const item of items){const id=addItem(item.label);if(prev)edges.push({from:prev,to:id});prev=id;}
+  }
+  if(edges.length>120)chartFail('Diagram exceeds 120 edges');
+  return {title,layout:flow?'flow':hierarchy?'hierarchy':'sequential',nodes,edges};
+}
