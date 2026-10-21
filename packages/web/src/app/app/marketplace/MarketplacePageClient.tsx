@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import {
   ChevronDown,
   Copy,
-  ExternalLink,
   LayoutGrid,
   List,
   Loader2,
@@ -28,6 +27,7 @@ import {
 } from './marketplace-shared';
 import { MarketplaceBotTable } from './MarketplaceBotTable';
 import { MarketplaceBotCard } from './MarketplaceBotCard';
+import { EntryAttribution } from './EntryAttribution';
 
 type Toast = { kind: 'success' | 'error'; text: string; agentId?: string } | null;
 
@@ -331,7 +331,9 @@ export default function MarketplacePageClient() {
           </a>
         </p>
         <p>
-          x.ai marketplace entries link back to their original listing and are all rights reserved; Loam never rehosts their prompts.
+          {t(
+            'x.ai marketplace entries link back to their original listing and are all rights reserved; Loam never rehosts their prompts.',
+          )}
         </p>
       </footer>
 
@@ -595,60 +597,7 @@ function MarketplaceDetail({
           </section>
         )}
 
-        <section className="mt-7">
-          <h3 className="border-b border-border-main pb-2 text-sm font-semibold text-text-primary">{t('Source')}</h3>
-          <div className="mt-3 space-y-2 text-[12.5px] leading-6 text-text-tertiary">
-            {entry.source.includes('botdirectory') && (
-              <p>
-                {t('Prompt contributed by')}{' '}
-                {entry.author.name ?? t('a botdirectory contributor')}
-                {entry.author.url && (
-                  <>
-                    {' '}
-                    <a href={entry.author.url} target="_blank" rel="noreferrer" className="underline hover:text-text-secondary">
-                      {t('profile')}
-                    </a>
-                  </>
-                )}
-                {' · '}
-                <a href={entry.sourceUrl} target="_blank" rel="noreferrer" className="underline hover:text-text-secondary">
-                  botdirectory.ai
-                </a>
-                {' · MIT'}
-                {entry.author.scoutedBy && <> · {t('scouted by {name}', { name: entry.author.scoutedBy })}</>}
-              </p>
-            )}
-            {entry.source.includes('xai') && (
-              <p>
-                {t('By {author}', { author: entry.author.name ?? authorLine(entry) })}
-                {' · '}
-                <a href={entry.sourceUrl} target="_blank" rel="noreferrer" className="underline hover:text-text-secondary">
-                  x.ai {t('listing')}
-                  <ExternalLink className="ms-1 inline size-3" aria-hidden />
-                </a>
-                {entry.addHref && (
-                  <>
-                    {' · '}
-                    <a href={entry.addHref} target="_blank" rel="noreferrer" className="underline hover:text-text-secondary">
-                      {t('Add on x.ai')}
-                    </a>
-                  </>
-                )}
-                {' · '}
-                {t('all rights reserved')}
-              </p>
-            )}
-            {entry.alsoAt?.map((url) => (
-              <p key={url}>
-                {t('Also listed at')}{' '}
-                <a href={url} target="_blank" rel="noreferrer" className="underline hover:text-text-secondary">
-                  {url}
-                </a>
-              </p>
-            ))}
-            <p className="font-mono text-[11.5px] text-text-tertiary">{entry.license}</p>
-          </div>
-        </section>
+        <EntryAttribution entry={entry} />
 
         {suggestions.length > 0 && (
           <section className="mt-7 pb-8">

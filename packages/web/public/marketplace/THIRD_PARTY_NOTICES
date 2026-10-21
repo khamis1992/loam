@@ -34,9 +34,24 @@ x.ai marketplace
 ================
 Entries that came from https://x.ai/bot/marketplace are creator-authored and
 published without a license. Loam keeps their names, short descriptions,
-categories and avatars only for the personal catalog shipped with this build,
-links every entry back to its original x.ai listing, and does not rehost
-prompts. Avatars remain the property of their creators. All rights reserved.
+categories and avatars only for the catalog bundled with this build, links
+every entry back to its original x.ai listing, and does not rehost prompts.
+Avatars remain the property of their creators. All rights reserved.
+
+BUILD NOTE — internal only
+--------------------------
+x.ai marketplace content in this catalog is INTERNAL-ONLY. It was collected
+for a personal/internal build (MARKETPLACE_SPEC §5, option (a)) and must NOT
+be shipped in any public or redistributed build with the content bundled.
+A public distribution must instead follow option (b): ship metadata only
+(name, short description, category, links) and fetch the remaining details
+at runtime, or ship the botdirectory-only catalog. x.ai prompts are never
+stored or rehosted: detail panels link back to the original listing and its
+"Add on x.ai" share link, so configurations behind share links stay linked,
+never rehosted. Attribution for every x.ai entry (creator + source URL +
+"all rights reserved") is rendered in the detail panel's Source section,
+and per-entry botdirectory attribution (contributor + source URL + MIT)
+is rendered there as well.
 
 
 Fonts
