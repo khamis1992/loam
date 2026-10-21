@@ -65,6 +65,8 @@ export interface UserMessage extends Base {
     /** MF4: per-task "Approve for me" toggle carried with each message. */
     approveForMe?: boolean;
     worktreeEnabled?: boolean;
+    /** Option 18: composer model tier ("max" | "standard" | "lite" | "flex"). */
+    modelTier?: string;
   };
 }
 

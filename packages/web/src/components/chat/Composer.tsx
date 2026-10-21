@@ -11,7 +11,7 @@ import {
 } from 'react';
 import {
   ArrowUp, Plus, ShieldCheck, Laptop, FolderGit, Folder, GitBranch, Square, X, ChevronDown,
-  Mic, Github, Mail, Calendar, Loader2, Wrench, Plug, Bot,
+  Mic, Github, Mail, Calendar, Loader2, Wrench, Plug, Bot, Check,
 } from 'lucide-react';
 import { VoiceIcon } from '@/components/home/VoiceIcon';
 import clsx from 'clsx';
@@ -42,10 +42,16 @@ interface ComposerProps {
   /** MF4: "Approve for me" chip — auto-approve the current task's sensitive actions. */
   approveForMe?: boolean;
   onToggleApproveForMe?: () => void;
+  /** Option 18: composer model tier sent with the task. */
+  modelTier?: string;
+  /** Option 17: project id sent with the task (sets the task's project). */
+  projectId?: string | null;
+  /** Option 17: start the task in a fresh git worktree under the bound folder. */
+  worktreeEnabled?: boolean;
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { onSend, onStop, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode, placeholder, approveForMe, onToggleApproveForMe }: ComposerProps,
+  { onSend, onStop, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode, placeholder, approveForMe, onToggleApproveForMe, modelTier, projectId, worktreeEnabled }: ComposerProps,
   ref: Ref<ComposerHandle>,
 ) {
   const router = useRouter();
@@ -138,6 +144,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     if (selectedLoamMode) extData.loamMode = selectedLoamMode;
     if (attachedSkills.length > 0) extData.skills = attachedSkills;
     if (attachedConnectors.length > 0) extData.connectors = attachedConnectors;
+    if (modelTier) extData.modelTier = modelTier;
+    if (projectId) extData.projectId = projectId;
+    if (worktreeEnabled) extData.worktreeEnabled = true;
     await onSend(text.trim(), mode, files, Object.keys(extData).length > 0 ? extData : undefined);
     setText('');
     setFiles([]);
@@ -607,6 +616,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   );
 });
 
+export interface ProjectOption {
+  id: string;
+  name: string;
+  folder?: string | null;
+}
+
 interface ComposerContextBarProps {
   home?: boolean;
   projectPath?: string | null;
@@ -614,6 +629,12 @@ interface ComposerContextBarProps {
   onChooseProject?: () => void;
   onSelectDownloads?: () => void;
   branch?: string;
+  /** Option 17: projects from GET /api/projects for the chip popover. */
+  projects?: ProjectOption[];
+  projectId?: string | null;
+  onSelectProject?: (project: ProjectOption | null) => void;
+  worktreeEnabled?: boolean;
+  onWorktreeChange?: (value: boolean) => void;
 }
 
 function basename(p?: string | null): string {
@@ -633,23 +654,98 @@ export function ComposerContextBar({
   onChooseProject,
   onSelectDownloads,
   branch,
+  projects,
+  projectId,
+  onSelectProject,
+  worktreeEnabled,
+  onWorktreeChange,
 }: ComposerContextBarProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [menuOpen]);
+
+  const hasPicker = Boolean(onSelectProject);
+  const openChip = () => {
+    if (hasPicker) setMenuOpen((v) => !v);
+    else onChooseProject?.();
+  };
+  const selectedProject = hasPicker && projectId ? (projects ?? []).find((p) => p.id === projectId) ?? null : null;
+  const label = selectedProject
+    ? selectedProject.name
+    : projectPath ? basename(projectPath) : t('Choose project');
+
   return (
     <div className="mb-2 flex flex-wrap items-center gap-4 text-xs text-text-secondary">
       <span className="flex items-center gap-1">
         <Laptop className="size-3.5" /> {t('This PC')}
       </span>
-      <button
-        type="button"
-        onClick={onChooseProject}
-        className={clsx(
-          'flex items-center gap-1 rounded-control px-1 transition-colors hover:bg-fill-hover',
-          activeFolder === 'project' && 'bg-fill-hover text-text-primary',
+      <div className="relative" ref={menuRef}>
+        <button
+          type="button"
+          onClick={openChip}
+          aria-haspopup={hasPicker ? 'menu' : undefined}
+          aria-expanded={hasPicker ? menuOpen : undefined}
+          className={clsx(
+            'flex items-center gap-1 rounded-control px-1 transition-colors hover:bg-fill-hover',
+            (activeFolder === 'project' || selectedProject) && 'bg-fill-hover text-text-primary',
+          )}
+        >
+          <FolderGit className="size-3.5" />
+          <span className="max-w-[160px] truncate">{label}</span>
+          {hasPicker && <ChevronDown className="size-3 shrink-0" />}
+        </button>
+        {menuOpen && (
+          <div
+            role="menu"
+            className="absolute bottom-full left-0 z-30 mb-1 min-w-[220px] max-w-[280px] rounded-card border border-border-main bg-bg-menu p-1 shadow-lg"
+          >
+            {(projects ?? []).length === 0 && (
+              <p className="px-2 py-1.5 text-xs text-text-tertiary">{t('No projects yet. Create one in Projects.')}</p>
+            )}
+            {(projects ?? []).map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                role="menuitem"
+                onClick={() => { setMenuOpen(false); onSelectProject?.(p); }}
+                className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-xs hover:bg-fill-hover"
+              >
+                <FolderGit className="size-3.5 shrink-0 text-text-tertiary" />
+                <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                {p.id === projectId && <Check className="size-3.5 shrink-0" />}
+              </button>
+            ))}
+            {(projects ?? []).length > 0 && <div className="my-1 border-t border-border-main" />}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setMenuOpen(false); onChooseProject?.(); }}
+              className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-xs hover:bg-fill-hover"
+            >
+              <Folder className="size-3.5 shrink-0 text-text-tertiary" />
+              {t('Use a folder')}
+            </button>
+            {projectId && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setMenuOpen(false); onSelectProject?.(null); }}
+                className="flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-xs hover:bg-fill-hover"
+              >
+                <X className="size-3.5 shrink-0 text-text-tertiary" />
+                {t('Clear project')}
+              </button>
+            )}
+          </div>
         )}
-      >
-        <FolderGit className="size-3.5" />
-        {projectPath ? basename(projectPath) : t('Choose project')}
-      </button>
+      </div>
       <button
         type="button"
         onClick={onSelectDownloads}
@@ -668,8 +764,14 @@ export function ComposerContextBar({
           <span className="truncate">{truncateBranch(branch)}</span>
         </span>
       )}
-      <label className="flex cursor-not-allowed items-center gap-1 text-text-disable">
-        <input type="checkbox" disabled className="size-3.5" /> {t('Worktree')}
+      <label className={clsx('flex items-center gap-1', onWorktreeChange ? 'cursor-pointer' : 'cursor-not-allowed text-text-disable')}>
+        <input
+          type="checkbox"
+          disabled={!onWorktreeChange}
+          checked={Boolean(worktreeEnabled)}
+          onChange={(e) => onWorktreeChange?.(e.target.checked)}
+          className="size-3.5"
+        /> {t('Worktree')}
       </label>
     </div>
   );

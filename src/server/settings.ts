@@ -18,6 +18,10 @@ export interface Settings {
    *  and the page opened when browser_open has no URL. */
   browserHeadless?: boolean;
   browserHomepage?: string;
+  /** Option 18 Flex tier: OpenAI-compatible provider base URL (the API key itself lives in the secrets vault). */
+  flexBaseUrl?: string;
+  /** Option 18 Flex tier: model id to call through the Flex provider. */
+  flexModel?: string;
 }
 
 const FILE = path.join(DATA_DIR, "settings.json");
@@ -37,6 +41,8 @@ export function loadSettings(): Settings {
         ...(typeof parsed.githubRepo === "string" ? { githubRepo: parsed.githubRepo } : {}),
         ...(typeof parsed.browserHeadless === "boolean" ? { browserHeadless: parsed.browserHeadless } : {}),
         ...(typeof parsed.browserHomepage === "string" ? { browserHomepage: parsed.browserHomepage } : {}),
+        ...(typeof parsed.flexBaseUrl === "string" ? { flexBaseUrl: parsed.flexBaseUrl } : {}),
+        ...(typeof parsed.flexModel === "string" ? { flexModel: parsed.flexModel } : {}),
       };
     }
   } catch {
@@ -65,6 +71,8 @@ export function updateSettings(patch: Partial<Settings>): Settings {
   if (typeof patch.autoApprove === "boolean") settings.autoApprove = patch.autoApprove;
   if (typeof patch.browserHeadless === "boolean") settings.browserHeadless = patch.browserHeadless;
   if (patch.browserHomepage !== undefined) settings.browserHomepage = typeof patch.browserHomepage === "string" ? patch.browserHomepage.trim() : "";
+  if (typeof patch.flexBaseUrl === "string") settings.flexBaseUrl = patch.flexBaseUrl.trim();
+  if (typeof patch.flexModel === "string") settings.flexModel = patch.flexModel.trim();
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     const tmp = `${FILE}.tmp`;

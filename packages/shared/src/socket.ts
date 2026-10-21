@@ -55,6 +55,10 @@ export interface UserMessage extends Base {
     workMode?: string;
     executionTarget?: { kind: 'sandbox' | 'desktop' };
     desktopBinding?: { deviceId: string; folderPath: string };
+    /** Option 17: start the task in a fresh git worktree under the bound folder. */
+    worktreeEnabled?: boolean;
+    /** Option 18: composer model tier ("max" | "standard" | "lite" | "flex"). */
+    modelTier?: string;
   };
 }
 

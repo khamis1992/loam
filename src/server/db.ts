@@ -24,6 +24,8 @@ export interface Project {
   id: string;
   name: string;
   instruction?: string;
+  /** Absolute folder on the machine where Loam runs (option 17 context chips). */
+  folder?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -138,8 +140,8 @@ export function createProject(name: string, instruction?: string): Project {
 }
 export function getProject(id: string): Project | undefined { return get<Project>("projects", id); }
 export function listProjects(): Project[] { return all<Project>("projects").sort((a,b) => b.updatedAt.localeCompare(a.updatedAt)); }
-export function updateProject(id: string, patch: {name?: string; instruction?: string}): Project | undefined {
-  return transaction(() => { const p = getProject(id); if (!p) return; if (patch.name?.trim()) p.name = patch.name.trim().slice(0,80); if (typeof patch.instruction === "string") p.instruction = patch.instruction; p.updatedAt = new Date().toISOString(); put("projects",p); return p; });
+export function updateProject(id: string, patch: {name?: string; instruction?: string; folder?: string}): Project | undefined {
+  return transaction(() => { const p = getProject(id); if (!p) return; if (patch.name?.trim()) p.name = patch.name.trim().slice(0,80); if (typeof patch.instruction === "string") p.instruction = patch.instruction; if (typeof patch.folder === "string") { if (patch.folder.trim()) p.folder = patch.folder.trim(); else delete p.folder; } p.updatedAt = new Date().toISOString(); put("projects",p); return p; });
 }
 export function deleteProjectR(id: string): boolean {
   return transaction(() => { const removed = remove("projects",id); for (const t of listTasks(id)) { t.projectId = null; put("tasks",t); } return removed; });
@@ -154,6 +156,18 @@ export function addSchedule(prompt: string, intervalSeconds: number, agentId?: s
 }
 export function setScheduleEnabled(id: string, enabled: boolean): boolean {
   return transaction(() => { const s = get<Schedule>("schedules", id); if (!s) return false; s.enabled = enabled; if (enabled && s.nextRunAt && Date.parse(s.nextRunAt) < Date.now()) s.nextRunAt = new Date(Date.now() + s.intervalSeconds * 1000).toISOString(); put("schedules", s); return true; });
+}
+/** Option 22: edit a routine's prompt and/or enabled state; re-arms nextRunAt when enabled. */
+export function updateSchedule(id: string, patch: { prompt?: string; enabled?: boolean }): Schedule | undefined {
+  return transaction(() => {
+    const s = get<Schedule>("schedules", id);
+    if (!s) return;
+    if (typeof patch.prompt === "string" && patch.prompt.trim()) s.prompt = patch.prompt.trim();
+    if (typeof patch.enabled === "boolean") s.enabled = patch.enabled;
+    if (s.enabled && (!s.nextRunAt || Date.parse(s.nextRunAt) < Date.now())) s.nextRunAt = new Date(Date.now() + s.intervalSeconds * 1000).toISOString();
+    put("schedules", s);
+    return s;
+  });
 }
 /** Test helper: force a schedule's next run time (scheduler gates). */
 export function setScheduleNextRunAt(id: string, at: string): boolean {

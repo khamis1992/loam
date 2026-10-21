@@ -42,6 +42,8 @@ import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { runAgent } from "./agent/loop.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
 import type { Emit } from "./agent/events.js";
+import { OllamaClient } from "./ollama.js";
+import { flexCredentials } from "./server/modelTiers.js";
 import { startServer, type RunTaskOptions } from "./server/http.js";
 import { appendMessage, appendStep, createTask, getProject, getTask, loadDb, setTaskStatus, listSchedules, setTaskDelegator } from "./server/db.js";
 import { conversationHistory } from "./agent/history.js";
@@ -174,6 +176,11 @@ async function main(): Promise<void> {
     const agent = agentId ? getAgent(agentId) : undefined;
     const chosenModel = opts.model && opts.model.trim().length > 0 ? opts.model : agent?.model ?? settings.model;
     const effectiveCfg = { ...cfg, policy: { ...cfg.policy, allowOutsideWorkspaceRead: false }, workspace: opts.savedRun.workspace, model: chosenModel || cfg.model };
+    // Option 18 Flex: when the chosen model is the vault-backed flex model, run through the
+    // user's own base URL/key with a run-scoped client. The key never leaves this boundary.
+    const flexCreds = opts.model && opts.model.trim().length > 0 ? flexCredentials() : null;
+    const flexModelId = flexCreds ? (flexCreds.model.endsWith(":cloud") ? flexCreds.model : `${flexCreds.model}:cloud`) : "";
+    const runOllama = flexCreds && effectiveCfg.model === flexModelId ? new OllamaClient(cfg.ollamaUrl, { baseUrl: flexCreds.baseUrl, apiKey: flexCreds.apiKey }) : ollama;
 
     // Loam task controls: explicit mode and execution effort.
     const effortBudgets: Record<string, number> = { max: 80, high: 64, medium: 40, low: 16 };
@@ -336,7 +343,7 @@ async function main(): Promise<void> {
       }
       const agentOpts = {
         cfg: effectiveCfg,
-        ollama,
+        ollama: runOllama,
         tools: agentTools,
         emit: wrappedEmit,
         prompt: effectivePrompt,
