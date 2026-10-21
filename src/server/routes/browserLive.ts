@@ -1,10 +1,10 @@
 import http from "node:http";
-import { cfg } from "../config.js";
+import { loadConfig } from "../../config.js";
 import { requireTaskWorkspace } from "../taskWorkspace.js";
 import { latestBrowserFrame } from "../../tools/browserFrames.js";
 import { clearBrowserData, browserSessionsInfo } from "../../tools/browser.js";
 import { getSettings, updateSettings } from "../settings.js";
-import { log } from "../log.js";
+import { log } from "../../log.js";
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
@@ -56,7 +56,7 @@ export async function handleBrowserLiveRoutes(
   if (req.method === "GET" && p === "/api/browser/frame") {
     const taskId = new URL(req.url ?? "/", "http://localhost").searchParams.get("taskId") ?? "";
     try {
-      requireTaskWorkspace(taskId || undefined as unknown as string, cfg.workspace);
+      requireTaskWorkspace(taskId || undefined as unknown as string, loadConfig().workspace);
     } catch (err) {
       sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
       return true;
@@ -69,7 +69,7 @@ export async function handleBrowserLiveRoutes(
     if (req.method === "GET") {
       const s = getSettings();
       sendJson(res, 200, {
-        headless: s.browserHeadless ?? cfg.browser.headless,
+        headless: s.browserHeadless ?? loadConfig().browser.headless,
         homepage: s.browserHomepage ?? "",
         sessions: browserSessionsInfo().length,
       });
@@ -86,7 +86,6 @@ export async function handleBrowserLiveRoutes(
       const patch = (body ?? {}) as { headless?: unknown; homepage?: unknown };
       if (typeof patch.headless === "boolean") {
         updateSettings({ browserHeadless: patch.headless });
-        cfg.browser.headless = patch.headless;
         log.info(`browser settings: headless=${patch.headless} (applies on next browser launch)`);
       }
       if (patch.homepage === "" || isHttpUrl(patch.homepage)) {
@@ -94,7 +93,7 @@ export async function handleBrowserLiveRoutes(
       }
       const s = getSettings();
       sendJson(res, 200, {
-        headless: s.browserHeadless ?? cfg.browser.headless,
+        headless: s.browserHeadless ?? loadConfig().browser.headless,
         homepage: s.browserHomepage ?? "",
       });
       return true;
