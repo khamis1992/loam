@@ -62,6 +62,8 @@ export interface UserMessage extends Base {
     executionTarget?: { kind: "sandbox" | "desktop" };
     desktopBinding?: { deviceId: string; folderPath: string };
     localPermissionMode?: "ask_for_approval" | "approve_for_me" | "full_access";
+    /** MF4: per-task "Approve for me" toggle carried with each message. */
+    approveForMe?: boolean;
     worktreeEnabled?: boolean;
   };
 }
@@ -83,7 +85,8 @@ export interface ResolveLocalExecutionApproval extends Base {
   type: "resolve_local_execution_approval";
   sessionId: string;
   requestId: string;
-  resolution: "approve" | "deny" | string;
+  /** "always" approves once AND persists an allow rule scoped to the task's agent. */
+  resolution: "approve" | "deny" | "always" | string;
   targetActionEventId?: string;
 }
 

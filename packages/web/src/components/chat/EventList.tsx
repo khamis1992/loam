@@ -6,7 +6,7 @@ import { UserBubble } from './ChatBubble';
 import { ToolUsedRow } from './ToolUsedRow';
 import { StatusUpdateRow } from './StatusUpdateRow';
 import { PlanStepRow, PlanUpdateRow } from './PlanStep';
-import { ApprovalCard, ExecutionApprovalCard, type LocalExecutionApprovalRequested } from '@/components/approval';
+import { ApprovalCard, FolderAccessApprovalCard, type LocalExecutionApprovalRequested } from '@/components/approval';
 import { AttachmentCard } from './AttachmentCard';
 import { summarizeTools } from './toolLabels';
 import type { ChatSocket } from '@/services/chatSocket';
@@ -55,7 +55,7 @@ const Row = memo(function Row({ e, sessionId, socket }: { e: RenderableEvent; se
       return <div className="text-sm text-text-tertiary">{t('Stopped')} — {t('send message to continue', { productName: PRODUCT })}</div>;
     case 'folderAccessRequest':
       return (
-        <ApprovalCard
+        <FolderAccessApprovalCard
           request={e}
           onRespond={(decision) => {
             if (decision === 'always') {
@@ -69,9 +69,17 @@ const Row = memo(function Row({ e, sessionId, socket }: { e: RenderableEvent; se
       );
     case 'localExecutionApprovalRequested':
       return (
-        <ExecutionApprovalCard
+        <ApprovalCard
           request={e}
-          onResolve={(resolution) => socket?.resolveLocalExecutionApproval(sessionId, e.requestId, resolution)}
+          onRespond={(decision) => {
+            // 'always' resolves 'approve' AND asks the server to persist a rule
+            // scoped to the task's agent (handled by the resolver endpoint).
+            socket?.resolveLocalExecutionApproval(
+              sessionId,
+              e.requestId,
+              decision === 'deny' ? 'deny' : decision === 'always' ? 'always' : 'approve',
+            );
+          }}
         />
       );
     case 'chatDelta':

@@ -44,6 +44,15 @@ interface Schedule {
   agentId?: string | null;
 }
 
+interface ApprovalRuleRow {
+  id: string;
+  agentId?: string | null;
+  tool: string;
+  pattern?: string | null;
+  decision: 'allow' | 'deny';
+  createdAt: string;
+}
+
 type TabId = 'overview' | 'channels' | 'routines' | 'media' | 'computer' | 'members';
 
 interface AgentInfoPaneProps {
@@ -229,6 +238,117 @@ function OverviewTab({ agent }: { agent: AgentWithMeta }) {
       </div>
 
       <ScratchpadSection agentId={agent.id} />
+      <ApprovalRulesSection agentId={agent.id} />
+    </div>
+  );
+}
+
+/** MF4 option 14: saved approval rules ("always allow") for this agent, with remove. */
+function ApprovalRulesSection({ agentId }: { agentId: string }) {
+  const [rules, setRules] = useState<ApprovalRuleRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${getApiBase()}/api/approval-rules?agentId=${encodeURIComponent(agentId)}`, {
+        headers: await getApiHeaders(),
+      });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data = (await res.json()) as { rules?: ApprovalRuleRow[] };
+      setRules(data.rules ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch(`${getApiBase()}/api/approval-rules?agentId=${encodeURIComponent(agentId)}`, {
+          headers: await getApiHeaders(),
+        });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const data = (await res.json()) as { rules?: ApprovalRuleRow[] };
+        if (mounted) setRules(data.rules ?? []);
+      } catch (e) {
+        if (mounted) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [agentId]);
+
+  const handleRemove = async (id: string) => {
+    setRemovingIds((prev) => new Set(prev).add(id));
+    try {
+      const res = await fetch(`${getApiBase()}/api/approval-rules/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: await getApiHeaders(),
+      });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRemovingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-xs font-medium text-text-tertiary">{t('Approval rules')}</span>
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-text-secondary">
+          <Spinner className="size-4" /> {t('Loading')}
+        </div>
+      ) : error ? (
+        <p className="text-xs text-function-error">{error}</p>
+      ) : rules.length === 0 ? (
+        <p className="text-sm text-text-tertiary">{t('No approval rules yet.')}</p>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {rules.map((rule) => (
+            <li key={rule.id} className="flex items-center gap-2 rounded-card border border-border-main bg-bg-main p-2">
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${
+                  rule.decision === 'allow' ? 'bg-function-success-tsp text-function-success' : 'bg-function-error-tsp text-function-error'
+                }`}
+              >
+                {rule.decision === 'allow' ? t('Always allow') : t('Deny')}
+              </span>
+              <div className="min-w-0 flex-1">
+                <code className="block truncate text-xs text-text-primary">{rule.tool}</code>
+                <p className="text-[11px] text-text-tertiary">
+                  {rule.agentId ? t('This agent') : t('Global')}
+                  {rule.pattern && ` · ${rule.pattern}`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleRemove(rule.id)}
+                disabled={removingIds.has(rule.id)}
+                className="rounded-control p-1 text-text-tertiary hover:bg-fill-hover hover:text-text-primary disabled:opacity-50"
+                aria-label={t('Remove')}
+                title={t('Remove')}
+              >
+                <X className="size-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

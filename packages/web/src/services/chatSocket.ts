@@ -174,7 +174,7 @@ export class ChatSocket {
   resolveLocalExecutionApproval(
     sessionId: string,
     requestId: string,
-    resolution: 'approve' | 'deny',
+    resolution: 'approve' | 'deny' | 'always',
   ) {
     this.emit({
       type: 'resolve_local_execution_approval',

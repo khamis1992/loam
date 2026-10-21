@@ -39,10 +39,13 @@ interface ComposerProps {
   defaultLoamMode?: string;
   resolvedLoamMode?: ModeChipResolved | null;
   placeholder?: string;
+  /** MF4: "Approve for me" chip — auto-approve the current task's sensitive actions. */
+  approveForMe?: boolean;
+  onToggleApproveForMe?: () => void;
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { onSend, onStop, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode, placeholder }: ComposerProps,
+  { onSend, onStop, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode, placeholder, approveForMe, onToggleApproveForMe }: ComposerProps,
   ref: Ref<ComposerHandle>,
 ) {
   const router = useRouter();
@@ -485,7 +488,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
         <button
           type="button"
-          className="hidden items-center gap-1 rounded-full border border-border-main px-2 py-1 text-xs text-text-secondary hover:bg-fill-hover sm:flex"
+          onClick={onToggleApproveForMe}
+          aria-pressed={approveForMe === true}
+          className={clsx(
+            'hidden items-center gap-1 rounded-full border px-2 py-1 text-xs sm:flex',
+            approveForMe ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
+          )}
         >
           <ShieldCheck className="size-3.5" /> {t('Approve for me')}
         </button>
