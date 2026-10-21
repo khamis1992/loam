@@ -8,7 +8,7 @@ Size: S = under 1 day, M = 1–3 days, L = more than 3 days.
 |---|---|---|---|---|
 | 1 | Settings › Shortcuts | Settings nav ("Coming soon") | A static list of shortcuts plus a keybinding registry (Ctrl+K works today) | S |
 | 2 | Settings › Personalization | Settings nav ("Coming soon") | Custom instructions stored in the backend and injected into the agent prompt | M |
-| 3 | Settings › Connectors, plus the composer connector icons (GitHub/Gmail/Calendar +4) | Settings, composer | OAuth flows, token storage, and agent tools for each connector | L |
+| 3 | Settings › Connectors, plus the composer connector icons (GitHub/Gmail/Calendar +4) | Settings, composer | Fixed (OpenCode): real OAuth (authorization-code + PKCE) for GitHub/Gmail/Google Calendar — AES-256-GCM vault token storage, token refresh, connection-gated agent tools (`src/server/connectors`, `src/server/routes/connectors.ts`, `src/tools/connectorTools.ts`), and the Connectors settings pane | ✅ |
 | 4 | Settings › Skills | Settings ("Coming soon") | Skill CRUD UI. A memory-skills MCP already exists in the backend and could be surfaced | M |
 | 5 | Settings › In-App Browser | Settings ("Coming soon") | Electron WebContentsView driven by the agent's browser tool | L |
 | 6 | Settings › Data controls | Settings ("Coming soon") | Export/delete-all endpoints and a training opt-out flag | S–M |
