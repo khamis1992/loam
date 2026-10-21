@@ -187,7 +187,7 @@ export function LiveView({ sessionId, taskId }: LiveViewProps) {
         {frame?.data ? (
           <img
             src={`data:${frame.mediaType};base64,${frame.data}`}
-            alt={frame.title || t('Live screen')}
+            alt={frame.title || (frame.source === 'browser' ? t('Live browser') : t('Live screen'))}
             className="mx-auto max-h-full w-auto max-w-full rounded-card border border-border-main"
           />
         ) : (
