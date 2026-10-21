@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Approval rules + idempotent approval replay (MF4 option 14).
  *
  *  - `approval_rules`: saved permission rules per agent/tool ("always allow").
@@ -122,7 +122,7 @@ function patternMatches(pattern: string | null, argsSource: string): boolean {
 export function matchApprovalRule(input: { agentId?: string | null; tool: string; args?: unknown }): ApprovalRule | undefined {
   const rows = database()
     .prepare("SELECT id, agent_id, tool, pattern, decision, created_at FROM approval_rules WHERE tool = ? ORDER BY created_at DESC, id DESC")
-    .all(input.tool) as RuleRow[];
+    .all(input.tool) as unknown as RuleRow[];
   const argsSource = canonicalArgsJson(input.args ?? {});
   const pick = (scopeAgentId: string | null): ApprovalRule | undefined => {
     for (const row of rows) {
@@ -142,7 +142,7 @@ export function matchApprovalRule(input: { agentId?: string | null; tool: string
 export function listApprovalRules(agentId?: string | null): ApprovalRule[] {
   const rows = database()
     .prepare("SELECT id, agent_id, tool, pattern, decision, created_at FROM approval_rules ORDER BY created_at DESC, id DESC")
-    .all() as RuleRow[];
+    .all() as unknown as RuleRow[];
   return rows
     .map(rowToRule)
     .filter((rule) => (agentId ? rule.agentId === null || rule.agentId === agentId : true));
@@ -160,10 +160,10 @@ export function createApprovalRule(input: { agentId?: string | null; tool: strin
   const db = database();
   const existing = db
     .prepare("SELECT id, agent_id, tool, pattern, decision, created_at FROM approval_rules WHERE tool = ? AND IFNULL(agent_id,'') = IFNULL(?, '') AND IFNULL(pattern,'') = IFNULL(?, '')")
-    .get(tool, agentId, pattern) as RuleRow | undefined;
+    .get(tool, agentId, pattern) as unknown as RuleRow | undefined;
   if (existing) {
     db.prepare("UPDATE approval_rules SET decision = ? WHERE id = ?").run(input.decision, existing.id);
-    const updated = db.prepare("SELECT id, agent_id, tool, pattern, decision, created_at FROM approval_rules WHERE id = ?").get(existing.id) as RuleRow;
+    const updated = db.prepare("SELECT id, agent_id, tool, pattern, decision, created_at FROM approval_rules WHERE id = ?").get(existing.id) as unknown as RuleRow;
     return rowToRule(updated);
   }
   const now = new Date().toISOString();
