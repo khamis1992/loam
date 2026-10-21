@@ -7,19 +7,21 @@ import { desktopApis, desktopEvents, isDesktop } from '@/services/desktopApis';
 import { Row, Section } from '@/components/settings/SettingsDialog';
 
 /** Map an electron-updater status payload (main process) onto the UI state. */
-export function mapUpdaterStatus(raw: unknown): { state: UpdateState; upToDate: boolean; disabled: boolean } {
-  const s = (raw ?? {}) as { state?: string; version?: string; percent?: number; reason?: string };
+export function mapUpdaterStatus(raw: unknown): { state: UpdateState; upToDate: boolean; disabled: boolean; currentVersion?: string } {
+  const s = (raw ?? {}) as { state?: string; version?: string; percent?: number; reason?: string; currentVersion?: string };
+  const currentVersion = typeof s.currentVersion === 'string' && s.currentVersion ? s.currentVersion : undefined;
+  const base = { currentVersion };
   switch (s.state) {
-    case 'checking': return { state: { state: 'checking' }, upToDate: false, disabled: false };
-    case 'available': return { state: { state: 'available', version: s.version }, upToDate: false, disabled: false };
-    case 'downloading': return { state: { state: 'downloading', progress: Math.max(0, Math.min(100, Math.round(s.percent ?? 0))) }, upToDate: false, disabled: false };
-    case 'downloaded': return { state: { state: 'downloaded', version: s.version }, upToDate: false, disabled: false };
-    case 'installing': return { state: { state: 'restarting' }, upToDate: false, disabled: false };
-    case 'error': return { state: { state: 'error', message: s.reason }, upToDate: false, disabled: false };
-    case 'current': return { state: { state: 'idle' }, upToDate: true, disabled: false };
-    case 'channel-mismatch': return { state: { state: 'error', message: s.state }, upToDate: false, disabled: false };
-    case 'disabled': return { state: { state: 'idle' }, upToDate: false, disabled: true };
-    default: return { state: { state: 'idle' }, upToDate: false, disabled: false };
+    case 'checking': return { ...base, state: { state: 'checking' }, upToDate: false, disabled: false };
+    case 'available': return { ...base, state: { state: 'available', version: s.version }, upToDate: false, disabled: false };
+    case 'downloading': return { ...base, state: { state: 'downloading', progress: Math.max(0, Math.min(100, Math.round(s.percent ?? 0))) }, upToDate: false, disabled: false };
+    case 'downloaded': return { ...base, state: { state: 'downloaded', version: s.version }, upToDate: false, disabled: false };
+    case 'installing': return { ...base, state: { state: 'restarting' }, upToDate: false, disabled: false };
+    case 'error': return { ...base, state: { state: 'error', message: s.reason }, upToDate: false, disabled: false };
+    case 'current': return { ...base, state: { state: 'idle' }, upToDate: true, disabled: false };
+    case 'channel-mismatch': return { ...base, state: { state: 'error', message: s.state }, upToDate: false, disabled: false };
+    case 'disabled': return { ...base, state: { state: 'idle' }, upToDate: false, disabled: true };
+    default: return { ...base, state: { state: 'idle' }, upToDate: false, disabled: false };
   }
 }
 
@@ -34,6 +36,7 @@ export function UpdaterSettings() {
   const [upToDate, setUpToDate] = useState(false);
   const [disabled, setDisabled] = useState(false);
   const [storeManaged, setStoreManaged] = useState(false);
+  const [currentVersion, setCurrentVersion] = useState<string>();
 
   useEffect(() => {
     if (!isDesktop()) return;
@@ -45,12 +48,14 @@ export function UpdaterSettings() {
       dispatch(setUpdateStatus(mapped.state));
       setUpToDate(mapped.upToDate);
       setDisabled(mapped.disabled);
+      setCurrentVersion(mapped.currentVersion);
     }).catch(() => {});
     return desktopEvents.updater.onStatusChanged((raw) => {
       const mapped = mapUpdaterStatus(raw);
       dispatch(setUpdateStatus(mapped.state));
       setUpToDate(mapped.upToDate);
       setDisabled(mapped.disabled);
+      setCurrentVersion(mapped.currentVersion);
     });
   }, [dispatch]);
 
@@ -75,6 +80,7 @@ export function UpdaterSettings() {
   else if (status.state === 'restarting') detail = t('Restarting…');
   else if (status.state === 'error') detail = t('Update failed: {message}', { message: status.message ?? '' });
   else if (upToDate) detail = t("You're up to date");
+  if (currentVersion) detail = t('Current version: {version}', { version: currentVersion }) + ' · ' + detail;
 
   return (
     <Section title={t('Updates')}>

@@ -703,6 +703,7 @@
   "Updates": "التحديثات",
   "You're up to date": "أنت محدَّث بالفعل",
   "Update available: {version}": "يتوفر تحديث: {version}",
+  "Current version: {version}": "الإصدار الحالي: {version}",
   "Downloading update… {progress}%": "جارٍ تنزيل التحديث… {progress}%",
   "Update downloaded. Restart to install.": "تم تنزيل التحديث. أعد التشغيل لتثبيته.",
   "Restart to update": "أعد التشغيل للتحديث",

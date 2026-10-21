@@ -711,6 +711,7 @@
   "Check for updates": "Check for updates",
   "You're up to date": "You're up to date",
   "Update available: {version}": "Update available: {version}",
+  "Current version: {version}": "Current version: {version}",
   "Downloading update… {progress}%": "Downloading update… {progress}%",
   "Update downloaded. Restart to install.": "Update downloaded. Restart to install.",
   "Restart to update": "Restart to update",

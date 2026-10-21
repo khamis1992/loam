@@ -42,7 +42,7 @@ export const desktopApis = {
       invoke('system', 'readFile', [filePath]) as Promise<{ name: string; base64: string; mime: string }>,
   },
   updater: {
-    getStatus: () => invoke('updater', 'getStatus') as Promise<{ state: string; version?: string; progress?: number; error?: string; storeManaged?: boolean; store?: string }>,
+    getStatus: () => invoke('updater', 'getStatus') as Promise<{ state: string; version?: string; progress?: number; error?: string; currentVersion?: string; storeManaged?: boolean; store?: string }>,
     checkForUpdates: () => invoke('updater', 'checkForUpdates'),
     restartNow: () => invoke('updater', 'restartNow'),
     getPolicyContext: () => invoke('updater', 'getPolicyContext') as Promise<{ storeManaged?: boolean; channel?: string; platform?: string }>,
