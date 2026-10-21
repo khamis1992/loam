@@ -5,6 +5,7 @@ const http = require("node:http");
 const { createHash } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const updater = require("./updater.cjs");
+const inAppBrowser = require("./inAppBrowser.cjs");
 const mcpBridge = require("./mcp-bridge.cjs");
 const { IPC_INVOKE, IPC_EVENT_PREFIX, IPC_META, IPC_SYNC, NAMESPACES } = require("./ipc-constants.cjs");
 
@@ -455,6 +456,7 @@ const ipcHandlers = {
   env: {
     setOverrideAndRelaunch: (_sender, _opts) => { throw new Error("not implemented"); },
   },
+  inAppBrowser: inAppBrowser.handlers,
   diagnosticLogs: {
     collect: () => ({ path: "" }),
   },
@@ -632,6 +634,28 @@ app.on("open-url", (event, url) => {
 app.whenReady().then(async () => {
   if (!ownsInstance) return;
   prepareUserData();
+
+  // Settings > In-App Browser (WebContentsView surface). The homepage is read
+  // from the shared Loam settings the agent browser tool uses for its
+  // browser_open default, so one homepage setting drives both.
+  async function resolveInAppBrowserHomepage() {
+    try {
+      const res = await fetch(`${BASE}/api/settings`, { headers: authHeader(localAuthToken), signal: AbortSignal.timeout(3000) });
+      if (res.ok) {
+        const s = await res.json();
+        const homepage = typeof s.browserHomepage === "string" ? s.browserHomepage.trim() : "";
+        if (/^https?:\/\//i.test(homepage)) return homepage;
+      }
+    } catch {}
+    return "";
+  }
+  inAppBrowser.init({
+    getWindow: () => win,
+    openExternal: (url) => { void shell.openExternal(url); },
+    resolveHomepage: resolveInAppBrowserHomepage,
+    fallbackHomepage: "https://www.google.com",
+  });
+
   const localAuth = getLocalAuthToken();
   localAuthToken = localAuth.token;
   localAuthUserData = localAuth.userData;
