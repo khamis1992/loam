@@ -3,7 +3,7 @@ import type JSZip from 'jszip';
 import {borderSides} from './sheet-borders.js';
 import {part,first,all,attr,serialize,S} from './ooxml.js';
 import {StudioError} from './store.js';
-import {numericText,typedCellValue,type StudioCellValue} from './sheet-format.js';
+import {numericText,typedCellValue,cellAddress,type StudioCellValue} from './sheet-format.js';
 type Sheet={cells?:string[][];styles?:Record<string,Record<string,string|number|boolean>>;columnWidths?:number[];rowHeights?:number[];merges?:string[];hiddenRows?:boolean[];hiddenColumns?:boolean[];printSettings?:SheetPrint};
 
 /** Editorial numeric display forms (thousands separators, spacing and percent) that can keep an originally numeric cell numeric. */
@@ -38,7 +38,6 @@ function replaceChild(doc:any,parent:any,name:string,attrs:Record<string,string>
 
 /** Re-serialize exactly the changed grid cells with typed values; untouched cells keep their original XML and strings stay distinct kinds. */
 export async function patchSheetValues(zip:JSZip,doc:any,current:Sheet,old:Sheet){
- const columnLetters=(column:number)=>{let label='';while(column){column--;label=String.fromCharCode(65+column%26)+label;column=Math.floor(column/26);}return label;};
  const changes:Array<{address:string;value:StudioCellValue}>=[];let needsEpoch=false,needsCodes=false;
  const rowCount=Math.max(current.cells?.length||0,old.cells?.length||0);
  for(let r=0;r<rowCount;r++){
@@ -49,7 +48,7 @@ export async function patchSheetValues(zip:JSZip,doc:any,current:Sheet,old:Sheet
    const typed=typedCellValue(value);
    if(typeof typed==='string'&&displayNumber(typed)!==null)needsCodes=true;
    if(typeof typed==='object')needsEpoch=true;
-   changes.push({address:columnLetters(c+1)+String(r+1),value:typed});
+   changes.push({address:cellAddress(c+1,r+1),value:typed});
   }
  }
  if(!changes.length)return;

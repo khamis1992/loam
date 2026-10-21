@@ -41,7 +41,7 @@ export function applyCellType(cell: ExcelJS.Cell, value: StudioCellValue, style?
 export function sheetCellValue(cell: ExcelJS.Cell): StudioCellValue {
   const value = cell.value;
   if (value === null || value === undefined) return "";
-  if (typeof value === "number" || typeof value === "boolean") return value;
+  if (typeof value === "number" || typeof value === "string" || typeof value === "boolean") return value;
   if (value instanceof Date) return { date: value.toISOString().slice(0, 10) };
   const object = value as unknown as Record<string, unknown>; 
   if (typeof object.formula === "string") return "=".concat(object.formula);
