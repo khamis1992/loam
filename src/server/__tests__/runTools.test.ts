@@ -110,6 +110,8 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll(createBoardTools());
     registry.registerAll(createGroupTools());
     registry.registerAll(createBackendScaffoldTools());
+    const deployToolsMod = await import("../../tools/deploy.js");
+    registry.registerAll(deployToolsMod.createDeployTools({ workspace: tmpDir }));
   });
 
   after(() => {
