@@ -1957,7 +1957,41 @@ loadAgents();
 
         if (req.method === "GET" && p === "/api/media") {
           const rel = url.searchParams.get("path") ?? "";
-          if (!rel) return sendJson(res, 400, { error: "path required" });
+          // Sane default instead of HTTP 400: a taskId without a path lists the
+          // task's streamable media files, newest first, so gallery consumers get
+          // a usable list mode from the same endpoint they stream from.
+          const MEDIA_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".mp4", ".webm", ".mov", ".mkv", ".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac"]);
+          if (!rel) {
+            try {
+              const root = requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace);
+              const max = Math.min(Math.max(Number(url.searchParams.get("max") ?? 200), 1), 2000);
+              const entries: Array<{ name: string; path: string; size: number; mtime: string; mtimeMs: number }> = [];
+              const scanCap = Math.max(max * 6, 2500);
+              const walk = (d: string, depth: number): void => {
+                if (entries.length >= scanCap || depth > 5) return;
+                let items: fs.Dirent[] = [];
+                try { items = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+                for (const it of items) {
+                  if (entries.length >= scanCap) return;
+                  if (it.isSymbolicLink()) continue;
+                  const full = path.join(d, it.name);
+                  try {
+                    const st = fs.statSync(full);
+                    if (!MEDIA_EXTS.has(path.extname(it.name).toLowerCase())) continue;
+                    entries.push({ name: it.name, path: path.relative(root, full).split(path.sep).join("/"), size: st.size, mtime: st.mtime.toISOString(), mtimeMs: st.mtimeMs });
+                  } catch { /* ignore */ }
+                  if (it.isDirectory()) walk(full, depth + 1);
+                }
+              };
+              walk(root, 0);
+              entries.sort((a, b) => b.mtimeMs - a.mtimeMs);
+              const trimmed = entries.slice(0, max).map(({ mtimeMs: _m, ...rest }) => rest);
+              sendJson(res, 200, { entries: trimmed });
+            } catch (err) {
+              sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+            }
+            return;
+          }
           try {
             const file = taskPath(requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace), rel);
             if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return sendJson(res, 404, { error: "not found" });
@@ -1991,9 +2025,7 @@ loadAgents();
         if (req.method === "GET" && p === "/api/files") {
           const rel = (url.searchParams.get("path") ?? "").trim().replace(/^[/\\]+/, "");
           const max = Math.min(Math.max(Number(url.searchParams.get("max") ?? 300), 1), 2000);
-          const root = requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace);
-          const dir = taskPath(root, rel);
-          if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return sendJson(res, 404, { error: "directory not found" });
+          const taskIdParam = url.searchParams.get("taskId");
           const skipDirs = new Set([
             "node_modules",
             ".git",
@@ -2004,38 +2036,63 @@ loadAgents();
             ".next",
             ".expo",
           ]);
-          const entries: Array<{ name: string; path: string; dir: boolean; size: number; mtime: string; mtimeMs: number }> = [];
-          const scanCap = Math.max(max * 6, 2500);
-          const walk = (d: string, depth: number): void => {
-            if (entries.length >= scanCap || depth > 5) return;
-            let items: fs.Dirent[] = [];
-            try {
-              items = fs.readdirSync(d, { withFileTypes: true });
-            } catch {
-              return;
-            }
-            for (const it of items) {
-              if (entries.length >= scanCap) return;
-              if (skipDirs.has(it.name) || it.isSymbolicLink()) continue;
-              const full = path.join(d, it.name);
-              const relPath = path.relative(root, full).split(path.sep).join("/");
+          type FileEntry = { name: string; path: string; dir: boolean; size: number; mtime: string; mtimeMs: number; taskId?: string };
+          const scanWorkspace = (root: string, ownerTaskId: string | undefined, entries: FileEntry[], budget: number): void => {
+            let dir: string;
+            try { dir = taskPath(root, rel); } catch { return; }
+            if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return;
+            const walk = (d: string, depth: number): void => {
+              if (entries.length >= budget || depth > 5) return;
+              let items: fs.Dirent[] = [];
               try {
-                const st = fs.statSync(full);
-                entries.push({
-                  name: it.name,
-                  path: relPath,
-                  dir: it.isDirectory(),
-                  size: st.size,
-                  mtime: st.mtime.toISOString(),
-                  mtimeMs: st.mtimeMs,
-                });
+                items = fs.readdirSync(d, { withFileTypes: true });
               } catch {
-                /* ignore */
+                return;
               }
-              if (it.isDirectory()) walk(full, depth + 1);
-            }
+              for (const it of items) {
+                if (entries.length >= budget) return;
+                if (skipDirs.has(it.name) || it.isSymbolicLink()) continue;
+                const full = path.join(d, it.name);
+                const relPath = path.relative(root, full).split(path.sep).join("/");
+                try {
+                  const st = fs.statSync(full);
+                  entries.push({
+                    name: it.name,
+                    path: relPath,
+                    dir: it.isDirectory(),
+                    size: st.size,
+                    mtime: st.mtime.toISOString(),
+                    mtimeMs: st.mtimeMs,
+                    ...(ownerTaskId ? { taskId: ownerTaskId } : {}),
+                  });
+                } catch {
+                  /* ignore */
+                }
+                if (it.isDirectory()) walk(full, depth + 1);
+              }
+            };
+            walk(dir, 0);
           };
-          walk(dir, 0);
+          // Sane default for the Creations and Library pages: with `list=1` and no
+          // taskId the endpoint lists every task's files at once, newest first, with
+          // each entry tagged with taskId so media links stay per-task. Without the
+          // flag the strict per-task contract (taskId required) is unchanged.
+          if (!taskIdParam && url.searchParams.get("list") === "1") {
+            const entries: FileEntry[] = [];
+            for (const task of listTasks().slice(0, 200)) {
+              if (!task.workspace) continue;
+              try { scanWorkspace(task.workspace, task.id, entries, max); } catch { /* skip unreadable task */ }
+            }
+            entries.sort((a, b) => b.mtimeMs - a.mtimeMs);
+            const trimmed = entries.slice(0, max).map(({ mtimeMs: _m, ...rest }) => rest);
+            sendJson(res, 200, { path: rel, entries: trimmed });
+            return;
+          }
+          const root = requireTaskWorkspace(taskIdParam, cfg.workspace);
+          const dir = taskPath(root, rel);
+          if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return sendJson(res, 404, { error: "directory not found" });
+          const entries: FileEntry[] = [];
+          scanWorkspace(root, undefined, entries, Math.max(max * 6, 2500));
           entries.sort((a, b) => b.mtimeMs - a.mtimeMs);
           const trimmed = entries.slice(0, max).map(({ mtimeMs: _m, ...rest }) => rest);
           sendJson(res, 200, { root: dir, workspaceRoot: root, path: rel, entries: trimmed });
@@ -2072,6 +2129,26 @@ loadAgents();
           try {
             const body = p === "/api/creative" && req.method === "POST" ? await readBody(req, 2_100_000) as { taskId?: unknown; scene?: unknown; expectedRevision?: unknown } : null;
             const taskId = body?.taskId ?? url.searchParams.get("taskId");
+            // Sane default for the Creations page: with `list=1` and no taskId the
+            // endpoint lists every saved creative scene across media tasks so the
+            // gallery can load in one call. The strict per-task contract (taskId
+            // required, media mode enforced) is unchanged otherwise.
+            if (!taskId && req.method === "GET" && url.searchParams.get("list") === "1") {
+              const scenes: Array<{ taskId: string; title: string; revision: number; updatedAt: string }> = [];
+              for (const task of listTasks().slice(0, 200)) {
+                if (!task.workspace) continue;
+                try {
+                  if (getLoamMode(task.mode).id !== "media") continue;
+                  const scene = readScene(task.workspace);
+                  if (!scene) continue;
+                  let updatedAt = "";
+                  try { updatedAt = fs.statSync(taskPath(task.workspace, ".loam/creative.json")).mtime.toISOString(); } catch { /* */ }
+                  scenes.push({ taskId: task.id, title: scene.title, revision: scene.revision, updatedAt });
+                } catch { /* skip unreadable scene */ }
+              }
+              scenes.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+              return sendJson(res, 200, { scenes });
+            }
             const root = requireTaskWorkspace(taskId, cfg.workspace);
             if (getLoamMode(getTask(String(taskId))!.mode).id !== "media") return sendJson(res, 403, { error: "Creative studio requires a media task" });
             if (p === "/api/creative/asset") {
