@@ -34,44 +34,28 @@ export default function LibraryPage() {
     (async () => {
       try {
         const headers = await getApiHeaders();
-        const tasksRes = await fetch(`${getApiBase()}/api/tasks?limit=50`, { headers });
-        if (!tasksRes.ok) throw new Error(`tasks ${tasksRes.status}`);
-        const tasks = (await tasksRes.json()) as { tasks?: Array<{ id: string; updatedAt: string }> };
-        const taskIds = (tasks.tasks ?? []).map((t) => t.id).filter(isTaskId);
-        if (taskIds.length === 0) {
-          if (mounted) setFiles([]);
-          return;
-        }
-
+        // One aggregate call: /api/files?list=1 lists every task's files at
+        // once, tagged with taskId, so no per-task enumeration is needed.
+        const params = new URLSearchParams({ list: '1', max: '400' });
+        const res = await fetch(`${getApiBase()}/api/files?${params.toString()}`, { headers });
+        if (!res.ok) throw new Error(`files ${res.status}`);
+        const data = (await res.json()) as {
+          entries?: Array<{ taskId?: string; name: string; path: string; size: number; mtime?: string; dir?: boolean }>;
+        };
         const collected: LibraryFile[] = [];
-        await Promise.all(
-          taskIds.map(async (taskId) => {
-            try {
-              const params = new URLSearchParams({ taskId, path: '', max: '200' });
-              const res = await fetch(`${getApiBase()}/api/files?${params.toString()}`, { headers });
-              if (!res.ok) return;
-              const data = (await res.json()) as {
-                entries?: Array<{ name: string; path: string; size: number; mtime?: string; dir?: boolean }>;
-              };
-              for (const e of data.entries ?? []) {
-                if (e.dir) continue;
-                if (!isLibraryFile(e.name)) continue;
-                collected.push({
-                  name: e.name,
-                  path: e.path,
-                  size: e.size,
-                  updatedAt: e.mtime ?? '',
-                  taskId,
-                  kind: kindFromName(e.name),
-                });
-              }
-            } catch (e) {
-              // eslint-disable-next-line no-console
-              console.error('failed to list task files', taskId, e);
-            }
-          }),
-        );
-
+        for (const e of data.entries ?? []) {
+          if (e.dir) continue;
+          if (typeof e.taskId !== 'string' || !isTaskId(e.taskId)) continue;
+          if (!isLibraryFile(e.name)) continue;
+          collected.push({
+            name: e.name,
+            path: e.path,
+            size: e.size,
+            updatedAt: e.mtime ?? '',
+            taskId: e.taskId,
+            kind: kindFromName(e.name),
+          });
+        }
         collected.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
         if (mounted) setFiles(collected);
       } catch (e) {

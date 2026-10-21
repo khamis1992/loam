@@ -52,6 +52,17 @@ try {
   // UI page flow: per-task files then media per entry
   const entries = ((await (await fetch(`${base}/api/files?taskId=${media.id}&path=&max=200`)).json()) as { entries: Array<{ path: string }> }).entries;
   for (const e of entries) console.log(`media entry ${e.path}:`, await status(`/api/media?taskId=${media.id}&path=${encodeURIComponent(e.path)}`));
+
+  console.log("== new list modes ==");
+  console.log("files list=1:", await status(`/api/files?list=1&max=300`));
+  const listData = JSON.parse(await (await fetch(`${base}/api/files?list=1&max=300`)).text()) as { entries: Array<{ taskId: string; path: string }> };
+  console.log("files list=1 entries:", JSON.stringify(listData.entries));
+  console.log("files paramless (strict kept):", await status(`/api/files`));
+  console.log("creative list=1:", await status(`/api/creative?list=1`));
+  console.log("creative paramless (strict kept):", await status(`/api/creative`));
+  console.log("media taskId only (no path):", await status(`/api/media?taskId=${media.id}&max=50`));
+  const mediaList = JSON.parse(await (await fetch(`${base}/api/media?taskId=${media.id}&max=50`)).text()) as { entries: Array<{ path: string }> };
+  console.log("media list entries:", JSON.stringify(mediaList.entries));
 } finally {
   if (child && child.exitCode === null) { const ended = once(child, "exit"); child.kill("SIGKILL"); await ended; }
   fs.rmSync(tmp, { recursive: true, force: true });
