@@ -1,4 +1,4 @@
-﻿import http from "node:http";
+import http from "node:http";
 import { startSseHeartbeat } from './sseHeartbeat.js';
 import { TimelineService } from '../creative/timeline.js';
 import { MobileError, mobileHistory, readMobile, saveMobile, travelMobile } from '../mobile/store.js';
@@ -92,6 +92,7 @@ import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
 import { handleRetryLastRoutes } from "./routes/retryLast.js";
 import { handleShareRoutes } from "./routes/shares.js";
 import { handleProjectContextRoutes } from "./routes/projectContext.js";
+import { handleVoiceRoutes } from "./routes/voice.js";
 import { importGrokbotBundle, sanitizeGrokbotBundle } from "./grokbotImport.js";
 import { isValidTimezone } from "./scheduleTime.js";
 import { getWorkModesUi, normalizeWorkMode, resolveCompanionCapabilities } from "./companionGateway.js";
@@ -1741,6 +1742,8 @@ loadAgents();
         if (await handleAutoVideoRoutes(req, res, p)) return;
         if (await handleLiveViewRoutes(req, res, p, { screenLive: live })) return;
         if (await handleTranscriptRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        // Composer mic proxy (option #19): raw recorded audio -> local STT server.
+        if (await handleVoiceRoutes(req, res, p)) return;
         // Bots marketplace: must precede the /api/agents/:id prefix block so
         // /api/agents/from-catalog is matched by the exact-path handler.
         if (await handleMarketplaceRoutes(req, res, p)) return;
