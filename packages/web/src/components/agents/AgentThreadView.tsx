@@ -25,6 +25,7 @@ import type {
   Attachment,
 } from '@shared/socket';
 import type { AgentCardAgent } from './AgentCard';
+import { AgentAvatar } from './AgentAvatar';
 import { GROKBOT_NOTE_HEADER } from '@/components/chat/GrokBotNote';
 import { InstructionProposalCard, useInstructionProposals } from './InstructionHistory';
 
@@ -426,9 +427,15 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
             onClick={onToggleInfo}
             className="flex min-w-0 items-center gap-2 rounded-control px-2 py-1 text-start hover:bg-fill-hover"
           >
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-control bg-fill-tsp text-base">
-              {agent.emoji || '🤖'}
-            </span>
+            <AgentAvatar
+              name={agent.name}
+              avatarShape={agent.avatarShape}
+              avatarColor={agent.avatarColor}
+              avatarImage={agent.avatarImage}
+              size={28}
+              working={running}
+              typing={running}
+            />
             <span className="min-w-0 truncate text-sm font-medium text-text-primary">{agent.name}</span>
             <PanelRight className={`size-3.5 shrink-0 text-text-tertiary transition-transform ${infoOpen ? 'rotate-180' : ''}`} />
           </button>
@@ -495,7 +502,15 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
               ) : (
                 <>
                   <div className="mb-4 flex items-center gap-2">
-                    <span className="text-lg">{agent.emoji || '🤖'}</span>
+                    <AgentAvatar
+                      name={agent.name}
+                      avatarShape={agent.avatarShape}
+                      avatarColor={agent.avatarColor}
+                      avatarImage={agent.avatarImage}
+                      size={24}
+                      working={running}
+                      typing={running}
+                    />
                     <span className="text-base font-semibold text-text-primary">{agent.name}</span>
                   </div>
                   {running && <div className="mb-2 text-sm text-text-tertiary">{t('{name} is thinking', { name: PRODUCT })}…</div>}
