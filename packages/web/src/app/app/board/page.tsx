@@ -60,7 +60,7 @@ const priorityChip: Record<TicketPriority, string> = {
   urgent: 'bg-function-error-tsp text-function-error',
 };
 
-export function BoardPageFallback() {
+function BoardPageFallback() {
   return (
     <div className="flex h-full items-center justify-center text-text-secondary">
       <Loader2 className="mr-2 size-5 animate-spin" /> {t('Loading')}
