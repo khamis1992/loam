@@ -1,7 +1,7 @@
 import type { ToolUsedEvent } from '@shared/socket';
 import { t } from '@/i18n/t';
 import { Spinner } from '@/components/ui/Button';
-import { humanizeToolName } from './toolLabels';
+import { humanizeToolName, isCorruptedPlaceholder } from './toolLabels';
 
 function StatusIcon({ s }: { s: ToolUsedEvent['status'] }) {
   if (s === 'running' || s === 'pending' || s === 'streaming' || s === 'argumentsFinished') return <Spinner className="size-3.5" />;
@@ -10,15 +10,25 @@ function StatusIcon({ s }: { s: ToolUsedEvent['status'] }) {
 }
 
 function briefDuplicatesLabel(tool: string, brief: string): boolean {
+  if (isCorruptedPlaceholder(brief)) return true;
   const label = t(humanizeToolName(tool)).toLowerCase();
   const raw = tool.toLowerCase();
   const value = brief.trim().toLowerCase();
   if (!value) return true;
   if (value === raw || value.replace(/[ _-]/g, '') === raw.replace(/_/g, '')) return true;
   const labelWords = new Set(label.split(/\s+/).filter(Boolean));
+  // Also count every word of the raw tool name (e.g. "edit", "write", "add")
+  // as label vocabulary so a brief that merely repeats the tool verb/spec is
+  // suppressed instead of surfacing "Edited file Write"-style rows.
+  for (const token of raw.split(/[^a-z0-9]+/)) {
+    if (token) labelWords.add(token);
+  }
   const briefWords = value.split(/[^a-z0-9]+/).filter(Boolean);
-  return briefWords.length > 0 && briefWords.every((word) => labelWords.has(word));
+  return briefWords.length > 0 && briefWords.every((word) => labelWords.has(word) || GENERIC_TOOL_WORDS.has(word));
 }
+
+/** Words so generic that repeating them next to the humanized label adds nothing. */
+const GENERIC_TOOL_WORDS = new Set(['write', 'edit', 'read', 'run', 'file', 'command']);
 
 export function ToolUsedRow({ e }: { e: ToolUsedEvent }) {
   const commands = e.detail?.suggestion?.commands;

@@ -4,28 +4,15 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 import { t, getLocale, PRODUCT } from '@/i18n/t';
+import { dedupeBrandLabel, LOAM_MODES, type ModeChipResolved } from './modeLabels';
 
-export interface ModeChipResolved {
-  mode: string;
-  label: string;
-  labelAr: string;
-}
+export type { ModeChipResolved } from './modeLabels';
 
 interface ModeChipProps {
   resolved?: ModeChipResolved | null;
   value?: string;
   onChange?: (mode: string) => void;
 }
-
-const LOAM_MODES = [
-  { value: 'build', label: 'Build' },
-  { value: 'write', label: 'Write' },
-  { value: 'data', label: 'Data' },
-  { value: 'media', label: 'Media' },
-  { value: 'research', label: 'Research' },
-  { value: 'security', label: 'Security' },
-  { value: 'automate', label: 'Automate' },
-] as const;
 
 export function ModeChip({ resolved, value, onChange }: ModeChipProps) {
   const [open, setOpen] = useState(false);
@@ -60,7 +47,8 @@ export function ModeChip({ resolved, value, onChange }: ModeChipProps) {
 
   const label = currentLabel();
   const hasMode = !!(value || resolved);
-  const displayLabel = label.startsWith(PRODUCT) ? label : label && label !== PRODUCT ? label : t('Standard');
+  const rawLabel = label.startsWith(PRODUCT) ? label : label && label !== PRODUCT ? label : t('Standard');
+  const displayLabel = dedupeBrandLabel(rawLabel);
 
   return (
     <div className="relative" ref={ref}>
