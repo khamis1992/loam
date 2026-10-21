@@ -21,6 +21,8 @@ export interface OperatorElement {
   role: string;
   name: string;
   value: string;
+  /** Capabilities reported by the browser_table observation (e.g. CLICK, TYPE_TEXT, SELECT). */
+  ops?: string[];
 }
 
 export interface OperatorObservation {
@@ -36,6 +38,7 @@ export interface OperatorObservation {
 export type OperatorAction =
   | { kind: "click"; index: number; label: string }
   | { kind: "type"; index: number; text: string; submit: boolean; label: string }
+  | { kind: "select"; index: number; label: string }
   | { kind: "scroll"; direction: "up" | "down" }
   | { kind: "navigate"; url: string }
   | { kind: "wait"; ms: number }
@@ -47,6 +50,7 @@ export type OperatorIntent =
   | { kind: "search"; query: string }
   | { kind: "type"; text: string; submit: boolean }
   | { kind: "click"; target: string }
+  | { kind: "select"; option: string; field?: string }
   | { kind: "generic" };
 
 export interface OperatorSurface {
@@ -129,9 +133,10 @@ function normalizeUrl(raw: string): string | null {
 }
 
 interface IntentCandidate {
-  kind: "navigate" | "search" | "type" | "click";
+  kind: "navigate" | "search" | "type" | "click" | "select";
   at: number;
   raw: string;
+  field?: string;
 }
 
 export function parseIntent(goal: string): OperatorIntent {
@@ -159,6 +164,16 @@ export function parseIntent(goal: string): OperatorIntent {
     candidates.push({ kind: "type", at: type.index, raw: payload });
   }
 
+  const select = /\b(?:select|choose|pick)\s+(.+?)(?:\s+(?:in|from|on)\s+(?:the\s+)?(.+?))?\s*[.!?]?$/i.exec(text);
+  if (select?.[1]) {
+    candidates.push({
+      kind: "select",
+      at: select.index,
+      raw: stripQuotes(select[1]),
+      field: select[2] ? cleanClickTarget(select[2]) : undefined,
+    });
+  }
+
   const click = /\b(?:click|press|tap|choose|select)\s+(?:the\s+)?(.+)$/i.exec(text);
   if (click?.[1]) candidates.push({ kind: "click", at: click.index, raw: cleanClickTarget(click[1]) });
 
@@ -174,6 +189,8 @@ export function parseIntent(goal: string): OperatorIntent {
       const submit = /\b(?:press(?:ing)?\s+(?:the\s+)?enter|hit\s+enter|submit)\b|\b(?:and|then)\s+search\b/i.test(text);
       return { kind: "type", text: first.raw, submit };
     }
+    case "select":
+      return { kind: "select", option: first.raw, field: first.field };
     case "click":
       return { kind: "click", target: first.raw };
   }
@@ -227,6 +244,18 @@ export function goalSatisfied(
     case "type": {
       return observation.elements.some((element) => element.value.toLowerCase().includes(intent.text.toLowerCase()));
     }
+    case "select": {
+      // Only the element VALUE proves a native selection was made; matching the
+      // element name would let a button that shares the option label pre-satisfy.
+      const wanted = tokens(intent.option);
+      if (wanted.length > 0 && observation.elements.some((element) => wanted.every((token) => element.value.toLowerCase().includes(token)))) {
+        return true;
+      }
+      if (!requireAction) return false;
+      // A select resolved through the click fallback may land on a new page
+      // whose copy does not repeat the option label.
+      return opts.before !== undefined && opts.before.url !== observation.url;
+    }
     case "click": {
       if (!requireAction) return false;
       const wanted = tokens(intent.target);
@@ -249,6 +278,17 @@ function elementHaystack(element: OperatorElement): string {
 
 function isTextInput(element: OperatorElement): boolean {
   return /textbox|search|combobox|textarea|input/i.test(`${element.role} ${element.name}`);
+}
+
+function isSelectElement(element: OperatorElement): boolean {
+  return /select|combobox|listbox/i.test(element.role);
+}
+
+/** Whether the observation reported this capability; unknown (no ops) stays permissive. */
+function supports(element: OperatorElement, op: string): boolean {
+  const ops = element.ops;
+  if (!ops || ops.length === 0) return true;
+  return ops.includes(op);
 }
 
 function rankElements(elements: OperatorElement[], wanted: string[], mode: "click" | "type"): OperatorElement[] {
@@ -278,6 +318,8 @@ export function actionKey(action: OperatorAction, observation: OperatorObservati
     }
     case "type":
       return `type:${action.index}:${action.text}`;
+    case "select":
+      return `select:${action.index}:${action.label}`;
     case "navigate":
       return `navigate:${action.url}`;
     case "scroll":
@@ -310,8 +352,8 @@ export function planOperatorAction(
 
   if (intent.kind === "search" || intent.kind === "type") {
     const payload = intent.kind === "search" ? intent.query : intent.text;
-    const wantsInput = rankElements(observation.elements, tokens(payload), "type").filter(isTextInput);
-    const input = wantsInput[0] ?? observation.elements.find(isTextInput);
+    const wantsInput = rankElements(observation.elements, tokens(payload), "type").filter(isTextInput).filter((element) => supports(element, "TYPE_TEXT"));
+    const input = wantsInput[0] ?? observation.elements.find((element) => isTextInput(element) && supports(element, "TYPE_TEXT"));
     if (input && !input.value.toLowerCase().includes(payload.toLowerCase())) {
       const action: OperatorAction = {
         kind: "type",
@@ -329,10 +371,32 @@ export function planOperatorAction(
     }
   }
 
+  if (intent.kind === "select") {
+    const selectables = observation.elements.filter((element) => supports(element, "SELECT") && isSelectElement(element));
+    const ranked = selectables.length > 0
+      ? (intent.field
+        ? rankElements(selectables, tokens(intent.field), "click")
+        : selectables)
+      : [];
+    for (const element of ranked) {
+      const action: OperatorAction = { kind: "select", index: element.index, label: intent.option };
+      if (!history.has(key(action))) return action;
+    }
+    // Without a native <select> in view, fall through to the click path below:
+    // option pickers that open on click are handled there.
+  }
+
   const target = intent.kind === "click" ? tokens(intent.target) : tokens(goal);
   for (const element of rankElements(observation.elements, target, "click")) {
     const action: OperatorAction = { kind: "click", index: element.index, label: element.name };
     if (!history.has(key(action))) return action;
+  }
+
+  // A page with no interactive elements at all may still be loading after a
+  // navigation or action. Wait once before declaring the page blocked.
+  if (observation.elements.length === 0 && observation.bodyText === "") {
+    const waitAction: OperatorAction = { kind: "wait", ms: 800 };
+    if (!history.has(key(waitAction))) return waitAction;
   }
 
   if (observation.canScrollDown && scrolls < maxScrolls) {
@@ -361,18 +425,29 @@ export interface OperatorLoopInput {
   pageId?: string;
   initialUrl?: string;
   maxSteps?: number;
+  maxScrolls?: number;
+  /** Pause after each state-changing action so a fresh observation captures settled DOM. */
+  settleMs?: number;
+  /** Literal text (or URL fragment) that must appear once the goal itself is satisfied. */
+  expectText?: string;
   decide?: OperatorDecide;
   signal?: AbortSignal;
 }
 
 export async function runBrowserOperatorLoop(input: OperatorLoopInput): Promise<OperatorLoopResult> {
   const maxSteps = Math.min(Math.max(Math.trunc(input.maxSteps ?? 8), 1), 20);
+  const maxScrolls = Math.min(Math.max(Math.trunc(input.maxScrolls ?? 4), 0), 20);
+  const settleMs = Math.min(Math.max(Math.trunc(input.settleMs ?? 0), 0), 2000);
+  const expectText = input.expectText?.trim().toLowerCase() ?? "";
   const steps: OperatorStep[] = [];
   const history = new Set<string>();
   let scrolls = 0;
   let noChange = 0;
   let failures = 0;
   let pageId = input.pageId?.trim() ?? "";
+
+  const expectOk = (observation: OperatorObservation): boolean =>
+    !expectText || pageText(observation).includes(expectText);
 
   const finish = async (
     status: OperatorStatus,
@@ -405,7 +480,7 @@ export async function runBrowserOperatorLoop(input: OperatorLoopInput): Promise<
     }
 
     const decide: OperatorDecide = input.decide
-      ?? ((observation, seen, goal) => planOperatorAction(goal, observation, { history: seen, scrolls }));
+      ?? ((observation, seen, goal) => planOperatorAction(goal, observation, { history: seen, scrolls, maxScrolls }));
 
     for (let index = 0; index < maxSteps; index += 1) {
       if (input.signal?.aborted) return finish("cancelled", "run cancelled before the next step");
@@ -418,13 +493,13 @@ export async function runBrowserOperatorLoop(input: OperatorLoopInput): Promise<
       }
 
       const intent = parseIntent(input.goal);
-      if (intent.kind === "navigate" && steps.length === 0 && goalSatisfied(input.goal, observation, intent)) {
+      if (intent.kind === "navigate" && steps.length === 0 && goalSatisfied(input.goal, observation, intent) && expectOk(observation)) {
         return finish("goal-reached", `already at ${observation.title || observation.url}`, observation);
       }
 
       const action = decide(observation, history, input.goal);
       if (action.kind === "done") {
-        if (goalSatisfied(input.goal, observation, intent, { requireAction: true })) {
+        if (goalSatisfied(input.goal, observation, intent, { requireAction: true }) && expectOk(observation)) {
           return finish("goal-reached", action.reason, observation);
         }
         return finish("blocked", `planner declared done but the goal was not verified: ${action.reason}`, observation);
@@ -455,6 +530,16 @@ export async function runBrowserOperatorLoop(input: OperatorLoopInput): Promise<
       }
       failures = 0;
 
+      // Let DOM/network effects of the action settle so verification reads the
+      // post-action page instead of a mid-navigation frame.
+      if (settleMs > 0 && (action.kind === "click" || action.kind === "type" || action.kind === "select")) {
+        try {
+          await input.surface.act(pageId, { kind: "wait", ms: settleMs });
+        } catch {
+          // Best-effort; the verification observation still happens below.
+        }
+      }
+
       let next: OperatorObservation;
       try {
         next = await input.surface.observe(pageId);
@@ -471,7 +556,7 @@ export async function runBrowserOperatorLoop(input: OperatorLoopInput): Promise<
         noChange = 0;
       }
 
-      if (step.changed && goalSatisfied(input.goal, next, intent, { requireAction: true, before: observation })) {
+      if (step.changed && goalSatisfied(input.goal, next, intent, { requireAction: true, before: observation }) && expectOk(next)) {
         return finish("goal-reached", `goal verified after step ${index + 1}`, next);
       }
     }
@@ -501,7 +586,7 @@ export function parseObservationTable(
   const snapshotMatch = /snapshot #(\d+)/.exec(text);
   const elements: OperatorElement[] = [];
   for (const line of text.split(/\r?\n/)) {
-    const match = /^\s*\[(\d+)\]\s+(\S+)\s+"([^"]*)"(?:\s+\S+\s+"([^"]*)")?\s+ops:/.exec(line);
+    const match = /^\s*\[(\d+)\]\s+(\S+)\s+"([^"]*)"(?:\s+\S+\s+"([^"]*)")?\s+ops:([A-Z_,]*)/.exec(line);
     if (!match) continue;
     const parsedIndex = Number(match[1]);
     if (!Number.isFinite(parsedIndex)) continue;
@@ -510,6 +595,7 @@ export function parseObservationTable(
       role: match[2] ?? "",
       name: decodeEntities(match[3] ?? ""),
       value: decodeEntities(match[4] ?? ""),
+      ops: (match[5] ?? "").split(",").filter(Boolean),
     });
   }
   return {
@@ -601,6 +687,13 @@ class BrowserToolSurface implements OperatorSurface {
         const pressed = await runBrowserTool("browser_press", { pageId, key: "Enter" }, this.ctx);
         return { ok: pressed.ok, message: `${typed.content}\n${pressed.content}` };
       }
+      case "select": {
+        const snapshotId = this.snapshots.get(pageId);
+        const args: Record<string, unknown> = { pageId, op: "SELECT", index: action.index, text: action.label };
+        if (snapshotId !== undefined) args.snapshotId = snapshotId;
+        const result = await runBrowserTool("browser_act", args, this.ctx);
+        return { ok: result.ok, message: result.content };
+      }
       case "scroll": {
         const result = await runBrowserTool("browser_act", {
           pageId,
@@ -644,6 +737,8 @@ function describeAction(action: OperatorAction): string {
       return `click [${action.index}] "${action.label}"`;
     case "type":
       return `type [${action.index}] "${action.label}" = "${action.text}"${action.submit ? " + Enter" : ""}`;
+    case "select":
+      return `select [${action.index}] "${action.label}"`;
     case "scroll":
       return `scroll ${action.direction}`;
     case "navigate":
@@ -662,7 +757,7 @@ export const browserOperatorTools: Tool[] = [
     name: "browser_operator",
     description:
       "Drive the local browser toward a high-level goal with a bounded observe → plan → act → verify loop. "
-      + "Each step reads the indexed DOM (browser_table) plus page text, chooses ONE safe action (click / type / scroll / navigate), "
+      + "Each step reads the indexed DOM (browser_table) plus page text, chooses ONE safe action (click / type / select / scroll / navigate), "
       + "then re-observes to verify progress. Stops on verified completion, a step cap, a blocked page, or repeated no-progress. "
       + "Pass pageId to reuse an existing browser page; otherwise a new page opens in the same isolated browser session.",
     parameters: {
@@ -672,6 +767,9 @@ export const browserOperatorTools: Tool[] = [
         pageId: { type: "string", description: "Optional existing browser page id (from browser_open/browser_pages)." },
         url: { type: "string", description: "Optional initial http(s) URL when a new page must be opened." },
         maxSteps: { type: "number", description: "Action budget (default 8, max 20)." },
+        maxScrolls: { type: "number", description: "Scroll budget while hunting for elements (default 4, max 20)." },
+        settleMs: { type: "number", description: "Pause after each state-changing action before verification, ms (default 400, max 2000)." },
+        expectText: { type: "string", description: "Optional literal text that must appear on the final page for success to be claimed." },
       },
       required: ["goal"],
     },
@@ -691,6 +789,9 @@ export const browserOperatorTools: Tool[] = [
         pageId: str(args, "pageId").trim() || undefined,
         initialUrl: initialUrl || undefined,
         maxSteps: num(args, "maxSteps", 8),
+        maxScrolls: num(args, "maxScrolls", 4),
+        settleMs: num(args, "settleMs", 400),
+        expectText: str(args, "expectText").trim() || undefined,
         signal: ctx.signal,
       });
 
