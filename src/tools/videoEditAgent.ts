@@ -327,7 +327,11 @@ export function compileEdl(input: CompileInput): VideoEdl {
   for (const clause of splitClauses(instruction)) {
     const detected = detectVerb(clause);
     const verb = detected ?? lastVerb;
-    if (verb === null) { warnings.push(`could not interpret: "${clause}"`); continue; }
+    if (verb === null) {
+      if (RESET_RE.test(clause)) continue;
+      warnings.push(`could not interpret: "${clause}"`);
+      continue;
+    }
     if (detected) lastVerb = detected;
 
     if (verb === "overlay") {
