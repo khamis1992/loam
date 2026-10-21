@@ -1,0 +1,4 @@
+﻿Loam build task. Work ONLY in this worktree. Create NEW files where possible and make MINIMAL edits to shared files to reduce merge conflicts. Finish with `npx tsc --noEmit` = 0 and `npm run build:server` exit 0. Do NOT touch protected files (src/setup/runtime.ts, src/server/companionGateway.ts, src/tools/companionTeamTools.ts, src/tools/serviceBridgeTools.ts, src/tools/serviceGapTools.ts, scripts/stt_server.py, docs/companions-frontier-progress.md, docs/evidence/fair-comparison.json). NEVER git reset --hard. Commit as you go.
+
+TASK:
+Implement UNIMPLEMENTED_OPTIONS #16 template gallery beyond 3 cards on Home. Create a TemplateGallery component backed by a static templates data module (title, prompt, optional image); clicking a card pre-fills the composer prompt (reuse existing prefill mechanism). No backend.
