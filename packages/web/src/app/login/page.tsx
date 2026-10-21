@@ -27,12 +27,14 @@ export default function LoginPage() {
       const token = await desktopApis.auth.getToken();
       if (!mounted) return;
       if (!token) return;
-      const user = await validateSessionToken(token);
+      const check = await validateSessionToken(token);
       if (!mounted) return;
-      if (!user) {
+      if (check.status === 'invalid') {
         await logoutAndRedirect(router, dispatch);
         return;
       }
+      if (check.status === 'unreachable') return; // keep the session; don't bounce
+      const user = check.user;
       dispatch(setToken(token));
       dispatch(setUser({
         displayname: user.displayname || `${user.firstname} ${user.lastname}`.trim() || user.email,

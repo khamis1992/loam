@@ -343,11 +343,22 @@ let currentTheme = "system";
 const ipcHandlers = {
   auth: {
     getToken: () => sessionToken,
-    setToken: (_sender, token) => { pendingLoginNonce = String(token ?? ""); },
+    setToken: (_sender, token) => {
+      pendingLoginNonce = String(token ?? "");
+      if (pendingLoginNonce) {
+        // Persist the pending login nonce so the agentstudio:// deep-link
+        // callback still matches after a full app restart (Windows relaunches
+        // the app for the callback, so the in-memory nonce would be lost).
+        const data = readLocalStorage();
+        data["login_nonce"] = pendingLoginNonce;
+        writeLocalStorage(data);
+      }
+    },
     removeToken: () => {
       sessionToken = "";
       const data = readLocalStorage();
       delete data["session_token"];
+      delete data["login_nonce"];
       writeLocalStorage(data);
     },
     notifyLoginSuccess: () => undefined,
@@ -563,11 +574,15 @@ async function handleDeepLinkCallback(url) {
     const loginToken = u.searchParams.get("token");
     const nonce = u.searchParams.get("nonce");
     if (!loginToken || !nonce) throw new Error("missing token or nonce");
-    if (nonce !== pendingLoginNonce) throw new Error("nonce mismatch");
+    // The nonce was registered with auth.setToken either in this process
+    // (in-memory) or in a previous one (persisted alongside session_token);
+    // a restarted app must still accept the callback that was started there.
+    if (nonce !== pendingLoginNonce && nonce !== (readLocalStorage()["login_nonce"] ?? "")) throw new Error("nonce mismatch");
 
     sessionToken = await exchangeAgentStudioSession(loginToken);
     const data = readLocalStorage();
     data["session_token"] = sessionToken;
+    delete data["login_nonce"];
     writeLocalStorage(data);
 
     if (win) {
