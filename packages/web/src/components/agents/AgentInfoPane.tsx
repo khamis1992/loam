@@ -31,6 +31,7 @@ interface Schedule {
   id: string;
   prompt: string;
   intervalSeconds: number;
+  kind?: string | null;
   enabled: boolean;
   cron?: string | null;
   runAt?: string | null;
@@ -51,6 +52,19 @@ interface ApprovalRuleRow {
   pattern?: string | null;
   decision: 'allow' | 'deny';
   createdAt: string;
+}
+
+interface UrlWatch {
+  id: string;
+  url: string;
+  intervalMinutes: number;
+  selector?: string | null;
+  prompt: string;
+  enabled: boolean;
+  agentId?: string | null;
+  lastCheckedAt?: string | null;
+  lastChangedAt?: string | null;
+  lastHash?: string | null;
 }
 
 type TabId = 'overview' | 'channels' | 'routines' | 'media' | 'computer' | 'members';
@@ -767,15 +781,19 @@ function RoutinesTab({ agentId }: { agentId: string }) {
 
   if (schedules.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-2 py-8 text-text-tertiary">
-        <p className="text-sm">{t('No routines for this agent.')}</p>
+      <div className="flex flex-col gap-4">
+        <WatchesSection agentId={agentId} />
+        <p className="text-sm text-text-tertiary">{t('No routines for this agent.')}</p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      {schedules.map((s) => (
+    <div className="flex flex-col gap-4">
+      <WatchesSection agentId={agentId} />
+      <div className="flex flex-col gap-2">
+        <p className="text-[11px] text-text-tertiary">{t('Scheduled routines')}</p>
+        {schedules.map((s) => (
         <div key={s.id} className="flex flex-col gap-2 rounded-card border border-border-main bg-bg-main p-3">
           <p className="text-sm font-medium text-text-primary">{s.prompt.slice(0, 120)}{s.prompt.length > 120 ? '…' : ''}</p>
           <div className="flex flex-wrap items-center gap-2 text-xs text-text-tertiary">
@@ -813,7 +831,169 @@ function RoutinesTab({ agentId }: { agentId: string }) {
           </Button>
         </div>
       ))}
+      </div>
     </div>
+  );
+}
+
+interface WatchesState {
+  watches: UrlWatch[];
+  loading: boolean;
+}
+
+function WatchesSection({ agentId }: { agentId: string }) {
+  const [state, setState] = useState<WatchesState>({ watches: [], loading: true });
+  const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [url, setUrl] = useState('');
+  const [intervalMinutes, setIntervalMinutes] = useState('5');
+  const [selector, setSelector] = useState('');
+  const [prompt, setPrompt] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+
+  const load = async () => {
+    try {
+      const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/watches`, {
+        headers: await getApiHeaders(),
+      });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data = (await res.json()) as { watches?: UrlWatch[] };
+      setState({ watches: data.watches ?? [], loading: false });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setState((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/watches`, {
+          headers: await getApiHeaders(),
+        });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const data = (await res.json()) as { watches?: UrlWatch[] };
+        if (mounted) setState({ watches: data.watches ?? [], loading: false });
+      } catch (e) {
+        if (mounted) {
+          setError(e instanceof Error ? e.message : String(e));
+          setState({ watches: [], loading: false });
+        }
+      }
+    })();
+    return () => { mounted = false; };
+  }, [agentId]);
+
+  const handleAdd = async () => {
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/watches`, {
+        method: 'POST',
+        headers: await getApiHeaders(),
+        body: JSON.stringify({
+          url: url.trim(),
+          intervalMinutes: Math.max(5, Math.floor(Number(intervalMinutes) || 5)),
+          ...(selector.trim() ? { selector: selector.trim() } : {}),
+          prompt: prompt.trim(),
+        }),
+      });
+      if (!res.ok) {
+        const body = (await res.json()) as { error?: string };
+        throw new Error(body.error ?? `status ${res.status}`);
+      }
+      setUrl('');
+      setSelector('');
+      setPrompt('');
+      setIntervalMinutes('5');
+      setShowForm(false);
+      await load();
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await fetch(`${getApiBase()}/api/watches/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: await getApiHeaders(),
+      });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const inputClass = 'rounded-control border border-border-main bg-bg-main px-3 py-2 text-sm text-text-primary outline-none focus:border-border-dark';
+
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] text-text-tertiary">{t('URL watches')}</p>
+        <Button type="button" variant="ghost" size="sm" onClick={() => setShowForm((prev) => !prev)}>
+          <Plus className="size-3.5" />
+          {t('Add watch')}
+        </Button>
+      </div>
+      {error && (
+        <p className="text-xs text-function-error">{t('Failed to load watches')} · {error}</p>
+      )}
+      {showForm && (
+        <div className="flex flex-col gap-2 rounded-card border border-border-main bg-bg-main p-3">
+          <label className="flex flex-col gap-1 text-xs text-text-secondary">
+            {t('URL')}
+            <input type="text" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/news" className={inputClass} />
+          </label>
+          <div className="flex gap-2">
+            <label className="flex flex-1 flex-col gap-1 text-xs text-text-secondary">
+              {t('Interval (minutes)')}
+              <input type="number" min={5} value={intervalMinutes} onChange={(e) => setIntervalMinutes(e.target.value)} className={inputClass} />
+            </label>
+            <label className="flex flex-1 flex-col gap-1 text-xs text-text-secondary">
+              {t('Selector (optional)')}
+              <input type="text" value={selector} onChange={(e) => setSelector(e.target.value)} placeholder="#feed" className={inputClass} />
+            </label>
+          </div>
+          <label className="flex flex-col gap-1 text-xs text-text-secondary">
+            {t('Prompt when content changes')}
+            <input type="text" value={prompt} onChange={(e) => setPrompt(e.target.value)} className={inputClass} />
+          </label>
+          {formError && <p className="text-xs text-function-error">{t('Failed to add watch')} · {formError}</p>}
+          <Button type="button" variant="secondary" size="sm" loading={submitting} disabled={submitting || !url.trim() || !prompt.trim()} onClick={handleAdd} className="w-full">
+            {t('Add watch')}
+          </Button>
+        </div>
+      )}
+      {state.loading ? (
+        <Loader2 className="size-4 animate-spin text-text-secondary" />
+      ) : !error && state.watches.length === 0 ? (
+        <p className="text-xs text-text-tertiary">{t('No URL watches yet.')}</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {state.watches.map((w) => (
+            <li key={w.id} className="flex flex-col gap-1 rounded-card border border-border-main bg-bg-main p-3">
+              <p dir="ltr" className="truncate text-xs font-medium text-text-primary">{w.url}</p>
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-tertiary">
+                <span className="rounded-full bg-fill-tsp px-2 py-0.5">{formatInterval(w.intervalMinutes * 60)}</span>
+                {w.selector && <span dir="ltr" className="rounded-full bg-fill-tsp px-2 py-0.5">{w.selector}</span>}
+                <span>{t('Last checked')} · {w.lastCheckedAt ? formatDateTime(w.lastCheckedAt) : t('Never')}</span>
+                <span className={w.lastChangedAt ? 'text-function-success' : ''}>{t('Last changed')} · {w.lastChangedAt ? formatDateTime(w.lastChangedAt) : t('Never')}</span>
+              </div>
+              <p className="text-[11px] text-text-tertiary">{w.prompt.slice(0, 100)}{w.prompt.length > 100 ? '…' : ''}</p>
+              <Button type="button" variant="ghost" size="sm" className="mt-0.5 self-end text-function-error" onClick={() => handleDelete(w.id)}>
+                {t('Delete')}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
