@@ -7,7 +7,9 @@ import { describe, it } from "node:test";
 import {
   detectScenes, pickHighlights, computeReframe, buildCaptions, wrapCaptionText,
   planAutoEdit, parseSceneLog, parseLoudnessLog,
+  adaptiveThreshold, snapToBeats, toSrt, toVtt, captionsForRange,
   type FrameDiff, type EnergySample, type Scene, type SubjectFrame, type MediaProbe,
+  type AutoClip, type CaptionCue,
 } from "../auto.js";
 
 const scenes = (specs: [number, number, number][]): Scene[] =>
@@ -154,6 +156,112 @@ describe("ffmpeg log parsers", () => {
   });
 });
 
+describe("adaptiveThreshold", () => {
+  it("falls back to 0.35 with too few samples or bad sensitivity", () => {
+    assert.strictEqual(adaptiveThreshold([]), 0.35);
+    assert.strictEqual(adaptiveThreshold([{ t: 0, score: 0.1 }]), 0.35);
+    assert.strictEqual(adaptiveThreshold([{ t: 0, score: 0.3 }, { t: 1, score: 0.4 }], { sensitivity: 0 }), 0.35);
+  });
+  it("separates subtle cuts from low-noise footage where 0.35 misses them", () => {
+    const subtle: FrameDiff[] = Array.from({ length: 22 }, (_, i) => ({ t: i / 2, score: i % 7 === 3 ? 0.2 : 0.02 + 0.01 * (i % 3) }));
+    const thr = adaptiveThreshold(subtle);
+    assert.ok(thr > 0.04 && thr < 0.2, `adaptive threshold ${thr} sits between noise ceiling and cut score`);
+    assert.strictEqual(detectScenes(subtle, { threshold: thr }).length, 4);
+    assert.strictEqual(detectScenes(subtle, { threshold: 0.35 }).length, 1);
+  });
+  it("never flags constant low-level noise", () => {
+    const flat = Array.from({ length: 30 }, (_, i) => ({ t: i, score: 0.05 }));
+    assert.strictEqual(detectScenes(flat, { threshold: adaptiveThreshold(flat) }).length, 1);
+  });
+});
+
+describe("beat-synced highlights", () => {
+  it("snaps starts to the nearest beat within tolerance, keeping ends fixed", () => {
+    const clips: AutoClip[] = [
+      { start: 9.7, end: 19.7, score: 1, sceneIndex: 0 },
+      { start: 20.3, end: 22.3, score: 0.6, sceneIndex: 1 },
+    ];
+    const out = snapToBeats(clips, [10, 20]);
+    assert.deepStrictEqual(out.map(c => [c.start, c.end]), [[10, 19.7], [20, 22.3]]);
+  });
+  it("reverts a snap that would truncate the clip below minKeep", () => {
+    const out = snapToBeats([{ start: 5.9, end: 6, score: 1, sceneIndex: 0 }], [4, 6]);
+    assert.strictEqual(out[0]!.start, 5.9);
+  });
+  it("leaves clips alone when no beat is in tolerance", () => {
+    const out = snapToBeats([{ start: 5, end: 9, score: 1, sceneIndex: 0 }], [14], { tolerance: 0.4 });
+    assert.strictEqual(out[0]!.start, 5);
+  });
+  it("validates inputs", () => {
+    assert.throws(() => snapToBeats([] as AutoClip[], [2, 1]), /ascending/);
+    assert.throws(() => snapToBeats([] as AutoClip[], [] as number[], { tolerance: 0 }), /tolerance/);
+    assert.throws(() => snapToBeats(undefined as unknown as AutoClip[], [] as number[]), /clips/);
+  });
+  it("pickHighlights snaps when beats are supplied", () => {
+    const energy: EnergySample[] = [{ start: 0, end: 10, energy: 0.1 }, { start: 10, end: 20, energy: 0.85 }];
+    const out = pickHighlights(scenes([[0, 10, 0.2], [10, 20, 0.9]]), energy, { targetSeconds: 10, beats: [9.8], beatsTolerance: 0.4 });
+    assert.deepStrictEqual(out.map(c => [c.start, c.end]), [[9.8, 20]]);
+  });
+});
+
+describe("computeReframe maxPan (capped pan speed)", () => {
+  const subjects: SubjectFrame[] = [
+    { t: 0, boxes: [{ x: 0.3, y: 0.4, w: 0.1, h: 0.2 }] },
+    { t: 10, boxes: [{ x: 0.9, y: 0.4, w: 0.1, h: 0.2 }] },
+  ];
+  const run = (over: { maxPan?: number; panTickSeconds?: number }) =>
+    computeReframe({ width: 1000, height: 1000, aspect: 0.5, subjects, start: 0, end: 10, ...over });
+  it("walks the crop origin through capped pursuit steps instead of jumping", () => {
+    const pan = 0.02, tick = 0.25;
+    const out = run({ maxPan: pan, panTickSeconds: tick });
+    assert.ok(out.length > 2, "pan walked in multiple windows");
+    assert.ok(Math.abs(out[0]!.crop.x - 105) <= 1, "walks from the left-anchored target, capped per tick");
+    for (let i = 1; i < out.length; i++) {
+      assert.ok(out[i]!.start >= out[i - 1]!.end - 1e-9, "windows stay contiguous");
+      assert.ok(Math.abs(out[i]!.crop.x - out[i - 1]!.crop.x) <= pan * 1000 * tick + 1, `step ${i} respects the cap`);
+    }
+    assert.strictEqual(out.at(-1)!.crop.x, 300, "crop lags the fast-moving target (capped), never catches it mid-clip");
+  });
+  it("arrives at the clamped target when maxPan permits", () => {
+    const out = run({ maxPan: 2, panTickSeconds: 2 });
+    assert.strictEqual(out.length, 5);
+    assert.strictEqual(out.at(-1)!.crop.x, 500, "reaches the clamped target");
+    assert.ok(out.every(w => w.crop.y === 0));
+  });
+  it("validates the pan knobs", () => {
+    assert.throws(() => run({ maxPan: 0 }), /maxPan/);
+    assert.throws(() => run({ maxPan: 0.02, panTickSeconds: 0 }), /panTick/);
+  });
+  it("extension defaults are unchanged without maxPan", () => {
+    const base = computeReframe({ width: 1000, height: 1000, aspect: 0.5, subjects, start: 0, end: 10 });
+    assert.deepStrictEqual(base.map(w => [w.start, w.end, w.crop.x, w.crop.y]), [[0, 10, 400, 0]]);
+  });
+});
+
+describe("caption export + range rebasing", () => {
+  const cues: CaptionCue[] = [
+    { index: 0, start: 0, end: 1.5, text: "hello" },
+    { index: 1, start: 2, end: 3, text: "world" },
+  ];
+  it("emits numbered SRT blocks with comma stamps", () => {
+    assert.strictEqual(toSrt([cues[0]!]), "1\n00:00:00,000 --> 00:00:01,500\nhello\n");
+  });
+  it("emits WebVTT with dot stamps", () => {
+    const out = toVtt(cues);
+    assert.ok(out.startsWith("WEBVTT\n\n"));
+    assert.ok(out.includes("00:00:02.000 --> 00:00:03.000\nworld"));
+  });
+  it("rebases the overlapping cues onto a highlight range", () => {
+    const rebased = captionsForRange(cues, 1, 4, { minKeep: 0.1 });
+    assert.deepStrictEqual(rebased.map(c => [c.index, Math.round(c.start * 100) / 100, Math.round(c.end * 100) / 100]), [[0, 0, 0.5], [1, 1, 2]]);
+  });
+  it("drops slivers below minKeep and validates inputs", () => {
+    assert.deepStrictEqual(captionsForRange(cues, 1, 3, { minKeep: 0.6 }).map(c => c.text), ["world"]);
+    assert.throws(() => captionsForRange(cues, 3, 1), /after start/);
+    assert.throws(() => toSrt([{ index: 0, start: 2, end: 1, text: "x" }]), /start <= end/);
+  });
+});
+
 describe("planAutoEdit", () => {
   const probe: MediaProbe = {
     frameDiffs: async () => [
@@ -174,6 +282,25 @@ describe("planAutoEdit", () => {
     assert.strictEqual(plan.reframes.length, 1);
     assert.strictEqual(plan.captions[0]!.text, "first line of narration");
     assert.deepStrictEqual(plan.warnings, []);
+  });
+  it("threads adaptive threshold, beat snap and capped pan through the plan", async () => {
+    // Low-noise footage (scores 0.05..0.07) with two subtle 0.25 cuts — static 0.35 sees one scene.
+    const subtleProbe: MediaProbe = {
+      frameDiffs: async () => [0.05, 0.06, 0.25, 0.07, 0.05, 0.06, 0.25, 0.07].map((score, i) => ({ t: i, score })),
+      audioEnergy: async () => [{ start: 0, end: 7, energy: 0.2 }],
+      transcribe: async () => [{ start: 0, end: 6, text: "narration" }],
+      subjects: async () => [
+        { t: 0, boxes: [{ x: 0.3, y: 0.4, w: 0.1, h: 0.2 }] },
+        { t: 12, boxes: [{ x: 0.9, y: 0.4, w: 0.1, h: 0.2 }] },
+      ],
+    };
+    const plan = await planAutoEdit("clip.mp4", {
+      adaptive: true, aspect: 0.5, width: 1000, height: 1000, targetSeconds: 3, maxPan: 0.2, beats: [1.9],
+    }, subtleProbe);
+    assert.strictEqual(plan.scenes.length, 3);
+    assert.ok(plan.clips.some(c => c.start === 1.9), "highlight start snapped to the beat");
+    assert.ok(plan.reframes.some(w => w.crop.x !== plan.reframes[0]!.crop.x), "pan walks across windows");
+    assert.strictEqual(plan.captions[0]!.text, "narration");
   });
   it("degrades with warnings when lanes are missing", async () => {
     const plan = await planAutoEdit("clip.mp4", { duration: 8, targetSeconds: 30 }, { audioEnergy: probe.audioEnergy });
