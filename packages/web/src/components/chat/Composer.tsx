@@ -58,6 +58,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const [availableConnectors, setAvailableConnectors] = useState<string[]>([]);
   const [attachLoading, setAttachLoading] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const [connectedOAuth, setConnectedOAuth] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -73,6 +74,22 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   useEffect(() => {
     setSelectedLoamMode(defaultLoamMode);
   }, [defaultLoamMode]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const headers = await getApiHeaders();
+        const res = await fetch(`${getApiBase()}/api/connectors`, { headers });
+        if (!res.ok) return;
+        const data = (await res.json()) as { connectors?: Array<{ id: string; connected: boolean }> };
+        if (mounted) setConnectedOAuth((data.connectors ?? []).filter((c) => c.connected).map((c) => c.id));
+      } catch {
+        /* icons simply stay unlit when the backend is unreachable */
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -465,18 +482,30 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         )}
 
         <div className="hidden items-center -space-x-1 rounded-full border border-border-main bg-bg-menu px-2 py-1 sm:flex">
-          <span className="z-30 flex size-5 items-center justify-center rounded-full border border-white bg-black text-white dark:border-[#1f1f1f]"
-            title={t('Github')}
+          <span
+            className={clsx(
+              'z-30 flex size-5 items-center justify-center rounded-full border border-white bg-black text-white dark:border-[#1f1f1f]',
+              !connectedOAuth.includes('github') && 'opacity-30 grayscale',
+            )}
+            title={`${t('Github')} — ${connectedOAuth.includes('github') ? t('Connected') : t('Disconnected')}`}
           >
             <Github className="size-3" />
           </span>
-          <span className="z-20 flex size-5 items-center justify-center rounded-full border border-white bg-[#ea4335] text-white dark:border-[#1f1f1f]"
-            title={t('Gmail')}
+          <span
+            className={clsx(
+              'z-20 flex size-5 items-center justify-center rounded-full border border-white bg-[#ea4335] text-white dark:border-[#1f1f1f]',
+              !connectedOAuth.includes('gmail') && 'opacity-30 grayscale',
+            )}
+            title={`${t('Gmail')} — ${connectedOAuth.includes('gmail') ? t('Connected') : t('Disconnected')}`}
           >
             <Mail className="size-3" />
           </span>
-          <span className="z-10 flex size-5 items-center justify-center rounded-full border border-white bg-[#4285f4] text-white dark:border-[#1f1f1f]"
-            title={t('Google Calendar')}
+          <span
+            className={clsx(
+              'z-10 flex size-5 items-center justify-center rounded-full border border-white bg-[#4285f4] text-white dark:border-[#1f1f1f]',
+              !connectedOAuth.includes('calendar') && 'opacity-30 grayscale',
+            )}
+            title={`${t('Google Calendar')} — ${connectedOAuth.includes('calendar') ? t('Connected') : t('Disconnected')}`}
           >
             <Calendar className="size-3" />
           </span>
