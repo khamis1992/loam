@@ -13,6 +13,7 @@ import { Composer, ComposerContextBar, type ComposerHandle } from '@/components/
 import { HomeCard } from '@/components/home/HomeCard';
 import { CreditsPopover } from '@/components/home/CreditsPopover';
 import { TemplateCard } from '@/components/home/TemplateCard';
+import { TemplateGalleryDialog } from '@/components/home/TemplateGalleryDialog';
 import { ModelMenu, type AgentModel } from '@/components/home/ModelMenu';
 import { StartFromFileCard } from '@/components/home/StartFromFileCard';
 import { StarterMenu, type StarterItem } from '@/components/home/StarterMenu';
@@ -57,6 +58,7 @@ export default function HomePage() {
   const dispatch = useAppDispatch();
   const composerRef = useRef<ComposerHandle>(null);
 
+  const [galleryOpen, setGalleryOpen] = useState(false);
   const [model, setModel] = useState<AgentModel>(readStoredModel);
   const [panelOpen, setPanelOpen] = useState(false);
   const [activeFolder, setActiveFolder] = useState<'project' | 'downloads' | null>(null);
@@ -349,7 +351,7 @@ export default function HomePage() {
           </div>
 
           {/* Template row */}
-          <div className="mb-3 grid grid-cols-3 gap-[10px]">
+          <div className="mb-3 grid grid-cols-4 gap-[10px]">
             {templates.map((tpl) => (
               <TemplateCard
                 key={tpl.title}
@@ -361,6 +363,14 @@ export default function HomePage() {
                 onClick={() => prefillComposer(tpl.prompt)}
               />
             ))}
+            <button
+              type="button"
+              onClick={() => setGalleryOpen(true)}
+              className="flex h-full min-h-[128px] flex-col items-center justify-center gap-1.5 rounded-card border border-border-main text-text-secondary transition-colors hover:bg-fill-hover"
+            >
+              <LayoutGrid className="size-5" />
+              <span className="text-[13px] font-medium">{t('More templates')}</span>
+            </button>
           </div>
 
           {/* Composer */}
@@ -384,6 +394,11 @@ export default function HomePage() {
         </div>
       </div>
       <SidePanel open={panelOpen} />
+      <TemplateGalleryDialog
+        open={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        onSelect={(tpl) => prefillComposer(tpl.prompt)}
+      />
     </div>
   );
 }
