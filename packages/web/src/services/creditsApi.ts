@@ -46,8 +46,8 @@ export interface InboundEmail {
 
 export interface AssetsSnapshot {
   email: { provider: string; address: string; inbox: InboundEmail[]; realProvider: string };
-  phone: { provider: string; number: string; realProvider: string };
-  wallet: { provider: string; balance: number; currency: string; realProvider: string };
+  phone: { provider: string; number: string; realProvider: string; connected: boolean };
+  wallet: { provider: string; balance: number; currency: string; realProvider: string; placeholder: string; connected: boolean };
 }
 
 interface ErrorBody {
@@ -105,5 +105,29 @@ export function injectMockInboundEmail(input: { from: string; subject: string; b
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
+  });
+}
+
+export function setAssetsEmailAlias(alias: string): Promise<{ address: string; mock: boolean }> {
+  return jsonFetch('/api/assets/email/alias', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ alias }),
+  });
+}
+
+export function setAssetsPhoneNumber(number: string): Promise<{ number: string; mock: boolean }> {
+  return jsonFetch('/api/assets/phone', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ number }),
+  });
+}
+
+export function setAssetsWalletPlaceholder(placeholder: string): Promise<{ placeholder: string; mock: boolean }> {
+  return jsonFetch('/api/assets/wallet', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ placeholder }),
   });
 }

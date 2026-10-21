@@ -44,6 +44,7 @@ export interface WalletProvider {
 
 const EMAIL_ADDRESS_KEY = "mock-email-address";
 const PHONE_NUMBER_KEY = "mock-phone-number";
+const WALLET_PLACEHOLDER_KEY = "mock-wallet-placeholder";
 const EMAIL_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789";
 
 interface StoredEmail extends InboundEmail {}
@@ -127,10 +128,49 @@ export function injectMockInbound(input: { from: string; subject: string; body: 
   return message;
 }
 
+/** Replace the auto-generated inbound alias with a user-chosen one. */
+export function setEmailAlias(alias: string): string {
+  const cleaned = alias.trim();
+  if (!cleaned) throw new Error("email alias is required");
+  if (cleaned.length > 200) throw new Error("email alias is too long");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned)) {
+    throw new Error("email alias must look like an address (name@example.com)");
+  }
+  return transaction(() => {
+    setMeta(EMAIL_ADDRESS_KEY, cleaned);
+    return cleaned;
+  });
+}
+
+/** Replace the auto-generated number with a user-chosen one. */
+export function setPhoneNumber(number: string): string {
+  const cleaned = number.trim();
+  if (!cleaned) throw new Error("phone number is required");
+  if (cleaned.length > 40) throw new Error("phone number is too long");
+  return transaction(() => {
+    setMeta(PHONE_NUMBER_KEY, cleaned);
+    return cleaned;
+  });
+}
+
+/** Store a billing/wallet placeholder (e.g. a Stripe customer id). Not connected. */
+export function setWalletPlaceholder(value: string): string {
+  const cleaned = value.trim();
+  if (cleaned.length > 200) throw new Error("wallet placeholder is too long");
+  return transaction(() => {
+    setMeta(WALLET_PLACEHOLDER_KEY, cleaned);
+    return cleaned;
+  });
+}
+
+export function getWalletPlaceholder(): string {
+  return getMeta(WALLET_PLACEHOLDER_KEY) ?? "";
+}
+
 export interface AssetsSnapshot {
   email: { provider: string; address: string; inbox: InboundEmail[]; realProvider: string };
-  phone: { provider: string; number: string; realProvider: string };
-  wallet: { provider: string; balance: number; currency: string; realProvider: string };
+  phone: { provider: string; number: string; realProvider: string; connected: boolean };
+  wallet: { provider: string; balance: number; currency: string; realProvider: string; placeholder: string; connected: boolean };
 }
 
 /** GET /api/assets payload. */
@@ -146,12 +186,15 @@ export function getAssetsSnapshot(): AssetsSnapshot {
       provider: mockPhoneProvider.id,
       number: mockPhoneProvider.getNumber(),
       realProvider: mockPhoneProvider.realProvider,
+      connected: false,
     },
     wallet: {
       provider: mockWalletProvider.id,
       balance: mockWalletProvider.getBalance().amount,
       currency: mockWalletProvider.getBalance().currency,
       realProvider: mockWalletProvider.realProvider,
+      placeholder: getWalletPlaceholder(),
+      connected: false,
     },
   };
 }
@@ -159,7 +202,7 @@ export function getAssetsSnapshot(): AssetsSnapshot {
 /** Test helper: wipe mock assets so each test starts clean. */
 export function resetAssetsForTests(): void {
   const db = database();
-  db.prepare("DELETE FROM metadata WHERE key IN ('mock-email-address','mock-phone-number')").run();
+  db.prepare("DELETE FROM metadata WHERE key IN ('mock-email-address','mock-phone-number','mock-wallet-placeholder')").run();
   for (const m of allEntities<StoredEmail>("mock_inbox")) {
     removeEntity("mock_inbox", m.id);
   }

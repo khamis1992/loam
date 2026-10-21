@@ -1,8 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { t } from '@/i18n/t';
 import { Row, Section } from './SettingsDialog';
 import { Button } from '@/components/ui/Button';
-import { fetchAssets, injectMockInboundEmail, type AssetsSnapshot, type InboundEmail } from '@/services/creditsApi';
+import {
+  fetchAssets,
+  injectMockInboundEmail,
+  setAssetsEmailAlias,
+  setAssetsPhoneNumber,
+  setAssetsWalletPlaceholder,
+  type AssetsSnapshot,
+  type InboundEmail,
+} from '@/services/creditsApi';
 
 interface InjectDraft {
   from: string;
@@ -12,10 +20,15 @@ interface InjectDraft {
 
 const EMPTY_DRAFT: InjectDraft = { from: '', subject: '', body: '' };
 
+type AssetField = 'alias' | 'phone' | 'wallet';
+
 /**
  * Settings > Assets (Email / Phone / Wallet), OPD option #8.
- * Everything here is a local mock; notes state which external provider a
- * real deployment would need.
+ *
+ * Everything here is a local mock: the server stores an inbound email alias, a
+ * phone number and a wallet/billing placeholder, but no real telephony or
+ * billing provider is connected. Notes state which external provider a real
+ * deployment would need.
  */
 export function AssetsPane({ kind }: { kind: 'Email' | 'Phone' | 'Wallet' }) {
   const [assets, setAssets] = useState<AssetsSnapshot | null>(null);
@@ -24,13 +37,41 @@ export function AssetsPane({ kind }: { kind: 'Email' | 'Phone' | 'Wallet' }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const load = () => {
-    fetchAssets()
-      .then((data) => { setAssets(data); setError(null); })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
-  };
+  const [alias, setAlias] = useState('');
+  const [phone, setPhone] = useState('');
+  const [wallet, setWallet] = useState('');
+  const [saving, setSaving] = useState<AssetField | null>(null);
 
-  useEffect(load, []);
+  const load = useCallback(() => {
+    fetchAssets()
+      .then((data) => {
+        setAssets(data);
+        setAlias(data.email.address);
+        setPhone(data.phone.number);
+        setWallet(data.wallet.placeholder);
+        setError(null);
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+  }, []);
+
+  useEffect(load, [load]);
+
+  const save = async (field: AssetField) => {
+    setSaving(field);
+    setNotice(null);
+    setError(null);
+    try {
+      if (field === 'alias') await setAssetsEmailAlias(alias);
+      else if (field === 'phone') await setAssetsPhoneNumber(phone);
+      else await setAssetsWalletPlaceholder(wallet);
+      setNotice(t('Saved'));
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(null);
+    }
+  };
 
   const inject = async () => {
     setBusy(true);
@@ -52,6 +93,13 @@ export function AssetsPane({ kind }: { kind: 'Email' | 'Phone' | 'Wallet' }) {
     return <p className="text-sm text-text-tertiary">{error ?? '…'}</p>;
   }
 
+  const status = (
+    <>
+      {notice && <p className="text-sm text-text-tertiary">{notice}</p>}
+      {error && <p className="text-sm text-func-error">{error}</p>}
+    </>
+  );
+
   if (kind === 'Email') {
     return (
       <div className="space-y-2">
@@ -62,6 +110,21 @@ export function AssetsPane({ kind }: { kind: 'Email' | 'Phone' | 'Wallet' }) {
           <Row label={t('Provider')} description={t('For real use you would connect: {provider}', { provider: assets.email.realProvider })}>
             <span className="rounded-full bg-fill-tsp px-2 py-0.5 text-xs text-text-secondary">{t('Mock')}</span>
           </Row>
+        </Section>
+        <Section title={t('Inbound email alias')}>
+          <div className="flex flex-col gap-2 py-2">
+            <input
+              value={alias}
+              onChange={(e) => setAlias(e.target.value)}
+              placeholder={t('name@example.com')}
+              className="h-row-sm w-full rounded-control border border-border-main bg-fill-tsp px-2 text-sm text-text-primary placeholder:text-text-tertiary"
+            />
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="secondary" loading={saving === 'alias'} onClick={() => void save('alias')} disabled={!alias.trim()}>
+                {t('Save alias')}
+              </Button>
+            </div>
+          </div>
         </Section>
         <Section title={t('Mock inbox')}>
           {assets.email.inbox.length === 0 && <p className="py-2 text-sm text-text-tertiary">{t('No messages')}</p>}
@@ -105,11 +168,10 @@ export function AssetsPane({ kind }: { kind: 'Email' | 'Phone' | 'Wallet' }) {
               <Button size="sm" variant="secondary" loading={busy} onClick={() => void inject()} disabled={!draft.from.trim() || !draft.subject.trim()}>
                 {t('Add to inbox')}
               </Button>
-              {notice && <span className="text-xs text-text-tertiary">{notice}</span>}
-              {error && <span className="text-xs text-func-error">{error}</span>}
             </div>
           </div>
         </Section>
+        {status}
       </div>
     );
   }
@@ -122,9 +184,27 @@ export function AssetsPane({ kind }: { kind: 'Email' | 'Phone' | 'Wallet' }) {
             <span className="text-sm text-text-secondary">{assets.phone.number}</span>
           </Row>
           <Row label={t('Provider')} description={t('For real use you would connect: {provider}', { provider: assets.phone.realProvider })}>
-            <span className="rounded-full bg-fill-tsp px-2 py-0.5 text-xs text-text-secondary">{t('Mock')}</span>
+            <span className="rounded-full bg-fill-tsp px-2 py-0.5 text-xs text-text-secondary">
+              {assets.phone.connected ? t('Connected') : t('Not connected')}
+            </span>
           </Row>
         </Section>
+        <Section title={t('Phone number')}>
+          <div className="flex flex-col gap-2 py-2">
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder={t('+1 (555) 010-0000')}
+              className="h-row-sm w-full rounded-control border border-border-main bg-fill-tsp px-2 text-sm text-text-primary placeholder:text-text-tertiary"
+            />
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="secondary" loading={saving === 'phone'} onClick={() => void save('phone')} disabled={!phone.trim()}>
+                {t('Save number')}
+              </Button>
+            </div>
+          </div>
+        </Section>
+        {status}
       </div>
     );
   }
@@ -136,9 +216,27 @@ export function AssetsPane({ kind }: { kind: 'Email' | 'Phone' | 'Wallet' }) {
           <span className="text-sm font-medium text-text-primary">{assets.wallet.balance.toLocaleString('en')} {t('credits')}</span>
         </Row>
         <Row label={t('Provider')} description={t('For real use you would connect: {provider}', { provider: assets.wallet.realProvider })}>
-          <span className="rounded-full bg-fill-tsp px-2 py-0.5 text-xs text-text-secondary">{t('Mock')}</span>
+          <span className="rounded-full bg-fill-tsp px-2 py-0.5 text-xs text-text-secondary">
+            {assets.wallet.connected ? t('Connected') : t('Not connected')}
+          </span>
         </Row>
       </Section>
+      <Section title={t('Billing placeholder')}>
+        <div className="flex flex-col gap-2 py-2">
+          <input
+            value={wallet}
+            onChange={(e) => setWallet(e.target.value)}
+            placeholder={t('e.g. Stripe customer id')}
+            className="h-row-sm w-full rounded-control border border-border-main bg-fill-tsp px-2 text-sm text-text-primary placeholder:text-text-tertiary"
+          />
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" loading={saving === 'wallet'} onClick={() => void save('wallet')}>
+              {t('Save placeholder')}
+            </Button>
+          </div>
+        </div>
+      </Section>
+      {status}
     </div>
   );
 }
