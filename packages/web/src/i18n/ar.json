@@ -498,6 +498,8 @@
   "Skill installed": "تم تثبيت المهارة.",
   "Skill updated": "تم تحديث المهارة.",
   "Skill removed": "تمت إزالة المهارة.",
+  "Delete skill?": "حذف المهارة؟",
+  "This permanently removes the skill. This cannot be undone.": "يؤدي هذا إلى إزالة المهارة نهائيًا. لا يمكن التراجع عن هذا.",
   "Source": "المصدر",
   "Skills loaded from the {name} catalog.": "تم تحميل المهارات من كتالوج {name}.",
   "Failed to load connectors": "فشل تحميل الموصلات.",

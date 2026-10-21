@@ -86,6 +86,7 @@ import { handleMarketplaceRoutes } from "./routes/marketplace.js";
 import { handlePersonalizationRoutes } from "./routes/personalization.js";
 import { handleApiKeysRoutes } from "./routes/apiKeys.js";
 import { handleDataControlsRoutes } from "./routes/dataControls.js";
+import { handleMemorySkillsRoutes } from "./routes/memorySkills.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
 import { handleRetryLastRoutes } from "./routes/retryLast.js";
@@ -1745,6 +1746,8 @@ loadAgents();
         if (await handlePersonalizationRoutes(req, res, p)) return;
         if (await handleApiKeysRoutes(req, res, p)) return;
         if (await handleDataControlsRoutes(req, res, p)) return;
+        // Settings › Skills (UNIMPLEMENTED_OPTIONS #4): proxy the memory-skills MCP.
+        if (await handleMemorySkillsRoutes(req, res, p, { call: memorySkillsCall })) return;
         if (await handleApprovalRuleRoutes(req, res, p, url)) return;
         if (await handleGrokbotBridgeRoutes(req, res, p, url)) return;
         // Public read-only task shares (option #11): create/revoke are authed,
