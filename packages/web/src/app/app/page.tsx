@@ -9,7 +9,7 @@ import clsx from 'clsx';
 import { useAppDispatch } from '@/store';
 import { addSession, loadSessions } from '@/store/sessionsSlice';
 import { t } from '@/i18n/t';
-import { Composer, ComposerContextBar, type ComposerHandle } from '@/components/chat/Composer';
+import { Composer, ComposerContextBar, type ComposerHandle, type ProjectOption } from '@/components/chat/Composer';
 import { HomeCard } from '@/components/home/HomeCard';
 import { CreditsPopover } from '@/components/home/CreditsPopover';
 import { TemplateCard } from '@/components/home/TemplateCard';
@@ -23,7 +23,7 @@ import { BuildIllustration, CreateIllustration } from '@/components/home/BuildIl
 import { useBranch } from '@/components/home/useBranch';
 import { uploadFile, type Attachment } from '@/services/upload';
 import { desktopApis, isDesktop } from '@/services/desktopApis';
-import { getSessionToken } from '@/services/rpc';
+import { getSessionToken, getApiBase, getApiHeaders } from '@/services/rpc';
 import { shortUid } from '@/utils/uid';
 import type { TaskMode } from '@shared/socket';
 
@@ -65,12 +65,51 @@ export default function HomePage() {
   const [credits, setCredits] = useState<number | null>(null);
   const [update, setUpdate] = useState<{ title: string; subtitle: string; version?: string; available: boolean } | null>(null);
   const [defaultLoamMode, setDefaultLoamMode] = useState<string | undefined>(undefined);
-
-  const branch = useBranch();
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [worktreeEnabled, setWorktreeEnabled] = useState(false);
+  const [projectBranch, setProjectBranch] = useState<string | null>(null);
+  const desktopBranch = useBranch();
+  const branch = projectBranch || desktopBranch;
 
   useEffect(() => {
     localStorage.setItem(MODEL_KEY, model);
   }, [model]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch(`${getApiBase()}/api/projects`, { headers: await getApiHeaders() });
+        if (!res.ok) return;
+        const data = (await res.json()) as { projects?: Array<{ id: string; name: string; folder?: string }> };
+        if (mounted) setProjects((data.projects ?? []).map((p) => ({ id: p.id, name: p.name, folder: p.folder ?? null })));
+      } catch {
+        // Loam server API unavailable: the chip keeps the folder dialog.
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  // Option 17: the branch chip shows the real branch of the selected project's folder.
+  useEffect(() => {
+    setProjectBranch(null);
+    if (!projectId) return;
+    const folder = projects.find((p) => p.id === projectId)?.folder;
+    if (!folder) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch(`${getApiBase()}/api/projects/${encodeURIComponent(projectId)}/git`, { headers: await getApiHeaders() });
+        if (!res.ok) return;
+        const data = (await res.json()) as { isGit?: boolean; branch?: string | null };
+        if (mounted && data.isGit && data.branch) setProjectBranch(data.branch);
+      } catch {
+        // ignore: fall back to the desktop-provided branch
+      }
+    })();
+    return () => { mounted = false; };
+  }, [projectId, projects]);
 
   useEffect(() => {
     getSessionToken().then((token) => {
@@ -136,9 +175,23 @@ export default function HomePage() {
       if (res && typeof res === 'object' && 'path' in res && typeof (res as { path?: unknown }).path === 'string') {
         setProjectPath((res as { path: string }).path);
         setActiveFolder('project');
+        setProjectId(null);
+        setProjectBranch(null);
       }
     } catch {
       // ignore
+    }
+  };
+
+  const selectProjectOption = (project: ProjectOption | null) => {
+    setProjectId(project?.id ?? null);
+    if (project?.folder) {
+      setProjectPath(project.folder);
+      setActiveFolder('project');
+    } else if (!project) {
+      setActiveFolder(null);
+      setProjectPath(null);
+      setWorktreeEnabled(false);
     }
   };
 
@@ -161,6 +214,8 @@ export default function HomePage() {
   const handleAddFolder = (path: string) => {
     setProjectPath(path);
     setActiveFolder('project');
+    setProjectId(null);
+    setProjectBranch(null);
   };
 
   const handleUpdateClick = async () => {
@@ -372,6 +427,11 @@ export default function HomePage() {
               onChooseProject={chooseProject}
               onSelectDownloads={selectDownloads}
               branch={branch}
+              projects={projects}
+              projectId={projectId}
+              onSelectProject={selectProjectOption}
+              worktreeEnabled={worktreeEnabled}
+              onWorktreeChange={setWorktreeEnabled}
             />
             <Composer
               ref={composerRef}
@@ -379,6 +439,9 @@ export default function HomePage() {
               home
               onAddFolder={handleAddFolder}
               defaultLoamMode={defaultLoamMode}
+              modelTier={model}
+              projectId={projectId}
+              worktreeEnabled={worktreeEnabled}
             />
           </div>
         </div>
