@@ -62,7 +62,11 @@ export function ApprovalCard({ request, onRespond }: ApprovalCardProps) {
 
   const toolName =
     record?.tool ??
-    (request.detail.kind === "terminal" ? request.detail.command : `${request.detail.kind}`);
+    (request.detail?.kind === "terminal"
+      ? request.detail.command
+      : request.detail
+        ? `${request.detail.kind}`
+        : (request.actionType ?? ""));
   const summary = request.summary || record?.summary || "";
   const argsPreview = prettyPreview(record?.argsPreview);
 

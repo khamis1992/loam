@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { Server } from 'socket.io';
 import type { AddressInfo } from 'node:net';
 import { ChatSocket, shortUid } from './chatSocket.js';
-import type { ServerEnvelope, ServerMessage } from '@agent-studio/shared';
+import type { ServerEnvelope, ServerMessage } from '@shared/socket';
 
 function makeEnvelope(sessionId: string, event: Record<string, unknown>): ServerEnvelope {
   const id = shortUid();

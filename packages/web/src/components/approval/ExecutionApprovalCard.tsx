@@ -14,7 +14,39 @@ export interface ExecutionApprovalCardProps {
 }
 
 export function ExecutionApprovalCard({ request, onResolve }: ExecutionApprovalCardProps) {
-  const { detail } = request;
+  const detail = request.detail;
+
+  // Wire shape allows detail to be absent (see @shared/socket); fall back to a
+  // generic card so the approval is still answerable.
+  if (!detail) {
+    return (
+      <div className="max-w-[560px] rounded-card border border-[0.5px] border-border-dark bg-bg-menu p-0 shadow-card">
+        <div className="flex items-center gap-2 border-b border-border-main px-4 py-3 text-sm font-medium text-text-primary">
+          <ShieldAlert className="size-5" aria-hidden />
+          {t("Approval request")}
+        </div>
+        <div className="space-y-3 p-4">
+          {request.summary && <p className="text-sm text-text-secondary">{request.summary}</p>}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-border-main px-4 py-3">
+          <button
+            type="button"
+            onClick={() => onResolve("deny")}
+            className="h-row-sm rounded-control border border-border-main bg-transparent px-3 text-sm font-medium text-text-primary hover:bg-fill-hover"
+          >
+            {t("Deny")}
+          </button>
+          <button
+            type="button"
+            onClick={() => onResolve("approve")}
+            className="h-row-sm rounded-control bg-text-primary px-3 text-sm font-medium text-text-onblack hover:opacity-90"
+          >
+            {t("Allow once")}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const headerTitle =
     detail.kind === "terminal"
