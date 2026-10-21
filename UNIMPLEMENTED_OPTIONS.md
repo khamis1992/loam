@@ -25,7 +25,7 @@ Size: S = under 1 day, M = 1–3 days, L = more than 3 days.
 | 17 | Choose project / Downloads chips, Worktree checkbox, git branch chip ("main") | Composer context row | The branch shows a fallback. Needs a project picker bound to /api/projects plus worktree creation through the existing backend `parseWorktrees` | S–M |
 | 18 | Model tiers Max / Lite / Flex (BYO key) | Model dropdown | The choice is stored but not mapped to different models. Flex needs a key input | S–M |
 | 19 | Voice mode and mic buttons | Composer | Wiring to the existing STT server (scripts/stt_server.py) and TTS | M |
-| 20 | Bell (notifications) and devices icon | Sidebar bottom | Notification feed. The devices icon could link to the /app/computers page | S |
+| 20 | Bell (notifications) and devices icon | Sidebar bottom | Fixed (OpenCode): client notifications store with stub feed (notificationsStore.ts); bell dropdown with unread dot + mark-read; devices icon → /app/computers | ✅ |
 | 21 | Creations and Library pages | Sidebar | Fixed (OpenCode): single-call /api/files?list=1, /api/creative?list=1 scenes and /api/media list default; strict per-task contracts kept | ✅ |
 | 22 | Projects / Automations create-edit | Sidebar pages | List only. Create, edit and delete UI over the existing /api/projects and /api/schedules | M |
 | 23 | Computers / Agent Loam actions | Sidebar pages | List only (empty now). Needs pair-device and create-companion flows over the existing APIs | M |
