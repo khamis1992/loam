@@ -164,4 +164,31 @@ describe("url-watch trigger (MF7)", () => {
     );
     assert.ok(effective.includes("watch_url"), "effective run tool list must include watch_url");
   });
+
+  it("github-issues connector maps repo/label to the API with the token header", async () => {
+    const prevToken = process.env.GITHUB_TOKEN;
+    process.env.GITHUB_TOKEN = "tok_test";
+    let calledUrl = "";
+    let calledHeaders: Record<string, string> = {};
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: unknown, init?: { headers?: Record<string, string> }) => {
+      calledUrl = String(url);
+      calledHeaders = init?.headers ?? {};
+      return {
+        ok: true,
+        json: async () => [
+          { number: 7, title: "排行 bug", state: "open", updated_at: "2026-10-21T00:00:00Z" },
+        ],
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    try {
+      const text = await urlWatch.githubIssuesFetcher({ url: "octo/hello:bug", scheduleId: "sched_x" });
+      assert.match(calledUrl, /api\.github\.com\/repos\/octo\/hello\/issues\?labels=bug&/);
+      assert.equal(calledHeaders.authorization, "Bearer tok_test");
+      assert.match(text, /#7 \[open\] 排行 bug/);
+    } finally {
+      globalThis.fetch = realFetch;
+      if (prevToken === undefined) delete process.env.GITHUB_TOKEN; else process.env.GITHUB_TOKEN = prevToken;
+    }
+  });
 });
