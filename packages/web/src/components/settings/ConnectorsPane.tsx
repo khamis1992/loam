@@ -5,21 +5,13 @@ import { Puzzle, Loader2, AlertCircle, Github, Mail, Calendar, Plug } from 'luci
 import clsx from 'clsx';
 import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
+import { listConnectors, connectConnector, disconnectConnector, type OAuthConnector } from '@/services/connectorsApi';
 import { Section } from './SettingsDialog';
 
 interface Connector {
   name: string;
   connected?: boolean;
   toolCount?: number;
-}
-
-interface OAuthConnector {
-  id: string;
-  name: string;
-  configured: boolean;
-  connected: boolean;
-  account: string | null;
-  envVars: string[];
 }
 
 const OAUTH_ICONS: Record<string, typeof Github> = { github: Github, gmail: Mail, calendar: Calendar };
@@ -32,16 +24,11 @@ function OAuthConnectorsSection() {
 
   const refresh = useCallback(async () => {
     try {
-      const headers = await getApiHeaders();
-      const res = await fetch(`${getApiBase()}/api/connectors`, { headers });
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const data = (await res.json()) as { connectors?: OAuthConnector[] };
+      const data = await listConnectors();
       setItems(data.connectors ?? []);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
     }
   }, []);
 
@@ -49,10 +36,7 @@ function OAuthConnectorsSection() {
     let mounted = true;
     (async () => {
       try {
-        const headers = await getApiHeaders();
-        const res = await fetch(`${getApiBase()}/api/connectors`, { headers });
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const data = (await res.json()) as { connectors?: OAuthConnector[] };
+        const data = await listConnectors();
         if (mounted) setItems(data.connectors ?? []);
       } catch (e) {
         if (mounted) setError(e instanceof Error ? e.message : String(e));
@@ -66,14 +50,9 @@ function OAuthConnectorsSection() {
   const connect = async (id: string) => {
     setBusyId(id);
     try {
-      const headers = { ...(await getApiHeaders()), 'content-type': 'application/json' };
-      const res = await fetch(`${getApiBase()}/api/connectors/${id}/connect`, { method: 'POST', headers });
-      const data = (await res.json().catch(() => ({}))) as { authUrl?: string; error?: string };
-      if (!res.ok || !data.authUrl) {
-        setError(data.error ?? `connect failed (${res.status})`);
-      } else {
-        window.open(data.authUrl, '_blank', 'noopener');
-      }
+      const data = await connectConnector(id);
+      if (!data.authUrl) throw new Error(data.error ?? 'connect failed');
+      window.open(data.authUrl, '_blank', 'noopener');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -85,8 +64,9 @@ function OAuthConnectorsSection() {
   const disconnect = async (id: string) => {
     setBusyId(id);
     try {
-      const headers = { ...(await getApiHeaders()), 'content-type': 'application/json' };
-      await fetch(`${getApiBase()}/api/connectors/${id}/disconnect`, { method: 'POST', headers });
+      await disconnectConnector(id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusyId(null);
       void refresh();
