@@ -15,7 +15,7 @@ Size: S = under 1 day, M = 1–3 days, L = more than 3 days.
 | 7 | Settings › Integrations / Developers | Settings ("Coming soon") | API keys page and a public API on the adapter | M |
 | 8 | Settings › Email / Phone / Wallet | Settings › Assets ("Coming soon") | Inbound email, telephony and billing. No backend at all | L each |
 | 9 | Credits "1K", Free plan / Upgrade, referral card ("Share Loam with a friend / Get 500 credits each") | Home header, account menu, sidebar | A credit ledger and billing. The value is static today | M |
-| 10 | Update button / updater | Not rendered | electron-updater feed and server. The `updater` IPC namespace exists but has no feed | M |
+| 10 | Update button / updater | Settings › General | Fixed (OpenCode): electron-updater generic feed (LOAM_UPDATE_FEED_URL + local channel, scripts/updater-test-feed.mjs); Settings check/download/restart via the `updater` IPC namespace | ✅ |
 | 11 | Share (public link) | Task header | Client-side "Copy link" works. A real public read-only share needs a share-token endpoint and a replay page | M |
 | 12 | Message Copy / Retry | Not present on bubbles | Copy is client-only (S). Retry needs a re-run-last-turn backend call | S |
 | 13 | Live computer screen (VNC) and browser view in "Loam's computer" | Task right panel | The panel already shows the command and its output. A live screen or browser view needs screen streaming | L |
