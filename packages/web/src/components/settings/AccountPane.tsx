@@ -1,9 +1,12 @@
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppSelector, useAppDispatch } from '@/store';
 import { t, PRODUCT } from '@/i18n/t';
 import { Row, Section } from './SettingsDialog';
 import { Button } from '@/components/ui/Button';
 import { logoutAndRedirect } from '@/services/desktopApis';
+import { fetchCredits, type CreditPlan } from '@/services/creditsApi';
+import { PlanDialog } from '@/components/dialogs/PlanDialog';
 
 export function AccountPane() {
   const user = useAppSelector((s) => s.auth.user);
@@ -11,6 +14,14 @@ export function AccountPane() {
   const dispatch = useAppDispatch();
   const name = user?.displayname || 'Demo User';
   const email = user?.email || 'demo@example.com';
+  const [plan, setPlan] = useState<CreditPlan | null>(null);
+  const [planOpen, setPlanOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCredits().then((data) => { if (!cancelled) setPlan(data.plan); }).catch(() => { if (!cancelled) setPlan(null); });
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div className="space-y-2">
@@ -24,8 +35,8 @@ export function AccountPane() {
       </Section>
 
       <Section title={t('Plan')}>
-        <Row label={t('Current plan')} description={t('Free plan')}>
-          <Button variant="primary" size="sm">{t('Upgrade')}</Button>
+        <Row label={t('Current plan')} description={t(plan === 'pro' ? 'Pro plan' : 'Free plan')}>
+          <Button variant="primary" size="sm" onClick={() => setPlanOpen(true)}>{t('Upgrade')}</Button>
         </Row>
       </Section>
 
@@ -37,6 +48,7 @@ export function AccountPane() {
           <Button variant="danger" size="sm">{t('Delete account')}</Button>
         </Row>
       </Section>
+      <PlanDialog open={planOpen} onClose={() => setPlanOpen(false)} />
     </div>
   );
 }

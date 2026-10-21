@@ -1,15 +1,24 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Sparkles, ExternalLink } from 'lucide-react';
+import { Sparkles, Rocket, ExternalLink } from 'lucide-react';
 import { useAppDispatch } from '@/store';
 import { openSettings } from '@/store';
 import { t } from '@/i18n/t';
+import { fetchCredits, type CreditPlan } from '@/services/creditsApi';
+import { PlanDialog } from '@/components/dialogs/PlanDialog';
 
 export function CreditsPopover({ total }: { total: number }) {
   const [open, setOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [plan, setPlan] = useState<CreditPlan | null>(null);
   const dispatch = useAppDispatch();
   const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    fetchCredits().then((data) => setPlan(data.plan)).catch(() => setPlan(null));
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -48,10 +57,18 @@ export function CreditsPopover({ total }: { total: number }) {
             </div>
             <div>
               <div className="text-headline-sm text-text-primary">{full}</div>
-              <div className="text-xs text-text-tertiary">{t('Total credits')}</div>
+              <div className="text-xs text-text-tertiary">{t('Total credits')}{plan ? ` · ${plan === 'pro' ? t('Pro plan') : t('Free plan')}` : ''}</div>
             </div>
           </div>
           <p className="mb-3 text-xs text-text-secondary">{t('Credits available to use across all tasks.')}</p>
+          <button
+            type="button"
+            onClick={() => { setOpen(false); setPlanOpen(true); }}
+            className="flex h-row-sm w-full items-center justify-between rounded-control px-2 text-sm text-text-primary hover:bg-fill-hover"
+          >
+            {t('Plans and credits')}
+            <Rocket className="size-3.5 text-text-tertiary" />
+          </button>
           <button
             type="button"
             onClick={() => { setOpen(false); dispatch(openSettings('Usage')); }}
@@ -62,6 +79,7 @@ export function CreditsPopover({ total }: { total: number }) {
           </button>
         </div>
       )}
+      <PlanDialog open={planOpen} onClose={() => setPlanOpen(false)} />
     </div>
   );
 }
