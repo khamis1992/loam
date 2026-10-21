@@ -45,7 +45,10 @@ function readSavedFeedUrl() {
 }
 
 function feedUrl() {
-  const fromEnv = (process.env.LOAM_UPDATE_URL || process.env.MANUS_LOCAL_UPDATE_URL || "").trim();
+  // LOAM_UPDATE_FEED_URL is the canonical override (generic provider feed,
+  // e.g. a local test feed from scripts/updater-test-feed.mjs); the older
+  // aliases keep working.
+  const fromEnv = (process.env.LOAM_UPDATE_FEED_URL || process.env.LOAM_UPDATE_URL || process.env.MANUS_LOCAL_UPDATE_URL || "").trim();
   if (fromEnv) return fromEnv;
   const fromSettings = readSavedFeedUrl();
   if (fromSettings) return fromSettings;

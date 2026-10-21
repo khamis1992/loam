@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAppDispatch, useAppSelector, setLocale } from '@/store';
 import { t, setLocale as setDocumentLocale } from '@/i18n/t';
 import { Row, Section } from './SettingsDialog';
+import { UpdaterSettings } from '@/components/update/UpdaterSettings';
 
 const NOTIFICATIONS_KEY = 'agent-studio:browser-notifications';
 const SOUND_KEY = 'agent-studio:sound-alert';
@@ -66,6 +67,8 @@ export function GeneralPane() {
           <PersistedSwitch storageKey={UPDATES_KEY} />
         </Row>
       </Section>
+
+      <UpdaterSettings />
     </div>
   );
 }

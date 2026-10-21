@@ -495,6 +495,10 @@ async function main(): Promise<void> {
     } finally { clearRunSignal(task.id); heartbeat?.stop(); if (lease) releaseRunLease(lease); }
   };
 
+  // Bridge for src/server/routes/retryLast.ts: the route module cannot receive
+  // runTask through startServer deps, so it reads this global per request.
+  (globalThis as { __loamRunTask?: typeof runTask }).__loamRunTask = runTask;
+
   // Companion-to-companion delegation: the delegate task is created and queued
   // under the TARGET companion; we return its id immediately — the execution
   // queue is serial, so awaiting completion here would deadlock the delegating run.
