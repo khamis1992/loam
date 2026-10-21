@@ -1,10 +1,10 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 /**
- * Grok Bot-style agent avatar: a colored geometric shape with a centered
- * monogram, or a custom image. Original geometry and animation curves.
+ * Grok Bot-style agent avatar: a compact, vivid, rounded colored mark with a
+ * centered monogram, or a custom image.
  */
 
 /** The 8 supported shape tokens (mirrors AVATAR_SHAPES in src/server/agents.ts). */
@@ -51,35 +51,41 @@ const PALETTE: Record<AvatarColor, { base: string; ink: string }> = {
   gray: { base: '#6e6f77', ink: '#ffffff' },
 };
 
-/** Original geometry per shape, drawn in a 64x64 viewBox. */
+/**
+ * Shared stroke width. Every silhouette is filled and stroked in its own color
+ * with round joins, which rounds the corners without changing the silhouette's
+ * weight, so all 8 marks stay crisp at 28-32px.
+ */
+const SHAPE_STROKE = 3;
+
+/** Softened geometry per shape, drawn in a 64x64 viewBox. */
 const SHAPE_PATHS: Record<AvatarShape, React.ReactNode> = {
   squircle: (
-    <path d="M32 2 C52 2 62 12 62 32 C62 52 52 62 32 62 C12 62 2 52 2 32 C2 12 12 2 32 2 Z" />
+    <path d="M32 3 C47 3 61 17 61 32 C61 47 47 61 32 61 C17 61 3 47 3 32 C3 17 17 3 32 3 Z" />
   ),
   teardrop: (
-    <path d="M32 2 C45 15 58 26 58 40 C58 53.25 46.25 62 32 62 C17.75 62 6 53.25 6 40 C6 26 19 15 32 2 Z" />
+    <path d="M32 4 C44 15 57 26 57 39 C57 52 45.5 60 32 60 C18.5 60 7 52 7 39 C7 26 20 15 32 4 Z" />
   ),
   pebble: (
-    <path d="M33 3 C49 2 60 13 61 30 C62 47 51 61 33 61 C16 61 3 50 3 32 C3 15 17 4 33 3 Z" />
+    <path d="M33 4 C49 3 59 14 60 30 C61 47 50 60 33 60 C16 60 4 49 4 32 C4 16 17 5 33 4 Z" />
   ),
   hex: (
     <path
       d="M58 32 L45 54.5 L19 54.5 L6 32 L19 9.5 L45 9.5 Z"
-      strokeWidth={9}
-      strokeLinejoin="round"
+      strokeWidth={6}
     />
   ),
   blob: (
-    <path d="M41 3 C55 5 63 18 61 33 C59 49 49 61 32 61 C16 61 3 53 3 38 C3 24 8 13 19 7 C26 3.5 34 2 41 3 Z" />
+    <path d="M41 4 C54 6 62 18 60 33 C58 49 48 60 32 60 C16 60 4 52 4 37 C4 23 9 12 20 6.5 C27 3.5 34 3.5 41 4 Z" />
   ),
   cloud: (
-    <path d="M13 51 C7 51 3 46 3 40 C3 34 8 30 13 30 C13 19 21 11 32 11 C42 11 50 18 50 28 C56 28 61 33 61 40 C61 46 57 51 51 51 Z" />
+    <path d="M14 50 C8 50 4 46 4 40 C4 35 8 31 13 30.5 C14 20 22 12 32 12 C42 12 50 19 50.5 28.5 C56 29 60 33.5 60 40 C60 46 56 50 50 50 Z" />
   ),
   wedge: (
-    <path d="M7 13 C7 9 11 7 15 9 L54 29 C58 31 58 33 54 35 L15 55 C11 57 7 55 7 51 Z" />
+    <path d="M8 14 C8 11 10.5 9 13.5 10.5 L53 28.5 C57 30.5 57 33.5 53 35.5 L13.5 53.5 C10.5 55 8 53 8 50 Z" />
   ),
   tablet: (
-    <path d="M20 2 L44 2 C51.7 2 58 8.3 58 16 L58 48 C58 55.7 51.7 62 44 62 L20 62 C12.3 62 6 55.7 6 48 L6 16 C6 8.3 12.3 2 20 2 Z" />
+    <path d="M22 3 L42 3 C50.84 3 58 11.84 58 19 L58 45 C58 52.16 50.84 61 42 61 L22 61 C13.16 61 6 52.16 6 45 L6 19 C6 11.84 13.16 3 22 3 Z" />
   ),
 };
 
@@ -129,6 +135,23 @@ function isValidImage(value?: string): value is string {
   return value.startsWith('data:image/') || value.startsWith('/api/');
 }
 
+/**
+ * Tracks the user's reduced-motion preference so animated states render
+ * statically. Starts as `false` (no hydration mismatch) and syncs after mount.
+ */
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReduced(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+  return reduced;
+}
+
 export function AgentAvatar({
   name,
   avatarShape,
@@ -139,6 +162,7 @@ export function AgentAvatar({
   working = false,
   typing = false,
 }: AgentAvatarProps) {
+  const reducedMotion = usePrefersReducedMotion();
   const resolved = useMemo(() => {
     const shape: AvatarShape = (AVATAR_SHAPES as readonly string[]).includes(avatarShape ?? '')
       ? (avatarShape as AvatarShape)
@@ -153,8 +177,10 @@ export function AgentAvatar({
 
   const palette = PALETTE[resolved.color];
   const dotSize = Math.max(8, Math.round(size * 0.3));
-  const ringSpan = Math.max(2, Math.round(size / 16) + 1);
-  const ringWidth = Math.max(1.5, Math.round(size / 22) + 0.5);
+  const ringSpan = Math.max(3, Math.round(size / 16) + 1);
+  // Monogram size expressed in 64-unit viewBox space so it scales with `size`.
+  const monogramSize = (Math.max(9, Math.round(size * 0.42)) * 64) / size;
+  const animate = !reducedMotion && typing;
 
   return (
     <span
@@ -170,35 +196,41 @@ export function AgentAvatar({
           src={resolved.image}
           alt=""
           draggable={false}
-          className={`h-full w-full select-none object-cover ${typing ? 'agent-avatar-typing' : ''}`}
+          className={`h-full w-full select-none object-cover ${animate ? 'agent-avatar-typing' : ''}`}
           style={{ borderRadius: Math.max(4, Math.round(size * 0.28)) }}
         />
       ) : (
-        <>
-          <svg
-            viewBox="0 0 64 64"
-            width={size}
-            height={size}
-            aria-hidden="true"
-            focusable="false"
-            className={typing ? 'agent-avatar-typing' : undefined}
-            style={{ display: 'block', overflow: 'visible' }}
+        <svg
+          viewBox="0 0 64 64"
+          width={size}
+          height={size}
+          aria-hidden="true"
+          focusable="false"
+          className={animate ? 'agent-avatar-typing' : undefined}
+          style={{ display: 'block', overflow: 'visible' }}
+        >
+          <g
+            fill={palette.base}
+            stroke={palette.base}
+            strokeWidth={SHAPE_STROKE}
+            strokeLinejoin="round"
+            strokeLinecap="round"
           >
-            <g fill={palette.base} stroke={palette.base}>
-              {SHAPE_PATHS[resolved.shape]}
-            </g>
-          </svg>
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 flex items-center justify-center font-semibold leading-none"
-            style={{
-              fontSize: Math.max(9, Math.round(size * 0.42)),
-              color: palette.ink,
-            }}
+            {SHAPE_PATHS[resolved.shape]}
+          </g>
+          <text
+            x={32}
+            y={32}
+            textAnchor="middle"
+            dominantBaseline="central"
+            fill={palette.ink}
+            fontSize={monogramSize}
+            fontWeight={500}
+            fontFamily="inherit"
           >
             {resolved.monogram}
-          </span>
-        </>
+          </text>
+        </svg>
       )}
 
       {selected && (
@@ -207,7 +239,7 @@ export function AgentAvatar({
           className="pointer-events-none absolute rounded-full"
           style={{
             inset: -ringSpan,
-            boxShadow: `0 0 0 ${ringWidth}px var(--background-gray-main), 0 0 0 ${ringWidth * 2}px ${palette.base}`,
+            boxShadow: `0 0 0 2px ${palette.base}`,
           }}
         />
       )}
@@ -215,7 +247,7 @@ export function AgentAvatar({
       {working && (
         <span
           aria-hidden="true"
-          className="agent-avatar-dot absolute rounded-full"
+          className={`absolute rounded-full ${reducedMotion ? '' : 'agent-avatar-dot'}`}
           style={{
             width: dotSize,
             height: dotSize,
