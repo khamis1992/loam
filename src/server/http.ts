@@ -88,6 +88,7 @@ import { handleApiKeysRoutes } from "./routes/apiKeys.js";
 import { handleDataControlsRoutes } from "./routes/dataControls.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
+import { handleShareRoutes } from "./routes/shares.js";
 import { importGrokbotBundle, sanitizeGrokbotBundle } from "./grokbotImport.js";
 import { isValidTimezone } from "./scheduleTime.js";
 import { getWorkModesUi, normalizeWorkMode, resolveCompanionCapabilities } from "./companionGateway.js";
@@ -270,6 +271,29 @@ function serveStatic(res: http.ServerResponse, urlPath: string): void {
   fs.createReadStream(file).pipe(res);
 }
 
+const NEXT_OUT = path.join(ROOT, "packages", "web", "out");
+
+/**
+ * Serve a file from the Next.js static export (packages/web/out). Used for the
+ * public share replay page and its /_next assets so a copied share link opens
+ * in any browser, not only inside the desktop's app:// protocol.
+ */
+function serveNextExport(res: http.ServerResponse, urlPath: string): void {
+  const rel = urlPath.replace(/^\/+/, "");
+  const file = path.resolve(NEXT_OUT, rel);
+  if (!file.startsWith(path.resolve(NEXT_OUT))) {
+    res.writeHead(403).end("forbidden");
+    return;
+  }
+  if (!fs.existsSync(file) || !fs.statSync(file).isFile()) {
+    res.writeHead(404, { "content-type": "text/plain" }).end("not found");
+    return;
+  }
+  const ext = path.extname(file).toLowerCase();
+  res.writeHead(200, { "content-type": MIME[ext] ?? "application/octet-stream" });
+  fs.createReadStream(file).pipe(res);
+}
+
 const TEXT_EXTRACT_EXT = new Set([
   ".txt", ".md", ".markdown", ".csv", ".json", ".jsonl", ".tsv", ".log", ".yml", ".yaml", ".html", ".xml",
   ".js", ".ts", ".py", ".css", ".sql", ".pdf", ".docx", ".xlsx", ".pptx",
@@ -397,7 +421,12 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         setLocalAuthUserDataDir(localAuthDir);
         const publicPaths = new Set(["/api/health", "/api/identity"]);
         const isStatic = req.method === "GET" && (p === "/" || MIME[path.extname(p).toLowerCase()] !== undefined);
-        if (!isStatic && !publicPaths.has(p)) {
+        // The public share replay feed (GET /api/share/:token) is anonymous by
+        // design; POST/DELETE stay behind the install token like every /api route.
+        const isPublicShare = req.method === "GET" && /^\/api\/share\/[A-Za-z0-9_-]+$/.test(p);
+        // The share replay page and its static assets are public like the feed.
+        const isNextStatic = req.method === "GET" && (p === "/share" || p.startsWith("/share/") || p.startsWith("/_next/"));
+        if (!isStatic && !isPublicShare && !isNextStatic && !publicPaths.has(p)) {
           const token =
             typeof req.headers["x-loam-local-token"] === "string"
               ? req.headers["x-loam-local-token"]
@@ -546,6 +575,18 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
         if (req.method === "GET" && !p.startsWith("/vendor/") && (p === "/" || MIME[path.extname(p).toLowerCase()] !== undefined)) {
           serveStatic(res, p);
+          return;
+        }
+
+        // Public share replay (option #11): serve the Next.js export so a copied
+        // link opens in a browser. /share/<token> and /share?t=<token> both land
+        // on the same replay page, which reads the token from path or query.
+        if (req.method === "GET" && (p === "/share" || p.startsWith("/share/"))) {
+          serveNextExport(res, "/share.html");
+          return;
+        }
+        if (req.method === "GET" && p.startsWith("/_next/")) {
+          serveNextExport(res, p);
           return;
         }
 
@@ -1703,6 +1744,9 @@ loadAgents();
         if (await handleDataControlsRoutes(req, res, p)) return;
         if (await handleApprovalRuleRoutes(req, res, p, url)) return;
         if (await handleGrokbotBridgeRoutes(req, res, p, url)) return;
+        // Public read-only task shares (option #11): create/revoke are authed,
+        // GET /api/share/:token is the anonymous replay feed exempted above.
+        if (await handleShareRoutes(req, res, p)) return;
 
         // ---- avatar (Grok Bot-style): set shape/color/image on an existing agent ----
         // Must run before the generic /api/agents/:id prefix block.

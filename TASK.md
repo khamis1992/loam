@@ -1,0 +1,4 @@
+﻿Loam build task. Work ONLY in this worktree. Create NEW files where possible and make MINIMAL edits to shared files to reduce merge conflicts. Finish with `npx tsc --noEmit` = 0 and `npm run build:server` exit 0. Do NOT touch protected files (src/setup/runtime.ts, src/server/companionGateway.ts, src/tools/companionTeamTools.ts, src/tools/serviceBridgeTools.ts, src/tools/serviceGapTools.ts, scripts/stt_server.py, docs/companions-frontier-progress.md, docs/evidence/fair-comparison.json). NEVER git reset --hard. Commit as you go.
+
+TASK:
+Implement UNIMPLEMENTED_OPTIONS #11 Share (public read-only link). Add a share-token endpoint (POST /api/tasks/:id/share -> token; GET /api/share/:token -> read-only task data) in a NEW route file under src/server/routes/, and a minimal replay page under packages/web/src/app/share/[token]/. Wire the existing Share button to request a token and copy the link. Add a server test.

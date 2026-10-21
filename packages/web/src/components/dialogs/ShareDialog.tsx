@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link2, Check, X, Loader2, ShieldOff } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { getApiBase, getApiHeaders } from '@/services/rpc';
+import { getLoamBase, getApiHeaders } from '@/services/rpc';
 
 export interface ShareDialogProps {
   open: boolean;
@@ -41,7 +41,7 @@ export function ShareDialog({ open, onClose, taskId }: ShareDialogProps) {
     setError('');
     try {
       const headers = await getApiHeaders();
-      const res = await fetch(`${getApiBase()}/api/tasks/${encodeURIComponent(taskId)}/share`, { method: 'POST', headers });
+      const res = await fetch(`${getLoamBase()}/api/tasks/${encodeURIComponent(taskId)}/share`, { method: 'POST', headers });
       const data = (await res.json().catch(() => ({}))) as ShareResponse & { error?: string };
       if (!res.ok || !data.token) throw new Error(data.error || `HTTP ${res.status}`);
       setShare(data);
@@ -59,7 +59,7 @@ export function ShareDialog({ open, onClose, taskId }: ShareDialogProps) {
     setError('');
     try {
       const headers = await getApiHeaders();
-      const res = await fetch(`${getApiBase()}/api/shares/${encodeURIComponent(share.token)}`, { method: 'DELETE', headers });
+      const res = await fetch(`${getLoamBase()}/api/shares/${encodeURIComponent(share.token)}`, { method: 'DELETE', headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setRevoked(true);
       setShare(null);

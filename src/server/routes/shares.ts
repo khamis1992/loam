@@ -12,7 +12,7 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
 function shareUrl(req: http.IncomingMessage, token: string): string {
   const host = typeof req.headers.host === "string" && req.headers.host ? req.headers.host : "127.0.0.1";
   const proto = req.headers["x-forwarded-proto"] === "https" || (req.socket as { encrypted?: boolean }).encrypted ? "https" : "http";
-  return `${proto}://${host}/share?t=${encodeURIComponent(token)}`;
+  return `${proto}://${host}/share/${encodeURIComponent(token)}`;
 }
 
 /**
