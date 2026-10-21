@@ -1,9 +1,38 @@
 import http from "node:http";
 import {
+  getMarketplaceEntry,
   installFromCatalog,
   listActiveInstalls,
   loadMarketplaceCatalog,
+  type MarketplaceCatalogEntry,
 } from "../marketplace.js";
+
+/** Slim per-install entry projection for the Overview › Source sheet and Connect-first chips. */
+function entrySummary(entry: MarketplaceCatalogEntry): {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  source: MarketplaceCatalogEntry["source"];
+  icon: string;
+  tools: string[];
+  author: MarketplaceCatalogEntry["author"];
+  sourceUrl: string;
+  license: string;
+} {
+  return {
+    id: entry.id,
+    name: entry.name,
+    description: entry.description,
+    category: entry.category,
+    source: entry.source,
+    icon: entry.icon,
+    tools: entry.tools,
+    author: entry.author,
+    sourceUrl: entry.sourceUrl,
+    license: entry.license,
+  };
+}
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
@@ -39,8 +68,8 @@ async function readJson(req: http.IncomingMessage, maxBytes = 32_000): Promise<u
 
 /**
  * Bots marketplace routes.
- * POST /api/agents/from-catalog  { catalogId } -> { agent, already, install }
- * GET  /api/marketplace/installs                -> { installs, count }
+ * POST /api/agents/from-catalog  { catalogId } -> { agent, already, install }   (add flow, spec §4)
+ * GET  /api/marketplace/installs                -> { installs: [{..., entry}], count }
  * GET  /api/marketplace/catalog                 -> { catalog, count, version }
  */
 export async function handleMarketplaceRoutes(
@@ -78,7 +107,10 @@ export async function handleMarketplaceRoutes(
   }
 
   if (p === "/api/marketplace/installs" && req.method === "GET") {
-    const installs = listActiveInstalls();
+    const installs = listActiveInstalls().map((install) => ({
+      ...install,
+      entry: getMarketplaceEntry(install.catalogId) ? entrySummary(getMarketplaceEntry(install.catalogId)!) : null,
+    }));
     sendJson(res, 200, { installs, count: installs.length });
     return true;
   }
