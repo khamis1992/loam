@@ -82,7 +82,8 @@ describe('ApiKeysPane', () => {
       const post = calls.find((c) => c.method === 'POST' && c.url.includes('/api/api-keys/key_1/revoke'));
       expect(post).toBeTruthy();
     });
-    expect(await screen.findByText(/Revoked/)).toBeInTheDocument();
+    expect(await screen.findByText('API key revoked')).toBeInTheDocument();
+    expect(screen.getAllByText(/Revoked/).length).toBeGreaterThan(0);
   });
 
   it('replaces the Developers "Coming soon" entry in the settings dialog', () => {
