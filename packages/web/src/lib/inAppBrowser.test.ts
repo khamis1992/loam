@@ -7,6 +7,7 @@ import {
   iabNavigate,
   iabOnStateChanged,
   iabSetBounds,
+  iabSetVisible,
   isInAppBrowserSupported,
 } from './inAppBrowser';
 
@@ -36,15 +37,21 @@ describe('inAppBrowser bridge', () => {
 
   it('reports supported and forwards calls when the bridge is present', async () => {
     const navigate = vi.fn(async (url: string) => ({ ok: true, url }));
+    const setVisible = vi.fn(async () => undefined);
 
     withBridge({
       attach: vi.fn(async () => state),
       navigate,
+      setVisible,
     });
     expect(isInAppBrowserSupported()).toBe(true);
     expect(await iabAttach()).toEqual(state);
     expect((await iabNavigate('https://x.dev')).ok).toBe(true);
     expect(navigate).toHaveBeenCalledWith('https://x.dev');
+    await iabSetVisible(true);
+    await iabSetVisible(false);
+    expect(setVisible).toHaveBeenNthCalledWith(1, true);
+    expect(setVisible).toHaveBeenNthCalledWith(2, false);
   });
 
   it('falls back to safe defaults for every method when absent', async () => {
@@ -54,6 +61,7 @@ describe('inAppBrowser bridge', () => {
     expect((await iabNavigate('https://x.dev')).ok).toBe(false);
     expect((await iabGetState()).attached).toBe(false);
     expect(await iabSetBounds({ x: 0, y: 0, width: 10, height: 10 })).toBe(false);
+    expect(await iabSetVisible(true)).toBeUndefined();
     expect(await iabOnStateChanged(() => undefined)).toBeTypeOf('function');
   });
 

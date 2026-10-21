@@ -233,6 +233,19 @@ function createWindow() {
   });
   void win.loadURL(url);
   win.webContents.setWindowOpenHandler((arg) => { void shell.openExternal(arg.url); return { action: "deny" }; });
+  // The in-app browser's native WebContentsView ignores CSS stacking, so the
+  // window itself must drive the window-side visibility factor: it can only be
+  // painted while this window is focused and not minimized/hidden. The
+  // renderer's iabSetVisible stays the other AND half; re-showing on focus/
+  // restore/show re-paints only if the renderer still wants the view.
+  const iabWindowHide = () => inAppBrowser.setWindowAllows(false);
+  const iabWindowRestore = () => inAppBrowser.setWindowAllows(true);
+  win.on("blur", iabWindowHide);
+  win.on("minimize", iabWindowHide);
+  win.on("hide", iabWindowHide);
+  win.on("focus", iabWindowRestore);
+  win.on("restore", iabWindowRestore);
+  win.on("show", iabWindowRestore);
   win.on("closed", () => { win = null; });
 }
 

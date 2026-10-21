@@ -11,6 +11,9 @@
 
 export interface InAppBrowserState {
   attached: boolean;
+  /** Effective visibility applied by the main process (renderer intent AND
+   *  window focus/minimize factor). Optional so older hosts stay compatible. */
+  visible?: boolean;
   url: string;
   title: string;
   loading: boolean;
@@ -71,6 +74,16 @@ export async function iabSetBounds(rect: InAppBrowserRect): Promise<boolean> {
   return (await invoke<boolean | undefined>('setBounds', rect)) === true;
 }
 
+/**
+ * Renderer-declared visibility intent: true when the preview surface is
+ * mounted AND actually on screen (not scrolled away, not under a modal, not
+ * hidden behind another route). The main process combines this with the
+ * window focus/minimize factor before painting the native view.
+ */
+export async function iabSetVisible(visible: boolean): Promise<void> {
+  await invoke('setVisible', visible);
+}
+
 export async function iabNavigate(url: string): Promise<InAppBrowserNavigateResult> {
   const res = await invoke<InAppBrowserNavigateResult | undefined>('navigate', url);
   return res ?? { ok: false, error: 'bridge unavailable' };
@@ -100,6 +113,7 @@ export async function iabHome(): Promise<InAppBrowserNavigateResult> {
 export async function iabGetState(): Promise<InAppBrowserState> {
   return {
     attached: false,
+    visible: false,
     url: '',
     title: '',
     loading: false,
