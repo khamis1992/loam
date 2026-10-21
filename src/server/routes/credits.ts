@@ -1,6 +1,7 @@
 import http from "node:http";
 import {
   MOCK_PACKS,
+  REFERRAL_BONUS,
   getBalance,
   getOrCreateReferralCode,
   getPlan,
@@ -10,6 +11,12 @@ import {
   setPlan,
   type CreditPlan,
 } from "../credits.js";
+
+function referralInfo(req: http.IncomingMessage): { code: string; link: string; bonus: number } {
+  const code = getOrCreateReferralCode();
+  const host = req.headers.host ?? "127.0.0.1:3939";
+  return { code, link: `http://${host}/referral/${code}`, bonus: REFERRAL_BONUS };
+}
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
@@ -55,7 +62,7 @@ export async function handleCreditsRoutes(
   _ctx?: Record<string, unknown>,
 ): Promise<boolean> {
   if (p === "/api/credits" && req.method === "GET") {
-    sendJson(res, 200, { balance: getBalance(), plan: getPlan(), ledger: listLedger() });
+    sendJson(res, 200, { balance: getBalance(), plan: getPlan(), ledger: listLedger(), referral: referralInfo(req) });
     return true;
   }
 
@@ -83,9 +90,7 @@ export async function handleCreditsRoutes(
   }
 
   if (p === "/api/referrals" && req.method === "POST") {
-    const code = getOrCreateReferralCode();
-    const host = req.headers.host ?? "127.0.0.1:3939";
-    sendJson(res, 200, { code, link: `http://${host}/referral/${code}` });
+    sendJson(res, 200, referralInfo(req));
     return true;
   }
 

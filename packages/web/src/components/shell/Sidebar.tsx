@@ -11,6 +11,7 @@ import { selectSession, startNewTask, loadSessions, type AgentSession } from '@/
 import { openSettings } from '@/store';
 import { t } from '@/i18n/t';
 import clsx from 'clsx';
+import { fetchCredits, type CreditsReferral } from '@/services/creditsApi';
 import { AccountPopover } from '@/components/dialogs/AccountPopover';
 import { SearchDialog } from '@/components/dialogs/SearchDialog';
 import { ReferralDialog } from '@/components/dialogs/ReferralDialog';
@@ -37,6 +38,7 @@ export function Sidebar() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [referralOpen, setReferralOpen] = useState(false);
+  const [referral, setReferral] = useState<CreditsReferral | null>(null);
   const accountAnchorRef = useRef<HTMLButtonElement>(null);
 
   const nav: NavItem[] = [
@@ -56,6 +58,14 @@ export function Sidebar() {
   useEffect(() => {
     dispatch(loadSessions());
   }, [dispatch]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCredits()
+      .then((data) => { if (!cancelled) setReferral(data.referral); })
+      .catch(() => { if (!cancelled) setReferral(null); });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -154,7 +164,9 @@ export function Sidebar() {
           <Share2 className="size-4 shrink-0 text-text-secondary" aria-hidden />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm text-text-primary">{t('Share Loam with a friend')}</p>
-            <p className="truncate text-xs text-text-tertiary">{t('Get 500 credits each')}</p>
+            <p className="truncate text-xs text-text-tertiary">
+              {referral ? `${t('Get 500 credits each')} · ${referral.code}` : t('Get 500 credits each')}
+            </p>
           </div>
           <ChevronRight className="size-3.5 shrink-0 text-text-tertiary" aria-hidden />
         </button>

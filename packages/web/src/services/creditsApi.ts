@@ -12,15 +12,20 @@ export interface CreditLedgerEntry {
   created_at: string;
 }
 
+export interface ReferralInfo {
+  code: string;
+  link: string;
+}
+
+export interface CreditsReferral extends ReferralInfo {
+  bonus: number;
+}
+
 export interface CreditsSnapshot {
   balance: number;
   plan: CreditPlan;
   ledger: CreditLedgerEntry[];
-}
-
-export interface ReferralInfo {
-  code: string;
-  link: string;
+  referral: CreditsReferral;
 }
 
 export interface ReferralRedeem {
