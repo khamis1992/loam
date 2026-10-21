@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Plus,
@@ -278,136 +278,126 @@ export function AgentSidebarList({
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 pb-4">
-        <SectionHeader
+        <AgentSection
+          id={SECTIONS.myAgents}
           label={t('My agents')}
           count={topLevelAgents.length}
           expanded={!!sections[SECTIONS.myAgents]}
           onToggle={() => toggleSection(SECTIONS.myAgents)}
-        />
-        {sections[SECTIONS.myAgents] && (
-          <div className="flex flex-col gap-0.5">
-            {topLevelAgents.length === 0 ? (
-              <p className="px-2 py-3 text-xs text-text-tertiary">{t('No agents yet.')}</p>
-            ) : (
-              topLevelAgents.map((agent) => (
-                <div key={agent.id} className="flex flex-col gap-0.5">
-                  <AgentRow
-                    agent={agent}
-                    selected={selectedId === agent.id}
-                    unread={unreadById?.[agent.id]?.count ?? 0}
-                    onClick={() => onSelect(agent)}
-                    onContextMenu={(e) => handleContextMenu(e, agent)}
-                  />
-                  {(childrenByParent[agent.id] ?? []).map((child) => {
-                    const childAgent: AgentWithMeta = {
-                      id: child.childId,
-                      name: child.name,
-                      emoji: child.emoji,
-                      description: child.description,
-                      mode: child.mode,
-                    };
-                    return (
-                      <AgentRow
-                        key={child.childId}
-                        agent={childAgent}
-                        selected={selectedId === child.childId}
-                        unread={unreadById?.[child.childId]?.count ?? 0}
-                        indent
-                        onClick={() => onSelect(childAgent)}
-                        onContextMenu={(e) => handleContextMenu(e, childAgent)}
-                      />
-                    );
-                  })}
+        >
+          {topLevelAgents.length === 0 ? (
+            <p className="px-2 py-3 text-xs text-text-tertiary">{t('No agents yet.')}</p>
+          ) : (
+            topLevelAgents.map((agent) => (
+              <div key={agent.id} className="flex flex-col gap-0.5">
+                <AgentRow
+                  agent={agent}
+                  selected={selectedId === agent.id}
+                  unread={unreadById?.[agent.id]?.count ?? 0}
+                  onClick={() => onSelect(agent)}
+                  onContextMenu={(e) => handleContextMenu(e, agent)}
+                />
+                {(childrenByParent[agent.id] ?? []).map((child) => {
+                  const childAgent: AgentWithMeta = {
+                    id: child.childId,
+                    name: child.name,
+                    emoji: child.emoji,
+                    description: child.description,
+                    mode: child.mode,
+                  };
+                  return (
+                    <AgentRow
+                      key={child.childId}
+                      agent={childAgent}
+                      selected={selectedId === child.childId}
+                      unread={unreadById?.[child.childId]?.count ?? 0}
+                      indent
+                      onClick={() => onSelect(childAgent)}
+                      onContextMenu={(e) => handleContextMenu(e, childAgent)}
+                    />
+                  );
+                })}
+              </div>
+            ))
+          )}
+        </AgentSection>
+
+        <AgentSection
+          id={SECTIONS.groups}
+          label={t('Groups')}
+          count={groups.length}
+          icon={MessageSquare}
+          expanded={!!sections[SECTIONS.groups]}
+          onToggle={() => toggleSection(SECTIONS.groups)}
+          action={
+            onNewGroup ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onNewGroup();
+                }}
+                className="rounded-control p-0.5 text-text-tertiary hover:text-text-primary"
+                aria-label={t('New group')}
+                title={t('New group')}
+              >
+                <Plus className="size-3.5" />
+              </button>
+            ) : undefined
+          }
+        >
+          {groups.length === 0 ? (
+            <p className="px-2 py-3 text-xs text-text-tertiary">{t('No groups yet.')}</p>
+          ) : (
+            groups.map((group) => (
+              <button
+                key={group.id}
+                type="button"
+                onClick={() => onSelectGroup?.(group)}
+                className={[
+                  'group relative flex h-row items-center gap-2 rounded-control px-2 text-start transition-colors',
+                  selectedGroupId === group.id ? 'bg-fill-hover' : 'hover:bg-fill-hover',
+                ].join(' ')}
+              >
+                {selectedGroupId === group.id && <RowAccent />}
+                <div className="flex size-7 shrink-0 items-center justify-center rounded-control bg-fill-tsp">
+                  <Users className="size-3.5 text-text-secondary" />
                 </div>
-              ))
-            )}
-          </div>
-        )}
+                <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{group.name}</span>
+                <span className="shrink-0 text-[11px] text-text-tertiary">{group.memberIds.length}</span>
+              </button>
+            ))
+          )}
+        </AgentSection>
 
-        <div className="mt-2 flex h-row-sm w-full items-center justify-between rounded-control px-2 text-xs font-medium text-text-secondary hover:bg-fill-hover">
-          <button
-            type="button"
-            onClick={() => toggleSection(SECTIONS.groups)}
-            className="flex min-w-0 flex-1 items-center gap-1.5 text-start"
-          >
-            <MessageSquare className="size-3.5" />
-            <span>{t('Groups')}</span>
-            <span className="text-[11px] text-text-tertiary">{groups.length}</span>
-            <ChevronRight
-              className={`size-3.5 text-text-tertiary transition-transform ${sections[SECTIONS.groups] ? 'rotate-90' : ''}`}
-            />
-          </button>
-          <button
-            type="button"
-            onClick={onNewGroup}
-            className="rounded-control p-0.5 text-text-tertiary hover:text-text-primary"
-            aria-label={t('New group')}
-            title={t('New group')}
-          >
-            <Plus className="size-3.5" />
-          </button>
-        </div>
-        {sections[SECTIONS.groups] && (
-          <div className="flex flex-col gap-0.5">
-            {groups.length === 0 ? (
-              <p className="px-2 py-3 text-xs text-text-tertiary">{t('No groups yet.')}</p>
-            ) : (
-              groups.map((group) => (
-                <button
-                  key={group.id}
-                  type="button"
-                  onClick={() => onSelectGroup?.(group)}
-                  className={[
-                    'flex h-row items-center gap-2 rounded-control px-2 text-start transition-colors',
-                    selectedGroupId === group.id ? 'bg-fill-hover' : 'hover:bg-fill-hover',
-                  ].join(' ')}
-                >
-                  <div className="flex size-7 shrink-0 items-center justify-center rounded-control bg-fill-tsp">
-                    <Users className="size-3.5 text-text-secondary" />
-                  </div>
-                  <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{group.name}</span>
-                  <span className="shrink-0 text-[11px] text-text-tertiary">{group.memberIds.length}</span>
-                </button>
-              ))
-            )}
-          </div>
-        )}
-
-        <SectionHeader
+        <AgentSection
+          id={SECTIONS.builtIn}
           label={t('Built-in')}
           count={builtInAgents.length}
           expanded={!!sections[SECTIONS.builtIn]}
           onToggle={() => toggleSection(SECTIONS.builtIn)}
-        />
-        {sections[SECTIONS.builtIn] && (
-          <div className="flex flex-col gap-0.5">
-            {builtInAgents.map((agent) => (
-              <AgentRow
-                key={agent.id}
-                agent={agent}
-                selected={false}
-                onClick={() => onStartBuiltIn?.(agent)}
-                onContextMenu={() => {}}
-              />
-            ))}
-          </div>
-        )}
+        >
+          {builtInAgents.map((agent) => (
+            <AgentRow
+              key={agent.id}
+              agent={agent}
+              selected={false}
+              onClick={() => onStartBuiltIn?.(agent)}
+              onContextMenu={() => {}}
+            />
+          ))}
+        </AgentSection>
 
         <BoardLink />
-        <button
-          type="button"
-          onClick={() => toggleSection(SECTIONS.teamRuns)}
-          className="mt-2 flex h-row-sm w-full items-center justify-between rounded-control px-2 text-xs font-medium text-text-secondary hover:bg-fill-hover"
+        <AgentSection
+          id={SECTIONS.teamRuns}
+          label={t('Team runs')}
+          icon={Users}
+          expanded={!!sections[SECTIONS.teamRuns]}
+          onToggle={() => toggleSection(SECTIONS.teamRuns)}
         >
-          <span className="flex items-center gap-1.5">
-            <Users className="size-3.5" />
-            {t('Team runs')}
-          </span>
-          <ChevronRight
-            className={`size-3.5 text-text-tertiary transition-transform ${sections[SECTIONS.teamRuns] ? 'rotate-90' : ''}`}
-          />
-        </button>
-        {sections[SECTIONS.teamRuns] && <TeamRunsCompact />}
+          <TeamRunsCompact />
+        </AgentSection>
       </div>
 
       {contextMenu && (
@@ -458,26 +448,63 @@ function SectionHeader({
   count,
   expanded,
   onToggle,
-}: {
+  icon: Icon,
+  action,
+}: SectionHeaderProps) {
+  return (
+    <div className="mt-2 flex h-row-sm w-full items-center rounded-control px-2 text-xs font-medium text-text-secondary hover:bg-fill-hover">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="flex min-w-0 flex-1 items-center gap-1.5 text-start"
+      >
+        {Icon && <Icon className="size-3.5 shrink-0" />}
+        <span className="min-w-0 truncate">{label}</span>
+        {typeof count === 'number' && (
+          <span className="shrink-0 text-[11px] text-text-tertiary">{count}</span>
+        )}
+      </button>
+      {action}
+      <ChevronRight
+        className={`ms-1 size-3.5 shrink-0 text-text-tertiary transition-transform ${expanded ? 'rotate-90' : ''}`}
+        aria-hidden
+      />
+    </div>
+  );
+}
+
+interface SectionHeaderProps {
   label: string;
-  count: number;
+  count?: number;
   expanded: boolean;
   onToggle: () => void;
-}) {
+  icon?: ComponentType<{ className?: string }>;
+  action?: ReactNode;
+}
+
+function AgentSection({
+  id,
+  label,
+  count,
+  expanded,
+  onToggle,
+  icon,
+  action,
+  children,
+}: SectionHeaderProps & { id: string; children: ReactNode }) {
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="mt-2 flex h-row-sm w-full items-center justify-between rounded-control px-2 text-xs font-medium text-text-secondary hover:bg-fill-hover"
-    >
-      <span>{label}</span>
-      <div className="flex items-center gap-1">
-        <span className="text-[11px] text-text-tertiary">{count}</span>
-        <ChevronRight
-          className={`size-3.5 text-text-tertiary transition-transform ${expanded ? 'rotate-90' : ''}`}
-        />
-      </div>
-    </button>
+    <section data-agents-section={id}>
+      <SectionHeader
+        label={label}
+        count={count}
+        expanded={expanded}
+        onToggle={onToggle}
+        icon={icon}
+        action={action}
+      />
+      {expanded && <div className="flex flex-col gap-0.5">{children}</div>}
+    </section>
   );
 }
 
@@ -501,12 +528,14 @@ function AgentRow({
       type="button"
       onClick={onClick}
       onContextMenu={onContextMenu}
+      aria-current={selected ? 'true' : undefined}
       className={[
-        'group flex h-row items-center gap-2 rounded-control px-2 text-start transition-colors',
+        'group relative flex h-row items-center gap-2 rounded-control px-2 text-start transition-colors',
         indent ? 'ps-6' : '',
         selected ? 'bg-fill-hover' : 'hover:bg-fill-hover',
       ].join(' ')}
     >
+      {selected && <RowAccent />}
       <div className="flex size-7 shrink-0 items-center justify-center rounded-control bg-fill-tsp text-base">
         {agent.emoji || '🤖'}
       </div>
@@ -521,6 +550,16 @@ function AgentRow({
         />
       )}
     </button>
+  );
+}
+
+function RowAccent() {
+  return (
+    <span
+      className="pointer-events-none absolute inset-y-1 start-0 w-[3px] rounded-full"
+      style={{ backgroundColor: 'var(--activity-indicator-running)' }}
+      aria-hidden
+    />
   );
 }
 
