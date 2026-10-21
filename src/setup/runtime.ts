@@ -18,6 +18,7 @@ import { mirofishTools } from "../tools/mirofish.js";
 import { createSubagentTools } from "../tools/subagents.js";
 import { webTools } from "../tools/web.js";
 import { browserTools, closeBrowser } from "../tools/browser.js";
+import { createBrowserOperatorTools } from "../tools/browserOperator.js";
 import { computerUseTools } from "../tools/computerUse.js";
 import { initPty, disposePty, ptyStatus, ptyTools } from "../tools/pty.js";
 import { registerMcpTools, type McpToolset } from "../tools/mcp.js";
@@ -54,7 +55,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   log.info(`pty: ${ptyStatus()}`);
 
   const registry = new ToolRegistry();
-  registry.registerAll([...fileTools, ...shellTools, ...ptyTools, ...webTools, ...browserTools, ...computerUseTools, ...attachmentTools(), ...symbolTools(), ...pentestTools()]);
+  registry.registerAll([...fileTools, ...shellTools, ...ptyTools, ...webTools, ...browserTools, ...createBrowserOperatorTools(), ...computerUseTools, ...attachmentTools(), ...symbolTools(), ...pentestTools()]);
   registry.registerAll(mirofishTools().map(tool => ({ ...tool, integration: true })));
 
   const embedder = new OllamaEmbedder(cfg.ollamaUrl, cfg.memory.model);

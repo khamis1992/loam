@@ -93,7 +93,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry = new Registry();
     // Register a few real build-mode staples plus the real scratchpad tools,
     // like buildRuntime + index.ts do at startup.
-    for (const name of ["file_read", "file_write", "shell_run", "web_fetch", "loam_mobile"]) registry.register(dummy(name));
+    for (const name of ["file_read", "file_write", "shell_run", "web_fetch", "loam_mobile", "browser_operator"]) registry.register(dummy(name));
     registry.registerAll(createScratchpadTools());
     registry.registerAll(createInstructionHistoryTools());
     registry.registerAll(createAgentSpawnTools());
@@ -126,6 +126,13 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     for (const name of ["file_read", "file_write", "shell_run"]) {
       assert.ok(tools.names().includes(name), `build-mode tool ${name} must survive the merge`);
     }
+  });
+
+  it("a build-mode agent task exposes browser_operator to the model", () => {
+    const { tools } = buildRunToolSet();
+    assert.ok(tools.names().includes("browser_operator"), "effective tool list must include browser_operator");
+    const modelToolNames = tools.toOllama().map((t) => t.function.name);
+    assert.ok(modelToolNames.includes("browser_operator"), "the model's function list must include browser_operator");
   });
 
   it("a build-mode agent task exposes the MF6 child-agent tools to the model", () => {
