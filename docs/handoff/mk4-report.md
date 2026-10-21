@@ -20,3 +20,10 @@ of inline JSX. New UI string is translated in `i18n/en.json` + `i18n/ar.json`, a
 entries and anonymous fallbacks. Verified `npx tsc --noEmit` (root) and
 `npx tsc --noEmit -p packages/web/tsconfig.json` both clean; commits: 63f8377
 (notices build note), b5a003d (util + component), c28b939 (i18n), 0b34d02 (tests).
+
+Follow-up session (same scope): the marketplace footer's x.ai licensing sentence
+was wrapped with `t()` and added to `i18n/en.json` + `i18n/ar.json` for full
+parity (commit 841363a); the orchestrator-provided root reference copy
+`UNIMPLEMENTED_OPTIONS.md` was committed as an untracked-cleanup checkpoint
+(ed96e78). Final state: both tsc checks clean, 5/5 vitest tests pass, nothing
+uncommitted.
