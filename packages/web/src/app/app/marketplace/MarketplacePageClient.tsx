@@ -439,7 +439,9 @@ export default function MarketplacePageClient() {
           </a>
         </p>
         <p>
-          x.ai marketplace entries link back to their original listing and are all rights reserved; Loam never rehosts their prompts.
+          {t(
+            'x.ai marketplace entries link back to their original listing and are all rights reserved; Loam never rehosts their prompts.',
+          )}
         </p>
       </footer>
 
