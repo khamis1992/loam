@@ -58,11 +58,18 @@ export function quotedSpans(text: string): Array<{ text: string; start: number }
 }
 
 /** Value after a directive: first quoted span if present, otherwise the
- *  remainder trimmed and stripped of a leading comparison/assignment token. */
+ *  remainder trimmed, keeping only what follows the LAST directive marker
+ *  (to / إلى / = / : / → / ←). */
 function valueOf(remainder: string): string {
   const spans = quotedSpans(remainder);
   if (spans.length) return spans[0]!.text.trim();
-  return remainder.replace(/^[\s:=→]+/u, "").trim().replace(/[\s.،]+$/u, "");
+  const marker = /\b(?:to|إلى)\b|→|←|[:=]/g;
+  let cut = -1;
+  for (let match = marker.exec(remainder); match; match = marker.exec(remainder)) {
+    cut = match.index + match[0].length;
+    marker.lastIndex = cut;
+  }
+  return (cut >= 0 ? remainder.slice(cut) : remainder).replace(/^[\s:=→]+/u, "").trim().replace(/[\s.،]+$/u, "");
 }
 
 /** Remove the first two quoted spans from the clause so structural keywords of
