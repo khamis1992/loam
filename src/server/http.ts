@@ -75,6 +75,9 @@ import { cancelRunSignal } from "./runControl.js";
 import { createAgent, deleteAgent, getAgent, listAgents, setAgentArchived, updateAgent } from "./agents.js";
 import { handleScratchpadRoutes } from "./routes/scratchpad.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
+import { handlePersonalizationRoutes } from "./routes/personalization.js";
+import { handleApiKeysRoutes } from "./routes/apiKeys.js";
+import { handleDataControlsRoutes } from "./routes/dataControls.js";
 import { isValidTimezone } from "./scheduleTime.js";
 import { getWorkModesUi, normalizeWorkMode, resolveCompanionCapabilities } from "./companionGateway.js";
 import { DEVICE_TEMPLATES, deviceManager, getDevice, listDevices, readJournal } from "./companionDevices.js";
@@ -1629,6 +1632,9 @@ loadAgents();
 
         if (await handleScratchpadRoutes(req, res, p)) return;
         if (await handleSchedulesRoutes(req, res, p)) return;
+        if (await handlePersonalizationRoutes(req, res, p)) return;
+        if (await handleApiKeysRoutes(req, res, p)) return;
+        if (await handleDataControlsRoutes(req, res, p)) return;
 
         if (p.startsWith("/api/agents/")) {
           const id = decodeURIComponent(p.slice("/api/agents/".length));
