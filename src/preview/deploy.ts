@@ -225,9 +225,9 @@ export function safeSegment(value: string): string {
   return /^[\w-]+$/.test(value) ? value : "task";
 }
 
-/** Archive-path-safe timestamp used in export/deploy paths. */
+/** Archive-path-safe timestamp (year..millisecond) so rapid deploys never collide. */
 export function timestampSegment(date = new Date()): string {
-  return date.toISOString().replace(/[-:T>Z]/g, "").slice(0, 14);
+  return date.toISOString().replace(/\D/g, "").slice(0, 17);
 }
 
 /** Environment variable names from this list that are not set yet. */
