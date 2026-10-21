@@ -20,7 +20,11 @@ export const CONNECTOR_TOOLS: Record<string, string[]> = {
 
 export const ALL_CONNECTOR_TOOL_NAMES: string[] = Object.values(CONNECTOR_TOOLS).flat();
 
-/** Names of tools whose connector is currently connected. */
-export function connectedConnectorToolNames(): string[] {
-  return CONNECTORS.filter((c) => isConnected(c.id)).flatMap((c) => CONNECTOR_TOOLS[c.id] ?? []);
+/** Names of tools whose connector is currently connected. Per-agent tool
+ *  denials always win over the connector grant. */
+export function connectedConnectorToolNames(disabledTools?: string[]): string[] {
+  const disabled = new Set(disabledTools ?? []);
+  return CONNECTORS.filter((c) => isConnected(c.id))
+    .flatMap((c) => CONNECTOR_TOOLS[c.id] ?? [])
+    .filter((name) => !disabled.has(name));
 }

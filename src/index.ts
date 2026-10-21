@@ -265,7 +265,7 @@ async function main(): Promise<void> {
       // device_* tools are bound to the companion's device; companion-memory tools
       // are bound to this agent in every mode.
       const dynamicAllow = new Set(capabilities.allow);
-      const runAllow = mergeAlwaysOnTools({ resolvedAllow: [...capabilities.allow, ...connectedConnectorToolNames()], registeredTools: registry.names(), disabledTools: agent?.disabledTools });
+      const runAllow = mergeAlwaysOnTools({ resolvedAllow: [...capabilities.allow, ...connectedConnectorToolNames(agent?.disabledTools)], registeredTools: registry.names(), disabledTools: agent?.disabledTools });
       const agentTools = registry.forAllowlist(runAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name)));
 
       // Sensitive host-input actions need an explicit user decision first (section 18).
