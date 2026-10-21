@@ -241,6 +241,29 @@ export interface BrowserFrameEvent extends ChatEventBase {
   jpegBase64?: string;
 }
 
+/** Option 14: pending tool approval card (mirrors the protocol adapter's wire shape). */
+export interface LocalExecutionApprovalRequestedEvent extends ChatEventBase {
+  type: 'localExecutionApprovalRequested';
+  requestId: string;
+  reviewer: 'user' | 'auto';
+  actionRef?: string;
+  actionType?: 'terminal' | 'file' | 'workspace';
+  summary?: string;
+  purpose?: string;
+  detail?:
+    | { kind: 'file'; operation: string; path: string }
+    | { kind: 'terminal'; command: string; cwd?: string; justification?: string; declaredNetwork?: boolean; writablePaths?: string[]; requireEscalated?: boolean; flaggedReason?: string }
+    | { kind: 'workspace'; intent?: 'directory_access'; deviceId: string; path: string; previousPath?: string; requestedPath: string; createIfMissing?: boolean };
+}
+
+/** Option 14: user decision for a pending tool approval card. */
+export interface LocalExecutionApprovalResolvedEvent extends ChatEventBase {
+  type: 'localExecutionApprovalResolved';
+  requestId: string;
+  reviewer: 'user' | 'auto';
+  result: 'approve' | 'deny';
+}
+
 export type ChatEvent =
   | ChatMessageEvent
   | ChatDeltaEvent
@@ -260,6 +283,8 @@ export type ChatEvent =
   | EventsNotifyEventsAfterEvent
   | ExplanationEvent
   | FolderAccessRequestEvent
-  | BrowserFrameEvent;
+  | BrowserFrameEvent
+  | LocalExecutionApprovalRequestedEvent
+  | LocalExecutionApprovalResolvedEvent;
 
 export type ServerMessage = ServerEnvelope | { type: 'session_write_access'; sessionId: string; writable: boolean };
