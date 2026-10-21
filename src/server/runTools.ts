@@ -26,6 +26,7 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "delegate_to_child",
   "list_children",
   "deep_research",
+  "wide_research",
 ];
 
 export interface AlwaysOnMergeInput {

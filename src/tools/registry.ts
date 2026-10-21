@@ -11,6 +11,10 @@ export interface ToolContext {
   signal?: AbortSignal;
   /** Active task id, so long-running tools can poll for cancellation. */
   taskId?: string;
+  /** Tool names the current run is allowed to use. Tools that fan out to
+   *  child agents use it so a child can never exceed the parent run's
+   *  capabilities. Undefined means "no run scope known". */
+  allowedTools?: readonly string[];
 }
 
 export interface ToolResult {

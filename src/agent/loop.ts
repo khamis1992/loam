@@ -101,6 +101,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     usedModel = restored.model;
   }
   const maxSteps = opts.maxSteps !== undefined && opts.maxSteps > 0 ? opts.maxSteps : opts.cfg.agent.maxSteps;
+  // The tool names this run may use. Tools that fan out to child agents read
+  // it from the tool context so a child never exceeds the parent's reach.
+  const runAllowedTools = opts.tools.names();
 
   for (step = (restored?.steps ?? 0) + 1; step <= maxSteps; step++) {
     // Stop immediately when the user pressed the cancel button (checked between every step).
@@ -199,6 +202,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
             workspace: opts.cfg.workspace,
             emit: opts.emit,
             signal: opts.signal,
+            allowedTools: runAllowedTools,
             ...(opts.taskId ? { taskId: opts.taskId } : {}),
           }),
         ),
@@ -234,6 +238,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           workspace: opts.cfg.workspace,
           emit: opts.emit,
           signal: opts.signal,
+          allowedTools: runAllowedTools,
           ...(opts.taskId ? { taskId: opts.taskId } : {}),
         });
 
