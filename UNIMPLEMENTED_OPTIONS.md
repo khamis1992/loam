@@ -15,11 +15,11 @@ Size: S = under 1 day, M = 1–3 days, L = more than 3 days.
 | 7 | Settings › Integrations / Developers | Settings ("Coming soon") | API keys page and a public API on the adapter | M |
 | 8 | Settings › Email / Phone / Wallet | Settings › Assets ("Coming soon") | Inbound email, telephony and billing. No backend at all | L each |
 | 9 | Credits "1K", Free plan / Upgrade, referral card ("Share Loam with a friend / Get 500 credits each") | Home header, account menu, sidebar | A credit ledger and billing. The value is static today | M |
-| 10 | Update button / updater | Settings › General | Fixed (OpenCode): electron-updater generic feed (LOAM_UPDATE_FEED_URL + local channel, scripts/updater-test-feed.mjs); Settings check/download/restart via the `updater` IPC namespace | ✅ |
+| 10 | Update button / updater | Not rendered | electron-updater feed and server. The `updater` IPC namespace exists but has no feed | M |
 | 11 | Share (public link) | Task header | Client-side "Copy link" works. A real public read-only share needs a share-token endpoint and a replay page | M |
 | 12 | Message Copy / Retry | Not present on bubbles | Copy is client-only (S). Retry needs a re-run-last-turn backend call | S |
 | 13 | Live computer screen (VNC) and browser view in "Loam's computer" | Task right panel | The panel already shows the command and its output. A live screen or browser view needs screen streaming | L |
-| 14 | Approval cards / "Approve for me" | Composer chip, chat | Fixed (OpenCode): ApprovalCard renders a pending Loam approval from the adapter mapping (tool, human summary, args preview via GET /api/approvals/:id); Deny / Approve once / Always allow ("Approve for me") resolve through resolve_local_execution_approval, with "always" saving an agent allow-rule; the composer chip toggles per-task auto-approve (PUT /api/approval-tasks/:taskId + extData.approveForMe) | ✅ |
+| 14 | Approval cards / "Approve for me" | Composer chip, chat | The adapter maps approvals, but ApprovalCard.tsx is a TODO stub and there is no wiring to the Loam permission gate | M |
 | 15 | Promo banner carousel ("Build an App / Create your Video") | Home top-right | Static marketing slides. Needs a content source, or delete it | S |
 | 16 | Template gallery beyond 3 cards | Home | Clicking a card pre-fills the prompt. A real gallery needs data and images | S |
 | 17 | Choose project / Downloads chips, Worktree checkbox, git branch chip ("main") | Composer context row | The branch shows a fallback. Needs a project picker bound to /api/projects plus worktree creation through the existing backend `parseWorktrees` | S–M |
@@ -28,4 +28,4 @@ Size: S = under 1 day, M = 1–3 days, L = more than 3 days.
 | 20 | Bell (notifications) and devices icon | Sidebar bottom | Fixed (OpenCode): client notifications store with stub feed (notificationsStore.ts); bell dropdown with unread dot + mark-read; devices icon → /app/computers | ✅ |
 | 21 | Creations and Library pages | Sidebar | Fixed (OpenCode): single-call /api/files?list=1, /api/creative?list=1 scenes and /api/media list default; strict per-task contracts kept | ✅ |
 | 22 | Projects / Automations create-edit | Sidebar pages | List only. Create, edit and delete UI over the existing /api/projects and /api/schedules | M |
-| 23 | Computers / Agent Loam actions | Sidebar pages | List only (empty now). Needs pair-device and create-companion flows over the existing APIs | M |
+| 23 | Computers / Agent Loam actions | Sidebar pages | Fixed (OpenCode): pair-device dialog over /api/companion-devices (companion + template + name, golden WSL base-image prep, start/stop/suspend/resume, confirm-delete) plus a create-companion dialog over /api/agents, both through the new companionsApi client service | ✅ |
