@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#7c3aed" />
+  <title>مخزوني — إدارة المخزون</title>
+  <!--
+    مخزوني — واجهة عربية RTL بتصميم سماوي وبنفسجي متجاوب، دون أي مكتبات خارجية.
+    المعرفات المطلوبة: #sku و#quantity و#save (الإضافة) • #withdraw-sku و#withdraw-quantity و#withdraw (السحب)
+    • #error رسالة خطأ عربية تظهر عند رفض أي عملية • جدول #items بصفوف .stock-item وخلية رصيد [data-quantity] تعرض الرقم وحده.
+    كل ردود fetch معالجة (نجاح / خطأ HTTP / JSON غير صالح / انقطاع شبكة)، والجدول يُحدَّث من الخادم بعد كل عملية وعند تحميل الصفحة.
+    التحقق من المدخلات يدوي (يشمل الكمية السالبة) ولا تُستخدم أي نوافذ تأكيد.
+  -->
+  <style>
+    /* ===== أساسيات ===== */
+    *, *::before, *::after { box-sizing: border-box; }
+
+    :root {
+      --cyan: #06b6d4;        --cyan-strong: #0891b2; --cyan-deep: #0e7490;
+      --cyan-soft: #cffafe;   --cyan-pale: #ecfeff;
+      --purple: #8b5cf6;      --purple-strong: #7c3aed; --purple-deep: #5b21b6;
+      --purple-soft: #ddd6fe; --purple-pale: #f5f3ff;
+      --ink: #1e293b; --muted: #64748b; --line: #e2e8f0; --radius: 16px;
+      --shadow: 0 10px 28px rgba(91, 33, 182, .10), 0 4px 12px rgba(8, 145, 178, .08);
+    }
+
+    body {
+      margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+      font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", "Noto Kufi Arabic", Arial, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(820px 380px at 88% -10%, rgba(139, 92, 246, .15), transparent 60%),
+        radial-gradient(820px 380px at 8% -10%, rgba(6, 182, 212, .17), transparent 60%),
+        linear-gradient(180deg, #f6fbfe 0%, #fbf9ff 100%);
+      background-repeat: no-repeat;
+    }
+
+    .container { width: 100%; max-width: 960px; margin-inline: auto; padding-inline: 20px; }
+
+    /* ===== الترويسة ===== */
+    .app-header {
+      background: linear-gradient(120deg, var(--cyan-strong), var(--purple-strong));
+      color: #fff; padding: 20px 0;
+      box-shadow: 0 8px 24px rgba(124, 58, 237, .25);
+    }
+    .header-inner { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+    .brand { display: flex; align-items: center; gap: 13px; }
+    .brand-icon {
+      width: 52px; height: 52px; border-radius: 14px; font-size: 26px; flex-shrink: 0;
+      background: rgba(255, 255, 255, .18); border: 1px solid rgba(255, 255, 255, .35);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .brand h1 { margin: 0; font-size: 1.5rem; }
+    .brand p  { margin: 4px 0 0; font-size: .88rem; opacity: .92; }
+    .badge {
+      background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .35);
+      padding: 8px 14px; border-radius: 999px; font-size: .83rem; font-weight: 700; white-space: nowrap;
+    }
+
+    main.container { padding-top: 24px; padding-bottom: 36px; flex: 1; }
+
+    /* ===== رسائل الحالة: #error للخطأ و#success للنجاح ===== */
+    .alert {
+      display: flex; align-items: flex-start; gap: 10px;
+      border-radius: 12px; padding: 12px 15px; margin: 0 0 16px;
+      font-weight: 700; font-size: .94rem; line-height: 1.8; border: 1px solid transparent;
+    }
+    .alert[hidden] { display: none !important; }
+    .alert-error   { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+    .alert-error::before   { content: "⚠️"; flex-shrink: 0; }
+    .alert-success { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    .alert-success::before { content: "✅"; flex-shrink: 0; }
+
+    noscript { display: block; padding: 12px; text-align: center; color: #b91c1c; font-weight: 700; }
+
+    /* ===== البطاقات والنماذج ===== */
+    .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+    .card {
+      background: #fff; border: 1px solid rgba(148, 163, 184, .18);
+      border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow);
+    }
+    .card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+    .card-head h2 { margin: 0; font-size: 1.08rem; }
+    .icon {
+      width: 40px; height: 40px; border-radius: 11px; font-size: 19px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .icon-cyan   { background: var(--cyan-soft); }
+    .icon-purple { background: var(--purple-soft); }
+    .icon-both   { background: linear-gradient(135deg, var(--cyan-soft), var(--purple-soft)); }
+
+    .field { margin-bottom: 13px; }
+    .field label { display: block; font-size: .84rem; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
+    .field input {
+      width: 100%; padding: 11px 13px; font-size: 1rem; font-family: inherit; color: var(--ink);
+      background: #fbfdff; border: 2px solid var(--line); border-radius: 11px;
+      transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+    }
+    .field input::placeholder { color: #94a3b8; }
+    #sku:focus, #quantity:focus {
+      outline: none; border-color: var(--cyan); background: #fff;
+      box-shadow: 0 0 0 4px rgba(6, 182, 212, .15);
+    }
+    #withdraw-sku:focus, #withdraw-quantity:focus {
+      outline: none; border-color: var(--purple); background: #fff;
+      box-shadow: 0 0 0 4px rgba(139, 92, 246, .15);
+    }
+
+    .btn {
+      appearance: none; border: none; cursor: pointer; width: 100%;
+      font-family: inherit; font-size: .98rem; font-weight: 700;
+      padding: 12px 18px; border-radius: 11px; color: #fff;
+      transition: filter .15s ease, transform .12s ease;
+    }
+    .btn:hover  { filter: brightness(1.07); transform: translateY(-1px); }
+    .btn:active { transform: none; filter: brightness(.98); }
+    .btn:focus-visible { outline: 3px solid rgba(139, 92, 246, .4); outline-offset: 2px; }
+    .btn:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+    .btn-add      { background: linear-gradient(120deg, var(--cyan), var(--purple)); box-shadow: 0 6px 14px rgba(8, 145, 178, .28); }
+    .btn-withdraw { background: linear-gradient(120deg, var(--purple-strong), var(--purple-deep)); box-shadow: 0 6px 14px rgba(124, 58, 237, .28); }
+
+    .btn-ghost {
+      appearance: none; cursor: pointer; font-family: inherit;
+      font-size: .82rem; font-weight: 700; color: var(--purple-deep);
+      background: var(--purple-pale); border: 1px solid var(--purple-soft);
+      padding: 7px 13px; border-radius: 999px; margin-inline-start: auto; transition: background .15s ease;
+    }
+    .btn-ghost:hover { background: var(--purple-soft); }
+
+    /* ===== جدول #items ===== */
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 13px; background: #fff; }
+    #items { width: 100%; border-collapse: collapse; min-width: 400px; }
+    #items thead th {
+      background: linear-gradient(120deg, var(--cyan-pale), var(--purple-pale));
+      text-align: right; font-size: .88rem; padding: 11px 15px;
+      border-bottom: 2px solid var(--line); white-space: nowrap;
+    }
+    #items tbody td { padding: 11px 15px; border-bottom: 1px solid #eef2f7; font-size: .97rem; }
+    #items tbody tr:last-child td { border-bottom: none; }
+    #items tbody tr:hover { background: linear-gradient(120deg, rgba(6, 182, 212, .06), rgba(139, 92, 246, .06)); }
+    .sku-cell  { font-weight: 700; }
+    .qty-cell  { font-weight: 800; color: var(--purple-deep); font-variant-numeric: tabular-nums; }
+
+    .empty-state { text-align: center; color: var(--muted); padding: 16px 8px 2px; margin: 0; font-size: .93rem; font-weight: 600; }
+    .empty-state[hidden] { display: none; }
+
+    /* ===== التذييل ===== */
+    .app-footer { padding: 16px 0 24px; text-align: center; color: var(--muted); font-size: .83rem; }
+    .app-footer p { margin: 0; }
+
+    /* ===== التجاوب ===== */
+    @media (max-width: 760px) {
+      .panels { grid-template-columns: 1fr; }
+      .brand h1 { font-size: 1.25rem; }
+      .badge { display: none; }
+      main.container { padding-top: 16px; padding-bottom: 26px; }
+      .card { padding: 16px; }
+      .app-header { padding: 16px 0; }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="container header-inner">
+      <div class="brand">
+        <span class="brand-icon" aria-hidden="true">📦</span>
+        <div>
+          <h1>مخزوني</h1>
+          <p>نظام إدارة مخزون عربي — بيانات حقيقية على الخادم (SQLite)</p>
+        </div>
+      </div>
+      <span class="badge">عربي • RTL • متجاوب</span>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- رسالة الخطأ العربية: تظهر عند رفض أي عملية (إدخال غير صالح أو رفض من الخادم) -->
+    <div id="error" class="alert alert-error" role="alert" hidden></div>
+    <!-- رسالة النجاح بعد العمليات المقبولة -->
+    <div id="success" class="alert alert-success" role="status" hidden></div>
+
+    <noscript>يتطلب هذا التطبيق تفعيل JavaScript في المتصفح.</noscript>
+
+    <div class="panels">
+      <!-- بطاقة الإضافة -->
+      <section class="card" aria-labelledby="add-title">
+        <div class="card-head">
+          <span class="icon icon-cyan" aria-hidden="true">➕</span>
+          <h2 id="add-title">إضافة صنف إلى المخزون</h2>
+        </div>
+        <form id="add-form" novalidate>
+          <div class="field">
+            <label for="sku">رمز الصنف (SKU)</label>
+            <input type="text" id="sku" name="sku" placeholder="مثال: كتاب" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="quantity">الكمية</label>
+            <input type="number" id="quantity" name="quantity" placeholder="مثال: 10" inputmode="numeric" autocomplete="off" />
+          </div>
+          <button type="button" id="save" class="btn btn-add">إضافة إلى المخزون</button>
+        </form>
+      </section>
+
+      <!-- بطاقة السحب -->
+      <section class="card" aria-labelledby="withdraw-title">
+        <div class="card-head">
+          <span class="icon icon-purple" aria-hidden="true">📤</span>
+          <h2 id="withdraw-title">سحب كمية من المخزون</h2>
+        </div>
+        <form id="withdraw-form" novalidate>
+          <div class="field">
+            <label for="withdraw-sku">رمز الصنف (SKU)</label>
+            <input type="text" id="withdraw-sku" name="withdraw-sku" placeholder="مثال: كتاب" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="withdraw-quantity">الكمية المطلوب سحبها</label>
+            <input type="number" id="withdraw-quantity" name="withdraw-quantity" placeholder="مثال: 3" inputmode="numeric" autocomplete="off" />
+          </div>
+          <button type="button" id="withdraw" class="btn btn-withdraw">سحب من المخزون</button>
+        </form>
+      </section>
+    </div>
+
+    <!-- بطاقة الجدول -->
+    <section class="card" aria-labelledby="items-title">
+      <div class="card-head">
+        <span class="icon icon-both" aria-hidden="true">📋</span>
+        <h2 id="items-title">أصناف المخزون</h2>
+        <button type="button" id="refresh" class="btn-ghost">تحديث القائمة</button>
+      </div>
+      <div class="table-wrap">
+        <table id="items">
+          <thead>
+            <tr>
+              <th scope="col">رمز الصنف</th>
+              <th scope="col">الرصيد المتاح</th>
+            </tr>
+          </thead>
+          <tbody id="items-body">
+            <!-- تُملأ صفوف البيانات (.stock-item) من الخادم عبر JavaScript -->
+          </tbody>
+        </table>
+      </div>
+      <p id="empty-state" class="empty-state" hidden>لا توجد أصناف في المخزون بعد — أضف أول صنف من النموذج أعلاه.</p>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <div class="container">
+      <p>يعمل بخادم Node وقاعدة SQLite فعلية — دون أي مكتبات خارجية • البيانات تُعرض دائمًا من الخادم</p>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      'use strict';
+
+      /* ---------------- عناصر الواجهة ---------------- */
+
+      var $ = function (id) { return document.getElementById(id); };
+      var skuInput     = $('sku');
+      var qtyInput     = $('quantity');
+      var saveBtn      = $('save');
+      var wSkuInput    = $('withdraw-sku');
+      var wQtyInput    = $('withdraw-quantity');
+      var withdrawBtn  = $('withdraw');
+      var errorBox     = $('error');
+      var successBox   = $('success');
+      var tbody        = $('items-body');
+      var emptyState   = $('empty-state');
+
+      /* ---------------- الرسائل ---------------- */
+
+      function showError(message) {
+        errorBox.textContent = message;
+        errorBox.hidden = false;
+        successBox.hidden = true;
+      }
+
+      function showSuccess(message) {
+        successBox.textContent = message;
+        successBox.hidden = false;
+        errorBox.hidden = true;
+      }
+
+      function clearMessages() {
+        errorBox.hidden = true;
+        successBox.hidden = true;
+      }
+
+      /* ---------------- عرض بيانات الخادم ---------------- */
+
+      /** يرسم صفوف الجدول من بيانات الخادم؛ خلية الرصيد تحمل data-quantity وتعرض الرقم وحده. */
+      function renderItems(items) {
+        tbody.textContent = '';
+        items.forEach(function (item) {
+          var tr = document.createElement('tr');
+          tr.className = 'stock-item';
+
+          var skuTd = document.createElement('td');
+          skuTd.className = 'sku-cell';
+          skuTd.textContent = String(item.sku);
+
+          var qtyTd = document.createElement('td');
+          qtyTd.className = 'qty-cell';
+          qtyTd.setAttribute('data-quantity', String(item.quantity));
+          qtyTd.textContent = String(item.quantity); // الرقم وحده دون أي نص إضافي
+
+          tr.appendChild(skuTd);
+          tr.appendChild(qtyTd);
+          tbody.appendChild(tr);
+        });
+        emptyState.hidden = items.length !== 0;
+      }
+
+      /**
+       * GET /api/stock — يجلب المخزون ويحدّث الجدول.
+       * كل النتائج المحتملة معالجة: نجاح / خطأ HTTP / رد غير JSON / انقطاع شبكة.
+       * silent=true بعد العمليات حتى لا تُطمس رسالة الخطأ الأدق للعملية نفسها.
+       */
+      async function loadStock(silent) {
+        try {
+          var res = await fetch('/api/stock', { headers: { 'Accept': 'application/json' } });
+          var data = null;
+          try { data = await res.json(); } catch (e) { data = null; }
+          if (!res.ok) {
+            if (!silent) showError((data && data.error) || 'تعذر تحميل بيانات المخزون من الخادم.');
+            return;
+          }
+          renderItems(data && Array.isArray(data.items) ? data.items : []);
+        } catch (err) {
+          if (!silent) showError('تعذر الاتصال بالخادم؛ تأكد من تشغيله ثم أعد المحاولة.');
+        }
+      }
+
+      /* ---------------- التحقق اليدوي من المدخلات ---------------- */
+
+      /**
+       * تحقق يدوي كامل لا يعتمد على منع HTML (الذي لا يُظهر #error):
+       * يرفض الرمز الفارغ والكمية الفارغة والكسرية وغير الرقمية والسالبة والصفر.
+       */
+      function validate(skuRaw, qtyRaw) {
+        var sku = String(skuRaw == null ? '' : skuRaw).trim();
+        var qtyText = String(qtyRaw == null ? '' : qtyRaw).trim();
+
+        if (sku === '') return { error: 'يرجى إدخال رمز الصنف (SKU) أولًا.' };
+        if (qtyText === '') return { error: 'يرجى إدخال الكمية.' };
+        if (!/^[+-]?\d+$/.test(qtyText)) return { error: 'يجب أن تكون الكمية عددًا صحيحًا دون كسور عشرية أو رموز.' };
+
+        var qty = Number(qtyText);
+        if (qty < 0) return { error: 'لا يمكن أن تكون الكمية سالبة؛ يرجى إدخال عدد صحيح موجب أكبر من صفر.' };
+        if (qty === 0) return { error: 'لا يمكن أن تكون الكمية صفرًا؛ يرجى إدخال عدد صحيح موجب.' };
+        return { sku: sku, quantity: qty };
+      }
+
+      /* ---------------- عملية الإضافة (POST /api/stock) ---------------- */
+
+      async function handleSave() {
+        clearMessages();
+
+        var v = validate(skuInput.value, qtyInput.value);
+        if (v.error) {
+          showError(v.error); // خطأ إدخال عربي ظاهر (يشمل الكمية السالبة) دون أي طلب للخادم
+          return;
+        }
+
+        saveBtn.disabled = true;
+        try {
+          var res = await fetch('/api/stock', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json; charset=utf-8', 'Accept': 'application/json' },
+            body: JSON.stringify({ sku: v.sku, quantity: v.quantity })
+          });
+
+          var data = null;
+          try { data = await res.json(); } catch (e) { data = null; }
+
+          if (res.status === 201) {
+            skuInput.value = '';
+            qtyInput.value = '';
+            showSuccess('تمت إضافة الصنف «' + v.sku + '» بكمية ' + v.quantity + ' بنجاح.');
+          } else if (res.status === 409) {
+            showError((data && data.error) || 'هذا الرمز موجود مسبقًا في المخزون؛ اختر رمزًا آخر.');
+          } else {
+            showError((data && data.error) || 'تعذرت إضافة الصنف؛ راجع المدخلات ثم أعد المحاولة.');
+          }
+        } catch (err) {
+          showError('تعذر الاتصال بالخادم؛ تأكد من تشغيله ثم أعد المحاولة.');
+        } finally {
+          saveBtn.disabled = false;
+          await loadStock(true); // بعد كل عملية تُعرض بيانات الخادم الحالية (بصمت حفاظًا على رسالة العملية)
+        }
+      }
+
+      /* ---------------- عملية السحب (POST /api/withdraw) ---------------- */
+
+      async function handleWithdraw() {
+        clearMessages();
+
+        var v = validate(wSkuInput.value, wQtyInput.value);
+        if (v.error) {
+          showError(v.error);
+          return;
+        }
+
+        withdrawBtn.disabled = true;
+        try {
+          var res = await fetch('/api/withdraw', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json; charset=utf-8', 'Accept': 'application/json' },
+            body: JSON.stringify({ sku: v.sku, quantity: v.quantity })
+          });
+
+          var data = null;
+          try { data = await res.json(); } catch (e) { data = null; }
+
+          if (res.status === 200) {
+            wSkuInput.value = '';
+            wQtyInput.value = '';
+            showSuccess('تم سحب ' + v.quantity + ' من الصنف «' + v.sku + '» بنجاح.');
+          } else if (res.status === 409) {
+            // رفض الخادم (صنف غير موجود أو رصيد غير كافٍ) دون أي تغيير في البيانات
+            showError((data && data.error) || 'لا يمكن إتمام السحب: الصنف غير موجود أو الرصيد غير كافٍ.');
+          } else {
+            showError((data && data.error) || 'تعذرت عملية السحب؛ راجع المدخلات ثم أعد المحاولة.');
+          }
+        } catch (err) {
+          showError('تعذر الاتصال بالخادم؛ تأكد من تشغيله ثم أعد المحاولة.');
+        } finally {
+          withdrawBtn.disabled = false;
+          await loadStock(true);
+        }
+      }
+
+      /* ---------------- ربط الأحداث ---------------- */
+
+      saveBtn.addEventListener('click', handleSave);
+      withdrawBtn.addEventListener('click', handleWithdraw);
+
+      // Enter داخل الحقول يُنفّذ العملية نفسها (النماذج novalidate والأزرار type=button — دون تحقق HTML)
+      $('add-form').addEventListener('submit', function (e) { e.preventDefault(); handleSave(); });
+      $('withdraw-form').addEventListener('submit', function (e) { e.preventDefault(); handleWithdraw(); });
+
+      $('refresh').addEventListener('click', function () {
+        clearMessages();
+        loadStock(false);
+      });
+
+      /* عند تحميل الصفحة: تُعرض بيانات الخادم مباشرة */
+      loadStock(false);
+    })();
+  </script>
+</body>
+</html>

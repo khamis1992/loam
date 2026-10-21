@@ -1,0 +1,131 @@
+{
+  "model": "glm-5.3-flash:cloud",
+  "fallbackModel": "qwen2.5:14b",
+  "ollamaUrl": "http://127.0.0.1:11434",
+  "server": {
+    "host": "127.0.0.1",
+    "port": 3939
+  },
+  "agent": {
+    "maxSteps": 40,
+    "temperature": 0.2,
+    "requestTimeoutMs": 600000
+  },
+  "workspace": "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\app-update\\candidate-profile\\workspace",
+  "policy": {
+    "networkEnabled": true,
+    "allowOutsideWorkspaceRead": true,
+    "denyCommandPatterns": [
+      "rm -rf /",
+      "rm -rf C:\\",
+      "format ",
+      "shutdown",
+      "diskpart",
+      "vssadmin delete",
+      "bcdedit",
+      "cipher /w",
+      "reg delete HKLM",
+      "net user ",
+      "takeown /f C:\\",
+      "icacls C:\\ ",
+      "Remove-Item -Recurse -Force C:\\"
+    ],
+    "allowCommandPatterns": [],
+    "maxCommandSeconds": 180
+  },
+  "browser": {
+    "channel": "msedge",
+    "headless": false,
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    }
+  },
+  "computerUse": {
+    "enabled": true,
+    "screenshotDir": "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\app-update\\candidate-profile\\workspace\\.screenshots"
+  },
+  "memory": {
+    "enabled": true,
+    "model": "nomic-embed-text:latest",
+    "file": "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\app-update\\candidate-profile\\data\\memory.json",
+    "autoStore": false,
+    "recallTop": 3,
+    "minScore": 0.45,
+    "maxEntries": 2000,
+    "dedupeThreshold": 0.97
+  },
+  "screen": {
+    "enabled": true,
+    "fps": 1,
+    "quality": 60,
+    "maxWidth": 1280
+  },
+  "vision": {
+    "enabled": true,
+    "maxImagesPerStep": 2
+  },
+  "selfImprove": {
+    "enabled": true,
+    "reviewEvery": 1,
+    "model": "",
+    "maxSteps": 10,
+    "writeApproval": false
+  },
+  "evaluation": {
+    "enabled": true,
+    "intervalMinutes": 360,
+    "suite": "core",
+    "critique": true,
+    "keepRuns": 30,
+    "transcripts": true
+  },
+  "selfPlay": {
+    "maxCases": 5
+  },
+  "orchestrator": {
+    "enabled": true,
+    "plannerModel": "",
+    "verifierModel": "",
+    "maxPlanSteps": 8,
+    "maxStepsPerWorker": 24,
+    "maxRevisionsPerStep": 1,
+    "maxReplans": 1,
+    "verifyFinal": true
+  },
+  "mcpServers": {
+    "filesystem": {
+      "command": "node",
+      "args": [
+        "${ROOT}/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js",
+        "${WORKSPACE}"
+      ]
+    },
+    "memory": {
+      "command": "node",
+      "args": [
+        "${ROOT}/node_modules/@modelcontextprotocol/server-memory/dist/index.js"
+      ]
+    },
+    "sequential-thinking": {
+      "command": "node",
+      "args": [
+        "${ROOT}/node_modules/@modelcontextprotocol/server-sequential-thinking/dist/index.js"
+      ]
+    },
+    "memory-skills": {
+      "command": "node",
+      "args": [
+        "${ROOT}/addons/memory-skills-mcp/dist/server.cjs"
+      ],
+      "env": {
+        "MEMSKILLS_OLLAMA_URL": "http://127.0.0.1:11434",
+        "MEMSKILLS_EMBED_MODEL": "nomic-embed-text:latest"
+      }
+    },
+    "loam-bridge": {
+      "transport": "http",
+      "url": "http://127.0.0.1:3004/mcp"
+    }
+  }
+}

@@ -1,0 +1,1 @@
+import fs from 'node:fs';const p='ui/studio.js';let s=fs.readFileSync(p,'utf8').replace(/    renderConflict\(\);\r?\n  }/,'    renderConflict();\n    void refreshNativeSlide(root,session,selection);\n  }');fs.writeFileSync(p,s);

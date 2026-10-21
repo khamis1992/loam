@@ -1,0 +1,11 @@
+import fs from 'node:fs';const p='src/studio/store.ts';let s=fs.readFileSync(p,'utf8');s=s.replace('export type SlideTable =','export type SlideChart = {id:string;type:"column"|"line";title:string;labels:string[];series:Array<{name:string;values:number[];color:string}>;x:number;y:number;w:number;h:number};\nexport type SlideTable =').replace('tables?:SlideTable[];','tables?:SlideTable[]; charts?:SlideChart[];');
+const fn=`function slideCharts(value:unknown):SlideChart[]{
+ const ids=new Set<string>();return array(value,8).map(item=>{const t=object(item),id=text(t.id,100);if(!id||ids.has(id))fail('Chart IDs must be unique');ids.add(id);if(!['column','line'].includes(String(t.type)))fail('Invalid chart type');
+ const labels=array(t.labels,20).map(v=>text(v,100));if(!labels.length)fail('Chart needs categories');
+ const series=array(t.series,6).map(v=>{const row=object(v),name=text(row.name,100),color=text(row.color,7);if(!/^#[a-f0-9]{6}$/i.test(color))fail('Invalid chart color');const values=array(row.values,20).map(n=>{if(typeof n!=='number'||!Number.isFinite(n)||Math.abs(n)>1e12)fail('Chart values must be finite numbers');return Number(n);});if(values.length!==labels.length)fail('Chart values must match category count');return {name,color,values};});if(!series.length)fail('Chart needs a data series');
+ for(const key of ['x','y','w','h']){const v=t[key];if(typeof v!=='number'||!Number.isFinite(v)||v<0||v>100||(['w','h'].includes(key)&&v<1))fail('Invalid chart geometry');}if(Number(t.x)+Number(t.w)>100.001||Number(t.y)+Number(t.h)>100.001)fail('Chart must remain inside the slide');
+ return {id,type:t.type as 'column'|'line',title:text(t.title,200),labels,series,x:Number(t.x),y:Number(t.y),w:Number(t.w),h:Number(t.h)};
+ });
+}
+`;
+s=s.replace('function slideTables(value:',fn+'function slideTables(value:');s=s.replace('      const tables=slide.tables',"      const charts=slide.charts===undefined?undefined:slideCharts(slide.charts);\n      if(value.sourceId&&charts?.length)fail('Charts in imported presentations are not supported yet');\n      const tables=slide.tables");s=s.replace('...(tables?{tables}:{}), id','...(tables?{tables}:{}), ...(charts?{charts}:{}), id');fs.writeFileSync(p,s);

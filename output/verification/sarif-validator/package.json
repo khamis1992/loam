@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "ajv-draft-04": "^1.0.0",
+    "ajv-formats": "^3.0.1"
+  }
+}

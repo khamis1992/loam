@@ -1,0 +1,22 @@
+﻿{
+    "version":  "0.5.9",
+    "capabilities":  {
+                         "revision":  5,
+                         "engine":  "scoped-assessment",
+                         "features":  [
+                                          "http",
+                                          "browser",
+                                          "login",
+                                          "spa-flows",
+                                          "scoped-post",
+                                          "retest",
+                                          "coverage-diagnostics",
+                                          "multi-account-authorization",
+                                          "identity-witness"
+                                      ]
+                     },
+    "backup":  "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\security-runtime-backup-20261018-092935",
+    "taskCount":  20,
+    "profilePreserved":  true,
+    "tasksPreserved":  true
+}

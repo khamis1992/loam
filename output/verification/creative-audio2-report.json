@@ -1,0 +1,14 @@
+{
+  "taskId": "task_mvedi4pca2f81f72c9e5",
+  "flatRms": 0.17386321789150144,
+  "boostedRms": 0.19465156923116886,
+  "compressedRms": 0.15095002871525567,
+  "duckedRms": 0.08627558964799693,
+  "normalizedRms": 0.12168830397518264,
+  "stems": [
+    "stem-01-الصورة الأساسية.wav",
+    "stem-02-طبقة مرئية.wav",
+    "stem-03-الموسيقى والصوت.wav",
+    "stem-04-مسار صوت.wav"
+  ]
+}

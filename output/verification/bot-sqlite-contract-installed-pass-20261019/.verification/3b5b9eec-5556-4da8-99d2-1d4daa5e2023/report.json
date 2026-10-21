@@ -1,0 +1,603 @@
+{
+  "pass": true,
+  "reason": "All six contract scenarios pass on desktop and mobile viewports with correct API statuses (201/200/409/400 paths), correct SQLite rows at every step, and screenshots confirming the requested UI: Arabic RTL layout, sky-blue/purple gradient theme, #sku/#quantity/#save add form, #withdraw-sku/#withdraw-quantity/#withdraw form, visible Arabic #error messages for overdraw, duplicate SKU, and negative quantity, and an #items table whose .stock-item rows show the quantity alone in [data-quantity] cells (10 → 7 after withdrawal, unchanged 10 on rejections, empty state after negative rejection). Mobile screenshots show a properly stacked responsive layout with no overlaps or clipped text.",
+  "reportPath": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvej3fh6a71115d7ab8e\\.verification\\3b5b9eec-5556-4da8-99d2-1d4daa5e2023\\report.json",
+  "elapsedMs": 74870,
+  "usage": {
+    "promptTokens": 17538,
+    "completionTokens": 1711,
+    "durationMs": 12282
+  },
+  "checks": [
+    {
+      "viewport": "desktop",
+      "scenario": "Add stock",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/inventory.sqlite",
+          "table": "stock",
+          "columns": [
+            "sku",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "كتاب",
+              10
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Server persistence on reload",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/inventory.sqlite",
+          "table": "stock",
+          "columns": [
+            "sku",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "كتاب",
+              10
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Valid withdrawal",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/withdraw",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/inventory.sqlite",
+          "table": "stock",
+          "columns": [
+            "sku",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "كتاب",
+              7
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Overdraw rejected without changing stock",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/withdraw",
+          "status": 409
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/inventory.sqlite",
+          "table": "stock",
+          "columns": [
+            "sku",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "كتاب",
+              10
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Duplicate SKU rejected",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 409
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/inventory.sqlite",
+          "table": "stock",
+          "columns": [
+            "sku",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "كتاب",
+              10
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Negative amount rejected",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/inventory.sqlite",
+          "table": "stock",
+          "columns": [
+            "sku",
+            "quantity"
+          ],
+          "rows": []
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Add stock",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/inventory.sqlite",
+          "table": "stock",
+          "columns": [
+            "sku",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "كتاب",
+              10
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Server persistence on reload",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/inventory.sqlite",
+          "table": "stock",
+          "columns": [
+            "sku",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "كتاب",
+              10
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Valid withdrawal",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/withdraw",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/inventory.sqlite",
+          "table": "stock",
+          "columns": [
+            "sku",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "كتاب",
+              7
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Overdraw rejected without changing stock",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/withdraw",
+          "status": 409
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/inventory.sqlite",
+          "table": "stock",
+          "columns": [
+            "sku",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "كتاب",
+              10
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Duplicate SKU rejected",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 409
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/inventory.sqlite",
+          "table": "stock",
+          "columns": [
+            "sku",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "كتاب",
+              10
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Negative amount rejected",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/inventory.sqlite",
+          "table": "stock",
+          "columns": [
+            "sku",
+            "quantity"
+          ],
+          "rows": []
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvej3fh6a71115d7ab8e\\.verification\\3b5b9eec-5556-4da8-99d2-1d4daa5e2023\\desktop-0.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvej3fh6a71115d7ab8e\\.verification\\3b5b9eec-5556-4da8-99d2-1d4daa5e2023\\desktop-1.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvej3fh6a71115d7ab8e\\.verification\\3b5b9eec-5556-4da8-99d2-1d4daa5e2023\\desktop-2.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvej3fh6a71115d7ab8e\\.verification\\3b5b9eec-5556-4da8-99d2-1d4daa5e2023\\desktop-3.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvej3fh6a71115d7ab8e\\.verification\\3b5b9eec-5556-4da8-99d2-1d4daa5e2023\\desktop-4.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvej3fh6a71115d7ab8e\\.verification\\3b5b9eec-5556-4da8-99d2-1d4daa5e2023\\desktop-5.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvej3fh6a71115d7ab8e\\.verification\\3b5b9eec-5556-4da8-99d2-1d4daa5e2023\\mobile-0.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvej3fh6a71115d7ab8e\\.verification\\3b5b9eec-5556-4da8-99d2-1d4daa5e2023\\mobile-1.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvej3fh6a71115d7ab8e\\.verification\\3b5b9eec-5556-4da8-99d2-1d4daa5e2023\\mobile-2.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvej3fh6a71115d7ab8e\\.verification\\3b5b9eec-5556-4da8-99d2-1d4daa5e2023\\mobile-3.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvej3fh6a71115d7ab8e\\.verification\\3b5b9eec-5556-4da8-99d2-1d4daa5e2023\\mobile-4.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvej3fh6a71115d7ab8e\\.verification\\3b5b9eec-5556-4da8-99d2-1d4daa5e2023\\mobile-5.png"
+  ],
+  "errors": [],
+  "runtime": {
+    "type": "node",
+    "isolation": "docker-network-none",
+    "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+    "freshBackendPerScenario": true
+  },
+  "visual": {
+    "model": "glm-5.3-flash",
+    "verdict": {
+      "verdict": "pass",
+      "reason": "All six contract scenarios pass on desktop and mobile viewports with correct API statuses (201/200/409/400 paths), correct SQLite rows at every step, and screenshots confirming the requested UI: Arabic RTL layout, sky-blue/purple gradient theme, #sku/#quantity/#save add form, #withdraw-sku/#withdraw-quantity/#withdraw form, visible Arabic #error messages for overdraw, duplicate SKU, and negative quantity, and an #items table whose .stock-item rows show the quantity alone in [data-quantity] cells (10 → 7 after withdrawal, unchanged 10 on rejections, empty state after negative rejection). Mobile screenshots show a properly stacked responsive layout with no overlaps or clipped text.",
+      "issues": [],
+      "notes": [
+        "Optional polish: the quantity column could right-align numerals consistently with tabular figures, but current rendering is already clear and readable."
+      ]
+    },
+    "response": "{\"verdict\":\"pass\",\"reason\":\"All six contract scenarios pass on desktop and mobile viewports with correct API statuses (201/200/409/400 paths), correct SQLite rows at every step, and screenshots confirming the requested UI: Arabic RTL layout, sky-blue/purple gradient theme, #sku/#quantity/#save add form, #withdraw-sku/#withdraw-quantity/#withdraw form, visible Arabic #error messages for overdraw, duplicate SKU, and negative quantity, and an #items table whose .stock-item rows show the quantity alone in [data-quantity] cells (10 → 7 after withdrawal, unchanged 10 on rejections, empty state after negative rejection). Mobile screenshots show a properly stacked responsive layout with no overlaps or clipped text.\",\"issues\":[],\"notes\":[\"Optional polish: the quantity column could right-align numerals consistently with tabular figures, but current rendering is already clear and readable.\"]}",
+    "attempts": 1
+  },
+  "sourceHashes": {
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvej3fh6a71115d7ab8e\\app-verification.json": "23a9cd798d8c802ae0f896f271925078ceffa3f05f82b172836aa93272b967a0",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvej3fh6a71115d7ab8e\\index.html": "dd386a7488bca05316e4157d69e057ab5e388a5e661f19ace4bcee283bf9002f",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvej3fh6a71115d7ab8e\\server.mjs": "5fd8860ddb648111eb5000b977baf4637b7bce876677777565b99f8dc8b764bf"
+  }
+}

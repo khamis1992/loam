@@ -1,0 +1,77 @@
+{
+  "taskId": "task_mvfef87673cad0ca75b7",
+  "contractSha256": "d5f248b2c554e39a68fc47a2ad1784183c0dae05ecf6c4ee6f979801ace76b3f",
+  "scope": "Read-only arithmetic diagnostic of declared successful quote API expectations only; not schema validation, runtime or full acceptance",
+  "rows": [
+    {
+      "scenario": 0,
+      "group": 0,
+      "request": 0,
+      "arithmeticMatches": true,
+      "withinSubtotalCap": true
+    },
+    {
+      "scenario": 1,
+      "group": 0,
+      "request": 0,
+      "arithmeticMatches": true,
+      "withinSubtotalCap": true
+    },
+    {
+      "scenario": 1,
+      "group": 0,
+      "request": 1,
+      "arithmeticMatches": true,
+      "withinSubtotalCap": true
+    },
+    {
+      "scenario": 1,
+      "group": 0,
+      "request": 2,
+      "arithmeticMatches": true,
+      "withinSubtotalCap": true
+    },
+    {
+      "scenario": 1,
+      "group": 0,
+      "request": 3,
+      "arithmeticMatches": true,
+      "withinSubtotalCap": true
+    },
+    {
+      "scenario": 2,
+      "group": 0,
+      "request": 0,
+      "arithmeticMatches": true,
+      "withinSubtotalCap": true
+    },
+    {
+      "scenario": 2,
+      "group": 0,
+      "request": 1,
+      "arithmeticMatches": true,
+      "withinSubtotalCap": true
+    },
+    {
+      "scenario": 7,
+      "group": 0,
+      "request": 0,
+      "arithmeticMatches": true,
+      "withinSubtotalCap": true
+    },
+    {
+      "scenario": 7,
+      "group": 0,
+      "request": 1,
+      "arithmeticMatches": true,
+      "withinSubtotalCap": true
+    },
+    {
+      "scenario": 7,
+      "group": 0,
+      "request": 2,
+      "arithmeticMatches": true,
+      "withinSubtotalCap": true
+    }
+  ]
+}

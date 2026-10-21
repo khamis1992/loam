@@ -1,0 +1,8 @@
+{
+  "workspaceServerSha256": "8F234839500BA54426FAF79BDF3A3F894F1BA8F8DE6B4920B6C14B0CF37022B5",
+  "matchesWorkspace": true,
+  "note": "Installed server changed after packaging during concurrent work; installed integration passed on this runtime.",
+  "installedServerSha256": "8F234839500BA54426FAF79BDF3A3F894F1BA8F8DE6B4920B6C14B0CF37022B5",
+  "testedTask": "task_mvdqz9eo93538df121bd",
+  "version": "0.5.22"
+}

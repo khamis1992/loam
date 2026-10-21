@@ -1,0 +1,82 @@
+{
+  "profilePreserved": true,
+  "tasksPreserved": 144,
+  "at": "2026-10-19T07:49:07.8719251+03:00",
+  "candidate": "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-install-20261019-074900\\candidate-server.cjs",
+  "runtimeHash": "FA0A2BC9E4E5BB8F2D8DDAA39F34440A0E3ED1704BD934E66AD2F1F8751F1585",
+  "backup": "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-install-20261019-074900\\previous-server.cjs",
+  "capabilities": {
+    "revision": 11,
+    "mandatoryFinalVerification": true,
+    "bufferedCompletion": true,
+    "taskToolScope": {
+      "explicitFileOnly": true,
+      "checkpointResume": true,
+      "languageCoverage": "limited-explicit-ar-en-commands"
+    },
+    "acceptanceIntegrity": {
+      "freezeAt": "explicit-user-contract-or-first-final-verification",
+      "explicitUserContractAtStart": true,
+      "explicitCommandLanguages": [
+        "ar",
+        "en"
+      ],
+      "preservesRepairChecks": true,
+      "orchestratorCheckpointResume": true,
+      "independentlyAuthored": true,
+      "independentMaxScenarios": 4,
+      "independentMandatoryForApplications": true,
+      "independentCheckpointResume": true
+    },
+    "creativeVerification": {
+      "renderer": "actual-studio",
+      "savedCamera": true,
+      "framedView": true,
+      "optionalMotionSample": true,
+      "fullAnimationValidation": false,
+      "visualReview": true
+    },
+    "applicationVerification": {
+      "contract": "app-verification.json",
+      "runtime": "isolated-playwright",
+      "viewports": [
+        "desktop",
+        "mobile"
+      ],
+      "visualReview": true,
+      "network": "local-only",
+      "backendApplications": true,
+      "expectedHttpResponses": true,
+      "maxScenarios": 12,
+      "sqliteChecks": {
+        "readOnly": true,
+        "declarative": true,
+        "maxChecksPerScenario": 4,
+        "maxRows": 100,
+        "optInContract": true
+      },
+      "apiChecks": {
+        "declarative": true,
+        "exactJsonResponse": true,
+        "maxJsonCharacters": 16000,
+        "maxGroups": 8,
+        "maxConcurrentRequests": 4,
+        "maxRequestsPerScenario": 16,
+        "optInContract": true
+      },
+      "backendRuntime": {
+        "type": "node",
+        "isolation": "docker-network-none",
+        "requiredLocalImage": "node:22-alpine",
+        "externalPackages": false,
+        "externalServices": false,
+        "freshStatePerScenario": true,
+        "processRestart": true,
+        "maxRestartsPerScenario": 2,
+        "containerDeletionDurability": false
+      }
+    },
+    "visualModel": "glm-5.3-flash:cloud"
+  },
+  "version": "0.5.25"
+}

@@ -1,0 +1,37 @@
+﻿{
+    "version":  "0.5.16",
+    "capabilities":  {
+                         "revision":  22,
+                         "engine":  "scoped-assessment",
+                         "features":  [
+                                          "http",
+                                          "browser",
+                                          "login",
+                                          "spa-flows",
+                                          "scoped-post",
+                                          "retest",
+                                          "coverage-diagnostics",
+                                          "multi-account-authorization",
+                                          "identity-witness",
+                                          "explicit-api-origins",
+                                          "cross-origin-authorization",
+                                          "browser-resource-budgets",
+                                          "openapi-fixtures-coverage",
+                                          "reviewed-source-repairs",
+                                          "repair-recovery",
+                                          "extended-request-budget",
+                                          "final-route-evidence",
+                                          "route-readiness",
+                                          "source-sql-review",
+                                          "source-coverage",
+                                          "sarif-source-locations",
+                                          "post-authorization",
+                                          "json-authorization-witness",
+                                          "local-sql-bindings"
+                                      ]
+                     },
+    "backup":  "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\security-runtime-backup-20261018-115451",
+    "taskCount":  66,
+    "profilePreserved":  true,
+    "tasksPreserved":  true
+}

@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>مخزوني — نظام إدارة المخزون</title>
+  <style>
+    /* ============================================================
+       تصميم سماوي/بنفسجي متجاوب — CSS داخلي بالكامل دون أي مكتبات
+       ============================================================ */
+    :root {
+      --cyan-600: #0891b2;
+      --cyan-500: #06b6d4;
+      --cyan-400: #22d3ee;
+      --cyan-50: #ecfeff;
+      --purple-700: #6d28d9;
+      --purple-600: #7c3aed;
+      --purple-500: #a855f7;
+      --purple-50: #f5f3ff;
+      --ink: #0f172a;
+      --body-color: #334155;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --card: #ffffff;
+      --danger-bg: #fef2f2;
+      --danger-border: #fca5a5;
+      --danger-text: #b91c1c;
+      --radius: 16px;
+      --shadow: 0 12px 32px rgba(15, 23, 42, .08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      font-family: "Segoe UI", Tahoma, "Noto Sans Arabic", "Noto Kufi Arabic", Arial, sans-serif;
+      color: var(--body-color);
+      background:
+        radial-gradient(1100px 480px at 88% -12%, rgba(168, 85, 247, .16), transparent 60%),
+        radial-gradient(1000px 480px at 8% -12%, rgba(34, 211, 238, .20), transparent 60%),
+        linear-gradient(160deg, #f0fdff 0%, #f8fafc 45%, #f5f3ff 100%);
+      background-attachment: fixed;
+    }
+
+    /* ---------- الترويسة ---------- */
+    .site-header {
+      background: linear-gradient(120deg, var(--cyan-600) 0%, var(--purple-600) 100%);
+      color: #fff;
+      padding: 26px 20px;
+      box-shadow: 0 8px 28px rgba(124, 58, 237, .28);
+    }
+    .brand {
+      max-width: 960px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .brand-icon {
+      flex: none;
+      width: 52px;
+      height: 52px;
+      display: grid;
+      place-items: center;
+      font-size: 1.55rem;
+      background: rgba(255, 255, 255, .16);
+      border: 1px solid rgba(255, 255, 255, .35);
+      border-radius: 14px;
+    }
+    .site-header h1 { margin: 0; font-size: 1.55rem; letter-spacing: .3px; }
+    .site-header p { margin: 4px 0 0; font-size: .92rem; opacity: .92; }
+
+    /* ---------- الحاوية واللوحات ---------- */
+    .container {
+      width: 100%;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 22px 16px 40px;
+      flex: 1;
+    }
+    .panels {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+    .panel-add { border-top: 4px solid var(--cyan-400); }
+    .panel-withdraw { border-top: 4px solid var(--purple-500); }
+    .panel-table { position: relative; }
+    .panel-table::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      right: 0;
+      left: 0;
+      height: 4px;
+      border-radius: var(--radius) var(--radius) 0 0;
+      background: linear-gradient(120deg, var(--cyan-400), var(--purple-500));
+    }
+    .panel-title {
+      margin: 0 0 16px;
+      font-size: 1.08rem;
+      color: var(--ink);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ---------- الحقول ---------- */
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+    .field label { font-size: .88rem; font-weight: 700; color: var(--ink); }
+    .field input {
+      width: 100%;
+      padding: 11px 12px;
+      font-size: 1rem;
+      font-family: inherit;
+      color: var(--ink);
+      background: #f8fafc;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 10px;
+      transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+    }
+    .field input::placeholder { color: #94a3b8; }
+    .field input:focus { outline: none; background: #fff; }
+    .panel-add .field input:focus {
+      border-color: var(--cyan-500);
+      box-shadow: 0 0 0 4px rgba(6, 182, 212, .18);
+    }
+    .panel-withdraw .field input:focus {
+      border-color: var(--purple-500);
+      box-shadow: 0 0 0 4px rgba(168, 85, 247, .18);
+    }
+
+    /* ---------- الأزرار ---------- */
+    .btn {
+      width: 100%;
+      padding: 12px 16px;
+      font-size: 1rem;
+      font-weight: 700;
+      font-family: inherit;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      box-shadow: 0 6px 16px rgba(15, 23, 42, .12);
+      transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
+    }
+    .btn:hover { transform: translateY(-1px); filter: brightness(1.06); }
+    .btn:active { transform: translateY(0); filter: brightness(.97); }
+    .btn:focus-visible { outline: 3px solid rgba(124, 58, 237, .4); outline-offset: 2px; }
+    .btn-save { background: linear-gradient(120deg, var(--cyan-600), var(--cyan-400)); }
+    .btn-withdraw { background: linear-gradient(120deg, var(--purple-600), var(--purple-500)); }
+
+    /* ---------- صندوق رسالة الخطأ #error ---------- */
+    .error-box {
+      display: none; /* مخفي افتراضيًا ويظهر فقط عند رفض عملية */
+      margin: 0 0 16px;
+      padding: 13px 16px;
+      border-radius: 12px;
+      background: var(--danger-bg);
+      border: 1.5px solid var(--danger-border);
+      color: var(--danger-text);
+      font-weight: 700;
+      font-size: .95rem;
+      line-height: 1.7;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .error-box.show { display: flex; }
+    .error-box::before { content: "⚠️"; flex: none; font-size: 1.05rem; line-height: 1.5; }
+
+    /* ---------- جدول الأصناف #items ---------- */
+    .table-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .table-head .panel-title { margin: 0; }
+    .summary {
+      font-size: .85rem;
+      font-weight: 700;
+      color: var(--purple-600);
+      background: var(--purple-50);
+      border: 1px solid #ddd6fe;
+      padding: 5px 12px;
+      border-radius: 999px;
+    }
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    table { width: 100%; border-collapse: collapse; min-width: 380px; }
+    thead th {
+      background: linear-gradient(120deg, rgba(8, 145, 178, .10), rgba(124, 58, 237, .10));
+      color: var(--ink);
+      font-size: .88rem;
+      text-align: right;
+      padding: 11px 14px;
+      border-bottom: 2px solid var(--line);
+    }
+    tbody td {
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+      font-size: .95rem;
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:nth-child(even) { background: #f8fafc; }
+    tbody tr:hover { background: var(--cyan-50); }
+    td.cell-sku { font-weight: 700; color: var(--ink); }
+    td.cell-qty {
+      font-weight: 800;
+      color: var(--purple-600);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ---------- حالة الفراغ والتذييل ---------- */
+    .empty {
+      margin: 14px 0 0;
+      padding: 18px 12px;
+      text-align: center;
+      color: var(--muted);
+      font-size: .92rem;
+      border: 1.5px dashed #cbd5e1;
+      border-radius: 12px;
+      background: #f8fafc;
+    }
+    .site-footer {
+      text-align: center;
+      padding: 18px 16px 26px;
+      color: var(--muted);
+      font-size: .82rem;
+    }
+    .site-footer p { margin: 0; }
+
+    /* ---------- التجاوب ---------- */
+    @media (max-width: 720px) {
+      .panels { grid-template-columns: 1fr; }
+      .site-header { padding: 20px 16px; }
+      .site-header h1 { font-size: 1.3rem; }
+      .panel { padding: 16px; }
+    }
+    @media (max-width: 420px) {
+      .container { padding: 16px 10px 30px; }
+      thead th, tbody td { padding: 9px 10px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand">
+      <span class="brand-icon" aria-hidden="true">📦</span>
+      <div>
+        <h1>مخزوني</h1>
+        <p>نظام إدارة المخزون — إضافة وسحب الأصناف مباشرة من قاعدة بيانات الخادم</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- رسالة الخطأ العربية: مخفية افتراضيًا وتظهر عند رفض أي عملية -->
+    <div id="error" class="error-box" role="alert" aria-live="assertive"></div>
+
+    <div class="panels">
+      <!-- نمط الإضافة -->
+      <section class="panel panel-add" aria-labelledby="add-title">
+        <h2 id="add-title" class="panel-title">➕ إضافة صنف جديد</h2>
+        <form id="add-form" novalidate>
+          <div class="field">
+            <label for="sku">رمز الصنف (SKU)</label>
+            <!-- type=text عمدًا: حتى القيم السالبة تُكتب ويظهر خطأ JS بدل منع المتصفح الصامت -->
+            <input type="text" id="sku" name="sku" placeholder="مثال: كتاب" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="quantity">الكمية</label>
+            <input type="text" id="quantity" name="quantity" inputmode="numeric" placeholder="مثال: 10" autocomplete="off">
+          </div>
+          <button type="submit" id="save" class="btn btn-save">إضافة إلى المخزون</button>
+        </form>
+      </section>
+
+      <!-- نمط السحب -->
+      <section class="panel panel-withdraw" aria-labelledby="withdraw-title">
+        <h2 id="withdraw-title" class="panel-title">➖ سحب من المخزون</h2>
+        <form id="withdraw-form" novalidate>
+          <div class="field">
+            <label for="withdraw-sku">رمز الصنف (SKU)</label>
+            <input type="text" id="withdraw-sku" name="withdraw-sku" placeholder="مثال: كتاب" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="withdraw-quantity">الكمية المطلوب سحبها</label>
+            <input type="text" id="withdraw-quantity" name="withdraw-quantity" inputmode="numeric" placeholder="مثال: 3" autocomplete="off">
+          </div>
+          <button type="submit" id="withdraw" class="btn btn-withdraw">سحب الكمية</button>
+        </form>
+      </section>
+    </div>
+
+    <!-- جدول الأصناف: يُملأ دائمًا من بيانات الخادم -->
+    <section class="panel panel-table" aria-labelledby="table-title">
+      <div class="table-head">
+        <h2 id="table-title" class="panel-title">📋 الأصناف الحالية</h2>
+        <span id="summary" class="summary"></span>
+      </div>
+      <div class="table-wrap">
+        <table id="items">
+          <thead>
+            <tr>
+              <th scope="col">رمز الصنف (SKU)</th>
+              <th scope="col">الرصيد المتوفر</th>
+            </tr>
+          </thead>
+          <tbody id="items-body"></tbody>
+        </table>
+      </div>
+      <p id="empty-message" class="empty" hidden>لا توجد أصناف في المخزون بعد — أضف أول صنف من النموذج أعلاه.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>البيانات تُقرأ وتُكتب في قاعدة SQLite على الخادم — تُحدَّث الواجهة من الخادم بعد كل عملية وعند تحميل الصفحة.</p>
+  </footer>
+
+  <script>
+    (function () {
+      'use strict';
+
+      /* ---------- عناصر الواجهة ---------- */
+      var skuInput = document.getElementById('sku');
+      var quantityInput = document.getElementById('quantity');
+      var addForm = document.getElementById('add-form');
+      var withdrawSkuInput = document.getElementById('withdraw-sku');
+      var withdrawQuantityInput = document.getElementById('withdraw-quantity');
+      var withdrawForm = document.getElementById('withdraw-form');
+      var errorBox = document.getElementById('error');
+      var itemsBody = document.getElementById('items-body');
+      var emptyMessage = document.getElementById('empty-message');
+      var summary = document.getElementById('summary');
+
+      /* ---------- إظهار/إخفاء رسالة الخطأ العربية ---------- */
+      function showError(message) {
+        errorBox.textContent = message;
+        errorBox.classList.add('show');
+      }
+
+      function hideError() {
+        errorBox.textContent = '';
+        errorBox.classList.remove('show');
+      }
+
+      /* ---------- نقطة عبور واحدة لكل استدعاءات الشبكة ----------
+         لا يوجد أي رد fetch بلا معالجة: أخطاء الشبكة، وJSON التالف،
+         ورموز الحالة غير الناجحة كلها تُلتقط وتُعرض في #error. */
+      async function requestJson(url, options) {
+        var res;
+        try {
+          res = await fetch(url, options);
+        } catch (networkError) {
+          throw new Error('تعذر الاتصال بالخادم. تأكد من تشغيله ثم أعد المحاولة.');
+        }
+
+        var data = null;
+        try {
+          data = await res.json();
+        } catch (parseError) {
+          data = null; // استجابة بلا JSON — تُعالج كخطأ عام أدناه عند فشل res.ok
+        }
+
+        if (!res.ok) {
+          var serverMessage = (data && typeof data.error === 'string' && data.error.trim() !== '')
+            ? data.error
+            : 'تعذر إتمام العملية (رمز الحالة ' + res.status + ')';
+          throw new Error(serverMessage);
+        }
+        return data;
+      }
+
+      /* ---------- إعادة الرسم من بيانات الخادم حصريًا ---------- */
+      function render(items) {
+        var list = Array.isArray(items) ? items : [];
+        itemsBody.textContent = '';
+
+        if (list.length === 0) {
+          emptyMessage.hidden = false;
+          summary.textContent = '';
+          return;
+        }
+        emptyMessage.hidden = true;
+
+        var totalUnits = 0;
+        var fragment = document.createDocumentFragment();
+
+        list.forEach(function (item) {
+          var quantityText = String(item.quantity);
+          var quantityNumber = Number(item.quantity);
+          if (Number.isFinite(quantityNumber)) { totalUnits += quantityNumber; }
+
+          var row = document.createElement('tr');
+          row.className = 'stock-item';
+
+          var skuCell = document.createElement('td');
+          skuCell.className = 'cell-sku';
+          skuCell.textContent = String(item.sku);
+
+          // خلية الرصيد: تحمل data-quantity وتعرض الرقم وحده دون أي نص إضافي
+          var qtyCell = document.createElement('td');
+          qtyCell.className = 'cell-qty';
+          qtyCell.setAttribute('data-quantity', quantityText);
+          qtyCell.textContent = quantityText;
+
+          row.appendChild(skuCell);
+          row.appendChild(qtyCell);
+          fragment.appendChild(row);
+        });
+
+        itemsBody.appendChild(fragment);
+        summary.textContent = 'عدد الأصناف: ' + list.length + ' • إجمالي الوحدات: ' + totalUnits;
+      }
+
+      /* جلب حالة المخزون من الخادم وإعادة الرسم منها */
+      async function refreshFromServer() {
+        try {
+          var data = await requestJson('/api/stock', {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
+          });
+          render(data && Array.isArray(data.items) ? data.items : []);
+        } catch (err) {
+          showError(err && err.message ? err.message : 'حدث خطأ غير متوقع أثناء جلب البيانات.');
+        }
+      }
+
+      /* ---------- تحقق JS قبل الإرسال ----------
+         يظهر الخطأ حتى للقيمة السالبة لأن الحقول type=text
+         ولا نعتمد على منع HTML وحده أبدًا. */
+      function validate(skuValue, quantityValue) {
+        var sku = String(skuValue == null ? '' : skuValue).trim();
+        if (sku === '') {
+          return { message: 'يرجى إدخال رمز الصنف (SKU) أولًا.' };
+        }
+        var rawQuantity = String(quantityValue == null ? '' : quantityValue).trim();
+        if (rawQuantity === '') {
+          return { message: 'يرجى إدخال الكمية.' };
+        }
+        if (!/^-?\d+$/.test(rawQuantity)) {
+          return { message: 'الكمية يجب أن تكون رقمًا صحيحًا دون فواصل عشرية أو رموز.' };
+        }
+        var quantity = Number(rawQuantity);
+        if (!Number.isSafeInteger(quantity)) {
+          return { message: 'الكمية خارج النطاق المسموح به.' };
+        }
+        if (quantity <= 0) {
+          return { message: 'الكمية يجب أن تكون عددًا صحيحًا موجبًا أكبر من صفر.' };
+        }
+        return { sku: sku, quantity: quantity };
+      }
+
+      /* ---------- عمليات الإضافة والسحب ---------- */
+      async function performAdd() {
+        var check = validate(skuInput.value, quantityInput.value);
+        if (check.message) {
+          showError(check.message);
+          return;
+        }
+        try {
+          await requestJson('/api/stock', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
+            body: JSON.stringify({ sku: check.sku, quantity: check.quantity })
+          });
+          hideError(); // النجاح يخفي رسالة الخطأ
+          skuInput.value = '';
+          quantityInput.value = '';
+        } catch (err) {
+          // رفض الخادم (409 تكرار / 400 إدخال غير صالح) أو أي فشل آخر: رسالة الخادم تُعرض
+          showError(err && err.message ? err.message : 'حدث خطأ غير متوقع أثناء الإضافة.');
+        }
+        // بعد كل عملية (نجاحًا أو رفضًا) تُقرأ الحالة من الخادم وتُعاد الرسم منها
+        await refreshFromServer();
+      }
+
+      async function performWithdraw() {
+        var check = validate(withdrawSkuInput.value, withdrawQuantityInput.value);
+        if (check.message) {
+          showError(check.message);
+          return;
+        }
+        try {
+          await requestJson('/api/withdraw', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
+            body: JSON.stringify({ sku: check.sku, quantity: check.quantity })
+          });
+          hideError();
+          withdrawSkuInput.value = '';
+          withdrawQuantityInput.value = '';
+        } catch (err) {
+          // 409 (صنف غير موجود أو رصيد غير كافٍ) أو 400: تُعرض رسالة الخادم دون تغيير البيانات
+          showError(err && err.message ? err.message : 'حدث خطأ غير متوقع أثناء السحب.');
+        }
+        await refreshFromServer();
+      }
+
+      /* ---------- ربط الأحداث مع حارس طلبات متزامنة ---------- */
+      var inFlight = false;
+
+      function withGuard(handler) {
+        return function (event) {
+          event.preventDefault(); // لا إرسال صفحات ولا نوافذ alert/confirm إطلاقًا
+          if (inFlight) { return; }
+          inFlight = true;
+          Promise.resolve(handler(event))
+            .catch(function (err) {
+              // شبكة أمان أخيرة: لا وعد مرفوض يبقى بلا معالجة
+              showError(err && err.message ? err.message : 'حدث خطأ غير متوقع.');
+            })
+            .finally(function () {
+              inFlight = false;
+            });
+        };
+      }
+
+      addForm.addEventListener('submit', withGuard(performAdd));
+      withdrawForm.addEventListener('submit', withGuard(performWithdraw));
+
+      /* عند تحميل الصفحة: عرض البيانات من الخادم */
+      refreshFromServer();
+    })();
+  </script>
+</body>
+</html>

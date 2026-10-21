@@ -1,0 +1,216 @@
+{
+  "pass": false,
+  "reason": "Error: Application interaction/runtime checks failed; inspect report and repair",
+  "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-independent-live-U2zbxJ\\.verification\\5a9dc7ad-b586-4592-af7a-95f82b9adf7c\\report.json",
+  "elapsedMs": 31989,
+  "usage": {
+    "promptTokens": 0,
+    "completionTokens": 0,
+    "durationMs": 0
+  },
+  "checks": [
+    {
+      "viewport": "desktop",
+      "scenario": "العداد يبدأ من صفر ويزيد واحدًا لكل ضغطة حتى يعرض 2 بعد ضغطتين",
+      "pass": false,
+      "error": "Error: Unexpected exact text for #count",
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "النقر المتكرر على زر الإضافة يزيد العدد بواحد في كل مرة",
+      "pass": false,
+      "error": "Error: Unexpected exact text for #count",
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "بعد تحديث الصفحة يبقى العداد ظاهرًا وقابلًا للاستخدام دون اشتراط حفظ العدد",
+      "pass": false,
+      "error": "Error: Unexpected exact text for #count",
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "العداد يبدأ من صفر ويزيد واحدًا لكل ضغطة حتى يعرض 2 بعد ضغطتين",
+      "pass": false,
+      "error": "Error: Unexpected exact text for #count",
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "النقر المتكرر على زر الإضافة يزيد العدد بواحد في كل مرة",
+      "pass": false,
+      "error": "Error: Unexpected exact text for #count",
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "بعد تحديث الصفحة يبقى العداد ظاهرًا وقابلًا للاستخدام دون اشتراط حفظ العدد",
+      "pass": false,
+      "error": "Error: Unexpected exact text for #count",
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    }
+  ],
+  "screenshots": [],
+  "errors": [
+    "Error: Unexpected exact text for #count",
+    "Error: Unexpected exact text for #count",
+    "Error: Unexpected exact text for #count",
+    "Error: Unexpected exact text for #count",
+    "Error: Unexpected exact text for #count",
+    "Error: Unexpected exact text for #count"
+  ],
+  "contractOrigin": "runtime-owned-independent",
+  "executedContract": {
+    "entry": "index.html",
+    "scenarios": [
+      {
+        "name": "العداد يبدأ من صفر ويزيد واحدًا لكل ضغطة حتى يعرض 2 بعد ضغطتين",
+        "steps": [
+          {
+            "action": "textExact",
+            "selector": "#count",
+            "value": "0"
+          },
+          {
+            "action": "click",
+            "selector": "#add"
+          },
+          {
+            "action": "textExact",
+            "selector": "#count",
+            "value": "1"
+          },
+          {
+            "action": "click",
+            "selector": "#add"
+          },
+          {
+            "action": "textExact",
+            "selector": "#count",
+            "value": "2"
+          }
+        ]
+      },
+      {
+        "name": "النقر المتكرر على زر الإضافة يزيد العدد بواحد في كل مرة",
+        "steps": [
+          {
+            "action": "click",
+            "selector": "#add"
+          },
+          {
+            "action": "click",
+            "selector": "#add"
+          },
+          {
+            "action": "click",
+            "selector": "#add"
+          },
+          {
+            "action": "textExact",
+            "selector": "#count",
+            "value": "3"
+          },
+          {
+            "action": "click",
+            "selector": "#add"
+          },
+          {
+            "action": "click",
+            "selector": "#add"
+          },
+          {
+            "action": "textExact",
+            "selector": "#count",
+            "value": "5"
+          }
+        ]
+      },
+      {
+        "name": "بعد تحديث الصفحة يبقى العداد ظاهرًا وقابلًا للاستخدام دون اشتراط حفظ العدد",
+        "steps": [
+          {
+            "action": "click",
+            "selector": "#add"
+          },
+          {
+            "action": "click",
+            "selector": "#add"
+          },
+          {
+            "action": "textExact",
+            "selector": "#count",
+            "value": "2"
+          },
+          {
+            "action": "reload"
+          },
+          {
+            "action": "visible",
+            "selector": "#count"
+          },
+          {
+            "action": "visible",
+            "selector": "#add"
+          }
+        ]
+      }
+    ]
+  }
+}

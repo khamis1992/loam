@@ -1,0 +1,1 @@
+import fs from 'node:fs';const p='scripts/check-sheet-installed.mjs';let s=fs.readFileSync(p,'utf8').replace("assert.equal(identity.version,'0.5.13')","assert.equal(identity.version,JSON.parse(await fs.readFile('package.json','utf8')).version)").replace("title:'تنسيق Excel المستورد — اختبار 0.5.13'","title:'تنسيق Excel المستورد — اختبار '+identity.version");fs.writeFileSync(p,s);

@@ -1,0 +1,1023 @@
+{
+  "pass": true,
+  "reason": "جميع السيناريوهات الثمانية نجحت على الحاسوب والجوال. تحقق يدوي من حسابات API: 1250×3+9999×2=23748، خصم 15%≈3562 (تقريب النصف للأعلى)، الإجمالي 22686 مع الشحن خارج الخصم؛ حالة التقريب 2501×50%=1250.5→1251؛ سقف المجموع 100000×10000=1000000000 مقبول بالضبط؛ وكل المدخلات غير الصالحة (نصوص، null، عشري، خارج النطاق، SKU مكرر/مكرر بعد trim/فارغ، 101 صنفًا، JSON معطوب، أشكال حمولة خاطئة) أعادت 400 مع {error:\"invalid\"}. لقطات الشاشة تؤكد واجهة عربية RTL بعنوان \"حاسبة عروض الأسعار\"، تدرجات سماوية وبنفسجية واضحة، صفوف أصناف قابلة للإضافة والحذف، نصوص مقروءة بلا تداخل، تخطيط جوال متجاوب مكدّس بشكل سليم، ورسالة خطأ عربية مفهومة (\"أدخل رمز صنف (SKU) غير فارغ للصنف رقم 1\"). فحوصات النص المنفذة أكدت عرض المجاميع الأربعة (8,500 / 850 / 500 / 8,150) بعد الطلب الناجح.",
+  "reportPath": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\d2fd7a5c-5ccd-4a1b-a9fb-935a9184d506\\report.json",
+  "elapsedMs": 97287,
+  "usage": {
+    "promptTokens": 25905,
+    "completionTokens": 3047,
+    "durationMs": 23159
+  },
+  "checks": [
+    {
+      "viewport": "desktop",
+      "scenario": "API: طلب صالح بصنفين مع خصم 15% وشحن 2500 يعيد 200 بالحقول الأربعة فقط بقيم مطابقة يدويًا (الشحن خارج حساب الخصم)",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200,
+          "responseJson": {
+            "subtotalCents": 23748,
+            "discountCents": 3562,
+            "shippingCents": 2500,
+            "totalCents": 22686
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "API: الحالات الحدية المقبولة (سعر 0 و10000000، كمية 1 و10000، خصم 0 و100، شحن 0 و1000000، سقف المجموع 1000000000 بالضبط، وتقريب النصف للأعلى)",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200,
+          "responseJson": {
+            "subtotalCents": 0,
+            "discountCents": 0,
+            "shippingCents": 0,
+            "totalCents": 0
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200,
+          "responseJson": {
+            "subtotalCents": 10000000,
+            "discountCents": 10000000,
+            "shippingCents": 1000000,
+            "totalCents": 1000000
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200,
+          "responseJson": {
+            "subtotalCents": 2501,
+            "discountCents": 1251,
+            "shippingCents": 0,
+            "totalCents": 1250
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200,
+          "responseJson": {
+            "subtotalCents": 1000000000,
+            "discountCents": 0,
+            "shippingCents": 0,
+            "totalCents": 1000000000
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "API: رفض 400 مع error=invalid للأصناف غير الصالحة (قائمة فارغة، 101 صنفًا، SKU مكرر أو مكرر بعد trim أو فارغ أو فراغات أو غير نصي)",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "API: رفض 400 لقيم سعر الوحدة والكمية غير الصالحة (نص، null، عدد عشري، خارج النطاق، سالب)",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "API: رفض 400 لنسبة الخصم ورسوم الشحن غير الصالحة وتجاوز سقف المجموع قبل الخصم وJSON المعطوب وأشكال الحمولة غير الصالحة",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 3,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 3,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 3,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "واجهة: ظهور RTL والتدرجات السماوية والبنفسجية مع إضافة صنف وحذفه",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "واجهة: عرض المجاميع الأربعة بوضوح بعد طلب ناجح (صنفان، خصم 10%، شحن 500)",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "واجهة: رسالة خطأ مفهومة عند إدخال غير صالح (SKU مكرر يرفضه الخادم، ثم قائمة فارغة وSKU فارغ يرفضهما العميل)",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "API: طلب صالح بصنفين مع خصم 15% وشحن 2500 يعيد 200 بالحقول الأربعة فقط بقيم مطابقة يدويًا (الشحن خارج حساب الخصم)",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200,
+          "responseJson": {
+            "subtotalCents": 23748,
+            "discountCents": 3562,
+            "shippingCents": 2500,
+            "totalCents": 22686
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "API: الحالات الحدية المقبولة (سعر 0 و10000000، كمية 1 و10000، خصم 0 و100، شحن 0 و1000000، سقف المجموع 1000000000 بالضبط، وتقريب النصف للأعلى)",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200,
+          "responseJson": {
+            "subtotalCents": 0,
+            "discountCents": 0,
+            "shippingCents": 0,
+            "totalCents": 0
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200,
+          "responseJson": {
+            "subtotalCents": 10000000,
+            "discountCents": 10000000,
+            "shippingCents": 1000000,
+            "totalCents": 1000000
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200,
+          "responseJson": {
+            "subtotalCents": 2501,
+            "discountCents": 1251,
+            "shippingCents": 0,
+            "totalCents": 1250
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200,
+          "responseJson": {
+            "subtotalCents": 1000000000,
+            "discountCents": 0,
+            "shippingCents": 0,
+            "totalCents": 1000000000
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "API: رفض 400 مع error=invalid للأصناف غير الصالحة (قائمة فارغة، 101 صنفًا، SKU مكرر أو مكرر بعد trim أو فارغ أو فراغات أو غير نصي)",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "API: رفض 400 لقيم سعر الوحدة والكمية غير الصالحة (نص، null، عدد عشري، خارج النطاق، سالب)",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "API: رفض 400 لنسبة الخصم ورسوم الشحن غير الصالحة وتجاوز سقف المجموع قبل الخصم وJSON المعطوب وأشكال الحمولة غير الصالحة",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 3,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 3,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 3,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "واجهة: ظهور RTL والتدرجات السماوية والبنفسجية مع إضافة صنف وحذفه",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "واجهة: عرض المجاميع الأربعة بوضوح بعد طلب ناجح (صنفان، خصم 10%، شحن 500)",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "واجهة: رسالة خطأ مفهومة عند إدخال غير صالح (SKU مكرر يرفضه الخادم، ثم قائمة فارغة وSKU فارغ يرفضهما العميل)",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    }
+  ],
+  "screenshots": [
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\d2fd7a5c-5ccd-4a1b-a9fb-935a9184d506\\desktop-0.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\d2fd7a5c-5ccd-4a1b-a9fb-935a9184d506\\desktop-1.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\d2fd7a5c-5ccd-4a1b-a9fb-935a9184d506\\desktop-2.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\d2fd7a5c-5ccd-4a1b-a9fb-935a9184d506\\desktop-3.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\d2fd7a5c-5ccd-4a1b-a9fb-935a9184d506\\desktop-4.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\d2fd7a5c-5ccd-4a1b-a9fb-935a9184d506\\desktop-5.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\d2fd7a5c-5ccd-4a1b-a9fb-935a9184d506\\desktop-6.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\d2fd7a5c-5ccd-4a1b-a9fb-935a9184d506\\desktop-7.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\d2fd7a5c-5ccd-4a1b-a9fb-935a9184d506\\mobile-0.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\d2fd7a5c-5ccd-4a1b-a9fb-935a9184d506\\mobile-1.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\d2fd7a5c-5ccd-4a1b-a9fb-935a9184d506\\mobile-2.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\d2fd7a5c-5ccd-4a1b-a9fb-935a9184d506\\mobile-3.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\d2fd7a5c-5ccd-4a1b-a9fb-935a9184d506\\mobile-4.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\d2fd7a5c-5ccd-4a1b-a9fb-935a9184d506\\mobile-5.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\d2fd7a5c-5ccd-4a1b-a9fb-935a9184d506\\mobile-6.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\d2fd7a5c-5ccd-4a1b-a9fb-935a9184d506\\mobile-7.png"
+  ],
+  "errors": [],
+  "contractOrigin": "workspace",
+  "runtime": {
+    "type": "node",
+    "isolation": "docker-network-none",
+    "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+    "freshBackendPerScenario": true
+  },
+  "visual": {
+    "model": "glm-5.3-flash",
+    "verdict": {
+      "verdict": "pass",
+      "reason": "جميع السيناريوهات الثمانية نجحت على الحاسوب والجوال. تحقق يدوي من حسابات API: 1250×3+9999×2=23748، خصم 15%≈3562 (تقريب النصف للأعلى)، الإجمالي 22686 مع الشحن خارج الخصم؛ حالة التقريب 2501×50%=1250.5→1251؛ سقف المجموع 100000×10000=1000000000 مقبول بالضبط؛ وكل المدخلات غير الصالحة (نصوص، null، عشري، خارج النطاق، SKU مكرر/مكرر بعد trim/فارغ، 101 صنفًا، JSON معطوب، أشكال حمولة خاطئة) أعادت 400 مع {error:\"invalid\"}. لقطات الشاشة تؤكد واجهة عربية RTL بعنوان \"حاسبة عروض الأسعار\"، تدرجات سماوية وبنفسجية واضحة، صفوف أصناف قابلة للإضافة والحذف، نصوص مقروءة بلا تداخل، تخطيط جوال متجاوب مكدّس بشكل سليم، ورسالة خطأ عربية مفهومة (\"أدخل رمز صنف (SKU) غير فارغ للصنف رقم 1\"). فحوصات النص المنفذة أكدت عرض المجاميع الأربعة (8,500 / 850 / 500 / 8,150) بعد الطلب الناجح.",
+      "issues": [],
+      "notes": [
+        "لقطات الشاشة المرفقة لا تلتقط لحظة ظهور لوحة النتائج بعد الحساب الناجح (desktop-6 يظهر النموذج معبأً قبل النتيجة)، لكن فحوصات النص المنفذة تحققت من القيم الأربعة بشكل صريح، فالأمر غير مانع."
+      ]
+    },
+    "response": "{\"verdict\":\"pass\",\"reason\":\"جميع السيناريوهات الثمانية نجحت على الحاسوب والجوال. تحقق يدوي من حسابات API: 1250×3+9999×2=23748، خصم 15%≈3562 (تقريب النصف للأعلى)، الإجمالي 22686 مع الشحن خارج الخصم؛ حالة التقريب 2501×50%=1250.5→1251؛ سقف المجموع 100000×10000=1000000000 مقبول بالضبط؛ وكل المدخلات غير الصالحة (نصوص، null، عشري، خارج النطاق، SKU مكرر/مكرر بعد trim/فارغ، 101 صنفًا، JSON معطوب، أشكال حمولة خاطئة) أعادت 400 مع {error:\\\"invalid\\\"}. لقطات الشاشة تؤكد واجهة عربية RTL بعنوان \\\"حاسبة عروض الأسعار\\\"، تدرجات سماوية وبنفسجية واضحة، صفوف أصناف قابلة للإضافة والحذف، نصوص مقروءة بلا تداخل، تخطيط جوال متجاوب مكدّس بشكل سليم، ورسالة خطأ عربية مفهومة (\\\"أدخل رمز صنف (SKU) غير فارغ للصنف رقم 1\\\"). فحوصات النص المنفذة أكدت عرض المجاميع الأربعة (8,500 / 850 / 500 / 8,150) بعد الطلب الناجح.\",\"issues\":[],\"notes\":[\"لقطات الشاشة المرفقة لا تلتقط لحظة ظهور لوحة النتائج بعد الحساب الناجح (desktop-6 يظهر النموذج معبأً قبل النتيجة)، لكن فحوصات النص المنفذة تحققت من القيم الأربعة بشكل صريح، فالأمر غير مانع.\"]}",
+    "attempts": 1
+  },
+  "sourceHashes": {
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\app-verification.json": "9d6efec2de217d3aa55a56f98d993ca409d35c2e8cebe5ed265f44ceee8aac1d",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\index.html": "0e54d9c004f776b2ea3f563965c1cf3855c7135786562f7ea9c61a31c8260880",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\server.mjs": "ef9295e0ba7f6cf639169f4e15b5c375087b4578de9abfbffcdebca6f87c7932"
+  }
+}

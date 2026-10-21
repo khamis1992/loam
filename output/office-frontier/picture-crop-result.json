@@ -1,0 +1,9 @@
+{
+  "crop": true,
+  "fractional": true,
+  "reimport": true,
+  "negativeOutset": true,
+  "invalidAreaRejected": true,
+  "sharedPicturePreserved": true,
+  "preservedParts": 19
+}

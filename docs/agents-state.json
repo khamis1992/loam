@@ -1,0 +1,89 @@
+﻿{
+    "createdAt":  "2026-10-19 19:46:40 Asia/Riyadh",
+    "serverUrl":  "http://127.0.0.1:4096",
+    "serverPid":  59324,
+    "serverStart":  "Start-Process \"C:\\Users\\khamis\\AppData\\Roaming\\npm\\node_modules\\opencode-ai\\bin\\opencode.exe\" -ArgumentList \u0027serve\u0027,\u0027--port\u0027,\u00274096\u0027,\u0027--hostname\u0027,\u0027127.0.0.1\u0027 -WindowStyle Hidden",
+    "model":  "ollama/kimi-k2.7-code:cloud (default freellmapi/auto unreachable: localhost:31415 down)",
+    "baseBranch":  "manus-parity",
+    "backup":  "C:\\Users\\khamis\\Desktop\\manus-local-backup-20261019",
+    "zcodeWipBranch":  "zcode-wip",
+    "statusScript":  "C:\\Users\\khamis\\Desktop\\manus-local\\docs\\opencode-agents.ps1 status|nudge",
+    "zcode":  {
+                  "suspendedPids":  "4448,17672,22608,23128,23292,23324,24392,25416,26000,26296,26448,28828,29984,29992,40364,41032,49788",
+                  "exe":  "C:\\Program Files\\ZCode\\ZCode.exe",
+                  "resumeCommand":  "Add-Type -Name NtP -Namespace W -MemberDefinition \u0027[DllImport(\"ntdll.dll\")] public static extern int NtResumeProcess(System.IntPtr h);\u0027; Get-Process | ? { $_.Path -like \u0027C:\\Program Files\\ZCode\\*\u0027 } | % { [W.NtP]::NtResumeProcess($_.Handle) }"
+              },
+    "agents":  [
+                   {
+                       "id":  "a01",
+                       "name":  "A1 protocol-server",
+                       "sessionId":  "ses_eaaf13dd6ffePVXEKBkP63FL03",
+                       "worktree":  "C:\\Users\\khamis\\Desktop\\manus-parity-wt\\a01",
+                       "branch":  "mp/a01-protocol-server"
+                   },
+                   {
+                       "id":  "a02",
+                       "name":  "A2 shared contracts + client lib",
+                       "sessionId":  "ses_eaaf13aeaffeI9YHfr39pkVt8q",
+                       "worktree":  "C:\\Users\\khamis\\Desktop\\manus-parity-wt\\a02",
+                       "branch":  "mp/a02-shared-client"
+                   },
+                   {
+                       "id":  "a03",
+                       "name":  "A3 web shell + design system",
+                       "sessionId":  "ses_eaaf13873ffeBbsqPK4c0i5QQx",
+                       "worktree":  "C:\\Users\\khamis\\Desktop\\manus-parity-wt\\a03",
+                       "branch":  "mp/a03-web-shell"
+                   },
+                   {
+                       "id":  "a04",
+                       "name":  "A4 screens: Home + Task view",
+                       "sessionId":  "ses_eaaf135dbffeGPMW6gjIXyjdO5",
+                       "worktree":  "C:\\Users\\khamis\\Desktop\\manus-parity-wt\\a04",
+                       "branch":  "mp/a04-screens"
+                   },
+                   {
+                       "id":  "a05",
+                       "name":  "A5 Settings, My Computer, dialogs, update, activity indicator",
+                       "sessionId":  "ses_eaaf1332dffeXLxJybS46zO6Lb",
+                       "worktree":  "C:\\Users\\khamis\\Desktop\\manus-parity-wt\\a05",
+                       "branch":  "mp/a05-settings"
+                   },
+                   {
+                       "id":  "a06",
+                       "name":  "A6 i18n EN/AR + RTL",
+                       "sessionId":  "ses_eaaf12fa0ffewFraLWHXzLcKOm",
+                       "worktree":  "C:\\Users\\khamis\\Desktop\\manus-parity-wt\\a06",
+                       "branch":  "mp/a06-i18n"
+                   },
+                   {
+                       "id":  "a07",
+                       "name":  "A7 approvals, permission modes, model/effort menus",
+                       "sessionId":  "ses_eaaf12bc3ffe5IWLtbTRSk6VX3",
+                       "worktree":  "C:\\Users\\khamis\\Desktop\\manus-parity-wt\\a07",
+                       "branch":  "mp/a07-approvals-menus"
+                   },
+                   {
+                       "id":  "a08",
+                       "name":  "A8 uploads + offline/reconnect",
+                       "sessionId":  "ses_eaaf12845ffeqqhGlKyremkrpj",
+                       "worktree":  "C:\\Users\\khamis\\Desktop\\manus-parity-wt\\a08",
+                       "branch":  "mp/a08-upload-offline"
+                   },
+                   {
+                       "id":  "a09",
+                       "name":  "A9 security + backend bug fixes",
+                       "sessionId":  "ses_eaaf1249affeWmOM0b0QbsQ7Y6",
+                       "worktree":  "C:\\Users\\khamis\\Desktop\\manus-parity-wt\\a09",
+                       "branch":  "mp/a09-security"
+                   },
+                   {
+                       "id":  "a10",
+                       "name":  "A10 Wide Research + QA/e2e + integration",
+                       "sessionId":  "ses_eaaf1209bffeHS354sa9m8bRoO",
+                       "worktree":  "C:\\Users\\khamis\\Desktop\\manus-parity-wt\\a10",
+                       "branch":  "mp/a10-qa-research"
+                   }
+               ],
+    "modelId":  "ollama/kimi-k2.7-code:cloud"
+}

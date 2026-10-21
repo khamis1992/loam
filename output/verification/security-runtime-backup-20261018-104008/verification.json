@@ -1,0 +1,27 @@
+﻿{
+    "version":  "0.5.13",
+    "capabilities":  {
+                         "revision":  10,
+                         "engine":  "scoped-assessment",
+                         "features":  [
+                                          "http",
+                                          "browser",
+                                          "login",
+                                          "spa-flows",
+                                          "scoped-post",
+                                          "retest",
+                                          "coverage-diagnostics",
+                                          "multi-account-authorization",
+                                          "identity-witness",
+                                          "explicit-api-origins",
+                                          "cross-origin-authorization",
+                                          "browser-resource-budgets",
+                                          "openapi-fixtures-coverage",
+                                          "reviewed-source-repairs"
+                                      ]
+                     },
+    "backup":  "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\security-runtime-backup-20261018-104008",
+    "taskCount":  33,
+    "profilePreserved":  true,
+    "tasksPreserved":  true
+}

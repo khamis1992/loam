@@ -1,0 +1,105 @@
+{
+  "pass": true,
+  "reason": "All six contract scenarios pass on desktop and mobile. Screenshots confirm the required UI: RTL Arabic layout with cyan/purple responsive design, #title/#amount/#category/#add form, #error message shown for negative amount (desktop-3/mobile-3), .expense items with .delete (حذف) buttons, #total updating correctly (20 after two adds, 9 after reload persistence, 0 after delete/reset), #filter with الكل/طعام options where filtering to food shows one entry and total 15 with 'مجموع الفئة المعروضة فقط' subtitle, and #reset (مسح جميع البيانات) clearing entries and surviving reload (desktop-5/mobile-5). Arabic category labels (طعام، مواصلات) render as badges, empty state is handled gracefully, and no overlaps, unreadable text, or broken mobile layout are visible.",
+  "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\f739792f-1ccd-4f6a-86b6-2aa3ede87555\\report.json",
+  "elapsedMs": 17372,
+  "usage": {
+    "promptTokens": 15008,
+    "completionTokens": 1178,
+    "durationMs": 8089
+  },
+  "checks": [
+    {
+      "viewport": "desktop",
+      "scenario": "Adding entries calculates sum",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Persistence after reload",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Deleting recomputes total",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Invalid input rejected",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Filtering shows matching entries and subtotal",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Reset clears persisted entries",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Adding entries calculates sum",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Persistence after reload",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Deleting recomputes total",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Invalid input rejected",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Filtering shows matching entries and subtotal",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Reset clears persisted entries",
+      "pass": true
+    }
+  ],
+  "screenshots": [
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\f739792f-1ccd-4f6a-86b6-2aa3ede87555\\desktop-0.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\f739792f-1ccd-4f6a-86b6-2aa3ede87555\\desktop-1.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\f739792f-1ccd-4f6a-86b6-2aa3ede87555\\desktop-2.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\f739792f-1ccd-4f6a-86b6-2aa3ede87555\\desktop-3.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\f739792f-1ccd-4f6a-86b6-2aa3ede87555\\desktop-4.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\f739792f-1ccd-4f6a-86b6-2aa3ede87555\\desktop-5.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\f739792f-1ccd-4f6a-86b6-2aa3ede87555\\mobile-0.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\f739792f-1ccd-4f6a-86b6-2aa3ede87555\\mobile-1.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\f739792f-1ccd-4f6a-86b6-2aa3ede87555\\mobile-2.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\f739792f-1ccd-4f6a-86b6-2aa3ede87555\\mobile-3.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\f739792f-1ccd-4f6a-86b6-2aa3ede87555\\mobile-4.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\f739792f-1ccd-4f6a-86b6-2aa3ede87555\\mobile-5.png"
+  ],
+  "errors": [],
+  "visual": {
+    "model": "glm-5.3-flash",
+    "verdict": {
+      "verdict": "pass",
+      "reason": "All six contract scenarios pass on desktop and mobile. Screenshots confirm the required UI: RTL Arabic layout with cyan/purple responsive design, #title/#amount/#category/#add form, #error message shown for negative amount (desktop-3/mobile-3), .expense items with .delete (حذف) buttons, #total updating correctly (20 after two adds, 9 after reload persistence, 0 after delete/reset), #filter with الكل/طعام options where filtering to food shows one entry and total 15 with 'مجموع الفئة المعروضة فقط' subtitle, and #reset (مسح جميع البيانات) clearing entries and surviving reload (desktop-5/mobile-5). Arabic category labels (طعام، مواصلات) render as badges, empty state is handled gracefully, and no overlaps, unreadable text, or broken mobile layout are visible.",
+      "issues": [],
+      "notes": [
+        "The 'other' (أخرى) category option is not directly visible in the captured screenshots since no scenario selects it, but the filter contract values and passing tests imply it exists.",
+        "Optional cosmetic: the native select arrow sits at the far edge in RTL; a custom-styled arrow could look more polished, but this is purely aesthetic."
+      ]
+    },
+    "response": "{\"verdict\":\"pass\",\"reason\":\"All six contract scenarios pass on desktop and mobile. Screenshots confirm the required UI: RTL Arabic layout with cyan/purple responsive design, #title/#amount/#category/#add form, #error message shown for negative amount (desktop-3/mobile-3), .expense items with .delete (حذف) buttons, #total updating correctly (20 after two adds, 9 after reload persistence, 0 after delete/reset), #filter with الكل/طعام options where filtering to food shows one entry and total 15 with 'مجموع الفئة المعروضة فقط' subtitle, and #reset (مسح جميع البيانات) clearing entries and surviving reload (desktop-5/mobile-5). Arabic category labels (طعام، مواصلات) render as badges, empty state is handled gracefully, and no overlaps, unreadable text, or broken mobile layout are visible.\",\"issues\":[],\"notes\":[\"The 'other' (أخرى) category option is not directly visible in the captured screenshots since no scenario selects it, but the filter contract values and passing tests imply it exists.\",\"Optional cosmetic: the native select arrow sits at the far edge in RTL; a custom-styled arrow could look more polished, but this is purely aesthetic.\"]}"
+  },
+  "sourceHashes": {
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json": "e46cf60a730f476fd44ea96c100680d66c6e42797ce1f24b7f1953c59267c6fe",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html": "d53459b223e7187f948816095e62368ce8f6ef58d5555c450033fa6d4386c7e3"
+  }
+}

@@ -1,0 +1,473 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Loam Security",
+          "rules": [
+            {
+              "id": "source_sql",
+              "shortDescription": {
+                "text": "source_sql"
+              }
+            },
+            {
+              "id": "security_headers",
+              "shortDescription": {
+                "text": "security_headers"
+              }
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "source_sql",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "SQL review\nDynamic query text omitted\nReview parameter binding"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/query.ts",
+                  "uriBaseId": "SRCROOT"
+                },
+                "region": {
+                  "startLine": 12
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "loamFingerprint": "de38183e37016f23126b434c"
+          },
+          "properties": {
+            "target": "src/query.ts:12",
+            "severity": "medium",
+            "confidence": "review",
+            "workflow": {
+              "state": "open",
+              "owner": "",
+              "note": ""
+            },
+            "evidence": [
+              "R1"
+            ],
+            "browserEvidence": []
+          }
+        },
+        {
+          "ruleId": "source_sql",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "SQL review\nDynamic query text omitted\nReview parameter binding"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/my%20file.ts",
+                  "uriBaseId": "SRCROOT"
+                },
+                "region": {
+                  "startLine": 2
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "loamFingerprint": "da5adb03a8b6a25884447f01"
+          },
+          "properties": {
+            "target": "src/my file.ts:2",
+            "severity": "medium",
+            "confidence": "review",
+            "workflow": {
+              "state": "open",
+              "owner": "",
+              "note": ""
+            },
+            "evidence": [
+              "R1"
+            ],
+            "browserEvidence": []
+          }
+        },
+        {
+          "ruleId": "source_sql",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "SQL review\nDynamic query text omitted\nReview parameter binding"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/%D8%A8%D9%8A%D8%A7%D9%86%D8%A7%D8%AA.ts",
+                  "uriBaseId": "SRCROOT"
+                },
+                "region": {
+                  "startLine": 5
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "loamFingerprint": "11a87d094746617831186282"
+          },
+          "properties": {
+            "target": "src/بيانات.ts:5",
+            "severity": "medium",
+            "confidence": "review",
+            "workflow": {
+              "state": "open",
+              "owner": "",
+              "note": ""
+            },
+            "evidence": [
+              "R1"
+            ],
+            "browserEvidence": []
+          }
+        },
+        {
+          "ruleId": "source_sql",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "SQL review\nDynamic query text omitted\nReview parameter binding"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/query.ts",
+                  "uriBaseId": "SRCROOT"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "loamFingerprint": "5b2e2703c97f65d62910d700"
+          },
+          "properties": {
+            "target": "src\\query.ts:3",
+            "severity": "medium",
+            "confidence": "review",
+            "workflow": {
+              "state": "open",
+              "owner": "",
+              "note": ""
+            },
+            "evidence": [
+              "R1"
+            ],
+            "browserEvidence": []
+          }
+        },
+        {
+          "ruleId": "source_sql",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "SQL review\nDynamic query text omitted\nReview parameter binding"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/a%23b%25%3F.ts",
+                  "uriBaseId": "SRCROOT"
+                },
+                "region": {
+                  "startLine": 7
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "loamFingerprint": "1797cd07c03d6c8676d222ab"
+          },
+          "properties": {
+            "target": "src/a#b%?.ts:7",
+            "severity": "medium",
+            "confidence": "review",
+            "workflow": {
+              "state": "open",
+              "owner": "",
+              "note": ""
+            },
+            "evidence": [
+              "R1"
+            ],
+            "browserEvidence": []
+          }
+        },
+        {
+          "ruleId": "source_sql",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "SQL review\nDynamic query text omitted\nReview parameter binding"
+          },
+          "partialFingerprints": {
+            "loamFingerprint": "8636e3161b27742cd4d082ff"
+          },
+          "properties": {
+            "target": "../outside.ts:1",
+            "severity": "medium",
+            "confidence": "review",
+            "workflow": {
+              "state": "open",
+              "owner": "",
+              "note": ""
+            },
+            "evidence": [
+              "R1"
+            ],
+            "browserEvidence": []
+          }
+        },
+        {
+          "ruleId": "source_sql",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "SQL review\nDynamic query text omitted\nReview parameter binding"
+          },
+          "partialFingerprints": {
+            "loamFingerprint": "3ee9a182514057aa953abd31"
+          },
+          "properties": {
+            "target": "/absolute.ts:1",
+            "severity": "medium",
+            "confidence": "review",
+            "workflow": {
+              "state": "open",
+              "owner": "",
+              "note": ""
+            },
+            "evidence": [
+              "R1"
+            ],
+            "browserEvidence": []
+          }
+        },
+        {
+          "ruleId": "source_sql",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "SQL review\nDynamic query text omitted\nReview parameter binding"
+          },
+          "partialFingerprints": {
+            "loamFingerprint": "cfbd7ca4e49b25cf17d113c7"
+          },
+          "properties": {
+            "target": "C:\\private\\file.ts:2",
+            "severity": "medium",
+            "confidence": "review",
+            "workflow": {
+              "state": "open",
+              "owner": "",
+              "note": ""
+            },
+            "evidence": [
+              "R1"
+            ],
+            "browserEvidence": []
+          }
+        },
+        {
+          "ruleId": "source_sql",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "SQL review\nDynamic query text omitted\nReview parameter binding"
+          },
+          "partialFingerprints": {
+            "loamFingerprint": "076d8ca72b9f4cf14a72a7b6"
+          },
+          "properties": {
+            "target": "https://example.test/a.ts:4",
+            "severity": "medium",
+            "confidence": "review",
+            "workflow": {
+              "state": "open",
+              "owner": "",
+              "note": ""
+            },
+            "evidence": [
+              "R1"
+            ],
+            "browserEvidence": []
+          }
+        },
+        {
+          "ruleId": "source_sql",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "SQL review\nDynamic query text omitted\nReview parameter binding"
+          },
+          "partialFingerprints": {
+            "loamFingerprint": "a5fd03eead41f41cd519bf66"
+          },
+          "properties": {
+            "target": "//server/a.ts:2",
+            "severity": "medium",
+            "confidence": "review",
+            "workflow": {
+              "state": "open",
+              "owner": "",
+              "note": ""
+            },
+            "evidence": [
+              "R1"
+            ],
+            "browserEvidence": []
+          }
+        },
+        {
+          "ruleId": "source_sql",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "SQL review\nDynamic query text omitted\nReview parameter binding"
+          },
+          "partialFingerprints": {
+            "loamFingerprint": "e3107353a6bfeb75c074d869"
+          },
+          "properties": {
+            "target": "src/./a.ts:1",
+            "severity": "medium",
+            "confidence": "review",
+            "workflow": {
+              "state": "open",
+              "owner": "",
+              "note": ""
+            },
+            "evidence": [
+              "R1"
+            ],
+            "browserEvidence": []
+          }
+        },
+        {
+          "ruleId": "source_sql",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "SQL review\nDynamic query text omitted\nReview parameter binding"
+          },
+          "partialFingerprints": {
+            "loamFingerprint": "2ceef9416f085750eb740a79"
+          },
+          "properties": {
+            "target": "src/a.ts:0",
+            "severity": "medium",
+            "confidence": "review",
+            "workflow": {
+              "state": "open",
+              "owner": "",
+              "note": ""
+            },
+            "evidence": [
+              "R1"
+            ],
+            "browserEvidence": []
+          }
+        },
+        {
+          "ruleId": "source_sql",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "SQL review\nDynamic query text omitted\nReview parameter binding"
+          },
+          "partialFingerprints": {
+            "loamFingerprint": "2d58f3d135b24ded84da83fa"
+          },
+          "properties": {
+            "target": "src/a.ts:9007199254740992",
+            "severity": "medium",
+            "confidence": "review",
+            "workflow": {
+              "state": "open",
+              "owner": "",
+              "note": ""
+            },
+            "evidence": [
+              "R1"
+            ],
+            "browserEvidence": []
+          }
+        },
+        {
+          "ruleId": "source_sql",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "SQL review\nDynamic query text omitted\nReview parameter binding"
+          },
+          "partialFingerprints": {
+            "loamFingerprint": "e227cbcb82a0821ae3c15185"
+          },
+          "properties": {
+            "target": "src//a.ts:1",
+            "severity": "medium",
+            "confidence": "review",
+            "workflow": {
+              "state": "open",
+              "owner": "",
+              "note": ""
+            },
+            "evidence": [
+              "R1"
+            ],
+            "browserEvidence": []
+          }
+        },
+        {
+          "ruleId": "security_headers",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "HTTP review\nTransport finding\n"
+          },
+          "partialFingerprints": {
+            "loamFingerprint": "754f44c898867c51e2aeb51c"
+          },
+          "properties": {
+            "target": "https://example.test:443/",
+            "severity": "high",
+            "confidence": "observed",
+            "workflow": {
+              "state": "open",
+              "owner": "",
+              "note": ""
+            },
+            "evidence": [],
+            "browserEvidence": []
+          }
+        }
+      ]
+    }
+  ]
+}

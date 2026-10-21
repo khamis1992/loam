@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="/theme.js"></script>
+    <title>Loam — الذاكرة الدائمة والتعلّم</title>
+    <link rel="icon" href="/assets/loam-symbol.svg">
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      body { padding: 16px; display: block; height: auto; }
+      a.back { color: var(--accent); text-decoration: none; }
+      h2 { margin: 8px 0 4px; font-size: 18px; }
+      h3 { margin: 0 0 10px; font-size: 15px; }
+      .box { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin: 12px 0; background: var(--panel); }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+      .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+      .chip { border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--muted); }
+      .item { border-top: 1px solid var(--border); padding: 8px 0; }
+      .item:first-child { border-top: 0; }
+      .head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .grow { flex: 1; min-width: 0; }
+      .id { font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+      .desc { font-size: 12px; color: var(--muted); }
+      .badge { font-size: 11px; border-radius: 6px; padding: 1px 8px; border: 1px solid var(--border); }
+      .badge.success { color: var(--ok); border-color: var(--ok); }
+      .badge.failed { color: var(--err); border-color: var(--err); }
+      .badge.partial { color: var(--accent); border-color: var(--accent); }
+      .summary { font-size: 13px; margin: 4px 0 0; white-space: pre-wrap; }
+      .lessons { margin: 4px 0 0; padding-inline-start: 18px; font-size: 12px; color: var(--muted); }
+      pre#skillView { max-height: 420px; overflow: auto; white-space: pre-wrap; font-size: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+      #status { position: sticky; top: 0; z-index: 5; margin: 8px 0 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); min-height: 36px; font-size: 13px; }
+      #status:empty { display: none; }
+      #status.ok { border-color: var(--ok); }
+      #status.err { border-color: var(--err); color: var(--err); }
+      .muted { color: var(--muted); }
+    </style>
+    <link rel="stylesheet" href="/loam.css" />
+  <link rel="stylesheet" href="/icons.css"><script type="module" src="/icons.js"></script></head>
+  <body class="loam-secondary">
+    <a class="back" href="/"><loam-icon name="back"></loam-icon> مساحة Loam</a>
+    <h2>الذاكرة الدائمة والتعلّم</h2>
+    <p class="desc">
+      مدعومة بخادم <span class="id">memory-skills</span>: حلقات المهام (episodic)، الحقائق والتفضيلات (semantic)،
+      والمهارات مع سجل أدائها وطابور التحسين (procedural). تُسجَّل كل مهمة تلقائياً ويُحقن السياق ذو الصلة قبل المهمة التالية.
+    </p>
+    <div class="row"><button id="refresh" class="primary">تحديث</button><span id="generatedAt" class="desc"></span></div>
+    <div id="status" role="status" aria-live="polite"></div>
+
+    <section class="box">
+      <h3>لقطة عامة</h3>
+      <div id="stats" class="chips"><span class="desc">…</span></div>
+    </section>
+
+    <section class="box">
+      <h3>طابور المراجعة <span id="reviewCount" class="muted"></span></h3>
+      <div id="review"><div class="desc">…</div></div>
+    </section>
+
+    <section class="box">
+      <h3>أحدث الحلقات (episodic)</h3>
+      <div id="episodes"><div class="desc">…</div></div>
+    </section>
+
+    <section class="box">
+      <h3>المهارات وسجل الأداء (procedural)</h3>
+      <div id="skills"><div class="desc">…</div></div>
+      <pre id="skillView" hidden></pre>
+    </section>
+
+    <section class="box">
+      <h3>حقائق وتفضيلات دائمة (semantic)</h3>
+      <div id="facts"><div class="desc">…</div></div>
+    </section>
+
+    <script src="/brain.js"></script>
+  </body>
+</html>

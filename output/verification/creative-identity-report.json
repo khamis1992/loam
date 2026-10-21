@@ -1,0 +1,16 @@
+{
+  "taskId": "task_mvedi4pca2f81f72c9e5",
+  "identity": {
+    "name": "هويتي",
+    "primary": "#20d4c0",
+    "secondary": "#1b2634",
+    "accent": "#e0a06a",
+    "titleColor": "#c02020",
+    "titleFont": 90,
+    "logoText": "لوم",
+    "logoCorner": "tr",
+    "logoColor": "#20d4c0"
+  },
+  "platform": "shorts",
+  "adNames": 3
+}
