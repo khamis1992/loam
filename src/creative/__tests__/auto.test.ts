@@ -283,6 +283,25 @@ describe("planAutoEdit", () => {
     assert.strictEqual(plan.captions[0]!.text, "first line of narration");
     assert.deepStrictEqual(plan.warnings, []);
   });
+  it("threads adaptive threshold, beat snap and capped pan through the plan", async () => {
+    // Low-noise footage (scores 0.05..0.07) with two subtle 0.25 cuts — static 0.35 sees one scene.
+    const subtleProbe: MediaProbe = {
+      frameDiffs: async () => [0.05, 0.06, 0.25, 0.07, 0.05, 0.06, 0.25, 0.07].map((score, i) => ({ t: i, score })),
+      audioEnergy: async () => [{ start: 0, end: 7, energy: 0.2 }],
+      transcribe: async () => [{ start: 0, end: 6, text: "narration" }],
+      subjects: async () => [
+        { t: 0, boxes: [{ x: 0.3, y: 0.4, w: 0.1, h: 0.2 }] },
+        { t: 12, boxes: [{ x: 0.9, y: 0.4, w: 0.1, h: 0.2 }] },
+      ],
+    };
+    const plan = await planAutoEdit("clip.mp4", {
+      adaptive: true, aspect: 0.5, width: 1000, height: 1000, targetSeconds: 3, maxPan: 0.2, beats: [1.9],
+    }, subtleProbe);
+    assert.strictEqual(plan.scenes.length, 3);
+    assert.ok(plan.clips.some(c => c.start === 1.9), "highlight start snapped to the beat");
+    assert.ok(plan.reframes.some(w => w.crop.x !== plan.reframes[0]!.crop.x), "pan walks across windows");
+    assert.strictEqual(plan.captions[0]!.text, "narration");
+  });
   it("degrades with warnings when lanes are missing", async () => {
     const plan = await planAutoEdit("clip.mp4", { duration: 8, targetSeconds: 30 }, { audioEnergy: probe.audioEnergy });
     assert.ok(plan.warnings.some(w => /frame-diff/.test(w)));

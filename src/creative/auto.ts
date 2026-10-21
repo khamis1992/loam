@@ -78,7 +78,9 @@ export function adaptiveThreshold(diffs:FrameDiff[],opts:{sensitivity?:number}={
   const median=scores.length%2?scores[(scores.length-1)/2]!:(scores[scores.length/2-1]!+scores[scores.length/2]!)/2;
   const dev=scores.map(s=>Math.abs(s-median)).sort((a,b)=>a-b);
   const mad=dev.length%2?dev[(dev.length-1)/2]!:(dev[dev.length/2-1]!+dev[dev.length/2]!)/2;
-  return Math.min(0.8,Math.max(0.05,Math.round((median+k*mad)*1000)/1000));
+  // MAD of 0 (dead-flat footage) needs a guard so noisefloor-at-threshold scores still miss.
+  const pad=mad===0?0.02:0;
+  return Math.min(0.8,Math.max(0.05,Math.round((median+k*mad+pad)*1000)/1000));
 }
 
 /** Mean audio energy over [start,end) with overlap weighting; 0 when no samples cover the range. */
