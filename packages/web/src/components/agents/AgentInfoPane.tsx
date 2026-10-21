@@ -10,7 +10,7 @@ import type { AgentCardAgent } from './AgentCard';
 import { loadAgentThreadFiles } from './AgentThreadView';
 import { GroupMembersTab } from './GroupMembersTab';
 import type { GroupChat } from './groupTypes';
-import { WorkspacePanel } from '@/components/workspace';
+import { WorkspaceFilePanel } from '@/components/workspace';
 import type { WorkspaceFile } from '@/components/workspace';
 
 interface AgentWithMeta extends AgentCardAgent {
@@ -90,7 +90,7 @@ export function AgentInfoPane({ agent, threadUid, onClose, onEdit, group, onGrou
   if (workspaceFile) {
     return (
       <aside className="flex w-[560px] shrink-0 flex-col border-s border-border-main bg-bg-menu">
-        <WorkspacePanel file={workspaceFile} onClose={() => setWorkspaceFile(null)} />
+        <WorkspaceFilePanel file={workspaceFile} onClose={() => setWorkspaceFile(null)} />
       </aside>
     );
   }
