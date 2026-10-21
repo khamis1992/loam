@@ -3,6 +3,7 @@
 import { Pencil, MessageSquare, Play } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { Button, IconButton } from '@/components/ui/Button';
+import { GrokBotBadge, isGrokBotAgent } from './GrokBotBadge';
 
 export interface AgentCardAgent {
   id: string;
@@ -12,6 +13,8 @@ export interface AgentCardAgent {
   mode?: string;
   workMode?: string;
   model?: string;
+  /** Provenance ("grokbot" = imported from a Grok Bot bundle). */
+  source?: string;
 }
 
 interface AgentCardProps {
@@ -28,7 +31,10 @@ export function AgentCard({ agent, onStart, onEdit }: AgentCardProps) {
           {agent.emoji || '🤖'}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-text-primary">{agent.name}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="min-w-0 truncate text-sm font-medium text-text-primary">{agent.name}</p>
+            {isGrokBotAgent(agent.source) && <GrokBotBadge />}
+          </div>
           {agent.description && (
             <p className="line-clamp-2 text-xs text-text-tertiary">{agent.description}</p>
           )}
