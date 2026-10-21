@@ -14,6 +14,8 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "check:encoding": "tsx src/scripts/check-encoding.ts --run",
+    "check:pentest-bench": "tsx src/scripts/check-pentest-bench.ts",
+    "test:pentest-bench": "node --import tsx --test src/scripts/__tests__/check-pentest-bench.test.ts",
     "check:selfimprove": "tsx src/scripts/check-selfimprove.ts",
     "check:eval": "tsx src/scripts/check-eval.ts",
     "check:orchestrator": "tsx src/scripts/check-orchestrator.ts",
