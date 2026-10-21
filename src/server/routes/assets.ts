@@ -1,5 +1,5 @@
 import http from "node:http";
-import { getAssetsSnapshot, injectMockInbound } from "../assets.js";
+import { getAssetsSnapshot, injectMockInbound, setEmailAlias, setPhoneNumber, setWalletPlaceholder } from "../assets.js";
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
@@ -58,6 +58,39 @@ export async function handleAssetsRoutes(
         body: typeof body.body === "string" ? body.body : "",
       });
       sendJson(res, 200, { message, mock: true });
+    } catch (err) {
+      sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return true;
+  }
+
+  if (p === "/api/assets/email/alias" && req.method === "POST") {
+    const body = (await readJson(req)) as { alias?: unknown };
+    try {
+      const address = setEmailAlias(typeof body.alias === "string" ? body.alias : "");
+      sendJson(res, 200, { address, mock: true });
+    } catch (err) {
+      sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return true;
+  }
+
+  if (p === "/api/assets/phone" && req.method === "POST") {
+    const body = (await readJson(req)) as { number?: unknown };
+    try {
+      const number = setPhoneNumber(typeof body.number === "string" ? body.number : "");
+      sendJson(res, 200, { number, mock: true });
+    } catch (err) {
+      sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return true;
+  }
+
+  if (p === "/api/assets/wallet" && req.method === "POST") {
+    const body = (await readJson(req)) as { placeholder?: unknown };
+    try {
+      const placeholder = setWalletPlaceholder(typeof body.placeholder === "string" ? body.placeholder : "");
+      sendJson(res, 200, { placeholder, mock: true });
     } catch (err) {
       sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
     }
