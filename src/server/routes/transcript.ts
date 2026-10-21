@@ -1,17 +1,15 @@
 // Transcript routes: transcribe a task-workspace media asset, then edit by
-// transcript (delete words/sentences, remove filler words) into EDL cuts.
-// Transcription reuses the local STT server path (scripts/stt_server.py via
+// transcript (delete/rearrange words/sentences, remove filler words) into an
+// ordered EDL. Transcription reuses the local STT server path (scripts/stt_server.py via
 // LOAM_STT_URL); editing logic is pure TypeScript in src/creative/transcript.ts.
 import http from "node:http";
 import fs from "node:fs";
 import {
   transcribe,
   transcriptWords,
-  buildEdl,
-  deleteWords,
-  deleteSegments,
-  removeFillerWords,
+  applyTranscriptEdit,
   type Transcript,
+  type TranscriptEdit,
 } from "../../creative/transcript.js";
 import { getTask } from "../db.js";
 import { requireTaskWorkspace, taskPath } from "../taskWorkspace.js";
@@ -65,6 +63,12 @@ function resolveMedia(root: string, input: unknown): string {
   return file;
 }
 
+/** Rearrange target: insert position in the ORIGINAL word/segment index space. */
+function moveTarget(value: unknown): number {
+  if (!Number.isInteger(value) || Number(value) < 0) throw new Error("move target index is required");
+  return Number(value);
+}
+
 export async function handleTranscriptRoutes(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -93,40 +97,64 @@ export async function handleTranscriptRoutes(
     }
 
     // POST /api/creative/transcript-edit
-    //   body: {taskId, transcript: Transcript, edit: {kind:"words", indices:number[]} |
-    //          {kind:"segments", indices:number[]} | {kind:"range", start,end} | {kind:"fillers", extraWords?:string[], maxDurationSeconds?:number}}
-    //   -> {count, removed, cuts, keeps, textAfter} (EDL over the source timeline)
+    //   body: {taskId, transcript: Transcript,
+    //          edit: {kind:"words", indices:[...]} | {kind:"segments", indices:[...]} |
+    //                {kind:"range", start, end} | {kind:"fillers", extraWords?, maxDurationSeconds?} |
+    //                {kind:"move-words", indices:[...], target} | {kind:"move-segments", indices:[...], target},
+    //          path?: string, save?: boolean}
+    //   -> {count, removed, clips, textAfter, timeline, droppedClips, cuts?, keeps?, savedTo?}
+    //   `timeline` is the render-ready EDL consumed by the workspace video
+    //   editor/render endpoint; `save` also persists it next to the media as
+    //   `<path>.edl.json` so the timeline hydrates the transcribed cut.
     if (p === "/api/creative/transcript-edit") {
       const body = await readJson(req);
-      mediaRoot(ctx as { workspace?: string } | undefined, body.taskId); // guarded, the transcript is caller-supplied JSON
+      const root = mediaRoot(ctx as { workspace?: string } | undefined, body.taskId); // guarded, the transcript is caller-supplied JSON
       const transcript = body.transcript as Transcript | undefined;
-      const edit = body.edit as { kind?: unknown; indices?: unknown; start?: unknown; end?: unknown; extraWords?: unknown; maxDurationSeconds?: unknown } | undefined;
+      const edit = body.edit as { kind?: unknown; indices?: unknown; start?: unknown; end?: unknown; target?: unknown; extraWords?: unknown; maxDurationSeconds?: unknown } | undefined;
       if (!transcript || !Array.isArray(transcript.segments)) throw new Error("transcript with segments is required");
       if (!edit || typeof edit.kind !== "string") throw new Error("edit kind is required");
       if (typeof transcript.duration !== "number" || !Number.isFinite(transcript.duration)) throw new Error("transcript duration is required");
       const indices = Array.isArray(edit.indices) ? edit.indices.filter((x) => Number.isInteger(x) && Number(x) >= 0).map(Number) : [];
-      let result: { count: number; removed: number; cuts: unknown; keeps: unknown; textAfter: string };
-      if (edit.kind === "words") {
+      let requested: TranscriptEdit;
+      if (edit.kind === "words" || edit.kind === "move-words") {
         if (!indices.length) throw new Error("word indices are required");
-        const edl = deleteWords(transcript, indices);
-        result = { count: indices.length, removed: edl.removed, cuts: edl.cuts, keeps: edl.keeps, textAfter: edl.textAfter };
-      } else if (edit.kind === "segments") {
+        requested = edit.kind === "words" ? { kind: "words", indices } : { kind: "move-words", indices, target: moveTarget(edit.target) };
+      } else if (edit.kind === "segments" || edit.kind === "move-segments") {
         if (!indices.length) throw new Error("segment indices are required");
-        const edl = deleteSegments(transcript, indices);
-        result = { count: indices.length, removed: edl.removed, cuts: edl.cuts, keeps: edl.keeps, textAfter: edl.textAfter };
+        requested = edit.kind === "segments" ? { kind: "segments", indices } : { kind: "move-segments", indices, target: moveTarget(edit.target) };
       } else if (edit.kind === "range") {
         const s = Number(edit.start), e = Number(edit.end);
         if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) throw new Error("range start/end are required");
-        const built = buildEdl(transcript, [{ start: s, end: e }]);
-        result = { count: built.cuts.length, removed: built.removed, cuts: built.cuts, keeps: built.keeps, textAfter: built.textAfter };
+        requested = { kind: "range", start: s, end: e };
       } else if (edit.kind === "fillers") {
-        const removal = removeFillerWords(transcript, {
+        requested = {
+          kind: "fillers",
           ...(Array.isArray(edit.extraWords) ? { extraWords: edit.extraWords.filter((x) => typeof x === "string") as string[] } : {}),
           ...(typeof edit.maxDurationSeconds === "number" && edit.maxDurationSeconds > 0 ? { maxDurationSeconds: edit.maxDurationSeconds } : {}),
-        });
-        result = { count: removal.count, removed: removal.edl.removed, cuts: removal.edl.cuts, keeps: removal.edl.keeps, textAfter: removal.edl.textAfter };
+        };
       } else throw new Error("unknown edit kind");
-      sendJson(res, 200, result);
+      const result = applyTranscriptEdit(transcript, requested);
+      let savedTo: string | undefined;
+      if (body.save === true) {
+        if (!result.timeline) throw new Error("nothing survives this edit; refusing to save an empty timeline");
+        if (typeof body.path !== "string" || !body.path) throw new Error("save requires the media path");
+        resolveMedia(root, body.path); // validates the task asset path
+        const sidecar = taskPath(root, `${body.path}.edl.json`);
+        const temp = `${sidecar}.${Date.now()}.tmp`;
+        fs.writeFileSync(temp, JSON.stringify(result.timeline));
+        fs.renameSync(temp, sidecar);
+        savedTo = `${body.path}.edl.json`;
+      }
+      sendJson(res, 200, {
+        count: result.count,
+        removed: result.removed,
+        clips: result.clips,
+        textAfter: result.text,
+        droppedClips: result.droppedClips,
+        timeline: result.timeline,
+        ...(result.deletion ? { cuts: result.deletion.cuts, keeps: result.deletion.keeps } : {}),
+        ...(savedTo ? { savedTo } : {}),
+      });
       return true;
     }
 
