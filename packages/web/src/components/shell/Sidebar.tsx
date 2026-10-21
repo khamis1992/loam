@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useEffect, useRef, type ComponentType } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import {
   SquarePen, Monitor, Search, BookOpen, Sparkles, Workflow, LayoutGrid, MoreHorizontal,
   ChevronRight, Share2, MonitorSmartphone, Clapperboard, Palette,
@@ -30,6 +30,7 @@ type NavItem = {
 export function Sidebar() {
   const dispatch = useAppDispatch();
   const router = useRouter();
+  const pathname = usePathname();
   const { list, activeUid, filter } = useAppSelector((s) => s.sessions);
   const user = useAppSelector((s) => s.auth.user);
   const [query, setQuery] = useState('');
@@ -84,6 +85,8 @@ export function Sidebar() {
     }
   };
 
+  const isNavActive = (item: NavItem) => !!item.href && (pathname === item.href || pathname.startsWith(`${item.href}/`));
+
   return (
     <nav aria-label={t('Sidebar')} className="flex h-full w-[192px] shrink-0 flex-col bg-bg-nav px-2 pb-3">
       <div className="flex flex-col gap-0.5 py-1.5">
@@ -94,8 +97,11 @@ export function Sidebar() {
             onClick={() => navAction(item)}
             className={clsx(
               'group flex h-[26px] w-full items-center gap-2 rounded-[8px] px-2 text-sm',
-              item.id === 'search' ? 'bg-fill-hover text-text-primary' : 'text-text-secondary hover:bg-fill-hover',
+              isNavActive(item) || item.id === 'search'
+                ? 'bg-fill-hover text-text-primary'
+                : 'text-text-secondary hover:bg-fill-hover',
             )}
+            aria-current={isNavActive(item) ? 'page' : undefined}
           >
             {item.id === 'agent-loam' ? (
               <item.icon className="size-4 shrink-0" />
