@@ -14,6 +14,10 @@ export interface Settings {
   /** Custom electron-updater generic feed URL or GitHub repo ("owner/repo"). */
   updateFeedUrl?: string;
   githubRepo?: string;
+  /** In-App Browser (Settings > In-App Browser): headless vs visible window,
+   *  and the page opened when browser_open has no URL. */
+  browserHeadless?: boolean;
+  browserHomepage?: string;
 }
 
 const FILE = path.join(DATA_DIR, "settings.json");
@@ -31,6 +35,8 @@ export function loadSettings(): Settings {
         ...(Array.isArray(parsed.recentWorkspaces) ? { recentWorkspaces: parsed.recentWorkspaces.map(String) } : {}),
         ...(typeof parsed.updateFeedUrl === "string" ? { updateFeedUrl: parsed.updateFeedUrl } : {}),
         ...(typeof parsed.githubRepo === "string" ? { githubRepo: parsed.githubRepo } : {}),
+        ...(typeof parsed.browserHeadless === "boolean" ? { browserHeadless: parsed.browserHeadless } : {}),
+        ...(typeof parsed.browserHomepage === "string" ? { browserHomepage: parsed.browserHomepage } : {}),
       };
     }
   } catch {
@@ -57,6 +63,8 @@ export function updateSettings(patch: Partial<Settings>): Settings {
   if (typeof patch.updateFeedUrl === "string") settings.updateFeedUrl = patch.updateFeedUrl.trim();
   if (typeof patch.githubRepo === "string") settings.githubRepo = patch.githubRepo.trim();
   if (typeof patch.autoApprove === "boolean") settings.autoApprove = patch.autoApprove;
+  if (typeof patch.browserHeadless === "boolean") settings.browserHeadless = patch.browserHeadless;
+  if (patch.browserHomepage !== undefined) settings.browserHomepage = typeof patch.browserHomepage === "string" ? patch.browserHomepage.trim() : "";
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     const tmp = `${FILE}.tmp`;
