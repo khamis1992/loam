@@ -91,6 +91,7 @@ import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
 import { handleRetryLastRoutes } from "./routes/retryLast.js";
 import { handleShareRoutes } from "./routes/shares.js";
+import { handleConnectorsRoutes } from "./routes/connectors.js";
 import { importGrokbotBundle, sanitizeGrokbotBundle } from "./grokbotImport.js";
 import { isValidTimezone } from "./scheduleTime.js";
 import { getWorkModesUi, normalizeWorkMode, resolveCompanionCapabilities } from "./companionGateway.js";
@@ -1746,6 +1747,8 @@ loadAgents();
         if (await handlePersonalizationRoutes(req, res, p)) return;
         if (await handleApiKeysRoutes(req, res, p)) return;
         if (await handleDataControlsRoutes(req, res, p)) return;
+        // Settings › Connectors (UNIMPLEMENTED_OPTIONS #3): list/connect/callback/disconnect.
+        if (await handleConnectorsRoutes(req, res, p)) return;
         // Settings › Skills (UNIMPLEMENTED_OPTIONS #4): proxy the memory-skills MCP.
         if (await handleMemorySkillsRoutes(req, res, p, { call: memorySkillsCall })) return;
         if (await handleApprovalRuleRoutes(req, res, p, url)) return;
