@@ -1,0 +1,50 @@
+{
+  "checks": [
+    {
+      "matches": true,
+      "sha256": "8A1F372D839E56BFE3C1044E40A9DA5018F25555FAC3D93ACE30363E67E13B3A",
+      "file": "dist/server.cjs"
+    },
+    {
+      "matches": true,
+      "sha256": "50DFF17798D4C9C46AE3B0AEBDD895DEB9EF13976CFDD34EC1F859C751475BDB",
+      "file": "scripts/render-word-preview.ps1"
+    },
+    {
+      "matches": true,
+      "sha256": "7534AD0566D0358F9DCCE6B4C29A67274F849F88B1EDD9A9DF07AC55F6F42ECC",
+      "file": "ui/studio.js"
+    },
+    {
+      "matches": true,
+      "sha256": "14A1676F8D4DEA385A305EB3337F2428AD1CBA0A4A39969E1E698640DFDA437D",
+      "file": "ui/studio.css"
+    },
+    {
+      "matches": true,
+      "sha256": "9BF5F6CCB678BB30FBB54E070D874AAB3B04FFE33BFD9B7482271AB0BFD3CBCC",
+      "file": "ui/studio-document.js"
+    },
+    {
+      "matches": true,
+      "sha256": "CF584E70238650A47EA302CC8B45C0331A33DFA62475DDFAB076E2B9A870C166",
+      "file": "ui/studio-rich.js"
+    },
+    {
+      "matches": true,
+      "sha256": "4F923FD6D83763324F583E54A640FBCEDD76C430754EA258F577AA282CEFE15E",
+      "file": "ui/studio-preview.js"
+    },
+    {
+      "matches": true,
+      "sha256": "6E8CF1D8308A04CD19BCB7F10D4A8BC40BF1F52EA4E27814036337AC3AB00245",
+      "file": "ui/office-preview.html"
+    },
+    {
+      "matches": true,
+      "sha256": "6074B3C5992C5AB95BEDBAD2B5EEE553B1FAB5EDF871FE471E6E94A23F2A5B6F",
+      "file": "ui/office-preview.bundle.js"
+    }
+  ],
+  "version": "0.5.10"
+}

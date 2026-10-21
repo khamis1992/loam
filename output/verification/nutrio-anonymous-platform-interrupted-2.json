@@ -1,0 +1,672 @@
+{
+  "run": {
+    "id": "37eb2641-c1de-4636-9235-03d291f92058",
+    "target": "http://127.0.0.1:5173/nutrio/welcome",
+    "checks": [
+      "server_banner"
+    ],
+    "includeSource": false,
+    "includeDependencies": false,
+    "witnesses": {
+      "salt": "fee2e8ad-6b00-43ac-a5e4-0652f7145a19",
+      "digests": {
+        "nutrioPublicKey": "14684c7f19196f02f2cb6cecbb80d9f3113d06b32a975d957ca799928a92845f"
+      }
+    },
+    "status": "interrupted",
+    "createdAt": "2026-10-18T11:33:04.937Z",
+    "completed": 0,
+    "total": 2,
+    "findings": [
+      {
+        "id": "c791e372c6124e4761fa09fc",
+        "check": "anonymous_api_coverage",
+        "target": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/profiles",
+        "verdict": "error",
+        "severity": "info",
+        "title": "Anonymous API case is inconclusive: profiles",
+        "detail": "Empty collection; existing protected records and authorization repair remain unverified",
+        "fingerprint": "c791e372c6124e4761fa09fc",
+        "requestIds": [
+          "R3",
+          "R4",
+          "R5"
+        ],
+        "confidence": "review",
+        "workflow": {
+          "state": "open",
+          "owner": "",
+          "note": ""
+        },
+        "browserEvidenceIds": [
+          "381c8f2b-35a9-472b-90e6-3acac5d35c9d"
+        ]
+      },
+      {
+        "id": "f482051dd8ee639dee984018",
+        "check": "anonymous_api_coverage",
+        "target": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/restaurants",
+        "verdict": "error",
+        "severity": "info",
+        "title": "Anonymous API case is inconclusive: restaurants",
+        "detail": "Empty collection; existing protected records and authorization repair remain unverified",
+        "fingerprint": "f482051dd8ee639dee984018",
+        "requestIds": [
+          "R6",
+          "R7",
+          "R8"
+        ],
+        "confidence": "review",
+        "workflow": {
+          "state": "open",
+          "owner": "",
+          "note": ""
+        },
+        "browserEvidenceIds": [
+          "706606b2-ef95-4533-a638-1491c51e8656"
+        ]
+      },
+      {
+        "id": "55d49e6a123d631b697a765b",
+        "check": "anonymous_api_coverage",
+        "target": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/meals",
+        "verdict": "error",
+        "severity": "info",
+        "title": "Anonymous API case is inconclusive: meals",
+        "detail": "Empty collection; existing protected records and authorization repair remain unverified",
+        "fingerprint": "55d49e6a123d631b697a765b",
+        "requestIds": [
+          "R9",
+          "R10",
+          "R11"
+        ],
+        "confidence": "review",
+        "workflow": {
+          "state": "open",
+          "owner": "",
+          "note": ""
+        },
+        "browserEvidenceIds": [
+          "eacbea74-7805-4e24-95e5-02d745ed266d"
+        ]
+      }
+    ],
+    "events": [
+      {
+        "at": "2026-10-18T11:33:04.938Z",
+        "message": "Assessment started with explicit scope"
+      },
+      {
+        "at": "2026-10-18T11:33:04.941Z",
+        "message": "Starting isolated browser rendering and verification"
+      },
+      {
+        "at": "2026-10-18T11:33:05.971Z",
+        "message": "Browser anonymous_api: observed on https://loepcagitrijlfksawfm.supabase.co/rest/v1/public_restaurant_catalog"
+      },
+      {
+        "at": "2026-10-18T11:33:06.525Z",
+        "message": "Browser anonymous_api: observed on https://loepcagitrijlfksawfm.supabase.co/rest/v1/public_meal_catalog"
+      },
+      {
+        "at": "2026-10-18T11:33:07.531Z",
+        "message": "Browser anonymous_api: inconclusive on https://loepcagitrijlfksawfm.supabase.co/rest/v1/profiles"
+      },
+      {
+        "at": "2026-10-18T11:33:08.551Z",
+        "message": "Browser anonymous_api: inconclusive on https://loepcagitrijlfksawfm.supabase.co/rest/v1/restaurants"
+      },
+      {
+        "at": "2026-10-18T11:33:09.57Z",
+        "message": "Browser anonymous_api: inconclusive on https://loepcagitrijlfksawfm.supabase.co/rest/v1/meals"
+      }
+    ],
+    "revision": 0,
+    "profile": "quick",
+    "scope": {
+      "seeds": [
+        "http://127.0.0.1:5173/nutrio/welcome",
+        "http://127.0.0.1:5173/"
+      ],
+      "exclusions": [],
+      "maxPages": 1,
+      "maxRequests": 3000,
+      "delayMs": 0,
+      "maxDepth": 0,
+      "timeoutSeconds": 180
+    },
+    "authenticated": false,
+    "queryAdvisories": false,
+    "protectedPaths": [],
+    "apiSeeds": [],
+    "evidence": [
+      {
+        "id": "R1",
+        "at": "2026-10-18T11:33:05.536Z",
+        "url": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/public_restaurant_catalog",
+        "method": "GET",
+        "authenticated": false,
+        "status": 200,
+        "durationMs": 414,
+        "bodyHash": "feb08a98250a353d755a25ecce25218b48baabe42439c4ad11af51e2b2f7e8a8",
+        "bytes": 47,
+        "contentType": "application/json",
+        "engine": "browser",
+        "apiOrigin": "https://loepcagitrijlfksawfm.supabase.co"
+      },
+      {
+        "id": "R2",
+        "at": "2026-10-18T11:33:06.27Z",
+        "url": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/public_meal_catalog",
+        "method": "GET",
+        "authenticated": false,
+        "status": 200,
+        "durationMs": 235,
+        "bodyHash": "85925c487cd3e081970c327f6e0f5dc3a5120b9065377c1042805bcc42cac787",
+        "bytes": 47,
+        "contentType": "application/json",
+        "engine": "browser",
+        "apiOrigin": "https://loepcagitrijlfksawfm.supabase.co"
+      },
+      {
+        "id": "R3",
+        "at": "2026-10-18T11:33:06.785Z",
+        "url": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/public_restaurant_catalog",
+        "method": "GET",
+        "authenticated": false,
+        "status": 200,
+        "durationMs": 227,
+        "bodyHash": "feb08a98250a353d755a25ecce25218b48baabe42439c4ad11af51e2b2f7e8a8",
+        "bytes": 47,
+        "contentType": "application/json",
+        "engine": "browser",
+        "apiOrigin": "https://loepcagitrijlfksawfm.supabase.co"
+      },
+      {
+        "id": "R4",
+        "at": "2026-10-18T11:33:07.036Z",
+        "url": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/profiles",
+        "method": "GET",
+        "authenticated": false,
+        "status": 200,
+        "durationMs": 234,
+        "bodyHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "bytes": 2,
+        "contentType": "application/json",
+        "engine": "browser",
+        "apiOrigin": "https://loepcagitrijlfksawfm.supabase.co"
+      },
+      {
+        "id": "R5",
+        "at": "2026-10-18T11:33:07.282Z",
+        "url": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/public_restaurant_catalog",
+        "method": "GET",
+        "authenticated": false,
+        "status": 200,
+        "durationMs": 229,
+        "bodyHash": "feb08a98250a353d755a25ecce25218b48baabe42439c4ad11af51e2b2f7e8a8",
+        "bytes": 47,
+        "contentType": "application/json",
+        "engine": "browser",
+        "apiOrigin": "https://loepcagitrijlfksawfm.supabase.co"
+      },
+      {
+        "id": "R6",
+        "at": "2026-10-18T11:33:07.797Z",
+        "url": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/public_restaurant_catalog",
+        "method": "GET",
+        "authenticated": false,
+        "status": 200,
+        "durationMs": 238,
+        "bodyHash": "feb08a98250a353d755a25ecce25218b48baabe42439c4ad11af51e2b2f7e8a8",
+        "bytes": 47,
+        "contentType": "application/json",
+        "engine": "browser",
+        "apiOrigin": "https://loepcagitrijlfksawfm.supabase.co"
+      },
+      {
+        "id": "R7",
+        "at": "2026-10-18T11:33:08.045Z",
+        "url": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/restaurants",
+        "method": "GET",
+        "authenticated": false,
+        "status": 200,
+        "durationMs": 233,
+        "bodyHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "bytes": 2,
+        "contentType": "application/json",
+        "engine": "browser",
+        "apiOrigin": "https://loepcagitrijlfksawfm.supabase.co"
+      },
+      {
+        "id": "R8",
+        "at": "2026-10-18T11:33:08.294Z",
+        "url": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/public_restaurant_catalog",
+        "method": "GET",
+        "authenticated": false,
+        "status": 200,
+        "durationMs": 238,
+        "bodyHash": "feb08a98250a353d755a25ecce25218b48baabe42439c4ad11af51e2b2f7e8a8",
+        "bytes": 47,
+        "contentType": "application/json",
+        "engine": "browser",
+        "apiOrigin": "https://loepcagitrijlfksawfm.supabase.co"
+      },
+      {
+        "id": "R9",
+        "at": "2026-10-18T11:33:08.844Z",
+        "url": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/public_restaurant_catalog",
+        "method": "GET",
+        "authenticated": false,
+        "status": 200,
+        "durationMs": 218,
+        "bodyHash": "feb08a98250a353d755a25ecce25218b48baabe42439c4ad11af51e2b2f7e8a8",
+        "bytes": 47,
+        "contentType": "application/json",
+        "engine": "browser",
+        "apiOrigin": "https://loepcagitrijlfksawfm.supabase.co"
+      },
+      {
+        "id": "R10",
+        "at": "2026-10-18T11:33:09.078Z",
+        "url": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/meals",
+        "method": "GET",
+        "authenticated": false,
+        "status": 200,
+        "durationMs": 227,
+        "bodyHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "bytes": 2,
+        "contentType": "application/json",
+        "engine": "browser",
+        "apiOrigin": "https://loepcagitrijlfksawfm.supabase.co"
+      },
+      {
+        "id": "R11",
+        "at": "2026-10-18T11:33:09.327Z",
+        "url": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/public_restaurant_catalog",
+        "method": "GET",
+        "authenticated": false,
+        "status": 200,
+        "durationMs": 225,
+        "bodyHash": "feb08a98250a353d755a25ecce25218b48baabe42439c4ad11af51e2b2f7e8a8",
+        "bytes": 47,
+        "contentType": "application/json",
+        "engine": "browser",
+        "apiOrigin": "https://loepcagitrijlfksawfm.supabase.co"
+      }
+    ],
+    "covered": [],
+    "browserOptions": {
+      "enabled": true,
+      "domCanary": false,
+      "framing": false,
+      "screenshots": false,
+      "maxPages": 1,
+      "settleMs": 750,
+      "readySelector": "[data-testid=\"onboarding-signin-btn\"]",
+      "responseLimitBytes": 10000000,
+      "totalLimitBytes": 200000000,
+      "readinessTimeoutMs": 30000,
+      "networkIdleTimeoutMs": 10000,
+      "accessAssertions": [],
+      "postPaths": [],
+      "followRedirects": true,
+      "login": [],
+      "flows": [],
+      "accounts": [],
+      "authorization": [],
+      "apiGrants": [
+        {
+          "origin": "https://loepcagitrijlfksawfm.supabase.co",
+          "paths": [
+            "/rest/v1/public_restaurant_catalog",
+            "/rest/v1/public_meal_catalog",
+            "/rest/v1/profiles",
+            "/rest/v1/restaurants",
+            "/rest/v1/meals"
+          ],
+          "methods": [
+            "GET"
+          ],
+          "credentialHeaders": [
+            "apikey"
+          ]
+        }
+      ],
+      "anonymousApi": [
+        {
+          "id": "public_restaurant_catalog",
+          "origin": "https://loepcagitrijlfksawfm.supabase.co",
+          "path": "/rest/v1/public_restaurant_catalog",
+          "query": {
+            "select": "id",
+            "limit": "1"
+          },
+          "collectionPath": "",
+          "expected": "public",
+          "publicKeyRef": "nutrioPublicKey"
+        },
+        {
+          "id": "public_meal_catalog",
+          "origin": "https://loepcagitrijlfksawfm.supabase.co",
+          "path": "/rest/v1/public_meal_catalog",
+          "query": {
+            "select": "id",
+            "limit": "1"
+          },
+          "collectionPath": "",
+          "expected": "public",
+          "publicKeyRef": "nutrioPublicKey"
+        },
+        {
+          "id": "profiles",
+          "origin": "https://loepcagitrijlfksawfm.supabase.co",
+          "path": "/rest/v1/profiles",
+          "query": {
+            "select": "id",
+            "limit": "1"
+          },
+          "collectionPath": "",
+          "expected": "private",
+          "publicKeyRef": "nutrioPublicKey",
+          "controlId": "public_restaurant_catalog"
+        },
+        {
+          "id": "restaurants",
+          "origin": "https://loepcagitrijlfksawfm.supabase.co",
+          "path": "/rest/v1/restaurants",
+          "query": {
+            "select": "id",
+            "limit": "1"
+          },
+          "collectionPath": "",
+          "expected": "private",
+          "publicKeyRef": "nutrioPublicKey",
+          "controlId": "public_restaurant_catalog"
+        },
+        {
+          "id": "meals",
+          "origin": "https://loepcagitrijlfksawfm.supabase.co",
+          "path": "/rest/v1/meals",
+          "query": {
+            "select": "id",
+            "limit": "1"
+          },
+          "collectionPath": "",
+          "expected": "private",
+          "publicKeyRef": "nutrioPublicKey",
+          "controlId": "public_restaurant_catalog"
+        }
+      ]
+    },
+    "browser": {
+      "engine": "chrome",
+      "version": "155.0.8059.80",
+      "pages": [],
+      "proofs": [
+        {
+          "id": "089f1f0d-a4e1-44a3-a88b-1583b296e345",
+          "at": "2026-10-18T11:33:05.255Z",
+          "kind": "anonymous_api",
+          "target": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/public_restaurant_catalog",
+          "outcome": "observed",
+          "summary": "Public collection positive control returned rows without a user session",
+          "requestIds": [
+            "R1"
+          ],
+          "observations": {
+            "caseId": "public_restaurant_catalog",
+            "expected": "public",
+            "collectionPath": "",
+            "publicKeySupplied": true,
+            "userSession": false,
+            "cookiesSent": false,
+            "status": 200,
+            "rows": 1,
+            "jsonValid": true,
+            "publicControlBefore": true,
+            "publicControlAfter": true,
+            "transportValid": true,
+            "queryHash": "03b8ff7a3c5ef66f2c8b586be5ad27327f4a8b2b0c4e2a016560695969ce1d5b"
+          }
+        },
+        {
+          "id": "9c74ec20-40cb-4d6b-835d-c46b36eaf48c",
+          "at": "2026-10-18T11:33:05.974Z",
+          "kind": "anonymous_api",
+          "target": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/public_meal_catalog",
+          "outcome": "observed",
+          "summary": "Public collection positive control returned rows without a user session",
+          "requestIds": [
+            "R2"
+          ],
+          "observations": {
+            "caseId": "public_meal_catalog",
+            "expected": "public",
+            "collectionPath": "",
+            "publicKeySupplied": true,
+            "userSession": false,
+            "cookiesSent": false,
+            "status": 200,
+            "rows": 1,
+            "jsonValid": true,
+            "publicControlBefore": true,
+            "publicControlAfter": true,
+            "transportValid": true,
+            "queryHash": "03b8ff7a3c5ef66f2c8b586be5ad27327f4a8b2b0c4e2a016560695969ce1d5b"
+          }
+        },
+        {
+          "id": "381c8f2b-35a9-472b-90e6-3acac5d35c9d",
+          "at": "2026-10-18T11:33:06.528Z",
+          "kind": "anonymous_api",
+          "target": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/profiles",
+          "outcome": "inconclusive",
+          "summary": "Empty collection; existing protected records and authorization repair remain unverified",
+          "requestIds": [
+            "R3",
+            "R4",
+            "R5"
+          ],
+          "observations": {
+            "caseId": "profiles",
+            "expected": "private",
+            "collectionPath": "",
+            "publicKeySupplied": true,
+            "userSession": false,
+            "cookiesSent": false,
+            "status": 200,
+            "rows": 0,
+            "jsonValid": true,
+            "publicControlBefore": true,
+            "publicControlAfter": true,
+            "transportValid": true,
+            "queryHash": "03b8ff7a3c5ef66f2c8b586be5ad27327f4a8b2b0c4e2a016560695969ce1d5b"
+          }
+        },
+        {
+          "id": "706606b2-ef95-4533-a638-1491c51e8656",
+          "at": "2026-10-18T11:33:07.534Z",
+          "kind": "anonymous_api",
+          "target": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/restaurants",
+          "outcome": "inconclusive",
+          "summary": "Empty collection; existing protected records and authorization repair remain unverified",
+          "requestIds": [
+            "R6",
+            "R7",
+            "R8"
+          ],
+          "observations": {
+            "caseId": "restaurants",
+            "expected": "private",
+            "collectionPath": "",
+            "publicKeySupplied": true,
+            "userSession": false,
+            "cookiesSent": false,
+            "status": 200,
+            "rows": 0,
+            "jsonValid": true,
+            "publicControlBefore": true,
+            "publicControlAfter": true,
+            "transportValid": true,
+            "queryHash": "03b8ff7a3c5ef66f2c8b586be5ad27327f4a8b2b0c4e2a016560695969ce1d5b"
+          }
+        },
+        {
+          "id": "eacbea74-7805-4e24-95e5-02d745ed266d",
+          "at": "2026-10-18T11:33:08.554Z",
+          "kind": "anonymous_api",
+          "target": "https://loepcagitrijlfksawfm.supabase.co/rest/v1/meals",
+          "outcome": "inconclusive",
+          "summary": "Empty collection; existing protected records and authorization repair remain unverified",
+          "requestIds": [
+            "R9",
+            "R10",
+            "R11"
+          ],
+          "observations": {
+            "caseId": "meals",
+            "expected": "private",
+            "collectionPath": "",
+            "publicKeySupplied": true,
+            "userSession": false,
+            "cookiesSent": false,
+            "status": 200,
+            "rows": 0,
+            "jsonValid": true,
+            "publicControlBefore": true,
+            "publicControlAfter": true,
+            "transportValid": true,
+            "queryHash": "03b8ff7a3c5ef66f2c8b586be5ad27327f4a8b2b0c4e2a016560695969ce1d5b"
+          }
+        }
+      ],
+      "blocked": [],
+      "incomplete": true,
+      "resources": {
+        "receivedBytes": 382,
+        "responseLimitBytes": 10000000,
+        "totalLimitBytes": 200000000
+      }
+    },
+    "diagnostics": {
+      "durationMs": null,
+      "requests": 11,
+      "modules": [
+        {
+          "id": "anonymous_api",
+          "enabled": true,
+          "units": 5,
+          "attempted": 5,
+          "conclusive": 2,
+          "inconclusive": 3,
+          "planned": 5,
+          "state": "incomplete"
+        },
+        {
+          "id": "http",
+          "enabled": true,
+          "units": 0,
+          "attempted": 0,
+          "conclusive": 0,
+          "inconclusive": 0,
+          "state": "no_execution"
+        },
+        {
+          "id": "browser",
+          "enabled": true,
+          "units": 0,
+          "attempted": 0,
+          "conclusive": 0,
+          "inconclusive": 0,
+          "state": "incomplete"
+        },
+        {
+          "id": "login",
+          "enabled": false,
+          "units": 0,
+          "attempted": 0,
+          "conclusive": 0,
+          "inconclusive": 0,
+          "planned": 0,
+          "state": "disabled"
+        },
+        {
+          "id": "flows",
+          "enabled": false,
+          "units": 0,
+          "attempted": 0,
+          "conclusive": 0,
+          "inconclusive": 0,
+          "planned": 0,
+          "state": "disabled"
+        },
+        {
+          "id": "post",
+          "enabled": false,
+          "units": 0,
+          "attempted": 0,
+          "conclusive": 0,
+          "inconclusive": 0,
+          "state": "disabled"
+        },
+        {
+          "id": "api_origins",
+          "enabled": true,
+          "units": 11,
+          "attempted": 11,
+          "conclusive": 11,
+          "inconclusive": 0,
+          "state": "executed"
+        },
+        {
+          "id": "sessions",
+          "enabled": false,
+          "units": 0,
+          "attempted": 0,
+          "conclusive": 0,
+          "inconclusive": 0,
+          "planned": 0,
+          "state": "disabled"
+        },
+        {
+          "id": "authorization",
+          "enabled": false,
+          "units": 0,
+          "attempted": 0,
+          "conclusive": 0,
+          "inconclusive": 0,
+          "planned": 0,
+          "state": "disabled"
+        },
+        {
+          "id": "source",
+          "enabled": false,
+          "units": 0,
+          "attempted": 0,
+          "conclusive": 0,
+          "inconclusive": 0,
+          "state": "disabled"
+        },
+        {
+          "id": "dependencies",
+          "enabled": false,
+          "units": 0,
+          "attempted": 0,
+          "conclusive": 0,
+          "inconclusive": 0,
+          "state": "disabled"
+        }
+      ],
+      "reasons": [
+        "تغطية المتصفح غير مكتملة؛ عدد الطلبات المحظورة: 0، وعدد الأدلة غير المحسومة: 3."
+      ],
+      "authorizationCoverage": {
+        "planned": 0,
+        "conclusive": 0,
+        "inconclusive": 0
+      }
+    },
+    "error": "Server restarted before the assessment finished"
+  }
+}

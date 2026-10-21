@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="تطبيق مخزون عربي RTL بتصميم سماوي وبنفسجي متجاوب — يعمل بخادم Node.js وقاعدة SQLite فعلية دون أي مكتبات خارجية." />
+  <title>مخزوني — إدارة المخزون</title>
+  <style>
+    /* =========================================================================
+       تصميم سماوي + بنفسجي — CSS مكتوب يدويًا دون أي مكتبات أو خطوط خارجية
+       ========================================================================= */
+    :root {
+      --cyan: #06b6d4;
+      --cyan-dark: #0e7490;
+      --cyan-light: #ecfeff;
+      --purple: #8b5cf6;
+      --purple-dark: #6d28d9;
+      --purple-light: #f5f3ff;
+      --ink: #1f2937;
+      --muted: #64748b;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --danger-bg: #fef2f2;
+      --danger-border: #fca5a5;
+      --danger-text: #b91c1c;
+      --ok-bg: #f0fdf4;
+      --ok-border: #86efac;
+      --ok-text: #15803d;
+      --radius: 16px;
+      --shadow: 0 10px 30px rgba(14, 116, 144, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Tahoma, "Noto Kufi Arabic", "Noto Sans Arabic", Arial, sans-serif;
+      color: var(--ink);
+      line-height: 1.65;
+      background:
+        radial-gradient(900px 420px at 88% -12%, rgba(139, 92, 246, 0.16), transparent 60%),
+        radial-gradient(900px 420px at 8% -12%, rgba(6, 182, 212, 0.18), transparent 60%),
+        linear-gradient(180deg, #f0fdff 0%, #faf9ff 100%);
+      background-attachment: fixed;
+    }
+
+    /* الترويسة */
+    .site-header {
+      background: linear-gradient(120deg, var(--cyan-dark) 0%, var(--cyan) 38%, var(--purple) 100%);
+      color: #ffffff;
+      padding: 26px 20px;
+      box-shadow: 0 6px 24px rgba(109, 40, 217, 0.25);
+    }
+    .brand {
+      max-width: 980px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .brand-icon {
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 54px;
+      height: 54px;
+      font-size: 1.7rem;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.18);
+      border: 1px solid rgba(255, 255, 255, 0.35);
+    }
+    .site-header h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2.1rem); letter-spacing: 0.5px; }
+    .site-header p { margin: 2px 0 0; opacity: 0.92; font-size: 0.95rem; }
+
+    /* الحاوية العامة */
+    .container {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 24px 20px 42px;
+    }
+
+    /* شريط الرسائل (خطأ / نجاح) — يظهر أعلى الصفحة ليكون مرئيًا دائمًا */
+    .banner {
+      margin: 0 0 18px;
+      padding: 13px 16px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 0.98rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      animation: banner-in 0.25s ease;
+    }
+    .banner::before { flex: none; font-size: 1.05rem; line-height: 1.5; }
+    .banner-error {
+      background: var(--danger-bg);
+      border: 1.5px solid var(--danger-border);
+      color: var(--danger-text);
+    }
+    .banner-error::before { content: "⚠️"; }
+    .banner-success {
+      background: var(--ok-bg);
+      border: 1.5px solid var(--ok-border);
+      color: var(--ok-text);
+    }
+    .banner-success::before { content: "✅"; }
+    @keyframes banner-in {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: none; }
+    }
+    /* ضمان إخفاء تام للعناصر ذات hidden حتى مع أي قواعد عرض أخرى */
+    [hidden] { display: none !important; }
+
+    /* بطاقتا العمليات */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 18px;
+    }
+    .card {
+      position: relative;
+      overflow: hidden;
+      background: var(--card);
+      border: 1px solid rgba(226, 232, 240, 0.9);
+      border-radius: var(--radius);
+      padding: 22px 22px 24px;
+      box-shadow: var(--shadow);
+    }
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 5px;
+      background: linear-gradient(90deg, var(--cyan), var(--purple));
+    }
+    .card h2 {
+      margin: 4px 0 4px;
+      font-size: 1.15rem;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .card-add h2 { color: var(--cyan-dark); }
+    .card-withdraw h2 { color: var(--purple-dark); }
+    .card-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      font-size: 1rem;
+    }
+    .card-add .card-icon { background: var(--cyan-light); }
+    .card-withdraw .card-icon { background: var(--purple-light); }
+
+    label {
+      display: block;
+      margin: 16px 0 6px;
+      font-weight: 700;
+      font-size: 0.92rem;
+      color: #334155;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 11px 14px;
+      font-size: 1rem;
+      font-family: inherit;
+      color: var(--ink);
+      background: #f8fafc;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    }
+    input[type="text"]::placeholder { color: #94a3b8; }
+    input[type="text"]:focus {
+      outline: none;
+      background: #ffffff;
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.15);
+    }
+    .card-withdraw input[type="text"]:focus {
+      border-color: var(--purple);
+      box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.15);
+    }
+
+    .card button {
+      width: 100%;
+      margin-top: 20px;
+      padding: 12px 18px;
+      font: inherit;
+      font-weight: 800;
+      font-size: 1rem;
+      color: #ffffff;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      box-shadow: 0 8px 18px rgba(124, 58, 237, 0.28);
+      transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease, opacity 0.2s ease;
+    }
+    .card-add button { background: linear-gradient(120deg, #0891b2, #06b6d4 55%, #8b5cf6); }
+    .card-withdraw button { background: linear-gradient(120deg, #7c3aed, #8b5cf6 55%, #06b6d4); }
+    .card button:hover { filter: brightness(1.07); transform: translateY(-1px); }
+    .card button:active { transform: translateY(1px); box-shadow: 0 4px 10px rgba(124, 58, 237, 0.25); }
+    .card button:disabled { opacity: 0.55; cursor: progress; transform: none; }
+
+    /* جدول الأصناف */
+    .table-card {
+      margin-top: 18px;
+      background: var(--card);
+      border: 1px solid rgba(226, 232, 240, 0.9);
+      border-radius: var(--radius);
+      padding: 22px;
+      box-shadow: var(--shadow);
+    }
+    .table-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .table-head h2 { margin: 0; font-size: 1.15rem; color: var(--cyan-dark); }
+    .count-pill {
+      background: linear-gradient(120deg, var(--cyan-light), var(--purple-light));
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      color: var(--purple-dark);
+      font-weight: 700;
+      font-size: 0.85rem;
+      padding: 5px 12px;
+      border-radius: 999px;
+    }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.98rem; }
+    thead th {
+      text-align: start;
+      padding: 12px 14px;
+      background: linear-gradient(120deg, rgba(6, 182, 212, 0.12), rgba(139, 92, 246, 0.12));
+      color: var(--purple-dark);
+      font-size: 0.9rem;
+      border-bottom: 2px solid rgba(139, 92, 246, 0.25);
+    }
+    tbody td {
+      text-align: start;
+      padding: 12px 14px;
+      border-bottom: 1px solid #eef2f7;
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr.stock-item { transition: background 0.15s ease; }
+    tbody tr.stock-item:hover { background: #f8fafc; }
+    .cell-sku { font-weight: 700; }
+    .cell-quantity {
+      width: 170px;
+      font-weight: 800;
+      color: var(--cyan-dark);
+      font-variant-numeric: tabular-nums;
+    }
+    tr.empty-row td {
+      text-align: center;
+      color: var(--muted);
+      padding: 26px 14px;
+      font-size: 0.95rem;
+    }
+
+    /* التذييل */
+    .site-footer {
+      margin-top: 22px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .site-footer p { margin: 0; }
+
+    /* التجاوب مع الشاشات الصغيرة */
+    @media (max-width: 640px) {
+      .site-header { padding: 20px 16px; }
+      .brand { gap: 10px; }
+      .brand-icon { width: 46px; height: 46px; font-size: 1.4rem; border-radius: 13px; }
+      .container { padding: 18px 14px 32px; }
+      .card { padding: 18px 16px 20px; }
+      .table-card { padding: 16px 12px; }
+      .cell-quantity { width: auto; }
+      table { font-size: 0.92rem; }
+      thead th, tbody td { padding: 10px 10px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand">
+      <span class="brand-icon" aria-hidden="true">📦</span>
+      <div>
+        <h1>مخزوني</h1>
+        <p>نظام إدارة مخزون عربي — إضافة وسحب الأصناف مع حفظ فوري في قاعدة بيانات الخادم</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- منطقة الرسائل: خطأ عربي عند رفض أي عملية، ورسالة نجاح عند الإتمام -->
+    <div id="error" class="banner banner-error" role="alert" aria-live="assertive" hidden></div>
+    <div id="success" class="banner banner-success" role="status" aria-live="polite" hidden></div>
+
+    <section class="cards">
+      <!-- نموذج الإضافة -->
+      <form id="add-form" class="card card-add" novalidate>
+        <h2><span class="card-icon" aria-hidden="true">➕</span> إضافة صنف جديد</h2>
+        <label for="sku">رمز الصنف (SKU)</label>
+        <input id="sku" name="sku" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="مثال: كتاب" />
+        <label for="quantity">الكمية</label>
+        <input id="quantity" name="quantity" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="مثال: 10" />
+        <button id="save" type="submit">حفظ في المخزون</button>
+      </form>
+
+      <!-- نموذج السحب -->
+      <form id="withdraw-form" class="card card-withdraw" novalidate>
+        <h2><span class="card-icon" aria-hidden="true">📤</span> سحب من المخزون</h2>
+        <label for="withdraw-sku">رمز الصنف (SKU)</label>
+        <input id="withdraw-sku" name="withdraw-sku" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="مثال: كتاب" />
+        <label for="withdraw-quantity">الكمية المطلوب سحبها</label>
+        <input id="withdraw-quantity" name="withdraw-quantity" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="مثال: 3" />
+        <button id="withdraw" type="submit">تنفيذ السحب</button>
+      </form>
+    </section>
+
+    <!-- جدول الأصناف: تُملأ صفوفه من استجابة الخادم بعد كل عملية وعند التحميل -->
+    <section class="table-card">
+      <div class="table-head">
+        <h2>الأصناف المتوفرة</h2>
+        <span id="items-count" class="count-pill">لا توجد أصناف</span>
+      </div>
+      <div class="table-wrap">
+        <table id="items">
+          <thead>
+            <tr>
+              <th scope="col">رمز الصنف (SKU)</th>
+              <th scope="col">الكمية المتوفرة</th>
+            </tr>
+          </thead>
+          <tbody id="items-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="site-footer">
+      <p>تُعرض البيانات مباشرة من الخادم (Node.js + SQLite) بعد كل عملية — لا يُستخدم أي تخزين محلي في المتصفح.</p>
+    </footer>
+  </main>
+
+  <noscript>
+    <p style="text-align:center; color:#b91c1c; font-weight:700;">
+      يتطلب هذا التطبيق تفعيل JavaScript في المتصفح.
+    </p>
+  </noscript>
+
+  <script>
+    (function () {
+      'use strict';
+
+      /* ------------------------------------------------------------------
+       * عناصر الواجهة
+       * ------------------------------------------------------------------ */
+      var errorBox = document.getElementById('error');
+      var successBox = document.getElementById('success');
+      var itemsBody = document.getElementById('items-body');
+      var itemsCount = document.getElementById('items-count');
+      var addForm = document.getElementById('add-form');
+      var saveButton = document.getElementById('save');
+      var withdrawForm = document.getElementById('withdraw-form');
+      var withdrawButton = document.getElementById('withdraw');
+
+      /* ------------------------------------------------------------------
+       * عرض الرسائل: #error لرسائل الرفض (بما فيها الكميات السالبة و400/409)
+       * ------------------------------------------------------------------ */
+      function showError(message) {
+        successBox.hidden = true;
+        errorBox.textContent = message;
+        errorBox.hidden = false; /* يظهر العنصر الآن (كان hidden) */
+        if (typeof errorBox.scrollIntoView === 'function') {
+          errorBox.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+        }
+      }
+
+      function showSuccess(message) {
+        errorBox.hidden = true;
+        successBox.textContent = message;
+        successBox.hidden = false;
+        if (typeof successBox.scrollIntoView === 'function') {
+          successBox.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+        }
+      }
+
+      function clearMessages() {
+        errorBox.hidden = true;
+        successBox.hidden = true;
+        errorBox.textContent = '';
+        successBox.textContent = '';
+      }
+
+      /* ------------------------------------------------------------------
+       * غلاف موحّد لكل نداءات fetch:
+       * - أخطاء الشبكة → رسالة عربية
+       * - الاستجابات غير الناجحة (400 / 409 / ...) → رسالة الخادم العربية أو رسالة حالة عربية
+       * لا يبقى أي رد fetch دون معالجة.
+       * ------------------------------------------------------------------ */
+      async function request(url, options) {
+        var response;
+        try {
+          response = await fetch(url, options);
+        } catch (networkError) {
+          throw new Error('تعذّر الاتصال بالخادم. تأكد من تشغيل الخادم على المنفذ 3000 ثم أعد المحاولة.');
+        }
+
+        var payload = null;
+        try {
+          payload = await response.json();
+        } catch (parseError) {
+          payload = null; /* استجابة بلا جسم JSON صالح */
+        }
+
+        if (!response.ok) {
+          var serverMessage = (payload && typeof payload.error === 'string' && payload.error)
+            ? payload.error
+            : '';
+          var failure = new Error(serverMessage || ('فشل الطلب (رمز الحالة ' + response.status + ').'));
+          failure.status = response.status;
+          throw failure;
+        }
+
+        return payload;
+      }
+
+      /* ------------------------------------------------------------------
+       * التحقق من الإدخال في JavaScript (لا نعتمد على منع HTML وحده):
+       * - تحويل الأرقام العربية ٠-٩ إلى لاتينية قبل الفحص
+       * - الكمية يجب أن تكون عددًا صحيحًا موجبًا؛ السالب والصفر وغير الرقمي مرفوض
+       * ------------------------------------------------------------------ */
+      function normalizeDigits(value) {
+        return String(value == null ? '' : value)
+          .replace(/[٠-٩]/g, function (digit) {
+            return String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit));
+          })
+          .trim();
+      }
+
+      function parseQuantity(raw) {
+        var text = normalizeDigits(raw);
+        if (!/^\+?\d+$/.test(text)) return NaN; /* يرفض "-1" و"3.5" و"abc" والفراغ */
+        var value = Number(text);
+        return Number.isSafeInteger(value) ? value : NaN;
+      }
+
+      /* ------------------------------------------------------------------
+       * رسم الجدول من بيانات الخادم:
+       * كل صف بيانات يحمل الصنف .stock-item، وخلية الرصيد تحمل data-quantity
+       * وتعرض الرقم وحده دون أي نص إضافي.
+       * ------------------------------------------------------------------ */
+      function formatCount(count) {
+        if (count === 0) return 'لا توجد أصناف';
+        if (count === 1) return 'صنف واحد';
+        if (count === 2) return 'صنفان';
+        if (count <= 10) return count + ' أصناف';
+        return count + ' صنفًا';
+      }
+
+      function renderItems(items) {
+        var rows = Array.isArray(items) ? items : [];
+        itemsBody.textContent = '';
+
+        if (rows.length === 0) {
+          var emptyRow = document.createElement('tr');
+          emptyRow.className = 'empty-row';
+          var emptyCell = document.createElement('td');
+          emptyCell.colSpan = 2;
+          emptyCell.textContent = 'لا توجد أصناف في المخزون بعد — أضف صنفك الأول من النموذج أعلاه.';
+          emptyRow.appendChild(emptyCell);
+          itemsBody.appendChild(emptyRow);
+        } else {
+          rows.forEach(function (item) {
+            var row = document.createElement('tr');
+            row.className = 'stock-item';
+
+            var skuCell = document.createElement('td');
+            skuCell.className = 'cell-sku';
+            skuCell.textContent = String(item.sku);
+
+            var quantityCell = document.createElement('td');
+            quantityCell.className = 'cell-quantity';
+            quantityCell.setAttribute('data-quantity', String(item.quantity));
+            quantityCell.textContent = String(item.quantity); /* الرقم وحده */
+
+            row.appendChild(skuCell);
+            row.appendChild(quantityCell);
+            itemsBody.appendChild(row);
+          });
+        }
+
+        if (itemsCount) itemsCount.textContent = formatCount(rows.length);
+      }
+
+      /* ------------------------------------------------------------------
+       * جلب الأصناف من الخادم: عند تحميل الصفحة وبعد كل عملية
+       * ------------------------------------------------------------------ */
+      var latestLoadToken = 0;
+      async function loadStock() {
+        var token = ++latestLoadToken;
+        try {
+          var payload = await request('/api/stock', {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
+          });
+          if (token !== latestLoadToken) return; /* تجاهل الاستجابات القديمة */
+          renderItems(payload && Array.isArray(payload.items) ? payload.items : []);
+        } catch (loadError) {
+          if (token !== latestLoadToken) return;
+          showError(loadError.message || 'تعذّر تحميل بيانات المخزون من الخادم.');
+        }
+      }
+
+      /* ------------------------------------------------------------------
+       * عملية الإضافة: POST /api/stock
+       * 201 نجاح — 409 رمز مكرر — 400 إدخال غير صالح (تُعرض كلها في #error)
+       * ------------------------------------------------------------------ */
+      addForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        clearMessages();
+
+        var skuField = document.getElementById('sku');
+        var quantityField = document.getElementById('quantity');
+        var sku = skuField.value.trim();
+        var quantity = parseQuantity(quantityField.value);
+
+        if (!sku) {
+          showError('الرجاء إدخال رمز الصنف (SKU) قبل الإضافة.');
+          skuField.focus();
+          return;
+        }
+        if (Number.isNaN(quantity) || quantity <= 0) {
+          showError('الكمية غير صالحة: أدخل عددًا صحيحًا موجبًا أكبر من صفر (مثال: 10).');
+          quantityField.focus();
+          return;
+        }
+
+        saveButton.disabled = true;
+        try {
+          await request('/api/stock', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ sku: sku, quantity: quantity })
+          });
+          skuField.value = '';
+          quantityField.value = '';
+          showSuccess('تمت إضافة الصنف «' + sku + '» إلى المخزون بنجاح.');
+        } catch (operationError) {
+          showError(operationError.message || 'فشلت عملية الإضافة.');
+        } finally {
+          saveButton.disabled = false;
+          await loadStock(); /* عرض البيانات من الخادم بعد كل عملية */
+        }
+      });
+
+      /* ------------------------------------------------------------------
+       * عملية السحب: POST /api/withdraw
+       * 200 نجاح — 409 صنف غير موجود أو رصيد غير كافٍ (دون تغيير البيانات)
+       * ------------------------------------------------------------------ */
+      withdrawForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        clearMessages();
+
+        var skuField = document.getElementById('withdraw-sku');
+        var quantityField = document.getElementById('withdraw-quantity');
+        var sku = skuField.value.trim();
+        var quantity = parseQuantity(quantityField.value);
+
+        if (!sku) {
+          showError('الرجاء إدخال رمز الصنف (SKU) المطلوب سحبه.');
+          skuField.focus();
+          return;
+        }
+        if (Number.isNaN(quantity) || quantity <= 0) {
+          showError('الكمية غير صالحة: أدخل عددًا صحيحًا موجبًا أكبر من صفر (مثال: 3).');
+          quantityField.focus();
+          return;
+        }
+
+        withdrawButton.disabled = true;
+        try {
+          var result = await request('/api/withdraw', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ sku: sku, quantity: quantity })
+          });
+          skuField.value = '';
+          quantityField.value = '';
+          var remaining = (result && typeof result.quantity === 'number') ? result.quantity : null;
+          showSuccess(remaining === null
+            ? 'تم تنفيذ عملية السحب بنجاح.'
+            : 'تم سحب ' + quantity + ' من «' + sku + '». الرصيد المتبقي: ' + remaining + '.');
+        } catch (operationError) {
+          showError(operationError.message || 'فشلت عملية السحب.');
+        } finally {
+          withdrawButton.disabled = false;
+          await loadStock(); /* عرض البيانات من الخادم بعد كل عملية */
+        }
+      });
+
+      /* ------------------------------------------------------------------
+       * التحميل الأولي: جلب الأصناف من الخادم مباشرة
+       * ------------------------------------------------------------------ */
+      loadStock();
+    })();
+  </script>
+</body>
+</html>

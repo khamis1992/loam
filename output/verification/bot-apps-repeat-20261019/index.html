@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#8b5cf6">
+<meta name="description" content="تطبيق مصروفات عربي يعمل محليًا ويحفظ البيانات في متصفحك">
+<title>مصروفي — تتبّع المصروفات اليومية</title>
+<style>
+  :root{
+    --cyan:#22d3ee;
+    --cyan-dark:#0891b2;
+    --purple:#8b5cf6;
+    --purple-dark:#7c3aed;
+    --ink:#1e1b4b;
+    --muted:#64748b;
+    --card:#ffffff;
+    --line:#e2e8f0;
+    --danger:#b91c1c;
+    --radius:18px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:"Segoe UI",Tahoma,"Noto Kufi Arabic","Noto Sans Arabic",system-ui,-apple-system,sans-serif;
+    background:linear-gradient(135deg,#cffafe 0%,#e0e7ff 45%,#ede9fe 100%);
+    min-height:100vh;
+    color:var(--ink);
+    line-height:1.65;
+    padding:28px 16px 56px;
+    position:relative;
+    overflow-x:hidden;
+  }
+  /* زخارف خلفية سماوية/بنفسجية */
+  body::before,body::after{
+    content:"";
+    position:fixed;
+    border-radius:50%;
+    filter:blur(70px);
+    opacity:.45;
+    z-index:0;
+    pointer-events:none;
+  }
+  body::before{
+    width:340px;height:340px;top:-120px;left:-100px;
+    background:radial-gradient(circle,var(--cyan),transparent 70%);
+  }
+  body::after{
+    width:380px;height:380px;bottom:-140px;right:-120px;
+    background:radial-gradient(circle,var(--purple),transparent 70%);
+  }
+
+  .app{
+    position:relative;z-index:1;
+    max-width:660px;margin:0 auto;
+    display:flex;flex-direction:column;gap:20px;
+  }
+
+  /* الترويسة */
+  header{text-align:center;padding:4px 0 2px}
+  header h1{
+    font-size:2.1rem;font-weight:800;letter-spacing:-.5px;
+    background:linear-gradient(90deg,var(--cyan-dark) 0%,var(--purple-dark) 100%);
+    -webkit-background-clip:text;background-clip:text;
+    -webkit-text-fill-color:transparent;color:transparent;
+  }
+  header p{color:var(--muted);font-size:.98rem;margin-top:4px}
+
+  /* بطاقات عامة */
+  .card{
+    background:var(--card);
+    border:1px solid rgba(139,92,246,.14);
+    border-radius:var(--radius);
+    box-shadow:0 10px 30px rgba(30,27,75,.08);
+    padding:22px;
+  }
+
+  /* بطاقة المجموع */
+  .total-card{
+    background:linear-gradient(120deg,var(--cyan) 0%,var(--purple) 100%);
+    color:#fff;text-align:center;
+    border:none;
+    box-shadow:0 14px 34px rgba(124,58,237,.35);
+  }
+  .total-label{display:block;font-size:.95rem;font-weight:600;opacity:.92}
+  .total-value{
+    display:flex;align-items:baseline;justify-content:center;gap:10px;
+    font-size:2.7rem;font-weight:800;margin-top:2px;
+    text-shadow:0 2px 10px rgba(0,0,0,.12);
+  }
+  .total-value .currency{font-size:1.05rem;font-weight:700;opacity:.9}
+
+  /* النموذج */
+  .form-grid{display:grid;grid-template-columns:1fr;gap:14px}
+  .field label{
+    display:block;font-size:.85rem;font-weight:700;
+    color:#4c1d95;margin-bottom:6px;
+  }
+  .field input,.field select{
+    width:100%;
+    padding:12px 14px;
+    font-family:inherit;font-size:1rem;color:var(--ink);
+    background:#f8fafc;
+    border:2px solid var(--line);
+    border-radius:12px;
+    transition:border-color .2s,box-shadow .2s,background .2s;
+  }
+  .field input:focus,.field select:focus{
+    outline:none;background:#fff;
+    border-color:var(--purple);
+    box-shadow:0 0 0 4px rgba(139,92,246,.15);
+  }
+  .field select{cursor:pointer}
+
+  #add{
+    grid-column:1 / -1;
+    padding:13px 18px;
+    border:none;border-radius:12px;cursor:pointer;
+    font-family:inherit;font-size:1.05rem;font-weight:800;color:#fff;
+    background:linear-gradient(90deg,var(--cyan-dark) 0%,var(--purple-dark) 100%);
+    box-shadow:0 10px 22px rgba(34,211,238,.35);
+    transition:transform .15s,filter .2s,box-shadow .2s;
+  }
+  #add:hover{filter:brightness(1.1);transform:translateY(-1px);box-shadow:0 12px 26px rgba(139,92,246,.4)}
+  #add:active{transform:translateY(0) scale(.99)}
+
+  /* رسالة الخطأ */
+  #error{
+    grid-column:1 / -1;
+    display:none;
+    padding:11px 14px;
+    border-radius:12px;
+    background:#fef2f2;
+    border:1px solid #fecaca;
+    color:var(--danger);
+    font-weight:700;font-size:.93rem;
+  }
+  #error.show{display:block;animation:shake .3s ease}
+  @keyframes shake{
+    0%,100%{transform:translateX(0)}
+    25%{transform:translateX(4px)}
+    75%{transform:translateX(-4px)}
+  }
+
+  /* قائمة المصروفات */
+  .entries-head{
+    display:flex;align-items:center;justify-content:space-between;
+    margin-bottom:14px;
+  }
+  .entries-head h2{
+    font-size:1.15rem;font-weight:800;
+    display:flex;align-items:center;gap:8px;
+  }
+  .entries-head h2::before{
+    content:"";
+    width:5px;height:22px;border-radius:99px;
+    background:linear-gradient(180deg,var(--cyan),var(--purple));
+  }
+  .count-badge{
+    min-width:30px;text-align:center;
+    padding:3px 12px;border-radius:999px;
+    background:linear-gradient(90deg,#cffafe,#ede9fe);
+    color:#4c1d95;font-size:.85rem;font-weight:800;
+  }
+
+  .expense{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:12px 14px;margin-bottom:10px;
+    background:#f8fafc;
+    border:1px solid #eef2f7;
+    border-radius:14px;
+    transition:transform .15s,box-shadow .2s,border-color .2s;
+    animation:slideIn .25s ease;
+  }
+  .expense:hover{
+    transform:translateY(-1px);
+    border-color:rgba(139,92,246,.35);
+    box-shadow:0 6px 16px rgba(139,92,246,.12);
+  }
+  @keyframes slideIn{
+    from{opacity:0;transform:translateY(8px)}
+    to{opacity:1;transform:translateY(0)}
+  }
+  .expense-info{display:flex;flex-direction:column;gap:5px;min-width:0}
+  .expense-title{font-weight:700;font-size:1rem;overflow-wrap:anywhere}
+  .expense-category{
+    align-self:flex-start;
+    font-size:.74rem;font-weight:700;
+    padding:2px 11px;border-radius:999px;
+  }
+  .cat-food{background:#cffafe;color:#0e7490}
+  .cat-transport{background:#ede9fe;color:#6d28d9}
+  .cat-other{background:#fce7f3;color:#be185d}
+
+  .expense-actions{display:flex;align-items:center;gap:10px;flex-shrink:0}
+  .expense-amount{font-weight:800;font-size:1.05rem;color:var(--purple-dark);white-space:nowrap}
+  .expense-amount .currency{font-size:.72rem;font-weight:700;color:var(--muted)}
+  .delete{
+    border:none;cursor:pointer;
+    padding:8px 13px;border-radius:10px;
+    font-family:inherit;font-size:.84rem;font-weight:800;
+    background:#fee2e2;color:var(--danger);
+    transition:background .2s,transform .15s;
+  }
+  .delete:hover{background:#fecaca;transform:scale(1.06)}
+  .delete:active{transform:scale(.97)}
+
+  /* شريط التصفية وزر المسح */
+  .filter-row{
+    display:flex;flex-direction:column;gap:12px;
+    margin-bottom:14px;
+  }
+  .filter-field{flex:1}
+  .filter-field label{margin-bottom:4px}
+  .filter-field select{width:100%}
+  #reset{
+    padding:11px 16px;
+    border:2px solid #fecaca;border-radius:12px;cursor:pointer;
+    font-family:inherit;font-size:.95rem;font-weight:800;
+    background:#fff;color:var(--danger);
+    transition:background .2s,transform .15s,box-shadow .2s;
+  }
+  #reset:hover{background:#fef2f2;transform:translateY(-1px);box-shadow:0 6px 16px rgba(185,28,28,.12)}
+  #reset:active{transform:translateY(0) scale(.99)}
+
+  .empty{
+    text-align:center;color:var(--muted);
+    padding:20px 10px;font-size:.95rem;
+  }
+
+  footer{
+    text-align:center;color:var(--muted);
+    font-size:.82rem;padding-top:4px;
+  }
+
+  /* تجاوب الشاشات */
+  @media (min-width:600px){
+    .form-grid{grid-template-columns:1.8fr 1fr 1fr}
+    .filter-row{flex-direction:row;align-items:flex-end}
+    #reset{flex-shrink:0}
+  }
+  @media (max-width:520px){
+    body{padding:18px 12px 44px}
+    header h1{font-size:1.65rem}
+    .card{padding:16px;border-radius:16px}
+    .total-card{padding:18px}
+    .total-value{font-size:2.15rem}
+    .expense{flex-wrap:wrap}
+    .expense-actions{width:100%;justify-content:space-between}
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>💰 مصروفي</h1>
+      <p>سجّل مصروفاتك اليومية وتابع المجموع بسهولة</p>
+    </header>
+
+    <section class="card total-card" aria-label="المجموع الكلي">
+      <span class="total-label" id="total-label">المجموع الكلي للمصروفات</span>
+      <div class="total-value">
+        <span id="total" aria-live="polite">0</span>
+        <span class="currency">ر.س</span>
+      </div>
+    </section>
+
+    <form id="expense-form" class="card" novalidate autocomplete="off">
+      <div class="form-grid">
+        <div class="field">
+          <label for="title">عنوان المصروف</label>
+          <input type="text" id="title" name="title" placeholder="مثال: قهوة الصباح">
+        </div>
+        <div class="field">
+          <label for="amount">المبلغ</label>
+          <input type="number" id="amount" name="amount" placeholder="0.00" step="any" inputmode="decimal">
+        </div>
+        <div class="field">
+          <label for="category">الفئة</label>
+          <select id="category" name="category">
+            <option value="food">طعام</option>
+            <option value="transport">مواصلات</option>
+            <option value="other">أخرى</option>
+          </select>
+        </div>
+        <button type="submit" id="add">➕ إضافة مصروف</button>
+        <p id="error" role="alert"></p>
+      </div>
+    </form>
+
+    <section class="card" aria-label="قائمة المصروفات">
+      <div class="entries-head">
+        <h2>قائمة المصروفات</h2>
+        <span class="count-badge"><span id="count">0</span> عنصر</span>
+      </div>
+      <div class="filter-row">
+        <div class="field filter-field">
+          <label for="filter">تصفية الفئة</label>
+          <select id="filter" name="filter">
+            <option value="all">الكل</option>
+            <option value="food">طعام</option>
+            <option value="transport">مواصلات</option>
+            <option value="other">أخرى</option>
+          </select>
+        </div>
+        <button type="button" id="reset">🧹 مسح الكل</button>
+      </div>
+      <div id="entries"></div>
+      <p id="empty" class="empty">لا توجد مصروفات بعد — أضف أول مصروف من النموذج أعلاه ✨</p>
+    </section>
+
+    <footer>🔒 تُحفظ بياناتك محليًا في متصفحك فقط (localStorage) — لا يُرسل أي شيء إلى أي خادم.</footer>
+  </div>
+
+<script>
+(function(){
+  'use strict';
+
+  var STORAGE_KEY = 'expenses';
+
+  var CATEGORIES = ['food', 'transport', 'other'];
+
+  var CATEGORY_NAMES = {
+    food: 'طعام',
+    transport: 'مواصلات',
+    other: 'أخرى'
+  };
+
+  var form        = document.getElementById('expense-form');
+  var titleEl     = document.getElementById('title');
+  var amountEl    = document.getElementById('amount');
+  var categoryEl  = document.getElementById('category');
+  var addBtn      = document.getElementById('add');
+  var errorEl     = document.getElementById('error');
+  var entriesEl   = document.getElementById('entries');
+  var totalEl     = document.getElementById('total');
+  var countEl     = document.getElementById('count');
+  var emptyEl     = document.getElementById('empty');
+  var filterEl    = document.getElementById('filter');
+  var resetBtn    = document.getElementById('reset');
+  var totalLabelEl= document.getElementById('total-label');
+
+  var expenses = [];
+
+  /* ---------- أدوات مساعدة ---------- */
+
+  // تنسيق رقم بدون أصفار زائدة: 20 -> "20" ، 12.5 -> "12.5" ، 0 -> "0"
+  function formatNumber(n){
+    var rounded = Math.round(n * 100) / 100;
+    return String(rounded);
+  }
+
+  function isValidItem(it){
+    return it !== null && typeof it === 'object' &&
+           typeof it.title === 'string' && it.title.trim() !== '' &&
+           typeof it.amount === 'number' && isFinite(it.amount) &&
+           typeof it.category === 'string' &&
+           CATEGORIES.indexOf(it.category) !== -1;
+  }
+
+  function save(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
+    }catch(e){ /* تجاهل أخطاء التخزين (وضع خاص/الحصة ممتلئة) */ }
+  }
+
+  function load(){
+    expenses = [];
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        var parsed = JSON.parse(raw);
+        if(Array.isArray(parsed)){
+          expenses = parsed.filter(isValidItem);
+        }
+      }
+    }catch(e){
+      expenses = [];
+    }
+  }
+
+  function showError(msg){
+    errorEl.textContent = msg;
+    errorEl.classList.add('show');
+  }
+
+  function hideError(){
+    errorEl.textContent = '';
+    errorEl.classList.remove('show');
+  }
+
+  /* ---------- العرض ---------- */
+
+  // العناصر المطابقة للفلتر الحالي فقط
+  function visibleItems(){
+    var filter = filterEl.value;
+    return expenses.filter(function(it){
+      return filter === 'all' || it.category === filter;
+    });
+  }
+
+  function render(){
+    entriesEl.innerHTML = '';
+
+    var filter = filterEl.value;
+    var visible = visibleItems();
+
+    visible.forEach(function(item){
+
+      // صف المصروف (العنصر الظاهر في القائمة)
+      var row = document.createElement('div');
+      row.className = 'expense';
+      row.setAttribute('data-category', item.category);
+
+      var info = document.createElement('div');
+      info.className = 'expense-info';
+
+      var t = document.createElement('span');
+      t.className = 'expense-title';
+      t.textContent = item.title;
+
+      var cat = document.createElement('span');
+      cat.className = 'expense-category cat-' + item.category;
+      cat.textContent = CATEGORY_NAMES[item.category] || CATEGORY_NAMES.other;
+
+      info.appendChild(t);
+      info.appendChild(cat);
+
+      var actions = document.createElement('div');
+      actions.className = 'expense-actions';
+
+      var amt = document.createElement('span');
+      amt.className = 'expense-amount';
+      var num = document.createElement('span');
+      num.textContent = formatNumber(item.amount);
+      var cur = document.createElement('span');
+      cur.className = 'currency';
+      cur.textContent = ' ر.س';
+      amt.appendChild(num);
+      amt.appendChild(cur);
+
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'delete';
+      del.textContent = '🗑 حذف';
+      del.setAttribute('aria-label', 'حذف ' + item.title);
+
+      actions.appendChild(amt);
+      actions.appendChild(del);
+
+      row.appendChild(info);
+      row.appendChild(actions);
+      entriesEl.appendChild(row);
+    });
+
+    countEl.textContent = String(visible.length);
+    emptyEl.style.display = visible.length ? 'none' : 'block';
+
+    // المجموع يعكس العناصر المعروضة فقط (all = المجموع الكامل)
+    var sum = visible.reduce(function(s, it){ return s + it.amount; }, 0);
+    totalEl.textContent = formatNumber(sum);
+
+    // تسمية المجموع تتغير حسب الفلتر النشط
+    if(totalLabelEl){
+      totalLabelEl.textContent = (filter === 'all')
+        ? 'المجموع الكلي للمصروفات'
+        : 'مجموع مصروفات ' + (CATEGORY_NAMES[filter] || '');
+    }
+  }
+
+  /* ---------- الإضافة ---------- */
+
+  function addExpense(){
+    var title = titleEl.value.trim();
+    var amountRaw = String(amountEl.value).trim();
+    var amount = parseFloat(amountRaw);
+
+    if(title === ''){
+      showError('⚠️ الرجاء إدخال عنوان للمصروف.');
+      titleEl.focus();
+      return;
+    }
+    if(amountRaw === '' || !isFinite(amount) || amount <= 0){
+      showError('⚠️ الرجاء إدخال مبلغ موجب أكبر من صفر.');
+      amountEl.focus();
+      return;
+    }
+
+    expenses.push({
+      title: title,
+      amount: amount,
+      category: categoryEl.value,
+      createdAt: Date.now()
+    });
+
+    save();
+    render();
+    hideError();
+
+    titleEl.value = '';
+    amountEl.value = '';
+    titleEl.focus();
+  }
+
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    addExpense();
+  });
+
+  /* ---------- الحذف (تفويض الأحداث) ---------- */
+
+  entriesEl.addEventListener('click', function(e){
+    var btn = e.target.closest ? e.target.closest('.delete') : null;
+    if(!btn) return;
+
+    var row = btn.closest('.expense');
+    if(!row) return;
+
+    var rows = entriesEl.querySelectorAll('.expense');
+    var index = Array.prototype.indexOf.call(rows, row);
+    if(index > -1){
+      // الفهرس داخل القائمة المعروضة يُترجم إلى الفهرس الفعلي في المصفوفة
+      var visible = visibleItems();
+      var target = visible[index];
+      var realIndex = expenses.indexOf(target);
+      if(realIndex === -1) return;
+      expenses.splice(realIndex, 1);
+      save();
+      render();
+      hideError();
+    }
+  });
+
+  /* ---------- التصفية: إعادة رسم المطابق فقط وإعادة حساب المجموع ---------- */
+
+  filterEl.addEventListener('change', function(){
+    render();
+  });
+
+  /* ---------- المسح الفوري لجميع البيانات (الواجهة + التخزين) ---------- */
+
+  resetBtn.addEventListener('click', function(){
+    expenses = [];                              // تفريغ المصفوفة فورًا
+    try{
+      localStorage.removeItem(STORAGE_KEY);     // إزالة مفتاح التخزين
+    }catch(e){ /* تجاهل أخطاء التخزين */ }
+    filterEl.value = 'all';
+    hideError();
+    render();                                   // #entries يصبح فارغًا و#total = 0
+  });
+
+  /* ---------- الاستعادة عند التحميل ---------- */
+
+  load();
+  render();
+})();
+</script>
+</body>
+</html>

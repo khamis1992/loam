@@ -1,0 +1,35 @@
+{
+  "id": "hard",
+  "name": "مهام متعددة الخطوات (ملفات + شل)",
+  "version": 1,
+  "cases": [
+    {
+      "id": "csv-sum-report",
+      "setup": [
+        { "type": "write_file", "path": "data.csv", "text": "بند,المبلغ\nأ,10\nب,20\nج,30\n" }
+      ],
+      "prompt": "اقرأ الملف data.csv واحسب مجموع عمود «المبلغ». ثم اكتب ملف report.md يبدأ سطره الأول بكلمة «التقرير» ويحتوي على المجموع الصحيح.",
+      "verify": [
+        { "type": "file_exists", "path": "report.md" },
+        { "type": "file_contains", "path": "report.md", "text": "التقرير" },
+        { "type": "file_matches", "path": "report.md", "pattern": "\\b60\\b" }
+      ],
+      "budget": { "maxSteps": 14, "timeoutSec": 240 },
+      "tags": ["files", "multi-step"]
+    },
+    {
+      "id": "fix-broken-script",
+      "setup": [
+        { "type": "write_file", "path": "calc.js", "text": "const values = [5, 10, 20, 20];\nconst total = 0;\nconsole.log(total);\n" }
+      ],
+      "prompt": "الملف calc.js مكسور: المطلوب أن يجمع أرقام المصفوفة values (بدون تعديل القيم) ويطبع المجموع عند تشغيله بـ node. أصلح خطأ الحساب فقط، ثم شغّل الملف واكتب المخرجات (الرقم فقط) في ملف out.txt.",
+      "verify": [
+        { "type": "shell_exit", "command": "node calc.js" },
+        { "type": "shell_contains", "command": "node calc.js", "text": "55" },
+        { "type": "file_contains", "path": "out.txt", "text": "55" }
+      ],
+      "budget": { "maxSteps": 14, "timeoutSec": 240 },
+      "tags": ["shell", "multi-step"]
+    }
+  ]
+}

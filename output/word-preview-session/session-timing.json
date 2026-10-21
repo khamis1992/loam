@@ -1,0 +1,12 @@
+{
+  "coldMs": 2627,
+  "warmMs": 163,
+  "cacheMs": 0,
+  "recoverMs": 4342,
+  "renders": 4,
+  "recoveries": 1,
+  "owners": {
+    "first": 47064,
+    "third": 10380
+  }
+}

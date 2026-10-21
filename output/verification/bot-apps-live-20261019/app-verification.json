@@ -1,0 +1,270 @@
+{
+  "entry": "index.html",
+  "scenarios": [
+    {
+      "name": "Adding entries calculates sum",
+      "steps": [
+        {
+          "action": "fill",
+          "selector": "#title",
+          "value": "خبز"
+        },
+        {
+          "action": "fill",
+          "selector": "#amount",
+          "value": "12.5"
+        },
+        {
+          "action": "select",
+          "selector": "#category",
+          "value": "food"
+        },
+        {
+          "action": "click",
+          "selector": "#add"
+        },
+        {
+          "action": "fill",
+          "selector": "#title",
+          "value": "حافلة"
+        },
+        {
+          "action": "fill",
+          "selector": "#amount",
+          "value": "7.5"
+        },
+        {
+          "action": "select",
+          "selector": "#category",
+          "value": "transport"
+        },
+        {
+          "action": "click",
+          "selector": "#add"
+        },
+        {
+          "action": "count",
+          "selector": ".expense",
+          "count": 2
+        },
+        {
+          "action": "text",
+          "selector": "#total",
+          "value": "20"
+        }
+      ]
+    },
+    {
+      "name": "Persistence after reload",
+      "steps": [
+        {
+          "action": "fill",
+          "selector": "#title",
+          "value": "قهوة"
+        },
+        {
+          "action": "fill",
+          "selector": "#amount",
+          "value": "9"
+        },
+        {
+          "action": "select",
+          "selector": "#category",
+          "value": "food"
+        },
+        {
+          "action": "click",
+          "selector": "#add"
+        },
+        {
+          "action": "reload"
+        },
+        {
+          "action": "text",
+          "selector": "#entries",
+          "value": "قهوة"
+        },
+        {
+          "action": "text",
+          "selector": "#total",
+          "value": "9"
+        }
+      ]
+    },
+    {
+      "name": "Deleting recomputes total",
+      "steps": [
+        {
+          "action": "fill",
+          "selector": "#title",
+          "value": "حليب"
+        },
+        {
+          "action": "fill",
+          "selector": "#amount",
+          "value": "10"
+        },
+        {
+          "action": "select",
+          "selector": "#category",
+          "value": "food"
+        },
+        {
+          "action": "click",
+          "selector": "#add"
+        },
+        {
+          "action": "click",
+          "selector": ".expense .delete"
+        },
+        {
+          "action": "count",
+          "selector": ".expense",
+          "count": 0
+        },
+        {
+          "action": "text",
+          "selector": "#total",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "name": "Invalid input rejected",
+      "steps": [
+        {
+          "action": "fill",
+          "selector": "#title",
+          "value": "خطأ"
+        },
+        {
+          "action": "fill",
+          "selector": "#amount",
+          "value": "-1"
+        },
+        {
+          "action": "select",
+          "selector": "#category",
+          "value": "food"
+        },
+        {
+          "action": "click",
+          "selector": "#add"
+        },
+        {
+          "action": "count",
+          "selector": ".expense",
+          "count": 0
+        },
+        {
+          "action": "visible",
+          "selector": "#error"
+        }
+      ]
+    },
+    {
+      "name": "Filtering shows matching entries and subtotal",
+      "steps": [
+        {
+          "action": "fill",
+          "selector": "#title",
+          "value": "طعام"
+        },
+        {
+          "action": "fill",
+          "selector": "#amount",
+          "value": "15"
+        },
+        {
+          "action": "select",
+          "selector": "#category",
+          "value": "food"
+        },
+        {
+          "action": "click",
+          "selector": "#add"
+        },
+        {
+          "action": "fill",
+          "selector": "#title",
+          "value": "سيارة"
+        },
+        {
+          "action": "fill",
+          "selector": "#amount",
+          "value": "8"
+        },
+        {
+          "action": "select",
+          "selector": "#category",
+          "value": "transport"
+        },
+        {
+          "action": "click",
+          "selector": "#add"
+        },
+        {
+          "action": "select",
+          "selector": "#filter",
+          "value": "food"
+        },
+        {
+          "action": "count",
+          "selector": ".expense",
+          "count": 1
+        },
+        {
+          "action": "text",
+          "selector": "#total",
+          "value": "15"
+        }
+      ]
+    },
+    {
+      "name": "Reset clears persisted entries",
+      "steps": [
+        {
+          "action": "fill",
+          "selector": "#title",
+          "value": "إزالة"
+        },
+        {
+          "action": "fill",
+          "selector": "#amount",
+          "value": "6"
+        },
+        {
+          "action": "select",
+          "selector": "#category",
+          "value": "food"
+        },
+        {
+          "action": "click",
+          "selector": "#add"
+        },
+        {
+          "action": "click",
+          "selector": "#reset"
+        },
+        {
+          "action": "count",
+          "selector": ".expense",
+          "count": 0
+        },
+        {
+          "action": "reload"
+        },
+        {
+          "action": "count",
+          "selector": ".expense",
+          "count": 0
+        },
+        {
+          "action": "text",
+          "selector": "#total",
+          "value": "0"
+        }
+      ]
+    }
+  ]
+}

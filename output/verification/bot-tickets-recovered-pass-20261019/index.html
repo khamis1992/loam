@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>إدارة التذاكر — سماوي وبنفسجي</title>
+<style>
+  /* ===== أساسيات عامة ===== */
+  :root {
+    --sky-50:  #eef7fd;
+    --sky-100: #d7ecfb;
+    --sky-300: #7cc4f2;
+    --sky-500: #2196d9;
+    --sky-600: #1878b4;
+    --sky-700: #125e8f;
+    --violet-100: #ece4fb;
+    --violet-300: #c3aef5;
+    --violet-500: #8b5cf6;
+    --violet-600: #7141e0;
+    --violet-700: #5a2fb8;
+    --ink: #1d2440;
+    --muted: #5b6480;
+    --danger: #c0392b;
+    --danger-bg: #fdecea;
+    --ok: #1e7d4f;
+    --ok-bg: #e8f7ef;
+    --card: #ffffff;
+    --radius: 14px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: "Segoe UI", Tahoma, "Noto Kufi Arabic", "Noto Sans Arabic", Arial, sans-serif;
+    color: var(--ink);
+    min-height: 100vh;
+    background:
+      radial-gradient(1100px 520px at 85% -10%, rgba(139, 92, 246, 0.22), transparent 60%),
+      radial-gradient(900px 480px at 10% 0%,  rgba(33, 150, 217, 0.20), transparent 55%),
+      linear-gradient(160deg, var(--sky-50) 0%, #f4f1fd 55%, var(--violet-100) 100%);
+    background-attachment: fixed;
+    line-height: 1.6;
+  }
+
+  .wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 20px 16px 48px;
+  }
+
+  /* ===== الترويسة ===== */
+  header.app-header {
+    text-align: center;
+    padding: 26px 18px 22px;
+    border-radius: var(--radius);
+    background: linear-gradient(120deg, var(--sky-600) 0%, var(--violet-600) 100%);
+    color: #fff;
+    box-shadow: 0 10px 26px rgba(84, 63, 190, 0.28);
+    margin-bottom: 22px;
+  }
+
+  header.app-header h1 {
+    margin: 0 0 6px;
+    font-size: 1.6rem;
+    letter-spacing: 0.2px;
+  }
+
+  header.app-header p {
+    margin: 0;
+    opacity: 0.92;
+    font-size: 0.98rem;
+  }
+
+  .badge {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 4px 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    font-size: 0.82rem;
+  }
+
+  /* ===== البطاقات ===== */
+  .card {
+    background: var(--card);
+    border: 1px solid rgba(33, 150, 217, 0.18);
+    border-radius: var(--radius);
+    box-shadow: 0 6px 18px rgba(29, 36, 64, 0.07);
+    padding: 18px;
+    margin-bottom: 20px;
+  }
+
+  .card h2 {
+    margin: 0 0 4px;
+    font-size: 1.12rem;
+    color: var(--violet-700);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card h2::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--sky-500), var(--violet-500));
+    flex: none;
+  }
+
+  .card .hint {
+    margin: 0 0 14px;
+    color: var(--muted);
+    font-size: 0.88rem;
+  }
+
+  /* ===== النماذج ===== */
+  form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    align-items: end;
+  }
+
+  .field { display: flex; flex-direction: column; gap: 5px; }
+
+  label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--sky-700);
+  }
+
+  input {
+    font-family: inherit;
+    font-size: 0.95rem;
+    color: var(--ink);
+    padding: 10px 12px;
+    border: 1.5px solid var(--sky-300);
+    border-radius: 10px;
+    background: #fbfdff;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    width: 100%;
+  }
+
+  input:focus {
+    border-color: var(--violet-500);
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.18);
+    background: #fff;
+  }
+
+  button {
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 11px 18px;
+    cursor: pointer;
+    transition: transform 0.12s, box-shadow 0.12s, filter 0.12s;
+    white-space: nowrap;
+  }
+
+  button:hover  { filter: brightness(1.06); transform: translateY(-1px); }
+  button:active { transform: translateY(0); }
+  button:disabled { opacity: 0.6; cursor: wait; transform: none; }
+
+  #create {
+    background: linear-gradient(135deg, var(--sky-500), var(--sky-700));
+    box-shadow: 0 6px 14px rgba(24, 120, 180, 0.30);
+  }
+
+  #update {
+    background: linear-gradient(135deg, var(--violet-500), var(--violet-700));
+    box-shadow: 0 6px 14px rgba(113, 65, 224, 0.30);
+  }
+
+  /* ===== رسائل الحالة ===== */
+  #error {
+    display: none;
+    margin: 0 0 16px;
+    padding: 11px 14px;
+    border-radius: 10px;
+    border: 1.5px solid #f2b8b5;
+    background: var(--danger-bg);
+    color: var(--danger);
+    font-weight: 600;
+    font-size: 0.93rem;
+  }
+
+  #error.show { display: block; }
+
+  #ok {
+    display: none;
+    margin: 0 0 16px;
+    padding: 11px 14px;
+    border-radius: 10px;
+    border: 1.5px solid #a9dcc4;
+    background: var(--ok-bg);
+    color: var(--ok);
+    font-weight: 600;
+    font-size: 0.93rem;
+  }
+
+  #ok.show { display: block; }
+
+  /* ===== جدول التذاكر ===== */
+  .table-head {
+    display: grid;
+    grid-template-columns: 1.1fr 2fr 1fr 0.7fr;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: linear-gradient(120deg, var(--sky-100), var(--violet-100));
+    color: var(--sky-700);
+    font-weight: 700;
+    font-size: 0.85rem;
+  }
+
+  .ticket {
+    display: grid;
+    grid-template-columns: 1.1fr 2fr 1fr 0.7fr;
+    gap: 10px;
+    align-items: center;
+    padding: 11px 12px;
+    margin-top: 8px;
+    border-radius: 10px;
+    border: 1px solid rgba(33, 150, 217, 0.22);
+    background: #fbfdff;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .ticket:hover {
+    border-color: var(--violet-300);
+    background: #f7f4ff;
+  }
+
+  .ticket .t-id {
+    font-weight: 700;
+    color: var(--sky-700);
+    direction: ltr;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+
+  .ticket [data-title] {
+    overflow-wrap: anywhere;
+  }
+
+  .ticket [data-status] {
+    display: inline-block;
+    padding: 2px 12px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+  }
+
+  .ticket [data-status="open"] {
+    background: var(--sky-100);
+    color: var(--sky-700);
+    border-color: var(--sky-300);
+  }
+
+  .ticket [data-status="closed"] {
+    background: var(--violet-100);
+    color: var(--violet-700);
+    border-color: var(--violet-300);
+  }
+
+  .ticket [data-version] {
+    font-weight: 700;
+    color: var(--violet-700);
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .empty {
+    margin-top: 10px;
+    padding: 16px 12px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.92rem;
+    border: 1.5px dashed var(--sky-300);
+    border-radius: 10px;
+    background: #fbfdff;
+  }
+
+  /* ===== التجاوب ===== */
+  @media (max-width: 640px) {
+    .wrap { padding: 14px 10px 40px; }
+
+    header.app-header h1 { font-size: 1.3rem; }
+
+    form { grid-template-columns: 1fr; }
+
+    button { width: 100%; }
+
+    .table-head { display: none; }
+
+    .ticket {
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding: 12px;
+    }
+
+    .ticket .t-id {
+      grid-column: 1 / -1;
+      border-bottom: 1px dashed var(--sky-300);
+      padding-bottom: 6px;
+      margin-bottom: 2px;
+    }
+
+    .ticket [data-title] { grid-column: 1 / -1; }
+
+    .ticket [data-status] { justify-self: start; }
+
+    .ticket [data-version] { justify-self: end; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="app-header">
+    <h1>نظام إدارة التذاكر</h1>
+    <p>إنشاء التذاكر وتعديلها بحماية من ضياع التعديلات المتزامنة عبر رقم الإصدار</p>
+    <span class="badge">تحكم تفاؤلي بالإصدار — كل تعديل يرفع رقم الإصدار</span>
+  </header>
+
+  <div id="error" role="alert"></div>
+  <div id="ok" role="status"></div>
+
+  <!-- نموذج إنشاء تذكرة -->
+  <section class="card">
+    <h2>إنشاء تذكرة جديدة</h2>
+    <p class="hint">المعرّف: 1–40 حرفًا إنجليزيًا أو رقمًا أو _ أو - ، والعنوان نص غير فارغ.</p>
+    <form id="createForm" novalidate>
+      <div class="field">
+        <label for="id">المعرّف</label>
+        <input id="id" name="id" type="text" autocomplete="off" placeholder="مثال: a-1">
+      </div>
+      <div class="field">
+        <label for="title">العنوان</label>
+        <input id="title" name="title" type="text" autocomplete="off" placeholder="عنوان التذكرة">
+      </div>
+      <button id="create" type="submit">إنشاء التذكرة</button>
+    </form>
+  </section>
+
+  <!-- نموذج تعديل تذكرة -->
+  <section class="card">
+    <h2>تعديل تذكرة قائمة</h2>
+    <p class="hint">أدخل رقم الإصدار الحالي كما تراه في الجدول؛ إن تغيّر السجل قبلك سيرفض الخادم التعديل برسالة تعارض.</p>
+    <form id="editForm" novalidate>
+      <div class="field">
+        <label for="editId">المعرّف</label>
+        <input id="editId" name="editId" type="text" autocomplete="off" placeholder="معرّف التذكرة">
+      </div>
+      <div class="field">
+        <label for="editTitle">العنوان الجديد</label>
+        <input id="editTitle" name="editTitle" type="text" autocomplete="off" placeholder="العنوان المعدّل">
+      </div>
+      <div class="field">
+        <label for="editStatus">الحالة</label>
+        <input id="editStatus" name="editStatus" type="text" autocomplete="off" placeholder="open أو closed">
+      </div>
+      <div class="field">
+        <label for="editVersion">رقم الإصدار</label>
+        <input id="editVersion" name="editVersion" type="text" inputmode="numeric" autocomplete="off" placeholder="مثال: 1">
+      </div>
+      <button id="update" type="submit">حفظ التعديل</button>
+    </form>
+  </section>
+
+  <!-- جدول التذاكر -->
+  <section class="card">
+    <h2>قائمة التذاكر</h2>
+    <p class="hint">تُحدَّث القائمة من الخادم عند التحميل وبعد كل طلب.</p>
+    <div class="table-head" aria-hidden="true">
+      <span>المعرّف</span>
+      <span>العنوان</span>
+      <span>الحالة</span>
+      <span>الإصدار</span>
+    </div>
+    <div id="tickets"></div>
+    <div id="empty" class="empty">لا توجد تذاكر بعد — أنشئ أول تذكرة من النموذج أعلاه.</div>
+  </section>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var errorBox = document.getElementById('error');
+  var okBox = document.getElementById('ok');
+  var ticketsBox = document.getElementById('tickets');
+  var emptyBox = document.getElementById('empty');
+
+  function showError(message) {
+    errorBox.textContent = message;
+    errorBox.classList.add('show');
+    okBox.classList.remove('show');
+  }
+
+  function showOk(message) {
+    okBox.textContent = message;
+    okBox.classList.add('show');
+    errorBox.classList.remove('show');
+  }
+
+  function hideMessages() {
+    errorBox.classList.remove('show');
+    okBox.classList.remove('show');
+  }
+
+  // بناء صف التذكرة: .ticket[data-id="..."] يحتوي [data-title] و[data-status] و[data-version]
+  function buildTicketRow(item) {
+    var row = document.createElement('div');
+    row.className = 'ticket';
+    row.setAttribute('data-id', item.id);
+
+    var idCell = document.createElement('span');
+    idCell.className = 't-id';
+    idCell.textContent = item.id;
+
+    var titleCell = document.createElement('span');
+    titleCell.setAttribute('data-title', '');
+    titleCell.textContent = item.title;
+
+    var statusCell = document.createElement('span');
+    statusCell.setAttribute('data-status', item.status);
+    statusCell.textContent = item.status === 'open' ? 'مفتوحة' : 'مغلقة';
+
+    var versionCell = document.createElement('span');
+    versionCell.setAttribute('data-version', '');
+    versionCell.textContent = String(item.version);
+
+    row.appendChild(idCell);
+    row.appendChild(titleCell);
+    row.appendChild(statusCell);
+    row.appendChild(versionCell);
+    return row;
+  }
+
+  // جلب القائمة من الخادم وإعادة بناء الجدول كاملًا
+  function refreshTickets() {
+    return fetch('/api/tickets', { method: 'GET' })
+      .then(function (res) {
+        if (!res.ok) throw new Error('http_' + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        var items = (data && Array.isArray(data.items)) ? data.items : [];
+        ticketsBox.textContent = '';
+        for (var i = 0; i < items.length; i++) {
+          ticketsBox.appendChild(buildTicketRow(items[i]));
+        }
+        emptyBox.style.display = items.length === 0 ? 'block' : 'none';
+      })
+      .catch(function () {
+        emptyBox.style.display = 'none';
+        showError('تعذّر تحميل قائمة التذاكر من الخادم.');
+      });
+  }
+
+  // قراءة نص حقل مع إزالة المسافات الطرفية
+  function trimmedValue(id) {
+    return String(document.getElementById(id).value || '').trim();
+  }
+
+  function isBusy(form) {
+    return form.getAttribute('data-busy') === '1';
+  }
+
+  function setBusy(form, busy) {
+    if (busy) {
+      form.setAttribute('data-busy', '1');
+    } else {
+      form.removeAttribute('data-busy');
+    }
+    var buttons = form.querySelectorAll('button[type="submit"]');
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].disabled = busy;
+    }
+  }
+
+  // ===== إنشاء تذكرة: POST /api/tickets بجسم {id,title} =====
+  document.getElementById('createForm').addEventListener('submit', function (event) {
+    event.preventDefault();
+    if (isBusy(this)) return;
+
+    var id = trimmedValue('id');
+    var title = trimmedValue('title');
+
+    if (!id || !title) {
+      showError('يرجى إدخال المعرّف والعنوان قبل الإنشاء.');
+      return;
+    }
+
+    var form = this;
+    setBusy(form, true);
+    hideMessages();
+
+    fetch('/api/tickets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ id: id, title: title })
+    })
+      .then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          return { status: res.status, data: data };
+        });
+      })
+      .then(function (result) {
+        if (result.status === 201) {
+          showOk('تم إنشاء التذكرة بنجاح.');
+          return refreshTickets();
+        }
+        if (result.status === 409 && result.data && result.data.error === 'duplicate') {
+          showError('المعرّف مستخدم مسبقًا — اختر معرّفًا آخر.');
+        } else if (result.status === 400) {
+          showError('بيانات غير صالحة: تحقق من صيغة المعرّف (1–40 حرفًا إنجليزيًا/رقمًا/_/-) ومن نص العنوان.');
+        } else {
+          showError('تعذّر إنشاء التذكرة (رمز ' + result.status + ').');
+        }
+        return refreshTickets();
+      })
+      .catch(function () {
+        showError('تعذّر الاتصال بالخادم أثناء إنشاء التذكرة.');
+        return refreshTickets();
+      })
+      .then(function () {
+        setBusy(form, false);
+      });
+  });
+
+  // ===== تعديل تذكرة: PATCH /api/tickets/<id> بجسم {title,status,version} =====
+  document.getElementById('editForm').addEventListener('submit', function (event) {
+    event.preventDefault();
+    if (isBusy(this)) return;
+
+    var id = trimmedValue('editId');
+    var title = trimmedValue('editTitle');
+    var status = trimmedValue('editStatus');
+    var versionRaw = trimmedValue('editVersion');
+
+    if (!id || !title || !status || !versionRaw) {
+      showError('يرجى تعبئة جميع حقول التعديل قبل الحفظ.');
+      return;
+    }
+
+    // تحويل رقم الإصدار إلى number قبل الإرسال
+    var version = Number(versionRaw);
+    if (!Number.isSafeInteger(version) || version <= 0) {
+      showError('رقم الإصدار يجب أن يكون عددًا صحيحًا موجبًا.');
+      return;
+    }
+
+    var form = this;
+    setBusy(form, true);
+    hideMessages();
+
+    fetch('/api/tickets/' + encodeURIComponent(id), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ title: title, status: status, version: version })
+    })
+      .then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          return { status: res.status, data: data };
+        });
+      })
+      .then(function (result) {
+        if (result.status === 200) {
+          showOk('تم حفظ التعديل بنجاح وارتفع رقم الإصدار.');
+          return refreshTickets();
+        }
+        if (result.status === 409 && result.data && result.data.error === 'version_conflict') {
+          showError('تعارض في الإصدار: عدّل السجل آخرًا شخص آخر. حدّث رقم الإصدار من الجدول ثم أعد المحاولة.');
+        } else if (result.status === 404) {
+          showError('التذكرة غير موجودة — تحقق من المعرّف.');
+        } else if (result.status === 400) {
+          showError('بيانات غير صالحة: الحالة يجب أن تكون open أو closed، والعنوان نصًا غير فارغ، والإصدار عددًا صحيحًا موجبًا.');
+        } else {
+          showError('تعذّر حفظ التعديل (رمز ' + result.status + ').');
+        }
+        return refreshTickets();
+      })
+      .catch(function () {
+        showError('تعذّر الاتصال بالخادم أثناء حفظ التعديل.');
+        return refreshTickets();
+      })
+      .then(function () {
+        setBusy(form, false);
+      });
+  });
+
+  // تحميل القائمة عند فتح الصفحة
+  refreshTickets();
+})();
+</script>
+</body>
+</html>

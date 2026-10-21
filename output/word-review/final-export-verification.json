@@ -1,0 +1,17 @@
+{
+  "identity": {
+    "application": "Loam",
+    "version": "0.5.6",
+    "apiVersion": 1,
+    "profileId": "cefabdd1b2d587a9438348d9169c11404c39924a0875bb1c0a59b0a3f5d8f957"
+  },
+  "exportMatchesVisuallyReviewedDocument": true,
+  "verifiedParts": [
+    "document",
+    "styles",
+    "header",
+    "footer",
+    "numbering"
+  ],
+  "download": "Loam — من الفكرة إلى مستند جاهز.docx"
+}

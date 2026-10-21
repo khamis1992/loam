@@ -1,0 +1,65 @@
+{
+  "ranAt": "2026-10-19T03:56:19.529Z",
+  "scenarios": [
+    {
+      "id": "create",
+      "status": "completed",
+      "ms": 2571,
+      "modelCalls": 10,
+      "toolCalls": 4,
+      "repairs": 0,
+      "verification": "node --test app.test.cjs",
+      "independentOk": true,
+      "memory": {
+        "files": 27,
+        "edges": 2
+      }
+    },
+    {
+      "id": "fix",
+      "status": "completed",
+      "ms": 2491,
+      "modelCalls": 11,
+      "toolCalls": 3,
+      "repairs": 0,
+      "verification": "node --test calculator.test.cjs",
+      "independentOk": true,
+      "memory": {
+        "files": 28,
+        "edges": 2
+      }
+    },
+    {
+      "id": "modify",
+      "status": "completed",
+      "ms": 2388,
+      "modelCalls": 10,
+      "toolCalls": 4,
+      "repairs": 0,
+      "verification": "node --test math.test.cjs",
+      "independentOk": true,
+      "memory": {
+        "files": 27,
+        "edges": 2
+      }
+    },
+    {
+      "id": "migrate",
+      "status": "completed",
+      "ms": 2480,
+      "modelCalls": 10,
+      "toolCalls": 4,
+      "repairs": 0,
+      "verification": "node --test tasks.test.cjs",
+      "independentOk": true,
+      "memory": {
+        "files": 28,
+        "edges": 2
+      }
+    }
+  ],
+  "overhead": {
+    "modelCalls": 41,
+    "stages": 52
+  }
+}

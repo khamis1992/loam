@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>حاسبة عروض الأسعار</title>
+  <style>
+    /* ===================== أساسيات ===================== */
+    *, *::before, *::after { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Tahoma, "Noto Kufi Arabic", "Noto Naskh Arabic", system-ui, sans-serif;
+      color: #1e293b;
+      background: linear-gradient(160deg, #a5f3fc 0%, #c7d2fe 38%, #ddd6fe 68%, #f3e8ff 100%);
+      background-attachment: fixed;
+    }
+
+    /* توهجات زخرفية سماوية وبنفسجية */
+    .glow {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(70px);
+      opacity: .55;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .glow-cyan {
+      width: 420px; height: 420px;
+      background: radial-gradient(circle, #22d3ee, transparent 70%);
+      top: -140px; left: -120px;
+    }
+    .glow-violet {
+      width: 460px; height: 460px;
+      background: radial-gradient(circle, #a78bfa, transparent 70%);
+      bottom: -160px; right: -140px;
+    }
+
+    .page {
+      position: relative;
+      z-index: 1;
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 28px 18px 56px;
+    }
+
+    /* ===================== الترويسة ===================== */
+    .hero { text-align: center; margin-bottom: 26px; }
+    .logo {
+      width: 58px; height: 58px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, #06b6d4, #7c3aed);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 12px;
+      box-shadow: 0 10px 24px rgba(124, 58, 237, .35);
+    }
+    .hero h1 {
+      margin: 0 0 10px;
+      font-size: clamp(1.7rem, 4vw, 2.4rem);
+      font-weight: 800;
+      background: linear-gradient(90deg, #0e7490, #7c3aed);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .subtitle {
+      margin: 0 auto;
+      max-width: 660px;
+      color: #475569;
+      font-size: 1rem;
+      line-height: 1.8;
+    }
+
+    /* ===================== البطاقات ===================== */
+    .card {
+      background: rgba(255, 255, 255, .88);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, .75);
+      border-radius: 20px;
+      box-shadow: 0 12px 32px rgba(76, 29, 149, .14);
+      padding: 22px;
+      margin-bottom: 20px;
+    }
+    .card h2 {
+      margin: 0 0 16px;
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: #312e81;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .card h2::before {
+      content: "";
+      width: 10px; height: 22px;
+      border-radius: 6px;
+      flex: none;
+      background: linear-gradient(180deg, #06b6d4, #7c3aed);
+    }
+
+    /* ===================== الأصناف ===================== */
+    .item-row {
+      border: 1px solid rgba(124, 58, 237, .16);
+      background: linear-gradient(135deg, rgba(6, 182, 212, .08), rgba(139, 92, 246, .08));
+      border-radius: 16px;
+      padding: 14px 14px 16px;
+      margin-bottom: 12px;
+    }
+    .item-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .item-badge {
+      font-size: .8rem;
+      font-weight: 700;
+      color: #6d28d9;
+      background: linear-gradient(135deg, rgba(6, 182, 212, .15), rgba(139, 92, 246, .18));
+      border: 1px solid rgba(124, 58, 237, .2);
+      padding: 4px 12px;
+      border-radius: 999px;
+    }
+    .item-fields {
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+      gap: 12px;
+    }
+    .field label {
+      display: block;
+      font-size: .83rem;
+      font-weight: 700;
+      color: #475569;
+      margin-bottom: 6px;
+    }
+    .input {
+      width: 100%;
+      padding: 10px 12px;
+      font-family: inherit;
+      font-size: 1rem;
+      color: #1e293b;
+      background: #fff;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 12px;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .input:focus {
+      outline: none;
+      border-color: #8b5cf6;
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, .18);
+    }
+    .input::placeholder { color: #94a3b8; }
+
+    .items-empty {
+      text-align: center;
+      color: #64748b;
+      font-size: .92rem;
+      padding: 14px;
+      border: 1.5px dashed #c4b5fd;
+      border-radius: 14px;
+      margin-bottom: 12px;
+    }
+
+    /* ===================== الأزرار ===================== */
+    .btn {
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 700;
+      border-radius: 12px;
+      transition: transform .15s ease, box-shadow .15s ease, filter .15s ease, background .15s ease;
+    }
+    .btn:focus-visible {
+      outline: 3px solid rgba(139, 92, 246, .4);
+      outline-offset: 2px;
+    }
+    .btn-add {
+      width: 100%;
+      padding: 12px;
+      font-size: 1rem;
+      color: #6d28d9;
+      background: rgba(255, 255, 255, .75);
+      border: 2px dashed #a78bfa;
+    }
+    .btn-add:hover { background: #fff; }
+    .btn-remove {
+      padding: 6px 14px;
+      font-size: .85rem;
+      color: #be123c;
+      background: #fff;
+      border: 1px solid #fecdd3;
+      border-radius: 10px;
+    }
+    .btn-remove:hover { background: #fff1f2; }
+    .btn-primary {
+      padding: 14px 34px;
+      font-size: 1.1rem;
+      color: #fff;
+      background: linear-gradient(135deg, #06b6d4, #7c3aed);
+      box-shadow: 0 10px 24px rgba(124, 58, 237, .35);
+    }
+    .btn-primary:hover { transform: translateY(-2px); filter: brightness(1.06); }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled { opacity: .65; cursor: wait; transform: none; }
+
+    /* ===================== الخصم والشحن ===================== */
+    .settings-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .hint {
+      margin: 12px 0 0;
+      font-size: .82rem;
+      color: #64748b;
+    }
+
+    /* ===================== زر الحساب ===================== */
+    .actions {
+      display: flex;
+      justify-content: center;
+      margin: 26px 0;
+    }
+
+    /* ===================== رسائل الخطأ ===================== */
+    .error-box {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      background: linear-gradient(135deg, #fff1f2, #ffe4e6);
+      border: 1px solid #fda4af;
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin: 0 0 20px;
+      color: #9f1239;
+      font-weight: 600;
+      line-height: 1.7;
+    }
+    .error-icon { flex: none; font-size: 1.1rem; }
+
+    /* ===================== النتائج ===================== */
+    .results-card {
+      background: linear-gradient(135deg, #0e7490 0%, #5b21b6 60%, #6d28d9 100%);
+      color: #fff;
+      border: none;
+    }
+    .results-card h2 { color: #e0f2fe; }
+    .results-card h2::before { background: linear-gradient(180deg, #67e8f9, #c4b5fd); }
+    .results-list { margin: 0; }
+    .result-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 4px;
+      border-bottom: 1px solid rgba(255, 255, 255, .18);
+    }
+    .result-row dt {
+      font-size: .92rem;
+      font-weight: 600;
+      color: rgba(255, 255, 255, .85);
+    }
+    .field-key {
+      direction: ltr;
+      unicode-bidi: isolate;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: .72rem;
+      font-weight: 600;
+      background: rgba(255, 255, 255, .16);
+      padding: 2px 8px;
+      border-radius: 6px;
+      margin-inline-start: 6px;
+      color: #e0f2fe;
+    }
+    .result-value {
+      margin: 0;
+      text-align: left;
+      direction: ltr;
+      unicode-bidi: isolate;
+    }
+    .cents-value {
+      display: block;
+      font-size: 1.35rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: .3px;
+    }
+    .major-value {
+      display: block;
+      font-size: .75rem;
+      font-weight: 500;
+      color: rgba(255, 255, 255, .75);
+      margin-top: 2px;
+    }
+    .result-row.total {
+      margin-top: 12px;
+      padding: 16px 18px;
+      background: rgba(255, 255, 255, .14);
+      border: 1px solid rgba(255, 255, 255, .25);
+      border-radius: 16px;
+    }
+    .result-row.total dt { font-size: 1rem; color: #fff; }
+    .result-row.total .cents-value {
+      font-size: 1.9rem;
+      background: linear-gradient(90deg, #67e8f9, #e9d5ff);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    /* ===================== التذييل ===================== */
+    .footer {
+      text-align: center;
+      color: #475569;
+      font-size: .82rem;
+      margin-top: 8px;
+      line-height: 1.8;
+    }
+    .ltr-inline { direction: ltr; unicode-bidi: isolate; }
+
+    /* ===================== التجاوب ===================== */
+    @media (max-width: 640px) {
+      .page { padding: 20px 12px 40px; }
+      .card { padding: 16px; border-radius: 16px; }
+      .item-fields { grid-template-columns: 1fr 1fr; }
+      .item-fields .sku-field { grid-column: 1 / -1; }
+      .settings-grid { grid-template-columns: 1fr; }
+      .actions { margin: 20px 0; }
+      .btn-primary { width: 100%; }
+      .result-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+      }
+      .result-value { text-align: right; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="glow glow-cyan" aria-hidden="true"></div>
+  <div class="glow glow-violet" aria-hidden="true"></div>
+
+  <main class="page">
+    <header class="hero">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/>
+          <line x1="9" y1="8" x2="15" y2="8"/>
+          <line x1="9" y1="12" x2="15" y2="12"/>
+          <line x1="9" y1="16" x2="13" y2="16"/>
+        </svg>
+      </div>
+      <h1>حاسبة عروض الأسعار</h1>
+      <p class="subtitle">
+        أضف أصنافك، وحدّد سعر الوحدة بالسنت والكمية ونسبة الخصم ورسوم الشحن،
+        واحصل على المجاميع محسوبة بدقة على الخادم.
+      </p>
+    </header>
+
+    <!-- ===================== الأصناف ===================== -->
+    <section class="card" aria-labelledby="items-title">
+      <h2 id="items-title">الأصناف</h2>
+
+      <div id="items-list">
+        <div class="item-row">
+          <div class="item-head">
+            <span class="item-badge">صنف 1</span>
+            <button type="button" class="btn btn-remove remove-item" aria-label="حذف الصنف رقم 1">✕ حذف</button>
+          </div>
+          <div class="item-fields">
+            <div class="field sku-field">
+              <label for="sku-1">رمز الصنف (SKU)</label>
+              <input id="sku-1" class="input sku-input" type="text" placeholder="مثال: KB-001" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="price-1">سعر الوحدة (سنت)</label>
+              <input id="price-1" class="input price-input" type="number" min="0" max="10000000" step="1" inputmode="numeric" placeholder="0">
+            </div>
+            <div class="field">
+              <label for="qty-1">الكمية</label>
+              <input id="qty-1" class="input qty-input" type="number" min="1" max="10000" step="1" inputmode="numeric" placeholder="1">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="items-empty" class="items-empty" hidden>
+        لا توجد أصناف بعد — اضغط «إضافة صنف» للبدء.
+      </div>
+
+      <button type="button" id="add-item" class="btn btn-add">＋ إضافة صنف</button>
+    </section>
+
+    <!-- ===================== الخصم والشحن ===================== -->
+    <section class="card" aria-labelledby="settings-title">
+      <h2 id="settings-title">الخصم والشحن</h2>
+      <div class="settings-grid">
+        <div class="field">
+          <label for="discount">نسبة الخصم (%)</label>
+          <input id="discount" class="input" type="number" min="0" max="100" step="1" inputmode="numeric" value="0">
+        </div>
+        <div class="field">
+          <label for="shipping">رسوم الشحن (سنت)</label>
+          <input id="shipping" class="input" type="number" min="0" max="1000000" step="1" inputmode="numeric" value="0">
+        </div>
+      </div>
+      <p class="hint">تُضاف رسوم الشحن بعد حساب الخصم ولا تدخل في نسبته.</p>
+    </section>
+
+    <!-- ===================== زر الحساب ===================== -->
+    <div class="actions">
+      <button type="button" id="calculate" class="btn btn-primary">احسب عرض السعر</button>
+    </div>
+
+    <!-- ===================== رسالة الخطأ ===================== -->
+    <div id="error-box" class="error-box" role="alert" hidden>
+      <span class="error-icon" aria-hidden="true">⚠</span>
+      <span id="error-message"></span>
+    </div>
+
+    <!-- ===================== النتائج ===================== -->
+    <section id="results-panel" class="card results-card" aria-labelledby="results-title" hidden>
+      <h2 id="results-title">نتيجة الحساب</h2>
+      <dl class="results-list">
+        <div class="result-row">
+          <dt>المجموع الفرعي <code class="field-key">subtotalCents</code></dt>
+          <dd id="result-subtotal" class="result-value">
+            <span class="cents-value">—</span>
+            <span class="major-value"></span>
+          </dd>
+        </div>
+        <div class="result-row">
+          <dt>قيمة الخصم <code class="field-key">discountCents</code></dt>
+          <dd id="result-discount" class="result-value">
+            <span class="cents-value">—</span>
+            <span class="major-value"></span>
+          </dd>
+        </div>
+        <div class="result-row">
+          <dt>رسوم الشحن <code class="field-key">shippingCents</code></dt>
+          <dd id="result-shipping" class="result-value">
+            <span class="cents-value">—</span>
+            <span class="major-value"></span>
+          </dd>
+        </div>
+        <div class="result-row total">
+          <dt>الإجمالي <code class="field-key">totalCents</code></dt>
+          <dd id="result-total" class="result-value">
+            <span class="cents-value">—</span>
+            <span class="major-value"></span>
+          </dd>
+        </div>
+      </dl>
+    </section>
+
+    <footer class="footer">
+      جميع القيم بالسنت — يتم الحساب على الخادم عبر <span class="ltr-inline">POST /api/quote</span>.
+    </footer>
+  </main>
+
+  <noscript>
+    <p style="text-align:center;color:#9f1239;font-weight:700;">
+      يتطلب هذا التطبيق تفعيل JavaScript في المتصفح.
+    </p>
+  </noscript>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var itemsList = document.getElementById('items-list');
+      var itemsEmpty = document.getElementById('items-empty');
+      var addItemBtn = document.getElementById('add-item');
+      var calculateBtn = document.getElementById('calculate');
+      var errorBox = document.getElementById('error-box');
+      var errorMessage = document.getElementById('error-message');
+      var resultsPanel = document.getElementById('results-panel');
+
+      var rowCounter = 1; // الصف الأول موجود مبدئيًا في HTML
+
+      var NETWORK_ERROR = 'تعذر الاتصال بالخادم. تأكد من أن الخادم يعمل على المنفذ 3000 ثم أعد المحاولة.';
+      var INVALID_INPUT = 'المدخلات غير صالحة: راجع الأصناف (رموز SKU غير فارغة وغير مكررة، وأسعار وكميات ضمن المجالات المسموحة) ونسبة الخصم ورسوم الشحن، ثم أعد المحاولة.';
+
+      /* ---------------- إدارة صفوف الأصناف ---------------- */
+
+      function createItemRow() {
+        rowCounter += 1;
+        var n = rowCounter;
+        var row = document.createElement('div');
+        row.className = 'item-row';
+        row.innerHTML =
+          '<div class="item-head">' +
+            '<span class="item-badge">صنف ' + n + '</span>' +
+            '<button type="button" class="btn btn-remove remove-item" aria-label="حذف الصنف">✕ حذف</button>' +
+          '</div>' +
+          '<div class="item-fields">' +
+            '<div class="field sku-field">' +
+              '<label for="sku-' + n + '">رمز الصنف (SKU)</label>' +
+              '<input id="sku-' + n + '" class="input sku-input" type="text" placeholder="مثال: KB-002" autocomplete="off">' +
+            '</div>' +
+            '<div class="field">' +
+              '<label for="price-' + n + '">سعر الوحدة (سنت)</label>' +
+              '<input id="price-' + n + '" class="input price-input" type="number" min="0" max="10000000" step="1" inputmode="numeric" placeholder="0">' +
+            '</div>' +
+            '<div class="field">' +
+              '<label for="qty-' + n + '">الكمية</label>' +
+              '<input id="qty-' + n + '" class="input qty-input" type="number" min="1" max="10000" step="1" inputmode="numeric" placeholder="1">' +
+            '</div>' +
+          '</div>';
+        return row;
+      }
+
+      function refreshBadges() {
+        var rows = itemsList.querySelectorAll('.item-row');
+        for (var i = 0; i < rows.length; i++) {
+          var badge = rows[i].querySelector('.item-badge');
+          if (badge) badge.textContent = 'صنف ' + (i + 1);
+          var btn = rows[i].querySelector('.remove-item');
+          if (btn) btn.setAttribute('aria-label', 'حذف الصنف رقم ' + (i + 1));
+        }
+      }
+
+      function refreshEmptyState() {
+        itemsEmpty.hidden = itemsList.querySelectorAll('.item-row').length > 0;
+      }
+
+      itemsList.addEventListener('click', function (event) {
+        var btn = event.target.closest('.remove-item');
+        if (!btn) return;
+        var row = btn.closest('.item-row');
+        if (row) row.remove();
+        refreshBadges();
+        refreshEmptyState();
+      });
+
+      addItemBtn.addEventListener('click', function () {
+        var row = createItemRow();
+        itemsList.appendChild(row);
+        refreshEmptyState();
+        var sku = row.querySelector('.sku-input');
+        if (sku) sku.focus();
+      });
+
+      /* ---------------- بناء الحمولة والتحقق المبدئي ---------------- */
+
+      function parseInteger(raw) {
+        if (typeof raw !== 'string' || raw.trim() === '') return null;
+        var value = Number(raw);
+        if (!Number.isInteger(value)) return null;
+        return value;
+      }
+
+      function buildPayload() {
+        var rows = Array.prototype.slice.call(itemsList.querySelectorAll('.item-row'));
+        if (rows.length === 0) {
+          return { ok: false, message: 'أضف صنفًا واحدًا على الأقل قبل الحساب.' };
+        }
+
+        var items = [];
+        for (var i = 0; i < rows.length; i++) {
+          var pos = i + 1;
+          var row = rows[i];
+          var skuInput = row.querySelector('.sku-input');
+          var priceInput = row.querySelector('.price-input');
+          var qtyInput = row.querySelector('.qty-input');
+
+          var sku = (skuInput && typeof skuInput.value === 'string') ? skuInput.value.trim() : '';
+          if (!sku) {
+            return { ok: false, message: 'أدخل رمز صنف (SKU) غير فارغ للصنف رقم ' + pos + '.' };
+          }
+
+          var price = parseInteger(priceInput ? priceInput.value : '');
+          if (price === null || price < 0 || price > 10000000) {
+            return { ok: false, message: 'سعر الوحدة للصنف رقم ' + pos + ' يجب أن يكون عددًا صحيحًا بين 0 و 10000000 سنت.' };
+          }
+
+          var qty = parseInteger(qtyInput ? qtyInput.value : '');
+          if (qty === null || qty < 1 || qty > 10000) {
+            return { ok: false, message: 'الكمية للصنف رقم ' + pos + ' يجب أن تكون عددًا صحيحًا بين 1 و 10000.' };
+          }
+
+          items.push({ sku: sku, unitPriceCents: price, quantity: qty });
+        }
+
+        var discount = parseInteger(document.getElementById('discount').value);
+        if (discount === null || discount < 0 || discount > 100) {
+          return { ok: false, message: 'نسبة الخصم يجب أن تكون عددًا صحيحًا بين 0 و 100.' };
+        }
+
+        var shipping = parseInteger(document.getElementById('shipping').value);
+        if (shipping === null || shipping < 0 || shipping > 1000000) {
+          return { ok: false, message: 'رسوم الشحن يجب أن تكون عددًا صحيحًا بين 0 و 1000000 سنت.' };
+        }
+
+        return {
+          ok: true,
+          data: { items: items, discountPercent: discount, shippingCents: shipping }
+        };
+      }
+
+      /* ---------------- عرض النتائج والأخطاء ---------------- */
+
+      function showError(message) {
+        errorMessage.textContent = message;
+        errorBox.hidden = false;
+        resultsPanel.hidden = true;
+      }
+
+      function hideError() {
+        errorBox.hidden = true;
+      }
+
+      function formatCents(value) {
+        return Number(value).toLocaleString('en-US');
+      }
+
+      function formatMajor(value) {
+        return (Number(value) / 100).toLocaleString('en-US', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        });
+      }
+
+      function fillValue(id, value) {
+        var dd = document.getElementById(id);
+        dd.querySelector('.cents-value').textContent = formatCents(value);
+        dd.querySelector('.major-value').textContent = 'يعادل ' + formatMajor(value) + ' بالوحدة الرئيسية';
+      }
+
+      function isValidQuote(data) {
+        return data !== null && typeof data === 'object' && !Array.isArray(data) &&
+          Number.isSafeInteger(data.subtotalCents) &&
+          Number.isSafeInteger(data.discountCents) &&
+          Number.isSafeInteger(data.shippingCents) &&
+          Number.isSafeInteger(data.totalCents);
+      }
+
+      function renderResults(data) {
+        fillValue('result-subtotal', data.subtotalCents);
+        fillValue('result-discount', data.discountCents);
+        fillValue('result-shipping', data.shippingCents);
+        fillValue('result-total', data.totalCents);
+        resultsPanel.hidden = false;
+      }
+
+      /* ---------------- زر الحساب ---------------- */
+
+      async function calculate() {
+        if (calculateBtn.disabled) return;
+        hideError();
+
+        var built = buildPayload();
+        if (!built.ok) {
+          showError(built.message);
+          return;
+        }
+
+        calculateBtn.disabled = true;
+        try {
+          var response = await fetch('/api/quote', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
+            body: JSON.stringify(built.data)
+          });
+
+          if (!response.ok) {
+            if (response.status === 400) {
+              showError(INVALID_INPUT);
+            } else {
+              showError('حدث خطأ غير متوقع من الخادم (رمز الحالة: ' + response.status + '). حاول مرة أخرى.');
+            }
+            return;
+          }
+
+          var data = null;
+          try {
+            data = await response.json();
+          } catch (parseErr) {
+            data = null;
+          }
+          if (!isValidQuote(data)) {
+            showError('استجابة غير متوقعة من الخادم. حاول مرة أخرى.');
+            return;
+          }
+
+          renderResults(data);
+        } catch (networkErr) {
+          showError(NETWORK_ERROR);
+        } finally {
+          calculateBtn.disabled = false;
+        }
+      }
+
+      calculateBtn.addEventListener('click', calculate);
+
+      // Enter داخل الحقول يشغّل الحساب أيضًا
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' && event.target && event.target.classList &&
+            event.target.classList.contains('input')) {
+          calculate();
+        }
+      });
+
+      refreshBadges();
+      refreshEmptyState();
+    })();
+  </script>
+</body>
+</html>

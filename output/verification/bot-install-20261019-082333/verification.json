@@ -1,0 +1,84 @@
+{
+  "profilePreserved": true,
+  "runtimeHash": "F4B84F485F9E52025279B5F8D1E9AC513120764CBF2C03884F7E8BA59E1DBD88",
+  "capabilities": {
+    "revision": 11,
+    "mandatoryFinalVerification": true,
+    "bufferedCompletion": true,
+    "taskToolScope": {
+      "explicitFileOnly": true,
+      "checkpointResume": true,
+      "languageCoverage": "limited-explicit-ar-en-commands"
+    },
+    "acceptanceIntegrity": {
+      "freezeAt": "explicit-user-contract-or-first-final-verification",
+      "explicitUserContractAtStart": true,
+      "explicitCommandLanguages": [
+        "ar",
+        "en"
+      ],
+      "preservesRepairChecks": true,
+      "orchestratorCheckpointResume": true,
+      "independentlyAuthored": true,
+      "independentMaxScenarios": 4,
+      "independentMandatoryForApplications": true,
+      "independentCheckpointResume": true
+    },
+    "creativeVerification": {
+      "renderer": "actual-studio",
+      "savedCamera": true,
+      "framedView": true,
+      "optionalMotionSample": true,
+      "fullAnimationValidation": false,
+      "visualReview": true
+    },
+    "applicationVerification": {
+      "contract": "app-verification.json",
+      "runtime": "isolated-playwright",
+      "viewports": [
+        "desktop",
+        "mobile"
+      ],
+      "visualReview": true,
+      "network": "local-only",
+      "backendApplications": true,
+      "expectedHttpResponses": true,
+      "maxScenarios": 12,
+      "sqliteChecks": {
+        "readOnly": true,
+        "declarative": true,
+        "maxChecksPerScenario": 4,
+        "maxRows": 100,
+        "optInContract": true
+      },
+      "apiChecks": {
+        "declarative": true,
+        "exactJsonResponse": true,
+        "maxJsonCharacters": 16000,
+        "maxGroups": 8,
+        "maxConcurrentRequests": 4,
+        "maxRequestsPerScenario": 16,
+        "optInContract": true
+      },
+      "backendRuntime": {
+        "type": "node",
+        "isolation": "docker-network-none",
+        "requiredLocalImage": "node:22-alpine",
+        "externalPackages": false,
+        "externalServices": false,
+        "freshStatePerScenario": true,
+        "processRestart": true,
+        "maxRestartsPerScenario": 2,
+        "containerDeletionDurability": false
+      }
+    },
+    "visualModel": "glm-5.3-flash:cloud"
+  },
+  "at": "2026-10-19T08:23:40.2255352+03:00",
+  "taskViewBackup": "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-install-20261019-082333\\previous-task-view.js",
+  "tasksPreserved": 146,
+  "taskViewHash": "E909AE0448625BA3A0892538B07BEDFEED7719F56486D6AB71698516C1D84DD8",
+  "candidate": "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-install-20261019-082333\\candidate-server.cjs",
+  "backup": "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-install-20261019-082333\\previous-server.cjs",
+  "version": "0.5.25"
+}

@@ -1,0 +1,71 @@
+{
+  "id": "core",
+  "name": "المجموعة الأساسية — ملفات وشل وإجابات",
+  "version": 1,
+  "cases": [
+    {
+      "id": "file-create-hello",
+      "prompt": "أنشئ داخل مجلد العمل ملفاً اسمه hello.txt يحتوي على الكلمة: مرحبا",
+      "verify": [
+        { "type": "file_exists", "path": "hello.txt" },
+        { "type": "file_contains", "path": "hello.txt", "text": "مرحبا" }
+      ],
+      "budget": { "maxSteps": 12, "timeoutSec": 180 },
+      "tags": ["files"]
+    },
+    {
+      "id": "file-edit-config",
+      "setup": [{ "type": "write_file", "path": "config.ini", "text": "[server]\nport=8080\n" }],
+      "prompt": "عدّل الملف config.ini بحيث يصبح المنفذ 9090 (port=9090) دون تغيير أي سطر آخر.",
+      "verify": [{ "type": "file_contains", "path": "config.ini", "text": "port=9090" }],
+      "budget": { "maxSteps": 12, "timeoutSec": 180 },
+      "tags": ["files"]
+    },
+    {
+      "id": "dir-and-note",
+      "prompt": "أنشئ مجلداً اسمه archive، ثم أنشئ داخله ملف note.txt يحوي النص: done",
+      "verify": [
+        { "type": "file_exists", "path": "archive/note.txt" },
+        { "type": "file_contains", "path": "archive/note.txt", "text": "done" }
+      ],
+      "budget": { "maxSteps": 12, "timeoutSec": 180 },
+      "tags": ["files"]
+    },
+    {
+      "id": "rename-keep-content",
+      "setup": [{ "type": "write_file", "path": "draft.txt", "text": "content-42" }],
+      "prompt": "أعد تسمية الملف draft.txt إلى final.txt مع الحفاظ على محتواه كما هو.",
+      "verify": [
+        { "type": "file_exists", "path": "final.txt" },
+        { "type": "file_contains", "path": "final.txt", "text": "content-42" },
+        { "type": "file_absent", "path": "draft.txt" }
+      ],
+      "budget": { "maxSteps": 12, "timeoutSec": 180 },
+      "tags": ["files"]
+    },
+    {
+      "id": "answer-capital",
+      "prompt": "ما عاصمة قطر؟ أجب بكلمة واحدة فقط دون استخدام أي أدوات.",
+      "verify": [{ "type": "answer_matches", "pattern": "الدوحة" }],
+      "budget": { "maxSteps": 4, "timeoutSec": 120 },
+      "tags": ["reasoning"]
+    },
+    {
+      "id": "read-summarize",
+      "setup": [
+        {
+          "type": "write_file",
+          "path": "notes.txt",
+          "text": "الاجتماع غداً الساعة العاشرة.\nالميزانية معتمدة.\nالمسؤول: سارة.\n"
+        }
+      ],
+      "prompt": "اقرأ ملف notes.txt ثم لخّص محتواه في سطر واحد يبدأ بكلمة: ملخص",
+      "verify": [
+        { "type": "tool_used", "name": "file_read" },
+        { "type": "answer_matches", "pattern": "ملخص" }
+      ],
+      "budget": { "maxSteps": 12, "timeoutSec": 180 },
+      "tags": ["files", "reasoning"]
+    }
+  ]
+}

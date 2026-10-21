@@ -1,0 +1,34 @@
+﻿{
+    "capabilities":  {
+                         "revision":  3,
+                         "mandatoryFinalVerification":  true,
+                         "bufferedCompletion":  true,
+                         "applicationVerification":  {
+                                                         "contract":  "app-verification.json",
+                                                         "runtime":  "isolated-playwright",
+                                                         "viewports":  [
+                                                                           "desktop",
+                                                                           "mobile"
+                                                                       ],
+                                                         "visualReview":  true,
+                                                         "network":  "local-only",
+                                                         "backendApplications":  true,
+                                                         "backendRuntime":  {
+                                                                                "type":  "node",
+                                                                                "isolation":  "docker-network-none",
+                                                                                "requiredLocalImage":  "node:22-alpine",
+                                                                                "externalPackages":  false,
+                                                                                "externalServices":  false,
+                                                                                "freshStatePerScenario":  true
+                                                                            }
+                                                     },
+                         "visualModel":  "glm-5.3-flash:cloud"
+                     },
+    "at":  "2026-10-19T01:48:02.1983386+03:00",
+    "runtimeHash":  "213BEF8D7D282D52D3A5E0D190F8B390BB2845F7B67CB5E7D7719A5F127DD6F3",
+    "backup":  "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-install-20261019-014753\\previous-server.cjs",
+    "version":  "0.5.25",
+    "candidate":  "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-install-20261019-014753\\candidate-server.cjs",
+    "profilePreserved":  true,
+    "tasksPreserved":  135
+}

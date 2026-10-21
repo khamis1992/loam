@@ -1,0 +1,1 @@
+import fs from 'node:fs';let p='ui/studio-slide-tables.js',s=fs.readFileSync(p,'utf8').replace('<textarea dir="auto" data-slide-table-cell=', '<textarea rows="${Math.max(1,text.split(\'\\n\').length)}" dir="auto" data-slide-table-cell=');fs.writeFileSync(p,s);

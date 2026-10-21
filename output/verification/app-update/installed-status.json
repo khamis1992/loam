@@ -1,0 +1,12 @@
+{
+  "state": "current",
+  "updatedAt": "2026-10-18T21:47:35.430Z",
+  "feed": "http://127.0.0.1:64237/",
+  "at": "2026-10-18T21:47:39.324Z",
+  "reason": "",
+  "percent": 0,
+  "version": "0.5.25",
+  "checkedAt": "2026-10-18T21:47:39.324Z",
+  "currentVersion": "0.5.25",
+  "localChannel": true
+}

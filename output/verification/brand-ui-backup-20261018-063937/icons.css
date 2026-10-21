@@ -1,0 +1,20 @@
+/* Loam Strata. Icons inherit text contrast; copper is a secondary detail only. */
+:root{--icon-accent:#cda77a;--brand-jade:#99d6b5;--brand-forest:#101d19;--brand-copper:#cda77a}
+[data-theme="light"]{--icon-accent:#926334;--brand-jade:#24664e}
+.loam-icon,loam-icon{display:inline-block;width:1.3em;height:1.3em;vertical-align:-.23em;flex-shrink:0;pointer-events:none}
+loam-icon>.loam-icon{display:block;width:100%;height:100%}.loam-icon .li-accent{color:var(--icon-accent)}
+.f-icon>.loam-icon{width:34px;height:34px}.rail-btn>.loam-icon,.rail-btn>loam-icon{width:22px;height:22px}
+.smchip>.loam-icon{width:22px;height:22px}.logo-mark>.loam-icon{width:29px;height:29px}
+.logo-mark{color:var(--brand-jade)!important;background:var(--brand-forest)!important;border:1px solid #99d6b533!important;box-shadow:none!important}
+.build-mark>.loam-icon{width:64px;height:64px}.mc-ic>.loam-icon,.am-icon>.loam-icon{width:24px;height:24px}
+.brand-section-mark{width:32px;height:32px;margin-inline-end:10px;color:var(--brand-jade)}
+.service-card h3 .loam-icon{margin-inline-end:8px}.f-icon{color:var(--brand-jade)!important;border-color:#99d6b52e!important;background:#193b2b33!important}
+.brand-wordmark{font-weight:700;letter-spacing:.12em}.loam-icon{overflow:visible}
+/* Shared identity tokens, independent of the selected workspace. */
+html:root{--bg:#101914;--bg-2:#142019;--panel:#18271f;--panel-2:#203229;--panel-3:#2a4033;--stage:#0b130f;--text:#e7eee8;--muted:#a5b9aa;--accent:#99d6b5;--accent-2:#cda77a;--btn-black:#37684d;--border:#314b3b;--line:#314b3b;--cyan:#99d6b5;--purple:#cda77a}
+html[data-theme="light"]{--bg:#f1f4ed;--bg-2:#fafbf7;--panel:#fff;--panel-2:#eaf0e5;--panel-3:#dce8d7;--stage:#e7eee1;--text:#173323;--muted:#4f6957;--accent:#286248;--accent-2:#926334;--btn-black:#286248;--border:#c8d8c4;--line:#c8d8c4;--cyan:#286248;--purple:#926334}
+.loam-shell .primary,.loam-shell .new-task,.loam-shell .send{background:var(--accent);color:var(--bg);border-color:var(--accent);box-shadow:none}
+.loam-shell .primary .li-accent{color:inherit}.loam-shell .sc-ic,.loam-shell .avatar{background:var(--panel-3);color:var(--accent);box-shadow:none}
+.loam-shell .grad-text{background:none;-webkit-text-fill-color:var(--accent);color:var(--accent)}
+.loam-shell .hero-glow{opacity:.25}.loam-shell .logo-accent{color:var(--accent-2)}
+.loam-shell .rail-btn.active{box-shadow:none;background:var(--panel-3)}

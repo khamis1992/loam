@@ -1,0 +1,4 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["../../src/security/**/*.ts", "../../src/scripts/check-security*.ts", "../../src/scripts/benchmark-security-sql.ts"]
+}

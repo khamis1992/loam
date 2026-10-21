@@ -1,0 +1,8 @@
+version: 0.5.25
+files:
+  - url: Loam-Setup-0.5.25.exe
+    sha512: sd2rSTSgCZN3HA3y8PRPF2TT8nj2eOP74ITiQH69hfo313p31FDHycC3Acwk7G4pw0CeFJw2PhMdb3X93uYfNw==
+    size: 172203688
+path: Loam-Setup-0.5.25.exe
+sha512: sd2rSTSgCZN3HA3y8PRPF2TT8nj2eOP74ITiQH69hfo313p31FDHycC3Acwk7G4pw0CeFJw2PhMdb3X93uYfNw==
+releaseDate: '2026-10-18T21:41:45.584Z'

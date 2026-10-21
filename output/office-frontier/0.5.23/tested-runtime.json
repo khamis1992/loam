@@ -1,0 +1,126 @@
+{
+  "version": "0.5.23",
+  "checks": [
+    {
+      "actualSha256": "B7E82464C2D39B9ADC29C6B48828E3909D427216529A77666D2F5DAE2B140DFE",
+      "file": "dist/server.cjs",
+      "matchesPackage": false
+    },
+    {
+      "actualSha256": "1D82506F287BAE6932B4E494BAC07A27F390BE334FE5D9C7A6400C06AC3C1166",
+      "file": "scripts/render-word-preview.ps1",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "B46DDA60434BD832775378C79D8F44FA4DF890799B31D02AD9706E1C43EE0F30",
+      "file": "ui/studio.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "41D6C9FD592852364369CE690349464ADD1DA1C0162DF2F4FB4ED7B09B4F0727",
+      "file": "ui/studio-source-pictures.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "26CF8A4C68FA44A91F9430A1AC3B5B1EEDC7B41BB59D169CD2BB17B59F1CAF14",
+      "file": "ui/studio-preview-edit.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "E67349B676DC13E49C1029B42FAD888436498B46A51276C6606B8A004AAE3957",
+      "file": "ui/studio-workspace.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "90975CADD48EEAEFA80E9526CE07451C42F71F3969F3AA753FD252CFBA320D12",
+      "file": "ui/studio-sheet-grid.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "6367B8C878E1AC317C2B17FA25A4D72D02C59151F6D5E15E17A3DF497D1BD6F0",
+      "file": "ui/studio-sheet-borders.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "677C486A88D647C89F02F043FA45EFBF55305D6DA2181CBCB4896A5BD5E8975E",
+      "file": "ui/studio-sheet-print.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "605A563B9B1E3E745DA968ECB0FF663B87F315C533CD923881D69E7657C510D4",
+      "file": "ui/studio-sheet-clipboard.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "6E6AC2843F89301E0122C7FD113C24DE5A273A0AA5D384DD65B7C9D5A67CA85D",
+      "file": "ui/studio-slides.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "0AD5BA466B1BF74F7E28E4E80C88242A7406E948528340A81A7FAEAE393FF799",
+      "file": "ui/studio-slide-charts.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "1E38A77E4AB0E0EC4312260C7D670946BCDBCBBB83BCAF58C3D91B6AE6DC18BE",
+      "file": "ui/studio-slide-preview.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "AC8FEB86AE280D557937B1B251E263A91925059549D7D03EDEAC24D6BEF361FB",
+      "file": "ui/chart-scale.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "D2A6EBF4820CEC17B45C28486551CB0658053348005A68E5FEC196C90D87BD6D",
+      "file": "scripts/render-slide-preview.ps1",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "550D1E8059C7A5A95F8239EBE24692E011565FE96C075E1296983A8F664B8B96",
+      "file": "ui/studio-slide-images.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "C30C00AA32DEBE90FA2FE3F25DD5DC57D022AB369CE17BE36E32262B6301D4EC",
+      "file": "ui/studio-slide-tables.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "A1C38E574E5E71913583EF1E78AB3588636524387FFCD86A40B55EDC561BA4B4",
+      "file": "ui/studio-sheet-format.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "EF91AD9A8797BE4D0A1C5E00570082C08939A847F8C9E95F9E309F4C41F7DEC3",
+      "file": "ui/studio.css",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "9BF5F6CCB678BB30FBB54E070D874AAB3B04FFE33BFD9B7482271AB0BFD3CBCC",
+      "file": "ui/studio-document.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "CF584E70238650A47EA302CC8B45C0331A33DFA62475DDFAB076E2B9A870C166",
+      "file": "ui/studio-rich.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "12941EE043806F193D3E1BCB15625F5BCD9F952A81E2B423DF73383CCAD495E4",
+      "file": "ui/studio-preview.js",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "335941E033BE90E7349513B978A8445FB480B2E656B1728C984D58F9B2D4A17E",
+      "file": "ui/office-preview.html",
+      "matchesPackage": true
+    },
+    {
+      "actualSha256": "A003C24F073381C9B096276FDC29096A1F61A6D12DB5E383F9F2566566DDE100",
+      "file": "ui/office-preview.bundle.js",
+      "matchesPackage": true
+    }
+  ],
+  "taskId": "task_mvdrnqzac7414ff919c9"
+}

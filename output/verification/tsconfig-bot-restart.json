@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["../../src/**/*.ts"],
+  "exclude": ["../../src/scripts/check-companions-voice.ts", "../../src/scripts/dbg-voice.ts"]
+}

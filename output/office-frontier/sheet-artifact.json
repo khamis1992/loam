@@ -1,0 +1,152 @@
+{
+  "kind": "spreadsheet",
+  "title": "تقرير الأداء",
+  "revision": 1,
+  "content": {
+    "sheets": [
+      {
+        "name": "الأداء",
+        "cells": [
+          [
+            "القسم",
+            "الإيرادات",
+            "النمو"
+          ],
+          [
+            "التطوير",
+            "125000",
+            "0.185"
+          ],
+          [
+            "التشغيل",
+            "98000",
+            "0.12"
+          ],
+          [
+            "الإجمالي",
+            "=SUM(B2:B3)",
+            ""
+          ]
+        ],
+        "styles": {
+          "A1": {
+            "fontFamily": "Arial",
+            "fontSize": 11,
+            "bold": true,
+            "color": "#FFFFFF",
+            "background": "#173F43"
+          },
+          "B1": {
+            "fontFamily": "Arial",
+            "fontSize": 11,
+            "bold": true,
+            "color": "#FFFFFF",
+            "background": "#173F43"
+          },
+          "C1": {
+            "fontFamily": "Arial",
+            "fontSize": 11,
+            "bold": true,
+            "color": "#FFFFFF",
+            "background": "#173F43"
+          },
+          "A2": {
+            "fontFamily": "Arial",
+            "fontSize": 11,
+            "bold": false,
+            "color": "#182332",
+            "background": "#EEF5F4",
+            "wrapText": true,
+            "verticalAlignment": "middle",
+            "alignment": "general"
+          },
+          "B2": {
+            "fontFamily": "Arial",
+            "fontSize": 11,
+            "bold": false,
+            "color": "#182332",
+            "background": "#EEF5F4",
+            "numberFormat": "#,##0.00",
+            "borderTop": "double",
+            "borderTopColor": "#187665",
+            "borderRight": "double",
+            "borderRightColor": "#187665",
+            "borderBottom": "double",
+            "borderBottomColor": "#187665",
+            "borderLeft": "none",
+            "borderLeftColor": "#187665"
+          },
+          "C2": {
+            "fontFamily": "Arial",
+            "fontSize": 11,
+            "bold": false,
+            "color": "#182332",
+            "background": "#EEF5F4",
+            "numberFormat": "0.0%"
+          },
+          "A3": {
+            "fontFamily": "Arial",
+            "fontSize": 11,
+            "bold": false,
+            "color": "#182332",
+            "background": "#FFFFFF"
+          },
+          "B3": {
+            "fontFamily": "Arial",
+            "fontSize": 11,
+            "bold": false,
+            "color": "#182332",
+            "background": "#FFFFFF"
+          },
+          "C3": {
+            "fontFamily": "Arial",
+            "fontSize": 11,
+            "bold": false,
+            "color": "#182332",
+            "background": "#FFFFFF"
+          },
+          "A4": {
+            "fontFamily": "Arial",
+            "fontSize": 11,
+            "bold": true,
+            "color": "#182332",
+            "background": "#EEF5F4"
+          },
+          "B4": {
+            "fontFamily": "Arial",
+            "fontSize": 11,
+            "bold": false,
+            "color": "#182332",
+            "background": "#EEF5F4"
+          },
+          "C4": {
+            "fontFamily": "Arial",
+            "fontSize": 11,
+            "bold": false,
+            "color": "#182332",
+            "background": "#EEF5F4"
+          }
+        },
+        "columnWidths": [
+          16,
+          16,
+          16
+        ],
+        "rowHeights": [
+          30,
+          24,
+          24,
+          24
+        ],
+        "printSettings": {
+          "orientation": "landscape",
+          "paperSize": 9,
+          "fitToPage": true,
+          "fitToWidth": 1,
+          "fitToHeight": 0,
+          "scale": 85
+        }
+      }
+    ]
+  }
+}

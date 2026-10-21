@@ -1,0 +1,76 @@
+{
+  "pass": true,
+  "reason": "All four contract scenarios pass on both desktop and mobile viewports, and the screenshots visually confirm each one: (1) after adding خبز 12.5 and حافلة 7.5, two .expense items appear with delete buttons and #total shows 20; (2) after reload, قهوة 9 is restored from localStorage with total 9; (3) after deleting, the list is empty and total resets to 0; (4) entering -1 shows a visible #error message ('مبلغ موجب أكبر من صفر') with no entry added. The UI matches the request: Arabic RTL layout (right-aligned labels, RTL form flow), cyan-to-purple gradient theme, responsive stacked mobile layout with no overlaps or clipped interactive elements, Arabic category names (طعام، مواصلات), and a footer noting localStorage-only offline operation. All required selectors are exercised by the passing tests.",
+  "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\1a5b5740-2afb-4353-bf73-35885314a0f2\\report.json",
+  "usage": {
+    "promptTokens": 9982,
+    "completionTokens": 2478,
+    "durationMs": 32041
+  },
+  "checks": [
+    {
+      "viewport": "desktop",
+      "scenario": "Adding entries calculates sum",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Persistence after reload",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Deleting recomputes total",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Invalid input rejected",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Adding entries calculates sum",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Persistence after reload",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Deleting recomputes total",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Invalid input rejected",
+      "pass": true
+    }
+  ],
+  "screenshots": [
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\1a5b5740-2afb-4353-bf73-35885314a0f2\\desktop-0.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\1a5b5740-2afb-4353-bf73-35885314a0f2\\desktop-1.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\1a5b5740-2afb-4353-bf73-35885314a0f2\\desktop-2.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\1a5b5740-2afb-4353-bf73-35885314a0f2\\desktop-3.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\1a5b5740-2afb-4353-bf73-35885314a0f2\\mobile-0.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\1a5b5740-2afb-4353-bf73-35885314a0f2\\mobile-1.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\1a5b5740-2afb-4353-bf73-35885314a0f2\\mobile-2.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\1a5b5740-2afb-4353-bf73-35885314a0f2\\mobile-3.png"
+  ],
+  "errors": [],
+  "visual": {
+    "model": "glm-5.3-flash",
+    "verdict": {
+      "verdict": "pass",
+      "reason": "All four contract scenarios pass on both desktop and mobile viewports, and the screenshots visually confirm each one: (1) after adding خبز 12.5 and حافلة 7.5, two .expense items appear with delete buttons and #total shows 20; (2) after reload, قهوة 9 is restored from localStorage with total 9; (3) after deleting, the list is empty and total resets to 0; (4) entering -1 shows a visible #error message ('مبلغ موجب أكبر من صفر') with no entry added. The UI matches the request: Arabic RTL layout (right-aligned labels, RTL form flow), cyan-to-purple gradient theme, responsive stacked mobile layout with no overlaps or clipped interactive elements, Arabic category names (طعام، مواصلات), and a footer noting localStorage-only offline operation. All required selectors are exercised by the passing tests.",
+      "issues": []
+    },
+    "response": "{\"verdict\":\"pass\",\"reason\":\"All four contract scenarios pass on both desktop and mobile viewports, and the screenshots visually confirm each one: (1) after adding خبز 12.5 and حافلة 7.5, two .expense items appear with delete buttons and #total shows 20; (2) after reload, قهوة 9 is restored from localStorage with total 9; (3) after deleting, the list is empty and total resets to 0; (4) entering -1 shows a visible #error message ('مبلغ موجب أكبر من صفر') with no entry added. The UI matches the request: Arabic RTL layout (right-aligned labels, RTL form flow), cyan-to-purple gradient theme, responsive stacked mobile layout with no overlaps or clipped interactive elements, Arabic category names (طعام، مواصلات), and a footer noting localStorage-only offline operation. All required selectors are exercised by the passing tests.\",\"issues\":[]}"
+  },
+  "sourceHashes": {
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json": "c3d8cb7682b00507950a0d5857898e949ab857632fa05568376e9322efcc1258",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html": "86607601fde3a3b67f9215941ede1e0fa27ca6712889b0a660b84908c12432d4"
+  }
+}

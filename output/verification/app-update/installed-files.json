@@ -1,0 +1,57 @@
+[
+  {
+    "sha256": "9D85A0E5D4812A80786954F1EFAA41793ED9A69D4F17F76DAF2A34328D6FD5BB",
+    "file": "electron/main.cjs",
+    "matches": true
+  },
+  {
+    "sha256": "BAA9DD9A6E41BEF7B1227A17547EAB0EDC0FBCA0BDBFC510E3DEA09163CE736C",
+    "file": "electron/preload.cjs",
+    "matches": true
+  },
+  {
+    "sha256": "C10B8F852D27B3C411E0F88EC17DFB0D4FC443730873F1CA3C962DA16DF5FAE2",
+    "file": "electron/updater.cjs",
+    "matches": true
+  },
+  {
+    "sha256": "CB16BD4743C37A618AB360E178ED1A40F1D55BBC0DCD5B058DA7BD794272BA71",
+    "file": "electron/local-updates.cjs",
+    "matches": true
+  },
+  {
+    "sha256": "C00C774EB1C1635B93BBBFF65A3297155CB166F2733E1FFF897F50CAF376B58E",
+    "file": "ui/app.js",
+    "matches": true
+  },
+  {
+    "sha256": "8FBC1CFB9BDC1D94BD8C738A4D48A92C591E0EF59F4109A758F245BF7435B2C3",
+    "file": "ui/app-updates.js",
+    "matches": true
+  },
+  {
+    "sha256": "05AA12630BE11B431DFE1ED6D9CE41B43B74EC0F8BA26483387DA79C009B4D85",
+    "file": "ui/navigation.js",
+    "matches": true
+  },
+  {
+    "sha256": "E3688FE936A065748444A336639C6EAE8C706E3B218A2567DFC8ABB1A652C857",
+    "file": "ui/theme.js",
+    "matches": true
+  },
+  {
+    "sha256": "8466E6CEAB0E22B8A888B557D8AAACA21C51BE904354295E8AE7160CB50A1369",
+    "file": "ui/index.html",
+    "matches": true
+  },
+  {
+    "sha256": "4C48E5F1E50233CB59D435804461A1028D722BAB09DA92FFC168EFFD47BE9F73",
+    "file": "ui/restore-command.css",
+    "matches": true
+  },
+  {
+    "sha256": "DF9DCD7311E1DD3F5492ADD5797171CDE94DBEF069DF85778148C318C9737DD2",
+    "file": "dist/server.cjs",
+    "matches": true
+  }
+]

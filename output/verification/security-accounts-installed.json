@@ -1,0 +1,83 @@
+{
+  "verifiedAt": "2026-10-18T06:32:00.191Z",
+  "base": "http://127.0.0.1:3939",
+  "identity": {
+    "application": "Loam",
+    "version": "0.5.10",
+    "apiVersion": 1,
+    "profileId": "cefabdd1b2d587a9438348d9169c11404c39924a0875bb1c0a59b0a3f5d8f957"
+  },
+  "capabilities": {
+    "revision": 5,
+    "engine": "scoped-assessment",
+    "features": [
+      "http",
+      "browser",
+      "login",
+      "spa-flows",
+      "scoped-post",
+      "retest",
+      "coverage-diagnostics",
+      "multi-account-authorization",
+      "identity-witness"
+    ]
+  },
+  "taskId": "task_mvdg5iae6429cd28def2",
+  "runs": [
+    {
+      "id": "39d7ad6f-4de5-432e-8d8e-53ea22f8e505",
+      "status": "completed",
+      "browser": "155.0.8059.80",
+      "coverage": {
+        "planned": 2,
+        "conclusive": 2,
+        "inconclusive": 0
+      },
+      "authorizationFindings": 1,
+      "comparison": {
+        "baselineId": "75c2d405-22dd-4a36-a514-0355700ee40c",
+        "new": [],
+        "persistent": [
+          "5820e7441be3f9135851570a",
+          "95738740cf5d4f11137e5126",
+          "ae54039a6bacd1196f12aa4b"
+        ],
+        "notObserved": [],
+        "unverified": []
+      }
+    },
+    {
+      "id": "75c2d405-22dd-4a36-a514-0355700ee40c",
+      "status": "completed",
+      "browser": "155.0.8059.80",
+      "coverage": {
+        "planned": 2,
+        "conclusive": 2,
+        "inconclusive": 0
+      },
+      "authorizationFindings": 1
+    },
+    {
+      "id": "9f940ba3-0a05-49ae-833d-24519893dfdf",
+      "status": "completed",
+      "coverage": {
+        "planned": 0,
+        "conclusive": 0,
+        "inconclusive": 0
+      },
+      "authorizationFindings": 0
+    }
+  ],
+  "screenshotDirectory": "C:/Users/khamis/AppData/Local/Temp/loam-security-http-kNYsLt",
+  "checks": [
+    "account identity before and after",
+    "API/UI allowed/denied matrix",
+    "fixed/outage/expired-session retests",
+    "UI configuration and secret clearing",
+    "installed UI retest and persistence",
+    "typecheck",
+    "encoding",
+    "security regression",
+    "server build"
+  ]
+}
