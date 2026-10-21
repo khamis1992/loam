@@ -15,8 +15,10 @@ import { describe, it } from "node:test";
 import type { ToolContext } from "../registry.js";
 import {
   WIDE_RESEARCH_MAX_BREADTH,
+  WIDE_RESEARCH_SYNTHESIS_CHUNK,
   buildChildPrompt,
   buildSynthesisPrompt,
+  chunkFindings,
   createWideResearchTool,
   dedupeCitations,
   deterministicSynthesis,
@@ -30,6 +32,7 @@ import {
   resolveChildAllowlist,
   runWideResearch,
   type WideResearchDispatcher,
+  type WideResearchFinding,
   type WideResearchSynthesizer,
   type WideResearchTask,
 } from "../wideResearch.js";
@@ -281,6 +284,8 @@ describe("wide research — the tool", () => {
     forAllowlist: () => stubRegistry,
   } as unknown as Parameters<typeof createWideResearchTool>[0]["parentRegistry"];
 
+  let seenAngles: string[] = [];
+
   function toolWith(dispatcher: WideResearchDispatcher, synthesizer: WideResearchSynthesizer = noopSynthesizer) {
     return createWideResearchTool({
       ollama: {} as Parameters<typeof createWideResearchTool>[0]["ollama"],
@@ -344,4 +349,141 @@ describe("wide research — the tool", () => {
     await tool.run({ query: "q", sources: ["https://a.example/1", "https://b.example/2"], breadth: 2 }, ctx);
     assert.deepStrictEqual(seen, ["https://a.example/1", "https://b.example/2"]);
   });
+
+  it("exposes the item list in the schema and dispatches one sub-agent per item", async () => {
+    const tool = toolWith(async (task) => {
+      seenAngles.push(task.angleId);
+      return { summary: "ok", citations: [`https://s.example/${task.index}`] };
+    });
+    const schema = tool.parameters as { properties?: Record<string, unknown> };
+    assert.ok(schema.properties?.["items"], "the tool accepts an explicit research item list");
+
+    seenAngles = [];
+    const result = await tool.run({ query: "q", items: [" alpha ", "alpha", "beta", "gamma"] }, ctx);
+    const report = JSON.parse(result.content) as { breadth: number; findings: { angleId?: string }[]; tasks: { angle: string }[] };
+    assert.strictEqual(report.breadth, 4, "the breadth defaults to the item list length (after dedup)");
+    assert.deepStrictEqual(
+      report.tasks.map((t) => t.angle),
+      ["list item", "list item", "list item", "overview"],
+      "each deduped item gets its own sub-agent, then angles fill the budget",
+    );
+    assert.deepStrictEqual(seenAngles, ["item-1", "item-2", "item-3", "general"]);
+  });
+
+  it("keeps the explicit list inside the breadth budget", async () => {
+    seenAngles = [];
+    const tool = toolWith(async (task) => {
+      seenAngles.push(task.angleId);
+      return { summary: "ok" };
+    });
+    await tool.run({ query: "q", items: ["a", "b", "c", "d", "e", "f"], breadth: 3 }, ctx);
+    assert.deepStrictEqual(seenAngles, ["item-1", "item-2", "item-3"], "relative item order is preserved when the budget clips the list");
+  });
 });
+
+describe("wide research — two-phase synthesis (map/reduce over chunks)", () => {
+  function dispatchTen(): WideResearchDispatcher {
+    return async (task) => ({ summary: `fact ${task.index}`, citations: [`https://x.example/${task.index}`] });
+  }
+
+  function fakeFinding(i: number): WideResearchFinding {
+    return { taskId: `wrt-${i + 1}`, index: i, angle: "overview", question: "q", summary: `fact ${i}`, citations: [`https://x.example/${i}`] };
+  }
+
+  const trackedSynthesizer = (): { synth: WideResearchSynthesizer; calls: { findings: readonly WideResearchFinding[]; sources: readonly string[] }[] } => {
+    const calls: { findings: readonly WideResearchFinding[]; sources: readonly string[] }[] = [];
+    const synth: WideResearchSynthesizer = async (input) => {
+      calls.push({ findings: input.findings, sources: input.sources });
+      return "merged";
+    };
+    return { synth, calls };
+  };
+
+  it("splits findings into contiguous chunks of the requested size", () => {
+    assert.deepStrictEqual(chunkFindings([], 4), []);
+    const findings = [0, 1, 2, 3, 4, 5, 6, 7].map(fakeFinding);
+    const chunks = chunkFindings(findings, 3);
+    assert.deepStrictEqual(chunks.map((c) => c.length), [3, 3, 2]);
+    assert.deepStrictEqual(chunks[2]!.map((f) => f.index), [6, 7], "chunks preserve plan order");
+    assert.deepStrictEqual(chunkFindings(findings, 0).length, 8, "a chunk size below 1 degrades to one finding per chunk");
+  });
+
+  it("maps a partial report per chunk in parallel and reduces the partials into one report", async () => {
+    const calls: { findings: readonly WideResearchFinding[]; sources: readonly string[] }[] = [];
+    const synthesizer: WideResearchSynthesizer = async (input) => {
+      calls.push({ findings: input.findings, sources: input.sources });
+      if (input.findings[0]?.angle.startsWith("partial report")) return "REDUCED-ANSWER";
+      return `chunk(${input.findings.map((f) => f.summary).join("|")})`;
+    };
+    const report = await runWideResearch({
+      query: "q",
+      breadth: 10,
+      dispatcher: dispatchTen(),
+      synthesizer,
+      synthesisChunkSize: 4,
+    });
+
+    assert.strictEqual(calls.length, 4, "3 chunk maps + 1 reduce");
+    assert.strictEqual(calls[0]!.findings.length, 4, "the first chunk map receives exactly one chunk of findings");
+    const reduce = calls.at(-1)!;
+    assert.deepStrictEqual(reduce.findings.map((f) => f.angle), ["partial report 1", "partial report 2", "partial report 3"]);
+    assert.match(reduce.findings[0]!.summary, /fact 0/, "the reduce sees the chunk partials");
+    assert.strictEqual(reduce.sources.length, 10, "the reduce carries the full deduplicated source list");
+    assert.strictEqual(report.summary, "REDUCED-ANSWER", "the final report is the reduce output");
+    assert.deepStrictEqual(report.sources, Array.from({ length: 10 }, (_, i) => `https://x.example/${i}`));
+  });
+
+  it("runs the chunked map even when one chunk's partial synthesis fails", async () => {
+    const calls: { findings: readonly WideResearchFinding[] }[] = [];
+    const synthesizer: WideResearchSynthesizer = async (input) => {
+      calls.push({ findings: input.findings });
+      if (input.findings[0]?.angle.startsWith("partial report")) return "REDUCED-ANSWER";
+      if (input.findings.some((f) => f.summary === "fact 0")) throw new Error("chunk exploded");
+      return "ok-chunk";
+    };
+    const report = await runWideResearch({
+      query: "q",
+      breadth: 6,
+      dispatcher: dispatchTen(),
+      synthesizer,
+      synthesisChunkSize: 3,
+    });
+
+    const reduce = calls.at(-1)!;
+    assert.deepStrictEqual(reduce.findings.map((f) => f.angle), ["partial report 1", "partial report 2"]);
+    assert.match(reduce.findings[0]!.summary, /3 independent sub-task/, "the failed chunk falls back to the deterministic partial");
+    assert.match(reduce.findings[1]!.summary, /ok-chunk/, "the surviving chunk still lands in the reduce");
+    assert.strictEqual(report.summary, "REDUCED-ANSWER");
+  });
+
+  it("falls back to the deterministic merge when the reduce step fails", async () => {
+    const synthesizer: WideResearchSynthesizer = async () => {
+      throw new Error("model down");
+    };
+    const report = await runWideResearch({
+      query: "q",
+      breadth: 6,
+      dispatcher: dispatchTen(),
+      synthesizer,
+      synthesisChunkSize: 2,
+    });
+    assert.match(report.summary, /6 independent sub-task/, "the deterministic merge still lands");
+    assert.match(report.summary, /fact 5/);
+    for (let i = 0; i < 6; i += 1) {
+      assert.ok(report.summary.includes(`https://x.example/${i}`), "every cited source survives the fallback");
+    }
+  });
+
+  it("stays a single synthesis call below the chunk threshold", async () => {
+    const { synth, calls } = trackedSynthesizer();
+    await runWideResearch({
+      query: "q",
+      breadth: 3,
+      dispatcher: dispatchTen(),
+      synthesizer: synth,
+    });
+    assert.strictEqual(calls.length, 1, `default chunk ${WIDE_RESEARCH_SYNTHESIS_CHUNK} keeps small merges in one call`);
+    assert.strictEqual(calls[0]!.findings.length, 3);
+  });
+});
+

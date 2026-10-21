@@ -13,6 +13,11 @@
  *    model and no network dependency. The dispatcher (one research sub-task)
  *    and the synthesizer (the merge) are injected, so the unit test runs
  *    fully offline with a mock dispatcher.
+ *  - Research dispatches either over an explicit, caller-decomposed list of
+ *    items (one sub-agent per item, the wide-research list mode) or over the
+ *    automatic angle plan. Big finding sets are synthesized with the
+ *    map/reduce pattern: a partial report per chunk, then one melt-down
+ *    reduce into the final merged report.
  *  - A research child may only use read-only research tools that the CURRENT
  *    run is itself allowed to use (`ctx.allowedTools`). wide_research can
  *    therefore never widen the policy of the run that called it.
@@ -29,6 +34,8 @@ import { num, str } from "./registry.js";
 export const WIDE_RESEARCH_MAX_BREADTH = 20;
 /** Default number of parallel research sub-tasks. */
 export const WIDE_RESEARCH_DEFAULT_BREADTH = 4;
+/** Findings per chunk in the two-phase (map/reduce-style) synthesis. */
+export const WIDE_RESEARCH_SYNTHESIS_CHUNK = 8;
 
 /** Read-only tools a research child may use. Deliberately narrow. */
 export const WIDE_RESEARCH_CHILD_TOOLS: readonly string[] = [
@@ -101,11 +108,13 @@ export function normalizeSources(raw: unknown): string[] {
 }
 
 /**
- * Turn one question plus optional seed sources into a bounded list of
- * independent sub-tasks. Seed sources come first (one sub-task each), the
- * remaining budget is filled with distinct research angles.
+ * Turn one question plus caller-decomposed research items and optional seed
+ * sources into a bounded list of independent sub-tasks. Seed sources come
+ * first (one sub-task each), then every explicit item (one sub-agent each),
+ * and the remaining budget is filled with distinct research angles. The
+ * total plan never exceeds `breadth`.
  */
-export function planResearchTasks(query: string, sources: string[], breadth: number): WideResearchTask[] {
+export function planResearchTasks(query: string, sources: string[], breadth: number, items: string[] = []): WideResearchTask[] {
   const limit = clamp(breadth, 1, WIDE_RESEARCH_MAX_BREADTH);
   const tasks: WideResearchTask[] = [];
 
@@ -131,6 +140,17 @@ export function planResearchTasks(query: string, sources: string[], breadth: num
       "source review",
       source,
     );
+  }
+
+  let itemCursor = 0;
+  for (const item of items) {
+    if (tasks.length >= limit) break;
+    push(
+      `Investigate this item as one thread of the research question and report focused findings for it.\n\nQUESTION: ${query}\nITEM: ${item}`,
+      `item-${itemCursor + 1}`,
+      "list item",
+    );
+    itemCursor += 1;
   }
 
   let cursor = 0;
@@ -291,11 +311,15 @@ export interface WideResearchReport {
 
 export interface WideResearchRunOptions {
   query: string;
+  /** Caller-decomposed research list — one sub-agent per item. */
+  items?: string[];
   sources?: string[];
   breadth?: number;
   dispatcher: WideResearchDispatcher;
   synthesizer: WideResearchSynthesizer;
   concurrency?: number;
+  /** Findings per chunk in the two-phase synthesis; below it the merge is one call. */
+  synthesisChunkSize?: number;
   signal?: AbortSignal;
   taskId?: string;
   emit?: Emit;
@@ -399,6 +423,65 @@ export function groupFindingsBySource(findings: readonly WideResearchFinding[]):
   return groups;
 }
 
+/** Split findings into ordered, contiguous chunks of at most {@link chunkSize}. */
+export function chunkFindings(findings: readonly WideResearchFinding[], chunkSize: number): WideResearchFinding[][] {
+  const size = Number.isFinite(chunkSize) ? Math.max(1, Math.trunc(chunkSize)) : 1;
+  const chunks: WideResearchFinding[][] = [];
+  for (let i = 0; i < findings.length; i += size) chunks.push(findings.slice(i, i + size));
+  return chunks;
+}
+
+/**
+ * Run the merge with the same map/reduce pattern the `map_reduce` tool uses:
+ * when the finding set is larger than one chunk, map a partial report over
+ * each chunk (in parallel sub-agent calls) and then reduce the partial
+ * reports into the final merged summary. A chunk whose partial synthesis
+ * falls back to the deterministic merge still reaches the reduce step, and a
+ * failing reduce step falls back to the deterministic merge of everything.
+ */
+async function runSynthesis(
+  options: WideResearchRunOptions,
+  query: string,
+  findings: readonly WideResearchFinding[],
+  sources: string[],
+  ctx: WideResearchContext,
+): Promise<string> {
+  const chunkSizeRaw = options.synthesisChunkSize ?? WIDE_RESEARCH_SYNTHESIS_CHUNK;
+  const chunkSize = Number.isFinite(chunkSizeRaw) ? Math.max(1, Math.trunc(chunkSizeRaw)) : 1;
+
+  if (findings.length <= chunkSize) {
+    return (await options.synthesizer({ query, findings: [...findings], sources }, ctx)).trim();
+  }
+
+  const chunks = chunkFindings(findings, chunkSize);
+  const partials: string[] = new Array(chunks.length).fill("");
+  await Promise.all(
+    chunks.map(async (chunk, i) => {
+      const chunkSources = dedupeCitations(chunk.flatMap((f) => f.citations));
+      try {
+        partials[i] = (
+          await options.synthesizer(
+            { query, findings: [...chunk], sources: chunkSources },
+            ctx.taskId ? { ...ctx, taskId: `${ctx.taskId}-synth-${i + 1}` } : ctx,
+          )
+        ).trim();
+      } catch {
+        partials[i] = "";
+      }
+      if (!partials[i]) partials[i] = deterministicSynthesis(query, chunk, chunkSources);
+    }),
+  );
+  const partialFindings: WideResearchFinding[] = partials.map((text, i) => ({
+    taskId: `wrs-${i + 1}`,
+    index: i,
+    angle: `partial report ${i + 1}`,
+    question: query,
+    summary: text,
+    citations: [],
+  }));
+  return (await options.synthesizer({ query, findings: partialFindings, sources }, ctx)).trim();
+}
+
 // ---------------------------------------------------------------------------
 // The core fan-out
 // ---------------------------------------------------------------------------
@@ -411,8 +494,9 @@ export async function runWideResearch(options: WideResearchRunOptions): Promise<
   const query = options.query.trim();
   if (!query) throw new Error("wide_research requires a query");
   const sources = normalizeSources(options.sources);
+  const items = normalizeSources(options.items);
   const breadth = clamp(options.breadth ?? WIDE_RESEARCH_DEFAULT_BREADTH, 1, WIDE_RESEARCH_MAX_BREADTH);
-  const tasks = planResearchTasks(query, sources, breadth);
+  const tasks = planResearchTasks(query, sources, breadth, items);
   const concurrency = clamp(options.concurrency ?? WIDE_RESEARCH_MAX_BREADTH, 1, WIDE_RESEARCH_MAX_BREADTH);
   const ctx: WideResearchContext = {
     ...(options.signal ? { signal: options.signal } : {}),
@@ -499,7 +583,7 @@ export async function runWideResearch(options: WideResearchRunOptions): Promise<
   let summary = "";
   if (findings.length > 0) {
     try {
-      summary = (await options.synthesizer({ query, findings, sources: dedupedSources }, ctx)).trim();
+      summary = await runSynthesis(options, query, findings, dedupedSources, ctx);
     } catch {
       summary = "";
     }
@@ -646,7 +730,10 @@ export function createWideResearchTool(options: WideResearchOptions): Tool {
   return {
     name: "wide_research",
     description:
-      "Fan a research question out to N independent research sub-agents (1-20 in parallel, each with a fresh context and its own read-only research tools), then merge their findings into one report with deduplicated source citations. Use it for broad 'research everything about X' questions; use web_search/web_fetch directly for a single lookup.",
+      "Fan a research question out to N independent research sub-agents (1-20 in parallel, each with a fresh context and its own read-only research tools), then merge their findings into one report with deduplicated source citations. " +
+      "Decompose the question yourself into an explicit list of items (questions, angles, subjects) and pass them via `items` so each item gets its own sub-agent; seed `sources` and automatic research angles fill the rest of the breadth. " +
+      "Large finding sets are synthesized in two phases (a partial report per chunk, then one merged report). " +
+      "Use it for broad 'research everything about X' questions and for researching a list of things at once; use web_search/web_fetch directly for a single lookup.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -656,6 +743,12 @@ export function createWideResearchTool(options: WideResearchOptions): Tool {
           type: "string",
           minLength: 1,
           description: "The research question to fan out.",
+        },
+        items: {
+          type: "array",
+          maxItems: WIDE_RESEARCH_MAX_BREADTH,
+          items: { type: "string", minLength: 1 },
+          description: "Explicit list of research items to dispatch one sub-agent over. Items are prioritized after seed sources; the total plan still never exceeds breadth.",
         },
         sources: {
           type: "array",
@@ -676,8 +769,9 @@ export function createWideResearchTool(options: WideResearchOptions): Tool {
       const query = str(args, "query").trim();
       if (!query) return { ok: false, content: "wide_research requires a query" };
       const sources = normalizeSources(args.sources);
+      const items = normalizeSources(args.items);
       const breadth = clamp(
-        num(args, "breadth", WIDE_RESEARCH_DEFAULT_BREADTH),
+        num(args, "breadth", Math.max(WIDE_RESEARCH_DEFAULT_BREADTH, sources.length + items.length)),
         1,
         WIDE_RESEARCH_MAX_BREADTH,
       );
@@ -685,7 +779,7 @@ export function createWideResearchTool(options: WideResearchOptions): Tool {
       ctx.emit({
         type: "tool_call",
         name: "wide_research",
-        args: { query, sources: sources.length, breadth },
+        args: { query, items: items.length, sources: sources.length, breadth },
       });
 
       const dispatcher = options.dispatcher ?? createDefaultDispatcher(options, ctx);
@@ -693,6 +787,7 @@ export function createWideResearchTool(options: WideResearchOptions): Tool {
 
       const report = await runWideResearch({
         query,
+        items,
         sources,
         breadth,
         dispatcher,
