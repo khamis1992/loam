@@ -125,4 +125,13 @@ describe("loam_design tool run", () => {
     const merged = mergeAlwaysOnTools({ resolvedAllow: [], registeredTools: [DESIGN_EXPLORE_TOOL_NAME] });
     assert.ok(merged.includes(DESIGN_EXPLORE_TOOL_NAME));
   });
+
+  it("injects the design-exploration directive into the system prompt", async () => {
+    const { buildSystemPrompt } = await import("../../agent/prompt.js");
+    const cfg = { workspace: "C:/tmp/task", policy: { networkEnabled: false } } as unknown as Parameters<typeof buildSystemPrompt>[0];
+    const withTool = buildSystemPrompt(cfg, [], [DESIGN_EXPLORE_TOOL_NAME]);
+    assert.match(withTool, /Design phase/);
+    const withoutTool = buildSystemPrompt(cfg, [], ["file_read"]);
+    assert.ok(!withoutTool.includes("Design phase"));
+  });
 });

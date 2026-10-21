@@ -110,6 +110,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll(createBoardTools());
     registry.registerAll(createGroupTools());
     registry.registerAll(createBackendScaffoldTools());
+    registry.register(dummy("loam_design")); // W3 build-phase design tool (always-on grant)
   });
 
   after(() => {
