@@ -257,6 +257,20 @@ export function Editor({ file, live, onChatEdit }: WorkspaceEditorProps) {
     })();
   }, [file.path]);
 
+  const cancelJob = useCallback(() => {
+    if (!job?.id) return;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/workspace/video/render/${encodeURIComponent(job.id)}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
+        const data = (await res.json()) as { status?: JobResponse['status'] };
+        setJob((prev) => (prev ? { ...prev, status: data.status ?? 'canceled' } : prev));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    })();
+  }, [job?.id]);
+
   if (!edl) {
     return (
       <div className="p-6 text-text-secondary">{error ? `${t('Video editor error')}: ${error}` : t('Loading video editor')}</div>
@@ -284,6 +298,11 @@ export function Editor({ file, live, onChatEdit }: WorkspaceEditorProps) {
       {job && (job.status === 'queued' || job.status === 'running') && (
         <div className="flex items-center gap-2 text-xs text-text-secondary">
           {t('Rendering')} {Math.round(job.progress)}%
+          {job.id && (
+            <button onClick={cancelJob} className="rounded-control border border-border-main px-2 py-0.5 text-func-error hover:bg-fill-hover">
+              {t('Cancel render')}
+            </button>
+          )}
         </div>
       )}
       {job?.status === 'done' && <div className="text-xs text-func-success">{t('Render complete')}</div>}
