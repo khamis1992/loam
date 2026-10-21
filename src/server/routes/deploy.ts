@@ -2,6 +2,7 @@ import http from "node:http";
 import path from "node:path";
 import fs from "node:fs";
 import { loadConfig } from "../../config.js";
+import { requireTaskWorkspace } from "../taskWorkspace.js";
 import { deployTargetCatalog, type DeployToolDeps } from "../../tools/deploy.js";
 import { deployBuild, exportBuild, findTarget } from "../../preview/deploy.js";
 
@@ -89,7 +90,7 @@ export async function handleDeployRoutes(
       return true;
     }
     try {
-      const workspace = resolvedWorkspace(ctx);
+      const workspace = requireTaskWorkspace(taskId, resolvedWorkspace(ctx));
       const outcome = await deployBuild(workspace, taskId, target);
       const zip = exportBuild(workspace, taskId);
       const result = outcome.result;
@@ -113,9 +114,8 @@ export async function handleDeployRoutes(
 
   const exportMatch = /^\/api\/tasks\/([\w-]+)\/export$/.exec(p);
   if (req.method === "GET" && exportMatch) {
-    const taskId = decodeURIComponent(exportMatch[1]!);
     try {
-      const info = exportBuild(resolvedWorkspace(ctx), taskId);
+      const info = exportBuild(taskRoot(exportMatch[1]!, ctx), exportMatch[1]!);
       const file = fs.readFileSync(info.zipPath);
       res.writeHead(200, {
         "content-type": "application/zip",
@@ -134,6 +134,11 @@ export async function handleDeployRoutes(
 
 function resolvedWorkspace(ctx: DeployRouteContext): string {
   return ctx.workspace ?? loadConfig().workspace;
+}
+
+/** The task's own workspace root (created on demand) — deploy/export operate inside it. */
+function taskRoot(taskIdRaw: string, ctx: DeployRouteContext): string {
+  return requireTaskWorkspace(taskIdRaw, resolvedWorkspace(ctx));
 }
 
 function resolvedDeps(ctx: DeployRouteContext): DeployRouteContext {
