@@ -131,6 +131,15 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const apiBase = useMemo(() => getApiBase(), []);
   const [shareOpen, setShareOpen] = useState(false);
   const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
+  const [approveForMe, setApproveForMe] = useState(false);
+
+  useEffect(() => {
+    try {
+      setApproveForMe(localStorage.getItem(`loam.approveForMe.${sessionUid}`) === '1');
+    } catch {
+      // Non-browser environment: keep default.
+    }
+  }, [sessionUid]);
 
   const onAuthFailure = useMemo(() => () => {
     dispatch(setError({ sessionId: sessionUid, error: t('Session expired. Please sign in again.') }));
@@ -319,13 +328,36 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
       const uploaded = await Promise.all(files.map((f) => uploadFile(apiBase, f)));
       attachments = [...attachments, ...uploaded];
     }
-    socket.sendText(sessionUid, text, mode, attachments, makeExtData(cwd, extData));
+    socket.sendText(sessionUid, text, mode, attachments, makeExtData(cwd, { approveForMe, ...extData }));
   };
 
   const handleStop = () => {
     const socket = socketRef.current;
     if (!socket) return;
     socket.stop(sessionUid);
+  };
+
+  // Option 14: "Approve for me" chip — toggles per-task auto-approve. The flag
+  // rides on the next message's extData and is pushed live for this session id.
+  const handleToggleApproveForMe = () => {
+    const next = !approveForMe;
+    setApproveForMe(next);
+    try {
+      localStorage.setItem(`loam.approveForMe.${sessionUid}`, next ? '1' : '0');
+    } catch {
+      // Non-browser environment: skip persistence.
+    }
+    void (async () => {
+      try {
+        await fetch(`${getApiBase()}/api/approval-tasks/${encodeURIComponent(sessionUid)}`, {
+          method: 'PUT',
+          headers: { ...(await getApiHeaders()), 'content-type': 'application/json' },
+          body: JSON.stringify({ auto: next }),
+        });
+      } catch {
+        // Best effort: new sessions pick it up via extData on the next message.
+      }
+    })();
   };
 
   const handleWorkspaceChatEdit = (instruction: string, file: WorkspaceFile) => {
@@ -442,6 +474,8 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               running={running}
               defaultLoamMode={draftLoamMode}
               resolvedLoamMode={resolvedLoamMode}
+              approveForMe={approveForMe}
+              onToggleApproveForMe={handleToggleApproveForMe}
             />
           </div>
         </div>
