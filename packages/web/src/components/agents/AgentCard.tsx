@@ -15,6 +15,10 @@ export interface AgentCardAgent {
   model?: string;
   /** Provenance ("grokbot" = imported from a Grok Bot bundle). */
   source?: string;
+  /** Pin timestamp (epoch ms); set = pinned, shown in the Pinned section. */
+  pinnedAt?: number;
+  /** Position among pinned agents (smaller = higher). */
+  sortOrder?: number;
 }
 
 interface AgentCardProps {

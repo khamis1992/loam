@@ -6,6 +6,7 @@ import { Plus, Loader2 } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { Button } from '@/components/ui/Button';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
+import { setAgentPinned, reorderPinnedAgents } from '@/services/agentsPinsApi';
 import { AgentSidebarList } from '@/components/agents/AgentSidebarList';
 import { AgentThreadView, resolveAgentThread } from '@/components/agents/AgentThreadView';
 import { AgentInfoPane } from '@/components/agents/AgentInfoPane';
@@ -220,6 +221,36 @@ export default function AgentsPageClient() {
     }
   };
 
+  const handleTogglePin = async (agent: Agent) => {
+    try {
+      await setAgentPinned(agent.id, typeof agent.pinnedAt !== 'number');
+      await loadAgents();
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('failed to toggle pin', e);
+      void loadAgents();
+    }
+  };
+
+  const handleReorderPinned = async (ids: string[]) => {
+    const pos = new Map(ids.map((id, i) => [id, i]));
+    setAgents((prev) => {
+      const head: Agent[] = [];
+      for (const id of ids) {
+        const found = prev.find((a) => a.id === id);
+        if (found) head.push(found);
+      }
+      return [...head, ...prev.filter((a) => !pos.has(a.id))];
+    });
+    try {
+      await reorderPinnedAgents(ids);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('failed to reorder pinned agents', e);
+    }
+    void loadAgents();
+  };
+
   const handleArchive = async (agent: Agent) => {
     try {
       const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agent.id)}/archive`, {
@@ -264,6 +295,8 @@ export default function AgentsPageClient() {
         onEdit={setEditAgent}
         onDuplicate={handleDuplicate}
         onArchive={handleArchive}
+        onTogglePin={handleTogglePin}
+        onReorderPinned={handleReorderPinned}
         onStartBuiltIn={setStartAgent}
         unreadById={unreadById}
         groups={groups}
