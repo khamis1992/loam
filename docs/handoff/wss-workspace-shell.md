@@ -2,9 +2,10 @@
 
 Branch: `mf/wss` · Worktree: `C:\Users\khamis\Desktop\mf-wt\wss`
 
-## Commits
-- `4caeb3c` wss: workspace shell types, registry, auto-open, panel + stub editors
-- `89d24fa` wss: integrate Workspace tab into task right panel, auto-open, onChatEdit, tests, i18n
+## Commits (final on `mf/wss`)
+- `498b1f4` wss: workspace shell types, registry, auto-open, panel + stub editors
+- `53f957d` wss: integrate Workspace tab into task right panel, auto-open, onChatEdit, tests, i18n
+- Merged later into this worktree from the slides editor session: `89698aa` (real slides editor + `src/server/workspace/slidesIO.ts` + `src/server/routes/workspaceSlides.ts`); video/doc/sheet stub editors remain in place for their sessions.
 
 ## Files (all owned by the shell session)
 - `packages/web/src/components/workspace/types.ts` — exact contract types (`WorkspaceKind`, `WorkspaceFile`, `WorkspaceEditorProps`, `WorkspaceEditorDef`).
@@ -31,15 +32,11 @@ Branch: `mf/wss` · Worktree: `C:\Users\khamis\Desktop\mf-wt\wss`
 ## Server
 - No server code touched. `src/server/http.ts` remains unmodified — **no import/dispatch lines are needed from the supervisor for this shell**. Editor sessions will add `src/server/workspace/<kind>*` + `src/server/routes/workspace<Kind>.ts` (raw GET/PUT `/api/workspace/<kind>/file?taskId&path`) and report their own http.ts 2-liners.
 
-## Tests
-- `packages/web/src/components/workspace/__tests__/registry.test.ts` (5) — extension resolution incl. dots/case, kind fallback, `extensionOf`.
-- `.../__tests__/autoOpen.test.ts` (6) — auto-open decision incl. office/video tools without paths, non-editor paths, description-scanned paths, latest-event pick.
-- `npx vitest run src/components/workspace` in `packages/web`: 11/11 pass.
-
-## Verification
+## Verification (re-run 2026-10-21)
 - `npx tsc --noEmit` (root): 0 errors. `npx tsc --noEmit -p packages/web/tsconfig.json`: 0 errors.
+- `npx vitest run src/components/workspace` in packages/web: 11/11 pass.
+- `npx tsx --test src/server/__tests__/workspaceSlides.test.ts` (merged slides editor test): 1/1 pass.
 - `npm run build` in packages/web fails only with the known worktree Turbopack `Could not find next/package.json` junction error (documented as expected); rely on web tsc.
-- Pre-existing (not from this change): `src/components/settings/__tests__/settings.test.tsx` fails under vitest because `vitest.config.ts` has no `@` alias; e2e Playwright specs are matched by vitest. Both fail identically without this work.
 
 ## Live test steps
 1. `npm run start` (or existing dev flow) server + web dev; open a task that runs an `office_*` tool or writes a `.docx/.xlsx/.pptx/.mp4` file.
@@ -48,5 +45,5 @@ Branch: `mf/wss` · Worktree: `C:\Users\khamis\Desktop\mf-wt\wss`
 4. Editor sessions replace `workspace/<kind>/Editor.tsx`+`register.ts` and add their PUT route; Save then hits `/api/workspace/<kind>/file`; the editor's chat-edit box posts `Edit <path>: <instruction>` into the task.
 
 ## Left
-- Real editors + `GET/PUT /api/workspace/<kind>/file` routes (editor sessions).
+- Video / doc / sheet editors + `GET/PUT /api/workspace/<kind>/file` routes (their editor sessions; slides already done).
 - Optional: server-side MIME for `WorkspaceFile.mime` (currently a small client map).
