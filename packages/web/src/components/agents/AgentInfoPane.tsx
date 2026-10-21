@@ -8,6 +8,8 @@ import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { TeamRunsList } from './TeamRunsList';
 import type { AgentCardAgent } from './AgentCard';
 import { loadAgentThreadFiles } from './AgentThreadView';
+import { GroupMembersTab } from './GroupMembersTab';
+import type { GroupChat } from './groupTypes';
 
 interface AgentWithMeta extends AgentCardAgent {
   description?: string;
@@ -49,35 +51,44 @@ interface AgentInfoPaneProps {
   threadUid: string | null;
   onClose: () => void;
   onEdit: () => void;
+  /** When set, the pane shows group details instead of the selected agent. */
+  group?: GroupChat | null;
+  onGroupChanged?: (group: GroupChat) => void;
 }
 
-export function AgentInfoPane({ agent, threadUid, onClose, onEdit }: AgentInfoPaneProps) {
+export function AgentInfoPane({ agent, threadUid, onClose, onEdit, group, onGroupChanged }: AgentInfoPaneProps) {
   const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const tabs = group ? TAB_ITEMS.filter((tab) => tab.id === 'members') : TAB_ITEMS;
+  const currentTab: TabId = group ? 'members' : activeTab;
 
   return (
     <aside className="flex w-[340px] shrink-0 flex-col border-s border-border-main bg-bg-menu">
       <div className="flex h-row items-center justify-between border-b border-border-main px-4">
         <div className="flex items-center gap-2">
           <div className="flex size-7 items-center justify-center rounded-control bg-fill-tsp text-base">
-            {agent.emoji || '🤖'}
+            {group ? '👥' : agent.emoji || 'dY-'}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-text-primary">{agent.name}</p>
-            <p className="truncate text-xs text-text-tertiary">{agent.description || agent.mode || 'loam'}</p>
+            <p className="truncate text-sm font-medium text-text-primary">{group ? group.name : agent.name}</p>
+            <p className="truncate text-xs text-text-tertiary">
+              {group ? t('Group chat') : agent.description || agent.mode || 'loam'}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onEdit}
-            className="h-row-sm w-row-sm px-0"
-            aria-label={t('Edit agent')}
-            title={t('Edit agent')}
-          >
-            <Settings className="size-4" />
-          </Button>
+          {!group && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onEdit}
+              className="h-row-sm w-row-sm px-0"
+              aria-label={t('Edit agent')}
+              title={t('Edit agent')}
+            >
+              <Settings className="size-4" />
+            </Button>
+          )}
           <Button
             type="button"
             variant="ghost"
@@ -93,14 +104,14 @@ export function AgentInfoPane({ agent, threadUid, onClose, onEdit }: AgentInfoPa
       </div>
 
       <div className="flex h-row-sm shrink-0 items-center border-b border-border-main">
-        {TAB_ITEMS.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
             onClick={() => setActiveTab(tab.id)}
             className={[
               'flex h-full flex-1 items-center justify-center px-1 text-[11px] font-medium transition-colors',
-              activeTab === tab.id
+              currentTab === tab.id
                 ? 'border-b-2 border-text-primary text-text-primary'
                 : 'border-b-2 border-transparent text-text-tertiary hover:bg-fill-hover hover:text-text-secondary',
             ].join(' ')}
@@ -111,11 +122,17 @@ export function AgentInfoPane({ agent, threadUid, onClose, onEdit }: AgentInfoPa
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
-        {activeTab === 'overview' && <OverviewTab agent={agent} />}
-        {activeTab === 'routines' && <RoutinesTab agentId={agent.id} />}
-        {activeTab === 'media' && <MediaTab threadUid={threadUid} />}
-        {activeTab === 'computer' && <ComputerTab threadUid={threadUid} />}
-        {activeTab === 'members' && <MembersTab />}
+        {group ? (
+          <GroupMembersTab groupId={group.id} onChanged={onGroupChanged} />
+        ) : (
+          <>
+            {activeTab === 'overview' && <OverviewTab agent={agent} />}
+            {activeTab === 'routines' && <RoutinesTab agentId={agent.id} />}
+            {activeTab === 'media' && <MediaTab threadUid={threadUid} />}
+            {activeTab === 'computer' && <ComputerTab threadUid={threadUid} />}
+            {activeTab === 'members' && <MembersTab />}
+          </>
+        )}
       </div>
     </aside>
   );

@@ -13,12 +13,14 @@ import {
   ExternalLink,
   Loader2,
   AlertCircle,
+  MessageSquare,
 } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { Button, Spinner } from '@/components/ui/Button';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import type { AgentCardAgent } from './AgentCard';
 import { getBuiltInAgents } from './BuiltInAgentCard';
+import type { GroupChat } from './groupTypes';
 
 interface AgentWithMeta extends AgentCardAgent {
   archivedAt?: string;
@@ -47,10 +49,15 @@ interface AgentSidebarListProps {
   unreadById?: Record<string, UnreadInfo>;
   teamRunsLoading?: boolean;
   teamRunsError?: string | null;
+  groups?: GroupChat[];
+  selectedGroupId?: string;
+  onSelectGroup?: (group: GroupChat) => void;
+  onNewGroup?: () => void;
 }
 
 const SECTIONS = {
   myAgents: 'my-agents',
+  groups: 'groups',
   builtIn: 'built-in',
   teamRuns: 'team-runs',
 } as const;
@@ -69,12 +76,17 @@ export function AgentSidebarList({
   onArchive,
   onStartBuiltIn,
   unreadById,
+  groups = [],
+  selectedGroupId,
+  onSelectGroup,
+  onNewGroup,
 }: AgentSidebarListProps) {
   const [search, setSearch] = useState('');
   const [sections, setSections] = useState<Record<(string), boolean>>(() => {
     if (typeof window === 'undefined') return {};
     const out: Record<(string), boolean> = {};
     out[SECTIONS.myAgents] = localStorage.getItem(storageKey(SECTIONS.myAgents)) !== 'false';
+    out[SECTIONS.groups] = localStorage.getItem(storageKey(SECTIONS.groups)) !== 'false';
     out[SECTIONS.builtIn] = localStorage.getItem(storageKey(SECTIONS.builtIn)) !== 'false';
     out[SECTIONS.teamRuns] = localStorage.getItem(storageKey(SECTIONS.teamRuns)) === 'true';
     return out;
@@ -221,6 +233,55 @@ export function AgentSidebarList({
                   onClick={() => onSelect(agent)}
                   onContextMenu={(e) => handleContextMenu(e, agent)}
                 />
+              ))
+            )}
+          </div>
+        )}
+
+        <div className="mt-2 flex h-row-sm w-full items-center justify-between rounded-control px-2 text-xs font-medium text-text-secondary hover:bg-fill-hover">
+          <button
+            type="button"
+            onClick={() => toggleSection(SECTIONS.groups)}
+            className="flex min-w-0 flex-1 items-center gap-1.5 text-start"
+          >
+            <MessageSquare className="size-3.5" />
+            <span>{t('Groups')}</span>
+            <span className="text-[11px] text-text-tertiary">{groups.length}</span>
+            <ChevronRight
+              className={`size-3.5 text-text-tertiary transition-transform ${sections[SECTIONS.groups] ? 'rotate-90' : ''}`}
+            />
+          </button>
+          <button
+            type="button"
+            onClick={onNewGroup}
+            className="rounded-control p-0.5 text-text-tertiary hover:text-text-primary"
+            aria-label={t('New group')}
+            title={t('New group')}
+          >
+            <Plus className="size-3.5" />
+          </button>
+        </div>
+        {sections[SECTIONS.groups] && (
+          <div className="flex flex-col gap-0.5">
+            {groups.length === 0 ? (
+              <p className="px-2 py-3 text-xs text-text-tertiary">{t('No groups yet.')}</p>
+            ) : (
+              groups.map((group) => (
+                <button
+                  key={group.id}
+                  type="button"
+                  onClick={() => onSelectGroup?.(group)}
+                  className={[
+                    'flex h-row items-center gap-2 rounded-control px-2 text-start transition-colors',
+                    selectedGroupId === group.id ? 'bg-fill-hover' : 'hover:bg-fill-hover',
+                  ].join(' ')}
+                >
+                  <div className="flex size-7 shrink-0 items-center justify-center rounded-control bg-fill-tsp">
+                    <Users className="size-3.5 text-text-secondary" />
+                  </div>
+                  <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{group.name}</span>
+                  <span className="shrink-0 text-[11px] text-text-tertiary">{group.memberIds.length}</span>
+                </button>
               ))
             )}
           </div>
