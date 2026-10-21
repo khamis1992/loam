@@ -151,7 +151,7 @@ function FlexForm({ onClose }: { onClose: () => void }) {
         <KeyRound className="size-3.5" />
         {t('Bring your own key')}
         {flex?.hasKey && (
-          <span className="ms-auto rounded-full bg-function-success-tsp px-2 py-0.5 text-[10px] font-medium text-function-success">
+          <span className="ms-auto rounded-full bg-fill-tsp px-2 py-0.5 text-[10px] font-medium text-func-success">
             {t('Key saved')}
           </span>
         )}
@@ -178,7 +178,7 @@ function FlexForm({ onClose }: { onClose: () => void }) {
         placeholder={flex?.hasKey ? t('New key (blank keeps current)') : t('API key')}
         className="mb-1.5 w-full rounded-control border border-border-main bg-bg-main px-2 py-1.5 text-xs text-text-primary placeholder:text-text-tertiary"
       />
-      {error && <p className="mb-1.5 text-[11px] text-function-error">{error}</p>}
+      {error && <p className="mb-1.5 text-[11px] text-func-error">{error}</p>}
       <div className="flex items-center gap-2">
         <button
           type="submit"
@@ -193,7 +193,7 @@ function FlexForm({ onClose }: { onClose: () => void }) {
             type="button"
             disabled={busy}
             onClick={removeKey}
-            className="flex items-center gap-1 rounded-control px-2 py-1 text-xs text-function-error hover:bg-fill-hover"
+            className="flex items-center gap-1 rounded-control px-2 py-1 text-xs text-func-error hover:bg-fill-hover"
           >
             <Trash2 className="size-3" /> {t('Remove key')}
           </button>
