@@ -528,5 +528,10 @@
   "Running {tool}": "قيد التنفيذ: {tool}",
   "Last tool: {tool}": "أحدث أداة: {tool}",
   "The workspace is empty. Files the task creates or edits will open here.": "مساحة العمل فارغة. ستفتح هنا الملفات التي ينشئها المهمة أو يعدّلها.",
-  "Select a file to edit": "اختر ملفاً للتعديل"
+  "Select a file to edit": "اختر ملفاً للتعديل",
+  "Loam Video": "فيديو Loam",
+  "Import from URL": "استيراد من رابط",
+  "Export": "تصدير",
+  "Ready": "جاهز",
+  "Unavailable": "غير متوفر"
 }

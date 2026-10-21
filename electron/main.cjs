@@ -501,9 +501,12 @@ ipcMain.on(IPC_SYNC, (event) => {
 
 app.setAppUserModelId("app.loam.desktop");
 
-// Register the privileged custom protocol used to serve the Agent Studio UI.
+// Register the privileged custom protocol used to serve the Agent Studio UI,
+// plus the loamfilm:// protocol used to serve the vendored Loam Video wasm video
+// editor from electron/filmcraft/dist. Both must be registered before app ready.
 protocol.registerSchemesAsPrivileged([
   { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
+  { scheme: "loamfilm", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
 ]);
 
 // Native folder picker for choosing the working repo/folder.
@@ -699,6 +702,51 @@ app.whenReady().then(async () => {
     const ext = path.extname(filePath).toLowerCase();
     const mime = MIME_TYPES[ext] || "application/octet-stream";
     return new Response(fs.readFileSync(filePath), { headers: { "Content-Type": mime } });
+  });
+
+  // Serve the vendored Loam Video wasm editor over the privileged
+  // loamfilm:// protocol. Files come from electron/filmcraft/dist; overlay
+  // files (e.g. bridge-relay.js) may live directly in electron/filmcraft/ so
+  // they survive re-copying a fresh dist folder. .wasm must be served as
+  // application/wasm so the editor boots.
+  const FILMCRAFT_DIST = path.join(ROOT, "electron", "filmcraft", "dist");
+  const FILMCRAFT_OVERLAY = path.join(ROOT, "electron", "filmcraft");
+  const FILMCRAFT_MIME = {
+    ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript",
+    ".json": "application/json", ".png": "image/png", ".wasm": "application/wasm",
+  };
+  function filmcraftFile(relPath) {
+    const cleaned = relPath.replace(/^\/+/, "");
+    for (const baseDir of [FILMCRAFT_DIST, FILMCRAFT_OVERLAY]) {
+      const baseRoot = path.resolve(baseDir) + path.sep;
+      const filePath = path.normalize(path.join(baseDir, cleaned));
+      if (!filePath.startsWith(baseRoot)) continue;
+      if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) return filePath;
+    }
+    return null;
+  }
+  protocol.handle("loamfilm", async (request) => {
+    const url = new URL(request.url);
+    let pathname = decodeURIComponent(url.pathname);
+    if (pathname === "/" || pathname.endsWith("/")) pathname += "index.html";
+    const filePath = filmcraftFile(pathname);
+    if (!filePath) return new Response("Not Found", { status: 404 });
+    const ext = path.extname(filePath).toLowerCase();
+    const mime = FILMCRAFT_MIME[ext] || "application/octet-stream";
+    const body = fs.readFileSync(filePath);
+    if (ext === ".html") {
+      // Inject the agent bridge relay into the vendored page so the host app
+      // can drive window.filmcraft over postMessage without editing the
+      // dist files themselves (fresh dist copies keep working).
+      let html = body.toString("utf8");
+      if (!html.includes("bridge-relay.js")) {
+        html = /<\/head>/i.test(html)
+          ? html.replace(/<\/head>/i, '<script src="bridge-relay.js"></script></head>')
+          : html + '<script src="bridge-relay.js"></script>';
+      }
+      return new Response(html, { headers: { "Content-Type": mime } });
+    }
+    return new Response(body, { headers: { "Content-Type": mime } });
   });
 
   // Health-check the Agent Studio backend; do not block the UI if it is down.
