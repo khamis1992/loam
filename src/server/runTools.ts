@@ -33,6 +33,8 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "ticket_update",
   "handoff_to_agent",
   "scaffold_backend",
+  "design_create",
+  "design_brand_kit_save",
 ];
 
 export interface AlwaysOnMergeInput {
