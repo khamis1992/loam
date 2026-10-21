@@ -37,6 +37,7 @@ let createScratchpadTools: () => Tool[];
 let createInstructionHistoryTools: () => Tool[];
 let createAgentSpawnTools: () => Tool[];
 let createDeepResearchTools: () => Tool[];
+let createBoardTools: () => Tool[];
 
 function dummy(name: string): Tool {
   return {
@@ -92,6 +93,8 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     createInstructionHistoryTools = instructionToolsMod.createInstructionHistoryTools;
     createAgentSpawnTools = agentSpawnToolsMod.createAgentSpawnTools;
     createDeepResearchTools = deepResearchToolsMod.createDeepResearchTools;
+    const boardToolsMod = await import("../../tools/boardTools.js");
+    createBoardTools = boardToolsMod.createBoardTools;
     const { ToolRegistry: Registry } = registryMod;
     registry = new Registry();
     // Register a few real build-mode staples plus the real scratchpad tools,
@@ -101,6 +104,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll(createInstructionHistoryTools());
     registry.registerAll(createAgentSpawnTools());
     registry.registerAll(createDeepResearchTools());
+    registry.registerAll(createBoardTools());
   });
 
   after(() => {
@@ -120,6 +124,10 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
   it("a build-mode agent task exposes scratchpad_add to the model", () => {
     const { tools } = buildRunToolSet();
     for (const name of ["scratchpad_add", "scratchpad_list", "scratchpad_complete"]) {
+      assert.ok(tools.names().includes(name), `effective tool list must include ${name}`);
+    }
+    // MF10: the shared ticket board is always-on too.
+    for (const name of ["ticket_create", "ticket_list", "ticket_claim", "ticket_update"]) {
       assert.ok(tools.names().includes(name), `effective tool list must include ${name}`);
     }
     assert.ok(tools.names().includes("propose_instructions_update"), "effective tool list must include propose_instructions_update");

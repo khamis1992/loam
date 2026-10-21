@@ -20,6 +20,7 @@ import { createApproval, waitForDecision } from "./server/approvals.js";
 import type { Tool } from "./tools/registry.js";
 import { createScratchpadTools } from "./tools/scratchpadTools.js";
 import { createDeepResearchTools } from "./tools/deepResearch.js";
+import { createBoardTools } from "./tools/boardTools.js";
 import { createInstructionHistoryTools } from "./tools/instructionTools.js";
 import { createAgentSpawnTools } from "./tools/agentSpawnTools.js";
 import { createBrowserOperatorTools } from "./tools/browserOperator.js";
@@ -94,6 +95,7 @@ async function main(): Promise<void> {
 
   const rt = await buildRuntime(cfg);
   rt.registry.registerAll(createScratchpadTools());
+  rt.registry.registerAll(createBoardTools());
   rt.registry.registerAll(createInstructionHistoryTools());
   rt.registry.registerAll(createAgentSpawnTools());
   rt.registry.registerAll(createBrowserOperatorTools());

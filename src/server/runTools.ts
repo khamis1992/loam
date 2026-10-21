@@ -27,6 +27,10 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "list_children",
   "deep_research",
   "wide_research",
+  "ticket_create",
+  "ticket_list",
+  "ticket_claim",
+  "ticket_update",
 ];
 
 export interface AlwaysOnMergeInput {

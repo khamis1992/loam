@@ -15,10 +15,12 @@ import {
   Loader2,
   AlertCircle,
   Store,
+  Kanban,
 } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { Button, Spinner } from '@/components/ui/Button';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
+import { Button, Spinner } from '@/components/ui/Button';
+import { useRouter } from 'next/navigation';
 import type { AgentCardAgent } from './AgentCard';
 import { getBuiltInAgents } from './BuiltInAgentCard';
 
@@ -330,6 +332,7 @@ export function AgentSidebarList({
           </div>
         )}
 
+        <BoardLink />
         <button
           type="button"
           onClick={() => toggleSection(SECTIONS.teamRuns)}
@@ -481,6 +484,20 @@ function ContextItem({
     >
       <span className="text-text-secondary">{icon}</span>
       {label}
+    </button>
+  );
+}
+
+function BoardLink() {
+  const router = useRouter();
+  return (
+    <button
+      type="button"
+      onClick={() => router.push('/app/board')}
+      className="mt-2 flex h-row-sm w-full items-center gap-1.5 rounded-control px-2 text-xs font-medium text-text-secondary hover:bg-fill-hover"
+    >
+      <Kanban className="size-3.5" />
+      {t('Board')}
     </button>
   );
 }
