@@ -17,6 +17,7 @@ import { SkillsPane } from './SkillsPane';
 import { ShortcutsPane } from './ShortcutsPane';
 import { MemoryPane } from './MemoryPane';
 import { InAppBrowserPane } from './InAppBrowserPane';
+import { PersonalizationPane } from './PersonalizationPane';
 import { AssetsPane } from './AssetsPane';
 import { ApiKeysPane } from './ApiKeysPane';
 import { EmptyState } from './EmptyState';
@@ -43,6 +44,7 @@ const TABS = [
 ];
 
 const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Memory', 'In-App Browser', 'Email', 'Phone', 'Wallet', 'Integrations', 'Developers']);
+const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'Personalization', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Memory', 'In-App Browser', 'Email', 'Phone', 'Wallet']);
 
 const GROUP_ORDER = ['Account', 'Settings', 'Capabilities', 'Computers', 'Data', 'Assets', 'About'];
 
@@ -73,7 +75,7 @@ export function SettingsDialog() {
         <nav className="flex w-[176px] flex-col gap-3 bg-bg-nav p-3" aria-label={t('Settings')}>
           <ProfileHeader />
           <div className="flex h-8 items-center gap-2 rounded-control border border-border-main bg-fill-tsp px-2 text-sm text-text-tertiary">
-            <span aria-hidden>🔍</span> {t('Search')}
+            <span aria-hidden>ðŸ”</span> {t('Search')}
           </div>
           {grouped.map(({ group, tabs }) => (
             <section key={group}>
@@ -102,7 +104,7 @@ export function SettingsDialog() {
         <main key={activeTab} className="flex-1 overflow-y-auto px-8 py-6">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-headline-sm text-text-primary">{t(activeTab)}</h2>
-            <button type="button" aria-label={t('Close')} onClick={() => dispatch(closeSettings())} className="rounded-control p-1 hover:bg-fill-hover text-text-secondary">✕</button>
+            <button type="button" aria-label={t('Close')} onClick={() => dispatch(closeSettings())} className="rounded-control p-1 hover:bg-fill-hover text-text-secondary">âœ•</button>
           </div>
           <hr className="mb-6 border-border-main" />
           <SettingsContent tab={activeTab} />
@@ -134,6 +136,7 @@ function SettingsContent({ tab }: { tab: string }) {
     case 'Appearance': return <AppearancePane />;
     case 'Shortcuts': return <ShortcutsPane />;
     case 'Data controls': return <DataControlsPane />;
+    case 'Personalization': return <PersonalizationPane />;
     case 'My Computer': return <MyComputerPane />;
     case 'Usage': return <UsagePane />;
     case 'Connectors': return <ConnectorsPane />;
@@ -152,11 +155,11 @@ function SettingsContent({ tab }: { tab: string }) {
 
 function glyphFor(icon: string) {
   const map: Record<string, string> = {
-    SlidersHorizontal: '⚙', User: '👤', Sparkles: '✨', Palette: '🎨', Keyboard: '⌨',
-    Blocks: '▦', Unplug: '🔌', Database: '🗄', Monitor: '🖥', Globe: '🌐', Mail: '✉', Phone: '📞',
-    Wallet: '👛', Info: 'ℹ',
+    SlidersHorizontal: 'âš™', User: 'ðŸ‘¤', Sparkles: 'âœ¨', Palette: 'ðŸŽ¨', Keyboard: 'âŒ¨',
+    Blocks: 'â–¦', Unplug: 'ðŸ”Œ', Database: 'ðŸ—„', Monitor: 'ðŸ–¥', Globe: 'ðŸŒ', Mail: 'âœ‰', Phone: 'ðŸ“ž',
+    Wallet: 'ðŸ‘›', Info: 'â„¹',
   };
-  return map[icon] || '•';
+  return map[icon] || 'â€¢';
 }
 
 export function Row({ label, description, children }: { label: string; description?: string; children: ReactNode }) {
