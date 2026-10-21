@@ -183,10 +183,10 @@ function centroidAt(subjects:SubjectFrame[],t:number):{x:number;y:number}|null{
  * Crop rectangles that fit `aspect` (target width/height, e.g. 9/16) into a `width`x`height`
  * frame while following subject boxes. Without subjects the crop stays centered. Windows
  * change only at subject timestamps, so the output is a small keyframe list — unless
- * `maxPan` (max crop-origin speed as a fraction of frame-per-second) is set, which adds
- * intermediate windows so the pan never outruns the subject tracking.
+ * `maxPan` (max crop-origin speed as a fraction of frame per second) is set, which walks
+ * the crop origin on capped pursuit steps (panTickSeconds grid) so the pan never jumps.
  */
-export function computeReframe(input:{width:number;height:number;aspect:number;subjects?:SubjectFrame[];start?:number;end?:number;maxPan?:number}):ReframeWindow[]{
+export function computeReframe(input:{width:number;height:number;aspect:number;subjects?:SubjectFrame[];start?:number;end?:number;maxPan?:number;panTickSeconds?:number}):ReframeWindow[]{
   const {width,height,aspect}=input;
   if(!isTime(width)||!isTime(height)||width<1||height<1)throw Error('reframe: width/height must be positive integers');
   if(!isTime(aspect)||aspect<=0)throw Error('reframe: aspect must be a positive number (width/height)');
@@ -211,7 +211,7 @@ export function computeReframe(input:{width:number;height:number;aspect:number;s
     };
   };
   const stops=[...new Set([start,...subjects.map(s=>s.t).filter(t=>t>start&&t<end),end])].sort((a,b)=>a-b);
-  const maxPan=input.maxPan;
+  const maxPan=input.maxPan,panTick=input.panTickSeconds??0.5;
   const windows:ReframeWindow[]=[];
   if(maxPan===undefined){
     for(let i=0;i<stops.length-1;i++){
@@ -222,16 +222,25 @@ export function computeReframe(input:{width:number;height:number;aspect:number;s
     }
     return windows;
   }
-  if(!isTime(maxPan)||maxPan<=0)throw Error('reframe: maxPan must be a positive number');
+  if(!isTime(maxPan)||maxPan<=0)throw Error('reframe: maxPan must be a positive number (fraction of frame per second)');
+  if(!isTime(panTick)||panTick<=0)throw Error('reframe: panTickSeconds must be a positive number');
+  // Capped-speed pursuit: the crop origin walks toward the interpolated target at most
+  // maxPan * (width for x, height for y) pixels per second, so the pan never jumps.
+  let cx=0,cy=0;
   for(let i=0;i<stops.length-1;i++){
     const s=stops[i]!,e=stops[i+1]!,dt=e-s;
     const a=rect(s),b=rect(e);
-    const steps=Math.max(1,Math.ceil(Math.max(Math.abs(b.x-a.x)/(maxPan*width*dt+1e-9),Math.abs(b.y-a.y)/(maxPan*height*dt+1e-9))));
-    for(let j=0;j<steps;j++){
-      const t0=s+dt*(j/steps),t1=j===steps-1?e:s+dt*((j+1)/steps),crop=rect((t0+t1)/2);
+    if(i===0){cx=a.x;cy=a.y;}
+    const k=Math.max(1,Math.ceil(dt/panTick)),h=dt/k;
+    const maxX=maxPan*width*h,maxY=maxPan*height*h;
+    for(let j=0;j<k;j++){
+      const f=(j+1)/k,tx=a.x+(b.x-a.x)*f,ty=a.y+(b.y-a.y)*f;
+      cx+=Math.min(maxX,Math.max(-maxX,tx-cx));
+      cy+=Math.min(maxY,Math.max(-maxY,ty-cy));
+      const tEnd=s+h*(j+1),crop={x:Math.round(cx),y:Math.round(cy),width:cropWidth,height:cropHeight};
       const prev=windows.at(-1);
-      if(prev&&prev.crop.x===crop.x&&prev.crop.y===crop.y&&prev.end>=t0-1e-9)prev.end=t1;
-      else windows.push({start:t0,end:t1,crop});
+      if(prev&&prev.crop.x===crop.x&&prev.crop.y===crop.y)prev.end=tEnd;
+      else windows.push({start:s+h*j,end:tEnd,crop});
     }
   }
   return windows;
@@ -326,7 +335,7 @@ export function captionsForRange(cues:CaptionCue[],start:number,end:number,opts:
 export type AutoEditOptions={
   threshold?:number;adaptive?:boolean;sensitivity?:number;minSceneSeconds?:number;duration?:number;
   targetSeconds?:number;minClipSeconds?:number;maxClipSeconds?:number;beats?:number[];beatsTolerance?:number;
-  aspect?:number;width?:number;height?:number;maxPan?:number;subjects?:SubjectFrame[];transcript?:TranscriptSegment[];language?:string;
+  aspect?:number;width?:number;height?:number;maxPan?:number;panTickSeconds?:number;subjects?:SubjectFrame[];transcript?:TranscriptSegment[];language?:string;
   maxChars?:number;maxCueSeconds?:number;
 };
 export type AutoEditPlan={scenes:Scene[];clips:AutoClip[];reframes:ReframeWindow[];captions:CaptionCue[];warnings:string[]};
@@ -348,7 +357,7 @@ export async function planAutoEdit(videoPath:string,opts:AutoEditOptions,probe:M
   let reframes:ReframeWindow[]=[];
   if(opts.aspect){
     if(!subjects.length)warnings.push('no subject boxes: reframing with centered crops');
-    reframes=computeReframe({width:opts.width??1920,height:opts.height??1080,aspect:opts.aspect,subjects,start:0,end:duration,maxPan:opts.maxPan});
+    reframes=computeReframe({width:opts.width??1920,height:opts.height??1080,aspect:opts.aspect,subjects,start:0,end:duration,maxPan:opts.maxPan,panTickSeconds:opts.panTickSeconds});
   }
   const transcript=opts.transcript??(probe.transcribe?await probe.transcribe(videoPath,{language:opts.language}):undefined);
   if(!transcript)warnings.push('no transcript: captions skipped');
