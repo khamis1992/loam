@@ -431,5 +431,16 @@
   "Secure": "آمن",
   "Sheets and research": "جداول البيانات والبحث",
   "Security scans and automations": "فحوصات الأمان والأتمتة",
-  "Slides, docs, images, and videos": "شرائح، ومستندات، وصور، وفيديوهات"
+  "Slides, docs, images, and videos": "شرائح، ومستندات، وصور، وفيديوهات",
+  "Channels": "القنوات",
+  "Telegram": "تيليجرام",
+  "Configured": "مهيأة",
+  "Not configured": "غير مهيأة",
+  "Not configured - set {var}": "غير مهيأة — عيّن {var}",
+  "No chats bound yet.": "لا توجد محادثات مرتبطة بعد.",
+  "Remove binding": "إزالة الربط",
+  "Failed to load channels": "فشل تحميل القنوات.",
+  "Chat id": "معرّف المحادثة",
+  "Email address": "البريد الإلكتروني",
+  "Bind": "ربط"
 }

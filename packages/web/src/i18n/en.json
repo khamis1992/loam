@@ -431,5 +431,16 @@
   "Secure": "Secure",
   "Sheets and research": "Sheets and research",
   "Security scans and automations": "Security scans and automations",
-  "Slides, docs, images, and videos": "Slides, docs, images, and videos"
+  "Slides, docs, images, and videos": "Slides, docs, images, and videos",
+  "Channels": "Channels",
+  "Telegram": "Telegram",
+  "Configured": "Configured",
+  "Not configured": "Not configured",
+  "Not configured - set {var}": "Not configured — set {var}",
+  "No chats bound yet.": "No chats bound yet.",
+  "Remove binding": "Remove binding",
+  "Failed to load channels": "Failed to load channels.",
+  "Chat id": "Chat id",
+  "Email address": "Email address",
+  "Bind": "Bind"
 }
