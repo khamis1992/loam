@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect, useRef, type ComponentType } from 'react'
 import { useRouter } from 'next/navigation';
 import {
   SquarePen, Monitor, Search, BookOpen, Sparkles, Workflow, LayoutGrid, MoreHorizontal,
-  ChevronRight, Share2, Bell, MonitorSmartphone,
+  ChevronRight, Share2, Bell, MonitorSmartphone, Palette,
 } from 'lucide-react';
 import { useAppSelector, useAppDispatch, toggleSidebar } from '@/store';
 import { selectSession, startNewTask, loadSessions, type AgentSession } from '@/store/sessionsSlice';
@@ -42,6 +42,7 @@ export function Sidebar() {
     { id: 'search', label: t('Search'), icon: Search, shortcut: t('Ctrl+K'), onClick: 'search' },
     { id: 'library', label: t('Library'), icon: BookOpen, href: '/app/library' },
     { id: 'creations', label: t('Creations'), icon: Sparkles, href: '/app/creations' },
+    { id: 'studio', label: t('Studio'), icon: Palette, href: '/app/studio' },
     { id: 'automations', label: t('Automations'), icon: Workflow, href: '/app/automations' },
     { id: 'plugins', label: t('Plugins'), icon: LayoutGrid, href: '/app/plugins' },
     { id: 'more', label: t('More'), icon: MoreHorizontal, href: '/app/more' },

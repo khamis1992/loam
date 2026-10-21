@@ -431,5 +431,13 @@
   "Secure": "Secure",
   "Sheets and research": "Sheets and research",
   "Security scans and automations": "Security scans and automations",
-  "Slides, docs, images, and videos": "Slides, docs, images, and videos"
+  "Slides, docs, images, and videos": "Slides, docs, images, and videos",
+  "Studio": "Studio",
+  "Design": "Design",
+  "Edit and render videos": "Edit and render videos",
+  "Draft and export documents": "Draft and export documents",
+  "Analyze and edit spreadsheets": "Analyze and edit spreadsheets",
+  "Build presentation decks": "Build presentation decks",
+  "Create images and visuals": "Create images and visuals",
+  "Each tool opens a new task workspace in its mode.": "Each tool opens a new task workspace in its mode."
 }

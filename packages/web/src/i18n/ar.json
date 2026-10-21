@@ -431,5 +431,13 @@
   "Secure": "آمن",
   "Sheets and research": "جداول البيانات والبحث",
   "Security scans and automations": "فحوصات الأمان والأتمتة",
-  "Slides, docs, images, and videos": "شرائح، ومستندات، وصور، وفيديوهات"
+  "Slides, docs, images, and videos": "شرائح، ومستندات، وصور، وفيديوهات",
+  "Studio": "استوديو",
+  "Design": "تصميم",
+  "Edit and render videos": "تحرير الفيديوهات وعرضها",
+  "Draft and export documents": "إنشاء المستندات وتصديرها",
+  "Analyze and edit spreadsheets": "تحليل الجداول وتحريرها",
+  "Build presentation decks": "بناء عروض تقديمية",
+  "Create images and visuals": "إنشاء الصور والتصاميم",
+  "Each tool opens a new task workspace in its mode.": "يفتح كل أداة مساحة عمل جديدة بالوضع الخاص بها."
 }
