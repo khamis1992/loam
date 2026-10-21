@@ -53,6 +53,10 @@ describe("workspace video render", () => {
     assert.throws(() => mod.normalizeEdl(null), /edl required/);
     assert.throws(() => mod.normalizeEdl({ clips: [{ in: 0, out: 0.01 }] }, 5), /segment/);
     assert.throws(() => mod.normalizeEdl({ clips: [{ in: 0, out: 1 }], overlays: [{ text: "", start: 0, end: 2 }] }), /text/);
+    // Task-produced EDL variants: `segments` with start/end aliases.
+    const alias = mod.normalizeEdl({ segments: [{ start: 1, end: 3 }] }, 10);
+    assert.equal(alias.clips[0]!.in, 1);
+    assert.equal(alias.clips[0]!.out, 3);
   });
 
   it("sums segment durations", () => {
@@ -77,6 +81,8 @@ describe("workspace video render", () => {
     const complex = (mod.buildFfmpegArgs(edl, source, out, true) as string []).find((a) => a.includes("concat"))!;
     assert.ok(complex.includes("atrim=start=4.000"), complex);
     assert.ok(complex.includes("concat=n=2:v=1:a=1"), complex);
+    // concat consumes inputs interleaved per segment, not all video then all audio.
+    assert.ok(complex.includes("[v0][a0][v1][a1]concat"), complex);
   });
 
   it("draws text overlays with escaped filter text and percent position", () => {
