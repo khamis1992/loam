@@ -14,6 +14,7 @@ let mod: {
   edlDuration: (edl: VideoEdl) => number;
   chooseOutputPath: (rel: string, root: string) => string;
   getRenderJob: (id: string) => { status: string } | undefined;
+  parseProgress: (stderr: string) => number | undefined;
 };
 
 describe("workspace video render", () => {
@@ -29,6 +30,7 @@ describe("workspace video render", () => {
       edlDuration: video.edlDuration,
       chooseOutputPath: video.chooseOutputPath,
       getRenderJob: video.getRenderJob,
+      parseProgress: video.parseProgress,
     };
   });
 
@@ -104,6 +106,12 @@ describe("workspace video render", () => {
     fs.writeFileSync(path.join(tmpDir, "clip.edit.mp4"), "x");
     const second = mod.chooseOutputPath("clip.mp4", tmpDir);
     assert.equal(second, "clip.edit-2.mp4");
+  });
+
+  it("reads progress from -progress output", () => {
+    assert.equal(mod.parseProgress("frame=10\nout_time_ms=1250000\nprogress=continue\n"), 1.25);
+    assert.equal(mod.parseProgress("time=00:00:03.50 bitrate=1k"), 3.5);
+    assert.equal(mod.parseProgress("no progress here"), undefined);
   });
 
   it("returns no job for unknown ids", () => {
