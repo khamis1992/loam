@@ -1,5 +1,5 @@
 /*
- * bridge-relay.js — injected into the vendored FilmCraft page by the
+ * bridge-relay.js — injected into the vendored Loam Video page by the
  * loamfilm:// protocol handler (see electron/main.cjs).
  *
  * It exposes window.filmcraft to the host Loam page over postMessage so the
@@ -45,7 +45,7 @@
     Promise.resolve().then(function () {
       var api = window.filmcraft;
       if (!api || typeof api[method] !== "function") {
-        throw new Error("filmcraft API not ready or missing method: " + String(method));
+        throw new Error("Loam Video editor API not ready or missing method: " + String(method));
       }
       return api[method].apply(api, args);
     }).then(

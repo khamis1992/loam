@@ -502,7 +502,7 @@ ipcMain.on(IPC_SYNC, (event) => {
 app.setAppUserModelId("app.loam.desktop");
 
 // Register the privileged custom protocol used to serve the Agent Studio UI,
-// plus the loamfilm:// protocol used to serve the vendored FilmCraft wasm video
+// plus the loamfilm:// protocol used to serve the vendored Loam Video wasm video
 // editor from electron/filmcraft/dist. Both must be registered before app ready.
 protocol.registerSchemesAsPrivileged([
   { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
@@ -704,7 +704,7 @@ app.whenReady().then(async () => {
     return new Response(fs.readFileSync(filePath), { headers: { "Content-Type": mime } });
   });
 
-  // Serve the vendored FilmCraft ("Loam Video") wasm editor over the privileged
+  // Serve the vendored Loam Video wasm editor over the privileged
   // loamfilm:// protocol. Files come from electron/filmcraft/dist; overlay
   // files (e.g. bridge-relay.js) may live directly in electron/filmcraft/ so
   // they survive re-copying a fresh dist folder. .wasm must be served as

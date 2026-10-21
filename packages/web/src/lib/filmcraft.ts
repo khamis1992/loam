@@ -1,5 +1,5 @@
 /**
- * Agent bridge for the vendored FilmCraft ("Loam Video") wasm editor.
+ * Agent bridge for the vendored "Loam Video" wasm editor.
  *
  * The editor is embedded in an iframe served from the privileged loamfilm://
  * scheme (registered in electron/main.cjs). That page runs an injected relay
@@ -65,7 +65,7 @@ export class FilmcraftBridge {
   dispose(): void {
     window.removeEventListener('message', this.onMessage);
     for (const { reject } of this.pending.values()) {
-      reject(new Error('FilmCraft bridge disposed'));
+      reject(new Error('Loam Video bridge disposed'));
     }
     this.pending.clear();
     this.readyCallbacks.clear();
