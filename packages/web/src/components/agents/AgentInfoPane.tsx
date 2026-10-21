@@ -10,6 +10,8 @@ import type { AgentCardAgent } from './AgentCard';
 import { loadAgentThreadFiles } from './AgentThreadView';
 import { GroupMembersTab } from './GroupMembersTab';
 import type { GroupChat } from './groupTypes';
+import { WorkspacePanel } from '@/components/workspace';
+import type { WorkspaceFile } from '@/components/workspace';
 
 interface AgentWithMeta extends AgentCardAgent {
   description?: string;
@@ -69,6 +71,15 @@ export function AgentInfoPane({ agent, threadUid, onClose, onEdit, group, onGrou
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const tabs = group ? TAB_ITEMS.filter((tab) => tab.id === 'members') : TAB_ITEMS;
   const currentTab: TabId = group ? 'members' : activeTab;
+  const [workspaceFile, setWorkspaceFile] = useState<WorkspaceFile | null>(null);
+
+  if (workspaceFile) {
+    return (
+      <aside className="flex w-[560px] shrink-0 flex-col border-s border-border-main bg-bg-menu">
+        <WorkspacePanel file={workspaceFile} onClose={() => setWorkspaceFile(null)} />
+      </aside>
+    );
+  }
 
   return (
     <aside className="flex w-[340px] shrink-0 flex-col border-s border-border-main bg-bg-menu">
@@ -138,7 +149,7 @@ export function AgentInfoPane({ agent, threadUid, onClose, onEdit, group, onGrou
             {activeTab === 'overview' && <OverviewTab agent={agent} />}
             {activeTab === 'channels' && <ChannelsTab agentId={agent.id} />}
             {activeTab === 'routines' && <RoutinesTab agentId={agent.id} />}
-            {activeTab === 'media' && <MediaTab threadUid={threadUid} />}
+            {activeTab === 'media' && <MediaTab threadUid={threadUid} onOpenDoc={(path, name) => setWorkspaceFile({ taskId: threadUid ?? '', path, name, kind: 'doc' })} />}
             {activeTab === 'computer' && <ComputerTab threadUid={threadUid} />}
             {activeTab === 'members' && <MembersTab agentId={agent.id} />}
           </>
@@ -843,7 +854,7 @@ function statusLabel(s: Schedule): string | null {
   return null;
 }
 
-function MediaTab({ threadUid }: { threadUid: string | null }) {
+function MediaTab({ threadUid, onOpenDoc }: { threadUid: string | null; onOpenDoc: (path: string, name: string) => void }) {
   const [files, setFiles] = useState<Array<{ name: string; path: string; bytes: number }>>([]);
   const [loading, setLoading] = useState(true);
 
@@ -893,10 +904,19 @@ function MediaTab({ threadUid }: { threadUid: string | null }) {
       {files.map((f) => (
         <li key={f.path} className="flex items-center gap-2 rounded-card border border-border-main bg-bg-main p-2">
           <FileText className="size-4 shrink-0 text-text-tertiary" />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm text-text-primary">{f.name}</p>
-            <p className="text-[11px] text-text-tertiary">{formatBytes(f.bytes)}</p>
-          </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm text-text-primary">{f.name}</p>
+          <p className="text-[11px] text-text-tertiary">{formatBytes(f.bytes)}</p>
+        </div>
+        {f.name.toLowerCase().endsWith('.docx') && (
+          <button
+            type="button"
+            onClick={() => onOpenDoc(f.path, f.name)}
+            className="rounded-control border border-border-main px-2 py-1 text-xs text-text-secondary hover:bg-fill-hover"
+          >
+            {t('Edit')}
+          </button>
+        )}
           <a
             href={`${getApiBase()}/api/media?taskId=${encodeURIComponent(threadUid)}&path=${encodeURIComponent(f.path)}`}
             target="_blank"
