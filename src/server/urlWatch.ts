@@ -374,3 +374,40 @@ export function startUrlWatchers(deps: UrlWatchDeps): () => void {
 export function deleteUrlWatch(scheduleId: string): boolean {
   return deleteSchedule(scheduleId);
 }
+
+// ---------------------------------------------------------------------------
+// Built-in connectors (MF7): GitHub issues — the one real connector, enabled
+// because a token API exists (GITHUB_TOKEN / GH_TOKEN, same as skillsRegistry).
+// ---------------------------------------------------------------------------
+
+/**
+ * GitHub issues connector: `url` may be "owner/repo[:label]" or a full
+ * api.github.com issues URL. Returns the issue list as stable text lines.
+ * Without a token the unauthenticated limit still works but is rate-capped.
+ */
+export function githubIssuesFetcher(input: { url: string; scheduleId: string }): Promise<string> {
+  const target = input.url.trim().replace(/^https?:\/\/github\.com\//i, "").replace(/\/issues$/i, "");
+  const [repoPart, labelPart] = target.split(":");
+  const api = /^https:\/\/api\.github\.com\//i.test(target)
+    ? target
+    : `https://api.github.com/repos/${repoPart}/issues${labelPart ? `?labels=${encodeURIComponent(labelPart)}&` : "?"}per_page=50&state=all&sort=updated`;
+  const headers: Record<string, string> = {
+    "user-agent": "loam-url-watch",
+    accept: "application/vnd.github+json",
+  };
+  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+  if (token) headers.authorization = `Bearer ${token}`;
+  return fetch(api, { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }).then(async (res) => {
+    if (!res.ok) throw new Error(`github issues fetch failed: ${res.status}`);
+    const items = (await res.json()) as Array<{ number: number; title: string; state: string; updated_at: string }>;
+    if (!Array.isArray(items)) throw new Error("github issues response was not a list");
+    return items
+      .map((i) => `#${i.number} [${i.state}] ${i.title} (${i.updated_at})`)
+      .join("\n");
+  });
+}
+
+/** Idempotent registration of the built-in connectors (server boot). */
+export function registerBuiltInConnectors(): void {
+  if (!connectorFetchers.has("github-issues")) watchConnector("github-issues", githubIssuesFetcher);
+}

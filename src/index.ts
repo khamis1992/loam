@@ -527,7 +527,8 @@ async function main(): Promise<void> {
   (globalThis as { __loamScheduledRun?: ScheduledRun }).__loamScheduledRun = scheduledRunObj;
 
   // MF7: url-change triggers poll on their own interval and fire only on change.
-  const { startUrlWatchers } = await import("./server/urlWatch.js");
+  const { startUrlWatchers, registerBuiltInConnectors } = await import("./server/urlWatch.js");
+  registerBuiltInConnectors();
   const stopUrlWatchers = startUrlWatchers({ run: scheduledRunObj });
 
   const stopScheduler = startScheduler({ runScheduled: scheduledRun });
