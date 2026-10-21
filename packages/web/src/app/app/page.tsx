@@ -24,7 +24,8 @@ import { BuildIllustration, CreateIllustration } from '@/components/home/BuildIl
 import { useBranch } from '@/components/home/useBranch';
 import { uploadFile, type Attachment } from '@/services/upload';
 import { desktopApis, isDesktop } from '@/services/desktopApis';
-import { getSessionToken, getApiBase, getApiHeaders } from '@/services/rpc';
+import { getSessionToken, getApiBase } from '@/services/rpc';
+import { fetchProjects } from '@/services/projectContextApi';
 import { shortUid } from '@/utils/uid';
 import type { TaskMode } from '@shared/socket';
 
@@ -70,9 +71,8 @@ export default function HomePage() {
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [worktreeEnabled, setWorktreeEnabled] = useState(false);
-  const [projectBranch, setProjectBranch] = useState<string | null>(null);
   const desktopBranch = useBranch();
-  const branch = projectBranch || desktopBranch;
+  const branch = desktopBranch;
 
   useEffect(() => {
     localStorage.setItem(MODEL_KEY, model);
@@ -80,38 +80,13 @@ export default function HomePage() {
 
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      try {
-        const res = await fetch(`${getApiBase()}/api/projects`, { headers: await getApiHeaders() });
-        if (!res.ok) return;
-        const data = (await res.json()) as { projects?: Array<{ id: string; name: string; folder?: string }> };
-        if (mounted) setProjects((data.projects ?? []).map((p) => ({ id: p.id, name: p.name, folder: p.folder ?? null })));
-      } catch {
+    fetchProjects()
+      .then((list) => { if (mounted) setProjects(list); })
+      .catch(() => {
         // Loam server API unavailable: the chip keeps the folder dialog.
-      }
-    })();
+      });
     return () => { mounted = false; };
   }, []);
-
-  // Option 17: the branch chip shows the real branch of the selected project's folder.
-  useEffect(() => {
-    setProjectBranch(null);
-    if (!projectId) return;
-    const folder = projects.find((p) => p.id === projectId)?.folder;
-    if (!folder) return;
-    let mounted = true;
-    (async () => {
-      try {
-        const res = await fetch(`${getApiBase()}/api/projects/${encodeURIComponent(projectId)}/git`, { headers: await getApiHeaders() });
-        if (!res.ok) return;
-        const data = (await res.json()) as { isGit?: boolean; branch?: string | null };
-        if (mounted && data.isGit && data.branch) setProjectBranch(data.branch);
-      } catch {
-        // ignore: fall back to the desktop-provided branch
-      }
-    })();
-    return () => { mounted = false; };
-  }, [projectId, projects]);
 
   useEffect(() => {
     let cancelled = false;
@@ -192,7 +167,6 @@ export default function HomePage() {
         setProjectPath((res as { path: string }).path);
         setActiveFolder('project');
         setProjectId(null);
-        setProjectBranch(null);
       }
     } catch {
       // ignore
@@ -231,7 +205,6 @@ export default function HomePage() {
     setProjectPath(path);
     setActiveFolder('project');
     setProjectId(null);
-    setProjectBranch(null);
   };
 
   const handleUpdateClick = async () => {
