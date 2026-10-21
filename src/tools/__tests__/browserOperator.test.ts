@@ -204,13 +204,14 @@ describe("browser_operator loop", () => {
     assert.ok(result.steps.length >= 2);
   });
 
-  it("reports blocked when nothing matches and the page cannot scroll", async () => {
+  it("waits once on a blank page before reporting blocked when nothing matches", async () => {
     const surface = new FakeSurface([observation({ title: "Empty" })]);
 
     const result = await runBrowserOperatorLoop({ goal: "click Continue", surface });
 
     assert.equal(result.status, "blocked");
-    assert.equal(result.steps.length, 0);
+    assert.equal(result.steps.length, 1);
+    assert.equal(surface.acts[0]?.kind, "wait");
     assert.match(result.message, /no interactive elements/i);
   });
 
