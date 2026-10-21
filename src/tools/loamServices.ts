@@ -164,6 +164,12 @@ export function createLoamServiceTools(): Tool[] {
           enabled: s.enabled,
           prompt: s.prompt.slice(0, 120),
           agentId: s.agentId ?? null,
+          kind: s.kind ?? "cron",
+          // MF7 url-watch state (null for the other kinds)
+          url: s.kind === "url-watch" ? (s.watchPath ?? null) : null,
+          selector: s.watchSelector ?? null,
+          lastWatchCheckedAt: s.lastWatchCheckedAt ?? null,
+          lastWatchChangedAt: s.lastWatchChangedAt ?? null,
           lastRunAt: s.lastRunAt ?? null,
           lastTaskId: s.lastTaskId ?? null,
           lastStatus: s.lastStatus ?? null,
