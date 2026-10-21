@@ -374,7 +374,9 @@ function coalescePieces(pieces: readonly AssemblyPiece[]): AssemblyPiece[] {
   const merged: AssemblyPiece[] = [];
   for (const piece of pieces) {
     const last = merged[merged.length - 1];
-    if (last && piece.start <= last.end + CONTIGUOUS_EPSILON) {
+    // Contiguous means the piece starts where the previous piece ended and does
+    // not begin before it in the source (reordered pieces never merge).
+    if (last && piece.start >= last.start && piece.start <= last.end + CONTIGUOUS_EPSILON) {
       last.end = Math.max(last.end, piece.end);
       last.text = last.text ? `${last.text} ${piece.text}` : piece.text;
     } else {
