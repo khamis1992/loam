@@ -3,6 +3,6 @@ import { registerEditor } from '../registry';
 registerEditor({
   kind: 'doc',
   label: 'Document',
-  extensions: ['.docx'],
+  extensions: ['.docx', 'docx', 'doc'],
   load: () => import('./Editor'),
 });

@@ -1,8 +1,29 @@
-export { WorkspacePanel } from './WorkspacePanel';
-export type { WorkspaceFile, WorkspaceEditorProps, WorkspaceEditorDef, WorkspaceKind } from './types';
+'use client';
 
-// Editors register via side-effect imports; the shell session owns this file.
-import './video/register';
-import './doc/register';
-import './sheet/register';
-import './slides/register';
+// Importing this module registers every available workspace editor.
+// Each editor session owns workspace/<kind>/register.ts; a missing or
+// broken register module must never break the workspace shell, so every
+// import is guarded. Registrations are notified via subscribeWorkspaceEditors.
+void import('./video/register').catch(() => undefined);
+void import('./doc/register').catch(() => undefined);
+void import('./sheet/register').catch(() => undefined);
+void import('./slides/register').catch(() => undefined);
+
+export * from './types';
+export {
+  registerEditor,
+  getEditorForFile,
+  getEditorForKind,
+  getEditorForPath,
+  listEditors,
+  extensionOf,
+  subscribeWorkspaceEditors,
+  workspaceEditorsVersion,
+} from './registry';
+export {
+  decideWorkspaceOpen,
+  latestWorkspaceDecision,
+  isWorkspaceToolName,
+  type WorkspaceOpenTarget,
+} from './autoOpen';
+export { WorkspacePanel, WorkspaceFilePanel } from './WorkspacePanel';
