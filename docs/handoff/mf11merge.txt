@@ -1,0 +1,9 @@
+﻿A `git merge --no-ff mf/mf11` is IN PROGRESS in C:\Users\khamis\Desktop\manus-local (branch manus-parity). Conflicts remain in exactly these 2 files:
+- packages/web/src/i18n/en.json
+- packages/web/src/i18n/ar.json
+
+Both sides ADD i18n keys. Resolve by KEEPING BOTH SIDES' keys (union), NO duplicate keys, valid JSON (correct commas, no trailing comma), NO conflict markers. Do NOT touch any other file. Then:
+1) git add packages/web/src/i18n/en.json packages/web/src/i18n/ar.json
+2) git commit --no-edit
+3) npx tsc --noEmit must be 0
+Reply DONE when committed and tsc 0.

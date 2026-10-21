@@ -1,0 +1,4 @@
+Small fix. OWNERSHIP: packages/web/src/components/agents/AgentEditDrawer.tsx ONLY.
+BUG: Editing an agent returns 404. The edit drawer saves with PUT /api/agents/:id, but the backend update route is handled with method POST at /api/agents/:id (there is NO PUT handler on the server). Verified live: saving an edit returns status 404.
+FIX: change the save request method in AgentEditDrawer.tsx from 'PUT' to 'POST' (same URL `${getApiBase()}/api/agents/${id}`, same JSON body, same getApiHeaders). Everything else stays the same.
+VERIFY: npx tsc --noEmit -p . = 0 errors AND npm --prefix packages/web run build succeeds. Commit only AgentEditDrawer.tsx. Note it in docs/handoff/int-fc-report.md.

@@ -1,0 +1,14 @@
+﻿A `git merge --no-ff mf/mf9` (group chats) is IN PROGRESS in C:\Users\khamis\Desktop\manus-local (branch manus-parity). Conflicts in exactly these files:
+- packages/web/src/components/agents/AgentInfoPane.tsx
+- packages/web/src/components/agents/AgentSidebarList.tsx
+- src/index.ts
+- src/server/runTools.ts
+- src/server/__tests__/runTools.test.ts
+
+ALL conflicts are ADDITIVE on both sides (both add UI tabs/sections/nav items, tool registrations, ALWAYS_ON_TOOLS entries, test cases). Resolve EVERY conflict by KEEPING BOTH SIDES' additions (union), NO duplicates, NO conflict markers, valid TS/JSX. Carefully merge the .tsx so BOTH features' JSX and imports/hooks are preserved and compile.
+
+Do NOT touch any other file except these 5. Do NOT touch src/setup/runtime.ts or companion* files. Then:
+1) git add <the 5 files>
+2) git commit --no-edit
+3) npx tsc --noEmit must be 0 (fix only these files if needed)
+Reply DONE when committed and tsc 0.

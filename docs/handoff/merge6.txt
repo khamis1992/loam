@@ -1,0 +1,8 @@
+﻿Repo C:\Users\khamis\Desktop\manus-local, branch manus-parity. A `git merge mf/mf6` is in progress with conflicts in src/index.ts, src/server/runTools.ts, src/server/__tests__/runTools.test.ts. Both sides ADD things (tool registrations, ALWAYS_ON_TOOLS names, test cases): resolve by keeping BOTH sides' additions (union), no duplicates. Do not touch other files. Then `git add` those 3 files and `git commit --no-edit`.
+Then edit src/server/http.ts (first confirm `git status --short src/server/http.ts` is empty, else stop): add imports next to the existing `import { handleAgentThreadRoutes } ...` line:
+  import { handleInstructionsRoutes } from "./routes/instructions.js";
+  import { handleAgentSpawnRoutes } from "./routes/agentSpawn.js";
+and dispatches right after the existing `handleScratchpadRoutes` dispatch line, matching each handler's real signature (read the route files):
+  if (await handleInstructionsRoutes(req, res, p)) return;
+  if (await handleAgentSpawnRoutes(req, res, p)) return;
+Run `npx tsc --noEmit` (0 errors) and `npx tsx --test src/server/__tests__/*.test.ts` (all pass; report failures). Commit http.ts alone: "mount instruction-history and agent-spawn routes (MF3, MF6)". Reply with a short summary.

@@ -1,0 +1,12 @@
+﻿A `git merge --no-ff mf/r1` is IN PROGRESS in C:\Users\khamis\Desktop\manus-local (branch manus-parity) with conflicts in exactly these 3 files:
+- src/index.ts
+- src/server/runTools.ts
+- src/server/__tests__/runTools.test.ts
+
+All conflicts are ADDITIVE on both sides (both sides register tools / add ALWAYS_ON_TOOLS entries / add test cases). Resolve EVERY conflict by KEEPING BOTH SIDES' additions (union), with NO duplicate lines and NO leftover conflict markers (<<<<<<< ======= >>>>>>>). Preserve correct syntax (commas, array/brackets).
+
+Do NOT touch any other file. Do NOT touch src/setup/runtime.ts or any companion* file. After resolving:
+1) git add src/index.ts src/server/runTools.ts src/server/__tests__/runTools.test.ts
+2) git commit --no-edit
+3) Run: npx tsc --noEmit  (must be 0 errors; if not, fix only these 3 files)
+Reply DONE when committed and tsc is 0.

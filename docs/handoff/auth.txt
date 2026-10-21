@@ -1,0 +1,12 @@
+﻿TASK (P0 bug): The Loam desktop app keeps showing the "Sign in to Loam" screen on EVERY launch, even after the user already signed in. Session/auth does not persist across app restarts. Root-cause and fix it.
+
+Follow all COMMON RULES in docs\handoff\mf-common.txt (read it first). You are in a git worktree on branch mf/auth; commit small with explicit paths, never push.
+
+Steps:
+1) Investigate how auth/login works: search for "Sign in to Loam", the login screen component, the agentstudio:// deep-link login flow, and where the session token/credentials are stored and read on startup. Likely files: src/index.ts, src/server/* (auth/session), packages/web/src/app login components, and any electron main-process store (electron-store / userData / localStorage).
+2) Determine WHY the persisted session is not restored on launch (e.g. token written to a location not read on boot, in-memory only, wrong path, cleared on start, cookie partition mismatch between Electron session and the web app origin).
+3) Implement the minimal correct fix so that once signed in, the app stays signed in across restarts. Prefer persisting to the Electron userData dir / a server-side session store that survives restart.
+4) Run `npx tsc --noEmit` and ensure 0 errors. Inspect your own `git diff` before committing.
+5) Write a short root-cause + fix summary to docs\handoff\auth-fix-notes.md and commit it with your code change.
+
+Do NOT touch the do-not-touch files. If a shared file (http.ts, runtime.ts) is dirty, do not edit it; report instead.

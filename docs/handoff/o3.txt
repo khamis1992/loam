@@ -1,0 +1,9 @@
+﻿Create ONE new file: src/tools/scheduleTools.ts. Do not edit any other file.
+Model it exactly on src/tools/scratchpadTools.ts (read it first and copy its structure: imports of getTask, Tool/ToolContext/ToolResult/str from "./registry.js", the agentIdFromContext helper).
+Imports from "../server/db.js": getTask, addSchedule, listSchedulesByAgent, deleteSchedule, getSchedule? (only if it exists; otherwise use listSchedulesByAgent to check ownership).
+Export: export function createScheduleTools(): Tool[] returning 3 tools:
+1. name "schedule_create". parameters: {prompt: string (required), cron?: string (5-field cron), at?: string (ISO time), timezone?: string (IANA, default Asia/Qatar), intervalSeconds?: number}. run: agentId = agentIdFromContext(ctx); if agentId === "default" return {ok:false, content:"schedule_create needs an agent run"}. Call addSchedule(prompt, intervalSeconds ?? 3600, agentId, undefined, "cron", undefined, true, {cron, runAt: at, timezone: timezone || "Asia/Qatar"}). Wrap in try/catch; on success return {ok:true, content:`created schedule ${s.id} next run ${s.nextRunAt} (${s.timezone ?? "Asia/Qatar"})`}.
+2. name "schedule_list". no params. Lists listSchedulesByAgent(agentId) as lines: `${s.id}: ${s.prompt} | ${s.cron ?? (s.runAt ? "at "+s.runAt : "every "+s.intervalSeconds+"s")} | tz ${s.timezone ?? "Asia/Qatar"} | next ${s.nextRunAt} | last ${s.lastStatus ?? "-"}`. If none, content "no schedules".
+3. name "schedule_cancel". params {id: string required}. Only if the id is in listSchedulesByAgent(agentId): deleteSchedule(id) and return ok; else {ok:false, content:"schedule not found for this agent"}.
+Numbers: read intervalSeconds via typeof args.intervalSeconds === "number" ? args.intervalSeconds : undefined.
+Then run with bash: npx tsc --noEmit  -> must be 0 errors. Do NOT commit. Reply DONE + tsc output.

@@ -1,0 +1,15 @@
+RULES: Repo C:\Users\khamis\Desktop\manus-local, branch manus-parity. NEVER edit src/server/http.ts, src/server/companionGateway.ts, src/setup/runtime.ts, src/tools/companionTeamTools.ts, scripts/stt_server.py, or src/scripts/check-*.ts (those have another tool's uncommitted edits). Do not push, do not touch main, do not run git stash/reset/checkout/restore. Commit ONLY files you own: git add <files> ; git commit -m "msg" -- <files>. Never touch files outside your ownership. Verify: npx tsc --noEmit -p . must be 0 errors; for web changes also run: npm --prefix packages/web run build. When fully done, write docs/handoff/int-<id>-report.md with your commits and changes. Keep working until complete; if a shell/edit permission is requested, it will be granted.
+YOU ARE int-p3 (Phase 3: Manus-style right panel). OWNERSHIP: packages/web/src/components/computer/**, packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx, packages/web/src/components/chat/EventList.tsx (if present). You MAY read but NOT edit src/protocol/** (int-p1 owns it); if you need a new event shape, note it in your report for int-p1.
+TASK (reference docs\BUILD_SPEC.md sections S4/S18 for design):
+1. Auto-open the right ComputerPanel on the first tool/computerActivity event (currently opens only on manual click in TaskPageClient.tsx ~276/308).
+2. Add a 40px tab strip to ComputerPanel.tsx with tabs: Terminal, Editor, Browser, Preview, Files. Switch based on active tool family.
+   - Terminal: show $ cmd + streamed output (keep existing, improve styling, monospace, dark).
+   - Editor: show file path + content with syntax styling; if the event has oldContent, show a simple line diff (added/removed highlight).
+   - Browser: show screenshot (from browser_screenshot / /api/browser/state) with a URL address bar and a 4px blue activity rule under it.
+   - Preview: an <iframe> bound to the preview_status URL when a preview tool ran.
+   - Files: file viewer for produced files (image/svg inline, others as download/open link).
+3. Header "Loam's computer" with expand + close icons; panel width ~520px chat / panel region, per spec.
+4. Fix stuck spinners: finalize a tool row when its tool-result arrives (do not leave spinning).
+5. Fix the duration bug ("Worked for 4683m20s") - compute elapsed correctly from start/end timestamps in ms.
+6. Humanize tool names: map raw names (file_stat, file_write, shell_run, web_fetch, browser_navigate...) to briefs ("Read file", "Wrote file", "Ran command", "Fetched page", "Opened browser"). Add a collapsed summary row like "Read 2 files - Ran 1 command".
+VERIFY: npx tsc --noEmit -p . = 0 errors AND npm --prefix packages/web run build succeeds. Report in docs/handoff/int-p3-report.md.

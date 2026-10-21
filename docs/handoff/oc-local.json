@@ -1,0 +1,1 @@
+{"$schema":"https://opencode.ai/config.json","provider":{"ollama":{"models":{"ornith-1.5:9b":{"name":"ornith-1.5:9b","tools":true}}}}}

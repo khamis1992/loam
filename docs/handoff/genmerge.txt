@@ -1,0 +1,4 @@
+﻿A `git merge --no-ff mf/mf4` is IN PROGRESS in C:\Users\khamis\Desktop\manus-local (branch manus-parity). Conflicts in these files:
+packages/web/src/components/agents/AgentInfoPane.tsx
+
+ALL conflicts are ADDITIVE on both sides (tool registrations, ALWAYS_ON_TOOLS entries, i18n keys, nav items, test cases). Resolve EVERY conflict by KEEPING BOTH SIDES' additions (union), NO duplicate keys/lines, NO conflict markers, valid TS/JSON/JSX. Do NOT touch src/setup/runtime.ts or companion* files or any file not listed above. Then: git add the listed files; git commit --no-edit; run npx tsc --noEmit (must be 0, fix only these files). Reply DONE.

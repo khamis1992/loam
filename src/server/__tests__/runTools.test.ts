@@ -119,6 +119,8 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll(createDesignStudioTools());
     // MF7: watch_url ships as an always-on tool, so it must be registered too.
     registry.registerAll(createLoamServiceTools().filter((tool) => tool.name === "watch_url"));
+    const deployToolsMod = await import("../../tools/deploy.js");
+    registry.registerAll(deployToolsMod.createDeployTools({ workspace: tmpDir }));
   });
 
   after(() => {
