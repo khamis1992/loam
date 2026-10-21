@@ -88,6 +88,19 @@ const apis = {
     setItem: (...args) => invoke("storage", "setItem", args),
     removeItem: (...args) => invoke("storage", "removeItem", args),
   },
+  inAppBrowser: {
+    attach: (...args) => invoke("inAppBrowser", "attach", args),
+    detach: (...args) => invoke("inAppBrowser", "detach", args),
+    setBounds: (...args) => invoke("inAppBrowser", "setBounds", args),
+    navigate: (...args) => invoke("inAppBrowser", "navigate", args),
+    back: (...args) => invoke("inAppBrowser", "back", args),
+    forward: (...args) => invoke("inAppBrowser", "forward", args),
+    reload: (...args) => invoke("inAppBrowser", "reload", args),
+    stop: (...args) => invoke("inAppBrowser", "stop", args),
+    home: (...args) => invoke("inAppBrowser", "home", args),
+    getState: (...args) => invoke("inAppBrowser", "getState", args),
+    clearData: (...args) => invoke("inAppBrowser", "clearData", args),
+  },
 };
 
 function subscribe(ns, evt, cb) {
@@ -107,6 +120,9 @@ const events = {
   },
   terminal: {
     onEvent: (cb) => subscribe("terminal", "onEvent", cb),
+  },
+  inAppBrowser: {
+    onStateChanged: (cb) => subscribe("inAppBrowser", "onStateChanged", cb),
   },
 };
 
