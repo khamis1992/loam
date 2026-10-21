@@ -1,5 +1,5 @@
 import { addSchedule } from "./db.js";
-import { createAgent, listAgents } from "./agents.js";
+import { createAgent, listAgents, sanitizeAvatarFields } from "./agents.js";
 import { applySkill, listSkillRecords } from "../tools/skills.js";
 import { log } from "../log.js";
 
@@ -29,6 +29,10 @@ export interface GrokbotBundleAgent {
   instructions: string;
   routines: GrokbotRoutine[] | "unknown";
   referencedSkills: string[];
+  /** Optional Grok Bot-style avatar tokens carried through the bundle. */
+  avatarShape?: string;
+  avatarColor?: string;
+  avatarImage?: string;
 }
 
 export interface GrokbotBundleSkill {
@@ -87,6 +91,7 @@ function sanitizeAgent(raw: unknown): GrokbotBundleAgent | undefined {
     instructions: str(r.instructions, 4000),
     routines,
     referencedSkills: strList(r.referencedSkills, 80).slice(0, 40),
+    ...sanitizeAvatarFields(r),
   };
 }
 
@@ -178,6 +183,9 @@ export function importGrokbotBundle(bundle: GrokbotBundle): GrokbotImportSummary
       description: agentBundle.description,
       instructions: instructions || (agentBundle.instructions ? agentBundle.instructions.slice(0, 8000) : undefined),
       source: "grokbot",
+      ...(agentBundle.avatarShape ? { avatarShape: agentBundle.avatarShape } : {}),
+      ...(agentBundle.avatarColor ? { avatarColor: agentBundle.avatarColor } : {}),
+      ...(agentBundle.avatarImage ? { avatarImage: agentBundle.avatarImage } : {}),
     });
     summary.agents += 1;
     if (agentBundle.routines === "unknown") continue;

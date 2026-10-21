@@ -72,7 +72,7 @@ import {
 } from "./db.js";
 import { getSettings, updateSettings } from "./settings.js";
 import { cancelRunSignal } from "./runControl.js";
-import { createAgent, deleteAgent, getAgent, listAgents, setAgentArchived, updateAgent } from "./agents.js";
+import { createAgent, deleteAgent, getAgent, listAgents, sanitizeAvatarFields, setAgentArchived, updateAgent } from "./agents.js";
 import { handleScratchpadRoutes } from "./routes/scratchpad.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
@@ -1438,6 +1438,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             voice: source.voice,
             ...(source.voiceRate !== undefined ? { voiceRate: source.voiceRate } : {}),
             ...(typeof source.voiceAuto === "boolean" ? { voiceAuto: source.voiceAuto } : {}),
+            ...sanitizeAvatarFields(source),
           });
           return sendJson(res, 200, { agent });
         }
@@ -1502,6 +1503,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             ...(Number.isFinite(Number(src.voiceRate)) ? { voiceRate: src.voiceRate as number } : {}),
             ...(typeof src.voiceAuto === "boolean" ? { voiceAuto: src.voiceAuto } : {}),
             ...(typeof src.source === "string" && src.source.trim() ? { source: src.source.trim().slice(0, 32) } : {}),
+            ...sanitizeAvatarFields(src as { avatarShape?: unknown; avatarColor?: unknown; avatarImage?: unknown }),
           });
           let importedMemory = 0;
           for (const entry of bundle.memory) {
@@ -1623,7 +1625,7 @@ loadAgents();
         }
 
         if (req.method === "POST" && p === "/api/agents") {
-          const body = (await readBody(req)) as { name?: unknown; emoji?: unknown; description?: unknown; instructions?: unknown; model?: unknown; mode?: unknown; effort?: unknown; disabledTools?: unknown; workMode?: unknown; allowedServices?: unknown; voice?: unknown; voiceRate?: unknown; voiceAuto?: unknown; source?: unknown };
+          const body = (await readBody(req)) as { name?: unknown; emoji?: unknown; description?: unknown; instructions?: unknown; model?: unknown; mode?: unknown; effort?: unknown; disabledTools?: unknown; workMode?: unknown; allowedServices?: unknown; voice?: unknown; voiceRate?: unknown; voiceAuto?: unknown; source?: unknown; avatarShape?: unknown; avatarColor?: unknown; avatarImage?: unknown };
           const name = typeof body.name === "string" ? body.name.trim() : "";
           if (!name) return sendJson(res, 400, { error: "اسم الوكيل مطلوب" });
           try {
@@ -1642,6 +1644,7 @@ loadAgents();
               ...(Number.isFinite(Number(body.voiceRate)) ? { voiceRate: Number(body.voiceRate) } : {}),
               ...(typeof body.voiceAuto === "boolean" ? { voiceAuto: body.voiceAuto } : {}),
               ...(typeof body.source === "string" && body.source.trim() ? { source: body.source.trim().slice(0, 32) } : {}),
+              ...sanitizeAvatarFields(body),
             });
             sendJson(res, 200, { agent });
           } catch (err) {
@@ -1668,6 +1671,22 @@ loadAgents();
         if (await handleApprovalRuleRoutes(req, res, p, url)) return;
         if (await handleGrokbotBridgeRoutes(req, res, p, url)) return;
 
+        // ---- avatar (Grok Bot-style): set shape/color/image on an existing agent ----
+        // Must run before the generic /api/agents/:id prefix block.
+        if (req.method === "POST" && p.startsWith("/api/agents/") && p.endsWith("/avatar")) {
+          const id = decodeURIComponent(p.slice("/api/agents/".length, -"/avatar".length));
+          const body = (await readBody(req)) as { avatarShape?: unknown; avatarColor?: unknown; avatarImage?: unknown };
+          const patch: { avatarShape?: string | null; avatarColor?: string | null; avatarImage?: string | null } = {};
+          for (const field of ["avatarShape", "avatarColor", "avatarImage"] as const) {
+            if (body[field] === null) patch[field] = null;
+            else if (typeof body[field] === "string") patch[field] = body[field] as string;
+          }
+          const agent = updateAgent(id, patch);
+          if (!agent) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+          sendJson(res, 200, { agent });
+          return;
+        }
+
         if (p.startsWith("/api/agents/")) {
           const id = decodeURIComponent(p.slice("/api/agents/".length));
           if (req.method === "GET") {
@@ -1692,8 +1711,8 @@ loadAgents();
             return;
           }
           if (req.method === "POST") {
-            const body = (await readBody(req)) as { name?: unknown; emoji?: unknown; description?: unknown; instructions?: unknown; model?: unknown; mode?: unknown; effort?: unknown; disabledTools?: unknown; workMode?: unknown; allowedServices?: unknown; voice?: unknown; voiceRate?: unknown; voiceAuto?: unknown };
-            const patch: { name?: string; emoji?: string; description?: string; instructions?: string; model?: string | null; mode?: string | null; effort?: string | null; disabledTools?: unknown; workMode?: string | null; allowedServices?: unknown; voice?: string | null; voiceRate?: number | null; voiceAuto?: boolean | null } = {};
+            const body = (await readBody(req)) as { name?: unknown; emoji?: unknown; description?: unknown; instructions?: unknown; model?: unknown; mode?: unknown; effort?: unknown; disabledTools?: unknown; workMode?: unknown; allowedServices?: unknown; voice?: unknown; voiceRate?: unknown; voiceAuto?: unknown; avatarShape?: unknown; avatarColor?: unknown; avatarImage?: unknown };
+            const patch: { name?: string; emoji?: string; description?: string; instructions?: string; model?: string | null; mode?: string | null; effort?: string | null; disabledTools?: unknown; workMode?: string | null; allowedServices?: unknown; voice?: string | null; voiceRate?: number | null; voiceAuto?: boolean | null; avatarShape?: string | null; avatarColor?: string | null; avatarImage?: string | null } = {};
             if (typeof body.name === "string") patch.name = body.name;
             if (typeof body.emoji === "string") patch.emoji = body.emoji;
             if (typeof body.description === "string") patch.description = body.description;
@@ -1714,6 +1733,10 @@ loadAgents();
             else if (Number.isFinite(Number(body.voiceRate))) patch.voiceRate = Number(body.voiceRate);
             if (body.voiceAuto === null) patch.voiceAuto = null;
             else if (typeof body.voiceAuto === "boolean") patch.voiceAuto = body.voiceAuto;
+            for (const field of ["avatarShape", "avatarColor", "avatarImage"] as const) {
+              if (body[field] === null) patch[field] = null;
+              else if (typeof body[field] === "string") patch[field] = body[field] as string;
+            }
             let agent: ReturnType<typeof updateAgent>;
             try {
               agent = updateAgent(id, patch);

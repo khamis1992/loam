@@ -33,6 +33,12 @@ export interface AgentRecord {
   voiceAuto?: boolean;
   /** Provenance of the agent: undefined = native Loam, e.g. "grokbot" = imported from a Grok Bot bundle. */
   source?: string;
+  /** Grok Bot-style avatar shape token (one of AVATAR_SHAPES). */
+  avatarShape?: string;
+  /** Grok Bot-style avatar color token (one of AVATAR_COLORS). */
+  avatarColor?: string;
+  /** Custom avatar image as a data URL or /api asset path, capped at ~256KB. */
+  avatarImage?: string;
   /** Soft-archive timestamp: archived companions keep all data but leave the active list. */
   archivedAt?: string;
   createdAt: string;
@@ -91,7 +97,49 @@ function sanitizeServices(value: unknown): { allowedServices?: string[] } {
   return { allowedServices: unique };
 }
 
-export function createAgent(input: { name: string; emoji?: string; description?: string; instructions?: string; model?: string; mode?: string; effort?: string; disabledTools?: unknown; workMode?: string; allowedServices?: unknown; voice?: string; voiceRate?: number; voiceAuto?: boolean; source?: string }): AgentRecord {
+/** Grok Bot-style avatar shapes (all agents render one of these). */
+export const AVATAR_SHAPES: readonly string[] = ["squircle", "teardrop", "pebble", "hex", "blob", "cloud", "wedge", "tablet"];
+
+/** Grok Bot-style avatar color tokens (concrete hex values live in the web palette). */
+export const AVATAR_COLORS: readonly string[] = ["red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "brown", "gray"];
+
+/** Cap for embedded avatar images (data URLs), roughly 256KB. */
+const AVATAR_IMAGE_MAX_BYTES = 256 * 1024;
+
+function sanitizeAvatarShape(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const v = value.trim().toLowerCase();
+  return AVATAR_SHAPES.includes(v) ? v : undefined;
+}
+
+function sanitizeAvatarColor(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const v = value.trim().toLowerCase();
+  return AVATAR_COLORS.includes(v) ? v : undefined;
+}
+
+function sanitizeAvatarImage(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const v = value.trim();
+  if (!v) return undefined;
+  if (!v.startsWith("data:image/") && !v.startsWith("/api/")) return undefined;
+  if (Buffer.byteLength(v, "utf8") > AVATAR_IMAGE_MAX_BYTES) return undefined;
+  return v;
+}
+
+/** Restrict avatar inputs to the known shape/color tokens and the supported image forms. */
+export function sanitizeAvatarFields(input: { avatarShape?: unknown; avatarColor?: unknown; avatarImage?: unknown }): { avatarShape?: string; avatarColor?: string; avatarImage?: string } {
+  const out: { avatarShape?: string; avatarColor?: string; avatarImage?: string } = {};
+  const shape = sanitizeAvatarShape(input.avatarShape);
+  const color = sanitizeAvatarColor(input.avatarColor);
+  const image = sanitizeAvatarImage(input.avatarImage);
+  if (shape) out.avatarShape = shape;
+  if (color) out.avatarColor = color;
+  if (image) out.avatarImage = image;
+  return out;
+}
+
+export function createAgent(input: { name: string; emoji?: string; description?: string; instructions?: string; model?: string; mode?: string; effort?: string; disabledTools?: unknown; workMode?: string; allowedServices?: unknown; voice?: string; voiceRate?: number; voiceAuto?: boolean; source?: string; avatarShape?: string; avatarColor?: string; avatarImage?: string }): AgentRecord {
   const mode = input.mode ? getLoamMode(input.mode).id : undefined;
   const workMode = input.workMode ? normalizeWorkMode(input.workMode) : undefined;
   const now = new Date().toISOString();
@@ -111,6 +159,7 @@ export function createAgent(input: { name: string; emoji?: string; description?:
     ...(Number.isFinite(Number(input.voiceRate)) ? { voiceRate: Math.max(0.5, Math.min(2, Number(input.voiceRate))) } : {}),
     ...(typeof input.voiceAuto === "boolean" ? { voiceAuto: input.voiceAuto } : {}),
     ...(input.source && input.source.trim() ? { source: input.source.trim().slice(0, 32) } : {}),
+    ...sanitizeAvatarFields(input),
     createdAt: now,
     updatedAt: now,
   };
@@ -126,7 +175,7 @@ function sanitizeDisabled(value: unknown): { disabledTools?: string[] } {
   return list.length > 0 ? { disabledTools: [...new Set(list)].slice(0, 500) } : { disabledTools: [] };
 }
 
-export function updateAgent(id: string, patch: { name?: string; emoji?: string; description?: string; instructions?: string; model?: string | null; mode?: string | null; effort?: string | null; disabledTools?: unknown; workMode?: string | null; allowedServices?: unknown; voice?: string | null; voiceRate?: number | null; voiceAuto?: boolean | null }): AgentRecord | undefined {
+export function updateAgent(id: string, patch: { name?: string; emoji?: string; description?: string; instructions?: string; model?: string | null; mode?: string | null; effort?: string | null; disabledTools?: unknown; workMode?: string | null; allowedServices?: unknown; voice?: string | null; voiceRate?: number | null; voiceAuto?: boolean | null; avatarShape?: string | null; avatarColor?: string | null; avatarImage?: string | null }): AgentRecord | undefined {
   const agent = agents.find((a) => a.id === id);
   if (!agent) return undefined;
   const mode = typeof patch.mode === "string" ? getLoamMode(patch.mode).id : undefined;
@@ -158,6 +207,15 @@ export function updateAgent(id: string, patch: { name?: string; emoji?: string; 
     const s = sanitizeServices(patch.allowedServices);
     if (s.allowedServices) agent.allowedServices = s.allowedServices;
     else delete agent.allowedServices;
+  }
+  for (const field of ["avatarShape", "avatarColor", "avatarImage"] as const) {
+    if (patch[field] === null) delete agent[field];
+  }
+  {
+    const s = sanitizeAvatarFields(patch);
+    if (s.avatarShape) agent.avatarShape = s.avatarShape;
+    if (s.avatarColor) agent.avatarColor = s.avatarColor;
+    if (s.avatarImage) agent.avatarImage = s.avatarImage;
   }
   agent.updatedAt = new Date().toISOString();
   save();
