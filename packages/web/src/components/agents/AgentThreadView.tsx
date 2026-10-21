@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Info, PanelRight, Loader2, AlertCircle, ExternalLink } from 'lucide-react';
 import clsx from 'clsx';
@@ -25,6 +25,7 @@ import type {
   Attachment,
 } from '@shared/socket';
 import type { AgentCardAgent } from './AgentCard';
+import { GROKBOT_NOTE_HEADER } from '@/components/chat/GrokBotNote';
 import { InstructionProposalCard, useInstructionProposals } from './InstructionHistory';
 
 function getSocketBase(): string {
@@ -138,6 +139,33 @@ export async function loadAgentThreadFiles(uid: string): Promise<TaskFileEntry[]
   }
 }
 
+interface MirroredNote {
+  id: string;
+  text: string;
+  ts: string;
+  /** True when the server already appended this note into the agent thread. */
+  threadAppended?: boolean;
+}
+
+/** READ-ONLY notes mirrored from Grok Bot for this agent (bridge store). */
+export async function loadMirroredNotes(agentId: string): Promise<MirroredNote[]> {
+  try {
+    const res = await fetch(`${getApiBase()}/api/bridge/grokbot/mirror?agentRef=${encodeURIComponent(agentId)}`, {
+      headers: await getApiHeaders(),
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { messages?: MirroredNote[] };
+    return data.messages ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** Best-effort dedupe: notes already appended to the thread history reuse the same text. */
+export function labelledNoteContent(text: string): string {
+  return `${GROKBOT_NOTE_HEADER}\n${text}`;
+}
+
 export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }: AgentThreadViewProps) {
   const router = useRouter();
   const dispatch = useAppDispatch();
@@ -149,6 +177,13 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
   const socketRef = useRef<ChatSocket | null>(null);
   const apiBase = useMemo(() => getApiBase(), []);
   const composerRef = useRef<React.ElementRef<typeof Composer>>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const events = useAppSelector((s) => (threadUid ? s.chat.eventsBySession[threadUid] ?? [] : []));
   const running = useAppSelector((s) => (threadUid ? s.chat.running[threadUid] ?? false : false));
@@ -207,6 +242,7 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
       if (history.length > 0) {
         dispatch(replaceEvents({ sessionId: threadUid, events: history }));
       }
+      void syncMirroredNotes(threadUid);
       try {
         await socket.connect();
       } catch {
@@ -218,8 +254,11 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
       socket.join(threadUid);
     })();
 
+    const poll = setInterval(() => void syncMirroredNotes(threadUid), 20_000);
+
     return () => {
       mounted = false;
+      clearInterval(poll);
       socket.disconnect();
       socketRef.current = null;
     };
@@ -346,6 +385,37 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
   const handleOpenTaskView = () => {
     if (threadUid) router.push(`/app/${threadUid}`);
   };
+
+  // Mirrored "from Grok Bot" notes (READ-ONLY): ingest calls that happened when
+  // the agent had no chat thread yet never landed in history, so they are
+  // merged here from the bridge store. Notes already appended server-side
+  // (threadAppended) render through the normal history and are skipped.
+  const syncedMirrorIds = useRef<Set<string>>(new Set());
+  const syncMirroredNotes = useCallback(async (sessionId: string) => {
+    if (!agent.id) return;
+    const notes = await loadMirroredNotes(agent.id);
+    if (!mountedRef.current) return;
+    for (const note of notes) {
+      if (note.threadAppended === true || syncedMirrorIds.current.has(note.id)) continue;
+      syncedMirrorIds.current.add(note.id);
+      dispatch(
+        appendEvent({
+          sessionId,
+          event: {
+            id: `gb-${note.id}`,
+            type: 'chat',
+            timestamp: Date.parse(note.ts) || Date.now(),
+            sender: 'user',
+            senderId: 'grokbot',
+            messageType: 'text',
+            content: `${GROKBOT_NOTE_HEADER}\n${note.text}`,
+            attachments: [],
+            deliveryKind: 'result',
+          },
+        }),
+      );
+    }
+  }, [agent.id, dispatch]);
 
   return (
     <div className={clsx('flex flex-1 flex-col overflow-hidden bg-bg-main', infoOpen && 'min-w-[360px]')}>

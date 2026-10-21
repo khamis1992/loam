@@ -22,6 +22,7 @@ import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { Button, Spinner } from '@/components/ui/Button';
 import type { AgentCardAgent } from './AgentCard';
+import { GrokBotBadge, isGrokBotAgent } from './GrokBotBadge';
 import { getBuiltInAgents } from './BuiltInAgentCard';
 import type { GroupChat } from './groupTypes';
 
@@ -510,6 +511,7 @@ function AgentRow({
         {agent.emoji || '🤖'}
       </div>
       <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{agent.name}</span>
+      {isGrokBotAgent(agent.source) && <GrokBotBadge />}
       {!!unread && unread > 0 && (
         <span
           className="size-2 shrink-0 rounded-full"

@@ -87,6 +87,8 @@ import { handlePersonalizationRoutes } from "./routes/personalization.js";
 import { handleApiKeysRoutes } from "./routes/apiKeys.js";
 import { handleDataControlsRoutes } from "./routes/dataControls.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
+import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
+import { importGrokbotBundle, sanitizeGrokbotBundle } from "./grokbotImport.js";
 import { isValidTimezone } from "./scheduleTime.js";
 import { getWorkModesUi, normalizeWorkMode, resolveCompanionCapabilities } from "./companionGateway.js";
 import { DEVICE_TEMPLATES, deviceManager, getDevice, listDevices, readJournal } from "./companionDevices.js";
@@ -1499,6 +1501,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             ...(typeof src.voice === "string" ? { voice: src.voice } : {}),
             ...(Number.isFinite(Number(src.voiceRate)) ? { voiceRate: src.voiceRate as number } : {}),
             ...(typeof src.voiceAuto === "boolean" ? { voiceAuto: src.voiceAuto } : {}),
+            ...(typeof src.source === "string" && src.source.trim() ? { source: src.source.trim().slice(0, 32) } : {}),
           });
           let importedMemory = 0;
           for (const entry of bundle.memory) {
@@ -1528,6 +1531,13 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             importedVoiceTurns += 1;
           }
           return sendJson(res, 200, { agent, importedMemory, importedSchedules, importedVoiceTurns });
+        }
+        if (req.method === "POST" && p === "/api/agents/import-grokbot") {
+          const body = (await readBody(req)) as { bundle?: unknown };
+          const sanitized = sanitizeGrokbotBundle(body.bundle);
+          if ("error" in sanitized) return sendJson(res, 400, sanitized);
+          const result = importGrokbotBundle(sanitized);
+          return sendJson(res, 200, result);
         }
         if (p.startsWith("/api/agents/") && p.includes("/integrations") && getAgent(decodeURIComponent(p.slice("/api/agents/".length).split("/")[0] ?? ""))) {
           const agentId = decodeURIComponent(p.slice("/api/agents/".length).split("/")[0] ?? "");
@@ -1613,7 +1623,7 @@ loadAgents();
         }
 
         if (req.method === "POST" && p === "/api/agents") {
-          const body = (await readBody(req)) as { name?: unknown; emoji?: unknown; description?: unknown; instructions?: unknown; model?: unknown; mode?: unknown; effort?: unknown; disabledTools?: unknown; workMode?: unknown; allowedServices?: unknown; voice?: unknown; voiceRate?: unknown; voiceAuto?: unknown };
+          const body = (await readBody(req)) as { name?: unknown; emoji?: unknown; description?: unknown; instructions?: unknown; model?: unknown; mode?: unknown; effort?: unknown; disabledTools?: unknown; workMode?: unknown; allowedServices?: unknown; voice?: unknown; voiceRate?: unknown; voiceAuto?: unknown; source?: unknown };
           const name = typeof body.name === "string" ? body.name.trim() : "";
           if (!name) return sendJson(res, 400, { error: "اسم الوكيل مطلوب" });
           try {
@@ -1631,6 +1641,7 @@ loadAgents();
               ...(typeof body.voice === "string" && body.voice.trim() ? { voice: body.voice } : {}),
               ...(Number.isFinite(Number(body.voiceRate)) ? { voiceRate: Number(body.voiceRate) } : {}),
               ...(typeof body.voiceAuto === "boolean" ? { voiceAuto: body.voiceAuto } : {}),
+              ...(typeof body.source === "string" && body.source.trim() ? { source: body.source.trim().slice(0, 32) } : {}),
             });
             sendJson(res, 200, { agent });
           } catch (err) {
@@ -1655,6 +1666,7 @@ loadAgents();
         if (await handleApiKeysRoutes(req, res, p)) return;
         if (await handleDataControlsRoutes(req, res, p)) return;
         if (await handleApprovalRuleRoutes(req, res, p, url)) return;
+        if (await handleGrokbotBridgeRoutes(req, res, p, url)) return;
 
         if (p.startsWith("/api/agents/")) {
           const id = decodeURIComponent(p.slice("/api/agents/".length));

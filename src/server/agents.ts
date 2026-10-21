@@ -31,6 +31,8 @@ export interface AgentRecord {
   voiceRate?: number;
   /** Auto-read assistant replies aloud. */
   voiceAuto?: boolean;
+  /** Provenance of the agent: undefined = native Loam, e.g. "grokbot" = imported from a Grok Bot bundle. */
+  source?: string;
   /** Soft-archive timestamp: archived companions keep all data but leave the active list. */
   archivedAt?: string;
   createdAt: string;
@@ -89,7 +91,7 @@ function sanitizeServices(value: unknown): { allowedServices?: string[] } {
   return { allowedServices: unique };
 }
 
-export function createAgent(input: { name: string; emoji?: string; description?: string; instructions?: string; model?: string; mode?: string; effort?: string; disabledTools?: unknown; workMode?: string; allowedServices?: unknown; voice?: string; voiceRate?: number; voiceAuto?: boolean }): AgentRecord {
+export function createAgent(input: { name: string; emoji?: string; description?: string; instructions?: string; model?: string; mode?: string; effort?: string; disabledTools?: unknown; workMode?: string; allowedServices?: unknown; voice?: string; voiceRate?: number; voiceAuto?: boolean; source?: string }): AgentRecord {
   const mode = input.mode ? getLoamMode(input.mode).id : undefined;
   const workMode = input.workMode ? normalizeWorkMode(input.workMode) : undefined;
   const now = new Date().toISOString();
@@ -108,6 +110,7 @@ export function createAgent(input: { name: string; emoji?: string; description?:
     ...(input.voice && input.voice.trim() ? { voice: input.voice.trim().slice(0, 60) } : {}),
     ...(Number.isFinite(Number(input.voiceRate)) ? { voiceRate: Math.max(0.5, Math.min(2, Number(input.voiceRate))) } : {}),
     ...(typeof input.voiceAuto === "boolean" ? { voiceAuto: input.voiceAuto } : {}),
+    ...(input.source && input.source.trim() ? { source: input.source.trim().slice(0, 32) } : {}),
     createdAt: now,
     updatedAt: now,
   };
