@@ -36,6 +36,7 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "design_create",
   "design_brand_kit_save",
   "watch_url",
+  "video_edit",
 ];
 
 export interface AlwaysOnMergeInput {
