@@ -8,10 +8,6 @@ import {
   ChevronRight,
   Users,
   MoreHorizontal,
-  Copy,
-  Pencil,
-  Archive,
-  ExternalLink,
   Loader2,
   AlertCircle,
   Store,
@@ -22,6 +18,7 @@ import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { Button, Spinner } from '@/components/ui/Button';
 import type { AgentCardAgent } from './AgentCard';
+import { AgentContextMenu } from './AgentContextMenu';
 import { GrokBotBadge, isGrokBotAgent } from './GrokBotBadge';
 import { getBuiltInAgents } from './BuiltInAgentCard';
 import type { GroupChat } from './groupTypes';
@@ -68,6 +65,15 @@ interface AgentSidebarListProps {
   selectedGroupId?: string;
   onSelectGroup?: (group: GroupChat) => void;
   onNewGroup?: () => void;
+  /** Opens the info pane for the agent. */
+  onInfo?: (agent: AgentWithMeta) => void;
+  /** Opens the rename dialog for the agent. */
+  onRename?: (agent: AgentWithMeta) => void;
+  /** Permanently deletes the agent (confirm is shown by the context menu). */
+  onDeleteAgent?: (agent: AgentWithMeta) => void;
+  /** Optional pin/hide handlers; without them the menu items stay stubs. */
+  onTogglePin?: (agent: AgentWithMeta) => void;
+  onToggleHide?: (agent: AgentWithMeta) => void;
 }
 
 const SECTIONS = {
@@ -95,6 +101,11 @@ export function AgentSidebarList({
   selectedGroupId,
   onSelectGroup,
   onNewGroup,
+  onInfo,
+  onRename,
+  onDeleteAgent,
+  onTogglePin,
+  onToggleHide,
 }: AgentSidebarListProps) {
   const router = useRouter();
   const [search, setSearch] = useState('');
@@ -113,7 +124,6 @@ export function AgentSidebarList({
     agent: AgentWithMeta;
   } | null>(null);
   const [childrenByParent, setChildrenByParent] = useState<Record<string, ChildAgent[]>>({});
-  const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const normalizedSearch = search.trim().toLowerCase();
@@ -167,22 +177,6 @@ export function AgentSidebarList({
   );
 
   const builtInAgents = useMemo(() => getBuiltInAgents(), []);
-
-  useEffect(() => {
-    if (!contextMenu) return;
-    const onClick = (e: MouseEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setContextMenu(null);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setContextMenu(null);
-    };
-    document.addEventListener('mousedown', onClick);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [contextMenu]);
 
   const toggleSection = (id: string) => {
     setSections((prev) => {
@@ -411,43 +405,21 @@ export function AgentSidebarList({
       </div>
 
       {contextMenu && (
-        <div
-          ref={menuRef}
-          className="fixed z-50 min-w-[160px] rounded-card border border-border-main bg-bg-menu py-1 shadow-menu"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-        >
-          <ContextItem
-            icon={<ExternalLink className="size-4" />}
-            label={t('Open')}
-            onClick={() => {
-              onSelect(contextMenu.agent);
-              setContextMenu(null);
-            }}
-          />
-          <ContextItem
-            icon={<Pencil className="size-4" />}
-            label={t('Edit')}
-            onClick={() => {
-              onEdit(contextMenu.agent);
-              setContextMenu(null);
-            }}
-          />
-          <ContextItem
-            icon={<Copy className="size-4" />}
-            label={t('Duplicate')}
-            onClick={() => {
-              onDuplicate(contextMenu.agent);
-              setContextMenu(null);
-            }}
-          />
-          <div className="my-1 border-t border-border-main" />
-          <ContextItem
-            icon={<Archive className="size-4" />}
-            label={t('Archive')}
-            className="text-function-error"
-            onClick={() => handleArchive(contextMenu.agent)}
-          />
-        </div>
+        <AgentContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          agentName={contextMenu.agent.name}
+          onOpen={() => onSelect(contextMenu.agent)}
+          onInfo={() => onInfo?.(contextMenu.agent)}
+          onRename={() => onRename?.(contextMenu.agent)}
+          onTogglePin={() => onTogglePin?.(contextMenu.agent)}
+          onToggleHide={() => onToggleHide?.(contextMenu.agent)}
+          onEdit={() => onEdit(contextMenu.agent)}
+          onDuplicate={() => onDuplicate(contextMenu.agent)}
+          onArchive={() => handleArchive(contextMenu.agent)}
+          onDelete={() => onDeleteAgent?.(contextMenu.agent)}
+          onClose={() => setContextMenu(null)}
+        />
       )}
     </aside>
   );
@@ -520,32 +492,6 @@ function AgentRow({
           title={t('{count} unread', { count: unread })}
         />
       )}
-    </button>
-  );
-}
-
-function ContextItem({
-  icon,
-  label,
-  onClick,
-  className,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-  className?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[
-        'flex w-full items-center gap-2 px-3 py-2 text-sm text-text-primary hover:bg-fill-hover',
-        className ?? '',
-      ].join(' ')}
-    >
-      <span className="text-text-secondary">{icon}</span>
-      {label}
     </button>
   );
 }
