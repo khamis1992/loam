@@ -21,6 +21,7 @@ import type { Tool } from "./tools/registry.js";
 import { createScratchpadTools } from "./tools/scratchpadTools.js";
 import { createInstructionHistoryTools } from "./tools/instructionTools.js";
 import { createAgentSpawnTools } from "./tools/agentSpawnTools.js";
+import { createWideResearchTool } from "./tools/wideResearch.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
 import { publishTaskEvent } from "./server/streams.js";
@@ -93,6 +94,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createScratchpadTools());
   rt.registry.registerAll(createInstructionHistoryTools());
   rt.registry.registerAll(createAgentSpawnTools());
+  rt.registry.register(createWideResearchTool({ ollama: rt.ollama, parentRegistry: rt.registry }));
   const { ollama, registry, memory, mcp } = rt;
 
   const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal; lease?: RunLease }): Promise<{ taskId: string; text: string }> => {
