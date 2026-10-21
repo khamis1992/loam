@@ -20,6 +20,7 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "scratchpad_add",
   "scratchpad_list",
   "scratchpad_complete",
+  "handoff_to_agent",
 ];
 
 export interface AlwaysOnMergeInput {

@@ -34,6 +34,7 @@ let mergeAlwaysOnTools: (input: {
 }) => string[];
 let ALWAYS_ON_TOOLS: readonly string[];
 let createScratchpadTools: () => Tool[];
+let createGroupTools: () => Tool[];
 
 function dummy(name: string): Tool {
   return {
@@ -83,12 +84,14 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     ({ LOAM_MODES } = catalogMod);
     ({ mergeAlwaysOnTools, ALWAYS_ON_TOOLS } = runToolsMod);
     createScratchpadTools = scratchpadToolsMod.createScratchpadTools;
+    createGroupTools = (await import("../../tools/groupTools.js")).createGroupTools;
     const { ToolRegistry: Registry } = registryMod;
     registry = new Registry();
     // Register a few real build-mode staples plus the real scratchpad tools,
     // like buildRuntime + index.ts do at startup.
     for (const name of ["file_read", "file_write", "shell_run", "web_fetch", "loam_mobile"]) registry.register(dummy(name));
     registry.registerAll(createScratchpadTools());
+    registry.registerAll(createGroupTools());
   });
 
   after(() => {
@@ -116,6 +119,13 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     for (const name of ["file_read", "file_write", "shell_run"]) {
       assert.ok(tools.names().includes(name), `build-mode tool ${name} must survive the merge`);
     }
+  });
+
+  it("group handoff_to_agent reaches the model's effective tool list", () => {
+    const { tools } = buildRunToolSet();
+    assert.ok(tools.names().includes("handoff_to_agent"), "always-on group tool must be registered");
+    const modelToolNames = tools.toOllama().map((t) => t.function.name);
+    assert.ok(modelToolNames.includes("handoff_to_agent"), "the model's function list must include handoff_to_agent");
   });
 
   it("scratchpad_add is available in every Loam mode and work mode", () => {
