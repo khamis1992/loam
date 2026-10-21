@@ -1,0 +1,86 @@
+/*
+ * Marketplace detail side-sheet styles (MARKETPLACE_SPEC §3.2).
+ * Imported by components/marketplace/MarketplaceDetail.tsx.
+ * Everything else is Tailwind utilities; these rules cover what utility
+ * classes cannot express cleanly (keyframes, native <details> markers,
+ * slim scrollbars).
+ */
+
+/* Entrance motion: scrim fade + sheet slide from the window edge. */
+.mp-fade-in {
+  animation: mp-fade-in 160ms ease-out;
+}
+.mp-sheet-in {
+  animation: mp-sheet-in 220ms cubic-bezier(0.25, 0.8, 0.35, 1);
+}
+
+@keyframes mp-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes mp-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+/* The sheet sits on the `end` edge, so in RTL it slides in from the left. */
+[dir='rtl'] .mp-sheet-in {
+  animation-name: mp-sheet-in-rtl;
+}
+@keyframes mp-sheet-in-rtl {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mp-fade-in,
+  .mp-sheet-in {
+    animation: none;
+  }
+}
+
+/* Skills accordion: hide the native disclosure marker, rotate our chevron. */
+.mp-skill summary {
+  list-style: none;
+}
+.mp-skill summary::-webkit-details-marker {
+  display: none;
+}
+.mp-skill-chevron {
+  transition: transform 140ms ease;
+}
+.mp-skill[open] > summary .mp-skill-chevron {
+  transform: rotate(90deg);
+}
+
+/* Slim scrollbars for the sheet body and the instructions block. */
+.mp-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-main) transparent;
+}
+.mp-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.mp-scroll::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--border-main);
+}
+.mp-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
