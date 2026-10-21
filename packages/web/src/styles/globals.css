@@ -37,4 +37,28 @@
     0%, 100% { opacity: 0.3; }
     50% { opacity: 1; }
   }
+
+  /* Agent avatar states (AgentAvatar) */
+  .agent-avatar-dot {
+    animation: agent-avatar-dot 1.4s ease-in-out infinite;
+  }
+  @keyframes agent-avatar-dot {
+    0%, 100% { transform: scale(0.7); opacity: 0.55; }
+    50% { transform: scale(1); opacity: 1; }
+  }
+
+  .agent-avatar-typing {
+    animation: agent-avatar-typing 1.8s ease-in-out infinite;
+  }
+  @keyframes agent-avatar-typing {
+    0%, 100% { transform: scale(1); filter: brightness(1); }
+    50% { transform: scale(0.96); filter: brightness(1.09); }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-avatar-dot,
+  .agent-avatar-typing {
+    animation: none;
+  }
 }

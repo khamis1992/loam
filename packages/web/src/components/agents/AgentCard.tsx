@@ -4,6 +4,7 @@ import { Pencil, MessageSquare, Play } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { Button, IconButton } from '@/components/ui/Button';
 import { GrokBotBadge, isGrokBotAgent } from './GrokBotBadge';
+import { AgentAvatar } from './AgentAvatar';
 
 export interface AgentCardAgent {
   id: string;
@@ -15,6 +16,10 @@ export interface AgentCardAgent {
   model?: string;
   /** Provenance ("grokbot" = imported from a Grok Bot bundle). */
   source?: string;
+  /** Grok Bot-style avatar tokens (undefined = derived from the name). */
+  avatarShape?: string;
+  avatarColor?: string;
+  avatarImage?: string;
 }
 
 interface AgentCardProps {
@@ -27,9 +32,13 @@ export function AgentCard({ agent, onStart, onEdit }: AgentCardProps) {
   return (
     <div className="flex flex-col gap-3 rounded-card border border-border-main bg-bg-menu p-3 hover:border-border-dark transition-colors">
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-fill-tsp text-lg">
-          {agent.emoji || '🤖'}
-        </div>
+        <AgentAvatar
+          name={agent.name}
+          avatarShape={agent.avatarShape}
+          avatarColor={agent.avatarColor}
+          avatarImage={agent.avatarImage}
+          size={40}
+        />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <p className="min-w-0 truncate text-sm font-medium text-text-primary">{agent.name}</p>

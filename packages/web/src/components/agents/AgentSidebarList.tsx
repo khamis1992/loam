@@ -23,6 +23,7 @@ import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { Button, Spinner } from '@/components/ui/Button';
 import type { AgentCardAgent } from './AgentCard';
 import { GrokBotBadge, isGrokBotAgent } from './GrokBotBadge';
+import { AgentAvatar } from './AgentAvatar';
 import { getBuiltInAgents } from './BuiltInAgentCard';
 import type { GroupChat } from './groupTypes';
 
@@ -507,9 +508,14 @@ function AgentRow({
         selected ? 'bg-fill-hover' : 'hover:bg-fill-hover',
       ].join(' ')}
     >
-      <div className="flex size-7 shrink-0 items-center justify-center rounded-control bg-fill-tsp text-base">
-        {agent.emoji || '🤖'}
-      </div>
+      <AgentAvatar
+        name={agent.name}
+        avatarShape={agent.avatarShape}
+        avatarColor={agent.avatarColor}
+        avatarImage={agent.avatarImage}
+        size={28}
+        selected={selected}
+      />
       <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{agent.name}</span>
       {isGrokBotAgent(agent.source) && <GrokBotBadge />}
       {!!unread && unread > 0 && (
