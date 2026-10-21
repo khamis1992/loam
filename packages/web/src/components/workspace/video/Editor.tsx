@@ -44,6 +44,7 @@ export function Editor({ file, live, onChatEdit }: WorkspaceEditorProps) {
   const [overlayDraft, setOverlayDraft] = useState<string>('');
   const [job, setJob] = useState<JobResponse | undefined>();
   const [lastOutput, setLastOutput] = useState<string | undefined>();
+  const [hydrated, setHydrated] = useState<boolean>(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const lastMtimeRef = useRef<string | undefined>(undefined);
 
@@ -67,10 +68,13 @@ export function Editor({ file, live, onChatEdit }: WorkspaceEditorProps) {
         setDuration(data.edl.sourceDuration ?? data.duration ?? 0);
         setHasAudio(data.hasAudio ?? false);
         const clips = data.edl.clips.length ? data.edl.clips : [{ id: 'clip-1', in: 0, out: data.duration ?? data.edl.sourceDuration ?? 0 }];
-        setEdl({ ...data.edl, clips: clips.filter((c) => c.out > c.in) });
-        setSelectedId(clips[0]?.id);
+        const valid = clips.filter((c) => c.out > c.in);
+        setEdl({ ...data.edl, clips: valid });
+        setSelectedId(valid[0]?.id);
       } catch (err) {
         if (!gone) setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!gone) setHydrated(true);
       }
     })();
     return () => { gone = true; };
@@ -78,7 +82,7 @@ export function Editor({ file, live, onChatEdit }: WorkspaceEditorProps) {
 
   // live: while the task runs, refresh the preview when the file changes
   useEffect(() => {
-    if (!live || !duration) return;
+    if (!live || !hydrated) return;
     const poll = () => {
       void (async () => {
         try {
@@ -97,7 +101,7 @@ export function Editor({ file, live, onChatEdit }: WorkspaceEditorProps) {
     };
     const timer = window.setInterval(poll, 3000);
     return () => window.clearInterval(timer);
-  }, [live, duration, file.taskId, file.path]);
+  }, [live, hydrated, file.taskId, file.path]);
 
   const total = useMemo(() => (edl ? edl.clips.reduce((s, c) => s + (c.out - c.in), 0) : 0), [edl]);
 
@@ -176,16 +180,19 @@ export function Editor({ file, live, onChatEdit }: WorkspaceEditorProps) {
     });
   }, [active, activeIndex, duration, mutate, playheadSourceTime]);
 
+  // Overlay times live on the rendered (concatenated) timeline, not source time.
   const addOverlay = useCallback(() => {
     const text = overlayDraft.trim();
-    if (!text || !active) return;
-    const start = active.in;
-    const end = active.out;
+    if (!text || !active || !edl) return;
+    const offset = edl.clips.slice(0, Math.max(0, activeIndex)).reduce((s, c) => s + (c.out - c.in), 0);
+    const durationSec = active.out - active.in;
+    const start = offset;
+    const end = offset + durationSec;
     const startClamped = Math.max(0, Math.min(start, end - 0.05));
     const overlay: Overlay = { id: newId(), text, start: startClamped, end: Math.max(startClamped + 0.05, end), x: 10, y: 10 };
     mutate((draft) => { draft.overlays.push(overlay); });
     setOverlayDraft('');
-  }, [active, mutate, overlayDraft]);
+  }, [active, activeIndex, edl, mutate, overlayDraft]);
 
   const saveEdl = useCallback(async () => {
     if (!edl) return;
@@ -326,8 +333,8 @@ export function Editor({ file, live, onChatEdit }: WorkspaceEditorProps) {
           <button onClick={trimInToPlayhead} disabled={!active} className="rounded-control border border-border-main px-2 py-0.5 text-text-primary hover:bg-fill-hover disabled:opacity-50">{t('Trim in')}</button>
           <button onClick={trimOutToPlayhead} disabled={!active} className="rounded-control border border-border-main px-2 py-0.5 text-text-primary hover:bg-fill-hover disabled:opacity-50">{t('Trim out')}</button>
           <button onClick={deleteSelected} disabled={!edl || edl.clips.length <= 1} className="rounded-control border border-border-main px-2 py-0.5 text-func-error hover:bg-fill-hover disabled:opacity-40">{t('Delete segment')}</button>
-          <button onClick={() => moveSelected(-1)} disabled={activeIndex <= 0} className="rounded-control border border-border-main px-2 py-0.5 text-text-primary hover:bg-fill-hover disabled:opacity-40">◀</button>
-          <button onClick={() => moveSelected(1)} disabled={!edl || activeIndex >= edl.clips.length - 1} className="rounded-control border border-border-main px-2 py-0.5 text-text-primary hover:bg-fill-hover disabled:opacity-40">▶</button>
+          <button onClick={() => moveSelected(-1)} disabled={activeIndex <= 0} className="rounded-control border border-border-main px-2 py-0.5 text-text-primary hover:bg-fill-hover disabled:opacity-40">{t('Move earlier')}</button>
+          <button onClick={() => moveSelected(1)} disabled={!edl || activeIndex >= edl.clips.length - 1} className="rounded-control border border-border-main px-2 py-0.5 text-text-primary hover:bg-fill-hover disabled:opacity-40">{t('Move later')}</button>
         </div>
 
         <div className="flex flex-wrap items-center gap-1">
@@ -356,7 +363,7 @@ export function Editor({ file, live, onChatEdit }: WorkspaceEditorProps) {
               <label className="text-[10px]">{t('End')}<input type="number" step="0.1" aria-label={t('Overlay end')} value={o.end} onChange={(e) => mutate((draft) => { draft.overlays = draft.overlays.map((x) => x.id === o.id ? { ...x, end: Math.max(0, Number(e.target.value) || 0) } : x); })} className="w-16 rounded-control border border-border-main bg-bg-nav px-1 text-text-primary outline-none" /></label>
               <label className="text-[10px]">{t('X')}<input type="number" step="1" aria-label={t('Overlay x')} value={o.x} onChange={(e) => mutate((draft) => { draft.overlays = draft.overlays.map((x) => x.id === o.id ? { ...x, x: Math.max(0, Math.min(99, Number(e.target.value) || 0)) } : x); })} className="w-12 rounded-control border border-border-main bg-bg-nav px-1 text-text-primary outline-none" /></label>
               <label className="text-[10px]">{t('Y')}<input type="number" step="1" aria-label={t('Overlay y')} value={o.y} onChange={(e) => mutate((draft) => { draft.overlays = draft.overlays.map((x) => x.id === o.id ? { ...x, y: Math.max(0, Math.min(99, Number(e.target.value) || 0)) } : x); })} className="w-12 rounded-control border border-border-main bg-bg-nav px-1 text-text-primary outline-none" /></label>
-              <button onClick={() => mutate((draft) => { draft.overlays = draft.overlays.filter((x) => x.id !== o.id); })} className="rounded-control border border-border-main px-2 py-0.5 text-func-error hover:bg-fill-hover">✕</button>
+              <button onClick={() => mutate((draft) => { draft.overlays = draft.overlays.filter((x) => x.id !== o.id); })} className="rounded-control border border-border-main px-2 py-0.5 text-func-error hover:bg-fill-hover">{t('Remove overlay')}</button>
             </div>
           ))}
         </div>
