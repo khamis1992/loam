@@ -21,6 +21,10 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "scratchpad_list",
   "scratchpad_complete",
   "propose_instructions_update",
+  "ticket_create",
+  "ticket_list",
+  "ticket_claim",
+  "ticket_update",
 ];
 
 export interface AlwaysOnMergeInput {

@@ -19,6 +19,7 @@ import { setDelegationRunner } from "./server/companionTeam.js";
 import { createApproval, waitForDecision } from "./server/approvals.js";
 import type { Tool } from "./tools/registry.js";
 import { createScratchpadTools } from "./tools/scratchpadTools.js";
+import { createBoardTools } from "./tools/boardTools.js";
 import { createInstructionHistoryTools } from "./tools/instructionTools.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
@@ -89,6 +90,7 @@ async function main(): Promise<void> {
 
   const rt = await buildRuntime(cfg);
   rt.registry.registerAll(createScratchpadTools());
+  rt.registry.registerAll(createBoardTools());
   rt.registry.registerAll(createInstructionHistoryTools());
   const { ollama, registry, memory, mcp } = rt;
 
