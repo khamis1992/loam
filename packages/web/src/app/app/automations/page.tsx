@@ -289,7 +289,7 @@ export default function AutomationsPage() {
               autoFocus
               value={draft.prompt}
               onChange={(e) => setDraft({ ...draft, prompt: e.target.value })}
-              placeholder={t('What should Loam do?')}
+              placeholder={t('What should {product} do?')}
               rows={3}
               className="rounded-control border border-border-main bg-bg-main px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary"
             />
