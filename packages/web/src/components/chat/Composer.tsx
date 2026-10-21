@@ -21,6 +21,7 @@ import { t } from '@/i18n/t';
 import { IconButton } from '@/components/ui/Button';
 import { desktopApis } from '@/services/desktopApis';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
+import { fetchProjectBranch, type ProjectOption } from '@/services/projectContextApi';
 import { useRouter } from 'next/navigation';
 import { ModeChip, type ModeChipResolved } from './ModeChip';
 import type { TaskMode } from '@shared/socket';
@@ -660,11 +661,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   );
 });
 
-export interface ProjectOption {
-  id: string;
-  name: string;
-  folder?: string | null;
-}
+export type { ProjectOption } from '@/services/projectContextApi';
 
 interface ComposerContextBarProps {
   home?: boolean;
@@ -714,6 +711,26 @@ export function ComposerContextBar({
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [menuOpen]);
+
+  // Option 17: resolve the selected project's real branch from the backend
+  // (GET /api/projects/:id/git) instead of the desktop "main" fallback. The
+  // desktop branch remains the fallback when no project is selected.
+  const [projectBranch, setProjectBranch] = useState<string | null>(null);
+  useEffect(() => {
+    setProjectBranch(null);
+    if (!projectId) return;
+    let mounted = true;
+    fetchProjectBranch(projectId)
+      .then((info) => {
+        if (mounted && info?.isGit && info.branch) setProjectBranch(info.branch);
+      })
+      .catch(() => {
+        // Backend route unavailable: keep the desktop fallback branch.
+      });
+    return () => { mounted = false; };
+  }, [projectId]);
+
+  const displayBranch = projectBranch || branch;
 
   const hasPicker = Boolean(onSelectProject);
   const openChip = () => {
@@ -800,12 +817,12 @@ export function ComposerContextBar({
       >
         <Folder className="size-3.5" /> {t('Downloads')}
       </button>
-      {branch && (
+      {displayBranch && (
         <span className="flex max-w-[180px] items-center gap-1 truncate"
-          title={branch}
+          title={displayBranch}
         >
           <GitBranch className="size-3.5 shrink-0" />
-          <span className="truncate">{truncateBranch(branch)}</span>
+          <span className="truncate">{truncateBranch(displayBranch)}</span>
         </span>
       )}
       <label className={clsx('flex items-center gap-1', onWorktreeChange ? 'cursor-pointer' : 'cursor-not-allowed text-text-disable')}>
