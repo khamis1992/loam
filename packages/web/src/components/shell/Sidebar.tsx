@@ -13,6 +13,7 @@ import { t } from '@/i18n/t';
 import clsx from 'clsx';
 import { AccountPopover } from '@/components/dialogs/AccountPopover';
 import { SearchDialog } from '@/components/dialogs/SearchDialog';
+import { ReferralDialog } from '@/components/dialogs/ReferralDialog';
 import { SidebarTaskItem } from './SidebarTaskItem';
 
 type NavItem = {
@@ -33,6 +34,7 @@ export function Sidebar() {
   const [query, setQuery] = useState('');
   const [accountOpen, setAccountOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [referralOpen, setReferralOpen] = useState(false);
   const accountAnchorRef = useRef<HTMLButtonElement>(null);
 
   const nav: NavItem[] = [
@@ -139,7 +141,7 @@ export function Sidebar() {
       <div className="mt-2 shrink-0 space-y-2">
         <button
           type="button"
-          onClick={() => dispatch(openSettings('General'))}
+          onClick={() => setReferralOpen(true)}
           className="flex w-full items-center gap-2 rounded-card border border-border-main bg-bg-menu px-2.5 py-2 text-start hover:bg-fill-hover"
         >
           <Share2 className="size-4 shrink-0 text-text-secondary" aria-hidden />
@@ -149,6 +151,8 @@ export function Sidebar() {
           </div>
           <ChevronRight className="size-3.5 shrink-0 text-text-tertiary" aria-hidden />
         </button>
+
+        <ReferralDialog open={referralOpen} onClose={() => setReferralOpen(false)} />
 
         <div className="flex items-center justify-between gap-1">
           <button

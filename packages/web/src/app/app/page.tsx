@@ -112,9 +112,17 @@ export default function HomePage() {
   }, [projectId, projects]);
 
   useEffect(() => {
-    getSessionToken().then((token) => {
-      if (!token) return;
-      fetch(`${UPLOAD_BASE}/user.v1.UserService/GetAvailableCredits`, {
+    let cancelled = false;
+    const loadLocalCredits = fetch(`${getApiBase()}/api/credits`)
+      .then(async (res) => {
+        if (!res.ok) return null;
+        const data = await res.json();
+        return typeof data.balance === 'number' ? data.balance : null;
+      })
+      .catch(() => null);
+    const loadProtocolCredits = getSessionToken().then((token) => {
+      if (!token) return null;
+      return fetch(`${UPLOAD_BASE}/user.v1.UserService/GetAvailableCredits`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -130,15 +138,21 @@ export default function HomePage() {
             : typeof data.totalCredits === 'number' ? data.totalCredits
             : 0;
         })
-        .then((total) => {
-          if (total && total > 0) {
-            setCredits(total);
-          } else {
-            setCredits(null);
-          }
-        })
-        .catch(() => setCredits(null));
+        .catch(() => null);
     });
+    // Local mock ledger first (OPD #9); fall back to the legacy protocol API.
+    void loadLocalCredits.then((local) => {
+      if (cancelled) return;
+      if (local !== null) {
+        setCredits(local);
+        return;
+      }
+      void loadProtocolCredits.then((total) => {
+        if (cancelled || total === null) return;
+        setCredits(total > 0 ? total : null);
+      });
+    });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {

@@ -16,6 +16,7 @@ import { ConnectorsPane } from './ConnectorsPane';
 import { SkillsPane } from './SkillsPane';
 import { MemoryPane } from './MemoryPane';
 import { InAppBrowserPane } from './InAppBrowserPane';
+import { AssetsPane } from './AssetsPane';
 import { EmptyState } from './EmptyState';
 
 const TABS = [
@@ -39,7 +40,7 @@ const TABS = [
   { id: 'About', group: 'About', icon: 'Info' },
 ];
 
-const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Data controls', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Memory', 'In-App Browser']);
+const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Data controls', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Memory', 'In-App Browser', 'Email', 'Phone', 'Wallet']);
 
 const GROUP_ORDER = ['Account', 'Settings', 'Capabilities', 'Computers', 'Data', 'Assets', 'About'];
 
@@ -136,6 +137,9 @@ function SettingsContent({ tab }: { tab: string }) {
     case 'Skills': return <SkillsPane />;
     case 'Memory': return <MemoryPane />;
     case 'In-App Browser': return <InAppBrowserPane />;
+    case 'Email': return <AssetsPane kind="Email" />;
+    case 'Phone': return <AssetsPane kind="Phone" />;
+    case 'Wallet': return <AssetsPane kind="Wallet" />;
     case 'About': return <AboutPane />;
     default: return null;
   }

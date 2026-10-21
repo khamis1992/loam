@@ -64,6 +64,7 @@ import { executionQueue } from "./server/executionQueue.js";
 import { requiresReplayConfirmation, type SavedRun } from "./server/recovery.js";
 import { acquireRuntimeLease, releaseRuntimeLease, backupDatabase } from "./server/sqliteStore.js";
 import { claimRunLease, releaseRunLease, startLeaseHeartbeat, type LeaseHeartbeat, type RunLease } from "./server/runLease.js";
+import { recordTaskUsage } from "./server/credits.js";
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
@@ -363,6 +364,7 @@ async function main(): Promise<void> {
       if (runSignal.aborted) throw new Error("cancelled by user");
       if (result.verified !== true) throw new Error("task incomplete: mandatory final verification missing");
       completeTaskRun(task, result.text, result.model, opts.lease);
+      recordTaskUsage(task, result.usage); // OPD #9: one mock usage entry per completed task
       if (doneEvent) {
         appendStep(task, { at: new Date().toISOString(), type: doneEvent.type, data: doneEvent });
         emit(doneEvent);
