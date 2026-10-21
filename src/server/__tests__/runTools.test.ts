@@ -121,6 +121,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll(createLoamServiceTools().filter((tool) => tool.name === "watch_url"));
     const deployToolsMod = await import("../../tools/deploy.js");
     registry.registerAll(deployToolsMod.createDeployTools({ workspace: tmpDir }));
+    registry.register(dummy("loam_design")); // W3 build-phase design tool (always-on grant)
   });
 
   after(() => {

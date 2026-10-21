@@ -39,6 +39,7 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "video_edit",
   "deploy_app",
   "export_build",
+  "loam_design",
 ];
 
 export interface AlwaysOnMergeInput {

@@ -32,6 +32,7 @@ import { createDesignStudioTools } from "./tools/designStudio.js";
 import { createOfficeEditTools } from "./tools/officeEditAgent.js";
 import { createVideoEditTools } from "./tools/videoEditAgent.js";
 import { createDeployTools } from "./tools/deploy.js";
+import { createDesignExploreTools } from "./tools/designExplore.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
 import { publishTaskEvent } from "./server/streams.js";
@@ -115,6 +116,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createOfficeEditTools());
   rt.registry.registerAll(createVideoEditTools());
   rt.registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview: rt.preview }));
+  rt.registry.registerAll(createDesignExploreTools());
   const { ollama, registry, memory, mcp } = rt;
 
   const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal; lease?: RunLease }): Promise<{ taskId: string; text: string }> => {
