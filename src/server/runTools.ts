@@ -35,6 +35,7 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "scaffold_backend",
   "design_create",
   "design_brand_kit_save",
+  "watch_url",
 ];
 
 export interface AlwaysOnMergeInput {

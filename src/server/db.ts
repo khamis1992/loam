@@ -60,9 +60,16 @@ export interface Schedule {
   agentId?: string;
   /** Where the routine executes: app workspace or the companion's own device. */
   workMode?: string;
-  /** Frontier 16: event-driven routines. */
-  kind?: "cron" | "file-watch" | "service-watch";
+  /** Frontier 16: event-driven routines. MF7 adds url-watch (scheduled fetch). */
+  kind?: "cron" | "file-watch" | "service-watch" | "url-watch";
   watchPath?: string;
+  /** MF7 url-watch: watchPath holds the watched URL; these carry extra state. */
+  watchSelector?: string;
+  watchConnector?: string;
+  lastWatchHash?: string;
+  lastWatchSnippet?: string;
+  lastWatchCheckedAt?: string;
+  lastWatchChangedAt?: string;
   /** MF2: 5-field cron expression evaluated in `timezone`. */
   cron?: string;
   /** MF2: one-shot ISO instant (offset-less strings read in `timezone`). */
@@ -137,7 +144,7 @@ export function updateProject(id: string, patch: {name?: string; instruction?: s
 export function deleteProjectR(id: string): boolean {
   return transaction(() => { const removed = remove("projects",id); for (const t of listTasks(id)) { t.projectId = null; put("tasks",t); } return removed; });
 }
-export function addSchedule(prompt: string, intervalSeconds: number, agentId?: string, workMode?: string, kind?: "cron" | "file-watch" | "service-watch", watchPath?: string, enabled = true, spec?: ScheduleSpec): Schedule {
+export function addSchedule(prompt: string, intervalSeconds: number, agentId?: string, workMode?: string, kind?: "cron" | "file-watch" | "service-watch" | "url-watch", watchPath?: string, enabled = true, spec?: ScheduleSpec): Schedule {
   const interval = Math.max(30, Math.floor(intervalSeconds));
   // Reject invalid cron/timezone specs eagerly so a bad routine never persists.
   if (spec?.cron) parseCron(spec.cron);
@@ -153,9 +160,23 @@ export function setScheduleNextRunAt(id: string, at: string): boolean {
   return transaction(() => { const s = get<Schedule>("schedules", id); if (!s) return false; s.nextRunAt = at; put("schedules", s); return true; });
 }
 export function listSchedules(): Schedule[] { return all<Schedule>("schedules"); }
+export function getSchedule(id: string): Schedule | undefined { return get<Schedule>("schedules", id); }
 /** MF2: schedules owned by one agent, soonest next run first. */
 export function listSchedulesByAgent(agentId: string): Schedule[] { return listSchedules().filter((s) => s.agentId === agentId).sort((a, b) => (a.nextRunAt ?? "").localeCompare(b.nextRunAt ?? "")); }
 export function deleteSchedule(id: string): boolean { return remove("schedules",id); }
+/** MF7 url-watch: idempotent state patch (hash/snippet/checked/changed timestamps). */
+export function updateUrlWatchState(
+  id: string,
+  patch: Partial<Pick<Schedule, "watchSelector" | "watchConnector" | "lastWatchHash" | "lastWatchSnippet" | "lastWatchCheckedAt" | "lastWatchChangedAt">>,
+): Schedule | undefined {
+  return transaction(() => {
+    const s = get<Schedule>("schedules", id);
+    if (!s) return undefined;
+    Object.assign(s, patch);
+    put("schedules", s);
+    return s;
+  });
+}
 export function dueSchedules(now = new Date()): Schedule[] { return listSchedules().filter((s) => s.enabled && Date.parse(s.nextRunAt) <= now.getTime()); }
 
 export interface ScheduleOutcome {

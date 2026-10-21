@@ -22,6 +22,8 @@ export function startScheduler(deps: SchedulerDeps): () => void {
       for (const schedule of dueSchedules()) {
         // Archived companions keep their schedules but never run them.
         if (schedule.agentId && getAgent(schedule.agentId)?.archivedAt) continue;
+        // MF7: url-watch routines are change-triggered; their own poller fires them.
+        if (schedule.kind === "url-watch") continue;
         const previous = schedule.lastTaskId ? getTask(schedule.lastTaskId) : undefined;
         if (previous && ["queued", "running", "interrupted"].includes(previous.status)) continue;
         log.info(`scheduler: running ${schedule.id} -> ${schedule.prompt.slice(0, 60)}`);
