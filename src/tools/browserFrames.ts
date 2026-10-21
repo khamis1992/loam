@@ -21,6 +21,13 @@ interface TaskFrameState {
 
 const frames = new Map<string, TaskFrameState>();
 const sinks = new Map<string, Set<BrowserFrameSink>>();
+/** Web session id -> Loam task id, set by the protocol socket so HTTP lookups
+ *  (which only know the web session id) can find the task's latest frame. */
+const aliases = new Map<string, string>();
+
+export function setTaskFrameAlias(aliasKey: string, taskId: string): void {
+  if (aliasKey && taskId) aliases.set(aliasKey, taskId);
+}
 
 export function setFrameThrottleMs(ms: number): void {
   throttleMs = Math.max(0, ms);
@@ -76,8 +83,9 @@ export function publishBrowserFrame(
   return true;
 }
 
-/** Latest captured frame for a task (kept even when throttling dropped the emit). */
-export function latestBrowserFrame(taskId: string): BrowserFrame | null {
+/** Latest captured frame, resolving web-session aliases (session uid -> task id). */
+export function latestBrowserFrame(key: string): BrowserFrame | null {
+  const taskId = aliases.get(key) ?? key;
   return frames.get(taskId)?.latest ?? null;
 }
 
@@ -105,5 +113,6 @@ export function buildBrowserFrameEvent(id: string, taskId: string, frame: Browse
 export function resetBrowserFrames(): void {
   frames.clear();
   sinks.clear();
+  aliases.clear();
   throttleMs = 1_000;
 }
