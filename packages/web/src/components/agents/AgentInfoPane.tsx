@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { X, Settings, Play, Loader2, AlertCircle, FileText, Folder, Plus, Send, Mail, Trash2 } from 'lucide-react';
+import { X, Settings, Play, Loader2, AlertCircle, FileText, Folder, Plus, Send, Mail, Trash2, Monitor } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { Button, Spinner } from '@/components/ui/Button';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { TeamRunsList } from './TeamRunsList';
 import type { AgentCardAgent } from './AgentCard';
 import { loadAgentThreadFiles } from './AgentThreadView';
+import { AgentContextMenu } from './AgentContextMenu';
 import { GroupMembersTab } from './GroupMembersTab';
 import type { GroupChat } from './groupTypes';
 import { WorkspaceFilePanel } from '@/components/workspace';
@@ -76,13 +77,21 @@ interface AgentInfoPaneProps {
   threadUid: string | null;
   onClose: () => void;
   onEdit: () => void;
+  /** Opens the rename dialog for this agent. */
+  onRenameAgent?: () => void;
+  /** Permanently deletes this agent (the context menu asks for confirmation). */
+  onDeleteAgent?: () => void;
+  /** Optional pin/hide handlers; the header menu items stay stubs without them. */
+  onTogglePin?: () => void;
+  onToggleHide?: () => void;
   /** When set, the pane shows group details instead of the selected agent. */
   group?: GroupChat | null;
   onGroupChanged?: (group: GroupChat) => void;
 }
 
-export function AgentInfoPane({ agent, threadUid, onClose, onEdit, group, onGroupChanged }: AgentInfoPaneProps) {
+export function AgentInfoPane({ agent, threadUid, onClose, onEdit, onRenameAgent, onDeleteAgent, onTogglePin, onToggleHide, group, onGroupChanged }: AgentInfoPaneProps) {
   const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number } | null>(null);
   const tabs = group ? TAB_ITEMS.filter((tab) => tab.id === 'members') : TAB_ITEMS;
   const currentTab: TabId = group ? 'members' : activeTab;
   const [workspaceFile, setWorkspaceFile] = useState<WorkspaceFile | null>(null);
@@ -95,9 +104,21 @@ export function AgentInfoPane({ agent, threadUid, onClose, onEdit, group, onGrou
     );
   }
 
+  const showHeaderMenu = !group && Boolean(onRenameAgent || onDeleteAgent);
+
   return (
     <aside className="flex w-[340px] shrink-0 flex-col border-s border-border-main bg-bg-menu">
-      <div className="flex h-row items-center justify-between border-b border-border-main px-4">
+      <div
+        className="flex h-row items-center justify-between border-b border-border-main px-4"
+        onContextMenu={
+          showHeaderMenu
+            ? (e) => {
+                e.preventDefault();
+                setHeaderMenu({ x: e.clientX, y: e.clientY });
+              }
+            : undefined
+        }
+      >
         <div className="flex items-center gap-2">
           <div className="flex size-7 items-center justify-center rounded-control bg-fill-tsp text-base">
             {group ? '👥' : agent.emoji || 'dY-'}
@@ -137,6 +158,8 @@ export function AgentInfoPane({ agent, threadUid, onClose, onEdit, group, onGrou
         </div>
       </div>
 
+      {!group && <ComputerPreviewCard agentName={agent.name} />}
+
       <div className="flex h-row-sm shrink-0 items-center border-b border-border-main">
         {tabs.map((tab) => (
           <button
@@ -169,6 +192,19 @@ export function AgentInfoPane({ agent, threadUid, onClose, onEdit, group, onGrou
           </>
         )}
       </div>
+
+      {headerMenu && (
+        <AgentContextMenu
+          x={headerMenu.x}
+          y={headerMenu.y}
+          agentName={agent.name}
+          onRename={() => onRenameAgent?.()}
+          onTogglePin={() => onTogglePin?.()}
+          onToggleHide={() => onToggleHide?.()}
+          onDelete={() => onDeleteAgent?.()}
+          onClose={() => setHeaderMenu(null)}
+        />
+      )}
     </aside>
   );
 }
@@ -181,6 +217,66 @@ const TAB_ITEMS: { id: TabId; label: string }[] = [
   { id: 'computer', label: t('Computer') },
   { id: 'members', label: t('Members') },
 ];
+
+function ComputerPreviewCard({ agentName }: { agentName: string }) {
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExpanded(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [expanded]);
+
+  if (expanded) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col bg-bg-main">
+        <div className="flex h-row items-center justify-between border-b border-border-main px-4">
+          <span className="min-w-0 truncate text-sm font-medium text-text-primary">
+            {agentName} · {t('Computer preview')}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setExpanded(false)}
+            className="h-row-sm w-row-sm px-0"
+            aria-label={t('Close')}
+            title={t('Close')}
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+          <Monitor className="size-12 text-text-tertiary" />
+          <p className="text-base font-medium text-text-primary">{t('Live preview placeholder')}</p>
+          <p className="max-w-[420px] text-sm text-text-secondary">
+            {t('The computer stream will appear here once the agent connects to a computer.')}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="shrink-0 px-4 pb-1 pt-3">
+      <span className="text-xs font-medium text-text-tertiary">{t('Computer preview')}</span>
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        aria-label={t('Open full screen')}
+        title={t('Open full screen')}
+        className="mt-1 flex h-28 w-full flex-col items-center justify-center gap-1.5 rounded-card border border-border-main bg-bg-main px-3 text-center transition-colors hover:bg-fill-hover"
+      >
+        <Monitor className="size-5 text-text-tertiary" />
+        <span className="text-xs text-text-secondary">{t('No live preview yet')}</span>
+        <span className="text-[11px] text-text-tertiary">{t('Click for full screen')}</span>
+      </button>
+    </div>
+  );
+}
 
 function OverviewTab({ agent }: { agent: AgentWithMeta }) {
   const [memory, setMemory] = useState<MemoryEntry[]>([]);

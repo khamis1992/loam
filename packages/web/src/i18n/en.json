@@ -703,5 +703,18 @@
   "Restart to update": "Restart to update",
   "Update failed: {message}": "Update failed: {message}",
   "Updates are disabled in unpackaged builds.": "Updates are disabled in unpackaged builds.",
-  "Restarting…": "Restarting…"
+  "Restarting…": "Restarting…",
+  "Info": "Info",
+  "Pin": "Pin",
+  "Unpin": "Unpin",
+  "Hide": "Hide",
+  "Unhide": "Unhide",
+  "Rename agent": "Rename agent",
+  "Delete {name} permanently? This cannot be undone.": "Delete {name} permanently? This cannot be undone.",
+  "Computer preview": "Computer preview",
+  "No live preview yet": "No live preview yet",
+  "Click for full screen": "Click for full screen",
+  "Open full screen": "Open full screen",
+  "Live preview placeholder": "Live preview placeholder",
+  "The computer stream will appear here once the agent connects to a computer.": "The computer stream will appear here once the agent connects to a computer."
 }

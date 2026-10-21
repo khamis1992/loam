@@ -15,6 +15,7 @@ import type { GroupChat } from '@/components/agents/groupTypes';
 import { NewAgentDialog } from '@/components/agents/NewAgentDialog';
 import { AgentStartDialog } from '@/components/agents/AgentStartDialog';
 import { AgentEditDrawer } from '@/components/agents/AgentEditDrawer';
+import { RenameAgentDialog } from '@/components/agents/RenameAgentDialog';
 import { getBuiltInAgents } from '@/components/agents/BuiltInAgentCard';
 import type { AgentCardAgent } from '@/components/agents/AgentCard';
 
@@ -44,6 +45,7 @@ export default function AgentsPageClient() {
   const [newOpen, setNewOpen] = useState(false);
   const [startAgent, setStartAgent] = useState<AgentCardAgent | null>(null);
   const [editAgent, setEditAgent] = useState<Agent | null>(null);
+  const [renameAgent, setRenameAgent] = useState<Agent | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const [unreadById, setUnreadById] = useState<Record<string, { count: number; lastAt?: string }>>({});
   const [groups, setGroups] = useState<GroupChat[]>([]);
@@ -165,12 +167,12 @@ export default function AgentsPageClient() {
     });
   }, [selectedId]);
 
-  const selectAgent = (agent: Agent) => {
+  const selectAgent = (agent: Agent, opts?: { openInfo?: boolean }) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('agent', agent.id);
     params.delete('group');
     router.replace(`/app/agents?${params.toString()}`, { scroll: false });
-    setInfoOpen(false);
+    setInfoOpen(opts?.openInfo ?? false);
   };
 
   const selectGroup = (group: GroupChat) => {
@@ -240,6 +242,35 @@ export default function AgentsPageClient() {
     }
   };
 
+  const handleInfo = (agent: Agent) => {
+    selectAgent(agent, { openInfo: true });
+  };
+
+  const handleDeleteAgent = async (agent: Agent) => {
+    try {
+      const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agent.id)}`, {
+        method: 'DELETE',
+        headers: await getApiHeaders(),
+      });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      setInfoOpen(false);
+      if (selectedId === agent.id) {
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete('agent');
+        router.replace(`/app/agents?${params.toString()}`, { scroll: false });
+      }
+      await loadAgents();
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('failed to delete agent', e);
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const handleRenamed = () => {
+    void loadAgents();
+  };
+
   const emptyState = (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-bg-main p-6 text-text-tertiary">
       <div className="flex size-12 items-center justify-center rounded-full bg-fill-tsp text-2xl">🤖</div>
@@ -270,6 +301,9 @@ export default function AgentsPageClient() {
         selectedGroupId={selectedGroupId}
         onSelectGroup={selectGroup}
         onNewGroup={() => setNewGroupOpen(true)}
+        onInfo={handleInfo}
+        onRename={setRenameAgent}
+        onDeleteAgent={handleDeleteAgent}
       />
 
       {selectedGroup ? (
@@ -306,6 +340,8 @@ export default function AgentsPageClient() {
           threadUid={infoThreadUid}
           onClose={() => setInfoOpen(false)}
           onEdit={() => setEditAgent(selectedAgent)}
+          onRenameAgent={() => setRenameAgent(selectedAgent)}
+          onDeleteAgent={() => void handleDeleteAgent(selectedAgent)}
         />
       ) : null}
 
@@ -333,6 +369,12 @@ export default function AgentsPageClient() {
         open={editAgent !== null}
         onClose={() => setEditAgent(null)}
         onSaved={handleSaved}
+      />
+
+      <RenameAgentDialog
+        agent={renameAgent}
+        onClose={() => setRenameAgent(null)}
+        onRenamed={handleRenamed}
       />
     </div>
   );
