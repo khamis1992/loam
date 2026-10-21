@@ -11,6 +11,7 @@ let db: typeof import("../db.js");
 let dataControls: typeof import("../dataControls.js");
 let memory: typeof import("../companionMemory.js");
 let agents: typeof import("../agents.js");
+let settings: typeof import("../settings.js");
 
 describe("data controls", () => {
   before(async () => {
@@ -22,6 +23,7 @@ describe("data controls", () => {
     dataControls = await import("../dataControls.js");
     memory = await import("../companionMemory.js");
     agents = await import("../agents.js");
+    settings = await import("../settings.js");
   });
 
   after(() => {
@@ -70,6 +72,18 @@ describe("data controls", () => {
     assert.equal(scope.entries.length, 1);
     assert.equal(typeof (scope.entries[0] as { kind?: string }).kind, "string");
     assert.ok(!JSON.stringify(scope.entries).includes("pref store"));
+  });
+
+  it("round-trips the training opt-out flag in settings", () => {
+    settings.updateSettings({ trainingOptOut: true });
+    assert.equal(settings.getSettings().trainingOptOut, true);
+
+    settings.updateSettings({ trainingOptOut: false });
+    assert.equal(settings.getSettings().trainingOptOut, false);
+
+    // A non-boolean patch leaves the stored value untouched.
+    settings.updateSettings({ trainingOptOut: undefined as unknown as boolean });
+    assert.equal(settings.getSettings().trainingOptOut, false);
   });
 
   it("deletes all user data with the typed confirmation", () => {
