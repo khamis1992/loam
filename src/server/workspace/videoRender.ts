@@ -45,13 +45,14 @@ function newId(): string {
 export function normalizeEdl(input: unknown, sourceDuration?: number): VideoEdl {
   if (!input || typeof input !== "object") throw new Error("edl required");
   const raw = input as Record<string, unknown>;
-  const rawClips = raw.clips;
+  // Accept `segments` and start/end aliases so a task-produced EDL can hydrate too.
+  const rawClips = Array.isArray(raw.clips) ? raw.clips : Array.isArray(raw.segments) ? raw.segments : raw.clips;
   if (!Array.isArray(rawClips)) throw new Error("edl.clips must be an array");
   const clips: VideoEdlClip[] = rawClips.map((c) => {
     if (!c || typeof c !== "object") throw new Error("invalid edl clip");
     const rec = c as Record<string, unknown>;
-    const start = num(rec.in);
-    const end = num(rec.out);
+    const start = num(rec.in ?? rec.start);
+    const end = num(rec.out ?? rec.end);
     if (Number.isNaN(start) || Number.isNaN(end)) throw new Error("clip in/out must be finite numbers");
     let lo = Math.max(0, start);
     let hi = end;
@@ -90,7 +91,7 @@ export function edlDuration(edl: VideoEdl): number {
 export interface VideoMeta { duration?: number; hasAudio: boolean; bytes: number; mtimeMs: number; }
 
 const DURATION_RE = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/;
-const AUDIO_RE = /^Stream #0:\d+.*Audio:/m;
+const AUDIO_RE = /^\s*Stream #0:\d+.*Audio:/m;
 
 /** Probe a video with `ffmpeg -i` stderr; unknown duration stays undefined. */
 export function probeVideo(absPath: string, executable = ffmpegPath()): Promise<VideoMeta> {
@@ -160,10 +161,11 @@ export function buildFfmpegArgs(edl: VideoEdl, sourceAbs: string, outAbs: string
   } else {
     const n = clips.length;
     if (audioLabels.length) {
-      parts.push(
-        videoLabels.map((l) => `[${l}]`).join("") + audioLabels.map((l) => `[${l}]`).join("") +
-        `concat=n=${n}:v=1:a=1[vCat][aCat]`,
-      );
+      // concat consumes inputs interleaved per segment: [v0][a0][v1][a1]...
+      const interleaved = clips
+        .map((_, i) => `[${videoLabels[i]}][${audioLabels[i]}]`)
+        .join("");
+      parts.push(`${interleaved}concat=n=${n}:v=1:a=1[vCat][aCat]`);
     } else {
       parts.push(videoLabels.map((l) => `[${l}]`).join("") + `concat=n=${n}:v=1:a=0[vCat]`);
     }
