@@ -189,7 +189,6 @@ export function buildFfmpegArgs(edl: VideoEdl, sourceAbs: string, outAbs: string
   args.push(
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
     "-movflags", "+faststart",
-    "-frame_pts", "0",
     "-t", fmt(total),
     outAbs,
   );
