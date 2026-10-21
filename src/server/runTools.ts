@@ -32,6 +32,7 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "ticket_claim",
   "ticket_update",
   "handoff_to_agent",
+  "scaffold_backend",
 ];
 
 export interface AlwaysOnMergeInput {
