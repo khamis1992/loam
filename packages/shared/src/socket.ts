@@ -227,6 +227,16 @@ export interface FolderAccessRequestEvent extends ChatEventBase {
   access: 'read' | 'write';
 }
 
+/** Live browser frame from the agent's browser tool (throttled ~1 fps). */
+export interface BrowserFrameEvent extends ChatEventBase {
+  type: 'browserFrame';
+  taskId: string;
+  url: string;
+  title?: string;
+  /** JPEG bytes without the data: prefix; omitted for URL/title-only updates. */
+  jpegBase64?: string;
+}
+
 export type ChatEvent =
   | ChatMessageEvent
   | ChatDeltaEvent
@@ -245,6 +255,7 @@ export type ChatEvent =
   | LocalPermissionModeChangeResultEvent
   | EventsNotifyEventsAfterEvent
   | ExplanationEvent
-  | FolderAccessRequestEvent;
+  | FolderAccessRequestEvent
+  | BrowserFrameEvent;
 
 export type ServerMessage = ServerEnvelope | { type: 'session_write_access'; sessionId: string; writable: boolean };
