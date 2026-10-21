@@ -64,6 +64,23 @@ export function detectScenes(diffs:FrameDiff[],opts:{threshold?:number;minSceneS
   return scenes;
 }
 
+/**
+ * Adaptive cut threshold from the diff-score distribution itself: median + sensitivity x MAD of
+ * the scores, clamped to [0.05, 0.8]. A static 0.35 misses scrubbing noise in mostly-static
+ * footage and over-cuts in already-jumpy footage; this tracks the footage. With fewer than two
+ * samples (or invalid input) it falls back to the 0.35 static default.
+ */
+export function adaptiveThreshold(diffs:FrameDiff[],opts:{sensitivity?:number}={}):number{
+  const k=opts.sensitivity??1.5;
+  if(!Array.isArray(diffs)||!Number.isFinite(k)||k<=0)return 0.35;
+  if(diffs.length<2)return 0.35;
+  const scores=diffs.map(d=>d.score).sort((a,b)=>a-b);
+  const median=scores.length%2?scores[(scores.length-1)/2]!:(scores[scores.length/2-1]!+scores[scores.length/2]!)/2;
+  const dev=scores.map(s=>Math.abs(s-median)).sort((a,b)=>a-b);
+  const mad=dev.length%2?dev[(dev.length-1)/2]!:(dev[dev.length/2-1]!+dev[dev.length/2]!)/2;
+  return Math.min(0.8,Math.max(0.05,Math.round((median+k*mad)*1000)/1000));
+}
+
 /** Mean audio energy over [start,end) with overlap weighting; 0 when no samples cover the range. */
 function meanEnergy(energy:EnergySample[],start:number,end:number){
   let sum=0,weight=0;
@@ -80,7 +97,7 @@ function meanEnergy(energy:EnergySample[],start:number,end:number){
  * maxClip-sized window inside long scenes) by 60% audio energy + 40% visual peak,
  * then greedily take the best windows until targetSeconds is filled.
  */
-export function pickHighlights(scenes:Scene[],energy:EnergySample[],opts:{targetSeconds:number;minClipSeconds?:number;maxClipSeconds?:number}):AutoClip[]{
+export function pickHighlights(scenes:Scene[],energy:EnergySample[],opts:{targetSeconds:number;minClipSeconds?:number;maxClipSeconds?:number;beats?:number[];beatsTolerance?:number}):AutoClip[]{
   if(!Array.isArray(scenes)||!scenes.length)throw Error('scenes must be a non-empty array');
   let prevEnd=-Infinity;
   for(const s of scenes){
@@ -118,7 +135,33 @@ export function pickHighlights(scenes:Scene[],energy:EnergySample[],opts:{target
     picked.push({start:c.start,end,score:Math.round(c.score*1000)/1000,sceneIndex:c.sceneIndex});
     remaining-=end-c.start;
   }
-  return picked.sort((a,b)=>a.start-b.start);
+  const beaten=opts.beats?snapToBeats(picked,opts.beats,{tolerance:opts.beatsTolerance}):picked;
+  return beaten.sort((a,b)=>a.start-b.start);
+}
+
+/**
+ * Snap a highlight list's start times to the nearest music beat within `tolerance` seconds
+ * (CapCut-style beat-sync: cuts land on the rhythm instead of mid-bar). Each snap keeps the
+ * clip end fixed; a snap that would leave the clip shorter than minKeep (0.2s default) is
+ * reverted. Beats must be strictly ascending timestamps.
+ */
+export function snapToBeats(clips:AutoClip[],beats:number[],opts:{tolerance?:number;minKeep?:number}={}):AutoClip[]{
+  if(!Array.isArray(clips))throw Error('clips must be an array');
+  if(!Array.isArray(beats))throw Error('beats must be an array');
+  requireTimes(beats,'beats');
+  const tolerance=opts.tolerance??0.4,minKeep=opts.minKeep??0.2;
+  if(!isTime(tolerance)||tolerance<=0)throw Error('tolerance must be a positive number');
+  if(!isTime(minKeep)||minKeep<=0)throw Error('minKeep must be a positive number');
+  return clips.map(c=>{
+    let best:number|undefined,bestDist=Infinity;
+    for(const beat of beats){
+      const dist=Math.abs(beat-c.start);
+      if(dist<bestDist){bestDist=dist;best=beat;}
+    }
+    if(best===undefined||bestDist>tolerance)return c;
+    if(c.end-best<minKeep)return c;
+    return {...c,start:best};
+  });
 }
 
 /** Interpolated subject centroid (normalized) at time t; null when no boxes are known. */
@@ -139,9 +182,11 @@ function centroidAt(subjects:SubjectFrame[],t:number):{x:number;y:number}|null{
 /**
  * Crop rectangles that fit `aspect` (target width/height, e.g. 9/16) into a `width`x`height`
  * frame while following subject boxes. Without subjects the crop stays centered. Windows
- * change only at subject timestamps, so the output is a small keyframe list.
+ * change only at subject timestamps, so the output is a small keyframe list — unless
+ * `maxPan` (max crop-origin speed as a fraction of frame-per-second) is set, which adds
+ * intermediate windows so the pan never outruns the subject tracking.
  */
-export function computeReframe(input:{width:number;height:number;aspect:number;subjects?:SubjectFrame[];start?:number;end?:number}):ReframeWindow[]{
+export function computeReframe(input:{width:number;height:number;aspect:number;subjects?:SubjectFrame[];start?:number;end?:number;maxPan?:number}):ReframeWindow[]{
   const {width,height,aspect}=input;
   if(!isTime(width)||!isTime(height)||width<1||height<1)throw Error('reframe: width/height must be positive integers');
   if(!isTime(aspect)||aspect<=0)throw Error('reframe: aspect must be a positive number (width/height)');
@@ -166,12 +211,28 @@ export function computeReframe(input:{width:number;height:number;aspect:number;s
     };
   };
   const stops=[...new Set([start,...subjects.map(s=>s.t).filter(t=>t>start&&t<end),end])].sort((a,b)=>a-b);
+  const maxPan=input.maxPan;
   const windows:ReframeWindow[]=[];
+  if(maxPan===undefined){
+    for(let i=0;i<stops.length-1;i++){
+      const s=stops[i]!,e=stops[i+1]!,crop=rect((s+e)/2);
+      const prev=windows.at(-1);
+      if(prev&&prev.crop.x===crop.x&&prev.crop.y===crop.y&&prev.end>=s-1e-9)prev.end=e;
+      else windows.push({start:s,end:e,crop});
+    }
+    return windows;
+  }
+  if(!isTime(maxPan)||maxPan<=0)throw Error('reframe: maxPan must be a positive number');
   for(let i=0;i<stops.length-1;i++){
-    const s=stops[i]!,e=stops[i+1]!,crop=rect((s+e)/2);
-    const prev=windows.at(-1);
-    if(prev&&prev.crop.x===crop.x&&prev.crop.y===crop.y&&prev.end>=s-1e-9)prev.end=e;
-    else windows.push({start:s,end:e,crop});
+    const s=stops[i]!,e=stops[i+1]!,dt=e-s;
+    const a=rect(s),b=rect(e);
+    const steps=Math.max(1,Math.ceil(Math.max(Math.abs(b.x-a.x)/(maxPan*width*dt+1e-9),Math.abs(b.y-a.y)/(maxPan*height*dt+1e-9))));
+    for(let j=0;j<steps;j++){
+      const t0=s+dt*(j/steps),t1=j===steps-1?e:s+dt*((j+1)/steps),crop=rect((t0+t1)/2);
+      const prev=windows.at(-1);
+      if(prev&&prev.crop.x===crop.x&&prev.crop.y===crop.y&&prev.end>=t0-1e-9)prev.end=t1;
+      else windows.push({start:t0,end:t1,crop});
+    }
   }
   return windows;
 }
@@ -219,10 +280,53 @@ export function buildCaptions(segments:TranscriptSegment[],opts:{maxChars?:numbe
   return cues;
 }
 
+function timeStamp(seconds:number,sep:string){
+  const ms=Math.max(0,Math.round(seconds*1000)),h=Math.floor(ms/3600000),m=Math.floor(ms/60000)%60,s=Math.floor(ms/1000)%60;
+  const pad=(n:number,w:number)=>String(n).padStart(w,'0');
+  return `${pad(h,2)}:${pad(m,2)}:${pad(s,2)}${sep}${pad(ms%1000,3)}`;
+}
+
+function validCues(label:string,cues:CaptionCue[]):CaptionCue[]{
+  if(!Array.isArray(cues))throw Error(label+': cues must be an array');
+  for(const c of cues)if(!isTime(c.start)||!isTime(c.end)||c.end<c.start)throw Error(label+': cues need 0 <= start <= end');
+  return cues;
+}
+
+/** SubRip (.srt) caption export: numbered blocks with `HH:MM:SS,mmm --> HH:MM:SS,mmm` ranges. */
+export function toSrt(cues:CaptionCue[]):string{
+  return validCues('toSrt',cues).map(c=>`${c.index+1}\n${timeStamp(c.start,',')} --> ${timeStamp(c.end,',')}\n${c.text}`).join('\n\n')+'\n';
+}
+
+/** WebVTT (.vtt) caption export: `WEBVTT` header with `HH:MM:SS.mmm --> HH:MM:SS.mmm` ranges. */
+export function toVtt(cues:CaptionCue[]):string{
+  return 'WEBVTT\n\n'+validCues('toVtt',cues).map(c=>`${c.index+1}\n${timeStamp(c.start,'.')} --> ${timeStamp(c.end,'.')}\n${c.text}`).join('\n\n')+'\n';
+}
+
+/**
+ * Rebase cues onto the [start,end) window — the captions companion of a highlight cut: cues
+ * overlapping the window stay (clamped to it, times shifted to 0), cues with less than
+ * minKeep (default 0.2s) visible are dropped, output re-indexed and monotonic.
+ */
+export function captionsForRange(cues:CaptionCue[],start:number,end:number,opts:{minKeep?:number}={}):CaptionCue[]{
+  validCues('captionsForRange',cues);
+  if(!isTime(start)||!isTime(end)||end<=start)throw Error('captionsForRange: end must be after start');
+  const minKeep=opts.minKeep??0.2;
+  if(!isTime(minKeep)||minKeep<=0)throw Error('captionsForRange: minKeep must be a positive number');
+  const out:CaptionCue[]=[];let floor=0;
+  for(const c of cues){
+    if(Math.min(c.end,end)-Math.max(c.start,start)<minKeep)continue;
+    const s=Math.max(c.start,start,floor)-start,e=Math.min(c.end,end)-start;
+    if(e-s<=1e-9)continue;
+    out.push({index:out.length,start:Math.round(s*1000)/1000,end:Math.round(e*1000)/1000,text:c.text});
+    floor=e+start;
+  }
+  return out;
+}
+
 export type AutoEditOptions={
-  threshold?:number;minSceneSeconds?:number;duration?:number;
-  targetSeconds?:number;minClipSeconds?:number;maxClipSeconds?:number;
-  aspect?:number;width?:number;height?:number;subjects?:SubjectFrame[];transcript?:TranscriptSegment[];language?:string;
+  threshold?:number;adaptive?:boolean;sensitivity?:number;minSceneSeconds?:number;duration?:number;
+  targetSeconds?:number;minClipSeconds?:number;maxClipSeconds?:number;beats?:number[];beatsTolerance?:number;
+  aspect?:number;width?:number;height?:number;maxPan?:number;subjects?:SubjectFrame[];transcript?:TranscriptSegment[];language?:string;
   maxChars?:number;maxCueSeconds?:number;
 };
 export type AutoEditPlan={scenes:Scene[];clips:AutoClip[];reframes:ReframeWindow[];captions:CaptionCue[];warnings:string[]};
@@ -237,13 +341,14 @@ export async function planAutoEdit(videoPath:string,opts:AutoEditOptions,probe:M
   if(!probe.audioEnergy)warnings.push('audio-energy probe unavailable: ranking scenes by visual peaks only');
   const duration=opts.duration??diffs.at(-1)?.t??0;
   if(duration<=0){warnings.push('video duration unknown: returning an empty plan');return {scenes:[],clips:[],reframes:[],captions:[],warnings};}
-  const scenes=diffs.length?detectScenes(diffs,{threshold:opts.threshold,minSceneSeconds:opts.minSceneSeconds,duration}):[{index:0,start:0,end:duration,peak:0}];
-  const clips=pickHighlights(scenes,energy,{targetSeconds:opts.targetSeconds??Math.min(30,duration),minClipSeconds:opts.minClipSeconds,maxClipSeconds:opts.maxClipSeconds});
+  const threshold=opts.threshold??(opts.adaptive?adaptiveThreshold(diffs,{sensitivity:opts.sensitivity}):undefined);
+  const scenes=diffs.length?detectScenes(diffs,{threshold,minSceneSeconds:opts.minSceneSeconds,duration}):[{index:0,start:0,end:duration,peak:0}];
+  const clips=pickHighlights(scenes,energy,{targetSeconds:opts.targetSeconds??Math.min(30,duration),minClipSeconds:opts.minClipSeconds,maxClipSeconds:opts.maxClipSeconds,beats:opts.beats,beatsTolerance:opts.beatsTolerance});
   const subjects=opts.subjects??(probe.subjects?await probe.subjects(videoPath):[]);
   let reframes:ReframeWindow[]=[];
   if(opts.aspect){
     if(!subjects.length)warnings.push('no subject boxes: reframing with centered crops');
-    reframes=computeReframe({width:opts.width??1920,height:opts.height??1080,aspect:opts.aspect,subjects,start:0,end:duration});
+    reframes=computeReframe({width:opts.width??1920,height:opts.height??1080,aspect:opts.aspect,subjects,start:0,end:duration,maxPan:opts.maxPan});
   }
   const transcript=opts.transcript??(probe.transcribe?await probe.transcribe(videoPath,{language:opts.language}):undefined);
   if(!transcript)warnings.push('no transcript: captions skipped');
