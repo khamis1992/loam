@@ -24,7 +24,7 @@ let recordTaskUsage: (taskId: string, usage?: TokenUsage) => CreditLedgerEntry |
 let purchaseMock: (pack: string) => CreditLedgerEntry;
 let getOrCreateReferralCode: () => string;
 let redeemReferral: (code: string) => { balance: number; added: number; alreadyRedeemed: boolean; code: string };
-let getAssetsSnapshot: () => Record<string, unknown>;
+let getAssetsSnapshot: () => unknown;
 let injectMockInbound: (input: { from: string; subject: string; body: string }) => { id: string; to: string; from: string; subject: string; body: string; receivedAt: string };
 let handleCreditsRoutes: (req: http.IncomingMessage, res: http.ServerResponse, p: string) => Promise<boolean>;
 let handleAssetsRoutes: (req: http.IncomingMessage, res: http.ServerResponse, p: string) => Promise<boolean>;
@@ -214,8 +214,6 @@ describe("credits ledger", () => {
   it("GET /api/credits returns balance, plan and ledger", async () => {
     resetCreditsForTests();
     const server = await startRouteServer();
-    server.listen(0, "127.0.0.1");
-    await new Promise<void>((resolve) => server.once("listening", resolve));
     try {
       const { status, json } = await request(server, "GET", "/api/credits");
       assert.equal(status, 200);
@@ -232,8 +230,6 @@ describe("credits ledger", () => {
   it("referral routes are idempotent over HTTP", async () => {
     resetCreditsForTests();
     const server = await startRouteServer();
-    server.listen(0, "127.0.0.1");
-    await new Promise<void>((resolve) => server.once("listening", resolve));
     try {
       const mine = await request(server, "POST", "/api/referrals");
       assert.equal(mine.status, 200);
@@ -264,8 +260,6 @@ describe("credits ledger", () => {
   it("mock purchase route validates packs and credits the ledger", async () => {
     resetCreditsForTests();
     const server = await startRouteServer();
-    server.listen(0, "127.0.0.1");
-    await new Promise<void>((resolve) => server.once("listening", resolve));
     try {
       const bad = await request(server, "POST", "/api/credits/purchase-mock", { pack: "infinite" });
       assert.equal(bad.status, 400);
@@ -287,8 +281,6 @@ describe("credits ledger", () => {
     resetCreditsForTests();
     resetAssetsForTests();
     const server = await startRouteServer();
-    server.listen(0, "127.0.0.1");
-    await new Promise<void>((resolve) => server.once("listening", resolve));
     try {
       const first = await request(server, "GET", "/api/assets");
       assert.equal(first.status, 200);
