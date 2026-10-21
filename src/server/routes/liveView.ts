@@ -151,7 +151,8 @@ export async function handleLiveViewRoutes(
       return true;
     }
     const frame = source === "screen" ? screenFrame(deps) : browserFramePayload(key);
-    sendJson(res, 200, { source, available: screenAvailable(deps), frame });
+    // available mirrors the per-source feature flag (screen) or always-present hub (browser).
+    sendJson(res, 200, { source, available: source === "screen" ? screenAvailable(deps) : true, frame });
     return true;
   }
 

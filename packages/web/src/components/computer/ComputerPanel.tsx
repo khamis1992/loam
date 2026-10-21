@@ -9,6 +9,7 @@ import {
   FolderOpen,
   Globe,
   Maximize2,
+  Monitor,
   Palette,
   RotateCcw,
   Terminal,
@@ -20,12 +21,13 @@ import type { ToolUsedEvent } from '@shared/socket';
 import { t } from '@/i18n/t';
 import { desktopEvents } from '@/services/desktopApis';
 import { getApiBase } from '@/services/rpc';
+import { LiveView } from '@/components/computer/LiveView';
 
 // int-f3: studio iframes load real backend UI pages served from the same origin used for /api/* calls.
 const OFFICE_PREVIEW_PATH = '/office-preview.html';
 const CREATIVE_RENDER_PATH = '/creative-render.html';
 
-type TabId = 'terminal' | 'editor' | 'browser' | 'preview' | 'files' | 'studio' | 'workspace';
+type TabId = 'terminal' | 'editor' | 'browser' | 'preview' | 'files' | 'studio' | 'workspace' | 'live';
 type StudioMode = 'media' | 'office';
 
 interface ComputerPanelProps {
@@ -36,6 +38,8 @@ interface ComputerPanelProps {
   workspaceSlot?: ReactNode;
   /** When true the panel focuses the Workspace tab (auto-open from file events). */
   focusWorkspace?: boolean;
+  /** Real Loam task id when known; lets the Live tab resolve browser frames. */
+  taskId?: string;
 }
 
 interface TerminalDetail {
@@ -67,6 +71,7 @@ const TABS: { id: TabId; label: string; icon: typeof Terminal }[] = [
   { id: 'editor', label: 'Editor', icon: FileText },
   { id: 'browser', label: 'Browser', icon: Globe },
   { id: 'preview', label: 'Preview', icon: Eye },
+  { id: 'live', label: 'Live', icon: Monitor },
   { id: 'files', label: 'Files', icon: Folder },
 ];
 
@@ -75,7 +80,7 @@ const STUDIO_TAB = { id: 'studio' as const, label: 'Open in studio', icon: Palet
 // Remember inferred studio mode per session so the tab stays visible after the first studio tool.
 const studioModeBySession = new Map<string, StudioMode>();
 
-export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusWorkspace }: ComputerPanelProps) {
+export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusWorkspace, taskId }: ComputerPanelProps) {
   const derivedTab = useMemo(() => getToolFamily(event.tool), [event.tool]);
   const [userTab, setUserTab] = useState<TabId | null>(null);
   useEffect(() => {
@@ -147,7 +152,7 @@ export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusW
       </div>
 
       <div className="flex-1 overflow-hidden">
-        <TabContent event={event} sessionId={sessionId} tab={activeTab} studioMode={studioMode} workspaceSlot={workspaceSlot} />
+        <TabContent event={event} sessionId={sessionId} tab={activeTab} studioMode={studioMode} workspaceSlot={workspaceSlot} taskId={taskId} />
       </div>
     </div>
   );
@@ -159,12 +164,14 @@ function TabContent({
   tab,
   studioMode,
   workspaceSlot,
+  taskId,
 }: {
   event: ToolUsedEvent;
   sessionId: string;
   tab: TabId;
   studioMode: StudioMode | null;
   workspaceSlot?: ReactNode;
+  taskId?: string;
 }) {
   switch (tab) {
     case 'terminal':
@@ -175,6 +182,8 @@ function TabContent({
       return <BrowserContent event={event} sessionId={sessionId} />;
     case 'preview':
       return <PreviewContent event={event} sessionId={sessionId} />;
+    case 'live':
+      return <LiveView sessionId={sessionId} taskId={taskId} />;
     case 'workspace':
       if (!workspaceSlot) return <FilesContent event={event} sessionId={sessionId} />;
       return <>{workspaceSlot}</>;
