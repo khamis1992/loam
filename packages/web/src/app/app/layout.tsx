@@ -25,18 +25,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           router.replace('/login');
           return;
         }
-        const user = await validateSessionToken(token);
+        const check = await validateSessionToken(token);
         if (!mounted) return;
-        if (!user) {
+        if (check.status === 'invalid') {
           await logoutAndRedirect(router, dispatch);
           return;
         }
-        dispatch(setToken(token));
-        dispatch(setUser({
-          displayname: user.displayname || `${user.firstname} ${user.lastname}`.trim() || user.email,
-          email: user.email,
-          avatar: user.avatar,
-        }));
+        if (check.status === 'ok') {
+          const user = check.user;
+          dispatch(setToken(token));
+          dispatch(setUser({
+            displayname: user.displayname || `${user.firstname} ${user.lastname}`.trim() || user.email,
+            email: user.email,
+            avatar: user.avatar,
+          }));
+        }
+        // unreachable: keep a persisted session; pages still retrieve the
+        // token via getSessionToken()
       } finally {
         if (mounted) setChecking(false);
       }

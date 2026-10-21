@@ -73,22 +73,49 @@ export const desktopEvents = {
   },
 };
 
-export async function validateSessionToken(token: string): Promise<UserInfoResponse | null> {
-  try {
-    const res = await fetch(`${PROTOCOL_API_BASE}/user.v1.UserService/UserInfo`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Connect-Protocol-Version': '1',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({}),
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as UserInfoResponse;
-  } catch {
-    return null;
+export type SessionCheck =
+  | { status: 'ok'; user: UserInfoResponse }
+  | { status: 'invalid' }
+  | { status: 'unreachable' };
+
+/**
+ * Validate a session token against the connect API.
+ *
+ * The result distinguishes a definitive rejection (server answered 401/403 —
+ * the token is invalid) from the backend being unreachable (network error /
+ * timeout / 5xx). Callers must only clear a PERSISTED token on `invalid`; a
+ * transient failure leaves the saved session alone so that a normal boot race
+ * (server still starting, network hiccup) can never log the user out.
+ */
+export async function validateSessionToken(
+  token: string,
+  opts: { timeoutMs?: number; retries?: number; retryDelayMs?: number } = {},
+): Promise<SessionCheck> {
+  const timeoutMs = opts.timeoutMs ?? 8000;
+  const retries = opts.retries ?? 2;
+  const retryDelayMs = opts.retryDelayMs ?? 300;
+  let invalid = false;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(`${PROTOCOL_API_BASE}/user.v1.UserService/UserInfo`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Connect-Protocol-Version': '1',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({}),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (res.ok) return { status: 'ok', user: (await res.json()) as UserInfoResponse };
+      // The server understood the request and rejected the token.
+      if (res.status === 401 || res.status === 403) { invalid = true; break; }
+    } catch {
+      /* unreachable/network error — fall through to retry */
+    }
+    if (attempt < retries) await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
   }
+  return invalid ? { status: 'invalid' } : { status: 'unreachable' };
 }
 
 export async function logoutAndRedirect(router: ReturnType<typeof useRouter>, dispatch: AppDispatch) {
