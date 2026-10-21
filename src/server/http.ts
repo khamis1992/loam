@@ -76,6 +76,7 @@ import { createAgent, deleteAgent, getAgent, listAgents, setAgentArchived, updat
 import { handleScratchpadRoutes } from "./routes/scratchpad.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
+import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
 import { handleInstructionsRoutes } from "./routes/instructions.js";
 import { handleAgentSpawnRoutes } from "./routes/agentSpawn.js";
 import { handleAutoVideoRoutes } from "./routes/autoVideo.js";
@@ -1632,6 +1633,7 @@ loadAgents();
         }
 
         if (await handleScratchpadRoutes(req, res, p)) return;
+        if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;
         if (await handleInstructionsRoutes(req, res, p)) return;
         if (await handleAgentSpawnRoutes(req, res, p)) return;
         if (await handleAgentThreadRoutes(req, res, p)) return;
