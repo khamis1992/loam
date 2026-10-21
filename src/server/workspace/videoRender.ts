@@ -62,6 +62,7 @@ export function normalizeEdl(input: unknown, sourceDuration?: number): VideoEdl 
     if (hi - lo < MIN_SEGMENT_SECONDS) throw new Error("clip segment must be at least " + MIN_SEGMENT_SECONDS + "s");
     return { id: typeof rec.id === "string" && rec.id ? rec.id : newId(), in: lo, out: hi };
   });
+  if (clips.length === 0) throw new Error("edl requires at least one clip segment");
   const rawOverlays = Array.isArray(raw.overlays) ? raw.overlays : [];
   const overlays: VideoEdlOverlay[] = rawOverlays.map((o) => {
     if (!o || typeof o !== "object") throw new Error("invalid edl overlay");
