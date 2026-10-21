@@ -1,5 +1,5 @@
 import type { ApiOperationPlan } from "./openapi.js";
-import type { FlowScan } from "./source-flow.js";
+import type { FlowScan, SourceFlow } from "./source-flow.js";
 
 // Self-planning (section 17): derives a suggested next-step checklist from a
 // finished assessment's own evidence — discovered pages, OpenAPI operations,
@@ -82,7 +82,10 @@ export function buildPlan(run: PlanEvidence): CampaignPlan {
   // model below). These are static review candidates with their full hop
   // chain; they are prepended to the plan because they carry the strongest
   // source-level evidence, but they still require explicit operator input.
-  const hints = run.taintHints ?? [];
+  // Evidence-gated: hints come either from explicitly supplied `taintHints`
+  // or, when absent, are derived from this run's own flowScan flows — a run
+  // without a flow scan simply gets no taint surface.
+  const hints = run.taintHints ?? (run.flowScan?.flows?.length ? flowScanTaintHints(run.flowScan) : []);
   for (const hint of hints) {
     push({ engine: hint.engine, surface: "source", target: hint.target, rationale: hint.rationale, operatorInput: hint.operatorInput });
   }
@@ -349,4 +352,75 @@ export function planTaintHints(graph: TaintGraph, opts: { maxHints?: number } = 
 /** Maps ranked taint hints into the plan's suggestion shape for buildPlan. */
 export function taintPlanSuggestions(hints: PlannerHint[]): PlanSuggestion[] {
   return hints.map(hint => ({ engine: hint.engine, surface: "source", target: hint.target, rationale: hint.rationale, operatorInput: hint.operatorInput }));
+}
+
+// ---------------------------------------------------------------------------
+// Adapter: scanner flow metrics → planner taint hints (evidence-gated)
+//
+// Thin, scoped bridge: converts the `traceSourceFlows` FlowScan findings into
+// the compact TaintGraphSpec the taint model above consumes, then reuses
+// `planTaintHints` unchanged for ranking. It does NOT reimplement or alter the
+// scanner — every edge simplification is traced back to a reported flow, and a
+// run without flow evidence produces no hints at all.
+// ---------------------------------------------------------------------------
+
+/** Infers a source trust kind from the scanner's origin description. */
+function sourceKindOf(what: string): TaintSourceKind {
+  const text = what.toLowerCase();
+  if (text.includes("cookie")) return "cookie";
+  if (text.includes("header")) return "header";
+  if (text.includes("body")) return "body";
+  if (text.includes("query")) return "query";
+  if (/(?:^|\.)(?:params|param)/.test(text)) return "param";
+  return "user_input";
+}
+
+const FLOW_SINK_KIND: Record<SourceFlow["sink"]["kind"], TaintSinkKind> = { sql_like: "query", command_like: "exec", html_like: "html" };
+
+export const FLOW_TAINT_MAX_FLOWS = 20;
+
+/** Converts the scanner's cross-file flows into the compact taint graph spec. */
+export function taintHintsSourceSpec(flowScan: FlowScan, maxFlows: number = FLOW_TAINT_MAX_FLOWS): TaintGraphSpec {
+  const spec: TaintGraphSpec = { sources: [], sinks: [], nodes: [], edges: [] };
+  const nodes: NonNullable<TaintGraphSpec["nodes"]> = spec.nodes ?? (spec.nodes = []);
+  for (const flow of flowScan.flows.slice(0, maxFlows)) {
+    const source: TaintSourceSpec = {
+      id: `src:${flow.source.file}:${flow.source.line}`,
+      name: flow.source.what.slice(0, 60),
+      kind: sourceKindOf(flow.source.what),
+      location: `${flow.source.file}:${flow.source.line}`,
+    };
+    const sink: TaintSinkSpec = {
+      id: `sink:${flow.sink.kind}:${flow.sink.file}:${flow.sink.line}`,
+      name: flow.sink.what.slice(0, 60),
+      kind: FLOW_SINK_KIND[flow.sink.kind],
+      location: `${flow.sink.file}:${flow.sink.line}`,
+    };
+    if (!spec.edges.some(edge => edge.from === source.id && edge.to === sink.id)) {
+      spec.sources.push(source);
+      spec.sinks.push(sink);
+      const carriers = new Map<string, TaintNodeSpec>();
+      for (const hop of flow.hops) carriers.set(`${hop.file}:${hop.line}`, { id: `node:${hop.file}:${hop.line}`, name: hop.what.slice(0, 60), location: `${hop.file}:${hop.line}` });
+      let prev = source.id;
+      for (const [key, node] of carriers) {
+        if (!nodes.some(existing => existing.id === node.id)) nodes.push(node);
+        spec.edges.push({ from: prev, to: node.id, label: key });
+        prev = node.id;
+      }
+      spec.edges.push({ from: prev, to: sink.id });
+    }
+  }
+  return spec;
+}
+
+/**
+ * Evidence-gated planner hints from the scanner's own FlowScan: the hints are
+ * derived only from flows the scan actually reported (bounded syntactic
+ * candidates, review confidence); a run without flow evidence gets none.
+ */
+export function flowScanTaintHints(flowScan: FlowScan, maxHints?: number, maxFlows?: number): PlannerHint[] {
+  if (!flowScan.flows?.length) return [];
+  const spec = taintHintsSourceSpec(flowScan, maxFlows);
+  if (!spec.edges.length) return [];
+  return planTaintHints(makeGraph(spec), { maxHints });
 }
