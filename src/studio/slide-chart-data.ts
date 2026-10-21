@@ -103,7 +103,7 @@ const chartFail=(message:string):never=>{throw new StudioError(message);};
 function chartLines(input:unknown):string[]{
   const raw=typeof input==='string'?input.split(/\r?\n/):Array.isArray(input)?input:chartFail('Expected bullet lines as a string or string array');
   const lines:string[]=[];
-  for(const line of raw){if(typeof line!=='string'||line.length>1000)chartFail('Invalid bullet line');const text=line.trim();if(text)lines.push(text);}
+  for(const line of raw){if(typeof line!=='string'||line.length>1000)chartFail('Invalid bullet line');const text=line.replace(/\s+$/,'');if(text)lines.push(text);}
   if(!lines.length||lines.length>400)chartFail('Expected 1..400 non-empty bullet lines');
   return lines;
 }
