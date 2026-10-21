@@ -408,6 +408,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               running={running}
               defaultLoamMode={draftLoamMode}
               resolvedLoamMode={resolvedLoamMode}
+              assistantReply={assistantText}
             />
           </div>
         </div>

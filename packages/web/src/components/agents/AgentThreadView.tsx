@@ -444,6 +444,7 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
               onStop={handleStop}
               running={running || sending}
               defaultLoamMode={agent.mode}
+              assistantReply={assistantText}
               placeholder={t('Message {name}', { name: agent.name })}
             />
           </div>
