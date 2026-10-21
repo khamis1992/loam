@@ -72,7 +72,7 @@ import {
 } from "./db.js";
 import { getSettings, updateSettings } from "./settings.js";
 import { cancelRunSignal } from "./runControl.js";
-import { createAgent, deleteAgent, getAgent, listAgents, setAgentArchived, updateAgent } from "./agents.js";
+import { createAgent, deleteAgent, getAgent, listAgents, reorderAgents, setAgentArchived, setAgentPinned, updateAgent } from "./agents.js";
 import { handleScratchpadRoutes } from "./routes/scratchpad.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
@@ -1463,6 +1463,24 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           if (!agent) return sendJson(res, 404, { error: "الوكيل غير موجود" });
           const restored = setAgentArchived(id, false);
           return sendJson(res, 200, { archived: false, agent: restored });
+        }
+        if (req.method === "POST" && p === "/api/agents/reorder") {
+          const body = (await readBody(req)) as { ids?: unknown };
+          if (!Array.isArray(body.ids) || body.ids.some((v) => typeof v !== "string")) {
+            return sendJson(res, 400, { error: "ids يجب أن تكون قائمة معرفات" });
+          }
+          const pinned = reorderAgents(body.ids as string[]);
+          return sendJson(res, 200, { pinned, agents: listAgents() });
+        }
+        if (req.method === "POST" && p.startsWith("/api/agents/") && p.endsWith("/pin")) {
+          const id = decodeURIComponent(p.slice("/api/agents/".length, -"/pin".length));
+          const agent = getAgent(id);
+          if (!agent) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+          const body = (await readBody(req)) as { pinned?: unknown };
+          const pinned = body.pinned === undefined ? true : body.pinned === true;
+          const updated = setAgentPinned(id, pinned);
+          if (!updated) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+          return sendJson(res, 200, { agent: updated });
         }
         if (req.method === "GET" && p.startsWith("/api/agents/") && p.endsWith("/export")) {
           const id = decodeURIComponent(p.slice("/api/agents/".length, -"/export".length));

@@ -35,6 +35,10 @@ export interface AgentRecord {
   source?: string;
   /** Soft-archive timestamp: archived companions keep all data but leave the active list. */
   archivedAt?: string;
+  /** Pin timestamp (epoch ms): pinned agents show in a "Pinned" section at the top. */
+  pinnedAt?: number;
+  /** User-defined position among pinned agents (smaller = higher). */
+  sortOrder?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -63,8 +67,80 @@ export function loadAgents(): void {
   }
 }
 
+function pinOrder(a: AgentRecord, b: AgentRecord): number {
+  const sa = a.sortOrder ?? Number.MAX_SAFE_INTEGER;
+  const sb = b.sortOrder ?? Number.MAX_SAFE_INTEGER;
+  if (sa !== sb) return sa - sb;
+  const pa = a.pinnedAt ?? Number.MAX_SAFE_INTEGER;
+  const pb = b.pinnedAt ?? Number.MAX_SAFE_INTEGER;
+  if (pa !== pb) return pa - pb;
+  return a.createdAt.localeCompare(b.createdAt);
+}
+
+function isPinned(agent: AgentRecord): boolean {
+  return typeof agent.pinnedAt === "number";
+}
+
 export function listAgents(includeArchived = false): AgentRecord[] {
-  return [...agents].filter((a) => (includeArchived ? true : !a.archivedAt)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const all = [...agents].filter((a) => (includeArchived ? true : !a.archivedAt));
+  return all.sort((first, second) => {
+    const firstPinned = isPinned(first) ? 0 : 1;
+    const secondPinned = isPinned(second) ? 0 : 1;
+    if (firstPinned !== secondPinned) return firstPinned - secondPinned;
+    if (firstPinned === 0) return pinOrder(first, second);
+    return first.createdAt.localeCompare(second.createdAt);
+  });
+}
+
+/** Pin or unpin an agent. Pinning appends it to the end of the pinned order; idempotent. */
+export function setAgentPinned(id: string, pinned: boolean): AgentRecord | undefined {
+  const agent = agents.find((a) => a.id === id);
+  if (!agent) return undefined;
+  if (pinned === isPinned(agent)) return agent;
+  if (pinned) {
+    agent.pinnedAt = Date.now();
+    agent.sortOrder = nextPinSortOrder();
+  } else {
+    delete agent.pinnedAt;
+    delete agent.sortOrder;
+  }
+  agent.updatedAt = new Date().toISOString();
+  save();
+  log.info(`agent ${pinned ? "pinned" : "unpinned"}: ${agent.name} (${agent.id})`);
+  return agent;
+}
+
+function nextPinSortOrder(): number {
+  let max = -1;
+  for (const a of agents) {
+    if (isPinned(a) && typeof a.sortOrder === "number" && a.sortOrder > max) max = a.sortOrder;
+  }
+  return max + 1;
+}
+
+/**
+ * Reorder pinned agents by the given id sequence. Ids that are unknown or not
+ * pinned are ignored; pinned agents missing from the list keep their relative
+ * order after the listed ones. Assigns dense sortOrder 0..n-1, so repeated
+ * calls with the same sequence are a no-op (idempotent).
+ */
+export function reorderAgents(desiredIds: string[]): AgentRecord[] {
+  const pinned = agents.filter((a) => isPinned(a) && !a.archivedAt);
+  const pinnedById = new Map(pinned.map((a) => [a.id, a]));
+  const head: AgentRecord[] = [];
+  for (const id of desiredIds) {
+    const agent = pinnedById.get(id);
+    if (agent && !head.includes(agent)) head.push(agent);
+  }
+  const rest = pinned.filter((a) => !head.includes(a)).sort(pinOrder);
+  const ordered = [...head, ...rest];
+  let changed = false;
+  ordered.forEach((agent, index) => {
+    if (isPinned(agent) && agent.sortOrder !== index) changed = true;
+    agent.sortOrder = index;
+  });
+  if (changed) save();
+  return listAgents().filter(isPinned);
 }
 
 /** Soft-archive keeps the companion's data for later restore instead of deleting it. */
@@ -91,9 +167,15 @@ function sanitizeServices(value: unknown): { allowedServices?: string[] } {
   return { allowedServices: unique };
 }
 
-export function createAgent(input: { name: string; emoji?: string; description?: string; instructions?: string; model?: string; mode?: string; effort?: string; disabledTools?: unknown; workMode?: string; allowedServices?: unknown; voice?: string; voiceRate?: number; voiceAuto?: boolean; source?: string }): AgentRecord {
+export function createAgent(input: { name: string; emoji?: string; description?: string; instructions?: string; model?: string; mode?: string; effort?: string; disabledTools?: unknown; workMode?: string; allowedServices?: unknown; voice?: string; voiceRate?: number; voiceAuto?: boolean; source?: string; pinned?: boolean; pinnedAt?: number; sortOrder?: number }): AgentRecord {
   const mode = input.mode ? getLoamMode(input.mode).id : undefined;
   const workMode = input.workMode ? normalizeWorkMode(input.workMode) : undefined;
+  const wantsPin = (input.pinned === true) || typeof input.pinnedAt === "number";
+  const pinSortOrder = typeof input.sortOrder === "number" && Number.isFinite(input.sortOrder)
+    ? input.sortOrder
+    : wantsPin
+      ? nextPinSortOrder()
+      : undefined;
   const now = new Date().toISOString();
   const agent: AgentRecord = {
     id: `agent_${Date.now().toString(36)}${crypto.randomBytes(3).toString("hex")}`,
@@ -111,6 +193,8 @@ export function createAgent(input: { name: string; emoji?: string; description?:
     ...(Number.isFinite(Number(input.voiceRate)) ? { voiceRate: Math.max(0.5, Math.min(2, Number(input.voiceRate))) } : {}),
     ...(typeof input.voiceAuto === "boolean" ? { voiceAuto: input.voiceAuto } : {}),
     ...(input.source && input.source.trim() ? { source: input.source.trim().slice(0, 32) } : {}),
+    ...(wantsPin ? { pinnedAt: typeof input.pinnedAt === "number" && Number.isFinite(input.pinnedAt) ? input.pinnedAt : Date.now() } : {}),
+    ...(pinSortOrder !== undefined ? { sortOrder: pinSortOrder } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -126,7 +210,7 @@ function sanitizeDisabled(value: unknown): { disabledTools?: string[] } {
   return list.length > 0 ? { disabledTools: [...new Set(list)].slice(0, 500) } : { disabledTools: [] };
 }
 
-export function updateAgent(id: string, patch: { name?: string; emoji?: string; description?: string; instructions?: string; model?: string | null; mode?: string | null; effort?: string | null; disabledTools?: unknown; workMode?: string | null; allowedServices?: unknown; voice?: string | null; voiceRate?: number | null; voiceAuto?: boolean | null }): AgentRecord | undefined {
+export function updateAgent(id: string, patch: { name?: string; emoji?: string; description?: string; instructions?: string; model?: string | null; mode?: string | null; effort?: string | null; disabledTools?: unknown; workMode?: string | null; allowedServices?: unknown; voice?: string | null; voiceRate?: number | null; voiceAuto?: boolean | null; pinned?: boolean | null; pinnedAt?: number | null; sortOrder?: number | null }): AgentRecord | undefined {
   const agent = agents.find((a) => a.id === id);
   if (!agent) return undefined;
   const mode = typeof patch.mode === "string" ? getLoamMode(patch.mode).id : undefined;
@@ -158,6 +242,18 @@ export function updateAgent(id: string, patch: { name?: string; emoji?: string; 
     const s = sanitizeServices(patch.allowedServices);
     if (s.allowedServices) agent.allowedServices = s.allowedServices;
     else delete agent.allowedServices;
+  }
+  if (patch.pinned === true && !isPinned(agent)) {
+    agent.pinnedAt = Date.now();
+    agent.sortOrder = nextPinSortOrder();
+  }
+  if (patch.pinnedAt !== undefined) {
+    if (patch.pinnedAt === null) delete agent.pinnedAt;
+    else if (Number.isFinite(Number(patch.pinnedAt))) agent.pinnedAt = Number(patch.pinnedAt);
+  }
+  if (patch.sortOrder !== undefined) {
+    if (patch.sortOrder === null) delete agent.sortOrder;
+    else if (Number.isFinite(Number(patch.sortOrder))) agent.sortOrder = Number(patch.sortOrder);
   }
   agent.updatedAt = new Date().toISOString();
   save();
