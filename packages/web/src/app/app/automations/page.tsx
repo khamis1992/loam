@@ -5,22 +5,16 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Clock, Zap, Play, Pencil, Trash2, Plus, X, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
 import { t } from '@/i18n/t';
-import { getApiBase, getApiHeaders } from '@/services/rpc';
+import {
+  createSchedule,
+  deleteSchedule,
+  listSchedules,
+  runScheduleNow,
+  updateSchedule,
+  type Schedule,
+  type ScheduleDraft,
+} from '@/services/schedulesApi';
 import { Dialog } from '@/components/ui/Dialog';
-
-interface Schedule {
-  id: string;
-  prompt: string;
-  intervalSeconds: number;
-  enabled: boolean;
-  nextRunAt?: string;
-  lastRunAt?: string;
-  cron?: string;
-  runAt?: string;
-  timezone?: string;
-  agentId?: string;
-  kind?: string;
-}
 
 type DraftKind = 'interval' | 'cron' | 'once';
 
@@ -55,9 +49,7 @@ export default function AutomationsPage() {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch(`${getApiBase()}/api/schedules`, { headers: await getApiHeaders() });
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const data = (await res.json()) as { schedules?: Schedule[] };
+      const data = await listSchedules();
       setSchedules(data.schedules ?? []);
       setError(null);
     } catch (e) {
@@ -80,25 +72,14 @@ export default function AutomationsPage() {
     setSaving(true);
     setFormError(null);
     try {
-      const headers = { 'content-type': 'application/json', ...(await getApiHeaders()) };
       if (draft.id) {
-        const res = await fetch(`${getApiBase()}/api/schedules/${encodeURIComponent(draft.id)}`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({ prompt: draft.prompt.trim() }),
-        });
-        if (!res.ok) {
-          const data = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(data.error ?? `status ${res.status}`);
-        }
+        await updateSchedule(draft.id, { prompt: draft.prompt.trim() });
       } else {
-        const body: Record<string, unknown> = { prompt: draft.prompt.trim() };
+        const body: ScheduleDraft = { prompt: draft.prompt.trim() };
         if (draft.kind === 'interval') body.intervalSeconds = Number(draft.intervalSeconds) || 3600;
         if (draft.kind === 'cron') body.cron = draft.cron.trim();
         if (draft.kind === 'once') body.at = new Date(draft.at).toISOString();
-        const res = await fetch(`${getApiBase()}/api/schedules`, { method: 'POST', headers, body: JSON.stringify(body) });
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        if (!res.ok) throw new Error(data.error ?? `status ${res.status}`);
+        await createSchedule(body);
       }
       setDraft(null);
       await refresh();
@@ -112,12 +93,7 @@ export default function AutomationsPage() {
   const toggle = async (s: Schedule) => {
     setBusyId(s.id);
     try {
-      const res = await fetch(`${getApiBase()}/api/schedules/${encodeURIComponent(s.id)}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json', ...(await getApiHeaders()) },
-        body: JSON.stringify({ enabled: !s.enabled }),
-      });
-      if (!res.ok) throw new Error(`status ${res.status}`);
+      await updateSchedule(s.id, { enabled: !s.enabled });
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -129,14 +105,7 @@ export default function AutomationsPage() {
   const runNow = async (s: Schedule) => {
     setBusyId(s.id);
     try {
-      const res = await fetch(`${getApiBase()}/api/schedules/${encodeURIComponent(s.id)}/run-now`, {
-        method: 'POST',
-        headers: await getApiHeaders(),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `status ${res.status}`);
-      }
+      await runScheduleNow(s.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -147,7 +116,7 @@ export default function AutomationsPage() {
   const remove = async (id: string) => {
     setBusyId(id);
     try {
-      await fetch(`${getApiBase()}/api/schedules/${encodeURIComponent(id)}`, { method: 'DELETE', headers: await getApiHeaders() });
+      await deleteSchedule(id);
       setConfirmDelete(null);
       await refresh();
     } finally {
