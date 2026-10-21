@@ -1,10 +1,42 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { X, Settings, Play, Loader2, AlertCircle, FileText, Folder, Plus, Send, Mail, Trash2, Monitor } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { X, Settings, Play, Loader2, AlertCircle, FileText, Folder, Plus, Send, Mail, Trash2, Monitor, Maximize2 } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { Button, Spinner } from '@/components/ui/Button';
-import { getApiBase, getApiHeaders } from '@/services/rpc';
+import { getApiBase } from '@/services/rpc';
+import {
+  getAgentMemory,
+  listApprovalRules,
+  removeApprovalRule,
+  listScratchpad,
+  addScratchpadItem,
+  completeScratchpadItem,
+  listWatches,
+  addWatch,
+  deleteWatch,
+  listSchedules,
+  runScheduleNow,
+  listChannelStatus,
+  listChannelBindings,
+  bindChannel,
+  unbindChannel,
+  listChildren,
+  getLiveViewStatus,
+  getLiveViewFrame,
+} from '@/services/agentInfoApi';
+import type {
+  MemoryEntry,
+  Schedule,
+  ApprovalRuleRow,
+  UrlWatch,
+  ChannelStatus,
+  ChannelBinding,
+  ScratchpadItem,
+  ChildAgent,
+  LiveFrame,
+} from '@/services/agentInfoApi';
+import { LiveView } from '@/components/computer/LiveView';
 import { TeamRunsList } from './TeamRunsList';
 import type { AgentCardAgent } from './AgentCard';
 import { loadAgentThreadFiles } from './AgentThreadView';
@@ -20,54 +52,6 @@ interface AgentWithMeta extends AgentCardAgent {
   effort?: string;
   allowedServices?: string[];
   workMode?: string;
-}
-
-interface MemoryEntry {
-  id: string;
-  text: string;
-  kind?: string;
-  source?: string;
-  at?: string;
-}
-
-interface Schedule {
-  id: string;
-  prompt: string;
-  intervalSeconds: number;
-  kind?: string | null;
-  enabled: boolean;
-  cron?: string | null;
-  runAt?: string | null;
-  timezone?: string | null;
-  nextRunAt?: string | null;
-  lastRunAt?: string | null;
-  lastTaskId?: string | null;
-  lastStatus?: 'ok' | 'retrying' | 'failed' | null;
-  attempts?: number | null;
-  lastError?: string | null;
-  agentId?: string | null;
-}
-
-interface ApprovalRuleRow {
-  id: string;
-  agentId?: string | null;
-  tool: string;
-  pattern?: string | null;
-  decision: 'allow' | 'deny';
-  createdAt: string;
-}
-
-interface UrlWatch {
-  id: string;
-  url: string;
-  intervalMinutes: number;
-  selector?: string | null;
-  prompt: string;
-  enabled: boolean;
-  agentId?: string | null;
-  lastCheckedAt?: string | null;
-  lastChangedAt?: string | null;
-  lastHash?: string | null;
 }
 
 type TabId = 'overview' | 'channels' | 'routines' | 'media' | 'computer' | 'members';
@@ -158,7 +142,7 @@ export function AgentInfoPane({ agent, threadUid, onClose, onEdit, onRenameAgent
         </div>
       </div>
 
-      {!group && <ComputerPreviewCard agentName={agent.name} />}
+      {!group && <ComputerPreviewCard agentId={agent.id} agentName={agent.name} threadUid={threadUid} />}
 
       <div className="flex h-row-sm shrink-0 items-center border-b border-border-main">
         {tabs.map((tab) => (
@@ -218,8 +202,40 @@ const TAB_ITEMS: { id: TabId; label: string }[] = [
   { id: 'members', label: t('Members') },
 ];
 
-function ComputerPreviewCard({ agentName }: { agentName: string }) {
+/**
+ * Live computer preview area (Grok Bot parity).
+ *
+ * Collapsed: a compact thumbnail that polls the latest screen frame so the
+ * area shows real computer activity. Expanded: the full LiveView stream
+ * (screen + browser) over a full-screen overlay with an X close.
+ */
+function ComputerPreviewCard({ agentId, agentName, threadUid }: { agentId: string; agentName: string; threadUid: string | null }) {
   const [expanded, setExpanded] = useState(false);
+  const key = threadUid ?? agentId;
+  const [frame, setFrame] = useState<LiveFrame | null>(null);
+  const [liveAvailable, setLiveAvailable] = useState(true);
+
+  useEffect(() => {
+    if (expanded) return;
+    let mounted = true;
+    const tick = async () => {
+      try {
+        const status = await getLiveViewStatus(key);
+        const next = await getLiveViewFrame(key, 'screen');
+        if (!mounted) return;
+        setLiveAvailable(status.available ?? true);
+        setFrame(next);
+      } catch {
+        if (mounted) setLiveAvailable(true);
+      }
+    };
+    void tick();
+    const id = setInterval(() => void tick(), 4000);
+    return () => {
+      mounted = false;
+      clearInterval(id);
+    };
+  }, [key, expanded]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -233,7 +249,7 @@ function ComputerPreviewCard({ agentName }: { agentName: string }) {
   if (expanded) {
     return (
       <div className="fixed inset-0 z-50 flex flex-col bg-bg-main">
-        <div className="flex h-row items-center justify-between border-b border-border-main px-4">
+        <div className="flex h-row shrink-0 items-center justify-between border-b border-border-main px-4">
           <span className="min-w-0 truncate text-sm font-medium text-text-primary">
             {agentName} · {t('Computer preview')}
           </span>
@@ -249,12 +265,8 @@ function ComputerPreviewCard({ agentName }: { agentName: string }) {
             <X className="size-4" />
           </Button>
         </div>
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-          <Monitor className="size-12 text-text-tertiary" />
-          <p className="text-base font-medium text-text-primary">{t('Live preview placeholder')}</p>
-          <p className="max-w-[420px] text-sm text-text-secondary">
-            {t('The computer stream will appear here once the agent connects to a computer.')}
-          </p>
+        <div className="min-h-0 flex-1">
+          <LiveView sessionId={key} taskId={threadUid ?? undefined} />
         </div>
       </div>
     );
@@ -262,17 +274,38 @@ function ComputerPreviewCard({ agentName }: { agentName: string }) {
 
   return (
     <div className="shrink-0 px-4 pb-1 pt-3">
-      <span className="text-xs font-medium text-text-tertiary">{t('Computer preview')}</span>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-text-tertiary">{t('Computer preview')}</span>
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          aria-label={t('Open full screen')}
+          title={t('Open full screen')}
+          className="rounded-control p-1 text-text-tertiary transition-colors hover:bg-fill-hover hover:text-text-primary"
+        >
+          <Maximize2 className="size-3.5" />
+        </button>
+      </div>
       <button
         type="button"
         onClick={() => setExpanded(true)}
         aria-label={t('Open full screen')}
         title={t('Open full screen')}
-        className="mt-1 flex h-28 w-full flex-col items-center justify-center gap-1.5 rounded-card border border-border-main bg-bg-main px-3 text-center transition-colors hover:bg-fill-hover"
+        className="relative mt-1 flex h-28 w-full items-center justify-center overflow-hidden rounded-card border border-border-main bg-bg-main px-3 text-center transition-colors hover:bg-fill-hover"
       >
-        <Monitor className="size-5 text-text-tertiary" />
-        <span className="text-xs text-text-secondary">{t('No live preview yet')}</span>
-        <span className="text-[11px] text-text-tertiary">{t('Click for full screen')}</span>
+        {liveAvailable && frame?.data ? (
+          <img
+            src={`data:${frame.mediaType};base64,${frame.data}`}
+            alt={frame.title || t('Computer preview')}
+            className="absolute inset-0 size-full object-cover"
+          />
+        ) : (
+          <span className="flex flex-col items-center gap-1.5">
+            <Monitor className="size-5 text-text-tertiary" />
+            <span className="text-xs text-text-secondary">{t('No live preview yet')}</span>
+            <span className="text-[11px] text-text-tertiary">{t('Click for full screen')}</span>
+          </span>
+        )}
       </button>
     </div>
   );
@@ -287,22 +320,19 @@ function OverviewTab({ agent }: { agent: AgentWithMeta }) {
     let mounted = true;
     setLoading(true);
     setError(null);
-    (async () => {
-      try {
-        const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agent.id)}/memory`, {
-          headers: await getApiHeaders(),
-        });
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const data = (await res.json()) as { entries?: MemoryEntry[] };
-        if (mounted) setMemory(data.entries ?? []);
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        if (mounted) setError(message);
-      } finally {
+    getAgentMemory(agent.id)
+      .then((entries) => {
+        if (mounted) setMemory(entries);
+      })
+      .catch((e: unknown) => {
+        if (mounted) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
         if (mounted) setLoading(false);
-      }
-    })();
-    return () => { mounted = false; };
+      });
+    return () => {
+      mounted = false;
+    };
   }, [agent.id]);
 
   return (
@@ -375,12 +405,7 @@ function ApprovalRulesSection({ agentId }: { agentId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${getApiBase()}/api/approval-rules?agentId=${encodeURIComponent(agentId)}`, {
-        headers: await getApiHeaders(),
-      });
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const data = (await res.json()) as { rules?: ApprovalRuleRow[] };
-      setRules(data.rules ?? []);
+      setRules(await listApprovalRules(agentId));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -390,31 +415,25 @@ function ApprovalRulesSection({ agentId }: { agentId: string }) {
 
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      try {
-        const res = await fetch(`${getApiBase()}/api/approval-rules?agentId=${encodeURIComponent(agentId)}`, {
-          headers: await getApiHeaders(),
-        });
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const data = (await res.json()) as { rules?: ApprovalRuleRow[] };
-        if (mounted) setRules(data.rules ?? []);
-      } catch (e) {
+    listApprovalRules(agentId)
+      .then((rows) => {
+        if (mounted) setRules(rows);
+      })
+      .catch((e: unknown) => {
         if (mounted) setError(e instanceof Error ? e.message : String(e));
-      } finally {
+      })
+      .finally(() => {
         if (mounted) setLoading(false);
-      }
-    })();
-    return () => { mounted = false; };
+      });
+    return () => {
+      mounted = false;
+    };
   }, [agentId]);
 
   const handleRemove = async (id: string) => {
     setRemovingIds((prev) => new Set(prev).add(id));
     try {
-      const res = await fetch(`${getApiBase()}/api/approval-rules/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        headers: await getApiHeaders(),
-      });
-      if (!res.ok) throw new Error(`status ${res.status}`);
+      await removeApprovalRule(id);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -483,21 +502,6 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-interface ChannelStatus {
-  name: 'telegram' | 'email';
-  configured: boolean;
-  envVarNames: string[];
-  hint?: string;
-}
-
-interface ChannelBinding {
-  id: string;
-  channel: 'telegram' | 'email';
-  chatId: string;
-  agentId: string;
-  createdAt: string;
-}
-
 function ChannelsTab({ agentId }: { agentId: string }) {
   const [channels, setChannels] = useState<ChannelStatus[]>([]);
   const [bindings, setBindings] = useState<ChannelBinding[]>([]);
@@ -512,19 +516,13 @@ function ChannelsTab({ agentId }: { agentId: string }) {
     setError(null);
     (async () => {
       try {
-        const headers = await getApiHeaders();
-        const [statusRes, bindingsRes] = await Promise.all([
-          fetch(`${getApiBase()}/api/channels`, { headers }),
-          fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/channels`, { headers }),
+        const [statusList, bindingList] = await Promise.all([
+          listChannelStatus(),
+          listChannelBindings(agentId).catch(() => [] as ChannelBinding[]),
         ]);
-        if (!statusRes.ok) throw new Error(`status ${statusRes.status}`);
-        const statusData = (await statusRes.json()) as { channels?: ChannelStatus[] };
-        const bindingsData = bindingsRes.ok
-          ? ((await bindingsRes.json()) as { bindings?: ChannelBinding[] })
-          : { bindings: [] as ChannelBinding[] };
         if (mounted) {
-          setChannels(statusData.channels ?? []);
-          setBindings(bindingsData.bindings ?? []);
+          setChannels(statusList);
+          setBindings(bindingList);
         }
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
@@ -541,14 +539,8 @@ function ChannelsTab({ agentId }: { agentId: string }) {
     if (!chatId) return;
     setBusy(true);
     try {
-      const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/channels`, {
-        method: 'POST',
-        headers: await getApiHeaders(),
-        body: JSON.stringify({ channel, chatId }),
-      });
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const data = (await res.json()) as { binding?: ChannelBinding };
-      if (data.binding) setBindings((prev) => [...prev, data.binding!]);
+      const binding = await bindChannel(agentId, channel, chatId);
+      setBindings((prev) => [...prev, binding]);
       setChatIds((prev) => ({ ...prev, [channel]: '' }));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -560,11 +552,7 @@ function ChannelsTab({ agentId }: { agentId: string }) {
   const unbind = async (bindingId: string) => {
     setBusy(true);
     try {
-      const res = await fetch(
-        `${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/channels/${encodeURIComponent(bindingId)}`,
-        { method: 'DELETE', headers: await getApiHeaders() },
-      );
-      if (!res.ok) throw new Error(`status ${res.status}`);
+      await unbindChannel(agentId, bindingId);
       setBindings((prev) => prev.filter((b) => b.id !== bindingId));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -654,14 +642,6 @@ function ChannelsTab({ agentId }: { agentId: string }) {
   );
 }
 
-interface ScratchpadItem {
-  id: string;
-  text: string;
-  status: 'open' | 'done';
-  createdAt: string;
-  doneAt?: string;
-}
-
 function ScratchpadSection({ agentId }: { agentId: string }) {
   const [items, setItems] = useState<ScratchpadItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -674,12 +654,7 @@ function ScratchpadSection({ agentId }: { agentId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/scratchpad`, {
-        headers: await getApiHeaders(),
-      });
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const data = (await res.json()) as { items?: ScratchpadItem[] };
-      setItems(data.items ?? []);
+      setItems(await listScratchpad(agentId));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -689,21 +664,19 @@ function ScratchpadSection({ agentId }: { agentId: string }) {
 
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      try {
-        const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/scratchpad`, {
-          headers: await getApiHeaders(),
-        });
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const data = (await res.json()) as { items?: ScratchpadItem[] };
-        if (mounted) setItems(data.items ?? []);
-      } catch (e) {
+    listScratchpad(agentId)
+      .then((rows) => {
+        if (mounted) setItems(rows);
+      })
+      .catch((e: unknown) => {
         if (mounted) setError(e instanceof Error ? e.message : String(e));
-      } finally {
+      })
+      .finally(() => {
         if (mounted) setLoading(false);
-      }
-    })();
-    return () => { mounted = false; };
+      });
+    return () => {
+      mounted = false;
+    };
   }, [agentId]);
 
   const handleAdd = async () => {
@@ -711,12 +684,7 @@ function ScratchpadSection({ agentId }: { agentId: string }) {
     if (!trimmed) return;
     setAdding(true);
     try {
-      const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/scratchpad`, {
-        method: 'POST',
-        headers: { ...(await getApiHeaders()), 'content-type': 'application/json' },
-        body: JSON.stringify({ text: trimmed }),
-      });
-      if (!res.ok) throw new Error(`status ${res.status}`);
+      await addScratchpadItem(agentId, trimmed);
       setText('');
       await load();
     } catch (e) {
@@ -729,11 +697,7 @@ function ScratchpadSection({ agentId }: { agentId: string }) {
   const handleComplete = async (id: string) => {
     setCompletingIds((prev) => new Set(prev).add(id));
     try {
-      const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/scratchpad/${encodeURIComponent(id)}/complete`, {
-        method: 'POST',
-        headers: await getApiHeaders(),
-      });
-      if (!res.ok) throw new Error(`status ${res.status}`);
+      await completeScratchpadItem(agentId, id);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -816,12 +780,7 @@ function RoutinesTab({ agentId }: { agentId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/schedules`, {
-        headers: await getApiHeaders(),
-      });
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const data = (await res.json()) as { schedules?: Schedule[] };
-      setSchedules(data.schedules ?? []);
+      setSchedules(await listSchedules(agentId));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -831,31 +790,25 @@ function RoutinesTab({ agentId }: { agentId: string }) {
 
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      try {
-        const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/schedules`, {
-          headers: await getApiHeaders(),
-        });
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const data = (await res.json()) as { schedules?: Schedule[] };
-        if (mounted) setSchedules(data.schedules ?? []);
-      } catch (e) {
+    listSchedules(agentId)
+      .then((rows) => {
+        if (mounted) setSchedules(rows);
+      })
+      .catch((e: unknown) => {
         if (mounted) setError(e instanceof Error ? e.message : String(e));
-      } finally {
+      })
+      .finally(() => {
         if (mounted) setLoading(false);
-      }
-    })();
-    return () => { mounted = false; };
+      });
+    return () => {
+      mounted = false;
+    };
   }, [agentId]);
 
   const handleRunNow = async (id: string) => {
     setRunningIds((prev) => new Set(prev).add(id));
     try {
-      const res = await fetch(`${getApiBase()}/api/schedules/${encodeURIComponent(id)}/run-now`, {
-        method: 'POST',
-        headers: await getApiHeaders(),
-      });
-      if (!res.ok) throw new Error(`status ${res.status}`);
+      await runScheduleNow(id);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -961,12 +914,8 @@ function WatchesSection({ agentId }: { agentId: string }) {
 
   const load = async () => {
     try {
-      const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/watches`, {
-        headers: await getApiHeaders(),
-      });
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const data = (await res.json()) as { watches?: UrlWatch[] };
-      setState({ watches: data.watches ?? [], loading: false });
+      const watches = await listWatches(agentId);
+      setState({ watches, loading: false });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setState((prev) => ({ ...prev, loading: false }));
@@ -975,42 +924,31 @@ function WatchesSection({ agentId }: { agentId: string }) {
 
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      try {
-        const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/watches`, {
-          headers: await getApiHeaders(),
-        });
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const data = (await res.json()) as { watches?: UrlWatch[] };
-        if (mounted) setState({ watches: data.watches ?? [], loading: false });
-      } catch (e) {
+    listWatches(agentId)
+      .then((watches) => {
+        if (mounted) setState({ watches, loading: false });
+      })
+      .catch((e: unknown) => {
         if (mounted) {
           setError(e instanceof Error ? e.message : String(e));
           setState({ watches: [], loading: false });
         }
-      }
-    })();
-    return () => { mounted = false; };
+      });
+    return () => {
+      mounted = false;
+    };
   }, [agentId]);
 
   const handleAdd = async () => {
     setSubmitting(true);
     setFormError(null);
     try {
-      const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/watches`, {
-        method: 'POST',
-        headers: await getApiHeaders(),
-        body: JSON.stringify({
-          url: url.trim(),
-          intervalMinutes: Math.max(5, Math.floor(Number(intervalMinutes) || 5)),
-          ...(selector.trim() ? { selector: selector.trim() } : {}),
-          prompt: prompt.trim(),
-        }),
+      await addWatch(agentId, {
+        url: url.trim(),
+        intervalMinutes: Math.max(5, Math.floor(Number(intervalMinutes) || 5)),
+        ...(selector.trim() ? { selector: selector.trim() } : {}),
+        prompt: prompt.trim(),
       });
-      if (!res.ok) {
-        const body = (await res.json()) as { error?: string };
-        throw new Error(body.error ?? `status ${res.status}`);
-      }
       setUrl('');
       setSelector('');
       setPrompt('');
@@ -1026,11 +964,7 @@ function WatchesSection({ agentId }: { agentId: string }) {
 
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch(`${getApiBase()}/api/watches/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        headers: await getApiHeaders(),
-      });
-      if (!res.ok) throw new Error(`status ${res.status}`);
+      await deleteWatch(id);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -1241,17 +1175,6 @@ function MembersTab({ agentId }: { agentId: string }) {
   );
 }
 
-interface ChildAgent {
-  childId: string;
-  spawnKey: string;
-  name: string;
-  emoji: string;
-  description: string;
-  mode?: string;
-  archived: boolean;
-  createdAt: string;
-}
-
 /** MF6: the child agents this companion spawned (persistent, reusable). */
 function ChildrenSection({ agentId }: { agentId: string }) {
   const [children, setChildren] = useState<ChildAgent[]>([]);
@@ -1262,21 +1185,19 @@ function ChildrenSection({ agentId }: { agentId: string }) {
     let mounted = true;
     setLoading(true);
     setError(null);
-    (async () => {
-      try {
-        const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/children`, {
-          headers: await getApiHeaders(),
-        });
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const data = (await res.json()) as { children?: ChildAgent[] };
-        if (mounted) setChildren(data.children ?? []);
-      } catch (e) {
+    listChildren(agentId)
+      .then((rows) => {
+        if (mounted) setChildren(rows);
+      })
+      .catch((e: unknown) => {
         if (mounted) setError(e instanceof Error ? e.message : String(e));
-      } finally {
+      })
+      .finally(() => {
         if (mounted) setLoading(false);
-      }
-    })();
-    return () => { mounted = false; };
+      });
+    return () => {
+      mounted = false;
+    };
   }, [agentId]);
 
   return (
