@@ -72,7 +72,8 @@ function buildProbe(): MediaProbe {
 const num = (o: Record<string, unknown>, key: string): number | undefined =>
   typeof o[key] === "number" && Number.isFinite(o[key] as number) ? (o[key] as number) : undefined;
 
-function sanitizeOptions(raw: Record<string, unknown>): AutoEditOptions {
+/** Numeric options are validated/clamped here; anything else is dropped, never trusted. */
+export function sanitizeOptions(raw: Record<string, unknown>): AutoEditOptions {
   const o: AutoEditOptions = {};
   const threshold = num(raw, "threshold"); if (threshold !== undefined && threshold >= 0 && threshold <= 1) o.threshold = threshold;
   const minSceneSeconds = num(raw, "minSceneSeconds"); if (minSceneSeconds !== undefined && minSceneSeconds >= 0) o.minSceneSeconds = minSceneSeconds;
