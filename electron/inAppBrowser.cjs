@@ -98,7 +98,14 @@ function goForward() {
 }
 
 function state() {
-  const wc = view && !view.webContents.isDestroyed() ? view.webContents : null;
+  let wc = null;
+  if (view) {
+    try {
+      if (!view.webContents.isDestroyed()) wc = view.webContents;
+    } catch {
+      wc = null;
+    }
+  }
   return {
     attached: Boolean(view && ownerWin && !ownerWin.isDestroyed()),
     url: wc ? wc.getURL() : "",
@@ -184,7 +191,13 @@ function createView() {
 }
 
 function ensureView() {
-  if (view && !view.webContents.isDestroyed()) return view;
+  if (view) {
+    try {
+      if (!view.webContents.isDestroyed()) return view;
+    } catch {
+      /* destroy()d views can throw on webContents access */
+    }
+  }
   view = createView();
   return view;
 }

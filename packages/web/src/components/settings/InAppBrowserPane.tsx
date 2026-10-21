@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { t } from '@/i18n/t';
 import { Row, Section } from './SettingsDialog';
 import { EmptyState } from './EmptyState';
@@ -37,13 +37,19 @@ import {
 type Pending = 'idle' | 'busy';
 
 export function InAppBrowserPane() {
-  const supported = useMemo(() => isInAppBrowserSupported(), []);
+  // Decided in an effect so SSR (Next static export) and the first hydration
+  // pass render the same non-branch markup.
+  const [supported, setSupported] = useState(false);
   const [state, setState] = useState<InAppBrowserState>({ attached: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false });
   const [urlInput, setUrlInput] = useState('');
   const [notice, setNotice] = useState('');
   const [pending, setPending] = useState<Pending>('idle');
   const [agentSettings, setAgentSettings] = useState<AgentBrowserSettings | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setSupported(isInAppBrowserSupported());
+  }, []);
 
   const refreshState = useCallback(async () => {
     setState(await iabGetState());
