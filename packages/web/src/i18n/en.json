@@ -716,5 +716,19 @@
   "Click for full screen": "Click for full screen",
   "Open full screen": "Open full screen",
   "Live preview placeholder": "Live preview placeholder",
-  "The computer stream will appear here once the agent connects to a computer.": "The computer stream will appear here once the agent connects to a computer."
+  "The computer stream will appear here once the agent connects to a computer.": "The computer stream will appear here once the agent connects to a computer.",
+  "All": "All",
+  "Approval": "Approval",
+  "Completed": "Completed",
+  "Failed": "Failed",
+  "Mark all read": "Mark all read",
+  "More templates": "More templates",
+  "No notifications": "No notifications",
+  "Notification": "Notification",
+  "Open computers": "Open computers",
+  "Routine": "Routine",
+  "Search templates...": "Search templates...",
+  "Stop recording": "Stop recording",
+  "Stop voice mode": "Stop voice mode",
+  "Template gallery": "Template gallery"
 }
