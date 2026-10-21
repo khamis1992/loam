@@ -15,9 +15,15 @@ import {
   removeFillerWords,
   cutRangeForWord,
   cutRangeForSegment,
-  type RawSttResult,
+  moveWords,
+  moveSegments,
+  assemblyFromEdl,
+  applyTranscriptEdit,
+  MIN_TIMELINE_CLIP_SECONDS,
+  type EdlAssembly,
   type Transcript,
   type TranscriptSegment,
+  type RawSttResult,
   type SttBackend,
 } from "../transcript.js";
 
@@ -205,5 +211,113 @@ describe("transcript", () => {
     edl = deleteSegments(t, []);
     assert.equal(edl.removed, 0);
     assert.equal(edl.cuts.length, 0);
+  });
+
+  // ---- rearrangement ----
+
+  it("moves a word block before a target word and coalesces the played ranges", () => {
+    const t: Transcript = { mediaPath: "m.wav", duration: 4, segments: [{ start: 0, end: 4, text: "alpha beta gamma delta" }] };
+    const assembly = moveWords(t, [2], 0); // gamma moves before alpha
+    assert.deepEqual(assembly.clips, [{ start: 2, end: 3 }, { start: 0, end: 2 }, { start: 3, end: 4 }]);
+    assert.equal(assembly.duration, 4);
+    assert.equal(assembly.text, "gamma alpha beta delta");
+  });
+
+  it("appends the moved block when the target equals the word count", () => {
+    const t: Transcript = { mediaPath: "m.wav", duration: 4, segments: [{ start: 0, end: 4, text: "alpha beta gamma delta" }] };
+    const assembly = moveWords(t, [2], 4);
+    assert.deepEqual(assembly.clips, [{ start: 0, end: 2 }, { start: 3, end: 4 }, { start: 2, end: 3 }]);
+    assert.equal(assembly.text, "alpha beta delta gamma");
+  });
+
+  it("treats a move onto its own selection as identity", () => {
+    const t: Transcript = { mediaPath: "m.wav", duration: 4, segments: [{ start: 0, end: 4, text: "alpha beta gamma" }] };
+    const assembly = moveWords(t, [1, 2], 2);
+    assert.deepEqual(assembly.clips, [{ start: 0, end: 4 }]);
+    assert.equal(assembly.text, "alpha beta gamma");
+  });
+
+  it("validates move selections and targets", () => {
+    const t: Transcript = { mediaPath: "m.wav", duration: 3, segments: [{ start: 0, end: 3, text: "a b c" }] };
+    assert.throws(() => moveWords(t, [], 0), /at least one piece/);
+    assert.throws(() => moveWords(t, [5], 0), /out of range/);
+    assert.throws(() => moveWords(t, [0], -1), /move target out of range/);
+    assert.throws(() => moveSegments(t, [3], 0), /out of range/);
+  });
+
+  it("moves sentences; source-adjacent survivors coalesce into one clip", () => {
+    const t: Transcript = {
+      mediaPath: "m.wav", duration: 6,
+      segments: [{ start: 0, end: 2, text: "one" }, { start: 2, end: 4, text: "two" }, { start: 4, end: 6, text: "three" }],
+    };
+    const assembly = moveSegments(t, [2], 0); // three, one, two
+    assert.deepEqual(assembly.clips, [{ start: 4, end: 6 }, { start: 0, end: 4 }]);
+    assert.equal(assembly.duration, 6);
+    assert.equal(assembly.text, "three one two");
+    assert.deepEqual(moveSegments(t, [0], 3).clips, [{ start: 2, end: 6 }, { start: 0, end: 2 }]);
+  });
+
+  it("rearranging plays spoken ranges and trims silent gaps between them", () => {
+    const t: Transcript = { mediaPath: "m.wav", duration: 10, segments: [{ start: 0, end: 2, text: "a" }, { start: 3, end: 5, text: "b" }] };
+    const assembly = moveSegments(t, [1], 0); // b, a — the 2..3s gap has no text anchor and does not play
+    assert.deepEqual(assembly.clips, [{ start: 3, end: 5 }, { start: 0, end: 2 }]);
+    assert.equal(assembly.duration, 4);
+    assert.equal(assembly.text, "b a");
+  });
+
+  it("projects a delete-only EDL into its ordered assembly", () => {
+    const t: Transcript = {
+      mediaPath: "m.wav", duration: 6,
+      segments: [{ start: 0, end: 2, text: "keep" }, { start: 2, end: 4, text: "cut" }, { start: 4, end: 6, text: "tail" }],
+    };
+    const assembly: EdlAssembly = assemblyFromEdl(deleteSegments(t, [1]));
+    assert.deepEqual(assembly.clips, [{ start: 0, end: 2 }, { start: 4, end: 6 }]);
+    assert.equal(assembly.duration, 4);
+    assert.equal(assembly.text, "keep tail");
+  });
+
+  // ---- timeline wiring ----
+
+  it("applyTranscriptEdit yields a uniform result with a render-ready timeline", () => {
+    const t: Transcript = {
+      mediaPath: "m.wav", duration: 6,
+      segments: [{ start: 0, end: 3, text: "um ok there" }, { start: 3, end: 6, text: "final words" }],
+    };
+    const result = applyTranscriptEdit(t, { kind: "move-words", indices: [3, 4], target: 0 });
+    assert.equal(result.removed, 0);
+    assert.equal(result.duration, 6);
+    assert.deepEqual(result.clips, [{ start: 3, end: 6 }, { start: 0, end: 3 }]);
+    assert.equal(result.text, "final words um ok there");
+    assert.deepEqual(result.timeline, {
+      version: 1,
+      sourceDuration: 6,
+      clips: [
+        { id: "clip-1", in: 3, out: 6 },
+        { id: "clip-2", in: 0, out: 3 },
+      ],
+      overlays: [],
+    });
+    assert.equal(result.droppedClips, 0);
+    const fillers = applyTranscriptEdit(t, { kind: "fillers", extraWords: ["words"] });
+    assert.equal(fillers.count, 2); // "um" + "words"
+    assert.equal(fillers.removed, 2.5); // um (1s) + words (1.5s) do not play
+    assert.equal(fillers.text, "ok there final");
+    const del = applyTranscriptEdit(t, { kind: "segments", indices: [1] });
+    assert.ok(del.deletion);
+    assert.deepEqual(del.clips, [{ start: 0, end: 3 }]);
+    assert.equal(del.removed, 3);
+  });
+
+  it("assemblyTimeline drops clips under the render minimum and reports them", () => {
+    assert.equal(MIN_TIMELINE_CLIP_SECONDS, 0.05);
+    const t: Transcript = {
+      mediaPath: "m.wav", duration: 2,
+      segments: [{ start: 0, end: 0.02, text: "tiny" }, { start: 1, end: 2, text: "big" }],
+    };
+    const result = applyTranscriptEdit(t, { kind: "move-segments", indices: [1], target: 0 });
+    assert.equal(result.droppedClips, 1);
+    assert.deepEqual(result.clips, [{ start: 1, end: 2 }, { start: 0, end: 0.02 }]);
+    assert.deepEqual(result.timeline!.clips, [{ id: "clip-1", in: 1, out: 2 }]);
+    assert.equal(result.timeline!.clips.length, 1);
   });
 });
