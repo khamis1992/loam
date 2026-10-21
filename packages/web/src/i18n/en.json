@@ -499,6 +499,8 @@
   "Skill installed": "Skill installed.",
   "Skill updated": "Skill updated.",
   "Skill removed": "Skill removed.",
+  "Delete skill?": "Delete skill?",
+  "This permanently removes the skill. This cannot be undone.": "This permanently removes the skill. This cannot be undone.",
   "Source": "Source",
   "Skills loaded from the {name} catalog.": "Skills loaded from the {name} catalog.",
   "Failed to load connectors": "Failed to load connectors.",
