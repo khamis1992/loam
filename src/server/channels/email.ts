@@ -23,11 +23,13 @@ export interface EmailOutbound {
   at: string;
 }
 
+export type EmailInboundCallback = (msg: EmailInbound) => void | Promise<void>;
+
 export interface EmailProvider {
   readonly name: string;
   readonly configured: boolean;
   readonly envVarNames: readonly string[];
-  onInbound(cb: (msg: EmailInbound) => void): void;
+  onInbound(cb: EmailInboundCallback): void;
   start(): Promise<void> | void;
   stop(): Promise<void> | void;
   send(to: string, subject: string, text: string): Promise<void>;
@@ -53,10 +55,10 @@ export class MockEmailProvider implements EmailProvider {
   readonly name = "mock";
   readonly configured = true;
   readonly envVarNames: readonly string[] = ["LOAM_EMAIL_PROVIDER"];
-  private callback: ((msg: EmailInbound) => void) | undefined;
+  private callback: EmailInboundCallback | undefined;
   private readonly outbox: EmailOutbound[] = [];
 
-  onInbound(cb: (msg: EmailInbound) => void): void {
+  onInbound(cb: EmailInboundCallback): void {
     this.callback = cb;
   }
 
@@ -73,9 +75,9 @@ export class MockEmailProvider implements EmailProvider {
     this.outbox.push({ to, subject, text, at: new Date().toISOString() });
   }
 
-  /** Test/fixture hook: simulate an inbound email arriving. */
-  deliver(msg: EmailInbound): void {
-    this.callback?.(msg);
+  /** Test/fixture hook: simulate an inbound email arriving (awaitable when the handler is async). */
+  deliver(msg: EmailInbound): void | Promise<void> {
+    return this.callback?.(msg);
   }
 
   getOutbox(): readonly EmailOutbound[] {
@@ -97,7 +99,7 @@ export class ImapSmtpEmailProvider implements EmailProvider {
   readonly name = "imap-smtp";
   readonly configured: boolean;
   readonly envVarNames: readonly string[] = EMAIL_ENV_VARS;
-  private callback: ((msg: EmailInbound) => void) | undefined;
+  private callback: EmailInboundCallback | undefined;
 
   constructor(env: NodeJS.ProcessEnv = process.env) {
     this.configured = Boolean(
@@ -105,7 +107,7 @@ export class ImapSmtpEmailProvider implements EmailProvider {
     );
   }
 
-  onInbound(cb: (msg: EmailInbound) => void): void {
+  onInbound(cb: EmailInboundCallback): void {
     this.callback = cb;
   }
 
@@ -166,7 +168,7 @@ export class EmailChannel implements Channel {
         text: msg.subject ? `${msg.subject}\n\n${msg.text}` : msg.text,
         ...(msg.at ? { at: msg.at } : {}),
       };
-      void this.handler(inbound);
+      return this.handler(inbound);
     });
     await this.provider.start();
   }

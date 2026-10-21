@@ -119,11 +119,13 @@ export class TelegramChannel implements Channel {
     if (!res.ok) throw new Error(`telegram getUpdates failed with status ${res.status}`);
     const data = (await res.json()) as { ok?: boolean; result?: TelegramUpdateLike[] };
     if (data.ok !== true) throw new Error("telegram getUpdates returned ok=false");
+    const previousOffset = this.offset;
     let dispatched = 0;
     for (const update of data.result ?? []) {
-      if (typeof update?.update_id === "number" && update.update_id >= this.offset) {
-        this.offset = update.update_id + 1;
-      }
+      const updateId = typeof update?.update_id === "number" ? update.update_id : undefined;
+      if (updateId !== undefined) this.offset = Math.max(this.offset, updateId + 1);
+      // Skip updates already processed on an earlier cycle (defensive dedupe).
+      if (updateId !== undefined && updateId < previousOffset) continue;
       const msg = updateToInbound(update);
       if (!msg || !this.handler) continue;
       await this.handler(msg);
