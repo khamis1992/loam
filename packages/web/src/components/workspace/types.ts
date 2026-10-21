@@ -10,9 +10,12 @@ export interface WorkspaceFile {
   mime?: string;
 }
 
+// Owned by the shell session; editor sessions must keep this shape so a richer
+// editor can replace ours without changing the panel contract.
 export interface WorkspaceEditorProps {
   file: WorkspaceFile;
-  live: boolean; /* task running */
+  /** The task is currently running. */
+  live: boolean;
   onSave: (data: Blob | string) => Promise<void>;
   onChatEdit: (instruction: string) => void;
 }
