@@ -4,6 +4,7 @@ import { mountAppUpdates } from './app-updates.js';
 import { createCreativeStudio } from './creative.js';
 import { createStudio } from './studio.js';
 import { mountTaskView } from './task-view.js';
+import { mountLivePreview } from './live-preview.js';
 import { renderMarkdown } from './markdown.js';
 import { studios, studioById, installStudioBridge } from './studio-routes.js';
 const $ = id => document.getElementById(id);
@@ -12,6 +13,7 @@ mountAppUpdates({confirm:confirmAction});
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const labels = {queued:'في الانتظار',running:'جارٍ التنفيذ',done:'مكتملة',error:'تعثّرت',interrupted:'انقطع التشغيل',cancelled:'متوقفة'};
 const state = {modes:[],tasks:[],task:null,mode:null,draft:null,attachments:[],sequence:0,stream:null,posting:new Set(),launching:false,uploading:false,projectId:null};
+let livePreview=null;
 const busy = task => ['queued','running'].includes(task?.status);
 const modeById = id => state.modes.find(m=>m.id===id);
 const date = value => value ? new Date(value).toLocaleDateString('ar',{month:'short',day:'numeric'}) : '';
@@ -25,7 +27,7 @@ function notice(message,error=false) { $('notice').hidden=!message; $('notice').
 function run(action) { return (...args)=>{ try { return Promise.resolve(action(...args)).catch(error=>notice(error.message,true)); } catch(error) { notice(error.message,true); } }; }
 function show(view,title) { updateNavigation(title); const creative=(view==='mode' && state.mode?.id==='media') || (view==='chat' && state.task?.mode==='media');document.body.classList.toggle('creative-workspace',creative);if(!creative)creativeStudio.unmount(); const office=(view==='mode' && ['write','data'].includes(state.mode?.id)) || (view==='chat' && ['write','data'].includes(state.task?.mode));document.body.classList.toggle('office-workspace',office);if(!office)officeStudio.unmount(); document.body.classList.toggle('build-studio',(view==='mode' && state.mode?.id==='build') || (view==='chat' && state.task?.mode==='build')); document.querySelectorAll('.view').forEach(el=>el.classList.toggle('active',el.id===`view-${view}`)); $('crumb').textContent=title; document.title=`${title} — Loam`; $('sidebar').classList.remove('open'); $('menuToggle').setAttribute('aria-expanded','false'); }
 function confirmAction(title,text) { const dialog=$('confirmDialog'); $('confirmTitle').textContent=title; $('confirmText').textContent=text; dialog.returnValue='cancel'; dialog.showModal(); return new Promise(resolve=>dialog.addEventListener('close',()=>resolve(dialog.returnValue==='confirm'),{once:true})); }
-function resetWorkspace() { $('filesList').replaceChildren(); $('fileView').replaceChildren(); $('fileView').hidden=true; $('previewFrame').src='about:blank'; $('previewFrame').hidden=true; document.querySelector('.sidepanel').hidden=true; $('taskWorkspace').setAttribute('aria-expanded','false'); }
+function resetWorkspace() { $('filesList').replaceChildren(); $('fileView').replaceChildren(); $('fileView').hidden=true; $('previewFrame').src='about:blank'; $('previewFrame').hidden=true; livePreview?.destroy(); livePreview=null; $('liveView').hidden=true; document.querySelector('.sidepanel').hidden=true; $('taskWorkspace').setAttribute('aria-expanded','false'); }
 function stopStream() { state.stream?.close(); state.stream=null; }
 const officeStudio=createStudio({ensureDraft,draftFactory:()=>{const context={sequence:state.sequence,mode:state.mode,projectId:state.projectId};return()=>ensureDraft(context);},confirm:confirmAction});
 const creativeStudio=createCreativeStudio({ensureDraft,draftFactory:()=>{const context={sequence:state.sequence,mode:state.mode,projectId:state.projectId};return()=>ensureDraft(context);},confirm:confirmAction});
@@ -222,9 +224,10 @@ async function openFile(path){
   try {const data=await api('/api/file?'+taskQuery(id)+'&path='+encodeURIComponent(path));if(id!==state.task?.id||box.firstChild!==title)return;const pre=document.createElement('pre');pre.textContent=data.content??data.text??'';box.append(pre);}catch(error){if(id===state.task?.id&&box.firstChild===title){const p=document.createElement('p');p.textContent='المعاينة النصية غير متاحة. يمكنك تنزيل الملف. '+error.message;box.append(p);}}
 }
 $('taskWorkspace').onclick=run(async()=>{const panel=document.querySelector('.sidepanel');panel.hidden=!panel.hidden;$('taskWorkspace').setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden){$('closeWorkspace').focus();await loadFiles();}});
-$('closeWorkspace').onclick=()=>{document.querySelector('.sidepanel').hidden=true;$('taskWorkspace').setAttribute('aria-expanded','false');$('taskWorkspace').focus();};
+$('closeWorkspace').onclick=()=>{document.querySelector('.sidepanel').hidden=true;$('taskWorkspace').setAttribute('aria-expanded','false');livePreview?.destroy();livePreview=null;$('liveView').hidden=true;$('taskWorkspace').focus();};
 $('refreshFiles').onclick=run(loadFiles);$('filesList').onclick=run(async event=>{const button=event.target.closest('[data-file]');if(button)await openFile(button.dataset.file);});
 $('taskPreview').onclick=run(async()=>{const id=state.task?.id;const existing=await api('/api/preview?'+taskQuery(id));const data=existing.running?existing:await post('/api/preview',{taskId:id,dir:'.'});if(id!==state.task?.id)return;if(!/^http:\/\/(127\.0\.0\.1|localhost):\d+\//.test(data.url||''))throw new Error('عنوان المعاينة غير صالح.');$('previewFrame').src=data.url;$('previewFrame').hidden=false;$('fileView').hidden=true;});
+$('taskLiveView').onclick=run(()=>{const panel=$('liveView');if(!panel.hidden){livePreview?.destroy();livePreview=null;panel.hidden=true;$('filesList').hidden=false;$('fileView').hidden=true;$('previewFrame').hidden=true;return;}const id=state.task?.id;if(!id){notice('اختر مهمة لعرض شاشتها.',true);return;}panel.hidden=false;$('filesList').hidden=true;$('fileView').hidden=true;$('previewFrame').hidden=true;livePreview?.destroy();livePreview=mountLivePreview(panel,{getTaskId:()=>state.task?.id});});
 $('chatForm').onsubmit=run(async event=>{event.preventDefault();await submitTask($('promptChat').value);});$('attachChat').onclick=()=>pickFiles('chat');$('stopChat').onclick=run(stopTask);
 const services=[['integrations','Loam · التكاملات','تفعيل أدوات الخدمات الخارجية لكل مهمة','/integrations.html'],['skills','Loam · المهارات','قدرات قابلة لإعادة الاستخدام','/skills.html'],['memory','Loam · الذاكرة','المعرفة المحفوظة المشتركة بإدارة مستقلة','/memory.html'],['brain','Loam · المعرفة','مراجعة المعرفة والخبرات المتراكمة','/brain.html'],['learning','Loam · التقييم','الاختبارات وجودة النتائج','/learning.html'],['companions','Loam · المساعدون','إدارة المساعدين ومحادثاتهم','/companions.html'],['screen','Loam · الشاشة','مشاركة شاشة الجهاز صراحةً','/screen.html']];
 $('serviceLinks').innerHTML=services.map(([id,name,description])=>`<a class="service-card" href="#/services/${id}"><h3>${icon(id)} ${name}</h3><p>${description}</p><span>فتح القسم <loam-icon name="back"></loam-icon></span></a>`).join('');
