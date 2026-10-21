@@ -121,7 +121,10 @@ export class ImapSmtpEmailProvider implements EmailProvider {
     /* nothing to release */
   }
 
-  async send(): Promise<void> {
+  async send(to: string, subject: string, text: string): Promise<void> {
+    void to;
+    void subject;
+    void text;
     throw new Error("email: real IMAP/SMTP sending is not implemented; use LOAM_EMAIL_PROVIDER=mock");
   }
 }
