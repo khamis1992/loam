@@ -476,6 +476,7 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
               defaultLoamMode={agent.mode}
               approveForMe={approveForMe}
               onToggleApproveForMe={handleToggleApproveForMe}
+              assistantReply={assistantText}
               placeholder={t('Message {name}', { name: agent.name })}
             />
           </div>

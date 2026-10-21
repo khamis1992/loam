@@ -1,0 +1,20 @@
+[
+  {
+    "title": "Create your Video",
+    "subtitle": "Make ideas come alive",
+    "prompt": "Create a short promotional video concept: a storyboard with scenes, shot list, narration script, and suggested visuals and pacing.",
+    "image": "/templates/anime.svg"
+  },
+  {
+    "title": "Build an App",
+    "subtitle": "Turn ideas into products",
+    "prompt": "Build a small web app: describe the core screens, then implement it as a single HTML file with a clean modern UI.",
+    "image": "/templates/budget.svg"
+  },
+  {
+    "title": "Design a Deck",
+    "subtitle": "Pitch with confidence",
+    "prompt": "Design a pitch deck: outline the story slide by slide, then produce the slides with clear titles, key messages, and speaker notes.",
+    "image": "/templates/deck.svg"
+  }
+]

@@ -14,6 +14,8 @@ import {
   Mic, Github, Mail, Calendar, Loader2, Wrench, Plug, Bot, Check,
 } from 'lucide-react';
 import { VoiceIcon } from '@/components/home/VoiceIcon';
+import { useVoiceTranscribe } from '@/components/chat/useVoiceTranscribe';
+import { speak, stopSpeaking } from '@/services/speech';
 import clsx from 'clsx';
 import { t } from '@/i18n/t';
 import { IconButton } from '@/components/ui/Button';
@@ -48,10 +50,12 @@ interface ComposerProps {
   projectId?: string | null;
   /** Option 17: start the task in a fresh git worktree under the bound folder. */
   worktreeEnabled?: boolean;
+  /** Latest assistant reply text; enables the voice-mode TTS toggle. */
+  assistantReply?: string;
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { onSend, onStop, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode, placeholder, approveForMe, onToggleApproveForMe, modelTier, projectId, worktreeEnabled }: ComposerProps,
+  { onSend, onStop, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode, placeholder, approveForMe, onToggleApproveForMe, modelTier, projectId, worktreeEnabled, assistantReply }: ComposerProps,
   ref: Ref<ComposerHandle>,
 ) {
   const router = useRouter();
@@ -72,6 +76,40 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const canSend = text.trim().length > 0 || files.length > 0;
+
+  const [voiceModeOn, setVoiceModeOn] = useState<boolean>(false);
+  const lastSpokenRef = useRef<string>('');
+  const reply = (assistantReply ?? '').trim();
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setVoiceModeOn(localStorage.getItem('agent-studio:voice-mode') === '1');
+    }
+  }, []);
+
+  // Voice mode: speak each new assistant reply while enabled.
+  useEffect(() => {
+    if (!voiceModeOn || !reply || reply === lastSpokenRef.current) return;
+    lastSpokenRef.current = reply;
+    speak(reply);
+  }, [voiceModeOn, reply]);
+
+  useEffect(() => () => stopSpeaking(), []);
+
+  const onTranscript = (transcript: string) => {
+    setText((prev) => (prev.trim() ? `${prev}\n${transcript}` : transcript));
+    textareaRef.current?.focus();
+  };
+
+  const voice = useVoiceTranscribe(onTranscript);
+
+  const toggleVoiceMode = () => {
+    const next = !voiceModeOn;
+    setVoiceModeOn(next);
+    if (typeof window !== 'undefined') localStorage.setItem('agent-studio:voice-mode', next ? '1' : '0');
+    lastSpokenRef.current = '';
+    stopSpeaking();
+  };
 
   useImperativeHandle(ref, () => ({
     focus: () => textareaRef.current?.focus(),
@@ -560,26 +598,32 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
         <div className="flex-1" />
 
-        {home && (
-          <>
-            <button
-              type="button"
-              className="hidden h-8 w-8 items-center justify-center rounded-full border border-border-main text-text-secondary transition-colors hover:bg-fill-hover sm:flex"
-              aria-label={t('Voice mode')}
-              title={t('Voice mode')}
-            >
-              <VoiceIcon className="size-4" />
-            </button>
-            <button
-              type="button"
-              className="hidden h-8 w-8 items-center justify-center rounded-full border border-border-main text-text-secondary transition-colors hover:bg-fill-hover sm:flex"
-              aria-label={t('Microphone')}
-              title={t('Microphone')}
-            >
-              <Mic className="size-4" />
-            </button>
-          </>
-        )}
+        <button
+          type="button"
+          className={clsx(
+            'hidden h-8 w-8 items-center justify-center rounded-full border border-border-main transition-colors hover:bg-fill-hover sm:flex',
+            voiceModeOn ? 'bg-fill-hover text-text-primary' : 'text-text-secondary',
+          )}
+          aria-label={t(voiceModeOn ? 'Stop voice mode' : 'Voice mode')}
+          aria-pressed={voiceModeOn}
+          title={t(voiceModeOn ? 'Stop voice mode' : 'Voice mode')}
+          onClick={toggleVoiceMode}
+        >
+          <VoiceIcon className="size-4" />
+        </button>
+        <button
+          type="button"
+          className={clsx(
+            'hidden h-8 w-8 items-center justify-center rounded-full border border-border-main transition-colors hover:bg-fill-hover sm:flex',
+            voice.state !== 'idle' && 'bg-fill-hover text-text-primary',
+            voice.state === 'recording' && 'text-function-error',
+          )}
+          aria-label={t(voice.state === 'recording' ? 'Stop recording' : 'Microphone')}
+          title={t(voice.state === 'recording' ? 'Stop recording' : 'Microphone')}
+          onClick={() => (voice.state === 'recording' ? voice.stop() : void voice.start())}
+        >
+          {voice.state === 'transcribing' ? <Loader2 className="size-4 animate-spin" /> : <Mic className="size-4" />}
+        </button>
 
         {running
           ? (

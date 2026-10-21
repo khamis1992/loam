@@ -5,6 +5,7 @@
  * user approves or denies — in the companions UI approvals center or via API.
  */
 import crypto from "node:crypto";
+import { notifyApprovalPending } from "./notifications.js";
 
 export type ApprovalStatus = "pending" | "approved" | "denied" | "expired";
 
@@ -34,6 +35,9 @@ export function createApproval(input: { taskId: string; tool: string; summary: s
     createdAt: new Date().toISOString(),
   };
   approvals.set(record.id, record);
+  // Notification feed hook (option #20): a pending sensitive action is one
+  // unread notification; deciding it does not auto-clear the feed entry.
+  notifyApprovalPending({ id: record.id, taskId: record.taskId, tool: record.tool, summary: record.summary });
   // Bound memory: drop decided/expired records beyond the recent window.
   if (approvals.size > 100) {
     const cutoff = Date.now() - 60 * 60_000;
