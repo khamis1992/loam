@@ -43,8 +43,7 @@ const TABS = [
   { id: 'About', group: 'About', icon: 'Info' },
 ];
 
-const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Memory', 'In-App Browser', 'Email', 'Phone', 'Wallet', 'Integrations', 'Developers']);
-const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'Personalization', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Memory', 'In-App Browser', 'Email', 'Phone', 'Wallet']);
+const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'Personalization', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Memory', 'In-App Browser', 'Email', 'Phone', 'Wallet', 'Integrations', 'Developers']);
 
 const GROUP_ORDER = ['Account', 'Settings', 'Capabilities', 'Computers', 'Data', 'Assets', 'About'];
 
