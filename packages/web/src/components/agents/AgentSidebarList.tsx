@@ -13,6 +13,7 @@ import {
   Store,
   Kanban,
   MessageSquare,
+  Pin,
 } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
@@ -530,6 +531,7 @@ export function AgentSidebarList({
             id={SECTIONS.pinned}
             label={t('Pinned')}
             count={rankedPinned.length}
+            icon={Pin}
             expanded={!!sections[SECTIONS.pinned]}
             onToggle={() => toggleSection(SECTIONS.pinned)}
             unread={pinnedUnread}
@@ -596,7 +598,7 @@ export function AgentSidebarList({
                 onClick={() => onSelectGroup?.(group)}
                 className={[
                   'group relative flex h-row items-center gap-2 rounded-control px-2 text-start transition-colors',
-                  selectedGroupId === group.id ? 'bg-fill-hover' : 'hover:bg-fill-hover',
+                  selectedGroupId === group.id ? 'bg-fill-tsp' : 'hover:bg-fill-hover',
                 ].join(' ')}
               >
                 {selectedGroupId === group.id && <RowAccent />}
@@ -709,7 +711,7 @@ function SectionHeader({
   action,
 }: SectionHeaderProps) {
   return (
-    <div className="mt-2 flex h-row-sm w-full items-center rounded-control px-2 text-xs font-medium text-text-secondary hover:bg-fill-hover">
+    <div className="mt-2 flex h-row-sm w-full items-center rounded-control px-2 text-[13px] font-semibold text-text-secondary hover:bg-fill-hover">
       <button
         type="button"
         onClick={onToggle}
@@ -719,7 +721,7 @@ function SectionHeader({
         {Icon && <Icon className="size-3.5 shrink-0" />}
         <span className="min-w-0 truncate">{label}</span>
         {typeof count === 'number' && (
-          <span className="shrink-0 text-[11px] text-text-tertiary">{count}</span>
+          <span className="shrink-0 text-[11px] font-normal tabular-nums text-text-tertiary">{count}</span>
         )}
         {unread > 0 && (
           <span
@@ -814,10 +816,10 @@ function AgentRow({
       aria-current={selected ? 'true' : undefined}
       {...(drag ?? {})}
       className={[
-        'group relative flex min-h-[44px] items-center gap-2 rounded-control px-2 py-1 text-start transition-colors',
+        'group relative flex min-h-[48px] items-center gap-2 rounded-control px-2 py-1.5 text-start transition-colors',
         indent ? 'ps-6' : '',
         dim ? 'opacity-60' : '',
-        selected ? 'bg-fill-hover' : 'hover:bg-fill-hover',
+        selected ? 'bg-fill-tsp' : 'hover:bg-fill-hover',
         drag ? 'cursor-grab select-none active:cursor-grabbing' : '',
       ].join(' ')}
       aria-label={drag ? t('Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder.', { name: agent.name }) : undefined}
@@ -834,7 +836,7 @@ function AgentRow({
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="min-w-0 truncate text-sm text-text-primary">{agent.name}</span>
         {subtitle ? (
-          <span className="min-w-0 truncate text-xs text-text-tertiary">{subtitle}</span>
+          <span className="min-w-0 truncate text-xs text-text-tertiary opacity-80">{subtitle}</span>
         ) : null}
       </span>
       {isGrokBotAgent(agent.source) && (
