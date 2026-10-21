@@ -144,6 +144,7 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
   const [resolving, setResolving] = useState(true);
   const [error, setLocalError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [approveForMe, setApproveForMe] = useState(false);
   const socketRef = useRef<ChatSocket | null>(null);
   const apiBase = useMemo(() => getApiBase(), []);
   const composerRef = useRef<React.ElementRef<typeof Composer>>(null);
@@ -169,6 +170,10 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
     let mounted = true;
     setResolving(true);
     setLocalError(null);
+    // MF4: restore the "Approve for me" chip state per agent.
+    try {
+      if (typeof window !== 'undefined') setApproveForMe(localStorage.getItem(`loam.approveForMe.${agent.id}`) === '1');
+    } catch {}
     resolveAgentThread(agent.id).then((uid) => {
       if (!mounted) return;
       setThreadUid(uid);
@@ -285,6 +290,7 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
 
     const extra: Record<string, unknown> = {
       agentId: agent.id,
+      approveForMe,
       ...(agent.mode ? { loamMode: agent.mode } : {}),
       ...(agent.workMode ? { workMode: agent.workMode } : {}),
       ...extData,
@@ -308,6 +314,30 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
 
   const handleStop = () => {
     if (threadUid) socketRef.current?.stop(threadUid);
+  };
+
+  // MF4: "Approve for me" chip — toggles auto-approve for the current task.
+  // The flag rides on the next message (extData) and is pushed live for threads
+  // that already map to a Loam task id.
+  const handleToggleApproveForMe = () => {
+    const next = !approveForMe;
+    setApproveForMe(next);
+    try {
+      localStorage.setItem(`loam.approveForMe.${agent.id}`, next ? '1' : '0');
+    } catch {}
+    if (threadUid) {
+      void (async () => {
+        try {
+          await fetch(`${getApiBase()}/api/approval-tasks/${encodeURIComponent(threadUid)}`, {
+            method: 'PUT',
+            headers: { ...(await getApiHeaders()), 'content-type': 'application/json' },
+            body: JSON.stringify({ auto: next }),
+          });
+        } catch {
+          // Best effort: runs without a resolved task id still pick it up via extData.
+        }
+      })();
+    }
   };
 
   const handleOpenTaskView = () => {
@@ -429,6 +459,8 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
               onStop={handleStop}
               running={running || sending}
               defaultLoamMode={agent.mode}
+              approveForMe={approveForMe}
+              onToggleApproveForMe={handleToggleApproveForMe}
               placeholder={t('Message {name}', { name: agent.name })}
             />
           </div>
