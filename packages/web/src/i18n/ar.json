@@ -735,7 +735,6 @@
   "Open full screen": "فتح بملء الشاشة",
   "Live preview placeholder": "بديل المعاينة المباشرة",
   "The computer stream will appear here once the agent connects to a computer.": "ستظهر صورة الكمبيوتر هنا عندما يتصل الوكيل بجهاز.",
-<<<<<<< HEAD
   "Export your data": "تصدير بياناتك",
   "Export all data": "تصدير كل البيانات",
   "Download a full copy of your tasks, projects, agents and memory.": "تنزيل نسخة كاملة من مهامك ومشاريعك والوكلاء والذاكرة.",
@@ -752,8 +751,17 @@
   "Training": "التدريب",
   "Help improve Loam": "ساعد في تحسين Loam",
   "Allow Loam to use my conversations to improve its models.": "السماح لـ Loam باستخدام محادثاتي لتحسين نماذجه.",
-  "Could not save your preference": "تعذّر حفظ تفضيلك"
-=======
+  "Could not save your preference": "تعذّر حفظ تفضيلك",
+  "About you": "عنك",
+  "Describe yourself so Loam can tailor its work to you.": "صف نفسك حتى يتمكن Loam من تخصيص عمله لك.",
+  "How to respond": "كيفية الرد",
+  "Tell Loam how it should behave in every task.": "أخبر Loam كيف يجب أن يتصرف في كل مهمة.",
+  "These instructions apply to every task.": "تنطبق هذه التعليمات على كل مهمة.",
+  "e.g. I work in finance and prefer concise summaries.": "مثال: أعمل في مجال المالية وأفضل الملخصات الموجزة.",
+  "e.g. Always cite sources and keep answers under three sentences.": "مثال: اذكر المصادر دائمًا واجعل الإجابات في أقل من ثلاث جمل.",
+  "Instructions saved": "تم حفظ التعليمات",
+  "Could not save your instructions": "تعذّر حفظ تعليماتك",
+  "Could not load your instructions": "تعذّر تحميل تعليماتك",
   "Landing page": "صفحة هبوط",
   "Portfolio site": "موقع أعمال",
   "Budget app": "تطبيق ميزانية",
@@ -775,5 +783,4 @@
   "Explainer animation": "رسوم متحركة توضيحية",
   "Expense tracker": "متتبع المصروفات",
   "Market scan": "مسح السوق"
->>>>>>> mf/templategallery
 }

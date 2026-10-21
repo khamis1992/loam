@@ -744,7 +744,6 @@
   "Stop recording": "Stop recording",
   "Stop voice mode": "Stop voice mode",
   "Template gallery": "Template gallery",
-<<<<<<< HEAD
   "Export your data": "Export your data",
   "Export all data": "Export all data",
   "Download a full copy of your tasks, projects, agents and memory.": "Download a full copy of your tasks, projects, agents and memory.",
@@ -761,8 +760,17 @@
   "Training": "Training",
   "Help improve Loam": "Help improve Loam",
   "Allow Loam to use my conversations to improve its models.": "Allow Loam to use my conversations to improve its models.",
-  "Could not save your preference": "Could not save your preference"
-=======
+  "Could not save your preference": "Could not save your preference",
+  "About you": "About you",
+  "Describe yourself so Loam can tailor its work to you.": "Describe yourself so Loam can tailor its work to you.",
+  "How to respond": "How to respond",
+  "Tell Loam how it should behave in every task.": "Tell Loam how it should behave in every task.",
+  "These instructions apply to every task.": "These instructions apply to every task.",
+  "e.g. I work in finance and prefer concise summaries.": "e.g. I work in finance and prefer concise summaries.",
+  "e.g. Always cite sources and keep answers under three sentences.": "e.g. Always cite sources and keep answers under three sentences.",
+  "Instructions saved": "Instructions saved",
+  "Could not save your instructions": "Could not save your instructions",
+  "Could not load your instructions": "Could not load your instructions",
   "Landing page": "Landing page",
   "Portfolio site": "Portfolio site",
   "Budget app": "Budget app",
@@ -784,5 +792,4 @@
   "Explainer animation": "Explainer animation",
   "Expense tracker": "Expense tracker",
   "Market scan": "Market scan"
->>>>>>> mf/templategallery
 }
