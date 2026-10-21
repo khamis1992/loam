@@ -208,12 +208,32 @@ function addMsg(role, text) {
   b.textContent = text;
   wrap.appendChild(b);
   if (role === "assistant") {
+    const actions = document.createElement("div");
+    actions.className = "rk-msg-actions";
     const sp = document.createElement("button");
-    sp.className = "rk-speak";
+    sp.className = "rk-mini-btn";
     sp.title = "نطق بصوت المساعد";
     sp.textContent = "🔊";
     sp.onclick = () => speakText(b.textContent || "", sp);
-    wrap.appendChild(sp);
+    const copy = document.createElement("button");
+    copy.className = "rk-mini-btn";
+    copy.title = "نسخ النص";
+    copy.textContent = "نسخ";
+    copy.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(b.textContent || "");
+        toast("نُسخت الرسالة.");
+      } catch {
+        toast("تعذّر النسخ.");
+      }
+    };
+    const retry = document.createElement("button");
+    retry.className = "rk-mini-btn";
+    retry.title = "إعادة تشغيل آخر رسالة";
+    retry.textContent = "إعادة";
+    retry.onclick = () => void retryLast(retry);
+    actions.append(sp, copy, retry);
+    wrap.appendChild(actions);
     if (activeAgent()?.voiceAuto) speakText(b.textContent || "");
   }
   thread().appendChild(wrap);
@@ -223,6 +243,24 @@ function addMsg(role, text) {
 function assistantBubble() {
   if (!state.assistantBody) state.assistantBody = addMsg("assistant", "");
   return state.assistantBody;
+}
+async function retryLast(button) {
+  const id = state.taskId;
+  if (!id) return toast("لا توجد محادثة لإعادة تشغيلها.");
+  if (state.streaming) return toast("يوجد تشغيل جارٍ — أوقفه أولاً");
+  button.disabled = true;
+  try {
+    const res = await fetch(`/api/tasks/${encodeURIComponent(id)}/retry-last`, { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    toast("أُعيد تشغيل آخر رسالة.");
+    state.assistantBody = null;
+    await openTask(id);
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    button.disabled = false;
+  }
 }
 function addTool(name, args) {
   clearWelcome();
