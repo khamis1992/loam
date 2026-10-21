@@ -1,0 +1,4 @@
+﻿Loam build task. Work ONLY in this worktree. Create NEW files where possible and make MINIMAL edits to shared files to reduce merge conflicts. Finish with `npx tsc --noEmit` = 0 and `npm run build:server` exit 0. Do NOT touch protected files (src/setup/runtime.ts, src/server/companionGateway.ts, src/tools/companionTeamTools.ts, src/tools/serviceBridgeTools.ts, src/tools/serviceGapTools.ts, scripts/stt_server.py, docs/companions-frontier-progress.md, docs/evidence/fair-comparison.json). NEVER git reset --hard. Commit as you go.
+
+TASK:
+Implement Approval cards (UNIMPLEMENTED_OPTIONS #14). ApprovalCard.tsx is a TODO stub; wire it to the Loam permission gate: render pending approvals from the adapter mapping, allow Approve/Reject and an "Approve for me" (always) option, posting to the existing permission reply endpoint. Edit only ApprovalCard.tsx, its container, and a client service. Gates: tsc=0, build:server=0.

@@ -19,13 +19,13 @@ Size: S = under 1 day, M = 1–3 days, L = more than 3 days.
 | 11 | Share (public link) | Task header | Client-side "Copy link" works. A real public read-only share needs a share-token endpoint and a replay page | M |
 | 12 | Message Copy / Retry | Not present on bubbles | Copy is client-only (S). Retry needs a re-run-last-turn backend call | S |
 | 13 | Live computer screen (VNC) and browser view in "Loam's computer" | Task right panel | The panel already shows the command and its output. A live screen or browser view needs screen streaming | L |
-| 14 | Approval cards / "Approve for me" | Composer chip, chat | The adapter maps approvals, but ApprovalCard.tsx is a TODO stub and there is no wiring to the Loam permission gate | M |
+| 14 | Approval cards / "Approve for me" | Composer chip, chat | Fixed (OpenCode): ApprovalCard renders a pending Loam approval from the adapter mapping (tool, human summary, args preview via GET /api/approvals/:id); Deny / Approve once / Always allow ("Approve for me") resolve through resolve_local_execution_approval, with "always" saving an agent allow-rule; the composer chip toggles per-task auto-approve (PUT /api/approval-tasks/:taskId + extData.approveForMe) | ✅ |
 | 15 | Promo banner carousel ("Build an App / Create your Video") | Home top-right | Static marketing slides. Needs a content source, or delete it | S |
 | 16 | Template gallery beyond 3 cards | Home | Clicking a card pre-fills the prompt. A real gallery needs data and images | S |
 | 17 | Choose project / Downloads chips, Worktree checkbox, git branch chip ("main") | Composer context row | The branch shows a fallback. Needs a project picker bound to /api/projects plus worktree creation through the existing backend `parseWorktrees` | S–M |
 | 18 | Model tiers Max / Lite / Flex (BYO key) | Model dropdown | The choice is stored but not mapped to different models. Flex needs a key input | S–M |
 | 19 | Voice mode and mic buttons | Composer | Wiring to the existing STT server (scripts/stt_server.py) and TTS | M |
-| 20 | Bell (notifications) and devices icon | Sidebar bottom | Notification feed. The devices icon could link to the /app/computers page | S |
+| 20 | Bell (notifications) and devices icon | Sidebar bottom | Fixed (OpenCode): client notifications store with stub feed (notificationsStore.ts); bell dropdown with unread dot + mark-read; devices icon → /app/computers | ✅ |
 | 21 | Creations and Library pages | Sidebar | Fixed (OpenCode): single-call /api/files?list=1, /api/creative?list=1 scenes and /api/media list default; strict per-task contracts kept | ✅ |
 | 22 | Projects / Automations create-edit | Sidebar pages | List only. Create, edit and delete UI over the existing /api/projects and /api/schedules | M |
 | 23 | Computers / Agent Loam actions | Sidebar pages | List only (empty now). Needs pair-device and create-companion flows over the existing APIs | M |
