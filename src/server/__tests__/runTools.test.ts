@@ -89,6 +89,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     createScratchpadTools = scratchpadToolsMod.createScratchpadTools;
     createInstructionHistoryTools = instructionToolsMod.createInstructionHistoryTools;
     createAgentSpawnTools = agentSpawnToolsMod.createAgentSpawnTools;
+    const { createBackendScaffoldTools } = await import("../../tools/backendScaffold.js");
     const { ToolRegistry: Registry } = registryMod;
     registry = new Registry();
     // Register a few real build-mode staples plus the real scratchpad tools,
@@ -97,6 +98,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll(createScratchpadTools());
     registry.registerAll(createInstructionHistoryTools());
     registry.registerAll(createAgentSpawnTools());
+    registry.registerAll(createBackendScaffoldTools());
   });
 
   after(() => {
