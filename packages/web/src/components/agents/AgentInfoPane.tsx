@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { X, Settings, Play, Loader2, AlertCircle, FileText, Folder, Plus } from 'lucide-react';
+import { X, Settings, Play, Loader2, AlertCircle, FileText, Folder, Plus, Send, Mail, Trash2 } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { Button, Spinner } from '@/components/ui/Button';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
@@ -42,7 +42,7 @@ interface Schedule {
   agentId?: string | null;
 }
 
-type TabId = 'overview' | 'routines' | 'media' | 'computer' | 'members';
+type TabId = 'overview' | 'channels' | 'routines' | 'media' | 'computer' | 'members';
 
 interface AgentInfoPaneProps {
   agent: AgentWithMeta;
@@ -112,6 +112,7 @@ export function AgentInfoPane({ agent, threadUid, onClose, onEdit }: AgentInfoPa
 
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === 'overview' && <OverviewTab agent={agent} />}
+        {activeTab === 'channels' && <ChannelsTab agentId={agent.id} />}
         {activeTab === 'routines' && <RoutinesTab agentId={agent.id} />}
         {activeTab === 'media' && <MediaTab threadUid={threadUid} />}
         {activeTab === 'computer' && <ComputerTab threadUid={threadUid} />}
@@ -123,6 +124,7 @@ export function AgentInfoPane({ agent, threadUid, onClose, onEdit }: AgentInfoPa
 
 const TAB_ITEMS: { id: TabId; label: string }[] = [
   { id: 'overview', label: t('Overview') },
+  { id: 'channels', label: t('Channels') },
   { id: 'routines', label: t('Routines') },
   { id: 'media', label: t('Media') },
   { id: 'computer', label: t('Computer') },
@@ -219,6 +221,177 @@ function Field({ label, value }: { label: string; value: string }) {
     <div className="flex flex-col gap-1">
       <span className="text-xs font-medium text-text-tertiary">{label}</span>
       <p className="text-sm text-text-primary">{value}</p>
+    </div>
+  );
+}
+
+interface ChannelStatus {
+  name: 'telegram' | 'email';
+  configured: boolean;
+  envVarNames: string[];
+  hint?: string;
+}
+
+interface ChannelBinding {
+  id: string;
+  channel: 'telegram' | 'email';
+  chatId: string;
+  agentId: string;
+  createdAt: string;
+}
+
+function ChannelsTab({ agentId }: { agentId: string }) {
+  const [channels, setChannels] = useState<ChannelStatus[]>([]);
+  const [bindings, setBindings] = useState<ChannelBinding[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [chatIds, setChatIds] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    setError(null);
+    (async () => {
+      try {
+        const headers = await getApiHeaders();
+        const [statusRes, bindingsRes] = await Promise.all([
+          fetch(`${getApiBase()}/api/channels`, { headers }),
+          fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/channels`, { headers }),
+        ]);
+        if (!statusRes.ok) throw new Error(`status ${statusRes.status}`);
+        const statusData = (await statusRes.json()) as { channels?: ChannelStatus[] };
+        const bindingsData = bindingsRes.ok
+          ? ((await bindingsRes.json()) as { bindings?: ChannelBinding[] })
+          : { bindings: [] as ChannelBinding[] };
+        if (mounted) {
+          setChannels(statusData.channels ?? []);
+          setBindings(bindingsData.bindings ?? []);
+        }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        if (mounted) setError(message);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [agentId]);
+
+  const bind = async (channel: ChannelStatus['name']) => {
+    const chatId = (chatIds[channel] ?? '').trim();
+    if (!chatId) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/channels`, {
+        method: 'POST',
+        headers: await getApiHeaders(),
+        body: JSON.stringify({ channel, chatId }),
+      });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data = (await res.json()) as { binding?: ChannelBinding };
+      if (data.binding) setBindings((prev) => [...prev, data.binding!]);
+      setChatIds((prev) => ({ ...prev, [channel]: '' }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const unbind = async (bindingId: string) => {
+    setBusy(true);
+    try {
+      const res = await fetch(
+        `${getApiBase()}/api/agents/${encodeURIComponent(agentId)}/channels/${encodeURIComponent(bindingId)}`,
+        { method: 'DELETE', headers: await getApiHeaders() },
+      );
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      setBindings((prev) => prev.filter((b) => b.id !== bindingId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-text-secondary">
+        <Spinner className="size-4" /> {t('Loading')}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {error && (
+        <p className="flex items-center gap-1 text-xs text-function-error">
+          <AlertCircle className="size-3.5" /> {t('Failed to load channels')} {error}
+        </p>
+      )}
+      {(['telegram', 'email'] as const).map((name) => {
+        const status = channels.find((c) => c.name === name);
+        const bound = bindings.filter((b) => b.channel === name);
+        return (
+          <div key={name} className="flex flex-col gap-2 rounded-card border border-border-main bg-bg-main p-3">
+            <div className="flex items-center gap-2">
+              {name === 'telegram' ? <Send className="size-4 text-text-secondary" /> : <Mail className="size-4 text-text-secondary" />}
+              <span className="text-sm font-medium text-text-primary">{t(name === 'telegram' ? 'Telegram' : 'Email')}</span>
+              <span
+                className={[
+                  'ms-auto rounded-control px-2 py-0.5 text-[11px]',
+                  status?.configured ? 'bg-fill-tsp text-text-secondary' : 'bg-fill-tsp text-text-tertiary',
+                ].join(' ')}
+              >
+                {status ? (status.configured ? t('Configured') : t('Not configured')) : t('Not configured')}
+              </span>
+            </div>
+            {status && !status.configured && (
+              <p className="text-[11px] text-text-tertiary">
+                {status.hint || t('Not configured - set {var}', { var: status.envVarNames.join(', ') })}
+              </p>
+            )}
+            {bound.length === 0 ? (
+              <p className="text-xs text-text-tertiary">{t('No chats bound yet.')}</p>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {bound.map((b) => (
+                  <li key={b.id} className="flex items-center gap-2 rounded-control bg-fill-tsp px-2 py-1">
+                    <span className="min-w-0 flex-1 truncate text-xs text-text-primary">{b.chatId}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void unbind(b.id)}
+                      className="h-row-sm w-row-sm px-0"
+                      aria-label={t('Remove binding')}
+                      title={t('Remove binding')}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="flex items-center gap-2">
+              <input
+                value={chatIds[name] ?? ''}
+                onChange={(e) => setChatIds((prev) => ({ ...prev, [name]: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void bind(name);
+                }}
+                placeholder={name === 'telegram' ? t('Chat id') : t('Email address')}
+                className="h-row-sm min-w-0 flex-1 rounded-control border border-border-main bg-bg-menu px-2 text-xs text-text-primary outline-none placeholder:text-text-tertiary focus:border-text-tertiary"
+              />
+              <Button type="button" variant="secondary" size="sm" disabled={busy || !(chatIds[name] ?? '').trim()} onClick={() => void bind(name)}>
+                {t('Bind')}
+              </Button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
