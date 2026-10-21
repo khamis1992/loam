@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { before, after, describe, it } from "node:test";
+import JSZip from "jszip";
 
 interface SheetDoc {
   taskId: string;
@@ -45,6 +46,7 @@ type RoutesApi = (req: http.IncomingMessage, res: http.ServerResponse, p: string
 interface RecordedResponse {
   status: number;
   body: string;
+  bytes: Buffer[];
   onWriteHead: (status: number) => void;
   onEnd: (chunk?: unknown) => void;
 }
@@ -58,7 +60,7 @@ let routes: RoutesApi;
 let taskId = "";
 
 function fakeRes(): { res: unknown; captured: RecordedResponse } {
-  const captured: RecordedResponse = { status: 0, body: "", onWriteHead: () => {}, onEnd: () => {} };
+  const captured: RecordedResponse = { status: 0, body: "", bytes: [], onWriteHead: () => {}, onEnd: () => {} };
   const res = {
     writeHead(status: number) {
       captured.status = status;
@@ -67,6 +69,7 @@ function fakeRes(): { res: unknown; captured: RecordedResponse } {
     },
     end(chunk?: unknown) {
       if (typeof chunk === "string") captured.body += chunk;
+      else if (Buffer.isBuffer(chunk)) captured.bytes.push(chunk);
       captured.onEnd(chunk);
       return res;
     },
@@ -216,6 +219,24 @@ describe("workspace sheet IO", () => {
     assert.equal(doc.sheets.length, 2);
   });
 
+  it("notes charts so the editor can warn instead of silently dropping them", async () => {
+    const abs = path.join(workspaceDir, "chart.xlsx");
+    await io.writeSheetDoc(abs, sampleDoc("chart.xlsx"));
+    const zip = await JSZip.loadAsync(fs.readFileSync(abs));
+    zip.file("xl/charts/chart1.xml", "<chartSpace/>");
+    fs.writeFileSync(abs, await zip.generateAsync({ type: "nodebuffer" }));
+    const doc = await io.readSheetDoc(abs, { taskId, path: "chart.xlsx", name: "chart.xlsx" });
+    assert.ok(doc.notes.some((note) => /chart/i.test(note)));
+    assert.equal(doc.sheets.length, 2);
+  });
+
+  it("routes: GET format=raw serves the original workbook bytes", async () => {
+    const req = fakeReq("GET", `/api/workspace/sheet/file?taskId=${encodeURIComponent(taskId)}&path=put.xlsx&format=raw`);
+    const captured = await callRoutes(req);
+    assert.equal(captured.status, 200);
+    assert.ok(Buffer.concat(captured.bytes).toString("latin1").startsWith("PK"));
+  });
+
   it("routes: rejects missing task, bad extension and bad JSON", async () => {
     const missingTask = fakeReq("GET", "/api/workspace/sheet/file?taskId=task_missing&path=a.xlsx");
     assert.equal((await callRoutes(missingTask)).status, 404);
@@ -228,6 +249,9 @@ describe("workspace sheet IO", () => {
 
     const notFound = fakeReq("GET", `/api/workspace/sheet/file?taskId=${encodeURIComponent(taskId)}&path=absent.xlsx`);
     assert.equal((await callRoutes(notFound)).status, 404);
+
+    const traversal = fakeReq("GET", `/api/workspace/sheet/file?taskId=${encodeURIComponent(taskId)}&path=${encodeURIComponent("../escape.xlsx")}`);
+    assert.equal((await callRoutes(traversal)).status, 400);
   });
 
   it("routes: rejects unknown methods for the endpoint", async () => {

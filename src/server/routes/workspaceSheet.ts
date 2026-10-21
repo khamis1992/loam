@@ -46,9 +46,14 @@ function resolveFile(taskId: string, rel: string, baseWorkspace: string): { abs:
   if (!taskId) throw new SheetIOError("taskId is required", 400);
   if (!/\.xlsx$/i.test(rel)) throw new SheetIOError("the sheet editor edits .xlsx workspace files", 400);
   if (!getTask(taskId)) throw new SheetIOError("task not found", 404);
-  const root = requireTaskWorkspace(taskId, baseWorkspace);
-  const abs = taskPath(root, rel);
-  return { abs, rel, taskId };
+  try {
+    const root = requireTaskWorkspace(taskId, baseWorkspace);
+    return { abs: taskPath(root, rel), rel, taskId };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/path outside task workspace|links are not allowed/.test(message)) throw new SheetIOError(message, 400);
+    throw err;
+  }
 }
 
 function fail(res: http.ServerResponse, err: unknown): void {

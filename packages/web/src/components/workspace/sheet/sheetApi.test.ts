@@ -6,7 +6,7 @@ import {
   sheetDocDigest,
   sheetDimensions,
   type SheetDoc,
-} from './sheetApi';
+} from './sheetModel';
 
 function miniDoc(): SheetDoc {
   return {
