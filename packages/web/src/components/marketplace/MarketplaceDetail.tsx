@@ -59,7 +59,7 @@ export default function MarketplaceDetail({
 
   useEffect(() => {
     if (!entry.id) return;
-    sheetRef.current?.scrollTo({ top: 0 });
+    sheetRef.current?.scrollTo?.({ top: 0 });
   }, [entry.id]);
 
   useEffect(() => () => window.clearTimeout(copyTimer.current), []);
