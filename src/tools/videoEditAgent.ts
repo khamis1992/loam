@@ -208,6 +208,7 @@ function extractRanges(clause: string, durationSec: number | undefined, warnings
       re.lastIndex = pos;
       const m = re.exec(lc);
       if (!m) continue;
+      if (g === 3 && !/(?:to|until|till|through)\s+the\s+end|onwards?|forward|to\s+end|\bend\b/.test(clause.toLowerCase().slice(m.index, m.index + m[0].length))) continue;
       if (!best || m.index < best.index || (m.index === best.index && m[0].length > best.end - best.index)) {
         best = { index: m.index, end: m.index + m[0].length, picks: m.slice(1), glob: g };
       }
