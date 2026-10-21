@@ -5,35 +5,25 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Monitor, Play, Pause, Power, Trash2, Plus, X, AlertCircle, Download } from 'lucide-react';
 import clsx from 'clsx';
 import { t } from '@/i18n/t';
-import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { Dialog } from '@/components/ui/Dialog';
+import { CompanionCreateDialog } from '@/components/computer/CompanionCreateDialog';
+import {
+  actOnCompanionDevice,
+  createCompanionDevice,
+  deleteCompanionDevice,
+  listCompanionDevices,
+  listCompanions,
+  prepareGoldenImage,
+  type CompanionDevice,
+  type CompanionOption,
+  type CompanionProviders,
+  type DeviceAction,
+  type DeviceTemplate,
+} from '@/services/companionsApi';
 
-interface Device {
-  id: string;
-  agentId: string;
-  name: string;
-  environment: 'linux' | 'windows';
-  provider: 'wsl' | 'hyperv' | 'fake';
-  template: string;
-  state: string;
-  lastError?: string;
-}
-
-interface DeviceTemplate {
-  id: string;
-  labelAr: string;
-  description: string;
-  environment: 'linux' | 'windows';
-}
-
-interface AgentOption { id: string; name: string; }
-
-interface Providers {
-  wsl: boolean;
-  hyperv: boolean;
-  fake: boolean;
-  wslDistros?: string[];
-}
+type Device = CompanionDevice;
+type AgentOption = CompanionOption;
+type Providers = CompanionProviders;
 
 function stateBadge(state: string): string {
   if (state === 'running') return 'bg-fill-tsp text-func-success';
@@ -62,19 +52,20 @@ export default function ComputersPage() {
   const [pairError, setPairError] = useState<string | null>(null);
   const [goldenDistro, setGoldenDistro] = useState('');
   const [goldenBusy, setGoldenBusy] = useState(false);
+  const [newCompanionOpen, setNewCompanionOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch(`${getApiBase()}/api/companion-devices`, { headers: await getApiHeaders() });
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const data = (await res.json()) as {
-        devices?: Device[]; templates?: DeviceTemplate[]; goldenReady?: boolean;
-        wsl?: boolean; hyperv?: boolean; fake?: boolean; wslDistros?: string[];
-      };
+      const data = await listCompanionDevices();
       setDevices(data.devices ?? []);
       setTemplates(data.templates ?? []);
       setGoldenReady(Boolean(data.goldenReady));
-      setProviders({ wsl: Boolean(data.wsl), hyperv: Boolean(data.hyperv), fake: Boolean(data.fake), wslDistros: data.wslDistros });
+      setProviders({
+        wsl: Boolean(data.providers?.wsl),
+        hyperv: Boolean(data.providers?.hyperv),
+        fake: Boolean(data.providers?.fake),
+        wslDistros: data.providers?.wslDistros,
+      });
       setError(null);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -86,19 +77,18 @@ export default function ComputersPage() {
     }
   }, []);
 
+  const loadAgents = useCallback(async () => {
+    try {
+      setAgents(await listCompanions());
+    } catch {
+      // agents unavailable: pairing dialog will show "no companions"
+    }
+  }, []);
+
   useEffect(() => {
     void refresh();
-    (async () => {
-      try {
-        const res = await fetch(`${getApiBase()}/api/agents`, { headers: await getApiHeaders() });
-        if (!res.ok) return;
-        const data = (await res.json()) as { agents?: Array<{ id: string; name?: string }> };
-        setAgents((data.agents ?? []).map((a) => ({ id: a.id, name: a.name || a.id })));
-      } catch {
-        // agents unavailable: pairing dialog will show "no companions"
-      }
-    })();
-  }, [refresh]);
+    void loadAgents();
+  }, [refresh, loadAgents]);
 
   const agentName = useMemo(() => {
     const map = new Map<string, string>();
@@ -106,17 +96,10 @@ export default function ComputersPage() {
     return (id: string) => map.get(id) ?? id;
   }, [agents]);
 
-  const act = async (id: string, action: 'start' | 'stop' | 'suspend' | 'resume') => {
+  const act = async (id: string, action: DeviceAction) => {
     setBusyId(id);
     try {
-      const res = await fetch(`${getApiBase()}/api/companion-devices/${encodeURIComponent(id)}/${action}`, {
-        method: 'POST',
-        headers: await getApiHeaders(),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `status ${res.status}`);
-      }
+      await actOnCompanionDevice(id, action);
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -128,14 +111,7 @@ export default function ComputersPage() {
   const removeDevice = async (id: string) => {
     setBusyId(id);
     try {
-      const res = await fetch(`${getApiBase()}/api/companion-devices/${encodeURIComponent(id)}?confirm=true`, {
-        method: 'DELETE',
-        headers: await getApiHeaders(),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `status ${res.status}`);
-      }
+      await deleteCompanionDevice(id);
       setConfirmDelete(null);
       await refresh();
     } catch (e) {
@@ -149,13 +125,7 @@ export default function ComputersPage() {
     setGoldenBusy(true);
     setPairError(null);
     try {
-      const res = await fetch(`${getApiBase()}/api/companion-devices/golden`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...(await getApiHeaders()) },
-        body: JSON.stringify({ fromDistro: goldenDistro }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-      if (!res.ok || !data.ok) throw new Error(data.error ?? `status ${res.status}`);
+      await prepareGoldenImage(goldenDistro);
       await refresh();
     } catch (e) {
       setPairError(e instanceof Error ? e.message : String(e));
@@ -168,15 +138,9 @@ export default function ComputersPage() {
     setPairBusy(true);
     setPairError(null);
     try {
-      const body: Record<string, unknown> = { agentId: pairAgent, template: pairTemplate };
+      const body: { agentId: string; template: string; name?: string } = { agentId: pairAgent, template: pairTemplate };
       if (pairName.trim()) body.name = pairName.trim();
-      const res = await fetch(`${getApiBase()}/api/companion-devices`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...(await getApiHeaders()) },
-        body: JSON.stringify(body),
-      });
-      const data = (await res.json().catch(() => ({}))) as { device?: Device; error?: string };
-      if (!res.ok || !data.device) throw new Error(data.error ?? `status ${res.status}`);
+      await createCompanionDevice(body);
       setPairOpen(false);
       setPairName('');
       await refresh();
@@ -202,8 +166,15 @@ export default function ComputersPage() {
         <h1 className="text-title-lg text-text-primary">{t('Computers')}</h1>
         <button
           type="button"
-          onClick={() => { setPairError(null); setPairOpen(true); }}
+          onClick={() => setNewCompanionOpen(true)}
           className="ms-auto flex items-center gap-1 rounded-control bg-fill-hover px-3 py-1.5 text-sm font-medium text-text-primary"
+        >
+          <Plus className="size-4" /> {t('New companion')}
+        </button>
+        <button
+          type="button"
+          onClick={() => { setPairError(null); setPairOpen(true); }}
+          className="flex items-center gap-1 rounded-control bg-fill-hover px-3 py-1.5 text-sm font-medium text-text-primary"
         >
           <Plus className="size-4" /> {t('New computer')}
         </button>
@@ -326,6 +297,15 @@ export default function ComputersPage() {
                 <option key={a.id} value={a.id}>{a.name}</option>
               ))}
             </select>
+            {agents.length === 0 && (
+              <button
+                type="button"
+                onClick={() => setNewCompanionOpen(true)}
+                className="flex items-center gap-1 self-start rounded-control bg-fill-hover px-2.5 py-1.5 text-xs font-medium text-text-primary"
+              >
+                <Plus className="size-3.5" /> {t('Create companion')}
+              </button>
+            )}
           </label>
           <label className="flex flex-col gap-1 text-xs text-text-secondary">
             {t('Template')}
@@ -366,6 +346,12 @@ export default function ComputersPage() {
           </div>
         </div>
       </Dialog>
+
+      <CompanionCreateDialog
+        open={newCompanionOpen}
+        onClose={() => setNewCompanionOpen(false)}
+        onCreated={() => void loadAgents()}
+      />
     </div>
   );
 }
