@@ -735,6 +735,7 @@
   "Open full screen": "فتح بملء الشاشة",
   "Live preview placeholder": "بديل المعاينة المباشرة",
   "The computer stream will appear here once the agent connects to a computer.": "ستظهر صورة الكمبيوتر هنا عندما يتصل الوكيل بجهاز.",
+<<<<<<< HEAD
   "Export your data": "تصدير بياناتك",
   "Export all data": "تصدير كل البيانات",
   "Download a full copy of your tasks, projects, agents and memory.": "تنزيل نسخة كاملة من مهامك ومشاريعك والوكلاء والذاكرة.",
@@ -752,4 +753,27 @@
   "Help improve Loam": "ساعد في تحسين Loam",
   "Allow Loam to use my conversations to improve its models.": "السماح لـ Loam باستخدام محادثاتي لتحسين نماذجه.",
   "Could not save your preference": "تعذّر حفظ تفضيلك"
+=======
+  "Landing page": "صفحة هبوط",
+  "Portfolio site": "موقع أعمال",
+  "Budget app": "تطبيق ميزانية",
+  "Habit tracker": "متتبع العادات",
+  "Kanban board": "لوحة كانبان",
+  "Pomodoro timer": "مؤقت بومودورو",
+  "Investor pitch": "عرض للمستثمرين",
+  "Quarterly review": "مراجعة ربع سنوية",
+  "Course lessons": "دروس دورة تعليمية",
+  "Technical spec": "مواصفات تقنية",
+  "User guide": "دليل المستخدم",
+  "Project proposal": "مقترح مشروع",
+  "Meeting notes": "ملاحظات الاجتماع",
+  "Logo concepts": "أفكار الشعار",
+  "Social media kit": "حزمة وسائل التواصل",
+  "Infographic": "إنفوجرافيك",
+  "Anime short": "مقطع أنيمي قصير",
+  "Product demo": "عرض توضيحي للمنتج",
+  "Explainer animation": "رسوم متحركة توضيحية",
+  "Expense tracker": "متتبع المصروفات",
+  "Market scan": "مسح السوق"
+>>>>>>> mf/templategallery
 }

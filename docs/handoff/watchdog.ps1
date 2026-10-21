@@ -7,7 +7,7 @@ $logf="C:\Users\khamis\Desktop\mf-wt\watchdog.log"
 $statef="C:\Users\khamis\Desktop\mf-wt\wd-state.json"
 $unimpl="C:\Users\khamis\Desktop\manus-local\docs\handoff\UNIMPLEMENTED_OPTIONS.md"
 # o3 removed (merged). Worktree-scoped keys only.
-$keys=@("uo5","uo13","uo14","uo21","mk1","mk2","mk3","mk4","ft1","ft2","ft3","ft4","ft5","ft6","ft7","ft8","opa","opd","ope","opi","r1","auth")
+$keys=@('parityrows','parityavatar',"shortcuts","msgcopyretry","promobanner","templategallery","belldevices","sharelink","datacontrols","projectscrud","resolve")
 # Khamis order: Ollama -> OpenCode Go (no DeepSeek at peak) -> freellmapi -> ornith (last resort, local).
 $allModels=@(
  @{P="ollama";M="glm-5.3:cloud"},
@@ -93,3 +93,7 @@ for($c=1;$c -le $maxCycles;$c++){
  Start-Sleep -Seconds 240
 }
 Add-Content $logf "`n=== watchdog finished after $maxCycles cycles ==="
+
+
+
+

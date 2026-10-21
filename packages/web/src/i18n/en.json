@@ -744,6 +744,7 @@
   "Stop recording": "Stop recording",
   "Stop voice mode": "Stop voice mode",
   "Template gallery": "Template gallery",
+<<<<<<< HEAD
   "Export your data": "Export your data",
   "Export all data": "Export all data",
   "Download a full copy of your tasks, projects, agents and memory.": "Download a full copy of your tasks, projects, agents and memory.",
@@ -761,4 +762,27 @@
   "Help improve Loam": "Help improve Loam",
   "Allow Loam to use my conversations to improve its models.": "Allow Loam to use my conversations to improve its models.",
   "Could not save your preference": "Could not save your preference"
+=======
+  "Landing page": "Landing page",
+  "Portfolio site": "Portfolio site",
+  "Budget app": "Budget app",
+  "Habit tracker": "Habit tracker",
+  "Kanban board": "Kanban board",
+  "Pomodoro timer": "Pomodoro timer",
+  "Investor pitch": "Investor pitch",
+  "Quarterly review": "Quarterly review",
+  "Course lessons": "Course lessons",
+  "Technical spec": "Technical spec",
+  "User guide": "User guide",
+  "Project proposal": "Project proposal",
+  "Meeting notes": "Meeting notes",
+  "Logo concepts": "Logo concepts",
+  "Social media kit": "Social media kit",
+  "Infographic": "Infographic",
+  "Anime short": "Anime short",
+  "Product demo": "Product demo",
+  "Explainer animation": "Explainer animation",
+  "Expense tracker": "Expense tracker",
+  "Market scan": "Market scan"
+>>>>>>> mf/templategallery
 }

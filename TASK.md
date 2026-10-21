@@ -1,4 +1,0 @@
-﻿Loam build task. Work ONLY in this worktree. Create NEW files where possible and make MINIMAL edits to shared files to reduce merge conflicts. Finish with `npx tsc --noEmit` = 0 and `npm run build:server` exit 0. Do NOT touch protected files (src/setup/runtime.ts, src/server/companionGateway.ts, src/tools/companionTeamTools.ts, src/tools/serviceBridgeTools.ts, src/tools/serviceGapTools.ts, scripts/stt_server.py, docs/companions-frontier-progress.md, docs/evidence/fair-comparison.json). NEVER git reset --hard. Commit as you go.
-
-TASK:
-Implement UNIMPLEMENTED_OPTIONS #1 Settings > Shortcuts. Create a new ShortcutsPane component (packages/web/src/components/settings/ShortcutsPane.tsx) showing a static, grouped list of keyboard shortcuts (include Ctrl+K search which works today) read from a small keybinding registry module you add. Register the pane in SettingsDialog.tsx replacing its "Coming soon" entry. i18n en+ar keys. No backend needed.
