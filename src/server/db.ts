@@ -160,6 +160,7 @@ export function setScheduleNextRunAt(id: string, at: string): boolean {
   return transaction(() => { const s = get<Schedule>("schedules", id); if (!s) return false; s.nextRunAt = at; put("schedules", s); return true; });
 }
 export function listSchedules(): Schedule[] { return all<Schedule>("schedules"); }
+export function getSchedule(id: string): Schedule | undefined { return get<Schedule>("schedules", id); }
 /** MF2: schedules owned by one agent, soonest next run first. */
 export function listSchedulesByAgent(agentId: string): Schedule[] { return listSchedules().filter((s) => s.agentId === agentId).sort((a, b) => (a.nextRunAt ?? "").localeCompare(b.nextRunAt ?? "")); }
 export function deleteSchedule(id: string): boolean { return remove("schedules",id); }
