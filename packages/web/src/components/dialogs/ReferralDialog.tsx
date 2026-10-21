@@ -5,7 +5,7 @@ import { Check, Copy } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from './Dialog';
-import { createReferral, redeemReferralCode, type ReferralInfo, type ReferralRedeem } from '@/services/creditsApi';
+import { fetchCredits, redeemReferralCode, type ReferralInfo, type ReferralRedeem } from '@/services/creditsApi';
 
 export function ReferralDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [referral, setReferral] = useState<ReferralInfo | null>(null);
@@ -18,8 +18,8 @@ export function ReferralDialog({ open, onClose }: { open: boolean; onClose: () =
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    createReferral()
-      .then((info) => { if (!cancelled) setReferral(info); })
+    fetchCredits()
+      .then((data) => { if (!cancelled) setReferral(data.referral); })
       .catch((err: unknown) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); });
     return () => { cancelled = true; };
   }, [open]);
