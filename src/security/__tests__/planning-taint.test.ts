@@ -3,12 +3,14 @@ import { describe, it } from "node:test";
 import {
   analyzeTaint,
   buildPlan,
+  flowScanTaintHints,
   makeGraph,
   planTaintHints,
   taintPlanSuggestions,
   type PlanEvidence,
   type TaintGraphSpec,
 } from "../planning.js";
+import type { FlowScan } from "../source-flow.js";
 
 // Unit coverage for the source-to-sink taint model wired into the planner.
 // Each case builds a small structured call/data graph and asserts the tainted
@@ -133,5 +135,53 @@ describe("source-to-sink taint planning", () => {
     assert.equal(flow.hops, 1);
     const hints = planTaintHints(graph);
     assert.equal(hints[0]!.confidence, "derived");
+  });
+
+  it("derives taint hints from the scanner's FlowScan and gates on evidence", () => {
+    const flowScan: FlowScan = {
+      filesScanned: 3,
+      importsResolved: 2,
+      sanitized: 1,
+      guardCuts: 2,
+      coverage: { bounded: false, parseErrors: 0, unsupported: 0, depthLimit: 0 },
+      flows: [
+        {
+          source: { file: "routes/users.js", line: 12, what: "req.query.id" },
+          hops: [{ file: "routes/users.js", line: 12, what: "req.query.id (tainted)" }, { file: "users.js", line: 20, what: "lookupUser(arg 0) ← routes/users.js:12 (tainted)" }],
+          sink: { file: "db.js", line: 8, what: "db.query(sql)", kind: "sql_like" },
+        },
+        {
+          source: { file: "routes/shell.js", line: 4, what: "req.body.cmd" },
+          hops: [],
+          sink: { file: "shell.js", line: 5, what: "child.exec(cmd)", kind: "command_like" },
+        },
+      ],
+    };
+
+    const hints = flowScanTaintHints(flowScan);
+    assert.equal(hints.length, 2);
+    assert.equal(hints[0]!.engine, "command", "exec sink outranks the sql sink");
+    assert.equal(hints[0]!.sourceKind, "body");
+    assert.equal(hints[1]!.engine, "injection");
+    assert.equal(hints[1]!.sinkKind, "query");
+    assert.ok(hints[1]!.rationale.includes("routes/users.js:12"));
+    assert.equal(hints[0]!.execution, "none");
+
+    // maxHints/maxFlows bounds are honored.
+    assert.equal(flowScanTaintHints(flowScan, 1).length, 1);
+    assert.equal(flowScanTaintHints(flowScan, 20, 1).length, 1);
+
+    // buildPlan derives hints from flowScan evidence, gated on presence.
+    const plan = buildPlan({ flowScan } as PlanEvidence);
+    assert.equal(plan.hints.length, 2);
+    assert.ok(plan.suggestions.some(s => s.engine === "command"));
+    assert.ok(plan.surfaces.some(s => s.id === "source" && s.present));
+
+    // A run without flow evidence gets no taint surface.
+    const empty = buildPlan({} as PlanEvidence);
+    assert.equal(empty.hints.length, 0);
+    const emptyScan = { ...flowScan, flows: [] };
+    assert.equal(flowScanTaintHints(emptyScan).length, 0);
+    assert.equal(buildPlan({ flowScan: emptyScan } as PlanEvidence).hints.length, 0);
   });
 });
