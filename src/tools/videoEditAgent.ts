@@ -175,38 +175,94 @@ export function parseTimeToken(raw: string): number | null {
 
 interface RangeResult { fromSec: number; toSec: number }
 
-/** Extract a [from,to] range from a clause; undefined points fall back to
- *  open-ended (from X to end / 0 to X) or null when no range is present. */
-function extractRange(clause: string, durationSec: number | undefined, warnings: string[]): RangeResult | null {
+/** Stricter, more readable sibling of `parseTimeToken`'s grammar: one captured
+ *  timestamp token (clock time, number, or number+unit). Self-contained
+ *  capture group so it can be interpolated into larger patterns. */
+const TIME_TOKEN_RE =
+  String.raw`(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?|\d+(?:\.\d+)?(?:\s*(?:h(?:ours?|rs?)?|m(?:in(?:ute)?s?)?|s(?:ec(?:ond)?s?)?))?)`;
+/** Seconds-only variant for "from 10s" style timestamps. */
+const TIME_TOKEN_SECOND_ONLY_RE =
+  String.raw`(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?|\d+(?:\.\d+)?(?:\s*(?:s(?:ec(?:ond)?s?)?)?))`;
+
+/** Extract every [from,to] range from a clause (leftmost-match iteration over
+ *  all range forms); undefined points fall back to open-ended (from X to end /
+ *  0 to X); a clause with no range yields []. */
+function extractRanges(clause: string, durationSec: number | undefined, warnings: string[]): RangeResult[] {
   const lc = clause.toLowerCase();
-  const timeRe = String.raw`(\d{1,2}:\d{2}(?::\d{2})?|\d+(?:\.\d+)?(?:\s*(?:h(?:ours?|rs?)?|m(?:in(?:ute)?s?)?|s(?:ec(?:ond)?s?)?))?`;
   const dash = "(?:-|–|—|~|to|until|till|through)";
-  let m = new RegExp(String.raw`(?:from|between)\s+${timeRe}\s+(?:${dash}|and)\s+${timeRe}(?![\w:])`).exec(lc);
-  if (m) return rangeFrom(parseTimeToken(m[1]!), parseTimeToken(m[2]!), warnings);
-  m = new RegExp(String.raw`${timeRe}\s+(?:${dash})\s+${timeRe}(?![\w:])`).exec(lc);
-  if (m) return rangeFrom(parseTimeToken(m[1]!), parseTimeToken(m[2]!), warnings);
-  m = new RegExp(String.raw`${timeRe}\s*[-–—~]\s*${timeRe}(?![\w:])`).exec(lc);
-  if (m) return rangeFrom(parseTimeToken(m[1]!), parseTimeToken(m[2]!), warnings);
-  m = /(?:from|starting(?:\s+at)?|after)\s+([\d:.,\s\w]+?)(?:\s+(?:to|until|till|through)\s+the\s+end|\s+(?:onwards?|forward)|\s+to\s+end|\bend(?:ing)?\b|$)/.exec(lc);
-  if (m && /(?:to|until|till|through)\s+the\s+end|onwards?|forward|to\s+end|\bend(?:ing)?\b/.test(m[0]!)) {
-    const from = parseTimeToken(m[1]!.trim());
-    if (from !== null && durationSec !== undefined) return { fromSec: clamp(from, durationSec, warnings), toSec: durationSec };
-    if (from !== null) { warnings.push(`"${m[0].trim()}" needs a known video duration; skipped`); return null; }
+  const dashInner = "-|–|—|~";
+  const patterns = [
+    new RegExp(String.raw`(?:from|between)\s+${TIME_TOKEN_RE}\s+(?:${dash}|and)\s+${TIME_TOKEN_RE}(?![\w:])`, "g"),
+    new RegExp(String.raw`${TIME_TOKEN_RE}\s+(?:${dash})\s+${TIME_TOKEN_RE}(?![\w:])`, "g"),
+    new RegExp(String.raw`${TIME_TOKEN_RE}\s*[${dashInner}]\s*${TIME_TOKEN_RE}(?![\w:])`, "g"),
+    /(?:from|starting(?:\s+at)?|after)\s+([\d:.,\s\w]+?)(?:\s+(?:to|until|till|through)\s+the\s+end|\s+(?:onwards?|forward)|\s+to\s+end|\bend(?:ing)?\b|$)/g,
+    new RegExp(String.raw`\b(?:first|opening)\s+${TIME_TOKEN_RE}(?![\w:])`, "g"),
+    new RegExp(String.raw`\b(?:last|final|closing|ending)\s+${TIME_TOKEN_RE}(?![\w:])`, "g"),
+  ];
+  const results: RangeResult[] = [];
+  let pos = 0;
+  for (;;) {
+    let best: { index: number; end: number; picks: string[]; glob: number } | null = null;
+    for (let g = 0; g < patterns.length; g++) {
+      const re = patterns[g]!;
+      re.lastIndex = pos;
+      const m = re.exec(lc);
+      if (!m) continue;
+      if (!best || m.index < best.index || (m.index === best.index && m[0].length > best.end - best.index)) {
+        best = { index: m.index, end: m.index + m[0].length, picks: m.slice(1), glob: g };
+      }
+    }
+    if (!best) break;
+    if (best.glob === 3) {
+      // "from X to the end": only a real range when the open-ended wording is present.
+      const text = lc.slice(best.index, best.end);
+      if (/(?:to|until|till|through)\s+the\s+end|onwards?|forward|to\s+end|\bend\b/.test(text)) {
+        const from = parseTimeToken(String(best.picks[0]).trim());
+        if (from !== null && durationSec !== undefined) {
+          results.push({ fromSec: clamp(from, durationSec, warnings), toSec: durationSec });
+        } else if (from !== null) {
+          warnings.push(`"${text.trim()}" needs a known video duration; skipped`);
+        }
+      }
+      // advance word by word so stalling "from <noise>" clauses cannot loop forever
+      const nextWord = lc.indexOf(" ", best.end);
+      if (nextWord === -1) break;
+      pos = nextWord + 1;
+      continue;
+    }
+    if (best.glob === 4) {
+      if (durationSec !== undefined) {
+        const len = parseTimeToken(String(best.picks[0]));
+        if (len !== null) { results.push({ fromSec: 0, toSec: clamp(len, durationSec, warnings) }); pos = best.end; continue; }
+      } else if (/\bfirst\s+\d/.test(lc)) {
+        warnings.push(`"${clause.trim()}" needs a known video duration; skipped`);
+      }
+      pos = best.end;
+      continue;
+    }
+    if (best.glob === 5) {
+      if (durationSec !== undefined) {
+        const len = parseTimeToken(String(best.picks[0]));
+        if (len !== null && durationSec !== undefined) {
+          results.push({ fromSec: clamp(durationSec - len, durationSec, warnings), toSec: durationSec });
+          pos = best.end;
+          continue;
+        }
+      }
+      if (durationSec === undefined && /\blast\s+\d/.test(lc)) {
+        warnings.push(`"${clause.trim()}" needs a known video duration; skipped`);
+      }
+      pos = best.end;
+      continue;
+    }
+    const r = rangeFrom(parseTimeToken(String(best.picks[0])), parseTimeToken(String(best.picks[1])), warnings);
+    if (r) results.push(r);
+    pos = best.end;
   }
-  m = new RegExp(String.raw`\b(?:first|opening)\s+${timeRe}(?![\w:])`).exec(lc);
-  if (m && durationSec !== undefined) {
-    const len = parseTimeToken(m[1]!);
-    if (len !== null) return { fromSec: 0, toSec: clamp(len, durationSec, warnings) };
-  }
-  m = new RegExp(String.raw`\b(?:last|final|closing|ending)\s+${timeRe}(?![\w:])`).exec(lc);
-  if (m && durationSec !== undefined) {
-    const len = parseTimeToken(m[1]!);
-    if (len !== null) return { fromSec: clamp(durationSec - len, durationSec, warnings), toSec: durationSec };
-  }
-  if (/\bfirst\s+\d|\blast\s+\d/.test(lc) && durationSec === undefined) {
+  if (/\bfirst\s+\d|\blast\s+\d/.test(lc) && durationSec === undefined && results.length === 0 && !warnings.some((w) => w.includes("needs a known video duration"))) {
     warnings.push(`"${clause.trim()}" needs a known video duration; skipped`);
   }
-  return null;
+  return results;
 }
 
 function rangeFrom(from: number | null, to: number | null, warnings: string[]): RangeResult | null {
@@ -288,18 +344,17 @@ function extractPosition(clause: string): "top" | "center" | "bottom" | undefine
 }
 
 function extractDurationSec(clause: string): number | null {
-  const timeRe = String.raw`(\d{1,2}:\d{2}(?::\d{2})?|\d+(?:\.\d+)?(?:\s*(?:h(?:ours?|rs?)?|m(?:in(?:ute)?s?)?|s(?:ec(?:ond)?s?)?))?`;
-  const m = new RegExp(String.raw`\bfor\s+${timeRe}(?![\w:])`).exec(clause.toLowerCase());
+  const m = new RegExp(String.raw`\bfor\s+${TIME_TOKEN_RE}(?![\w:])`).exec(clause.toLowerCase());
   return m ? parseTimeToken(m[1]!) : null;
 }
 
 function extractAtSec(clause: string, durationSec: number | undefined, warnings: string[]): number | null {
-  const m = /\bat\s+(\d{1,2}:\d{2}(?::\d{2})?|\d+(?:\.\d+)?(?:\s*(?:h(?:ours?|rs?)?|m(?:in(?:ute)?s?)?|s(?:ec(?:ond)?s?)?))?)/i.exec(clause);
+  const m = new RegExp(String.raw`\bat\s+${TIME_TOKEN_RE}`, "i").exec(clause);
   if (m) {
     const t = parseTimeToken(m[1]!);
     if (t !== null) return durationSec === undefined ? t : clamp(t, durationSec, warnings);
   }
-  const from = /\bfrom\s+(\d{1,2}:\d{2}(?::\d{2})?|\d+(?:\.\d+)?(?:\s*(?:s(?:ec(?:ond)?s?)?)?))\b/i.exec(clause);
+  const from = new RegExp(String.raw`\bfrom\s+${TIME_TOKEN_SECOND_ONLY_RE}\b`, "i").exec(clause);
   if (from) {
     const t = parseTimeToken(from[1]!);
     if (t !== null) return durationSec === undefined ? t : clamp(t, durationSec, warnings);
@@ -374,14 +429,16 @@ export function compileEdl(input: CompileInput): VideoEdl {
       continue;
     }
 
-    // trim and delete consume a range.
-    const range = extractRange(clause, durationSec, warnings);
-    if (!range) { warnings.push(`${verb} needs a range ("from X to Y", "X-Y", "first N seconds"): "${clause}"`); continue; }
-    const fromSec = durationSec === undefined ? range.fromSec : clamp(range.fromSec, durationSec, warnings);
-    const toSec = durationSec === undefined ? range.toSec : clamp(range.toSec, durationSec, warnings);
-    if (toSec - fromSec <= 1e-9) { warnings.push(`${verb} range ${fromSec}-${toSec}s is empty: "${clause}"`); continue; }
-    if (verb === "trim") ops.push({ id: "", op: "trim", fromSec, toSec });
-    else ops.push({ id: "", op: "delete", fromSec, toSec });
+    // trim and delete consume one or more ranges.
+    const ranges = extractRanges(clause, durationSec, warnings);
+    if (ranges.length === 0) { warnings.push(`${verb} needs a range ("from X to Y", "X-Y", "first N seconds"): "${clause}"`); continue; }
+    for (const range of ranges) {
+      const fromSec = durationSec === undefined ? range.fromSec : clamp(range.fromSec, durationSec, warnings);
+      const toSec = durationSec === undefined ? range.toSec : clamp(range.toSec, durationSec, warnings);
+      if (toSec - fromSec <= 1e-9) { warnings.push(`${verb} range ${fromSec}-${toSec}s is empty: "${clause}"`); continue; }
+      if (verb === "trim") ops.push({ id: "", op: "trim", fromSec, toSec });
+      else ops.push({ id: "", op: "delete", fromSec, toSec });
+    }
   }
 
   ops.forEach((op, i) => { op.id = `op${i + 1}`; });
