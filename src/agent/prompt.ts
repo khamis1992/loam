@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Config } from "../config.js";
 import { APP_CONTRACT_INSTRUCTIONS } from "./appVerification.js";
 import { BUILD_PHASE_PROMPT } from "../modes/buildPhases.js";
+import { personalizationBlock } from "../server/personalization.js";
 
 export interface Skill {
   name: string;
@@ -80,6 +81,9 @@ export function buildSystemPrompt(
     for (const memory of memories) lines.push(memory.text);
   }
   if (extraContext?.trim()) lines.push(extraContext.trim());
+  // User custom instructions ("about me" / "how to respond") apply to every run.
+  const personal = personalizationBlock();
+  if (personal) lines.push(personal);
   if (toolNames.includes("skill_view") && skills.length > 0) {
     lines.push("Available skills:");
     for (const skill of skills) lines.push(`- ${skill.name}: ${skill.description}`);
