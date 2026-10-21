@@ -20,7 +20,6 @@ interface ToolbarButtonSpec {
 
 export default function DocEditor({ file, live, onSave, onChatEdit }: WorkspaceEditorProps) {  const surfaceRef = useRef<HTMLDivElement>(null);
   const markerRef = useRef<string>('');
-  const sessionRef = useRef<string>('');
   const mtimeRef = useRef<number>(0);
 
   const [loading, setLoading] = useState(true);
@@ -34,8 +33,6 @@ export default function DocEditor({ file, live, onSave, onChatEdit }: WorkspaceE
   const applyContent = useCallback((html: string) => {
     const { marker, fragment } = splitMarker(html);
     markerRef.current = marker;
-    const session = /doc-session\s+([a-f0-9-]{36})/.exec(marker)?.[1] ?? '';
-    sessionRef.current = session;
     if (surfaceRef.current) surfaceRef.current.innerHTML = fragment;
     setDirty(false);
   }, []);
