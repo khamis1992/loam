@@ -3,6 +3,7 @@ import type { ChatEvent, ToolUsedEvent, CascadeTaskClockEvent, AttachmentEvent, 
 import { t, PRODUCT } from '@/i18n/t';
 import { Markdown } from './Markdown';
 import { UserBubble } from './ChatBubble';
+import { CopyMessageButton } from './CopyMessageButton';
 import { ToolUsedRow } from './ToolUsedRow';
 import { StatusUpdateRow } from './StatusUpdateRow';
 import { PlanStepRow, PlanUpdateRow } from './PlanStep';
@@ -24,8 +25,8 @@ const Row = memo(function Row({ e, sessionId, socket }: { e: RenderableEvent; se
   switch (e.type) {
     case 'chat':
       return e.sender === 'user'
-        ? <UserBubble event={e} />
-        : <Markdown className="text-base text-text-primary">{e.content}</Markdown>;
+        ? <div className="group relative"><CopyMessageButton text={e.content} align="end" /><UserBubble event={e} /></div>
+        : <div className="group relative"><CopyMessageButton text={e.content} /><Markdown className="text-base text-text-primary">{e.content}</Markdown></div>;
     case 'newPlanStep':
       return <PlanStepRow e={e} />;
     case 'planUpdate':
