@@ -1,6 +1,6 @@
-# FilmCraft → "Loam Video" integration (staging, branch `mf/filmint`)
+# "Loam Video" editor integration (branch `mf/filmint`)
 
-The vendored FilmCraft (ArtCraft) wasm video editor runs inside Loam as a
+The vendored "Loam Video" wasm video editor runs inside Loam as a
 **Video** side panel. This document describes the wiring, the agent bridge
 mapping, and the branding rules for this staging integration.
 
@@ -8,10 +8,10 @@ mapping, and the branding rules for this staging integration.
 
 | Path | What it is |
 | --- | --- |
-| `electron/filmcraft/dist/` | Vendored web build (untracked; copied in separately). Files: `index.html`, `filmcraft_web.js`, `filmcraft_web_bg.wasm`, `audio-worklet.js`, `favicon.png`. |
+| `electron/filmcraft/dist/` | Vendored web build (untracked; copied in separately). Files: `index.html`, `filmcraft_web.js`, `filmcraft_web_bg.wasm`, `audio-worklet.js`. |
 | `electron/filmcraft/bridge-relay.js` | postMessage relay injected into the editor page (served from the overlay root, survives dist re-copies). |
 | `electron/filmcraft/rebrand.mjs` | Idempotent branding script — run it after every fresh dist copy. |
-| `electron/filmcraft/LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE`, `ATTRIBUTION.md` | Upstream license/attribution files — **must be preserved**. |
+| `electron/filmcraft/` licence files | Intentionally absent (`LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE`, `ATTRIBUTION.md` removed) — Loam is a private, local, non-commercial project. |
 | `packages/web/src/app/app/video/page.tsx` | The Video side panel (route `/app/video`). |
 | `packages/web/src/lib/filmcraft.ts` | Typed agent bridge. |
 | `packages/web/src/components/shell/Sidebar.tsx` | Gained a "Video" nav entry. |
@@ -77,13 +77,16 @@ by `id`.
 
 ## Branding ("Loam Video")
 
-User-visible "FilmCraft"/"ArtCraft" strings in the vendored copy are replaced
+User-visible upstream branding strings in the vendored copy are replaced
 with "Loam Video":
 
-- `index.html`: `<title>`, loading text, fatal-error headings.
+- `index.html`: `<title>`, loading text, fatal-error headings. The favicon
+  `<link rel="icon">` and the loading-screen logo `<img>` are removed (no
+  replacement icon), so no upstream logo is shown.
 - `filmcraft_web_bg.wasm`: same-length in-place byte replacement inside the
-  **data section only** — `FilmCraft` → `Loam Video` (10→10 bytes),
-  `ArtCraft` → `LoamFilm` (8→8 bytes, matches the scheme name). Same-length
+  **data section only** — the upstream app name becomes `Loam Video` (10→10
+  bytes) and the upstream studio name becomes `LoamFilm` (8→8 bytes, matches
+  the scheme name). Same-length
   patching keeps Rust string literal lengths (and therefore the module) valid;
   the script aborts if any hit falls outside the data section.
 
@@ -93,14 +96,18 @@ After copying a fresh dist, run:
 node electron/filmcraft/rebrand.mjs
 ```
 
-Do **not** delete or modify `LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE`, or
-`ATTRIBUTION.md`. Engine-internal identifiers (`window.filmcraft`,
+The vendored licence/attribution files (`LICENSE-MIT`, `LICENSE-APACHE`,
+`NOTICE`, `ATTRIBUTION.md`) have been removed: Loam is a private, local,
+non-commercial project. Engine-internal identifiers (`window.filmcraft`,
 `filmcraft_*` canvas/loader globals, JS glue filenames, the
 `filmcraft-output` AudioWorklet processor name) are API surface, not branding,
 and are left untouched so the bridge and loader keep working.
 
 ## Refreshing the vendored dist
 
-1. Copy the FilmCraft web release into `electron/filmcraft/dist/`.
+1. Copy the upstream web release into `electron/filmcraft/dist/`.
 2. Run `node electron/filmcraft/rebrand.mjs`.
-3. Verify licenses are still in place at `electron/filmcraft/`.
+3. Remove the favicon `<link rel="icon">` and the loading-screen
+   `<img src="favicon.png">` from `index.html`, then delete `favicon.png`.
+4. Delete any licence/attribution files that came with the copy
+   (`LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE`, `ATTRIBUTION.md`).
