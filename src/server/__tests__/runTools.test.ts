@@ -36,6 +36,7 @@ let ALWAYS_ON_TOOLS: readonly string[];
 let createScratchpadTools: () => Tool[];
 let createInstructionHistoryTools: () => Tool[];
 let createAgentSpawnTools: () => Tool[];
+let createDeepResearchTools: () => Tool[];
 
 function dummy(name: string): Tool {
   return {
@@ -80,6 +81,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     const scratchpadToolsMod = await import("../../tools/scratchpadTools.js");
     const instructionToolsMod = await import("../../tools/instructionTools.js");
     const agentSpawnToolsMod = await import("../../tools/agentSpawnTools.js");
+    const deepResearchToolsMod = await import("../../tools/deepResearch.js");
     const gatewayMod = await import("../companionGateway.js");
     const catalogMod = await import("../../modes/catalog.js");
     const runToolsMod = await import("../runTools.js");
@@ -89,6 +91,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     createScratchpadTools = scratchpadToolsMod.createScratchpadTools;
     createInstructionHistoryTools = instructionToolsMod.createInstructionHistoryTools;
     createAgentSpawnTools = agentSpawnToolsMod.createAgentSpawnTools;
+    createDeepResearchTools = deepResearchToolsMod.createDeepResearchTools;
     const { ToolRegistry: Registry } = registryMod;
     registry = new Registry();
     // Register a few real build-mode staples plus the real scratchpad tools,
@@ -97,6 +100,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll(createScratchpadTools());
     registry.registerAll(createInstructionHistoryTools());
     registry.registerAll(createAgentSpawnTools());
+    registry.registerAll(createDeepResearchTools());
   });
 
   after(() => {

@@ -19,6 +19,7 @@ import { setDelegationRunner } from "./server/companionTeam.js";
 import { createApproval, waitForDecision } from "./server/approvals.js";
 import type { Tool } from "./tools/registry.js";
 import { createScratchpadTools } from "./tools/scratchpadTools.js";
+import { createDeepResearchTools } from "./tools/deepResearch.js";
 import { createInstructionHistoryTools } from "./tools/instructionTools.js";
 import { createAgentSpawnTools } from "./tools/agentSpawnTools.js";
 import { createBrowserOperatorTools } from "./tools/browserOperator.js";
@@ -95,6 +96,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createInstructionHistoryTools());
   rt.registry.registerAll(createAgentSpawnTools());
   rt.registry.registerAll(createBrowserOperatorTools());
+  rt.registry.registerAll(createDeepResearchTools());
   const { ollama, registry, memory, mcp } = rt;
 
   const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal; lease?: RunLease }): Promise<{ taskId: string; text: string }> => {
