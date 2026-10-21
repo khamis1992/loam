@@ -38,6 +38,7 @@ let createInstructionHistoryTools: () => Tool[];
 let createAgentSpawnTools: () => Tool[];
 let createDeepResearchTools: () => Tool[];
 let createBoardTools: () => Tool[];
+let createGroupTools: () => Tool[];
 
 function dummy(name: string): Tool {
   return {
@@ -95,6 +96,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     createDeepResearchTools = deepResearchToolsMod.createDeepResearchTools;
     const boardToolsMod = await import("../../tools/boardTools.js");
     createBoardTools = boardToolsMod.createBoardTools;
+    createGroupTools = (await import("../../tools/groupTools.js")).createGroupTools;
     const { ToolRegistry: Registry } = registryMod;
     registry = new Registry();
     // Register a few real build-mode staples plus the real scratchpad tools,
@@ -105,6 +107,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll(createAgentSpawnTools());
     registry.registerAll(createDeepResearchTools());
     registry.registerAll(createBoardTools());
+    registry.registerAll(createGroupTools());
   });
 
   after(() => {
@@ -175,6 +178,13 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     const { tools } = buildRunToolSet("build", "loam", { disabledTools: ["delegate_to_child"] });
     assert.ok(!tools.names().includes("delegate_to_child"), "agent tool denial must win over the always-on grant");
     assert.ok(tools.names().includes("spawn_agent"), "non-denied child-agent tools must remain");
+  });
+
+  it("group handoff_to_agent reaches the model's effective tool list", () => {
+    const { tools } = buildRunToolSet();
+    assert.ok(tools.names().includes("handoff_to_agent"), "always-on group tool must be registered");
+    const modelToolNames = tools.toOllama().map((t) => t.function.name);
+    assert.ok(modelToolNames.includes("handoff_to_agent"), "the model's function list must include handoff_to_agent");
   });
 
   it("scratchpad_add is available in every Loam mode and work mode", () => {

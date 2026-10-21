@@ -9,6 +9,9 @@ import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { AgentSidebarList } from '@/components/agents/AgentSidebarList';
 import { AgentThreadView, resolveAgentThread } from '@/components/agents/AgentThreadView';
 import { AgentInfoPane } from '@/components/agents/AgentInfoPane';
+import { GroupThreadView } from '@/components/agents/GroupThreadView';
+import { GroupCreateDialog } from '@/components/agents/GroupCreateDialog';
+import type { GroupChat } from '@/components/agents/groupTypes';
 import { NewAgentDialog } from '@/components/agents/NewAgentDialog';
 import { AgentStartDialog } from '@/components/agents/AgentStartDialog';
 import { AgentEditDrawer } from '@/components/agents/AgentEditDrawer';
@@ -43,11 +46,18 @@ export default function AgentsPageClient() {
   const [editAgent, setEditAgent] = useState<Agent | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const [unreadById, setUnreadById] = useState<Record<string, { count: number; lastAt?: string }>>({});
+  const [groups, setGroups] = useState<GroupChat[]>([]);
+  const [newGroupOpen, setNewGroupOpen] = useState(false);
 
   const selectedId = searchParams.get('agent') ?? undefined;
+  const selectedGroupId = searchParams.get('group') ?? undefined;
   const selectedAgent = useMemo(
     () => agents.find((a) => a.id === selectedId),
     [agents, selectedId],
+  );
+  const selectedGroup = useMemo(
+    () => groups.find((g) => g.id === selectedGroupId),
+    [groups, selectedGroupId],
   );
   const [infoThreadUid, setInfoThreadUid] = useState<string | null>(null);
 
@@ -81,8 +91,24 @@ export default function AgentsPageClient() {
     }
   };
 
+  const loadGroups = async () => {
+    try {
+      const res = await fetch(`${getApiBase()}/api/groups`, {
+        headers: await getApiHeaders(),
+      });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data = (await res.json()) as { groups?: GroupChat[] };
+      setGroups(data.groups ?? []);
+    } catch (e) {
+      // Groups are additive; a failure must not break the agents page.
+      // eslint-disable-next-line no-console
+      console.error('failed to load groups', e);
+    }
+  };
+
   useEffect(() => {
     void loadAgents();
+    void loadGroups();
   }, []);
 
   // Compute unread counts from agent threads.
@@ -142,8 +168,26 @@ export default function AgentsPageClient() {
   const selectAgent = (agent: Agent) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('agent', agent.id);
+    params.delete('group');
     router.replace(`/app/agents?${params.toString()}`, { scroll: false });
     setInfoOpen(false);
+  };
+
+  const selectGroup = (group: GroupChat) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('group', group.id);
+    params.delete('agent');
+    router.replace(`/app/agents?${params.toString()}`, { scroll: false });
+    setInfoOpen(false);
+  };
+
+  const handleGroupCreated = (group: GroupChat) => {
+    setGroups((prev) => [group, ...prev.filter((g) => g.id !== group.id)]);
+    selectGroup(group);
+  };
+
+  const handleGroupChanged = (group: GroupChat) => {
+    setGroups((prev) => prev.map((g) => (g.id === group.id ? group : g)));
   };
 
   const handleCreated = () => {
@@ -222,9 +266,21 @@ export default function AgentsPageClient() {
         onArchive={handleArchive}
         onStartBuiltIn={setStartAgent}
         unreadById={unreadById}
+        groups={groups}
+        selectedGroupId={selectedGroupId}
+        onSelectGroup={selectGroup}
+        onNewGroup={() => setNewGroupOpen(true)}
       />
 
-      {selectedAgent ? (
+      {selectedGroup ? (
+        <GroupThreadView
+          group={selectedGroup}
+          agents={agents}
+          onToggleInfo={() => setInfoOpen((v) => !v)}
+          infoOpen={infoOpen}
+          onGroupChanged={() => void loadGroups()}
+        />
+      ) : selectedAgent ? (
         <AgentThreadView
           agent={selectedAgent}
           onToggleInfo={() => setInfoOpen((v) => !v)}
@@ -235,19 +291,35 @@ export default function AgentsPageClient() {
         emptyState
       )}
 
-      {selectedAgent && infoOpen && (
+      {selectedGroup && infoOpen ? (
+        <AgentInfoPane
+          agent={{ id: selectedGroup.id, name: selectedGroup.name, emoji: '👥' }}
+          threadUid={null}
+          onClose={() => setInfoOpen(false)}
+          onEdit={() => undefined}
+          group={selectedGroup}
+          onGroupChanged={handleGroupChanged}
+        />
+      ) : selectedAgent && infoOpen ? (
         <AgentInfoPane
           agent={selectedAgent}
           threadUid={infoThreadUid}
           onClose={() => setInfoOpen(false)}
           onEdit={() => setEditAgent(selectedAgent)}
         />
-      )}
+      ) : null}
 
       <NewAgentDialog
         open={newOpen}
         onClose={() => setNewOpen(false)}
         onCreated={handleCreated}
+      />
+
+      <GroupCreateDialog
+        open={newGroupOpen}
+        agents={agents}
+        onClose={() => setNewGroupOpen(false)}
+        onCreated={handleGroupCreated}
       />
 
       <AgentStartDialog
