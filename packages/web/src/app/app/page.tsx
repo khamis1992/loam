@@ -23,7 +23,7 @@ import { BuildIllustration, CreateIllustration } from '@/components/home/BuildIl
 import { useBranch } from '@/components/home/useBranch';
 import { uploadFile, type Attachment } from '@/services/upload';
 import { desktopApis, isDesktop } from '@/services/desktopApis';
-import { getSessionToken } from '@/services/rpc';
+import { getSessionToken, getApiBase } from '@/services/rpc';
 import { shortUid } from '@/utils/uid';
 import type { TaskMode } from '@shared/socket';
 
@@ -73,9 +73,17 @@ export default function HomePage() {
   }, [model]);
 
   useEffect(() => {
-    getSessionToken().then((token) => {
-      if (!token) return;
-      fetch(`${UPLOAD_BASE}/user.v1.UserService/GetAvailableCredits`, {
+    let cancelled = false;
+    const loadLocalCredits = fetch(`${getApiBase()}/api/credits`)
+      .then(async (res) => {
+        if (!res.ok) return null;
+        const data = await res.json();
+        return typeof data.balance === 'number' ? data.balance : null;
+      })
+      .catch(() => null);
+    const loadProtocolCredits = getSessionToken().then((token) => {
+      if (!token) return null;
+      return fetch(`${UPLOAD_BASE}/user.v1.UserService/GetAvailableCredits`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -91,15 +99,21 @@ export default function HomePage() {
             : typeof data.totalCredits === 'number' ? data.totalCredits
             : 0;
         })
-        .then((total) => {
-          if (total && total > 0) {
-            setCredits(total);
-          } else {
-            setCredits(null);
-          }
-        })
-        .catch(() => setCredits(null));
+        .catch(() => null);
     });
+    // Local mock ledger first (OPD #9); fall back to the legacy protocol API.
+    void loadLocalCredits.then((local) => {
+      if (cancelled) return;
+      if (local !== null) {
+        setCredits(local);
+        return;
+      }
+      void loadProtocolCredits.then((total) => {
+        if (cancelled || total === null) return;
+        setCredits(total > 0 ? total : null);
+      });
+    });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
