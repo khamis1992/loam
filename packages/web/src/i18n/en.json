@@ -795,5 +795,13 @@
   "Product demo": "Product demo",
   "Explainer animation": "Explainer animation",
   "Expense tracker": "Expense tracker",
-  "Market scan": "Market scan"
+  "Market scan": "Market scan",
+  "New companion": "New companion",
+  "Create companion": "Create companion",
+  "Companion name": "Companion name",
+  "Companion emoji": "Companion emoji",
+  "Companion description": "Companion description",
+  "Mode": "Mode",
+  "Memory enabled (Loam execution)": "Memory enabled (Loam execution)",
+  "Memory disabled (Chat only)": "Memory disabled (Chat only)"
 }

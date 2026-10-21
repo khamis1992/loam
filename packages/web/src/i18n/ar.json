@@ -1250,5 +1250,13 @@
   "Product demo": "Ø¹Ø±Ø¶ ØªÙˆØ¶ÙŠØ­ÙŠ Ù„Ù„Ù…Ù†ØªØ¬",
   "Explainer animation": "Ø±Ø³ÙˆÙ… Ù…ØªØ­Ø±ÙƒØ© ØªÙˆØ¶ÙŠØ­ÙŠØ©",
   "Expense tracker": "Ù…ØªØªØ¨Ø¹ Ø§Ù„Ù…ØµØ±ÙˆÙØ§Øª",
-  "Market scan": "Ù…Ø³Ø­ Ø§Ù„Ø³ÙˆÙ‚"
+  "Market scan": "Ù…Ø³Ø­ Ø§Ù„Ø³ÙˆÙ‚",
+  "New companion": "مساعد جديد",
+  "Create companion": "إنشاء مساعد",
+  "Companion name": "اسم المساعد",
+  "Companion emoji": "رمز المساعد",
+  "Companion description": "وصف المساعد",
+  "Mode": "الوضع",
+  "Memory enabled (Loam execution)": "الذاكرة مفعّلة (تنفيذ داخل Loam)",
+  "Memory disabled (Chat only)": "الذاكرة معطّلة (دردشة فقط)"
 }
