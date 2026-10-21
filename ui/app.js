@@ -144,7 +144,7 @@ $('uploadPicker').onchange=run(async()=>{
     notice('أُضيفت المرفقات إلى مساحة هذه المهمة.');
   } finally {state.uploading=false;renderTaskState();if($('modeSubmit'))$('modeSubmit').disabled=false;}
 });
-document.addEventListener('click',event=>{const remove=event.target.closest('[data-remove-attachment]');if(remove){state.attachments.splice(Number(remove.dataset.removeAttachment),1);renderAttachments();}const copy=event.target.closest('.md-copy-btn');if(copy)navigator.clipboard.writeText(copy.dataset.copyCode||'').then(()=>notice('تم نسخ النص.')).catch(()=>notice('تعذّر النسخ.',true));});
+document.addEventListener('click',event=>{const remove=event.target.closest('[data-remove-attachment]');if(remove){state.attachments.splice(Number(remove.dataset.removeAttachment),1);renderAttachments();}const copy=event.target.closest('.md-copy-btn');if(copy)navigator.clipboard.writeText(copy.dataset.copyCode||'').then(()=>notice('تم نسخ النص.')).catch(()=>notice('تعذّر النسخ.',true));const copyMsg=event.target.closest('[data-copy-message]');if(copyMsg){const body=copyMsg.closest('.log-entry')?.querySelector('.log-body');navigator.clipboard.writeText(body?.textContent??'').then(()=>notice('تم نسخ النص.')).catch(()=>notice('تعذّر النسخ.',true));return;}const retryMsg=event.target.closest('[data-retry-message]');if(retryMsg){void retryLastTurn(retryMsg.dataset.retryMessage,retryMsg);return;}});
 async function submitTask(prompt,newTask=false) {
   if(!prompt.trim() || state.launching || state.posting.has(state.task?.id) || state.uploading)return;
   if(!newTask && busy(state.task))throw new Error('انتظر اكتمال المهمة أو أوقفها قبل إرسال التوجيه.');
@@ -170,7 +170,7 @@ function appendLog(event) {
   const div=document.createElement(event.type==='tool_call'?'details':'div');div.className=`log-entry ${event.type==='user'?'user':''}`;
   const descriptions={plan:'الخطة',critique:'مراجعة الخطوة',verify:'التحقق النهائي',error:'تنبيه',cancelled:'أُوقفت المهمة',done:'انتهى التنفيذ',revise:'تعديل الخطوة',replan:'تحديث الخطة',mode:'نمط التنفيذ'};
   if(event.type==='user')div.innerHTML=`<div class="log-label">أنت</div><div>${renderMarkdown(event.text)}</div>`;
-  else if(event.type==='assistant_message')div.innerHTML=`<div class="log-label">Loam</div>${renderMarkdown(event.text)}`;
+  else if(event.type==='assistant_message')div.innerHTML=`<div class="log-entry-head"><span class="log-label">Loam</span><span class="log-entry-actions"><button type="button" class="msg-action" data-copy-message title="نسخ النص">نسخ</button><button type="button" class="msg-action" data-retry-message="${encodeURIComponent(state.task?.id||'')}" title="إعادة تشغيل آخر رسالة">إعادة</button></span></div><div class="log-body">${renderMarkdown(event.text)}</div>`;
   else if(event.type==='tool_call')div.innerHTML=`<summary>${esc(toolLabel(event.name))}</summary><pre>${esc(JSON.stringify(event.args||{},null,2))}</pre>`;
   else if(event.type==='tool_result')div.innerHTML=`<div class="log-label">${event.ok?'اكتملت الأداة':'تعذّرت الأداة'} · ${esc(toolLabel(event.name))}</div><details><summary>عرض التفاصيل</summary><pre>${esc(event.summary||'')}</pre></details>`;
   else if(event.type==='plan')div.innerHTML=`<div class="log-label">الخطة</div><ol>${(event.steps||[]).map(s=>`<li>${esc(s.title)}</li>`).join('')}</ol>`;
@@ -210,6 +210,7 @@ function renderRecovery(recovery) {
   const button=document.createElement('button');button.className='primary';button.textContent='استئناف المهمة';button.onclick=run(async()=>{const id=state.task.id;if(recovery.requiresConfirmation && !await confirmAction('استئناف خطوة انقطعت','قد تكون الخطوة نُفّذت جزئيًا. تأكد من أثرها في السجل والملفات قبل إعادة المحاولة.'))return;button.disabled=true;try{await post(`/api/tasks/${encodeURIComponent(id)}/resume`,{retryInterruptedStep:!!recovery.requiresConfirmation});await loadTask(id,true);}finally{button.disabled=false;}});box.append(p,button);
 }
 async function stopTask(){const id=state.task?.id;if(!id)return;await post(`/api/tasks/${encodeURIComponent(id)}/cancel`,{});notice('أُرسل طلب الإيقاف.');await loadTask(id,true);}
+async function retryLastTurn(id,button){if(!id){notice('لا توجد مهمة لإعادة تشغيلها.',true);return;}if(busy(state.task)){notice('انتظر اكتمال المهمة أو أوقفها قبل إعادة التشغيل.',true);return;}button.disabled=true;try{await post(`/api/tasks/${encodeURIComponent(id)}/retry-last`,{});notice('أُعيد تشغيل آخر رسالة.');await loadTask(id,true);}catch(error){notice(error.message,true);}finally{button.disabled=false;}}
 function taskQuery(id=state.task?.id){if(!id)throw new Error('اختر مهمة لعرض ملفاتها.');return `taskId=${encodeURIComponent(id)}`;}
 async function loadFiles(){const id=state.task?.id;if(!id)return;const data=await api(`/api/files?${taskQuery(id)}&max=400`);if(state.task?.id!==id)return;const entries=data.entries||[];$('filesList').innerHTML=entries.filter(f=>!f.dir).map(f=>`<button class="file-row" data-file="${esc(f.path)}" dir="auto">${esc(f.path)}</button>`).join('')||'<div class="empty">لا ملفات في هذه المهمة بعد.</div>';}
 async function openFile(path){
