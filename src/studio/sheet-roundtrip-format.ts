@@ -3,17 +3,83 @@ import type JSZip from 'jszip';
 import {borderSides} from './sheet-borders.js';
 import {part,first,all,attr,serialize,S} from './ooxml.js';
 import {StudioError} from './store.js';
-type Sheet={styles?:Record<string,Record<string,string|number|boolean>>;columnWidths?:number[];rowHeights?:number[];merges?:string[];hiddenRows?:boolean[];hiddenColumns?:boolean[];printSettings?:SheetPrint};
+import {numericText,typedCellValue,type StudioCellValue} from './sheet-format.js';
+type Sheet={cells?:string[][];styles?:Record<string,Record<string,string|number|boolean>>;columnWidths?:number[];rowHeights?:number[];merges?:string[];hiddenRows?:boolean[];hiddenColumns?:boolean[];printSettings?:SheetPrint};
+
+/** Editorial numeric display forms (thousands separators, spacing and percent) that can keep an originally numeric cell numeric. */
+export function displayNumber(value:string):number|null{
+ const compact=value.replace(/[,\s]/g,''),scaled=compact.endsWith('%'),core=scaled?compact.slice(0,-1):compact;
+ if(!numericText.test(core))return null;
+ const number=Number(core)/(scaled?100:1);
+ return core.replace(/[-.]/g,'').length<=15&&Number.isFinite(number)&&Math.abs(number)<=1e15?number:null;
+}
+/** Number format codes able to display decimal numbers: decimal, comma, percent and scientific patterns without text or date placeholders. */
+const numericFormat=(code:string):boolean=>{const patterns=code.replace(/\\./g,'').replace(/"[^"]*"/g,'');return !/@/.test(patterns)&&/[0#?]/.test(patterns)&&!/[dmyhs]/i.test(patterns);};
+/** Warm builtin numFmtIds that resolve without a numFmts entry; unknown or text-only ids stay text. */
+const builtinFormatCodes=new Map<number,string>([[0,'General'],[1,'0'],[2,'0.00'],[3,'#,##0'],[4,'#,##0.00'],[5,'#,##0.00;(#,##0.00)'],[9,'0%'],[10,'0.00%'],[11,'0.00E+00'],[12,'# ?/?'],[13,'# ??/??'],[37,'#,##0;(#,##0)'],[38,'#,##0;[Red](#,##0)'],[39,'#,##0.00;(#,##0.00)'],[40,'#,##0.00;[Red](#,##0.00)'],[44,'_("$"* #,##0_);_("$"* (#,##0);_("$"* "-"_);_(@_)']]);
+/** The XLSX serial epoch: 1904 system when the workbook opts in, otherwise 1899-12-30. */
+export const sheetDateEpoch=(date1904:boolean):number=>date1904?Date.UTC(1904,0,1):Date.UTC(1899,11,30);
+
+/** Serialize one typed studio value into a worksheet cell so numbers, booleans, dates, formulas and text stay distinct kinds. */
+export function writeSheetValue(doc:any,cell:any,value:StudioCellValue,epoch:number):void{
+ while(cell.firstChild)cell.removeChild(cell.firstChild);
+ cell.removeAttribute('t');
+ if(typeof value==='number'){const v=doc.createElementNS(S,'v');v.textContent=String(value);cell.appendChild(v);return;}
+ if(typeof value==='boolean'){cell.setAttribute('t','b');const v=doc.createElementNS(S,'v');v.textContent=value?'1':'0';cell.appendChild(v);return;}
+ if(typeof value==='object'){const v=doc.createElementNS(S,'v');v.textContent=String((Date.parse(value.date+'T00:00:00Z')-epoch)/86400000);cell.appendChild(v);return;}
+ if(value.startsWith('=')&&value.length>1){const f=doc.createElementNS(S,'f');f.textContent=value.slice(1);cell.appendChild(f);return;}
+ cell.setAttribute('t','inlineStr');const is=doc.createElementNS(S,'is'),t=doc.createElementNS(S,'t');t.setAttribute('xml:space','preserve');t.textContent=value;is.appendChild(t);cell.appendChild(is);
+}
 const children=(n:any,name:string):any[]=>Array.from(n.childNodes||[]).filter((x:any)=>x.nodeType===1&&x.localName===name);
 const index=(s:string)=>[...s].reduce((n,c)=>n*26+c.charCodeAt(0)-64,0);
 function row(doc:any,r:number){const data=first(doc,S,'sheetData');let node=children(data,'row').find(n=>Number(attr(n,'r'))===r);if(!node){node=doc.createElementNS(S,'row');node.setAttribute('r',String(r));data.insertBefore(node,children(data,'row').find(n=>Number(attr(n,'r'))>r)||null);}return node;}
 function cell(doc:any,address:string){const match=/^([A-Z]+)(\d+)$/.exec(address)!;const parent=row(doc,Number(match[2]));let node=children(parent,'c').find(n=>attr(n,'r')===address);if(!node){node=doc.createElementNS(S,'c');node.setAttribute('r',address);parent.insertBefore(node,children(parent,'c').find(n=>index(attr(n,'r').replace(/\d/g,''))>index(match[1]!))||null);}return node;}
 function replaceChild(doc:any,parent:any,name:string,attrs:Record<string,string>|null){for(const old of children(parent,name))parent.removeChild(old);if(attrs){const n=doc.createElementNS(S,name);for(const [k,v]of Object.entries(attrs))n.setAttribute(k,v);parent.appendChild(n);}}
 
+/** Re-serialize exactly the changed grid cells with typed values; untouched cells keep their original XML and strings stay distinct kinds. */
+export async function patchSheetValues(zip:JSZip,doc:any,current:Sheet,old:Sheet){
+ const columnLetters=(column:number)=>{let label='';while(column){column--;label=String.fromCharCode(65+column%26)+label;column=Math.floor(column/26);}return label;};
+ const changes:Array<{address:string;value:StudioCellValue}>=[];let needsEpoch=false,needsCodes=false;
+ const rowCount=Math.max(current.cells?.length||0,old.cells?.length||0);
+ for(let r=0;r<rowCount;r++){
+  const row=current.cells?.[r]||[],before=old.cells?.[r]||[],width=Math.max(row.length,before.length);
+  for(let c=0;c<width;c++){
+   const value=row[c]??'',beforeText=before[c]??'';
+   if(value===beforeText)continue;
+   const typed=typedCellValue(value);
+   if(typeof typed==='string'&&displayNumber(typed)!==null)needsCodes=true;
+   if(typeof typed==='object')needsEpoch=true;
+   changes.push({address:columnLetters(c+1)+String(r+1),value:typed});
+  }
+ }
+ if(!changes.length)return;
+ const styles=needsCodes&&zip.file('xl/styles.xml')?await part(zip,'xl/styles.xml'):null;
+ const table=(name:string)=>first(styles,S,name)||{};
+ const numeral=(node:any):string|null=>{
+  if(!styles)return null;
+  const column=index(attr(node,'r').replace(/\d/g,'')),columnStyle=all(doc,S,'col').find((n:any)=>Number(attr(n,'min'))<=column&&Number(attr(n,'max'))>=column);
+  const id=Number(node.hasAttribute('s')?attr(node,'s'):node.parentNode.hasAttribute('s')?attr(node.parentNode,'s'):attr(columnStyle,'style','0'));
+  const xf=children(table('cellXfs'),'xf')[id];if(!xf)return null;
+  const numFmtId=Number(attr(xf,'numFmtId','0'));
+  if(numFmtId<164)return builtinFormatCodes.get(numFmtId)??null;
+  const custom=children(table('numFmts'),'numFmt').find((n:any)=>Number(attr(n,'numFmtId'))===numFmtId);
+  const code=custom?attr(custom,'formatCode'):null;
+  return code&&numericFormat(code)?code:null;
+ };
+ const epoch=needsEpoch?sheetDateEpoch(attr(first(await part(zip,'xl/workbook.xml'),S,'workbookPr'),'date1904')==='1'):sheetDateEpoch(false);
+ for(const change of changes){
+  const target=cell(doc,change.address);
+  let value=change.value;
+  if(typeof value==='string'){const displayed=displayNumber(value);if(displayed!==null&&numeral(target))value=displayed;}
+  writeSheetValue(doc,target,value,epoch);
+ }
+}
+
 /** Append derived styles; never mutate a shared original style used by other cells. */
 export async function patchSheetFormat(zip:JSZip,doc:any,current:Sheet,old:Sheet){
  for(const key of ['hiddenRows','hiddenColumns'] as const)if(JSON.stringify(current[key]||[])!==JSON.stringify(old[key]||[]))throw new StudioError('Changing row or column visibility in imported workbooks is not supported yet.');
  if(JSON.stringify(current.merges||[])!==JSON.stringify(old.merges||[]))throw new StudioError('Changing merged ranges in imported workbooks is not supported yet.');
+ await patchSheetValues(zip,doc,current,old);
  patchPrintSettings(doc,current.printSettings,old.printSettings);
  const addresses=new Set(Object.keys(current.styles||{}));
  const changed=[...addresses].filter(a=>JSON.stringify(current.styles?.[a]||{})!==JSON.stringify(old.styles?.[a]||{}));
