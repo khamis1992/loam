@@ -30,6 +30,7 @@ import { startServer, type RunTaskOptions } from "./server/http.js";
 import { appendMessage, appendStep, createTask, getProject, getTask, loadDb, setTaskStatus, listSchedules, setTaskDelegator } from "./server/db.js";
 import { conversationHistory } from "./agent/history.js";
 import { startScheduler } from "./server/scheduler.js";
+import { startChannelRouter } from "./server/channels/router.js";
 import { appendLearning } from "./server/learning.js";
 import { appendTelemetry, hashPrompt } from "./telemetry/store.js";
 import { loadSuite } from "./eval/suites.js";
@@ -473,6 +474,14 @@ async function main(): Promise<void> {
 
   const stopScheduler = startScheduler({ runScheduled: scheduledRun });
 
+  // MF11 messaging channels: Telegram/Email inbound -> agent thread task, reply -> channel.
+  const stopChannelRouter = startChannelRouter({
+    runAgentTurn: async ({ taskId, prompt, agentId }) => {
+      const result = await runTask({ taskId, prompt, agentId, emit: () => {} });
+      return result.text;
+    },
+  });
+
   let evalTimer: NodeJS.Timeout | null = null;
   if (cfg.evaluation.enabled) {
     const intervalMs = Math.max(5, cfg.evaluation.intervalMinutes) * 60_000;
@@ -504,6 +513,7 @@ async function main(): Promise<void> {
   const shutdown = async (): Promise<void> => {
     log.info("shutting down...");
     stopScheduler();
+    stopChannelRouter();
     stopAllWatchers();
     stopServiceWatch();
     if (evalTimer) clearInterval(evalTimer);
