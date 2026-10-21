@@ -122,7 +122,6 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   }
   const apiBase = useMemo(() => getApiBase(), []);
   const [shareOpen, setShareOpen] = useState(false);
-  const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
 
   const onAuthFailure = useMemo(() => () => {
     dispatch(setError({ sessionId: sessionUid, error: t('Session expired. Please sign in again.') }));
@@ -382,8 +381,25 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                     </div>
                   )}
                   <div className="mb-4 flex items-center gap-2 text-sm text-text-tertiary">
-                    <button className="rounded-control p-1 hover:bg-fill-hover"><Copy className="size-4" /></button>
-                    <button className="rounded-control p-1 hover:bg-fill-hover"><Repeat2 className="size-4" /></button>
+                    <button
+                      type="button"
+                      aria-label={t('Copy message')}
+                      title={t('Copy message')}
+                      onClick={() => { if (assistantText) void navigator.clipboard.writeText(assistantText).catch(() => {}); }}
+                      className="rounded-control p-1 hover:bg-fill-hover"
+                    >
+                      <Copy className="size-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={t('Retry last message')}
+                      title={t('Retry last message')}
+                      disabled={running || !userText}
+                      onClick={() => { if (userText) void handleSend(userText, (resolvedLoamMode?.mode as TaskMode) || draftMode, []); }}
+                      className="rounded-control p-1 hover:bg-fill-hover disabled:opacity-40"
+                    >
+                      <Repeat2 className="size-4" />
+                    </button>
                     <span className="ms-auto">{formatTime(Date.now())}</span>
                   </div>
                   <div className="mb-2 flex items-center gap-2 text-sm text-text-secondary">
@@ -413,7 +429,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
         </div>
         {selectedTool && <ComputerPanel sessionId={sessionUid} event={selectedTool} onClose={() => setSelectedTool(null)} />}
       </div>
-      <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} url={shareUrl} />
+      <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} taskId={taskId ?? null} />
 
       {filesOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
