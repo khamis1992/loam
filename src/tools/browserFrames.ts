@@ -89,6 +89,12 @@ export function latestBrowserFrame(key: string): BrowserFrame | null {
   return frames.get(taskId)?.latest ?? null;
 }
 
+/** Resolve a web-session alias to the real task id (HTTP callers only know the
+ *  web session id; sinks and frames are keyed by the Loam task id). */
+export function resolveFrameKey(key: string): string {
+  return aliases.get(key) ?? key;
+}
+
 /** Mirror of the event shape pushed over the socket; used for tests. */
 export function buildBrowserFrameEvent(id: string, taskId: string, frame: BrowserFrame): {
   id: string;
