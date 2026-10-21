@@ -110,6 +110,7 @@ describe("workspace video render", () => {
 
   it("reads progress from -progress output", () => {
     assert.equal(mod.parseProgress("frame=10\nout_time_ms=1250000\nprogress=continue\n"), 1.25);
+    assert.equal(mod.parseProgress("out_time_us=2000000\nprogress=continue\n"), 2);
     assert.equal(mod.parseProgress("time=00:00:03.50 bitrate=1k"), 3.5);
     assert.equal(mod.parseProgress("no progress here"), undefined);
   });
