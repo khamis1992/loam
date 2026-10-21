@@ -526,6 +526,10 @@ async function main(): Promise<void> {
   });
   (globalThis as { __loamScheduledRun?: ScheduledRun }).__loamScheduledRun = scheduledRunObj;
 
+  // MF7: url-change triggers poll on their own interval and fire only on change.
+  const { startUrlWatchers } = await import("./server/urlWatch.js");
+  const stopUrlWatchers = startUrlWatchers({ run: scheduledRunObj });
+
   const stopScheduler = startScheduler({ runScheduled: scheduledRun });
 
   // MF11 messaging channels: Telegram/Email inbound -> agent thread task, reply -> channel.
@@ -570,6 +574,7 @@ async function main(): Promise<void> {
     stopChannelRouter();
     stopAllWatchers();
     stopServiceWatch();
+    stopUrlWatchers();
     if (evalTimer) clearInterval(evalTimer);
     executionQueue.stop();
     for (const id of listRunningSignals()) cancelRunSignal(id);

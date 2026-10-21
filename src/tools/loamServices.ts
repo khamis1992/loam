@@ -12,6 +12,7 @@ import { createTask, getTask, listTasks, setTaskStatus } from "../server/db.js";
 import { addSchedule, listSchedules, deleteSchedule } from "../server/db.js";
 import { cancelRunSignal } from "../server/runControl.js";
 import { createWatchRoutine, watchSchedules } from "../server/fileWatchers.js";
+import { createUrlWatch, listConnectors, MIN_URL_WATCH_INTERVAL_SECONDS } from "../server/urlWatch.js";
 import { DEFAULT_TIMEZONE, isValidTimezone } from "../server/scheduleTime.js";
 
 const json = (value: unknown): string => JSON.stringify(value, null, 1);
@@ -202,6 +203,36 @@ export function createLoamServiceTools(): Tool[] {
       async run() {
         const rows = watchSchedules();
         return { ok: true, content: rows.length > 0 ? json(rows) : "لا مشغلات مركبة" };
+      },
+    },
+    {
+      name: "watch_url",
+      description: "أنشئ مراقب URL: استقصِ صفحة ويب كل فترة (5 دقائق كأدنى) ولا تشغّل أمرك إلا إذا تغيّر محتواها — يُرفق مع الأمر diff قصير للنص القديم مقابل الجديد. مثال: راقب صفحة الأخبار وبلغني عند أي تحديث جديد.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "عنوان الصفحة المراقبة (http/https)" },
+          intervalMinutes: { type: "number", minimum: 5, description: "الفاصل بالدقائق (افتراضي 5، الأدنى 5)" },
+          selector: { type: "string", description: "اختياري: انتقاء النص — مثل #id أو .class أو اسم وسم، أو regex بصيغة /pat/ig" },
+          prompt: { type: "string", description: "الأمر الذي يُنفّذ عند تغيّر المحتوى فقط (وصف مهمة كامل)" },
+        },
+        required: ["url", "prompt"],
+      },
+      async run(args, ctx) {
+        const url = str(args, "url").trim();
+        const prompt = str(args, "prompt").trim().slice(0, 4000);
+        if (!url || !prompt) return { ok: false, content: "url وprompt مطلوبان" };
+        const intervalMinutes = num(args, "intervalMinutes", MIN_URL_WATCH_INTERVAL_SECONDS / 60);
+        const owner = str(args, "agentId").trim() || (ctx.taskId ? (getTask(ctx.taskId)?.agentId ?? "") : "");
+        const created = createUrlWatch({
+          url,
+          intervalSeconds: Math.round(intervalMinutes * 60),
+          ...(str(args, "selector").trim() ? { selector: str(args, "selector").trim() } : {}),
+          prompt,
+          ...(owner ? { agentId: owner } : {}),
+        });
+        if ("error" in created) return { ok: false, content: created.error };
+        return { ok: true, content: `رُكّب مراقب URL (${created.scheduleId}) على ${created.url} كل ${Math.round(created.intervalSeconds / 60)} دقيقة — عند أول قراءة يُحفظ خط أساس، وعند أي تغيّر لاحق فقط يُنفّذ أمرك مع diff. أوقفه بـ schedule_delete.${listConnectors().length > 0 ? ` (موصلات مرتبطة: ${listConnectors().join("، ")})` : ""}` };
       },
     },
     {
