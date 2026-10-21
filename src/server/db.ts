@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { database, transaction, putEntity as put, getEntity as get, allEntities as all, removeEntity as remove } from "./sqliteStore.js";
 export { closeDb } from "./sqliteStore.js";
 import type { SavedRun } from "./recovery.js";
+import { notifyTaskStatus, notifyScheduleFailed } from "./notifications.js";
 import { initialNextRunAt, isValidTimezone, nextOccurrenceAfter, parseCron, DEFAULT_RETRY_DELAY_MS } from "./scheduleTime.js";
 export { DEFAULT_TIMEZONE, DEFAULT_RETRY_DELAY_MS } from "./scheduleTime.js";
 
@@ -122,6 +123,11 @@ export function setTaskAgent(id: string, agentId: string | null): void {
 
 export function setTaskStatus(id: string, status: TaskStatus, extra?: {model?: string; error?: string}): void {
   editTask(id, (t) => { t.status = status; if (["queued", "running", "done"].includes(status)) delete t.error; if (extra?.model) t.model = extra.model; if (extra?.error) t.error = extra.error; });
+  // Notification feed hook (option #20): task completion and failure only,
+  // kept outside the transaction so the notification store never nests it.
+  if (status === "done" || status === "error") {
+    notifyTaskStatus(id, status, { title: getTask(id)?.title, error: extra?.error });
+  }
 }
 export function createProject(name: string, instruction?: string): Project {
   const now = new Date().toISOString(); const project: Project = { id: newId("proj"), name: name.slice(0,80), instruction, createdAt: now, updatedAt: now }; put("projects", project); return project;
@@ -170,9 +176,11 @@ export interface ScheduleOutcome {
  * disable). Records attempt count and lastError/lastStatus either way.
  */
 export function recordScheduleOutcome(id: string, outcome: ScheduleOutcome): Schedule | undefined {
-  return transaction(() => {
+  const finalFailure = { failed: false, prompt: "", error: "" };
+  const result = transaction(() => {
     const s = get<Schedule>("schedules", id);
     if (!s) return undefined;
+    const wasFailed = s.lastStatus === "failed";
     const now = outcome.now ?? new Date();
     s.lastRunAt = now.toISOString();
     if (outcome.taskId) s.lastTaskId = outcome.taskId;
@@ -196,8 +204,13 @@ export function recordScheduleOutcome(id: string, outcome: ScheduleOutcome): Sch
       }
     }
     put("schedules", s);
+    // Notification feed hook data (option #20): a routine that reached its
+    // final failure state notifies once (not while it is merely retrying).
+    if (!wasFailed && s.lastStatus === "failed") { finalFailure.failed = true; finalFailure.prompt = s.prompt ?? ""; finalFailure.error = String(outcome.error ?? "run failed"); }
     return s;
   });
+  if (finalFailure.failed) notifyScheduleFailed(id, finalFailure.prompt, finalFailure.error); // outside the transaction
+  return result;
 }
 export function markScheduleRun(id: string, taskId: string): void {
   recordScheduleOutcome(id, { ok: true, taskId });
@@ -241,5 +254,8 @@ export function completeTaskRun(taskId: string, text: string, model: string): vo
     task.messages.push({ role: "assistant", content: text, at: task.updatedAt });
     put("tasks", task);
     clearSavedRun(taskId);
+    // Notification feed hook (option #20): completed run. Kept inside the
+    // existing transaction; the notification store shares the entities table.
+    notifyTaskStatus(taskId, "done", { title: task.title });
   });
 }
