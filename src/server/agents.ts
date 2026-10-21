@@ -35,6 +35,8 @@ export interface AgentRecord {
   source?: string;
   /** Soft-archive timestamp: archived companions keep all data but leave the active list. */
   archivedAt?: string;
+  /** Soft-hide timestamp: hidden companions stay in the UI's collapsible "Hidden" section. */
+  hiddenAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -73,6 +75,24 @@ export function setAgentArchived(id: string, archived: boolean): AgentRecord | u
   if (!agent) return undefined;
   if (archived) agent.archivedAt = new Date().toISOString();
   else delete agent.archivedAt;
+  agent.updatedAt = new Date().toISOString();
+  save();
+  return agent;
+}
+
+/**
+ * Hide/unhide keeps the companion listed in the sidebar's collapsible "Hidden"
+ * section (Loam-local, [INF] beyond Grok Bot, which only has permanent delete).
+ * Idempotent: hiding an already-hidden companion keeps its original hiddenAt.
+ */
+export function setAgentHidden(id: string, hidden: boolean): AgentRecord | undefined {
+  const agent = agents.find((a) => a.id === id);
+  if (!agent) return undefined;
+  if (hidden) {
+    if (!agent.hiddenAt) agent.hiddenAt = new Date().toISOString();
+  } else {
+    delete agent.hiddenAt;
+  }
   agent.updatedAt = new Date().toISOString();
   save();
   return agent;

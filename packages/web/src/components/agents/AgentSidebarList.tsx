@@ -17,6 +17,8 @@ import {
   Store,
   Kanban,
   MessageSquare,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
@@ -25,8 +27,11 @@ import type { AgentCardAgent } from './AgentCard';
 import { GrokBotBadge, isGrokBotAgent } from './GrokBotBadge';
 import { getBuiltInAgents } from './BuiltInAgentCard';
 import type { GroupChat } from './groupTypes';
+import { foldName, searchAgents, splitHidden, sumUnread } from './agentListFilter';
 
 interface AgentWithMeta extends AgentCardAgent {
+  /** Soft-hide timestamp: hidden agents live in the bottom "Hidden" section. */
+  hiddenAt?: string;
   archivedAt?: string;
   description?: string;
   instructions?: string;
@@ -60,6 +65,7 @@ interface AgentSidebarListProps {
   onEdit: (agent: AgentWithMeta) => void;
   onDuplicate: (agent: AgentWithMeta) => void;
   onArchive: (agent: AgentWithMeta) => void;
+  onHideAgent?: (agent: AgentWithMeta, hidden: boolean) => void;
   onStartBuiltIn?: (agent: AgentCardAgent) => void;
   unreadById?: Record<string, UnreadInfo>;
   teamRunsLoading?: boolean;
@@ -75,9 +81,12 @@ const SECTIONS = {
   groups: 'groups',
   builtIn: 'built-in',
   teamRuns: 'team-runs',
+  hidden: 'hidden',
 } as const;
 
 const storageKey = (id: string) => `loam.agents.section.${id}`;
+
+const EMPTY_SEARCH_TEXT = t('No matches');
 
 export function AgentSidebarList({
   agents,
@@ -89,6 +98,7 @@ export function AgentSidebarList({
   onEdit,
   onDuplicate,
   onArchive,
+  onHideAgent,
   onStartBuiltIn,
   unreadById,
   groups = [],
@@ -105,6 +115,7 @@ export function AgentSidebarList({
     out[SECTIONS.groups] = localStorage.getItem(storageKey(SECTIONS.groups)) !== 'false';
     out[SECTIONS.builtIn] = localStorage.getItem(storageKey(SECTIONS.builtIn)) !== 'false';
     out[SECTIONS.teamRuns] = localStorage.getItem(storageKey(SECTIONS.teamRuns)) === 'true';
+    out[SECTIONS.hidden] = localStorage.getItem(storageKey(SECTIONS.hidden)) !== 'false';
     return out;
   });
   const [contextMenu, setContextMenu] = useState<{
@@ -116,15 +127,37 @@ export function AgentSidebarList({
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const normalizedSearch = search.trim().toLowerCase();
+  const trimmedSearch = search.trim();
+  // Search spans all sections: visible, hidden, groups and built-in (diacritic-insensitive).
+  const searchActive = foldName(trimmedSearch).length > 0;
+  const builtInAgents = useMemo(() => getBuiltInAgents(), []);
 
-  const filteredAgents = useMemo(() => {
-    if (!normalizedSearch) return agents;
-    return agents.filter((a) =>
-      a.name.toLowerCase().includes(normalizedSearch) ||
-      (a.description ?? '').toLowerCase().includes(normalizedSearch),
-    );
-  }, [agents, normalizedSearch]);
+  const filteredAgents = useMemo(
+    () => searchAgents(agents, search),
+    [agents, search],
+  );
+
+  const { visible: searchVisibleAgents, hidden: searchHiddenAgents } = useMemo(
+    () => splitHidden(filteredAgents),
+    [filteredAgents],
+  );
+
+  const filteredGroups = useMemo(
+    () => (searchActive ? groups.filter((g) => foldName(g.name).includes(foldName(trimmedSearch))) : groups),
+    [groups, searchActive, trimmedSearch],
+  );
+
+  const filteredBuiltIn = useMemo(
+    () => searchAgents(builtInAgents, search),
+    [builtInAgents, search],
+  );
+
+  const noSearchMatches =
+    searchActive &&
+    searchVisibleAgents.length === 0 &&
+    searchHiddenAgents.length === 0 &&
+    filteredGroups.length === 0 &&
+    filteredBuiltIn.length === 0;
 
   // MF6: child agents live under their parent, not as top-level entries.
   const agentIdsKey = useMemo(() => agents.map((a) => a.id).join(','), [agents]);
@@ -162,11 +195,20 @@ export function AgentSidebarList({
   );
 
   const topLevelAgents = useMemo(
-    () => filteredAgents.filter((a) => !childAgentIds.has(a.id)),
-    [filteredAgents, childAgentIds],
+    () => searchVisibleAgents.filter((a) => !childAgentIds.has(a.id)),
+    [searchVisibleAgents, childAgentIds],
   );
 
-  const builtInAgents = useMemo(() => getBuiltInAgents(), []);
+  // Section-header unread sums; sumUnread stubs to 0 when no unread source is wired.
+  const myAgentIds = useMemo(
+    () => [
+      ...topLevelAgents.map((a) => a.id),
+      ...topLevelAgents.flatMap((a) => (childrenByParent[a.id] ?? []).map((c) => c.childId)),
+    ],
+    [topLevelAgents, childrenByParent],
+  );
+  const myAgentsUnread = sumUnread(myAgentIds, unreadById);
+  const hiddenUnread = sumUnread(searchHiddenAgents.map((a) => a.id), unreadById);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -283,11 +325,14 @@ export function AgentSidebarList({
           count={topLevelAgents.length}
           expanded={!!sections[SECTIONS.myAgents]}
           onToggle={() => toggleSection(SECTIONS.myAgents)}
+          unread={myAgentsUnread}
         />
         {sections[SECTIONS.myAgents] && (
           <div className="flex flex-col gap-0.5">
             {topLevelAgents.length === 0 ? (
-              <p className="px-2 py-3 text-xs text-text-tertiary">{t('No agents yet.')}</p>
+              <p className="px-2 py-3 text-xs text-text-tertiary">
+                {searchActive ? EMPTY_SEARCH_TEXT : t('No agents yet.')}
+              </p>
             ) : (
               topLevelAgents.map((agent) => (
                 <div key={agent.id} className="flex flex-col gap-0.5">
@@ -332,7 +377,7 @@ export function AgentSidebarList({
           >
             <MessageSquare className="size-3.5" />
             <span>{t('Groups')}</span>
-            <span className="text-[11px] text-text-tertiary">{groups.length}</span>
+            <span className="text-[11px] text-text-tertiary">{filteredGroups.length}</span>
             <ChevronRight
               className={`size-3.5 text-text-tertiary transition-transform ${sections[SECTIONS.groups] ? 'rotate-90' : ''}`}
             />
@@ -349,10 +394,12 @@ export function AgentSidebarList({
         </div>
         {sections[SECTIONS.groups] && (
           <div className="flex flex-col gap-0.5">
-            {groups.length === 0 ? (
-              <p className="px-2 py-3 text-xs text-text-tertiary">{t('No groups yet.')}</p>
+            {filteredGroups.length === 0 ? (
+              <p className="px-2 py-3 text-xs text-text-tertiary">
+                {searchActive ? EMPTY_SEARCH_TEXT : t('No groups yet.')}
+              </p>
             ) : (
-              groups.map((group) => (
+              filteredGroups.map((group) => (
                 <button
                   key={group.id}
                   type="button"
@@ -375,13 +422,16 @@ export function AgentSidebarList({
 
         <SectionHeader
           label={t('Built-in')}
-          count={builtInAgents.length}
+          count={filteredBuiltIn.length}
           expanded={!!sections[SECTIONS.builtIn]}
           onToggle={() => toggleSection(SECTIONS.builtIn)}
         />
         {sections[SECTIONS.builtIn] && (
           <div className="flex flex-col gap-0.5">
-            {builtInAgents.map((agent) => (
+            {filteredBuiltIn.length === 0 ? (
+              <p className="px-2 py-3 text-xs text-text-tertiary">{EMPTY_SEARCH_TEXT}</p>
+            ) : (
+              filteredBuiltIn.map((agent) => (
               <AgentRow
                 key={agent.id}
                 agent={agent}
@@ -389,7 +439,8 @@ export function AgentSidebarList({
                 onClick={() => onStartBuiltIn?.(agent)}
                 onContextMenu={() => {}}
               />
-            ))}
+              ))
+            )}
           </div>
         )}
 
@@ -408,6 +459,40 @@ export function AgentSidebarList({
           />
         </button>
         {sections[SECTIONS.teamRuns] && <TeamRunsCompact />}
+
+        {searchHiddenAgents.length > 0 && (
+          <>
+            <SectionHeader
+              label={t('Hidden')}
+              count={searchHiddenAgents.length}
+              expanded={!!sections[SECTIONS.hidden]}
+              onToggle={() => toggleSection(SECTIONS.hidden)}
+              unread={hiddenUnread}
+            />
+            {sections[SECTIONS.hidden] && (
+              <div className="flex flex-col gap-0.5">
+                {searchHiddenAgents.map((agent) => (
+                  <AgentRow
+                    key={agent.id}
+                    agent={agent}
+                    selected={selectedId === agent.id}
+                    unread={unreadById?.[agent.id]?.count ?? 0}
+                    indent
+                    dim
+                    onClick={() => onSelect(agent)}
+                    onContextMenu={(e) => handleContextMenu(e, agent)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {noSearchMatches && (
+          <p className="px-2 py-6 text-center text-xs text-text-tertiary">
+            {t('No agents match "{search}"', { search })}
+          </p>
+        )}
       </div>
 
       {contextMenu && (
@@ -440,6 +525,25 @@ export function AgentSidebarList({
               setContextMenu(null);
             }}
           />
+          {contextMenu.agent.hiddenAt ? (
+            <ContextItem
+              icon={<Eye className="size-4" />}
+              label={t('Unhide')}
+              onClick={() => {
+                onHideAgent?.(contextMenu.agent, false);
+                setContextMenu(null);
+              }}
+            />
+          ) : (
+            <ContextItem
+              icon={<EyeOff className="size-4" />}
+              label={t('Hide')}
+              onClick={() => {
+                onHideAgent?.(contextMenu.agent, true);
+                setContextMenu(null);
+              }}
+            />
+          )}
           <div className="my-1 border-t border-border-main" />
           <ContextItem
             icon={<Archive className="size-4" />}
@@ -456,11 +560,13 @@ export function AgentSidebarList({
 function SectionHeader({
   label,
   count,
+  unread = 0,
   expanded,
   onToggle,
 }: {
   label: string;
   count: number;
+  unread?: number;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -472,6 +578,15 @@ function SectionHeader({
     >
       <span>{label}</span>
       <div className="flex items-center gap-1">
+        {unread > 0 && (
+          <span
+            className="rounded-full px-1.5 text-[10px] font-medium text-text-primary"
+            style={{ backgroundColor: 'var(--activity-indicator-running)' }}
+            title={t('{count} unread', { count: unread })}
+          >
+            {unread}
+          </span>
+        )}
         <span className="text-[11px] text-text-tertiary">{count}</span>
         <ChevronRight
           className={`size-3.5 text-text-tertiary transition-transform ${expanded ? 'rotate-90' : ''}`}
@@ -486,6 +601,7 @@ function AgentRow({
   selected,
   unread,
   indent,
+  dim,
   onClick,
   onContextMenu,
 }: {
@@ -493,6 +609,7 @@ function AgentRow({
   selected: boolean;
   unread?: number;
   indent?: boolean;
+  dim?: boolean;
   onClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }) {
@@ -504,6 +621,7 @@ function AgentRow({
       className={[
         'group flex h-row items-center gap-2 rounded-control px-2 text-start transition-colors',
         indent ? 'ps-6' : '',
+        dim ? 'opacity-60' : '',
         selected ? 'bg-fill-hover' : 'hover:bg-fill-hover',
       ].join(' ')}
     >

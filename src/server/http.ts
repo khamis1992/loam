@@ -72,7 +72,7 @@ import {
 } from "./db.js";
 import { getSettings, updateSettings } from "./settings.js";
 import { cancelRunSignal } from "./runControl.js";
-import { createAgent, deleteAgent, getAgent, listAgents, setAgentArchived, updateAgent } from "./agents.js";
+import { createAgent, deleteAgent, getAgent, listAgents, setAgentArchived, setAgentHidden, updateAgent } from "./agents.js";
 import { handleScratchpadRoutes } from "./routes/scratchpad.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
@@ -1463,6 +1463,21 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           if (!agent) return sendJson(res, 404, { error: "الوكيل غير موجود" });
           const restored = setAgentArchived(id, false);
           return sendJson(res, 200, { archived: false, agent: restored });
+        }
+        // ---- hide/unhide (Loam-local [INF]): POST /hide {hidden?=true} is idempotent ----
+        if (req.method === "POST" && p.startsWith("/api/agents/") && p.endsWith("/hide")) {
+          const id = decodeURIComponent(p.slice("/api/agents/".length, -"/hide".length));
+          const agent = getAgent(id);
+          if (!agent) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+          let body: { hidden?: unknown } = {};
+          try {
+            body = (await readBody(req)) as { hidden?: unknown };
+          } catch {
+            body = {};
+          }
+          const hidden = typeof body.hidden === "boolean" ? body.hidden : true;
+          const updated = setAgentHidden(id, hidden);
+          return sendJson(res, 200, { hidden: Boolean(updated?.hiddenAt), agent: updated });
         }
         if (req.method === "GET" && p.startsWith("/api/agents/") && p.endsWith("/export")) {
           const id = decodeURIComponent(p.slice("/api/agents/".length, -"/export".length));

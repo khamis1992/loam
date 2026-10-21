@@ -19,6 +19,7 @@ import { getBuiltInAgents } from '@/components/agents/BuiltInAgentCard';
 import type { AgentCardAgent } from '@/components/agents/AgentCard';
 
 interface Agent extends AgentCardAgent {
+  hiddenAt?: string;
   archivedAt?: string;
   description?: string;
   instructions?: string;
@@ -240,6 +241,22 @@ export default function AgentsPageClient() {
     }
   };
 
+  const handleHidden = async (agent: Agent, hidden: boolean) => {
+    try {
+      const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agent.id)}/hide`, {
+        method: 'POST',
+        headers: await getApiHeaders(),
+        body: JSON.stringify({ hidden }),
+      });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      await loadAgents();
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('failed to toggle agent hidden state', e);
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const emptyState = (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-bg-main p-6 text-text-tertiary">
       <div className="flex size-12 items-center justify-center rounded-full bg-fill-tsp text-2xl">🤖</div>
@@ -264,6 +281,7 @@ export default function AgentsPageClient() {
         onEdit={setEditAgent}
         onDuplicate={handleDuplicate}
         onArchive={handleArchive}
+        onHideAgent={handleHidden}
         onStartBuiltIn={setStartAgent}
         unreadById={unreadById}
         groups={groups}
