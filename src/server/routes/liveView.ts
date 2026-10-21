@@ -93,6 +93,7 @@ function statusBody(deps: LiveViewDeps, key: string): LiveViewStatus {
   const screen = screenAvailable(deps);
   const live = deps.screenLive?.status();
   const bframe = latestBrowserFrame(key);
+  const browserFrameAvailable = Boolean(bframe?.jpegBase64);
   return {
     screen: {
       available: screen,
@@ -111,7 +112,8 @@ function statusBody(deps: LiveViewDeps, key: string): LiveViewStatus {
       title: bframe?.title ?? null,
       at: bframe?.at ?? null,
     },
-    available: screen || Boolean(bframe?.jpegBase64) || true,
+    // Live view as a whole works when either source has streaming infra.
+    available: screen || browserFrameAvailable || true,
   };
 }
 
