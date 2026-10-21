@@ -448,6 +448,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
         {selectedTool && (
           <ComputerPanel
             sessionId={sessionUid}
+            taskId={taskId ?? undefined}
             event={selectedTool}
             onClose={() => {
               setSelectedTool(null);
