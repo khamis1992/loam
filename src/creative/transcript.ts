@@ -329,3 +329,255 @@ export function cutRangeForSegment(transcript: Transcript, segmentIndex: number)
   if (!seg) throw new Error("segment index out of range: " + segmentIndex);
   return { start: seg.start, end: seg.end };
 }
+
+// ---------------------------------------------------------------------------
+// Rearrangement (assembly). Deleting only ever removes content; moving
+// transcript text also reorders it, so the output is modeled as an ordered
+// assembly of source ranges (what actually plays) instead of cuts + keeps.
+// ---------------------------------------------------------------------------
+
+/** Output timeline of a transcript edit: source ranges in play order. */
+export interface EdlAssembly {
+  /** Ordered source ranges composing the output. */
+  clips: EdlCut[];
+  /** Total output duration in seconds (sum of clip lengths). */
+  duration: number;
+  /** Transcript text in output order. */
+  text: string;
+}
+
+interface AssemblyPiece {
+  start: number;
+  end: number;
+  text: string;
+}
+
+/** Pieces whose source ranges touch (within rounding) play as one clip. */
+const CONTIGUOUS_EPSILON = 1e-6;
+
+function transcriptPieces(transcript: Transcript): AssemblyPiece[] {
+  const pieces: AssemblyPiece[] = [];
+  for (const seg of transcript.segments) {
+    const range = saneTimes(seg.start, seg.end);
+    const text = typeof seg.text === "string" ? seg.text.trim() : "";
+    if (!range || !text) continue;
+    pieces.push({ ...range, text });
+  }
+  return pieces;
+}
+
+function wordPieces(transcript: Transcript): AssemblyPiece[] {
+  return transcriptWords(transcript).map((w) => ({ start: w.start, end: w.end, text: w.word }));
+}
+
+function coalescePieces(pieces: readonly AssemblyPiece[]): AssemblyPiece[] {
+  const merged: AssemblyPiece[] = [];
+  for (const piece of pieces) {
+    const last = merged[merged.length - 1];
+    if (last && piece.start <= last.end + CONTIGUOUS_EPSILON) {
+      last.end = Math.max(last.end, piece.end);
+      last.text = last.text ? `${last.text} ${piece.text}` : piece.text;
+    } else {
+      merged.push({ ...piece });
+    }
+  }
+  return merged;
+}
+
+function piecesToAssembly(pieces: readonly AssemblyPiece[]): EdlAssembly {
+  const merged = coalescePieces(pieces);
+  const clips = merged.map((p) => ({ start: p.start, end: p.end }));
+  return {
+    clips,
+    duration: clips.reduce((sum, c) => sum + (c.end - c.start), 0),
+    text: merged.map((p) => p.text).join(" ").trim(),
+  };
+}
+
+/** The kept, ordered source ranges of a delete-only EDL, as an assembly. */
+export function assemblyFromEdl(edl: EditDecisionList): EdlAssembly {
+  const clips = edl.keeps.map((k) => ({ ...k }));
+  return {
+    clips,
+    duration: clips.reduce((sum, c) => sum + (c.end - c.start), 0),
+    text: edl.textAfter,
+  };
+}
+
+function movePieces(pieces: readonly AssemblyPiece[], indices: readonly number[], target: number): AssemblyPiece[] {
+  const total = pieces.length;
+  const picked = new Set<number>();
+  for (const i of indices) {
+    if (!Number.isInteger(i) || i < 0 || i >= total) throw new Error("piece index out of range: " + String(i));
+    picked.add(Number(i));
+  }
+  if (!picked.size) throw new Error("select at least one piece to move");
+  if (!Number.isInteger(target) || target < 0 || target > total) throw new Error("move target out of range: " + String(target));
+  if (picked.has(target)) return [...pieces];
+  const block = [...picked].sort((a, b) => a - b).map((i) => pieces[i]!);
+  const order: AssemblyPiece[] = [];
+  let placed = false;
+  for (let i = 0; i < total; i++) {
+    if (picked.has(i)) continue;
+    if (!placed && i === target) {
+      order.push(...block);
+      placed = true;
+    }
+    order.push(pieces[i]!);
+  }
+  if (!placed) order.push(...block);
+  return order;
+}
+
+/** Move selected words (flat indices in transcriptWords()) before the word
+ *  currently at `target`, keeping the block's internal order. `target` is an
+ *  index into the original word list; `words.length` appends at the end. */
+export function moveWords(transcript: Transcript, flatIndices: readonly number[], target: number): EdlAssembly {
+  return piecesToAssembly(movePieces(wordPieces(transcript), flatIndices, target));
+}
+
+/** Move selected sentences before the segment currently at `target` (index
+ *  into the original segment list; `segments.length` appends at the end). */
+export function moveSegments(transcript: Transcript, indices: readonly number[], target: number): EdlAssembly {
+  return piecesToAssembly(movePieces(transcriptPieces(transcript), indices, target));
+}
+
+// ---------------------------------------------------------------------------
+// Timeline wiring. The workspace video editor and its render endpoint consume
+// an ordered clip list of source in/out points (normalized by the render
+// service, which also accepts a `{version, clips}` body directly). Projection
+// here means a transcript edit can hydrate into the live timeline unchanged.
+// ---------------------------------------------------------------------------
+
+export interface TimelineClip {
+  id: string;
+  /** Source in point (seconds). */
+  in: number;
+  /** Source out point (seconds). */
+  out: number;
+}
+
+/** Render-ready EDL: same shape the workspace video render endpoint validates. */
+export interface TimelineEdl {
+  version: 1;
+  /** Source media duration in seconds, when known. */
+  sourceDuration?: number;
+  clips: TimelineClip[];
+  /** Transcript edits never produce overlays; always empty. */
+  overlays: never[];
+}
+
+/** The render model rejects clips shorter than this. */
+export const MIN_TIMELINE_CLIP_SECONDS = 0.05;
+
+export interface TimelineProjectionOptions {
+  /** Source media duration reported in the EDL when known. */
+  sourceDuration?: number;
+  /** Clips shorter than this are dropped (render model minimum). Default 0.05. */
+  minClipSeconds?: number;
+}
+
+export interface TimelineProjection {
+  /** Render-ready EDL, or null when no clip survives the minimum length. */
+  timeline: TimelineEdl | null;
+  /** Clips omitted because they are shorter than the render model minimum. */
+  droppedClips: number;
+}
+
+export function assemblyTimeline(assembly: EdlAssembly, options: TimelineProjectionOptions = {}): TimelineProjection {
+  const min = options.minClipSeconds ?? MIN_TIMELINE_CLIP_SECONDS;
+  const clips: TimelineClip[] = [];
+  let droppedClips = 0;
+  for (const clip of assembly.clips) {
+    if (clip.end - clip.start < min) {
+      droppedClips += 1;
+      continue;
+    }
+    clips.push({ id: `clip-${clips.length + 1}`, in: clip.start, out: clip.end });
+  }
+  const timeline: TimelineEdl | null = clips.length
+    ? {
+        version: 1,
+        clips,
+        overlays: [],
+        ...(options.sourceDuration !== undefined && Number.isFinite(options.sourceDuration)
+          ? { sourceDuration: options.sourceDuration }
+          : {}),
+      }
+    : null;
+  return { timeline, droppedClips };
+}
+
+// ---------------------------------------------------------------------------
+// Unified transcript-edit dispatch: delete, rearrange, and filler removal all
+// resolve to one uniform result (ordered clips + render-ready timeline).
+// ---------------------------------------------------------------------------
+
+export type TranscriptEdit =
+  | { kind: "words"; indices: number[] }
+  | { kind: "segments"; indices: number[] }
+  | { kind: "range"; start: number; end: number }
+  | { kind: "fillers"; extraWords?: string[]; maxDurationSeconds?: number }
+  | { kind: "move-words"; indices: number[]; target: number }
+  | { kind: "move-segments"; indices: number[]; target: number };
+
+export interface TranscriptEditResult {
+  /** Items the edit selected (words, sentences, filler hits, or merged cuts). */
+  count: number;
+  /** Source seconds that do not play in the output. */
+  removed: number;
+  /** Output duration in seconds. */
+  duration: number;
+  /** Ordered source ranges composing the output. */
+  clips: EdlCut[];
+  /** Transcript text in output order. */
+  text: string;
+  /** Present for delete-only edits: the cut/complement decision list. */
+  deletion?: EditDecisionList;
+  /** Render-ready timeline, or null when nothing survives the edit. */
+  timeline: TimelineEdl | null;
+  /** Clips dropped from the timeline for being under the minimum length. */
+  droppedClips: number;
+}
+
+export function applyTranscriptEdit(transcript: Transcript, edit: TranscriptEdit): TranscriptEditResult {
+  const project = (assembly: EdlAssembly, count: number, deletion?: EditDecisionList): TranscriptEditResult => {
+    const projection = assemblyTimeline(assembly, { sourceDuration: transcript.duration });
+    return {
+      count,
+      removed: transcript.duration - assembly.duration,
+      duration: assembly.duration,
+      clips: assembly.clips,
+      text: assembly.text,
+      ...(deletion ? { deletion } : {}),
+      timeline: projection.timeline,
+      droppedClips: projection.droppedClips,
+    };
+  };
+  switch (edit.kind) {
+    case "words": {
+      const edl = deleteWords(transcript, edit.indices);
+      return project(assemblyFromEdl(edl), edit.indices.length, edl);
+    }
+    case "segments": {
+      const edl = deleteSegments(transcript, edit.indices);
+      return project(assemblyFromEdl(edl), edit.indices.length, edl);
+    }
+    case "range": {
+      const edl = buildEdl(transcript, [{ start: edit.start, end: edit.end }]);
+      return project(assemblyFromEdl(edl), edl.cuts.length, edl);
+    }
+    case "fillers": {
+      const removal = removeFillerWords(transcript, edit);
+      return project(assemblyFromEdl(removal.edl), removal.count, removal.edl);
+    }
+    case "move-words": {
+      const assembly = moveWords(transcript, edit.indices, edit.target);
+      return project(assembly, edit.indices.length);
+    }
+    case "move-segments": {
+      const assembly = moveSegments(transcript, edit.indices, edit.target);
+      return project(assembly, edit.indices.length);
+    }
+  }
+}
