@@ -1062,7 +1062,6 @@
   "Open full screen": "ÙØªØ­ Ø¨Ù…Ù„Ø¡ Ø§Ù„Ø´Ø§Ø´Ø©",
   "Live preview placeholder": "Ø¨Ø¯ÙŠÙ„ Ø§Ù„Ù…Ø¹Ø§ÙŠÙ†Ø© Ø§Ù„Ù…Ø¨Ø§Ø´Ø±Ø©",
   "The computer stream will appear here once the agent connects to a computer.": "Ø³ØªØ¸Ù‡Ø± ØµÙˆØ±Ø© Ø§Ù„ÙƒÙ…Ø¨ÙŠÙˆØªØ± Ù‡Ù†Ø§ Ø¹Ù†Ø¯Ù…Ø§ ÙŠØªØµÙ„ Ø§Ù„ÙˆÙƒÙŠÙ„ Ø¨Ø¬Ù‡Ø§Ø².",
-<<<<<<< HEAD
   "Export your data": "ØªØµØ¯ÙŠØ± Ø¨ÙŠØ§Ù†Ø§ØªÙƒ",
   "Export all data": "ØªØµØ¯ÙŠØ± ÙƒÙ„ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª",
   "Download a full copy of your tasks, projects, agents and memory.": "ØªÙ†Ø²ÙŠÙ„ Ù†Ø³Ø®Ø© ÙƒØ§Ù…Ù„Ø© Ù…Ù† Ù…Ù‡Ø§Ù…Ùƒ ÙˆÙ…Ø´Ø§Ø±ÙŠØ¹Ùƒ ÙˆØ§Ù„ÙˆÙƒÙ„Ø§Ø¡ ÙˆØ§Ù„Ø°Ø§ÙƒØ±Ø©.",
@@ -1079,8 +1078,7 @@
   "Training": "Ø§Ù„ØªØ¯Ø±ÙŠØ¨",
   "Help improve Loam": "Ø³Ø§Ø¹Ø¯ ÙÙŠ ØªØ­Ø³ÙŠÙ† Loam",
   "Allow Loam to use my conversations to improve its models.": "Ø§Ù„Ø³Ù…Ø§Ø­ Ù„Ù€ Loam Ø¨Ø§Ø³ØªØ®Ø¯Ø§Ù… Ù…Ø­Ø§Ø¯Ø«Ø§ØªÙŠ Ù„ØªØ­Ø³ÙŠÙ† Ù†Ù…Ø§Ø°Ø¬Ù‡.",
-  "Could not save your preference": "ØªØ¹Ø°Ù‘Ø± Ø­ÙØ¸ ØªÙØ¶ÙŠÙ„Ùƒ"
-=======
+  "Could not save your preference": "ØªØ¹Ø°Ù‘Ø± Ø­ÙØ¸ ØªÙØ¶ÙŠÙ„Ùƒ",
   "Landing page": "ØµÙØ­Ø© Ù‡Ø¨ÙˆØ·",
   "Portfolio site": "Ù…ÙˆÙ‚Ø¹ Ø£Ø¹Ù…Ø§Ù„",
   "Budget app": "ØªØ·Ø¨ÙŠÙ‚ Ù…ÙŠØ²Ø§Ù†ÙŠØ©",
@@ -1102,5 +1100,4 @@
   "Explainer animation": "Ø±Ø³ÙˆÙ… Ù…ØªØ­Ø±ÙƒØ© ØªÙˆØ¶ÙŠØ­ÙŠØ©",
   "Expense tracker": "Ù…ØªØªØ¨Ø¹ Ø§Ù„Ù…ØµØ±ÙˆÙØ§Øª",
   "Market scan": "Ù…Ø³Ø­ Ø§Ù„Ø³ÙˆÙ‚"
->>>>>>> mf/updaterfeed
 }
