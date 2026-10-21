@@ -403,6 +403,7 @@ const ipcHandlers = {
     getStatus: () => updater.getStatus(),
     checkForUpdates: () => { void updater.check(); return updater.getStatus(); },
     restartNow: () => updater.installNow(),
+    getPolicyContext: () => ({ storeManaged: false, platform: process.platform, channel: updater.feedUrl() }),
   },
   theme: {
     broadcastConfig: (_sender, { theme }) => {
@@ -734,6 +735,9 @@ app.whenReady().then(async () => {
       onStatus: (s) => {
         const label = s && s.state === "downloaded" ? "تحديث جاهز" : s && s.state ? s.state : "idle";
         if (tray) tray.setToolTip("Loam — " + label);
+        // Push status to the Agent Studio UI (preload exposes
+        // desktopEvents.updater.onStatusChanged for this channel).
+        try { win?.webContents.send("desktop-ipc-event:updater:onStatusChanged", s); } catch {}
       },
     });
   }
