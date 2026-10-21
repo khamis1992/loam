@@ -12,6 +12,8 @@ import { requireTaskWorkspace, taskPath } from "../server/taskWorkspace.js";
 import type { RunTaskOptions } from "../server/http.js";
 import { log } from "../log.js";
 import { mapAgentEvent, shortUid, baseId, createEventMapperState, makeBrief, mapToolName } from "./events.js";
+import { getApproval, decideApproval } from "../server/approvals.js";
+import { setTaskApprovalAuto, createApprovalRule } from "../server/approvalRules.js";
 import { resolveLoamMode, modeEventInfo } from "../modes/detect.js";
 import { getLoamMode, normalizeModeId, LOAM_MODES } from "../modes/catalog.js";
 import { appendTelemetry } from "../telemetry/store.js";
@@ -402,6 +404,23 @@ export function createChatSocket(deps: SocketDeps): Server {
         if (m.type === "resolve_local_execution_approval") {
           const resolve = m as ResolveLocalExecutionApproval;
           const ts = Date.now();
+          // MF4 (option 14): wire this path to the Loam approval gate — decide the
+          // stored approval record; "always" additionally saves an allow rule for
+          // the task's agent (global when the task has no agent).
+          const approve = resolve.resolution !== "deny";
+          const record = getApproval(resolve.requestId);
+          if (record) decideApproval(resolve.requestId, approve ? "approve" : "deny");
+          if (record && resolve.resolution === "always") {
+            try {
+              createApprovalRule({
+                agentId: getTask(record.taskId)?.agentId ?? null,
+                tool: record.tool,
+                decision: "allow",
+              });
+            } catch (err) {
+              log.warn(`approval rule from always-allow failed: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
           const resolved: ServerEnvelope = {
             id: baseId(),
             type: "event",
@@ -413,7 +432,7 @@ export function createChatSocket(deps: SocketDeps): Server {
               timestamp: ts,
               requestId: resolve.requestId,
               reviewer: "user",
-              result: resolve.resolution === "approve" ? "approve" : "deny",
+              result: approve ? "approve" : "deny",
             },
           };
           store.appendEvent(resolve.sessionId, resolved);
@@ -442,6 +461,12 @@ export function createChatSocket(deps: SocketDeps): Server {
           if (um.extData.agentId) {
             setThread(um.extData.agentId, taskId);
             touchMessage(um.extData.agentId);
+          }
+
+          // MF4: "Approve for me" chip — the composer sends its current toggle with
+          // every message, so a brand-new session lands on the right task too.
+          if (typeof um.extData.approveForMe === "boolean") {
+            setTaskApprovalAuto(taskId, um.extData.approveForMe);
           }
 
           // Forward the UI locale to Loam. Because Loam has no per-request locale
