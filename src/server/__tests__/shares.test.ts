@@ -100,7 +100,7 @@ describe("share tokens and routes (option #11)", () => {
     assert.equal(createdRes.status, 200);
     const { token, url } = JSON.parse(createdRes.body) as { token: string; url: string };
     assert.equal(token.length, 43);
-    assert.ok(url.includes(`/share?t=${token}`));
+    assert.ok(url.includes(`/share/${token}`));
 
     const readRes = await call("GET", `/api/share/${token}`);
     assert.equal(readRes.status, 200);

@@ -1,4 +1,4 @@
-import http from "node:http";
+﻿import http from "node:http";
 import { startSseHeartbeat } from './sseHeartbeat.js';
 import { TimelineService } from '../creative/timeline.js';
 import { MobileError, mobileHistory, readMobile, saveMobile, travelMobile } from '../mobile/store.js';
@@ -89,6 +89,7 @@ import { handleDataControlsRoutes } from "./routes/dataControls.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
 import { handleRetryLastRoutes } from "./routes/retryLast.js";
+import { handleShareRoutes } from "./routes/shares.js";
 import { importGrokbotBundle, sanitizeGrokbotBundle } from "./grokbotImport.js";
 import { isValidTimezone } from "./scheduleTime.js";
 import { getWorkModesUi, normalizeWorkMode, resolveCompanionCapabilities } from "./companionGateway.js";
@@ -196,7 +197,7 @@ function parseWorktrees(porcelainOut: string): Array<{ path: string; head: strin
 
 /** A ":cloud"-suffixed model may be served verbatim by the local Ollama (router
  *  setups register the full name); only demand a cloudModel.apiKey when Ollama
- *  does not actually have it — otherwise the request dies before it starts. */
+ *  does not actually have it â€” otherwise the request dies before it starts. */
 const ollamaTagCache = new Map<string, { names: string[]; at: number }>();
 async function cloudSuffixedModelServedByOllama(model: string): Promise<boolean> {
   const baseUrl = process.env.OLLAMA_HOST && /^http/.test(process.env.OLLAMA_HOST) ? process.env.OLLAMA_HOST : "http://127.0.0.1:11434";
@@ -271,6 +272,29 @@ function serveStatic(res: http.ServerResponse, urlPath: string): void {
   fs.createReadStream(file).pipe(res);
 }
 
+const NEXT_OUT = path.join(ROOT, "packages", "web", "out");
+
+/**
+ * Serve a file from the Next.js static export (packages/web/out). Used for the
+ * public share replay page and its /_next assets so a copied share link opens
+ * in any browser, not only inside the desktop's app:// protocol.
+ */
+function serveNextExport(res: http.ServerResponse, urlPath: string): void {
+  const rel = urlPath.replace(/^\/+/, "");
+  const file = path.resolve(NEXT_OUT, rel);
+  if (!file.startsWith(path.resolve(NEXT_OUT))) {
+    res.writeHead(403).end("forbidden");
+    return;
+  }
+  if (!fs.existsSync(file) || !fs.statSync(file).isFile()) {
+    res.writeHead(404, { "content-type": "text/plain" }).end("not found");
+    return;
+  }
+  const ext = path.extname(file).toLowerCase();
+  res.writeHead(200, { "content-type": MIME[ext] ?? "application/octet-stream" });
+  fs.createReadStream(file).pipe(res);
+}
+
 const TEXT_EXTRACT_EXT = new Set([
   ".txt", ".md", ".markdown", ".csv", ".json", ".jsonl", ".tsv", ".log", ".yml", ".yaml", ".html", ".xml",
   ".js", ".ts", ".py", ".css", ".sql", ".pdf", ".docx", ".xlsx", ".pptx",
@@ -296,7 +320,7 @@ async function buildAttachmentsBlock(raw: unknown, workspace: string): Promise<s
       abs = null;
     }
     if (!abs) {
-      parts.push(`• مرفق مفقود: ${rel}`);
+      parts.push(`â€¢ Ù…Ø±ÙÙ‚ Ù…ÙÙ‚ÙˆØ¯: ${rel}`);
       continue;
     }
     const ext = path.extname(abs).toLowerCase();
@@ -310,7 +334,7 @@ async function buildAttachmentsBlock(raw: unknown, workspace: string): Promise<s
             const pdfResult = await parser.getText();
             const pdfText = String(pdfResult?.text ?? "");
             parts.push(
-              `• [مستند "${name}"] عدد الصفحات: ${pdfResult?.total ?? "?"} — النص:\n<attachment id="${rel}">\n${pdfText.slice(0, ATTACH_INLINE_CHARS)}${pdfText.length > ATTACH_INLINE_CHARS ? `\n…(مقتطع؛ للاكتمال استخدم file_extract_text على ${rel})` : ""}\n</attachment>`,
+              `â€¢ [Ù…Ø³ØªÙ†Ø¯ "${name}"] Ø¹Ø¯Ø¯ Ø§Ù„ØµÙØ­Ø§Øª: ${pdfResult?.total ?? "?"} â€” Ø§Ù„Ù†Øµ:\n<attachment id="${rel}">\n${pdfText.slice(0, ATTACH_INLINE_CHARS)}${pdfText.length > ATTACH_INLINE_CHARS ? `\nâ€¦(Ù…Ù‚ØªØ·Ø¹Ø› Ù„Ù„Ø§ÙƒØªÙ…Ø§Ù„ Ø§Ø³ØªØ®Ø¯Ù… file_extract_text Ø¹Ù„Ù‰ ${rel})` : ""}\n</attachment>`,
             );
           } finally {
             try { await parser.destroy(); } catch { /* ignore */ }
@@ -318,23 +342,23 @@ async function buildAttachmentsBlock(raw: unknown, workspace: string): Promise<s
         } else if (OFFICE_EXT.has(ext)) {
           text = extractOfficeText(abs);
           parts.push(
-            `• [مستند "${name}" (${ext})] النص:\n<attachment id="${rel}">\n${text.slice(0, ATTACH_INLINE_CHARS)}${text.length > ATTACH_INLINE_CHARS ? `\n…(مقتطع؛ للاكتمال استخدم file_extract_text على ${rel})` : ""}\n</attachment>`,
+            `â€¢ [Ù…Ø³ØªÙ†Ø¯ "${name}" (${ext})] Ø§Ù„Ù†Øµ:\n<attachment id="${rel}">\n${text.slice(0, ATTACH_INLINE_CHARS)}${text.length > ATTACH_INLINE_CHARS ? `\nâ€¦(Ù…Ù‚ØªØ·Ø¹Ø› Ù„Ù„Ø§ÙƒØªÙ…Ø§Ù„ Ø§Ø³ØªØ®Ø¯Ù… file_extract_text Ø¹Ù„Ù‰ ${rel})` : ""}\n</attachment>`,
           );
         } else {
           text = fs.readFileSync(abs, "utf8");
-          parts.push(`• [ملف "${name}"] ${text.slice(0, ATTACH_INLINE_CHARS)}${text.length > ATTACH_INLINE_CHARS ? `\n…(مقتطع؛ للاكتمال استخدم file_extract_text على ${rel})` : ""}`);
+          parts.push(`â€¢ [Ù…Ù„Ù "${name}"] ${text.slice(0, ATTACH_INLINE_CHARS)}${text.length > ATTACH_INLINE_CHARS ? `\nâ€¦(Ù…Ù‚ØªØ·Ø¹Ø› Ù„Ù„Ø§ÙƒØªÙ…Ø§Ù„ Ø§Ø³ØªØ®Ø¯Ù… file_extract_text Ø¹Ù„Ù‰ ${rel})` : ""}`);
         }
       } catch (err) {
-        parts.push(`• تعذّر استخراج ${rel}: ${err instanceof Error ? err.message : String(err)}`);
+        parts.push(`â€¢ ØªØ¹Ø°Ù‘Ø± Ø§Ø³ØªØ®Ø±Ø§Ø¬ ${rel}: ${err instanceof Error ? err.message : String(err)}`);
       }
     } else if (IMAGE_EXTRACT_EXT.has(ext)) {
-      parts.push(`• [صورة "${name}"] استخدم أداة file_view_image بمسار ${rel} لرؤيتها.`);
+      parts.push(`â€¢ [ØµÙˆØ±Ø© "${name}"] Ø§Ø³ØªØ®Ø¯Ù… Ø£Ø¯Ø§Ø© file_view_image Ø¨Ù…Ø³Ø§Ø± ${rel} Ù„Ø±Ø¤ÙŠØªÙ‡Ø§.`);
     } else {
-      parts.push(`• [ملف "${name}"] (${ext}) — داخل المساحة: استخدم file_read أو الأدوات المناسبة.`);
+      parts.push(`â€¢ [Ù…Ù„Ù "${name}"] (${ext}) â€” Ø¯Ø§Ø®Ù„ Ø§Ù„Ù…Ø³Ø§Ø­Ø©: Ø§Ø³ØªØ®Ø¯Ù… file_read Ø£Ùˆ Ø§Ù„Ø£Ø¯ÙˆØ§Øª Ø§Ù„Ù…Ù†Ø§Ø³Ø¨Ø©.`);
     }
   }
   if (parts.length === 0) return "";
-  return `【المرفقات — تحليلها جزء من المهمة， وتابع عملك عليها】\n${parts.join("\n")}`;
+  return `ã€Ø§Ù„Ù…Ø±ÙÙ‚Ø§Øª â€” ØªØ­Ù„ÙŠÙ„Ù‡Ø§ Ø¬Ø²Ø¡ Ù…Ù† Ø§Ù„Ù…Ù‡Ù…Ø©ï¼Œ ÙˆØªØ§Ø¨Ø¹ Ø¹Ù…Ù„Ùƒ Ø¹Ù„ÙŠÙ‡Ø§ã€‘\n${parts.join("\n")}`;
 }
 
 async function applyPendingItem(item: PendingItem, memory?: MemoryStore): Promise<string> {
@@ -382,7 +406,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
   };
 
   const evalDeps = (): EvalDeps => {
-    if (!registry) throw new Error("التقييم غير متاح في هذه الجلسة");
+    if (!registry) throw new Error("Ø§Ù„ØªÙ‚ÙŠÙŠÙ… ØºÙŠØ± Ù…ØªØ§Ø­ ÙÙŠ Ù‡Ø°Ù‡ Ø§Ù„Ø¬Ù„Ø³Ø©");
     return { cfg, ollama, registry, critique: cfg.evaluation.critique };
   };
 
@@ -398,7 +422,12 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         setLocalAuthUserDataDir(localAuthDir);
         const publicPaths = new Set(["/api/health", "/api/identity"]);
         const isStatic = req.method === "GET" && (p === "/" || MIME[path.extname(p).toLowerCase()] !== undefined);
-        if (!isStatic && !publicPaths.has(p)) {
+        // The public share replay feed (GET /api/share/:token) is anonymous by
+        // design; POST/DELETE stay behind the install token like every /api route.
+        const isPublicShare = req.method === "GET" && /^\/api\/share\/[A-Za-z0-9_-]+$/.test(p);
+        // The share replay page and its static assets are public like the feed.
+        const isNextStatic = req.method === "GET" && (p === "/share" || p.startsWith("/share/") || p.startsWith("/_next/"));
+        if (!isStatic && !isPublicShare && !isNextStatic && !publicPaths.has(p)) {
           const token =
             typeof req.headers["x-loam-local-token"] === "string"
               ? req.headers["x-loam-local-token"]
@@ -473,7 +502,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
               res.end(buffer); return;
             }
             if (body && p === '/api/mobile/build') {
-              if (typeof body.brief !== 'string' || body.brief.trim().length < 10 || body.brief.length > 12000) throw new MobileError('اكتب طلبًا بين 10 و12000 حرف.');
+              if (typeof body.brief !== 'string' || body.brief.trim().length < 10 || body.brief.length > 12000) throw new MobileError('Ø§ÙƒØªØ¨ Ø·Ù„Ø¨Ù‹Ø§ Ø¨ÙŠÙ† 10 Ùˆ12000 Ø­Ø±Ù.');
               if (body.model !== undefined && (typeof body.model !== 'string' || body.model.length > 200)) throw new MobileError('Invalid model');
               if (body.operation !== undefined && body.operation !== 'polish' && body.operation !== 'review-data') throw new MobileError('Invalid mobile operation');
               if (body.allowNavigationChanges !== undefined && typeof body.allowNavigationChanges !== 'boolean') throw new MobileError('Invalid navigation change option');
@@ -506,12 +535,12 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
         if (p === "/api/swarm/runs" || p.startsWith("/api/swarm/runs/")) {
           res.setHeader("cache-control", "no-store");
-          if (!swarm) return sendJson(res, 503, { error: "محرك الفريق غير متاح في هذه الجلسة" });
+          if (!swarm) return sendJson(res, 503, { error: "Ù…Ø­Ø±Ùƒ Ø§Ù„ÙØ±ÙŠÙ‚ ØºÙŠØ± Ù…ØªØ§Ø­ ÙÙŠ Ù‡Ø°Ù‡ Ø§Ù„Ø¬Ù„Ø³Ø©" });
           // These endpoints execute tools; browser mutations must originate in this app.
           if (req.method !== "GET") {
             const origin = req.headers.origin;
             if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") {
-              return sendJson(res, 403, { error: "طلبات التشغيل مسموحة من التطبيق فقط" });
+              return sendJson(res, 403, { error: "Ø·Ù„Ø¨Ø§Øª Ø§Ù„ØªØ´ØºÙŠÙ„ Ù…Ø³Ù…ÙˆØ­Ø© Ù…Ù† Ø§Ù„ØªØ·Ø¨ÙŠÙ‚ ÙÙ‚Ø·" });
             }
             if (!req.headers["content-type"]?.startsWith("application/json")) {
               return sendJson(res, 415, { error: "application/json required" });
@@ -547,6 +576,18 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
         if (req.method === "GET" && !p.startsWith("/vendor/") && (p === "/" || MIME[path.extname(p).toLowerCase()] !== undefined)) {
           serveStatic(res, p);
+          return;
+        }
+
+        // Public share replay (option #11): serve the Next.js export so a copied
+        // link opens in a browser. /share/<token> and /share?t=<token> both land
+        // on the same replay page, which reads the token from path or query.
+        if (req.method === "GET" && (p === "/share" || p.startsWith("/share/"))) {
+          serveNextExport(res, "/share.html");
+          return;
+        }
+        if (req.method === "GET" && p.startsWith("/_next/")) {
+          serveNextExport(res, p);
           return;
         }
 
@@ -732,7 +773,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           const findings = target ? await runPentestCheck(target, check) : [];
           const scan = scanWorkspaceRoutesAndRisks(workspace);
           const report = buildPentestMarkdownReport({
-            target: target || "فحص مصدري لمساحة العمل",
+            target: target || "ÙØ­Øµ Ù…ØµØ¯Ø±ÙŠ Ù„Ù…Ø³Ø§Ø­Ø© Ø§Ù„Ø¹Ù…Ù„",
             workspace: requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace),
             findings,
             scan,
@@ -759,15 +800,15 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         if (req.method === "POST" && p === "/api/workspace") {
           const body = (await readBody(req)) as { path?: unknown };
           const raw = typeof body.path === "string" ? body.path.trim().replace(/^"|"$/g, "") : "";
-          if (!raw) return sendJson(res, 400, { error: "المسار مطلوب" });
+          if (!raw) return sendJson(res, 400, { error: "Ø§Ù„Ù…Ø³Ø§Ø± Ù…Ø·Ù„ÙˆØ¨" });
           const abs = path.resolve(raw);
           try {
             if (!fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) {
-              return sendJson(res, 400, { error: `ليس مجلداً موجوداً: ${abs}` });
+              return sendJson(res, 400, { error: `Ù„ÙŠØ³ Ù…Ø¬Ù„Ø¯Ø§Ù‹ Ù…ÙˆØ¬ÙˆØ¯Ø§Ù‹: ${abs}` });
             }
             fs.accessSync(abs, fs.constants.R_OK | fs.constants.W_OK);
           } catch (err) {
-            return sendJson(res, 403, { error: `لا يمكن الوصول للمجلد: ${abs}` });
+            return sendJson(res, 403, { error: `Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø§Ù„ÙˆØµÙˆÙ„ Ù„Ù„Ù…Ø¬Ù„Ø¯: ${abs}` });
           }
           cfg.workspace = abs;
           const st = getSettings();
@@ -779,10 +820,10 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (p === "/api/worktree" || p.startsWith("/api/worktree/")) {
-          return sendJson(res, 410, { error: "مساحات Loam معزولة وثابتة لكل مهمة؛ إدارة أشجار العمل المشتركة غير متاحة." });
+          return sendJson(res, 410, { error: "Ù…Ø³Ø§Ø­Ø§Øª Loam Ù…Ø¹Ø²ÙˆÙ„Ø© ÙˆØ«Ø§Ø¨ØªØ© Ù„ÙƒÙ„ Ù…Ù‡Ù…Ø©Ø› Ø¥Ø¯Ø§Ø±Ø© Ø£Ø´Ø¬Ø§Ø± Ø§Ù„Ø¹Ù…Ù„ Ø§Ù„Ù…Ø´ØªØ±ÙƒØ© ØºÙŠØ± Ù…ØªØ§Ø­Ø©." });
         }
 
-        if (p === "/api/launch") return sendJson(res, 410, { error: "استخدم مساحات Loam المدمجة بدلاً من مشغّل التطبيقات الخارجي." });
+        if (p === "/api/launch") return sendJson(res, 410, { error: "Ø§Ø³ØªØ®Ø¯Ù… Ù…Ø³Ø§Ø­Ø§Øª Loam Ø§Ù„Ù…Ø¯Ù…Ø¬Ø© Ø¨Ø¯Ù„Ø§Ù‹ Ù…Ù† Ù…Ø´ØºÙ‘Ù„ Ø§Ù„ØªØ·Ø¨ÙŠÙ‚Ø§Øª Ø§Ù„Ø®Ø§Ø±Ø¬ÙŠ." });
 
         if (req.method === "GET" && p.startsWith("/vendor/three/")) {
           const addon = p.startsWith("/vendor/three/addons/");
@@ -1003,7 +1044,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (req.method === "POST" && p === "/api/eval/run") {
-          if (!registry) return sendJson(res, 503, { error: "التقييم غير متاح في هذه الجلسة" });
+          if (!registry) return sendJson(res, 503, { error: "Ø§Ù„ØªÙ‚ÙŠÙŠÙ… ØºÙŠØ± Ù…ØªØ§Ø­ ÙÙŠ Ù‡Ø°Ù‡ Ø§Ù„Ø¬Ù„Ø³Ø©" });
           const body = (await readBody(req)) as { suite?: unknown; case?: unknown };
           const ref = typeof body.suite === "string" && body.suite ? body.suite : cfg.evaluation.suite;
           try {
@@ -1215,11 +1256,11 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         if (req.method === "GET" && p.startsWith("/api/tasks/") && p.endsWith("/files")) {
           const id = decodeURIComponent(p.slice("/api/tasks/".length, -"/files".length));
           const task = getTask(id);
-          if (!task) return sendJson(res, 404, { error: "المهمة غير موجودة" });
+          if (!task) return sendJson(res, 404, { error: "Ø§Ù„Ù…Ù‡Ù…Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©" });
           const root = requireTaskWorkspace(id, cfg.workspace);
           const rel = url.searchParams.get("path") ?? "";
           const dir = taskPath(root, rel);
-          if (!dir.startsWith(path.resolve(root))) return sendJson(res, 400, { error: "مسار غير صالح" });
+          if (!dir.startsWith(path.resolve(root))) return sendJson(res, 400, { error: "Ù…Ø³Ø§Ø± ØºÙŠØ± ØµØ§Ù„Ø­" });
           let entries: Array<{ name: string; dir: boolean; bytes: number; at: string }> = [];
           try {
             entries = fs.readdirSync(dir, { withFileTypes: true })
@@ -1231,7 +1272,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
               })
               .sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1));
           } catch {
-            return sendJson(res, 404, { error: "المجلد غير موجود" });
+            return sendJson(res, 404, { error: "Ø§Ù„Ù…Ø¬Ù„Ø¯ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           }
           return sendJson(res, 200, { path: rel || ".", files: entries });
         }
@@ -1240,7 +1281,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         if (p.startsWith("/api/agents/") && p.includes("/voice")) {
           const rest = decodeURIComponent(p.slice("/api/agents/".length));
           const [agentId, action] = rest.split("/");
-          if (!agentId || !getAgent(agentId)) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+          if (!agentId || !getAgent(agentId)) return sendJson(res, 404, { error: "Ø§Ù„ÙˆÙƒÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           if (req.method === "GET" && (!action || action === "voice")) return sendJson(res, 200, { turns: listVoiceTurns(agentId) });
           if (req.method === "POST" && action === "voice" && p.endsWith("/transcribe")) {
             const raw = await readRawBody(req);
@@ -1273,10 +1314,10 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           }
           if (req.method === "POST") {
             const body = (await readBody(req)) as { name?: unknown; value?: unknown };
-            if (typeof body.name !== "string" || typeof body.value !== "string") return sendJson(res, 400, { error: "name وvalue مطلوبان" });
+            if (typeof body.name !== "string" || typeof body.value !== "string") return sendJson(res, 400, { error: "name Ùˆvalue Ù…Ø·Ù„ÙˆØ¨Ø§Ù†" });
             const result = setSecret(agentId, body.name, body.value);
             if (result !== true) return sendJson(res, 400, result);
-            return sendJson(res, 200, { ok: true, note: "حُفظ السر مشفرًا — القيمة لا تظهر مجددًا لأي واجهة أو نموذج." });
+            return sendJson(res, 200, { ok: true, note: "Ø­ÙÙØ¸ Ø§Ù„Ø³Ø± Ù…Ø´ÙØ±Ù‹Ø§ â€” Ø§Ù„Ù‚ÙŠÙ…Ø© Ù„Ø§ ØªØ¸Ù‡Ø± Ù…Ø¬Ø¯Ø¯Ù‹Ø§ Ù„Ø£ÙŠ ÙˆØ§Ø¬Ù‡Ø© Ø£Ùˆ Ù†Ù…ÙˆØ°Ø¬." });
           }
           if (req.method === "DELETE") {
             const name = url.searchParams.get("name") ?? "";
@@ -1291,22 +1332,22 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         if (req.method === "POST" && p.startsWith("/api/approvals/")) {
           const id = decodeURIComponent(p.slice("/api/approvals/".length));
           const body = (await readBody(req)) as { decision?: unknown };
-          if (body.decision !== "approve" && body.decision !== "deny") return sendJson(res, 400, { error: "decision يجب أن يكون approve أو deny" });
+          if (body.decision !== "approve" && body.decision !== "deny") return sendJson(res, 400, { error: "decision ÙŠØ¬Ø¨ Ø£Ù† ÙŠÙƒÙˆÙ† approve Ø£Ùˆ deny" });
           const rec = decideApproval(id, body.decision);
-          if (!rec) return sendJson(res, 404, { error: "الطلب غير موجود" });
-          if (rec.status === "pending") return sendJson(res, 409, { error: "بُتّ في الطلب مسبقًا" , approval: rec });
+          if (!rec) return sendJson(res, 404, { error: "Ø§Ù„Ø·Ù„Ø¨ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
+          if (rec.status === "pending") return sendJson(res, 409, { error: "Ø¨ÙØªÙ‘ ÙÙŠ Ø§Ù„Ø·Ù„Ø¨ Ù…Ø³Ø¨Ù‚Ù‹Ø§" , approval: rec });
           return sendJson(res, 200, { approval: rec });
         }
         if (req.method === "GET" && p.startsWith("/api/approvals/")) {
           const rec = getApproval(decodeURIComponent(p.slice("/api/approvals/".length)));
-          if (!rec) return sendJson(res, 404, { error: "الطلب غير موجود" });
+          if (!rec) return sendJson(res, 404, { error: "Ø§Ù„Ø·Ù„Ø¨ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           return sendJson(res, 200, { approval: rec });
         }
 
         // ---- per-companion usage/cost (section 19) + project handover (section 1) ----
         if (req.method === "GET" && p.startsWith("/api/agents/") && p.endsWith("/usage")) {
           const id = decodeURIComponent(p.slice("/api/agents/".length, -"/usage".length));
-          if (!getAgent(id)) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+          if (!getAgent(id)) return sendJson(res, 404, { error: "Ø§Ù„ÙˆÙƒÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           const tasksByAgent = new Map(listTasks().map((t) => [t.id, t.agentId ?? null]));
           const rows = readTelemetry(2000).filter((r) => r.taskId && tasksByAgent.get(r.taskId) === id);
           const usage = {
@@ -1319,17 +1360,17 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             deviceToolCalls: rows.reduce((a, r) => a + (r.toolCalls?.filter((c) => c.name?.startsWith("device_")).length ?? 0), 0),
             lastRunAt: rows[0]?.at ?? null,
           };
-          sendJson(res, 200, { usage, costNote: "نماذج وأجهزة محلية على حاسوبك — لا تكلفة سحابية؛ الرموز أعلاه مقياس الاستهلاك" });
+          sendJson(res, 200, { usage, costNote: "Ù†Ù…Ø§Ø°Ø¬ ÙˆØ£Ø¬Ù‡Ø²Ø© Ù…Ø­Ù„ÙŠØ© Ø¹Ù„Ù‰ Ø­Ø§Ø³ÙˆØ¨Ùƒ â€” Ù„Ø§ ØªÙƒÙ„ÙØ© Ø³Ø­Ø§Ø¨ÙŠØ©Ø› Ø§Ù„Ø±Ù…ÙˆØ² Ø£Ø¹Ù„Ø§Ù‡ Ù…Ù‚ÙŠØ§Ø³ Ø§Ù„Ø§Ø³ØªÙ‡Ù„Ø§Ùƒ" });
           return;
         }
         if (req.method === "POST" && p.startsWith("/api/projects/") && p.endsWith("/handover")) {
           const id = decodeURIComponent(p.slice("/api/projects/".length, -"/handover".length));
           const project = getProject(id);
-          if (!project) return sendJson(res, 404, { error: "المشروع غير موجود" });
+          if (!project) return sendJson(res, 404, { error: "Ø§Ù„Ù…Ø´Ø±ÙˆØ¹ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           const body = (await readBody(req)) as { toAgentId?: unknown };
           const toAgentId = typeof body.toAgentId === "string" ? body.toAgentId : "";
           const target = getAgent(toAgentId);
-          if (!target) return sendJson(res, 400, { error: "الرفيق المستلم غير موجود" });
+          if (!target) return sendJson(res, 400, { error: "Ø§Ù„Ø±ÙÙŠÙ‚ Ø§Ù„Ù…Ø³ØªÙ„Ù… ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           const projectTasks = listTasks(id).filter((t) => t.agentId && t.agentId !== toAgentId);
           const previousOwners = [...new Set(projectTasks.map((t) => t.agentId!))];
           for (const t of projectTasks) setTaskAgent(t.id, toAgentId);
@@ -1349,7 +1390,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             fromAgents: previousOwners,
             toAgent: { id: target.id, name: target.name },
             memoryEntriesTransferred: importedEntries,
-            note: "انتقلت مهام المشروع إلى الرفيق المستلم مع نسخة من ذاكرة الملاك السابقين (تظهر عنده موسومة بالمصدر).",
+            note: "Ø§Ù†ØªÙ‚Ù„Øª Ù…Ù‡Ø§Ù… Ø§Ù„Ù…Ø´Ø±ÙˆØ¹ Ø¥Ù„Ù‰ Ø§Ù„Ø±ÙÙŠÙ‚ Ø§Ù„Ù…Ø³ØªÙ„Ù… Ù…Ø¹ Ù†Ø³Ø®Ø© Ù…Ù† Ø°Ø§ÙƒØ±Ø© Ø§Ù„Ù…Ù„Ø§Ùƒ Ø§Ù„Ø³Ø§Ø¨Ù‚ÙŠÙ† (ØªØ¸Ù‡Ø± Ø¹Ù†Ø¯Ù‡ Ù…ÙˆØ³ÙˆÙ…Ø© Ø¨Ø§Ù„Ù…ØµØ¯Ø±).",
           });
           return;
         }
@@ -1358,7 +1399,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         if (p.startsWith("/api/agents/") && p.includes("/memory")) {
           const rest = decodeURIComponent(p.slice("/api/agents/".length));
           const [agentId, memoryAction, entryId] = rest.split("/");
-          if (!agentId || !getAgent(agentId)) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+          if (!agentId || !getAgent(agentId)) return sendJson(res, 404, { error: "Ø§Ù„ÙˆÙƒÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           if (req.method === "GET" && (!memoryAction || memoryAction === "memory")) {
             return sendJson(res, 200, { entries: listMemory(agentId, { q: url.searchParams.get("q") ?? undefined, includeInactive: url.searchParams.get("all") === "1" }) });
           }
@@ -1382,7 +1423,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           }
           if (req.method === "POST" && memoryAction === "memory" && entryId === "supersede") {
             const body = (await readBody(req)) as { entryId?: unknown; text?: unknown };
-            if (typeof body.entryId !== "string" || typeof body.text !== "string" || !body.text.trim()) return sendJson(res, 400, { error: "entryId وtext مطلوبان" });
+            if (typeof body.entryId !== "string" || typeof body.text !== "string" || !body.text.trim()) return sendJson(res, 400, { error: "entryId Ùˆtext Ù…Ø·Ù„ÙˆØ¨Ø§Ù†" });
             const result = supersedeMemory(agentId, body.entryId, body.text);
             if ("error" in result) return sendJson(res, 404, result);
             return sendJson(res, 200, { result });
@@ -1425,9 +1466,9 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         if (req.method === "POST" && p.startsWith("/api/agents/") && p.endsWith("/duplicate")) {
           const id = decodeURIComponent(p.slice("/api/agents/".length, -"/duplicate".length));
           const source = getAgent(id);
-          if (!source) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+          if (!source) return sendJson(res, 404, { error: "Ø§Ù„ÙˆÙƒÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           const agent = createAgent({
-            name: source.name + " (نسخة)",
+            name: source.name + " (Ù†Ø³Ø®Ø©)",
             emoji: source.emoji,
             description: source.description,
             instructions: source.instructions,
@@ -1447,7 +1488,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         if (req.method === "POST" && p.startsWith("/api/agents/") && p.endsWith("/archive")) {
           const id = decodeURIComponent(p.slice("/api/agents/".length, -"/archive".length));
           const agent = getAgent(id);
-          if (!agent) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+          if (!agent) return sendJson(res, 404, { error: "Ø§Ù„ÙˆÙƒÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           const archived = setAgentArchived(id, true);
           if (archived?.archivedAt) {
             // Stop every event source that could still trigger this companion.
@@ -1458,12 +1499,12 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
               }
             }
           }
-          return sendJson(res, 200, { archived: Boolean(archived?.archivedAt), agent: archived, note: "أُرشف الرفيق وأُوقفت كل روتيناته ومشغلاته — بياناته محفوظة" });
+          return sendJson(res, 200, { archived: Boolean(archived?.archivedAt), agent: archived, note: "Ø£ÙØ±Ø´Ù Ø§Ù„Ø±ÙÙŠÙ‚ ÙˆØ£ÙÙˆÙ‚ÙØª ÙƒÙ„ Ø±ÙˆØªÙŠÙ†Ø§ØªÙ‡ ÙˆÙ…Ø´ØºÙ„Ø§ØªÙ‡ â€” Ø¨ÙŠØ§Ù†Ø§ØªÙ‡ Ù…Ø­ÙÙˆØ¸Ø©" });
         }
         if (req.method === "POST" && p.startsWith("/api/agents/") && p.endsWith("/unarchive")) {
           const id = decodeURIComponent(p.slice("/api/agents/".length, -"/unarchive".length));
           const agent = getAgent(id);
-          if (!agent) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+          if (!agent) return sendJson(res, 404, { error: "Ø§Ù„ÙˆÙƒÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           const restored = setAgentArchived(id, false);
           return sendJson(res, 200, { archived: false, agent: restored });
         }
@@ -1471,7 +1512,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         if (req.method === "POST" && p.startsWith("/api/agents/") && p.endsWith("/hide")) {
           const id = decodeURIComponent(p.slice("/api/agents/".length, -"/hide".length));
           const agent = getAgent(id);
-          if (!agent) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+          if (!agent) return sendJson(res, 404, { error: "Ø§Ù„ÙˆÙƒÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           let body: { hidden?: unknown } = {};
           try {
             body = (await readBody(req)) as { hidden?: unknown };
@@ -1485,7 +1526,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         if (req.method === "POST" && p === "/api/agents/reorder") {
           const body = (await readBody(req)) as { ids?: unknown };
           if (!Array.isArray(body.ids) || body.ids.some((v) => typeof v !== "string")) {
-            return sendJson(res, 400, { error: "ids يجب أن تكون قائمة معرفات" });
+            return sendJson(res, 400, { error: "ids ÙŠØ¬Ø¨ Ø£Ù† ØªÙƒÙˆÙ† Ù‚Ø§Ø¦Ù…Ø© Ù…Ø¹Ø±ÙØ§Øª" });
           }
           const pinned = reorderAgents(body.ids as string[]);
           return sendJson(res, 200, { pinned, agents: listAgents() });
@@ -1493,17 +1534,17 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         if (req.method === "POST" && p.startsWith("/api/agents/") && p.endsWith("/pin")) {
           const id = decodeURIComponent(p.slice("/api/agents/".length, -"/pin".length));
           const agent = getAgent(id);
-          if (!agent) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+          if (!agent) return sendJson(res, 404, { error: "Ø§Ù„ÙˆÙƒÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           const body = (await readBody(req)) as { pinned?: unknown };
           const pinned = body.pinned === undefined ? true : body.pinned === true;
           const updated = setAgentPinned(id, pinned);
-          if (!updated) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+          if (!updated) return sendJson(res, 404, { error: "Ø§Ù„ÙˆÙƒÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           return sendJson(res, 200, { agent: updated });
         }
         if (req.method === "GET" && p.startsWith("/api/agents/") && p.endsWith("/export")) {
           const id = decodeURIComponent(p.slice("/api/agents/".length, -"/export".length));
           const agent = getAgent(id);
-          if (!agent) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+          if (!agent) return sendJson(res, 404, { error: "Ø§Ù„ÙˆÙƒÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           const bundle: CompanionBundle = {
             kind: "loam-companion-bundle",
             version: 1,
@@ -1524,7 +1565,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           if ("error" in bundle) return sendJson(res, 400, bundle);
           const src = bundle.agent as Record<string, unknown>;
           const agent = createAgent({
-            name: typeof src.name === "string" ? src.name + " (مستورد)" : "مساعد مستورد",
+            name: typeof src.name === "string" ? src.name + " (Ù…Ø³ØªÙˆØ±Ø¯)" : "Ù…Ø³Ø§Ø¹Ø¯ Ù…Ø³ØªÙˆØ±Ø¯",
             ...(typeof src.emoji === "string" ? { emoji: src.emoji } : {}),
             ...(typeof src.description === "string" ? { description: src.description } : {}),
             ...(typeof src.instructions === "string" ? { instructions: src.instructions } : {}),
@@ -1561,7 +1602,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           let importedVoiceTurns = 0;
           for (const entry of bundle.voiceTurns) {
             const e = entry as Record<string, unknown>;
-            // Bundles store `speaker`; older exports used `role` — accept both.
+            // Bundles store `speaker`; older exports used `role` â€” accept both.
             const speakerRaw = typeof e.speaker === "string" && e.speaker ? e.speaker : e.role;
             if (typeof speakerRaw !== "string" || typeof e.text !== "string") continue;
             appendVoiceTurn(agent.id, { speaker: speakerRaw === "user" ? "user" : "assistant", text: e.text });
@@ -1581,8 +1622,8 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           if (req.method === "GET") return sendJson(res, 200, { granted: agentIntegrationGrants(agentId) });
           if (req.method === "POST") {
             const body = (await readBody(req)) as { names?: unknown };
-            if (!Array.isArray(body.names)) return sendJson(res, 400, { error: "names مطلوبة كمصفوفة" });
-            if (!registry) return sendJson(res, 503, { error: "سجل الأدوات غير متاح" });
+            if (!Array.isArray(body.names)) return sendJson(res, 400, { error: "names Ù…Ø·Ù„ÙˆØ¨Ø© ÙƒÙ…ØµÙÙˆÙØ©" });
+            if (!registry) return sendJson(res, 503, { error: "Ø³Ø¬Ù„ Ø§Ù„Ø£Ø¯ÙˆØ§Øª ØºÙŠØ± Ù…ØªØ§Ø­" });
             try { saveAgentIntegrationGrants(agentId, body.names.filter((n): n is string => typeof n === "string"), registry); }
             catch (error) { return sendJson(res, 400, { error: String(error) }); }
             return sendJson(res, 200, { granted: agentIntegrationGrants(agentId) });
@@ -1604,22 +1645,22 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         // ---- remote continuity channel (22): keyed access from the LAN (phone/web) ----
-        const LOAM_REMOTE_PAGE = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Loam بعيد</title><style>body{font-family:system-ui;max-width:640px;margin:0 auto;padding:1.2rem;background:#101613;color:#e8efe9}textarea,select,button{font-family:inherit;font-size:1rem}textarea{width:100%;min-height:96px;padding:.7rem;border-radius:10px;border:1px solid #2c3a30;background:#0b100d;color:#e8efe9}button{background:#4f7d5c;color:#fff;border:0;border-radius:10px;padding:.65rem 1.4rem;margin-top:.5rem}#st{margin-top:.8rem;font-size:.9rem;color:#9fb8a8;white-space:pre-wrap}</style></head><body>
-<h2>🤖 Loam — من هاتفك</h2>
-<p style="color:#9fb8a8;font-size:.9rem">أرسل مهمة لمساعدك على جهازك المنزلي، وتابع حالتها هنا.</p>
+        const LOAM_REMOTE_PAGE = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Loam Ø¨Ø¹ÙŠØ¯</title><style>body{font-family:system-ui;max-width:640px;margin:0 auto;padding:1.2rem;background:#101613;color:#e8efe9}textarea,select,button{font-family:inherit;font-size:1rem}textarea{width:100%;min-height:96px;padding:.7rem;border-radius:10px;border:1px solid #2c3a30;background:#0b100d;color:#e8efe9}button{background:#4f7d5c;color:#fff;border:0;border-radius:10px;padding:.65rem 1.4rem;margin-top:.5rem}#st{margin-top:.8rem;font-size:.9rem;color:#9fb8a8;white-space:pre-wrap}</style></head><body>
+<h2>ðŸ¤– Loam â€” Ù…Ù† Ù‡Ø§ØªÙÙƒ</h2>
+<p style="color:#9fb8a8;font-size:.9rem">Ø£Ø±Ø³Ù„ Ù…Ù‡Ù…Ø© Ù„Ù…Ø³Ø§Ø¹Ø¯Ùƒ Ø¹Ù„Ù‰ Ø¬Ù‡Ø§Ø²Ùƒ Ø§Ù„Ù…Ù†Ø²Ù„ÙŠØŒ ÙˆØªØ§Ø¨Ø¹ Ø­Ø§Ù„ØªÙ‡Ø§ Ù‡Ù†Ø§.</p>
 <select id="ag" style="width:100%;padding:.6rem;border-radius:10px;background:#0b100d;color:#e8efe9;border:1px solid #2c3a30"></select>
-<textarea id="p" placeholder="اكتب المهمة…"></textarea><br>
-<button onclick="send()">إرسال للمساعد</button>
-<button onclick="location.reload()" style="background:#2c3a30">تحديث القائمة</button>
+<textarea id="p" placeholder="Ø§ÙƒØªØ¨ Ø§Ù„Ù…Ù‡Ù…Ø©â€¦"></textarea><br>
+<button onclick="send()">Ø¥Ø±Ø³Ø§Ù„ Ù„Ù„Ù…Ø³Ø§Ø¹Ø¯</button>
+<button onclick="location.reload()" style="background:#2c3a30">ØªØ­Ø¯ÙŠØ« Ø§Ù„Ù‚Ø§Ø¦Ù…Ø©</button>
 <div id="st"></div>
 <script>
 const KEY=new URLSearchParams(location.search).get('key')||'';
 const H={'content-type':'application/json','x-loam-key':KEY};
-async function loadAgents(){try{const r=await fetch('/api/agents',{headers:H});const d=await r.json();const s=document.getElementById('ag');s.innerHTML=(d.agents||[]).map(a=>'<option value="'+a.id+'">'+a.name+' — '+(a.description||'')+'</option>').join('');}catch(e){document.getElementById('st').textContent='تعذر تحميل المساعدين: '+e.message;}}
-async function send(){const p=document.getElementById('p').value.trim();if(!p)return;const ag=document.getElementById('ag').value;const st=document.getElementById('st');st.textContent='⏳ جارٍ الإرسال…';try{const r=await fetch('/api/remote/trigger',{method:'POST',headers:H,body:JSON.stringify({prompt:p,agentId:ag||undefined})});const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);st.textContent='✅ بدأت المهمة ('+d.taskId+') — أتابعها…';poll(d.taskId);}catch(e){st.textContent='✗ '+e.message;}}
-async function poll(id){for(let i=0;i<120;i++){await new Promise(r=>setTimeout(r,3000));try{const r=await fetch('/api/remote/status?taskId='+encodeURIComponent(id),{headers:H});const d=await r.json();if(d.status==='done'){document.getElementById('st').textContent='🎉 اكتملت المهمة!
+async function loadAgents(){try{const r=await fetch('/api/agents',{headers:H});const d=await r.json();const s=document.getElementById('ag');s.innerHTML=(d.agents||[]).map(a=>'<option value="'+a.id+'">'+a.name+' â€” '+(a.description||'')+'</option>').join('');}catch(e){document.getElementById('st').textContent='ØªØ¹Ø°Ø± ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ù…Ø³Ø§Ø¹Ø¯ÙŠÙ†: '+e.message;}}
+async function send(){const p=document.getElementById('p').value.trim();if(!p)return;const ag=document.getElementById('ag').value;const st=document.getElementById('st');st.textContent='â³ Ø¬Ø§Ø±Ù Ø§Ù„Ø¥Ø±Ø³Ø§Ù„â€¦';try{const r=await fetch('/api/remote/trigger',{method:'POST',headers:H,body:JSON.stringify({prompt:p,agentId:ag||undefined})});const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);st.textContent='âœ… Ø¨Ø¯Ø£Øª Ø§Ù„Ù…Ù‡Ù…Ø© ('+d.taskId+') â€” Ø£ØªØ§Ø¨Ø¹Ù‡Ø§â€¦';poll(d.taskId);}catch(e){st.textContent='âœ— '+e.message;}}
+async function poll(id){for(let i=0;i<120;i++){await new Promise(r=>setTimeout(r,3000));try{const r=await fetch('/api/remote/status?taskId='+encodeURIComponent(id),{headers:H});const d=await r.json();if(d.status==='done'){document.getElementById('st').textContent='ðŸŽ‰ Ø§ÙƒØªÙ…Ù„Øª Ø§Ù„Ù…Ù‡Ù…Ø©!
 
-'+(d.notification?.body||'');return;}if(d.status==='error'||d.status==='cancelled'){document.getElementById('st').textContent='✗ انتهت: '+d.status;return;}document.getElementById('st').textContent='⏳ الحالة: '+d.status+'…';}catch(e){}}document.getElementById('st').textContent='انتهت مهلة المتابعة — المهمة ما زالت تعمل على جهازك.';}
+'+(d.notification?.body||'');return;}if(d.status==='error'||d.status==='cancelled'){document.getElementById('st').textContent='âœ— Ø§Ù†ØªÙ‡Øª: '+d.status;return;}document.getElementById('st').textContent='â³ Ø§Ù„Ø­Ø§Ù„Ø©: '+d.status+'â€¦';}catch(e){}}document.getElementById('st').textContent='Ø§Ù†ØªÙ‡Øª Ù…Ù‡Ù„Ø© Ø§Ù„Ù…ØªØ§Ø¨Ø¹Ø© â€” Ø§Ù„Ù…Ù‡Ù…Ø© Ù…Ø§ Ø²Ø§Ù„Øª ØªØ¹Ù…Ù„ Ø¹Ù„Ù‰ Ø¬Ù‡Ø§Ø²Ùƒ.';}
 loadAgents();
 </script></body></html>`;
         const remoteKey = () => process.env.LOAM_REMOTE_KEY || "";
@@ -1627,7 +1668,7 @@ loadAgents();
         if (req.method === "GET" && p === "/remote") {
           if (!remoteOk(req) && url.searchParams.get("key") !== remoteKey()) {
             res.writeHead(401, { "content-type": "text/html; charset=utf-8" });
-            res.end('<!doctype html><meta charset="utf-8"><body dir="rtl" style="font-family:system-ui;padding:2rem"><h3>مفتاح الوصول مطلوب</h3><input id="k" placeholder="المفتاح" style="padding:.6rem;width:220px"><script>function go(){location=\'/remote?key=\'+encodeURIComponent(document.getElementById(\'k\').value)}</script><button onclick="go()" style="padding:.6rem">دخول</button></body>');
+            res.end('<!doctype html><meta charset="utf-8"><body dir="rtl" style="font-family:system-ui;padding:2rem"><h3>Ù…ÙØªØ§Ø­ Ø§Ù„ÙˆØµÙˆÙ„ Ù…Ø·Ù„ÙˆØ¨</h3><input id="k" placeholder="Ø§Ù„Ù…ÙØªØ§Ø­" style="padding:.6rem;width:220px"><script>function go(){location=\'/remote?key=\'+encodeURIComponent(document.getElementById(\'k\').value)}</script><button onclick="go()" style="padding:.6rem">Ø¯Ø®ÙˆÙ„</button></body>');
             return;
           }
           res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -1635,22 +1676,22 @@ loadAgents();
           return;
         }
         if (req.method === "POST" && p === "/api/remote/trigger") {
-          if (!remoteOk(req)) return sendJson(res, 401, { error: "مفتاح الوصول غير صالح — فعّل LOAM_REMOTE_KEY على جهاز Loam" });
+          if (!remoteOk(req)) return sendJson(res, 401, { error: "Ù…ÙØªØ§Ø­ Ø§Ù„ÙˆØµÙˆÙ„ ØºÙŠØ± ØµØ§Ù„Ø­ â€” ÙØ¹Ù‘Ù„ LOAM_REMOTE_KEY Ø¹Ù„Ù‰ Ø¬Ù‡Ø§Ø² Loam" });
           const body = (await readBody(req)) as { prompt?: unknown; agentId?: unknown };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
-          if (!prompt) return sendJson(res, 400, { error: "prompt مطلوب" });
+          if (!prompt) return sendJson(res, 400, { error: "prompt Ù…Ø·Ù„ÙˆØ¨" });
           const agentId = typeof body.agentId === "string" && body.agentId ? body.agentId : undefined;
-          const task0 = createTask(prompt, "طلب بعيد", null, agentId);
+          const task0 = createTask(prompt, "Ø·Ù„Ø¨ Ø¨Ø¹ÙŠØ¯", null, agentId);
           void runTask({ taskId: task0.id, prompt, ...(agentId ? { agentId } : {}), emit: () => {} }).catch((e) => log.warn("remote trigger: " + String(e)));
-          return sendJson(res, 202, { taskId: task0.id, note: "بدأ التنفيذ — راقب /api/remote/status" });
+          return sendJson(res, 202, { taskId: task0.id, note: "Ø¨Ø¯Ø£ Ø§Ù„ØªÙ†ÙÙŠØ° â€” Ø±Ø§Ù‚Ø¨ /api/remote/status" });
         }
         if (req.method === "GET" && p === "/api/remote/status") {
-          if (!remoteOk(req)) return sendJson(res, 401, { error: "مفتاح الوصول غير صالح" });
+          if (!remoteOk(req)) return sendJson(res, 401, { error: "Ù…ÙØªØ§Ø­ Ø§Ù„ÙˆØµÙˆÙ„ ØºÙŠØ± ØµØ§Ù„Ø­" });
           const id = url.searchParams.get("taskId") ?? "";
           const task2 = getTask(id);
-          if (!task2) return sendJson(res, 404, { error: "المهمة غير موجودة" });
+          if (!task2) return sendJson(res, 404, { error: "Ø§Ù„Ù…Ù‡Ù…Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©" });
           const last2 = (task2.messages ?? []).filter((m) => m.role === "assistant").at(-1);
-          return sendJson(res, 200, { taskId: id, status: task2.status, notification: task2.status === "done" ? { title: "اكتملت المهمة البعيدة", body: (last2?.content ?? "").slice(0, 400) } : null });
+          return sendJson(res, 200, { taskId: id, status: task2.status, notification: task2.status === "done" ? { title: "Ø§ÙƒØªÙ…Ù„Øª Ø§Ù„Ù…Ù‡Ù…Ø© Ø§Ù„Ø¨Ø¹ÙŠØ¯Ø©", body: (last2?.content ?? "").slice(0, 400) } : null });
         }
 
         // ---- companion gateway: work modes + service catalog (unified tool gateway) ----
@@ -1662,7 +1703,7 @@ loadAgents();
         if (req.method === "POST" && p === "/api/agents") {
           const body = (await readBody(req)) as { name?: unknown; emoji?: unknown; description?: unknown; instructions?: unknown; model?: unknown; mode?: unknown; effort?: unknown; disabledTools?: unknown; workMode?: unknown; allowedServices?: unknown; voice?: unknown; voiceRate?: unknown; voiceAuto?: unknown; source?: unknown; avatarShape?: unknown; avatarColor?: unknown; avatarImage?: unknown };
           const name = typeof body.name === "string" ? body.name.trim() : "";
-          if (!name) return sendJson(res, 400, { error: "اسم الوكيل مطلوب" });
+          if (!name) return sendJson(res, 400, { error: "Ø§Ø³Ù… Ø§Ù„ÙˆÙƒÙŠÙ„ Ù…Ø·Ù„ÙˆØ¨" });
           try {
             const agent = createAgent({
               name,
@@ -1706,6 +1747,9 @@ loadAgents();
         if (await handleDataControlsRoutes(req, res, p)) return;
         if (await handleApprovalRuleRoutes(req, res, p, url)) return;
         if (await handleGrokbotBridgeRoutes(req, res, p, url)) return;
+        // Public read-only task shares (option #11): create/revoke are authed,
+        // GET /api/share/:token is the anonymous replay feed exempted above.
+        if (await handleShareRoutes(req, res, p)) return;
 
         // ---- avatar (Grok Bot-style): set shape/color/image on an existing agent ----
         // Must run before the generic /api/agents/:id prefix block.
@@ -1718,7 +1762,7 @@ loadAgents();
             else if (typeof body[field] === "string") patch[field] = body[field] as string;
           }
           const agent = updateAgent(id, patch);
-          if (!agent) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+          if (!agent) return sendJson(res, 404, { error: "Ø§Ù„ÙˆÙƒÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           sendJson(res, 200, { agent });
           return;
         }
@@ -1727,7 +1771,7 @@ loadAgents();
           const id = decodeURIComponent(p.slice("/api/agents/".length));
           if (req.method === "GET") {
             const agent = getAgent(id);
-            if (!agent) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+            if (!agent) return sendJson(res, 404, { error: "Ø§Ù„ÙˆÙƒÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
             const mode = agent.mode ?? "build";
             const caps = resolveCompanionCapabilities({
               mode,
@@ -1779,7 +1823,7 @@ loadAgents();
             } catch (err) {
               return sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
             }
-            if (!agent) return sendJson(res, 404, { error: "الوكيل غير موجود" });
+            if (!agent) return sendJson(res, 404, { error: "Ø§Ù„ÙˆÙƒÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
             sendJson(res, 200, { agent });
             return;
           }
@@ -1802,7 +1846,7 @@ loadAgents();
         if (req.method === "POST" && p === "/api/companion-devices/golden") {
           const body = (await readBody(req)) as { fromDistro?: unknown };
           const fromDistro = typeof body.fromDistro === "string" && body.fromDistro.trim() ? body.fromDistro.trim() : undefined;
-          if (!fromDistro) return sendJson(res, 400, { error: "fromDistro مطلوب (اسم توزيعة WSL تُصدَّر كصورة أساس)" });
+          if (!fromDistro) return sendJson(res, 400, { error: "fromDistro Ù…Ø·Ù„ÙˆØ¨ (Ø§Ø³Ù… ØªÙˆØ²ÙŠØ¹Ø© WSL ØªÙØµØ¯ÙŽÙ‘Ø± ÙƒØµÙˆØ±Ø© Ø£Ø³Ø§Ø³)" });
           try {
             sendJson(res, fromDistro ? 200 : 400, await deviceManager.prepareGolden(fromDistro));
           } catch (err) {
@@ -1813,7 +1857,7 @@ loadAgents();
         if (req.method === "POST" && p === "/api/companion-devices") {
           const body = (await readBody(req)) as { agentId?: unknown; template?: unknown; name?: unknown; resources?: unknown };
           const agentId = typeof body.agentId === "string" ? body.agentId : "";
-          if (!agentId || !getAgent(agentId)) return sendJson(res, 400, { error: "agentId غير صالح — اختر المساعد أولًا" });
+          if (!agentId || !getAgent(agentId)) return sendJson(res, 400, { error: "agentId ØºÙŠØ± ØµØ§Ù„Ø­ â€” Ø§Ø®ØªØ± Ø§Ù„Ù…Ø³Ø§Ø¹Ø¯ Ø£ÙˆÙ„Ù‹Ø§" });
           let created: Awaited<ReturnType<typeof deviceManager.create>>;
           try {
             created = await deviceManager.create({
@@ -1832,30 +1876,30 @@ loadAgents();
         if (p.startsWith("/api/companion-devices/")) {
           const rest = decodeURIComponent(p.slice("/api/companion-devices/".length));
           const [id, action] = rest.split("/");
-          if (!id) return sendJson(res, 404, { error: "الجهاز غير موجود" });
+          if (!id) return sendJson(res, 404, { error: "Ø§Ù„Ø¬Ù‡Ø§Ø² ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           const device = getDevice(id);
           if (req.method === "GET" && !action) {
-            if (!device) return sendJson(res, 404, { error: "الجهاز غير موجود" });
+            if (!device) return sendJson(res, 404, { error: "Ø§Ù„Ø¬Ù‡Ø§Ø² ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
             sendJson(res, 200, { device, journal: readJournal(device), readiness: await deviceManager.isReady(id) });
             return;
           }
           if (req.method === "GET" && action === "stats") {
-            if (!device) return sendJson(res, 404, { error: "الجهاز غير موجود" });
+            if (!device) return sendJson(res, 404, { error: "Ø§Ù„Ø¬Ù‡Ø§Ø² ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
             const stats = await deviceManager.stats(id);
             if ("error" in stats) return sendJson(res, 409, stats);
-            sendJson(res, 200, { stats, costNote: "جهاز محلي على حاسوبك — لا تكلفة سحابية" });
+            sendJson(res, 200, { stats, costNote: "Ø¬Ù‡Ø§Ø² Ù…Ø­Ù„ÙŠ Ø¹Ù„Ù‰ Ø­Ø§Ø³ÙˆØ¨Ùƒ â€” Ù„Ø§ ØªÙƒÙ„ÙØ© Ø³Ø­Ø§Ø¨ÙŠØ©" });
             return;
           }
           if (req.method === "GET" && action === "files") {
-            if (!device) return sendJson(res, 404, { error: "الجهاز غير موجود" });
+            if (!device) return sendJson(res, 404, { error: "Ø§Ù„Ø¬Ù‡Ø§Ø² ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
             const listing = await deviceManager.listFiles(id, url.searchParams.get("path") ?? "/home/loam");
             if (typeof listing === "string") return sendJson(res, 200, { listing });
             return sendJson(res, 409, listing);
           }
           if (req.method === "GET" && action === "file") {
-            if (!device) return sendJson(res, 404, { error: "الجهاز غير موجود" });
+            if (!device) return sendJson(res, 404, { error: "Ø§Ù„Ø¬Ù‡Ø§Ø² ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
             const pathInDevice = url.searchParams.get("path") ?? "";
-            if (!pathInDevice) return sendJson(res, 400, { error: "path مطلوب" });
+            if (!pathInDevice) return sendJson(res, 400, { error: "path Ù…Ø·Ù„ÙˆØ¨" });
             const buf = await deviceManager.readFile(id, pathInDevice);
             if ("error" in buf) return sendJson(res, 409, buf);
             res.writeHead(200, { "content-type": "application/octet-stream", "content-disposition": `attachment; filename="${encodeURIComponent(path.posix.basename(pathInDevice))}"` });
@@ -1863,7 +1907,7 @@ loadAgents();
             return;
           }
           if (req.method === "POST" && action === "file") {
-            if (!device) return sendJson(res, 404, { error: "الجهاز غير موجود" });
+            if (!device) return sendJson(res, 404, { error: "Ø§Ù„Ø¬Ù‡Ø§Ø² ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
             const raw = await readRawBody(req);
             if (raw.length === 0) return sendJson(res, 400, { error: "empty upload" });
             const name = path.basename(url.searchParams.get("path") ?? `upload-${Date.now()}`);
@@ -1875,19 +1919,19 @@ loadAgents();
           }
           // ---- live GUI viewer: boot the X session, stream frames, manual input ----
           if (req.method === "POST" && action === "gui-ensure") {
-            if (!device) return sendJson(res, 404, { error: "الجهاز غير موجود" });
+            if (!device) return sendJson(res, 404, { error: "Ø§Ù„Ø¬Ù‡Ø§Ø² ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
             const result = await deviceManager.ensureGui(id);
             if ("error" in result) return sendJson(res, 409, result);
             return sendJson(res, 200, result);
           }
           if (req.method === "GET" && action === "windows") {
-            if (!device) return sendJson(res, 404, { error: "الجهاز غير موجود" });
+            if (!device) return sendJson(res, 404, { error: "Ø§Ù„Ø¬Ù‡Ø§Ø² ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
             const windows = await deviceManager.guiWindows(id);
             if ("error" in windows) return sendJson(res, 409, windows);
             return sendJson(res, 200, { windows });
           }
           if (req.method === "GET" && (action === "screen" || action === "stream")) {
-            if (!device) return sendJson(res, 404, { error: "الجهاز غير موجود" });
+            if (!device) return sendJson(res, 404, { error: "Ø§Ù„Ø¬Ù‡Ø§Ø² ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
             const ensure = url.searchParams.get("ensure") !== "0";
             if (action === "screen") {
               const frame = await deviceManager.captureScreen(id, ensure);
@@ -1925,10 +1969,10 @@ loadAgents();
             return;
           }
           if (req.method === "POST" && action === "input") {
-            if (!device) return sendJson(res, 404, { error: "الجهاز غير موجود" });
+            if (!device) return sendJson(res, 404, { error: "Ø§Ù„Ø¬Ù‡Ø§Ø² ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
             const body = (await readBody(req)) as { type?: unknown; x?: unknown; y?: unknown; text?: unknown; key?: unknown };
             const allowed = ["click", "doubleclick", "rightclick", "move", "type", "key", "scroll"];
-            if (typeof body.type !== "string" || !allowed.includes(body.type)) return sendJson(res, 400, { error: `type يجب أن يكون أحد: ${allowed.join(", ")}` });
+            if (typeof body.type !== "string" || !allowed.includes(body.type)) return sendJson(res, 400, { error: `type ÙŠØ¬Ø¨ Ø£Ù† ÙŠÙƒÙˆÙ† Ø£Ø­Ø¯: ${allowed.join(", ")}` });
             const result = await deviceManager.sendGuiInput(id, {
               type: body.type as "click",
               ...(typeof body.x === "number" ? { x: body.x } : {}),
@@ -1941,7 +1985,7 @@ loadAgents();
             return;
           }
           if (req.method === "POST" && ["start", "stop", "suspend", "resume"].includes(action ?? "")) {
-            if (!device) return sendJson(res, 404, { error: "الجهاز غير موجود" });
+            if (!device) return sendJson(res, 404, { error: "Ø§Ù„Ø¬Ù‡Ø§Ø² ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
             const op = deviceManager[action as "start" | "stop" | "suspend" | "resume"].bind(deviceManager);
             const result = await op(id);
             if ("error" in result) return sendJson(res, 409, result);
@@ -1949,7 +1993,7 @@ loadAgents();
             return;
           }
           if (req.method === "POST" && (action === "snapshot" || action === "restore" || action === "control" || action === "exec")) {
-            if (!device) return sendJson(res, 404, { error: "الجهاز غير موجود" });
+            if (!device) return sendJson(res, 404, { error: "Ø§Ù„Ø¬Ù‡Ø§Ø² ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
             const body = (await readBody(req)) as { label?: unknown; snapshotId?: unknown; take?: unknown; command?: unknown };
             if (action === "snapshot") {
               const result = await deviceManager.snapshot(id, typeof body.label === "string" ? body.label : "");
@@ -1957,7 +2001,7 @@ loadAgents();
               return sendJson(res, 200, { device: result });
             }
             if (action === "restore") {
-              if (typeof body.snapshotId !== "string") return sendJson(res, 400, { error: "snapshotId مطلوب" });
+              if (typeof body.snapshotId !== "string") return sendJson(res, 400, { error: "snapshotId Ù…Ø·Ù„ÙˆØ¨" });
               const result = await deviceManager.restore(id, body.snapshotId);
               if ("error" in result) return sendJson(res, 409, result);
               return sendJson(res, 200, { device: result });
@@ -1967,8 +2011,8 @@ loadAgents();
               if ("error" in result) return sendJson(res, 404, result);
               return sendJson(res, 200, { device: result });
             }
-            // exec: the viewer's manual console — requires the user to hold control.
-            if (typeof body.command !== "string" || !body.command.trim()) return sendJson(res, 400, { error: "command مطلوب" });
+            // exec: the viewer's manual console â€” requires the user to hold control.
+            if (typeof body.command !== "string" || !body.command.trim()) return sendJson(res, 400, { error: "command Ù…Ø·Ù„ÙˆØ¨" });
             const result = await deviceManager.userExec(device, body.command);
             if ("error" in result) return sendJson(res, 409, result);
             return sendJson(res, 200, { result });
@@ -2321,7 +2365,7 @@ loadAgents();
           const body = await readBody(req) as { title?: string; mode?: string; agentId?: string; projectId?: string };
           let mode: string;
           try { mode = getLoamMode(body.mode).id; } catch (error) { return sendJson(res, 400, { error: String(error) }); }
-          const task = createTask("", body.title || "مهمة جديدة", body.projectId, body.agentId);
+          const task = createTask("", body.title || "Ù…Ù‡Ù…Ø© Ø¬Ø¯ÙŠØ¯Ø©", body.projectId, body.agentId);
           requireTaskWorkspace(task.id, cfg.workspace);
           setTaskMode(task.id, mode);
           setTaskStatus(task.id, "cancelled");
@@ -2394,10 +2438,10 @@ loadAgents();
           const timezone = typeof body.timezone === "string" && body.timezone.trim() ? body.timezone.trim() : undefined;
           if (!prompt) return sendJson(res, 400, { error: "prompt required" });
           if (cron && runAt) return sendJson(res, 400, { error: "cron and at are mutually exclusive" });
-          if (timezone && !isValidTimezone(timezone)) return sendJson(res, 400, { error: `منطقة زمنية غير معروفة: ${timezone}` });
+          if (timezone && !isValidTimezone(timezone)) return sendJson(res, 400, { error: `Ù…Ù†Ø·Ù‚Ø© Ø²Ù…Ù†ÙŠØ© ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙØ©: ${timezone}` });
           if (runAt && Number.isNaN(Date.parse(runAt))) return sendJson(res, 400, { error: "at must be an ISO timestamp" });
           if (!cron && !runAt && (!Number.isFinite(intervalSeconds) || intervalSeconds < 30)) return sendJson(res, 400, { error: "intervalSeconds must be >= 30" });
-          if (agentId && !getAgent(agentId)) return sendJson(res, 400, { error: "الوكيل غير موجود" });
+          if (agentId && !getAgent(agentId)) return sendJson(res, 400, { error: "Ø§Ù„ÙˆÙƒÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           try {
             const schedule = addSchedule(prompt, Number.isFinite(intervalSeconds) ? intervalSeconds : 0, agentId, workMode, cron || runAt ? "cron" : undefined, undefined, body.enabled !== false, { cron, runAt, timezone });
             sendJson(res, 200, { schedule });
@@ -2413,12 +2457,12 @@ loadAgents();
           const body = (await readBody(req)) as { prompt?: unknown; watchPath?: unknown; agentId?: unknown; workMode?: unknown };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
           const watchPath = typeof body.watchPath === "string" ? body.watchPath.trim() : "";
-          if (!prompt || !watchPath) return sendJson(res, 400, { error: "prompt وwatchPath مطلوبان" });
+          if (!prompt || !watchPath) return sendJson(res, 400, { error: "prompt ÙˆwatchPath Ù…Ø·Ù„ÙˆØ¨Ø§Ù†" });
           const agentId = typeof body.agentId === "string" && body.agentId ? body.agentId : undefined;
-          if (agentId && !getAgent(agentId)) return sendJson(res, 400, { error: "الوكيل غير موجود" });
+          if (agentId && !getAgent(agentId)) return sendJson(res, 400, { error: "Ø§Ù„ÙˆÙƒÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           const workMode = body.workMode === "own_device" || body.workMode === "loam" ? body.workMode : undefined;
           const run = (globalThis as unknown as { __loamScheduledRun?: (o: { prompt: string; scheduleId: string; agentId?: string; workMode?: string }) => Promise<string> }).__loamScheduledRun;
-          if (!run) return sendJson(res, 503, { error: "محرك المشغلات غير مهيأ" });
+          if (!run) return sendJson(res, 503, { error: "Ù…Ø­Ø±Ùƒ Ø§Ù„Ù…Ø´ØºÙ„Ø§Øª ØºÙŠØ± Ù…Ù‡ÙŠØ£" });
           const created = createWatchRoutine({ prompt, watchPath, agentId, workMode, run });
           if ("error" in created) return sendJson(res, 400, created);
           return sendJson(res, 201, created);
@@ -2426,11 +2470,11 @@ loadAgents();
         if (req.method === "POST" && p === "/api/schedules/service-watch") {
           const body = (await readBody(req)) as { prompt?: unknown; agentId?: unknown };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
-          if (!prompt) return sendJson(res, 400, { error: "prompt مطلوب" });
+          if (!prompt) return sendJson(res, 400, { error: "prompt Ù…Ø·Ù„ÙˆØ¨" });
           const agentId = typeof body.agentId === "string" && body.agentId ? body.agentId : undefined;
-          if (agentId && !getAgent(agentId)) return sendJson(res, 400, { error: "الوكيل غير موجود" });
+          if (agentId && !getAgent(agentId)) return sendJson(res, 400, { error: "Ø§Ù„ÙˆÙƒÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           const s = addSchedule(prompt, 3600, agentId, undefined, "service-watch");
-          return sendJson(res, 201, { schedule: s, note: "يُشغّل تلقائيًا عند تعطل مزود النماذج (انتقال من يعمل إلى متوقف)" });
+          return sendJson(res, 201, { schedule: s, note: "ÙŠÙØ´ØºÙ‘Ù„ ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§ Ø¹Ù†Ø¯ ØªØ¹Ø·Ù„ Ù…Ø²ÙˆØ¯ Ø§Ù„Ù†Ù…Ø§Ø°Ø¬ (Ø§Ù†ØªÙ‚Ø§Ù„ Ù…Ù† ÙŠØ¹Ù…Ù„ Ø¥Ù„Ù‰ Ù…ØªÙˆÙ‚Ù)" });
         }
         if (req.method === "GET" && p === "/api/schedules/watch") {
           return sendJson(res, 200, { watchers: watchSchedules() });
@@ -2442,10 +2486,10 @@ loadAgents();
         if (req.method === "POST" && p.startsWith("/api/schedules/") && p.endsWith("/run-now")) {
           const id = decodeURIComponent(p.slice("/api/schedules/".length, -"/run-now".length));
           const schedule = listSchedules().find((s) => s.id === id);
-          if (!schedule) return sendJson(res, 404, { error: "الروتين غير موجود" });
+          if (!schedule) return sendJson(res, 404, { error: "Ø§Ù„Ø±ÙˆØªÙŠÙ† ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯" });
           const previous = schedule.lastTaskId ? getTask(schedule.lastTaskId) : undefined;
           if (previous && ["queued", "running", "interrupted"].includes(previous.status)) {
-            return sendJson(res, 409, { error: "تشغيل سابق لهذا الروتين ما يزال جاريًا" });
+            return sendJson(res, 409, { error: "ØªØ´ØºÙŠÙ„ Ø³Ø§Ø¨Ù‚ Ù„Ù‡Ø°Ø§ Ø§Ù„Ø±ÙˆØªÙŠÙ† Ù…Ø§ ÙŠØ²Ø§Ù„ Ø¬Ø§Ø±ÙŠÙ‹Ø§" });
           }
           void runTask({
             prompt: schedule.prompt,
@@ -2553,11 +2597,11 @@ loadAgents();
           if (!saved || task.status === "done" || executionQueue.has(id)) return sendJson(res, 409, { error: "task cannot be resumed" });
           const body = await readBody(req) as { retryInterruptedStep?: boolean };
           if (requiresReplayConfirmation(saved) && body.retryInterruptedStep !== true) {
-            return sendJson(res, 409, { error: "قد تكون الخطوة المتوقفة نفذت إجراءات بالفعل. يلزم تأكيد إعادة المحاولة.", requiresConfirmation: true });
+            return sendJson(res, 409, { error: "Ù‚Ø¯ ØªÙƒÙˆÙ† Ø§Ù„Ø®Ø·ÙˆØ© Ø§Ù„Ù…ØªÙˆÙ‚ÙØ© Ù†ÙØ°Øª Ø¥Ø¬Ø±Ø§Ø¡Ø§Øª Ø¨Ø§Ù„ÙØ¹Ù„. ÙŠÙ„Ø²Ù… ØªØ£ÙƒÙŠØ¯ Ø¥Ø¹Ø§Ø¯Ø© Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø©.", requiresConfirmation: true });
           }
           if (!fs.existsSync(saved.workspace)) return sendJson(res, 409, { error: "saved workspace is unavailable" });
           if (path.resolve(saved.workspace).toLowerCase() !== path.resolve(requireTaskWorkspace(id, cfg.workspace)).toLowerCase()) {
-            return sendJson(res, 409, { error: "لا يمكن استئناف التنفيذ القديم في المساحة المشتركة. ابدأ تشغيلاً جديداً معزولاً." });
+            return sendJson(res, 409, { error: "Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø§Ø³ØªØ¦Ù†Ø§Ù Ø§Ù„ØªÙ†ÙÙŠØ° Ø§Ù„Ù‚Ø¯ÙŠÙ… ÙÙŠ Ø§Ù„Ù…Ø³Ø§Ø­Ø© Ø§Ù„Ù…Ø´ØªØ±ÙƒØ©. Ø§Ø¨Ø¯Ø£ ØªØ´ØºÙŠÙ„Ø§Ù‹ Ø¬Ø¯ÙŠØ¯Ø§Ù‹ Ù…Ø¹Ø²ÙˆÙ„Ø§Ù‹." });
           }
           void runTask({ taskId: id, prompt: saved.prompt, resume: true, retryInterruptedStep: body.retryInterruptedStep === true, emit: () => {} })
             .catch((error) => log.warn(`resume ${id}: ${String(error)}`));
@@ -2569,7 +2613,7 @@ loadAgents();
           if (!task) return sendJson(res, 404, { error: "task not found" });
           const ok = cancelRunSignal(id);
           log.info(`cancel requested for task ${id}: signal=${ok}`);
-          sendJson(res, 200, { ok, note: ok ? "سيُوقف التنفيذ بين الخطوات" : "بدون تشغيل جارٍ لهذه المهمة" });
+          sendJson(res, 200, { ok, note: ok ? "Ø³ÙŠÙÙˆÙ‚Ù Ø§Ù„ØªÙ†ÙÙŠØ° Ø¨ÙŠÙ† Ø§Ù„Ø®Ø·ÙˆØ§Øª" : "Ø¨Ø¯ÙˆÙ† ØªØ´ØºÙŠÙ„ Ø¬Ø§Ø±Ù Ù„Ù‡Ø°Ù‡ Ø§Ù„Ù…Ù‡Ù…Ø©" });
           return;
         }
 
@@ -2704,7 +2748,7 @@ loadAgents();
           if (!q.trim()) return sendJson(res, 400, { error: "q required" });
           try {
             const info = await detectFrontierMode(q);
-            return sendJson(res, 200, info ?? { mode: "general", label: "General Workspace Mode", labelAr: "المود العام لمساحة العمل", reason: "" });
+            return sendJson(res, 200, info ?? { mode: "general", label: "General Workspace Mode", labelAr: "Ø§Ù„Ù…ÙˆØ¯ Ø§Ù„Ø¹Ø§Ù… Ù„Ù…Ø³Ø§Ø­Ø© Ø§Ù„Ø¹Ù…Ù„", reason: "" });
           } catch (err) {
             return sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
           }
