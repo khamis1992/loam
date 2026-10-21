@@ -17,6 +17,7 @@ import { memoryContext, setMemoryEmbedder } from "./server/companionMemory.js";
 import { createCompanionTeamTools } from "./tools/companionTeamTools.js";
 import { setDelegationRunner } from "./server/companionTeam.js";
 import { createApproval, waitForDecision } from "./server/approvals.js";
+import { approvalStableKey, getReplayDecision, matchApprovalRule, saveApprovalDecision, taskApprovalAuto } from "./server/approvalRules.js";
 import type { Tool } from "./tools/registry.js";
 import { createScratchpadTools } from "./tools/scratchpadTools.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
@@ -266,6 +267,10 @@ async function main(): Promise<void> {
       const agentTools = registry.forAllowlist(runAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name)));
 
       // Sensitive host-input actions need an explicit user decision first (section 18).
+      // MF4 (option 14): the gate resolves each request idempotently — replay of a
+      // decided key returns the same decision, saved approval rules (agent-specific
+      // first, then global) and the per-task "Approve for me" mode are checked
+      // BEFORE prompting, and no card is shown twice.
       const SENSITIVE_HOST_INPUT = new Set(["computer_click", "computer_type", "computer_key", "computer_ui_click", "computer_ui_set_text"]);
       for (const name of agentTools.names()) {
         if (!SENSITIVE_HOST_INPUT.has(name)) continue;
@@ -273,11 +278,25 @@ async function main(): Promise<void> {
         agentTools.replaceTool({
           ...original,
           async run(args, ctx) {
-            const approval = createApproval({ taskId: task, tool: name, summary: `إجراء تحكم حساس بجهازك (${name}) في انتظار موافقتك`, argsPreview: JSON.stringify(args ?? {}) });
-            wrappedEmit({ type: "approval_required", approvalId: approval.id, tool: name, summary: approval.summary });
-            const decision = await waitForDecision(approval.id, runSignal);
-            if (decision !== "approved") {
-              return { ok: false, content: decision === "denied" ? "رفض المستخدم هذا الإجراء — لم يُنفّذ." : `انتهت مهلة الموافقة (${decision}) — لم يُنفّذ.` };
+            const toolCallId = (ctx as { toolCallId?: string } | undefined)?.toolCallId;
+            const stableKey = approvalStableKey(task, toolCallId, name, args);
+            const replay = getReplayDecision(stableKey);
+            const autoForTask = !replay && taskApprovalAuto(task);
+            const rule = !replay && !autoForTask ? matchApprovalRule({ agentId: agentId ?? null, tool: name, args }) : undefined;
+            if (replay || autoForTask || rule) {
+              const allow = replay ? replay.decision === "allow" : autoForTask ? true : rule!.decision === "allow";
+              saveApprovalDecision(stableKey, allow ? "allow" : "deny", replay ? replay.source : autoForTask ? "auto" : "rule");
+              if (!allow) {
+                return { ok: false, content: "رفض المستخدم هذا الإجراء — لم يُنفّذ." };
+              }
+            } else {
+              const approval = createApproval({ taskId: task, tool: name, summary: `إجراء تحكم حساس بجهازك (${name}) في انتظار موافقتك`, argsPreview: JSON.stringify(args ?? {}) });
+              wrappedEmit({ type: "approval_required", approvalId: approval.id, tool: name, summary: approval.summary });
+              const decision = await waitForDecision(approval.id, runSignal);
+              saveApprovalDecision(stableKey, decision === "approved" ? "allow" : "deny", "user");
+              if (decision !== "approved") {
+                return { ok: false, content: decision === "denied" ? "رفض المستخدم هذا الإجراء — لم يُنفّذ." : `انتهت مهلة الموافقة (${decision}) — لم يُنفّذ.` };
+              }
             }
             return original.run(args, ctx);
           },
