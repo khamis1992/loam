@@ -284,7 +284,7 @@ export function chooseOutputPath(relSource: string, taskRoot: string): string {
 }
 
 const TIME_RE = /time=\s*(\d+):(\d+):(\d+(?:\.\d+)?)/;
-const PROGRESS_RE = /out_time_ms=(\d+)/g;
+const PROGRESS_RE = /out_time_(?:ms|us)=(\d+)/g;
 
 /** Recover the rendered offset from `-progress pipe:2` (fallback: a stats line). */
 export function parseProgress(stderr: string): number | undefined {
