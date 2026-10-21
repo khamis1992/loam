@@ -16,6 +16,7 @@ import {
   iabOnStateChanged,
   iabReload,
   iabSetBounds,
+  iabSetVisible,
   iabStop,
   isInAppBrowserSupported,
   type AgentBrowserSettings,
@@ -32,6 +33,19 @@ import {
  * The "Agent browser tool" section mirrors the shared browser settings the
  * agent's Playwright browser reads (headless flag + homepage from /api/settings),
  * so this surface and the agent stay in one configuration.
+ *
+ * Because the native view ignores CSS stacking/visibility/overflow, this pane
+ * explicitly drives its visibility (iabSetVisible). The view is painted ONLY
+ * while ALL of these hold — the main process ANDs the first with its window
+ * focus/minimize factor (electron/inAppBrowser.cjs):
+ *   - the preview surface is mounted AND intersecting the viewport (this
+ *     covers route switches, the pane scrolling off, and the settings dialog
+ *     being closed while still mounted);
+ *   - the document is not hidden (visibilitychange);
+ *   - the host window has focus;
+ *   - no top-layer dialog opened over the pane (confirm dialogs, ...).
+ * Any lost condition hides the native view; every regained one re-anchoring
+ * the bounds first, then re-showing.
  */
 
 type Pending = 'idle' | 'busy';
@@ -40,15 +54,59 @@ export function InAppBrowserPane() {
   // Decided in an effect so SSR (Next static export) and the first hydration
   // pass render the same non-branch markup.
   const [supported, setSupported] = useState(false);
-  const [state, setState] = useState<InAppBrowserState>({ attached: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false });
+  const [state, setState] = useState<InAppBrowserState>({ attached: false, visible: false, url: '', title: '', loading: false, canGoBack: false, canGoForward: false });
   const [urlInput, setUrlInput] = useState('');
   const [notice, setNotice] = useState('');
   const [pending, setPending] = useState<Pending>('idle');
   const [agentSettings, setAgentSettings] = useState<AgentBrowserSettings | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+  // Renderer-side visibility factors (see the component doc block). Kept in
+  // refs because they change without a re-render and always combine into one
+  // iabSetVisible boolean.
+  const previewIntersectingRef = useRef(false);
+  const documentVisibleRef = useRef(true);
+  const windowFocusedRef = useRef(true);
+  const modalOverPaneRef = useRef(false);
 
   useEffect(() => {
     setSupported(isInAppBrowserSupported());
+  }, []);
+
+  /** Re-assert visibility after any factor changed. Hiding is unconditional
+   *  and immediate; showing only when every factor is satisfied again. */
+  const applyVisibility = useCallback(() => {
+    const onScreen = previewIntersectingRef.current && documentVisibleRef.current && windowFocusedRef.current && !modalOverPaneRef.current;
+    void iabSetVisible(onScreen);
+  }, []);
+
+  /** Measure the preview rect in CSS pixels and push it as the native view's
+   *  window-relative bounds (nothing to anchor while the rect is collapsed). */
+  const pushBounds = useCallback(() => {
+    const el = previewRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 1 || rect.height <= 1) return;
+    const dpr = window.devicePixelRatio || 1;
+    // DPI handling (chosen approach): WebContentsView.setBounds() positions
+    // the view in DIPs relative to the window content area, and getBoundingClientRect()
+    // reports CSS pixels from the renderer — two coordinate spaces Electron
+    // keeps aligned (devicePixelRatio = displayScale * zoomFactor, and the
+    // shell's zoom factor is always 1), so the CSS-pixel rect passes through
+    // 1:1. Blindly multiplying by devicePixelRatio would misplace the view on
+    // every scaled display (125/150% Windows, retina). What a
+    // devicePixelRatio !== 1 DOES change is the physical-pixel grid the view
+    // is rasterized on: fractional DIP rects can snap the view's edges one
+    // physical pixel away from the host element. So when devicePixelRatio is
+    // not 1 we snap the rect onto that grid (round in physical pixels, back
+    // to DIPs) — rounding is sub-pixel-safe: it never moves an edge more than
+    // half a physical pixel, and on the common integer scales it is exact.
+    const snap = (v: number) => (dpr === 1 ? Math.round(v) : Math.round(v * dpr) / dpr);
+    void iabSetBounds({
+      x: snap(rect.left),
+      y: snap(rect.top),
+      width: snap(rect.width),
+      height: snap(rect.height),
+    });
   }, []);
 
   const refreshState = useCallback(async () => {
@@ -71,6 +129,90 @@ export function InAppBrowserPane() {
       off();
     };
   }, [supported, refreshState]);
+
+  // Show the native view only while the pane is actually on screen. Covers
+  // route changes away from this pane, the pane scrolling off inside the
+  // dialog, and the settings dialog being closed while still mounted — native
+  // views ignore the CSS visibility that would otherwise hide the preview.
+  useEffect(() => {
+    if (!supported) return;
+    const el = previewRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          previewIntersectingRef.current = entry.isIntersecting && entry.intersectionRatio > 0;
+        }
+        // Coming back on screen: re-anchor bounds before showing so the view
+        // does not repaint at a stale rect from before it was hidden.
+        if (previewIntersectingRef.current) pushBounds();
+        applyVisibility();
+      },
+      { threshold: 0 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [supported, pushBounds, applyVisibility]);
+
+  // The document being hidden (window minimized/covered, tab suspended in the
+  // shell) and host-window focus also gate the view, mirroring the main
+  // process window factor: hide aggressively on any loss, restore only when
+  // everything (intersection included) is back.
+  useEffect(() => {
+    if (!supported) return;
+    const onVisibilityChange = () => {
+      documentVisibleRef.current = document.visibilityState === 'visible';
+      if (documentVisibleRef.current) applyVisibility();
+      else void iabSetVisible(false);
+    };
+    const onWindowBlur = () => {
+      windowFocusedRef.current = false;
+      void iabSetVisible(false);
+    };
+    const onWindowFocus = () => {
+      windowFocusedRef.current = true;
+      applyVisibility();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('blur', onWindowBlur);
+    window.addEventListener('focus', onWindowFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('blur', onWindowBlur);
+      window.removeEventListener('focus', onWindowFocus);
+    };
+  }, [supported, applyVisibility]);
+
+  // A modal opening over the pane (destructive-action confirm, command
+  // palette, ...) is DOM-stacked above the preview, which the native view
+  // cannot see: it must hide while any open top-layer dialog that does NOT
+  // contain the preview is present (the settings dialog itself contains it
+  // and is fine). Restored from intersection state when none is left.
+  useEffect(() => {
+    if (!supported) return;
+    const dialogQuery = '[role="dialog"], [aria-modal="true"], dialog[open]';
+    const hasBlockingDialog = () => {
+      const preview = previewRef.current;
+      const dialogs = document.querySelectorAll(dialogQuery);
+      for (const node of Array.from(dialogs)) {
+        if (!preview || !node.contains(preview)) return true;
+      }
+      return false;
+    };
+    const reconcile = () => {
+      const blocked = hasBlockingDialog();
+      if (blocked === modalOverPaneRef.current) return;
+      modalOverPaneRef.current = blocked;
+      if (blocked) void iabSetVisible(false);
+      else applyVisibility();
+    };
+    // Dialogs can appear/remove as nodes or flip their open/aria attributes
+    // in place; watch both so the view hides behind every modal variant.
+    const mo = new MutationObserver(reconcile);
+    mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['open', 'role', 'aria-modal'] });
+    reconcile();
+    return () => mo.disconnect();
+  }, [supported, applyVisibility]);
 
   // Mirror the agent browser tool settings (read-only) from the Loam server.
   useEffect(() => {
@@ -100,45 +242,49 @@ export function InAppBrowserPane() {
     if (!supported) return;
     const el = previewRef.current;
     if (!el) return;
-    const push = () => {
-      const rect = el.getBoundingClientRect();
-      if (rect.height > 1 && rect.width > 1) {
-        void iabSetBounds({ x: Math.round(rect.left), y: Math.round(rect.top), width: Math.round(rect.width), height: Math.round(rect.height) });
-      }
-    };
-    const ro = new ResizeObserver(push);
-    ro.observe(el);
-    window.addEventListener('resize', push);
-    document.addEventListener('scroll', push, true);
-    push();
+    const ro = new ResizeObserver(pushBounds);
+    // The existing preview observer only fires when the preview itself
+    // resizes; a resize of the SURROUNDING layout (e.g. the sidebar
+    // collapsing/expanding) can move or reshape the pane without changing the
+    // preview's own box first. Observe the layout containers too so any of
+    // them resizing triggers a re-measure of the real rect.
+    if (el.parentElement) ro.observe(el.parentElement);
+    ro.observe(document.documentElement);
+    // window 'resize' also fires when the OS display scale changes
+    // (devicePixelRatio flips), re-measuring bounds after a DPI change.
+    window.addEventListener('resize', pushBounds);
+    document.addEventListener('scroll', pushBounds, true);
+    pushBounds();
     return () => {
       ro.disconnect();
-      window.removeEventListener('resize', push);
-      document.removeEventListener('scroll', push, true);
+      window.removeEventListener('resize', pushBounds);
+      document.removeEventListener('scroll', pushBounds, true);
       // Leaving this pane releases the native surface so nothing stays
-      // overlaid over the app (tab switching unmounts this component).
+      // overlaid over the app (tab switching unmounts this component): hide
+      // first (cheap, survives re-attach with its page kept), then detach.
+      void iabSetVisible(false);
       void iabDetach();
     };
-  }, [supported]);
+  }, [supported, pushBounds]);
 
   const attach = useCallback(async () => {
     if (!supported) return;
-    const el = previewRef.current;
     try {
+      // attach() starts the native view hidden in the main process; bounds
+      // are measured first, then the on-screen decision re-asserted so the
+      // view only paints once it is anchored (and only if it should).
       await iabAttach();
-      if (el) {
-        const rect = el.getBoundingClientRect();
-        await iabSetBounds({ x: Math.round(rect.left), y: Math.round(rect.top), width: Math.round(rect.width), height: Math.round(rect.height) });
-      }
+      pushBounds();
       const cur = await iabGetState();
       // Pasting one agent-configured homepage into the surface when the user
       // attaches with nothing loaded keeps the pane never-empty.
       if (!cur.url) void iabHome();
       setState(cur);
+      applyVisibility();
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));
     }
-  }, [supported]);
+  }, [supported, pushBounds, applyVisibility]);
 
   useEffect(() => {
     if (supported) void attach();
