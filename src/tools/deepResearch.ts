@@ -15,6 +15,7 @@
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { num, str } from "./registry.js";
 import { webTools } from "./web.js";
+import { appendStudio, readStudio, saveStudio, StudioError } from "../studio/store.js";
 
 const MAX_QUERIES_PER_ITER = 2;
 const MAX_READS_PER_ITER = 3;
@@ -47,6 +48,30 @@ interface ReadSource {
   items: Harvested[];
 }
 
+/** One numbered citation row (n matches the inline [n] markers and Sources list). */
+export interface CitedSource {
+  n: number;
+  title: string;
+  url: string;
+}
+
+/** One covered aspect section with its cited quotable items, in report order. */
+export interface CitedSection {
+  id: string;
+  heading: string;
+  items: Array<{ text: string; n: number }>;
+}
+
+/** Structured twin of the markdown report, consumed by the Studio routing. */
+export interface ReportData {
+  topic: string;
+  sources: CitedSource[];
+  summary: Array<{ text: string; n: number }>;
+  sections: CitedSection[];
+  gaps: Array<{ id: string; heading: string }>;
+  iterations: number;
+}
+
 export interface DeepResearchResult {
   ok: boolean;
   /** Markdown report; empty when ok is false. */
@@ -56,6 +81,8 @@ export interface DeepResearchResult {
   sourceCount: number;
   coveredAspects: string[];
   uncoveredAspects: string[];
+  /** Structured report twin; present when ok is true. */
+  data?: ReportData;
   reason?: string;
 }
 
@@ -251,6 +278,26 @@ export async function runDeepResearch(topic: string, depth: number, ctx: ToolCon
   }
 
   const uncovered = ASPECTS.filter((a) => !covered.has(a.id)).map((a) => a.id);
+  const topSummary = sources
+    .flatMap((src) => src.items.map((h) => ({ text: h.text, n: src.n, score: h.score })))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+  const data: ReportData = {
+    topic,
+    sources: sources.map((s) => ({ n: s.n, title: s.title, url: s.url })),
+    summary: topSummary.map(({ text, n }) => ({ text, n })),
+    sections: ASPECTS.map((aspect) => ({
+      id: aspect.id,
+      heading: aspect.heading,
+      items: sources.flatMap((src) =>
+        src.items
+          .filter((h) => h.aspects.includes(aspect.id))
+          .map((h) => ({ text: h.text, n: src.n })),
+      ),
+    })).filter((section) => section.items.length > 0),
+    gaps: uncovered.map((id) => ({ id, heading: ASPECTS.find((a) => a.id === id)?.heading ?? id })),
+    iterations,
+  };
   return {
     ok: true,
     report: renderReport(topic, sources, summary, uncovered, iterations),
@@ -258,7 +305,198 @@ export async function runDeepResearch(topic: string, depth: number, ctx: ToolCon
     sourceCount: sources.length,
     coveredAspects: [...ASPECTS.map((a) => a.id)].filter((id) => covered.has(id)),
     uncoveredAspects: uncovered,
+    data,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Studio routing (frontier R2): turn the structured report twin into  */
+/* a live document / spreadsheet / presentation via the same studio    */
+/* store the office tools use, without clobbering user content.        */
+/* ------------------------------------------------------------------ */
+
+export type StudioDeliverKind = "document" | "spreadsheet" | "presentation";
+
+const STUDIO_DELIVER_KINDS: readonly StudioDeliverKind[] = ["document", "spreadsheet", "presentation"];
+
+export function isStudioDeliverKind(value: string): value is StudioDeliverKind {
+  return (STUDIO_DELIVER_KINDS as readonly string[]).includes(value);
+}
+
+/** A saveStudio/appendStudio-ready artifact input. */
+export interface StudioInput {
+  kind: StudioDeliverKind;
+  title: string;
+  content: unknown;
+}
+
+function clip(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+function artifactTitle(topic: string): string {
+  return clip(`Deep Research: ${topic}`, 300);
+}
+
+function cited(text: string, n: number): string {
+  return `${text} [${n}]`;
+}
+
+function gapMessage(heading: string): string {
+  return `No usable source verified the "${heading}" aspect; treat that section as unknown.`;
+}
+
+/** Build the document variant: summary, aspect sections with cited bullets,
+ *  honest gap notes, and a numbered sources table. */
+export function reportToDocumentInput(data: ReportData): StudioInput {
+  const blocks: Array<Record<string, unknown>> = [];
+  blocks.push({
+    type: "paragraph",
+    text: `Built from ${data.sources.length} source(s) over ${data.iterations} search iteration(s).`,
+  });
+  if (data.summary.length) {
+    blocks.push({ type: "heading", text: "Summary" });
+    for (const item of data.summary) blocks.push({ type: "bullet", text: clip(cited(item.text, item.n), 4000) });
+  }
+  for (const section of data.sections) {
+    blocks.push({ type: "heading", text: section.heading });
+    for (const item of section.items) blocks.push({ type: "bullet", text: clip(cited(item.text, item.n), 4000) });
+  }
+  for (const gap of data.gaps) blocks.push({ type: "bullet", text: gapMessage(gap.heading) });
+  blocks.push({ type: "heading", text: "Sources" });
+  blocks.push({
+    type: "table",
+    text: "Verified sources",
+    columns: ["#", "Source", "URL"],
+    rows: data.sources.map((s) => [String(s.n), clip(s.title, 190), clip(s.url, 190)]),
+  });
+  return { kind: "document", title: artifactTitle(data.topic), content: { blocks } };
+}
+
+/** Build the single-sheet spreadsheet variant so it also appends cleanly onto
+ *  an existing live sheet (append requires exactly one input sheet). */
+export function reportToSpreadsheetInput(data: ReportData): StudioInput {
+  const cells: string[][] = [];
+  cells.push([clip(`Deep Research: ${data.topic}`, 300)]);
+  cells.push([]);
+  cells.push(["Topic", clip(data.topic, 1000)]);
+  cells.push(["Iterations", String(data.iterations)]);
+  cells.push([]);
+  cells.push(["Summary", ""]);
+  for (const item of data.summary) cells.push(["", clip(cited(item.text, item.n), 1000)]);
+  for (const section of data.sections) {
+    cells.push([]);
+    cells.push([section.heading, ""]);
+    for (const item of section.items) cells.push(["", clip(cited(item.text, item.n), 1000)]);
+  }
+  if (data.gaps.length) {
+    cells.push([]);
+    cells.push(["Gaps", ""]);
+    for (const gap of data.gaps) cells.push(["", clip(gapMessage(gap.heading), 1000)]);
+  }
+  cells.push([]);
+  cells.push(["Sources", ""]);
+  cells.push(["#", "Source", "URL"]);
+  for (const s of data.sources) cells.push([String(s.n), clip(s.title, 900), clip(s.url, 900)]);
+  return {
+    kind: "spreadsheet",
+    title: artifactTitle(data.topic),
+    content: { sheets: [{ name: "Deep Research", cells }] },
+  };
+}
+
+const SLIDE_COLORS = { background: "#f5f1e8", accent: "#187665" };
+
+/** Build the deck variant: title slide, one slide per covered aspect with
+ *  cited bullet lines, a gap slide when aspects remain unverified, sources. */
+export function reportToPresentationInput(data: ReportData): StudioInput {
+  const slides: Array<Record<string, unknown>> = [
+    {
+      id: "dr-title",
+      title: clip(`Deep Research: ${data.topic}`, 500),
+      body: `Built from ${data.sources.length} source(s) over ${data.iterations} search iteration(s).`,
+      notes: "",
+      ...SLIDE_COLORS,
+    },
+  ];
+  for (const section of data.sections) {
+    const body = section.items.map((item) => clip(cited(item.text, item.n), 900)).join("\n");
+    slides.push({
+      id: `dr-${section.id}`,
+      title: clip(section.heading, 500),
+      body: clip(body, 19_000),
+      notes: "",
+      ...SLIDE_COLORS,
+    });
+  }
+  if (data.gaps.length) {
+    slides.push({
+      id: "dr-gaps",
+      title: "Gaps",
+      body: clip(data.gaps.map((g) => clip(gapMessage(g.heading), 900)).join("\n"), 19_000),
+      notes: "",
+      ...SLIDE_COLORS,
+    });
+  }
+  slides.push({
+    id: "dr-sources",
+    title: "Sources",
+    body: clip(
+      data.sources.map((s) => clip(`${s.n}. ${s.title} — ${s.url}`, 900)).join("\n"),
+      19_000,
+    ),
+    notes: "",
+    ...SLIDE_COLORS,
+  });
+  return { kind: "presentation", title: artifactTitle(data.topic), content: { slides } };
+}
+
+export function reportToStudioInput(data: ReportData, kind: StudioDeliverKind): StudioInput {
+  if (kind === "document") return reportToDocumentInput(data);
+  if (kind === "spreadsheet") return reportToSpreadsheetInput(data);
+  return reportToPresentationInput(data);
+}
+
+export interface StudioDelivery {
+  ok: boolean;
+  kind: StudioDeliverKind;
+  /** Revision after the save; undefined when delivery failed. */
+  revision?: number;
+  /** True when the report created a fresh canvas artifact. */
+  created?: boolean;
+  /** True when the report was appended onto the existing live artifact. */
+  appended?: boolean;
+  reason?: string;
+}
+
+/** Conflict-safe routing into the live canvas: create when empty, append when
+ *  the live artifact has the same kind, refuse to overwrite a different kind.
+ *  On a 409 revision conflict (user edits mid-delivery) re-read and retry; our
+ *  writes only add rows/slides/blocks, so a rejected attempt never duplicates. */
+export function deliverResearchToStudio(input: StudioInput, workspace: string): StudioDelivery {
+  const current = readStudio(workspace);
+  if (!current) {
+    const artifact = saveStudio(workspace, input, 0);
+    return { ok: true, kind: input.kind, revision: artifact.revision, created: true };
+  }
+  if (current.kind !== input.kind) {
+    return {
+      ok: false,
+      kind: input.kind,
+      reason: `The live studio currently holds a ${current.kind} artifact; the report was not delivered. Export or clear it first, then re-run deep_research with deliver, or place the report manually via loam_studio.`,
+    };
+  }
+  let conflict: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const artifact = appendStudio(workspace, input, readStudio(workspace)?.revision ?? current.revision);
+      return { ok: true, kind: input.kind, revision: artifact.revision, appended: true };
+    } catch (error) {
+      if (!(error instanceof StudioError) || error.status !== 409) throw error;
+      conflict = error;
+    }
+  }
+  throw conflict;
 }
 
 export function createDeepResearchTools(): Tool[] {
@@ -266,12 +504,17 @@ export function createDeepResearchTools(): Tool[] {
     {
       name: "deep_research",
       description:
-        "Run an iterative research loop (plan queries, web search, read pages, coverage gap-check, repeat) and return a structured markdown report with inline numbered citations and a sources list. Requires networkEnabled.",
+        "Run an iterative research loop (plan queries, web search, read pages, coverage gap-check, repeat) and return a structured markdown report with inline numbered citations and a sources list. Optionally route the same cited report into the live Studio canvas as a document, spreadsheet or presentation via deliver (frontier R2); the Studio copy is saved conflict-safely (created when the canvas is empty, appended onto a matching live artifact, never overwriting a different kind). Requires networkEnabled.",
       parameters: {
         type: "object",
         properties: {
           topic: { type: "string", description: "Research topic (1-2000 characters)." },
           depth: { type: "number", minimum: 1, maximum: 3, description: "Search iterations, 1-3 (default 2)." },
+          deliver: {
+            type: "string",
+            enum: ["none", "document", "spreadsheet", "presentation"],
+            description: "Route the report into the live Studio canvas as this kind (default none).",
+          },
         },
         required: ["topic"],
       },
@@ -280,9 +523,24 @@ export function createDeepResearchTools(): Tool[] {
         const topic = str(args, "topic").trim();
         if (!topic || topic.length > 2000) return { ok: false, content: "Provide a research topic of 1-2000 characters" };
         const depth = Math.floor(num(args, "depth", 2));
+        const deliver = str(args, "deliver", "none");
+        if (deliver !== "none" && !isStudioDeliverKind(deliver)) {
+          return { ok: false, content: "deliver must be none, document, spreadsheet or presentation" };
+        }
         const result = await runDeepResearch(topic, depth, ctx);
         if (!result.ok) return { ok: false, content: result.reason ?? "deep_research could not produce a report" };
-        return { ok: true, content: result.report };
+        if (deliver === "none" || !result.data) return { ok: true, content: result.report };
+        let note: string;
+        try {
+          const delivery = deliverResearchToStudio(reportToStudioInput(result.data, deliver), ctx.workspace);
+          note = delivery.ok
+            ? `\n\n---\nStudio delivery: saved as a ${deliver} (revision ${delivery.revision}${delivery.created ? ", created on the empty canvas" : ", appended onto the existing canvas"}). The report already lives in the live Studio — do not recreate it via loam_studio.`
+            : `\n\n---\nStudio delivery skipped: ${delivery.reason} The markdown report above is still valid — place it manually via loam_studio if wanted.`;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          note = `\n\n---\nStudio delivery failed: ${message} The markdown report above is still valid — place it manually via loam_studio if wanted.`;
+        }
+        return { ok: true, content: result.report + note };
       },
     },
   ];
