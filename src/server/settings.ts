@@ -14,6 +14,10 @@ export interface Settings {
   /** Custom electron-updater generic feed URL or GitHub repo ("owner/repo"). */
   updateFeedUrl?: string;
   githubRepo?: string;
+  /** Option 18 Flex tier: OpenAI-compatible provider base URL (the API key itself lives in the secrets vault). */
+  flexBaseUrl?: string;
+  /** Option 18 Flex tier: model id to call through the Flex provider. */
+  flexModel?: string;
 }
 
 const FILE = path.join(DATA_DIR, "settings.json");
@@ -31,6 +35,8 @@ export function loadSettings(): Settings {
         ...(Array.isArray(parsed.recentWorkspaces) ? { recentWorkspaces: parsed.recentWorkspaces.map(String) } : {}),
         ...(typeof parsed.updateFeedUrl === "string" ? { updateFeedUrl: parsed.updateFeedUrl } : {}),
         ...(typeof parsed.githubRepo === "string" ? { githubRepo: parsed.githubRepo } : {}),
+        ...(typeof parsed.flexBaseUrl === "string" ? { flexBaseUrl: parsed.flexBaseUrl } : {}),
+        ...(typeof parsed.flexModel === "string" ? { flexModel: parsed.flexModel } : {}),
       };
     }
   } catch {
@@ -57,6 +63,8 @@ export function updateSettings(patch: Partial<Settings>): Settings {
   if (typeof patch.updateFeedUrl === "string") settings.updateFeedUrl = patch.updateFeedUrl.trim();
   if (typeof patch.githubRepo === "string") settings.githubRepo = patch.githubRepo.trim();
   if (typeof patch.autoApprove === "boolean") settings.autoApprove = patch.autoApprove;
+  if (typeof patch.flexBaseUrl === "string") settings.flexBaseUrl = patch.flexBaseUrl.trim();
+  if (typeof patch.flexModel === "string") settings.flexModel = patch.flexModel.trim();
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     const tmp = `${FILE}.tmp`;
