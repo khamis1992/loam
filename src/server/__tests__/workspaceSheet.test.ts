@@ -1,4 +1,4 @@
-/**
+﻿/**
  * workspace/sheet editor IO + routes: xlsx JSON round-trip and HTTP status paths.
  *
  * Like the other server tests, the data directory env var is set before any
@@ -21,6 +21,9 @@ interface SheetDoc {
     cells: string[][];
     styles: Record<string, Record<string, string | number | boolean>>;
     columnWidths: number[];
+    rowHeights: number[];
+    hiddenRows: boolean[];
+    hiddenColumns: boolean[];
     merges: string[];
   }>;
   notes: string[];
@@ -71,13 +74,15 @@ function fakeRes(): { res: unknown; captured: RecordedResponse } {
   return { res, captured };
 }
 
-function fakeReq(method: string, url: string): http.IncomingMessage {
+type FakeIncomingMessage = http.IncomingMessage & { write: (chunk: string) => boolean; end: (chunk?: unknown) => void };
+
+function fakeReq(method: string, url: string): FakeIncomingMessage {
   const stream = new PassThrough();
   Object.assign(stream, { method, url, headers: { host: "127.0.0.1" } });
-  return stream as unknown as http.IncomingMessage;
+  return stream as unknown as FakeIncomingMessage;
 }
 
-async function callRoutes(req: http.IncomingMessage, feedBody?: string): Promise<RecordedResponse> {
+async function callRoutes(req: FakeIncomingMessage, feedBody?: string): Promise<RecordedResponse> {
   const { res, captured } = fakeRes();
   const pending = routes(req, res as unknown as http.ServerResponse, "/api/workspace/sheet/file");
   if (feedBody !== undefined) {
