@@ -92,6 +92,15 @@ export async function handleWorkspaceVideoRoutes(
   if (!rawPath.startsWith(prefix)) return false;
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "127.0.0.1"}`);
   const p = url.pathname;
+  // Browser mutations must originate from this app (same pattern as other tool routes).
+  if (req.method !== "GET") {
+    const origin = req.headers.origin;
+    const host = req.headers.host;
+    if ((origin && origin !== "null" && origin !== `http://${host}` && origin !== `https://${host}`) || req.headers["sec-fetch-site"] === "cross-site") {
+      sendJson(res, 403, { error: "same-origin requests required" });
+      return true;
+    }
+  }
   try {
     // --- raw file bytes (video preview, EDL sidecar, any task file) ---
     if ((req.method === "GET" || req.method === "PUT") && (p === `${prefix}/file` || p === `${prefix}/edl`)) {
@@ -127,10 +136,11 @@ export async function handleWorkspaceVideoRoutes(
       const root = taskRoot(ctx, taskId);
       const abs = taskPath(root, rel);
       if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) throw new HttpError(404, "file not found");
-      if (!ffmpegAvailable()) throw new HttpError(503, "ffmpeg is not available on this server");
-      let probe: VideoMeta | undefined;
-      try { probe = await probeVideo(abs); } catch { /* not a video or ffmpeg missing: give container facts only */ }
       const st = fs.statSync(abs);
+      // Default is a cheap stat poll for live preview refresh; probing is opt-in.
+      const probe = url.searchParams.get("probe") === "1" && ffmpegAvailable()
+        ? await probeVideo(abs).catch(() => undefined)
+        : undefined;
       sendJson(res, 200, {
         bytes: st.size,
         mtime: st.mtime.toISOString(),
