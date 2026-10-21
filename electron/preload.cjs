@@ -92,6 +92,7 @@ const apis = {
     attach: (...args) => invoke("inAppBrowser", "attach", args),
     detach: (...args) => invoke("inAppBrowser", "detach", args),
     setBounds: (...args) => invoke("inAppBrowser", "setBounds", args),
+    setVisible: (...args) => invoke("inAppBrowser", "setVisible", args),
     navigate: (...args) => invoke("inAppBrowser", "navigate", args),
     back: (...args) => invoke("inAppBrowser", "back", args),
     forward: (...args) => invoke("inAppBrowser", "forward", args),

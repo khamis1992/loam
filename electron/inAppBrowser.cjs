@@ -6,6 +6,13 @@
 // over the pane's preview surface — the same technique used for overlays on top
 // of DOM-rendered dialogs, because Electron has no native "webview hole".
 //
+// Visibility is explicit (this file cannot rely on the DOM to hide it): the
+// view paints only while the renderer says the preview is mounted + on-screen
+// (setVisible) AND the host window is focused and not minimized/hidden
+// (setWindowAllows, driven by main.cjs window events). attach() always starts
+// hidden; hide() is a host-side force-hide that keeps the page; detach() is
+// the full teardown.
+//
 // Shared state with the agent browser tool (src/tools/browser.ts):
 //   - Home resolves through the Loam server settings endpoint, so the homepage
 //     configured for the agent's Playwright browser (Settings > In-App Browser
@@ -23,6 +30,19 @@ let ownerWin = null; // BrowserWindow the view is currently attached to
 let bounds = { x: 0, y: 0, width: 0, height: 0 };
 let opts = { getWindow: () => null, openExternal: () => undefined, resolveHomepage: async () => "", backgroundColor: "#080b12" };
 let lastNotified = "";
+
+// Visibility is an AND of two independent factors. Native child views ignore
+// CSS stacking/visibility/overflow, so "the user can see the in-app browser"
+// has to be recomputed here and enforced with WebContentsView.setVisible():
+//   1. rendererWantsVisible — the Settings pane reports the preview surface is
+//      mounted AND intersecting the viewport (iabSetVisible from the renderer).
+//   2. windowAllows       — the host window can show it at all (focused AND
+//      not minimized/hidden). main.cjs maintains this from window events.
+// The view never floats over other panes/dialogs: whenever either factor is
+// false, the view is setVisible(false) while staying attached and loaded.
+let rendererWantsVisible = false; // default false: attach() starts hidden
+let windowAllows = true; // no window events yet -> assume a visible-capable window
+let visibleNow = false; // last applied effective visibility
 
 /** Only http(s), about:blank and devtools-ish safe schemes may load. Anything
  *  else (file:, app:, loamfilm:, javascript:, data:...) is refused. */
@@ -108,12 +128,55 @@ function state() {
   }
   return {
     attached: Boolean(view && ownerWin && !ownerWin.isDestroyed()),
+    visible: visibleNow,
     url: wc ? wc.getURL() : "",
     title: wc ? wc.getTitle() : "",
     loading: wc ? wc.isLoading() : false,
     canGoBack: canBack(),
     canGoForward: canForward(),
   };
+}
+
+/** Recompute and apply the effective visibility: renderer intent AND window
+ *  factor, and only for a view that is still attached to a live window. The
+ *  view itself stays attached and loaded either way — this only toggles
+ *  whether it is painted on top of the shell. */
+function applyVisibility() {
+  const attached = Boolean(view && ownerWin && !ownerWin.isDestroyed());
+  visibleNow = attached && rendererWantsVisible && windowAllows;
+  if (view) {
+    try {
+      view.setVisible(visibleNow);
+    } catch {
+      /* a destroyed view can throw on setVisible(); state() guards reads too */
+    }
+  }
+  notify();
+}
+
+/** Renderer-declared intent (IPC `setVisible`): the pane is mounted and its
+ *  preview surface is on screen. Effective visibility additionally requires
+ *  the window-side factor, see setWindowAllows(). */
+function setVisible(want) {
+  rendererWantsVisible = Boolean(want);
+  applyVisibility();
+  return state();
+}
+
+/** Force-hide without detaching (host-facing helper): clears the renderer
+ *  intent but keeps the view, its bounds and its page so the pane can re-show
+ *  it cheaply. detach() remains the full teardown. */
+function hide() {
+  return setVisible(false);
+}
+
+/** Window-side visibility factor, maintained by main.cjs window events
+ *  (blur/minimize/hide -> false, focus/restore/show -> true). Re-showing on
+ *  the positive edge only paints again when the renderer still wants it. */
+function setWindowAllows(allowed) {
+  windowAllows = Boolean(allowed);
+  applyVisibility();
+  return state();
 }
 
 /** Push a state snapshot to the shell renderer as a desktop-ipc event so the
@@ -184,7 +247,7 @@ function createView() {
     } catch {}
     if (view === v) view = null;
     ownerWin = null;
-    notify();
+    applyVisibility();
   });
   wc.on("unresponsive", notify);
   return v;
@@ -224,11 +287,17 @@ function attach() {
     target.once?.("closed", () => {
       if (ownerWin === target) {
         ownerWin = null;
-        notify();
+        applyVisibility();
       }
     });
   }
-  notify();
+  // Every attach starts hidden: the renderer measures the preview rect
+  // (setBounds) and then opts in with setVisible(true) once the pane is
+  // actually on screen. Without this reset the view would keep whatever
+  // visibility it had and float over the app at stale bounds. The window-side
+  // factor is left untouched — it tracks real window state via main.cjs.
+  rendererWantsVisible = false;
+  applyVisibility();
   return state();
 }
 
@@ -239,7 +308,10 @@ function detach() {
     } catch {}
   }
   ownerWin = null;
-  notify();
+  // Full teardown also clears the renderer intent so a view kept for its page
+  // cannot be re-shown without an explicit setVisible(true) after re-attach.
+  rendererWantsVisible = false;
+  applyVisibility();
   return state();
 }
 
@@ -301,7 +373,8 @@ async function clearData() {
     } catch {}
   }
   view = null;
-  notify();
+  visibleNow = false;
+  applyVisibility();
   return { cleared, state: state() };
 }
 
@@ -317,6 +390,7 @@ const handlers = {
   attach: () => attach(),
   detach: () => detach(),
   setBounds: (_sender, rect) => setBounds(rect),
+  setVisible: (_sender, v) => setVisible(Boolean(v)),
   navigate: (_sender, url) => navigate(url),
   back: () => {
     goBack();
@@ -355,9 +429,21 @@ function init(next) {
 }
 
 function isVisible() {
-  return Boolean(view && ownerWin);
+  return visibleNow;
 }
 
 const IAB_EVENT_CHANNEL = "desktop-ipc-event:inAppBrowser:onStateChanged";
 
-module.exports = { IAB_SESSION_PARTITION, IAB_EVENT_CHANNEL, handlers, init, state, isVisible, isAllowedUrl, reloadIgnoringCache };
+module.exports = {
+  IAB_SESSION_PARTITION,
+  IAB_EVENT_CHANNEL,
+  handlers,
+  init,
+  state,
+  isVisible,
+  isAllowedUrl,
+  reloadIgnoringCache,
+  setVisible,
+  hide,
+  setWindowAllows,
+};
