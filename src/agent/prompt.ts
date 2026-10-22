@@ -6,6 +6,8 @@ import { BUILD_PHASE_PROMPT } from "../modes/buildPhases.js";
 import { personalizationBlock } from "../server/personalization.js";
 import { renderPolicyContext } from "../policy/riskTier.js";
 import { buildMasterPrompt, codingModeSection, deriveMasterSlots, isCodingTask } from "./masterPrompt.js";
+import { loadProjectMemory, type ProjectMemoryResult } from "./projectMemory.js";
+import { DESIGN_RULES_PROMPT, isUiIntent } from "./designPrompt.js";
 
 /** The master prompt is on by default; LOAM_MASTER_PROMPT=0 falls back to the
  *  legacy Loam prompt for A/B or recovery. */
@@ -67,10 +69,19 @@ export function buildSystemPrompt(
   memories: RecalledMemory[] = [],
   extraContext?: string,
   sandboxMode?: import("../policy/riskTier.js").SandboxMode,
+  /** Pre-loaded project memory; pass null to skip loading, omit to load from cfg.workspace. */
+  projectMemory?: ProjectMemoryResult | null,
+  /** The user's request text; used only to gate the UI design-rules section. */
+  userPrompt?: string,
 ): string {
   const lines: string[] = [];
   if (masterPromptEnabled()) {
     lines.push(buildMasterPrompt(deriveMasterSlots(cfg, toolNames), { model: cfg.model }));
+  }
+  // UI intents get the binding design-rules section (G1/G12). Injected only
+  // for UI tasks, so a non-UI request never pays for it.
+  if (isUiIntent(userPrompt)) {
+    lines.push(DESIGN_RULES_PROMPT);
   }
   if (codingPromptEnabled() && isCodingTask(toolNames)) {
     const coding = codingModeSection();
@@ -111,6 +122,10 @@ export function buildSystemPrompt(
     for (const memory of memories) lines.push(memory.text);
   }
   if (extraContext?.trim()) lines.push(extraContext.trim());
+  // Project rules files (LOAM.md / AGENTS.md / CLAUDE.md + imports) apply to every run.
+  const projectMemoryBlock =
+    projectMemory === undefined ? (cfg.workspace ? loadProjectMemory(cfg.workspace) : null) : projectMemory;
+  if (projectMemoryBlock && projectMemoryBlock.text) lines.push(projectMemoryBlock.text);
   // User custom instructions ("about me" / "how to respond") apply to every run.
   const personal = personalizationBlock();
   if (personal) lines.push(personal);
