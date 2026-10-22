@@ -136,6 +136,13 @@ export interface Config {
     /** Legacy configuration field; final verification is mandatory regardless. */
     verifyFinal: boolean;
   };
+  /** ACP-style subagent delegation (delegate_task). */
+  subagent: {
+    /** Maximum delegation depth: a child may delegate up to this many levels. */
+    maxDepth: number;
+    /** Maximum number of concurrently running child subagents. */
+    maxConcurrentChildren: number;
+  };
   mcpServers: Record<string, McpServerConfig>;
 }
 
@@ -193,6 +200,7 @@ const DEFAULTS: Config = {
     maxReplans: 1,
     verifyFinal: true,
   },
+  subagent: { maxDepth: 2, maxConcurrentChildren: 4 },
   mcpServers: {},
 };
 

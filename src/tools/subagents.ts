@@ -6,6 +6,10 @@ import { runAgent } from "../agent/loop.js";
 import { listAgents } from "../server/agents.js";
 import type { Tool, ToolContext, ToolResult, ToolRegistry } from "./registry.js";
 import { num, str } from "./registry.js";
+import { registry as subagentRegistry } from "../subagent/index.js";
+import type { SubagentRunHandle, SubagentStartOptions } from "../subagent/index.js";
+import { createInProcessProvider } from "../subagent/inProcessProvider.js";
+import { createAcpProvider } from "../subagent/acpProvider.js";
 
 export interface SubagentProfile {
   name: string;
@@ -128,6 +132,12 @@ export function discoverSubagents(workspace: string): SubagentProfile[] {
 }
 
 export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRegistry): Tool[] {
+  /** Register the built-in providers once so delegate_task can start them by name. */
+  function ensureDefaultProviders(): void {
+    if (!subagentRegistry.has("in-process")) subagentRegistry.register("in-process", createInProcessProvider());
+    if (!subagentRegistry.has("acp")) subagentRegistry.register("acp", createAcpProvider());
+  }
+
   return [
     {
       name: "subagent_list",
@@ -198,6 +208,101 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
           ok: true,
           content: `[Subagent "${profile.name}" finished in ${res.steps} step(s), ${toolCalls} tool call(s)]\n\n${res.text}`,
         };
+      },
+    },
+    {
+      name: "delegate_task",
+      description:
+        "Delegate a task to an external or in-process subagent provider (ACP or in-process). Returns the child's final text. Depth limit 2, max concurrent children configurable (default 4).",
+      parameters: {
+        type: "object",
+        properties: {
+          provider: { type: "string", enum: ["in-process", "acp"], description: "Provider to use." },
+          prompt: { type: "string", description: "Task prompt for the child agent." },
+          cwd: { type: "string", description: "Working directory (must be within workspace)." },
+          model: { type: "string", description: "Model override for in-process provider." },
+          timeoutMs: { type: "number", description: "Timeout in ms (default 120000)." },
+          acpCommand: { type: "string", description: "Command for ACP provider (e.g. 'node', 'npx')." },
+          acpArgs: { type: "array", items: { type: "string" }, description: "Args for ACP command." },
+          permissionPolicy: { type: "string", enum: ["allow", "reject"], description: "ACP permission policy (default reject)." },
+        },
+        required: ["provider", "prompt", "cwd"],
+      },
+      async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+        const provider = str(args, "provider") as "in-process" | "acp";
+        const prompt = str(args, "prompt");
+        const cwd = str(args, "cwd");
+        const model = str(args, "model") || undefined;
+        const timeoutMs =
+          typeof args.timeoutMs === "number" && Number.isFinite(args.timeoutMs) ? args.timeoutMs : undefined;
+        const acpCommand = str(args, "acpCommand") || undefined;
+        const acpArgs = args.acpArgs as string[] | undefined;
+        const permissionPolicy = (str(args, "permissionPolicy") as "allow" | "reject") || "reject";
+
+        if (!prompt || !cwd) return { ok: false, content: "delegate_task requires provider, prompt, and cwd" };
+
+        const workspaceRoot = path.resolve(ctx.workspace);
+        const targetCwd = path.resolve(cwd);
+        const withinWorkspace = targetCwd === workspaceRoot || targetCwd.startsWith(workspaceRoot + path.sep);
+        if (!withinWorkspace) {
+          return { ok: false, content: "cwd must be within workspace" };
+        }
+
+        const subagentCfg = ctx.cfg.subagent ?? { maxDepth: 2, maxConcurrentChildren: 4 };
+        const depth = ctx.depth ?? 0;
+        if (depth >= subagentCfg.maxDepth) {
+          return {
+            ok: false,
+            content: `delegate_task blocked: subagent depth limit ${subagentCfg.maxDepth} reached (current depth ${depth})`,
+          };
+        }
+
+        const startOpts: SubagentStartOptions = {
+          provider,
+          prompt,
+          cwd: targetCwd,
+          model,
+          timeoutMs,
+          permissionPolicy,
+          command: acpCommand,
+          args: acpArgs,
+          depth: depth + 1,
+          cfg: ctx.cfg,
+          ollama,
+          tools: parentRegistry,
+          signal: ctx.signal,
+        };
+
+        if (provider === "acp" && !acpCommand) {
+          return { ok: false, content: "ACP provider requires acpCommand" };
+        }
+
+        ensureDefaultProviders();
+        subagentRegistry.setMaxConcurrentChildren(subagentCfg.maxConcurrentChildren);
+        const release = await subagentRegistry.acquireChild();
+
+        let handle: SubagentRunHandle;
+        try {
+          handle = await subagentRegistry.start(startOpts);
+        } catch (e) {
+          release();
+          return { ok: false, content: `Failed to start subagent: ${e instanceof Error ? e.message : String(e)}` };
+        }
+
+        try {
+          // Drain the event stream so late notifications (and failures) surface
+          // through result(); the provider's accumulated text is authoritative.
+          for await (const _event of handle.events) {
+            /* consumed for liveness */
+          }
+          const result = await handle.result();
+          if (result.stopReason === "completed") return { ok: true, content: result.text };
+          return { ok: false, content: `[subagent ${result.stopReason}] ${result.text}`.trim() };
+        } catch (e) {
+          return { ok: false, content: `Subagent failed: ${e instanceof Error ? e.message : String(e)}` };
+        } finally {
+          release();
+        }
       },
     },
   ];
