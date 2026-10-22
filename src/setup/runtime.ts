@@ -37,6 +37,8 @@ import { createRorkTools } from "../tools/rork.js";
 import { createFrontierBridgeTools } from "../tools/frontierBridge.js";
 import { writeGate } from "../server/pending.js";
 import { createIntegrationTools } from '../tools/integrations.js';
+import { createGitWorkflowTools } from "../tools/gitWorkflowTools.js";
+
 import { createPhaseTools } from "../tools/phaseTools.js";
 import { createFinishTools } from "../tools/finishTools.js";
 import { createMultiEditTools } from "../tools/multiEdit.js";
@@ -105,6 +107,8 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createRorkTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createFrontierBridgeTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createSubagentTools(ollama, registry));
+  registry.registerAll(createGitWorkflowTools());
+
   registry.registerAll(createCodeSessionTools());
   registry.registerAll(createDocsLookupTools());
   // N12 generator tools: media/search providers from the environment plus the
