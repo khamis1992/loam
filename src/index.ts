@@ -26,6 +26,7 @@ import { createInstructionHistoryTools } from "./tools/instructionTools.js";
 import { createAgentSpawnTools } from "./tools/agentSpawnTools.js";
 import { createBrowserOperatorTools } from "./tools/browserOperator.js";
 import { createWideResearchTool } from "./tools/wideResearch.js";
+import { createFindAndEditTools } from "./tools/findAndEdit.js";
 import { createGroupTools } from "./tools/groupTools.js";
 import { createBackendScaffoldTools } from "./tools/backendScaffold.js";
 import { createDesignStudioTools } from "./tools/designStudio.js";
@@ -115,6 +116,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createBrowserOperatorTools());
   rt.registry.registerAll(createDeepResearchTools());
   rt.registry.register(createWideResearchTool({ ollama: rt.ollama, parentRegistry: rt.registry }));
+  rt.registry.registerAll(createFindAndEditTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createGroupTools());
   rt.registry.registerAll(createBackendScaffoldTools());
   rt.registry.registerAll(createDesignStudioTools());
