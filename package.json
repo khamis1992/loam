@@ -58,7 +58,11 @@
     "check:studio-ui": "node src/scripts/check-studio-ui.mjs",
     "check:studio-export": "tsx src/scripts/check-studio-export.ts",
     "gen:master-prompt": "tsx src/scripts/gen-master-prompt.ts",
-    "check:promptwire": "tsx src/scripts/check-promptwire.ts"
+    "check:promptwire": "tsx src/scripts/check-promptwire.ts",
+    "vendor:filmcraft": "node scripts/vendor/fetch-filmcraft.mjs",
+    "vendor:effectcraft": "node scripts/vendor/fetch-effectcraft.mjs",
+    "vendor": "npm run vendor:filmcraft && npm run vendor:effectcraft",
+    "test:vendor": "node --import tsx --test scripts/vendor/__tests__/*.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",

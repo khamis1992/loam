@@ -17,13 +17,20 @@
  * glue filenames, the AudioWorklet processor name) are API surface and stay
  * unchanged.
  *
- * Usage: node electron/filmcraft/rebrand.mjs
+ * Usage: node electron/filmcraft/rebrand.mjs [distDir]
+ * The optional distDir argument defaults to ./dist next to this script; the
+ * vendoring scripts (scripts/vendor/fetch-filmcraft.mjs) pass their target so a
+ * freshly extracted dist is rebranded in place.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), 'dist');
+const root = process.argv[2]
+  ? isAbsolute(process.argv[2])
+    ? process.argv[2]
+    : resolve(process.cwd(), process.argv[2])
+  : join(dirname(fileURLToPath(import.meta.url)), 'dist');
 const WASM = join(root, 'filmcraft_web_bg.wasm');
 const HTML = join(root, 'index.html');
 
@@ -94,7 +101,7 @@ function replaceAllBytes(buf, from, to) {
 let changed = false;
 
 // --- index.html -------------------------------------------------------------
-{
+if (existsSync(HTML)) {
   let html = readFileSync(HTML, 'utf8');
   for (const [from, to] of HTML_REPLACEMENTS) {
     if (html.includes(from)) {
@@ -107,7 +114,7 @@ let changed = false;
 }
 
 // --- filmcraft_web_bg.wasm --------------------------------------------------
-{
+if (existsSync(WASM)) {
   const buf = readFileSync(WASM);
   const before = buf.length;
   let total = 0;

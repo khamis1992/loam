@@ -44,6 +44,14 @@ const MIME_TYPES = {
   ".wasm": "application/wasm",
 };
 
+// Non-failing vendored-dist check: when a dist is missing, print how to fetch it.
+// Never auto-downloads (see scripts/vendor/*); the app falls back gracefully.
+function warnIfVendorDistMissing(label, distDir, npmScript) {
+  if (fs.existsSync(path.join(distDir, "index.html"))) return;
+  console.warn(`[electron] ${label} dist not found at ${distDir}.`);
+  console.warn(`[electron] Fetch it with: npm run ${npmScript}`);
+}
+
 let serverChild = null;
 let win = null;
 let tray = null;
@@ -763,6 +771,9 @@ app.whenReady().then(async () => {
     }
     return null;
   }
+  warnIfVendorDistMissing("Loam Video", FILMCRAFT_DIST, "vendor:filmcraft");
+  warnIfVendorDistMissing("Loam Effects", path.join(ROOT, "electron", "effectcraft", "dist"), "vendor:effectcraft");
+
   protocol.handle("loamfilm", async (request) => {
     const url = new URL(request.url);
     let pathname = decodeURIComponent(url.pathname);

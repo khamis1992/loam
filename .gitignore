@@ -29,3 +29,8 @@ nul
 /packages/web/e2e/results/
 /packages/web/e2e/visual/
 /packages/web/e2e/snapshots/
+
+# Vendored editor dists (fetched with `npm run vendor`; never committed)
+/electron/filmcraft/dist/
+/electron/effectcraft/dist/
+/.cache/vendor/
