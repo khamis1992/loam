@@ -35,3 +35,8 @@ export function subscribeTask(taskId: string, listener: Listener): () => void {
 export function runningTaskCount(): number {
   return subs.size;
 }
+
+/** Live subscriber count for one task's event stream (0 means no panel attached). */
+export function subscriberCount(taskId: string): number {
+  return subs.get(taskId)?.size ?? 0;
+}
