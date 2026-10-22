@@ -150,6 +150,22 @@ export interface Config {
       apiKeyEnv: string;
       enabled: boolean;
     }>;
+  },
+  compression: {
+    /** Enable/disable context compression (default: true). */
+    enabled: boolean;
+    /** Trigger compression when estimated tokens exceed this fraction of the model's context window (default: 0.50). */
+    thresholdPercent: number;
+    /** Number of leading messages to always protect from compression (default: 3 = system + first user + first assistant). */
+    protectLead: number;
+    /** Number of trailing messages to always protect from compression (default: 20). */
+    protectTail: number;
+    /** Target compression ratio for summarization step (default: 0.20, clamped to 0.10-0.80). */
+    targetRatio: number;
+    /** Model to use for summarization ("" = main model). */
+    model: string;
+    /** Context window size per model prefix (longest-prefix match). Defaults cover common models. */
+    contextWindow: Record<string, number>;
   };
   sessionLog: { enabled: boolean };
 }
@@ -219,6 +235,33 @@ const DEFAULTS: Config = {
       { id: "openrouter", kind: "openai-compatible", baseUrl: "https://openrouter.ai/api/v1", model: "openrouter/free", apiKeyEnv: "OPENROUTER_API_KEY", enabled: true },
       { id: "ornith", kind: "openai-compatible", baseUrl: "https://api.ornith.ai/v1", model: "ornith", apiKeyEnv: "ORNITH_API_KEY", enabled: true },
     ],
+  },
+  compression: {
+    enabled: true,
+    thresholdPercent: 0.5,
+    protectLead: 3,
+    protectTail: 20,
+    targetRatio: 0.2,
+    model: "",
+    contextWindow: {
+      "gpt-4": 8192,
+      "gpt-4-32k": 32768,
+      "gpt-4-turbo": 128000,
+      "gpt-4o": 128000,
+      "claude-3": 200000,
+      "claude-3.5": 200000,
+      "llama-3": 8192,
+      "llama-3.1": 128000,
+      "mistral": 32768,
+      "mixtral": 32768,
+      "qwen": 32768,
+      "qwen2": 32768,
+      "qwen2.5": 32768,
+      "glm": 32768,
+      "deepseek": 32768,
+      "gemini": 1048576,
+      "gemini-1.5": 1048576,
+    },
   },
   sessionLog: { enabled: true },
 };

@@ -70,6 +70,8 @@ export type AgentEvent =
   | { type: "approval_required"; approvalId: string; tool: string; summary: string }
   /** End-to-end verification of the completed task. */
   | { type: "verify"; verdict: Verdict; reason: string; parsed?: boolean }
+  /** Context compression happened. */
+  | { type: "compaction"; step: 1 | 2; originalTokens: number; afterPruneTokens: number; finalTokens: number; summaryChars?: number; fallback?: boolean }
   /** A workspace file was published as a task artifact via artifact_publish. */
   | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string };
 
