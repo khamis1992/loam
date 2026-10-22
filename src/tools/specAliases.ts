@@ -1,5 +1,5 @@
 import type { Tool, ToolContext, ToolResult, ToolRegistry } from "./registry.js";
-import { bool, num, str, strs } from "./registry.js";
+import { bool, num, str, strFirst, strs } from "./registry.js";
 import { createMapReduceTool } from "./mapReduce.js";
 import type { OllamaClient } from "../ollama.js";
 import type { PlanStepStatus } from "../agent/events.js";
@@ -215,8 +215,11 @@ function textEditorTool(registry: ToolRegistry): Tool {
         action: { enum: ["read", "write", "append", "str_replace", "find_in_file", "find_by_name"] },
         path: { type: "string" },
         content: { type: "string" },
-        oldStr: { type: "string" },
-        newStr: { type: "string" },
+        old_string: { type: "string", description: "Exact text to find (alias: oldStr)." },
+        new_string: { type: "string", description: "Replacement text (alias: newStr)." },
+        oldStr: { type: "string", description: "Alias for old_string." },
+        newStr: { type: "string", description: "Alias for new_string." },
+        replace_all: { type: "boolean", description: "Replace every occurrence instead of requiring a single unique match." },
         startLine: { type: "integer", minimum: 1 },
         endLine: { type: "integer", minimum: 1 },
         regex: { type: "string" },
@@ -240,8 +243,18 @@ function textEditorTool(registry: ToolRegistry): Tool {
           return execNative(registry, "file_write", { path: p, content: str(args, "content") }, ctx);
         case "append":
           return execNative(registry, "file_write", { path: p, content: str(args, "content"), append: true }, ctx);
-        case "str_replace":
-          return execNative(registry, "file_edit", { path: p, find: str(args, "oldStr"), replace: str(args, "newStr") }, ctx);
+        case "str_replace": {
+          const oldString = strFirst(args, "old_string", "oldStr");
+          const newString = strFirst(args, "new_string", "newStr");
+          if (oldString === undefined) return { ok: false, content: "text_editor str_replace requires old_string (or oldStr)" };
+          if (newString === undefined) return { ok: false, content: "text_editor str_replace requires new_string (or newStr)" };
+          return execNative(
+            registry,
+            "file_edit",
+            { path: p, old_string: oldString, new_string: newString, replace_all: bool(args, "replace_all", false) },
+            ctx,
+          );
+        }
         case "find_in_file":
           return execNative(registry, "file_search", { pattern: str(args, "regex"), path: p }, ctx);
         case "find_by_name":
@@ -393,7 +406,7 @@ function browserTool(registry: ToolRegistry): Tool {
   };
 }
 
-function messageTool(): Tool {
+export function messageTool(): Tool {
   return {
     name: "message",
     description: "Talk to the user. kind=notify does not block; kind=ask pauses the task until the user replies.",
