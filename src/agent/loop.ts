@@ -14,6 +14,8 @@ import { createStallGuard } from "./stallGuard.js";
 import { compressContext } from "./contextCompressor.js";
 import { throwIfCancelled } from "../server/runControl.js";
 import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/riskTier.js";
+import { ReminderChannel, TODO_UPDATE_TOOLS, MEMORY_UPDATE_TOOLS, type ReminderChannelOptions } from "./reminders.js";
+import { getTaskPhase } from "../tools/phaseTools.js";
 import { ReadState } from "../tools/readState.js";
 
 export interface RunOptions {
@@ -45,6 +47,11 @@ export interface RunOptions {
   saveWorker?: (checkpoint: WorkerCheckpoint | undefined) => void;
   /** Resolved sandbox mode for this run; rendered into the system prompt. */
   sandboxMode?: SandboxMode;
+  /** Shared reminder channel. Callers may push external file changes or memory
+   *  updates into it; the loop appends due reminders as hidden user messages. */
+  reminderChannel?: ReminderChannel;
+  /** Overrides the stale-todo threshold and initial plan mode for this run. */
+  reminders?: ReminderChannelOptions;
 }
 
 export interface RunResult {
@@ -146,6 +153,10 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // The tool names this run may use. Tools that fan out to child agents read
   // it from the tool context so a child never exceeds the parent's reach.
   const runAllowedTools = opts.tools.names();
+  // Harness reminders (stale todo list, external file change, plan mode, memory
+  // update) are injected as hidden user-role blocks. They are never emitted as
+  // events, so the UI cannot render them.
+  const reminders = opts.reminderChannel ?? new ReminderChannel(opts.reminders);
   // Per-session read tracking: file_read fills it, edit/write tools consult it
   // so the model cannot blind-edit content it never saw or clobber a file that
   // changed since it was read. A fresh instance per run matches Claude Code.
@@ -156,6 +167,10 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     throwIfCancelled(opts.signal, opts.taskId);
     opts.emit({ type: "step", index: step });
     opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
+
+    // Plan mode is a read-only work phase; announce it once when it is active.
+    if (opts.taskId) reminders.setPlanMode(getTaskPhase(opts.taskId) === "plan");
+    for (const message of reminders.drainMessages(step)) messages.push(message);
 
     if (opts.cfg.compression.enabled) {
       const compressed = await compressContext(opts.cfg, opts.ollama, messages, opts.emit, opts.signal);
@@ -271,6 +286,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.onToolEvidence?.(evidence);
         const notice = stallGuard(item.name, item.args, toolResult.ok);
         if (notice) stallNotices.push(notice);
+        if (TODO_UPDATE_TOOLS.has(item.name) && toolResult.ok) reminders.noteTodoUpdate(step);
+        if (MEMORY_UPDATE_TOOLS.has(item.name) && toolResult.ok) reminders.memoryUpdated();
         opts.emit({
           type: "tool_result",
           name: item.name,
@@ -306,6 +323,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.onToolEvidence?.(evidence);
         const notice = stallGuard(name, args, toolResult.ok);
         if (notice) stallNotices.push(notice);
+        if (TODO_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.noteTodoUpdate(step);
+        if (MEMORY_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.memoryUpdated();
         messages.push({ role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) });
         // Cancel pressed while the tool ran? Stop before the next tool/step.
         throwIfCancelled(opts.signal, opts.taskId);
