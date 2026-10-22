@@ -95,6 +95,7 @@ import { handleShareRoutes } from "./routes/shares.js";
 import { handleProjectContextRoutes } from "./routes/projectContext.js";
 import { handleVoiceRoutes } from "./routes/voice.js";
 import { handleConnectorsRoutes } from "./routes/connectors.js";
+import { handleWikiRoutes } from "./routes/wiki.js";
 import { importGrokbotBundle, sanitizeGrokbotBundle } from "./grokbotImport.js";
 import { isValidTimezone } from "./scheduleTime.js";
 import { getWorkModesUi, normalizeWorkMode, resolveCompanionCapabilities } from "./companionGateway.js";
@@ -1768,6 +1769,8 @@ loadAgents();
         // Project context + model tiers (options 17/18/22): must precede the
         // generic /api/projects/ and /api/schedules/ handlers below.
         if (await handleProjectContextRoutes(req, res, p)) return;
+        // Repo wiki (D8): list/generate/read DeepWiki-style pages.
+        if (await handleWikiRoutes(req, res, p, { workspace: cfg.workspace, ollama, model: cfg.model })) return;
 
         // ---- avatar (Grok Bot-style): set shape/color/image on an existing agent ----
         // Must run before the generic /api/agents/:id prefix block.

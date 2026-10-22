@@ -13,6 +13,7 @@ import { disposeShellSessions, shellTools } from "../tools/shell.js";
 import { fileTools } from "../tools/files.js";
 import { attachmentTools } from "../tools/attachments.js";
 import { symbolTools } from "../tools/symbols.js";
+import { createWikiTools } from "../tools/wiki.js";
 import { pentestTools } from "../tools/pentest.js";
 import { mirofishTools } from "../tools/mirofish.js";
 import { createSubagentTools } from "../tools/subagents.js";
@@ -55,6 +56,8 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
 
   const registry = new ToolRegistry();
   registry.registerAll([...fileTools, ...shellTools, ...ptyTools, ...webTools, ...browserTools, ...computerUseTools, ...attachmentTools(), ...symbolTools(), ...pentestTools()]);
+  // Repo wiki (D8): wiki_generate + ask_codebase. file_search is already registered above.
+  registry.registerAll(createWikiTools(ollama, cfg.model, registry));
   registry.registerAll(mirofishTools().map(tool => ({ ...tool, integration: true })));
 
   const embedder = new OllamaEmbedder(cfg.ollamaUrl, cfg.memory.model);
