@@ -72,6 +72,36 @@ function toolMessageContent(name: string, content: string): string {
   return isUntrustedTool(name) ? markUntrusted(content, name) : content;
 }
 
+/** Maximum number of independent read-only tool calls executed concurrently from
+ *  one assistant turn. Writes never enter the parallel path and stay serial. */
+const PARALLEL_READ_LIMIT = 8;
+
+/**
+ * Run `fn` over `items` with at most `limit` invocations in flight and return the
+ * results in the original item order. Results are index-mapped rather than
+ * collected in completion order, so the tool results stay aligned with the
+ * assistant's tool_call order even when the calls finish out of order.
+ */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  const workers = Math.max(1, Math.min(limit, items.length));
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: workers }, async () => {
+      for (;;) {
+        const index = next++;
+        if (index >= items.length) return;
+        results[index] = await fn(items[index] as T, index);
+      }
+    }),
+  );
+  return results;
+}
+
 export async function runAgent(opts: RunOptions): Promise<RunResult> {
   if (!opts.suppressFinal) opts = { ...opts, tools: taskScopedTools(opts.tools, opts.prompt, opts.history) };
   const acceptanceGuard = new AcceptanceGuard(undefined, opts.suppressFinal ? undefined : opts.prompt);
@@ -216,18 +246,16 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.emit({ type: "tool_call", name, args });
         return { name, args, t0: Date.now() };
       });
-      const batchResults = await Promise.all(
-        prepared.map((item) =>
-          opts.tools.exec(item.name, item.args, {
-            cfg: opts.cfg,
-            workspace: opts.cfg.workspace,
-            emit: opts.emit,
-            signal: opts.signal,
-            allowedTools: runAllowedTools,
-            ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
-            ...(opts.taskId ? { taskId: opts.taskId } : {}),
-          }),
-        ),
+      const batchResults = await mapWithConcurrency(prepared, PARALLEL_READ_LIMIT, (item) =>
+        opts.tools.exec(item.name, item.args, {
+          cfg: opts.cfg,
+          workspace: opts.cfg.workspace,
+          emit: opts.emit,
+          signal: opts.signal,
+          allowedTools: runAllowedTools,
+          ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
+          ...(opts.taskId ? { taskId: opts.taskId } : {}),
+        }),
       );
       for (let i = 0; i < prepared.length; i++) {
         const item = prepared[i]!;
