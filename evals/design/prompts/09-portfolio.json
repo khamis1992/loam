@@ -1,0 +1,12 @@
+{
+  "id": "portfolio",
+  "prompt": "Design a portfolio site for a product designer: a hero statement, a selected-work grid, a short about section and a contact footer. Let the work imagery lead, keep the palette to a single accent, and make the grid reflow cleanly from one to three columns.",
+  "locale": "en",
+  "direction": "ltr",
+  "expectations": {
+    "must": ["selected work", "about", "contact"],
+    "mustNot": ["lorem ipsum", "stock placeholder images"],
+    "keywords": ["portfolio", "designer"],
+    "minLint": 80
+  }
+}

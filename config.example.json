@@ -35,7 +35,8 @@
       "Remove-Item -Recurse -Force C:\\"
     ],
     "allowCommandPatterns": [],
-    "maxCommandSeconds": 180
+    "maxCommandSeconds": 180,
+    "sandboxMode": "workspace-write"
   },
   "browser": {
     "channel": "msedge",
