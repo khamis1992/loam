@@ -18,8 +18,9 @@
     "test:pentest-bench": "node --import tsx --test src/scripts/__tests__/check-pentest-bench.test.ts",
     "test:browser-operator": "node --import tsx --test src/tools/__tests__/browserOperator.test.ts",
     "test:electron": "node --test electron/__tests__/inAppBrowser.test.cjs",
-    "test:vendor": "node --import tsx --test scripts/vendor/__tests__/*.test.mjs",
+    "test:vendor": "node --test scripts/vendor/__tests__/fetch-craft.test.mjs",
     "test:vendor:protocol": "node --test electron/__tests__/vendorProtocol.test.cjs",
+    "test:vendor:editors": "node --import tsx --test scripts/vendor/__tests__/*.test.mjs",
     "test:craft": "node --import tsx --test src/server/__tests__/craftStatus.test.ts",
     "vendor:craft": "node scripts/vendor/fetch-craft.mjs",
     "check:selfimprove": "tsx src/scripts/check-selfimprove.ts",
@@ -69,8 +70,7 @@
     "check:promptwire": "tsx src/scripts/check-promptwire.ts",
     "vendor:filmcraft": "node scripts/vendor/fetch-filmcraft.mjs",
     "vendor:effectcraft": "node scripts/vendor/fetch-effectcraft.mjs",
-    "vendor": "npm run vendor:filmcraft && npm run vendor:effectcraft",
-    "test:vendor": "node --import tsx --test scripts/vendor/__tests__/*.test.mjs"
+    "vendor": "npm run vendor:filmcraft && npm run vendor:effectcraft"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",

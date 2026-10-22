@@ -14,10 +14,15 @@ export async function handleCraftRoutes(
   req: IncomingMessage,
   res: ServerResponse,
   p: string,
+  opts: { root?: string } = {},
 ): Promise<boolean> {
   if (!p.startsWith("/api/craft")) return false;
+  // The route reads the project root from LOAM_ROOT (set by config.ts / the
+  // Electron main process) instead of the import-time default, so tests and a
+  // packaged install can point it at a different tree.
+  const root = opts.root ?? process.env.LOAM_ROOT ?? process.env.MANUS_LOCAL_ROOT;
   if (req.method === "GET" && p === "/api/craft/status") {
-    sendJson(res, 200, { apps: readCraftStatus() });
+    sendJson(res, 200, { apps: readCraftStatus(root) });
     return true;
   }
   sendJson(res, 404, { error: "Not found" });
