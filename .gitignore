@@ -25,3 +25,7 @@ Thumbs.db
 /.github/workflows/release.yml
 
 nul
+/packages/web/e2e/report/
+/packages/web/e2e/results/
+/packages/web/e2e/visual/
+/packages/web/e2e/snapshots/

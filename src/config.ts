@@ -144,6 +144,7 @@ export interface Config {
     maxConcurrentChildren: number;
   };
   mcpServers: Record<string, McpServerConfig>;
+  sessionLog: { enabled: boolean };
 }
 
 const DEFAULTS: Config = {
@@ -202,6 +203,7 @@ const DEFAULTS: Config = {
   },
   subagent: { maxDepth: 2, maxConcurrentChildren: 4 },
   mcpServers: {},
+  sessionLog: { enabled: true },
 };
 
 function isObj(v: unknown): v is Record<string, unknown> {
