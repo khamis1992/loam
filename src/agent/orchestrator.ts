@@ -9,6 +9,7 @@ import type { ExecutionCheckpoint, WorkerCheckpoint } from "./checkpoint.js";
 import { AcceptanceGuard } from "./acceptanceGuard.js";
 import { IndependentAcceptanceGuard, independentRequirements } from "./independentAcceptance.js";
 import { taskScopedTools, fileOnlyRequested } from "./taskToolScope.js";
+import { addUsage, sumUsage } from "./usageAccounting.js";
 
 export interface VerdictRecord extends VerdictInfo {
   scope: string;
@@ -31,12 +32,6 @@ const WORKER_SUFFIX = [
 function oneLine(text: string, max = 300): string {
   const t = text.trim().replace(/\s+/g, " ");
   return t.length > max ? `${t.slice(0, max)}...` : t;
-}
-
-function addUsage(target: Usage, add: Usage): void {
-  target.promptTokens += add.promptTokens;
-  target.completionTokens += add.completionTokens;
-  target.durationMs += add.durationMs;
 }
 
 interface WorkerOutcome {
@@ -205,7 +200,7 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
   let worker: WorkerCheckpoint | undefined = restored?.worker;
   const checkpoint = (inFlight: boolean, complete = false, pendingUsage?: Usage): void => {
     o.saveCheckpoint?.(structuredClone({ version: 1, plan, nextStep, completed, lastText,
-      trace: allTrace, round, usage: pendingUsage ? { promptTokens: usage.promptTokens + pendingUsage.promptTokens, completionTokens: usage.completionTokens + pendingUsage.completionTokens, durationMs: usage.durationMs + pendingUsage.durationMs } : usage, totalSteps, model: usedModel, inFlight, complete, finalRepairUsed, finalRepairAttempts, finalRepairPrompt: pendingFinalRepair, acceptanceContract: acceptanceGuard.snapshot(), independentAcceptance: independentGuard.snapshot(), independentRequirements: independentRequest, fileOnlyTools, worker }));
+      trace: allTrace, round, usage: pendingUsage ? sumUsage(usage, pendingUsage) : usage, totalSteps, model: usedModel, inFlight, complete, finalRepairUsed, finalRepairAttempts, finalRepairPrompt: pendingFinalRepair, acceptanceContract: acceptanceGuard.snapshot(), independentAcceptance: independentGuard.snapshot(), independentRequirements: independentRequest, fileOnlyTools, worker }));
   };
   checkpoint(restored?.inFlight ?? false);
 
