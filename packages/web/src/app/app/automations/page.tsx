@@ -36,6 +36,12 @@ function scheduleLabel(s: Schedule): string {
   return `${t('Every')} ${seconds} ${t('s')}`;
 }
 
+function triggerLabel(s: Schedule): string {
+  if (s.trigger === 'webhook') return t('Webhook');
+  if (s.trigger === 'github') return t('GitHub');
+  return t('Schedule');
+}
+
 export default function AutomationsPage() {
   const router = useRouter();
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -180,7 +186,7 @@ export default function AutomationsPage() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-text-primary" title={s.prompt}>{s.prompt}</p>
                   <p className="text-xs text-text-tertiary">
-                    {scheduleLabel(s)}
+                    {triggerLabel(s)} - {scheduleLabel(s)}
                     {s.nextRunAt ? ` - ${t('Next')}: ${s.nextRunAt}` : ''}
                   </p>
                 </div>
