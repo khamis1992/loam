@@ -1,10 +1,26 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { X, Settings, Play, Loader2, AlertCircle, FileText, Folder, Plus, Send, Mail, Trash2, Monitor, Maximize2 } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import {
+  X,
+  Settings,
+  Play,
+  Loader2,
+  AlertCircle,
+  Plus,
+  Send,
+  Mail,
+  Trash2,
+  Monitor,
+  Maximize2,
+  ChevronRight,
+  ArrowLeft,
+  Bell,
+  BellOff,
+} from 'lucide-react';
 import { t } from '@/i18n/t';
 import { Button, Spinner } from '@/components/ui/Button';
-import { getApiBase } from '@/services/rpc';
+import { getApiBase, getApiHeaders } from '@/services/rpc';
 import {
   getAgentMemory,
   listApprovalRules,
@@ -39,12 +55,11 @@ import type {
 import { LiveView } from '@/components/computer/LiveView';
 import { TeamRunsList } from './TeamRunsList';
 import type { AgentCardAgent } from './AgentCard';
-import { loadAgentThreadFiles } from './AgentThreadView';
+import { AgentAvatar, AVATAR_SHAPES, AVATAR_COLORS } from './AgentAvatar';
+import { agentLabel } from './agentLabels';
 import { AgentContextMenu } from './AgentContextMenu';
 import { GroupMembersTab } from './GroupMembersTab';
 import type { GroupChat } from './groupTypes';
-import { WorkspaceFilePanel } from '@/components/workspace';
-import type { WorkspaceFile } from '@/components/workspace';
 
 interface AgentWithMeta extends AgentCardAgent {
   description?: string;
@@ -52,15 +67,14 @@ interface AgentWithMeta extends AgentCardAgent {
   effort?: string;
   allowedServices?: string[];
   workMode?: string;
+  title?: string;
+  notifications?: boolean;
 }
-
-type TabId = 'overview' | 'channels' | 'routines' | 'media' | 'computer' | 'members';
 
 interface AgentInfoPaneProps {
   agent: AgentWithMeta;
   threadUid: string | null;
   onClose: () => void;
-  onEdit: () => void;
   /** Opens the rename dialog for this agent. */
   onRenameAgent?: () => void;
   /** Permanently deletes this agent (the context menu asks for confirmation). */
@@ -68,27 +82,35 @@ interface AgentInfoPaneProps {
   /** Optional pin/hide handlers; the header menu items stay stubs without them. */
   onTogglePin?: () => void;
   onToggleHide?: () => void;
+  /** Reloads the agent list after the per-agent settings subpage saves. */
+  onSaved?: () => void;
   /** When set, the pane shows group details instead of the selected agent. */
   group?: GroupChat | null;
   onGroupChanged?: (group: GroupChat) => void;
 }
 
-export function AgentInfoPane({ agent, threadUid, onClose, onEdit, onRenameAgent, onDeleteAgent, onTogglePin, onToggleHide, group, onGroupChanged }: AgentInfoPaneProps) {
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
+export function AgentInfoPane({ agent, threadUid, onClose, onRenameAgent, onDeleteAgent, onTogglePin, onToggleHide, onSaved, group, onGroupChanged }: AgentInfoPaneProps) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number } | null>(null);
-  const tabs = group ? TAB_ITEMS.filter((tab) => tab.id === 'members') : TAB_ITEMS;
-  const currentTab: TabId = group ? 'members' : activeTab;
-  const [workspaceFile, setWorkspaceFile] = useState<WorkspaceFile | null>(null);
+  const showHeaderMenu = !group && Boolean(onRenameAgent || onDeleteAgent);
+  const headerTitle = group ? group.name : agent.name;
+  const headerSubtitle = group ? t('Group chat') : agent.title || agent.description || agent.mode || 'loam';
 
-  if (workspaceFile) {
+  if (settingsOpen && !group) {
     return (
-      <aside className="flex w-[560px] shrink-0 flex-col border-s border-border-main bg-bg-menu">
-        <WorkspaceFilePanel file={workspaceFile} onClose={() => setWorkspaceFile(null)} />
+      <aside className="flex w-[340px] shrink-0 flex-col border-s border-border-main bg-bg-menu">
+        <AgentSettingsSubpage
+          agent={agent}
+          onBack={() => setSettingsOpen(false)}
+          onClose={onClose}
+          onSaved={() => {
+            onSaved?.();
+            setSettingsOpen(false);
+          }}
+        />
       </aside>
     );
   }
-
-  const showHeaderMenu = !group && Boolean(onRenameAgent || onDeleteAgent);
 
   return (
     <aside className="flex w-[340px] shrink-0 flex-col border-s border-border-main bg-bg-menu">
@@ -103,27 +125,33 @@ export function AgentInfoPane({ agent, threadUid, onClose, onEdit, onRenameAgent
             : undefined
         }
       >
-        <div className="flex items-center gap-2">
-          <div className="flex size-7 items-center justify-center rounded-control bg-fill-tsp text-base">
-            {group ? '👥' : agent.emoji || 'dY-'}
-          </div>
+        <div className="flex min-w-0 items-center gap-2">
+          {group ? (
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-control bg-fill-tsp text-base">👥</div>
+          ) : (
+            <AgentAvatar
+              name={agent.name}
+              avatarShape={agent.avatarShape}
+              avatarColor={agent.avatarColor}
+              avatarImage={agent.avatarImage}
+              size={32}
+            />
+          )}
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-text-primary">{group ? group.name : agent.name}</p>
-            <p className="truncate text-xs text-text-tertiary">
-              {group ? t('Group chat') : agent.description || agent.mode || 'loam'}
-            </p>
+            <p className="truncate text-sm font-medium text-text-primary">{headerTitle}</p>
+            <p className="truncate text-xs text-text-tertiary">{headerSubtitle}</p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {!group && (
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              onClick={onEdit}
+              onClick={() => setSettingsOpen(true)}
               className="h-row-sm w-row-sm px-0"
-              aria-label={t('Edit agent')}
-              title={t('Edit agent')}
+              aria-label={t('Agent settings')}
+              title={t('Agent settings')}
             >
               <Settings className="size-4" />
             </Button>
@@ -142,39 +170,31 @@ export function AgentInfoPane({ agent, threadUid, onClose, onEdit, onRenameAgent
         </div>
       </div>
 
-      {!group && <ComputerPreviewCard agentId={agent.id} agentName={agent.name} threadUid={threadUid} />}
+      <div className="flex-1 overflow-y-auto">
+        {!group && <ComputerPreviewCard agentId={agent.id} agentName={agent.name} threadUid={threadUid} />}
 
-      <div className="flex h-row-sm shrink-0 items-center border-b border-border-main">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActiveTab(tab.id)}
-            className={[
-              'flex h-full flex-1 items-center justify-center px-1 text-[11px] font-medium transition-colors',
-              currentTab === tab.id
-                ? 'border-b-2 border-text-primary text-text-primary'
-                : 'border-b-2 border-transparent text-text-tertiary hover:bg-fill-hover hover:text-text-secondary',
-            ].join(' ')}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4">
-        {group ? (
-          <GroupMembersTab groupId={group.id} onChanged={onGroupChanged} />
-        ) : (
-          <>
-            {activeTab === 'overview' && <OverviewTab agent={agent} />}
-            {activeTab === 'channels' && <ChannelsTab agentId={agent.id} />}
-            {activeTab === 'routines' && <RoutinesTab agentId={agent.id} />}
-            {activeTab === 'media' && <MediaTab threadUid={threadUid} onOpenDoc={(path, name) => setWorkspaceFile({ taskId: threadUid ?? '', path, name, kind: 'doc' })} />}
-            {activeTab === 'computer' && <ComputerTab threadUid={threadUid} />}
-            {activeTab === 'members' && <MembersTab agentId={agent.id} />}
-          </>
-        )}
+        <div className="flex flex-col gap-6 p-4">
+          {group ? (
+            <Section title={t('Members')}>
+              <GroupMembersTab groupId={group.id} onChanged={onGroupChanged} />
+            </Section>
+          ) : (
+            <>
+              <Section title={t('Overview')}>
+                <OverviewSection agent={agent} />
+              </Section>
+              <Section title={t('Routines')}>
+                <RoutinesTab agentId={agent.id} />
+              </Section>
+              <Section title={t('Channels')}>
+                <ChannelsTab agentId={agent.id} />
+              </Section>
+              <Section title={t('Members')}>
+                <MembersTab agentId={agent.id} />
+              </Section>
+            </>
+          )}
+        </div>
       </div>
 
       {headerMenu && (
@@ -193,14 +213,227 @@ export function AgentInfoPane({ agent, threadUid, onClose, onEdit, onRenameAgent
   );
 }
 
-const TAB_ITEMS: { id: TabId; label: string }[] = [
-  { id: 'overview', label: t('Overview') },
-  { id: 'channels', label: t('Channels') },
-  { id: 'routines', label: t('Routines') },
-  { id: 'media', label: t('Media') },
-  { id: 'computer', label: t('Computer') },
-  { id: 'members', label: t('Members') },
-];
+/** A titled block in the pane's single scroll. */
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+/**
+ * Per-agent settings subpage opened from the header gear (Grok Bot parity):
+ * avatar, name, title, description and the per-agent notifications toggle.
+ */
+function AgentSettingsSubpage({
+  agent,
+  onBack,
+  onClose,
+  onSaved,
+}: {
+  agent: AgentWithMeta;
+  onBack: () => void;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(agent.name);
+  const [title, setTitle] = useState(agent.title ?? '');
+  const [description, setDescription] = useState(agent.description ?? '');
+  const [notifications, setNotifications] = useState(agent.notifications !== false);
+  const [avatarShape, setAvatarShape] = useState(agent.avatarShape);
+  const [avatarColor, setAvatarColor] = useState(agent.avatarColor);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      setError(agentLabel('nameRequired'));
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`${getApiBase()}/api/agents/${encodeURIComponent(agent.id)}`, {
+        method: 'POST',
+        headers: {
+          ...(await getApiHeaders()),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: name.trim(),
+          title: title.trim(),
+          description: description.trim(),
+          notifications,
+          ...(avatarShape ? { avatarShape } : {}),
+          ...(avatarColor ? { avatarColor } : {}),
+        }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? `status ${res.status}`);
+      }
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputClass =
+    'rounded-control border border-border-main bg-bg-main px-3 py-2 text-sm text-text-primary outline-none focus:border-border-dark placeholder:text-text-tertiary';
+
+  return (
+    <>
+      <div className="flex h-row items-center gap-2 border-b border-border-main px-4">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onBack}
+          className="h-row-sm w-row-sm px-0"
+          aria-label={t('Back')}
+          title={t('Back')}
+        >
+          <ArrowLeft className="size-4" />
+        </Button>
+        <p className="min-w-0 flex-1 truncate text-sm font-medium text-text-primary">{t('Agent settings')}</p>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onClose}
+          className="h-row-sm w-row-sm px-0"
+          aria-label={t('Close')}
+          title={t('Close')}
+        >
+          <X className="size-4" />
+        </Button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex flex-col items-center gap-3 pb-4">
+          <AgentAvatar
+            name={name || agent.name}
+            avatarShape={avatarShape}
+            avatarColor={avatarColor}
+            avatarImage={agent.avatarImage}
+            size={64}
+          />
+          <p className="text-sm font-medium text-text-primary">{name || agent.name}</p>
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-medium text-text-tertiary">{t('Avatar')}</span>
+            <div className="flex flex-wrap gap-2">
+              {AVATAR_SHAPES.map((shape) => (
+                <button
+                  key={shape}
+                  type="button"
+                  onClick={() => setAvatarShape(shape)}
+                  aria-label={shape}
+                  title={shape}
+                  className={[
+                    'rounded-control p-1 transition-colors hover:bg-fill-hover',
+                    avatarShape === shape ? 'ring-2 ring-text-primary' : '',
+                  ].join(' ')}
+                >
+                  <AgentAvatar name={name || agent.name} avatarShape={shape} avatarColor={avatarColor} size={28} />
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {AVATAR_COLORS.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => setAvatarColor(color)}
+                  aria-label={color}
+                  title={color}
+                  className={[
+                    'rounded-control p-1 transition-colors hover:bg-fill-hover',
+                    avatarColor === color ? 'ring-2 ring-text-primary' : '',
+                  ].join(' ')}
+                >
+                  <AgentAvatar name={name || agent.name} avatarShape={avatarShape} avatarColor={color} size={28} />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <label className="flex flex-col gap-1 text-sm text-text-secondary">
+            {t('Name')}
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className={inputClass}
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-sm text-text-secondary">
+            {t('Title')}
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={t('Title')}
+              className={inputClass}
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-sm text-text-secondary">
+            {t('Description')}
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className={inputClass}
+            />
+          </label>
+
+          <label className="flex cursor-pointer items-start gap-2 rounded-control border border-border-main bg-bg-main p-3 hover:bg-fill-hover">
+            <input
+              type="checkbox"
+              checked={notifications}
+              onChange={(e) => setNotifications(e.target.checked)}
+              className="mt-0.5 size-4 shrink-0 accent-text-primary"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-1.5 text-sm text-text-primary">
+                {notifications ? <Bell className="size-4" /> : <BellOff className="size-4" />}
+                {t('Per-agent notifications')}
+              </p>
+              <p className="text-xs text-text-tertiary">{t('Notifications for this agent')}</p>
+            </div>
+          </label>
+
+          {error && (
+            <p className="rounded-control bg-function-error-tsp px-3 py-2 text-sm text-function-error">{error}</p>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-end gap-2 border-t border-border-main p-4">
+        <Button type="button" variant="ghost" onClick={onBack} disabled={saving}>
+          {t('Cancel')}
+        </Button>
+        <Button
+          type="button"
+          variant="primary"
+          loading={saving}
+          disabled={saving || !name.trim()}
+          onClick={handleSave}
+        >
+          {t('Save')}
+        </Button>
+      </div>
+    </>
+  );
+}
 
 /**
  * Live computer preview area (Grok Bot parity).
@@ -311,7 +544,65 @@ function ComputerPreviewCard({ agentId, agentName, threadUid }: { agentId: strin
   );
 }
 
-function OverviewTab({ agent }: { agent: AgentWithMeta }) {
+function OverviewSection({ agent }: { agent: AgentWithMeta }) {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Field label={t('Name')} value={agent.name} />
+      {agent.title && <Field label={t('Title')} value={agent.title} />}
+      {agent.description && <Field label={t('Description')} value={agent.description} />}
+      {agent.instructions && (
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-text-tertiary">{t('Instructions')}</span>
+          <p className="whitespace-pre-wrap text-sm text-text-primary">{agent.instructions}</p>
+        </div>
+      )}
+      <Field label={t('Mode')} value={agent.mode || '—'} />
+      <Field label={t('Work mode')} value={agent.workMode || 'loam'} />
+
+      <button
+        type="button"
+        onClick={() => setAdvancedOpen((prev) => !prev)}
+        aria-expanded={advancedOpen}
+        className="flex items-center justify-between rounded-control border border-border-main bg-bg-main px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-fill-hover"
+      >
+        {t('Advanced')}
+        <ChevronRight className={`size-4 transition-transform ${advancedOpen ? 'rotate-90' : ''}`} />
+      </button>
+
+      {advancedOpen && (
+        <div className="flex flex-col gap-4">
+          <Field label={t('Model')} value={agent.model || t('Default')} />
+          <Field label={t('Effort')} value={agent.effort ? agent.effort.toUpperCase() : '—'} />
+          <AllowedServicesBlock agent={agent} />
+          <MemorySection agentId={agent.id} />
+          <ScratchpadSection agentId={agent.id} />
+          <ApprovalRulesSection agentId={agent.id} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AllowedServicesBlock({ agent }: { agent: AgentWithMeta }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs font-medium text-text-tertiary">{t('Allowed services')}</span>
+      {agent.allowedServices && agent.allowedServices.length > 0 ? (
+        <ul className="flex flex-wrap gap-1">
+          {agent.allowedServices.map((svc) => (
+            <li key={svc} className="rounded-control bg-fill-tsp px-2 py-1 text-xs text-text-secondary">{svc}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-text-secondary">{t('All services')}</p>
+      )}
+    </div>
+  );
+}
+
+function MemorySection({ agentId }: { agentId: string }) {
   const [memory, setMemory] = useState<MemoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -320,7 +611,7 @@ function OverviewTab({ agent }: { agent: AgentWithMeta }) {
     let mounted = true;
     setLoading(true);
     setError(null);
-    getAgentMemory(agent.id)
+    getAgentMemory(agentId)
       .then((entries) => {
         if (mounted) setMemory(entries);
       })
@@ -333,63 +624,32 @@ function OverviewTab({ agent }: { agent: AgentWithMeta }) {
     return () => {
       mounted = false;
     };
-  }, [agent.id]);
+  }, [agentId]);
 
   return (
-    <div className="flex flex-col gap-4">
-      <Field label={t('Name')} value={agent.name} />
-      {agent.description && <Field label={t('Description')} value={agent.description} />}
-      {agent.instructions && (
-        <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-text-tertiary">{t('Instructions')}</span>
-          <p className="whitespace-pre-wrap text-sm text-text-primary">{agent.instructions}</p>
+    <div className="flex flex-col gap-2">
+      <span className="text-xs font-medium text-text-tertiary">{t('Memory')}</span>
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-text-secondary">
+          <Spinner className="size-4" /> {t('Loading')}
         </div>
+      ) : error ? (
+        <p className="text-xs text-function-error">{error}</p>
+      ) : memory.length === 0 ? (
+        <p className="text-sm text-text-tertiary">{t('No memory entries yet.')}</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {memory.slice(0, 20).map((entry) => (
+            <li key={entry.id} className="rounded-card border border-border-main bg-bg-main p-2">
+              <p className="text-sm text-text-primary">{entry.text}</p>
+              <p className="mt-1 text-[11px] text-text-tertiary">
+                {entry.kind} · {entry.source}
+                {entry.at && ` · ${new Date(entry.at).toLocaleString()}`}
+              </p>
+            </li>
+          ))}
+        </ul>
       )}
-      <Field label={t('Mode')} value={agent.mode || '—'} />
-      <Field label={t('Work mode')} value={agent.workMode || 'loam'} />
-      <Field label={t('Model')} value={agent.model || t('Default')} />
-      <Field label={t('Effort')} value={agent.effort ? agent.effort.toUpperCase() : '—'} />
-
-      <div className="flex flex-col gap-1">
-        <span className="text-xs font-medium text-text-tertiary">{t('Allowed services')}</span>
-        {agent.allowedServices && agent.allowedServices.length > 0 ? (
-          <ul className="flex flex-wrap gap-1">
-            {agent.allowedServices.map((svc) => (
-              <li key={svc} className="rounded-control bg-fill-tsp px-2 py-1 text-xs text-text-secondary">{svc}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-text-secondary">{t('All services')}</p>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <span className="text-xs font-medium text-text-tertiary">{t('Memory')}</span>
-        {loading ? (
-          <div className="flex items-center gap-2 text-sm text-text-secondary">
-            <Spinner className="size-4" /> {t('Loading')}
-          </div>
-        ) : error ? (
-          <p className="text-xs text-function-error">{error}</p>
-        ) : memory.length === 0 ? (
-          <p className="text-sm text-text-tertiary">{t('No memory entries yet.')}</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {memory.slice(0, 20).map((entry) => (
-              <li key={entry.id} className="rounded-card border border-border-main bg-bg-main p-2">
-                <p className="text-sm text-text-primary">{entry.text}</p>
-                <p className="mt-1 text-[11px] text-text-tertiary">
-                  {entry.kind} · {entry.source}
-                  {entry.at && ` · ${new Date(entry.at).toLocaleString()}`}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <ScratchpadSection agentId={agent.id} />
-      <ApprovalRulesSection agentId={agent.id} />
     </div>
   );
 }
@@ -1062,108 +1322,6 @@ function statusLabel(s: Schedule): string | null {
   if (s.lastStatus === 'retrying') return t('Retrying · attempt {n}', { n: s.attempts ?? 1 });
   if (s.lastStatus === 'failed') return t('Failed · attempt {n}', { n: s.attempts ?? 1 });
   return null;
-}
-
-function MediaTab({ threadUid, onOpenDoc }: { threadUid: string | null; onOpenDoc: (path: string, name: string) => void }) {
-  const [files, setFiles] = useState<Array<{ name: string; path: string; bytes: number }>>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-    setLoading(true);
-    if (!threadUid) {
-      setFiles([]);
-      setLoading(false);
-      return;
-    }
-    loadAgentThreadFiles(threadUid).then((entries) => {
-      if (!mounted) return;
-      setFiles(entries.map((e) => ({ name: e.name, path: e.path, bytes: e.bytes })));
-      setLoading(false);
-    });
-    return () => { mounted = false; };
-  }, [threadUid]);
-
-  if (!threadUid) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-2 py-8 text-text-tertiary">
-        <p className="text-sm">{t('No thread yet.')}</p>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center gap-2 py-8 text-text-secondary">
-        <Loader2 className="size-5 animate-spin" /> {t('Loading')}
-      </div>
-    );
-  }
-
-  if (files.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-2 py-8 text-text-tertiary">
-        <Folder className="size-5" />
-        <p className="text-sm">{t('No media files in this thread.')}</p>
-      </div>
-    );
-  }
-
-  return (
-    <ul className="flex flex-col gap-2">
-      {files.map((f) => (
-        <li key={f.path} className="flex items-center gap-2 rounded-card border border-border-main bg-bg-main p-2">
-          <FileText className="size-4 shrink-0 text-text-tertiary" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm text-text-primary">{f.name}</p>
-          <p className="text-[11px] text-text-tertiary">{formatBytes(f.bytes)}</p>
-        </div>
-        {f.name.toLowerCase().endsWith('.docx') && (
-          <button
-            type="button"
-            onClick={() => onOpenDoc(f.path, f.name)}
-            className="rounded-control border border-border-main px-2 py-1 text-xs text-text-secondary hover:bg-fill-hover"
-          >
-            {t('Edit')}
-          </button>
-        )}
-          <a
-            href={`${getApiBase()}/api/media?taskId=${encodeURIComponent(threadUid)}&path=${encodeURIComponent(f.path)}`}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"
-            aria-label={t('Open')}
-          >
-            ✕
-          </a>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function ComputerTab({ threadUid }: { threadUid: string | null }) {
-  if (!threadUid) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-2 py-8 text-text-tertiary">
-        <p className="text-sm">{t('No thread yet.')}</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-2">
-      <p className="text-sm text-text-secondary">
-        {t('Computer preview opens automatically when the agent uses a tool. Open the task view for the full computer panel.')}
-      </p>
-    </div>
-  );
 }
 
 function MembersTab({ agentId }: { agentId: string }) {

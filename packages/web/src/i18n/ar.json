@@ -1258,5 +1258,21 @@
   "Companion description": "وصف المساعد",
   "Mode": "الوضع",
   "Memory enabled (Loam execution)": "الذاكرة مفعّلة (تنفيذ داخل Loam)",
-  "Memory disabled (Chat only)": "الذاكرة معطّلة (دردشة فقط)"
+  "Memory disabled (Chat only)": "الذاكرة معطّلة (دردشة فقط)",
+  "Overview": "نظرة عامة",
+  "Members": "الأعضاء",
+  "Advanced": "متقدم",
+  "Title": "المسمى",
+  "Agent settings": "إعدادات الوكيل",
+  "Per-agent notifications": "إشعارات الوكيل",
+  "Notifications for this agent": "إشعارات هذا الوكيل",
+  "Toggle agent info pane": "تبديل لوحة معلومات الوكيل",
+  "Avatar": "الصورة الرمزية",
+  "Shape": "الشكل",
+  "Color": "اللون",
+  "Default avatar": "الصورة الرمزية الافتراضية",
+  "Group chat": "محادثة جماعية",
+  "Work mode": "وضع العمل",
+  "Allowed services": "الخدمات المسموح بها",
+  "All services": "كل الخدمات"
 }

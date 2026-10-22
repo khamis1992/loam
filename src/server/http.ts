@@ -1705,14 +1705,15 @@ loadAgents();
         }
 
         if (req.method === "POST" && p === "/api/agents") {
-          const body = (await readBody(req)) as { name?: unknown; emoji?: unknown; description?: unknown; instructions?: unknown; model?: unknown; mode?: unknown; effort?: unknown; disabledTools?: unknown; workMode?: unknown; allowedServices?: unknown; voice?: unknown; voiceRate?: unknown; voiceAuto?: unknown; source?: unknown; avatarShape?: unknown; avatarColor?: unknown; avatarImage?: unknown };
+          const body = (await readBody(req)) as { name?: unknown; emoji?: unknown; description?: unknown; title?: unknown; instructions?: unknown; model?: unknown; mode?: unknown; effort?: unknown; disabledTools?: unknown; workMode?: unknown; allowedServices?: unknown; voice?: unknown; voiceRate?: unknown; voiceAuto?: unknown; notifications?: unknown; source?: unknown; avatarShape?: unknown; avatarColor?: unknown; avatarImage?: unknown };
           const name = typeof body.name === "string" ? body.name.trim() : "";
-          if (!name) return sendJson(res, 400, { error: "Ã˜Â§Ã˜Â³Ã™â€¦ Ã˜Â§Ã™â€žÃ™Ë†Ã™Æ’Ã™Å Ã™â€ž Ã™â€¦Ã˜Â·Ã™â€žÃ™Ë†Ã˜Â¨" });
+          if (!name) return sendJson(res, 400, { error: "اسم الوكيل مطلوب" });
           try {
             const agent = createAgent({
               name,
               emoji: typeof body.emoji === "string" ? body.emoji : undefined,
               description: typeof body.description === "string" ? body.description : undefined,
+              title: typeof body.title === "string" ? body.title : undefined,
               instructions: typeof body.instructions === "string" ? body.instructions : undefined,
               model: typeof body.model === "string" ? body.model : undefined,
               mode: typeof body.mode === "string" ? body.mode : undefined,
@@ -1723,6 +1724,7 @@ loadAgents();
               ...(typeof body.voice === "string" && body.voice.trim() ? { voice: body.voice } : {}),
               ...(Number.isFinite(Number(body.voiceRate)) ? { voiceRate: Number(body.voiceRate) } : {}),
               ...(typeof body.voiceAuto === "boolean" ? { voiceAuto: body.voiceAuto } : {}),
+              ...(typeof body.notifications === "boolean" ? { notifications: body.notifications } : {}),
               ...(typeof body.source === "string" && body.source.trim() ? { source: body.source.trim().slice(0, 32) } : {}),
               ...sanitizeAvatarFields(body),
             });
@@ -1804,11 +1806,13 @@ loadAgents();
             return;
           }
           if (req.method === "POST") {
-            const body = (await readBody(req)) as { name?: unknown; emoji?: unknown; description?: unknown; instructions?: unknown; model?: unknown; mode?: unknown; effort?: unknown; disabledTools?: unknown; workMode?: unknown; allowedServices?: unknown; voice?: unknown; voiceRate?: unknown; voiceAuto?: unknown; avatarShape?: unknown; avatarColor?: unknown; avatarImage?: unknown };
-            const patch: { name?: string; emoji?: string; description?: string; instructions?: string; model?: string | null; mode?: string | null; effort?: string | null; disabledTools?: unknown; workMode?: string | null; allowedServices?: unknown; voice?: string | null; voiceRate?: number | null; voiceAuto?: boolean | null; avatarShape?: string | null; avatarColor?: string | null; avatarImage?: string | null } = {};
+            const body = (await readBody(req)) as { name?: unknown; emoji?: unknown; description?: unknown; title?: unknown; instructions?: unknown; model?: unknown; mode?: unknown; effort?: unknown; disabledTools?: unknown; workMode?: unknown; allowedServices?: unknown; voice?: unknown; voiceRate?: unknown; voiceAuto?: unknown; notifications?: unknown; avatarShape?: unknown; avatarColor?: unknown; avatarImage?: unknown };
+            const patch: { name?: string; emoji?: string; description?: string; title?: string | null; instructions?: string; model?: string | null; mode?: string | null; effort?: string | null; disabledTools?: unknown; workMode?: string | null; allowedServices?: unknown; voice?: string | null; voiceRate?: number | null; voiceAuto?: boolean | null; notifications?: boolean | null; avatarShape?: string | null; avatarColor?: string | null; avatarImage?: string | null } = {};
             if (typeof body.name === "string") patch.name = body.name;
             if (typeof body.emoji === "string") patch.emoji = body.emoji;
             if (typeof body.description === "string") patch.description = body.description;
+            if (body.title === null) patch.title = null;
+            else if (typeof body.title === "string") patch.title = body.title;
             if (typeof body.instructions === "string") patch.instructions = body.instructions;
             if (body.model === null) patch.model = null;
             else if (typeof body.model === "string") patch.model = body.model;
@@ -1826,6 +1830,7 @@ loadAgents();
             else if (Number.isFinite(Number(body.voiceRate))) patch.voiceRate = Number(body.voiceRate);
             if (body.voiceAuto === null) patch.voiceAuto = null;
             else if (typeof body.voiceAuto === "boolean") patch.voiceAuto = body.voiceAuto;
+            if (body.notifications !== undefined) patch.notifications = typeof body.notifications === "boolean" ? body.notifications : null;
             for (const field of ["avatarShape", "avatarColor", "avatarImage"] as const) {
               if (body[field] === null) patch[field] = null;
               else if (typeof body[field] === "string") patch[field] = body[field] as string;

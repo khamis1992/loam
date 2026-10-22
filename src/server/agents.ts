@@ -13,6 +13,8 @@ export interface AgentRecord {
   description: string;
   /** System-level instructions injected for every run of this agent. */
   instructions: string;
+  /** Optional short role/subtitle shown under the agent name in the info pane. */
+  title?: string;
   /** Optional model override for this agent. */
   model?: string;
   /** Default run mode for this agent (build = act, ask = read-only answers). */
@@ -41,6 +43,8 @@ export interface AgentRecord {
   avatarImage?: string;
   /** Soft-archive timestamp: archived companions keep all data but leave the active list. */
   archivedAt?: string;
+  /** Per-agent notifications toggle (default true when undefined). */
+  notifications?: boolean;
   /** Soft-hide timestamp: hidden companions stay in the UI's collapsible "Hidden" section. */
   hiddenAt?: string;
   /** Pin timestamp (epoch ms): pinned agents show in a "Pinned" section at the top. */
@@ -235,7 +239,7 @@ export function sanitizeAvatarFields(input: { avatarShape?: unknown; avatarColor
   return out;
 }
 
-export function createAgent(input: { name: string; emoji?: string; description?: string; instructions?: string; model?: string; mode?: string; effort?: string; disabledTools?: unknown; workMode?: string; allowedServices?: unknown; voice?: string; voiceRate?: number; voiceAuto?: boolean; source?: string; avatarShape?: string; avatarColor?: string; avatarImage?: string; pinned?: boolean; pinnedAt?: number; sortOrder?: number }): AgentRecord {
+export function createAgent(input: { name: string; emoji?: string; description?: string; instructions?: string; model?: string; mode?: string; effort?: string; disabledTools?: unknown; workMode?: string; allowedServices?: unknown; voice?: string; voiceRate?: number; voiceAuto?: boolean; source?: string; avatarShape?: string; avatarColor?: string; avatarImage?: string; pinned?: boolean; pinnedAt?: number; sortOrder?: number; title?: string; notifications?: boolean }): AgentRecord {
   const mode = input.mode ? getLoamMode(input.mode).id : undefined;
   const workMode = input.workMode ? normalizeWorkMode(input.workMode) : undefined;
   const wantsPin = (input.pinned === true) || typeof input.pinnedAt === "number";
@@ -250,6 +254,7 @@ export function createAgent(input: { name: string; emoji?: string; description?:
     name: input.name.trim().slice(0, 80),
     emoji: (input.emoji ?? "🤖").trim().slice(0, 8) || "🤖",
     description: (input.description ?? "").trim().slice(0, 300),
+    ...(input.title && input.title.trim() ? { title: input.title.trim().slice(0, 80) } : {}),
     instructions: (input.instructions ?? "").trim().slice(0, 8000),
     ...(input.model && input.model.trim() ? { model: input.model.trim() } : {}),
     ...(mode ? { mode } : {}),
@@ -260,6 +265,7 @@ export function createAgent(input: { name: string; emoji?: string; description?:
     ...(input.voice && input.voice.trim() ? { voice: input.voice.trim().slice(0, 60) } : {}),
     ...(Number.isFinite(Number(input.voiceRate)) ? { voiceRate: Math.max(0.5, Math.min(2, Number(input.voiceRate))) } : {}),
     ...(typeof input.voiceAuto === "boolean" ? { voiceAuto: input.voiceAuto } : {}),
+    ...(typeof input.notifications === "boolean" ? { notifications: input.notifications } : {}),
     ...(input.source && input.source.trim() ? { source: input.source.trim().slice(0, 32) } : {}),
     ...sanitizeAvatarFields(input),
     ...(wantsPin ? { pinnedAt: typeof input.pinnedAt === "number" && Number.isFinite(input.pinnedAt) ? input.pinnedAt : Date.now() } : {}),
@@ -279,7 +285,7 @@ function sanitizeDisabled(value: unknown): { disabledTools?: string[] } {
   return list.length > 0 ? { disabledTools: [...new Set(list)].slice(0, 500) } : { disabledTools: [] };
 }
 
-export function updateAgent(id: string, patch: { name?: string; emoji?: string; description?: string; instructions?: string; model?: string | null; mode?: string | null; effort?: string | null; disabledTools?: unknown; workMode?: string | null; allowedServices?: unknown; voice?: string | null; voiceRate?: number | null; voiceAuto?: boolean | null; avatarShape?: string | null; avatarColor?: string | null; avatarImage?: string | null; pinned?: boolean | null; pinnedAt?: number | null; sortOrder?: number | null }): AgentRecord | undefined {
+export function updateAgent(id: string, patch: { name?: string; emoji?: string; description?: string; title?: string | null; instructions?: string; model?: string | null; mode?: string | null; effort?: string | null; disabledTools?: unknown; workMode?: string | null; allowedServices?: unknown; voice?: string | null; voiceRate?: number | null; voiceAuto?: boolean | null; notifications?: boolean | null; avatarShape?: string | null; avatarColor?: string | null; avatarImage?: string | null; pinned?: boolean | null; pinnedAt?: number | null; sortOrder?: number | null }): AgentRecord | undefined {
   const agent = agents.find((a) => a.id === id);
   if (!agent) return undefined;
   const mode = typeof patch.mode === "string" ? getLoamMode(patch.mode).id : undefined;
@@ -287,6 +293,12 @@ export function updateAgent(id: string, patch: { name?: string; emoji?: string; 
   if (typeof patch.name === "string" && patch.name.trim()) agent.name = patch.name.trim().slice(0, 80);
   if (typeof patch.emoji === "string" && patch.emoji.trim()) agent.emoji = patch.emoji.trim().slice(0, 8);
   if (typeof patch.description === "string") agent.description = patch.description.trim().slice(0, 300);
+  if (patch.title === null) delete agent.title;
+  else if (typeof patch.title === "string") {
+    const title = patch.title.trim().slice(0, 80);
+    if (title) agent.title = title;
+    else delete agent.title;
+  }
   if (typeof patch.instructions === "string") agent.instructions = patch.instructions.trim().slice(0, 8000);
   if (patch.model === null) delete agent.model;
   else if (typeof patch.model === "string" && patch.model.trim()) agent.model = patch.model.trim();
@@ -307,6 +319,10 @@ export function updateAgent(id: string, patch: { name?: string; emoji?: string; 
   else if (Number.isFinite(Number(patch.voiceRate))) agent.voiceRate = Math.max(0.5, Math.min(2, Number(patch.voiceRate)));
   if (patch.voiceAuto === null) delete agent.voiceAuto;
   else if (typeof patch.voiceAuto === "boolean") agent.voiceAuto = patch.voiceAuto;
+  if (patch.notifications !== undefined) {
+    if (patch.notifications === null) delete agent.notifications;
+    else if (typeof patch.notifications === "boolean") agent.notifications = patch.notifications;
+  }
   if (patch.allowedServices !== undefined) {
     const s = sanitizeServices(patch.allowedServices);
     if (s.allowedServices) agent.allowedServices = s.allowedServices;
