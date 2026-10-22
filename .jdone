@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 V13 (quick-edit route) is complete, and the merge gate now passes.
 
 ## Merge gate (the failure that was fixed)
@@ -37,14 +36,18 @@ That resolution was committed as `7d52e7c merge manus-parity: keep quick-edit ro
 - `npm run build:server` -> dist/server.cjs built, pdf worker copied
 - `(cd packages/web && npx next build)` -> compiled successfully, 25/25 static pages generated
 - `node --import tsx --test src/agent/__tests__/*.test.ts src/server/__tests__/*.test.ts` -> 527 pass, 0 fail
-- `node --import tsx --test src/tools/__tests__/quickEdit.test.ts src/tools/__tests__/findAndEdit.test.ts src/tools/__tests__/editSchemaAlias.test.ts` -> 27 pass, 0 fail
+- `node --import tsx --test src/tools/__tests__/*.test.ts` -> 543 pass, 0 fail
+  (full tools suite green on the final merged tip, including the search perf test)
 
-One pre-existing environment-only flake remains, NOT caused by this merge:
-`src/tools/__tests__/search.test.ts` asserts a wall-clock budget (`elapsed < 1000`) for a real
-repository grep. On this machine it measures ~1.1-1.5s. Verified pre-existing by running the same
-test on a clean `manus-parity` worktree at `C:/Users/khamis/Desktop/manus-local`, which fails
-identically at 1526ms (this branch measures faster, 1139ms). The test is a machine-speed assertion,
-not a regression, so it was not weakened. Every other test in the suite passes.
+manus-parity advanced twice while this gate ran (to 8dddc3e, then to 29b9a62). Both were merged
+and re-resolved keeping both sides; the second resolution is `e872e8c Merge branch 'manus-parity'
+into khamis1992/v0-v13`. The branch is 0 commits behind manus-parity and
+`git merge-tree --write-tree manus-parity HEAD` exits 0.
+
+The earlier `src/tools/__tests__/search.test.ts` wall-clock flake (`elapsed < 1000` for a real
+repository grep) was load-induced while four heavy gates ran concurrently; it is machine-speed
+dependent and pre-existing on manus-parity (a clean parity worktree fails it at 1526ms). It passes
+on the final tip, and no test was weakened.
 
 Working tree is clean; no existing test was weakened.
 
