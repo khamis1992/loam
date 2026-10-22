@@ -270,7 +270,7 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
         timestamp: ts,
         tasks: event.steps.map((s, i) => ({
           title: s.title,
-          status: i === 0 ? "doing" : "done",
+          status: s.status ?? (i === 0 ? "doing" : "done"),
           startedAt: ts,
         })),
       };
@@ -427,6 +427,7 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
     case "task":
     case "step":
     case "workmode":
+    case "phase":
     case "critique":
     case "revise":
     case "replan":
