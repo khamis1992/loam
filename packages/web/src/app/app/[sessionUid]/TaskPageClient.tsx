@@ -14,6 +14,8 @@ import { addSession, selectSession } from '@/store/sessionsSlice';
 import { t, PRODUCT } from '@/i18n/t';
 import { Composer } from '@/components/chat/Composer';
 import { EventList } from '@/components/chat/EventList';
+import { StepTimeline, type TimelineStep } from '@/components/chat/StepTimeline';
+import { SideChatPanel } from '@/components/chat/SideChatPanel';
 import { AttachmentCard, kindFromName, type AttachmentKind } from '@/components/chat/AttachmentCard';
 import { ComputerPanel } from '@/components/computer/ComputerPanel';
 import {
@@ -132,6 +134,10 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const [shareOpen, setShareOpen] = useState(false);
   const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
   const [approveForMe, setApproveForMe] = useState(false);
+  const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
+  const [paused, setPaused] = useState(false);
+  const [takeoverNote, setTakeoverNote] = useState('');
+  const [controlBusy, setControlBusy] = useState(false);
 
   useEffect(() => {
     try {
@@ -340,6 +346,50 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     socket.stop(sessionUid);
   };
 
+  // Time-travel: clicking a timeline step selects it and greys later steps.
+  const handleSelectStep = (step: TimelineStep) => {
+    setSelectedActionId(step.actionId);
+    const ev = events.find((e): e is ToolUsedEvent => e.type === 'toolUsed' && e.actionId === step.actionId);
+    if (ev) setSelectedTool(ev);
+    if (step.actionId !== workspaceOpenActionRef.current) setWorkspaceTarget(null);
+  };
+
+  // D16: Pause the running agent, then take over with a "user changed X" note.
+  const handlePause = async () => {
+    if (!taskId) return;
+    setControlBusy(true);
+    try {
+      const headers = await getApiHeaders();
+      const res = await fetch(`${getApiBase()}/api/tasks/${encodeURIComponent(taskId)}/pause`, { method: 'POST', headers });
+      if (res.ok) setPaused(true);
+    } catch {
+      // Best effort; the run keeps going if the control plane is unavailable.
+    } finally {
+      setControlBusy(false);
+    }
+  };
+
+  const handleResume = async () => {
+    if (!taskId) return;
+    setControlBusy(true);
+    try {
+      const headers = await getApiHeaders();
+      const res = await fetch(`${getApiBase()}/api/tasks/${encodeURIComponent(taskId)}/resume`, {
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ note: takeoverNote }),
+      });
+      if (res.ok) {
+        setPaused(false);
+        setTakeoverNote('');
+      }
+    } catch {
+      // Best effort.
+    } finally {
+      setControlBusy(false);
+    }
+  };
+
   // Option 14: "Approve for me" chip — toggles per-task auto-approve. The flag
   // rides on the next message's extData and is pushed live for this session id.
   const handleToggleApproveForMe = () => {
@@ -373,6 +423,16 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex h-row items-center justify-end gap-2 px-6">
+        {running && taskId && !paused && (
+          <button
+            type="button"
+            onClick={() => void handlePause()}
+            disabled={controlBusy}
+            className="flex h-row-sm items-center gap-1 rounded-control px-2 text-sm text-text-secondary hover:bg-fill-hover disabled:opacity-40"
+          >
+            {t('Pause')}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setShareOpen(true)}
@@ -384,6 +444,28 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
         <button className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><MoreHorizontal className="size-4" /></button>
         <button className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><PanelRight className="size-4" /></button>
       </div>
+
+      {paused && (
+        <div className="flex items-center gap-2 border-b border-border-main bg-fill-tsp px-6 py-2">
+          <span className="text-sm text-function-warning">{t('Paused')}</span>
+          <input
+            type="text"
+            value={takeoverNote}
+            onChange={(e) => setTakeoverNote(e.target.value)}
+            placeholder={t('What did you change?')}
+            aria-label={t('What did you change?')}
+            className="h-8 flex-1 rounded-control border border-border-main bg-bg-menu px-2 text-sm text-text-primary outline-none focus:border-icon-blue"
+          />
+          <button
+            type="button"
+            onClick={() => void handleResume()}
+            disabled={controlBusy}
+            className="flex h-8 items-center rounded-control bg-icon-blue px-3 text-sm font-medium text-white disabled:opacity-40"
+          >
+            {t('Take over')}
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-1 flex-col overflow-hidden">
@@ -409,12 +491,14 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                   {error}
                 </div>
               )}
+              <StepTimeline events={events} selectedActionId={selectedActionId} onSelect={handleSelectStep} />
               <EventList
                 events={events}
                 sessionId={sessionUid}
                 socket={socketRef.current}
                 onOpenComputer={(e) => {
                   setSelectedTool(e);
+                  setSelectedActionId(e.actionId);
                   if (e.actionId !== workspaceOpenActionRef.current) setWorkspaceTarget(null);
                 }}
               />
@@ -498,6 +582,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               approveForMe={approveForMe}
               onToggleApproveForMe={handleToggleApproveForMe}
             />
+            <SideChatPanel taskId={taskId ?? null} />
           </div>
         </div>
         {selectedTool && (
