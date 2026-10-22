@@ -51,6 +51,12 @@ async function mockBackend(page: Page, initial: MockAgent[]): Promise<MockAgent[
     w.__AGENT_STUDIO_ENV__ = { apiBase: 'http://localhost:8787', socketBase: 'http://localhost:8787' };
   });
 
+  // Catch-all for the desktop protocol base (lowest priority: registered first
+  // so the specific handlers below win). The real backend on :8787 answers 401
+  // for unauthenticated RPC calls (e.g. ListSessions), and any 401 makes the
+  // app bounce to /login.
+  await page.route('http://localhost:8787/**', (route) => json(route, {}));
+
   await page.route('**/user.v1.UserService/UserInfo', (route) =>
     json(route, { firstname: 'E2E', lastname: 'User', displayname: 'E2E User', email: 'e2e@example.com', avatar: null }),
   );
@@ -121,6 +127,9 @@ test.describe('agents page', () => {
     await mockBackend(page, INITIAL_AGENTS);
     await page.goto('/app/agents');
 
+    // The search field is toggled by the header search icon (Grok Bot parity).
+    await page.getByRole('button', { name: 'Search agents' }).click();
+
     const search = page.getByPlaceholder('Search agents');
     await expect(search).toBeVisible();
 
@@ -152,6 +161,8 @@ test.describe('agents page', () => {
 
     await expect(page.locator('[data-agents-section="my-agents"]').getByText('Researcher', { exact: true })).toBeVisible();
     await expect(page.locator('[data-agents-section="pinned"]')).toHaveCount(0);
+
+    await page.screenshot({ path: 'test-results/agents-page.png', fullPage: true });
   });
 
   test('opening an agent shows the thread and Ctrl+Shift+I toggles the info pane', async ({ page }) => {
@@ -160,19 +171,19 @@ test.describe('agents page', () => {
 
     await page.locator('main').getByRole('button', { name: /Researcher/ }).first().click();
 
-    // Thread view: the info toggle lives only in the thread header.
-    const toggle = page.getByRole('button', { name: 'Toggle info pane' });
+    // Thread view: the centered header pill toggles the info pane.
+    const toggle = page.getByRole('button', { name: 'Agent info' });
     await expect(toggle).toBeVisible();
     await expect(page.getByText('Hello from the thread')).toBeVisible();
 
-    // Info pane starts closed; its tab strip is unique to the pane.
-    await expect(page.getByRole('button', { name: 'Channels', exact: true })).toHaveCount(0);
+    // Info pane starts closed; the Channels heading is unique to the pane.
+    await expect(page.getByRole('heading', { name: 'Channels', exact: true })).toHaveCount(0);
 
     await page.keyboard.press('Control+Shift+I');
-    await expect(page.getByRole('button', { name: 'Channels', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Channels', exact: true })).toBeVisible();
 
     await page.keyboard.press('Control+Shift+I');
-    await expect(page.getByRole('button', { name: 'Channels', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Channels', exact: true })).toHaveCount(0);
   });
 
   test('Arabic locale renders real Arabic without mojibake', async ({ page }) => {
