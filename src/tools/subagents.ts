@@ -213,7 +213,7 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
     {
       name: "delegate_task",
       description:
-        "Delegate a task to an external or in-process subagent provider (ACP or in-process). Returns the child's final text. Depth limit 2, max concurrent children configurable (default 4).",
+        "Delegate a self-contained task to a subagent and return its final text. Use provider 'in-process' to run a Loam agent in-process (optionally with a model override) or 'acp' to drive an external agent over the Agent Client Protocol, providing acpCommand and optional acpArgs. The child runs with its own context in a cwd that must be inside the workspace, so put everything it needs in the prompt. Delegation depth is limited (default 2) and concurrent children are capped (default 4). Use it for parallel, isolated work such as exploration or independent edits. When NOT to use: do the work directly when it needs your conversation context, use file_*/shell_* for simple steps, and remember the child cannot see the parent's history; never delegate work that requires an approval gate or a secret.",
       parameters: {
         type: "object",
         properties: {

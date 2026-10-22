@@ -185,7 +185,7 @@ export function createMultiEditTools(): Tool[] {
     {
       name: "file_multi_edit",
       description:
-        "Apply several exact string replacements to one workspace file in a single atomic operation. Each find must match exactly once unless replaceAll is set. The file is only rewritten if every edit succeeds; otherwise it is left untouched. Preserves line endings and BOM.",
+        "Apply several exact string replacements to one workspace file in a single atomic operation. Each edit's find text must match exactly once unless you set replaceAll, which replaces every occurrence. The file is only rewritten if every edit succeeds; if any find is missing or ambiguous, nothing is written and the original is left untouched. Edits are applied in order to the in-memory content, line endings and a BOM are preserved, and a successful call refreshes the read snapshot. It is a mutating effect, so keep it serial. When NOT to use: use file_edit for a single change, file_write to create or fully rewrite a file, and file_search to locate text; never build a file through repeated shell echoes, which bypasses read tracking and can corrupt line endings.",
       parameters: {
         type: "object",
         properties: {
