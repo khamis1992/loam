@@ -183,6 +183,7 @@ const EXEC_TOOL_NAMES = new Set<string>([
   "scaffold_backend",
   "preview_serve",
   "preview_stop",
+  "preview_screenshot",
   "screen_stream_start",
   "screen_stream_stop",
   "swarm_run",
