@@ -1,0 +1,12 @@
+{
+  "id": "landing",
+  "prompt": "Design and build a responsive marketing landing page for a small specialty coffee roastery called Northlight Roast. Open with a clear value proposition above the fold, show the current roast selection, include a short story section, a testimonial strip and exactly one primary call to action. Keep it calm and editorial, mobile-first, and scannable in under five seconds.",
+  "locale": "en",
+  "direction": "ltr",
+  "expectations": {
+    "must": ["Northlight Roast", "Our roasts", "Start your subscription"],
+    "mustNot": ["lorem ipsum"],
+    "keywords": ["coffee", "roast"],
+    "minLint": 80
+  }
+}

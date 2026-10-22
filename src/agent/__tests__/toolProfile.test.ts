@@ -111,7 +111,7 @@ describe("coding tool profile", () => {
 
   it("applies the coding profile on top of a file-only restriction", () => {
     const names = taskScopedTools(codingRegistry(), "استخدم أدوات الملفات فقط", [], true, "coding").names();
-    assert.deepEqual(names, ["file_edit", "file_list", "file_read", "file_write"]);
+    assert.deepEqual(names, ["file_edit", "file_list", "file_read", "file_write", "glob", "grep"]);
   });
 
   it("leaves an unrestricted task untouched when no profile is requested", () => {

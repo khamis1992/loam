@@ -5,20 +5,46 @@
  * used by the protocol adapter (A1), the desktop operator (A4/A9) and tests.
  */
 import path from "node:path";
+import { classifyToolCall, decideGate, type RiskTier, type SandboxMode } from "./riskTier.js";
 
 // ----------------------------------------------------------------------------
 // Permission modes
 // ----------------------------------------------------------------------------
 
-export type LocalPermissionMode = "ask_for_approval" | "approve_for_me" | "full_access";
+/**
+ * Local permission modes.
+ *
+ * `plan` is the read-only planning phase: only read-only tools may run and every
+ * mutating action is refused until the agent presents its plan with `plan_exit`
+ * and the user approves, which switches the task to `approve_for_me` (the Loam
+ * equivalent of Claude Code's `acceptEdits`).
+ */
+export type LocalPermissionMode = "plan" | "ask_for_approval" | "approve_for_me" | "full_access";
 
 export const LOCAL_PERMISSION_MODES: LocalPermissionMode[] = [
+  "plan",
   "ask_for_approval",
   "approve_for_me",
   "full_access",
 ];
 
 export const DEFAULT_PERMISSION_MODE: LocalPermissionMode = "approve_for_me";
+
+/**
+ * The mode `plan_exit` switches to once a plan is approved. Named after the
+ * Claude Code `acceptEdits` permission mode so the mapping is explicit.
+ */
+export const ACCEPT_EDITS_MODE: LocalPermissionMode = "approve_for_me";
+
+/** True for the read-only planning phase. */
+export function isPlanMode(mode: LocalPermissionMode): boolean {
+  return mode === "plan";
+}
+
+/** True when the mode forbids local mutations (currently only `plan`). */
+export function isReadOnlyPermissionMode(mode: LocalPermissionMode): boolean {
+  return mode === "plan";
+}
 
 export function isLocalPermissionMode(value: unknown): value is LocalPermissionMode {
   return typeof value === "string" && (LOCAL_PERMISSION_MODES as string[]).includes(value);
@@ -30,11 +56,20 @@ export interface PermissionModeInfo {
   titleAr: string;
   description: string;
   descriptionAr: string;
-  icon: "hand" | "shield-check" | "shield-alert";
+  icon: "clipboard-list" | "hand" | "shield-check" | "shield-alert";
   isDangerous: boolean;
 }
 
 export const PERMISSION_MODE_INFO: Record<LocalPermissionMode, PermissionModeInfo> = {
+  plan: {
+    mode: "plan",
+    title: "Plan",
+    titleAr: "خطة",
+    description: "Read-only: inspect files and research, then present a plan for approval before any edit.",
+    descriptionAr: "للقراءة فقط: افحص الملفات وابحث، ثم قدّم خطة للموافقة قبل أي تعديل.",
+    icon: "clipboard-list",
+    isDangerous: false,
+  },
   ask_for_approval: {
     mode: "ask_for_approval",
     title: "Ask for approval",
@@ -131,6 +166,21 @@ export interface ActionReview {
 export function reviewLocalAction(input: ActionReviewInput): ActionReview {
   if (input.mode === "full_access") {
     return { needsApproval: false, reviewer: "auto" };
+  }
+
+  // Plan mode is strictly read-only: reads pass, every other action is held for
+  // the user. `plan_exit` is the only escape hatch and switches the task to
+  // acceptEdits on approval.
+  if (input.mode === "plan") {
+    if (input.action === "read") {
+      return { needsApproval: false, reviewer: "auto" };
+    }
+    return {
+      needsApproval: true,
+      reviewer: "user",
+      reason: "Plan mode is read-only; this action is blocked until the plan is approved with plan_exit.",
+      reasonAr: "وضع الخطة للقراءة فقط؛ هذا الإجراء محظور حتى تتم الموافقة على الخطة عبر plan_exit.",
+    };
   }
 
   // Anything explicitly flagged by a safety rule must be reviewed by the user.
@@ -374,4 +424,65 @@ export function buildRunExtData(
     localPermissionMode: permissionMode,
     executionTarget: { kind: "desktop" },
   };
+}
+
+// ----------------------------------------------------------------------------
+// Plan-mode tool gate
+// ----------------------------------------------------------------------------
+
+/**
+ * Map a permission mode onto the sandbox vocabulary used by the risk-tier gate
+ * matrix. `plan` is the read-only phase, `full_access` is the permissive mode,
+ * and the two approval-oriented modes behave like workspace-write.
+ */
+export function permissionModeSandboxMode(mode: LocalPermissionMode): SandboxMode {
+  switch (mode) {
+    case "plan":
+      return "read-only";
+    case "full_access":
+      return "danger-full-access";
+    case "ask_for_approval":
+    case "approve_for_me":
+      return "workspace-write";
+  }
+}
+
+export interface PermissionGateDecision {
+  allowed: boolean;
+  reason?: string;
+}
+
+/** Tiers that are safe while planning: inspection and read-only research. */
+const PLAN_ALLOWED_TIERS: ReadonlySet<RiskTier> = new Set<RiskTier>(["read", "network-external"]);
+
+/**
+ * Decide whether one tool call may run under a permission mode, before the tool
+ * executes. `plan` refuses every mutating tier (writes, commands, destructive
+ * and secret actions) while allowing reads and read-only web research. Other
+ * modes fall back to the sandbox x risk-tier matrix, where `deny` and `ask` both
+ * block the call.
+ */
+export function gateToolCallForPermissionMode(
+  mode: LocalPermissionMode,
+  toolName: string,
+  args?: Record<string, unknown> | null,
+  workspaceRoot: string = process.cwd(),
+): PermissionGateDecision {
+  const tier = classifyToolCall(toolName, args, workspaceRoot);
+
+  if (mode === "plan") {
+    if (PLAN_ALLOWED_TIERS.has(tier)) return { allowed: true };
+    return {
+      allowed: false,
+      reason: `${tier} actions are disabled while plan mode is active`,
+    };
+  }
+
+  const sandbox = permissionModeSandboxMode(mode);
+  const decision = decideGate(sandbox, tier);
+  if (decision === "allow") return { allowed: true };
+  if (decision === "deny") {
+    return { allowed: false, reason: `${tier} is denied in ${sandbox} mode` };
+  }
+  return { allowed: false, reason: `${tier} requires approval in ${sandbox} mode` };
 }
