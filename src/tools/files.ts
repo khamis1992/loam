@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { resolveRead, resolveWrite } from "../policy/paths.js";
+import { loadMemoryForFile } from "../agent/projectMemory.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { bool, num, str } from "./registry.js";
 
@@ -77,7 +78,13 @@ export const fileTools: Tool[] = [
       const max = Math.max(1, num(args, "maxLines", 400));
       const slice = lines.slice(start - 1, start - 1 + max);
       const numbered = slice.map((l, i) => `${start + i}: ${l}`).join("\n");
-      return { ok: true, content: `${p} (${lines.length} lines)\n${numbered}` };
+      // Subdirectory memory is loaded on demand when a file there is read; the
+      // workspace root is already part of the system prompt, so it is excluded.
+      const memory = loadMemoryForFile(p, ctx.workspace);
+      const memoryBlock = memory.text
+        ? `\n\n--- project memory (${memory.files.map((f) => path.relative(ctx.workspace, f) || f).join(", ")}) ---\n${memory.text}`
+        : "";
+      return { ok: true, content: `${p} (${lines.length} lines)\n${numbered}${memoryBlock}` };
     },
   },
   {
