@@ -39,6 +39,7 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "design_brand_kit_save",
   "watch_url",
   "video_edit",
+  "video_studio",
   "deploy_app",
   "export_build",
   "loam_design",
