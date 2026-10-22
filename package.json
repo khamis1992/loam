@@ -19,7 +19,7 @@
     "test:browser-operator": "node --import tsx --test src/tools/__tests__/browserOperator.test.ts",
     "test:electron": "node --test electron/__tests__/inAppBrowser.test.cjs",
     "test:vendor": "node --test scripts/vendor/__tests__/fetch-craft.test.mjs",
-    "test:vendor:protocol": "node --test electron/__tests__/vendorProtocol.test.cjs",
+    "test:vendor:protocol": "node --test electron/__tests__/vendorProtocol.test.cjs electron/__tests__/filmcraftRebrand.test.mjs",
     "test:vendor:editors": "node --import tsx --test scripts/vendor/__tests__/*.test.mjs",
     "test:craft": "node --import tsx --test src/server/__tests__/craftStatus.test.ts",
     "vendor:craft": "node scripts/vendor/fetch-craft.mjs",
