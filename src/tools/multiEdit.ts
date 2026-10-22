@@ -3,6 +3,7 @@ import path from "node:path";
 import { resolveWrite } from "../policy/paths.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { bool, str } from "./registry.js";
+import { guardExistingEdit } from "./readState.js";
 
 const MAX_EDITS = 50;
 /** Above this many lines on either side, fall back to a coarse prefix/suffix diff. */
@@ -210,6 +211,9 @@ export function createMultiEditTools(): Tool[] {
           return { ok: false, content: err instanceof Error ? err.message : String(err) };
         }
 
+        const guard = guardExistingEdit(ctx, p);
+        if (guard) return guard;
+
         const rawEdits = args.edits;
         if (!Array.isArray(rawEdits)) return { ok: false, content: "edits must be an array" };
         if (rawEdits.length < 1 || rawEdits.length > MAX_EDITS) {
@@ -269,6 +273,10 @@ export function createMultiEditTools(): Tool[] {
         } catch (err) {
           return { ok: false, content: `cannot write ${p}: ${err instanceof Error ? err.message : String(err)}` };
         }
+
+        // Refresh the read snapshot so a follow-up edit in the same session is
+        // not rejected as stale; the model already saw the pre-edit content.
+        ctx.readState?.record(p);
 
         return { ok: true, content: formatSummary(p, edits.length, normalized.split("\n").length, work.split("\n").length, diff) };
       },
