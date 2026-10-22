@@ -85,6 +85,7 @@ const READ_TOOL_NAMES = new Set<string>([
   "session_search",
   "code_outline",
   "code_symbols",
+  "semantic_search",
   "explore",
   "task_get",
   "task_list",
@@ -122,6 +123,17 @@ const READ_TOOL_NAMES = new Set<string>([
   "computer_ui_tree",
   "computer_ui_list",
   "computer_list_windows",
+  // Control/communication tools never touch the filesystem or run a command, so
+  // they stay usable while plan mode is read-only.
+  "think",
+  "plan",
+  "plan_exit",
+  "finish",
+  "message",
+  "phase_set",
+  "suggestion",
+  "report_environment_issue",
+  "idle",
 ]);
 
 const WRITE_TOOL_NAMES = new Set<string>([
@@ -164,7 +176,6 @@ const WRITE_TOOL_NAMES = new Set<string>([
   "office_export",
   "office_import",
   "propose_instructions_update",
-  "message",
 ]);
 
 const EXEC_TOOL_NAMES = new Set<string>([
@@ -181,6 +192,7 @@ const EXEC_TOOL_NAMES = new Set<string>([
   "pty_kill",
   "deploy_app",
   "scaffold_backend",
+  "web_scaffold",
   "preview_serve",
   "preview_stop",
   "preview_screenshot",

@@ -1,0 +1,45 @@
+{
+  "bridge": "craft:* postMessage v1 (loam=1)",
+  "apps": {
+    "deckcraft": {
+      "rev": "a31b990d32f2c8562f1588562f922960c3fde48b",
+      "short": "a31b990",
+      "zip": "deckcraft-web-loam-a31b990.zip",
+      "sha256": "a0f30f466c2af57d0ddaae426a6de7608682e53f17b10dfac875275a87c9ff87",
+      "repo": "https://github.com/storytold/deckcraft",
+      "name": "Loam Slides"
+    },
+    "designcraft": {
+      "rev": "8dff7ecdb04d3708a112bb42fc1cecc38664f3cb",
+      "short": "8dff7ec",
+      "zip": "designcraft-web-loam-8dff7ec.zip",
+      "sha256": "b76987ee7f8e31a144690ae02bead01fd937a2ba032cd42833cdd8ce6f440685",
+      "repo": "https://github.com/storytold/designcraft",
+      "name": "Loam Design"
+    },
+    "gridcraft": {
+      "rev": "68e58a2eae462ba997a8ba5a1269e03a79b61136",
+      "short": "68e58a2",
+      "zip": "gridcraft-web-loam-68e58a2.zip",
+      "sha256": "016b3f0812867db78d6c062478b1f99ad01c266d12404ca23685d8ab33170b89",
+      "repo": "https://github.com/storytold/gridcraft",
+      "name": "Loam Sheets"
+    },
+    "photocraft": {
+      "rev": "872748fb5b2a53e09dd4e385e31968d985c0515b",
+      "short": "872748f",
+      "zip": "photocraft-web-loam-872748f.zip",
+      "sha256": "145ec53871ba4313683f7dbd6c56f17b217e39fdb9e82a29bd0a8341f4742214",
+      "repo": "https://github.com/storytold/photocraft",
+      "name": "Loam Photo"
+    },
+    "wordcraft": {
+      "rev": "d1b0bfc3f9dd83126b162a42b667facecb003b7f",
+      "short": "d1b0bfc",
+      "zip": "wordcraft-web-loam-d1b0bfc.zip",
+      "sha256": "03edde4e1605783f8c9a05a4e3362e1dfc1ef58e9b703aa8fc63e27199b8534c",
+      "repo": "https://github.com/storytold/wordcraft",
+      "name": "Loam Docs"
+    }
+  }
+}

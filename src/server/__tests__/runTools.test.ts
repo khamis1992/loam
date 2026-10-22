@@ -41,6 +41,7 @@ let createBoardTools: () => Tool[];
 let createGroupTools: () => Tool[];
 let createDesignStudioTools: () => Tool[];
 let createLoamServiceTools: () => Tool[];
+let createTodoTools: () => Tool[];
 
 function dummy(name: string): Tool {
   return {
@@ -89,6 +90,8 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     const designStudioToolsMod = await import("../../tools/designStudio.js");
     const loamServicesMod = await import("../../tools/loamServices.js");
     createLoamServiceTools = loamServicesMod.createLoamServiceTools;
+    const todoToolsMod = await import("../../tools/todoTools.js");
+    createTodoTools = todoToolsMod.createTodoTools;
     const gatewayMod = await import("../companionGateway.js");
     const catalogMod = await import("../../modes/catalog.js");
     const runToolsMod = await import("../runTools.js");
@@ -103,6 +106,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     createBoardTools = boardToolsMod.createBoardTools;
     createGroupTools = (await import("../../tools/groupTools.js")).createGroupTools;
     const { createBackendScaffoldTools } = await import("../../tools/backendScaffold.js");
+    const { createWebScaffoldTools } = await import("../../tools/webScaffold.js");
     createDesignStudioTools = designStudioToolsMod.createDesignStudioTools;
     const { ToolRegistry: Registry } = registryMod;
     registry = new Registry();
@@ -116,7 +120,9 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll(createBoardTools());
     registry.registerAll(createGroupTools());
     registry.registerAll(createBackendScaffoldTools());
+    registry.registerAll(createWebScaffoldTools());
     registry.registerAll(createDesignStudioTools());
+    registry.registerAll(createTodoTools());
     // MF7: watch_url ships as an always-on tool, so it must be registered too.
     registry.registerAll(createLoamServiceTools().filter((tool) => tool.name === "watch_url"));
     const videoEditToolsMod = await import("../../tools/videoEditAgent.js");
@@ -124,6 +130,10 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     const deployToolsMod = await import("../../tools/deploy.js");
     registry.registerAll(deployToolsMod.createDeployTools({ workspace: tmpDir }));
     registry.register(dummy("loam_design")); // W3 build-phase design tool (always-on grant)
+    registry.register(dummy("design_autofix")); // V5 deterministic design repair pass (always-on grant)
+    // D13: resumable workflow tools ship as always-on, so register the real set.
+    const workflowToolsMod = await import("../../tools/workflow.js");
+    registry.registerAll(workflowToolsMod.createWorkflowTools({ ollama: {} as never, registry }));
   });
 
   after(() => {
@@ -157,6 +167,13 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     for (const name of ["file_read", "file_write", "shell_run"]) {
       assert.ok(tools.names().includes(name), `build-mode tool ${name} must survive the merge`);
     }
+  });
+
+  it("a build-mode agent task exposes todo_write to the model", () => {
+    const { tools } = buildRunToolSet();
+    assert.ok(tools.names().includes("todo_write"), "effective tool list must include todo_write");
+    const modelToolNames = tools.toOllama().map((t) => t.function.name);
+    assert.ok(modelToolNames.includes("todo_write"), "the model's function list must include todo_write");
   });
 
   it("a build-mode agent task exposes browser_operator to the model", () => {

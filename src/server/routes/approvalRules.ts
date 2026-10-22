@@ -1,5 +1,6 @@
 import http from "node:http";
-import { createApprovalRule, deleteApprovalRule, listApprovalRules, setTaskApprovalAuto, taskApprovalAuto, setTaskSandboxMode, taskSandboxMode, type ApprovalDecision, type ApprovalRule } from "../approvalRules.js";
+import { createApprovalRule, deleteApprovalRule, listApprovalRules, setTaskApprovalAuto, taskApprovalAuto, setTaskSandboxMode, taskSandboxMode, setTaskPermissionMode, taskPermissionMode, type ApprovalDecision, type ApprovalRule } from "../approvalRules.js";
+import { isLocalPermissionMode, type LocalPermissionMode } from "../../policy/permissionModes.js";
 import { getTask } from "../db.js";
 import { RISK_TIERS, isSandboxMode, type RiskTier } from "../../policy/riskTier.js";
 
@@ -111,11 +112,11 @@ export async function handleApprovalRuleRoutes(
         return true;
       }
       if (req.method === "GET") {
-        sendJson(res, 200, { taskId, auto: taskApprovalAuto(taskId), sandboxMode: taskSandboxMode(taskId) ?? null });
+        sendJson(res, 200, { taskId, auto: taskApprovalAuto(taskId), sandboxMode: taskSandboxMode(taskId) ?? null, permissionMode: taskPermissionMode(taskId) ?? null });
         return true;
       }
       if (req.method === "PUT" || req.method === "POST") {
-        const body = (await readJson(req)) as { auto?: unknown; sandboxMode?: unknown };
+        const body = (await readJson(req)) as { auto?: unknown; sandboxMode?: unknown; permissionMode?: unknown };
         if (typeof body.auto !== "boolean") {
           sendJson(res, 400, { error: "auto must be a boolean" });
           return true;
@@ -128,7 +129,14 @@ export async function handleApprovalRuleRoutes(
           }
           setTaskSandboxMode(taskId, body.sandboxMode);
         }
-        sendJson(res, 200, { taskId, auto: body.auto, sandboxMode: taskSandboxMode(taskId) ?? null });
+        if (body.permissionMode !== undefined && body.permissionMode !== null) {
+          if (!isLocalPermissionMode(body.permissionMode)) {
+            sendJson(res, 400, { error: "permissionMode is invalid" });
+            return true;
+          }
+          setTaskPermissionMode(taskId, body.permissionMode as LocalPermissionMode);
+        }
+        sendJson(res, 200, { taskId, auto: body.auto, sandboxMode: taskSandboxMode(taskId) ?? null, permissionMode: taskPermissionMode(taskId) ?? null });
         return true;
       }
       return false;

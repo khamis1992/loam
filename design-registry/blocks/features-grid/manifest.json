@@ -1,0 +1,18 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "features-grid",
+  "name": "Features Grid",
+  "description": "A six-card feature grid with small inline icons, titles and one-line descriptions under a section heading.",
+  "category": "features",
+  "license": "MIT",
+  "source": "shadcn/ui blocks",
+  "tags": ["features", "grid", "landing"],
+  "intent": "Communicate several product capabilities at a glance on a landing page.",
+  "deps": ["react"],
+  "rtl": false,
+  "dir": "ltr",
+  "lang": "en",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"]
+}

@@ -1,6 +1,6 @@
 import type { Config } from "../config.js";
 import type { OllamaClient, ChatMessage } from "../ollama.js";
-import type { Emit, Usage, ToolTraceItem } from "./events.js";
+import type { Emit, Usage, ToolTraceItem, TodoItem, TodoStatus } from "./events.js";
 import { verifyFinal } from "./verifier.js";
 import { AcceptanceGuard } from "./acceptanceGuard.js";
 import { IndependentAcceptanceGuard, independentRequirements } from "./independentAcceptance.js";
@@ -117,7 +117,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   const independentGuard = new IndependentAcceptanceGuard(independentRequest);
   const baseSystem =
     opts.systemOverride ??
-    buildSystemPrompt(opts.cfg, loadSkills(SKILLS_DIR), opts.tools.names(), opts.memories ?? [], undefined, opts.sandboxMode);
+    buildSystemPrompt(opts.cfg, loadSkills(SKILLS_DIR), opts.tools.names(), opts.memories ?? [], undefined, opts.sandboxMode, undefined, opts.prompt);
   const system =
     opts.systemSuffix && opts.systemSuffix.trim().length > 0
       ? `${baseSystem}\n\n${opts.systemSuffix.trim()}`
@@ -161,6 +161,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // so the model cannot blind-edit content it never saw or clobber a file that
   // changed since it was read. A fresh instance per run matches Claude Code.
   const readState = new ReadState();
+  // The model's live task list, mirrored here so a compaction can re-attach it
+  // as a hidden reminder after the conversation is folded away.
+  let currentTodos: TodoItem[] = [];
 
   for (step = (restored?.steps ?? 0) + 1; step <= maxSteps; step++) {
     // Stop immediately when the user pressed the cancel button (checked between every step).
@@ -173,13 +176,15 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     for (const message of reminders.drainMessages(step)) messages.push(message);
 
     if (opts.cfg.compression.enabled) {
-      const compressed = await compressContext(opts.cfg, opts.ollama, messages, opts.emit, opts.signal);
+      const compressed = await compressContext(opts.cfg, opts.ollama, messages, opts.emit, opts.signal, { readState, todos: currentTodos, model: usedModel });
       if (compressed.compressed) {
         messages = compressed.messages;
         usage.promptTokens += compressed.usage.promptTokens;
         usage.completionTokens += compressed.usage.completionTokens;
         usage.durationMs += compressed.usage.durationMs;
       }
+      // Re-attach recent file reads and the live task list as hidden reminders.
+      for (const reminder of compressed.reminders) messages.push(reminder);
     }
 
     const result = await chatWithFallback({
@@ -286,7 +291,10 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.onToolEvidence?.(evidence);
         const notice = stallGuard(item.name, item.args, toolResult.ok);
         if (notice) stallNotices.push(notice);
-        if (TODO_UPDATE_TOOLS.has(item.name) && toolResult.ok) reminders.noteTodoUpdate(step);
+        if (TODO_UPDATE_TOOLS.has(item.name) && toolResult.ok) {
+          reminders.noteTodoUpdate(step);
+          currentTodos = parseTaskList(item.name, item.args);
+        }
         if (MEMORY_UPDATE_TOOLS.has(item.name) && toolResult.ok) reminders.memoryUpdated();
         opts.emit({
           type: "tool_result",
@@ -323,7 +331,10 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.onToolEvidence?.(evidence);
         const notice = stallGuard(name, args, toolResult.ok);
         if (notice) stallNotices.push(notice);
-        if (TODO_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.noteTodoUpdate(step);
+        if (TODO_UPDATE_TOOLS.has(name) && toolResult.ok) {
+          reminders.noteTodoUpdate(step);
+          currentTodos = parseTaskList(name, args);
+        }
         if (MEMORY_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.memoryUpdated();
         messages.push({ role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) });
         // Cancel pressed while the tool ran? Stop before the next tool/step.
@@ -354,4 +365,38 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   const msg = `stopped after ${maxSteps} steps without finishing`;
   opts.emit({ type: "error", message: msg });
   throw new Error(msg);
+}
+
+/**
+ * Mirror the live task list the model just sent into the run-local copy used for
+ * post-compaction re-attachment. Two tools maintain that list, with different
+ * shapes: `todo_write` sends `{ todos: [{ content, status }] }` and `plan` sends
+ * `{ steps: [{ title, status? }] }` with statuses in a different vocabulary.
+ * Parsing is best-effort: a malformed list leaves the previous mirror in place
+ * rather than throwing.
+ */
+export function parseTaskList(toolName: string, args: Record<string, unknown>): TodoItem[] {
+  const raw = args.todos ?? args.steps;
+  if (!Array.isArray(raw)) return [];
+  const items: TodoItem[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    const content = typeof record.content === "string" ? record.content.trim()
+      : typeof record.title === "string" ? record.title.trim() : "";
+    if (!content) continue;
+    const status = normalizeTodoStatus(String(record.status ?? ""), toolName);
+    items.push({ id: `todo-${items.length}`, content, status });
+  }
+  return items.length > 0 ? items : [];
+}
+
+/** Fold the `plan` tool's status vocabulary onto the todo one. */
+function normalizeTodoStatus(status: string, toolName: string): TodoStatus {
+  if (toolName === "plan") {
+    if (status === "doing") return "in_progress";
+    if (status === "done") return "completed";
+  }
+  if (status === "pending" || status === "in_progress" || status === "completed") return status;
+  return "pending";
 }
