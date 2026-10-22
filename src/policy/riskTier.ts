@@ -191,6 +191,8 @@ const EXEC_TOOL_NAMES = new Set<string>([
   "pty_kill",
   "deploy_app",
   "scaffold_backend",
+  "env_blueprint_generate",
+  "env_build_status",
   "web_scaffold",
   "preview_serve",
   "preview_stop",
