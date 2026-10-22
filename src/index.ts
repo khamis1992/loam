@@ -50,6 +50,7 @@ import type { Emit } from "./agent/events.js";
 import { OllamaClient } from "./ollama.js";
 import { flexCredentials } from "./server/modelTiers.js";
 import { startServer, type RunTaskOptions } from "./server/http.js";
+import { logMissingCraftDists } from "./server/craftStatus.js";
 import { appendMessage, appendStep, createTask, getProject, getTask, loadDb, setTaskStatus, listSchedules, setTaskDelegator } from "./server/db.js";
 import { conversationHistory } from "./agent/history.js";
 import { startScheduler } from "./server/scheduler.js";
@@ -578,6 +579,11 @@ async function main(): Promise<void> {
     preview: rt.preview,
     mcp,
   });
+
+  // Non-failing startup check: log how to install any missing Craft dists.
+  // Never downloads; a missing dist just means the app falls back to Loam's
+  // own editor for that file type.
+  logMissingCraftDists();
 
   // A1: Start the Manus-style protocol adapter (Connect RPC + socket.io) on top of Loam.
   const protocolAdapter = await startProtocolAdapter({ cfg, runTask, getTask });
