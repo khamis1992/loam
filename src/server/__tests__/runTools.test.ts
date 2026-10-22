@@ -124,6 +124,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     const deployToolsMod = await import("../../tools/deploy.js");
     registry.registerAll(deployToolsMod.createDeployTools({ workspace: tmpDir }));
     registry.register(dummy("loam_design")); // W3 build-phase design tool (always-on grant)
+    registry.register(dummy("design_autofix")); // V5 deterministic design repair pass (always-on grant)
   });
 
   after(() => {
