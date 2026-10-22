@@ -6,11 +6,21 @@ export interface VerdictInfo {
   fixes: string[];
 }
 
+/** Live status of one plan step. Defaults are derived from the step index. */
+export type PlanStepStatus = "pending" | "doing" | "done" | "blocked" | "cancelled";
+
+/** Coarse work phase of a task, set explicitly via the phase_set tool. */
+export type WorkPhase = "chat" | "plan" | "build" | "verify";
+
 export interface PlanStepInfo {
   id: string;
   title: string;
   instruction: string;
   successCriteria: string;
+  /** Explicit status supplied by the plan tool; otherwise derived from the index. */
+  status?: PlanStepStatus;
+  /** Optional note; required by validation when status is blocked or cancelled. */
+  note?: string;
 }
 
 export interface ToolTraceItem {
@@ -48,6 +58,8 @@ export type AgentEvent =
   | { type: "plan"; goal: string; trivial: boolean; steps: PlanStepInfo[]; source: "model" | "fallback" }
   /** Orchestrator: lifecycle of one plan step (executor worker run). */
   | { type: "plan_step"; id: string; index: number; total: number; title: string; phase: "start" | "done"; summary?: string }
+  /** Work phase of the current task, set explicitly via the phase_set tool. */
+  | { type: "phase"; phase: WorkPhase; reason: string }
   /** Verifier verdict on one plan step (Actor-Critic: critique). */
   | { type: "critique"; id: string; verdict: Verdict; reason: string; parsed?: boolean }
   /** Reflection loop: the step is being retried with the critique's fixes. */
@@ -57,6 +69,8 @@ export type AgentEvent =
   /** Sensitive-action gate: a host input action awaits an explicit user decision. */
   | { type: "approval_required"; approvalId: string; tool: string; summary: string }
   /** End-to-end verification of the completed task. */
-  | { type: "verify"; verdict: Verdict; reason: string; parsed?: boolean };
+  | { type: "verify"; verdict: Verdict; reason: string; parsed?: boolean }
+  /** A workspace file was published as a task artifact via artifact_publish. */
+  | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string };
 
 export type Emit = (event: AgentEvent) => void;

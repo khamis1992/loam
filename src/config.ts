@@ -147,6 +147,7 @@ export interface Config {
       enabled: boolean;
     }>;
   };
+  sessionLog: { enabled: boolean };
 }
 
 const DEFAULTS: Config = {
@@ -214,6 +215,7 @@ const DEFAULTS: Config = {
       { id: "ornith", kind: "openai-compatible", baseUrl: "https://api.ornith.ai/v1", model: "ornith", apiKeyEnv: "ORNITH_API_KEY", enabled: true },
     ],
   },
+  sessionLog: { enabled: true },
 };
 
 function isObj(v: unknown): v is Record<string, unknown> {
