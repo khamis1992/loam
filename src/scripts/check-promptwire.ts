@@ -117,6 +117,9 @@ async function main(): Promise<void> {
     const sequence: Array<{ name: string; args: () => Record<string, unknown> }> = [
       { name: "think", args: () => ({ note: "promptwire e2e" }) },
       { name: "phase_set", args: () => ({ phase: "build", reason: "promptwire e2e" }) },
+      // The C1 read-tracking guard rejects editing a file that was never read, so
+      // read the target first (file_read is not part of PROMPTWIRE_TOOLS).
+      { name: "file_read", args: () => ({ path: "notes.txt" }) },
       { name: "file_multi_edit", args: () => ({ path: "notes.txt", edits: [{ find: "alpha", replace: "beta" }] }) },
       { name: "vault_ref", args: () => ({}) },
       { name: "docs_lookup", args: () => ({ library: "react" }) },

@@ -15,6 +15,8 @@ export interface SavedRun {
   orchestrated: boolean;
   started: boolean;
   checkpoint?: ExecutionCheckpoint;
+  /** Side-chat ("/btw") run: restricted to read-only inspection tools. */
+  sideChat?: boolean;
 }
 export function requiresReplayConfirmation(run: SavedRun): boolean {
   return run.checkpoint ? run.checkpoint.inFlight : run.started;

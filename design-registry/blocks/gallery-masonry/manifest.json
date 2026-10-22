@@ -1,0 +1,18 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "gallery-masonry",
+  "name": "Masonry Gallery",
+  "description": "A masonry-style image gallery with real images, captions and a hover overlay for a portfolio page.",
+  "category": "gallery",
+  "license": "MIT",
+  "source": "shadcn/ui blocks",
+  "tags": ["gallery", "portfolio", "images"],
+  "intent": "Showcase visual work in a dense, varied grid without placeholder art.",
+  "deps": ["react"],
+  "rtl": false,
+  "dir": "ltr",
+  "lang": "en",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"]
+}
