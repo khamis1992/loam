@@ -4,6 +4,23 @@ import type { Config } from "../config.js";
 import { APP_CONTRACT_INSTRUCTIONS } from "./appVerification.js";
 import { BUILD_PHASE_PROMPT } from "../modes/buildPhases.js";
 import { personalizationBlock } from "../server/personalization.js";
+import { renderPolicyContext } from "../policy/riskTier.js";
+import { buildMasterPrompt, codingModeSection, deriveMasterSlots, isCodingTask } from "./masterPrompt.js";
+import { loadProjectMemory, type ProjectMemoryResult } from "./projectMemory.js";
+
+/** The master prompt is on by default; LOAM_MASTER_PROMPT=0 falls back to the
+ *  legacy Loam prompt for A/B or recovery. */
+export function masterPromptEnabled(): boolean {
+  const raw = process.env.LOAM_MASTER_PROMPT ?? process.env.MANUS_LOCAL_MASTER_PROMPT ?? "";
+  return !["0", "false", "no", "off"].includes(raw.trim().toLowerCase());
+}
+
+/** Appendix C (coding mode) is on by default; LOAM_CODING_PROMPT=0 disables it
+ *  so the coding eval can measure the section with and without it. */
+export function codingPromptEnabled(): boolean {
+  const raw = process.env.LOAM_CODING_PROMPT ?? process.env.MANUS_LOCAL_CODING_PROMPT ?? "";
+  return !["0", "false", "no", "off"].includes(raw.trim().toLowerCase());
+}
 
 export interface Skill {
   name: string;
@@ -50,8 +67,21 @@ export function buildSystemPrompt(
   toolNames: string[],
   memories: RecalledMemory[] = [],
   extraContext?: string,
+  sandboxMode?: import("../policy/riskTier.js").SandboxMode,
+  /** Pre-loaded project memory; pass null to skip loading, omit to load from cfg.workspace. */
+  projectMemory?: ProjectMemoryResult | null,
 ): string {
-  const lines: string[] = [
+  const lines: string[] = [];
+  if (masterPromptEnabled()) {
+    lines.push(buildMasterPrompt(deriveMasterSlots(cfg, toolNames), { model: cfg.model }));
+  }
+  if (codingPromptEnabled() && isCodingTask(toolNames)) {
+    const coding = codingModeSection();
+    if (coding && !lines.some((line) => line.includes(coding.split("\n")[0]!))) {
+      lines.push(coding);
+    }
+  }
+  lines.push(
     "You are Loam, a local assistant working in the current task's isolated workspace.",
     "Reply in the user's language. Use the provided tools and observed results; never invent success.",
     APP_CONTRACT_INSTRUCTIONS,
@@ -64,7 +94,10 @@ export function buildSystemPrompt(
     `Workspace: ${cfg.workspace}`,
     `Network access: ${cfg.policy.networkEnabled ? "enabled" : "disabled"}`,
     `Available tools (${toolNames.length}): ${toolNames.join(", ")}`,
-  ];
+  );
+  if (sandboxMode) {
+    lines.push(renderPolicyContext(sandboxMode));
+  }
   if (toolNames.includes("browser_table")) lines.push("Browser workflow: open page, inspect browser_table, then act on observed indexes and inspect again. Never guess selectors or report actions without evidence.");
   if (toolNames.includes("shell_run")) lines.push("Commands run on the user's machine. Stay within this task's workspace, avoid destructive commands, and verify the result.");
   if (toolNames.includes("loam_dataset")) lines.push("Use loam_dataset to calculate CSV statistics. Report missing values and assumptions; never invent data.");
@@ -81,6 +114,10 @@ export function buildSystemPrompt(
     for (const memory of memories) lines.push(memory.text);
   }
   if (extraContext?.trim()) lines.push(extraContext.trim());
+  // Project rules files (LOAM.md / AGENTS.md / CLAUDE.md + imports) apply to every run.
+  const projectMemoryBlock =
+    projectMemory === undefined ? (cfg.workspace ? loadProjectMemory(cfg.workspace) : null) : projectMemory;
+  if (projectMemoryBlock && projectMemoryBlock.text) lines.push(projectMemoryBlock.text);
   // User custom instructions ("about me" / "how to respond") apply to every run.
   const personal = personalizationBlock();
   if (personal) lines.push(personal);

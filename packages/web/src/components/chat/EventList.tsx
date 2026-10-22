@@ -7,7 +7,7 @@ import { GrokBotNote, grokBotNoteText, isGrokBotNote } from './GrokBotNote';
 import { CopyMessageButton } from './CopyMessageButton';
 import { ToolUsedRow } from './ToolUsedRow';
 import { StatusUpdateRow } from './StatusUpdateRow';
-import { PlanStepRow, PlanUpdateRow } from './PlanStep';
+import { PlanStepRow, PlanUpdateRow, TodoListRow } from './PlanStep';
 import { ApprovalCard, FolderAccessApprovalCard, type LocalExecutionApprovalRequested } from '@/components/approval';
 import { AttachmentCard } from './AttachmentCard';
 import { summarizeTools } from './toolLabels';
@@ -51,6 +51,8 @@ export function ChatEventRow({ e, sessionId, socket, renderChat }: ChatEventRowP
       return <PlanStepRow e={e} />;
     case 'planUpdate':
       return <PlanUpdateRow e={e} />;
+    case 'todoUpdate':
+      return <TodoListRow e={e} />;
     case 'toolUsed':
       return <ToolUsedRow e={e as ToolUsedEvent} />;
     case 'statusUpdate':
