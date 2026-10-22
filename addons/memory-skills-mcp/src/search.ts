@@ -35,3 +35,24 @@ export function lexicalFromRank(rank: unknown): number {
   const r = typeof rank === "number" && Number.isFinite(rank) ? rank : 0;
   return Math.max(0, -r);
 }
+
+/** Maximum characters accepted from an untrusted search query. */
+export const MAX_QUERY_CHARS = 2048;
+
+/**
+ * Normalize an untrusted query: cap the length, strip FTS5 operator characters
+ * and collapse whitespace. The result is safe to embed in an FTS5 MATCH
+ * expression and in a LIKE pattern (after `escapeLike`).
+ */
+export function sanitizeQuery(query: string, max = MAX_QUERY_CHARS): string {
+  const capped = String(query ?? "").slice(0, max);
+  return capped
+    .replace(/["'*+\-<>()~^:]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Escape LIKE wildcards so user text is matched literally. */
+export function escapeLike(text: string): string {
+  return text.replace(/[\\%_]/g, (m) => `\\${m}`);
+}
