@@ -1,9 +1,28 @@
 import fs from "node:fs";
 import path from "node:path";
 import { resolveRead, resolveWrite } from "../policy/paths.js";
+import {
+  formatDiagnosticReport,
+  resolveDiagnosticsSettings,
+  runDiagnostics,
+} from "../agent/diagnostics.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { bool, num, str } from "./registry.js";
 import { guardExistingEdit } from "./readState.js";
+
+/** Append per-edit diagnostics to a successful write result. Never throws and
+ *  never turns a successful edit into a failure. */
+async function withDiagnostics(content: string, file: string, ctx: ToolContext): Promise<string> {
+  try {
+    const settings = resolveDiagnosticsSettings(ctx.workspace, ctx.cfg);
+    if (!settings.enabled) return content;
+    const outcome = await runDiagnostics(file, settings);
+    if (!outcome) return content;
+    return `${content}\n\n${formatDiagnosticReport(outcome)}`;
+  } catch {
+    return content;
+  }
+}
 
 const IGNORE_DIRS = new Set([
   "node_modules",
@@ -105,7 +124,7 @@ export const fileTools: Tool[] = [
       else fs.writeFileSync(p, content, "utf8");
       ctx.readState?.record(p);
       const size = fs.statSync(p).size;
-      return { ok: true, content: `wrote ${size} bytes to ${p}` };
+      return { ok: true, content: await withDiagnostics(`wrote ${size} bytes to ${p}`, p, ctx) };
     },
   },
   {
@@ -138,7 +157,7 @@ export const fileTools: Tool[] = [
       // Refresh the read snapshot so a follow-up edit in the same session is
       // not rejected as stale; the model already saw the pre-edit content.
       ctx.readState?.record(p);
-      return { ok: true, content: `replaced ${occurrences} occurrence(s) in ${p}` };
+      return { ok: true, content: await withDiagnostics(`replaced ${occurrences} occurrence(s) in ${p}`, p, ctx) };
     },
   },
   {
