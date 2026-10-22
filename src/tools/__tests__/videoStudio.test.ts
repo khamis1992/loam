@@ -261,6 +261,20 @@ describe("video_studio actions produce the expected command sequence", () => {
     ]);
   });
 
+  it("reorder refuses anything that is not a full 1-based permutation", async () => {
+    // A permutation is exactly 1..n, each index once: a duplicate, a gap or a
+    // 0-based list would silently reorder the wrong clips, so it is refused
+    // before the command is sent.
+    for (const order of [[1, 1, 2], [0, 1, 2], [1, 1], [1, 2, 4], [1.5, 2], "2,1"]) {
+      relay = new MockRelay();
+      relay.commands = CATALOG;
+      const res = await tool().run({ action: "reorder", order }, ctx());
+      assert.equal(res.ok, false, `order ${JSON.stringify(order)} should be refused`);
+      assert.match(res.content, /permutation|requires order|must be integers/);
+      assert.deepEqual(commandsDispatched(), [], `order ${JSON.stringify(order)} must not dispatch`);
+    }
+  });
+
   it("speed resolves clip.speed", async () => {
     relay = new MockRelay();
     relay.commands = CATALOG;
@@ -319,6 +333,17 @@ describe("video_studio actions produce the expected command sequence", () => {
     await tool().run({ action: "effect_basic", name: "blur", params: { amount: 12 } }, ctx());
     assert.deepEqual(commandsDispatched(), [
       { method: "execute", params: { command: "effects.apply", params: { name: "blur", amount: 12 } } },
+    ]);
+  });
+
+  it("effect_basic keeps the positional name and drops a params.name override", async () => {
+    // A free-form `params.name` would silently swap the effect the action was
+    // asked to apply, so the positional `name` must win.
+    relay = new MockRelay();
+    relay.commands = CATALOG;
+    await tool().run({ action: "effect_basic", name: "glow", params: { intensity: 0.5, name: "OVERRIDE" } }, ctx());
+    assert.deepEqual(commandsDispatched(), [
+      { method: "execute", params: { command: "effects.apply", params: { name: "glow", intensity: 0.5 } } },
     ]);
   });
 
