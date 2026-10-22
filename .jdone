@@ -1,15 +1,37 @@
-V7 complete.
+V13 (quick-edit route) is complete, and the merge gate now passes.
 
-- Merged latest manus-parity into khamis1992/v0-v7, resolving conflicts in src/index.ts and src/server/__tests__/runTools.test.ts by keeping both sides (V7 design_brief + manus-parity design_autofix/workflow tools).
-- src/design/brief.ts: generateDesignBrief() validates against DESIGN_BRIEF_JSON_SCHEMA (palette 3-5 colours, at most 2 fonts), retries once on invalid output, falls back deterministically; RTL/Arabic detection included.
-- src/tools/designBrief.ts: design_brief agent tool, optional writeTokens.
-- Registered in src/index.ts and ALWAYS_ON_TOOLS (src/server/runTools.ts); design-explore phase and BUILD_PHASE_PROMPT updated.
+## Merge gate (the failure that was fixed)
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity.
+Ran `git merge manus-parity`; two files conflicted and were resolved keeping BOTH sides:
+- `src/index.ts`: kept the V13 quick-edit route (`planQuickEditRoute(effectiveCfg, effectivePrompt)` and
+  `quickEditRoute.suffix` / `quickEditRoute.model` wiring) AND the incoming manus-parity memory
+  index summary (`memoryIndexSummary` from `memory.indexSummary(8)`, kept in the prompt suffix array).
+- `src/tools/multiEdit.ts`: kept the V13 exports/doc comments on `DiffHunk` and `diffLines` (the
+  incoming side only had a shorter comment; no code was lost).
+Resolution committed as `7d52e7c merge manus-parity: keep quick-edit route with memory index summary (V13)`.
+`git merge-tree --write-tree manus-parity HEAD` is clean (exit 0), so no conflict re-emerges.
 
-Tests:
-  npx tsc --noEmit
-  npm run build:server
-  (cd packages/web && npx next build)
-  npx tsx --test src/design/__tests__/brief.test.ts
-  npx tsx --test src/tools/__tests__/designBrief.test.ts
-  npx tsx --test src/server/__tests__/runTools.test.ts
-All pass.
+## What V13 delivers (commit 639a92c)
+- `src/agent/quickEdit.ts`: conservative classifier. Measured scope wins (text-only or pure reorder,
+  within limits) -> fast model; behavioural / structural / file-boundary / oversized / multi-file /
+  ambiguous -> base model. Short instructions classified by narrow-vs-big patterns in English and
+  Arabic; ambiguous or long instructions stay on the base model.
+- `resolveQuickEditModel` uses the configured fast tier (`fallbackModel`), falling back to the base
+  model when it is unset; `planQuickEditRoute` adds a minimal targeted-edit instruction (English +
+  Arabic) only for the quick route.
+- `planTargetedDiff(before, after)` turns a before/after pair into line-anchored patches (replacement,
+  deletion, insertion, insert-before-first-line) via the now-exported `diffLines`/`DiffSummary`/`DiffHunk`.
+- Arabic/RTL: narrow-edit instructions are recognised in Arabic, `hasRtlScript` detects RTL script,
+  and a targeted patch preserves Arabic text exactly (covered by tests).
+- `src/agent/loop.ts` and `src/agent/orchestrator.ts`: optional per-run `model` override so the
+  quick-edit route can actually run on the fast model; `src/index.ts` passes it through.
+
+## Gates (all run from the worktree root)
+- `npx tsc --noEmit` -> clean
+- `npm run build:server` -> dist/server.cjs built, pdf worker copied
+- `(cd packages/web && npx next build)` -> compiled successfully, 25/25 static pages generated
+- `node --import tsx --test src/agent/__tests__/*.test.ts` -> 144 pass, 0 fail
+- `node --import tsx --test src/tools/__tests__/*.test.ts` -> 435 pass, 0 fail
+  (includes quickEdit, editSchemaAlias, findAndEdit, fileLock, mapReduce)
+
+Working tree is clean; no existing test was weakened.
