@@ -24,6 +24,7 @@
     "eval": "tsx src/scripts/eval-run.ts",
     "eval:design": "tsx src/scripts/eval-design.ts",
     "eval:selfplay": "tsx src/scripts/eval-selfplay.ts",
+    "eval:coding": "tsx src/scripts/eval-coding.ts",
     "ft:export": "tsx src/scripts/ft-export.ts",
     "check:task-ui": "npm run check:loam-ui",
     "check:recovery": "tsx src/scripts/check-recovery.ts",

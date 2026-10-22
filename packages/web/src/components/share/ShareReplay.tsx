@@ -6,6 +6,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { t, PRODUCT } from '@/i18n/t';
 import { EventList } from '@/components/chat/EventList';
 import { getApiBase, getLoamBase } from '@/services/rpc';
+import { visibleMessages } from '@/lib/reminders';
 import type { ChatEvent, ChatMessageEvent } from '@shared/socket';
 
 interface SharedMessage {
@@ -77,7 +78,7 @@ export function ShareReplay() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  const events: ChatEvent[] = useMemo(() => (transcript?.messages ?? [])
+  const events: ChatEvent[] = useMemo(() => visibleMessages(transcript?.messages ?? [])
     .filter((m) => m.role !== 'system')
     .map((m, i): ChatMessageEvent => ({
       id: `share-${i}`,
