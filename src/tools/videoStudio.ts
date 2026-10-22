@@ -369,6 +369,17 @@ function buildAction(
       if (!Array.isArray(raw) || raw.length === 0) return { error: "reorder requires order (array of 1-based indices)" };
       const order = raw.map((entry) => (typeof entry === "number" ? entry : Number(entry)));
       if (order.some((entry) => !Number.isInteger(entry))) return { error: "reorder order must be integers" };
+      // The editor applies `order` as a full 1-based permutation: exactly the
+      // indices 1..n, each once. Anything else (duplicates, gaps, a 0-based or
+      // short list) would silently reorder the wrong clips or be refused by the
+      // engine, so refuse it here with a precise message instead.
+      const seen = new Set<number>();
+      for (const entry of order) {
+        if (entry < 1 || entry > order.length || seen.has(entry)) {
+          return { error: `reorder order must be a full 1-based permutation of 1..${order.length} (got ${JSON.stringify(order)})` };
+        }
+        seen.add(entry);
+      }
       const id = resolveCommandId(catalog, VIDEO_STUDIO_COMMAND_CANDIDATES.reorder);
       if (!id) return { error: unknownCommandMessage("reorder", catalog, VIDEO_STUDIO_COMMAND_CANDIDATES.reorder) };
       return { steps: [execStep(id, { order })] };
