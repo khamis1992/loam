@@ -41,6 +41,8 @@ import { createMultiEditTools } from "../tools/multiEdit.js";
 import { createVaultTools } from "../tools/vaultTools.js";
 import { createCodeSessionTools } from "../tools/codeSession.js";
 import { createDocsLookupTools } from "../tools/docsLookup.js";
+import { createGenExtraTools } from "../tools/genExtra.js";
+import { defaultGenProviders } from "../creative/genProviders.js";
 import { createArtifactTools } from "../tools/artifactTools.js";
 import { planTool, messageTool } from "../tools/specAliases.js";
 
@@ -101,6 +103,9 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createSubagentTools(ollama, registry));
   registry.registerAll(createCodeSessionTools());
   registry.registerAll(createDocsLookupTools());
+  // N12 generator tools: media/search providers from the environment plus the
+  // runtime model as the reasoning backend for solve_logic / generate_storyboard.
+  registry.registerAll(createGenExtraTools({ providers: defaultGenProviders(cfg), reasoner: ollama }));
 
   const mcp = opts.mcp === false ? null : await registerMcpTools(registry, cfg.mcpServers, cfg.workspace);
   registry.registerAll(createIntegrationTools(registry));
