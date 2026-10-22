@@ -17,6 +17,7 @@ import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/risk
 import { ReminderChannel, TODO_UPDATE_TOOLS, MEMORY_UPDATE_TOOLS, type ReminderChannelOptions } from "./reminders.js";
 import { getTaskPhase } from "../tools/phaseTools.js";
 import { ReadState } from "../tools/readState.js";
+import { checkBudget, consumeSteps, consumeTokens, type ComputeBudget } from "./computeBudget.js";
 
 export interface RunOptions {
   cfg: Config;
@@ -47,6 +48,9 @@ export interface RunOptions {
   saveWorker?: (checkpoint: WorkerCheckpoint | undefined) => void;
   /** Resolved sandbox mode for this run; rendered into the system prompt. */
   sandboxMode?: SandboxMode;
+  /** D19: per-session compute budget (steps/tokens) enforced inside this run.
+   *  The runtime store owns the counters; the loop only consults it. */
+  budget?: ComputeBudget;
   /** Shared reminder channel. Callers may push external file changes or memory
    *  updates into it; the loop appends due reminders as hidden user messages. */
   reminderChannel?: ReminderChannel;
@@ -165,6 +169,15 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   for (step = (restored?.steps ?? 0) + 1; step <= maxSteps; step++) {
     // Stop immediately when the user pressed the cancel button (checked between every step).
     throwIfCancelled(opts.signal, opts.taskId);
+    // D19 compute budget: consult BEFORE the step runs so the first crossing
+    // of the ceiling stops the run instead of burning one more step.
+    const budgetDecision = opts.budget ? checkBudget(opts.budget) : { action: "allow" as const };
+    if (budgetDecision.action === "stop") {
+      const msg = `${budgetDecision.reason}. Raise the session budget to continue.`;
+      opts.emit({ type: "error", message: msg });
+      throw new Error(msg);
+    }
+    if (opts.budget) consumeSteps(opts.budget, 1);
     opts.emit({ type: "step", index: step });
     opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
 
@@ -198,6 +211,10 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     usage.promptTokens += result.usage.promptTokens;
     usage.completionTokens += result.usage.completionTokens;
     usage.durationMs += result.usage.durationMs;
+    if (opts.budget) consumeTokens(opts.budget, result.usage.promptTokens, result.usage.completionTokens);
+    if (opts.budget && checkBudget(opts.budget).action === "warn") {
+      opts.emit({ type: "error", message: "Compute budget is close to its ceiling; consider raising it." });
+    }
     opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
 
     if (result.toolCalls.length === 0) {

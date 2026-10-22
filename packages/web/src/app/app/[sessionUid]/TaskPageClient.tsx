@@ -14,6 +14,8 @@ import { addSession, selectSession } from '@/store/sessionsSlice';
 import { t, PRODUCT } from '@/i18n/t';
 import { Composer } from '@/components/chat/Composer';
 import { EventList } from '@/components/chat/EventList';
+import { SessionStatusBadge } from '@/components/chat/SessionStatusBadge';
+import { useSessionRuntime } from '@/components/chat/useSessionRuntime';
 import { AttachmentCard, kindFromName, type AttachmentKind } from '@/components/chat/AttachmentCard';
 import { ComputerPanel } from '@/components/computer/ComputerPanel';
 import {
@@ -132,6 +134,8 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const [shareOpen, setShareOpen] = useState(false);
   const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
   const [approveForMe, setApproveForMe] = useState(false);
+  // D19 session runtime: sleep state + compute budget, shown by the badge.
+  const runtime = useSessionRuntime(sessionUid);
 
   useEffect(() => {
     try {
@@ -329,6 +333,8 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
       attachments = [...attachments, ...uploaded];
     }
     socket.sendText(sessionUid, text, mode, attachments, makeExtData(cwd, { approveForMe, ...extData }));
+    // The badge should react immediately rather than waiting for the poll.
+    void runtime.refresh();
   };
 
   const handleStop = () => {
@@ -389,6 +395,14 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               <div className="mb-2 flex items-center gap-2">
                 <span className="text-lg">◉</span>
                 <span className="text-base font-semibold text-text-primary">{PRODUCT}</span>
+              </div>
+              {/* D19: sleep state + compute budget for this session. */}
+              <div className="mb-2">
+                <SessionStatusBadge
+                  snapshot={runtime.snapshot}
+                  onRaiseBudget={() => void runtime.raiseBudget()}
+                  onWake={() => void runtime.wake()}
+                />
               </div>
               {running && <div className="mb-2 text-sm text-text-tertiary">{t('{name} is thinking', { name: PRODUCT })}…</div>}
               {clockEvent && !running && (

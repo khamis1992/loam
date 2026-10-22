@@ -74,6 +74,8 @@ import { getSettings, updateSettings } from "./settings.js";
 import { cancelRunSignal } from "./runControl.js";
 import { createAgent, deleteAgent, getAgent, listAgents, listAgentsWithChatMeta, reorderAgents, sanitizeAvatarFields, setAgentArchived, setAgentHidden, setAgentPinned, updateAgent } from "./agents.js";
 import { handleScratchpadRoutes } from "./routes/scratchpad.js";
+// Session sleep/wake + compute budget (D19): dispatched before generic handlers.
+import { handleSessionRuntimeRoutes } from "./routes/sessionRuntime.js";
 import { handleDesignStudioRoutes } from "./routes/designStudio.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
@@ -1738,6 +1740,8 @@ loadAgents();
         }
 
         if (await handleScratchpadRoutes(req, res, p)) return;
+        // Session sleep/wake + compute budget (D19).
+        if (await handleSessionRuntimeRoutes(req, res, p)) return;
         // Design Studio (/api/design/*): brand kits, templates, generate, outputs.
         if (await handleDesignStudioRoutes(req, res, p)) return;
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;
