@@ -1,42 +1,22 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Clapperboard, Loader2 } from 'lucide-react';
 import { t } from '@/i18n/t';
-import { FilmcraftBridge, FILMCRAFT_FRAME_URL } from '@/lib/filmcraft';
-
-type BridgeStatus = 'loading' | 'ready' | 'unavailable';
+import type { FilmcraftBridge } from '@/lib/filmcraft';
+import {
+  LoamVideoPanel,
+  type LoamVideoBridgeStatus,
+} from '@/components/workspace/loamVideo/LoamVideoPanel';
 
 export default function VideoPage() {
   const router = useRouter();
-  const iframeRef = useRef<HTMLIFrameElement>(null);
   const bridgeRef = useRef<FilmcraftBridge | null>(null);
-  const [status, setStatus] = useState<BridgeStatus>('loading');
+  const [status, setStatus] = useState<LoamVideoBridgeStatus>('loading');
   const [busy, setBusy] = useState(false);
   const [importUrl, setImportUrl] = useState('');
   const [message, setMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-    const bridge = new FilmcraftBridge(iframe);
-    bridgeRef.current = bridge;
-    let disposed = false;
-    bridge
-      .waitForApi()
-      .then(({ hasApi }) => {
-        if (!disposed) setStatus(hasApi ? 'ready' : 'unavailable');
-      })
-      .catch(() => {
-        if (!disposed) setStatus('unavailable');
-      });
-    return () => {
-      disposed = true;
-      bridgeRef.current = null;
-      bridge.dispose();
-    };
-  }, []);
 
   const runAction = async (label: string, action: (bridge: FilmcraftBridge) => Promise<unknown>) => {
     const bridge = bridgeRef.current;
@@ -124,12 +104,11 @@ export default function VideoPage() {
       )}
 
       <div className="min-h-0 flex-1">
-        <iframe
-          ref={iframeRef}
-          src={FILMCRAFT_FRAME_URL}
-          title={t('Loam Video')}
-          className="h-full w-full border-0"
-          allow="autoplay; fullscreen"
+        <LoamVideoPanel
+          onStatusChange={setStatus}
+          onBridgeReady={(bridge) => {
+            bridgeRef.current = bridge;
+          }}
         />
       </div>
     </div>
