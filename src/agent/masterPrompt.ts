@@ -56,6 +56,30 @@ export const MASTER_ORDER: readonly (readonly string[])[] = [
   ["24"],
 ];
 
+/** Appendix C is authored in the master asset but sent only for coding tasks. */
+export const CODING_MODE_SECTION_ID = "appendix-c";
+
+/** Tools whose presence marks a run as a coding task (Appendix C applies). */
+const CODING_TASK_TOOLS = [
+  "file_edit",
+  "file_write",
+  "file_multi_edit",
+  "code_session",
+  "shell_run",
+] as const;
+
+/** True when the run has coding tools and should receive Appendix C. */
+export function isCodingTask(toolNames: readonly string[]): boolean {
+  return CODING_TASK_TOOLS.some((name) => toolNames.includes(name));
+}
+
+/** Render the coding-mode appendix (Appendix C) with its heading. */
+export function codingModeSection(): string {
+  const section = MASTER_PROMPT_SECTIONS.find((s) => s.id === CODING_MODE_SECTION_ID);
+  if (!section) return "";
+  return `## ${section.title}\n\n${section.body}`;
+}
+
 const DEFAULT_MAX_PARALLEL_AGENTS = 4;
 const DEFAULT_SPILL_THRESHOLD = 80_000;
 const DEFAULT_LOCAL_TIMEOUT_S = 600;

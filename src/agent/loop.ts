@@ -16,6 +16,9 @@ import { createStallGuard } from "./stallGuard.js";
 import { compressContext } from "./contextCompressor.js";
 import { throwIfCancelled } from "../server/runControl.js";
 import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/riskTier.js";
+import { ReminderChannel, TODO_UPDATE_TOOLS, MEMORY_UPDATE_TOOLS, type ReminderChannelOptions } from "./reminders.js";
+import { getTaskPhase } from "../tools/phaseTools.js";
+import { ReadState } from "../tools/readState.js";
 
 export interface RunOptions {
   cfg: Config;
@@ -46,6 +49,11 @@ export interface RunOptions {
   saveWorker?: (checkpoint: WorkerCheckpoint | undefined) => void;
   /** Resolved sandbox mode for this run; rendered into the system prompt. */
   sandboxMode?: SandboxMode;
+  /** Shared reminder channel. Callers may push external file changes or memory
+   *  updates into it; the loop appends due reminders as hidden user messages. */
+  reminderChannel?: ReminderChannel;
+  /** Overrides the stale-todo threshold and initial plan mode for this run. */
+  reminders?: ReminderChannelOptions;
 }
 
 export interface RunResult {
@@ -88,6 +96,36 @@ function summarize(text: string, lines = 10): string {
 /** Web/email/browser output is external data; wrap it so the model never follows it as instructions. */
 function toolMessageContent(name: string, content: string): string {
   return isUntrustedTool(name) ? markUntrusted(content, name) : content;
+}
+
+/** Maximum number of independent read-only tool calls executed concurrently from
+ *  one assistant turn. Writes never enter the parallel path and stay serial. */
+const PARALLEL_READ_LIMIT = 8;
+
+/**
+ * Run `fn` over `items` with at most `limit` invocations in flight and return the
+ * results in the original item order. Results are index-mapped rather than
+ * collected in completion order, so the tool results stay aligned with the
+ * assistant's tool_call order even when the calls finish out of order.
+ */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  const workers = Math.max(1, Math.min(limit, items.length));
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: workers }, async () => {
+      for (;;) {
+        const index = next++;
+        if (index >= items.length) return;
+        results[index] = await fn(items[index] as T, index);
+      }
+    }),
+  );
+  return results;
 }
 
 export async function runAgent(opts: RunOptions): Promise<RunResult> {
@@ -137,12 +175,24 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   const routeCoding = opts.cfg.coding?.enabled !== false && isCodingTurn(opts.prompt, opts.history);
   // Edit attribution is on by default and can be disabled per config.
   const auditEdits = opts.cfg.coding?.logEdits !== false;
+  // Harness reminders (stale todo list, external file change, plan mode, memory
+  // update) are injected as hidden user-role blocks. They are never emitted as
+  // events, so the UI cannot render them.
+  const reminders = opts.reminderChannel ?? new ReminderChannel(opts.reminders);
+  // Per-session read tracking: file_read fills it, edit/write tools consult it
+  // so the model cannot blind-edit content it never saw or clobber a file that
+  // changed since it was read. A fresh instance per run matches Claude Code.
+  const readState = new ReadState();
 
   for (step = (restored?.steps ?? 0) + 1; step <= maxSteps; step++) {
     // Stop immediately when the user pressed the cancel button (checked between every step).
     throwIfCancelled(opts.signal, opts.taskId);
     opts.emit({ type: "step", index: step });
     opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
+
+    // Plan mode is a read-only work phase; announce it once when it is active.
+    if (opts.taskId) reminders.setPlanMode(getTaskPhase(opts.taskId) === "plan");
+    for (const message of reminders.drainMessages(step)) messages.push(message);
 
     if (opts.cfg.compression.enabled) {
       const compressed = await compressContext(opts.cfg, opts.ollama, messages, opts.emit, opts.signal);
@@ -248,18 +298,17 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.emit({ type: "tool_call", name, args });
         return { name, args, t0: Date.now() };
       });
-      const batchResults = await Promise.all(
-        prepared.map((item) =>
-          opts.tools.exec(item.name, item.args, {
-            cfg: opts.cfg,
-            workspace: opts.cfg.workspace,
-            emit: opts.emit,
-            signal: opts.signal,
-            allowedTools: runAllowedTools,
-            ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
-            ...(opts.taskId ? { taskId: opts.taskId } : {}),
-          }),
-        ),
+      const batchResults = await mapWithConcurrency(prepared, PARALLEL_READ_LIMIT, (item) =>
+        opts.tools.exec(item.name, item.args, {
+          cfg: opts.cfg,
+          workspace: opts.cfg.workspace,
+          emit: opts.emit,
+          signal: opts.signal,
+          allowedTools: runAllowedTools,
+          readState,
+          ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
+          ...(opts.taskId ? { taskId: opts.taskId } : {}),
+        }),
       );
       for (let i = 0; i < prepared.length; i++) {
         const item = prepared[i]!;
@@ -270,6 +319,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         auditEdit(item.name, item.args, usedModel, toolResult.ok, step, auditEdits, opts.taskId);
         const notice = stallGuard(item.name, item.args, toolResult.ok);
         if (notice) stallNotices.push(notice);
+        if (TODO_UPDATE_TOOLS.has(item.name) && toolResult.ok) reminders.noteTodoUpdate(step);
+        if (MEMORY_UPDATE_TOOLS.has(item.name) && toolResult.ok) reminders.memoryUpdated();
         opts.emit({
           type: "tool_result",
           name: item.name,
@@ -294,6 +345,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           emit: opts.emit,
           signal: opts.signal,
           allowedTools: runAllowedTools,
+          readState,
           ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
           ...(opts.taskId ? { taskId: opts.taskId } : {}),
         });
@@ -305,6 +357,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         auditEdit(name, args, usedModel, toolResult.ok, step, auditEdits, opts.taskId);
         const notice = stallGuard(name, args, toolResult.ok);
         if (notice) stallNotices.push(notice);
+        if (TODO_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.noteTodoUpdate(step);
+        if (MEMORY_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.memoryUpdated();
         messages.push({ role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) });
         // Cancel pressed while the tool ran? Stop before the next tool/step.
         throwIfCancelled(opts.signal, opts.taskId);

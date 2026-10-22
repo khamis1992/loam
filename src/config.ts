@@ -187,6 +187,8 @@ export interface Config {
     /** Append every edit tool call to the model-edit audit log (default: true). */
     logEdits: boolean;
   };
+  /** Optional per-edit diagnostics overrides (LOAM.md may override these). */
+  diagnostics?: import("./agent/diagnostics.js").DiagnosticSettings;
 }
 
 const DEFAULTS: Config = {
