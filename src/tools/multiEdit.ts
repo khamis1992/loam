@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveWrite } from "../policy/paths.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
-import { bool, str } from "./registry.js";
+import { bool, str, strFirst } from "./registry.js";
 import { guardExistingEdit } from "./readState.js";
 
 const MAX_EDITS = 50;
@@ -180,7 +180,7 @@ export function createMultiEditTools(): Tool[] {
     {
       name: "file_multi_edit",
       description:
-        "Apply several exact string replacements to one workspace file in a single atomic operation. Each find must match exactly once unless replaceAll is set. The file is only rewritten if every edit succeeds; otherwise it is left untouched. Preserves line endings and BOM.",
+        "Apply several exact string replacements to one workspace file in a single atomic operation. Each edit uses `old_string`/`new_string`; `find`/`replace` are accepted as aliases. Each old_string must match exactly once unless replace_all is true. The file is only rewritten if every edit succeeds; otherwise it is left untouched. Preserves line endings and BOM.",
       parameters: {
         type: "object",
         properties: {
@@ -193,11 +193,14 @@ export function createMultiEditTools(): Tool[] {
             items: {
               type: "object",
               properties: {
-                find: { type: "string", description: "Exact text to find." },
-                replace: { type: "string", description: "Replacement text." },
-                replaceAll: { type: "boolean", description: "Replace every occurrence instead of requiring exactly one (default false)." },
+                old_string: { type: "string", description: "Exact text to find. Must occur exactly once unless replace_all is true." },
+                new_string: { type: "string", description: "Replacement text. Must differ from old_string." },
+                find: { type: "string", description: "Alias for old_string." },
+                replace: { type: "string", description: "Alias for new_string." },
+                replace_all: { type: "boolean", description: "Replace every occurrence instead of requiring exactly one (default false)." },
+                replaceAll: { type: "boolean", description: "Alias for replace_all." },
               },
-              required: ["find", "replace"],
+              anyOf: [{ required: ["old_string", "new_string"] }, { required: ["find", "replace"] }],
             },
           },
         },
@@ -227,10 +230,12 @@ export function createMultiEditTools(): Tool[] {
             return { ok: false, content: `edit ${index + 1}: must be an object` };
           }
           const record = entry as Record<string, unknown>;
-          const find = str(record, "find");
-          const replace = str(record, "replace");
-          if (find.length === 0) return { ok: false, content: `edit ${index + 1}: find must be non-empty` };
-          edits.push({ find, replace, replaceAll: bool(record, "replaceAll") });
+          const find = strFirst(record, "old_string", "find");
+          const replace = strFirst(record, "new_string", "replace");
+          if (find === undefined) return { ok: false, content: `edit ${index + 1}: requires old_string (or its alias find)` };
+          if (replace === undefined) return { ok: false, content: `edit ${index + 1}: requires new_string (or its alias replace)` };
+          if (find.length === 0) return { ok: false, content: `edit ${index + 1}: old_string must be non-empty` };
+          edits.push({ find, replace, replaceAll: bool(record, "replace_all", bool(record, "replaceAll")) });
         }
 
         if (!fs.existsSync(p)) return { ok: false, content: `not found: ${p}` };
@@ -256,10 +261,19 @@ export function createMultiEditTools(): Tool[] {
           const edit = edits[index]!;
           const find = normalizeNewlines(edit.find);
           const replace = normalizeNewlines(edit.replace);
+          if (find === replace) {
+            return {
+              ok: false,
+              content: `edit ${index + 1}: old_string and new_string are identical, so this edit would change nothing. Provide a new_string that actually differs from old_string (or drop this no-op edit).`,
+            };
+          }
           const count = countOccurrences(work, find);
-          if (count === 0) return { ok: false, content: `edit ${index + 1}: find text not found` };
+          if (count === 0) return { ok: false, content: `edit ${index + 1}: old_string text not found` };
           if (count > 1 && !edit.replaceAll) {
-            return { ok: false, content: `edit ${index + 1}: find text is ambiguous (${count} matches); refine the find text or set replaceAll` };
+            return {
+              ok: false,
+              content: `edit ${index + 1}: old_string is ambiguous: ${count} matches in ${p}, but replace_all is false. Add more surrounding context to old_string (include more lines or words around the change) so it matches exactly once, or set replace_all to true to replace every match.`,
+            };
           }
           work = work.split(find).join(replace);
         }

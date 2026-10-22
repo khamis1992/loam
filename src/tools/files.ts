@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveRead, resolveWrite } from "../policy/paths.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
-import { bool, num, str } from "./registry.js";
+import { bool, num, str, strFirst } from "./registry.js";
 import { guardExistingEdit } from "./readState.js";
 
 const IGNORE_DIRS = new Set([
@@ -110,16 +110,21 @@ export const fileTools: Tool[] = [
   },
   {
     name: "file_edit",
-    description: "Exact string replacement inside a workspace file. Fails if the find string is missing or ambiguous (unless count is given).",
+    description:
+      "Replace text inside a workspace file. Pass the exact `old_string` to find and the `new_string` to write in its place. The match must be unique unless `replace_all` is true. Use enough surrounding context (whole lines or a distinctive snippet) so the match is unambiguous. `find`/`replace` are accepted as aliases for `old_string`/`new_string`.",
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string" },
-        find: { type: "string", description: "Exact text to find." },
-        replace: { type: "string", description: "Replacement text." },
-        count: { type: "number", description: "Expected occurrences to replace (default 1)." },
+        path: { type: "string", description: "Target file path inside the workspace." },
+        old_string: { type: "string", description: "Exact text to find. Must occur exactly once unless replace_all is true." },
+        new_string: { type: "string", description: "Replacement text. Must differ from old_string." },
+        find: { type: "string", description: "Alias for old_string." },
+        replace: { type: "string", description: "Alias for new_string." },
+        replace_all: { type: "boolean", description: "Replace every occurrence instead of requiring a single unique match (default false)." },
+        count: { type: "number", description: "Legacy: expected occurrence count when replace_all is false (default 1)." },
       },
-      required: ["path", "find", "replace"],
+      required: ["path"],
+      anyOf: [{ required: ["old_string", "new_string"] }, { required: ["find", "replace"] }],
     },
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
       const p = resolveWrite(ctx.workspace, str(args, "path"));
@@ -127,14 +132,33 @@ export const fileTools: Tool[] = [
       if (guard) return guard;
       if (!fs.existsSync(p)) return { ok: false, content: `not found: ${p}` };
       const original = fs.readFileSync(p, "utf8");
-      const find = str(args, "find");
-      const replace = str(args, "replace");
-      const occurrences = original.split(find).length - 1;
+      const oldString = strFirst(args, "old_string", "find");
+      const newString = strFirst(args, "new_string", "replace");
+      if (oldString === undefined) return { ok: false, content: "file_edit requires old_string (or its alias find)" };
+      if (newString === undefined) return { ok: false, content: "file_edit requires new_string (or its alias replace)" };
+      if (oldString.length === 0) return { ok: false, content: "old_string must be non-empty" };
+      if (oldString === newString) {
+        return {
+          ok: false,
+          content: `old_string and new_string are identical, so this edit would change nothing. Provide a new_string that actually differs from old_string (or drop this no-op edit).`,
+        };
+      }
+      const occurrences = original.split(oldString).length - 1;
+      if (occurrences === 0) return { ok: false, content: `old_string not present in ${p}` };
+      const replaceAll = bool(args, "replace_all", false);
+      if (replaceAll) {
+        fs.writeFileSync(p, original.split(oldString).join(newString), "utf8");
+        ctx.readState?.record(p);
+        return { ok: true, content: `replaced ${occurrences} occurrence(s) in ${p} (replace_all)` };
+      }
       const want = num(args, "count", 1);
-      if (occurrences === 0) return { ok: false, content: `find string not present in ${p}` };
-      if (occurrences !== want) return { ok: false, content: `find string appears ${occurrences} times (expected ${want}); refine the search text` };
-      if (find === replace) return { ok: true, content: `no change: find and replace are identical; ${p} was not written. This is not evidence of a new modification.` };
-      fs.writeFileSync(p, original.split(find).join(replace), "utf8");
+      if (occurrences !== want) {
+        return {
+          ok: false,
+          content: `Found ${occurrences} matches of old_string in ${p}, but replace_all is false and the match is not unique. Add more surrounding context to old_string (include more lines or words around the change) so it matches exactly once, or set replace_all to true to replace every match.`,
+        };
+      }
+      fs.writeFileSync(p, original.split(oldString).join(newString), "utf8");
       // Refresh the read snapshot so a follow-up edit in the same session is
       // not rejected as stale; the model already saw the pre-edit content.
       ctx.readState?.record(p);
