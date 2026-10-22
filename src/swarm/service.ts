@@ -100,7 +100,7 @@ interface Options { cfg: Config; ollama: OllamaClient; tools: ToolRegistry; exec
 const now = () => new Date().toISOString();
 const active = (s: SwarmStatus) => s === "running" || s === "queued";
 const copy = <T>(v: T): T => structuredClone(v);
-const READ = ["file_read", "file_list", "file_search", "file_stat", "code_symbols", "code_outline"];
+const READ = ["file_read", "file_list", "file_search", "file_stat", "grep", "glob", "code_symbols", "code_outline", "semantic_search"];
 const WRITE = ["file_write", "file_edit", "file_mkdir"];
 const stages = [
   ["discovery", "pm", "اكتشاف المنتج", []],

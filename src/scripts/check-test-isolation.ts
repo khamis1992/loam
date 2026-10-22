@@ -94,8 +94,11 @@ try {
         { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 28, cwd: sandbox },
       );
     } catch (error) {
-      exitCode = error.status ?? -1;
-      output = String(error.stdout ?? "") + String(error.stderr ?? "");
+      // `execFileSync` rejects with an Error carrying `status`, `stdout` and
+      // `stderr`; the compiler only knows it as `unknown`.
+      const failure = error as { status?: number; stdout?: string; stderr?: string };
+      exitCode = failure.status ?? -1;
+      output = String(failure.stdout ?? "") + String(failure.stderr ?? "");
     }
 
     const residue = Object.fromEntries(
