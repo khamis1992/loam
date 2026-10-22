@@ -1,3 +1,68 @@
+J10 complete: prompt-cache (KV) miss detection + reusable-token accounting, and the
+merge gate now passes.
+
+Task (from `.jgatefail.txt`): the branch had a MERGE CONFLICT with manus-parity. Ran
+`git merge manus-parity`, resolved every conflict keeping BOTH sides (never dropping
+either), got all gates green, and recorded the result here.
+
+## Merge gate (the failure that was fixed)
+Two files conflicted on the first merge:
+- `src/agent/events.ts`: kept the incoming `compaction` event with `blocked?: boolean`
+  (parity) AND this branch's `cache_usage` event (J10). Both event kinds are in the
+  union now.
+- `packages/web/public/marketplace/THIRD_PARTY_NOTICES`: kept BOTH jcode MIT notices.
+  The J10 KV-miss-detection notice (HEAD) and the `bench/` adaptation notice (parity)
+  each keep their own section, sharing one MIT License block. Neither notice was dropped.
+Resolution committed as `6a6c3f5 Merge manus-parity (keep both sides) into jcode-j10`.
+
+A typecheck failure surfaced by that merge was fixed (not worked around): the
+`compression` literal in `src/agent/__tests__/cacheUsageAccounting.test.ts` was missing
+the new `bufferTokens` / `reattachFiles` / `reattachFileChars` fields. Added them to
+match the config type (same values as `contextCompressor.test.ts`). The test assertions
+are unchanged.
+
+manus-parity advanced three times while this gate ran (14 commits, then 7 more, then
+again). Each new tip was merged and re-verified:
+- `5fc32c4 Merge branch 'manus-parity' into khamis1992/jcode-j10`
+- `4e8ff1e Merge branch 'manus-parity' into khamis1992/jcode-j10` (current tip)
+All three merges were conflict-free after the first resolution, and the branch is now
+0 commits behind manus-parity.
+
+## What J10 delivers
+- `src/agent/kvCacheMonitor.ts`: normalizes provider usage into
+  `{ promptTokens, cachedTokens, cacheWriteTokens? }`.
+  - `parseOpenAiUsage`: `prompt_tokens` + `prompt_tokens_details.cached_tokens`
+    (plus the legacy top-level `cached_tokens`), clamped so cached never exceeds prompt.
+  - `parseAnthropicUsage`: `input_tokens` + `cache_read_input_tokens` +
+    `cache_creation_input_tokens`.
+  - `parseOllamaUsage`: Ollama prompt-eval counters (also accepts the nested
+    `cached_tokens.tokens` shape).
+  - Miss-reason detection: cached ratio collapses after compaction, idle gap past the
+    cache TTL, and model switch each produce a distinct reason.
+- `src/ollama.ts`: provider usage types carry the cache fields.
+- `src/agent/events.ts` + `src/protocol/{events,types}.ts` + `packages/shared/src/socket.ts`:
+  the `cache_usage` event/counter wire format.
+- `packages/web/src/components/chat/CacheUsageRow.tsx`: the small chat notice, wired into
+  `EventList.tsx`, with `en`/`ar` strings.
+- `src/agent/loop.ts`: reusable-token accounting on the per-step usage re-sum, so a
+  prompt-cache read is no longer dropped when usage is recomputed (fix `a12d0e0`).
+
+## Gates (all run from the worktree root, on merged tip `4e8ff1e`)
+- `npx tsc --noEmit` -> clean
+- `npm run build:server` -> dist/server.cjs 19.1mb, pdf worker copied
+- `(cd packages/web && npx next build)` -> compiled successfully
+- `npm run verify` -> exit 0 (encoding OK, eval PASS, orchestrator smoke PASS 114/114,
+  recovery PASS, modes PASS)
+- `node --import tsx --test src/{agent,server,tools,design,scripts,protocol,memory}/__tests__/*.test.ts`
+  -> tests 1340, pass 1340, fail 0
+- `(cd packages/web && npx vitest run)` -> 63 files, 372 tests passed
+- J10-specific: `kvCacheMonitor` + `cacheUsageEvents` + `cacheUsageAccounting`
+  -> 46 pass, 0 fail
+
+Working tree is clean; no existing test was weakened and no forbidden path was touched.
+
+---
+
 D9 gate fix complete.
 
 ## Incoming manus-parity report (V13 gate fix)
