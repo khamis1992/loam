@@ -175,6 +175,8 @@ export interface Config {
     contextWindow: Record<string, number>;
   };
   sessionLog: { enabled: boolean };
+  /** Optional per-edit diagnostics overrides (LOAM.md may override these). */
+  diagnostics?: import("./agent/diagnostics.js").DiagnosticSettings;
 }
 
 const DEFAULTS: Config = {
