@@ -164,10 +164,12 @@ export function waitForApi(
 export function disposeBridge(
   pending: Map<BridgeId, BridgePending>,
   readyCallbacks: Set<BridgeReadyCallback>,
-  onMessage: () => void,
+  removeListener: () => void,
   reason = 'Loam bridge disposed',
 ): void {
-  window.removeEventListener('message', onMessage);
+  // `removeListener` is the remover returned by addMessageListener; calling it
+  // detaches the exact function that was registered with addEventListener.
+  removeListener();
   rejectAllPending(pending, new Error(reason));
   readyCallbacks.clear();
 }

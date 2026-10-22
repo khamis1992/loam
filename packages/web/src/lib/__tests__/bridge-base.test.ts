@@ -239,18 +239,29 @@ describe('waitForApi', () => {
 });
 
 describe('disposeBridge', () => {
-  it('drops the window listener, fails in-flight calls and clears ready callbacks', () => {
-    const removeEventListener = vi.spyOn(window, 'removeEventListener');
+  it('invokes the remover, fails in-flight calls and clears ready callbacks', () => {
+    const removeListener = vi.fn();
     const pending = emptyPending();
     pending.set('a', { resolve: vi.fn(), reject: vi.fn(), timer: null });
     const callbacks = new Set<(hasApi: boolean) => void>([() => {}]);
-    const onMessage = (): void => {};
 
-    disposeBridge(pending, callbacks, onMessage, 'gone');
+    disposeBridge(pending, callbacks, removeListener, 'gone');
 
-    expect(removeEventListener).toHaveBeenCalledWith('message', onMessage);
+    expect(removeListener).toHaveBeenCalledTimes(1);
     expect(pending.size).toBe(0);
     expect(callbacks.size).toBe(0);
+  });
+
+  it('detaches the window listener it registered', () => {
+    const removeEventListener = vi.spyOn(window, 'removeEventListener');
+    const iframe = makeIframe();
+    const bridge = new FilmcraftBridge(iframe);
+
+    expect(removeEventListener).not.toHaveBeenCalled();
+    bridge.dispose();
+
+    // The remover returned by addMessageListener must reach removeEventListener.
+    expect(removeEventListener).toHaveBeenCalledWith('message', expect.any(Function));
   });
 });
 
@@ -378,6 +389,32 @@ describe('FilmcraftBridge (regression for the shared bridge-base refactor)', () 
     await expect(ready).resolves.toEqual({ hasApi: true });
     expect(onReady).toHaveBeenCalledWith(true);
     bridge.dispose();
+  });
+
+  it('stops delivering messages once disposed', () => {
+    const iframe = makeIframe();
+    const bridge = new FilmcraftBridge(iframe);
+    const onReady = vi.fn();
+    bridge.onReady(onReady);
+
+    fireMessage(iframe.contentWindow, { type: 'filmcraft:ready', hasApi: true });
+    expect(onReady).toHaveBeenCalledWith(true);
+
+    bridge.dispose();
+    // The listener must be detached: a later ready must not reach subscribers.
+    fireMessage(iframe.contentWindow, { type: 'filmcraft:ready', hasApi: true });
+    expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects in-flight calls on dispose', async () => {
+    const iframe = makeIframe();
+    const bridge = new FilmcraftBridge(iframe);
+
+    const pending = bridge.call('info');
+    await flushMicrotasks();
+    bridge.dispose();
+
+    await expect(pending).rejects.toThrow('Loam Video bridge disposed');
   });
 
   it('broadcasts a no-API boot to every ready subscriber', () => {
