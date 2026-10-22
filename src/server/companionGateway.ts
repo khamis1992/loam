@@ -34,7 +34,7 @@ export const COMPANION_SERVICES: CompanionService[] = [
   { id: "swarm", labelAr: "ذكاء الأسراب", description: "تفويض فرق مساعدين وبوابات جودة", tools: ["super_swarm", "super_quality_gate", "super_time_travel", "metagpt_company", "subagent_list", "delegate_subagent"] },
   { id: "security", labelAr: "الأمن السيبراني", description: "فحوص مصرّح بها (رؤوس/كوكيز/ملفات مكشوفة/TLS...) وتقارير عبر pentest_check", tools: ["pentest_check", "pentest_routes", "pentest_report"] },
   { id: "shell", labelAr: "بيئة الأوامر", description: "أوامر وطرفيات داخل مساحة المهمة", tools: ["shell_run", "shell_start", "shell_write", "shell_read", "shell_list", "shell_kill", "pty_start", "pty_write", "pty_read", "pty_list", "pty_kill"] },
-  { id: "code", labelAr: "فهم الكود", description: "رموز المشروع وهيكلته", tools: ["code_symbols", "code_outline"] },
+  { id: "code", labelAr: "فهم الكود", description: "رموز المشروع وهيكلته والبحث الدلالي في الملفات", tools: ["code_symbols", "code_outline", "semantic_search"] },
   { id: "memory", labelAr: "الذاكرة والمعرفة", description: "ذاكرة دائمة وبحث في الجلسات", tools: ["memory_store", "memory_search", "memory_list", "memory_delete", "session_search"] },
   { id: "skills", labelAr: "المهارات", description: "اكتشاف المهارات وتشغيلها", tools: ["skill_list", "skill_view", "skill_create", "skill_patch", "skill_delete", "skill_search", "skill_install"] },
   { id: "preview", labelAr: "المعاينة", description: "تشغيل معاينات المشروع محليًا", tools: ["preview_serve", "preview_status", "preview_stop"] },

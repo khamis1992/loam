@@ -1,0 +1,13 @@
+{
+  "id": "task-012",
+  "title": "Modularize TypeScript code",
+  "category": "refactor",
+  "language": "typescript",
+  "prompt": "`src/report.ts` mixes aggregation with rendering. Move `totalAmount` and `regions` into a new module `src/aggregate.ts` and export both from there, then have `src/report.ts` import and use them. Keep `Sale` exported from `src/report.ts` and `renderReport`'s output byte-for-byte identical. Neither helper may remain defined in `src/report.ts`.",
+  "testCommand": "node .eval/check.mjs",
+  "timeoutSec": 60,
+  "maxSteps": 18,
+  "requireFiles": ["src/aggregate.ts"],
+  "forbidPatterns": [{ "path": "src/report.ts", "pattern": "function (?:totalAmount|regions)" }],
+  "tags": ["modularisation", "separation"]
+}

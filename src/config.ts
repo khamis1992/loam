@@ -169,6 +169,16 @@ export interface Config {
     protectTail: number;
     /** Target compression ratio for summarization step (default: 0.20, clamped to 0.10-0.80). */
     targetRatio: number;
+    /** Tokens reserved for the answer and the next tool outputs. Compression also
+     *  triggers once the transcript exceeds the window minus this buffer
+     *  (default: 20000). The effective trigger is the earlier of the ratio
+     *  threshold and this buffer. */
+    bufferTokens: number;
+    /** How many of the most recently read files to re-attach after compaction
+     *  (default: 5; 0 disables re-attachment). */
+    reattachFiles: number;
+    /** Characters of each re-attached file snapshot to keep (default: 4000). */
+    reattachFileChars: number;
     /** Model to use for summarization ("" = main model). */
     model: string;
     /** Context window size per model prefix (longest-prefix match). Defaults cover common models. */
@@ -252,6 +262,9 @@ const DEFAULTS: Config = {
     protectLead: 3,
     protectTail: 20,
     targetRatio: 0.2,
+    bufferTokens: 20000,
+    reattachFiles: 5,
+    reattachFileChars: 4000,
     model: "",
     contextWindow: {
       "gpt-4": 8192,
