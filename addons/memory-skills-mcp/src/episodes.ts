@@ -1,4 +1,4 @@
-import { rowOf, rowsOf, runStatement, type Db, type Row } from "./db.js";
+import { insertEpisodeTrigram, rowOf, rowsOf, runStatement, type Db, type Row } from "./db.js";
 import { fromBlob, type Embedder } from "./embed.js";
 import { blendedScore, buildMatchQuery, lexicalFromRank, normalizeLexical } from "./search.js";
 import { clamp, newId, nowIso, parseStringList, snippet, stringArray } from "./util.js";
@@ -96,6 +96,14 @@ export class Episodes {
       lessons.join(" "),
       tags.join(" "),
     );
+    insertEpisodeTrigram(this.db, {
+      id,
+      goal,
+      summary,
+      lessons: lessons.join(" "),
+      tools: tools.join(" "),
+      tags: tags.join(" "),
+    });
     return { id, createdAt };
   }
 
