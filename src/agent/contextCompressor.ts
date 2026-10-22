@@ -263,6 +263,28 @@ export function buildReattachReminder(options: {
   return parts.join("\n\n");
 }
 
+/**
+ * Build the re-attach reminder for a completed compaction, or `[]` when there is
+ * nothing worth re-attaching (no todos and no read tracking). Every compaction
+ * that actually dropped transcript content needs this, not just the summarizer
+ * path: pruning alone also removes the working context the model was mid-task
+ * with.
+ */
+function buildCompactionReminders(options: CompressOptions): ChatMessage[] {
+  const todos = options.todos ?? [];
+  const reattachFiles = Math.max(0, Math.floor(options.cfg.compression.reattachFiles));
+  const reattachFileChars = Math.max(1, Math.floor(options.cfg.compression.reattachFileChars));
+  if (todos.length === 0 && !(reattachFiles > 0 && options.readState)) return [];
+  const body = buildReattachReminder({
+    readState: options.readState ?? new ReadState(),
+    workspace: options.cfg.workspace,
+    todos,
+    reattachFiles,
+    reattachFileChars,
+  });
+  return [reminderMessage(body)];
+}
+
 export interface CompressOptions {
   cfg: Config;
   ollama: OllamaClient;
@@ -370,7 +392,7 @@ export async function compressContext(
       afterPruneTokens,
       finalTokens: afterPruneTokens,
     });
-    return { messages: afterPrune, compressed: true, step: 1, usage: zeroUsage(), reminders: [], hookBlocked: false };
+    return { messages: afterPrune, compressed: true, step: 1, usage: zeroUsage(), reminders: buildCompactionReminders(options), hookBlocked: false };
   }
 
   const middleChars = prunedMiddle.reduce((sum, m) => sum + (m.content?.length ?? 0), 0);
@@ -431,20 +453,7 @@ export async function compressContext(
   const finalTokens = totalTokens(finalMessages);
 
   // Re-attach recent file reads and the live todo list as a hidden reminder.
-  const reminders: ChatMessage[] = [];
-  const reattachFiles = Math.max(0, Math.floor(cfg.compression.reattachFiles));
-  const reattachFileChars = Math.max(1, Math.floor(cfg.compression.reattachFileChars));
-  const todos = options.todos ?? [];
-  if (todos.length > 0 || (reattachFiles > 0 && options.readState)) {
-    const body = buildReattachReminder({
-      readState: options.readState ?? new ReadState(),
-      workspace: cfg.workspace,
-      todos,
-      reattachFiles,
-      reattachFileChars,
-    });
-    reminders.push(reminderMessage(body));
-  }
+  const reminders = buildCompactionReminders(options);
 
   emit({
     type: "compaction",

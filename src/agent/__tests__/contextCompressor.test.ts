@@ -444,6 +444,33 @@ describe("context compressor", () => {
     assert.equal(reminderMessage("probe").content.includes("<system-reminder>"), true);
   });
 
+  it("re-attaches the todo list even when compaction finishes with pruning only", async () => {
+    // Pruning alone can drop the working context, so a step-1 compaction needs the
+    // re-attach reminder as much as a step-2 one does.
+    const cfg = makeConfig({
+      compression: { ...makeConfig().compression, thresholdPercent: 0.01, protectLead: 1, protectTail: 1 },
+    });
+    const { ollama } = makeOllama(() => okResult("Summary."));
+    const { emit } = makeEmit();
+
+    const messages: ChatMessage[] = [
+      sysMsg("System"),
+      userMsg("Go"),
+      asstMsg("", [{ function: { name: "tool_a", arguments: {} } }]),
+      toolMsg("tool_a", "z".repeat(20000)),
+      userMsg("Next"),
+      asstMsg("End"),
+    ];
+
+    const todos = [{ id: "todo-0", content: "Ship it", status: "in_progress" as const }];
+    const result = await compressContext(cfg, ollama, messages, emit, undefined, { todos });
+
+    assert.equal(result.step, 1, "pruning brought the transcript under the threshold");
+    assert.equal(result.reminders.length, 1);
+    assert.match(result.reminders[0]!.content, /Live task list/);
+    assert.match(result.reminders[0]!.content, /Ship it/);
+  });
+
   it("re-attaches the most recently read files (newest first, truncated)", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-c8-"));
     try {

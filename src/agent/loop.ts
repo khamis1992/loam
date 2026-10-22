@@ -1,6 +1,6 @@
 import type { Config } from "../config.js";
 import type { OllamaClient, ChatMessage } from "../ollama.js";
-import type { Emit, Usage, ToolTraceItem, TodoItem } from "./events.js";
+import type { Emit, Usage, ToolTraceItem, TodoItem, TodoStatus } from "./events.js";
 import { verifyFinal } from "./verifier.js";
 import { AcceptanceGuard } from "./acceptanceGuard.js";
 import { IndependentAcceptanceGuard, independentRequirements } from "./independentAcceptance.js";
@@ -293,7 +293,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         if (notice) stallNotices.push(notice);
         if (TODO_UPDATE_TOOLS.has(item.name) && toolResult.ok) {
           reminders.noteTodoUpdate(step);
-          currentTodos = parseTodoArgs(item.args, toolResult.content);
+          currentTodos = parseTaskList(item.name, item.args);
         }
         if (MEMORY_UPDATE_TOOLS.has(item.name) && toolResult.ok) reminders.memoryUpdated();
         opts.emit({
@@ -333,7 +333,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         if (notice) stallNotices.push(notice);
         if (TODO_UPDATE_TOOLS.has(name) && toolResult.ok) {
           reminders.noteTodoUpdate(step);
-          currentTodos = parseTodoArgs(args, toolResult.content);
+          currentTodos = parseTaskList(name, args);
         }
         if (MEMORY_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.memoryUpdated();
         messages.push({ role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) });
@@ -368,24 +368,35 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
 }
 
 /**
- * Mirror the todo list the model just sent into the run-local copy used for
- * post-compaction re-attachment. Parsing is best-effort: a malformed list leaves
- * the previous mirror in place rather than throwing.
+ * Mirror the live task list the model just sent into the run-local copy used for
+ * post-compaction re-attachment. Two tools maintain that list, with different
+ * shapes: `todo_write` sends `{ todos: [{ content, status }] }` and `plan` sends
+ * `{ steps: [{ title, status? }] }` with statuses in a different vocabulary.
+ * Parsing is best-effort: a malformed list leaves the previous mirror in place
+ * rather than throwing.
  */
-function parseTodoArgs(args: Record<string, unknown>, resultContent: string): TodoItem[] {
-  const raw = args.todos;
+export function parseTaskList(toolName: string, args: Record<string, unknown>): TodoItem[] {
+  const raw = args.todos ?? args.steps;
   if (!Array.isArray(raw)) return [];
   const items: TodoItem[] = [];
   for (const entry of raw) {
     if (!entry || typeof entry !== "object") continue;
     const record = entry as Record<string, unknown>;
-    const content = typeof record.content === "string" ? record.content.trim() : "";
-    const status = record.status;
+    const content = typeof record.content === "string" ? record.content.trim()
+      : typeof record.title === "string" ? record.title.trim() : "";
     if (!content) continue;
-    if (status !== "pending" && status !== "in_progress" && status !== "completed") continue;
+    const status = normalizeTodoStatus(String(record.status ?? ""), toolName);
     items.push({ id: `todo-${items.length}`, content, status });
   }
-  if (items.length === 0) return [];
-  void resultContent;
-  return items;
+  return items.length > 0 ? items : [];
+}
+
+/** Fold the `plan` tool's status vocabulary onto the todo one. */
+function normalizeTodoStatus(status: string, toolName: string): TodoStatus {
+  if (toolName === "plan") {
+    if (status === "doing") return "in_progress";
+    if (status === "done") return "completed";
+  }
+  if (status === "pending" || status === "in_progress" || status === "completed") return status;
+  return "pending";
 }
