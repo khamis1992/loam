@@ -44,6 +44,14 @@ fs.appendFileSync(path.join(process.env.MANUS_WORKSPACE || process.cwd(), '.hook
 console.log(JSON.stringify({ decision: 'block' }));
 `;
 
+const SESSION_END_REASON_FIXTURE = `const fs = require('fs');
+const path = require('path');
+fs.writeFileSync(
+  path.join(process.env.MANUS_WORKSPACE || process.cwd(), '.session-end-reason'),
+  process.env.MANUS_ARG_reason || 'unknown',
+);
+`;
+
 function makeWorkspace(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "loam-loop-hooks-"));
 }
@@ -182,4 +190,30 @@ test("SessionStart block prevents the run from starting", async () => {
     /SessionStart/,
   );
   assert.equal(executorCalls(), 0);
+});
+
+test("SessionEnd reports the real terminal reason on a cancelled run", async () => {
+  const workspace = makeWorkspace();
+  const fixture = writeFile(workspace, "se_reason_fixture.js", SESSION_END_REASON_FIXTURE);
+  writeHooks(workspace, { SessionEnd: [{ matcher: "", command: command(fixture), timeoutMs: 10000 }] });
+
+  const controller = new AbortController();
+  const { client } = makeClient(() => {
+    controller.abort();
+    return answer("still working");
+  });
+  await assert.rejects(
+    runAgent({
+      cfg: makeConfig(workspace),
+      ollama: client,
+      tools: new ToolRegistry(),
+      prompt: "hi",
+      signal: controller.signal,
+      emit: () => {},
+    }),
+    /cancelled/,
+  );
+
+  const reason = fs.readFileSync(path.join(workspace, ".session-end-reason"), "utf8").trim();
+  assert.equal(reason, "cancelled", "SessionEnd must not claim a completed session");
 });

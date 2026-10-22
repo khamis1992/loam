@@ -13,7 +13,7 @@ import { chatWithFallback } from "./model.js";
 import { createStallGuard } from "./stallGuard.js";
 import { compressContext, getContextWindow, totalTokens } from "./contextCompressor.js";
 import { runLifecycleHooks } from "../policy/hooks.js";
-import { throwIfCancelled } from "../server/runControl.js";
+import { throwIfCancelled, isCancelled } from "../server/runControl.js";
 import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/riskTier.js";
 
 export interface RunOptions {
@@ -114,6 +114,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   let finalText = "";
   let usedModel = opts.cfg.model;
   let step = 0;
+  // How this run actually ended, so SessionEnd can report a truthful reason.
+  let endedReason: "completed" | "cancelled" | "failed" = "failed";
   const usage = { promptTokens: 0, completionTokens: 0, durationMs: 0 };
   const trace: ToolTraceItem[] = [];
   let verificationAttempts = 0;
@@ -229,6 +231,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           finalText = checked.finalAnswer ?? finalText;
           opts.emit({ type: "assistant_message", text: finalText });
           opts.emit({ type: "done", text: finalText, steps: step, model: usedModel });
+          endedReason = "completed";
         }
         return { text: finalText, messages, steps: step, model: usedModel, usage, verified: opts.suppressFinal !== true };
       }
@@ -350,9 +353,12 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     throw new Error(msg);
   } finally {
     // SessionEnd fires once the run reaches any terminal state (completed,
-    // cancelled or failed) for a top-level run.
+    // cancelled or failed) for a top-level run. The reason is the real
+    // outcome, so a hook can tell a cancelled or failed session apart from a
+    // completed one instead of always seeing "completed".
     if (!opts.suppressFinal) {
-      await runLifecycleHooks("SessionEnd", "", { reason: "completed" }, workspace);
+      if (opts.signal?.aborted || isCancelled(opts.taskId)) endedReason = "cancelled";
+      await runLifecycleHooks("SessionEnd", "", { reason: endedReason }, workspace);
     }
   }
 }
