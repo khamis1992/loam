@@ -217,6 +217,20 @@ export function normalizeHex(value: unknown, fallback: string): string {
   return HEX.test(s) ? s.toLowerCase() : fallback;
 }
 
+/** A logo ref becomes an SVG <image href>. Only safe schemes and plain paths
+ *  are accepted: script-capable or non-image data URIs are dropped rather than
+ *  embedded into a document the studio serves as image/svg+xml. */
+export function isRenderableLogoRef(ref: string): boolean {
+  const s = ref.trim();
+  if (!s) return false;
+  if (s.startsWith("//")) return false;
+  const scheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.exec(s);
+  if (!scheme) return true;
+  const lower = s.toLowerCase();
+  if (lower.startsWith("data:")) return lower.startsWith("data:image/");
+  return lower.startsWith("http:") || lower.startsWith("https:") || lower.startsWith("file:");
+}
+
 export function validateBrandKitInput(raw: unknown): Omit<BrandKit, "id" | "createdAt" | "updatedAt"> {
   if (!raw || typeof raw !== "object") throw new Error("brand kit object required");
   const body = raw as Record<string, unknown>;
@@ -237,7 +251,11 @@ export function validateBrandKitInput(raw: unknown): Omit<BrandKit, "id" | "crea
     body: font(fontsIn.body, DEFAULT_BRAND.fonts.body),
   };
   const logoRefs = Array.isArray(body.logoRefs)
-    ? body.logoRefs.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim().slice(0, 500)).slice(0, 8)
+    ? body.logoRefs
+        .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+        .map((x) => x.trim().slice(0, 500))
+        .filter((x) => isRenderableLogoRef(x))
+        .slice(0, 8)
     : [];
   return { name: name.slice(0, 120), colors, fonts, logoRefs };
 }

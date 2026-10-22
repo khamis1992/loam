@@ -42,6 +42,7 @@ import type { AgentCardAgent } from './AgentCard';
 import { loadAgentThreadFiles } from './AgentThreadView';
 import { AgentContextMenu } from './AgentContextMenu';
 import { GroupMembersTab } from './GroupMembersTab';
+import { AgentAvatar } from './AgentAvatar';
 import type { GroupChat } from './groupTypes';
 import { WorkspaceFilePanel } from '@/components/workspace';
 import type { WorkspaceFile } from '@/components/workspace';
@@ -104,9 +105,15 @@ export function AgentInfoPane({ agent, threadUid, onClose, onEdit, onRenameAgent
         }
       >
         <div className="flex items-center gap-2">
-          <div className="flex size-7 items-center justify-center rounded-control bg-fill-tsp text-base">
-            {group ? '👥' : agent.emoji || 'dY-'}
-          </div>
+          <AgentAvatar
+            name={group ? group.name : agent.name}
+            id={group ? group.id : agent.id}
+            avatarShape={agent.avatarShape}
+            avatarColor={agent.avatarColor}
+            avatarImage={agent.avatarImage}
+            emoji={group ? '👥' : agent.emoji}
+            size={28}
+          />
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-text-primary">{group ? group.name : agent.name}</p>
             <p className="truncate text-xs text-text-tertiary">
@@ -1215,9 +1222,12 @@ function ChildrenSection({ agentId }: { agentId: string }) {
         <ul className="flex flex-col gap-2">
           {children.map((child) => (
             <li key={child.childId} className="flex items-start gap-2 rounded-card border border-border-main bg-bg-main p-2">
-              <div className="flex size-7 shrink-0 items-center justify-center rounded-control bg-fill-tsp text-base">
-                {child.emoji || '🤖'}
-              </div>
+              <AgentAvatar
+                name={child.name}
+                id={child.childId}
+                emoji={child.emoji}
+                size={28}
+              />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm text-text-primary">{child.name}</p>
                 {child.description && (

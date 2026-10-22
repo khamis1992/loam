@@ -90,7 +90,25 @@ export interface StudioDescriptor {
 
 const registry = new Map<StudioApp, StudioEngine>();
 
+/** True when a value has the minimal shape of a studio engine. */
+function isEngineShape(value: unknown): value is StudioEngine {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<StudioEngine>;
+  return (
+    isStudioApp(candidate.app) &&
+    typeof candidate.title === "string" &&
+    typeof candidate.enabled === "function" &&
+    typeof candidate.commands === "function" &&
+    typeof candidate.run === "function"
+  );
+}
+
 export function registerStudioEngine(engine: StudioEngine): void {
+  if (!isEngineShape(engine)) {
+    throw new TypeError(
+      `invalid studio engine: expected { app: ${STUDIO_APPS.join("|")}, title, enabled(), commands(), run() }`,
+    );
+  }
   registry.set(engine.app, engine);
 }
 
@@ -111,23 +129,103 @@ export const registryResolver: StudioEngineResolver = getRegisteredStudioEngine;
 
 const MAX_REASON_LENGTH = 240;
 
-/** Truncate + single-line a gate reason so responses stay safe to display. */
-function safeReason(reason: string | undefined, engineTitle: string): string {
-  const fallback = `${engineTitle} is currently unavailable`;
-  const text = typeof reason === "string" && reason.trim() ? reason.trim() : fallback;
-  return text.replace(/[\r\n]+/g, " ").slice(0, MAX_REASON_LENGTH);
+/** Collapse control characters and whitespace runs into one display-safe line. */
+function oneLine(text: string): string {
+  return text.replace(/[\u0000-\u001F\u007F-\u009F]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Truncate by Unicode code points so a surrogate pair is never split. */
+function truncateCodePoints(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return Array.from(text).slice(0, max).join("");
+}
+
+/** Truncate + single-line a message so responses stay safe to display. */
+function safeMessage(text: string | undefined, fallback: string): string {
+  const raw = typeof text === "string" && text.trim() ? text : fallback;
+  return truncateCodePoints(oneLine(raw), MAX_REASON_LENGTH) || fallback;
+}
+
+/** Display-safe engine title (never trusts an injected engine). */
+function engineTitle(engine: StudioEngine): string {
+  return typeof engine.title === "string" && engine.title.trim() ? engine.title.trim() : "Studio";
+}
+
+/**
+ * Read an engine's availability gate without letting a misbehaving engine throw.
+ * A throw or a malformed gate is reported as disabled with a safe reason.
+ */
+function readGate(engine: StudioEngine): StudioGate {
+  try {
+    const gate = engine.enabled();
+    if (gate && typeof gate === "object") {
+      return {
+        enabled: gate.enabled === true,
+        reason: typeof gate.reason === "string" ? gate.reason : undefined,
+      };
+    }
+  } catch {
+    // fall through to the safe disabled gate
+  }
+  return { enabled: false, reason: `${engineTitle(engine)} is not responding` };
+}
+
+/**
+ * Read + validate an engine's command catalog without letting it throw.
+ * Invalid entries, duplicate ids, and the virtual LIST_COMMANDS_ID are dropped.
+ */
+function readCommands(engine: StudioEngine): StudioCommandSpec[] {
+  let raw: unknown;
+  try {
+    raw = engine.commands();
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(raw)) return [];
+  const specs: StudioCommandSpec[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const candidate = entry as {
+      id?: unknown;
+      title?: unknown;
+      description?: unknown;
+      params?: unknown;
+    };
+    if (typeof candidate.id !== "string" || !candidate.id.trim()) continue;
+    const id = candidate.id.trim();
+    if (id === LIST_COMMANDS_ID || seen.has(id)) continue;
+    seen.add(id);
+    specs.push({
+      id,
+      title:
+        typeof candidate.title === "string" && candidate.title.trim()
+          ? candidate.title.trim()
+          : id,
+      ...(typeof candidate.description === "string" && candidate.description.trim()
+        ? { description: candidate.description.trim() }
+        : {}),
+      ...(candidate.params && typeof candidate.params === "object" && !Array.isArray(candidate.params)
+        ? { params: candidate.params as Record<string, StudioParamSpec> }
+        : {}),
+    });
+  }
+  return specs;
 }
 
 export function describeStudio(engine: StudioEngine): StudioDescriptor {
-  const gate = engine.enabled();
+  const gate = readGate(engine);
+  const title = engineTitle(engine);
   const descriptor: StudioDescriptor = {
     app: engine.app,
-    title: engine.title,
+    title,
     available: gate.enabled,
-    commands: engine.commands().map((c) => c.id),
+    commands: readCommands(engine).map((c) => c.id),
   };
-  if (engine.description) descriptor.description = engine.description;
-  if (!gate.enabled) descriptor.reason = safeReason(gate.reason, engine.title);
+  if (typeof engine.description === "string" && engine.description.trim()) {
+    descriptor.description = engine.description.trim();
+  }
+  if (!gate.enabled) descriptor.reason = safeMessage(gate.reason, `${title} is currently unavailable`);
   return descriptor;
 }
 
@@ -135,8 +233,18 @@ export function describeStudio(engine: StudioEngine): StudioDescriptor {
 export function listStudios(resolver: StudioEngineResolver = registryResolver): StudioDescriptor[] {
   const studios: StudioDescriptor[] = [];
   for (const app of STUDIO_APPS) {
-    const engine = resolver(app);
-    if (engine) studios.push(describeStudio(engine));
+    let engine: StudioEngine | undefined;
+    try {
+      engine = resolver(app);
+    } catch {
+      continue;
+    }
+    if (!engine) continue;
+    try {
+      studios.push(describeStudio(engine));
+    } catch {
+      // describeStudio is defensive; skip an engine that still misbehaves.
+    }
   }
   return studios;
 }
@@ -165,18 +273,31 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * - `id === "list_commands"` returns the engine's self-describing catalog
  *   without consulting the gate (catalogs are static metadata).
  * - any other id requires the gate to pass and the command to be declared.
+ *
+ * Every engine touch is guarded: a misbehaving engine yields an `{ ok: false }`
+ * envelope instead of a thrown stack, so callers always get JSON.
  */
 export async function runStudioCommand(
   app: string,
-  command: { id?: unknown; params?: unknown },
+  command: { id?: unknown; params?: unknown } | null | undefined,
   resolver: StudioEngineResolver = registryResolver,
 ): Promise<StudioCommandOutcome> {
   if (!isStudioApp(app)) {
     return { ok: false, kind: "unknown_app", app, error: `unknown studio app "${app}"` };
   }
-  const engine = resolver(app);
+
+  let engine: StudioEngine | undefined;
+  try {
+    engine = resolver(app);
+  } catch {
+    engine = undefined;
+  }
   if (!engine) {
     return { ok: false, kind: "unknown_app", app, error: `no studio engine registered for "${app}"` };
+  }
+
+  if (!isPlainObject(command)) {
+    return { ok: false, kind: "bad_request", error: "command body must be a JSON object" };
   }
   const id = typeof command.id === "string" ? command.id.trim() : "";
   if (!id) {
@@ -188,24 +309,46 @@ export async function runStudioCommand(
   }
 
   if (id === LIST_COMMANDS_ID) {
-    return { ok: true, kind: "commands", commands: engine.commands() };
+    return { ok: true, kind: "commands", commands: readCommands(engine) };
   }
 
-  const gate = engine.enabled();
+  const title = engineTitle(engine);
+  const gate = readGate(engine);
   if (!gate.enabled) {
-    return { ok: false, kind: "disabled", error: "studio_disabled", reason: safeReason(gate.reason, engine.title) };
+    return {
+      ok: false,
+      kind: "disabled",
+      error: "studio_disabled",
+      reason: safeMessage(gate.reason, `${title} is currently unavailable`),
+    };
   }
 
-  if (!engine.commands().some((c) => c.id === id)) {
-    return { ok: false, kind: "unsupported_command", error: `command "${id}" is not supported by ${engine.title}`, commandId: id };
+  if (!readCommands(engine).some((c) => c.id === id)) {
+    return {
+      ok: false,
+      kind: "unsupported_command",
+      error: `command "${id}" is not supported by ${title}`,
+      commandId: id,
+    };
   }
 
+  let output: unknown;
   try {
-    const output = await engine.run(id, params);
-    if (output.ok) return { ok: true, kind: "result", data: output.data ?? null };
-    return { ok: false, kind: "engine_error", error: typeof output.error === "string" && output.error ? output.error : "command failed" };
+    output = await engine.run(id, params);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, kind: "engine_error", error: message.slice(0, MAX_REASON_LENGTH) || "command failed" };
+    return { ok: false, kind: "engine_error", error: safeMessage(message, "command failed") };
   }
+
+  if (output && typeof output === "object" && (output as { ok?: unknown }).ok === true) {
+    return { ok: true, kind: "result", data: (output as { data?: unknown }).data ?? null };
+  }
+  if (output && typeof output === "object" && typeof (output as { error?: unknown }).error === "string") {
+    return {
+      ok: false,
+      kind: "engine_error",
+      error: safeMessage((output as { error: string }).error, "command failed"),
+    };
+  }
+  return { ok: false, kind: "engine_error", error: "command failed" };
 }

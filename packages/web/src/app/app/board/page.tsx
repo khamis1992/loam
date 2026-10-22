@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
 
 type TicketStatus = 'todo' | 'doing' | 'review' | 'done';
 type TicketPriority = 'low' | 'normal' | 'high' | 'urgent';
@@ -299,11 +300,8 @@ function TicketCard({
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
           {assignee && (
-            <span
-              className="flex size-4 shrink-0 items-center justify-center rounded-full bg-fill-tsp text-[9px]"
-              title={assignee.name}
-            >
-              {assignee.emoji || '🤖'}
+            <span title={assignee.name} className="flex shrink-0">
+              <AgentAvatar name={assignee.name} id={assignee.id} emoji={assignee.emoji} size={16} />
             </span>
           )}
           {prev && (
@@ -560,7 +558,12 @@ function TicketDrawer({
               {t(COLUMNS[index]!.label)}
             </span>
             <span className="flex items-center gap-1 rounded-full bg-fill-tsp px-2 py-0.5 text-[10px] text-text-tertiary">
-              {assignee ? `${assignee.emoji || '🤖'} ${assignee.name}` : t('Unassigned')}
+              {assignee ? (
+                <>
+                  <AgentAvatar name={assignee.name} id={assignee.id} emoji={assignee.emoji} size={14} />
+                  {assignee.name}
+                </>
+              ) : t('Unassigned')}
               {assignee && (
                 <button type="button" onClick={() => void unassign()} className="text-text-tertiary hover:text-text-primary">
                   <X className="size-2.5" />

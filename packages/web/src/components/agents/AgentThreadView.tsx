@@ -429,9 +429,11 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
           >
             <AgentAvatar
               name={agent.name}
+              id={agent.id}
               avatarShape={agent.avatarShape}
               avatarColor={agent.avatarColor}
               avatarImage={agent.avatarImage}
+              emoji={agent.emoji}
               size={28}
               working={running}
               typing={running}
@@ -504,9 +506,11 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
                   <div className="mb-4 flex items-center gap-2">
                     <AgentAvatar
                       name={agent.name}
+                      id={agent.id}
                       avatarShape={agent.avatarShape}
                       avatarColor={agent.avatarColor}
                       avatarImage={agent.avatarImage}
+                      emoji={agent.emoji}
                       size={24}
                       working={running}
                       typing={running}

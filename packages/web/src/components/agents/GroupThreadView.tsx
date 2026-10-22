@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import type { AgentCardAgent } from './AgentCard';
 import type { GroupChat, GroupMessage, GroupMemberInfo } from './groupTypes';
+import { AgentAvatar } from './AgentAvatar';
 
 interface GroupThreadViewProps {
   group: GroupChat;
@@ -149,8 +150,13 @@ export function GroupThreadView({ group, agents, onToggleInfo, infoOpen, onGroup
               return (
                 <div key={message.id} className={clsx('flex gap-2', isUser ? 'justify-end' : 'justify-start')}>
                   {!isUser && (
-                    <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-fill-tsp text-sm">
-                      {who!.emoji || '🤖'}
+                    <div className="mt-0.5 shrink-0">
+                      <AgentAvatar
+                        name={who!.name}
+                        id={who!.id}
+                        emoji={who!.emoji}
+                        size={28}
+                      />
                     </div>
                   )}
                   <div className={clsx('min-w-0 max-w-[78%]', isUser && 'items-end')}>

@@ -487,3 +487,42 @@ describe("wide research — two-phase synthesis (map/reduce over chunks)", () =>
   });
 });
 
+describe("wide research — citation ports and synthesis sources", () => {
+  it("keeps a non-default port exactly once (host already carries the port)", () => {
+    assert.strictEqual(normalizeCitation("https://example.com:8443/path"), "https://example.com:8443/path");
+    assert.strictEqual(normalizeCitation("http://example.com:8080/a?utm_source=x#frag"), "https://example.com:8080/a");
+    assert.strictEqual(normalizeCitation("https://example.com:443/a"), "https://example.com/a");
+    assert.strictEqual(normalizeCitation("http://example.com:80/a"), "https://example.com/a");
+  });
+
+  it("dedupes tracking noise on the same port but keeps distinct ports apart", () => {
+    assert.deepStrictEqual(
+      dedupeCitations(["https://example.com:8443/a", "https://example.com:8443/a?utm_source=x"]),
+      ["https://example.com:8443/a"],
+    );
+    assert.deepStrictEqual(
+      dedupeCitations(["https://example.com:8443/a", "https://example.com:9443/a"]),
+      ["https://example.com:8443/a", "https://example.com:9443/a"],
+      "different ports address different resources",
+    );
+  });
+
+  it("the merge prompt carries the deduplicated source list", () => {
+    const prompt = buildSynthesisPrompt(
+      "q",
+      [{ taskId: "wrt-1", index: 0, angle: "overview", question: "q", summary: "S", citations: ["https://a.example/1"] }],
+      ["https://a.example/1", "https://b.example/2"],
+    );
+    assert.match(prompt, /Cited sources \(2\)/);
+    assert.match(prompt, /- https:\/\/a\.example\/1/);
+    assert.match(prompt, /- https:\/\/b\.example\/2/);
+  });
+
+  it("the merge prompt omits the source block when there are none", () => {
+    const prompt = buildSynthesisPrompt("q", [
+      { taskId: "wrt-1", index: 0, angle: "overview", question: "q", summary: "S", citations: [] },
+    ]);
+    assert.ok(!prompt.includes("Cited sources"));
+  });
+});
+
