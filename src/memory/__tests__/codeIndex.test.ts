@@ -210,6 +210,13 @@ describe("chunkSource", () => {
     assert.equal(chunks.length, 1);
     assert.deepEqual({ startLine: chunks[0]!.startLine, endLine: chunks[0]!.endLine }, { startLine: 1, endLine: 3 });
   });
+
+  it("stops at maxChunks so one huge file cannot explode the index", () => {
+    const content = Array.from({ length: 500 }, (_, i) => `line ${i}`).join("\n");
+    const chunks = chunkSource(content, 60, 3);
+    assert.equal(chunks.length, 3, "the chunk count is capped");
+    assert.ok(chunks[chunks.length - 1]!.endLine < 500, "the tail is deliberately left out of the index");
+  });
 });
 
 describe("IgnoreMatcher", () => {

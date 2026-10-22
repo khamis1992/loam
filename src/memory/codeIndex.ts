@@ -342,6 +342,15 @@ export class CodeIndex {
     const existing = this.db.prepare("SELECT hash FROM chunks WHERE file=? LIMIT 1").get(rel) as { hash?: string } | undefined;
     if (existing && existing.hash === hash) return false;
     const pieces = chunkSource(content, this.chunkChars);
+    // A pathologically large file is truncated at MAX_CHUNKS_PER_FILE so one file
+    // cannot stall a step. Say so, rather than silently dropping its tail.
+    const lastPiece = pieces[pieces.length - 1];
+    if (lastPiece) {
+      const totalLines = content.split(/\r?\n/).length;
+      if (lastPiece.endLine < totalLines) {
+        log.warn(`code-index: ${rel} truncated at ${pieces.length} chunks (lines 1-${lastPiece.endLine} of ${totalLines})`);
+      }
+    }
     this.db.prepare("DELETE FROM chunks WHERE file=?").run(rel);
     if (pieces.length === 0) return true;
 
