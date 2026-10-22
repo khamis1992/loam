@@ -200,6 +200,25 @@ describe("video_studio actions produce the expected command sequence", () => {
     ]);
   });
 
+  it("trim accepts the from/to time aliases as well as fromSec/toSec", async () => {
+    relay = new MockRelay();
+    relay.commands = CATALOG;
+    await tool().run({ action: "trim", from: "0:10", to: "1:30" }, ctx());
+    assert.deepEqual(commandsDispatched(), [
+      { method: "execute", params: { command: "timeline.trim", params: { fromSec: 10, toSec: 90 } } },
+    ]);
+  });
+
+  it("cut and split accept the at alias for atSec", async () => {
+    relay = new MockRelay();
+    relay.commands = CATALOG;
+    await tool().run({ action: "cut", at: "0:05" }, ctx());
+    await tool().run({ action: "split", at: 12 }, ctx());
+    const steps = commandsDispatched();
+    assert.deepEqual(steps[0], { method: "execute", params: { command: "timeline.razor", params: { atSec: 5 } } });
+    assert.deepEqual(steps[1], { method: "execute", params: { command: "timeline.split", params: { atSec: 12 } } });
+  });
+
   it("trim rejects an empty range", async () => {
     relay = new MockRelay();
     relay.commands = CATALOG;
