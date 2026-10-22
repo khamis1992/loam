@@ -46,6 +46,7 @@ import { createWorkflowTools } from "./tools/workflow.js";
 import { applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
+import { planQuickEditRoute } from "./agent/quickEdit.js";
 import { SIDE_CHAT_READ_ONLY_TOOLS } from "./agent/sideChat.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
 import { publishTaskEvent } from "./server/streams.js";
@@ -334,6 +335,9 @@ async function main(): Promise<void> {
         reason: "selected work mode",
       });
       const agentSuffix = agent ? agentSystemSuffix(agent) : undefined;
+      // Quick-edit route: a narrow follow-up edit runs on the fast model with a
+      // targeted-edit instruction; larger work keeps the base model.
+      const quickEditRoute = planQuickEditRoute(effectiveCfg, effectivePrompt);
       // Provenance-aware index summary: a bounded digest of long-term memory so
       // the agent knows what it already knows without a tool call.
       const memoryIndexSummary = memory && memory.count > 0 ? memory.indexSummary(8) : undefined;
@@ -344,6 +348,7 @@ async function main(): Promise<void> {
         memoryContextSuffix,
         memoryIndexSummary,
         agentSuffix, askModeSuffix, sideChatSuffix,
+        quickEditRoute.suffix,
       ].filter(Boolean).join("\n\n");
       // The gateway's resolved allowlist is the base tool set for this run: mode ∪
       // work-mode grants − revoked services − agent service/tool denials. Always-on
@@ -430,6 +435,7 @@ async function main(): Promise<void> {
         memories,
         ...(suffix ? { systemSuffix: suffix } : {}),
         ...(effortMaxSteps ? { maxSteps: effortMaxSteps } : {}),
+        model: quickEditRoute.model,
         signal: runSignal,
         taskId: task,
         sandboxMode: sandboxPolicy.mode,
