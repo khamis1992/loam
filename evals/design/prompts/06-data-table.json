@@ -1,0 +1,12 @@
+{
+  "id": "data-table",
+  "prompt": "Create a data table view for an orders list: sortable columns, a filter input, pagination controls and an empty state when there are no results. Row actions must be reachable by keyboard and the table must scroll horizontally only inside its own container, never the page.",
+  "locale": "en",
+  "direction": "ltr",
+  "expectations": {
+    "must": ["sortable", "filter", "pagination", "empty state"],
+    "mustNot": ["lorem ipsum", "page-level horizontal scroll"],
+    "keywords": ["orders", "table"],
+    "minLint": 80
+  }
+}

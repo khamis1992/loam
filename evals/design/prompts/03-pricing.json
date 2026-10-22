@@ -1,0 +1,12 @@
+{
+  "id": "pricing",
+  "prompt": "Create a pricing page with three plans, a monthly/annual toggle, a highlighted recommended tier and a comparison table. Every price must be real and specific, the call to action must be obvious on mobile, and the layout must avoid horizontal scrolling at 375px.",
+  "locale": "en",
+  "direction": "ltr",
+  "expectations": {
+    "must": ["monthly", "annual", "three plans"],
+    "mustNot": ["lorem ipsum", "$TBD", "contact us for pricing"],
+    "keywords": ["price", "plan"],
+    "minLint": 80
+  }
+}
