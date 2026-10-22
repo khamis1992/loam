@@ -14,6 +14,7 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "check:encoding": "tsx src/scripts/check-encoding.ts --run",
+    "check:design-registry": "tsx src/scripts/check-design-registry.ts",
     "check:pentest-bench": "tsx src/scripts/check-pentest-bench.ts",
     "test:pentest-bench": "node --import tsx --test src/scripts/__tests__/check-pentest-bench.test.ts",
     "test:browser-operator": "node --import tsx --test src/tools/__tests__/browserOperator.test.ts",

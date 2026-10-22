@@ -1,0 +1,18 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "auth-login",
+  "name": "Login Card",
+  "description": "A centred sign-in card with labelled email and password fields, a show-password toggle and a submit action.",
+  "category": "auth",
+  "license": "MIT",
+  "source": "shadcn/ui blocks",
+  "tags": ["auth", "login", "form"],
+  "intent": "Sign-in screen with accessible labelled inputs and clear feedback.",
+  "deps": ["react"],
+  "rtl": false,
+  "dir": "ltr",
+  "lang": "en",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"]
+}
