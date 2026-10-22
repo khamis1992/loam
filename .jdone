@@ -1,3 +1,7 @@
+D9 gate fix complete.
+
+## Incoming manus-parity report (V13 gate fix)
+
 V13 (quick-edit route) is complete, and the merge gate now passes.
 
 ## Merge gate (the failure that was fixed)
@@ -57,44 +61,47 @@ Working tree is clean; no existing test was weakened.
 
 V10 complete.
 
-Task: resolve the merge conflict with the LATEST manus-parity (keeping both sides)
-and get the gates green on khamis1992/v0-v10.
+Task: resolve the merge conflict with manus-parity (keeping both sides) and get the
+gates green (typecheck, builds, tests) on khamis1992/devin-d9.
 
 What was done:
-- Merged the latest manus-parity tip (58fc2f8, which had advanced past the 3f76f82 the
-  first merge used) into khamis1992/v0-v10. The re-merge was conflict-free and kept both
-  sides: V10's preview_screenshot work + parity's V12 design assets/brief, M2/M5 mirofish,
-  D16 side-chat/session-control, and the rest.
-- Branch is now 0 commits behind manus-parity.
-- V10 feature (preview_screenshot at 3 viewports with console capture) verified intact:
-  - src/preview/shot.ts: PreviewScreenshotService renders a fixture site at mobile/tablet/
-    desktop, pins network to the captured origin, and records console/pageerror/http errors.
-  - src/tools/preview.ts: preview_screenshot tool registered in createPreviewTools.
-  - src/modes/catalog.ts + src/server/companionGateway.ts: preview_screenshot added to the
-    PREVIEW mode set and the preview service catalog (so it is covered, not uncovered).
-  - src/index.ts, src/policy/riskTier.ts, packages/web/src/components/chat/toolLabels.ts
-    wired for the new tool.
+- Merged manus-parity into khamis1992/devin-d9 and resolved every conflict by keeping
+  BOTH sides (never dropping either). Three conflicted files, one hunk each:
+  - src/server/runTools.ts: ALWAYS_ON_TOOLS is now the union. Kept D9's
+    "playbook_create_from_session" and parity's "web_scaffold", plus parity's
+    todo_write, design_image_generate, design_page_images, design_brief,
+    design_autofix and workflow_run/resume/status.
+  - src/server/http.ts: kept both route dispatch blocks. D9's handlePlaybookRoutes and
+    parity's handleWikiRoutes (D8) both dispatch now. All other parity routes
+    (craft, insights, automations, session control, video-studio relay) and the
+    sessionId/publicSchedule/event-trigger changes were preserved by the auto-merge.
+  - src/server/__tests__/runTools.test.ts: union of both registration sets. D9
+    registers createPlaybookTools (playbook_create_from_session always-on); parity
+    registers createDesignAssetsTools and createTodoTools. Both registered; the
+    todo_write exposure test is kept. No test was weakened or deleted.
+- Verified the resolution is a true union: zero lines from either side of HEAD or
+  manus-parity are absent from the merged files (modulo lines one side intentionally
+  rewrote, e.g. parity's publicSchedule/sessionId replacing HEAD's older forms).
+- manus-parity advanced while working (V12, D16, V10 merged upstream). Merged the
+  newer tip (29b9a62) as a second, conflict-free merge so the branch is now
+  0 commits behind manus-parity.
 
 Gates (all pass, from the worktree root):
   npx tsc --noEmit                              -> exit 0
-  npm run build:server                          -> exit 0 (dist/server.cjs 19.0mb)
+  npm run build:server                          -> exit 0 (dist/server.cjs 19.1mb)
   (cd packages/web && npx next build)           -> exit 0
   npm run verify                                -> exit 0
     - check:encoding OK (no BOM, no mojibake, all JSON valid)
     - check:eval PASS, check:orchestrator PASS (114/114), check:recovery PASS,
       check:modes PASS
   node --import tsx --test src/{agent,server,tools,design,scripts,preview}/__tests__/*.test.ts
-    - tests 1230, pass 1230, fail 0
-  (cd packages/web && npx vitest run)           -> 61 files, 361 tests passed
-  bench tests (fakeModel/rssSampler/memBench)   -> 23 pass
-  check:design-registry                         -> OK (30 blocks, 8 RTL)
-  check:promptwire                              -> PASS (all promptwire tools ok:true)
+    - tests 1266, pass 1266, fail 0
+  (cd packages/web && npx vitest run)           -> 62 files, 368 tests passed
 
-Note: `npx tsx src/scripts/check-companions.ts` fails with "mode tools missing from the
-service catalog" (grep, glob, docs_lookup, think, finish, plan, ... security_assess,
-security_status). This is PRE-EXISTING on manus-parity and unrelated to V10: the parity
-side of src/modes/catalog.ts and src/server/companionGateway.ts is byte-identical to HEAD
-except for the preview_screenshot addition, and preview_screenshot is NOT in the uncovered
-list. It is documented in docs/handoff/o2-report.md as already failing at base 0e9c3bf, and
-check-companions is not part of this task's gate list. No test was weakened and no forbidden
-path was touched.
+No test was weakened. Forbidden paths untouched.
+
+Note: src/agent/masterPromptText.ts shows as "modified" after a test run because
+src/tools/__tests__/promptwire.test.ts imports src/scripts/gen-master-prompt.ts, which
+calls main() at import time and rewrites the file with LF endings. The content is
+byte-identical to the committed version (git diff is empty); it is only line-ending
+noise under core.autocrlf=true. Restored with git checkout.
