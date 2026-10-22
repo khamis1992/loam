@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { LifecycleState } from "./curator.js";
 import { rowOf, rowsOf, runStatement, type Db, type Row } from "./db.js";
 import { fromBlob, type Embedder } from "./embed.js";
 import { blendedScore, buildMatchQuery, lexicalFromRank, normalizeLexical } from "./search.js";
@@ -38,6 +39,7 @@ export interface SkillHit {
   updatedAt: string;
   tags: string[];
   score: number;
+  lifecycleState: LifecycleState;
 }
 
 export interface SkillDetail {
@@ -55,6 +57,9 @@ export interface SkillDetail {
   pendingNotes: FailureNote[];
   history: string[];
   content: string;
+  lifecycleState: LifecycleState;
+  reads: number;
+  lastReadAt: string | null;
 }
 
 export interface SkillRecordResult {
@@ -295,6 +300,7 @@ export class Skills {
           updatedAt: String(r["updated_at"]),
           tags: parseStringList(r["tags"]),
           score: blendedScore(lex.get(slug) ?? 0, qvec, itemVec, String(r["updated_at"])) * prior,
+          lifecycleState: lifecycleOf(r),
         };
       })
       .sort((a, b) => b.score - a.score)
@@ -305,6 +311,7 @@ export class Skills {
     await this.sync();
     const row = this.find(name);
     if (!row) return null;
+    const slug = String(row["slug"]);
     const file = String(row["path"]);
     let content = "";
     try {
@@ -312,8 +319,8 @@ export class Skills {
     } catch {
       content = "";
     }
-    return {
-      slug: String(row["slug"]),
+    const detail: SkillDetail = {
+      slug,
       name: String(row["name"]),
       description: String(row["description"]),
       version: Number(row["version"] ?? 1),
@@ -327,7 +334,12 @@ export class Skills {
       pendingNotes: parseNotes(row["failure_notes"]),
       history: listHistory(path.dirname(file)),
       content,
+      lifecycleState: lifecycleOf(row),
+      reads: Number(row["reads"] ?? 0),
+      lastReadAt: typeof row["last_read_at"] === "string" ? row["last_read_at"] : null,
     };
+    this.recordRead(slug);
+    return detail;
   }
 
   async report(
@@ -591,6 +603,16 @@ export class Skills {
     return rowOf(this.db, `SELECT * FROM skills WHERE slug = ?`, slug);
   }
 
+  /** Track a skill read so the curator can see recent activity. */
+  private recordRead(slug: string): void {
+    runStatement(
+      this.db,
+      `UPDATE skills SET last_read_at = ?, reads = reads + 1 WHERE slug = ?`,
+      nowIso(),
+      slug,
+    );
+  }
+
   private find(nameOrSlug: string): Row | null {
     const q = nameOrSlug.trim();
     if (!q) return null;
@@ -640,6 +662,11 @@ export class Skills {
       /* history is best-effort */
     }
   }
+}
+
+function lifecycleOf(row: Row): LifecycleState {
+  const v = String(row["lifecycle_state"] ?? "active");
+  return v === "stale" || v === "archived" ? v : "active";
 }
 
 function statsOf(row: Row): SkillStats {

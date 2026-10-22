@@ -110,4 +110,24 @@ describe("approvalRules", () => {
     api.setTaskApprovalAuto("task_auto", false);
     assert.equal(api.taskApprovalAuto("task_auto"), false);
   });
+
+  it("persists a risk tier on a rule and round-trips it", () => {
+    const tiered = api.createApprovalRule({ tool: "shell_run", tier: "destructive", decision: "allow" });
+    assert.equal(tiered.tier, "destructive");
+    const matched = api.matchApprovalRule({ tool: "shell_run", args: { command: "rm -rf /" } });
+    assert.equal(matched!.tier, "destructive");
+    // A tier-agnostic rule for the same tool is a distinct rule.
+    const generic = api.createApprovalRule({ tool: "shell_run", decision: "allow" });
+    assert.equal(generic.tier, null);
+    assert.notEqual(generic.id, tiered.id);
+  });
+
+  it("persists the per-task sandbox override", () => {
+    assert.equal(api.taskSandboxMode("task_sandbox"), undefined);
+    api.setTaskSandboxMode("task_sandbox", "read-only");
+    assert.equal(api.taskSandboxMode("task_sandbox"), "read-only");
+    api.setTaskSandboxMode("task_sandbox", "danger-full-access");
+    assert.equal(api.taskSandboxMode("task_sandbox"), "danger-full-access");
+    assert.throws(() => api.setTaskSandboxMode("task_sandbox", "bogus" as never), /invalid sandbox mode/);
+  });
 });
