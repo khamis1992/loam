@@ -14,6 +14,7 @@ import { createStallGuard } from "./stallGuard.js";
 import { compressContext } from "./contextCompressor.js";
 import { throwIfCancelled } from "../server/runControl.js";
 import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/riskTier.js";
+import { ReadState } from "../tools/readState.js";
 
 export interface RunOptions {
   cfg: Config;
@@ -115,6 +116,10 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // The tool names this run may use. Tools that fan out to child agents read
   // it from the tool context so a child never exceeds the parent's reach.
   const runAllowedTools = opts.tools.names();
+  // Per-session read tracking: file_read fills it, edit/write tools consult it
+  // so the model cannot blind-edit content it never saw or clobber a file that
+  // changed since it was read. A fresh instance per run matches Claude Code.
+  const readState = new ReadState();
 
   for (step = (restored?.steps ?? 0) + 1; step <= maxSteps; step++) {
     // Stop immediately when the user pressed the cancel button (checked between every step).
@@ -224,6 +229,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
             emit: opts.emit,
             signal: opts.signal,
             allowedTools: runAllowedTools,
+            readState,
             ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
             ...(opts.taskId ? { taskId: opts.taskId } : {}),
           }),
@@ -261,6 +267,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           emit: opts.emit,
           signal: opts.signal,
           allowedTools: runAllowedTools,
+          readState,
           ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
           ...(opts.taskId ? { taskId: opts.taskId } : {}),
         });
