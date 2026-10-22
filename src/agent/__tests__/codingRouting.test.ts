@@ -13,23 +13,38 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 
-import { runAgent } from "../loop.js";
-import { ToolRegistry, str, type Tool } from "../../tools/registry.js";
 import type { Config } from "../../config.js";
 import type { ChatResult, OllamaClient, OllamaToolCall } from "../../ollama.js";
 import type { Emit } from "../events.js";
-import { editModelCounts, recentEditModels, resetEditModelMemory } from "../../llm/modelAudit.js";
 import type { CooldownStore, FailoverProvider, ProviderClient } from "../../llm/failover.js";
+import type { Tool } from "../../tools/registry.js";
+
+// The edit audit appends to `DATA_DIR/model-edits.jsonl`, and DATA_DIR is a
+// module-level constant in `config.ts`. Point it at a temp folder *before* any
+// value import that transitively loads config, so running these tests never
+// writes fake edit records into the repository's data folder. The imports above
+// are type-only and erased at runtime; the value imports below are dynamic for
+// exactly this ordering reason.
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "loam-coding-routing-"));
+process.env.MANUS_LOCAL_DATA_DIR = path.join(tmp, "data");
+
+const { runAgent } = await import("../loop.js");
+const { ToolRegistry: RegistryCtor, str } = await import("../../tools/registry.js");
+const { editModelCounts, recentEditModels, resetEditModelMemory } = await import("../../llm/modelAudit.js");
+
+type ToolRegistry = import("../../tools/registry.js").ToolRegistry;
 
 let workspace = "";
 
 before(() => {
-  workspace = fs.mkdtempSync(path.join(os.tmpdir(), "loam-coding-routing-"));
+  workspace = path.join(tmp, "workspace");
+  fs.mkdirSync(workspace, { recursive: true });
 });
 
 after(() => {
+  delete process.env.MANUS_LOCAL_DATA_DIR;
   try {
-    fs.rmSync(workspace, { recursive: true, force: true });
+    fs.rmSync(tmp, { recursive: true, force: true });
   } catch {
     /* ignore */
   }
@@ -150,7 +165,7 @@ function coderClient(model: string): ProviderClient {
 }
 
 function registry(): ToolRegistry {
-  const base = new ToolRegistry();
+  const base = new RegistryCtor();
   base.registerAll([writeTool()]);
   return base.forAllowlist(["file_write"]);
 }
