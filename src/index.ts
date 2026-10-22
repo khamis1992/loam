@@ -1,45 +1,82 @@
 import fs from "node:fs";
 import { ensureTaskWorkspace } from "./server/taskWorkspace.js";
 import path from "node:path";
-import { loadConfig, ROOT } from "./config.js";
+import { loadConfig, ROOT, DATA_DIR } from "./config.js";
+import { setLocalAuthUserDataDir } from "./security/localAuth.js";
 import { buildRuntime } from "./setup/runtime.js";
 import { type ToolTraceItem } from "./agent/reflect.js";
 import { loadPending } from "./server/pending.js";
 import { getSettings, loadSettings } from "./server/settings.js";
 import { createRunSignal, clearRunSignal, isCancelledError, cancelRunSignal, listRunningSignals, activateRunSignal } from "./server/runControl.js";
 import { agentSystemSuffix, getAgent, loadAgents } from "./server/agents.js";
+import { getWorkMode, normalizeWorkMode, resolveCompanionCapabilities, COMPANION_DYNAMIC_TOOL_NAMES } from "./server/companionGateway.js";
+import { deviceManager, getDeviceByAgent, loadCompanionDevices, type CompanionDeviceRecord } from "./server/companionDevices.js";
+import { createDeviceTools } from "./tools/deviceTools.js";
+import { createCompanionMemoryTools } from "./tools/companionMemoryTools.js";
+import { memoryContext, setMemoryEmbedder } from "./server/companionMemory.js";
+import { createCompanionTeamTools } from "./tools/companionTeamTools.js";
+import { setDelegationRunner } from "./server/companionTeam.js";
+import { createApproval, waitForDecision } from "./server/approvals.js";
+import { approvalStableKey, getReplayDecision, matchApprovalRule, saveApprovalDecision, taskApprovalAuto } from "./server/approvalRules.js";
+import type { Tool } from "./tools/registry.js";
+import { createScratchpadTools } from "./tools/scratchpadTools.js";
+import { createDeepResearchTools } from "./tools/deepResearch.js";
+import { createBoardTools } from "./tools/boardTools.js";
+import { createInstructionHistoryTools } from "./tools/instructionTools.js";
+import { createAgentSpawnTools } from "./tools/agentSpawnTools.js";
+import { createBrowserOperatorTools } from "./tools/browserOperator.js";
+import { createWideResearchTool } from "./tools/wideResearch.js";
+import { createGroupTools } from "./tools/groupTools.js";
+import { createBackendScaffoldTools } from "./tools/backendScaffold.js";
+import { createDesignStudioTools } from "./tools/designStudio.js";
+import { createOfficeEditTools } from "./tools/officeEditAgent.js";
+import { createVideoEditTools } from "./tools/videoEditAgent.js";
+import { createDeployTools } from "./tools/deploy.js";
+import { createDesignExploreTools } from "./tools/designExplore.js";
+import { createConnectorTools } from "./tools/connectorTools.js";
+import { connectedConnectorToolNames } from "./server/connectors/index.js";
+import { mergeAlwaysOnTools } from "./server/runTools.js";
+import { OllamaEmbedder } from "./memory/embeddings.js";
 import { publishTaskEvent } from "./server/streams.js";
 import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { runAgent } from "./agent/loop.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
 import type { Emit } from "./agent/events.js";
+import { OllamaClient } from "./ollama.js";
+import { flexCredentials } from "./server/modelTiers.js";
 import { startServer, type RunTaskOptions } from "./server/http.js";
-import { appendMessage, appendStep, createTask, getProject, getTask, loadDb, setTaskStatus } from "./server/db.js";
+import { appendMessage, appendStep, createTask, getProject, getTask, loadDb, setTaskStatus, listSchedules, setTaskDelegator } from "./server/db.js";
 import { conversationHistory } from "./agent/history.js";
 import { startScheduler } from "./server/scheduler.js";
+import { startChannelRouter } from "./server/channels/router.js";
 import { appendLearning } from "./server/learning.js";
 import { appendTelemetry, hashPrompt } from "./telemetry/store.js";
 import { loadSuite } from "./eval/suites.js";
 import { evalBusy, runSuiteLocked } from "./eval/service.js";
 import { lastRunForSuite } from "./eval/store.js";
 import { getLoamMode } from "./modes/catalog.js";
-import { closeBrowser } from "./tools/browser.js";
+import { closeBrowser, closeBrowserSession, setBrowserSessionResolver } from "./tools/browser.js";
 import { setTaskMode } from "./server/db.js";
 import { log } from "./log.js";
 import { recoverInterruptedTasks, getSavedRun, saveRun, queueTaskRun, completeTaskRun, closeDb } from "./server/db.js";
+import { startProtocolAdapter } from "./protocol/adapter.js";
 import { executionQueue } from "./server/executionQueue.js";
 import { requiresReplayConfirmation, type SavedRun } from "./server/recovery.js";
 import { acquireRuntimeLease, releaseRuntimeLease, backupDatabase } from "./server/sqliteStore.js";
+import { claimRunLease, releaseRunLease, startLeaseHeartbeat, type LeaseHeartbeat, type RunLease } from "./server/runLease.js";
+import { recordTaskUsage } from "./server/credits.js";
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
+  setLocalAuthUserDataDir(process.env.LOAM_LOCAL_TOKEN_DIR || DATA_DIR);
   loadDb();
   acquireRuntimeLease();
   backupDatabase();
   const recovered = recoverInterruptedTasks();
   if (recovered) log.info(`recovery: ${recovered} interrupted task(s) awaiting resume`);
   const bootSettings = loadSettings();
-  if (bootSettings.workspace && fs.existsSync(bootSettings.workspace) && fs.statSync(bootSettings.workspace).isDirectory()) {
+  const envRoot = process.env.LOAM_ROOT || process.env.MANUS_LOCAL_ROOT;
+  if (!envRoot && bootSettings.workspace && fs.existsSync(bootSettings.workspace) && fs.statSync(bootSettings.workspace).isDirectory()) {
     cfg.workspace = path.resolve(bootSettings.workspace);
   } else {
     cfg.workspace = path.resolve(cfg.workspace);
@@ -47,6 +84,20 @@ async function main(): Promise<void> {
   fs.mkdirSync(cfg.workspace, { recursive: true });
   loadPending();
   loadAgents();
+  loadCompanionDevices();
+  // Browser isolation (section 7): every companion browses in its OWN persistent
+  // session (profile under DATA_DIR/browser-profiles/agent-<id>); anonymous runs
+  // get ephemeral per-task sessions instead of one shared context.
+  setBrowserSessionResolver((ctx) => {
+    if (!ctx.taskId) return "shared";
+    const owner = getTask(ctx.taskId)?.agentId;
+    return owner ? `agent:${owner}` : `task:${ctx.taskId}`;
+  });
+  // Semantic companion-memory search: active only when the memory stack (and its
+  // embedding model) is enabled; otherwise search stays honestly text-only.
+  if (cfg.memory.enabled && cfg.memory.model) {
+    setMemoryEmbedder(new OllamaEmbedder(cfg.ollamaUrl, cfg.memory.model));
+  }
 
   const encodingIssues = scanEncoding(ROOT);
   if (encodingIssues.length > 0) {
@@ -57,9 +108,24 @@ async function main(): Promise<void> {
   }
 
   const rt = await buildRuntime(cfg);
+  rt.registry.registerAll(createScratchpadTools());
+  rt.registry.registerAll(createBoardTools());
+  rt.registry.registerAll(createInstructionHistoryTools());
+  rt.registry.registerAll(createAgentSpawnTools());
+  rt.registry.registerAll(createBrowserOperatorTools());
+  rt.registry.registerAll(createDeepResearchTools());
+  rt.registry.register(createWideResearchTool({ ollama: rt.ollama, parentRegistry: rt.registry }));
+  rt.registry.registerAll(createGroupTools());
+  rt.registry.registerAll(createBackendScaffoldTools());
+  rt.registry.registerAll(createDesignStudioTools());
+  rt.registry.registerAll(createOfficeEditTools());
+  rt.registry.registerAll(createVideoEditTools());
+  rt.registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview: rt.preview }));
+  rt.registry.registerAll(createDesignExploreTools());
+  rt.registry.registerAll(createConnectorTools());
   const { ollama, registry, memory, mcp } = rt;
 
-  const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal }): Promise<{ taskId: string; text: string }> => {
+  const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal; lease?: RunLease }): Promise<{ taskId: string; text: string }> => {
     const { prompt, emit } = opts;
     const settings = getSettings();
     const previous = opts.taskId ? getTask(opts.taskId) : undefined;
@@ -75,10 +141,10 @@ async function main(): Promise<void> {
 
     const effectivePrompt = opts.savedRun.effectivePrompt;
 
-    setTaskStatus(task, "running");
+    setTaskStatus(task, "running", undefined, opts.lease);
     activateRunSignal(task);
     opts.savedRun.started = true;
-    saveRun(task, opts.savedRun);
+    saveRun(task, opts.savedRun, opts.lease);
     publishTaskEvent(task, { type: "task-status", status: "running" });
     // Announce the id immediately so the UI can cancel while the run is alive.
     emit({ type: "task", taskId: task });
@@ -111,6 +177,11 @@ async function main(): Promise<void> {
     const agent = agentId ? getAgent(agentId) : undefined;
     const chosenModel = opts.model && opts.model.trim().length > 0 ? opts.model : agent?.model ?? settings.model;
     const effectiveCfg = { ...cfg, policy: { ...cfg.policy, allowOutsideWorkspaceRead: false }, workspace: opts.savedRun.workspace, model: chosenModel || cfg.model };
+    // Option 18 Flex: when the chosen model is the vault-backed flex model, run through the
+    // user's own base URL/key with a run-scoped client. The key never leaves this boundary.
+    const flexCreds = opts.model && opts.model.trim().length > 0 ? flexCredentials() : null;
+    const flexModelId = flexCreds ? (flexCreds.model.endsWith(":cloud") ? flexCreds.model : `${flexCreds.model}:cloud`) : "";
+    const runOllama = flexCreds && effectiveCfg.model === flexModelId ? new OllamaClient(cfg.ollamaUrl, { baseUrl: flexCreds.baseUrl, apiKey: flexCreds.apiKey }) : ollama;
 
     // Loam task controls: explicit mode and execution effort.
     const effortBudgets: Record<string, number> = { max: 80, high: 64, medium: 40, low: 16 };
@@ -120,6 +191,56 @@ async function main(): Promise<void> {
     const effectiveEffort = String(opts.effort ?? agent?.effort ?? "").toLowerCase();
     const effortMaxSteps = effortBudgets[effectiveEffort];
     const runSignal = opts.signal;
+
+    // Companion gateway: the work mode decides where the run executes and which
+    // services it may touch; the resolver output is the only tool allowlist.
+    const effectiveWorkMode = normalizeWorkMode(opts.savedRun.workMode ?? agent?.workMode);
+    const workModeDefinition = getWorkMode(effectiveWorkMode);
+
+    // Own-device mode (stage 2): the run executes inside the companion's real
+    // isolated environment. No device / not ready → honest refusal, never a
+    // silent fallback to the user's machine.
+    let deviceRecord: CompanionDeviceRecord | undefined;
+    let deviceToolInstances: ReturnType<typeof createDeviceTools> = [];
+    if (workModeDefinition.requiresDevice) {
+      if (!agentId || !agent) {
+        throw new Error("وضع «جهاز المساعد المستقل» يتطلب مساعدًا محددًا — اختر رفيقًا له جهاز قبل تشغيله.");
+      }
+      deviceRecord = getDeviceByAgent(agentId);
+      if (!deviceRecord) {
+        throw new Error(`لا يوجد جهاز للمساعد «${agent.name}» — أنشئ جهازه من لوحة الجهاز في صفحة الرفقاء ثم أعد المحاولة.`);
+      }
+      if (deviceRecord.state === "provisioning") {
+        throw new Error(`جهاز المساعد «${deviceRecord.name}» قيد التجهيز — انتظر اكتماله من لوحة الجهاز.`);
+      }
+      if (deviceRecord.state !== "running") {
+        throw new Error(`جهاز المساعد «${deviceRecord.name}» حالته ${deviceRecord.state} — شغّله من لوحة الجهاز ثم أعد المحاولة.`);
+      }
+      const readiness = await deviceManager.isReady(deviceRecord.id);
+      if (!readiness.ready) {
+        deviceRecord.state = "error";
+        deviceRecord.lastError = readiness.detail;
+        throw new Error(`فحص جاهزية جهاز المساعد «${deviceRecord.name}» فشل: ${readiness.detail}`);
+      }
+      deviceToolInstances = createDeviceTools(deviceManager, deviceRecord, agentId);
+    }
+
+    // Companion personal memory (stage 4a): tools bound to THIS agent only, plus
+    // a bounded context of its saved preferences/instructions.
+    const memoryToolInstances = agentId ? createCompanionMemoryTools(agentId) : [];
+    const teamToolInstances = agentId ? createCompanionTeamTools(agentId) : [];
+    const memoryContextEntries = agentId ? memoryContext(agentId) : [];
+    const memoryContextSuffix =
+      memoryContextEntries.length > 0
+        ? [`ذاكرة «${agent?.name ?? agentId}» الشخصية (احترمها وراجعها مع المستخدم عند التعارض):`, ...memoryContextEntries.map((e) => `- (${e.source === "user" ? "قاله المستخدم" : "استنتاج"} | ثقة ${e.confidence.toFixed(2)}) ${e.text}`)].join("\n")
+        : undefined;
+    const capabilities = resolveCompanionCapabilities({
+      mode: effectiveMode,
+      workMode: effectiveWorkMode,
+      allowedServices: agent?.allowedServices,
+      disabledTools: agent?.disabledTools,
+      registeredTools: [...registry.names(), ...COMPANION_DYNAMIC_TOOL_NAMES],
+    });
     const askModeSuffix =
       effectiveMode === "ask"
         ? "وضع السؤال (Ask): أجب بالقراءة والتحليل فقط — لا تعدّل الملفات، لا تنفّذ أوامر نظام، ولا تبدأ مهام تنفيذية؛ إن أحبّت اقترح الخطوات دون تنفيذها."
@@ -144,21 +265,86 @@ async function main(): Promise<void> {
 
     // Task isolation: never silently inject memories or execute background tools from other tasks.
     const memories: Array<{ text: string; score: number }> = [];
+    // Shared resources reset ONLY for runs that will actually use them — the
+    // execution queue serializes browser-lane runs among themselves, so a
+    // parallel own-device/office run never kills another run's browser/preview.
+    const usesBrowser = capabilities.allow.some((t) => t.startsWith("browser_"));
+    const usesPreview = capabilities.allow.some((t) => t === "preview_serve" || t === "preview_stop" || t === "preview_status");
     try {
-      // The application has a serial queue; close the previous browser session before this task.
-      await closeBrowser();
-      rt.preview.stop();
+      if (usesBrowser) {
+        // Companion browser sessions PERSIST between runs (durable logins);
+        // only anonymous per-task sessions are reset for isolation.
+        const browserOwner = agentId ? null : getTask(task)?.agentId ?? null;
+        if (!browserOwner) await closeBrowserSession(`task:${task}`);
+      }
+      if (usesPreview) rt.preview.stop();
       const verdicts: VerdictRecord[] = [];
       wrappedEmit({ type: "mode", mode: effectiveMode, label: modeDefinition.label, labelAr: modeDefinition.labelAr, reason: "selected task mode" });
+      wrappedEmit({
+        type: "workmode",
+        workMode: effectiveWorkMode,
+        labelAr: workModeDefinition.labelAr,
+        deviceRequired: workModeDefinition.requiresDevice,
+        ...(deviceRecord ? { deviceId: deviceRecord.id, deviceName: deviceRecord.name } : {}),
+        reason: "selected work mode",
+      });
       const agentSuffix = agent ? agentSystemSuffix(agent) : undefined;
       const suffix = [
         `You are Loam. Active mode: ${modeDefinition.labelAr}. ${modeDefinition.description} Only use the provided tool capabilities.`,
+        modeDefinition.outputHint,
+        workModeDefinition.policy,
+        memoryContextSuffix,
         agentSuffix, askModeSuffix,
       ].filter(Boolean).join("\n\n");
-      const agentTools = registry.forMode(effectiveMode).cloneFiltered({ deny: agent?.disabledTools ?? [] });
+      // The gateway's resolved allowlist is the base tool set for this run: mode ∪
+      // work-mode grants − revoked services − agent service/tool denials. Always-on
+      // core tools (per-agent scratchpad — low-risk, approval-free) are merged in on
+      // top; the agent's tool denials still remove them. In own-device mode the
+      // device_* tools are bound to the companion's device; companion-memory tools
+      // are bound to this agent in every mode.
+      const dynamicAllow = new Set(capabilities.allow);
+      const runAllow = mergeAlwaysOnTools({ resolvedAllow: [...capabilities.allow, ...connectedConnectorToolNames(agent?.disabledTools)], registeredTools: registry.names(), disabledTools: agent?.disabledTools });
+      const agentTools = registry.forAllowlist(runAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name)));
+
+      // Sensitive host-input actions need an explicit user decision first (section 18).
+      // MF4 (option 14): the gate resolves each request idempotently — replay of a
+      // decided key returns the same decision, saved approval rules (agent-specific
+      // first, then global) and the per-task "Approve for me" mode are checked
+      // BEFORE prompting, and no card is shown twice.
+      const SENSITIVE_HOST_INPUT = new Set(["computer_click", "computer_type", "computer_key", "computer_ui_click", "computer_ui_set_text"]);
+      for (const name of agentTools.names()) {
+        if (!SENSITIVE_HOST_INPUT.has(name)) continue;
+        const original = agentTools.get(name)!;
+        agentTools.replaceTool({
+          ...original,
+          async run(args, ctx) {
+            const toolCallId = (ctx as { toolCallId?: string } | undefined)?.toolCallId;
+            const stableKey = approvalStableKey(task, toolCallId, name, args);
+            const replay = getReplayDecision(stableKey);
+            const autoForTask = !replay && taskApprovalAuto(task);
+            const rule = !replay && !autoForTask ? matchApprovalRule({ agentId: agentId ?? null, tool: name, args }) : undefined;
+            if (replay || autoForTask || rule) {
+              const allow = replay ? replay.decision === "allow" : autoForTask ? true : rule!.decision === "allow";
+              saveApprovalDecision(stableKey, allow ? "allow" : "deny", replay ? replay.source : autoForTask ? "auto" : "rule");
+              if (!allow) {
+                return { ok: false, content: "رفض المستخدم هذا الإجراء — لم يُنفّذ." };
+              }
+            } else {
+              const approval = createApproval({ taskId: task, tool: name, summary: `إجراء تحكم حساس بجهازك (${name}) في انتظار موافقتك`, argsPreview: JSON.stringify(args ?? {}) });
+              wrappedEmit({ type: "approval_required", approvalId: approval.id, tool: name, summary: approval.summary });
+              const decision = await waitForDecision(approval.id, runSignal);
+              saveApprovalDecision(stableKey, decision === "approved" ? "allow" : "deny", "user");
+              if (decision !== "approved") {
+                return { ok: false, content: decision === "denied" ? "رفض المستخدم هذا الإجراء — لم يُنفّذ." : `انتهت مهلة الموافقة (${decision}) — لم يُنفّذ.` };
+              }
+            }
+            return original.run(args, ctx);
+          },
+        } satisfies Tool);
+      }
       const agentOpts = {
         cfg: effectiveCfg,
-        ollama,
+        ollama: runOllama,
         tools: agentTools,
         emit: wrappedEmit,
         prompt: effectivePrompt,
@@ -171,12 +357,14 @@ async function main(): Promise<void> {
       };
       const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
         ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint,
-        saveCheckpoint: (checkpoint) => { opts.savedRun.checkpoint = checkpoint; saveRun(task, opts.savedRun); },
+        saveCheckpoint: (checkpoint) => { opts.savedRun.checkpoint = checkpoint; saveRun(task, opts.savedRun, opts.lease); },
       }) : await runAgent(agentOpts);
       // The orchestrator can swallow an abort (it reports a failed step instead),
       // so treat a cancelled run explicitly — never as success.
       if (runSignal.aborted) throw new Error("cancelled by user");
-      completeTaskRun(task, result.text, result.model);
+      if (result.verified !== true) throw new Error("task incomplete: mandatory final verification missing");
+      completeTaskRun(task, result.text, result.model, opts.lease);
+      recordTaskUsage(task, result.usage); // OPD #9: one mock usage entry per completed task
       if (doneEvent) {
         appendStep(task, { at: new Date().toISOString(), type: doneEvent.type, data: doneEvent });
         emit(doneEvent);
@@ -207,9 +395,17 @@ async function main(): Promise<void> {
       }
       const message = err instanceof Error ? err.message : String(err);
       const cancelled = runSignal.aborted || isCancelledError(err);
-      setTaskStatus(task, cancelled ? "cancelled" : "error", { error: cancelled ? "cancelled by user" : message });
-      publishTaskEvent(task, cancelled ? { type: "cancelled" } : { type: "error", message });
-      wrappedEmit({ type: "error", message: cancelled ? "⏹ أُوقفت المهمة بناءً على طلبك" : message });
+      let statusWritten = true;
+      try {
+        setTaskStatus(task, cancelled ? "cancelled" : "error", { error: cancelled ? "cancelled by user" : message }, opts.lease);
+      } catch (writeError) {
+        statusWritten = false;
+        log.warn(`lease-fenced status write rejected for ${task}: ${String(writeError)}`);
+      }
+      if (statusWritten) {
+        publishTaskEvent(task, cancelled ? { type: "cancelled" } : { type: "error", message });
+        wrappedEmit({ type: "error", message: cancelled ? "⏹ أُوقفت المهمة بناءً على طلبك" : message });
+      }
       recordTelemetry("error", { model: effectiveCfg.model, steps: 0, usage: { promptTokens: 0, completionTokens: 0 }, error: cancelled ? "cancelled by user" : message });
       if (!cancelled) throw err;
       return { taskId: task, text: "" };
@@ -242,6 +438,7 @@ async function main(): Promise<void> {
         history: conversationHistory(previous?.messages ?? []), workspace: cfg.workspace,
         model: opts.model || agent?.model || getSettings().model || cfg.model,
         projectId, agentId, mode: getLoamMode(opts.mode ?? previous?.mode ?? agent?.mode).id, effort: opts.effort ?? agent?.effort ?? "",
+        workMode: normalizeWorkMode(opts.workMode ?? agent?.workMode),
         orchestrated: cfg.orchestrator.enabled, started: false,
       };
     }
@@ -250,24 +447,70 @@ async function main(): Promise<void> {
     setTaskMode(task.id, saved.mode);
     saved.workspace = ensureTaskWorkspace(task.id, cfg.workspace);
     queueTaskRun(task.id, saved, opts.resume === true, opts.scheduleId, opts.title);
+    // Resource locks (parallel lanes): browser/preview are the only shared
+    // runtime states a run may reset — everything else (own devices, files,
+    // office/data) is per-run and runs fully in parallel.
+    const laneAgent = saved.agentId ? getAgent(saved.agentId) : undefined;
+    const laneCaps = resolveCompanionCapabilities({
+      mode: saved.mode,
+      workMode: normalizeWorkMode(saved.workMode ?? laneAgent?.workMode),
+      allowedServices: laneAgent?.allowedServices,
+      disabledTools: laneAgent?.disabledTools,
+      registeredTools: [...registry.names(), ...COMPANION_DYNAMIC_TOOL_NAMES],
+    });
+    // Browser runs no longer lock: each run browses in its own isolated session.
+    const locks: string[] = [];
+    if (laneCaps.allow.some((t) => t === "preview_serve" || t === "preview_stop" || t === "preview_status")) locks.push("preview");
+    // user_device runs share the single user-desktop resource; parallel runs must not fight over mouse/keyboard.
+    // EVERY computer_* tool touches the same desktop, so the lock covers them all.
+    if (laneCaps.allow.some((t) => t.startsWith("computer_"))) locks.push("user-desktop");
+    // Each companion device is one machine: runs targeting the same device serialize on it.
+    const laneDevice = saved.agentId ? getDeviceByAgent(saved.agentId) : undefined;
+    if (laneCaps.allow.some((t) => t.startsWith("device_")) && laneDevice) locks.push(`device:${laneDevice.id}`);
     const signal = createRunSignal(task.id, false);
     opts.emit({ type: "task", taskId: task.id });
     opts.emit({ type: "task-status", status: "queued" });
     publishTaskEvent(task.id, { type: "task-status", status: "queued" });
+    let lease: RunLease | undefined;
+    let heartbeat: LeaseHeartbeat | undefined;
     try {
+      const claimed = claimRunLease(task.id);
+      lease = claimed;
+      heartbeat = startLeaseHeartbeat(claimed, () => cancelRunSignal(task.id));
       return await executionQueue.enqueue(task.id, () => executeTask({
-        ...opts, ...saved, taskId: task.id, savedRun: saved, signal,
-      }), signal);
+        ...opts, ...saved, taskId: task.id, savedRun: saved, signal, lease: claimed,
+      }), signal, locks);
     } catch (error) {
       if (getTask(task.id)?.status === "queued" || getTask(task.id)?.status === "running") {
         const message = error instanceof Error ? error.message : String(error);
-        setTaskStatus(task.id, isCancelledError(error) ? "cancelled" : "error", { error: message });
+        try {
+          setTaskStatus(task.id, isCancelledError(error) ? "cancelled" : "error", { error: message }, lease);
+        } catch (writeError) {
+          log.warn(`lease-fenced status write rejected for ${task.id}: ${String(writeError)}`);
+        }
         const event = { type: "error" as const, message };
         opts.emit(event); publishTaskEvent(task.id, event);
       }
       throw error;
-    } finally { clearRunSignal(task.id); }
+    } finally { clearRunSignal(task.id); heartbeat?.stop(); if (lease) releaseRunLease(lease); }
   };
+
+  // Bridge for src/server/routes/retryLast.ts: the route module cannot receive
+  // runTask through startServer deps, so it reads this global per request.
+  (globalThis as { __loamRunTask?: typeof runTask }).__loamRunTask = runTask;
+
+  // Companion-to-companion delegation: the delegate task is created and queued
+  // under the TARGET companion; we return its id immediately — the execution
+  // queue is serial, so awaiting completion here would deadlock the delegating run.
+  setDelegationRunner((req) => {
+    const target = getAgent(req.toAgentId);
+    const task = createTask(req.brief, req.title ?? `تفويض → ${target?.name ?? req.toAgentId}`, null, req.toAgentId);
+    setTaskDelegator(task.id, req.fromAgentId);
+    if (req.mode) setTaskMode(task.id, req.mode);
+    void runTask({ taskId: task.id, prompt: req.brief, agentId: req.toAgentId, ...(req.mode ? { mode: req.mode } : {}), emit: () => {} })
+      .catch((error) => log.warn(`delegation run ${task.id}: ${String(error)}`));
+    return Promise.resolve({ taskId: task.id, queued: true });
+  });
 
   const server = await startServer({
     cfg,
@@ -280,17 +523,47 @@ async function main(): Promise<void> {
     mcp,
   });
 
-  const stopScheduler = startScheduler({
-    runScheduled: async (prompt: string, scheduleId: string) => {
-      const res = await runTask({
-        prompt,
-        scheduleId,
-        emit: () => {
-          /* scheduled runs are persisted in db, no SSE consumer */
-        },
-      });
-      log.info(`scheduled run finished: ${res.taskId}`);
-      return res.taskId;
+  // A1: Start the Manus-style protocol adapter (Connect RPC + socket.io) on top of Loam.
+  const protocolAdapter = await startProtocolAdapter({ cfg, runTask, getTask });
+
+  // Event-driven routines (16): file watchers reuse the scheduled-run path so a
+  // triggered routine runs under its companion exactly like a cron routine.
+  const scheduledRun = async (prompt: string, scheduleId: string, agentId?: string, workMode?: string): Promise<string> => {
+    const res = await runTask({
+      prompt,
+      scheduleId,
+      ...(agentId ? { agentId } : {}),
+      ...(workMode ? { workMode } : {}),
+      emit: () => {
+        /* triggered runs are persisted in db, no SSE consumer */
+      },
+    });
+    return res.taskId;
+  };
+  const { startFileWatchers, stopAllWatchers } = await import("./server/fileWatchers.js");
+  type ScheduledRun = (o: { prompt: string; scheduleId: string; agentId?: string; workMode?: string }) => Promise<string>;
+  const scheduledRunObj: ScheduledRun = (o) => scheduledRun(o.prompt, o.scheduleId, o.agentId, o.workMode);
+  startFileWatchers(scheduledRunObj);
+  const { startServiceWatch } = await import("./server/serviceWatch.js");
+  const stopServiceWatch = startServiceWatch({
+    probe: () => fetch(cfg.ollamaUrl.replace(/\/+$/, "") + "/api/tags", { signal: AbortSignal.timeout(5000) }).then((r) => r.ok).catch(() => false),
+    run: scheduledRunObj,
+    watches: () => listSchedules().filter((s2) => s2.kind === "service-watch").map((s2) => ({ id: s2.id, prompt: s2.prompt, agentId: s2.agentId, workMode: s2.workMode })),
+  });
+  (globalThis as { __loamScheduledRun?: ScheduledRun }).__loamScheduledRun = scheduledRunObj;
+
+  // MF7: url-change triggers poll on their own interval and fire only on change.
+  const { startUrlWatchers, registerBuiltInConnectors } = await import("./server/urlWatch.js");
+  registerBuiltInConnectors();
+  const stopUrlWatchers = startUrlWatchers({ run: scheduledRunObj });
+
+  const stopScheduler = startScheduler({ runScheduled: scheduledRun });
+
+  // MF11 messaging channels: Telegram/Email inbound -> agent thread task, reply -> channel.
+  const stopChannelRouter = startChannelRouter({
+    runAgentTurn: async ({ taskId, prompt, agentId }) => {
+      const result = await runTask({ taskId, prompt, agentId, emit: () => {} });
+      return result.text;
     },
   });
 
@@ -325,10 +598,15 @@ async function main(): Promise<void> {
   const shutdown = async (): Promise<void> => {
     log.info("shutting down...");
     stopScheduler();
+    stopChannelRouter();
+    stopAllWatchers();
+    stopServiceWatch();
+    stopUrlWatchers();
     if (evalTimer) clearInterval(evalTimer);
     executionQueue.stop();
     for (const id of listRunningSignals()) cancelRunSignal(id);
     await rt.dispose();
+    await protocolAdapter.close();
     server.close();
     releaseRuntimeLease();
     closeDb();

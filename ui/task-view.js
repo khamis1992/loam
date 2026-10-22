@@ -15,6 +15,8 @@ export function applyTaskEvent(model, event) {
     const step = model.plan.find(s => s.id === event.id);
     if (step) { step.phase = event.verdict; step.reason = event.reason; }
   }
+  if (event.type === 'verification_progress') model.verificationProgress = event.stage;
+  if (['verify', 'error', 'cancelled', 'done'].includes(event.type)) model.verificationProgress = null;
   if (event.type === 'verify') model.verification = event;
   if (event.type === 'assistant_message') model.result = event.text || '';
   if (event.type === 'error') model.error = event.message;
@@ -87,10 +89,12 @@ export function mountTaskView({ markdown, stop, followup, openFile }) {
     const phases = {waiting:'بانتظار التنفيذ', running:'قيد التنفيذ', executed:'نُفّذت — لم تُراجع', pass:'اجتازت المراجعة', revise:'تحتاج تعديلًا', fail:'لم تجتز المراجعة'};
     put('taskPlan', model.plan.length ? '<ol>' + model.plan.map(step => `<li><div class="task-step-title">${escape(step.title)} <span class="pill">${phases[step.phase] || escape(step.phase)}</span></div>${(step.successCriteria || step.success_criteria) ? `<p class="muted">معيار الإنجاز: ${escape((step.successCriteria || step.success_criteria))}</p>` : ''}${step.reason ? `<p>${escape(step.reason)}</p>` : ''}</li>`).join('') + '</ol>' : '<p class="muted">لم تُسجّل خطة لهذا الطلب بعد.</p>');
     const verification = model.verification;
-    $('taskVerification').textContent = verification ? `${verification.verdict === 'pass' ? 'اجتاز التحقق النهائي' : 'التحقق يتطلب مراجعة'} — ${verification.reason || ''}` : 'لم يُسجّل تحقق نهائي لهذا الطلب.';
+    const verificationStages = {creative:'فحص المشهد بصريًا', application:'تشغيل اختبارات التطبيق والفحص البصري', independent_author:'إعداد اختبارات قبول مستقلة', independent_application:'تشغيل الاختبارات المستقلة والفحص البصري', final_review:'مراجعة النتائج قبل التسليم'};
+    const progress = active && verificationStages[model.verificationProgress];
+    $('taskVerification').textContent = progress ? `جارٍ ${progress} — لم يُعتمد اكتمال المهمة بعد.` : verification ? `${verification.verdict === 'pass' ? 'اجتاز التحقق النهائي' : 'التحقق يتطلب مراجعة'} — ${verification.reason || ''}` : 'لم يُسجّل تحقق نهائي لهذا الطلب.';
     $('taskIssue').hidden = !model.error;
     $('taskIssue').textContent = model.error ? `تنبيه من التنفيذ: ${model.error}` : '';
-    put('taskFiles', model.files.size ? [...model.files].map(path => `<button class="task-output" data-output="${escape(path)}"><span dir="auto">${escape(path)}</span><span>فتح الملف ←</span></button>`).join('') : '<p class="muted">لم يُسجّل حفظ أو تعديل ملفات بأدوات الملفات لهذا الطلب.</p>');
+    put('taskFiles', model.files.size ? [...model.files].map(path => `<button class="task-output" data-output="${escape(path)}"><span dir="auto">${escape(path)}</span><span>فتح الملف <loam-icon name="back"></loam-icon></span></button>`).join('') : '<p class="muted">لم يُسجّل حفظ أو تعديل ملفات بأدوات الملفات لهذا الطلب.</p>');
   }
   return {
     reset(task, recovery) { model = createTaskModel(task, recovery); selectTab('overview'); render(); },

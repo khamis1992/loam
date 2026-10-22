@@ -13,6 +13,8 @@ let blockSecond = true;
 let secondWaiting = false;
 let firstTools = 0;
 let secondTools = 0;
+let rejectFinal = false;
+const afterEffect = process.argv.includes("--after-effect");
 const model = http.createServer(async (req, res) => {
   if (req.url === "/api/tags") { res.end(JSON.stringify({ models: [{ name: "test-model" }] })); return; }
   let raw = ""; for await (const chunk of req) raw += chunk;
@@ -27,13 +29,18 @@ const model = http.createServer(async (req, res) => {
       { id: "one", title: "first", instruction: "WRITE_FIRST", success_criteria: "first file exists" },
       { id: "two", title: "second", instruction: "WRITE_SECOND", success_criteria: "second file exists" },
     ] });
-  } else if (system.includes("ONE executed plan step") || system.includes("COMPLETED task as a whole")) {
+  } else if (system.includes("COMPLETED task as a whole")) {
+    if (rejectFinal) content = JSON.stringify({ verdict: "revise", reason: "deliberately unverified result", fixes: ["Provide actual evidence"] });
+    else if (!messages.some(m => m.role === "tool")) tool_calls = ["first.txt", "second.txt"].map(p => ({ function: { name: "file_read", arguments: { path: p } } }));
+    else content = JSON.stringify({ verdict: "pass", reason: "read both actual files" });
+  } else if (system.includes("ONE executed plan step")) {
     content = JSON.stringify({ verdict: "pass", reason: "file evidence" });
   } else if (messages.at(-1)?.role === "tool") {
+    if (afterEffect && blockSecond && prompt.includes("WRITE_SECOND")) { secondWaiting = true; return; }
     content = "File saved and checked.";
   } else {
     const second = prompt.includes("WRITE_SECOND");
-    if (second && blockSecond) { secondWaiting = true; return; }
+    if (second && blockSecond && !afterEffect) { secondWaiting = true; return; }
     if (second) secondTools++; else firstTools++;
     tool_calls = [{ function: { name: "file_write", arguments: { path: second ? "second.txt" : "first.txt", content: "one effect\n", append: true } } }];
   }
@@ -96,16 +103,29 @@ try {
   assert.equal(recovered.task.status, "interrupted");
   assert.equal(recovered.recovery?.completedSteps, 1);
   assert.equal(recovered.recovery?.requiresConfirmation, true);
+  const secondFile = path.join(workspace, ".loam-tasks", first.id, "second.txt");
+  if (afterEffect) assert.equal(fs.readFileSync(secondFile, "utf8"), "one effect\n", "effect survived the crash before its step checkpoint");
   assert.equal((await post(`/api/tasks/${first.id}/resume`)).status, 409);
+  assert.equal((await post(`/api/tasks/${first.id}/resume`, { retryInterruptedStep: false })).status, 409);
+  assert.equal((await post(`/api/tasks/${first.id}/resume`, { retryInterruptedStep: "true" })).status, 409);
+  assert.equal(secondTools, afterEffect ? 1 : 0, "denied resume cannot replay an uncertain effect");
+  assert.equal((await tasks()).find(t => t.id === first.id)?.status, "interrupted");
   assert.equal((await post(`/api/tasks/${first.id}/resume`, { retryInterruptedStep: true })).status, 202);
   await waitFor(async () => (await tasks()).find((t) => t.id === first.id)?.status === "done");
   assert.equal(firstTools, 1, "completed step was not replayed");
-  assert.equal(secondTools, 1);
+  assert.equal(secondTools, 1, "resume retains the completed tool batch within an interrupted step");
+  assert.equal(fs.readFileSync(secondFile, "utf8"), "one effect\n", "saved tool results must not be replayed");
   assert.equal(fs.readFileSync(path.join(workspace, ".loam-tasks", first.id, "first.txt"), "utf8"), "one effect\n");
   const finished = await (await fetch(`${base}/api/tasks/${first.id}`)).json() as TaskResponse;
   assert.equal(finished.task.messages.filter((m: { role: string }) => m.role === "user").length, 1);
   assert.equal(finished.recovery, null);
-  console.log(`PASS HTTP queue, cancellation isolation, process kill/restart, explicit replay confirmation and resume without repeating completed effects (${tmp})`);
+  rejectFinal = true;
+  await (await post("/api/chat", { prompt: "unverified fixture" })).text();
+  const rejected = (await tasks()).find(t => t.id !== first.id && t.id !== waiting.id)!;
+  assert.equal(rejected.status, "error", "failed verification must not persist done");
+  const rejectedDetails = await (await fetch(`${base}/api/tasks/${rejected.id}`)).json() as TaskResponse;
+  assert.equal(rejectedDetails.task.messages.filter(m => m.role === "assistant").length, 0, "unverified completion never persisted as an assistant answer");
+  console.log(`PASS HTTP queue, cancellation isolation, process kill/restart, explicit replay confirmation and resume without repeating checkpointed effects; afterEffect=${afterEffect} (${tmp})`);
 } finally {
   await stop(); model.closeAllConnections(); await new Promise<void>((resolve) => model.close(() => resolve()));
 }

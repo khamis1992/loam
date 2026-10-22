@@ -1,0 +1,27 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+
+export function useBranch(): string {
+  const [branch, setBranch] = useState<string>('main');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const w = window as unknown as {
+      desktopSync?: { env?: Record<string, string> };
+      __AGENT_STUDIO_ENV__?: { gitBranch?: string };
+      __apis?: { system?: { getGitBranch?: () => Promise<string | null> | string | null } };
+    };
+    const fromEnv = w.desktopSync?.env?.GIT_BRANCH || w.__AGENT_STUDIO_ENV__?.gitBranch;
+    if (fromEnv) {
+      setBranch(fromEnv);
+      return;
+    }
+    const getter = w.__apis?.system?.getGitBranch;
+    if (getter) {
+      Promise.resolve(getter()).then((b) => setBranch(b || 'main')).catch(() => setBranch('main'));
+    }
+  }, []);
+
+  return branch;
+}

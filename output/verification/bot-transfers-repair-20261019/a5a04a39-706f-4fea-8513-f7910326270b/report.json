@@ -1,0 +1,1769 @@
+{
+  "pass": true,
+  "reason": "All 10 scenarios (the 7 original UI tests plus the 3 new API scenarios) pass on both desktop and mobile. The core fix is verified: whitespace-only requestIds (\" \" and \"\\t\\n\") return 400, and the SQLite checks confirm no stock change (A=10, B=0, C=0) and an empty transfers table, proving rejection occurs before any inventory or log trace. Concurrent replay returns 201/200 with a single recorded transfer, competing transfers return 201/409 with only one row, and all invalid-input groups (string quantity, 0.5, unknown warehouse, empty object, broken JSON) return 400. The contract JSON is preserved unchanged. Screenshots show a coherent RTL Arabic UI: stock panel with correct quantities per scenario, success/error messages rendering correctly (conflict, insufficient stock, same-warehouse), persistent transfer log after reload, readable text, no overlaps, and a properly stacked mobile layout.",
+  "reportPath": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\report.json",
+  "elapsedMs": 132047,
+  "usage": {
+    "promptTokens": 28877,
+    "completionTokens": 2206,
+    "durationMs": 17662
+  },
+  "checks": [
+    {
+      "viewport": "desktop",
+      "scenario": "Atomic transfer",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              7
+            ],
+            [
+              "B",
+              3
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "one",
+              "A",
+              "B",
+              3
+            ]
+          ]
+        }
+      ],
+      "api": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Idempotent replay",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              7
+            ],
+            [
+              "B",
+              3
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "one",
+              "A",
+              "B",
+              3
+            ]
+          ]
+        }
+      ],
+      "api": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Conflicting request id",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 409
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              7
+            ],
+            [
+              "B",
+              3
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "one",
+              "A",
+              "B",
+              3
+            ]
+          ]
+        }
+      ],
+      "api": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Insufficient stock rollback",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 409
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              10
+            ],
+            [
+              "B",
+              0
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": []
+        }
+      ],
+      "api": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Reject same warehouse",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              10
+            ],
+            [
+              "B",
+              0
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": []
+        }
+      ],
+      "api": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Reverse transfer",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              9
+            ],
+            [
+              "B",
+              1
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "one",
+              "A",
+              "B",
+              3
+            ],
+            [
+              "two",
+              "B",
+              "A",
+              2
+            ]
+          ]
+        }
+      ],
+      "api": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Reload persists both sides",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              7
+            ],
+            [
+              "B",
+              3
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "one",
+              "A",
+              "B",
+              3
+            ]
+          ]
+        }
+      ],
+      "api": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "API rejects invalid inputs",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              10
+            ],
+            [
+              "B",
+              0
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": []
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 400
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 400
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 400
+        },
+        {
+          "group": 3,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 400
+        },
+        {
+          "group": 4,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 400
+        },
+        {
+          "group": 5,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 400
+        },
+        {
+          "group": 6,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 400
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "API concurrent identical replay",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              3
+            ],
+            [
+              "B",
+              7
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "api-once",
+              "A",
+              "B",
+              7
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 201
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 409
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "API concurrent competing transfers",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              3
+            ],
+            [
+              "B",
+              7
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              "B",
+              7
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 201
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 409
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Atomic transfer",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              7
+            ],
+            [
+              "B",
+              3
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "one",
+              "A",
+              "B",
+              3
+            ]
+          ]
+        }
+      ],
+      "api": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Idempotent replay",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              7
+            ],
+            [
+              "B",
+              3
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "one",
+              "A",
+              "B",
+              3
+            ]
+          ]
+        }
+      ],
+      "api": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Conflicting request id",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 409
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              7
+            ],
+            [
+              "B",
+              3
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "one",
+              "A",
+              "B",
+              3
+            ]
+          ]
+        }
+      ],
+      "api": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Insufficient stock rollback",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 409
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              10
+            ],
+            [
+              "B",
+              0
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": []
+        }
+      ],
+      "api": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Reject same warehouse",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              10
+            ],
+            [
+              "B",
+              0
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": []
+        }
+      ],
+      "api": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Reverse transfer",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              9
+            ],
+            [
+              "B",
+              1
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "one",
+              "A",
+              "B",
+              3
+            ],
+            [
+              "two",
+              "B",
+              "A",
+              2
+            ]
+          ]
+        }
+      ],
+      "api": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Reload persists both sides",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              7
+            ],
+            [
+              "B",
+              3
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "one",
+              "A",
+              "B",
+              3
+            ]
+          ]
+        }
+      ],
+      "api": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "API rejects invalid inputs",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              10
+            ],
+            [
+              "B",
+              0
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": []
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 400
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 400
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 400
+        },
+        {
+          "group": 3,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 400
+        },
+        {
+          "group": 4,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 400
+        },
+        {
+          "group": 5,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 400
+        },
+        {
+          "group": 6,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 400
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "API concurrent identical replay",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              3
+            ],
+            [
+              "B",
+              7
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "requestId",
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "api-once",
+              "A",
+              "B",
+              7
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 201
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 200
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 409
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "API concurrent competing transfers",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/transfers",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "stock",
+          "columns": [
+            "warehouse",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              3
+            ],
+            [
+              "B",
+              7
+            ],
+            [
+              "C",
+              0
+            ]
+          ]
+        },
+        {
+          "database": "/tmp/transfers.sqlite",
+          "table": "transfers",
+          "columns": [
+            "source",
+            "destination",
+            "quantity"
+          ],
+          "rows": [
+            [
+              "A",
+              "B",
+              7
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 409
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/transfers",
+          "status": 201
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\desktop-0.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\desktop-1.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\desktop-2.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\desktop-3.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\desktop-4.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\desktop-5.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\desktop-6.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\desktop-7.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\desktop-8.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\desktop-9.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\mobile-0.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\mobile-1.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\mobile-2.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\mobile-3.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\mobile-4.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\mobile-5.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\mobile-6.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\mobile-7.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\mobile-8.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\.verification\\a5a04a39-706f-4fea-8513-f7910326270b\\mobile-9.png"
+  ],
+  "errors": [],
+  "runtime": {
+    "type": "node",
+    "isolation": "docker-network-none",
+    "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+    "freshBackendPerScenario": true
+  },
+  "visual": {
+    "model": "glm-5.3-flash",
+    "verdict": {
+      "verdict": "pass",
+      "reason": "All 10 scenarios (the 7 original UI tests plus the 3 new API scenarios) pass on both desktop and mobile. The core fix is verified: whitespace-only requestIds (\" \" and \"\\t\\n\") return 400, and the SQLite checks confirm no stock change (A=10, B=0, C=0) and an empty transfers table, proving rejection occurs before any inventory or log trace. Concurrent replay returns 201/200 with a single recorded transfer, competing transfers return 201/409 with only one row, and all invalid-input groups (string quantity, 0.5, unknown warehouse, empty object, broken JSON) return 400. The contract JSON is preserved unchanged. Screenshots show a coherent RTL Arabic UI: stock panel with correct quantities per scenario, success/error messages rendering correctly (conflict, insufficient stock, same-warehouse), persistent transfer log after reload, readable text, no overlaps, and a properly stacked mobile layout.",
+      "issues": [],
+      "notes": [
+        "The form helper text explicitly documents that an ID composed of spaces only is not accepted, which nicely mirrors the new server-side rule in the UI.",
+        "Placeholders (مثال: order-101) correctly reappear after reload once fields are cleared, indicating proper form reset behavior."
+      ]
+    },
+    "response": "{\"verdict\":\"pass\",\"reason\":\"All 10 scenarios (the 7 original UI tests plus the 3 new API scenarios) pass on both desktop and mobile. The core fix is verified: whitespace-only requestIds (\\\" \\\" and \\\"\\\\t\\\\n\\\") return 400, and the SQLite checks confirm no stock change (A=10, B=0, C=0) and an empty transfers table, proving rejection occurs before any inventory or log trace. Concurrent replay returns 201/200 with a single recorded transfer, competing transfers return 201/409 with only one row, and all invalid-input groups (string quantity, 0.5, unknown warehouse, empty object, broken JSON) return 400. The contract JSON is preserved unchanged. Screenshots show a coherent RTL Arabic UI: stock panel with correct quantities per scenario, success/error messages rendering correctly (conflict, insufficient stock, same-warehouse), persistent transfer log after reload, readable text, no overlaps, and a properly stacked mobile layout.\",\"issues\":[],\"notes\":[\"The form helper text explicitly documents that an ID composed of spaces only is not accepted, which nicely mirrors the new server-side rule in the UI.\",\"Placeholders (مثال: order-101) correctly reappear after reload once fields are cleared, indicating proper form reset behavior.\"]}",
+    "attempts": 1
+  },
+  "sourceHashes": {
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\app-verification.json": "45cc107cd62a5cc6850a52bb306fc4336047e46f8ddff7537477a5c93afde577",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\index.html": "c1f2e09924df13340b11c61a3cea26ae5a5fd56150c361fa425a3fc2124d8440",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvekt3qa69bbc61f4011\\server.mjs": "3c9b13d871875e9877e0e3a82d89b387bb12f346ff477e5e0d12892f8f11a53e"
+  }
+}

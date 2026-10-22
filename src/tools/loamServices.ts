@@ -1,0 +1,254 @@
+/**
+ * Loam services as gateway tools (frontier stage 3): the two services the
+ * companion gateway cataloged but had no model-facing tools — المهام/المشاريع
+ * (tasks) and الأتمتة (automation/schedules). These run against the app's real
+ * task + schedule stores, so a companion can create, follow, cancel, deliver
+ * into tasks and set up routines — with verification evidence per service in
+ * check:companions.
+ */
+import type { Tool } from "./registry.js";
+import { str, num, bool } from "./registry.js";
+import { createTask, getTask, listTasks, setTaskStatus } from "../server/db.js";
+import { addSchedule, listSchedules, deleteSchedule } from "../server/db.js";
+import { cancelRunSignal } from "../server/runControl.js";
+import { createWatchRoutine, watchSchedules } from "../server/fileWatchers.js";
+import { createUrlWatch, listConnectors, MIN_URL_WATCH_INTERVAL_SECONDS } from "../server/urlWatch.js";
+import { DEFAULT_TIMEZONE, isValidTimezone } from "../server/scheduleTime.js";
+
+const json = (value: unknown): string => JSON.stringify(value, null, 1);
+
+export function createLoamServiceTools(): Tool[] {
+  return [
+    {
+      name: "task_create",
+      description: "أنشئ مهمة Loam جديدة (مساحة عمل + سجل) — تُربط تلقائيًا بمساعد هذه الجولة إن وجد. أعد معرفها للمستخدم ليفتحها ويتابع نتائجها. لا تشغّلها تلقائيًا؛ اذكر ذلك بوضوح.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "عنوان المهمة (مختصر وواضح)" },
+          prompt: { type: "string", description: "وصف الهدف ومعايير الإنجاز (اختياري — يُحفظ مع المهمة)" },
+          agentId: { type: "string", description: "إسناد المهمة لمساعد محدد (افتراضيًا: مساعد هذه الجولة)" },
+        },
+        required: ["title"],
+      },
+      async run(args, ctx) {
+        const title = str(args, "title").trim().slice(0, 200);
+        if (!title) return { ok: false, content: "title مطلوب" };
+        const prompt = str(args, "prompt").trim().slice(0, 8000) || title;
+        const agentId = str(args, "agentId").trim() || (ctx.taskId ? (getTask(ctx.taskId)?.agentId ?? "") : "") || null;
+        const task = createTask(prompt, title, null, agentId);
+        return { ok: true, content: `أُنشئت المهمة «${task.title}» (الحالة: ${task.status}) — المعرف: ${task.id}. افتحها من صفحة المهام في Loam؛ لن تُشغَّل تلقائيًا.` };
+      },
+    },
+    {
+      name: "task_list",
+      description: "اعرض مهام Loam الأخيرة مع حالتها (queued/running/done/error/cancelled) وتاريخ آخر تحديث.",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "integer", minimum: 1, maximum: 50, description: "افتراضي 10" },
+          mineOnly: { type: "boolean", description: "اقصر القائمة على مهام هذا المساعد (يتطلب تعريف المهمة بمعرف المساعد)" },
+        },
+      },
+      async run(args, ctx) {
+        const limit = Math.min(50, Math.max(1, Math.floor(num(args, "limit", 10))));
+        const mine = bool(args, "mineOnly", false);
+        // mineOnly = THIS companion's tasks only (from the run's task owner)
+        const myAgentId = mine ? (ctx.taskId ? (getTask(ctx.taskId)?.agentId ?? "") : (str(args, "agentId") || "")) : "";
+        const rows = listTasks()
+          .filter((t) => (mine && myAgentId ? t.agentId === myAgentId : true))
+          .slice(0, limit)
+          .map((t) => ({ id: t.id, title: t.title, status: t.status, agentId: t.agentId ?? null, updatedAt: t.updatedAt }));
+        return { ok: true, content: rows.length > 0 ? json(rows) : "لا مهام بعد" };
+      },
+    },
+    {
+      name: "task_get",
+      description: "اقرأ حالة مهمة Loam وتقدمها: عدد الخطوات، آخر رسالة مساعد، وآخر خطوة موقوفة — لمتابعة التنفيذ أو تسليمه.",
+      parameters: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+      async run(args) {
+        const task = getTask(str(args, "id").trim());
+        if (!task) return { ok: false, content: "المهمة غير موجودة" };
+        const lastAssistant = [...(task.messages ?? [])].reverse().find((m) => m.role === "assistant");
+        const lastStep = (task.steps ?? []).at(-1) as { at?: string; data?: { type?: string } } | undefined;
+        return {
+          ok: true,
+          content: json({
+            id: task.id, title: task.title, status: task.status, agentId: task.agentId ?? null,
+            steps: (task.steps ?? []).length, messages: (task.messages ?? []).length,
+            lastAssistantMessage: (lastAssistant?.content ?? "").slice(0, 600),
+            lastStep: lastStep ? { type: lastStep.data?.type, at: lastStep.at } : null,
+          }),
+        };
+      },
+    },
+    {
+      name: "task_cancel",
+      description: "أوقف مهمة Loam جارية (إيقاف بين الخطوات) وضعها في حالة cancelled. للإلغاء عند طلب المستخدم أو انحراف المهمة.",
+      parameters: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+      async run(args) {
+        const id = str(args, "id").trim();
+        const task = getTask(id);
+        if (!task) return { ok: false, content: "المهمة غير موجودة" };
+        if (task.status === "done" || task.status === "cancelled") return { ok: false, content: `المهمة «${task.title}» حالتها ${task.status} أصلًا — لا شيء لإلغائه` };
+        const signaled = cancelRunSignal(id);
+        setTaskStatus(id, "cancelled", { error: "cancelled by companion" });
+        return { ok: true, content: `أُوقفت المهمة «${task.title}» وحُفظ ما نُفّذ منها${signaled ? " (أُرسلت إشارة الإيقاف لتشغيل جارٍ)" : ""}.` };
+      },
+    },
+    {
+      name: "schedule_create",
+      description: "أنشئ روتينًا مجدولًا (الأتمتة): يُشغّل أمرًا دوريًا (everyMinutes) أو حسب تعبير cron أو مرة واحدة في وقت محدد (at). يُربط الروتين تلقائيًا بهذا المساعد إن كانت الجولة لمساعد. اعرض دائمًا التوقيت ومعرّف الروتين للمستخدم.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "الأمر الذي يُنفّذ كل مرة (وصف مهمة كامل)" },
+          everyMinutes: { type: "number", minimum: 1, description: "الفاصل بالدقائق (الحد الأدنى الفعلي 30 ثانية) — استخدمه للروتين الدوري البسيط" },
+          cron: { type: "string", description: "تعبير cron من 5 حقول (دقيقة ساعة يوم-الشهر شهر يوم-الأسبوع) — بديل عن everyMinutes" },
+          at: { type: "string", description: "توقيت ISO 8601 لتشغيل واحد فقط (مثال 2026-11-01T18:00:00+03:00) — بديل عن everyMinutes" },
+          timezone: { type: "string", description: "منطقة IANA الزمنية لتفسير cron/at (افتراضيًا Asia/Qatar)" },
+          agentId: { type: "string", description: "إسناد الروتين لمساعد محدد (افتراضيًا: مساعد هذه الجولة)" },
+          workMode: { type: "string", enum: ["loam", "own_device"], description: "أين يُنفّذ الروتين: داخل التطبيق أو على جهاز المساعد المستقل (يتطلب جهازًا جاهزًا)" },
+        },
+        required: ["prompt"],
+      },
+      async run(args, ctx) {
+        const prompt = str(args, "prompt").trim().slice(0, 4000);
+        const everyMinutes = num(args, "everyMinutes", 0);
+        const cron = str(args, "cron").trim();
+        const at = str(args, "at").trim();
+        const timezone = str(args, "timezone").trim() || DEFAULT_TIMEZONE;
+        if (!prompt) return { ok: false, content: "prompt مطلوب" };
+        if (cron && at) return { ok: false, content: "لا يمكن الجمع بين cron وat — اختر واحدًا" };
+        if (!isValidTimezone(timezone)) return { ok: false, content: `منطقة زمنية غير معروفة: ${timezone}` };
+        if (!cron && !at && !(everyMinutes > 0)) return { ok: false, content: "everyMinutes يجب أن يكون رقمًا موجبًا (أو مرّر cron أو at)" };
+        const intervalSeconds = everyMinutes > 0 ? Math.round(everyMinutes * 60) : 0;
+        const owner = str(args, "agentId").trim() || (ctx.taskId ? (getTask(ctx.taskId)?.agentId ?? "") : "");
+        const workMode = str(args, "workMode").trim() || undefined;
+        let s;
+        try {
+          s = addSchedule(
+            prompt,
+            intervalSeconds,
+            owner || undefined,
+            workMode === "own_device" || workMode === "loam" ? workMode : undefined,
+            cron || at ? "cron" : undefined,
+            undefined,
+            true,
+            { cron: cron || undefined, runAt: at || undefined, timezone },
+          );
+        } catch (error) {
+          return { ok: false, content: `تعذّر إنشاء الروتين: ${(error as Error).message}` };
+        }
+        const cadence = cron
+          ? `يُشغّل حسب cron «${cron}» (${timezone})`
+          : at
+            ? `يُشغّل مرة واحدة عند ${s.nextRunAt}`
+            : `يُنفّذ كل ${everyMinutes} دقيقة بدءًا من ${s.nextRunAt}`;
+        return { ok: true, content: `أُنشئ الروتين (المعرف ${s.id}) — ${cadence}${s.agentId ? ` ويعمل باسم هذا المساعد (${s.agentId}) — تظهر نتائجه في محادثته` : ""}${s.workMode === "own_device" ? " على جهازه المستقل" : ""}. أوقفه بـ schedule_delete بنفس المعرف.` };
+      },
+    },
+    {
+      name: "schedule_list",
+      description: "اعرض روتينات الأتمتة المجدولة: المعرف، الفاصل أو cron، المنطقة الزمنية، التمكين، آخر تشغيل وحالته.",
+      parameters: { type: "object", properties: {} },
+      async run() {
+        const rows = listSchedules().map((s) => ({
+          id: s.id,
+          everyMinutes: Math.round(s.intervalSeconds / 60),
+          intervalSeconds: s.intervalSeconds,
+          cron: s.cron ?? null,
+          runAt: s.runAt ?? null,
+          timezone: s.timezone ?? DEFAULT_TIMEZONE,
+          nextRunAt: s.nextRunAt ?? null,
+          enabled: s.enabled,
+          prompt: s.prompt.slice(0, 120),
+          agentId: s.agentId ?? null,
+          kind: s.kind ?? "cron",
+          // MF7 url-watch state (null for the other kinds)
+          url: s.kind === "url-watch" ? (s.watchPath ?? null) : null,
+          selector: s.watchSelector ?? null,
+          lastWatchCheckedAt: s.lastWatchCheckedAt ?? null,
+          lastWatchChangedAt: s.lastWatchChangedAt ?? null,
+          lastRunAt: s.lastRunAt ?? null,
+          lastTaskId: s.lastTaskId ?? null,
+          lastStatus: s.lastStatus ?? null,
+          attempts: s.attempts ?? 0,
+          lastError: s.lastError ?? null,
+        }));
+        return { ok: true, content: rows.length > 0 ? json(rows) : "لا روتينات مجدولة" };
+      },
+    },
+    {
+      name: "watch_create",
+      description: "أنشئ مشغلًا حدثيًا: راقب مجلدًا عند المستخدم ونفّذ أمرًا لمساعدك عند أي تغيير فيه (بعد مهلة تهدئة). مثال: عالج الفواتير الجديدة في مجلد الفواتير تلقائيًا.",
+      parameters: {
+        type: "object",
+        properties: {
+          watchPath: { type: "string", description: "المجلد المراقب (مسار مطلق عند المستخدم)" },
+          prompt: { type: "string", description: "الأمر الذي يُنفّذ عند كل تغيير (وصف مهمة كامل)" },
+        },
+        required: ["watchPath", "prompt"],
+      },
+      async run(args, ctx) {
+        const watchPath = str(args, "watchPath").trim();
+        const prompt = str(args, "prompt").trim().slice(0, 4000);
+        if (!watchPath || !prompt) return { ok: false, content: "watchPath وprompt مطلوبان" };
+        const owner = str(args, "agentId").trim() || (ctx.taskId ? (getTask(ctx.taskId)?.agentId ?? "") : "");
+        const run = (globalThis as unknown as { __loamScheduledRun?: (o: { prompt: string; scheduleId: string; agentId?: string; workMode?: string }) => Promise<string> }).__loamScheduledRun;
+        if (!run) return { ok: false, content: "محرك المشغلات غير مهيأ في هذه البيئة" };
+        const created = createWatchRoutine({ prompt, watchPath, ...(owner ? { agentId: owner } : {}), run });
+        if ("error" in created) return { ok: false, content: created.error };
+        return { ok: true, content: `رُكّب المشغل (${created.scheduleId}) على ${created.dir} — أي تغيير في المجلد يشغّل أمرك باسمك. أوقفه بـ schedule_delete.` };
+      },
+    },
+    {
+      name: "watch_list",
+      description: "اعرض المشغلات الحدثية المركبة (مجلدات مراقبة).",
+      parameters: { type: "object", properties: {} },
+      async run() {
+        const rows = watchSchedules();
+        return { ok: true, content: rows.length > 0 ? json(rows) : "لا مشغلات مركبة" };
+      },
+    },
+    {
+      name: "watch_url",
+      description: "أنشئ مراقب URL: استقصِ صفحة ويب كل فترة (5 دقائق كأدنى) ولا تشغّل أمرك إلا إذا تغيّر محتواها — يُرفق مع الأمر diff قصير للنص القديم مقابل الجديد. مثال: راقب صفحة الأخبار وبلغني عند أي تحديث جديد.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "عنوان الصفحة المراقبة (http/https)" },
+          intervalMinutes: { type: "number", minimum: 5, description: "الفاصل بالدقائق (افتراضي 5، الأدنى 5)" },
+          selector: { type: "string", description: "اختياري: انتقاء النص — مثل #id أو .class أو اسم وسم، أو regex بصيغة /pat/ig" },
+          prompt: { type: "string", description: "الأمر الذي يُنفّذ عند تغيّر المحتوى فقط (وصف مهمة كامل)" },
+        },
+        required: ["url", "prompt"],
+      },
+      async run(args, ctx) {
+        const url = str(args, "url").trim();
+        const prompt = str(args, "prompt").trim().slice(0, 4000);
+        if (!url || !prompt) return { ok: false, content: "url وprompt مطلوبان" };
+        const intervalMinutes = num(args, "intervalMinutes", MIN_URL_WATCH_INTERVAL_SECONDS / 60);
+        const owner = str(args, "agentId").trim() || (ctx.taskId ? (getTask(ctx.taskId)?.agentId ?? "") : "");
+        const created = createUrlWatch({
+          url,
+          intervalSeconds: Math.round(intervalMinutes * 60),
+          ...(str(args, "selector").trim() ? { selector: str(args, "selector").trim() } : {}),
+          prompt,
+          ...(owner ? { agentId: owner } : {}),
+        });
+        if ("error" in created) return { ok: false, content: created.error };
+        return { ok: true, content: `رُكّب مراقب URL (${created.scheduleId}) على ${created.url} كل ${Math.round(created.intervalSeconds / 60)} دقيقة — عند أول قراءة يُحفظ خط أساس، وعند أي تغيّر لاحق فقط يُنفّذ أمرك مع diff. أوقفه بـ schedule_delete.${listConnectors().length > 0 ? ` (موصلات مرتبطة: ${listConnectors().join("، ")})` : ""}` };
+      },
+    },
+    {
+      name: "schedule_delete",
+      description: "أوقف روتين أتمتة واحذفه بمعرّفه (من schedule_list).",
+      parameters: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+      async run(args) {
+        const ok = deleteSchedule(str(args, "id").trim());
+        return { ok, content: ok ? "حُذف الروتين ولن يُشغّل مجددًا" : "الروتين غير موجود" };
+      },
+    },
+  ];
+}

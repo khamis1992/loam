@@ -1,0 +1,41 @@
+﻿# Fix round progress
+- 13:31 step1: task session nudged to commit src/protocol round5 (other dirty files = ZCode, untouched)
+- 13:36 step1 done: 63affd7. step2: tsc root/web checked, web out built
+- 13:40 step3 QA started: auto-login OK, sidebar persists, real task -> 'not found' (GetSession 404). Sent to OpenCode task session round 6.
+- 13:41 QA: model dropdown OK, templates/Build/Create fill prompt OK, add-files menu OK, right panel OK, Ctrl+K OK, account menu OK; settings nav broken + no dark -> shell session.
+- 13:45 real-task bug root cause: client never sends user_message after GetSession 404 (double join). Sent to task session. Arabic/RTL OK, search OK, rename/delete menu shown.
+- 13:47 logout->/login OK, /app guard OK, deep-link login OK.
+- 13:55 c3cb8d7 verified: real task reply + follow-up + stop OK. Settings nav still broken after 271a5f5 -> resent to shell with harness. Task round 7 sent (step icons, computer panel, status bar, stop i18n).
+- 14:08 both sessions still busy (12+ min)
+- 14:18 sessions were blocked on external_directory permission (TEMP\qa) - approved always. UNIMPLEMENTED_OPTIONS.md drafted on box.
+- 14:29 090c82f task round7 committed (computer panel, step icons). Settings nav confirmed working (QA harness clicked li). Shell nudged to finish share/credits/toggles.
+- 14:30 verified: settings nav OK, dark theme OK, early status fixed. Spinners stuck + empty computer panel -> task round 8.
+- 14:34 verified: rename+delete persist after reload, fullscreen toggle OK, minimize OK. Attachments broken (PUT blob aborted) -> queued round 9.
+- 14:52 backend restarted for fccb952. Live: spinners still 4, no panel; attachments -> /app/sess_attachments, dup turns, no file content. Sent round 10.
+- 15:05 a0b2bfd shell share/credits/toggles committed. task round10 in progress.
+- 15:15 round10 was hung on CDP screenshot (window minimized) - restored window.
+- 15:23 NEW SCOPE: Manus home reference saved docs\handoff\manus-home-reference.png; shell session -> sidebar/topbar, home session -> home parity. Task session still on round10.
+- 15:37 0bc88d1 home parity committed. kimi can't read images -> wrote docs\handoff\manus-home-reference.md text spec; shell + home re-nudged.
+- 15:47 f02e760 round10, 212cc01 home polish, 9fa0812 sidebar committed. Owner: remove 'Cue' badge -> shell session.
+- 15:48 round10 verified: spinners 0, panel opens, 1 turn, fresh id. Wrong attachment content + panel 'No content' -> round 11. /api/agents 404 on 8787 noted for shell.
+- 15:48 correction: attachment content correct end-to-end (test file had been rewritten). Remaining: filename + panel content.
+- 15:52 95f9686 round11, 8ccda97 Cue removed. Sent /api 404 fix to shell.
+- 15:54 side-by-side qa2/side_by_side_home.png: gaps sent to home (logo, grid, promo dark, branch chip, composer fit) and shell (light theme bug, sidebar width, task icons).
+- 15:57 owner: rename Agent Studio -> Loam (keep agentstudio:// + env names) queued to home session.
+- 16:10 brand 6f202ec verified (title Loam, wordmark loam studio, Sign in to Loam, no Cue). FINAL QA run 1: task+attachment+panel+share+delete+logout/guard OK; nav pages CORS fail -> shell proxy fix.
+- 16:14 FINAL QA run 2: follow-up OK, history persists, Stop OK, credits popover OK, settings 6 real tabs + 11 'Coming soon', dark OK, RTL OK. Regressions sent: Build/Create no-op + ar sidebar (home), stop text i18n (task).
+- 16:28 ed27ac8 proxy: backend restarted; /api via 8787 -> 401 (LOAM_LOCAL_TOKEN unset). Sent in-process token fix to shell.
+- 16:41 8dd6714 + 6a3e180 committed; NOTE 8dd6714 swept ZCode's uncommitted src/server/http.ts edits (ollama cloud check, LOAM_AUTH_DISABLED) into the commit. Backend restarted.
+- 16:43 nav pages still 401 via proxy; backend restart logs user out. Sent to shell.
+- 16:48 resumed; shell+home sessions busy (proxy/sessions; build-create/ar).
+- 17:04 shell session hit output length limit; new OpenCode session ses_ea65f5ec3ffexj9Em2Cls52DXb for proxy401+sessions.
+- 17:12 d403b42 proxy401+persistent sessions committed.
+- 17:21 home session went off-track (headless chrome on 9333), aborted; new session ses_ea650162bffeEnCCcPQTO9AmzP to finish build/create + ar.
+- 17:24 fd36633 committed. Final verification starting.
+- 17:26 backend restarted for d403b42. Build/Create still no popover + sidebar t() module-level -> home-finish session.
+- 17:27 restart auto-login OK. nav pages 401 'login required' = missing Authorization header in page fetch -> proxy session.
+- 17:35 5101824 starter menu + reactive sidebar committed.
+- 17:38 4509693 nav token committed; final verify.
+- 17:40 nav: 5/7 real data; library/creations 400 + projects ar ???? -> proxy session. Arabic sidebar OK.
+- 17:41 Build/Create popover OK (real mouse), prefill OK.
+- 17:47 qa2 screenshots + side_by_side_home.png done; writing report.

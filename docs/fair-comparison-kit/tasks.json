@@ -1,0 +1,48 @@
+{
+ "suite": "loam-fair-comparison v1",
+ "createdAt": "2026-10-19",
+ "contract": {
+  "identicalPrompts": true,
+  "permissions": "نفس صلاحيات التنفيذ الممنوحة لكل مساعد (ملفات + إنشاء مهام + حفظ ذاكرة)",
+  "budget": "زمن أقصى 10 دقائق لكل مهمة، بلا تدخل بشري إلا ما يطلبه النظام نفسه",
+  "scoring": "صحة النتيجة تُقاس ضد الآثار الجانبية الفعلية لا ضد ادعاء النموذج"
+ },
+ "tasks": [
+  {
+   "id": "doc-ar",
+   "lang": "ar",
+   "prompt": "أنشئ مستندًا بالاسم report-ar.md عنوانه «تقرير الربع» ومحتواه سطر واحد: نمت الإيرادات 12 بالمئة هذا الربع. احفظه ثم أجب: تم.",
+   "effect": "يوجد الملف report-ar.md في مساحة المهمة ويحتوي 12"
+  },
+  {
+   "id": "memory-ar",
+   "lang": "ar",
+   "prompt": "احفظ في ذاكرتك الشخصية أنني أفضّل الأمثلة قبل التعريفات، ثم أجب: تم.",
+   "effect": "ذكرى محفوظة بنص التفضيل"
+  },
+  {
+   "id": "task-en",
+   "lang": "en",
+   "prompt": "Create a task titled 'Quarterly infrastructure audit' (do not run it), then reply: done.",
+   "effect": "مهمة بهذا العنوان مملوكة للمساعد"
+  },
+  {
+   "id": "csv-en",
+   "lang": "en",
+   "prompt": "Write sales.csv with rows Riyadh 120, Jeddah 80, Dammam 40 (header city,sales) then analyze it and report the total.",
+   "effect": "الملف موجود + مجموع 240 مذكور في التحليل"
+  },
+  {
+   "id": "device-ar",
+   "lang": "ar",
+   "prompt": "اعمل منفصلًا على جهازك المستقل: اكتب الملف bench.md بداخله يحوي «ناتج داخل الجهاز» ثم سلّمه إلى مساحة المهمة.",
+   "effect": "ملف مسلّم في مساحة المهمة بالنص المطلوب"
+  },
+  {
+   "id": "delegate-en",
+   "lang": "en",
+   "prompt": "Delegate to a reviewer companion the sign-off of the audit checklist, then confirm completion.",
+   "effect": "مهمة مفوّضة للمراجع منتهية"
+  }
+ ]
+}

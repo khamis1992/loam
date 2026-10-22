@@ -1,0 +1,11 @@
+export type DataField={id:string;label:string;type:'text'|'number'|'date'|'boolean'|'select'|'relation';required?:boolean;options?:string[];collectionId?:string;min?:number;max?:number;integer?:boolean};
+export type CollectionRule={id:string;message:string}&({type:'compare';field:string;otherField:string;operator:'gt'|'gte'}|{type:'unique';fields:string[];when?:{field:string;equals:string|boolean}});
+export type MobileCollection={id:string;title:string;singular:string;titleField:string;subtitleField?:string;fields:DataField[];rules?:CollectionRule[]};
+export type DataRecord={id:string;values:Record<string,string|number|boolean>;createdAt:string;updatedAt:string;deletedAt?:string};
+export type RecordState={version:1;revision:number;collections:Record<string,DataRecord[]>};
+export function validateCollections(input?:unknown):MobileCollection[];
+export function parseRecordState(raw:string|null):RecordState;
+export function validateRecord(collection:MobileCollection,values:Record<string,unknown>,state:RecordState,excludeId?:string):{values:Record<string,string|number|boolean>;errors:Record<string,string>};
+export function mutateRecords(state:RecordState,schemas:MobileCollection[],action:{type:'save'|'delete'|'restore';collectionId:string;id?:string;expectedUpdatedAt?:string;values?:Record<string,unknown>}):{state:RecordState;errors:Record<string,string>};
+export function recordLabel(schema:MobileCollection,row:DataRecord):string;
+export function relationLabel(schema:MobileCollection,row:DataRecord,rows:DataRecord[]):string;

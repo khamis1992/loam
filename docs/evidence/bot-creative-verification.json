@@ -1,0 +1,133 @@
+{
+  "at": "2026-10-18T23:11:00.471Z",
+  "workspace": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O",
+  "good": {
+    "pass": true,
+    "reason": "Red cube visible",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O\\.verification\\creative-3b6908c9-d9e9-443b-a2f5-3c94cfd30e85\\report.json",
+    "screenshots": [
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O\\.verification\\creative-3b6908c9-d9e9-443b-a2f5-3c94cfd30e85\\saved-camera.png",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O\\.verification\\creative-3b6908c9-d9e9-443b-a2f5-3c94cfd30e85\\framed.png"
+    ],
+    "usage": {
+      "promptTokens": 1,
+      "completionTokens": 1,
+      "durationMs": 1
+    },
+    "elapsedMs": 2243,
+    "revision": 1,
+    "visual": {
+      "model": "visual-fixture",
+      "verdict": {
+        "verdict": "pass",
+        "reason": "Red cube visible",
+        "issues": []
+      },
+      "response": "{\"verdict\":\"pass\",\"reason\":\"Red cube visible\",\"issues\":[]}",
+      "attempts": 1
+    },
+    "sourceHashes": {
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O\\.loam\\creative.json": "0d21f15808f60b8f36275c20b32c8eda071bfcfce5203737734c2169ecf5faa1"
+    },
+    "scope": "saved camera, framed view and optional motion sample; not full animation/export validation"
+  },
+  "bad": {
+    "pass": false,
+    "reason": "Error: Scene visual verification rejected: {\"verdict\":\"revise\",\"reason\":\"Box is not a car\",\"issues\":[\"Requested car has no recognizable wheels/body\"]}",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O\\.verification\\creative-bec985dc-71b9-4db3-94bf-8c88e4c430d5\\report.json",
+    "screenshots": [
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O\\.verification\\creative-bec985dc-71b9-4db3-94bf-8c88e4c430d5\\saved-camera.png",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O\\.verification\\creative-bec985dc-71b9-4db3-94bf-8c88e4c430d5\\framed.png"
+    ],
+    "usage": {
+      "promptTokens": 1,
+      "completionTokens": 1,
+      "durationMs": 1
+    },
+    "elapsedMs": 1492,
+    "revision": 1,
+    "visual": {
+      "model": "visual-fixture",
+      "verdict": {
+        "verdict": "revise",
+        "reason": "Box is not a car",
+        "issues": [
+          "Requested car has no recognizable wheels/body"
+        ]
+      },
+      "response": "{\"verdict\":\"revise\",\"reason\":\"Box is not a car\",\"issues\":[\"Requested car has no recognizable wheels/body\"]}",
+      "attempts": 1
+    }
+  },
+  "changed": {
+    "pass": false,
+    "reason": "Error: Scene or asset changed during verification",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O\\.verification\\creative-f9ba2492-04af-4a4a-bc10-45d32ce74a36\\report.json",
+    "screenshots": [
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O\\.verification\\creative-f9ba2492-04af-4a4a-bc10-45d32ce74a36\\saved-camera.png",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O\\.verification\\creative-f9ba2492-04af-4a4a-bc10-45d32ce74a36\\framed.png"
+    ],
+    "usage": {
+      "promptTokens": 1,
+      "completionTokens": 1,
+      "durationMs": 1
+    },
+    "elapsedMs": 1364,
+    "revision": 1,
+    "visual": {
+      "model": "visual-fixture",
+      "verdict": {
+        "verdict": "pass",
+        "reason": "Red cube visible",
+        "issues": []
+      },
+      "response": "{\"verdict\":\"pass\",\"reason\":\"Red cube visible\",\"issues\":[]}",
+      "attempts": 1
+    }
+  },
+  "empty": {
+    "pass": false,
+    "reason": "Error: Scene is missing or contains no visible objects",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O\\.verification\\creative-9f15a6ba-b94f-40af-bdf2-5cf9b2d20216\\report.json",
+    "screenshots": [],
+    "usage": {
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "durationMs": 0
+    },
+    "elapsedMs": 2
+  },
+  "imported": {
+    "pass": true,
+    "reason": "Red cube visible",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O\\.verification\\creative-eb66c98e-90b3-410c-9e94-bbe79521cc2d\\report.json",
+    "screenshots": [
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O\\.verification\\creative-eb66c98e-90b3-410c-9e94-bbe79521cc2d\\saved-camera.png",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O\\.verification\\creative-eb66c98e-90b3-410c-9e94-bbe79521cc2d\\framed.png",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O\\.verification\\creative-eb66c98e-90b3-410c-9e94-bbe79521cc2d\\motion-sample.png"
+    ],
+    "usage": {
+      "promptTokens": 1,
+      "completionTokens": 1,
+      "durationMs": 1
+    },
+    "elapsedMs": 1551,
+    "revision": 4,
+    "visual": {
+      "model": "visual-fixture",
+      "verdict": {
+        "verdict": "pass",
+        "reason": "Red cube visible",
+        "issues": []
+      },
+      "response": "{\"verdict\":\"pass\",\"reason\":\"Red cube visible\",\"issues\":[]}",
+      "attempts": 1
+    },
+    "sourceHashes": {
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O\\.loam\\creative.json": "9a0a52cad0c1c2067c751c1de1c08e67d1368114ee624de5883e7f11a53fd9a0",
+      "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-creative-verify-AkeZ7O\\triangle.glb": "aa7a4a0ccfff9e7091472699b043c2973181bce4b5c3f9febcfd71f4d20689aa"
+    },
+    "scope": "saved camera, framed view and optional motion sample; not full animation/export validation"
+  },
+  "visualModelIsFixture": true
+}

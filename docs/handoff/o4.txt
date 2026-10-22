@@ -1,0 +1,5 @@
+﻿Edit ONLY src/server/runTools.ts. In the ALWAYS_ON_TOOLS array, after the line   "scratchpad_complete",   add three lines:
+  "schedule_create",
+  "schedule_list",
+  "schedule_cancel",
+Nothing else. Do not commit. Reply DONE.

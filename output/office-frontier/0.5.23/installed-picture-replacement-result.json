@@ -1,0 +1,11 @@
+{
+  "version": "0.5.23",
+  "taskId": "task_mvdrnqzac7414ff919c9",
+  "revision": 3,
+  "replacement": true,
+  "cropEditing": true,
+  "invalidCropRecovery": true,
+  "sharedImageUnchanged": true,
+  "frameAndTransformsPreserved": true,
+  "preservedParts": 17
+}

@@ -1,0 +1,17 @@
+[
+  {
+    "check": "check:loam-e2e",
+    "exit": 1,
+    "log": "output/frontier-audit-2026-10-19/check-loam-e2e.log"
+  },
+  {
+    "check": "check:bot-chat-heartbeat",
+    "exit": 0,
+    "log": "output/frontier-audit-2026-10-19/check-bot-chat-heartbeat.log"
+  },
+  {
+    "check": "check:bot-file-edit",
+    "exit": 0,
+    "log": "output/frontier-audit-2026-10-19/check-bot-file-edit.log"
+  }
+]

@@ -1,0 +1,292 @@
+[
+  {
+    "url": "/",
+    "theme": "dark",
+    "icons": 77
+  },
+  {
+    "url": "/#/services",
+    "theme": "dark",
+    "icons": 77
+  },
+  {
+    "url": "/#/settings",
+    "theme": "dark",
+    "icons": 77
+  },
+  {
+    "url": "/#/projects",
+    "theme": "dark",
+    "icons": 77
+  },
+  {
+    "url": "/#/schedules",
+    "theme": "dark",
+    "icons": 77
+  },
+  {
+    "url": "/#/tasks",
+    "theme": "dark",
+    "icons": 77
+  },
+  {
+    "url": "/#/modes/ask",
+    "theme": "dark",
+    "icons": 78
+  },
+  {
+    "url": "/#/modes/build",
+    "theme": "dark",
+    "icons": 80
+  },
+  {
+    "url": "/#/modes/research",
+    "theme": "dark",
+    "icons": 78
+  },
+  {
+    "url": "/#/modes/write",
+    "theme": "dark",
+    "icons": 83
+  },
+  {
+    "url": "/#/modes/data",
+    "theme": "dark",
+    "icons": 81
+  },
+  {
+    "url": "/#/modes/automate",
+    "theme": "dark",
+    "icons": 78
+  },
+  {
+    "url": "/#/modes/media",
+    "theme": "dark",
+    "icons": 84
+  },
+  {
+    "url": "/brain.html",
+    "theme": "dark",
+    "icons": 9
+  },
+  {
+    "url": "/companions.html",
+    "theme": "dark",
+    "icons": 19
+  },
+  {
+    "url": "/learning.html",
+    "theme": "dark",
+    "icons": 1
+  },
+  {
+    "url": "/memory.html",
+    "theme": "dark",
+    "icons": 2
+  },
+  {
+    "url": "/skills.html",
+    "theme": "dark",
+    "icons": 26
+  },
+  {
+    "url": "/screen.html",
+    "theme": "dark",
+    "icons": 1
+  },
+  {
+    "url": "/terminal.html",
+    "theme": "dark",
+    "icons": 1
+  },
+  {
+    "url": "/integrations.html",
+    "theme": "dark",
+    "icons": 2
+  },
+  {
+    "url": "/mobile.html",
+    "theme": "dark",
+    "icons": 11
+  },
+  {
+    "url": "/security.html",
+    "theme": "dark",
+    "icons": 5
+  },
+  {
+    "url": "/swarm.html",
+    "theme": "dark",
+    "icons": 4
+  },
+  {
+    "url": "/studios/index.html#mobile",
+    "theme": "dark",
+    "icons": 20
+  },
+  {
+    "url": "/studios/index.html#office",
+    "theme": "dark",
+    "icons": 19
+  },
+  {
+    "url": "/studios/index.html#creative",
+    "theme": "dark",
+    "icons": 20
+  },
+  {
+    "url": "/studios/index.html#security",
+    "theme": "dark",
+    "icons": 20
+  },
+  {
+    "url": "/studios/index.html#swarm",
+    "theme": "dark",
+    "icons": 19
+  },
+  {
+    "url": "/",
+    "theme": "light",
+    "icons": 77
+  },
+  {
+    "url": "/#/services",
+    "theme": "light",
+    "icons": 77
+  },
+  {
+    "url": "/#/settings",
+    "theme": "light",
+    "icons": 77
+  },
+  {
+    "url": "/#/projects",
+    "theme": "light",
+    "icons": 77
+  },
+  {
+    "url": "/#/schedules",
+    "theme": "light",
+    "icons": 77
+  },
+  {
+    "url": "/#/tasks",
+    "theme": "light",
+    "icons": 77
+  },
+  {
+    "url": "/#/modes/ask",
+    "theme": "light",
+    "icons": 78
+  },
+  {
+    "url": "/#/modes/build",
+    "theme": "light",
+    "icons": 80
+  },
+  {
+    "url": "/#/modes/research",
+    "theme": "light",
+    "icons": 78
+  },
+  {
+    "url": "/#/modes/write",
+    "theme": "light",
+    "icons": 83
+  },
+  {
+    "url": "/#/modes/data",
+    "theme": "light",
+    "icons": 81
+  },
+  {
+    "url": "/#/modes/automate",
+    "theme": "light",
+    "icons": 78
+  },
+  {
+    "url": "/#/modes/media",
+    "theme": "light",
+    "icons": 84
+  },
+  {
+    "url": "/brain.html",
+    "theme": "light",
+    "icons": 9
+  },
+  {
+    "url": "/companions.html",
+    "theme": "light",
+    "icons": 19
+  },
+  {
+    "url": "/learning.html",
+    "theme": "light",
+    "icons": 1
+  },
+  {
+    "url": "/memory.html",
+    "theme": "light",
+    "icons": 2
+  },
+  {
+    "url": "/skills.html",
+    "theme": "light",
+    "icons": 26
+  },
+  {
+    "url": "/screen.html",
+    "theme": "light",
+    "icons": 1
+  },
+  {
+    "url": "/terminal.html",
+    "theme": "light",
+    "icons": 1
+  },
+  {
+    "url": "/integrations.html",
+    "theme": "light",
+    "icons": 2
+  },
+  {
+    "url": "/mobile.html",
+    "theme": "light",
+    "icons": 11
+  },
+  {
+    "url": "/security.html",
+    "theme": "light",
+    "icons": 5
+  },
+  {
+    "url": "/swarm.html",
+    "theme": "light",
+    "icons": 4
+  },
+  {
+    "url": "/studios/index.html#mobile",
+    "theme": "light",
+    "icons": 20
+  },
+  {
+    "url": "/studios/index.html#office",
+    "theme": "light",
+    "icons": 19
+  },
+  {
+    "url": "/studios/index.html#creative",
+    "theme": "light",
+    "icons": 20
+  },
+  {
+    "url": "/studios/index.html#security",
+    "theme": "light",
+    "icons": 20
+  },
+  {
+    "url": "/studios/index.html#swarm",
+    "theme": "light",
+    "icons": 19
+  }
+]

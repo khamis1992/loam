@@ -1,0 +1,7 @@
+<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/mobile-app.css"><link rel="stylesheet" href="/mobile-design.css"><link rel="stylesheet" href="/mobile-records.css"><body><div id="mobile-app"></div><script type="module">
+import {mountMobile} from '/mobile-runtime.js';
+let trail=[],lastScreen='',lastKey='';
+window.addEventListener('keydown',event=>{if(event.key==='Escape')parent.postMessage({type:'mobile-preview-exit'},location.origin);});
+window.addEventListener('message',event=>{if(event.origin!==location.origin||event.source!==parent||event.data?.type!=='mobile-render')return;const d=event.data;if(d.storageKey!==lastKey||d.screen!==lastScreen)trail=[];lastScreen=d.screen;lastKey=d.storageKey;mountMobile(document.getElementById('mobile-app'),d.project,d.storageKey,d.screen,{edit:d.edit,selected:d.blockId,trail,onSelect:id=>parent.postMessage({type:'mobile-select',id},location.origin),onScreen:(id,stack)=>{lastScreen=id;trail=stack;parent.postMessage({type:'mobile-screen',id},location.origin);}});});
+parent.postMessage({type:'mobile-ready'},location.origin);
+</script></body></html>

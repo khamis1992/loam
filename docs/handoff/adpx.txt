@@ -1,0 +1,8 @@
+Follow-up backend fix. OWNERSHIP: src/protocol/adapter.ts ONLY. Do NOT edit src/server/http.ts or other protected files.
+PROBLEM: The protocol adapter on port 8787 proxies browser requests to the Loam server on 3939, but the pass-through proxy block (around line 165) only forwards GET: `if (req.method === "GET" && p.startsWith("/api/") && p !== "/api/health")`. Write methods (POST/PUT/PATCH/DELETE) to /api/* are never proxied, so they fall through and 404. This breaks companion create/edit from the desktop UI (POST /api/agents, PUT /api/agents/:id both 404). Verified live: creating a custom agent returns 404.
+FIX:
+1. Change that proxy condition to also handle POST, PUT, PATCH, DELETE for p.startsWith("/api/") (keep excluding /api/health and any path already handled earlier in the function - the RPC handlers and the chat upload POST routes at the top run BEFORE this block, so they still win; this block is a fallthrough).
+2. For write methods you MUST forward the request body: pipe the incoming req into proxyReq (req.pipe(proxyReq)) instead of calling proxyReq.end() with no body. For GET keep the current no-body behavior (proxyReq.end()). Preserve forwarding of req.headers (content-type, content-length, auth/x-client headers) so the 3939 server authorizes the call and parses JSON.
+3. Keep the existing error handling, status/header passthrough, and proxyRes.pipe(res).
+Do not change anything else. After the fix, POST http://localhost:8787/api/agents and PUT http://localhost:8787/api/agents/:id should reach the 3939 createAgent/updateAgent handlers.
+VERIFY: npx tsc --noEmit -p . = 0 errors. Commit only src/protocol/adapter.ts. Append a short note to docs/handoff/int-f1-report.md.

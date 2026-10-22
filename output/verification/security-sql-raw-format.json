@@ -1,0 +1,1179 @@
+{
+  "createdAt": "2026-10-18T09:00:39.571Z",
+  "engineRevision": 22,
+  "corpus": {
+    "files": {
+      "minimongo.js": "b03557c7ace571d5beb88c4da78b9db6c79f5e7358db40411fb97726418de8b7",
+      "dbo.js": "34fcbf6d2883047ba1956f707c5bea56111b7d7092400c30cc14ecc1c8aea5c6",
+      "marsdb-flow-from.js": "01fcfb2dcb2e513ca2e84ab60000dd328fcfb4dc47c76746bbfe652316b79f68",
+      "athena.js": "63a57ba698cbd1b7cf1f4a555876a0539e6df7cd618751e5005a8ae4eecf9385",
+      "vercel.ts": "dd621ab0a9d2f7e7840f4be767ae3804b7a133b7cf32b27f3350b244012bbb86",
+      "node-sqlite3-LICENSE": "7686f81e580cd6774f609a2d8a41b2cebdf79bc30e6b46c3efff5a656158981c",
+      "marsdb-flow-to.js": "7af4467f29fb1feb60732e69c04ffe470d2e8298db1600337b354f8fcef3199b",
+      "tst2.js": "e1c0b02f391a4861a90d0bfabf547438e47910d68756888dfb940ffe709216fb",
+      "marsdb.js": "4faea7e706a24fcbcce6177277fce5effd2784753e63da03f4c79c437c6ccbec",
+      "mongooseModel.js": "21908508971461186bacea22e7f15079c84f395320196b0a0e9ec04af0fbd681",
+      "redis.js": "7e445a412a7aadde3ffa8e4bc326a2444bae040e71187516cc44d7d5896156b4",
+      "koarouter.js": "2698db29e61b26a1f1ed7c31bfb18e298c27ac65e31f2ccdd64d79c141ee70b8",
+      "mongodb.js": "1d30faee7301bf25c40d9413385b9e63ffd56c3f0d3b8e15b088a48fe3362577",
+      "rds-client.js": "be979c568464f93c4fb9596c4cda7ba6f3f83d96cc31bc88df57c2f1b3be39c7",
+      "SqlInjection.qlref": "ecba32269a5727e588bc0303e6aae809df8b08a21888cd93a0e0c7bc991fca78",
+      "CODEQL-LICENSE": "66056d06b874e3eb6a22f5fff297e1676a23dc43e8c8b81279c1ef33a6a270df",
+      "ldap.js": "66bd897ecd169297baa18edbabe12ef7ef8c891d3037826c5d0c7d241778c3d5",
+      "tst4.js": "5ad0cfe8aadd297010b4a8bb510a52eff03afefbe8b015bd680d3e44973ffc94",
+      "pg-promise-types.ts": "ac6c3da2f0414f929f36a5a0902ad6824c0c8f82b606b9e4bb75bcedf653c8bc",
+      "mongooseModelClient.js": "469532cffab824f06c86211e712031d4abbca2985880db110673087ec2f500c4",
+      "mongooseJsonParse.js": "dc15894ed44f1b3feb88c1d07272b93c8a3f87b2168ec82a8cb30a09a42e00ba",
+      "mysql.js": "7dc8ee39ceeab816c1f398bd0f882935dfe572c8c832fc0343cb9322e131f1cc",
+      "tst.js": "d324a4b19333bf2f179147ff111890a15d52a558bc1ae16cf69105f432cd0397",
+      "DatabaseAccesses.expected": "812c504eaaa6cba3afe91ba6ec48b9f9ae6d4c9fc35ebf8204b91dbcbc572ad8",
+      "SqlInjection.expected": "e895462221c1c2e2891bdc004a8868d1b24dea2a9b2cb8321e7d6c823c6edfc2",
+      "json-schema-validator.js": "bfc064a906e78a889b97cc6fe35e0f5c89984630a862cdb855c4356bd5ee958b",
+      "DatabaseAccesses.ql": "f0132b46ea56fe7803c9ffbc3b58aecb500417ed783e3fd96ad3c07983c373a4",
+      "mongoose.js": "2f72c240ceb28e9f607a7c7e093f79b3bf1f0785394ef3232a2d6a8c7153dd0b",
+      "hana.js": "d729253d78d120adf28f4e6b524cd02645c3bdf13aec12105f2f7dd13e76b571",
+      "dynamodb.js": "afb612545c6cb35305adef495fbf57227854c167c2d9ee03365d1845cea73b99",
+      "pg-promise.js": "f80bbd539d7d62ceee02744daccc1e1ece95b9f8ca5825e9e19ac6a6d21fc343",
+      "socketio.js": "6ad898382755fb71ff4ad79612e3e3bddd8fa0a5cf51eadee1f7bcda812409a3",
+      "tst3.js": "2715dd8e6eb9af076c61037da7e3bb8c1db17b92ab1d986845213f7ba11895c6",
+      "node-postgres-LICENSE": "0d468bfb937708d8b24b12afdcd24a8f42b2121ddc5659acf31ba8ce532e5ebc",
+      "mongodb_bodySafe.js": "f51fad2ab66b570b481a04460583c3dfbc2f2a6e4e74c1f165b48adb20d39627",
+      "graphql.js": "62c92f193cce99d1f6d45a65c5613a7c3f2c0ed615c57fc144a4c76623311992",
+      "html-sanitizer.js": "05fc182cfe487b0d4fb9e453817c3201ec21ccfc1593dbc0499a467cd5f9bb70",
+      "clients3.js": "9d22bd95fd071616befb60c1673f640f72371e504b9f112193cdbec165dd42bf"
+    },
+    "revision": "ff3231c5ac4779befd8c8690bb04f447fc6a8d13",
+    "path": "javascript/ql/test/query-tests/Security/CWE-089/untyped",
+    "repository": "https://github.com/github/codeql"
+  },
+  "methodology": "Location overlap: CodeQL expected sink range inside a call starting on a Loam candidate line. Not CodeQL execution, precision measurement, independent audit or production vulnerability confirmation. No expected sinks excluded.",
+  "expectedSinks": 158,
+  "matchedSinks": 36,
+  "unmatchedCandidates": 2,
+  "files": [
+    {
+      "file": "athena.js",
+      "status": "analyzed",
+      "expected": 7,
+      "matched": 0,
+      "missed": [
+        {
+          "file": "athena.js",
+          "line": 19,
+          "column": 23,
+          "endLine": 19,
+          "endColumn": 23
+        },
+        {
+          "file": "athena.js",
+          "line": 27,
+          "column": 23,
+          "endLine": 27,
+          "endColumn": 58
+        },
+        {
+          "file": "athena.js",
+          "line": 36,
+          "column": 23,
+          "endLine": 36,
+          "endColumn": 58
+        },
+        {
+          "file": "athena.js",
+          "line": 48,
+          "column": 22,
+          "endLine": 48,
+          "endColumn": 30
+        },
+        {
+          "file": "athena.js",
+          "line": 57,
+          "column": 22,
+          "endLine": 57,
+          "endColumn": 30
+        },
+        {
+          "file": "athena.js",
+          "line": 66,
+          "column": 22,
+          "endLine": 66,
+          "endColumn": 30
+        },
+        {
+          "file": "athena.js",
+          "line": 84,
+          "column": 23,
+          "endLine": 84,
+          "endColumn": 29
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "clients3.js",
+      "status": "analyzed",
+      "expected": 3,
+      "matched": 0,
+      "missed": [
+        {
+          "file": "clients3.js",
+          "line": 18,
+          "column": 23,
+          "endLine": 18,
+          "endColumn": 60
+        },
+        {
+          "file": "clients3.js",
+          "line": 29,
+          "column": 21,
+          "endLine": 29,
+          "endColumn": 68
+        },
+        {
+          "file": "clients3.js",
+          "line": 38,
+          "column": 21,
+          "endLine": 38,
+          "endColumn": 68
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "dbo.js",
+      "status": "analyzed",
+      "expected": 0,
+      "matched": 0,
+      "missed": [],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "dynamodb.js",
+      "status": "analyzed",
+      "expected": 6,
+      "matched": 0,
+      "missed": [
+        {
+          "file": "dynamodb.js",
+          "line": 15,
+          "column": 23,
+          "endLine": 15,
+          "endColumn": 29
+        },
+        {
+          "file": "dynamodb.js",
+          "line": 21,
+          "column": 23,
+          "endLine": 21,
+          "endColumn": 35
+        },
+        {
+          "file": "dynamodb.js",
+          "line": 47,
+          "column": 24,
+          "endLine": 47,
+          "endColumn": 30
+        },
+        {
+          "file": "dynamodb.js",
+          "line": 58,
+          "column": 20,
+          "endLine": 58,
+          "endColumn": 77
+        },
+        {
+          "file": "dynamodb.js",
+          "line": 64,
+          "column": 28,
+          "endLine": 64,
+          "endColumn": 85
+        },
+        {
+          "file": "dynamodb.js",
+          "line": 67,
+          "column": 28,
+          "endLine": 67,
+          "endColumn": 85
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "graphql.js",
+      "status": "analyzed",
+      "expected": 11,
+      "matched": 0,
+      "missed": [
+        {
+          "file": "graphql.js",
+          "line": 9,
+          "column": 34,
+          "endLine": 19,
+          "endColumn": 5
+        },
+        {
+          "file": "graphql.js",
+          "line": 26,
+          "column": 30,
+          "endLine": 26,
+          "endColumn": 40
+        },
+        {
+          "file": "graphql.js",
+          "line": 29,
+          "column": 32,
+          "endLine": 29,
+          "endColumn": 42
+        },
+        {
+          "file": "graphql.js",
+          "line": 32,
+          "column": 18,
+          "endLine": 32,
+          "endColumn": 28
+        },
+        {
+          "file": "graphql.js",
+          "line": 43,
+          "column": 14,
+          "endLine": 43,
+          "endColumn": 24
+        },
+        {
+          "file": "graphql.js",
+          "line": 47,
+          "column": 44,
+          "endLine": 47,
+          "endColumn": 54
+        },
+        {
+          "file": "graphql.js",
+          "line": 55,
+          "column": 39,
+          "endLine": 55,
+          "endColumn": 49
+        },
+        {
+          "file": "graphql.js",
+          "line": 57,
+          "column": 66,
+          "endLine": 57,
+          "endColumn": 76
+        },
+        {
+          "file": "graphql.js",
+          "line": 74,
+          "column": 46,
+          "endLine": 74,
+          "endColumn": 64
+        },
+        {
+          "file": "graphql.js",
+          "line": 82,
+          "column": 14,
+          "endLine": 88,
+          "endColumn": 8
+        },
+        {
+          "file": "graphql.js",
+          "line": 118,
+          "column": 38,
+          "endLine": 118,
+          "endColumn": 48
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "hana.js",
+      "status": "analyzed",
+      "expected": 13,
+      "matched": 10,
+      "missed": [
+        {
+          "file": "hana.js",
+          "line": 50,
+          "column": 40,
+          "endLine": 50,
+          "endColumn": 89
+        },
+        {
+          "file": "hana.js",
+          "line": 54,
+          "column": 38,
+          "endLine": 54,
+          "endColumn": 66
+        },
+        {
+          "file": "hana.js",
+          "line": 71,
+          "column": 44,
+          "endLine": 71,
+          "endColumn": 99
+        }
+      ],
+      "unmatchedCandidateLines": [
+        93,
+        94
+      ]
+    },
+    {
+      "file": "html-sanitizer.js",
+      "status": "analyzed",
+      "expected": 1,
+      "matched": 1,
+      "missed": [],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "json-schema-validator.js",
+      "status": "analyzed",
+      "expected": 5,
+      "matched": 0,
+      "missed": [
+        {
+          "file": "json-schema-validator.js",
+          "line": 33,
+          "column": 22,
+          "endLine": 33,
+          "endColumn": 26
+        },
+        {
+          "file": "json-schema-validator.js",
+          "line": 35,
+          "column": 18,
+          "endLine": 35,
+          "endColumn": 22
+        },
+        {
+          "file": "json-schema-validator.js",
+          "line": 55,
+          "column": 22,
+          "endLine": 55,
+          "endColumn": 26
+        },
+        {
+          "file": "json-schema-validator.js",
+          "line": 59,
+          "column": 22,
+          "endLine": 59,
+          "endColumn": 26
+        },
+        {
+          "file": "json-schema-validator.js",
+          "line": 61,
+          "column": 22,
+          "endLine": 61,
+          "endColumn": 26
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "koarouter.js",
+      "status": "analyzed",
+      "expected": 1,
+      "matched": 1,
+      "missed": [],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "ldap.js",
+      "status": "analyzed",
+      "expected": 4,
+      "matched": 0,
+      "missed": [
+        {
+          "file": "ldap.js",
+          "line": 28,
+          "column": 30,
+          "endLine": 28,
+          "endColumn": 34
+        },
+        {
+          "file": "ldap.js",
+          "line": 32,
+          "column": 5,
+          "endLine": 32,
+          "endColumn": 61
+        },
+        {
+          "file": "ldap.js",
+          "line": 66,
+          "column": 30,
+          "endLine": 66,
+          "endColumn": 53
+        },
+        {
+          "file": "ldap.js",
+          "line": 68,
+          "column": 27,
+          "endLine": 68,
+          "endColumn": 42
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "marsdb-flow-from.js",
+      "status": "analyzed",
+      "expected": 0,
+      "matched": 0,
+      "missed": [],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "marsdb-flow-to.js",
+      "status": "analyzed",
+      "expected": 1,
+      "matched": 0,
+      "missed": [
+        {
+          "file": "marsdb-flow-to.js",
+          "line": 13,
+          "column": 17,
+          "endLine": 13,
+          "endColumn": 21
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "marsdb.js",
+      "status": "analyzed",
+      "expected": 1,
+      "matched": 0,
+      "missed": [
+        {
+          "file": "marsdb.js",
+          "line": 15,
+          "column": 12,
+          "endLine": 15,
+          "endColumn": 16
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "minimongo.js",
+      "status": "analyzed",
+      "expected": 1,
+      "matched": 0,
+      "missed": [
+        {
+          "file": "minimongo.js",
+          "line": 17,
+          "column": 12,
+          "endLine": 17,
+          "endColumn": 16
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "mongodb.js",
+      "status": "analyzed",
+      "expected": 7,
+      "matched": 0,
+      "missed": [
+        {
+          "file": "mongodb.js",
+          "line": 17,
+          "column": 16,
+          "endLine": 17,
+          "endColumn": 20
+        },
+        {
+          "file": "mongodb.js",
+          "line": 30,
+          "column": 18,
+          "endLine": 30,
+          "endColumn": 45
+        },
+        {
+          "file": "mongodb.js",
+          "line": 51,
+          "column": 16,
+          "endLine": 51,
+          "endColumn": 20
+        },
+        {
+          "file": "mongodb.js",
+          "line": 61,
+          "column": 12,
+          "endLine": 61,
+          "endColumn": 16
+        },
+        {
+          "file": "mongodb.js",
+          "line": 72,
+          "column": 14,
+          "endLine": 72,
+          "endColumn": 26
+        },
+        {
+          "file": "mongodb.js",
+          "line": 79,
+          "column": 12,
+          "endLine": 79,
+          "endColumn": 24
+        },
+        {
+          "file": "mongodb.js",
+          "line": 105,
+          "column": 14,
+          "endLine": 105,
+          "endColumn": 18
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "mongodb_bodySafe.js",
+      "status": "analyzed",
+      "expected": 1,
+      "matched": 0,
+      "missed": [
+        {
+          "file": "mongodb_bodySafe.js",
+          "line": 28,
+          "column": 16,
+          "endLine": 28,
+          "endColumn": 20
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "mongoose.js",
+      "status": "analyzed",
+      "expected": 49,
+      "matched": 0,
+      "missed": [
+        {
+          "file": "mongoose.js",
+          "line": 23,
+          "column": 21,
+          "endLine": 23,
+          "endColumn": 27
+        },
+        {
+          "file": "mongoose.js",
+          "line": 25,
+          "column": 17,
+          "endLine": 25,
+          "endColumn": 21
+        },
+        {
+          "file": "mongoose.js",
+          "line": 27,
+          "column": 22,
+          "endLine": 27,
+          "endColumn": 26
+        },
+        {
+          "file": "mongoose.js",
+          "line": 29,
+          "column": 21,
+          "endLine": 29,
+          "endColumn": 25
+        },
+        {
+          "file": "mongoose.js",
+          "line": 31,
+          "column": 28,
+          "endLine": 31,
+          "endColumn": 32
+        },
+        {
+          "file": "mongoose.js",
+          "line": 33,
+          "column": 16,
+          "endLine": 33,
+          "endColumn": 20
+        },
+        {
+          "file": "mongoose.js",
+          "line": 35,
+          "column": 19,
+          "endLine": 35,
+          "endColumn": 23
+        },
+        {
+          "file": "mongoose.js",
+          "line": 37,
+          "column": 28,
+          "endLine": 37,
+          "endColumn": 32
+        },
+        {
+          "file": "mongoose.js",
+          "line": 39,
+          "column": 28,
+          "endLine": 39,
+          "endColumn": 32
+        },
+        {
+          "file": "mongoose.js",
+          "line": 41,
+          "column": 28,
+          "endLine": 41,
+          "endColumn": 32
+        },
+        {
+          "file": "mongoose.js",
+          "line": 43,
+          "column": 22,
+          "endLine": 43,
+          "endColumn": 26
+        },
+        {
+          "file": "mongoose.js",
+          "line": 45,
+          "column": 18,
+          "endLine": 45,
+          "endColumn": 22
+        },
+        {
+          "file": "mongoose.js",
+          "line": 47,
+          "column": 22,
+          "endLine": 47,
+          "endColumn": 26
+        },
+        {
+          "file": "mongoose.js",
+          "line": 49,
+          "column": 21,
+          "endLine": 49,
+          "endColumn": 25
+        },
+        {
+          "file": "mongoose.js",
+          "line": 51,
+          "column": 32,
+          "endLine": 51,
+          "endColumn": 36
+        },
+        {
+          "file": "mongoose.js",
+          "line": 53,
+          "column": 27,
+          "endLine": 53,
+          "endColumn": 31
+        },
+        {
+          "file": "mongoose.js",
+          "line": 54,
+          "column": 8,
+          "endLine": 54,
+          "endColumn": 12
+        },
+        {
+          "file": "mongoose.js",
+          "line": 57,
+          "column": 17,
+          "endLine": 57,
+          "endColumn": 21
+        },
+        {
+          "file": "mongoose.js",
+          "line": 58,
+          "column": 10,
+          "endLine": 58,
+          "endColumn": 14
+        },
+        {
+          "file": "mongoose.js",
+          "line": 59,
+          "column": 8,
+          "endLine": 59,
+          "endColumn": 12
+        },
+        {
+          "file": "mongoose.js",
+          "line": 60,
+          "column": 7,
+          "endLine": 60,
+          "endColumn": 11
+        },
+        {
+          "file": "mongoose.js",
+          "line": 61,
+          "column": 16,
+          "endLine": 61,
+          "endColumn": 20
+        },
+        {
+          "file": "mongoose.js",
+          "line": 63,
+          "column": 10,
+          "endLine": 63,
+          "endColumn": 14
+        },
+        {
+          "file": "mongoose.js",
+          "line": 68,
+          "column": 46,
+          "endLine": 68,
+          "endColumn": 50
+        },
+        {
+          "file": "mongoose.js",
+          "line": 69,
+          "column": 47,
+          "endLine": 69,
+          "endColumn": 51
+        },
+        {
+          "file": "mongoose.js",
+          "line": 71,
+          "column": 46,
+          "endLine": 71,
+          "endColumn": 50
+        },
+        {
+          "file": "mongoose.js",
+          "line": 73,
+          "column": 51,
+          "endLine": 73,
+          "endColumn": 55
+        },
+        {
+          "file": "mongoose.js",
+          "line": 75,
+          "column": 46,
+          "endLine": 75,
+          "endColumn": 50
+        },
+        {
+          "file": "mongoose.js",
+          "line": 78,
+          "column": 46,
+          "endLine": 78,
+          "endColumn": 50
+        },
+        {
+          "file": "mongoose.js",
+          "line": 80,
+          "column": 51,
+          "endLine": 80,
+          "endColumn": 55
+        },
+        {
+          "file": "mongoose.js",
+          "line": 82,
+          "column": 46,
+          "endLine": 82,
+          "endColumn": 50
+        },
+        {
+          "file": "mongoose.js",
+          "line": 97,
+          "column": 14,
+          "endLine": 97,
+          "endColumn": 18
+        },
+        {
+          "file": "mongoose.js",
+          "line": 99,
+          "column": 31,
+          "endLine": 99,
+          "endColumn": 35
+        },
+        {
+          "file": "mongoose.js",
+          "line": 102,
+          "column": 22,
+          "endLine": 102,
+          "endColumn": 25
+        },
+        {
+          "file": "mongoose.js",
+          "line": 103,
+          "column": 21,
+          "endLine": 103,
+          "endColumn": 24
+        },
+        {
+          "file": "mongoose.js",
+          "line": 104,
+          "column": 21,
+          "endLine": 104,
+          "endColumn": 24
+        },
+        {
+          "file": "mongoose.js",
+          "line": 105,
+          "column": 18,
+          "endLine": 105,
+          "endColumn": 21
+        },
+        {
+          "file": "mongoose.js",
+          "line": 106,
+          "column": 22,
+          "endLine": 106,
+          "endColumn": 25
+        },
+        {
+          "file": "mongoose.js",
+          "line": 107,
+          "column": 16,
+          "endLine": 107,
+          "endColumn": 19
+        },
+        {
+          "file": "mongoose.js",
+          "line": 108,
+          "column": 19,
+          "endLine": 108,
+          "endColumn": 22
+        },
+        {
+          "file": "mongoose.js",
+          "line": 109,
+          "column": 20,
+          "endLine": 109,
+          "endColumn": 21
+        },
+        {
+          "file": "mongoose.js",
+          "line": 110,
+          "column": 28,
+          "endLine": 110,
+          "endColumn": 31
+        },
+        {
+          "file": "mongoose.js",
+          "line": 111,
+          "column": 28,
+          "endLine": 111,
+          "endColumn": 31
+        },
+        {
+          "file": "mongoose.js",
+          "line": 112,
+          "column": 28,
+          "endLine": 112,
+          "endColumn": 31
+        },
+        {
+          "file": "mongoose.js",
+          "line": 113,
+          "column": 18,
+          "endLine": 113,
+          "endColumn": 21
+        },
+        {
+          "file": "mongoose.js",
+          "line": 114,
+          "column": 22,
+          "endLine": 114,
+          "endColumn": 25
+        },
+        {
+          "file": "mongoose.js",
+          "line": 115,
+          "column": 21,
+          "endLine": 115,
+          "endColumn": 24
+        },
+        {
+          "file": "mongoose.js",
+          "line": 116,
+          "column": 16,
+          "endLine": 116,
+          "endColumn": 26
+        },
+        {
+          "file": "mongoose.js",
+          "line": 122,
+          "column": 30,
+          "endLine": 122,
+          "endColumn": 34
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "mongooseJsonParse.js",
+      "status": "analyzed",
+      "expected": 1,
+      "matched": 0,
+      "missed": [
+        {
+          "file": "mongooseJsonParse.js",
+          "line": 22,
+          "column": 19,
+          "endLine": 22,
+          "endColumn": 23
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "mongooseModel.js",
+      "status": "analyzed",
+      "expected": 0,
+      "matched": 0,
+      "missed": [],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "mongooseModelClient.js",
+      "status": "analyzed",
+      "expected": 2,
+      "matched": 0,
+      "missed": [
+        {
+          "file": "mongooseModelClient.js",
+          "line": 11,
+          "column": 16,
+          "endLine": 11,
+          "endColumn": 24
+        },
+        {
+          "file": "mongooseModelClient.js",
+          "line": 12,
+          "column": 16,
+          "endLine": 12,
+          "endColumn": 34
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "mysql.js",
+      "status": "analyzed",
+      "expected": 2,
+      "matched": 2,
+      "missed": [],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "pg-promise-types.ts",
+      "status": "analyzed",
+      "expected": 1,
+      "matched": 0,
+      "missed": [
+        {
+          "file": "pg-promise-types.ts",
+          "line": 8,
+          "column": 17,
+          "endLine": 8,
+          "endColumn": 21
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "pg-promise.js",
+      "status": "analyzed",
+      "expected": 22,
+      "matched": 16,
+      "missed": [
+        {
+          "file": "pg-promise.js",
+          "line": 47,
+          "column": 11,
+          "endLine": 47,
+          "endColumn": 23
+        },
+        {
+          "file": "pg-promise.js",
+          "line": 54,
+          "column": 11,
+          "endLine": 54,
+          "endColumn": 23
+        },
+        {
+          "file": "pg-promise.js",
+          "line": 56,
+          "column": 14,
+          "endLine": 56,
+          "endColumn": 29
+        },
+        {
+          "file": "pg-promise.js",
+          "line": 60,
+          "column": 20,
+          "endLine": 60,
+          "endColumn": 24
+        },
+        {
+          "file": "pg-promise.js",
+          "line": 63,
+          "column": 23,
+          "endLine": 63,
+          "endColumn": 27
+        },
+        {
+          "file": "pg-promise.js",
+          "line": 64,
+          "column": 16,
+          "endLine": 64,
+          "endColumn": 20
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "rds-client.js",
+      "status": "analyzed",
+      "expected": 4,
+      "matched": 0,
+      "missed": [
+        {
+          "file": "rds-client.js",
+          "line": 19,
+          "column": 23,
+          "endLine": 19,
+          "endColumn": 58
+        },
+        {
+          "file": "rds-client.js",
+          "line": 36,
+          "column": 23,
+          "endLine": 36,
+          "endColumn": 51
+        },
+        {
+          "file": "rds-client.js",
+          "line": 53,
+          "column": 14,
+          "endLine": 53,
+          "endColumn": 22
+        },
+        {
+          "file": "rds-client.js",
+          "line": 61,
+          "column": 50,
+          "endLine": 61,
+          "endColumn": 52
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "redis.js",
+      "status": "analyzed",
+      "expected": 9,
+      "matched": 0,
+      "missed": [
+        {
+          "file": "redis.js",
+          "line": 10,
+          "column": 16,
+          "endLine": 10,
+          "endColumn": 27
+        },
+        {
+          "file": "redis.js",
+          "line": 18,
+          "column": 16,
+          "endLine": 18,
+          "endColumn": 18
+        },
+        {
+          "file": "redis.js",
+          "line": 19,
+          "column": 43,
+          "endLine": 19,
+          "endColumn": 45
+        },
+        {
+          "file": "redis.js",
+          "line": 25,
+          "column": 14,
+          "endLine": 25,
+          "endColumn": 16
+        },
+        {
+          "file": "redis.js",
+          "line": 30,
+          "column": 23,
+          "endLine": 30,
+          "endColumn": 25
+        },
+        {
+          "file": "redis.js",
+          "line": 32,
+          "column": 28,
+          "endLine": 32,
+          "endColumn": 30
+        },
+        {
+          "file": "redis.js",
+          "line": 39,
+          "column": 16,
+          "endLine": 39,
+          "endColumn": 18
+        },
+        {
+          "file": "redis.js",
+          "line": 43,
+          "column": 27,
+          "endLine": 43,
+          "endColumn": 29
+        },
+        {
+          "file": "redis.js",
+          "line": 46,
+          "column": 34,
+          "endLine": 46,
+          "endColumn": 36
+        }
+      ],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "socketio.js",
+      "status": "analyzed",
+      "expected": 1,
+      "matched": 1,
+      "missed": [],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "tst.js",
+      "status": "analyzed",
+      "expected": 1,
+      "matched": 1,
+      "missed": [],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "tst2.js",
+      "status": "analyzed",
+      "expected": 1,
+      "matched": 1,
+      "missed": [],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "tst3.js",
+      "status": "analyzed",
+      "expected": 1,
+      "matched": 1,
+      "missed": [],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "tst4.js",
+      "status": "analyzed",
+      "expected": 1,
+      "matched": 1,
+      "missed": [],
+      "unmatchedCandidateLines": []
+    },
+    {
+      "file": "vercel.ts",
+      "status": "analyzed",
+      "expected": 1,
+      "matched": 1,
+      "missed": [],
+      "unmatchedCandidateLines": []
+    }
+  ]
+}

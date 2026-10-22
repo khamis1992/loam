@@ -1,0 +1,79 @@
+{
+  "backup": "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-install-20261019-071713\\previous-server.cjs",
+  "capabilities": {
+    "revision": 10,
+    "mandatoryFinalVerification": true,
+    "bufferedCompletion": true,
+    "taskToolScope": {
+      "explicitFileOnly": true,
+      "checkpointResume": true,
+      "languageCoverage": "limited-explicit-ar-en-commands"
+    },
+    "acceptanceIntegrity": {
+      "freezeAt": "explicit-user-contract-or-first-final-verification",
+      "explicitUserContractAtStart": true,
+      "explicitCommandLanguages": [
+        "ar",
+        "en"
+      ],
+      "preservesRepairChecks": true,
+      "orchestratorCheckpointResume": true,
+      "independentlyAuthored": false
+    },
+    "creativeVerification": {
+      "renderer": "actual-studio",
+      "savedCamera": true,
+      "framedView": true,
+      "optionalMotionSample": true,
+      "fullAnimationValidation": false,
+      "visualReview": true
+    },
+    "applicationVerification": {
+      "contract": "app-verification.json",
+      "runtime": "isolated-playwright",
+      "viewports": [
+        "desktop",
+        "mobile"
+      ],
+      "visualReview": true,
+      "network": "local-only",
+      "backendApplications": true,
+      "expectedHttpResponses": true,
+      "maxScenarios": 12,
+      "sqliteChecks": {
+        "readOnly": true,
+        "declarative": true,
+        "maxChecksPerScenario": 4,
+        "maxRows": 100,
+        "optInContract": true
+      },
+      "apiChecks": {
+        "declarative": true,
+        "exactJsonResponse": true,
+        "maxJsonCharacters": 16000,
+        "maxGroups": 8,
+        "maxConcurrentRequests": 4,
+        "maxRequestsPerScenario": 16,
+        "optInContract": true
+      },
+      "backendRuntime": {
+        "type": "node",
+        "isolation": "docker-network-none",
+        "requiredLocalImage": "node:22-alpine",
+        "externalPackages": false,
+        "externalServices": false,
+        "freshStatePerScenario": true,
+        "processRestart": true,
+        "maxRestartsPerScenario": 2,
+        "containerDeletionDurability": false
+      }
+    },
+    "visualModel": "glm-5.3-flash:cloud"
+  },
+  "candidate": "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-install-20261019-071713\\candidate-server.cjs",
+  "tasksPreserved": 144,
+  "profilePreserved": true,
+  "version": "0.5.25",
+  "at": "2026-10-19T07:17:20.2166146+03:00",
+  "runtimeHash": "73151D0FDC96668B1C026D5D64120AC9B7E5F22628DEFF56DBBD2E6D5CB7B69C"
+}

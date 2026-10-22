@@ -1,0 +1,61 @@
+Third-party notices — Loam Bots Marketplace
+
+botdirectory.ai
+===============
+The bot listings bundled in catalog.json that came from botdirectory.ai
+(https://github.com/elie222/botdirectory.ai) are distributed under the MIT
+License below. Prompt texts remain the work of their individual contributors
+and are credited per entry in the marketplace detail panel.
+
+MIT License
+
+Copyright (c) 2026 Inbox Zero Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+x.ai marketplace
+================
+Entries that came from https://x.ai/bot/marketplace are creator-authored and
+published without a license. Loam keeps their names, short descriptions,
+categories and avatars only for the catalog bundled with this build, links
+every entry back to its original x.ai listing, and does not rehost prompts.
+Avatars remain the property of their creators. All rights reserved.
+
+BUILD NOTE — internal only
+--------------------------
+x.ai marketplace content in this catalog is INTERNAL-ONLY. It was collected
+for a personal/internal build (MARKETPLACE_SPEC §5, option (a)) and must NOT
+be shipped in any public or redistributed build with the content bundled.
+A public distribution must instead follow option (b): ship metadata only
+(name, short description, category, links) and fetch the remaining details
+at runtime, or ship the botdirectory-only catalog. x.ai prompts are never
+stored or rehosted: detail panels link back to the original listing and its
+"Add on x.ai" share link, so configurations behind share links stay linked,
+never rehosted. Attribution for every x.ai entry (creator + source URL +
+"all rights reserved") is rendered in the detail panel's Source section,
+and per-entry botdirectory attribution (contributor + source URL + MIT)
+is rendered there as well.
+
+
+Fonts
+=====
+The marketplace UI uses the app's system font stack. It does not bundle Aeonik
+(commercial) or Geist. Geist and Geist Mono are licensed under the SIL Open
+Font License 1.1 when supplied separately.

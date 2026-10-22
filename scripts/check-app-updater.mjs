@@ -1,0 +1,23 @@
+import fs from 'node:fs/promises';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+import {EventEmitter} from 'node:events';
+import {createRequire} from 'node:module';
+import os from 'node:os';
+import path from 'node:path';
+const require=createRequire(import.meta.url),native=new EventEmitter();let checks=0,installs=0,allowed=false,resolveCheck;
+native.setFeedURL=()=>{};native.checkForUpdates=()=>{checks++;native.emit('checking-for-update');return new Promise(resolve=>{resolveCheck=resolve;});};native.quitAndInstall=()=>installs++;
+const dialogs=[];
+const context={module:{exports:{}},require:name=>name==='electron'?{app:{isPackaged:true,getVersion:()=> '0.5.24',getPath:()=>'/missing'},dialog:{showMessageBox:async options=>{dialogs.push(options);return {response:1};}}}:name==='electron-updater'?{autoUpdater:native}:require(name),process:{env:{}},console,setInterval:()=>1,clearInterval:()=>{}};
+vm.runInNewContext(await fs.readFile('electron/updater.cjs','utf8'),context);const updater=context.module.exports;
+updater.init({localFeed:'http://127.0.0.1:1234/',canInstall:async()=>allowed});await Promise.resolve();assert.equal(checks,1);const concurrent=updater.check();assert.equal(checks,1);
+native.emit('update-not-available',{version:'0.5.24'});resolveCheck({});assert.equal((await concurrent).state,'current');assert.ok(updater.getStatus().checkedAt);
+const interactive=updater.checkInteractive();await Promise.resolve();native.emit('update-not-available',{version:'0.5.24'});resolveCheck({});await interactive;assert.match(dialogs.at(-1).message,/محليًا/);assert.match(dialogs.at(-1).detail,/0.5.24/);
+const stale=updater.checkInteractive();await Promise.resolve();native.emit('update-not-available',{version:'0.5.23'});resolveCheck({});assert.equal((await stale).state,'channel-mismatch');assert.equal(dialogs.at(-1).type,'warning');
+const originalSetFeed=native.setFeedURL;native.setFeedURL=()=>{throw Error('invalid feed');};assert.equal((await updater.check()).state,'error');native.setFeedURL=originalSetFeed;
+const checked=updater.check();await Promise.resolve();native.emit('update-available',{version:'0.5.25'});native.emit('download-progress',{percent:52.2});assert.equal(updater.getStatus().percent,52);native.emit('update-downloaded',{version:'0.5.25'});resolveCheck({});await checked;
+assert.equal(native.autoInstallOnAppQuit,false);assert.equal(updater.getStatus().state,'downloaded');const checksBefore=checks;await updater.check();assert.equal(checks,checksBefore);
+await assert.rejects(updater.installNow(),/المهام/);assert.equal(installs,0);allowed=true;assert.equal(await updater.installNow(),true);assert.equal(installs,1);assert.equal(updater.getStatus().state,'installing');assert.equal(await updater.installNow(),false);
+const {startLocalUpdates}=require('../electron/local-updates.cjs');const dir=await fs.mkdtemp(path.join(os.tmpdir(),'loam-updates-'));await fs.writeFile(path.join(dir,'latest.yml'),'version: 0.5.24');await fs.writeFile(path.join(dir,'secret.txt'),'private');const feed=await startLocalUpdates(dir);
+try{assert.equal((await fetch(feed.url+'latest.yml')).status,200);assert.equal((await fetch(feed.url+'secret.txt')).status,404);assert.equal((await fetch(feed.url+'latest.yml',{method:'POST'})).status,404);}finally{feed.close();await fs.rm(dir,{recursive:true,force:true});}
+console.log('PASS update coalescing, progress, explicit install, active-task guard, double install guard, local channel artifact isolation');

@@ -13,8 +13,12 @@ const AUTO_CHECK_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 let updater = null;
 let timer = null;
-let promptedForVersion = null;
+let installing = false;
 let latest = { state: "idle", updatedAt: new Date().toISOString() };
+let localFeed = '';
+let canInstall = async () => true;
+let checkPending = null;
+let onStatus = () => {};
 
 function readSavedFeedUrl() {
   const candidates = [];
@@ -41,22 +45,26 @@ function readSavedFeedUrl() {
 }
 
 function feedUrl() {
-  const fromEnv = (process.env.LOAM_UPDATE_URL || process.env.MANUS_LOCAL_UPDATE_URL || "").trim();
+  // LOAM_UPDATE_FEED_URL is the canonical override (generic provider feed,
+  // e.g. a local test feed from scripts/updater-test-feed.mjs); the older
+  // aliases keep working.
+  const fromEnv = (process.env.LOAM_UPDATE_FEED_URL || process.env.LOAM_UPDATE_URL || process.env.MANUS_LOCAL_UPDATE_URL || "").trim();
   if (fromEnv) return fromEnv;
   const fromSettings = readSavedFeedUrl();
   if (fromSettings) return fromSettings;
   const ghRepo = (process.env.LOAM_GITHUB_REPO || process.env.MANUS_GITHUB_REPO || "").trim();
   if (ghRepo) return `https://github.com/${ghRepo.replace(/^\/+|\/+$/g, "")}/releases/latest/download/`;
-  return DEFAULT_FEED_URL;
+  return localFeed || DEFAULT_FEED_URL;
 }
 
 function setState(patch) {
   latest = Object.assign({}, latest, patch, { at: new Date().toISOString() });
+  try { onStatus(getStatus()); } catch { /* UI callbacks must not interrupt updates. */ }
   return latest;
 }
 
 function getStatus() {
-  return latest;
+  return { ...latest, currentVersion: app.getVersion(), localChannel: feedUrl() === localFeed };
 }
 
 function loadUpdater() {
@@ -79,45 +87,31 @@ function isDisabled() {
 
 function wire(u) {
   u.autoDownload = true;
-  u.autoInstallOnAppQuit = true;
+  u.autoInstallOnAppQuit = false;
   u.allowPrerelease = false;
   u.logger = { info: () => {}, warn: () => {}, error: (m) => console.error("[updater] " + m) };
 
   u.on("checking-for-update", () => setState({ state: "checking" }));
-  u.on("update-available", (info) => setState({ state: "available", version: info && info.version }));
-  u.on("update-not-available", (info) => setState({ state: "current", version: info && info.version }));
+  u.on("update-available", (info) => setState({ state: "available", version: info && info.version, checkedAt: new Date().toISOString() }));
+  u.on("update-not-available", (info) => {
+    const version = info && info.version;
+    setState({ state: version === app.getVersion() ? 'current' : 'channel-mismatch', version, checkedAt: new Date().toISOString() });
+  });
   u.on("download-progress", (p) =>
     setState({ state: "downloading", percent: p && Math.round(p.percent || 0) }));
   u.on("update-downloaded", (info) => {
     const version = (info && info.version) || "unknown";
     setState({ state: "downloaded", version });
-    if (promptedForVersion !== version) {
-      promptedForVersion = version;
-      void promptInstall(version);
-    }
+
   });
   u.on("error", (err) => setState({ state: "error", reason: err ? String(err.message || err) : "unknown" }));
 }
 
-async function promptInstall(version) {
-  try {
-    const res = await dialog.showMessageBox({
-      type: "info",
-      buttons: ["إعادة التشغيل الآن", "لاحقاً"],
-      defaultId: 0,
-      cancelId: 1,
-      title: "تحديث جاهز",
-      message: `توفّر إصدار جديد (${version}).`,
-      detail: "سيُثبَّت التحديث. أي مهام جارية في Loam ستُقاطَع عند إعادة التشغيل.",
-    });
-    if (res.response === 0) installNow();
-  } catch (err) {
-    /* dialog may be unavailable during shutdown */
-  }
-}
-
 function init(options) {
   const opts = options || {};
+  localFeed = opts.localFeed || '';
+  canInstall = opts.canInstall || canInstall;
+  onStatus = opts.onStatus || (() => {});
   if (opts.onStatus) {
     try { opts.onStatus(getStatus()); } catch (err) { /* ignore */ }
   }
@@ -141,40 +135,43 @@ function init(options) {
   }
   wire(u);
   setState({ state: "idle", feed: feedUrl() });
-  void u.checkForUpdates().catch(() => {});
+  void check().catch(() => {});
   if (timer) clearInterval(timer);
-  timer = setInterval(() => { void u.checkForUpdates().catch(() => {}); }, AUTO_CHECK_MS);
+  timer = setInterval(() => { void check().catch(() => {}); }, AUTO_CHECK_MS);
   return getStatus();
 }
 
 async function checkInteractive() {
+  const result = await check();
+  const detail = 'الإصدار المثبت: '+app.getVersion()+'\nالإصدار المنشور: '+(result.version || 'غير معروف')+'\nالمصدر: '+(result.localChannel?'قناة محلية على هذا الجهاز. لا تتحقق من إصدارات الإنترنت.':'قناة التحديث المحددة.')+(result.checkedAt?'\nوقت الفحص: '+new Date(result.checkedAt).toLocaleString('ar-SA'):'');
+  if (result.state === 'current') await dialog.showMessageBox({type:'info',title:'التحديثات',message:result.localChannel?'الإصدار المثبت يطابق آخر إصدار منشور محليًا.':'الإصدار المثبت يطابق آخر إصدار على القناة المحددة.',detail:detail+(result.localChannel?'\nتعديلات التطوير لا تصل إلى التطبيق حتى تُحزم وتُنشر برقم إصدار جديد.':'')});
+  if (result.state === 'channel-mismatch') await dialog.showMessageBox({type:'warning',title:'التحديثات',message:'قناة التحديث تعرض إصدارًا مختلفًا ولا توفر ترقية أحدث متوافقة.',detail});
+  if (result.state === 'error' || result.state === 'disabled') await dialog.showMessageBox({type:'info',title:'التحديثات',message:result.localChannel?'لم يتوفر إصدار محلي منشور. أعد المحاولة بعد نشر التحديث.':'تعذّر التحقق من التحديثات. أعد المحاولة.'});
+  return result;
+}
+
+async function check() {
   const disabled = isDisabled();
-  if (disabled) {
-    await dialog.showMessageBox({ type: "info", title: "التحديثات", message: disabled, detail: "شغّل نسخة محزَّمة (npm run dist) لتفعيل التحديث التلقائي." });
-    return getStatus();
-  }
-  const u = loadUpdater();
-  if (!u) {
-    await dialog.showMessageBox({ type: "warning", title: "التحديثات", message: "electron-updater غير مثبّت." });
-    return getStatus();
-  }
-  setState({ state: "checking" });
-  try {
-    const res = await u.checkForUpdates();
-    const found = res && res.updateInfo && res.isUpdateAvailable;
-    if (!found) {
-      await dialog.showMessageBox({ type: "info", title: "التحديثات", message: "أنت على أحدث إصدار.", detail: `الإصدار الحالي: ${app.getVersion()}` });
-    }
-  } catch (err) {
-    await dialog.showMessageBox({ type: "error", title: "فشل التحقق من التحديث", message: String((err && err.message) || err) });
-  }
-  return getStatus();
+  if (disabled) { setState({ state: 'disabled', reason: disabled });return getStatus(); }
+  if (['downloaded','downloading','installing'].includes(latest.state)) return getStatus();
+  if (checkPending) { await checkPending;return getStatus(); }
+  const u = loadUpdater();if (!u) return getStatus();
+  // Settings may change while the app is running.
+  setState({ state: 'checking', reason: '', percent: 0, version: null, checkedAt: null });
+  checkPending = Promise.resolve().then(() => {
+    u.setFeedURL({ provider: 'generic', url: feedUrl(), useMultipleRangeRequest: false });
+    return u.checkForUpdates();
+  }).catch(err => setState({ state: 'error', reason: String(err.message || err) })).finally(() => { checkPending = null; });
+  await checkPending;return getStatus();
 }
 
-function installNow() {
+async function installNow() {
+  if (latest.state !== 'downloaded' || installing) return false;
+  installing = true;
+  try { if (!await canInstall()) throw new Error('انتظر انتهاء المهام الجارية قبل تثبيت التحديث.'); } catch (error) { installing = false;throw error; }
   const u = loadUpdater();
-  if (!u) return false;
-  try { u.quitAndInstall(); return true; } catch (err) { return false; }
+  if (!u) { installing = false;return false; }
+  try { setState({ state: 'installing' });u.quitAndInstall(); return true; } catch (err) { installing = false;setState({ state: 'error', reason: String(err.message || err) });return false; }
 }
 
-module.exports = { init, checkInteractive, installNow, getStatus, feedUrl };
+module.exports = { init, check, checkInteractive, installNow, getStatus, feedUrl };

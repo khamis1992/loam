@@ -1,0 +1,52 @@
+[
+  {
+    "path": "src/server/http.ts",
+    "sha256": "2FA4683D3CDED5B8686C9263182AC1DD26050BD5C723E6F54E3E5222852341F3",
+    "modifiedUtc": "2026-10-19T14:36:37.8373611Z"
+  },
+  {
+    "path": "src/server/settings.ts",
+    "sha256": "3095A56705CD1E990544215D388C3E8C564F9F2ACE75AD16E69D44706556330C",
+    "modifiedUtc": "2026-10-17T11:00:41.9433719Z"
+  },
+  {
+    "path": "src/swarm/service.ts",
+    "sha256": "7367BF1A09F39FF0E88525AE4A69E4788244EEBE7D7E7BC940A504C4E8977326",
+    "modifiedUtc": "2026-10-19T03:57:14.9104860Z"
+  },
+  {
+    "path": "src/studio/roundtrip.ts",
+    "sha256": "41E91EFCB0A00EE648131F5CE46EF43ADA885D431A42831E29E11100705B056D",
+    "modifiedUtc": "2026-10-18T14:46:59.8934588Z"
+  },
+  {
+    "path": "src/eval/verify.ts",
+    "sha256": "313B27B03A94299D89759061A7CB15E93B8846EDC6FCDD2D49AC62225ACAE200",
+    "modifiedUtc": "2026-10-15T16:47:02.3337604Z"
+  },
+  {
+    "path": "docs/fair-comparison-kit/score.ts",
+    "sha256": "EA164F05787EDEB9E237118279AFBCBBAC0BD4F6F3A1882EA18214EE216FC8C0",
+    "modifiedUtc": "2026-10-18T21:06:52.3529632Z"
+  },
+  {
+    "path": "ui/app.js",
+    "sha256": "C00C774EB1C1635B93BBBFF65A3297155CB166F2733E1FFF897F50CAF376B58E",
+    "modifiedUtc": "2026-10-18T16:08:26.4070886Z"
+  },
+  {
+    "path": "package.json",
+    "sha256": "79FD4FF99E0691A5262A16157B210881819A0ACB7CE8137DEDFD8F58B58858C9",
+    "modifiedUtc": "2026-10-19T14:44:16.3100283Z"
+  },
+  {
+    "path": "electron/main.cjs",
+    "sha256": "9D85A0E5D4812A80786954F1EFAA41793ED9A69D4F17F76DAF2A34328D6FD5BB",
+    "modifiedUtc": "2026-10-18T16:07:57.7994755Z"
+  },
+  {
+    "path": "electron/updater.cjs",
+    "sha256": "86A0048355AD44E4E71867E2B61615FBB4090C10E9C3890FDD2EC8C046EBE12C",
+    "modifiedUtc": "2026-10-18T21:37:53.6725319Z"
+  }
+]

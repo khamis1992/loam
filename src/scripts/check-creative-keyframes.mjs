@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {newClip,newTimeline,validateTimeline,transitionAt} from '../../ui/creative-timeline-model.js';
+import {animatedValue,setKeyframe} from '../../ui/creative-keyframes.js';
+const project=newTimeline(),clip=newClip(project.tracks[0],null,2);clip.duration=6;project.clips=[clip];
+setKeyframe(clip,'x',2,-1);setKeyframe(clip,'x',8,1);
+assert.equal(animatedValue(clip,'x',5),0);assert.equal(animatedValue(clip,'x',1),-1);assert.equal(animatedValue(clip,'x',9),1);
+setKeyframe(clip,'x',2,-1,'smooth');assert.ok(Math.abs(animatedValue(clip,'x',3.5)+.6875)<1e-10);
+const split=2.3,right={...structuredClone(clip),start:clip.start+split,duration:clip.duration-split,animationOffset:split};
+for(let t=right.start;t<8;t+=.13)assert.equal(animatedValue(right,'x',t),animatedValue(clip,'x',t),'split preserves smooth curve exactly');
+setKeyframe(clip,'volume',2,0,'hold');setKeyframe(clip,'volume',5,1);assert.equal(animatedValue(clip,'volume',4.999),0);assert.equal(animatedValue(clip,'volume',5),1);
+validateTimeline(project);for(const keys of [[{time:0,value:NaN,ease:'linear'}],[{time:0,value:3,ease:'linear'}],[{time:1,value:0,ease:'linear'},{time:0,value:1,ease:'linear'}],[{time:0,value:0,ease:'invalid'}]])assert.throws(()=>validateTimeline({...project,clips:[{...clip,keyframes:{x:keys}}]}));
+assert.throws(()=>setKeyframe(clip,'x',0,1));
+assert.throws(()=>validateTimeline({...project,clips:[{...clip,keyframes:{constructor:[{time:0,value:10,ease:'linear'}]}}]}));
+clip.transition='fade';clip.transitionDuration=2;
+const transitionRight={...right,transition:'fade',transitionDuration:2,transitionOffset:split,transitionSourceDuration:clip.duration};
+for(let t=right.start;t<8;t+=.13)assert.deepEqual(transitionAt(transitionRight,t),transitionAt(clip,t),'split preserves transition envelope');
+console.log('PASS keyframes: linear/smooth/hold, endpoint behavior, validation, exact split curve preservation');

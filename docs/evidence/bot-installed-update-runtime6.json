@@ -1,0 +1,54 @@
+﻿{
+    "capabilities":  {
+                         "revision":  6,
+                         "mandatoryFinalVerification":  true,
+                         "bufferedCompletion":  true,
+                         "taskToolScope":  {
+                                               "explicitFileOnly":  true,
+                                               "checkpointResume":  true,
+                                               "languageCoverage":  "limited-explicit-ar-en-commands"
+                                           },
+                         "acceptanceIntegrity":  {
+                                                     "freezeAt":  "first-final-verification",
+                                                     "preservesRepairChecks":  true,
+                                                     "orchestratorCheckpointResume":  true,
+                                                     "independentlyAuthored":  false
+                                                 },
+                         "creativeVerification":  {
+                                                      "renderer":  "actual-studio",
+                                                      "savedCamera":  true,
+                                                      "framedView":  true,
+                                                      "optionalMotionSample":  true,
+                                                      "fullAnimationValidation":  false,
+                                                      "visualReview":  true
+                                                  },
+                         "applicationVerification":  {
+                                                         "contract":  "app-verification.json",
+                                                         "runtime":  "isolated-playwright",
+                                                         "viewports":  [
+                                                                           "desktop",
+                                                                           "mobile"
+                                                                       ],
+                                                         "visualReview":  true,
+                                                         "network":  "local-only",
+                                                         "backendApplications":  true,
+                                                         "expectedHttpResponses":  true,
+                                                         "backendRuntime":  {
+                                                                                "type":  "node",
+                                                                                "isolation":  "docker-network-none",
+                                                                                "requiredLocalImage":  "node:22-alpine",
+                                                                                "externalPackages":  false,
+                                                                                "externalServices":  false,
+                                                                                "freshStatePerScenario":  true
+                                                                            }
+                                                     },
+                         "visualModel":  "glm-5.3-flash:cloud"
+                     },
+    "at":  "2026-10-19T03:06:42.3112852+03:00",
+    "runtimeHash":  "F594BB524314FAED388CB8FD96703BAB87019921BE545A5D72F26286BE107073",
+    "backup":  "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-install-20261019-030633\\previous-server.cjs",
+    "version":  "0.5.25",
+    "candidate":  "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-install-20261019-030633\\candidate-server.cjs",
+    "profilePreserved":  true,
+    "tasksPreserved":  138
+}

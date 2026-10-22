@@ -1,0 +1,154 @@
+{
+  "createdAt": "2026-10-18T11:19:08.347Z",
+  "backend": "https://loepcagitrijlfksawfm.supabase.co",
+  "method": "GET",
+  "userSession": false,
+  "publicKeySource": "local published Vite client module",
+  "requestCount": 12,
+  "observations": [
+    {
+      "at": "2026-10-18T11:19:06.814Z",
+      "path": "/auth/v1/user",
+      "expectation": "user session required",
+      "mode": "no-key",
+      "status": 401,
+      "bytes": 101,
+      "durationMs": 223,
+      "bodyHash": "65836ea867f252ca97d809516c54b6a21cb0c1757dca5ba3887edd0f9d84c261",
+      "observation": "explicit denial"
+    },
+    {
+      "at": "2026-10-18T11:19:07.068Z",
+      "path": "/auth/v1/user",
+      "expectation": "user session required",
+      "mode": "public-client-key",
+      "status": 401,
+      "bytes": 96,
+      "durationMs": 253,
+      "bodyHash": "ee46b954ff5d26f81f2070507216775b319dc8df09a9dba9bb3ad6d706dc7196",
+      "observation": "explicit denial"
+    },
+    {
+      "at": "2026-10-18T11:19:07.079Z",
+      "path": "/rest/v1/public_restaurant_catalog?select=id&limit=1",
+      "expectation": "public positive control",
+      "mode": "no-key",
+      "status": 401,
+      "bytes": 101,
+      "durationMs": 11,
+      "bodyHash": "65836ea867f252ca97d809516c54b6a21cb0c1757dca5ba3887edd0f9d84c261",
+      "observation": "explicit denial"
+    },
+    {
+      "at": "2026-10-18T11:19:07.324Z",
+      "path": "/rest/v1/public_restaurant_catalog?select=id&limit=1",
+      "expectation": "public positive control",
+      "mode": "public-client-key",
+      "status": 200,
+      "bytes": 47,
+      "durationMs": 245,
+      "bodyHash": "feb08a98250a353d755a25ecce25218b48baabe42439c4ad11af51e2b2f7e8a8",
+      "rows": 1,
+      "observation": "rows returned (IDs omitted)"
+    },
+    {
+      "at": "2026-10-18T11:19:07.335Z",
+      "path": "/rest/v1/public_meal_catalog?select=id&limit=1",
+      "expectation": "public positive control",
+      "mode": "no-key",
+      "status": 401,
+      "bytes": 101,
+      "durationMs": 11,
+      "bodyHash": "65836ea867f252ca97d809516c54b6a21cb0c1757dca5ba3887edd0f9d84c261",
+      "observation": "explicit denial"
+    },
+    {
+      "at": "2026-10-18T11:19:07.559Z",
+      "path": "/rest/v1/public_meal_catalog?select=id&limit=1",
+      "expectation": "public positive control",
+      "mode": "public-client-key",
+      "status": 200,
+      "bytes": 47,
+      "durationMs": 224,
+      "bodyHash": "85925c487cd3e081970c327f6e0f5dc3a5120b9065377c1042805bcc42cac787",
+      "rows": 1,
+      "observation": "rows returned (IDs omitted)"
+    },
+    {
+      "at": "2026-10-18T11:19:07.569Z",
+      "path": "/rest/v1/profiles?select=id&limit=1",
+      "expectation": "no anonymous private rows",
+      "mode": "no-key",
+      "status": 401,
+      "bytes": 101,
+      "durationMs": 10,
+      "bodyHash": "65836ea867f252ca97d809516c54b6a21cb0c1757dca5ba3887edd0f9d84c261",
+      "observation": "explicit denial"
+    },
+    {
+      "at": "2026-10-18T11:19:07.826Z",
+      "path": "/rest/v1/profiles?select=id&limit=1",
+      "expectation": "no anonymous private rows",
+      "mode": "public-client-key",
+      "status": 200,
+      "bytes": 2,
+      "durationMs": 257,
+      "bodyHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "rows": 0,
+      "observation": "no rows returned; existence not established"
+    },
+    {
+      "at": "2026-10-18T11:19:07.836Z",
+      "path": "/rest/v1/restaurants?select=id&limit=1",
+      "expectation": "private base table denied",
+      "mode": "no-key",
+      "status": 401,
+      "bytes": 101,
+      "durationMs": 10,
+      "bodyHash": "65836ea867f252ca97d809516c54b6a21cb0c1757dca5ba3887edd0f9d84c261",
+      "observation": "explicit denial"
+    },
+    {
+      "at": "2026-10-18T11:19:08.079Z",
+      "path": "/rest/v1/restaurants?select=id&limit=1",
+      "expectation": "private base table denied",
+      "mode": "public-client-key",
+      "status": 200,
+      "bytes": 2,
+      "durationMs": 243,
+      "bodyHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "rows": 0,
+      "observation": "no rows returned; existence not established"
+    },
+    {
+      "at": "2026-10-18T11:19:08.090Z",
+      "path": "/rest/v1/meals?select=id&limit=1",
+      "expectation": "private base table denied",
+      "mode": "no-key",
+      "status": 401,
+      "bytes": 101,
+      "durationMs": 11,
+      "bodyHash": "65836ea867f252ca97d809516c54b6a21cb0c1757dca5ba3887edd0f9d84c261",
+      "observation": "explicit denial"
+    },
+    {
+      "at": "2026-10-18T11:19:08.347Z",
+      "path": "/rest/v1/meals?select=id&limit=1",
+      "expectation": "private base table denied",
+      "mode": "public-client-key",
+      "status": 200,
+      "bytes": 2,
+      "durationMs": 257,
+      "bodyHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "rows": 0,
+      "observation": "no rows returned; existence not established"
+    }
+  ],
+  "limitations": [
+    "No user accounts or personal browser sessions used.",
+    "GET only; no write or login attempt, token forgery or password guessing.",
+    "One ID column and at most one row requested per table; values not retained.",
+    "Empty rows cannot establish protection of known existing private records.",
+    "This targeted transport probe is supplementary to platform browser evidence, not a built-in platform authorization-matrix run."
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "createdAt": "2026-10-18T09:14:26.244Z",
+  "ajvVersion": "8.20.0",
+  "joiVersion": "18.3.0",
+  "schemas": {
+    "open": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      }
+    },
+    "closed": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "cases": [
+    {
+      "id": "ordinary-data",
+      "openAccepted": true,
+      "closedAccepted": true
+    },
+    {
+      "id": "unknown-operator-key",
+      "openAccepted": true,
+      "closedAccepted": false
+    },
+    {
+      "id": "unknown-expression-key",
+      "openAccepted": true,
+      "closedAccepted": false
+    },
+    {
+      "id": "unknown-ordinary-key",
+      "openAccepted": true,
+      "closedAccepted": false
+    },
+    {
+      "id": "operator-object-in-string-field",
+      "openAccepted": false,
+      "closedAccepted": false
+    },
+    {
+      "id": "empty-object",
+      "openAccepted": true,
+      "closedAccepted": true
+    }
+  ],
+  "nestedOpenAcceptedOperatorObject": true,
+  "stringValidationDoesNotValidateDecodedObject": true,
+  "joi": {
+    "defaultRejectsUnknownOperatorKey": true,
+    "defaultRejectsObjectInStringField": true,
+    "unknownTrueAllowsOperatorKey": true,
+    "errorResultRetainsOriginalInput": true
+  },
+  "interpretation": "Schema validation is not blanket query sanitization. Default additional properties can preserve operator-shaped keys. Closed flat scalar schemas block these specific fixtures, but empty filters still pass. No database operation, exploit confirmation or claim about every validator/version."
+}

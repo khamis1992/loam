@@ -43,6 +43,12 @@ function fakeOllama(handler: (role: Role, messages: ChatMessage[], counts: Recor
   const client = {
     async chat(opts: ChatOptions): Promise<ChatResult> {
       const role = roleOf(opts.messages);
+      // Flow fixtures inspect their observation journal before delivering the
+      // scripted final verdict. Adversarial verifier fixtures opt out by not
+      // registering this specifically marked tool. Counts track scripted turns.
+      if (role === "final" && opts.tools?.some(t => t.function.description === "orchestrator test observation") && !opts.messages.some(m => m.role === "tool" && m.tool_name === "file_read")) {
+        return { content: "", toolCalls: [{ function: { name: "file_read", arguments: {} } }], model: opts.model, usage: { promptTokens: 0, completionTokens: 0, durationMs: 0 } };
+      }
       counts[role] += 1;
       const last = opts.messages[opts.messages.length - 1];
       if (last) prompts.push(last.content);
@@ -63,11 +69,13 @@ function fakeOllama(handler: (role: Role, messages: ChatMessage[], counts: Recor
 
 function testRegistry(): InstanceType<typeof ToolRegistry> {
   const registry = new ToolRegistry();
+  const observations: string[] = [];
+  registry.register({ name: "file_read", description: "orchestrator test observation", parameters: {}, run: async () => ({ ok: true, content: observations.join("\n") || "No echo observations" }) });
   registry.register({
     name: "echo",
     description: "echo a text back",
     parameters: { type: "object", properties: { text: { type: "string" } } },
-    run: async (args) => ({ ok: true, content: `echo: ${String(args["text"] ?? "")}` }),
+    run: async (args) => { const content = `echo: ${String(args["text"] ?? "")}`; observations.push(content); return { ok: true, content }; },
   });
   return registry;
 }
@@ -143,6 +151,9 @@ async function scenarioParsing(): Promise<Array<[string, boolean]>> {
   checks.push(["verdict: not complete maps to revise", parseVerdict('{"verdict":"not complete"}').verdict === "revise"]);
   checks.push(["verdict: fixes string becomes array", parseVerdict('{"verdict":"revise","fixes":"only one"}').fixes.length === 1]);
   checks.push(["verdict: fixes array preserved", parseVerdict('{"verdict":"revise","fixes":["a","b"]}').fixes.length === 2]);
+  checks.push(["verdict: PASS with required fixes cannot certify completion", parseVerdict('{"verdict":"pass","fixes":["Missing persistence"]}').verdict === "revise"]);
+  checks.push(["verdict: empty fixes cannot hide issues alias", parseVerdict('{"verdict":"pass","fixes":[],"issues":["Submit does not work"]}').verdict === "revise"]);
+  checks.push(["verdict: optional notes do not block completed work", parseVerdict('{"verdict":"pass","fixes":[],"notes":["Consider softer colors"]}').verdict === "pass"]);
   checks.push(["verdict: garbage requires verification", (() => {
     const v = parseVerdict("I dunno, looks fine");
     return v.verdict === "revise" && v.parsed === false;
@@ -197,8 +208,8 @@ async function scenarioReviseAndVerify(): Promise<Array<[string, boolean]>> {
   const planStart = ofType(events, "plan_step").filter((e) => e.phase === "start");
   const planDone = ofType(events, "plan_step").filter((e) => e.phase === "done");
   checks.push([
-    "events: plan_step start per step, done per attempt",
-    planStart.length === 2 && planDone.length === 3 && planStart.every((e, i) => e.total === 2 && e.index === i + 1),
+    "events: plan_step done only after accepted attempt",
+    planStart.length === 2 && planDone.length === 2 && planStart.every((e, i) => e.total === 2 && e.index === i + 1),
   ]);
   const critiques = ofType(events, "critique");
   checks.push(["events: critique sequence revise,pass,pass", critiques.length === 3 && critiques[0]?.verdict === "revise" && critiques[1]?.verdict === "pass" && critiques[2]?.verdict === "pass"]);
@@ -223,7 +234,7 @@ async function scenarioTrivialWithTool(): Promise<Array<[string, boolean]>> {
       }
       return { content: "done with tool" };
     }
-    throw new Error(`unexpected ${role} call in trivial scenario`);
+    return { content: verdictJson("pass", "echo evidence checked") };
   });
 
   const res = await runOrchestratedAgent({
@@ -234,11 +245,11 @@ async function scenarioTrivialWithTool(): Promise<Array<[string, boolean]>> {
     prompt: "echo hi",
   });
 
-  checks.push(["trivial: no critic/verify calls", counts.critic === 0 && counts.final === 0]);
+  checks.push(["trivial: mandatory critic and final verification", counts.critic === 1 && counts.final === 1]);
   checks.push(["trivial: worker used the tool", ofType(events, "tool_result").some((e) => e.name === "echo" && e.ok)]);
   checks.push(["trivial: result text", res.text === "done with tool"]);
   checks.push(["trivial: plan marked trivial", ofType(events, "plan")[0]?.trivial === true]);
-  checks.push(["trivial: done steps = planner + worker loop steps", ofType(events, "done")[0]?.steps === 3]);
+  checks.push(["trivial: done steps include verification", ofType(events, "done")[0]?.steps === 5]);
   return checks;
 }
 
@@ -328,7 +339,7 @@ async function scenarioFailureBoundaries(): Promise<Array<[string, boolean]>> {
     catch { failed = true; }
     checks.push([`${kind}: correct terminal result`, failed === (kind !== "final-fixed")]);
     checks.push([`${kind}: no false done event`, ofType(events, "done").length === (kind === "final-fixed" ? 1 : 0)]);
-    if (kind.startsWith("final-")) checks.push([`${kind}: repair verified again`, counts.final === 2]);
+    if (kind.startsWith("final-")) checks.push([`${kind}: repair verified again`, counts.final === (kind === "final-fail" ? 3 : 2)]);
     if (kind === "crash") checks.push(["crash: critic cannot override executor failure", counts.critic === 0]);
   }
   return checks;
@@ -351,6 +362,24 @@ async function scenarioHistoryAndAsk(): Promise<Array<[string, boolean]>> {
   await runOrchestratedAgent({ cfg: testCfg(), ollama: client, tools: testRegistry(), emit: () => {}, prompt: "Translate it", history });
   checks.push(["history: all roles see earlier turns", ["planner", "worker", "critic", "final"].every((role) => seen.has(role))]);
   checks.push(["history: current turn is not duplicated", history.length === 2]);
+  const longTurns = Array.from({ length: 20 }, (_, i) => [{ role: "user", content: i === 0 ? "ORIGINAL_CONSTRAINT: Arabic, no network, SAR" : `User follow-up ${i}` }, { role: "assistant", content: `Assistant response ${i}` }]).flat();
+  longTurns.push({ role: "user", content: "LATEST_CORRECTION: tax is 5 percent" }, { role: "assistant", content: "Correction recorded" });
+  const longHistory = conversationHistory(longTurns);
+  checks.push(["history: all older user constraints retained", longHistory.filter(m => m.role === "user").length === 21 && longHistory.some(m => m.content.startsWith("ORIGINAL_CONSTRAINT"))]);
+  checks.push(["history: latest correction follows original requirement", longHistory.findIndex(m => m.content.startsWith("LATEST_CORRECTION")) > longHistory.findIndex(m => m.content.startsWith("ORIGINAL_CONSTRAINT"))]);
+  checks.push(["history: omitted assistant output disclosed", !longHistory.some(m => m.content === "Assistant response 0") && longHistory[0]?.content.includes("older assistant replies were omitted") === true]);
+  const seenLong = new Set<string>();
+  const longMock = fakeOllama((role, messages) => {
+    if (messages.some(m => m.role === "user" && m.content.startsWith("ORIGINAL_CONSTRAINT")) && messages.some(m => m.role === "user" && m.content.startsWith("LATEST_CORRECTION"))) seenLong.add(role);
+    if (role === "planner") return { content: planJson([{ title: "continue", instruction: "follow constraints", criteria: "correct result" }]) };
+    if (role === "worker") return { content: "Arabic SAR receipt at 5 percent" };
+    return { content: verdictJson("pass", "constraints checked") };
+  });
+  await runOrchestratedAgent({ cfg: testCfg(), ollama: longMock.client, tools: testRegistry(), emit: () => {}, prompt: "Continue", history: longHistory });
+  checks.push(["history: all agent roles receive oldest constraints and latest correction", ["planner", "worker", "critic", "final"].every(role => seenLong.has(role))]);
+  let budgetRejected = false;
+  try { conversationHistory([{ role: "user", content: "x".repeat(96_001) }]); } catch { budgetRejected = true; }
+  checks.push(["history: oversized constraints fail explicitly instead of being silently dropped", budgetRejected]);
   let reads = 0;
   let writes = 0;
   const registry = new ToolRegistry();
@@ -367,11 +396,16 @@ async function scenarioHistoryAndAsk(): Promise<Array<[string, boolean]>> {
   fs.writeFileSync(path.join(cfg.workspace, ".manus", "hooks.json"), JSON.stringify({
     PreToolUse: [{ matcher: "", command: `node -e "require('fs').writeFileSync('hook-ran','bad')"` }],
   }));
-  const adversarial = fakeOllama((_role, _messages, c) => c.worker === 1
-    ? { content: "", toolCalls: registry.names().map((name) => ({ function: { name, arguments: {} } })) }
-    : { content: "answer" });
+  const adversarial = fakeOllama((role, _messages, c) => {
+    if (role === "final") return c.final === 1
+      ? { content: "", toolCalls: [{ function: { name: "file_read", arguments: {} } }] }
+      : { content: verdictJson("pass", "read checked") };
+    return c.worker === 1
+      ? { content: "", toolCalls: registry.names().map((name) => ({ function: { name, arguments: {} } })) }
+      : { content: "answer" };
+  });
   await runAgent({ cfg, ollama: adversarial.client, tools: ask, emit: () => {}, prompt: "read only" });
-  checks.push(["ask: injected mutation calls never execute", writes === 0 && reads === 1]);
+  checks.push(["ask: injected mutation calls never execute", writes === 0 && reads === 2]);
   checks.push(["ask: model only receives read tools", ask.toOllama().length === 1]);
   checks.push(["ask: command hooks cannot bypass permissions", !fs.existsSync(marker)]);
   fs.unlinkSync(path.join(cfg.workspace, ".manus", "hooks.json"));
@@ -429,7 +463,7 @@ async function scenarioCheckpointResume(): Promise<Array<[string, boolean]>> {
   checks.push(["checkpoint: completion persisted", saved?.complete === true && saved?.inFlight === false]);
   const completedMock = mock();
   await runOrchestratedAgent({ cfg: testCfg(), ollama: completedMock.client, tools: registry, emit: () => {}, prompt: "two effects", resume: saved });
-  checks.push(["checkpoint: completed result recovered without tools or model", toolRuns === 2 && Object.values(completedMock.counts).every((n) => n === 0)]);
+  checks.push(["checkpoint: completed result reverified without replaying effects", toolRuns === 2 && completedMock.counts.worker === 0 && completedMock.counts.final === 1]);
   db.closeDb();
   return checks;
 }
@@ -444,12 +478,104 @@ async function main(): Promise<void> {
   checks.push(...(await scenarioFailureBoundaries()));
   checks.push(...(await scenarioHistoryAndAsk()));
   checks.push(...(await scenarioCheckpointResume()));
+  checks.push(...(await scenarioMandatoryVerification()));
 
   console.log("");
   for (const [name, ok] of checks) console.log(`  ${ok ? "PASS" : "FAIL"}  ${name}`);
   const allOk = checks.every(([, ok]) => ok);
   console.log(`\norchestrator smoke: ${allOk ? "PASS" : "FAIL"} (${checks.filter(([, ok]) => ok).length}/${checks.length})  (tmp: ${tmp})`);
   if (!allOk) process.exit(1);
+}
+
+async function scenarioMandatoryVerification(): Promise<Array<[string, boolean]>> {
+  const checks: Array<[string, boolean]> = [];
+  const { runAgent } = await import("../agent/loop.js");
+  const { verifyFinal } = await import("../agent/verifier.js");
+  for (const mode of ["direct", "planned", "repaired"] as const) {
+    const events: AgentEvent[] = [];
+    const mock = fakeOllama((role, _messages, counts) => {
+      if (role === "planner") return { content: planJson([{ title: "deliver", instruction: "deliver result", criteria: "verified result" }]) };
+      if (role === "critic") return { content: verdictJson("pass", "step ready") };
+      if (role === "final" && mode === "repaired" && counts.final === 1) return { content: verdictJson("revise", "repair required") };
+      if (role === "final") return { content: JSON.stringify({ verdict: "pass", reason: "checked", fixes: [], finalAnswer: "The system completed verification. Result: 42." }) };
+      return { content: "Verification will run later. Result: 42." };
+    });
+    const options = { cfg: testCfg(), ollama: mock.client, tools: testRegistry(), emit: (e: AgentEvent) => events.push(e), prompt: "Deliver the result" };
+    const result = await (mode === "direct" ? runAgent(options) : runOrchestratedAgent(options));
+    const expected = "The system completed verification. Result: 42.";
+    checks.push([`delivery ${mode}: return and terminal events use inspected final answer`, result.text === expected && ofType(events, "assistant_message").every(e => e.text === expected) && ofType(events, "done").every(e => e.text === expected)]);
+    checks.push([`delivery ${mode}: verified before message`, events.findIndex(e => e.type === "verify" && e.verdict === "pass") < events.findIndex(e => e.type === "assistant_message")]);
+  }
+  for (const registryKind of ["absent", "empty", "mutation-only"] as const) {
+    const registry = new ToolRegistry();
+    let writes = 0;
+    if (registryKind === "mutation-only") registry.register({ name: "file_write", description: "write", parameters: {}, run: async () => { writes++; return { ok: true, content: "saved" }; } });
+    const mock = fakeOllama(() => ({ content: verdictJson("pass", "claims success") }));
+    const base = { cfg: testCfg(), ollama: mock.client, ...(registryKind === "absent" ? {} : { tools: registry }), request: "save report", goal: "save report", finalText: "done", completedSteps: [] };
+    for (const toolName of ["file_write", "application_verification"]) {
+      const result = await verifyFinal({ ...base, trace: [{ name: toolName, ok: true, summary: "PASS" }] });
+      checks.push([`missing inspector ${registryKind}/${toolName}: cannot self-certify`, result.verdict === "revise" && mock.counts.final === 0 && writes === 0]);
+    }
+    const conversation = await verifyFinal({ ...base, request: "Translate hello into Arabic", finalText: "مرحبا", trace: [] });
+    checks.push([`missing inspector ${registryKind}: pure text still reviewed`, conversation.verdict === "pass" && mock.counts.final === 1]);
+  }
+  for (const mode of ["direct", "planned"] as const) {
+    const events: AgentEvent[] = [];
+    const mock = fakeOllama((role) => {
+      if (role === "planner") return { content: planJson([{ title: "report", instruction: "write report", criteria: "correct report" }]) };
+      if (role === "critic") return { content: verdictJson("pass", "step ready") };
+      if (role === "final") return { content: JSON.stringify({ verdict: "pass", reason: "Report produced", fixes: [], issues: ["Required totals are wrong"] }) };
+      return { content: "Report complete" };
+    });
+    let rejected = false;
+    try {
+      const options = { cfg: testCfg(), ollama: mock.client, tools: testRegistry(), emit: (e: AgentEvent) => events.push(e), prompt: "Produce a report with correct totals" };
+      await (mode === "direct" ? runAgent(options) : runOrchestratedAgent(options));
+    } catch { rejected = true; }
+    checks.push([`${mode}: contradictory final PASS remains incomplete after repair`, rejected && mock.counts.final === (mode === "planned" ? 3 : 2) && !events.some(e => ["assistant_message", "assistant_token", "done"].includes(e.type))]);
+  }
+  for (const mode of ["fallback", "trivial", "direct"] as const) {
+    const events: AgentEvent[] = [];
+    const cfg = testCfg();
+    cfg.orchestrator.verifyFinal = false;
+    cfg.orchestrator.maxReplans = 0;
+    const mock = fakeOllama((role) => {
+      if (role === "planner") return { content: mode === "fallback" ? "invalid plan" : planJson([{ title: "save", instruction: "save report", criteria: "report exists" }], true) };
+      if (role === "critic") return { content: verdictJson("pass", "candidate ready") };
+      if (role === "final") return { content: verdictJson("revise", "missing report", ["Create and inspect report"]) };
+      return { content: "Done, report saved" };
+    });
+    let failed = false;
+    try {
+      const opts = { cfg, ollama: mock.client, tools: testRegistry(), emit: (e: AgentEvent) => events.push(e), prompt: "save report" };
+      await (mode === "direct" ? runAgent(opts) : runOrchestratedAgent(opts));
+    } catch { failed = true; }
+    checks.push([`${mode}: disabled flag cannot bypass final gate`, failed && mock.counts.final >= 1]);
+    checks.push([`${mode}: no premature success message/token/event`, !events.some(e => ["done", "assistant_message", "assistant_token"].includes(e.type))]);
+  }
+  for (const behavior of ["skip", "missing", "mutate", "read"] as const) {
+    let writes = 0;
+    const registry = new ToolRegistry();
+    registry.register({ name: "file_read", description: "read", parameters: {}, run: async () => ({ ok: behavior === "read", content: behavior === "read" ? "actual report contents" : "not found" }) });
+    registry.register({ name: "file_write", description: "write", parameters: {}, run: async () => { writes++; return { ok: true, content: "written" }; } });
+    const mock = fakeOllama((_role, _messages, counts) => counts.final === 1 && behavior !== "skip"
+      ? { content: "", toolCalls: [{ function: { name: behavior === "mutate" ? "file_write" : "file_read", arguments: { path: "report.txt" } } }] }
+      : { content: verdictJson("pass", "claims checked") });
+    const result = await verifyFinal({ cfg: testCfg(), ollama: mock.client, tools: registry, request: "save report", goal: "saved report", finalText: "done", completedSteps: [], trace: [{ name: "file_write", ok: true, summary: "saved" }] });
+    checks.push([`inspection ${behavior}: enforced independently of model PASS`, (result.verdict === "pass") === (behavior === "read") && writes === 0]);
+  }
+  let retained = false;
+  const repair = fakeOllama((role, messages, c) => {
+    if (role === "planner") return { content: planJson([{ title: "inspect", instruction: "inspect two sections", criteria: "both sections observed" }]) };
+    if (role === "worker" && [1, 3].includes(c.worker)) return { content: "", toolCalls: [{ function: { name: "echo", arguments: { text: c.worker === 1 ? "SECTION_A" : "SECTION_B" } } }] };
+    if (role === "worker") return { content: "observed" };
+    if (role === "critic" && c.critic === 1) return { content: verdictJson("revise", "read second section") };
+    if (role === "critic") { const evidence = messages.at(-1)?.content ?? ""; retained = evidence.includes("echo: SECTION_A") && evidence.includes("echo: SECTION_B"); }
+    return { content: verdictJson("pass", "evidence complete") };
+  });
+  await runOrchestratedAgent({ cfg: testCfg(), ollama: repair.client, tools: testRegistry(), prompt: "inspect both sections", emit: () => {} });
+  checks.push(["repair: critic retains observations from earlier attempts", retained]);
+  return checks;
 }
 
 main().catch((err) => {

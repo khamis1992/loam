@@ -125,6 +125,7 @@ export const fileTools: Tool[] = [
       const want = num(args, "count", 1);
       if (occurrences === 0) return { ok: false, content: `find string not present in ${p}` };
       if (occurrences !== want) return { ok: false, content: `find string appears ${occurrences} times (expected ${want}); refine the search text` };
+      if (find === replace) return { ok: true, content: `no change: find and replace are identical; ${p} was not written. This is not evidence of a new modification.` };
       fs.writeFileSync(p, original.split(find).join(replace), "utf8");
       return { ok: true, content: `replaced ${occurrences} occurrence(s) in ${p}` };
     },
@@ -150,12 +151,12 @@ export const fileTools: Tool[] = [
   },
   {
     name: "file_search",
-    description: "Recursive text search inside workspace files (regular expression). Returns file:line:match.",
+    description: "Text search in a workspace file or recursively in a directory (regular expression). Returns file:line:match.",
     parameters: {
       type: "object",
       properties: {
         pattern: { type: "string", description: "Regular expression." },
-        path: { type: "string", description: "Root directory (default workspace)." },
+        path: { type: "string", description: "File or root directory (default workspace)." },
         maxResults: { type: "number", description: "Cap (default 60)." },
         glob: { type: "string", description: "Optional substring filter on file path (e.g. .ts)." },
       },
@@ -174,6 +175,19 @@ export const fileTools: Tool[] = [
       const hits: string[] = [];
       const deadline = Date.now() + 2500;
       let filesVisited = 0;
+      const scanFile = (full: string): void => {
+        if (hits.length >= maxResults || filesVisited >= 500 || Date.now() > deadline) return;
+        if (globFilter && !full.includes(globFilter)) return;
+        try {
+          if (fs.statSync(full).size > 500_000) return;
+          filesVisited++;
+          const lines = fs.readFileSync(full, 'utf8').split(/\r?\n/);
+          for (let i = 0; i < lines.length && hits.length < maxResults; i++) {
+            const line = lines[i] ?? '';
+            if (re.test(line)) hits.push(`${full}:${i + 1}: ${line.trim().slice(0, 200)}`);
+          }
+        } catch { return; }
+      };
       const walk = (d: string, depth: number): void => {
         if (hits.length >= maxResults || depth > 8 || filesVisited >= 500 || Date.now() > deadline) return;
         let entries: fs.Dirent[];
@@ -190,29 +204,12 @@ export const fileTools: Tool[] = [
             continue;
           }
           if (!e.isFile()) continue;
-          if (globFilter && !full.includes(globFilter)) continue;
-          let size = 0;
-          try {
-            size = fs.statSync(full).size;
-          } catch {
-            continue;
-          }
-          if (size > 500_000) continue;
-          filesVisited += 1;
-          let text: string;
-          try {
-            text = fs.readFileSync(full, "utf8");
-          } catch {
-            continue;
-          }
-          const lines = text.split(/\r?\n/);
-          for (let i = 0; i < lines.length && hits.length < maxResults; i++) {
-            const line = lines[i] ?? "";
-            if (re.test(line)) hits.push(`${full}:${i + 1}: ${line.trim().slice(0, 200)}`);
-          }
+          scanFile(full);
         }
       };
-      walk(root, 0);
+      if (!fs.existsSync(root)) return { ok: false, content: `not found: ${root}` };
+      if (fs.statSync(root).isFile()) scanFile(root);
+      else walk(root, 0);
       return { ok: true, content: hits.length ? hits.join("\n") : `no matches for ${str(args, "pattern")}` };
     },
   },

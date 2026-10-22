@@ -1,0 +1,1369 @@
+{
+  "pass": true,
+  "reason": "All 14 executed checks (7 scenarios × desktop/mobile) match the contract exactly: POST returns 201 with version 1, PATCH bumps version to 2, a stale version gets 409 while the row keeps 'محدثة' and an Arabic #error banner appears (desktop-2), data survives reload and two backend restarts (desktop-3/desktop-6, mobile-3), concurrent PATCHes yield one 200 and one 409 with final state 'متزامنة/closed/2', and every invalid input returns 400/404 leaving state unchanged. Screenshots confirm an RTL cyan/purple responsive UI with the required #id/#title/#create and #editId/#editTitle/#editStatus/#editVersion/#update controls, .ticket[data-id] rows exposing data-title/data-status/data-version, correct error display that clears after success, no auto-overwrite of edit fields during typing, and a clean stacked mobile layout with no overlaps or unreadable text.\n\nAll contract scenarios pass on both desktop and mobile, including create (201, version=1), update incrementing to version 2, stale-edit rejection with 409 and unchanged row, reload retention, concurrent one-winner behavior (200/409), invalid-input 400/404 handling leaving state unchanged, and persistence across two backend restarts with identical SQLite rows. The screenshots show a clean RTL Arabic interface in the requested cyan/purple theme: create form (#id, #title, #create), plain-text edit form (#editId, #editTitle, #editStatus, #editVersion, #update) with an explicit note that fields are not auto-filled, and a tickets table rendering the record. Text is readable, sections stack properly on mobile, and no overlaps or placeholder output are visible.",
+  "reportPath": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\report.json",
+  "elapsedMs": 154785,
+  "usage": {
+    "promptTokens": 32662,
+    "completionTokens": 14361,
+    "durationMs": 61215
+  },
+  "checks": [
+    {
+      "viewport": "desktop",
+      "scenario": "Create and inspect JSON",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/tickets",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/tickets.sqlite",
+          "table": "tickets",
+          "columns": [
+            "id",
+            "title",
+            "status",
+            "version"
+          ],
+          "rows": [
+            [
+              "a",
+              "الأولى",
+              "open",
+              1
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200,
+          "responseJson": {
+            "items": [
+              {
+                "id": "a",
+                "title": "الأولى",
+                "status": "open",
+                "version": 1
+              }
+            ]
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Update version",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/tickets",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/tickets.sqlite",
+          "table": "tickets",
+          "columns": [
+            "id",
+            "title",
+            "status",
+            "version"
+          ],
+          "rows": [
+            [
+              "a",
+              "محدثة",
+              "closed",
+              2
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200,
+          "responseJson": {
+            "items": [
+              {
+                "id": "a",
+                "title": "محدثة",
+                "status": "closed",
+                "version": 2
+              }
+            ]
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Reject stale edit",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/tickets",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 409
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/tickets.sqlite",
+          "table": "tickets",
+          "columns": [
+            "id",
+            "title",
+            "status",
+            "version"
+          ],
+          "rows": [
+            [
+              "a",
+              "محدثة",
+              "closed",
+              2
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200,
+          "responseJson": {
+            "items": [
+              {
+                "id": "a",
+                "title": "محدثة",
+                "status": "closed",
+                "version": 2
+              }
+            ]
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Reload retains version",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/tickets",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/tickets.sqlite",
+          "table": "tickets",
+          "columns": [
+            "id",
+            "title",
+            "status",
+            "version"
+          ],
+          "rows": [
+            [
+              "a",
+              "محدثة",
+              "closed",
+              2
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200,
+          "responseJson": {
+            "items": [
+              {
+                "id": "a",
+                "title": "محدثة",
+                "status": "closed",
+                "version": 2
+              }
+            ]
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Concurrent updates have one winner",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/tickets",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/tickets.sqlite",
+          "table": "tickets",
+          "columns": [
+            "id",
+            "title",
+            "status",
+            "version"
+          ],
+          "rows": [
+            [
+              "a",
+              "متزامنة",
+              "closed",
+              2
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 409
+        },
+        {
+          "group": 0,
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 200
+        },
+        {
+          "group": 1,
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200,
+          "responseJson": {
+            "items": [
+              {
+                "id": "a",
+                "title": "متزامنة",
+                "status": "closed",
+                "version": 2
+              }
+            ]
+          }
+        },
+        {
+          "group": 2,
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 409,
+          "responseJson": {
+            "error": "version_conflict"
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Invalid API inputs leave state unchanged",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/tickets",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/tickets.sqlite",
+          "table": "tickets",
+          "columns": [
+            "id",
+            "title",
+            "status",
+            "version"
+          ],
+          "rows": [
+            [
+              "a",
+              "الأولى",
+              "open",
+              1
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 3,
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 4,
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 5,
+          "method": "PATCH",
+          "path": "/api/tickets/missing",
+          "status": 404,
+          "responseJson": {
+            "error": "not_found"
+          }
+        },
+        {
+          "group": 6,
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200,
+          "responseJson": {
+            "items": [
+              {
+                "id": "a",
+                "title": "الأولى",
+                "status": "open",
+                "version": 1
+              }
+            ]
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Updated ticket survives two backend process restarts",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/tickets",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/tickets.sqlite",
+          "table": "tickets",
+          "columns": [
+            "id",
+            "title",
+            "status",
+            "version"
+          ],
+          "rows": [
+            [
+              "a",
+              "محدثة",
+              "closed",
+              2
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200,
+          "responseJson": {
+            "items": [
+              {
+                "id": "a",
+                "title": "محدثة",
+                "status": "closed",
+                "version": 2
+              }
+            ]
+          }
+        }
+      ],
+      "restarts": [
+        {
+          "previousPid": 14,
+          "currentPid": 129
+        },
+        {
+          "previousPid": 129,
+          "currentPid": 192
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Create and inspect JSON",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/tickets",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/tickets.sqlite",
+          "table": "tickets",
+          "columns": [
+            "id",
+            "title",
+            "status",
+            "version"
+          ],
+          "rows": [
+            [
+              "a",
+              "الأولى",
+              "open",
+              1
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200,
+          "responseJson": {
+            "items": [
+              {
+                "id": "a",
+                "title": "الأولى",
+                "status": "open",
+                "version": 1
+              }
+            ]
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Update version",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/tickets",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/tickets.sqlite",
+          "table": "tickets",
+          "columns": [
+            "id",
+            "title",
+            "status",
+            "version"
+          ],
+          "rows": [
+            [
+              "a",
+              "محدثة",
+              "closed",
+              2
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200,
+          "responseJson": {
+            "items": [
+              {
+                "id": "a",
+                "title": "محدثة",
+                "status": "closed",
+                "version": 2
+              }
+            ]
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Reject stale edit",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/tickets",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 409
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/tickets.sqlite",
+          "table": "tickets",
+          "columns": [
+            "id",
+            "title",
+            "status",
+            "version"
+          ],
+          "rows": [
+            [
+              "a",
+              "محدثة",
+              "closed",
+              2
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200,
+          "responseJson": {
+            "items": [
+              {
+                "id": "a",
+                "title": "محدثة",
+                "status": "closed",
+                "version": 2
+              }
+            ]
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Reload retains version",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/tickets",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/tickets.sqlite",
+          "table": "tickets",
+          "columns": [
+            "id",
+            "title",
+            "status",
+            "version"
+          ],
+          "rows": [
+            [
+              "a",
+              "محدثة",
+              "closed",
+              2
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200,
+          "responseJson": {
+            "items": [
+              {
+                "id": "a",
+                "title": "محدثة",
+                "status": "closed",
+                "version": 2
+              }
+            ]
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Concurrent updates have one winner",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/tickets",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/tickets.sqlite",
+          "table": "tickets",
+          "columns": [
+            "id",
+            "title",
+            "status",
+            "version"
+          ],
+          "rows": [
+            [
+              "a",
+              "متزامنة",
+              "closed",
+              2
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 409
+        },
+        {
+          "group": 0,
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 200
+        },
+        {
+          "group": 1,
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200,
+          "responseJson": {
+            "items": [
+              {
+                "id": "a",
+                "title": "متزامنة",
+                "status": "closed",
+                "version": 2
+              }
+            ]
+          }
+        },
+        {
+          "group": 2,
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 409,
+          "responseJson": {
+            "error": "version_conflict"
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Invalid API inputs leave state unchanged",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/tickets",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/tickets.sqlite",
+          "table": "tickets",
+          "columns": [
+            "id",
+            "title",
+            "status",
+            "version"
+          ],
+          "rows": [
+            [
+              "a",
+              "الأولى",
+              "open",
+              1
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 3,
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 4,
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 5,
+          "method": "PATCH",
+          "path": "/api/tickets/missing",
+          "status": 404,
+          "responseJson": {
+            "error": "not_found"
+          }
+        },
+        {
+          "group": 6,
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200,
+          "responseJson": {
+            "items": [
+              {
+                "id": "a",
+                "title": "الأولى",
+                "status": "open",
+                "version": 1
+              }
+            ]
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Updated ticket survives two backend process restarts",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/tickets",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "PATCH",
+          "path": "/api/tickets/a",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/tickets.sqlite",
+          "table": "tickets",
+          "columns": [
+            "id",
+            "title",
+            "status",
+            "version"
+          ],
+          "rows": [
+            [
+              "a",
+              "محدثة",
+              "closed",
+              2
+            ]
+          ]
+        }
+      ],
+      "api": [
+        {
+          "group": 0,
+          "method": "GET",
+          "path": "/api/tickets",
+          "status": 200,
+          "responseJson": {
+            "items": [
+              {
+                "id": "a",
+                "title": "محدثة",
+                "status": "closed",
+                "version": 2
+              }
+            ]
+          }
+        }
+      ],
+      "restarts": [
+        {
+          "previousPid": 14,
+          "currentPid": 129
+        },
+        {
+          "previousPid": 129,
+          "currentPid": 192
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-0.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-1.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-2.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-3.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-4.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-5.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-6.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-0.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-1.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-2.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-3.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-4.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-5.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-6.png"
+  ],
+  "errors": [],
+  "contractOrigin": "workspace",
+  "runtime": {
+    "type": "node",
+    "isolation": "docker-network-none",
+    "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+    "freshBackendPerScenario": true
+  },
+  "visual": {
+    "complete": true,
+    "model": "glm-5.3-flash",
+    "verdict": {
+      "verdict": "pass",
+      "reason": "All 14 executed checks (7 scenarios × desktop/mobile) match the contract exactly: POST returns 201 with version 1, PATCH bumps version to 2, a stale version gets 409 while the row keeps 'محدثة' and an Arabic #error banner appears (desktop-2), data survives reload and two backend restarts (desktop-3/desktop-6, mobile-3), concurrent PATCHes yield one 200 and one 409 with final state 'متزامنة/closed/2', and every invalid input returns 400/404 leaving state unchanged. Screenshots confirm an RTL cyan/purple responsive UI with the required #id/#title/#create and #editId/#editTitle/#editStatus/#editVersion/#update controls, .ticket[data-id] rows exposing data-title/data-status/data-version, correct error display that clears after success, no auto-overwrite of edit fields during typing, and a clean stacked mobile layout with no overlaps or unreadable text.\n\nAll contract scenarios pass on both desktop and mobile, including create (201, version=1), update incrementing to version 2, stale-edit rejection with 409 and unchanged row, reload retention, concurrent one-winner behavior (200/409), invalid-input 400/404 handling leaving state unchanged, and persistence across two backend restarts with identical SQLite rows. The screenshots show a clean RTL Arabic interface in the requested cyan/purple theme: create form (#id, #title, #create), plain-text edit form (#editId, #editTitle, #editStatus, #editVersion, #update) with an explicit note that fields are not auto-filled, and a tickets table rendering the record. Text is readable, sections stack properly on mobile, and no overlaps or placeholder output are visible.",
+      "issues": []
+    },
+    "response": "```json\n{\n  \"verdict\": \"pass\",\n  \"reason\": \"All 14 executed checks (7 scenarios × desktop/mobile) match the contract exactly: POST returns 201 with version 1, PATCH bumps version to 2, a stale version gets 409 while the row keeps 'محدثة' and an Arabic #error banner appears (desktop-2), data survives reload and two backend restarts (desktop-3/desktop-6, mobile-3), concurrent PATCHes yield one 200 and one 409 with final state 'متزامنة/closed/2', and every invalid input returns 400/404 leaving state unchanged. Screenshots confirm an RTL cyan/purple responsive UI with the required #id/#title/#create and #editId/#editTitle/#editStatus/#editVersion/#update controls, .ticket[data-id] rows exposing data-title/data-status/data-version, correct error display that clears after success, no auto-overwrite of edit fields during typing, and a clean stacked mobile layout with no overlaps or unreadable text.\",\n  \"issues\": [],\n  \"notes\": [\n    \"In the mobile captures the tickets table shows only المعرف/العنوان/الحالة; the الإصدار cell exists (mobile textExact on [data-version] passed) but its number is not visible in the captured viewport, so consider a horizontal-scroll affordance or always-visible version badge on small screens.\",\n    \"The footer line is clipped at the bottom edge in desktop-2 only because of the viewport capture; it is fully visible in desktop-0.\"\n  ]\n}\n```\n{\"verdict\":\"pass\",\"reason\":\"All contract scenarios pass on both desktop and mobile, including create (201, version=1), update incrementing to version 2, stale-edit rejection with 409 and unchanged row, reload retention, concurrent one-winner behavior (200/409), invalid-input 400/404 handling leaving state unchanged, and persistence across two backend restarts with identical SQLite rows. The screenshots show a clean RTL Arabic interface in the requested cyan/purple theme: create form (#id, #title, #create), plain-text edit form (#editId, #editTitle, #editStatus, #editVersion, #update) with an explicit note that fields are not auto-filled, and a tickets table rendering the record. Text is readable, sections stack properly on mobile, and no overlaps or placeholder output are visible.\",\"issues\":[],\"notes\":[\"عمود الإصدار غير ظاهر في أول عرض للجدول على الجوال (يبدو أن الجدول يتمرر أفقيًا داخل الحاوية)؛ تحسين اختياري: تقليص عرض الأعمدة أو الإشارة إلى إمكانية التمرير حتى يظهر رقم الإصدار دون تمرير.\",\"النص الختامي أسفل الصفحة مقصوص عند حدّ لقطة الشاشة فقط ولا يمثل عيبًا في التنسيق.\"]}",
+    "attempts": 2,
+    "batches": [
+      {
+        "screenshots": [
+          "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-0.png",
+          "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-1.png",
+          "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-2.png",
+          "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-3.png",
+          "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-4.png",
+          "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-5.png",
+          "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-6.png",
+          "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-0.png",
+          "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-1.png",
+          "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-2.png",
+          "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-3.png",
+          "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-4.png"
+        ],
+        "model": "glm-5.3-flash",
+        "verdict": {
+          "verdict": "pass",
+          "reason": "All 14 executed checks (7 scenarios × desktop/mobile) match the contract exactly: POST returns 201 with version 1, PATCH bumps version to 2, a stale version gets 409 while the row keeps 'محدثة' and an Arabic #error banner appears (desktop-2), data survives reload and two backend restarts (desktop-3/desktop-6, mobile-3), concurrent PATCHes yield one 200 and one 409 with final state 'متزامنة/closed/2', and every invalid input returns 400/404 leaving state unchanged. Screenshots confirm an RTL cyan/purple responsive UI with the required #id/#title/#create and #editId/#editTitle/#editStatus/#editVersion/#update controls, .ticket[data-id] rows exposing data-title/data-status/data-version, correct error display that clears after success, no auto-overwrite of edit fields during typing, and a clean stacked mobile layout with no overlaps or unreadable text.",
+          "issues": [],
+          "notes": [
+            "In the mobile captures the tickets table shows only المعرف/العنوان/الحالة; the الإصدار cell exists (mobile textExact on [data-version] passed) but its number is not visible in the captured viewport, so consider a horizontal-scroll affordance or always-visible version badge on small screens.",
+            "The footer line is clipped at the bottom edge in desktop-2 only because of the viewport capture; it is fully visible in desktop-0."
+          ]
+        },
+        "response": "```json\n{\n  \"verdict\": \"pass\",\n  \"reason\": \"All 14 executed checks (7 scenarios × desktop/mobile) match the contract exactly: POST returns 201 with version 1, PATCH bumps version to 2, a stale version gets 409 while the row keeps 'محدثة' and an Arabic #error banner appears (desktop-2), data survives reload and two backend restarts (desktop-3/desktop-6, mobile-3), concurrent PATCHes yield one 200 and one 409 with final state 'متزامنة/closed/2', and every invalid input returns 400/404 leaving state unchanged. Screenshots confirm an RTL cyan/purple responsive UI with the required #id/#title/#create and #editId/#editTitle/#editStatus/#editVersion/#update controls, .ticket[data-id] rows exposing data-title/data-status/data-version, correct error display that clears after success, no auto-overwrite of edit fields during typing, and a clean stacked mobile layout with no overlaps or unreadable text.\",\n  \"issues\": [],\n  \"notes\": [\n    \"In the mobile captures the tickets table shows only المعرف/العنوان/الحالة; the الإصدار cell exists (mobile textExact on [data-version] passed) but its number is not visible in the captured viewport, so consider a horizontal-scroll affordance or always-visible version badge on small screens.\",\n    \"The footer line is clipped at the bottom edge in desktop-2 only because of the viewport capture; it is fully visible in desktop-0.\"\n  ]\n}\n```",
+        "attempts": 1
+      },
+      {
+        "screenshots": [
+          "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-5.png",
+          "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-6.png"
+        ],
+        "model": "glm-5.3-flash",
+        "verdict": {
+          "verdict": "pass",
+          "reason": "All contract scenarios pass on both desktop and mobile, including create (201, version=1), update incrementing to version 2, stale-edit rejection with 409 and unchanged row, reload retention, concurrent one-winner behavior (200/409), invalid-input 400/404 handling leaving state unchanged, and persistence across two backend restarts with identical SQLite rows. The screenshots show a clean RTL Arabic interface in the requested cyan/purple theme: create form (#id, #title, #create), plain-text edit form (#editId, #editTitle, #editStatus, #editVersion, #update) with an explicit note that fields are not auto-filled, and a tickets table rendering the record. Text is readable, sections stack properly on mobile, and no overlaps or placeholder output are visible.",
+          "issues": [],
+          "notes": [
+            "عمود الإصدار غير ظاهر في أول عرض للجدول على الجوال (يبدو أن الجدول يتمرر أفقيًا داخل الحاوية)؛ تحسين اختياري: تقليص عرض الأعمدة أو الإشارة إلى إمكانية التمرير حتى يظهر رقم الإصدار دون تمرير.",
+            "النص الختامي أسفل الصفحة مقصوص عند حدّ لقطة الشاشة فقط ولا يمثل عيبًا في التنسيق."
+          ]
+        },
+        "response": "{\"verdict\":\"pass\",\"reason\":\"All contract scenarios pass on both desktop and mobile, including create (201, version=1), update incrementing to version 2, stale-edit rejection with 409 and unchanged row, reload retention, concurrent one-winner behavior (200/409), invalid-input 400/404 handling leaving state unchanged, and persistence across two backend restarts with identical SQLite rows. The screenshots show a clean RTL Arabic interface in the requested cyan/purple theme: create form (#id, #title, #create), plain-text edit form (#editId, #editTitle, #editStatus, #editVersion, #update) with an explicit note that fields are not auto-filled, and a tickets table rendering the record. Text is readable, sections stack properly on mobile, and no overlaps or placeholder output are visible.\",\"issues\":[],\"notes\":[\"عمود الإصدار غير ظاهر في أول عرض للجدول على الجوال (يبدو أن الجدول يتمرر أفقيًا داخل الحاوية)؛ تحسين اختياري: تقليص عرض الأعمدة أو الإشارة إلى إمكانية التمرير حتى يظهر رقم الإصدار دون تمرير.\",\"النص الختامي أسفل الصفحة مقصوص عند حدّ لقطة الشاشة فقط ولا يمثل عيبًا في التنسيق.\"]}",
+        "attempts": 1
+      }
+    ],
+    "reviewedScreenshots": [
+      "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-0.png",
+      "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-1.png",
+      "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-2.png",
+      "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-3.png",
+      "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-4.png",
+      "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-5.png",
+      "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\desktop-6.png",
+      "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-0.png",
+      "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-1.png",
+      "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-2.png",
+      "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-3.png",
+      "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-4.png",
+      "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-5.png",
+      "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\.verification\\b7083753-fca5-4849-ae93-345ba7f18404\\mobile-6.png"
+    ]
+  },
+  "sourceHashes": {
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\app-verification.json": "61bc72a56711487c5e0f96694cb83e702591876e1febe32c54e2d2da82fd53b6",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\index.html": "ea749a0b713d4f5c2e979e2577df7b2e4ee32c1b3161137e4fa4a51d35ef7986",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mveumcvtdbf76a7e226c\\server.mjs": "edd99da7e3bd51600b9f67dab4e823db4b2d32f09a77f171ab22c0d4c60c5ba4"
+  }
+}

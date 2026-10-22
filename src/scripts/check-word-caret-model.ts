@@ -1,0 +1,24 @@
+import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import {importStudio} from '../studio/import.js';
+import {exportStudio} from '../studio/export.js';
+import {validateStudio} from '../studio/store.js';
+import {safeZip,part,all,first,W} from '../studio/ooxml.js';
+import {children} from '../studio/word-import.js';
+// @ts-expect-error Shared browser operation module intentionally has no declaration file.
+import {previewEdit} from '../../ui/studio-preview-edit.js';
+const work=await fs.mkdtemp('output/word-caret-preview/model-'),source=await fs.readFile('output/word-native-preview/complex-source.docx');
+const artifact=await importStudio(work,source,'complex.docx',0);if(artifact.kind!=='document')throw Error();
+const before=await part(await safeZip(source),'word/document.xml'),nodes=children(first(before,W,'body'));
+const index=artifact.content.blocks.findIndex(b=>b.type==='paragraph'&&b.text.length>10&&b.sourceNode!==undefined&&first(nodes[b.sourceNode],W,'sectPr'));assert.ok(index>=0);
+const original=artifact.content.blocks[index]!,split=previewEdit(artifact,{kind:'split-insert',index,offset:8,block:{type:'stats',text:'',items:[{value:'1',label:'Inserted',tone:'teal'}]}},artifact.revision);
+const result=await exportStudio(split,work),after=await part(await safeZip(result.buffer),'word/document.xml');assert.equal(all(after,W,'sectPr').length,all(before,W,'sectPr').length,'Splitting a section-ending paragraph must not create extra sections');assert.equal(split.content.blocks[index].text+split.content.blocks[index+2].text,original.text);
+assert.throws(()=>previewEdit(artifact,{kind:'split-insert',index,offset:-1,block:{type:'paragraph',text:''}},artifact.revision));
+const revisedText='Updated section\nنص جديد قبل الإدراج',atomic=previewEdit(artifact,{kind:'split-insert',index,offset:16,sourceText:revisedText,block:{type:'paragraph',text:'Inserted atomically'}},artifact.revision);
+const atomicOutput=await exportStudio(atomic,work),atomicDoc=await part(await safeZip(atomicOutput.buffer),'word/document.xml');
+assert.equal(all(atomicDoc,W,'sectPr').length,all(before,W,'sectPr').length);
+assert.equal(atomic.content.blocks[index].text+atomic.content.blocks[index+2].text,revisedText);
+assert.ok(all(atomicDoc,W,'t').map(n=>n.textContent).join('').includes('نص جديد قبل الإدراج'));
+const bad=structuredClone(artifact);bad.content.blocks[0]!.position={x:Infinity,y:10};assert.throws(()=>validateStudio(bad));
+assert.throws(()=>previewEdit(artifact,{kind:'replace',index:0,block:artifact.content.blocks[0]},artifact.revision+1));
+console.log('PASS split section preservation, text conservation, coordinate validation, stale revision rejection');

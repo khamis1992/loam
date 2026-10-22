@@ -1,0 +1,1 @@
+﻿window.__send("Create a routine for yourself: every weekday at 09:00 Asia/Qatar time (cron 0 9 * * 0-4) with prompt \u0027Morning Nutrio check\u0027. Use your scheduling tool, then list your schedules and reply with the schedule id and next run.")

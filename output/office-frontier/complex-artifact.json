@@ -1,0 +1,96 @@
+{
+  "kind": "spreadsheet",
+  "title": "complex",
+  "content": {
+    "sheets": [
+      {
+        "sourceIndex": 0,
+        "styles": {
+          "A2": {
+            "borderBottom": "double",
+            "borderBottomColor": "#550000",
+            "wrapText": true,
+            "color": "#223344",
+            "fontFamily": "Calibri",
+            "fontSize": 12,
+            "verticalAlignment": "middle",
+            "bold": true,
+            "background": "#EAF5F2"
+          },
+          "C2": {
+            "fontFamily": "Calibri",
+            "fontSize": 11,
+            "numberFormat": "0.0%"
+          },
+          "A3": {
+            "borderBottom": "double",
+            "borderBottomColor": "#550000",
+            "wrapText": true,
+            "color": "#223344",
+            "fontFamily": "Calibri",
+            "fontSize": 12,
+            "verticalAlignment": "middle"
+          },
+          "B2": {
+            "numberFormat": "#,##0.00"
+          },
+          "D8": {
+            "color": "#993344",
+            "italic": true
+          }
+        },
+        "columnWidths": [
+          12,
+          34,
+          12
+        ],
+        "rowHeights": [
+          20,
+          40,
+          20,
+          20
+        ],
+        "merges": [],
+        "hiddenRows": [
+          false,
+          false,
+          false,
+          false
+        ],
+        "hiddenColumns": [
+          false,
+          true,
+          false
+        ],
+        "name": "Complex",
+        "cells": [
+          [
+            "Report",
+            "Revenue",
+            "Growth"
+          ],
+          [
+            "Development",
+            "125000",
+            "0.185"
+          ],
+          [
+            "Operations",
+            "98000",
+            "0.12"
+          ],
+          [
+            "Total",
+            "=SUM(B2:B3)",
+            ""
+          ]
+        ]
+      }
+    ]
+  },
+  "sourceId": "cbd69be4-60f1-456b-b932-e677fb56268e",
+  "warnings": [
+    "معاينة مبسطة قابلة للتحرير. تبقى الصور والتنسيقات والعناصر غير المعروضة محفوظة في الملف الأصلي عند التصدير."
+  ],
+  "revision": 1
+}

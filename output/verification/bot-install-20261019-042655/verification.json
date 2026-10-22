@@ -1,0 +1,67 @@
+{
+  "capabilities": {
+    "revision": 7,
+    "mandatoryFinalVerification": true,
+    "bufferedCompletion": true,
+    "taskToolScope": {
+      "explicitFileOnly": true,
+      "checkpointResume": true,
+      "languageCoverage": "limited-explicit-ar-en-commands"
+    },
+    "acceptanceIntegrity": {
+      "freezeAt": "explicit-user-contract-or-first-final-verification",
+      "explicitUserContractAtStart": true,
+      "explicitCommandLanguages": [
+        "ar",
+        "en"
+      ],
+      "preservesRepairChecks": true,
+      "orchestratorCheckpointResume": true,
+      "independentlyAuthored": false
+    },
+    "creativeVerification": {
+      "renderer": "actual-studio",
+      "savedCamera": true,
+      "framedView": true,
+      "optionalMotionSample": true,
+      "fullAnimationValidation": false,
+      "visualReview": true
+    },
+    "applicationVerification": {
+      "contract": "app-verification.json",
+      "runtime": "isolated-playwright",
+      "viewports": [
+        "desktop",
+        "mobile"
+      ],
+      "visualReview": true,
+      "network": "local-only",
+      "backendApplications": true,
+      "expectedHttpResponses": true,
+      "maxScenarios": 12,
+      "sqliteChecks": {
+        "readOnly": true,
+        "declarative": true,
+        "maxChecksPerScenario": 4,
+        "maxRows": 100,
+        "optInContract": true
+      },
+      "backendRuntime": {
+        "type": "node",
+        "isolation": "docker-network-none",
+        "requiredLocalImage": "node:22-alpine",
+        "externalPackages": false,
+        "externalServices": false,
+        "freshStatePerScenario": true
+      }
+    },
+    "visualModel": "glm-5.3-flash:cloud"
+  },
+  "profilePreserved": true,
+  "tasksPreserved": 142,
+  "backup": "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-install-20261019-042655\\previous-server.cjs",
+  "at": "2026-10-19T04:27:02.2761164+03:00",
+  "candidate": "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-install-20261019-042655\\candidate-server.cjs",
+  "runtimeHash": "123E44EFB259F26000C3EE439023442E07905621069EC25E4AFC31A932BA1CCA",
+  "version": "0.5.25"
+}

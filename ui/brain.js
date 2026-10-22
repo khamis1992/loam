@@ -41,7 +41,7 @@ async function load() {
   chips.push(`<span class="chip">آخر 7 أيام: ${Number(stats.last7d ?? 0)}</span>`);
   for (const [k, v] of Object.entries(stats.byOutcome ?? {})) chips.push(`<span class="chip">${esc(k)}: ${Number(v)}</span>`);
   for (const t of stats.topTags ?? []) chips.push(`<span class="chip">#${esc(t.tag)} ×${t.count}</span>`);
-  for (const t of stats.topTools ?? []) chips.push(`<span class="chip">🔧 ${esc(t.tool)} ×${t.count}</span>`);
+  for (const t of stats.topTools ?? []) chips.push(`<span class="chip"><loam-icon name="build"></loam-icon> ${esc(t.tool)} ×${t.count}</span>`);
   $("stats").innerHTML = chips.join(" ") || '<span class="desc">لا بيانات بعد.</span>';
 
   const review = data.review ?? [];
@@ -81,7 +81,7 @@ async function load() {
         </div>
         <p class="summary">${esc(e.summary)}</p>
         ${lessons ? `<ul class="lessons">${lessons}</ul>` : ""}
-        <div class="chips">${badges(e.tools, "🔧")}${badges(e.tags, "#")}</div>`;
+        <div class="chips">${badges(e.tools, "")}${badges(e.tags, "#")}</div>`;
       $("episodes").appendChild(row);
     }
   }

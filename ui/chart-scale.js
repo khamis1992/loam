@@ -1,0 +1,1 @@
+export function chartScale(values){const min=Math.min(0,...values),max=Math.max(0,...values);const rough=Math.max((max-min||1)/5,1e-12);const power=10**Math.floor(Math.log10(rough));const fraction=rough/power;const step=(fraction<=1?1:fraction<=2?2:fraction<=5?5:10)*power;return {min:Math.floor(min/step)*step,max:max===min?step*5:Math.ceil(max/step)*step,step};}

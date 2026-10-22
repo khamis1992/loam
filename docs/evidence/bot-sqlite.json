@@ -1,0 +1,31 @@
+{
+  "at": "2026-10-18T23:31:25.663Z",
+  "workspace": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-sqlite-8Yzuzw",
+  "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+  "observations": [
+    {
+      "rows": [
+        {
+          "sku": "book",
+          "quantity": 7
+        }
+      ],
+      "audit": 1
+    },
+    {
+      "rows": [
+        {
+          "sku": "book",
+          "quantity": 2
+        }
+      ],
+      "audit": 2
+    }
+  ],
+  "rollback": true,
+  "quotedInput": true,
+  "databaseReopen": true,
+  "competingWithdrawals": true,
+  "cleanup": true,
+  "scope": "hand-written API fixture; SQLite in sandbox /tmp; no persistence across container destruction or claim of autonomous generation"
+}

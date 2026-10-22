@@ -1,0 +1,29 @@
+{
+  "id": "web",
+  "name": "مهام الشبكة (تتطلب إنترنت)",
+  "version": 1,
+  "cases": [
+    {
+      "id": "web-fetch-title",
+      "network": true,
+      "prompt": "استخدم أداة web_fetch على الرابط https://example.com واكتب عنوان الصفحة (title) في ملف title.txt داخل مجلد العمل.",
+      "verify": [
+        { "type": "file_exists", "path": "title.txt" },
+        { "type": "file_contains", "path": "title.txt", "text": "Example Domain" }
+      ],
+      "budget": { "maxSteps": 10, "timeoutSec": 180 },
+      "tags": ["web", "network"]
+    },
+    {
+      "id": "web-answer-purpose",
+      "network": true,
+      "prompt": "استخدم web_fetch على https://example.com وأجب في سطر واحد: ما الغرض من هذا النطاق (example.com)؟",
+      "verify": [
+        { "type": "tool_used", "name": "web_fetch" },
+        { "type": "answer_matches", "pattern": "مثال|توثيق|example|documentation" }
+      ],
+      "budget": { "maxSteps": 8, "timeoutSec": 180 },
+      "tags": ["web", "network"]
+    }
+  ]
+}

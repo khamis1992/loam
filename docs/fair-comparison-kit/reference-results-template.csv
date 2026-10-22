@@ -1,0 +1,7 @@
+task,lang,pass,completion_percent,user_interventions,wall_seconds,notes
+doc-ar,ar,,,,,
+memory-ar,ar,,,,,
+task-en,en,,,,,
+csv-en,en,,,,,
+device-ar,ar,,,,,
+delegate-en,en,,,,,

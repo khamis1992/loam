@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# build outputs
+.next/
+out/
+dist/
+
+# test artifacts
+test-results/
+coverage/
+
+# lockfile (managed at workspace root when monorepo is wired)
+package-lock.json
+
+# ts cache
+*.tsbuildinfo

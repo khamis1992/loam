@@ -1,0 +1,271 @@
+{
+  "at": "2026-10-19T01:55:21.875Z",
+  "workspace": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-json-VFg6zx",
+  "scope": "actual Docker/browser with fixture visual verdict; JSON comparison unit holdouts",
+  "reports": {
+    "good": {
+      "pass": true,
+      "reason": "fixture approval",
+      "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-json-VFg6zx\\.verification\\d1b63f14-4fbd-42f2-84c9-53426bc5557a\\report.json",
+      "elapsedMs": 8526,
+      "usage": {
+        "promptTokens": 1,
+        "completionTokens": 1,
+        "durationMs": 1
+      },
+      "checks": [
+        {
+          "viewport": "desktop",
+          "scenario": "Correct API content",
+          "pass": true,
+          "responses": [
+            {
+              "method": "GET",
+              "path": "/index.html",
+              "status": 200
+            }
+          ],
+          "databases": [],
+          "api": [
+            {
+              "group": 0,
+              "method": "GET",
+              "path": "/api/state",
+              "status": 200,
+              "responseJson": {
+                "active": true,
+                "items": [
+                  {
+                    "quantity": 7,
+                    "id": "one"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "viewport": "mobile",
+          "scenario": "Correct API content",
+          "pass": true,
+          "responses": [
+            {
+              "method": "GET",
+              "path": "/index.html",
+              "status": 200
+            }
+          ],
+          "databases": [],
+          "api": [
+            {
+              "group": 0,
+              "method": "GET",
+              "path": "/api/state",
+              "status": 200,
+              "responseJson": {
+                "active": true,
+                "items": [
+                  {
+                    "quantity": 7,
+                    "id": "one"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "screenshots": [
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-json-VFg6zx\\.verification\\d1b63f14-4fbd-42f2-84c9-53426bc5557a\\desktop-0.png",
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-json-VFg6zx\\.verification\\d1b63f14-4fbd-42f2-84c9-53426bc5557a\\mobile-0.png"
+      ],
+      "errors": [],
+      "runtime": {
+        "type": "node",
+        "isolation": "docker-network-none",
+        "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+        "freshBackendPerScenario": true
+      },
+      "visual": {
+        "model": "fixture",
+        "verdict": {
+          "verdict": "pass",
+          "reason": "fixture approval",
+          "issues": []
+        },
+        "response": "{\"verdict\":\"pass\",\"reason\":\"fixture approval\",\"issues\":[]}",
+        "attempts": 1
+      },
+      "sourceHashes": {
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-json-VFg6zx\\app-verification.json": "058f88ae45cf824db8abef4bb851194a25e2da3bfd150ddb589c61e64721ae7a",
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-json-VFg6zx\\index.html": "07ea8e41302ea163337bd7ca9973a3af5bafb988844c4d7d7c03ca21f2d8bf39",
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-json-VFg6zx\\server.mjs": "0a27d25f347fa6c0f6215fe676b0a52d5c2c484660b43d594ba449e0ee308ad0"
+      }
+    },
+    "wrong": {
+      "pass": false,
+      "reason": "Error: Application interaction/runtime checks failed; inspect report and repair",
+      "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-json-VFg6zx\\.verification\\987da5b9-db3f-4cc6-ad03-1d3a205888f4\\report.json",
+      "elapsedMs": 8444,
+      "usage": {
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "durationMs": 0
+      },
+      "checks": [
+        {
+          "viewport": "desktop",
+          "scenario": "Correct API content",
+          "pass": false,
+          "error": "Error: API group 0 mismatch: expected statuses [200], observed [{\"group\":0,\"method\":\"GET\",\"path\":\"/api/state\",\"status\":200,\"responseJson\":{\"active\":true,\"items\":[{\"quantity\":\"7\",\"id\":\"one\"}]},\"error\":\"Error: API JSON mismatch for request 0: expected {\\\"active\\\":true,\\\"items\\\":[{\\\"id\\\":\\\"one\\\",\\\"quantity\\\":7}]}, observed {\\\"active\\\":true,\\\"items\\\":[{\\\"id\\\":\\\"one\\\",\\\"quantity\\\":\\\"7\\\"}]}\"}]",
+          "responses": [
+            {
+              "method": "GET",
+              "path": "/index.html",
+              "status": 200
+            }
+          ],
+          "databases": [],
+          "api": [
+            {
+              "group": 0,
+              "method": "GET",
+              "path": "/api/state",
+              "status": 200,
+              "responseJson": {
+                "active": true,
+                "items": [
+                  {
+                    "quantity": "7",
+                    "id": "one"
+                  }
+                ]
+              },
+              "error": "Error: API JSON mismatch for request 0: expected {\"active\":true,\"items\":[{\"id\":\"one\",\"quantity\":7}]}, observed {\"active\":true,\"items\":[{\"id\":\"one\",\"quantity\":\"7\"}]}"
+            }
+          ]
+        },
+        {
+          "viewport": "mobile",
+          "scenario": "Correct API content",
+          "pass": false,
+          "error": "Error: API group 0 mismatch: expected statuses [200], observed [{\"group\":0,\"method\":\"GET\",\"path\":\"/api/state\",\"status\":200,\"responseJson\":{\"active\":true,\"items\":[{\"quantity\":\"7\",\"id\":\"one\"}]},\"error\":\"Error: API JSON mismatch for request 0: expected {\\\"active\\\":true,\\\"items\\\":[{\\\"id\\\":\\\"one\\\",\\\"quantity\\\":7}]}, observed {\\\"active\\\":true,\\\"items\\\":[{\\\"id\\\":\\\"one\\\",\\\"quantity\\\":\\\"7\\\"}]}\"}]",
+          "responses": [
+            {
+              "method": "GET",
+              "path": "/index.html",
+              "status": 200
+            }
+          ],
+          "databases": [],
+          "api": [
+            {
+              "group": 0,
+              "method": "GET",
+              "path": "/api/state",
+              "status": 200,
+              "responseJson": {
+                "active": true,
+                "items": [
+                  {
+                    "quantity": "7",
+                    "id": "one"
+                  }
+                ]
+              },
+              "error": "Error: API JSON mismatch for request 0: expected {\"active\":true,\"items\":[{\"id\":\"one\",\"quantity\":7}]}, observed {\"active\":true,\"items\":[{\"id\":\"one\",\"quantity\":\"7\"}]}"
+            }
+          ]
+        }
+      ],
+      "screenshots": [
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-json-VFg6zx\\.verification\\987da5b9-db3f-4cc6-ad03-1d3a205888f4\\desktop-0.png",
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-json-VFg6zx\\.verification\\987da5b9-db3f-4cc6-ad03-1d3a205888f4\\mobile-0.png"
+      ],
+      "errors": [
+        "Error: API group 0 mismatch: expected statuses [200], observed [{\"group\":0,\"method\":\"GET\",\"path\":\"/api/state\",\"status\":200,\"responseJson\":{\"active\":true,\"items\":[{\"quantity\":\"7\",\"id\":\"one\"}]},\"error\":\"Error: API JSON mismatch for request 0: expected {\\\"active\\\":true,\\\"items\\\":[{\\\"id\\\":\\\"one\\\",\\\"quantity\\\":7}]}, observed {\\\"active\\\":true,\\\"items\\\":[{\\\"id\\\":\\\"one\\\",\\\"quantity\\\":\\\"7\\\"}]}\"}]",
+        "Error: API group 0 mismatch: expected statuses [200], observed [{\"group\":0,\"method\":\"GET\",\"path\":\"/api/state\",\"status\":200,\"responseJson\":{\"active\":true,\"items\":[{\"quantity\":\"7\",\"id\":\"one\"}]},\"error\":\"Error: API JSON mismatch for request 0: expected {\\\"active\\\":true,\\\"items\\\":[{\\\"id\\\":\\\"one\\\",\\\"quantity\\\":7}]}, observed {\\\"active\\\":true,\\\"items\\\":[{\\\"id\\\":\\\"one\\\",\\\"quantity\\\":\\\"7\\\"}]}\"}]"
+      ],
+      "runtime": {
+        "type": "node",
+        "isolation": "docker-network-none",
+        "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+        "freshBackendPerScenario": true
+      }
+    },
+    "invalid": {
+      "pass": false,
+      "reason": "Error: Application interaction/runtime checks failed; inspect report and repair",
+      "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-json-VFg6zx\\.verification\\192aa4a0-b964-427d-9fe6-dab52726e001\\report.json",
+      "elapsedMs": 8327,
+      "usage": {
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "durationMs": 0
+      },
+      "checks": [
+        {
+          "viewport": "desktop",
+          "scenario": "Correct API content",
+          "pass": false,
+          "error": "Error: API group 0 mismatch: expected statuses [200], observed [{\"group\":0,\"method\":\"GET\",\"path\":\"/api/state\",\"status\":200,\"error\":\"SyntaxError: Expected property name or '}' in JSON at position 1 (line 1 column 2)\"}]",
+          "responses": [
+            {
+              "method": "GET",
+              "path": "/index.html",
+              "status": 200
+            }
+          ],
+          "databases": [],
+          "api": [
+            {
+              "group": 0,
+              "method": "GET",
+              "path": "/api/state",
+              "status": 200,
+              "error": "SyntaxError: Expected property name or '}' in JSON at position 1 (line 1 column 2)"
+            }
+          ]
+        },
+        {
+          "viewport": "mobile",
+          "scenario": "Correct API content",
+          "pass": false,
+          "error": "Error: API group 0 mismatch: expected statuses [200], observed [{\"group\":0,\"method\":\"GET\",\"path\":\"/api/state\",\"status\":200,\"error\":\"SyntaxError: Expected property name or '}' in JSON at position 1 (line 1 column 2)\"}]",
+          "responses": [
+            {
+              "method": "GET",
+              "path": "/index.html",
+              "status": 200
+            }
+          ],
+          "databases": [],
+          "api": [
+            {
+              "group": 0,
+              "method": "GET",
+              "path": "/api/state",
+              "status": 200,
+              "error": "SyntaxError: Expected property name or '}' in JSON at position 1 (line 1 column 2)"
+            }
+          ]
+        }
+      ],
+      "screenshots": [
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-json-VFg6zx\\.verification\\192aa4a0-b964-427d-9fe6-dab52726e001\\desktop-0.png",
+        "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-api-json-VFg6zx\\.verification\\192aa4a0-b964-427d-9fe6-dab52726e001\\mobile-0.png"
+      ],
+      "errors": [
+        "Error: API group 0 mismatch: expected statuses [200], observed [{\"group\":0,\"method\":\"GET\",\"path\":\"/api/state\",\"status\":200,\"error\":\"SyntaxError: Expected property name or '}' in JSON at position 1 (line 1 column 2)\"}]",
+        "Error: API group 0 mismatch: expected statuses [200], observed [{\"group\":0,\"method\":\"GET\",\"path\":\"/api/state\",\"status\":200,\"error\":\"SyntaxError: Expected property name or '}' in JSON at position 1 (line 1 column 2)\"}]"
+      ],
+      "runtime": {
+        "type": "node",
+        "isolation": "docker-network-none",
+        "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+        "freshBackendPerScenario": true
+      }
+    }
+  },
+  "pass": true
+}

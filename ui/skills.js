@@ -1,5 +1,5 @@
 /* Skills page — creative rewrite.
- * Tabs (installed / catalog) + category chips + gradient avatars + drawer editor + toasts.
+ * Tabs (installed / catalog) + category chips + Loam icons + drawer editor + toasts.
  * Same API surface as before: /api/skills*, /api/skills/catalog, /api/skills/one. */
 
 const $ = (id) => document.getElementById(id);
@@ -11,23 +11,6 @@ let catalogTotal = 0;
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
-
-function hue(name) {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
-  return h;
-}
-
-function avatarStyle(name) {
-  const h = hue(name);
-  return `background:linear-gradient(135deg,hsl(${h} 72% 58%),hsl(${(h + 42) % 360} 72% 46%))`;
-}
-
-function initial(name) {
-  const c = String(name).replace(/[^a-zA-Z\u0600-\u06ff]/g, "");
-  return (c[0] || "?").toUpperCase();
-}
-
 function toast(msg, kind) {
   const el = document.createElement("div");
   el.className = "toast" + (kind ? " " + kind : "");
@@ -42,7 +25,7 @@ function skeletons(box, n = 6) {
 
 const emptyState = (title, sub, icon) =>
   `<div class="empty" style="grid-column:1/-1">
-     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">${icon}</svg>
+     <loam-icon name="skills"></loam-icon>
      <div style="font-weight:600;font-size:14px;color:var(--text)">${esc(title)}</div>
      <div style="font-size:12.5px;margin-top:4px">${esc(sub)}</div>
    </div>`;
@@ -86,7 +69,7 @@ function renderInstalled() {
       (s) => `
     <article class="sk-card">
       <div class="sk-head">
-        <div class="avatar" style="${avatarStyle(s.name)}">${esc(initial(s.name))}</div>
+        <div class="avatar"><loam-icon name="skills"></loam-icon></div>
         <div style="min-width:0">
           <div class="sk-name">${esc(s.name)}</div>
           <div class="sk-id">skills/${esc(s.name)}</div>
@@ -130,7 +113,7 @@ async function loadCatalog(query = "", refresh = false) {
         (s) => `
       <article class="sk-card">
         <div class="sk-head">
-          <div class="avatar" style="${avatarStyle(s.id)}">${esc(initial(s.id.split("/").pop() || s.id))}</div>
+          <div class="avatar"><loam-icon name="skills"></loam-icon></div>
           <div style="min-width:0">
             <div class="sk-name">${esc(s.id.split("/").pop() || s.id)}</div>
             <div class="sk-id">${esc(s.id)}</div>
@@ -199,7 +182,7 @@ async function installSkill(id, btn) {
       return;
     }
     toast(`تم تثبيت ${id} (${(data.files ?? []).length} ملف)`, "ok");
-    if (btn) btn.textContent = "مثبّتة ✓";
+    if (btn) btn.innerHTML = 'مثبّتة <loam-icon name="check"></loam-icon>';
     await loadInstalled();
   } catch (err) {
     toast("تعذّر الاتصال: " + err.message, "err");

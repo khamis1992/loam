@@ -1,0 +1,19 @@
+{
+  "at": "2026-10-19T17:50:12.1164408+03:00",
+  "taskId": "task_mvfcqvrbb16c29ef60e6",
+  "sourceSha256": "934EE948CE4639E7641EDB68D4A5547303E9ED902B09473A55E13668B4761B43",
+  "itemCount": 100,
+  "computedSubtotal": 100000000000.0,
+  "userSubtotalCap": 1000000000,
+  "expectedStatus": [
+    200
+  ],
+  "expectedJson": {
+    "subtotalCents": 1000000000,
+    "discountCents": 1000000000,
+    "shippingCents": 1000000,
+    "totalCents": 1000000
+  },
+  "taskStillRunning": true,
+  "sourceEdited": false
+}

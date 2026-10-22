@@ -1,0 +1,34 @@
+{
+  "version": "0.5.9",
+  "taskId": "task_mvdd0apdb8a363245d0f",
+  "revision": 3,
+  "editedOriginals": [
+    "stats",
+    "table",
+    "image"
+  ],
+  "insertedAt": 8,
+  "unchangedElementsPreserved": true,
+  "preservedParts": [
+    "word/styles.xml",
+    "docProps/core.xml",
+    "_rels/.rels",
+    "word/_rels/header1.xml.rels",
+    "word/_rels/footer1.xml.rels",
+    "word/header1.xml",
+    "word/footer1.xml",
+    "docProps/custom.xml",
+    "docProps/app.xml",
+    "word/footnotes.xml",
+    "word/_rels/footnotes.xml.rels",
+    "word/endnotes.xml",
+    "word/_rels/endnotes.xml.rels",
+    "word/settings.xml",
+    "word/fontTable.xml",
+    "word/_rels/fontTable.xml.rels",
+    "word/theme/theme1.xml",
+    "word/numbering.xml",
+    "word/media/94853c90f2509c0a9c0fefd201932769b7197488.png",
+    "word/media/loam-c73e02e8-41e5-48bd-8463-461d34de6800.png"
+  ]
+}

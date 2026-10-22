@@ -1,0 +1,10 @@
+﻿In C:\Users\khamis\Desktop\manus-local (branch manus-parity), edit ONLY the file packages/web/src/app/app/board/page.tsx.
+
+Problem: Next.js App Router route files may not have arbitrary named exports. Line 63 currently reads `export function BoardPageFallback() {`. BoardPageFallback is only used locally (line ~170), so remove the `export` keyword: change `export function BoardPageFallback()` to `function BoardPageFallback()`. Do NOT change anything else. Do NOT touch any other file.
+
+Then verify the production build type-check passes:
+  cd packages/web ; npx next build --webpack
+It must complete without the TS2344 BoardPageFallback error (ignore the unrelated turbopack.root warning). Then commit:
+  git add packages/web/src/app/app/board/page.tsx
+  git commit -m "fix(web): make BoardPageFallback a local (non-exported) component so Next route type-check passes"
+Reply DONE when committed and the build type-check passes.

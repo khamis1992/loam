@@ -1,0 +1,21 @@
+import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import ExcelJS from 'exceljs';
+import {importStudio} from '../studio/import.js';
+import {exportStudio} from '../studio/export.js';
+import {safeZip} from '../studio/ooxml.js';
+const out='output/office-frontier';await fs.mkdir(out,{recursive:true});const work=await fs.mkdtemp(out+'/import-format-');
+const book=new ExcelJS.Workbook(),sheet=book.addWorksheet('Complex');sheet.addRows([['Item','Revenue','Growth'],['Development',125000,.185],['Operations',98000,.12],['Total',{formula:'SUM(B2:B3)',result:223000},null]]);
+sheet.getColumn(2).width=21;sheet.getColumn(2).hidden=true;sheet.getRow(2).height=26;
+for(const address of ['A2','A3']){const c=sheet.getCell(address);c.font={name:'Calibri',size:12,color:{argb:'FF223344'}};c.border={bottom:{style:'double',color:{argb:'FF550000'}}};c.alignment={wrapText:true,vertical:'middle'};c.protection={locked:false};}
+sheet.getCell('C2').numFmt='0.0%';sheet.getCell('A1').value={text:'Report',hyperlink:'https://example.com/report'};sheet.getCell('C3').dataValidation={type:'decimal',operator:'between',formulae:[0,1]};sheet.addConditionalFormatting({ref:'B2:B3',rules:[{type:'cellIs',operator:'greaterThan',formulae:[100000],priority:1,style:{fill:{type:'pattern',pattern:'solid',fgColor:{argb:'FFAAFFAA'}}}}]});
+const image=book.addImage({buffer:await fs.readFile('output/word-original-edit/replacement.png') as any,extension:'png'});sheet.addImage(image,'E2:F5');
+const source=Buffer.from(await book.xlsx.writeBuffer());await fs.writeFile(out+'/complex-original.xlsx',source);
+const artifact=await importStudio(work,source,'complex.xlsx',0);if(artifact.kind!=='spreadsheet')throw Error();assert.ok((await exportStudio(artifact,work)).buffer.equals(source));
+const current=artifact.content.sheets[0]!;current.styles!.A2={...current.styles!.A2,bold:true,background:'#EAF5F2'};current.styles!.B2={...current.styles!.B2,numberFormat:'#,##0.00'};current.styles!.D8={color:'#993344',italic:true};current.columnWidths![1]=34;current.rowHeights![1]=40;
+const result=await exportStudio(artifact,work),loaded=new ExcelJS.Workbook();await loaded.xlsx.load(result.buffer as any);const actual=loaded.getWorksheet(1)!;
+assert.equal(actual.getCell('A2').font.bold,true);assert.equal(actual.getCell('A3').font.bold,undefined);assert.equal(actual.getCell('A2').border.bottom?.style,'double');assert.equal(actual.getCell('A2').protection.locked,false);assert.equal(actual.getCell('A2').alignment.wrapText,true);assert.equal(actual.getCell('A2').font.name,'Calibri');assert.equal(actual.getCell('B2').numFmt,'#,##0.00');assert.equal(actual.getCell('B4').formula,'SUM(B2:B3)');assert.equal(actual.getColumn(2).hidden,true);assert.equal(actual.getColumn(2).width,34);assert.equal(actual.getRow(2).height,40);assert.equal(actual.getCell('D8').font.italic,true);assert.equal(actual.getCell('A1').hyperlink,'https://example.com/report');assert.equal(actual.getCell('C3').dataValidation.type,'decimal');
+const before=await safeZip(source),after=await safeZip(result.buffer);let preserved=0;for(const f of Object.values(before.files)){if(f.dir||['xl/styles.xml','xl/worksheets/sheet1.xml','xl/workbook.xml'].includes(f.name))continue;assert.ok((await f.async('nodebuffer')).equals(await after.file(f.name)!.async('nodebuffer')),f.name);preserved++;}
+const originalSheet=await before.file('xl/worksheets/sheet1.xml')!.async('string'),changedSheet=await after.file('xl/worksheets/sheet1.xml')!.async('string');for(const tag of ['conditionalFormatting','dataValidations','drawing','hyperlinks'])assert.equal(changedSheet.match(new RegExp(`<${tag}\\b[\\s\\S]*?(?:</${tag}>|/>)`))?.[0],originalSheet.match(new RegExp(`<${tag}\\b[\\s\\S]*?(?:</${tag}>|/>)`))?.[0],tag);
+await fs.writeFile(out+'/complex-artifact.json',JSON.stringify(artifact,null,2));await fs.writeFile(out+'/complex-formatted.xlsx',result.buffer);await fs.writeFile(out+'/import-format-verification.json',JSON.stringify({preservedParts:preserved,sharedStylesIsolated:true,formulasAndProtectionPreserved:true},null,2));
+console.log('PASS imported XLSX formatting, shared-style isolation, dimensions, blank cells, formulas, borders, protection, conditional formatting and unchanged supporting parts');

@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>نظام حجز الغرف — واجهة عربية</title>
+<style>
+  /* ================= الأساسيات ================= */
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  [hidden] { display: none !important; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", "Helvetica Neue", Arial, sans-serif;
+    color: #1e293b;
+    line-height: 1.65;
+    background: linear-gradient(160deg, #ecfeff 0%, #e0f2fe 30%, #f5f3ff 65%, #ede9fe 100%);
+    background-attachment: fixed;
+  }
+
+  /* هالات سماوية وبنفسجية في الخلفية */
+  body::before, body::after {
+    content: "";
+    position: fixed;
+    z-index: 0;
+    border-radius: 50%;
+    filter: blur(70px);
+    pointer-events: none;
+  }
+  body::before {
+    width: 420px; height: 420px; top: -140px; left: -120px;
+    background: radial-gradient(circle at center, rgba(34, 211, 238, .45), transparent 70%);
+  }
+  body::after {
+    width: 480px; height: 480px; bottom: -160px; right: -140px;
+    background: radial-gradient(circle at center, rgba(167, 139, 250, .45), transparent 70%);
+  }
+
+  .page {
+    position: relative;
+    z-index: 1;
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 26px 16px 42px;
+  }
+
+  /* ================= الترويسة ================= */
+  .hero { text-align: center; padding: 8px 0 24px; }
+  .logo {
+    width: 66px; height: 66px;
+    margin: 0 auto 14px;
+    border-radius: 20px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    background: linear-gradient(135deg, #06b6d4, #8b5cf6);
+    box-shadow: 0 12px 28px rgba(124, 58, 237, .28);
+  }
+  .logo svg { width: 34px; height: 34px; }
+  h1 {
+    margin: 0 0 6px;
+    font-size: clamp(1.6rem, 4.5vw, 2.3rem);
+    font-weight: 800;
+    color: #7c3aed;
+  }
+  @supports ((-webkit-background-clip: text) or (background-clip: text)) {
+    h1 {
+      background: linear-gradient(90deg, #0e7490 0%, #6366f1 55%, #8b5cf6 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      -webkit-text-fill-color: transparent;
+    }
+  }
+  .subtitle { margin: 0; color: #475569; font-size: 1rem; }
+
+  /* ================= البطاقات ================= */
+  .card {
+    background: rgba(255, 255, 255, .93);
+    border: 1px solid rgba(139, 92, 246, .14);
+    border-radius: 22px;
+    box-shadow: 0 14px 34px rgba(30, 41, 59, .10);
+    padding: 24px;
+    margin-bottom: 22px;
+  }
+  .card-title {
+    display: flex; align-items: center; gap: 10px;
+    margin: 0 0 18px;
+    font-size: 1.15rem; font-weight: 800; color: #0f172a;
+  }
+  .card-title .dot {
+    flex: none;
+    width: 11px; height: 11px; border-radius: 50%;
+    background: linear-gradient(135deg, #06b6d4, #8b5cf6);
+  }
+
+  /* ================= الحقول ================= */
+  .fields {
+    display: grid;
+    grid-template-columns: 1.15fr 1fr 1fr;
+    gap: 16px;
+  }
+  .field label {
+    display: block;
+    margin-bottom: 7px;
+    font-size: .88rem; font-weight: 700; color: #334155;
+  }
+  .field .hint {
+    display: block;
+    margin-top: 6px;
+    font-size: .75rem; color: #94a3b8;
+  }
+  .field input {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 1rem;
+    font-family: inherit;
+    color: #0f172a;
+    background: #f8fafc;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 13px;
+    transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+  }
+  .field input::placeholder { color: #a8b6c8; }
+  .field input:focus {
+    outline: none;
+    border-color: #8b5cf6;
+    background: #fff;
+    box-shadow: 0 0 0 4px rgba(139, 92, 246, .15);
+  }
+  /* حقول التوقيت تُعرض باتجاه لاتيني لأن قيمها بصيغة UTC */
+  input.ltr {
+    direction: ltr;
+    text-align: left;
+    font-family: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+    font-size: .95rem;
+    letter-spacing: .2px;
+  }
+
+  /* ================= الزر ================= */
+  .actions {
+    display: flex; align-items: center; gap: 14px;
+    margin-top: 20px; flex-wrap: wrap;
+  }
+  #save {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 13px 30px;
+    border: none; border-radius: 14px;
+    font-family: inherit; font-size: 1.05rem; font-weight: 800;
+    color: #fff; cursor: pointer;
+    background: linear-gradient(135deg, #06b6d4 0%, #6366f1 55%, #8b5cf6 100%);
+    box-shadow: 0 10px 24px rgba(99, 102, 241, .35);
+    transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
+  }
+  #save:hover  { filter: brightness(1.07); transform: translateY(-1px); box-shadow: 0 14px 28px rgba(99, 102, 241, .4); }
+  #save:active { transform: translateY(1px); }
+  #save svg { width: 19px; height: 19px; }
+
+  /* ================= الرسائل ================= */
+  .msg {
+    margin: 16px 0 0;
+    padding: 13px 16px;
+    border-radius: 13px;
+    font-weight: 700;
+    font-size: .95rem;
+  }
+  #error { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+  #ok    { background: #ecfdf5; border: 1px solid #a7f3d0; color: #047857; }
+
+  .note {
+    display: flex; gap: 10px; align-items: flex-start;
+    margin-top: 18px;
+    padding: 12px 14px;
+    border-radius: 13px;
+    background: linear-gradient(135deg, rgba(6, 182, 212, .08), rgba(139, 92, 246, .08));
+    border: 1px solid rgba(14, 116, 144, .15);
+    color: #334155; font-size: .85rem;
+  }
+  .note svg { flex: none; width: 18px; height: 18px; color: #0891b2; margin-top: 3px; }
+
+  /* ================= قائمة الحجوزات ================= */
+  .list-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; margin-bottom: 14px; flex-wrap: wrap;
+  }
+  .list-head .card-title { margin: 0; }
+  .head-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .count-pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: .85rem; font-weight: 700; color: #0e7490;
+    background: linear-gradient(135deg, #cffafe, #ede9fe);
+    border: 1px solid rgba(14, 116, 144, .15);
+  }
+  #refresh {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 16px;
+    border-radius: 11px;
+    border: 1.5px solid #c4b5fd;
+    background: #fff;
+    color: #6d28d9;
+    font-family: inherit; font-size: .88rem; font-weight: 700;
+    cursor: pointer;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  #refresh:hover { background: #f5f3ff; border-color: #8b5cf6; }
+  #refresh svg { width: 15px; height: 15px; }
+
+  #list { display: flex; flex-direction: column; gap: 11px; }
+
+  .booking {
+    display: flex; align-items: center; gap: 15px; flex-wrap: wrap;
+    padding: 14px 16px;
+    border-radius: 16px;
+    background: linear-gradient(90deg, rgba(6, 182, 212, .09) 0%, rgba(139, 92, 246, .09) 100%);
+    border: 1px solid rgba(139, 92, 246, .18);
+    animation: rowIn .25s ease;
+  }
+  @keyframes rowIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+  .room-badge {
+    flex: none;
+    min-width: 52px; max-width: 130px;
+    height: 46px; padding: 0 12px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 13px;
+    background: linear-gradient(135deg, #06b6d4, #8b5cf6);
+    color: #fff; font-weight: 800; font-size: 1.05rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    box-shadow: 0 6px 14px rgba(124, 58, 237, .25);
+  }
+  .b-info { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .tline { display: flex; align-items: baseline; gap: 9px; font-size: .93rem; min-width: 0; }
+  .tline .lbl { flex: none; color: #64748b; font-size: .78rem; font-weight: 700; }
+  .tline .val {
+    direction: ltr;
+    unicode-bidi: isolate;
+    font-family: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+    font-size: .88rem;
+    color: #0f172a;
+    word-break: break-all;
+  }
+
+  /* زر الإلغاء داخل كل صف حجز */
+  .b-cancel {
+    flex: none;
+    margin-inline-start: auto;
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 9px 18px;
+    border-radius: 12px;
+    border: 1.5px solid #c4b5fd;
+    background: #fff;
+    color: #6d28d9;
+    font-family: inherit; font-size: .9rem; font-weight: 800;
+    cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, transform .12s ease;
+  }
+  .b-cancel:hover  { background: #f5f3ff; border-color: #8b5cf6; }
+  .b-cancel:active { transform: translateY(1px); }
+  .b-cancel:disabled { opacity: .55; cursor: default; }
+  .b-cancel svg { width: 15px; height: 15px; }
+
+  .empty {
+    padding: 26px 16px;
+    text-align: center;
+    color: #64748b;
+    background: #f8fafc;
+    border: 1.5px dashed #cbd5e1;
+    border-radius: 16px;
+  }
+  .empty .big { display: block; font-size: 1.7rem; margin-bottom: 6px; }
+
+  footer {
+    text-align: center;
+    color: #64748b;
+    font-size: .8rem;
+    padding: 4px 0 8px;
+  }
+
+  /* ================= التجاوب ================= */
+  @media (max-width: 560px) {
+    .b-cancel { width: 100%; justify-content: center; }
+  }
+  @media (max-width: 720px) {
+    .page { padding: 18px 12px 32px; }
+    .card { padding: 18px; border-radius: 18px; }
+    .fields { grid-template-columns: 1fr; gap: 14px; }
+    #save { width: 100%; justify-content: center; }
+    .room-badge { min-width: 44px; height: 40px; font-size: .95rem; }
+    .list-head { align-items: flex-start; flex-direction: column; }
+    .head-tools { width: 100%; justify-content: space-between; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="hero">
+    <div class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4" width="18" height="17" rx="3"></rect>
+        <line x1="16" y1="2" x2="16" y2="6"></line>
+        <line x1="8" y1="2" x2="8" y2="6"></line>
+        <line x1="3" y1="10" x2="21" y2="10"></line>
+      </svg>
+    </div>
+    <h1>نظام حجز الغرف</h1>
+    <p class="subtitle">احجز غرفتك في أي وقت — واجهة عربية متجاوبة بتصميم سماوي وبنفسجي</p>
+  </header>
+
+  <main>
+    <!-- نموذج الحجز -->
+    <section class="card" aria-labelledby="form-title">
+      <h2 class="card-title" id="form-title"><span class="dot"></span>حجز جديد</h2>
+
+      <div class="fields">
+        <div class="field">
+          <label for="room">اسم الغرفة</label>
+          <input type="text" id="room" name="room" placeholder="مثال: A" autocomplete="off">
+          <span class="hint">نص غير فارغ — كل غرفة مستقلة عن غيرها</span>
+        </div>
+
+        <div class="field">
+          <label for="start">بداية الحجز (UTC)</label>
+          <input type="text" id="start" name="start" class="ltr" placeholder="2026-11-01T10:00:00Z" autocomplete="off" spellcheck="false">
+          <span class="hint">الصيغة: <bdi dir="ltr">YYYY-MM-DDTHH:mm:ssZ</bdi></span>
+        </div>
+
+        <div class="field">
+          <label for="end">نهاية الحجز (UTC)</label>
+          <input type="text" id="end" name="end" class="ltr" placeholder="2026-11-01T11:00:00Z" autocomplete="off" spellcheck="false">
+          <span class="hint">يجب أن تكون البداية قبل النهاية</span>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="button" id="save">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          حجز الآن
+        </button>
+      </div>
+
+      <!-- رسالة الخطأ العربية (تعارض / انعكاس الوقت / صحة البيانات) -->
+      <div id="error" class="msg" role="alert" hidden></div>
+      <!-- رسالة النجاح -->
+      <div id="ok" class="msg" role="status" hidden></div>
+
+      <div class="note">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+        <span>
+          الفترات نصف مفتوحة: يمكن أن تبدأ فترة حجز جديدة في نفس اللحظة التي تنتهي فيها فترة سابقة لنفس الغرفة،
+          ولا يُقبل أي تعارض زمني داخل الغرفة الواحدة. جميع البيانات تُحفظ في قاعدة بيانات SQLite على الخادم.
+        </span>
+      </div>
+    </section>
+
+    <!-- قائمة الحجوزات -->
+    <section class="card" aria-labelledby="list-title">
+      <div class="list-head">
+        <h2 class="card-title" id="list-title"><span class="dot"></span>الحجوزات الحالية</h2>
+        <div class="head-tools">
+          <span class="count-pill">العدد: <span id="count">0</span></span>
+          <button type="button" id="refresh">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+            تحديث
+          </button>
+        </div>
+      </div>
+
+      <!-- تُرسم هنا صفوف .booking من بيانات الخادم: الغرفة والبداية والنهاية -->
+      <div id="list"></div>
+      <div id="empty" class="empty" hidden>
+        <span class="big">🗓️</span>
+        لا توجد حجوزات بعد — أنشئ أول حجز من النموذج أعلاه.
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    يعمل التطبيق بخادم Node مدمج وقاعدة SQLite حقيقية — تُحدَّث القائمة من الخادم بعد كل عملية وعند تحميل الصفحة.
+  </footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var API_URL = '/api/bookings';
+  var CANCEL_URL = '/api/bookings/cancel';
+
+  var roomEl  = document.getElementById('room');
+  var startEl = document.getElementById('start');
+  var endEl   = document.getElementById('end');
+  var saveBtn = document.getElementById('save');
+  var errorEl = document.getElementById('error');
+  var okEl    = document.getElementById('ok');
+  var listEl  = document.getElementById('list');
+  var emptyEl = document.getElementById('empty');
+  var countEl = document.getElementById('count');
+  var refreshBtn = document.getElementById('refresh');
+
+  if (!roomEl || !startEl || !endEl || !saveBtn || !errorEl) return;
+
+  /* نفس تحقق الخادم: صيغة UTC‏ YYYY-MM-DDTHH:mm:ssZ مع تاريخ فعلي صحيح */
+  var DATE_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/;
+
+  function parseUtcDate(value) {
+    if (typeof value !== 'string') return null;
+    var m = DATE_RE.exec(value);
+    if (!m) return null;
+    var Y = Number(m[1]), MO = Number(m[2]), D = Number(m[3]);
+    var H = Number(m[4]), MI = Number(m[5]), S = Number(m[6]);
+    var ms = Date.UTC(Y, MO - 1, D, H, MI, S);
+    var dt = new Date(ms);
+    if (dt.getUTCFullYear() !== Y || dt.getUTCMonth() !== MO - 1 || dt.getUTCDate() !== D ||
+        dt.getUTCHours() !== H || dt.getUTCMinutes() !== MI || dt.getUTCSeconds() !== S) {
+      return null;
+    }
+    return ms;
+  }
+
+  /* ---------- الرسائل ---------- */
+  var okTimer = null;
+
+  function showError(message) {
+    okEl.hidden = true;
+    errorEl.textContent = message;
+    errorEl.hidden = false;
+  }
+
+  function showOk(message) {
+    errorEl.hidden = true; /* إخفاء #error عند النجاح */
+    okEl.textContent = message;
+    okEl.hidden = false;
+    if (okTimer) clearTimeout(okTimer);
+    okTimer = setTimeout(function () { okEl.hidden = true; }, 4000);
+  }
+
+  /* ---------- رسم الصفوف من بيانات الخادم ---------- */
+  function render(items) {
+    while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+    countEl.textContent = String(items.length);
+
+    if (!items.length) {
+      emptyEl.hidden = false;
+      return;
+    }
+    emptyEl.hidden = true;
+
+    var frag = document.createDocumentFragment();
+    items.forEach(function (item) {
+      var row = document.createElement('div');
+      row.className = 'booking';
+      /* الغرفة على الصف نفسه ليعمل المحدد .booking[data-room="A"] [data-cancel] */
+      row.dataset.id = item.id;
+      row.dataset.room = item.room;
+
+      var badge = document.createElement('span');
+      badge.className = 'room-badge';
+      badge.textContent = item.room;
+      badge.title = item.room;
+
+      var info = document.createElement('div');
+      info.className = 'b-info';
+
+      var sLine = document.createElement('div');
+      sLine.className = 'tline';
+      var sLbl = document.createElement('span');
+      sLbl.className = 'lbl';
+      sLbl.textContent = 'البداية:';
+      var sVal = document.createElement('span');
+      sVal.className = 'val';
+      sVal.dir = 'ltr';
+      sVal.textContent = item.start;
+      sLine.appendChild(sLbl);
+      sLine.appendChild(sVal);
+
+      var eLine = document.createElement('div');
+      eLine.className = 'tline';
+      var eLbl = document.createElement('span');
+      eLbl.className = 'lbl';
+      eLbl.textContent = 'النهاية:';
+      var eVal = document.createElement('span');
+      eVal.className = 'val';
+      eVal.dir = 'ltr';
+      eVal.textContent = item.end;
+      eLine.appendChild(eLbl);
+      eLine.appendChild(eVal);
+
+      info.appendChild(sLine);
+      info.appendChild(eLine);
+      row.appendChild(badge);
+      row.appendChild(info);
+
+      /* زر إلغاء عربي لكل صف — بلا نافذة تأكيد */
+      var cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'b-cancel';
+      cancelBtn.setAttribute('data-cancel', '');
+      cancelBtn.setAttribute('aria-label', 'إلغاء حجز الغرفة ' + item.room);
+      cancelBtn.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" ' +
+        'stroke-linecap="round" aria-hidden="true">' +
+        '<line x1="18" y1="6" x2="6" y2="18"></line>' +
+        '<line x1="6" y1="6" x2="18" y2="18"></line>' +
+        '</svg>' +
+        'إلغاء';
+      row.appendChild(cancelBtn);
+
+      frag.appendChild(row);
+    });
+    listEl.appendChild(frag);
+  }
+
+  /* ---------- جلب الحجوزات من الخادم (عند التحميل وبعد كل عملية) ---------- */
+  async function refresh() {
+    try {
+      var res = await fetch(API_URL, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        cache: 'no-store'
+      });
+      if (!res.ok) {
+        showError('تعذر جلب الحجوزات: استجابة غير متوقعة من الخادم (رمز ' + res.status + ').');
+        return;
+      }
+      var data = await res.json();
+      var items = (data && Array.isArray(data.items)) ? data.items : [];
+      render(items);
+    } catch (e) {
+      showError('تعذر الاتصال بالخادم لجلب الحجوزات، أعد تحميل الصفحة أو اضغط «تحديث».');
+    }
+  }
+
+  /* ---------- إنشاء حجز ---------- */
+  var inFlight = false;
+
+  async function submit() {
+    if (inFlight) return;
+
+    var room  = roomEl.value.trim();
+    var start = startEl.value.trim();
+    var end   = endEl.value.trim();
+
+    /* تحقق مبدئي بالجافاسكربت (لا قيود HTML) — الخادم يبقى المرجع النهائي */
+    if (room === '') {
+      showError('اسم الغرفة مطلوب: أدخل نصًا غير فارغ.');
+      return;
+    }
+    var startMs = parseUtcDate(start);
+    if (startMs === null) {
+      showError('تاريخ البداية غير صالح: استخدم صيغة UTC‏ YYYY-MM-DDTHH:mm:ssZ بتاريخ فعلي صحيح.');
+      return;
+    }
+    var endMs = parseUtcDate(end);
+    if (endMs === null) {
+      showError('تاريخ النهاية غير صالح: استخدم صيغة UTC‏ YYYY-MM-DDTHH:mm:ssZ بتاريخ فعلي صحيح.');
+      return;
+    }
+    if (startMs >= endMs) {
+      showError('انعكاس في الوقت: يجب أن تكون بداية الحجز قبل نهايته.');
+      return;
+    }
+
+    inFlight = true;
+    try {
+      var res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Accept': 'application/json' },
+        body: JSON.stringify({ room: room, start: start, end: end })
+      });
+
+      var payload = null;
+      try { payload = await res.json(); } catch (e) { payload = null; }
+
+      if (res.status === 201) {
+        roomEl.value = '';
+        startEl.value = '';
+        endEl.value = '';
+        showOk('تم إنشاء الحجز بنجاح ✓');
+      } else if (res.status === 409) {
+        showError((payload && payload.error) ? payload.error : 'تعارض في الحجز: الغرفة محجوزة بالفعل خلال هذه الفترة.');
+      } else if (res.status === 400) {
+        showError((payload && payload.error) ? payload.error : 'بيانات الحجز غير صالحة: تحقق من صيغة التواريخ ومن أن البداية قبل النهاية.');
+      } else {
+        showError('حدث خطأ غير متوقع من الخادم (رمز ' + res.status + ').');
+      }
+
+      /* تحديث الجدول من الخادم بعد كل عملية */
+      await refresh();
+    } catch (e) {
+      showError('تعذر الاتصال بالخادم، تأكد من تشغيله ثم أعد المحاولة.');
+    } finally {
+      inFlight = false;
+    }
+  }
+
+  /* ---------- إلغاء حجز (POST /api/bookings/cancel) ---------- */
+  var cancelInFlight = false;
+
+  async function cancelBooking(id, btn) {
+    if (cancelInFlight) return;
+    cancelInFlight = true;
+    if (btn) btn.disabled = true;
+    try {
+      var res = await fetch(CANCEL_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Accept': 'application/json' },
+        body: JSON.stringify({ id: id })
+      });
+
+      var payload = null;
+      try { payload = await res.json(); } catch (e) { payload = null; }
+
+      if (res.status === 200) {
+        showOk((payload && payload.message) ? payload.message : 'تم إلغاء الحجز بنجاح ✓');
+      } else if (res.status === 404) {
+        showError((payload && payload.error) ? payload.error : 'الحجز غير موجود أو أُلغي سابقًا.');
+      } else if (res.status === 400) {
+        showError((payload && payload.error) ? payload.error : 'طلب الإلغاء غير صالح.');
+      } else {
+        showError('حدث خطأ غير متوقع من الخادم (رمز ' + res.status + ').');
+      }
+
+      /* تحديث الجدول من الخادم بعد كل عملية إلغاء */
+      await refresh();
+    } catch (e) {
+      showError('تعذر الاتصال بالخادم لإلغاء الحجز، أعد المحاولة.');
+    } finally {
+      cancelInFlight = false;
+      if (btn) btn.disabled = false;
+      if (btn && !btn.isConnected) btn = null;
+    }
+  }
+
+  /* تفويض النقر: أي عنصر يحمل data-cancel داخل صف .booking يلغي حجزه دون نافذة تأكيد */
+  listEl.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('[data-cancel]');
+    if (!btn || !listEl.contains(btn)) return;
+    var row = btn.closest('.booking');
+    if (!row) return;
+    var id = Number(row.dataset.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      showError('تعذر تحديد الحجز المطلوب إلغاؤه، حدّث القائمة ثم أعد المحاولة.');
+      return;
+    }
+    cancelBooking(id, btn);
+  });
+
+  saveBtn.addEventListener('click', submit);
+  refreshBtn.addEventListener('click', refresh);
+
+  /* إرسال بمفتاح Enter من الحقول */
+  [roomEl, startEl, endEl].forEach(function (el) {
+    el.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        submit();
+      }
+    });
+  });
+
+  /* الجلب الأول عند تحميل الصفحة */
+  refresh();
+})();
+</script>
+</body>
+</html>

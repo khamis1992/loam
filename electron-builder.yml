@@ -29,7 +29,22 @@ files:
   - "!node_modules/**/prebuilds/linux-*/**/*"
   - "!node_modules/**/prebuilds/win32-arm64/**/*"
   - "!node_modules/**/win10-arm64/**/*"
-asar: false
+asar: true
+asarUnpack:
+  - "**/*.node"
+afterPack: ./electron/afterPack.cjs
+# electron-builder's dependency collector excludes directories named examples.
+# Three.js ships its runtime controls/loaders/exporters in examples/jsm.
+extraResources:
+  - from: node_modules/ffmpeg-static
+    to: app/node_modules/ffmpeg-static
+    filter:
+      - "ffmpeg.exe*"
+      - "LICENSE"
+  - from: node_modules/three/examples/jsm
+    to: app/node_modules/three/examples/jsm
+    filter:
+      - "**/*.js"
 npmRebuild: false
 
 # Update feed (generic): overridable at runtime via MANUS_LOCAL_UPDATE_URL,

@@ -1,0 +1,41 @@
+﻿{
+    "candidate":  "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\security-runtime-backup-20261018-150528\\candidate",
+    "version":  "0.5.23",
+    "capabilities":  {
+                         "revision":  40,
+                         "engine":  "scoped-assessment",
+                         "features":  [
+                                          "html-insertion-repair",
+                                          "anonymous-api-collections",
+                                          "http",
+                                          "browser",
+                                          "login",
+                                          "spa-flows",
+                                          "scoped-post",
+                                          "retest",
+                                          "coverage-diagnostics",
+                                          "multi-account-authorization",
+                                          "identity-witness",
+                                          "explicit-api-origins",
+                                          "cross-origin-authorization",
+                                          "browser-resource-budgets",
+                                          "openapi-fixtures-coverage",
+                                          "reviewed-source-repairs",
+                                          "repair-recovery",
+                                          "extended-request-budget",
+                                          "final-route-evidence",
+                                          "route-readiness",
+                                          "source-sql-review",
+                                          "source-coverage",
+                                          "sarif-source-locations",
+                                          "post-authorization",
+                                          "json-authorization-witness",
+                                          "local-sql-bindings",
+                                          "source-nosql-review"
+                                      ]
+                     },
+    "backup":  "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\security-runtime-backup-20261018-150528",
+    "taskCount":  125,
+    "profilePreserved":  true,
+    "tasksPreserved":  true
+}

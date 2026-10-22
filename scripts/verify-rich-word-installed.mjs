@@ -1,0 +1,21 @@
+import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import JSZip from 'jszip';
+const base='http://127.0.0.1:3939';
+async function json(url,body){const r=await fetch(base+url,body?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}:{});if(!r.ok)throw Error(await r.text());return r.json();}
+const settings=await json('/api/settings');assert.equal(settings.model,'glm-5.3-flash:cloud');
+const identity=await json('/api/identity');assert.equal(identity.version,'0.5.7');
+const {task}=await json('/api/tasks/draft',{title:'تقرير بصري — بطاقات وجداول وصور',mode:'write'});
+const uploaded=await fetch(base+'/api/upload?taskId='+task.id+'&name=loam-brand.png',{method:'POST',headers:{'content-type':'application/octet-stream'},body:await fs.readFile('electron/assets/loam.png')});
+assert.ok(uploaded.ok);const asset=await uploaded.json();
+await fs.writeFile('output/word-review/rich-task.json',JSON.stringify({taskId:task.id,identity,settings:{model:settings.model,defaultModel:settings.defaultModel},image:asset.path},null,2));
+console.log('Generating with persisted default GLM. Task '+task.id);
+const prompt=`أنشئ مستند Word احترافي عربي قصير بعنوان «Loam — تقرير جاهزية التجربة». استخدم loam_studio لإنشاء المحتوى الفعلي في المحرر. لا تستخدم أدوات أخرى ولا تبحث في الإنترنت. هذه عينة تصميم وبياناتها توضيحية فقط وليست نتائج فعلية. المطلوب: فقرة تمهيدية قصيرة، بطاقات stats بثلاث قيم 92% للإنجاز و24 لمهام التجربة و3 لمراحل العمل مع الألوان teal blue amber، ثم عنوان وجدول table بثلاثة أعمدة (المرحلة، المخرج، الحالة) وأربعة صفوف قصيرة، ثم صورة image من الملف الموجود فعلًا ${asset.path} مع alt وشروح قصيرة، ثم فقرة ختامية قصيرة. استخدم حقول text للتعليقات. الصورة مسارها path داخل المهمة. حافظ على محتوى موجز يناسب صفحة أو صفحتين. اقرأ الاستوديو ثم استعمل replace أو append واحفظ جميع العناصر. أخبر المستخدم باختصار عند اكتمال المستند.`;
+const response=await fetch(base+'/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({taskId:task.id,mode:'write',prompt,attachments:[]})});
+assert.ok(response.ok);await fs.writeFile('output/word-review/rich-generation.log',await response.text());
+const {artifact}=await json('/api/studio?taskId='+task.id);assert.ok(artifact);for(const type of ['stats','table','image'])assert.ok(artifact.content.blocks.some(b=>b.type===type),'Missing '+type);
+await fs.writeFile('output/word-review/rich-generated-artifact.json',JSON.stringify(artifact,null,2));
+const exported=await fetch(base+'/api/studio/export?taskId='+task.id);if(!exported.ok)throw Error(await exported.text());
+const buffer=Buffer.from(await exported.arrayBuffer());await fs.writeFile('output/word-review/loam-rich-glm.docx',buffer);
+const zip=await JSZip.loadAsync(buffer),xml=await zip.file('word/document.xml').async('string');assert.match(xml,/<w:tbl>/);assert.match(xml,/w:tblHeader/);assert.match(xml,/w:drawing/);
+console.log(JSON.stringify({taskId:task.id,version:identity.version,model:settings.model,blocks:artifact.content.blocks.map(b=>b.type),file:'output/word-review/loam-rich-glm.docx'}));

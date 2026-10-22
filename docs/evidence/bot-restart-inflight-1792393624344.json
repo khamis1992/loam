@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-19T07:07:02.615Z",
+  "scope": "Actual Docker test of restart while a request is provably in flight",
+  "pass": false,
+  "restart": {
+    "previousPid": 14,
+    "currentPid": 86
+  },
+  "request": {
+    "status": "rejected",
+    "error": "Error: Docker operation failed (1): TypeError: fetch failed\n"
+  },
+  "error": "AssertionError [ERR_ASSERTION]: A controlled restart must drain existing requests before killing their server\n+ actual - expected\n\n+ 'rejected'\n- 'fulfilled'\n"
+}

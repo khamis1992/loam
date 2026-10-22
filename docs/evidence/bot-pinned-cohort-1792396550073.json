@@ -1,0 +1,74 @@
+{
+  "startedAt": "2026-10-19T07:55:50.074Z",
+  "runtimeSha256": "4caaed2b99c94e8765988474e663f7cab636cccfa144f63da8065839ab14bb3c",
+  "plan": [
+    {
+      "round": 1,
+      "kind": "quote",
+      "script": "check-bot-independent-installed.ts"
+    },
+    {
+      "round": 1,
+      "kind": "bookings",
+      "script": "check-bot-installed-bookings.ts"
+    },
+    {
+      "round": 1,
+      "kind": "tickets",
+      "script": "check-bot-tickets-fresh-full-gate.ts"
+    },
+    {
+      "round": 2,
+      "kind": "quote",
+      "script": "check-bot-independent-installed.ts"
+    },
+    {
+      "round": 2,
+      "kind": "bookings",
+      "script": "check-bot-installed-bookings.ts"
+    },
+    {
+      "round": 2,
+      "kind": "tickets",
+      "script": "check-bot-tickets-fresh-full-gate.ts"
+    },
+    {
+      "round": 3,
+      "kind": "quote",
+      "script": "check-bot-independent-installed.ts"
+    },
+    {
+      "round": 3,
+      "kind": "bookings",
+      "script": "check-bot-installed-bookings.ts"
+    },
+    {
+      "round": 3,
+      "kind": "tickets",
+      "script": "check-bot-tickets-fresh-full-gate.ts"
+    }
+  ],
+  "collectAll": true,
+  "attempts": [
+    {
+      "round": 1,
+      "kind": "quote",
+      "script": "check-bot-independent-installed.ts",
+      "startedAt": "2026-10-19T07:55:50.107Z",
+      "scriptSha256": "e6da5a4a09841fe65d608e0f7731680fe12a41894cdac3f97be685460576f1fc",
+      "pass": false,
+      "exitCode": 1,
+      "report": "docs\\evidence\\bot-cohort-1792396550073-1-quote.json",
+      "log": "output\\verification\\bot-pinned-cohort-1792396550073\\1-quote.log",
+      "finishedAt": "2026-10-19T08:06:31.637Z",
+      "taskId": "task_mveymll94409cd147f72",
+      "reportSha256": "89e53b88d1c331d76d482e15eef08a680ffdde7ed7cabad71ac212e5de36eb5b",
+      "error": "TypeError: terminated"
+    }
+  ],
+  "complete": false,
+  "pass": false,
+  "caveat": "Only a complete fixed-build cohort supports a descriptive cohort pass rate; neither an interrupted cohort nor these tasks establish external-agent parity. No failed task is automatically repaired or retried.",
+  "error": "AssertionError [ERR_ASSERTION]: Existing active task: stop cohort, never cancel or restart it\n\n1 !== 0\n",
+  "finishedAt": "2026-10-19T08:06:31.656Z"
+}

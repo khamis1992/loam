@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { chromium } from 'playwright';
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'loam-integrations-'));
+process.env.LOAM_DATA_DIR = path.join(tmp, 'data');
+process.env.LOAM_CONFIG = path.join(tmp, 'config.json');
+fs.writeFileSync(process.env.LOAM_CONFIG, JSON.stringify({workspace:path.join(tmp,'workspace'),memory:{enabled:false},mcpServers:{}}));
+const {loadConfig}=await import('../config.js');
+const {loadDb,createTask,setTaskMode,setTaskStatus,closeDb}=await import('../server/db.js');
+const {ToolRegistry}=await import('../tools/registry.js');
+const {createIntegrationTools,integrationGrants}=await import('../tools/integrations.js');
+const {startServer}=await import('../server/http.js');
+const {OllamaClient}=await import('../ollama.js');
+loadDb();const cfg=loadConfig();cfg.server={host:'127.0.0.1',port:0};
+const a=createTask('Integration A'),b=createTask('Integration B'),ask=createTask('Explore');setTaskMode(a.id,'build');setTaskMode(b.id,'build');setTaskMode(ask.id,'ask');setTaskStatus(a.id,'done');setTaskStatus(b.id,'done');setTaskStatus(ask.id,'done');
+let calls=0;
+const registry=new ToolRegistry();registry.register({name:'mcp__fixture__echo',integration:true,description:'Echo fixture',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']},async run(args,ctx){calls++;return {ok:true,content:JSON.stringify({text:args.text,taskId:ctx.taskId})};}});registry.registerAll(createIntegrationTools(registry));
+const server=await startServer({cfg,registry,ollama:new OllamaClient('http://127.0.0.1:1'),runTask:async()=>({taskId:a.id,text:''})});
+const base='http://127.0.0.1:'+(server.address() as import('node:net').AddressInfo).port;
+const post=(body:unknown,headers={})=>fetch(base+'/api/integrations',{method:'POST',headers:{'content-type':'application/json',...headers},body:JSON.stringify(body)});
+const ctx=(taskId:string)=>({cfg,workspace:cfg.workspace,taskId,emit:()=>{}});
+const args={name:'mcp__fixture__echo',arguments:{text:'integration works'}};
+let browser;
+try{
+ assert.equal((await registry.forMode('build').exec('integration_call',args,ctx(a.id))).ok,false);assert.equal(calls,0);
+ assert.equal((await post({taskId:ask.id,enabled:[args.name]})).status,400);
+ assert.equal((await post({taskId:a.id,enabled:[args.name]},{origin:'https://evil.example'})).status,403);
+ assert.equal((await post({taskId:a.id,enabled:['file_write']})).status,400);
+ browser=await chromium.launch({channel:'msedge',headless:true});const page=await browser.newPage();const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(base+'/integrations.html?taskId='+a.id);await page.locator('.tool').waitFor();await page.getByRole('checkbox').check();await page.locator('#save').click();await page.waitForFunction("document.querySelector('#status').textContent.startsWith('تم الحفظ')");
+ assert.deepEqual(integrationGrants(a.id),[args.name]);
+ const allowed=await registry.forMode('build').exec('integration_list',{},ctx(a.id));assert.match(allowed.content,/mcp__fixture__echo/);
+ const result=await registry.forMode('build').exec('integration_call',args,ctx(a.id));assert.equal(result.ok,true);assert.equal(JSON.parse(result.content).taskId,a.id);assert.equal(calls,1);
+ assert.equal((await registry.forMode('build').exec('integration_call',args,ctx(b.id))).ok,false);
+ assert.equal((await registry.forMode('ask').exec('integration_call',args,ctx(a.id))).ok,false);
+ cfg.policy.networkEnabled=false;assert.equal((await registry.forMode('build').exec('integration_call',args,ctx(a.id))).ok,false);cfg.policy.networkEnabled=true;
+ await page.reload();await page.getByRole('checkbox').waitFor();assert.equal(await page.getByRole('checkbox').isChecked(),true);
+ setTaskStatus(a.id,'running');assert.equal((await post({taskId:a.id,enabled:[]})).status,400);setTaskStatus(a.id,'done');
+ await page.getByRole('checkbox').uncheck();await page.locator('#save').click();await page.waitForFunction("document.querySelector('#status').textContent.startsWith('تم الحفظ')");
+ assert.equal((await registry.forMode('build').exec('integration_call',args,ctx(a.id))).ok,false);assert.equal(calls,1);
+ for(const width of [320,768,1440]){await page.setViewportSize({width,height:900});assert.equal(await page.evaluate("document.documentElement.scrollWidth<=innerWidth+1"),true);}
+ assert.deepEqual(errors,[]);console.log('PASS integrations: UI grant/reload/revoke, schema discovery, actual gateway execution, cross-task/Explore/unknown/origin/network/busy denial, responsive layout');
+}finally{await browser?.close();server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));closeDb();}

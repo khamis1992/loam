@@ -1,0 +1,1538 @@
+{
+  "at": "2026-10-18T22:14:52.574Z",
+  "model": "glm-5.3-flash:cloud",
+  "workspace": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace",
+  "results": [
+    {
+      "turn": 0,
+      "pass": true,
+      "ms": 350613,
+      "usage": {
+        "promptTokens": 265227,
+        "completionTokens": 55725,
+        "durationMs": 320261
+      },
+      "steps": 27,
+      "events": [
+        {
+          "type": "plan",
+          "goal": "إنشاء تطبيق مصروفات عربي RTL أحادي الملف في index.html يعمل محليًا مع localStorage وفق عقد القبول app-verification.json دون أي اختبارات تشغيل من طرفي.",
+          "trivial": false,
+          "steps": [
+            {
+              "id": "s1",
+              "title": "قراءة عقد القبول",
+              "instruction": "استخدم file_read لقراءة app-verification.json في جذر المشروع واستخراج السيناريوهات والمحددات المطلوبة (#title، #amount، #category، #add، #error، #entries، #total، .expense، .delete) وقواعد التحقق (مبلغ موجب، رسالة خطأ، المجموع، الاستعادة بعد إعادة التحميل).",
+              "successCriteria": "تم استرجاع محتوى app-verification.json كاملًا وتوثيق السلوكيات والمحددات المطلوبة قبل كتابة الكود."
+            },
+            {
+              "id": "s2",
+              "title": "كتابة index.html الكامل",
+              "instruction": "استخدم file_write لحفظ index.html كتطبيق واحد بلا مكتبات خارجية أو شبكة: html dir=\"rtl\" lang=\"ar\"، تصميم سماوي/بنفسجي متجاوب بـ CSS داخلي، نموذج يحوي #title و#amount (input رقمي) و#category (select بخيارات food=طعام، transport=مواصلات، other=أخرى) وزر #add ومنطقة #error، قائمة #entries يُضاف لكل مصروف عنصر .expense يعرض العنوان والمبلغ واسم الفئة العربية وزر .delete، وعنصر #total يعرض مجموع المبالغ. التحقق: رفض العنوان الفارغ أو المبلغ غير الموجب بعرض رسالة في #error. الحذف يزيل العنصر ويحدث #total وlocalStorage. الحفظ في localStorage عند كل إضافة/حذف والتحميل منه عند فتح الصفحة لاستعادة البيانات.",
+              "successCriteria": "الملف index.html موجود ويحتوي جميع المحددات المطلوبة ومنطق localStorage والفئات الثلاث بعناوين عربية وبدون أي مراجع شبكية أو مكتبات خارجية."
+            },
+            {
+              "id": "s3",
+              "title": "فحص الملف وتسليم النتيجة",
+              "instruction": "استخدم file_stat للتأكد من وجود index.html ثم file_read للتحقق العيني من وجود المحددات (#title، #amount، #category، #add، #error، #entries، #total، .expense، .delete) ومن استدعاءات localStorage. ثم قدّم الإجابة النهائية: مسار الملف، ملخص الميزات، وتنبيه صريح بأن اختبار تشغيل المتصفح والتحقق البصري الإلزامي وفق app-verification.json متروكان للنظام ولم يُدّعَ تنفيذهما.",
+              "successCriteria": "تأكيد وجود الملف ومطابقة المحددات، وتسليم رسالة نهائية تتضمن مسار index.html وملخص الميزات مع الإشارة إلى أن التحقق الزمني والبصري مسؤولية النظام."
+            }
+          ],
+          "source": "model"
+        },
+        {
+          "type": "plan_step",
+          "id": "s1",
+          "index": 1,
+          "total": 3,
+          "title": "قراءة عقد القبول",
+          "phase": "start"
+        },
+        {
+          "type": "step",
+          "index": 1
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "app-verification.json"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json (166 lines)\n1: {\n2:   \"entry\": \"index.html\",\n3:   \"scenarios\": [\n4:     {\n5:       \"name\": \"Adding entries calculates sum\",\n6:       \"steps\": [\n7:         {\n8:           \"action\": \"fill\",\n9:           \"selector\": \"#title\",",
+          "ms": 4
+        },
+        {
+          "type": "step",
+          "index": 2
+        },
+        {
+          "type": "tool_call",
+          "name": "file_write",
+          "args": {
+            "content": "# توثيق عقد القبول app-verification.json (الخطوة 1/3)\n\nتمت قراءة الملف كاملًا من جذر المشروع: `app-verification.json` (166 سطرًا).\nنقطة الدخول المعلنة: `entry: \"index.html\"`.\n\n## المحددات الإلزامية (من العقد — غير قابلة للتغيير)\n- `#title` — حقل عنوان المصروف (fill).\n- `#amount` — حقل المبلغ (fill، يقبل قيمًا مثل \"12.5\" و\"7.5\" و\"9\" و\"10\" و\"-1\").\n- `#category` — قائمة منسدلة (select) بقيم: `food` و`transport` و`other`.\n- `#add` — زر الإضافة (click).\n- `#error` — منطقة رسالة الخطأ (يجب أن تكون مرئية visible عند الإدخال غير الصالح).\n- `#entries` — حاوية عرض العناصر (يجب أن يحتوي نص العنوان بعد إعادة التحميل).\n- `#total` — عرض المجموع (نص).\n- `.expense` — عنصر المصروف الواحد (يُعدّ بعددها).\n- `.delete` — زر الحذف داخل كل `.expense` (يُنقر عليه عبر المحدد `.expense .delete`).\n\n## السيناريوهات الأربعة الثابتة\n\n### 1) Adding entries calculates sum\n- إضافة \"خبز\" بمبلغ 12.5 فئة food، ثم \"حافلة\" بمبلغ 7.5 فئة transport.\n- تأكيدات: `count .expense == 2`، ونص `#total` يحتوي \"20\".\n- استنتاج: المجموع = 12.5 + 7.5 = 20، ويجب عرضه بصيغة رقمية نظيفة (يفضل \"20\" بدون أصفار زائدة؛ التحقق نصّي يحتوي على \"20\").\n\n### 2) Persistence after reload\n- إضافة \"قهوة\" بمبلغ 9 فئة food، ثم `reload`.\n- تأكيدات: نص `#entries` يحتوي \"قهوة\"، ونص `#total` يحتوي \"9\".\n- استنتاج: الحفظ في localStorage واستعادته عند التحميل إلزامي (العنوان والمبلغ والفئة والمجموع).\n\n### 3) Deleting recomputes total\n- إضافة \"حليب\" بمبلغ 10 فئة food، ثم النقر على `.expense .delete`.\n- تأكيدات: `count .expense == 0`، ونص `#total` يحتوي \"0\".\n- استنتاج: الحذف يعيد حساب المجموع فورًا (10 → 0) ويحدّث localStorage.\n\n### 4) Invalid input rejected\n- عنوان \"خطأ\" ومبلغ \"-1\" وفئة food، ثم النقر على `#add`.\n- تأكيدات: `count .expense == 0`، و`#error` مرئي (visible).\n- استنتاج: يجب رفض المبلغ غير الموجب (≤ 0 أو غير رقمي) دون إضافة عنصر، وإظهار `#error` برسالة عربية. يُستحسن إخفاء `#error` افتراضيًا (hidden/display:none) وإظهاره عند الخطأ فقط، مع رفض العنوان الفارغ أيضًا.\n\n## قواعد التحقق المستخلصة\n1. المبلغ يجب أن يكون رقمًا موجبًا (> 0)؛ القيمة \"-1\" تُرفض مع إظهار `#error`.\n2. كل إضافة صالحة تُنشئ عنصرًا جديدًا `.expense` يحمل زر `.delete`.\n3. `#total` يُحدَّث بعد كل إضافة/حذف، ويُستعاد من localStorage بعد reload.\n4. `#entries` يحفظ نص العنوان العربي ويظهر بعد reload.\n5. قيم الفئات الداخلية إنجليزية (`food`/`transport`/`other`) مع تسميات عربية للعرض.\n6. لا شبكة ولا خادم خلفي ولا مكتبات خارجية — ملف واحد `index.html` يعمل محليًا.\n7. التصميم: عربي RTL، سماوي وبنفسجي، متجاوب.\n\n## ملاحظات تنفيذية للخطوات التالية\n- تنسيق المجموع: إزالة الأصفار الزائدة (مثل 20 و9 و0) لضمان مطابقة النص.\n- سيناريو الحذف ينقر أول `.expense .delete` — يجب أن يعمل الحذف لأي عنصر.\n- كل سيناريو يبدأ في سياق متصفح نظيف، لذا لا اعتماد على بيانات سيناريو آخر.\n- لن أُجري أي اختبار تشغيل أو تحقق بصري بنفسي؛ ذلك مسؤولية النظام.",
+            "path": "contract-notes.md"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_write",
+          "ok": true,
+          "summary": "wrote 4175 bytes to C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\contract-notes.md",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 3
+        },
+        {
+          "type": "critique",
+          "id": "s1",
+          "verdict": "pass",
+          "reason": "الدليل يؤكد استرجاع app-verification.json كاملًا (166 سطرًا تتضمن السيناريوهات الأربعة: جمع 12.5+7.5=20، الاستعادة بعد reload، الحذف عبر .expense .delete مع total=0، ورفض -1 مع ظهور #error)، كما وُثّقت المحددات والسلوكيات في contract-notes.md، والملخص المقدَّم يطابق محتوى العقد بدقة دون أي ادعاء بتشغيل اختبارات."
+        },
+        {
+          "type": "plan_step",
+          "id": "s1",
+          "index": 1,
+          "total": 3,
+          "title": "قراءة عقد القبول",
+          "phase": "done",
+          "summary": "اكتملت الخطوة 1/3 بنجاح. إليك ملخص ما تم: ## ✅ قراءة عقد القبول — مكتملة **الدليل الملموس:** - قرأت `app-verification.json` كاملًا من جذر المشروع (166 سطرًا، 4.2KB). - وثّقت كل شيء في `contract-notes.md` داخل مساحة العمل. **السيناريوهات الأربعة الثابتة المستخرجة:** | السيناريو | الخطوات الأساسية | ا..."
+        },
+        {
+          "type": "plan_step",
+          "id": "s2",
+          "index": 2,
+          "total": 3,
+          "title": "كتابة index.html الكامل",
+          "phase": "start"
+        },
+        {
+          "type": "step",
+          "index": 1
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "app-verification.json"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json (166 lines)\n1: {\n2:   \"entry\": \"index.html\",\n3:   \"scenarios\": [\n4:     {\n5:       \"name\": \"Adding entries calculates sum\",\n6:       \"steps\": [\n7:         {\n8:           \"action\": \"fill\",\n9:           \"selector\": \"#title\",",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 2
+        },
+        {
+          "type": "tool_call",
+          "name": "file_write",
+          "args": {
+            "content": "<!DOCTYPE html>\n<html lang=\"ar\" dir=\"rtl\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<meta name=\"description\" content=\"تطبيق مصروفات عربي يعمل محليًا بالكامل ويحفظ البيانات في متصفحك عبر localStorage\">\n<title>مصروفي — تتبّع المصروفات اليومية</title>\n<style>\n  :root{\n    --cyan-600:#0891b2; --cyan-500:#06b6d4; --cyan-400:#22d3ee; --cyan-100:#cffafe;\n    --violet-700:#6d28d9; --violet-600:#7c3aed; --violet-500:#8b5cf6; --violet-100:#ede9fe;\n    --ink:#1e293b; --ink-soft:#334155; --muted:#64748b;\n    --line:#e2e8f0; --field-bg:#f8fafc;\n    --danger-bg:#fef2f2; --danger-border:#fecaca; --danger:#b91c1c;\n    --radius:16px;\n    --shadow:0 12px 32px rgba(15,23,42,.18);\n  }\n  *{box-sizing:border-box;margin:0;padding:0}\n  html{-webkit-text-size-adjust:100%}\n  body{\n    font-family:\"Segoe UI\",Tahoma,\"Noto Kufi Arabic\",\"Noto Naskh Arabic\",Arial,sans-serif;\n    background:linear-gradient(135deg,#0e7490 0%,#4f46e5 55%,#7c3aed 100%);\n    background-attachment:fixed;\n    min-height:100vh;\n    padding:28px 16px 48px;\n    color:var(--ink);\n    line-height:1.65;\n  }\n  .app{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:18px}\n\n  /* ===== الترويسة ===== */\n  .app-header{text-align:center;color:#fff;margin-bottom:2px}\n  .logo{\n    width:64px;height:64px;margin:0 auto 12px;border-radius:20px;\n    display:flex;align-items:center;justify-content:center;font-size:30px;\n    background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);\n    box-shadow:0 8px 24px rgba(15,23,42,.25);backdrop-filter:blur(6px);\n  }\n  .app-header h1{font-size:2rem;font-weight:800;letter-spacing:.5px;text-shadow:0 2px 10px rgba(15,23,42,.25)}\n  .tagline{margin:6px auto 0;font-size:.95rem;color:rgba(255,255,255,.88);max-width:48ch}\n\n  /* ===== البطاقات ===== */\n  .card{\n    background:rgba(255,255,255,.97);\n    border:1px solid rgba(255,255,255,.6);\n    border-radius:var(--radius);\n    box-shadow:var(--shadow);\n    padding:20px;\n  }\n  .card-title{\n    font-size:1.05rem;font-weight:800;color:var(--ink-soft);\n    display:flex;align-items:center;gap:10px;margin-bottom:14px;\n  }\n  .card-title::before{\n    content:\"\";width:10px;height:22px;border-radius:6px;flex:none;\n    background:linear-gradient(180deg,var(--cyan-500),var(--violet-600));\n  }\n\n  /* ===== بطاقة المجموع ===== */\n  .total-card{display:flex;align-items:center;justify-content:space-between;gap:12px}\n  .total-label{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--ink-soft);font-size:1.05rem}\n  .total-icon{\n    width:42px;height:42px;border-radius:12px;flex:none;\n    display:inline-flex;align-items:center;justify-content:center;\n    background:linear-gradient(135deg,var(--cyan-100),var(--violet-100));\n    color:var(--violet-700);font-size:1.25rem;font-weight:800;\n  }\n  .total-value{font-size:2.2rem;font-weight:800;color:var(--violet-600);line-height:1.2}\n  @supports ((-webkit-background-clip:text) or (background-clip:text)){\n    .total-value{\n      background:linear-gradient(90deg,var(--cyan-600),var(--violet-600));\n      -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;\n    }\n  }\n\n  /* ===== النموذج ===== */\n  form{display:grid;grid-template-columns:1fr 1fr;gap:14px}\n  .field{display:flex;flex-direction:column;gap:6px}\n  .field-full{grid-column:1/-1}\n  label{font-size:.85rem;font-weight:700;color:var(--ink-soft)}\n  input,select{\n    width:100%;padding:11px 14px;font:inherit;font-size:1rem;color:var(--ink);\n    background:var(--field-bg);border:2px solid var(--line);border-radius:12px;\n    transition:border-color .2s,box-shadow .2s,background .2s;\n  }\n  select{cursor:pointer}\n  input::placeholder{color:#94a3b8}\n  input:focus,select:focus{\n    outline:none;border-color:var(--cyan-500);background:#fff;\n    box-shadow:0 0 0 4px rgba(6,182,212,.15);\n  }\n  .add-btn{\n    grid-column:1/-1;padding:13px 16px;font:inherit;font-size:1rem;font-weight:800;\n    color:#fff;border:none;border-radius:12px;cursor:pointer;\n    background:linear-gradient(135deg,var(--cyan-600),var(--violet-600));\n    box-shadow:0 8px 20px rgba(124,58,237,.35);\n    transition:transform .15s,box-shadow .15s,filter .15s;\n  }\n  .add-btn:hover{transform:translateY(-1px);filter:brightness(1.06);box-shadow:0 10px 24px rgba(124,58,237,.45)}\n  .add-btn:active{transform:translateY(0)}\n  .add-btn:focus-visible{outline:3px solid rgba(34,211,238,.7);outline-offset:2px}\n\n  /* ===== رسالة الخطأ ===== */\n  .error{\n    margin-top:12px;padding:10px 14px;border-radius:12px;\n    background:var(--danger-bg);border:1px solid var(--danger-border);\n    color:var(--danger);font-weight:700;font-size:.92rem;\n  }\n  .error[hidden]{display:none}\n\n  /* ===== قائمة المصروفات ===== */\n  .list-count{\n    background:linear-gradient(135deg,var(--cyan-100),var(--violet-100));\n    color:var(--violet-700);font-size:.8rem;font-weight:800;\n    min-width:26px;height:26px;padding:0 8px;border-radius:999px;\n    display:inline-flex;align-items:center;justify-content:center;\n  }\n  .entries{list-style:none;display:flex;flex-direction:column;gap:10px}\n  .expense{\n    display:flex;align-items:center;justify-content:space-between;gap:12px;\n    background:var(--field-bg);border:1px solid var(--line);\n    border-radius:14px;padding:12px 14px;animation:pop .25s ease;\n  }\n  @keyframes pop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}\n  .expense-info{display:flex;flex-direction:column;gap:4px;min-width:0}\n  .expense-title{font-weight:700;color:var(--ink);overflow-wrap:anywhere}\n  .expense-category{align-self:flex-start;font-size:.75rem;font-weight:800;padding:3px 10px;border-radius:999px}\n  .cat-food .expense-category{background:#ffedd5;color:#c2410c}\n  .cat-transport .expense-category{background:var(--cyan-100);color:#0e7490}\n  .cat-other .expense-category{background:var(--violet-100);color:var(--violet-700)}\n  .expense-meta{display:flex;align-items:center;gap:10px;flex:none}\n  .expense-amount{\n    font-weight:800;font-size:1.05rem;color:var(--violet-700);\n    background:linear-gradient(135deg,var(--cyan-100),var(--violet-100));\n    padding:6px 12px;border-radius:10px;\n  }\n  .delete{\n    font:inherit;font-size:.85rem;font-weight:800;color:#be123c;\n    background:#fee2e2;border:1px solid #fecaca;border-radius:10px;\n    padding:7px 14px;cursor:pointer;transition:background .2s,transform .15s;\n  }\n  .delete:hover{background:#fecaca}\n  .delete:active{transform:scale(.95)}\n  .delete:focus-visible{outline:3px solid rgba(190,18,60,.4);outline-offset:2px}\n  .empty{\n    border:2px dashed #cbd5e1;border-radius:14px;background:var(--field-bg);\n    color:var(--muted);text-align:center;padding:20px 14px;font-size:.95rem;\n  }\n\n  .app-footer{text-align:center;color:rgba(255,255,255,.85);font-size:.85rem;margin-top:4px}\n\n  /* ===== التجاوب ===== */\n  @media (max-width:520px){\n    body{padding:20px 12px 36px}\n    .app-header h1{font-size:1.6rem}\n    .tagline{font-size:.88rem}\n    .card{padding:16px}\n    form{grid-template-columns:1fr}\n    .total-value{font-size:1.8rem}\n    .expense{flex-wrap:wrap}\n  }\n  @media (prefers-reduced-motion:reduce){\n    *{animation:none!important;transition:none!important}\n  }\n</style>\n</head>\n<body>\n<main class=\"app\">\n\n  <header class=\"app-header\">\n    <div class=\"logo\" aria-hidden=\"true\">💰</div>\n    <h1>مصروفي</h1>\n    <p class=\"tagline\">سجّل مصروفاتك اليومية وتابع مجموعها بسهولة — كل البيانات تُحفظ في متصفحك فقط</p>\n  </header>\n\n  <section class=\"card total-card\" aria-label=\"المجموع الكلي للمصروفات\">\n    <div class=\"total-label\">\n      <span class=\"total-icon\" aria-hidden=\"true\">Σ</span>\n      المجموع الكلي\n    </div>\n    <div class=\"total-value\" dir=\"ltr\"><span id=\"total\">0</span></div>\n  </section>\n\n  <section class=\"card form-card\">\n    <h2 class=\"card-title\">إضافة مصروف جديد</h2>\n    <form id=\"expense-form\" novalidate>\n      <div class=\"field field-full\">\n        <label for=\"title\">العنوان</label>\n        <input type=\"text\" id=\"title\" name=\"title\" placeholder=\"مثال: خبز\" autocomplete=\"off\" maxlength=\"60\">\n      </div>\n      <div class=\"field\">\n        <label for=\"amount\">المبلغ</label>\n        <input type=\"number\" id=\"amount\" name=\"amount\" placeholder=\"0.00\" min=\"0\" step=\"any\" inputmode=\"decimal\">\n      </div>\n      <div class=\"field\">\n        <label for=\"category\">الفئة</label>\n        <select id=\"category\" name=\"category\">\n          <option value=\"food\" selected>طعام</option>\n          <option value=\"transport\">مواصلات</option>\n          <option value=\"other\">أخرى</option>\n        </select>\n      </div>\n      <button type=\"submit\" id=\"add\" class=\"add-btn\">+ إضافة مصروف</button>\n    </form>\n    <p id=\"error\" class=\"error\" role=\"alert\" hidden></p>\n  </section>\n\n  <section class=\"card list-card\">\n    <h2 class=\"card-title\">قائمة المصروفات <span class=\"list-count\" id=\"count\">0</span></h2>\n    <ul id=\"entries\" class=\"entries\"></ul>\n  </section>\n\n  <footer class=\"app-footer\">\n    <p>🔒 يعمل بدون إنترنت — تُحفظ بياناتك محليًا في متصفحك (localStorage) ولا تُرسل إلى أي خادم.</p>\n  </footer>\n\n</main>\n\n<script>\n(function () {\n  'use strict';\n\n  var STORAGE_KEY = 'expenses-app-data';\n  var CATEGORY_NAMES = { food: 'طعام', transport: 'مواصلات', other: 'أخرى' };\n\n  var form = document.getElementById('expense-form');\n  var titleInput = document.getElementById('title');\n  var amountInput = document.getElementById('amount');\n  var categorySelect = document.getElementById('category');\n  var errorBox = document.getElementById('error');\n  var entriesList = document.getElementById('entries');\n  var totalEl = document.getElementById('total');\n  var countEl = document.getElementById('count');\n\n  var expenses = loadExpenses();\n\n  function generateId() {\n    return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);\n  }\n\n  /* تحميل المصروفات من localStorage عند فتح الصفحة */\n  function loadExpenses() {\n    try {\n      var raw = localStorage.getItem(STORAGE_KEY);\n      if (!raw) return [];\n      var data = JSON.parse(raw);\n      if (!Array.isArray(data)) return [];\n      return data\n        .filter(function (item) {\n          return item &&\n            typeof item.title === 'string' &&\n            typeof item.amount === 'number' &&\n            isFinite(item.amount) && item.amount > 0;\n        })\n        .map(function (item) {\n          return {\n            id: (typeof item.id === 'string' && item.id) ? item.id : generateId(),\n            title: item.title,\n            amount: item.amount,\n            category: CATEGORY_NAMES[item.category] ? item.category : 'other'\n          };\n        });\n    } catch (err) {\n      return [];\n    }\n  }\n\n  /* حفظ المصروفات في localStorage بعد كل إضافة أو حذف */\n  function saveExpenses() {\n    try {\n      localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));\n    } catch (err) {\n      /* التخزين غير متاح — يكمل التطبيق في الذاكرة فقط */\n    }\n  }\n\n  /* تنسيق المبلغ: عدد عشري بلا أصفار زائدة (20 بدلًا من 20.00) */\n  function formatAmount(value) {\n    return String(Math.round(value * 100) / 100);\n  }\n\n  function computeTotal() {\n    return expenses.reduce(function (sum, item) { return sum + item.amount; }, 0);\n  }\n\n  function showError(message) {\n    errorBox.textContent = message;\n    errorBox.hidden = false;\n  }\n\n  function hideError() {\n    errorBox.hidden = true;\n    errorBox.textContent = '';\n  }\n\n  function buildEntry(item) {\n    var li = document.createElement('li');\n    li.className = 'expense cat-' + item.category;\n    li.setAttribute('data-id', item.id);\n\n    var info = document.createElement('div');\n    info.className = 'expense-info';\n\n    var title = document.createElement('span');\n    title.className = 'expense-title';\n    title.textContent = item.title;\n\n    var badge = document.createElement('span');\n    badge.className = 'expense-category';\n    badge.textContent = CATEGORY_NAMES[item.category] || CATEGORY_NAMES.other;\n\n    info.appendChild(title);\n    info.appendChild(badge);\n\n    var meta = document.createElement('div');\n    meta.className = 'expense-meta';\n\n    var amount = document.createElement('span');\n    amount.className = 'expense-amount';\n    amount.setAttribute('dir', 'ltr');\n    amount.textContent = formatAmount(item.amount);\n\n    var del = document.createElement('button');\n    del.type = 'button';\n    del.className = 'delete';\n    del.textContent = 'حذف';\n    del.setAttribute('aria-label', 'حذف المصروف: ' + item.title);\n\n    meta.appendChild(amount);\n    meta.appendChild(del);\n\n    li.appendChild(info);\n    li.appendChild(meta);\n    return li;\n  }\n\n  /* إعادة رسم القائمة والمجموع */\n  function render() {\n    entriesList.textContent = '';\n    if (expenses.length === 0) {\n      var empty = document.createElement('li');\n      empty.className = 'empty';\n      empty.textContent = 'لا توجد مصروفات بعد — أضف أول مصروف من النموذج أعلاه.';\n      entriesList.appendChild(empty);\n    } else {\n      expenses.forEach(function (item) {\n        entriesList.appendChild(buildEntry(item));\n      });\n    }\n    totalEl.textContent = formatAmount(computeTotal());\n    countEl.textContent = String(expenses.length);\n  }\n\n  /* الإضافة مع التحقق: عنوان غير فارغ ومبلغ موجب */\n  form.addEventListener('submit', function (event) {\n    event.preventDefault();\n\n    var title = titleInput.value.trim();\n    var amountRaw = amountInput.value.trim();\n    var amount = parseFloat(amountRaw);\n    var category = categorySelect.value;\n\n    if (!title) {\n      showError('⚠️ يرجى إدخال عنوان للمصروف.');\n      titleInput.focus();\n      return;\n    }\n    if (amountRaw === '' || !isFinite(amount) || amount <= 0) {\n      showError('⚠️ يرجى إدخال مبلغ موجب أكبر من صفر.');\n      amountInput.focus();\n      return;\n    }\n\n    expenses.push({ id: generateId(), title: title, amount: amount, category: category });\n    saveExpenses();\n    render();\n\n    titleInput.value = '';\n    amountInput.value = '';\n    categorySelect.value = 'food';\n    hideError();\n    titleInput.focus();\n  });\n\n  /* الحذف عبر تفويض الأحداث: يزيل العنصر ويحدّث المجموع والتخزين */\n  entriesList.addEventListener('click', function (event) {\n    var button = event.target.closest('.delete');\n    if (!button) return;\n    var row = button.closest('.expense');\n    if (!row) return;\n    var id = row.getAttribute('data-id');\n    expenses = expenses.filter(function (item) { return item.id !== id; });\n    saveExpenses();\n    render();\n  });\n\n  /* إخفاء رسالة الخطأ بمجرد أن يبدأ المستخدم بالتصحيح */\n  titleInput.addEventListener('input', hideError);\n  amountInput.addEventListener('input', hideError);\n\n  /* استعادة البيانات المحفوظة عند فتح الصفحة */\n  render();\n})();\n</script>\n</body>\n</html>",
+            "path": "index.html"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_write",
+          "ok": true,
+          "summary": "wrote 15489 bytes to C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+          "ms": 3
+        },
+        {
+          "type": "step",
+          "index": 3
+        },
+        {
+          "type": "tool_call",
+          "name": "file_list",
+          "args": {
+            "path": "."
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_list",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json (3378 bytes)\nC:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\contract-notes.md (4175 bytes)\nC:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (15489 bytes)",
+          "ms": 1
+        },
+        {
+          "type": "step",
+          "index": 4
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 60,
+            "path": "index.html",
+            "startLine": 160
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (406 lines)\n160:     .expense{flex-wrap:wrap}\n161:   }\n162:   @media (prefers-reduced-motion:reduce){\n163:     *{animation:none!important;transition:none!important}\n164:   }\n165: </style>\n166: </head>\n167: <body>\n168: <main class=\"app\">",
+          "ms": 1
+        },
+        {
+          "type": "step",
+          "index": 5
+        },
+        {
+          "type": "critique",
+          "id": "s2",
+          "verdict": "revise",
+          "reason": "الدليل يؤكد وجود index.html وبنية HTML بجميع المحددات المطلوبة (#title، #amount، #category، #add، #error، #entries، #total) والفئات الثلاث بعناوين عربية وبدون مراجع خارجية في المقاطع المعروضة، لكن المقاطع المقروءة تنقطع عند وسم <script> فلا يظهر أي دليل على منطق JavaScript (حفظ/تحميل localStorage، معالجة .delete، إظهار #error، تنسيق #total)، وتأكيدات المنفذ النصية وحدها لا تثبت السلوك."
+        },
+        {
+          "type": "revise",
+          "id": "s2",
+          "attempt": 2,
+          "fixes": [
+            "أرفق file_read لقسم <script> في index.html (الأسطر ~219–406) كدليل يُظهر منطق localStorage عند الإضافة/الحذف والتحميل عند فتح الصفحة، وتفويض الحذف على .delete، والتحقق من العنوان الفارغ والمبلغ غير الموجب.",
+            "تأكد من الكود المعروض أن نص #total يطابق العقد حرفيًا ('20' و'9' و'0') بدون رمز عملة أو منازل عشرية زائدة، وأن إظهار #error يزيل الخاصية hidden فعليًا (وليس مجرد تنسيق) ليمر فحص visible في العقد.",
+            "أكد خلو الملف بالكامل (وليس المقاطع المعروضة فقط) من أي مراجع شبكية أو مكتبات خارجية (لا <link> ولا script src ولا url(http))."
+          ]
+        },
+        {
+          "type": "step",
+          "index": 1
+        },
+        {
+          "type": "tool_call",
+          "name": "file_list",
+          "args": {
+            "path": "."
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_list",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json (3378 bytes)\nC:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\contract-notes.md (4175 bytes)\nC:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (15489 bytes)",
+          "ms": 1
+        },
+        {
+          "type": "step",
+          "index": 2
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "contract-notes.md"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\contract-notes.md (52 lines)\n1: # توثيق عقد القبول app-verification.json (الخطوة 1/3)\n2: \n3: تمت قراءة الملف كاملًا من جذر المشروع: `app-verification.json` (166 سطرًا).\n4: نقطة الدخول المعلنة: `entry: \"index.html\"`.\n5: \n6: ## المحددات الإلزامية (من العقد — غير قابلة للتغيير)\n7: - `#title` — حقل عنوان المصروف (fill).\n8: - `#amount` — حقل المبلغ (fill، يقبل قيمًا مثل \"12.5\" و\"7.5\" و\"9\" و\"10\" و\"-1\").\n9: - `#category` — قائمة منسدلة (select) بقيم: `food` و`transport` و`other`.",
+          "ms": 8
+        },
+        {
+          "type": "step",
+          "index": 3
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "index.html"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (406 lines)\n1: <!DOCTYPE html>\n2: <html lang=\"ar\" dir=\"rtl\">\n3: <head>\n4: <meta charset=\"UTF-8\">\n5: <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n6: <meta name=\"description\" content=\"تطبيق مصروفات عربي يعمل محليًا بالكامل ويحفظ البيانات في متصفحك عبر localStorage\">\n7: <title>مصروفي — تتبّع المصروفات اليومية</title>\n8: <style>\n9:   :root{",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 4
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "index.html",
+            "startLine": 386
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (406 lines)\n386:   entriesList.addEventListener('click', function (event) {\n387:     var button = event.target.closest('.delete');\n388:     if (!button) return;\n389:     var row = button.closest('.expense');\n390:     if (!row) return;\n391:     var id = row.getAttribute('data-id');\n392:     expenses = expenses.filter(function (item) { return item.id !== id; });\n393:     saveExpenses();\n394:     render();",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 5
+        },
+        {
+          "type": "tool_call",
+          "name": "file_write",
+          "args": {
+            "content": "<!DOCTYPE html>\n<html lang=\"ar\" dir=\"rtl\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<meta name=\"description\" content=\"تطبيق مصروفات عربي يعمل محليًا بالكامل ويحفظ البيانات في متصفحك عبر localStorage\">\n<title>مصروفي — تتبّع المصروفات اليومية</title>\n<style>\n  :root{\n    --cyan-600:#0891b2; --cyan-500:#06b6d4; --cyan-400:#22d3ee; --cyan-100:#cffafe;\n    --violet-700:#6d28d9; --violet-600:#7c3aed; --violet-500:#8b5cf6; --violet-100:#ede9fe;\n    --ink:#1e293b; --ink-soft:#334155; --muted:#64748b;\n    --line:#e2e8f0; --field-bg:#f8fafc;\n    --danger-bg:#fef2f2; --danger-border:#fecaca; --danger:#b91c1c;\n    --radius:16px;\n    --shadow:0 12px 32px rgba(15,23,42,.18);\n  }\n  *{box-sizing:border-box;margin:0;padding:0}\n  html{-webkit-text-size-adjust:100%}\n  body{\n    font-family:\"Segoe UI\",Tahoma,\"Noto Kufi Arabic\",\"Noto Naskh Arabic\",Arial,sans-serif;\n    background:linear-gradient(135deg,#0e7490 0%,#4f46e5 55%,#7c3aed 100%);\n    background-attachment:fixed;\n    min-height:100vh;\n    padding:28px 16px 48px;\n    color:var(--ink);\n    line-height:1.65;\n  }\n  .app{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:18px}\n\n  /* ===== الترويسة ===== */\n  .app-header{text-align:center;color:#fff;margin-bottom:2px}\n  .logo{\n    width:64px;height:64px;margin:0 auto 12px;border-radius:20px;\n    display:flex;align-items:center;justify-content:center;font-size:30px;\n    background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);\n    box-shadow:0 8px 24px rgba(15,23,42,.25);backdrop-filter:blur(6px);\n  }\n  .app-header h1{font-size:2rem;font-weight:800;letter-spacing:.5px;text-shadow:0 2px 10px rgba(15,23,42,.25)}\n  .tagline{margin:6px auto 0;font-size:.95rem;color:rgba(255,255,255,.88);max-width:48ch}\n\n  /* ===== البطاقات ===== */\n  .card{\n    background:rgba(255,255,255,.97);\n    border:1px solid rgba(255,255,255,.6);\n    border-radius:var(--radius);\n    box-shadow:var(--shadow);\n    padding:20px;\n  }\n  .card-title{\n    font-size:1.05rem;font-weight:800;color:var(--ink-soft);\n    display:flex;align-items:center;gap:10px;margin-bottom:14px;\n  }\n  .card-title::before{\n    content:\"\";width:10px;height:22px;border-radius:6px;flex:none;\n    background:linear-gradient(180deg,var(--cyan-500),var(--violet-600));\n  }\n\n  /* ===== بطاقة المجموع ===== */\n  .total-card{display:flex;align-items:center;justify-content:space-between;gap:12px}\n  .total-label{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--ink-soft);font-size:1.05rem}\n  .total-icon{\n    width:42px;height:42px;border-radius:12px;flex:none;\n    display:inline-flex;align-items:center;justify-content:center;\n    background:linear-gradient(135deg,var(--cyan-100),var(--violet-100));\n    color:var(--violet-700);font-size:1.25rem;font-weight:800;\n  }\n  .total-value{font-size:2.2rem;font-weight:800;color:var(--violet-600);line-height:1.2}\n  @supports ((-webkit-background-clip:text) or (background-clip:text)){\n    .total-value{\n      background:linear-gradient(90deg,var(--cyan-600),var(--violet-600));\n      -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;\n    }\n  }\n\n  /* ===== النموذج ===== */\n  form{display:grid;grid-template-columns:1fr 1fr;gap:14px}\n  .field{display:flex;flex-direction:column;gap:6px}\n  .field-full{grid-column:1/-1}\n  label{font-size:.85rem;font-weight:700;color:var(--ink-soft)}\n  input,select{\n    width:100%;padding:11px 14px;font:inherit;font-size:1rem;color:var(--ink);\n    background:var(--field-bg);border:2px solid var(--line);border-radius:12px;\n    transition:border-color .2s,box-shadow .2s,background .2s;\n  }\n  select{cursor:pointer}\n  input::placeholder{color:#94a3b8}\n  input:focus,select:focus{\n    outline:none;border-color:var(--cyan-500);background:#fff;\n    box-shadow:0 0 0 4px rgba(6,182,212,.15);\n  }\n  .add-btn{\n    grid-column:1/-1;padding:13px 16px;font:inherit;font-size:1rem;font-weight:800;\n    color:#fff;border:none;border-radius:12px;cursor:pointer;\n    background:linear-gradient(135deg,var(--cyan-600),var(--violet-600));\n    box-shadow:0 8px 20px rgba(124,58,237,.35);\n    transition:transform .15s,box-shadow .15s,filter .15s;\n  }\n  .add-btn:hover{transform:translateY(-1px);filter:brightness(1.06);box-shadow:0 10px 24px rgba(124,58,237,.45)}\n  .add-btn:active{transform:translateY(0)}\n  .add-btn:focus-visible{outline:3px solid rgba(34,211,238,.7);outline-offset:2px}\n\n  /* ===== رسالة الخطأ ===== */\n  .error{\n    margin-top:12px;padding:10px 14px;border-radius:12px;\n    background:var(--danger-bg);border:1px solid var(--danger-border);\n    color:var(--danger);font-weight:700;font-size:.92rem;\n  }\n  .error[hidden]{display:none}\n\n  /* ===== قائمة المصروفات ===== */\n  .list-count{\n    background:linear-gradient(135deg,var(--cyan-100),var(--violet-100));\n    color:var(--violet-700);font-size:.8rem;font-weight:800;\n    min-width:26px;height:26px;padding:0 8px;border-radius:999px;\n    display:inline-flex;align-items:center;justify-content:center;\n  }\n  .entries{list-style:none;display:flex;flex-direction:column;gap:10px}\n  .expense{\n    display:flex;align-items:center;justify-content:space-between;gap:12px;\n    background:var(--field-bg);border:1px solid var(--line);\n    border-radius:14px;padding:12px 14px;animation:pop .25s ease;\n  }\n  @keyframes pop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}\n  .expense-info{display:flex;flex-direction:column;gap:4px;min-width:0}\n  .expense-title{font-weight:700;color:var(--ink);overflow-wrap:anywhere}\n  .expense-category{align-self:flex-start;font-size:.75rem;font-weight:800;padding:3px 10px;border-radius:999px}\n  .cat-food .expense-category{background:#ffedd5;color:#c2410c}\n  .cat-transport .expense-category{background:var(--cyan-100);color:#0e7490}\n  .cat-other .expense-category{background:var(--violet-100);color:var(--violet-700)}\n  .expense-meta{display:flex;align-items:center;gap:10px;flex:none}\n  .expense-amount{\n    font-weight:800;font-size:1.05rem;color:var(--violet-700);\n    background:linear-gradient(135deg,var(--cyan-100),var(--violet-100));\n    padding:6px 12px;border-radius:10px;\n  }\n  .delete{\n    font:inherit;font-size:.85rem;font-weight:800;color:#be123c;\n    background:#fee2e2;border:1px solid #fecaca;border-radius:10px;\n    padding:7px 14px;cursor:pointer;transition:background .2s,transform .15s;\n  }\n  .delete:hover{background:#fecaca}\n  .delete:active{transform:scale(.95)}\n  .delete:focus-visible{outline:3px solid rgba(190,18,60,.4);outline-offset:2px}\n  .empty{\n    border:2px dashed #cbd5e1;border-radius:14px;background:var(--field-bg);\n    color:var(--muted);text-align:center;padding:20px 14px;font-size:.95rem;\n  }\n\n  .app-footer{text-align:center;color:rgba(255,255,255,.85);font-size:.85rem;margin-top:4px}\n\n  /* ===== التجاوب ===== */\n  @media (max-width:520px){\n    body{padding:20px 12px 36px}\n    .app-header h1{font-size:1.6rem}\n    .tagline{font-size:.88rem}\n    .card{padding:16px}\n    form{grid-template-columns:1fr}\n    .total-value{font-size:1.8rem}\n    .expense{flex-wrap:wrap}\n  }\n  @media (prefers-reduced-motion:reduce){\n    *{animation:none!important;transition:none!important}\n  }\n</style>\n</head>\n<body>\n<main class=\"app\">\n\n  <header class=\"app-header\">\n    <div class=\"logo\" aria-hidden=\"true\">💰</div>\n    <h1>مصروفي</h1>\n    <p class=\"tagline\">سجّل مصروفاتك اليومية وتابع مجموعها بسهولة — كل البيانات تُحفظ في متصفحك فقط</p>\n  </header>\n\n  <section class=\"card total-card\" aria-label=\"المجموع الكلي للمصروفات\">\n    <div class=\"total-label\">\n      <span class=\"total-icon\" aria-hidden=\"true\">Σ</span>\n      المجموع الكلي\n    </div>\n    <div class=\"total-value\" dir=\"ltr\"><span id=\"total\">0</span></div>\n  </section>\n\n  <section class=\"card form-card\">\n    <h2 class=\"card-title\">إضافة مصروف جديد</h2>\n    <form id=\"expense-form\" novalidate autocomplete=\"off\">\n      <div class=\"field field-full\">\n        <label for=\"title\">العنوان</label>\n        <input type=\"text\" id=\"title\" name=\"title\" placeholder=\"مثال: خبز\" autocomplete=\"off\" maxlength=\"60\">\n      </div>\n      <div class=\"field\">\n        <label for=\"amount\">المبلغ</label>\n        <input type=\"number\" id=\"amount\" name=\"amount\" placeholder=\"0.00\" step=\"any\" inputmode=\"decimal\">\n      </div>\n      <div class=\"field\">\n        <label for=\"category\">الفئة</label>\n        <select id=\"category\" name=\"category\">\n          <option value=\"food\" selected>طعام</option>\n          <option value=\"transport\">مواصلات</option>\n          <option value=\"other\">أخرى</option>\n        </select>\n      </div>\n      <button type=\"submit\" id=\"add\" class=\"add-btn\">+ إضافة مصروف</button>\n    </form>\n    <p id=\"error\" class=\"error\" role=\"alert\" hidden></p>\n  </section>\n\n  <section class=\"card list-card\">\n    <h2 class=\"card-title\">قائمة المصروفات <span class=\"list-count\" id=\"count\">0</span></h2>\n    <ul id=\"entries\" class=\"entries\"></ul>\n  </section>\n\n  <footer class=\"app-footer\">\n    <p>🔒 يعمل بدون إنترنت — تُحفظ بياناتك محليًا في متصفحك (localStorage) ولا تُرسل إلى أي خادم.</p>\n  </footer>\n\n</main>\n\n<script>\n(function () {\n  'use strict';\n\n  var STORAGE_KEY = 'expenses-app-data';\n  var CATEGORY_NAMES = { food: 'طعام', transport: 'مواصلات', other: 'أخرى' };\n\n  var form = document.getElementById('expense-form');\n  var titleInput = document.getElementById('title');\n  var amountInput = document.getElementById('amount');\n  var categorySelect = document.getElementById('category');\n  var errorBox = document.getElementById('error');\n  var entriesList = document.getElementById('entries');\n  var totalEl = document.getElementById('total');\n  var countEl = document.getElementById('count');\n\n  /* استعادة البيانات من localStorage فور فتح الصفحة */\n  var expenses = loadExpenses();\n\n  function generateId() {\n    return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);\n  }\n\n  /* التحميل من localStorage عند فتح الصفحة مع التحقق من سلامة البيانات */\n  function loadExpenses() {\n    try {\n      var raw = localStorage.getItem(STORAGE_KEY);\n      if (!raw) return [];\n      var data = JSON.parse(raw);\n      if (!Array.isArray(data)) return [];\n      return data\n        .filter(function (item) {\n          return item &&\n            typeof item.title === 'string' && item.title.trim() !== '' &&\n            typeof item.amount === 'number' &&\n            isFinite(item.amount) && item.amount > 0;\n        })\n        .map(function (item) {\n          return {\n            id: (typeof item.id === 'string' && item.id) ? item.id : generateId(),\n            title: item.title,\n            amount: item.amount,\n            category: CATEGORY_NAMES[item.category] ? item.category : 'other'\n          };\n        });\n    } catch (err) {\n      return [];\n    }\n  }\n\n  /* الحفظ في localStorage بعد كل إضافة أو حذف */\n  function saveExpenses() {\n    try {\n      localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));\n    } catch (err) {\n      /* التخزين غير متاح — يكمل التطبيق في الذاكرة فقط */\n    }\n  }\n\n  /* تنسيق المبلغ: رقم نظيف بلا رمز عملة وبلا أصفار عشرية زائدة\n     (12.5 + 7.5 يُعرض \"20\" حرفيًا، و9 يُعرض \"9\"، والمجموع الفارغ \"0\") */\n  function formatAmount(value) {\n    return String(Math.round(value * 100) / 100);\n  }\n\n  function computeTotal() {\n    return expenses.reduce(function (sum, item) { return sum + item.amount; }, 0);\n  }\n\n  /* إظهار الخطأ بإزالة الخاصية hidden فعليًا (وليس مجرد تنسيق) */\n  function showError(message) {\n    errorBox.textContent = message;\n    errorBox.hidden = false;\n  }\n\n  function hideError() {\n    errorBox.hidden = true;\n    errorBox.textContent = '';\n  }\n\n  /* بناء عنصر .expense: العنوان + الفئة بالعربية + المبلغ + زر .delete */\n  function buildEntry(item) {\n    var li = document.createElement('li');\n    li.className = 'expense cat-' + item.category;\n    li.setAttribute('data-id', item.id);\n\n    var info = document.createElement('div');\n    info.className = 'expense-info';\n\n    var title = document.createElement('span');\n    title.className = 'expense-title';\n    title.textContent = item.title;\n\n    var badge = document.createElement('span');\n    badge.className = 'expense-category';\n    badge.textContent = CATEGORY_NAMES[item.category] || CATEGORY_NAMES.other;\n\n    info.appendChild(title);\n    info.appendChild(badge);\n\n    var meta = document.createElement('div');\n    meta.className = 'expense-meta';\n\n    var amount = document.createElement('span');\n    amount.className = 'expense-amount';\n    amount.setAttribute('dir', 'ltr');\n    amount.textContent = formatAmount(item.amount);\n\n    var del = document.createElement('button');\n    del.type = 'button';\n    del.className = 'delete';\n    del.textContent = 'حذف';\n    del.setAttribute('aria-label', 'حذف المصروف: ' + item.title);\n\n    meta.appendChild(amount);\n    meta.appendChild(del);\n\n    li.appendChild(info);\n    li.appendChild(meta);\n    return li;\n  }\n\n  /* إعادة رسم القائمة والمجموع بعد كل تغيير */\n  function render() {\n    entriesList.textContent = '';\n    if (expenses.length === 0) {\n      var empty = document.createElement('li');\n      empty.className = 'empty';\n      empty.textContent = 'لا توجد مصروفات بعد — أضف أول مصروف من النموذج أعلاه.';\n      entriesList.appendChild(empty);\n    } else {\n      expenses.forEach(function (item) {\n        entriesList.appendChild(buildEntry(item));\n      });\n    }\n    totalEl.textContent = formatAmount(computeTotal());\n    countEl.textContent = String(expenses.length);\n  }\n\n  /* الإضافة مع التحقق: رفض العنوان الفارغ والمبلغ غير الموجب بعرض #error */\n  form.addEventListener('submit', function (event) {\n    event.preventDefault();\n\n    var title = titleInput.value.trim();\n    var amountRaw = amountInput.value.trim();\n    var amount = Number(amountRaw);\n    var category = categorySelect.value;\n\n    if (!title) {\n      showError('⚠️ يرجى إدخال عنوان للمصروف.');\n      titleInput.focus();\n      return;\n    }\n    if (amountRaw === '' || !isFinite(amount) || amount <= 0) {\n      showError('⚠️ يرجى إدخال مبلغ موجب أكبر من صفر.');\n      amountInput.focus();\n      return;\n    }\n\n    expenses.push({ id: generateId(), title: title, amount: amount, category: category });\n    saveExpenses();\n    render();\n\n    titleInput.value = '';\n    amountInput.value = '';\n    categorySelect.value = 'food';\n    hideError();\n    titleInput.focus();\n  });\n\n  /* الحذف عبر تفويض الأحداث: أي نقرة على .delete داخل .expense\n     تزيل العنصر وتحدّث #total وlocalStorage */\n  entriesList.addEventListener('click', function (event) {\n    var button = event.target.closest('.delete');\n    if (!button) return;\n    var row = button.closest('.expense');\n    if (!row) return;\n    var id = row.getAttribute('data-id');\n    expenses = expenses.filter(function (item) { return item.id !== id; });\n    saveExpenses();\n    render();\n  });\n\n  /* إخفاء رسالة الخطأ بمجرد أن يبدأ المستخدم بالتصحيح */\n  titleInput.addEventListener('input', hideError);\n  amountInput.addEventListener('input', hideError);\n\n  /* رسم أولي يستعيد البيانات المحفوظة عند فتح الصفحة */\n  render();\n})();\n</script>\n</body>\n</html>",
+            "path": "index.html"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_write",
+          "ok": true,
+          "summary": "wrote 16081 bytes to C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 6
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 218,
+            "path": "index.html",
+            "startLine": 1
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (411 lines)\n1: <!DOCTYPE html>\n2: <html lang=\"ar\" dir=\"rtl\">\n3: <head>\n4: <meta charset=\"UTF-8\">\n5: <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n6: <meta name=\"description\" content=\"تطبيق مصروفات عربي يعمل محليًا بالكامل ويحفظ البيانات في متصفحك عبر localStorage\">\n7: <title>مصروفي — تتبّع المصروفات اليومية</title>\n8: <style>\n9:   :root{",
+          "ms": 12
+        },
+        {
+          "type": "step",
+          "index": 7
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 195,
+            "path": "index.html",
+            "startLine": 217
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (411 lines)\n217: </main>\n218: \n219: <script>\n220: (function () {\n221:   'use strict';\n222: \n223:   var STORAGE_KEY = 'expenses-app-data';\n224:   var CATEGORY_NAMES = { food: 'طعام', transport: 'مواصلات', other: 'أخرى' };\n225: ",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 8
+        },
+        {
+          "type": "critique",
+          "id": "s2",
+          "verdict": "pass",
+          "reason": "قراءات الملف الكاملة بعد الحفظ (411 سطرًا) تؤكد وجود جميع المحددات المطلوبة (#title و#amount رقمي و#category بقيم food/transport/other بعناوين طعام/مواصلات/أخرى و#add و#error و#entries و#total و .expense و .delete)، ومنطق localStorage كاملًا (تحميل عند الفتح وحفظ بعد كل إضافة/حذف مع إعادة حساب المجموع)، والتحقق يُظهر #error فعليًا بإزالة hidden، مع html lang=ar dir=rtl وتصميم سماوي/بنفسجي متجاوب ودون أي مراجع شبكية أو مكتبات خارجية."
+        },
+        {
+          "type": "plan_step",
+          "id": "s2",
+          "index": 2,
+          "total": 3,
+          "title": "كتابة index.html الكامل",
+          "phase": "done",
+          "summary": "اكتملت الخطوة 2/3 بنجاح. أعدت كتابة `index.html` كاملًا عبر `file_write` (411 سطرًا، 16081 بايت) وقرأته بالكامل بعد الحفظ كدليل. ## ✅ كتابة index.html — مكتملة **الدليل الملموس (من قراءات الملف أعلاه):** ### 1) قسم `<script>` كاملًا (الأسطر 219–409) — يثبت المنطق: - **التحميل عند فتح الصفحة:** `var ..."
+        },
+        {
+          "type": "plan_step",
+          "id": "s3",
+          "index": 3,
+          "total": 3,
+          "title": "فحص الملف وتسليم النتيجة",
+          "phase": "start"
+        },
+        {
+          "type": "step",
+          "index": 1
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 450,
+            "path": "index.html"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (411 lines)\n1: <!DOCTYPE html>\n2: <html lang=\"ar\" dir=\"rtl\">\n3: <head>\n4: <meta charset=\"UTF-8\">\n5: <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n6: <meta name=\"description\" content=\"تطبيق مصروفات عربي يعمل محليًا بالكامل ويحفظ البيانات في متصفحك عبر localStorage\">\n7: <title>مصروفي — تتبّع المصروفات اليومية</title>\n8: <style>\n9:   :root{",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 2
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 60,
+            "path": "index.html",
+            "startLine": 378
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (411 lines)\n378:     expenses.push({ id: generateId(), title: title, amount: amount, category: category });\n379:     saveExpenses();\n380:     render();\n381: \n382:     titleInput.value = '';\n383:     amountInput.value = '';\n384:     categorySelect.value = 'food';\n385:     hideError();\n386:     titleInput.focus();",
+          "ms": 3
+        },
+        {
+          "type": "step",
+          "index": 3
+        },
+        {
+          "type": "tool_call",
+          "name": "file_stat",
+          "args": {
+            "path": "index.html"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_stat",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html\ntype=file\nsize=16081\nmtime=2026-10-18T22:03:15.067Z",
+          "ms": 1
+        },
+        {
+          "type": "step",
+          "index": 4
+        },
+        {
+          "type": "tool_call",
+          "name": "file_stat",
+          "args": {
+            "path": "app-verification.json"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_stat",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json\ntype=file\nsize=3378\nmtime=2026-10-18T21:59:45.803Z",
+          "ms": 1
+        },
+        {
+          "type": "step",
+          "index": 5
+        },
+        {
+          "type": "critique",
+          "id": "s3",
+          "verdict": "pass",
+          "reason": "الأدلة تؤكد وجود index.html (16,081 بايت، 411 سطرًا) وتطابق جميع المحددات المطلوبة (#title، #amount، #category، #add، #error، #entries، #total، .expense، .delete) مع استدعاءي localStorage getItem/setItem، والرسالة النهائية تضمن المسار وملخص الميزات وتنبيهًا صريحًا بأن اختبار التشغيل والتحقق البصري مسؤولية النظام دون أي ادعاء بتنفيذهما."
+        },
+        {
+          "type": "plan_step",
+          "id": "s3",
+          "index": 3,
+          "total": 3,
+          "title": "فحص الملف وتسليم النتيجة",
+          "phase": "done",
+          "summary": "اكتمل الفحص العيني للخطوة 3/3. إليك النتيجة النهائية: ## ✅ التسليم النهائي — تطبيق «مصروفي» جاهز ### 📄 مسار الملف - **التطبيق الكامل:** `C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html` - **دليل الوجود (file_stat):** ملف بحجم **16,081 بايت**، 411 سطرًا، آخر تعديل 2026-1..."
+        },
+        {
+          "type": "tool_result",
+          "name": "application_verification",
+          "ok": true,
+          "summary": "All four contract scenarios pass on both desktop and mobile viewports, and the screenshots visually confirm each one: (1) after adding خبز 12.5 and حافلة 7.5, two .expense items appear with delete buttons and #total shows 20; (2) after reload, قهوة 9 is restored from localStorage with total 9; (3) after deleting, the list is empty and total resets to 0; (4) entering -1 shows a visible #error message ('مبلغ موجب أكبر من صفر') with no entry added. The UI matches the request: Arabic RTL layout (right-aligned labels, RTL form flow), cyan-to-purple gradient theme, responsive stacked mobile layout with no overlaps or clipped interactive elements, Arabic category names (طعام، مواصلات), and a footer noting localStorage-only offline operation. All required selectors are exercised by the passing tests.\nReport: C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\1a5b5740-2afb-4353-bf73-35885314a0f2\\report.json",
+          "ms": 32041
+        },
+        {
+          "type": "tool_call",
+          "name": "file_list",
+          "args": {
+            "maxEntries": 50,
+            "path": "."
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_list",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification/\nC:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json (3378 bytes)\nC:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\contract-notes.md (4175 bytes)\nC:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (16081 bytes)",
+          "ms": 0
+        },
+        {
+          "type": "tool_call",
+          "name": "file_stat",
+          "args": {
+            "path": ".verification/1a5b5740-2afb-4353-bf73-35885314a0f2/report.json"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_stat",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\1a5b5740-2afb-4353-bf73-35885314a0f2\\report.json\ntype=file\nsize=5482\nmtime=2026-10-18T22:04:52.252Z",
+          "ms": 0
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 120,
+            "path": ".verification/1a5b5740-2afb-4353-bf73-35885314a0f2/report.json"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\1a5b5740-2afb-4353-bf73-35885314a0f2\\report.json (76 lines)\n1: {\n2:   \"pass\": true,\n3:   \"reason\": \"All four contract scenarios pass on both desktop and mobile viewports, and the screenshots visually confirm each one: (1) after adding خبز 12.5 and حافلة 7.5, two .expense items appear with delete buttons and #total shows 20; (2) after reload, قهوة 9 is restored from localStorage with total 9; (3) after deleting, the list is empty and total resets to 0; (4) entering -1 shows a visible #error message ('مبلغ موجب أكبر من صفر') with no entry added. The UI matches the request: Arabic RTL layout (right-aligned labels, RTL form flow), cyan-to-purple gradient theme, responsive stacked mobile layout with no overlaps or clipped interactive elements, Arabic category names (طعام، مواصلات), and a footer noting localStorage-only offline operation. All required selectors are exercised by the passing tests.\",\n4:   \"reportPath\": \"C:\\\\Users\\\\khamis\\\\AppData\\\\Local\\\\Temp\\\\loam-long-app-LK7YRO\\\\workspace\\\\.verification\\\\1a5b5740-2afb-4353-bf73-35885314a0f2\\\\report.json\",\n5:   \"usage\": {\n6:     \"promptTokens\": 9982,\n7:     \"completionTokens\": 2478,\n8:     \"durationMs\": 32041\n9:   },\n10:   \"checks\": [\n11:     {\n12:       \"viewport\": \"desktop\",\n13:       \"scenario\": \"Adding entries calculates sum\",\n14:       \"pass\": true\n15:     },\n16:     {\n17:       \"viewport\": \"desktop\",\n18:       \"scenario\": \"Persistence after reload\",\n19:       \"pass\": true\n20:     },\n21:     {\n22:       \"viewport\": \"desktop\",\n23:       \"scenario\": \"Deleting recomputes total\",\n24:       \"pass\": true\n25:     },\n26:     {\n27:       \"viewport\": \"desktop\",\n28:       \"scenario\": \"Invalid input rejected\",\n29:       \"pass\": true\n30:     },\n31:     {\n32:       \"viewport\": \"mobile\",\n33:       \"scenario\": \"Adding entries calculates sum\",\n34:       \"pass\": true\n35:     },\n36:     {\n37:       \"viewport\": \"mobile\",\n38:       \"scenario\": \"Persistence af",
+          "ms": 0
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 200,
+            "path": "app-verification.json"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json (166 lines)\n1: {\n2:   \"entry\": \"index.html\",\n3:   \"scenarios\": [\n4:     {\n5:       \"name\": \"Adding entries calculates sum\",\n6:       \"steps\": [\n7:         {\n8:           \"action\": \"fill\",\n9:           \"selector\": \"#title\",\n10:           \"value\": \"خبز\"\n11:         },\n12:         {\n13:           \"action\": \"fill\",\n14:           \"selector\": \"#amount\",\n15:           \"value\": \"12.5\"\n16:         },\n17:         {\n18:           \"action\": \"select\",\n19:           \"selector\": \"#category\",\n20:           \"value\": \"food\"\n21:         },\n22:         {\n23:           \"action\": \"click\",\n24:           \"selector\": \"#add\"\n25:         },\n26:         {\n27:           \"action\": \"fill\",\n28:           \"selector\": \"#title\",\n29:           \"value\": \"حافلة\"\n30:         },\n31:         {\n32:           \"action\": \"fill\",\n33:           \"selector\": \"#amount\",\n34:           \"value\": \"7.5\"\n35:         },\n36:         {\n37:           \"action\": \"select\",\n38:           \"selector\": \"#category\",\n39:           \"value\": \"transport\"\n40:         },\n41:         {\n42:           \"action\": \"click\",\n43:           \"selector\": \"#add\"\n44:         },\n45:         {\n46:           \"action\": \"count\",\n47:           \"selector\": \".expense\",\n48:           \"count\": 2\n49:         },\n50:         {\n51:           \"action\": \"text\",\n52:           \"selector\": \"#total\",\n53:           \"value\": \"20\"\n54:         }\n55:       ]\n56:     },\n57:     {\n58:       \"name\": \"Persistence after reload\",\n59:       \"steps\": [\n60:         {\n61:           \"action\": \"fill\",\n62:           \"selector\": \"#title\",\n63:           \"value\": \"قهوة\"\n64:         },\n65:         {\n66:           \"action\": \"fill\",\n67:           \"selector\": \"#amount\",\n68:           \"value\": \"9\"\n69:         },\n70:         {\n71:           \"action\": \"select\",\n72:           \"selector\": \"#category\",\n73:           \"value\": \"food\"\n74:         },\n75:         {\n76:           \"action\": \"click\",\n77:           \"selector",
+          "ms": 0
+        },
+        {
+          "type": "verify",
+          "verdict": "pass",
+          "reason": "فحصتُ index.html كاملًا (411 سطرًا): كل المحددات المطلوبة موجودة (#title س189، #amount س193، #category س197 بخيارات food/transport/other بعناوين عربية، #add س203، #error س205 مع إظهار فعلي بإزالة hidden، #entries س210، #total س181، .expense س302، .delete س329)، مع localStorage (getItem س245 / setItem س272 بعد الإضافة والحذف)، تحقق من المبلغ الموجب، تفويض حذف يحدّث المجموع، RTL عربي كامل، تصميم سماوي/بنفسجي متجاوب، ولا أي مكتبة أو طلب شبكة خارجي. عقد القبول app-verification.json لم يُمَسّ (3378 بايت، mtime أقدم من كتابة index.html). تقرير التحقق الإلزامي للنظام (.verification/.../report.json) يؤكد نجاح السيناريوهات الأربعة على سطح المكتب والجوال (8/8) مع حكم بصري pass ولقطات شاشة، والمنفّذ لم يدّعِ تشغيل الاختبارات بنفسه."
+        },
+        {
+          "type": "assistant_message",
+          "text": "اكتمل الفحص العيني للخطوة 3/3. إليك النتيجة النهائية:\n\n## ✅ التسليم النهائي — تطبيق «مصروفي» جاهز\n\n### 📄 مسار الملف\n- **التطبيق الكامل:** `C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html`\n- **دليل الوجود (file_stat):** ملف بحجم **16,081 بايت**، 411 سطرًا، آخر تعديل 2026-10-18T22:03:15Z\n- **عقد القبول موجود بجانبه:** `app-verification.json` (3,378 بايت) — لم يُمَسّ ولم يُغيَّر\n\n### 🔍 تحقق عيني من المحددات المطلوبة (من قراءة الملف كاملًا)\n| المحدد | الموقع | الدليل |\n|---|---|---|\n| `#title` | سطر 189 | `<input type=\"text\" id=\"title\">` |\n| `#amount` | سطر 193 | `<input type=\"number\" id=\"amount\" step=\"any\">` |\n| `#category` | سطر 197 | `<select id=\"category\">` بخيارات food/transport/other |\n| `#add` | سطر 203 | `<button type=\"submit\" id=\"add\">` |\n| `#error` | سطر 205 | `<p id=\"error\" role=\"alert\" hidden>` |\n| `#entries` | سطر 210 | `<ul id=\"entries\">` |\n| `#total` | سطر 181 | `<span id=\"total\">0</span>` |\n| `.expense` | سطر 302 | `li.className = 'expense cat-' + item.category` |\n| `.delete` | سطر 329 | `del.className = 'delete'` مع نص «حذف» |\n\n### 🔍 استدعاءات localStorage (دليل الحفظ والاستعادة)\n- **الاستعادة عند الفتح:** سطر 245 `localStorage.getItem(STORAGE_KEY)` داخل `loadExpenses()` مع تحقق من سلامة البيانات (سطر 236 ثم `render()` في سطر 407)\n- **الحفظ بعد كل تغيير:** سطر 272 `localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses))` يُستدعى بعد الإضافة (سطر 379) وبعد الحذف (سطر 398)\n\n### 📋 ملخص الميزات\n- **عربي RTL كامل:** `lang=\"ar\" dir=\"rtl\"`، خطوط عربية، أرقام المبالغ باتجاه LTR داخل عناصر `dir=\"ltr\"` لعرض صحيح\n- **إضافة مصروف:** عنوان + مبلغ موجب + فئة، مع تحقق يرفض العنوان الفارغ والمبلغ غير الموجب (صفر/سالب/نص) عبر إظهار `#error` فعليًا بإزالة `hidden`\n- **الفئات الثلاث بعناوين عربية:** طعام (food)، مواصلات (transport)، أخرى (other) مع شارات ملوّنة لكل فئة\n- **عرض القائمة والمجموع:** كل عنصر `.expense` يعرض العنوان والفئة والمبلغ وزر `.delete`، و`#total` يتحدث فورًا بعد كل إضافة أو حذف\n- **الحذف:** تفويض أحداث على `#entries` يزيل العنصر ويحدّث المجموع ويحفظ في localStorage\n- **الاستعادة بعد إعادة التحميل:** البيانات تُقرأ من localStorage عند فتح الصفحة وتُرسم مباشرة\n- **تصميم سماوي/بنفسجي متجاوب:** تدرّج خلفية سماوي→بنفسجي، بطاقات زجاجية، استعلامات وسائط للجوال (≤520px)، ودعم `prefers-reduced-motion`\n- **بدون مكتبات خارجية ولا شبكة ولا خادم:** ملف واحد، JavaScript خام (IIFE بوضع strict)، لا أي طلب خارجي\n\n### ⚠️ تنبيه صريح\n**اختبار تشغيل المتصفح والتحقق البصري الإلزامي وفق `app-verification.json` متروكان للنظام ولم يُدّعَ تنفيذهما من طرفي.** أنا لم أشغّل أي اختبار سيناريو ولم ألتقط أي لقطات شاشة؛ قمت فقط بفحص الملف نصيًا (file_stat + file_read) للتأكد من الوجود ومطابقة المحددات واستدعاءات localStorage. النظام هو من سيشغّل السيناريوهات الثابتة على سطح المكتب والجوال ويراجع لقطات الشاشة بصريًا."
+        },
+        {
+          "type": "done",
+          "text": "اكتمل الفحص العيني للخطوة 3/3. إليك النتيجة النهائية:\n\n## ✅ التسليم النهائي — تطبيق «مصروفي» جاهز\n\n### 📄 مسار الملف\n- **التطبيق الكامل:** `C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html`\n- **دليل الوجود (file_stat):** ملف بحجم **16,081 بايت**، 411 سطرًا، آخر تعديل 2026-10-18T22:03:15Z\n- **عقد القبول موجود بجانبه:** `app-verification.json` (3,378 بايت) — لم يُمَسّ ولم يُغيَّر\n\n### 🔍 تحقق عيني من المحددات المطلوبة (من قراءة الملف كاملًا)\n| المحدد | الموقع | الدليل |\n|---|---|---|\n| `#title` | سطر 189 | `<input type=\"text\" id=\"title\">` |\n| `#amount` | سطر 193 | `<input type=\"number\" id=\"amount\" step=\"any\">` |\n| `#category` | سطر 197 | `<select id=\"category\">` بخيارات food/transport/other |\n| `#add` | سطر 203 | `<button type=\"submit\" id=\"add\">` |\n| `#error` | سطر 205 | `<p id=\"error\" role=\"alert\" hidden>` |\n| `#entries` | سطر 210 | `<ul id=\"entries\">` |\n| `#total` | سطر 181 | `<span id=\"total\">0</span>` |\n| `.expense` | سطر 302 | `li.className = 'expense cat-' + item.category` |\n| `.delete` | سطر 329 | `del.className = 'delete'` مع نص «حذف» |\n\n### 🔍 استدعاءات localStorage (دليل الحفظ والاستعادة)\n- **الاستعادة عند الفتح:** سطر 245 `localStorage.getItem(STORAGE_KEY)` داخل `loadExpenses()` مع تحقق من سلامة البيانات (سطر 236 ثم `render()` في سطر 407)\n- **الحفظ بعد كل تغيير:** سطر 272 `localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses))` يُستدعى بعد الإضافة (سطر 379) وبعد الحذف (سطر 398)\n\n### 📋 ملخص الميزات\n- **عربي RTL كامل:** `lang=\"ar\" dir=\"rtl\"`، خطوط عربية، أرقام المبالغ باتجاه LTR داخل عناصر `dir=\"ltr\"` لعرض صحيح\n- **إضافة مصروف:** عنوان + مبلغ موجب + فئة، مع تحقق يرفض العنوان الفارغ والمبلغ غير الموجب (صفر/سالب/نص) عبر إظهار `#error` فعليًا بإزالة `hidden`\n- **الفئات الثلاث بعناوين عربية:** طعام (food)، مواصلات (transport)، أخرى (other) مع شارات ملوّنة لكل فئة\n- **عرض القائمة والمجموع:** كل عنصر `.expense` يعرض العنوان والفئة والمبلغ وزر `.delete`، و`#total` يتحدث فورًا بعد كل إضافة أو حذف\n- **الحذف:** تفويض أحداث على `#entries` يزيل العنصر ويحدّث المجموع ويحفظ في localStorage\n- **الاستعادة بعد إعادة التحميل:** البيانات تُقرأ من localStorage عند فتح الصفحة وتُرسم مباشرة\n- **تصميم سماوي/بنفسجي متجاوب:** تدرّج خلفية سماوي→بنفسجي، بطاقات زجاجية، استعلامات وسائط للجوال (≤520px)، ودعم `prefers-reduced-motion`\n- **بدون مكتبات خارجية ولا شبكة ولا خادم:** ملف واحد، JavaScript خام (IIFE بوضع strict)، لا أي طلب خارجي\n\n### ⚠️ تنبيه صريح\n**اختبار تشغيل المتصفح والتحقق البصري الإلزامي وفق `app-verification.json` متروكان للنظام ولم يُدّعَ تنفيذهما من طرفي.** أنا لم أشغّل أي اختبار سيناريو ولم ألتقط أي لقطات شاشة؛ قمت فقط بفحص الملف نصيًا (file_stat + file_read) للتأكد من الوجود ومطابقة المحددات واستدعاءات localStorage. النظام هو من سيشغّل السيناريوهات الثابتة على سطح المكتب والجوال ويراجع لقطات الشاشة بصريًا.",
+          "steps": 27,
+          "model": "glm-5.3-flash"
+        }
+      ]
+    },
+    {
+      "turn": 1,
+      "pass": false,
+      "ms": 556154,
+      "error": "Error: orchestrator: task incomplete: final verification: Independent inspection missing or unsuccessful",
+      "events": [
+        {
+          "type": "plan",
+          "goal": "تطوير تطبيق المصروفات العربي RTL الموجود في index.html بإضافة فلتر الفئة #filter وزر #reset مع جعل المجموع يعكس العناصر المعروضة فقط، مع الحفاظ على جميع الوظائف والتصميم المتجاوب وترك اختبار المتصفح والتحقق البصري للنظام.",
+          "trivial": false,
+          "steps": [
+            {
+              "id": "s1",
+              "title": "قراءة عقد القبول المحدّث والملف الحالي",
+              "instruction": "استخدم file_read لقراءة app-verification.json المحدّث واستخراج السيناريوهات الستة نصيًا (خاصة سيناريو الفلتر #filter بالقيم all/food/transport/other، وانعكاس #total على المعروضين، وسيناريو #reset الذي يمسح البيانات فورًا بما فيها التخزين). ثم استخدم file_read لقراءة index.html الحالي بالكامل لتحديد مواضع شريط الأدوات، ودالة render، ومفتاح localStorage، والمحددات الموجودة (#title #amount #category #add #error #entries #total و .expense و .delete).",
+              "successCriteria": "تم استخراج نص السيناريوهات الستة من app-verification.json، وتحديد مواضع الإدراج الدقيقة في index.html (شريط الأدوات، دالة render، معالجات الأحداث، مفتاح التخزين)."
+            },
+            {
+              "id": "s2",
+              "title": "إضافة #filter و#reset وربط منطق الفلترة والمسح",
+              "instruction": "عدّل index.html عبر file_edit: (1) أضف قائمة اختيار select بعنصر id=filter بخيارات all وfood وtransport وother بعناوين عربية (الكل، طعام، مواصلات، أخرى) داخل شريط الأدوات بجانب #total. (2) أضف زر id=reset بنص عربي مثل «مسح الكل». (3) في دالة render: طبّق الفلترة حسب قيمة #filter بحيث تعرض #entries فقط العناصر المطابقة، واجعل #total يحسب مجموع العناصر المعروضة فقط وليس كل المصروفات. (4) أضف مستمع change على #filter يستدعي render فورًا. (5) أضف مستمع click على #reset يمسح مصفوفة المصروفات فورًا ويستدعي localStorage.removeItem للمفتاح (أو يكتب مصفوفة فارغة) ثم يستدعي render لتفريغ #entries وتصفير #total وإعادة #filter إلى all. (6) حافظ على كل الوظائف السابقة: الإضافة بالتحقق عبر #error، الحذف عبر .delete مع تحديث المجموع، الحفظ في localStorage بعد الإضافة والحذف، الاستعادة عند التحميل، dir=rtl والتصميم السماوي البنفسجي المتجاوب، وبدون أي مكتبات خارجية أو شبكة أو خادم. لا تعدّل app-verification.json إطلاقًا.",
+              "successCriteria": "index.html يحتوي على #filter بالقيم الأربع و#reset، ودالة render تُفلتر العناصر وتحسب #total من المعروضين فقط، و#reset يمسح الحالة والتخزين فورًا، مع بقاء المحددات الأصلية والاستعادة بعد إعادة التحميل وRTL سليمة."
+            },
+            {
+              "id": "s3",
+              "title": "فحص نصي نهائي وتسليم النتيجة",
+              "instruction": "استخدم file_stat للتأكد من تحديث index.html ثم file_read للتحقق نصيًا من: وجود #filter و#reset، منطق الفلترة وحساب #total من المعروضين فقط، استدعاء مسح التخزين داخل معالج #reset، بقاء المحددات المطلوبة (#title #amount #category #add #error #entries #total و .expense و .delete)، وعدم وجود أي CDN أو طلب شبكة. لا تشغّل أي اختبار متصفح ولا تلتقط لقطات شاشة ولا تزعم تنفيذ السيناريوهات بنفسك — اذكر صراحة أن تشغيل المتصفح والتحقق البصري الإلزامي وفق app-verification.json من مسؤولية النظام. قدّم للمستخدم المسار الكامل للملف وملخص التحسينات.",
+              "successCriteria": "تقرير نهائي بالمسار الكامل لـ index.html مع دليل نصي (أرقام أسطر أو مقاطع) لوجود #filter و#reset ومنطق المجموع المُفلتر ومسح التخزين، وتنبيه صريح بأن اختبار التشغيل والتحقق البصري متروكان للنظام."
+            }
+          ],
+          "source": "model"
+        },
+        {
+          "type": "plan_step",
+          "id": "s1",
+          "index": 1,
+          "total": 3,
+          "title": "قراءة عقد القبول المحدّث والملف الحالي",
+          "phase": "start"
+        },
+        {
+          "type": "step",
+          "index": 1
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "index.html"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (411 lines)\n1: <!DOCTYPE html>\n2: <html lang=\"ar\" dir=\"rtl\">\n3: <head>\n4: <meta charset=\"UTF-8\">\n5: <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n6: <meta name=\"description\" content=\"تطبيق مصروفات عربي يعمل محليًا بالكامل ويحفظ البيانات في متصفحك عبر localStorage\">\n7: <title>مصروفي — تتبّع المصروفات اليومية</title>\n8: <style>\n9:   :root{",
+          "ms": 3
+        },
+        {
+          "type": "step",
+          "index": 2
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "app-verification.json"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json (270 lines)\n1: {\n2:   \"entry\": \"index.html\",\n3:   \"scenarios\": [\n4:     {\n5:       \"name\": \"Adding entries calculates sum\",\n6:       \"steps\": [\n7:         {\n8:           \"action\": \"fill\",\n9:           \"selector\": \"#title\",",
+          "ms": 3
+        },
+        {
+          "type": "step",
+          "index": 3
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "index.html",
+            "startLine": 378
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (411 lines)\n378:     expenses.push({ id: generateId(), title: title, amount: amount, category: category });\n379:     saveExpenses();\n380:     render();\n381: \n382:     titleInput.value = '';\n383:     amountInput.value = '';\n384:     categorySelect.value = 'food';\n385:     hideError();\n386:     titleInput.focus();",
+          "ms": 3
+        },
+        {
+          "type": "step",
+          "index": 4
+        },
+        {
+          "type": "critique",
+          "id": "s1",
+          "verdict": "pass",
+          "reason": "القراءة مكتملة وموثقة بالأدلة: file_read أظهر app-verification.json كاملًا (270 سطرًا) بالسيناريوهات الستة بما فيها سيناريو الفلتر (select #filter=food ← count .expense=1 ← #total=15) وسيناريو #reset (نقر ← count 0 ← reload ← count 0 ← #total=0)، وfile_read أظهر index.html (411 سطرًا + قراءة تكميلية من سطر 378) بمطابقة كل مواضع الإدراج المذكورة: STORAGE_KEY سطر 223، computeTotal 284–286، render 342–356، تفويض الحذف 391–400، render() الأولي سطر 407، وكل المحددات المطلوبة موجودة (#total:181، #title:189، #amount:193، #category:197، #add:203، #error:205، #entries:210، .expense:302، .delete:329)."
+        },
+        {
+          "type": "plan_step",
+          "id": "s1",
+          "index": 1,
+          "total": 3,
+          "title": "قراءة عقد القبول المحدّث والملف الحالي",
+          "phase": "done",
+          "summary": "اكتملت القراءة الكاملة للملفين. إليك نتائج الخطوة 1/3: ## 📋 أولاً: السيناريوهات الستة المستخرجة نصيًا من `app-verification.json` (270 سطرًا، 6 سيناريوهات) | # | اسم السيناريو | الخطوات والتوقعات | |---|---|---| | 1 | **Adding entries calculates sum** | `#title`=\"خبز\" + `#amount`=\"12.5\" + `#category..."
+        },
+        {
+          "type": "plan_step",
+          "id": "s2",
+          "index": 2,
+          "total": 3,
+          "title": "إضافة #filter و#reset وربط منطق الفلترة والمسح",
+          "phase": "start"
+        },
+        {
+          "type": "step",
+          "index": 1
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "app-verification.json"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json (270 lines)\n1: {\n2:   \"entry\": \"index.html\",\n3:   \"scenarios\": [\n4:     {\n5:       \"name\": \"Adding entries calculates sum\",\n6:       \"steps\": [\n7:         {\n8:           \"action\": \"fill\",\n9:           \"selector\": \"#title\",",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 2
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "index.html"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (411 lines)\n1: <!DOCTYPE html>\n2: <html lang=\"ar\" dir=\"rtl\">\n3: <head>\n4: <meta charset=\"UTF-8\">\n5: <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n6: <meta name=\"description\" content=\"تطبيق مصروفات عربي يعمل محليًا بالكامل ويحفظ البيانات في متصفحك عبر localStorage\">\n7: <title>مصروفي — تتبّع المصروفات اليومية</title>\n8: <style>\n9:   :root{",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 3
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "index.html",
+            "startLine": 378
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (411 lines)\n378:     expenses.push({ id: generateId(), title: title, amount: amount, category: category });\n379:     saveExpenses();\n380:     render();\n381: \n382:     titleInput.value = '';\n383:     amountInput.value = '';\n384:     categorySelect.value = 'food';\n385:     hideError();\n386:     titleInput.focus();",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 4
+        },
+        {
+          "type": "tool_call",
+          "name": "file_edit",
+          "args": {
+            "path": "index.html",
+            "find": "  /* ===== بطاقة المجموع ===== */\n  .total-card{display:flex;align-items:center;justify-content:space-between;gap:12px}",
+            "replace": "  /* ===== بطاقة المجموع وشريط الأدوات ===== */\n  .total-card{display:flex;flex-direction:column;gap:14px}\n  .total-row{display:flex;align-items:center;justify-content:space-between;gap:12px}\n  .toolbar{\n    display:flex;align-items:flex-end;justify-content:space-between;gap:12px;\n    padding-top:14px;border-top:1px dashed var(--line);\n  }\n  .filter-field{display:flex;flex-direction:column;gap:6px;flex:1 1 auto;min-width:0;max-width:230px}\n  .reset-btn{\n    font:inherit;font-size:.9rem;font-weight:800;color:#be123c;\n    background:#fee2e2;border:1px solid #fecaca;border-radius:12px;\n    padding:11px 16px;cursor:pointer;white-space:nowrap;flex:none;\n    transition:background .2s,transform .15s;\n  }\n  .reset-btn:hover{background:#fecaca}\n  .reset-btn:active{transform:scale(.97)}\n  .reset-btn:focus-visible{outline:3px solid rgba(190,18,60,.4);outline-offset:2px}"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_edit",
+          "ok": true,
+          "summary": "replaced 1 occurrence(s) in C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 5
+        },
+        {
+          "type": "tool_call",
+          "name": "file_edit",
+          "args": {
+            "find": "    .total-value{font-size:1.8rem}\n    .expense{flex-wrap:wrap}",
+            "path": "index.html",
+            "replace": "    .total-value{font-size:1.8rem}\n    .toolbar{flex-direction:column;align-items:stretch}\n    .filter-field{max-width:none}\n    .reset-btn{width:100%}\n    .expense{flex-wrap:wrap}"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_edit",
+          "ok": true,
+          "summary": "replaced 1 occurrence(s) in C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 6
+        },
+        {
+          "type": "tool_call",
+          "name": "file_edit",
+          "args": {
+            "find": "  <section class=\"card total-card\" aria-label=\"المجموع الكلي للمصروفات\">\n    <div class=\"total-label\">\n      <span class=\"total-icon\" aria-hidden=\"true\">Σ</span>\n      المجموع الكلي\n    </div>\n    <div class=\"total-value\" dir=\"ltr\"><span id=\"total\">0</span></div>\n  </section>",
+            "path": "index.html",
+            "replace": "  <section class=\"card total-card\" aria-label=\"المجموع الكلي للمصروفات\">\n    <div class=\"total-row\">\n      <div class=\"total-label\">\n        <span class=\"total-icon\" aria-hidden=\"true\">Σ</span>\n        المجموع الكلي\n      </div>\n      <div class=\"total-value\" dir=\"ltr\"><span id=\"total\">0</span></div>\n    </div>\n    <div class=\"toolbar\">\n      <div class=\"filter-field\">\n        <label for=\"filter\">تصفية حسب الفئة</label>\n        <select id=\"filter\" name=\"filter\">\n          <option value=\"all\" selected>الكل</option>\n          <option value=\"food\">طعام</option>\n          <option value=\"transport\">مواصلات</option>\n          <option value=\"other\">أخرى</option>\n        </select>\n      </div>\n      <button type=\"button\" id=\"reset\" class=\"reset-btn\">🗑️ مسح الكل</button>\n    </div>\n  </section>"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_edit",
+          "ok": true,
+          "summary": "replaced 1 occurrence(s) in C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 7
+        },
+        {
+          "type": "tool_call",
+          "name": "file_edit",
+          "args": {
+            "find": "  var totalEl = document.getElementById('total');\n  var countEl = document.getElementById('count');",
+            "path": "index.html",
+            "replace": "  var totalEl = document.getElementById('total');\n  var countEl = document.getElementById('count');\n  var filterSelect = document.getElementById('filter');\n  var resetBtn = document.getElementById('reset');"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_edit",
+          "ok": true,
+          "summary": "replaced 1 occurrence(s) in C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+          "ms": 3
+        },
+        {
+          "type": "step",
+          "index": 8
+        },
+        {
+          "type": "tool_call",
+          "name": "file_edit",
+          "args": {
+            "find": "  function computeTotal() {\n    return expenses.reduce(function (sum, item) { return sum + item.amount; }, 0);\n  }",
+            "path": "index.html",
+            "replace": "  /* الفلترة حسب قيمة #filter: all يعرض الجميع، وإلا الفئة المطابقة فقط */\n  function getFiltered() {\n    var filterValue = filterSelect.value;\n    if (filterValue === 'all') return expenses;\n    return expenses.filter(function (item) { return item.category === filterValue; });\n  }\n\n  function computeTotal(list) {\n    return list.reduce(function (sum, item) { return sum + item.amount; }, 0);\n  }"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_edit",
+          "ok": true,
+          "summary": "replaced 1 occurrence(s) in C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 9
+        },
+        {
+          "type": "tool_call",
+          "name": "file_edit",
+          "args": {
+            "find": "  /* إعادة رسم القائمة والمجموع بعد كل تغيير */\n  function render() {\n    entriesList.textContent = '';\n    if (expenses.length === 0) {\n      var empty = document.createElement('li');\n      empty.className = 'empty';\n      empty.textContent = 'لا توجد مصروفات بعد — أضف أول مصروف من النموذج أعلاه.';\n      entriesList.appendChild(empty);\n    } else {\n      expenses.forEach(function (item) {\n        entriesList.appendChild(buildEntry(item));\n      });\n    }\n    totalEl.textContent = formatAmount(computeTotal());\n    countEl.textContent = String(expenses.length);\n  }",
+            "path": "index.html",
+            "replace": "  /* إعادة رسم القائمة والمجموع بعد كل تغيير.\n     #entries يعرض العناصر المطابقة للفلتر فقط، و#total يحسب مجموع المعروض فقط */\n  function render() {\n    var visible = getFiltered();\n\n    entriesList.textContent = '';\n    if (visible.length === 0) {\n      var empty = document.createElement('li');\n      empty.className = 'empty';\n      empty.textContent = (expenses.length === 0)\n        ? 'لا توجد مصروفات بعد — أضف أول مصروف من النموذج أعلاه.'\n        : 'لا توجد مصروفات في هذه الفئة.';\n      entriesList.appendChild(empty);\n    } else {\n      visible.forEach(function (item) {\n        entriesList.appendChild(buildEntry(item));\n      });\n    }\n    totalEl.textContent = formatAmount(computeTotal(visible));\n    countEl.textContent = String(visible.length);\n  }"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_edit",
+          "ok": true,
+          "summary": "replaced 1 occurrence(s) in C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+          "ms": 3
+        },
+        {
+          "type": "step",
+          "index": 10
+        },
+        {
+          "type": "tool_call",
+          "name": "file_edit",
+          "args": {
+            "find": "  /* إخفاء رسالة الخطأ بمجرد أن يبدأ المستخدم بالتصحيح */\n  titleInput.addEventListener('input', hideError);\n  amountInput.addEventListener('input', hideError);",
+            "path": "index.html",
+            "replace": "  /* تغيير الفلتر يعيد الرسم فورًا: القائمة والمجموع والعدّاد */\n  filterSelect.addEventListener('change', render);\n\n  /* مسح الكل: تفريغ المصروفات فورًا + إزالة المفتاح من localStorage\n     + إعادة الفلتر إلى \"الكل\" ثم إعادة الرسم لتفريغ #entries وتصفير #total */\n  resetBtn.addEventListener('click', function () {\n    expenses = [];\n    try {\n      localStorage.removeItem(STORAGE_KEY);\n    } catch (err) {\n      /* التخزين غير متاح — المسح يكمل في الذاكرة فقط */\n    }\n    filterSelect.value = 'all';\n    hideError();\n    render();\n  });\n\n  /* إخفاء رسالة الخطأ بمجرد أن يبدأ المستخدم بالتصحيح */\n  titleInput.addEventListener('input', hideError);\n  amountInput.addEventListener('input', hideError);"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_edit",
+          "ok": true,
+          "summary": "replaced 1 occurrence(s) in C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 11
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "index.html"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (474 lines)\n1: <!DOCTYPE html>\n2: <html lang=\"ar\" dir=\"rtl\">\n3: <head>\n4: <meta charset=\"UTF-8\">\n5: <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n6: <meta name=\"description\" content=\"تطبيق مصروفات عربي يعمل محليًا بالكامل ويحفظ البيانات في متصفحك عبر localStorage\">\n7: <title>مصروفي — تتبّع المصروفات اليومية</title>\n8: <style>\n9:   :root{",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 12
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "index.html",
+            "startLine": 360
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (474 lines)\n360:     var meta = document.createElement('div');\n361:     meta.className = 'expense-meta';\n362: \n363:     var amount = document.createElement('span');\n364:     amount.className = 'expense-amount';\n365:     amount.setAttribute('dir', 'ltr');\n366:     amount.textContent = formatAmount(item.amount);\n367: \n368:     var del = document.createElement('button');",
+          "ms": 1
+        },
+        {
+          "type": "error",
+          "message": "stopped after 12 steps without finishing"
+        },
+        {
+          "type": "replan",
+          "round": 1,
+          "reason": "إضافة #filter و#reset وربط منطق الفلترة والمسح: stopped after 12 steps without finishing"
+        },
+        {
+          "type": "plan",
+          "goal": "تطوير تطبيق المصروفات الموجود في index.html بإضافة فلتر الفئة #filter وزر المسح #reset مع بقاء كل الوظائف والمحددات الأصلية والتصميم العربي المتجاوب، وترك اختبار المتصفح والتحقق البصري للنظام.",
+          "trivial": false,
+          "steps": [
+            {
+              "id": "s1",
+              "title": "إعادة كتابة index.html كاملًا بـ #filter و#reset",
+              "instruction": "القراءة المسبقة للعقد app-verification.json والملف الحالي مكتملة ولا تُعاد. باستخدام file_write مرة واحدة (كتابة كاملة بدل تعديلات متفرقة لتجنب نفاد الخطوات)، أعد كتابة الملف C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html مع الحفاظ على كل الميزات والمحددات الحالية (#title #amount #category #add #error #entries #total و .expense و .delete وحفظ/استعادة localStorage) وإضافة: 1) قائمة منسدلة #filter بخيارات all وfood وtransport وother بعناوين عربية (الكل/طعام/مواصلات/أخرى)؛ 2) منطق فلترة يجعل #entries تعرض العناصر المطابقة للفلتر فقط و#total يعكس مجموع العناصر المعروضة فقط، مع إعادة الرسم عند كل إضافة وحذف وتغيير فلتر؛ 3) زر #reset يمسح المصروفات فورًا من الذاكرة ومن localStorage (حذف المفتاح أو كتابة مصفوفة فارغة) ويحدّث #entries و#total فورًا؛ 4) بقاء التصميم العربي RTL السماوي/البنفسجي المتجاوب وبدون أي مكتبات خارجية أو شبكة أو خادم. لا تعدّل app-verification.json ولا تدّعِ تشغيل أي اختبار متصفح.",
+              "successCriteria": "file_stat يُظهر index.html محدّثًا (حجم ووقت تعديل جديدان)، وfile_read يُظهر وجود id=\"filter\" بخيارات all/food/transport/other، وid=\"reset\"، ومنطقًا يربط #entries و#total بالعناصر المعروضة بعد الفلترة، واستدعاء مسح localStorage داخل معالج #reset، وبقاء جميع المحددات الأصلية."
+            },
+            {
+              "id": "s2",
+              "title": "تحقق ثابت من الملف مقابل السيناريوهات الستة",
+              "instruction": "باستخدام file_read على الملف المحدّث، تحقق نصيًا فقط (بدون متصفح وبدون تشغيل اختبارات) من تغطية السيناريوهات الستة في العقد: الإضافة مع إظهار #error عند الإدخال غير الصالح، عرض العناصر والمجموع، الحذف وتحديث المجموع، الاستعادة بعد إعادة التحميل، الفلترة وتأثيرها على #total، والمسح الفوري عبر #reset بما فيه التخزين. اربط كل سيناريو بموقعه في الكود (أرقام أسطر) واذكر أي عدم مطابقة إن وُجد.",
+              "successCriteria": "تقرير نصي يربط كل سيناريو من السيناريوهات الستة بموضع في الكود، مع تأكيد وجود #filter و#reset ومنطق مجموع المعروض ومسح localStorage، وعبارة صريحة بأن اختبار تشغيل المتصفح والتحقق البصري الإلزامي متروكان للنظام."
+            },
+            {
+              "id": "s3",
+              "title": "التسليم النهائي",
+              "instruction": "قدّم الإجابة النهائية الكاملة بالعربية: مسار الملف المحدّث C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html، ملخص الإضافات (#filter بقيمه الأربع بعناوين عربية، #total يعكس المعروض، #reset يمسح فورًا بما فيه التخزين)، تأكيد بقاء الوظائف والمحددات الأصلية والتصميم العربي المتجاوب بدون مكتبات خارجية، وتنبيه صريح بأن تشغيل اختبارات المتصفح والتحقق البصري وفق app-verification.json من مسؤولية النظام ولم يُدَّعَ تنفيذها.",
+              "successCriteria": "إجابة نهائية عربية كاملة تتضمن المسار الكامل للملف المحدّث وقائمة الإضافات وإخلاء مسؤولية واضحًا عن اختبارات النظام الإلزامية."
+            }
+          ],
+          "source": "model"
+        },
+        {
+          "type": "plan_step",
+          "id": "s1",
+          "index": 1,
+          "total": 3,
+          "title": "إعادة كتابة index.html كاملًا بـ #filter و#reset",
+          "phase": "start"
+        },
+        {
+          "type": "step",
+          "index": 1
+        },
+        {
+          "type": "tool_call",
+          "name": "file_write",
+          "args": {
+            "content": "<!DOCTYPE html>\n<html lang=\"ar\" dir=\"rtl\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<meta name=\"description\" content=\"تطبيق مصروفات عربي RTL يعمل محليًا ويحفظ البيانات في localStorage — بدون مكتبات خارجية\">\n<title>مصروفي — تطبيق المصروفات</title>\n<style>\n*{margin:0;padding:0;box-sizing:border-box}\n[hidden]{display:none!important}\nbody{\n  min-height:100vh;\n  font-family:\"Segoe UI\",Tahoma,\"Noto Kufi Arabic\",\"Cairo\",Arial,sans-serif;\n  background:linear-gradient(135deg,#0ea5e9 0%,#6366f1 48%,#a855f7 100%);\n  background-attachment:fixed;\n  color:#fff;\n  display:flex;align-items:flex-start;justify-content:center;\n  padding:32px 16px 48px;\n  overflow-x:hidden;\n}\nbody::before,body::after{\n  content:\"\";position:fixed;border-radius:50%;filter:blur(70px);opacity:.5;pointer-events:none;z-index:0;\n}\nbody::before{width:340px;height:340px;background:rgba(56,189,248,.55);top:-90px;right:-90px}\nbody::after{width:300px;height:300px;background:rgba(168,85,247,.5);bottom:-80px;left:-80px}\n.app{width:100%;max-width:680px;position:relative;z-index:1;display:flex;flex-direction:column;gap:18px}\n.app-header{text-align:center}\n.logo{display:inline-block;font-size:2.4rem;line-height:1;margin-bottom:6px;filter:drop-shadow(0 4px 10px rgba(30,27,75,.35))}\nh1{font-size:2rem;font-weight:800;text-shadow:0 2px 12px rgba(30,27,75,.35)}\n.tagline{margin-top:6px;font-size:.98rem;opacity:.9}\n.card{\n  background:rgba(255,255,255,.14);\n  border:1px solid rgba(255,255,255,.32);\n  border-radius:20px;padding:20px;\n  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);\n  box-shadow:0 14px 34px rgba(30,27,75,.28);\n}\n.total-card{\n  display:flex;align-items:center;justify-content:space-between;gap:12px;\n  background:linear-gradient(135deg,rgba(255,255,255,.24),rgba(255,255,255,.1));\n}\n.total-label{display:block;font-size:.9rem;font-weight:600;opacity:.85}\n.total-note{display:block;font-size:.75rem;opacity:.7;margin-top:3px}\n.total-value{font-size:2.3rem;font-weight:800;text-shadow:0 2px 10px rgba(30,27,75,.3)}\n.card h2{font-size:1.08rem;font-weight:700;margin-bottom:14px}\n.field{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}\n.field label{font-size:.85rem;font-weight:600;opacity:.92}\n.field input,.field select{\n  width:100%;padding:11px 13px;border-radius:12px;border:1.5px solid rgba(255,255,255,.45);\n  background:rgba(255,255,255,.92);color:#1e1b4b;font-size:1rem;font-family:inherit;outline:none;\n  transition:border-color .2s,box-shadow .2s;\n}\n.field input:focus,.field select:focus{border-color:#38bdf8;box-shadow:0 0 0 3px rgba(56,189,248,.35)}\n.field-title{margin-bottom:14px}\n.field-row{display:flex;gap:12px;margin-bottom:14px}\n.btn-add{\n  width:100%;padding:13px;border:none;border-radius:12px;cursor:pointer;color:#fff;\n  background:linear-gradient(135deg,#0ea5e9,#6366f1 60%,#8b5cf6);\n  font-family:inherit;font-size:1.05rem;font-weight:700;\n  box-shadow:0 8px 20px rgba(49,46,129,.35);\n  transition:transform .15s,filter .15s;\n}\n.btn-add:hover{transform:translateY(-2px);filter:brightness(1.08)}\n.btn-add:active{transform:translateY(0)}\n.error{\n  margin-top:12px;padding:10px 14px;border-radius:10px;\n  font-size:.92rem;font-weight:600;\n  background:rgba(244,63,94,.22);border:1px solid rgba(253,164,175,.55);color:#ffe4e6;\n}\n.list-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}\n.filter-wrap{display:flex;align-items:center;gap:8px}\n.filter-label{font-size:.82rem;font-weight:600;opacity:.88}\n#filter{\n  padding:9px 12px;border-radius:11px;border:1.5px solid rgba(255,255,255,.45);\n  background:rgba(255,255,255,.92);color:#1e1b4b;font-family:inherit;font-size:.92rem;cursor:pointer;outline:none;\n  transition:border-color .2s,box-shadow .2s;\n}\n#filter:focus{border-color:#38bdf8;box-shadow:0 0 0 3px rgba(56,189,248,.35)}\n.entries{list-style:none;display:flex;flex-direction:column;gap:10px}\n.expense{\n  display:flex;align-items:center;justify-content:space-between;gap:12px;\n  background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.24);\n  border-radius:14px;padding:12px 14px;animation:pop .25s ease both;\n}\n@keyframes pop{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}\n.expense-info{display:flex;flex-direction:column;gap:5px;min-width:0}\n.expense-title{font-weight:700;font-size:1rem;overflow-wrap:anywhere}\n.badge{align-self:flex-start;padding:3px 11px;border-radius:999px;font-size:.76rem;font-weight:700}\n.badge-food{background:rgba(251,191,36,.28);border:1px solid rgba(251,191,36,.55);color:#fde68a}\n.badge-transport{background:rgba(56,189,248,.28);border:1px solid rgba(56,189,248,.55);color:#bae6fd}\n.badge-other{background:rgba(192,132,252,.28);border:1px solid rgba(192,132,252,.55);color:#e9d5ff}\n.expense-amount{font-weight:800;font-size:1.08rem;white-space:nowrap;text-shadow:0 1px 6px rgba(30,27,75,.3)}\n.delete{\n  flex-shrink:0;background:rgba(244,63,94,.2);border:1px solid rgba(244,63,94,.5);color:#ffe4e6;\n  border-radius:10px;padding:8px 13px;font-family:inherit;font-size:.85rem;font-weight:700;cursor:pointer;\n  transition:background .2s,transform .15s;\n}\n.delete:hover{background:rgba(244,63,94,.38);transform:translateY(-1px)}\n.empty-state{\n  text-align:center;padding:24px 16px;border-radius:14px;font-size:.95rem;opacity:.92;\n  background:rgba(255,255,255,.08);border:1.5px dashed rgba(255,255,255,.38);\n}\n.btn-reset{\n  margin-top:16px;width:100%;padding:12px;border-radius:12px;cursor:pointer;\n  background:rgba(244,63,94,.16);border:1.5px solid rgba(244,63,94,.55);color:#ffe4e6;\n  font-family:inherit;font-size:.98rem;font-weight:700;\n  transition:background .2s,transform .15s;\n}\n.btn-reset:hover{background:rgba(244,63,94,.32);transform:translateY(-1px)}\n.app-footer{text-align:center;font-size:.8rem;opacity:.75}\n@media (max-width:520px){\n  body{padding:20px 12px 36px}\n  .card{padding:16px;border-radius:16px}\n  h1{font-size:1.6rem}\n  .logo{font-size:2rem}\n  .total-value{font-size:1.9rem}\n  .field-row{flex-direction:column;gap:12px}\n  .list-head{flex-direction:column;align-items:stretch}\n  .filter-wrap{justify-content:space-between}\n}\n@media (prefers-reduced-motion:reduce){\n  *,*::before,*::after{animation:none!important;transition:none!important}\n}\n</style>\n</head>\n<body>\n<div class=\"app\">\n  <header class=\"app-header\">\n    <span class=\"logo\" aria-hidden=\"true\">💰</span>\n    <h1>مصروفي</h1>\n    <p class=\"tagline\">سجّل مصروفاتك اليومية وتابع مجموعك بسهولة — يعمل دون اتصال</p>\n  </header>\n\n  <section class=\"card total-card\" aria-label=\"المجموع الكلي\">\n    <div>\n      <span class=\"total-label\">المجموع</span>\n      <span class=\"total-note\" id=\"total-note\">مجموع كل المصروفات</span>\n    </div>\n    <span id=\"total\" class=\"total-value\" dir=\"ltr\">0</span>\n  </section>\n\n  <section class=\"card\" aria-label=\"إضافة مصروف\">\n    <h2>➕ إضافة مصروف</h2>\n    <form id=\"expense-form\" novalidate autocomplete=\"off\">\n      <div class=\"field field-title\">\n        <label for=\"title\">العنوان</label>\n        <input type=\"text\" id=\"title\" name=\"title\" placeholder=\"مثال: قهوة الصباح\">\n      </div>\n      <div class=\"field-row\">\n        <div class=\"field\">\n          <label for=\"amount\">المبلغ (موجب)</label>\n          <input type=\"number\" id=\"amount\" name=\"amount\" placeholder=\"0.00\" step=\"any\" inputmode=\"decimal\" dir=\"ltr\">\n        </div>\n        <div class=\"field\">\n          <label for=\"category\">الفئة</label>\n          <select id=\"category\" name=\"category\">\n            <option value=\"food\">طعام</option>\n            <option value=\"transport\">مواصلات</option>\n            <option value=\"other\">أخرى</option>\n          </select>\n        </div>\n      </div>\n      <button type=\"submit\" id=\"add\" class=\"btn-add\">إضافة المصروف</button>\n      <p id=\"error\" class=\"error\" role=\"alert\" hidden></p>\n    </form>\n  </section>\n\n  <section class=\"card\" aria-label=\"قائمة المصروفات\">\n    <div class=\"list-head\">\n      <h2>📋 المصروفات</h2>\n      <div class=\"filter-wrap\">\n        <label class=\"filter-label\" for=\"filter\">فلترة حسب الفئة</label>\n        <select id=\"filter\" name=\"filter\">\n          <option value=\"all\">الكل</option>\n          <option value=\"food\">طعام</option>\n          <option value=\"transport\">مواصلات</option>\n          <option value=\"other\">أخرى</option>\n        </select>\n      </div>\n    </div>\n    <ul id=\"entries\" class=\"entries\"></ul>\n    <div id=\"empty\" class=\"empty-state\" hidden></div>\n    <button type=\"button\" id=\"reset\" class=\"btn-reset\">🗑️ مسح جميع البيانات</button>\n  </section>\n\n  <footer class=\"app-footer\">تُحفظ بياناتك محليًا في متصفحك فقط (localStorage) — لا شبكة ولا خادم</footer>\n</div>\n\n<script>\n(function(){\n'use strict';\n\nvar STORAGE_KEY='expenses-ar-v1';\nvar CATEGORY_LABELS={food:'طعام',transport:'مواصلات',other:'أخرى'};\n\nvar els={\n  form:document.getElementById('expense-form'),\n  title:document.getElementById('title'),\n  amount:document.getElementById('amount'),\n  category:document.getElementById('category'),\n  add:document.getElementById('add'),\n  error:document.getElementById('error'),\n  entries:document.getElementById('entries'),\n  total:document.getElementById('total'),\n  filter:document.getElementById('filter'),\n  reset:document.getElementById('reset'),\n  empty:document.getElementById('empty'),\n  totalNote:document.getElementById('total-note')\n};\n\nvar expenses=[];\nvar currentFilter='all';\n\nfunction uid(){\n  return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);\n}\n\nfunction formatAmount(value){\n  var rounded=Math.round(value*100)/100;\n  return String(parseFloat(rounded.toFixed(2)));\n}\n\nfunction sanitize(raw){\n  if(!Array.isArray(raw)){return[];}\n  return raw.filter(function(item){\n    return item!==null&&typeof item==='object'\n      &&typeof item.title==='string'&&item.title.trim()!==''\n      &&typeof item.amount==='number'&&isFinite(item.amount)&&item.amount>0\n      &&Object.prototype.hasOwnProperty.call(CATEGORY_LABELS,item.category);\n  }).map(function(item){\n    return{\n      id:(typeof item.id==='string'&&item.id!=='')?item.id:uid(),\n      title:item.title.trim(),\n      amount:item.amount,\n      category:item.category\n    };\n  });\n}\n\nfunction loadExpenses(){\n  try{\n    var raw=localStorage.getItem(STORAGE_KEY);\n    expenses=raw?sanitize(JSON.parse(raw)):[];\n  }catch(err){\n    expenses=[];\n  }\n}\n\nfunction saveExpenses(){\n  try{\n    localStorage.setItem(STORAGE_KEY,JSON.stringify(expenses));\n  }catch(err){\n    /* التخزين غير متاح: نكمل بالذاكرة فقط */\n  }\n}\n\n/* الفلترة: مصدر الحقيقة لكل من #entries و#total */\nfunction getFilteredExpenses(){\n  if(currentFilter==='all'){return expenses.slice();}\n  return expenses.filter(function(item){return item.category===currentFilter;});\n}\n\nfunction buildItem(item){\n  var li=document.createElement('li');\n  li.className='expense cat-'+item.category;\n  li.setAttribute('data-id',item.id);\n\n  var info=document.createElement('div');\n  info.className='expense-info';\n\n  var title=document.createElement('span');\n  title.className='expense-title';\n  title.textContent=item.title;\n\n  var badge=document.createElement('span');\n  badge.className='badge badge-'+item.category;\n  badge.textContent=CATEGORY_LABELS[item.category]||item.category;\n\n  info.appendChild(title);\n  info.appendChild(badge);\n\n  var amount=document.createElement('span');\n  amount.className='expense-amount';\n  amount.setAttribute('dir','ltr');\n  amount.textContent=formatAmount(item.amount);\n\n  var del=document.createElement('button');\n  del.type='button';\n  del.className='delete';\n  del.textContent='حذف';\n  del.setAttribute('aria-label','حذف: '+item.title);\n\n  li.appendChild(info);\n  li.appendChild(amount);\n  li.appendChild(del);\n  return li;\n}\n\n/* إعادة الرسم الكاملة: القائمة والمجموع مشتقان من القائمة المفلترة */\nfunction render(){\n  var visible=getFilteredExpenses();\n\n  els.entries.textContent='';\n  for(var i=0;i<visible.length;i++){\n    els.entries.appendChild(buildItem(visible[i]));\n  }\n\n  var sum=0;\n  for(var j=0;j<visible.length;j++){sum+=visible[j].amount;}\n  els.total.textContent=formatAmount(sum);\n\n  if(visible.length===0){\n    els.empty.textContent=expenses.length===0\n      ?'لا توجد مصروفات بعد. أضف أول مصروف من النموذج أعلاه.'\n      :'لا توجد مصروفات في هذه الفئة.';\n    els.empty.hidden=false;\n  }else{\n    els.empty.hidden=true;\n  }\n\n  els.totalNote.textContent=currentFilter==='all'\n    ?'مجموع كل المصروفات'\n    :'مجموع الفئة المعروضة فقط';\n}\n\nfunction showError(message){\n  els.error.textContent=message;\n  els.error.hidden=false;\n}\n\nfunction hideError(){\n  els.error.hidden=true;\n  els.error.textContent='';\n}\n\nfunction handleAdd(event){\n  event.preventDefault();\n\n  var title=els.title.value.trim();\n  var amountRaw=els.amount.value.trim();\n  var amount=Number(amountRaw);\n\n  if(title===''){\n    showError('يرجى إدخال عنوان المصروف.');\n    els.title.focus();\n    return;\n  }\n  if(amountRaw===''||!isFinite(amount)||amount<=0){\n    showError('يرجى إدخال مبلغ موجب صحيح.');\n    els.amount.focus();\n    return;\n  }\n\n  var category=Object.prototype.hasOwnProperty.call(CATEGORY_LABELS,els.category.value)?els.category.value:'other';\n\n  expenses.push({id:uid(),title:title,amount:amount,category:category});\n  saveExpenses();\n  hideError();\n  render();\n\n  els.title.value='';\n  els.amount.value='';\n  els.title.focus();\n}\n\nfunction handleDeleteClick(event){\n  var button=event.target.closest('.delete');\n  if(!button){return;}\n  var row=button.closest('.expense');\n  if(!row){return;}\n  var id=row.getAttribute('data-id');\n  expenses=expenses.filter(function(item){return item.id!==id;});\n  saveExpenses();\n  render();\n}\n\nfunction handleFilterChange(){\n  currentFilter=els.filter.value;\n  render();\n}\n\n/* المسح الفوري: من الذاكرة ومن localStorage معًا، وتحديث فوري للعرض */\nfunction handleReset(){\n  expenses=[];\n  try{\n    localStorage.removeItem(STORAGE_KEY);\n  }catch(err){\n    /* تجاهل: حتى لو فشل التخزين يُمسح العرض */\n  }\n  currentFilter='all';\n  els.filter.value='all';\n  hideError();\n  render();\n}\n\nfunction init(){\n  loadExpenses();\n  render();\n\n  els.form.addEventListener('submit',handleAdd);\n  els.entries.addEventListener('click',handleDeleteClick);\n  els.filter.addEventListener('change',handleFilterChange);\n  els.reset.addEventListener('click',handleReset);\n\n  els.title.addEventListener('input',hideError);\n  els.amount.addEventListener('input',hideError);\n}\n\nif(document.readyState==='loading'){\n  document.addEventListener('DOMContentLoaded',init);\n}else{\n  init();\n}\n})();\n</script>\n</body>\n</html>",
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_write",
+          "ok": true,
+          "summary": "wrote 15200 bytes to C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+          "ms": 1
+        },
+        {
+          "type": "step",
+          "index": 2
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 120,
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+            "startLine": 160
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (417 lines)\n160:           </select>\n161:         </div>\n162:       </div>\n163:       <button type=\"submit\" id=\"add\" class=\"btn-add\">إضافة المصروف</button>\n164:       <p id=\"error\" class=\"error\" role=\"alert\" hidden></p>\n165:     </form>\n166:   </section>\n167: \n168:   <section class=\"card\" aria-label=\"قائمة المصروفات\">",
+          "ms": 3
+        },
+        {
+          "type": "step",
+          "index": 3
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 140,
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+            "startLine": 280
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (417 lines)\n280:   info.appendChild(badge);\n281: \n282:   var amount=document.createElement('span');\n283:   amount.className='expense-amount';\n284:   amount.setAttribute('dir','ltr');\n285:   amount.textContent=formatAmount(item.amount);\n286: \n287:   var del=document.createElement('button');\n288:   del.type='button';",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 4
+        },
+        {
+          "type": "tool_call",
+          "name": "file_stat",
+          "args": {
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_stat",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json\ntype=file\nsize=5559\nmtime=2026-10-18T22:05:36.420Z",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 5
+        },
+        {
+          "type": "critique",
+          "id": "s1",
+          "verdict": "revise",
+          "reason": "الوظائف الجديدة كلها موثقة بالدليل (#filter بخيارات all/food/transport/other بعناوين عربية في السطور 173–178، #reset في سطر 183، معالج handleReset يستدعي localStorage.removeItem في سطر 386، وrender يحسب #total من نفس القائمة المفلترة في السطور 301–310)، لكن مقاطع file_read تبدأ من السطر 160 فلا تُظهر عناصر HTML الأصلية #title و#amount و#total ولا خيارات #category مباشرةً، وبقاء جميع المحددات الأصلية شرط نجاح لم يُثبت بعد بالقراءة."
+        },
+        {
+          "type": "revise",
+          "id": "s1",
+          "attempt": 2,
+          "fixes": [
+            "نفّذ file_read واحدة على index.html تغطي السطور ~110–165 لتُظهر مباشرةً في HTML: <input id=\"title\"> و<input id=\"amount\"> و<select id=\"category\"> بخيارات food/transport/other بعناوينها العربية، وعنصر #total.",
+            "نفّذ file_stat على index.html نفسه (وليس app-verification.json فقط) لتوثيق الحجم الجديد 15200 بايت ووقت تعديل جديد وفق معيار النجاح."
+          ]
+        },
+        {
+          "type": "step",
+          "index": 1
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 500,
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+            "startLine": 1
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (417 lines)\n1: <!DOCTYPE html>\n2: <html lang=\"ar\" dir=\"rtl\">\n3: <head>\n4: <meta charset=\"UTF-8\">\n5: <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n6: <meta name=\"description\" content=\"تطبيق مصروفات عربي RTL يعمل محليًا ويحفظ البيانات في localStorage — بدون مكتبات خارجية\">\n7: <title>مصروفي — تطبيق المصروفات</title>\n8: <style>\n9: *{margin:0;padding:0;box-sizing:border-box}",
+          "ms": 3
+        },
+        {
+          "type": "step",
+          "index": 2
+        },
+        {
+          "type": "tool_call",
+          "name": "file_stat",
+          "args": {
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_stat",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html\ntype=file\nsize=15200\nmtime=2026-10-18T22:08:51.623Z",
+          "ms": 1
+        },
+        {
+          "type": "step",
+          "index": 3
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 56,
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+            "startLine": 110
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (417 lines)\n110: .app-footer{text-align:center;font-size:.8rem;opacity:.75}\n111: @media (max-width:520px){\n112:   body{padding:20px 12px 36px}\n113:   .card{padding:16px;border-radius:16px}\n114:   h1{font-size:1.6rem}\n115:   .logo{font-size:2rem}\n116:   .total-value{font-size:1.9rem}\n117:   .field-row{flex-direction:column;gap:12px}\n118:   .list-head{flex-direction:column;align-items:stretch}",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 4
+        },
+        {
+          "type": "critique",
+          "id": "s1",
+          "verdict": "pass",
+          "reason": "الأدلة المباشرة تؤكد كل معايير النجاح: file_stat يُظهر تحديث index.html (15200 بايت، mtime جديد 2026-10-18T22:08:51Z مقابل 22:03:15Z السابق)، وfile_read يُظهر #filter بخيارات all/food/transport/other بعناوين عربية (س173-178) و#reset (س183) مع localStorage.removeItem داخل handleReset (س383-394)، وrender يشتق #entries و#total كلاهما من القائمة المفلترة getFilteredExpenses (س258-261، 300-324) مع إعادة رسم عند الإضافة والحذف وتغيير الفلتر، مع بقاء جميع المحددات الأصلية (#title #amount #category #add #error #entries #total و.expense و.delete) وحفظ/استعادة localStorage (س242، 251) والتصميم العربي RTL السماوي/البنفسجي المتجاوب بلا أي مكتبات خارجية أو شبكة. لم يُعدَّل عقد القبول (كتابة واحدة فقط لـ index.html) ولم يُدّعِ المنفّذ تشغيل أي اختبار متصفح؛ يبقى التحقق الوظيفي الزمني لسيناريوهات المتصفح الستة والتحقق البصري للنظام وفق الخطة."
+        },
+        {
+          "type": "plan_step",
+          "id": "s1",
+          "index": 1,
+          "total": 3,
+          "title": "إعادة كتابة index.html كاملًا بـ #filter و#reset",
+          "phase": "done",
+          "summary": "تم تنفيذ الإصلاحين المطلوبين بالكامل. إليك تقرير الخطوة 1/3 مع الأدلة المباشرة: ## ✅ معالجة ملاحظات الناقد — مكتملة ### 1️⃣ إثبات بقاء المحددات الأصلية (file_read للسطور 110–165) القراءة أظهرت عناصر HTML الأصلية **مباشرةً وبنصّها الحرفي**: | المحدد | السطر | النص الفعلي في الملف | |---|---|---| | `#..."
+        },
+        {
+          "type": "plan_step",
+          "id": "s2",
+          "index": 2,
+          "total": 3,
+          "title": "تحقق ثابت من الملف مقابل السيناريوهات الستة",
+          "phase": "start"
+        },
+        {
+          "type": "step",
+          "index": 1
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 300,
+            "path": "app-verification.json"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json (270 lines)\n1: {\n2:   \"entry\": \"index.html\",\n3:   \"scenarios\": [\n4:     {\n5:       \"name\": \"Adding entries calculates sum\",\n6:       \"steps\": [\n7:         {\n8:           \"action\": \"fill\",\n9:           \"selector\": \"#title\",",
+          "ms": 3
+        },
+        {
+          "type": "step",
+          "index": 2
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 500,
+            "path": "index.html"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (417 lines)\n1: <!DOCTYPE html>\n2: <html lang=\"ar\" dir=\"rtl\">\n3: <head>\n4: <meta charset=\"UTF-8\">\n5: <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n6: <meta name=\"description\" content=\"تطبيق مصروفات عربي RTL يعمل محليًا ويحفظ البيانات في localStorage — بدون مكتبات خارجية\">\n7: <title>مصروفي — تطبيق المصروفات</title>\n8: <style>\n9: *{margin:0;padding:0;box-sizing:border-box}",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 3
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 30,
+            "path": "index.html",
+            "startLine": 396
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (417 lines)\n396: function init(){\n397:   loadExpenses();\n398:   render();\n399: \n400:   els.form.addEventListener('submit',handleAdd);\n401:   els.entries.addEventListener('click',handleDeleteClick);\n402:   els.filter.addEventListener('change',handleFilterChange);\n403:   els.reset.addEventListener('click',handleReset);\n404: ",
+          "ms": 3
+        },
+        {
+          "type": "step",
+          "index": 4
+        },
+        {
+          "type": "critique",
+          "id": "s2",
+          "verdict": "pass",
+          "reason": "تقرير التحقق الثابت دقيق ومطابق للأدلة: تحققت من أرقام الأسطر المذكورة مقابل قراءة الملف الفعلية، ووجدت #filter (سطر 173) و#reset (سطر 183) موجودين، والمجموع مشتقًا من القائمة المفلترة عبر getFilteredExpenses وrender (أسطر 258–310)، والمسح الفوري يزيل المفتاح من localStorage عبر removeItem (سطر 386) مع إعادة الرسم، وتغطية السيناريوهات الستة مؤكدة من أدلة القراءة (بما فيها سيناريو الفلترة count=1 و#total=\"15\" وسيناريو المسح مع إعادة التحميل) دون أي عدم مطابقة، حتى مع اقتطاع نهاية رسالة المنفّذ. اختبار تشغيل المتصفح والتحقق البصري الإلزامي يبقيان للنظام ولم يدّعهما المنفّذ."
+        },
+        {
+          "type": "plan_step",
+          "id": "s2",
+          "index": 2,
+          "total": 3,
+          "title": "تحقق ثابت من الملف مقابل السيناريوهات الستة",
+          "phase": "done",
+          "summary": "اكتملت القراءة الكاملة للملف المحدّث (417 سطرًا) ولعقد القبول (270 سطرًا، 6 سيناريوهات). إليك تقرير الخطوة 2/3 — **تحقق ثابت نصي فقط، دون متصفح ودون تشغيل أي اختبار**: ## ✅ تقرير التحقق الثابت: ربط السيناريوهات الستة بمواضعها في الكود ### السيناريو 1 — «Adding entries calculates sum» (عقد: أسطر 5–56..."
+        },
+        {
+          "type": "plan_step",
+          "id": "s3",
+          "index": 3,
+          "total": 3,
+          "title": "التسليم النهائي",
+          "phase": "start"
+        },
+        {
+          "type": "step",
+          "index": 1
+        },
+        {
+          "type": "tool_call",
+          "name": "file_stat",
+          "args": {
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_stat",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json\ntype=file\nsize=5559\nmtime=2026-10-18T22:05:36.420Z",
+          "ms": 1
+        },
+        {
+          "type": "step",
+          "index": 2
+        },
+        {
+          "type": "tool_call",
+          "name": "file_stat",
+          "args": {
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_stat",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html\ntype=file\nsize=15200\nmtime=2026-10-18T22:08:51.623Z",
+          "ms": 0
+        },
+        {
+          "type": "step",
+          "index": 3
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 417,
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (417 lines)\n1: <!DOCTYPE html>\n2: <html lang=\"ar\" dir=\"rtl\">\n3: <head>\n4: <meta charset=\"UTF-8\">\n5: <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n6: <meta name=\"description\" content=\"تطبيق مصروفات عربي RTL يعمل محليًا ويحفظ البيانات في localStorage — بدون مكتبات خارجية\">\n7: <title>مصروفي — تطبيق المصروفات</title>\n8: <style>\n9: *{margin:0;padding:0;box-sizing:border-box}",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 4
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 30,
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+            "startLine": 396
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (417 lines)\n396: function init(){\n397:   loadExpenses();\n398:   render();\n399: \n400:   els.form.addEventListener('submit',handleAdd);\n401:   els.entries.addEventListener('click',handleDeleteClick);\n402:   els.filter.addEventListener('change',handleFilterChange);\n403:   els.reset.addEventListener('click',handleReset);\n404: ",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 5
+        },
+        {
+          "type": "critique",
+          "id": "s3",
+          "verdict": "pass",
+          "reason": "الأدلة المباشرة (file_stat + قراءة الملف كاملًا 417 سطرًا) تؤكد تنفيذ كل المطلوب: #filter بالقيم الأربع all/food/transport/other بعناوين عربية (سطور 173–178)، و#total محسوب من العناصر المفلترة فقط داخل render() (سطور 300–310)، و#reset الذي يفرّغ المصفوفة وlocalStorage.removeItem فورًا بدون تأكيد (سطور 383–394)، مع بقاء جميع المحددات الأصلية (#title #amount #category #add #error #entries #total و.expense و.delete) والتصميم العربي RTL المتجاوب بدون مكتبات خارجية، والإجابة النهائية استوفت معايير الخطوة بالمسار الكامل وقائمة الإضافات وإخلاء المسؤولية الصريح عن اختبارات المتصفح والتحقق البصري وفق app-verification.json كمسؤولية النظام دون ادعاء تنفيذها."
+        },
+        {
+          "type": "plan_step",
+          "id": "s3",
+          "index": 3,
+          "total": 3,
+          "title": "التسليم النهائي",
+          "phase": "done",
+          "summary": "اكتمل الفحص العيني النهائي للملف كاملًا (417 سطرًا). إليك الإجابة النهائية: ## ✅ التسليم النهائي — تطبيق «مصروفي» بعد التطوير ### 📄 مسار الملف المحدّث - **التطبيق الكامل:** `C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html` - **دليل الوجود (file_stat):** ملف بحجم **15,20..."
+        },
+        {
+          "type": "tool_result",
+          "name": "application_verification",
+          "ok": false,
+          "summary": "Error: Visual/coverage verification did not pass: {\"verdict\":\"pass\",\"reason\":\"All six contract scenarios are visually corroborated on both desktop and mobile screenshots: (1) two entries خبز/حافلة render as .expense items with total 20; (2) قهوة 9 persists after reload with total 9; (3) deleting leaves 0 items and total 0 with a proper empty state; (4) negative amount -1 is rejected with a visible #error box and no entry added; (5) filter set to طعام shows only the food entry with subtotal 15 and subtitle 'مجموع الفئة المعروضة فقط'; (6) #reset empties the list and storage (still empty after reload, total 0). All required selectors (#title, #amount, #category, #add, #error, #entries, #total, #filter, #reset, .expense, .delete) are present and functioning, Arabic RTL layout, cyan/purple gradient design, Arabic category labels (طعام/مواصلات/الكل), and stacked mobile layout are intact with readable text and no overlaps or placeholder content.\",\"issues\":[\"Minor cosmetic only: the error message appears to read 'برجي إدخال مبلغ موجب صحيح' where 'يرجى' would be the standard spelling — a possible one-letter typo that does not impair readability or any required behavior.\"]}\nReport: C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\6a8ffb7a-9cad-4f55-b300-c3dc23cebf5c\\report.json",
+          "ms": 30590
+        },
+        {
+          "type": "verify",
+          "verdict": "revise",
+          "reason": "Error: Visual/coverage verification did not pass: {\"verdict\":\"pass\",\"reason\":\"All six contract scenarios are visually corroborated on both desktop and mobile screenshots: (1) two entries خبز/حافلة render as .expense items with total 20; (2) قهوة 9 persists after reload with total 9; (3) deleting leaves 0 items and total 0 with a proper empty state; (4) negative amount -1 is rejected with a visible #error box and no entry added; (5) filter set to طعام shows only the food entry with subtotal 15 and subtitle 'مجموع الفئة المعروضة فقط'; (6) #reset empties the list and storage (still empty after reload, total 0). All required selectors (#title, #amount, #category, #add, #error, #entries, #total, #filter, #reset, .expense, .delete) are present and functioning, Arabic RTL layout, cyan/purple gradient design, Arabic category labels (طعام/مواصلات/الكل), and stacked mobile layout are intact with readable text and no overlaps or placeholder content.\",\"issues\":[\"Minor cosmetic only: the error message appears to read 'برجي إدخال مبلغ موجب صحيح' where 'يرجى' would be the standard spelling — a possible one-letter typo that does not impair readability or any required behavior.\"]}"
+        },
+        {
+          "type": "revise",
+          "id": "final",
+          "attempt": 1,
+          "fixes": [
+            "Inspect C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\6a8ffb7a-9cad-4f55-b300-c3dc23cebf5c\\report.json and fix the application or its acceptance scenarios. Do not remove the contract to bypass verification."
+          ]
+        },
+        {
+          "type": "step",
+          "index": 1
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 420,
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (417 lines)\n1: <!DOCTYPE html>\n2: <html lang=\"ar\" dir=\"rtl\">\n3: <head>\n4: <meta charset=\"UTF-8\">\n5: <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n6: <meta name=\"description\" content=\"تطبيق مصروفات عربي RTL يعمل محليًا ويحفظ البيانات في localStorage — بدون مكتبات خارجية\">\n7: <title>مصروفي — تطبيق المصروفات</title>\n8: <style>\n9: *{margin:0;padding:0;box-sizing:border-box}",
+          "ms": 3
+        },
+        {
+          "type": "step",
+          "index": 2
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 200,
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\6a8ffb7a-9cad-4f55-b300-c3dc23cebf5c\\report.json"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\6a8ffb7a-9cad-4f55-b300-c3dc23cebf5c\\report.json (98 lines)\n1: {\n2:   \"pass\": false,\n3:   \"reason\": \"Error: Visual/coverage verification did not pass: {\\\"verdict\\\":\\\"pass\\\",\\\"reason\\\":\\\"All six contract scenarios are visually corroborated on both desktop and mobile screenshots: (1) two entries خبز/حافلة render as .expense items with total 20; (2) قهوة 9 persists after reload with total 9; (3) deleting leaves 0 items and total 0 with a proper empty state; (4) negative amount -1 is rejected with a visible #error box ",
+          "ms": 3
+        },
+        {
+          "type": "step",
+          "index": 3
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+            "startLine": 396
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (417 lines)\n396: function init(){\n397:   loadExpenses();\n398:   render();\n399: \n400:   els.form.addEventListener('submit',handleAdd);\n401:   els.entries.addEventListener('click',handleDeleteClick);\n402:   els.filter.addEventListener('change',handleFilterChange);\n403:   els.reset.addEventListener('click',handleReset);\n404: ",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 4
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\app-verification.json (270 lines)\n1: {\n2:   \"entry\": \"index.html\",\n3:   \"scenarios\": [\n4:     {\n5:       \"name\": \"Adding entries calculates sum\",\n6:       \"steps\": [\n7:         {\n8:           \"action\": \"fill\",\n9:           \"selector\": \"#title\",",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 5
+        },
+        {
+          "type": "tool_call",
+          "name": "file_edit",
+          "args": {
+            "count": 1,
+            "find": ".error{\n  margin-top:12px;padding:10px 14px;border-radius:10px;\n  font-size:.92rem;font-weight:600;\n  background:rgba(244,63,94,.22);border:1px solid rgba(253,164,175,.55);color:#ffe4e6;\n}",
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+            "replace": ".error{\n  margin-top:12px;padding:11px 14px;border-radius:10px;\n  font-size:.98rem;font-weight:700;line-height:1.6;\n  background:rgba(190,18,60,.45);border:1.5px solid rgba(253,164,175,.8);color:#fff1f2;\n}"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_edit",
+          "ok": true,
+          "summary": "replaced 1 occurrence(s) in C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 6
+        },
+        {
+          "type": "tool_call",
+          "name": "file_edit",
+          "args": {
+            "count": 1,
+            "find": "    showError('يرجى إدخال مبلغ موجب صحيح.');",
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+            "replace": "    showError('المبلغ مطلوب ويجب أن يكون رقمًا أكبر من صفر.');"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_edit",
+          "ok": true,
+          "summary": "replaced 1 occurrence(s) in C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+          "ms": 4
+        },
+        {
+          "type": "step",
+          "index": 7
+        },
+        {
+          "type": "tool_call",
+          "name": "file_edit",
+          "args": {
+            "count": 1,
+            "find": "    showError('يرجى إدخال عنوان المصروف.');",
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+            "replace": "    showError('العنوان مطلوب ولا يمكن أن يكون فارغًا.');"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_edit",
+          "ok": true,
+          "summary": "replaced 1 occurrence(s) in C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+          "ms": 3
+        },
+        {
+          "type": "step",
+          "index": 8
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 30,
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+            "startLine": 60
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (417 lines)\n60:   box-shadow:0 8px 20px rgba(49,46,129,.35);\n61:   transition:transform .15s,filter .15s;\n62: }\n63: .btn-add:hover{transform:translateY(-2px);filter:brightness(1.08)}\n64: .btn-add:active{transform:translateY(0)}\n65: .error{\n66:   margin-top:12px;padding:11px 14px;border-radius:10px;\n67:   font-size:.98rem;font-weight:700;line-height:1.6;\n68:   background:rgba(190,18,60,.45);border:1.5px solid rgba(253,164,175,.8);color:#fff1f2;",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 9
+        },
+        {
+          "type": "tool_call",
+          "name": "file_read",
+          "args": {
+            "maxLines": 30,
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html",
+            "startLine": 336
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_read",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html (417 lines)\n336: function handleAdd(event){\n337:   event.preventDefault();\n338: \n339:   var title=els.title.value.trim();\n340:   var amountRaw=els.amount.value.trim();\n341:   var amount=Number(amountRaw);\n342: \n343:   if(title===''){\n344:     showError('العنوان مطلوب ولا يمكن أن يكون فارغًا.');",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 10
+        },
+        {
+          "type": "tool_call",
+          "name": "file_stat",
+          "args": {
+            "path": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html"
+          }
+        },
+        {
+          "type": "tool_result",
+          "name": "file_stat",
+          "ok": true,
+          "summary": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\index.html\ntype=file\nsize=15272\nmtime=2026-10-18T22:13:19.865Z",
+          "ms": 2
+        },
+        {
+          "type": "step",
+          "index": 11
+        },
+        {
+          "type": "tool_result",
+          "name": "application_verification",
+          "ok": true,
+          "summary": "All six contract scenarios are corroborated by the screenshots on both viewports: two entries with total 20 (desktop-0/mobile-0), persisted 'قهوة' with total 9 after reload (desktop-1/mobile-1), empty list with total 0 after delete (desktop-2/mobile-2), visible Arabic error 'المبلغ مطلوب ويجب أن يكون رقمًا أكبر من صفر' with no entry added for -1 (desktop-3/mobile-3), food filter showing one entry with subtotal 15 and subtitle 'مجموع الفئة المعروضة فقط' (desktop-4/mobile-4), and empty state with total 0 after reset plus reload (desktop-5/mobile-5). The UI is a professional RTL Arabic expenses app with cyan/purple gradient, category badges (طعام/مواصلات), #filter with 'الكل', a #reset button 'مسح جميع البيانات', .expense rows with .delete buttons, and a clean stacked mobile layout with no overlaps, clipped text, or placeholder content.\nReport: C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\2eba961a-5b31-41f7-8e92-fe070d73380a\\report.json",
+          "ms": 61932
+        },
+        {
+          "type": "verify",
+          "verdict": "revise",
+          "reason": "Independent inspection missing or unsuccessful"
+        }
+      ]
+    }
+  ]
+}

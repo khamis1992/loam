@@ -3,9 +3,12 @@ import type { Emit, PlanStepInfo, ToolTraceItem, Usage, VerdictInfo } from "./ev
 import { log } from "../log.js";
 import { runAgent, type RunOptions, type RunResult } from "./loop.js";
 import { planTask, type Plan, type PlanResult } from "./planner.js";
-import { critiqueStep, verifyFinal, type VerdictOutcome } from "./verifier.js";
+import { critiqueStep, verifyFinal, formatExecutorMessage, type VerdictOutcome } from "./verifier.js";
 import { CancelledError, isCancelled, isCancelledError, throwIfCancelled } from "../server/runControl.js";
-import type { ExecutionCheckpoint } from "./checkpoint.js";
+import type { ExecutionCheckpoint, WorkerCheckpoint } from "./checkpoint.js";
+import { AcceptanceGuard } from "./acceptanceGuard.js";
+import { IndependentAcceptanceGuard, independentRequirements } from "./independentAcceptance.js";
+import { taskScopedTools, fileOnlyRequested } from "./taskToolScope.js";
 
 export interface VerdictRecord extends VerdictInfo {
   scope: string;
@@ -48,11 +51,11 @@ interface WorkerOutcome {
 
 async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: string, maxSteps: number): Promise<WorkerOutcome> {
   const trace: ToolTraceItem[] = [];
+  let progress = o.resumeWorker
+    ? { steps: o.resumeWorker.steps, model: o.resumeWorker.model, usage: { ...o.resumeWorker.usage } }
+    : { steps: 0, model: o.cfg.model, usage: { promptTokens: 0, completionTokens: 0, durationMs: 0 } };
   const emit: Emit = (event) => {
     o.emit(event);
-    if (event.type === "tool_result") {
-      trace.push({ name: event.name, ok: event.ok, summary: event.summary, ms: event.ms });
-    }
   };
   const inherited = o.systemSuffix && o.systemSuffix.trim().length > 0 ? `${o.systemSuffix.trim()}\n\n` : "";
   try {
@@ -69,6 +72,10 @@ async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: s
       systemSuffix: `${inherited}${systemSuffix}`,
       maxSteps,
       suppressFinal: true,
+      onToolEvidence: (item) => trace.push(item),
+      onProgress: (value) => { progress = value; },
+      ...(o.resumeWorker ? { resumeWorker: o.resumeWorker } : {}),
+      ...(o.saveWorker ? { saveWorker: o.saveWorker } : {}),
     });
     return { text: res.text, messages: res.messages, model: res.model, steps: res.steps, usage: res.usage, trace };
   } catch (err) {
@@ -80,9 +87,9 @@ async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: s
     return {
       text: "",
       messages: [],
-      model: o.cfg.model,
-      steps: 0,
-      usage: { promptTokens: 0, completionTokens: 0, durationMs: 0 },
+      model: progress.model,
+      steps: progress.steps,
+      usage: progress.usage,
       trace,
       error: message,
     };
@@ -93,7 +100,7 @@ function stepPrompt(o: OrchestratorOptions, plan: Plan, step: PlanStepInfo, inde
   const lines: string[] = [];
   lines.push("=== Orchestrated task ===");
   lines.push("ORIGINAL USER REQUEST:");
-  lines.push(o.prompt.slice(0, 2000));
+  lines.push(o.prompt);
   lines.push("");
   lines.push(`PLAN GOAL: ${plan.goal}`);
   lines.push("");
@@ -121,7 +128,7 @@ function stepPrompt(o: OrchestratorOptions, plan: Plan, step: PlanStepInfo, inde
 function replanPrompt(o: OrchestratorOptions, completed: string[], failure: string): string {
   return [
     "ORIGINAL USER REQUEST:",
-    o.prompt.slice(0, 2000),
+    o.prompt,
     "",
     "ALREADY COMPLETED (do not redo):",
     completed.length > 0 ? completed.map((c) => `- ${c}`).join("\n") : "(nothing yet)",
@@ -133,15 +140,15 @@ function replanPrompt(o: OrchestratorOptions, completed: string[], failure: stri
 
 function finalFixPrompt(o: OrchestratorOptions, goal: string, finalText: string, v: VerdictInfo): string {
   return [
-    "The task is complete but the final verification did not pass.",
+    "The task was attempted but final verification did not pass. It is not complete.",
     "",
     "ORIGINAL USER REQUEST:",
-    o.prompt.slice(0, 2000),
+    o.prompt,
     "",
     `PLAN GOAL: ${goal}`,
     "",
     "CURRENT FINAL ANSWER:",
-    finalText.slice(0, 3000),
+    formatExecutorMessage(finalText),
     "",
     "VERIFIER VERDICT:",
     v.reason,
@@ -155,8 +162,13 @@ function finalFixPrompt(o: OrchestratorOptions, goal: string, finalText: string,
  *  (plan -> act -> observe -> critique -> revise), replacing the linear agent loop.
  *  Same signature as runAgent so it can be injected anywhere RunOptions is accepted. */
 export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunResult> {
+  const fileOnlyTools = o.resume?.fileOnlyTools === true || fileOnlyRequested(o.prompt, o.history);
+  o = { ...o, tools: taskScopedTools(o.tools, o.prompt, o.history, fileOnlyTools) };
   const oc = o.cfg.orchestrator;
   const restored = o.resume;
+  const acceptanceGuard = new AcceptanceGuard(restored?.acceptanceContract, o.prompt);
+  const independentRequest = restored?.independentRequirements ?? independentRequirements(o.prompt, o.history);
+  const independentGuard = new IndependentAcceptanceGuard(independentRequest, restored?.independentAcceptance);
   const usage: Usage = { ...(restored?.usage ?? { promptTokens: 0, completionTokens: 0, durationMs: 0 }) };
   let totalSteps = restored?.totalSteps ?? 0;
   let usedModel = restored?.model ?? o.cfg.model;
@@ -170,6 +182,7 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
     prompt: o.prompt,
     history: o.history,
     maxPlanSteps: oc.maxPlanSteps,
+    availableTools: o.tools.names(),
     ...(oc.plannerModel ? { model: oc.plannerModel } : {}),
     ...(o.memories ? { memories: o.memories } : {}),
     ...(o.signal ? { signal: o.signal } : {}),
@@ -186,11 +199,15 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
   let round = restored?.round ?? 1;
   let nextStep = restored?.nextStep ?? 0;
   let finalRepairUsed = restored?.finalRepairUsed ?? false;
-  const checkpoint = (inFlight: boolean, complete = false): void => {
+  let finalRepairAttempts = restored?.finalRepairAttempts ?? (finalRepairUsed ? 1 : 0);
+  if (!Number.isInteger(finalRepairAttempts) || finalRepairAttempts < 0 || finalRepairAttempts > 2) throw new Error("Invalid final repair attempt checkpoint");
+  let pendingFinalRepair = restored?.finalRepairPrompt;
+  let worker: WorkerCheckpoint | undefined = restored?.worker;
+  const checkpoint = (inFlight: boolean, complete = false, pendingUsage?: Usage): void => {
     o.saveCheckpoint?.(structuredClone({ version: 1, plan, nextStep, completed, lastText,
-      trace: allTrace, round, usage, totalSteps, model: usedModel, inFlight, complete, finalRepairUsed }));
+      trace: allTrace, round, usage: pendingUsage ? { promptTokens: usage.promptTokens + pendingUsage.promptTokens, completionTokens: usage.completionTokens + pendingUsage.completionTokens, durationMs: usage.durationMs + pendingUsage.durationMs } : usage, totalSteps, model: usedModel, inFlight, complete, finalRepairUsed, finalRepairAttempts, finalRepairPrompt: pendingFinalRepair, acceptanceContract: acceptanceGuard.snapshot(), independentAcceptance: independentGuard.snapshot(), independentRequirements: independentRequest, fileOnlyTools, worker }));
   };
-  checkpoint(false, restored?.complete ?? false);
+  checkpoint(restored?.inFlight ?? false);
 
   const emitPlan = (): void => {
     o.emit({ type: "plan", goal: plan.goal, trivial: plan.trivial, steps: plan.steps, source: plan.source });
@@ -199,7 +216,17 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
   log.info(`orchestrator: plan (${plan.source}, trivial=${plan.trivial}) steps=${plan.steps.length}`);
 
   const runStepWorker = async (prompt: string, suffix: string): Promise<WorkerOutcome> => {
-    const w = await runWorker(o, prompt, suffix, oc.maxStepsPerWorker);
+    const resumeWorker = worker?.prompt === prompt ? worker : undefined;
+    worker = resumeWorker;
+    checkpoint(true);
+    // An explicit checkpoint resume must be able to continue a budget-exhausted
+    // worker, without replaying completed tools. Grant one bounded additional
+    // slice for this resume only; ordinary execution never auto-extends itself.
+    const workerLimit = restored && resumeWorker && resumeWorker.steps >= oc.maxStepsPerWorker
+      ? resumeWorker.steps + oc.maxStepsPerWorker
+      : oc.maxStepsPerWorker;
+    const w = await runWorker({ ...o, resumeWorker, saveWorker: value => { worker = value; checkpoint(true); } }, prompt, suffix, workerLimit);
+    worker = undefined;
     totalSteps += w.steps;
     addUsage(usage, w.usage);
     if (w.model) usedModel = w.model;
@@ -215,32 +242,22 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
     const finalText = text.trim().length > 0 ? text : "(no output)";
     o.emit({ type: "assistant_message", text: finalText });
     o.emit({ type: "done", text: finalText, steps: totalSteps, model: usedModel });
-    return { text: finalText, messages: lastMessages, steps: totalSteps, model: usedModel, usage };
+    return { text: finalText, messages: lastMessages, steps: totalSteps, model: usedModel, usage, verified: true };
   };
 
-  if (restored?.complete) return finish(lastText);
+  const runFinalRepair = async (prompt: string): Promise<void> => {
+    const fixed = await runStepWorker(prompt, WORKER_SUFFIX);
+    allTrace.push(...fixed.trace);
+    if (fixed.error) throw new Error(`final revision worker failed: ${fixed.error}`);
+    if (!fixed.text.trim()) throw new Error("final revision worker returned an empty answer");
+    lastText = fixed.text;
+    completed.push(`final revision: ${oneLine(fixed.text, 200)}`);
+    pendingFinalRepair = undefined;
+    checkpoint(false);
+  };
 
-  const trivialStep = plan.steps[0];
-  if (plan.trivial && trivialStep && plan.steps.length === 1) {
-    if (nextStep === 1) return finish(lastText);
-    guard();
-    checkpoint(true);
-    o.emit({ type: "plan_step", id: trivialStep.id, index: 1, total: 1, title: trivialStep.title, phase: "start" });
-    const w = await runStepWorker(o.prompt, "");
-    o.emit({
-      type: "plan_step",
-      id: trivialStep.id,
-      index: 1,
-      total: 1,
-      title: trivialStep.title,
-      phase: "done",
-      summary: oneLine(w.error ? `executor failed: ${w.error}` : w.text),
-    });
-    if (w.error) throw new Error(`executor failed: ${w.error}`);
-    nextStep = 1;
-    allTrace.push(...w.trace);
-    return finish(w.text);
-  }
+  // A restored completion is rechecked against current state without replaying
+  // effects. Neither trivial plans nor planner failures bypass verification.
 
   let failure: string | null = null;
 
@@ -252,7 +269,7 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
       nextStep = i;
       checkpoint(true);
       const step = plan.steps[i]!;
-      const emitStep = (phase: "start" | "done", summary?: string): void => {
+      const emitStep = (phase: "start" | "done"): void => {
         o.emit({
           type: "plan_step",
           id: step.id,
@@ -260,7 +277,6 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
           total: plan.steps.length,
           title: step.title,
           phase,
-          ...(summary !== undefined ? { summary } : {}),
         });
       };
       emitStep("start");
@@ -269,13 +285,14 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
       let attempt = 0;
       let outcome: WorkerOutcome | null = null;
       let verdict: VerdictOutcome | null = null;
+      const stepEvidence: ToolTraceItem[] = [];
 
       while (attempt < maxAttempts) {
         guard();
         attempt += 1;
         outcome = await runStepWorker(stepPrompt(o, plan, step, i, completed, verdict), WORKER_SUFFIX);
         allTrace.push(...outcome.trace);
-        emitStep("done", oneLine(outcome.error ? `executor failed: ${outcome.error}` : outcome.text));
+        stepEvidence.push(...outcome.trace);
         if (outcome.error) {
           failedStep = `${step.title}: ${outcome.error}`;
           break;
@@ -283,6 +300,8 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
 
         const workerText = outcome.text || `(executor failed: ${outcome.error ?? "unknown error"})`;
         verdict = await critiqueStep({
+          tools: o.tools,
+          emit: o.emit,
           history: o.history,
           cfg: o.cfg,
           ollama: o.ollama,
@@ -294,7 +313,7 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
           attempt,
           maxAttempts,
           workerText,
-          trace: outcome.trace,
+          trace: stepEvidence,
           ...(oc.verifierModel ? { model: oc.verifierModel } : {}),
           ...(o.signal ? { signal: o.signal } : {}),
           ...(o.taskId ? { taskId: o.taskId } : {}),
@@ -313,6 +332,10 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
         break;
       }
       completed.push(`${step.title}: ${oneLine(outcome?.text ?? "", 200) || "(no output)"}`);
+      // Worker drafts may claim whole-task success. Keep them in the private
+      // review/checkpoint state, never in a public progress event before the
+      // mandatory final gate has approved delivery.
+      emitStep("done");
       if (outcome && outcome.text.trim().length > 0) lastText = outcome.text;
       nextStep = i + 1;
       checkpoint(false);
@@ -333,6 +356,7 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
       prompt: replanPrompt(o, completed, failedStep),
       history: o.history,
       maxPlanSteps: oc.maxPlanSteps,
+      availableTools: o.tools.names(),
       ...(oc.plannerModel ? { model: oc.plannerModel } : {}),
       ...(o.signal ? { signal: o.signal } : {}),
     ...(o.taskId ? { taskId: o.taskId } : {}),
@@ -347,9 +371,18 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
     checkpoint(false);
   }
 
-  if (!failure && oc.verifyFinal && lastText.trim().length > 0) {
+  // Resume the already-authorized repair before judging the stale pre-repair
+  // draft. This is the same repair attempt, not a fresh verification bypass.
+  if (!failure && finalRepairUsed && pendingFinalRepair) {
+    guard();
+    await runFinalRepair(pendingFinalRepair);
+  }
+
+  while (!failure && lastText.trim().length > 0) {
     guard();
     const v = await verifyFinal({
+      acceptanceGuard,
+      independentGuard, independentRequest, saveIndependentAcceptance: pendingUsage => checkpoint(false, false, pendingUsage),
       history: o.history,
       cfg: o.cfg,
       ollama: o.ollama,
@@ -358,6 +391,8 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
       finalText: lastText,
       completedSteps: completed,
       trace: allTrace,
+      tools: o.tools,
+      emit: o.emit,
       ...(oc.verifierModel ? { model: oc.verifierModel } : {}),
       ...(o.signal ? { signal: o.signal } : {}),
     ...(o.taskId ? { taskId: o.taskId } : {}),
@@ -366,34 +401,19 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
     totalSteps += 1;
     o.verdicts?.push({ scope: "final", verdict: v.verdict, reason: v.reason, fixes: v.fixes });
     o.emit({ type: "verify", verdict: v.verdict, reason: v.reason });
+    if (v.verdict === "pass" && v.finalAnswer) lastText = v.finalAnswer;
 
     if (v.verdict !== "pass") {
-      if (finalRepairUsed) throw new Error(`final verification still failed: ${v.reason}`);
-      o.emit({ type: "revise", id: "final", attempt: 1, fixes: v.fixes });
+      if (v.unavailable) throw new Error(`Independent verification unavailable; preserve output and resume verification when the environment is ready: ${v.reason}`);
+      if (finalRepairAttempts >= 2) throw new Error(`orchestrator: task incomplete: final verification still failed: ${v.reason}`);
+      finalRepairAttempts++;
+      o.emit({ type: "revise", id: "final", attempt: finalRepairAttempts, fixes: v.fixes });
       guard();
       finalRepairUsed = true;
+      pendingFinalRepair = finalFixPrompt(o, plan.goal, lastText, v);
       checkpoint(true);
-      const fixed = await runStepWorker(finalFixPrompt(o, plan.goal, lastText, v), WORKER_SUFFIX);
-      allTrace.push(...fixed.trace);
-      if (fixed.text.trim().length > 0) {
-        lastText = fixed.text;
-        completed.push(`final revision: ${oneLine(fixed.text, 200)}`);
-      }
-      if (fixed.error) throw new Error(`final revision worker failed: ${fixed.error}`);
-      checkpoint(false);
-      const checked = await verifyFinal({
-        history: o.history,
-        cfg: o.cfg, ollama: o.ollama, request: o.prompt, goal: plan.goal,
-        finalText: lastText, completedSteps: completed, trace: allTrace,
-        ...(oc.verifierModel ? { model: oc.verifierModel } : {}),
-        ...(o.signal ? { signal: o.signal } : {}),
-      });
-      addUsage(usage, checked.usage);
-      totalSteps += 1;
-      o.verdicts?.push({ scope: "final", verdict: checked.verdict, reason: checked.reason, fixes: checked.fixes });
-      o.emit({ type: "verify", verdict: checked.verdict, reason: checked.reason });
-      if (checked.verdict !== "pass") failure = `final verification: ${checked.reason}`;
-    }
+      await runFinalRepair(pendingFinalRepair);
+    } else break;
   }
 
   if (failure) {

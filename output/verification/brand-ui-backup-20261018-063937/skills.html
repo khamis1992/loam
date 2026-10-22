@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="/theme.js"></script>
+    <title>Loam — المهارات</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%233b82f6'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      body { padding: 0; display: block; height: auto; background: var(--bg); }
+
+      .sk-top {
+        position: sticky; top: 0; z-index: 20;
+        display: flex; align-items: center; gap: 12px;
+        padding: 12px 22px; background: color-mix(in srgb, var(--bg) 88%, transparent);
+        backdrop-filter: blur(10px); border-bottom: 1px solid var(--border);
+      }
+      .sk-top h1 { font-size: 17px; margin: 0; }
+      .sk-stats { display: flex; gap: 8px; margin-inline-start: auto; }
+      .stat {
+        display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+        border: 1px solid var(--border); border-radius: 999px; padding: 5px 11px; background: var(--panel);
+      }
+      .stat b { font-size: 13px; }
+
+      .sk-tabs { display: flex; gap: 6px; padding: 14px 22px 0; }
+      .sk-tab {
+        border: 1px solid transparent; background: transparent; border-radius: 10px;
+        padding: 8px 14px; font-size: 13px; font-weight: 600; color: var(--muted);
+      }
+      .sk-tab.active { background: var(--panel); border-color: var(--border); color: var(--text); }
+      .sk-tab:hover { color: var(--text); }
+
+      .sk-wrap { padding: 16px 22px 60px; }
+      .panel { display: none; }
+      .panel.active { display: block; }
+
+      .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+      .toolbar input[type="text"] { flex: 1; min-width: 220px; padding: 10px 14px 10px 34px; background: var(--panel); }
+      .searchbox { position: relative; flex: 1; display: flex; align-items: center; }
+      .searchbox .ic { position: absolute; inset-inline-start: 12px; color: var(--muted); }
+
+      .cats { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+      .cat {
+        border: 1px solid var(--border); background: transparent; color: var(--muted);
+        border-radius: 999px; padding: 4px 11px; font-size: 12px;
+      }
+      .cat:hover { color: var(--text); border-color: var(--accent); }
+      .cat.active { background: var(--btn-black); border-color: var(--btn-black); color: #fff; }
+      .cat span { opacity: .6; margin-inline-start: 4px; }
+
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
+
+      .sk-card {
+        border: 1px solid var(--border); border-radius: var(--r); background: var(--panel);
+        padding: 14px; display: flex; flex-direction: column; gap: 9px;
+        transition: border-color .15s, transform .15s, box-shadow .15s;
+      }
+      .sk-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); transform: translateY(-1px); box-shadow: var(--shadow); }
+      .sk-head { display: flex; gap: 10px; align-items: flex-start; }
+      .avatar {
+        width: 38px; height: 38px; min-width: 38px; border-radius: 11px;
+        display: flex; align-items: center; justify-content: center;
+        color: #fff; font-weight: 700; font-size: 16px;
+      }
+      .sk-name { font-weight: 600; font-size: 14px; word-break: break-word; }
+      .sk-id { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--muted); direction: ltr; }
+      .sk-desc { font-size: 12.5px; color: var(--muted); line-height: 1.6; flex: 1; }
+      .sk-actions { display: flex; gap: 6px; }
+      .sk-actions button { padding: 6px 11px; font-size: 12px; }
+      .badge {
+        font-size: 10.5px; border: 1px solid var(--border); border-radius: 999px;
+        padding: 1px 8px; color: var(--muted);
+      }
+
+      .empty { text-align: center; padding: 54px 20px; color: var(--muted); }
+      .empty svg { width: 74px; height: 74px; opacity: .35; margin-bottom: 10px; }
+
+      .skeleton { height: 118px; border-radius: var(--r); background: linear-gradient(90deg, var(--panel-2) 25%, var(--panel) 50%, var(--panel-2) 75%); background-size: 200% 100%; animation: sk 1.2s infinite; }
+      @keyframes sk { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+      /* drawer editor */
+      .scrim { position: fixed; inset: 0; background: rgba(10,12,18,.28); opacity: 0; pointer-events: none; transition: opacity .18s; z-index: 40; }
+      .scrim.on { opacity: 1; pointer-events: auto; }
+      .drawer {
+        position: fixed; top: 0; inset-inline-end: 0; height: 100%; width: 520px; max-width: 94vw;
+        background: var(--bg-2); border-inline-start: 1px solid var(--border); z-index: 41;
+        transform: translateX(-104%); transition: transform .22s ease; display: flex; flex-direction: column;
+      }
+      html[dir="rtl"] .drawer { transform: translateX(-104%); }
+      .drawer.on { transform: translateX(0) !important; }
+      .drawer header { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+      .drawer header h2 { font-size: 15px; margin: 0; }
+      .drawer .body { padding: 16px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+      .drawer footer { margin-top: auto; padding: 12px 18px; border-top: 1px solid var(--border); display: flex; gap: 8px; }
+      label.fld { font-size: 11.5px; color: var(--muted); display: block; margin-bottom: 5px; }
+      .drawer input[type="text"], .drawer textarea, .drawer select { width: 100%; }
+      .drawer textarea { min-height: 220px; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+
+      /* toast */
+      .toasts { position: fixed; bottom: 20px; inset-inline-start: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 60; }
+      .toast {
+        background: var(--btn-black); color: #fff; border-radius: 10px; padding: 10px 14px; font-size: 13px;
+        box-shadow: var(--shadow); animation: pop .18s ease; max-width: 420px;
+      }
+      .toast.err { background: var(--err); }
+      .toast.ok { background: var(--ok); }
+      @keyframes pop { from { opacity: 0; transform: translateY(8px); } }
+    </style>
+    <link rel="stylesheet" href="/loam.css" />
+  <link rel="stylesheet" href="/icons.css"><script type="module" src="/icons.js"></script></head>
+  <body class="loam-secondary">
+    <div class="sk-top">
+      <a class="back" href="/">→ المحادثة</a>
+      <h1><loam-icon name="skills"></loam-icon> المهارات</h1>
+      <div class="sk-stats">
+        <span class="stat">المثبّتة <b id="stInstalled">—</b></span>
+        <span class="stat">الكتالوج <b id="stCatalog">—</b></span>
+      </div>
+    </div>
+
+    <div class="sk-tabs">
+      <button class="sk-tab active" data-tab="installed">المثبّتة</button>
+      <button class="sk-tab" data-tab="catalog">استكشف الكتالوج</button>
+    </div>
+
+    <div class="sk-wrap">
+      <!-- installed -->
+      <section class="panel active" data-panel="installed">
+        <div class="toolbar">
+          <button id="newSkill" class="primary"><loam-icon name="plus"></loam-icon> مهارة جديدة</button>
+          <input id="filterInstalled" type="text" placeholder="تصفية المهارات المثبّتة..." style="padding:10px 14px" />
+        </div>
+        <div id="installedGrid" class="grid"></div>
+      </section>
+
+      <!-- catalog -->
+      <section class="panel" data-panel="catalog">
+        <div class="toolbar">
+          <div class="searchbox">
+            <span class="ic"><loam-icon name="research"></loam-icon></span>
+            <input id="catalogQuery" type="text" placeholder="ابحث في 900+ مهارة: pdf, react, data, slides..." />
+          </div>
+          <button id="catalogRefresh" class="ghost">تحديث الفهرس</button>
+        </div>
+        <div id="cats" class="cats"></div>
+        <div id="catalogGrid" class="grid"></div>
+      </section>
+    </div>
+
+    <!-- editor drawer -->
+    <div class="scrim" id="scrim"></div>
+    <aside class="drawer" id="drawer">
+      <header>
+        <h2 id="drawerTitle">مهارة جديدة</h2>
+        <div class="grow"></div>
+        <button id="drawerClose" class="icon"><loam-icon name="close"></loam-icon></button>
+      </header>
+      <div class="body">
+        <div>
+          <label class="fld">الاسم (a-z / 0-9 / -)</label>
+          <input id="fName" type="text" placeholder="release-check" />
+        </div>
+        <div>
+          <label class="fld">الوصف — متى يستخدمها الوكيل؟</label>
+          <input id="fDesc" type="text" placeholder="تحقّق من بناء الإصدار قبل الوسم..." />
+        </div>
+        <div>
+          <label class="fld">التعليمات (Markdown)</label>
+          <textarea id="fBody" placeholder="# الاسم&#10;## متى تُستخدم&#10;## الخطوات&#10;1. ...&#10;## التحقق"></textarea>
+        </div>
+        <div>
+          <label class="fld">النطاق (عند الإنشاء فقط)</label>
+          <select id="fLoc">
+            <option value="project">مشروع (skills/)</option>
+            <option value="user">مكتبة المستخدم</option>
+            <option value="manus">مكتبة متوافقة سابقة</option>
+          </select>
+        </div>
+      </div>
+      <footer>
+        <button id="drawerSave" class="primary">حفظ</button>
+        <button id="drawerCancel" class="ghost">إلغاء</button>
+      </footer>
+    </aside>
+
+    <div class="toasts" id="toasts"></div>
+    <script src="/skills.js"></script>
+  </body>
+</html>

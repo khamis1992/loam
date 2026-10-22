@@ -1,0 +1,57 @@
+{
+ "at": "2026-10-19T16:31:19.715Z",
+ "title": "اختبار القبول الحاسم الثلاثي — 3 مساعدين على 3 أجهزة مستقلة حقيقية بالتوازي",
+ "model": "glm-5.3-flash:cloud",
+ "scenario": [
+  "3 companions from templates (researcher/developer/reviewer) via POST /api/agents/from-template",
+  "3 REAL WSL2 devices created via POST /api/companion-devices (isolated loam users)",
+  "All 3 reached running state",
+  "PARALLEL live runs (own_device work mode) — Promise.all",
+  "All wrote inside their isolated environments + delivered via device_pull_file",
+  "Task workspaces verified: each task done + owned by its companion + 1 delivered file",
+  "Manual take-over: control=user, manual exec OK, release: control=agent",
+  "All 3 devices still running after parallel run",
+  "No host-control tool (computer_*) was ever offered to any companion"
+ ],
+ "results": {
+  "companions": [
+   {
+    "name": "الباحث الموثّق",
+    "done": true,
+    "wrote": true,
+    "pulled": true,
+    "noHostTools": true,
+    "taskStatus": "done",
+    "owned": true,
+    "deliveredFiles": 1
+   },
+   {
+    "name": "المبرمج المطور",
+    "done": true,
+    "wrote": true,
+    "pulled": true,
+    "noHostTools": true,
+    "taskStatus": "done",
+    "owned": true,
+    "deliveredFiles": 1
+   },
+   {
+    "name": "المحرر الناقد",
+    "done": true,
+    "wrote": true,
+    "pulled": true,
+    "noHostTools": true,
+    "taskStatus": "done",
+    "owned": true,
+    "deliveredFiles": 1
+   }
+  ],
+  "parallelTimeSeconds": 141.6,
+  "takeOverTest": {
+   "takeOver": "user ✔",
+   "manualExec": "✔",
+   "release": "agent ✔"
+  },
+  "devicesAliveAfterRun": 3
+ }
+}

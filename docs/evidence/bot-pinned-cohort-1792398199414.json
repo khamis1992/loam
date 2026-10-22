@@ -1,0 +1,115 @@
+{
+  "startedAt": "2026-10-19T08:23:19.414Z",
+  "runtimeSha256": "4caaed2b99c94e8765988474e663f7cab636cccfa144f63da8065839ab14bb3c",
+  "plan": [
+    {
+      "round": 1,
+      "kind": "quote",
+      "script": "check-bot-independent-installed.ts"
+    },
+    {
+      "round": 1,
+      "kind": "bookings",
+      "script": "check-bot-installed-bookings.ts"
+    },
+    {
+      "round": 1,
+      "kind": "tickets",
+      "script": "check-bot-tickets-fresh-full-gate.ts"
+    },
+    {
+      "round": 2,
+      "kind": "quote",
+      "script": "check-bot-independent-installed.ts"
+    },
+    {
+      "round": 2,
+      "kind": "bookings",
+      "script": "check-bot-installed-bookings.ts"
+    },
+    {
+      "round": 2,
+      "kind": "tickets",
+      "script": "check-bot-tickets-fresh-full-gate.ts"
+    },
+    {
+      "round": 3,
+      "kind": "quote",
+      "script": "check-bot-independent-installed.ts"
+    },
+    {
+      "round": 3,
+      "kind": "bookings",
+      "script": "check-bot-installed-bookings.ts"
+    },
+    {
+      "round": 3,
+      "kind": "tickets",
+      "script": "check-bot-tickets-fresh-full-gate.ts"
+    }
+  ],
+  "collectAll": true,
+  "continuation": {
+    "priorCohort": "docs\\evidence\\bot-pinned-cohort-1792396550073.json",
+    "priorSha256": "d680b361e203ea7032961b5c48ae24fbdfa83afa9a0cef4a6fdacb1bba774ff9",
+    "preservesOriginalObserverFailure": true
+  },
+  "attempts": [
+    {
+      "round": 1,
+      "kind": "quote",
+      "script": "check-bot-independent-installed.ts",
+      "startedAt": "2026-10-19T07:55:50.107Z",
+      "scriptSha256": "e6da5a4a09841fe65d608e0f7731680fe12a41894cdac3f97be685460576f1fc",
+      "pass": false,
+      "exitCode": 1,
+      "report": "docs\\evidence\\bot-cohort-1792396550073-1-quote.json",
+      "log": "output\\verification\\bot-pinned-cohort-1792396550073\\1-quote.log",
+      "finishedAt": "2026-10-19T08:06:31.637Z",
+      "taskId": "task_mveymll94409cd147f72",
+      "reportSha256": "89e53b88d1c331d76d482e15eef08a680ffdde7ed7cabad71ac212e5de36eb5b",
+      "error": "TypeError: terminated",
+      "resolvedObservation": {
+        "report": "docs\\evidence\\bot-cohort-1792396550073-1-quote-observed.json",
+        "sha256": "ab53e005176894293a979fc9cbe5c9957b5df991cb024c7af287585b88ae6b62",
+        "pass": false,
+        "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n'error' !== 'done'\n"
+      }
+    },
+    {
+      "round": 1,
+      "kind": "bookings",
+      "script": "check-bot-installed-bookings.ts",
+      "startedAt": "2026-10-19T08:23:19.464Z",
+      "scriptSha256": "049752a42ad0a3ae5621dc2bac66f6d2b752093f6c75fca6a6cced7f8af9d83c",
+      "pass": false,
+      "report": "docs/evidence/bot-installed-bookings-live-1792398199954.json",
+      "exitCode": 1,
+      "log": "output\\verification\\bot-pinned-cohort-1792398199414\\1-bookings.log",
+      "finishedAt": "2026-10-19T08:36:11.865Z",
+      "taskId": "task_mvezlyg47071e894b129",
+      "reportSha256": "8fa90fb66a5e086b3d23b8c7d415e75c72a9c28ae57bda3091252e9b15a1d48b",
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n'error' !== 'done'\n"
+    },
+    {
+      "round": 1,
+      "kind": "tickets",
+      "script": "check-bot-tickets-fresh-full-gate.ts",
+      "startedAt": "2026-10-19T08:36:11.901Z",
+      "scriptSha256": "72b25b82cebf31223d788b2f3e7e6f2abb03988353226cd13414993c245c4401",
+      "pass": false,
+      "report": "docs/evidence/bot-installed-tickets-fresh-full-gate-1792398972400.json",
+      "exitCode": 1,
+      "log": "output\\verification\\bot-pinned-cohort-1792398199414\\1-tickets.log",
+      "finishedAt": "2026-10-19T09:06:12.490Z",
+      "taskId": "task_mvf02igzd1807ea0bc58",
+      "reportSha256": "f899cb8667ccf74ca84647213f562570b5b21e6069df82f34399b54eb72a0c44",
+      "error": "TimeoutError: The operation was aborted due to timeout"
+    }
+  ],
+  "complete": false,
+  "pass": false,
+  "caveat": "Only a complete fixed-build cohort supports a descriptive cohort pass rate; neither an interrupted cohort nor these tasks establish external-agent parity. No failed task is automatically repaired or retried.",
+  "error": "AssertionError [ERR_ASSERTION]: Existing active task: stop cohort, never cancel or restart it\n\n1 !== 0\n",
+  "finishedAt": "2026-10-19T09:06:12.554Z"
+}

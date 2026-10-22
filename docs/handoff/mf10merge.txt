@@ -1,0 +1,15 @@
+﻿A `git merge --no-ff mf/mf10` is IN PROGRESS in C:\Users\khamis\Desktop\manus-local (branch manus-parity) with conflicts in exactly these files:
+- packages/web/src/components/agents/AgentSidebarList.tsx
+- packages/web/src/i18n/ar.json
+- packages/web/src/i18n/en.json
+- src/index.ts
+- src/server/runTools.ts
+- src/server/__tests__/runTools.test.ts
+
+ALL conflicts are ADDITIVE on both sides (both add nav links / i18n keys / tool registrations / ALWAYS_ON_TOOLS entries / test cases). Resolve EVERY conflict by KEEPING BOTH SIDES' additions (union), NO duplicate keys/lines, NO leftover conflict markers. For the JSON files keep valid JSON (no duplicate keys, correct commas). For .tsx keep valid JSX/TS.
+
+Do NOT touch any other file. Do NOT touch src/setup/runtime.ts or companion* files. Then:
+1) git add <the 6 files above>
+2) git commit --no-edit
+3) npx tsc --noEmit must be 0 (fix only these files if needed)
+Reply DONE when committed and tsc is 0.

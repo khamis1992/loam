@@ -1,0 +1,42 @@
+﻿{
+    "capabilities":  {
+                         "revision":  4,
+                         "mandatoryFinalVerification":  true,
+                         "bufferedCompletion":  true,
+                         "creativeVerification":  {
+                                                      "renderer":  "actual-studio",
+                                                      "savedCamera":  true,
+                                                      "framedView":  true,
+                                                      "optionalMotionSample":  true,
+                                                      "fullAnimationValidation":  false,
+                                                      "visualReview":  true
+                                                  },
+                         "applicationVerification":  {
+                                                         "contract":  "app-verification.json",
+                                                         "runtime":  "isolated-playwright",
+                                                         "viewports":  [
+                                                                           "desktop",
+                                                                           "mobile"
+                                                                       ],
+                                                         "visualReview":  true,
+                                                         "network":  "local-only",
+                                                         "backendApplications":  true,
+                                                         "backendRuntime":  {
+                                                                                "type":  "node",
+                                                                                "isolation":  "docker-network-none",
+                                                                                "requiredLocalImage":  "node:22-alpine",
+                                                                                "externalPackages":  false,
+                                                                                "externalServices":  false,
+                                                                                "freshStatePerScenario":  true
+                                                                            }
+                                                     },
+                         "visualModel":  "glm-5.3-flash:cloud"
+                     },
+    "at":  "2026-10-19T02:22:51.4242891+03:00",
+    "runtimeHash":  "64986C0C7380C473F16C929AB5607F66AE7326FD6DECADF3A2EF20676472461B",
+    "backup":  "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-install-20261019-022243\\previous-server.cjs",
+    "version":  "0.5.25",
+    "candidate":  "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-install-20261019-022243\\candidate-server.cjs",
+    "profilePreserved":  true,
+    "tasksPreserved":  137
+}

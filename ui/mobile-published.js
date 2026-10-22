@@ -1,0 +1,3 @@
+import {bridgeMobileCode} from './mobile-code-bridge.js';
+const query=new URLSearchParams(location.search),frame=document.getElementById('published-app'),error=document.getElementById('published-error');
+try{const response=await fetch('/api/mobile/releases?'+query),data=await response.json();if(!response.ok||!data.project)throw Error(data.error||'لا توجد نسخة منشورة');document.title=data.project.title;bridgeMobileCode(frame,{taskId:query.get('taskId'),project:data.project,onError:message=>error.textContent=message});frame.src='/api/mobile/source-preview?taskId='+encodeURIComponent(query.get('taskId'))+'&releaseId='+encodeURIComponent(query.get('releaseId')||data.active);}catch(e){error.textContent=e.message;}

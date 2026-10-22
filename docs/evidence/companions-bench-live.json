@@ -1,0 +1,42 @@
+{
+ "suite": "companions-bench-live v1 (model=glm-5.3-flash:cloud)",
+ "at": "2026-10-19T14:17:40.404Z",
+ "model": "glm-5.3-flash:cloud",
+ "total": 3,
+ "passed": 3,
+ "completionRate": 1,
+ "totalInterventions": 0,
+ "wallMs": 22223,
+ "results": [
+  {
+   "id": "doc-ar",
+   "lang": "ar",
+   "pass": true,
+   "reason": "ok",
+   "ms": 7409,
+   "toolCalls": 3,
+   "interventions": 0,
+   "modelReply": "تم."
+  },
+  {
+   "id": "memory-ar",
+   "lang": "ar",
+   "pass": true,
+   "reason": "ok",
+   "ms": 9816,
+   "toolCalls": 2,
+   "interventions": 0,
+   "modelReply": "تم."
+  },
+  {
+   "id": "task-en",
+   "lang": "en",
+   "pass": true,
+   "reason": "ok",
+   "ms": 4998,
+   "toolCalls": 2,
+   "interventions": 0,
+   "modelReply": "تم إنشاء المهمة «Quarterly infrastructure audit» (المعرف: task_mvfc9kapd37e75f4d3bb) ولم تُشغَّل.\n\ndone"
+  }
+ ]
+}

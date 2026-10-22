@@ -1,0 +1,22 @@
+{
+  "at": "2026-10-19T04:14:03.408Z",
+  "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+  "sourceHashes": {
+    "server.mjs": "134a607a23381d6e74a5b890a83a3f9de03b0faab7a417009fb0e8b2723c2c30"
+  },
+  "probe": {
+    "uid": 1000,
+    "denied": {
+      "/app/escape": true,
+      "/etc/escape": true
+    },
+    "network": false,
+    "secret": false,
+    "socket": false,
+    "host": false
+  },
+  "apiRoundTrip": true,
+  "limitsVerified": true,
+  "cleanup": true,
+  "lifetimeExpiry": true
+}

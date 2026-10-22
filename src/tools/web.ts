@@ -1,6 +1,24 @@
 import { headOutput } from "../policy/commands.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { num, str } from "./registry.js";
+export function parseSearchPage(html: string, limit: number) {
+  const results: Array<{title:string;url:string}> = [];
+  for (const match of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
+    const attrs = match[1]!;
+    if (!/class=["'][^"']*\bresult__a\b[^"']*["']/i.test(attrs)) continue;
+    const href = /href=["']([^"']+)["']/i.exec(attrs)?.[1];
+    if (!href) continue;
+    try {
+      const link = new URL(href.replace(/&amp;/g, '&'), 'https://duckduckgo.com');
+      const target = link.hostname === 'duckduckgo.com' ? link.searchParams.get('uddg') || link.href : link.href;
+      if (!/^https?:\/\//i.test(target)) continue;
+      results.push({ title: htmlToText(match[2]!), url: target });
+      if (results.length >= limit) break;
+    } catch { /* Skip invalid result links. */ }
+  }
+  if (!results.length && !/no-results|No results found/i.test(html)) throw Error('Search provider returned a challenge or unexpected page');
+  return results;
+}
 
 function htmlToText(html: string): string {
   return html
@@ -22,6 +40,25 @@ function htmlToText(html: string): string {
 }
 
 export const webTools: Tool[] = [
+  {
+    name: 'web_search',
+    description: 'Search the web for sources. Returns titles, URLs and snippets; use web_fetch to read sources. Requires networkEnabled.',
+    parameters: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'number', minimum: 1, maximum: 10 } }, required: ['query'] },
+    async run(args, ctx) {
+      if (!ctx.cfg.policy.networkEnabled) return { ok: false, content: 'Network access is disabled' };
+      const query = str(args, 'query').trim();
+      if (!query || query.length > 2000) return { ok: false, content: 'Provide a search query of 1–2000 characters' };
+      try {
+        const signal = ctx.signal ? AbortSignal.any([ctx.signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000);
+        const response = await fetch('https://html.duckduckgo.com/html/?' + new URLSearchParams({ q: query }), { signal, headers: { 'user-agent': 'Loam/0.5' } });
+        if (!response.ok) throw Error(`Search provider HTTP ${response.status}`);
+        const ab = await response.arrayBuffer();
+        if (ab.byteLength > 2_000_000) throw Error('Search response too large');
+        const results = parseSearchPage(Buffer.from(ab).toString('utf8'), Math.max(1, Math.min(10, Math.floor(num(args, 'limit', 5)))));
+        return { ok: true, content: JSON.stringify({ query, provider: 'DuckDuckGo', results, ...(results.length ? {} : { message: 'No search results returned. Try another query.' }) }) };
+      } catch (error) { return { ok: false, content: `Search unavailable: ${error instanceof Error ? error.message : String(error)}` }; }
+    },
+  },
   {
     name: "web_fetch",
     description: "Fetch a URL and return readable text (HTML is converted to text). Requires networkEnabled in config.",

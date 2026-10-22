@@ -1,0 +1,11 @@
+{
+  "version": "0.5.19",
+  "taskId": "task_mvdmt0m5d9914c2c1b70",
+  "revision": 3,
+  "drag": true,
+  "resize": true,
+  "cancellation": true,
+  "nativeGeometry": true,
+  "preservedParts": 19,
+  "preservedCropAndTransforms": true
+}

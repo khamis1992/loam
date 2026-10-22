@@ -1,0 +1,6 @@
+<!doctype html><html><meta charset="utf-8"><title>Loam background renderer</title><canvas></canvas><script type="module">
+import {TimelineEngine} from './creative-timeline-engine.js';
+let exactEngine;
+window.prepareExactRender=async project=>{exactEngine?.dispose();exactEngine=new TimelineEngine(document.querySelector('canvas'),()=>{});await exactEngine.setProject(project);};
+window.renderExactFrame=async time=>{await exactEngine.seek(time,true);return exactEngine.canvas.toDataURL('image/png').split(',')[1];};
+</script></html>

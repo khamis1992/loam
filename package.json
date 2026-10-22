@@ -14,6 +14,10 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "check:encoding": "tsx src/scripts/check-encoding.ts --run",
+    "check:pentest-bench": "tsx src/scripts/check-pentest-bench.ts",
+    "test:pentest-bench": "node --import tsx --test src/scripts/__tests__/check-pentest-bench.test.ts",
+    "test:browser-operator": "node --import tsx --test src/tools/__tests__/browserOperator.test.ts",
+    "test:electron": "node --test electron/__tests__/inAppBrowser.test.cjs",
     "check:selfimprove": "tsx src/scripts/check-selfimprove.ts",
     "check:eval": "tsx src/scripts/check-eval.ts",
     "check:orchestrator": "tsx src/scripts/check-orchestrator.ts",
@@ -39,6 +43,7 @@
     "check:modes": "tsx src/scripts/check-modes.ts",
     "check:isolation": "tsx src/scripts/check-isolation-http.ts",
     "check:loam-ui": "tsx src/scripts/check-loam-ui.mjs",
+    "check:promo-carousel": "node src/scripts/check-promo-carousel.mjs",
     "check:loam-ancillary": "node src/scripts/check-loam-ancillary.mjs",
     "check:loam-agents": "tsx src/scripts/check-loam-agents.ts",
     "check:loam-e2e": "tsx src/scripts/check-loam-e2e.ts",
@@ -59,6 +64,7 @@
     "@modelcontextprotocol/server-memory": "^1.0.0",
     "@modelcontextprotocol/server-sequential-thinking": "^1.0.0",
     "@nut-tree-fork/nut-js": "^4.2.6",
+    "@xmldom/xmldom": "^0.9.12",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "docx": "^9.12.0",
@@ -68,13 +74,17 @@
     "pdf-parse": "^2.4.5",
     "playwright": "^1.49.0",
     "pptxgenjs": "^4.0.1",
-    "sharp": "^0.35.5"
+    "sharp": "^0.35.5",
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
+    "@electron/fuses": "^1.8.0",
+    "@playwright/test": "^1.64.1",
     "@types/node": "^22.10.0",
     "electron": "^44.7.2",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
+    "socket.io-client": "^4.8.4",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }

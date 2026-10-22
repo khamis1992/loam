@@ -1,0 +1,661 @@
+{
+  "pass": true,
+  "reason": "All six contract scenarios pass on both desktop and mobile viewports with response codes matching the contract (201 on create, 409 on overlap) and SQLite rows in /tmp/bookings.sqlite exactly matching the expected states, including the empty table after reversed-time rejection and persistence after reload. Screenshots confirm the requested UI: Arabic RTL layout with sky-blue/purple gradient design, plain text fields #room/#start/#end with UTC placeholders, #save button, .booking rows showing room badge plus البداية/النهاية timestamps, Arabic #error messages for both conflict (تعارض في الحجز... محجوزة بالفعل) and reversed time (انعكاس في الوقت...), success feedback, server refresh after each operation and on load, and a stacked responsive mobile layout with no overlaps, clipped text, or placeholder-only output.",
+  "reportPath": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvejd1jv56a4682f62a4\\.verification\\66cbf32f-7350-40ef-ac87-3d1ee0b98fc6\\report.json",
+  "elapsedMs": 84934,
+  "usage": {
+    "promptTokens": 18667,
+    "completionTokens": 3098,
+    "durationMs": 19320
+  },
+  "checks": [
+    {
+      "viewport": "desktop",
+      "scenario": "Create booking",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/bookings",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/bookings.sqlite",
+          "table": "bookings",
+          "columns": [
+            "room",
+            "start",
+            "end"
+          ],
+          "rows": [
+            [
+              "A",
+              "2026-11-01T10:00:00Z",
+              "2026-11-01T11:00:00Z"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Reject overlapping room",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/bookings",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/bookings",
+          "status": 409
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/bookings.sqlite",
+          "table": "bookings",
+          "columns": [
+            "room",
+            "start",
+            "end"
+          ],
+          "rows": [
+            [
+              "A",
+              "2026-11-01T10:00:00Z",
+              "2026-11-01T11:00:00Z"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Allow adjacent time",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/bookings",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/bookings",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/bookings.sqlite",
+          "table": "bookings",
+          "columns": [
+            "room",
+            "start",
+            "end"
+          ],
+          "rows": [
+            [
+              "A",
+              "2026-11-01T10:00:00Z",
+              "2026-11-01T11:00:00Z"
+            ],
+            [
+              "A",
+              "2026-11-01T11:00:00Z",
+              "2026-11-01T12:00:00Z"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Independent rooms",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/bookings",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/bookings",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/bookings.sqlite",
+          "table": "bookings",
+          "columns": [
+            "room",
+            "start",
+            "end"
+          ],
+          "rows": [
+            [
+              "A",
+              "2026-11-01T10:00:00Z",
+              "2026-11-01T11:00:00Z"
+            ],
+            [
+              "B",
+              "2026-11-01T10:00:00Z",
+              "2026-11-01T11:00:00Z"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Reject reversed time",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/bookings.sqlite",
+          "table": "bookings",
+          "columns": [
+            "room",
+            "start",
+            "end"
+          ],
+          "rows": []
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Reload persistence",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/bookings",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/bookings.sqlite",
+          "table": "bookings",
+          "columns": [
+            "room",
+            "start",
+            "end"
+          ],
+          "rows": [
+            [
+              "A",
+              "2026-11-01T10:00:00Z",
+              "2026-11-01T11:00:00Z"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Create booking",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/bookings",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/bookings.sqlite",
+          "table": "bookings",
+          "columns": [
+            "room",
+            "start",
+            "end"
+          ],
+          "rows": [
+            [
+              "A",
+              "2026-11-01T10:00:00Z",
+              "2026-11-01T11:00:00Z"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Reject overlapping room",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/bookings",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/bookings",
+          "status": 409
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/bookings.sqlite",
+          "table": "bookings",
+          "columns": [
+            "room",
+            "start",
+            "end"
+          ],
+          "rows": [
+            [
+              "A",
+              "2026-11-01T10:00:00Z",
+              "2026-11-01T11:00:00Z"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Allow adjacent time",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/bookings",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/bookings",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/bookings.sqlite",
+          "table": "bookings",
+          "columns": [
+            "room",
+            "start",
+            "end"
+          ],
+          "rows": [
+            [
+              "A",
+              "2026-11-01T10:00:00Z",
+              "2026-11-01T11:00:00Z"
+            ],
+            [
+              "A",
+              "2026-11-01T11:00:00Z",
+              "2026-11-01T12:00:00Z"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Independent rooms",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/bookings",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/bookings",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/bookings.sqlite",
+          "table": "bookings",
+          "columns": [
+            "room",
+            "start",
+            "end"
+          ],
+          "rows": [
+            [
+              "A",
+              "2026-11-01T10:00:00Z",
+              "2026-11-01T11:00:00Z"
+            ],
+            [
+              "B",
+              "2026-11-01T10:00:00Z",
+              "2026-11-01T11:00:00Z"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Reject reversed time",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/bookings.sqlite",
+          "table": "bookings",
+          "columns": [
+            "room",
+            "start",
+            "end"
+          ],
+          "rows": []
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Reload persistence",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/bookings",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/bookings",
+          "status": 200
+        }
+      ],
+      "databases": [
+        {
+          "database": "/tmp/bookings.sqlite",
+          "table": "bookings",
+          "columns": [
+            "room",
+            "start",
+            "end"
+          ],
+          "rows": [
+            [
+              "A",
+              "2026-11-01T10:00:00Z",
+              "2026-11-01T11:00:00Z"
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvejd1jv56a4682f62a4\\.verification\\66cbf32f-7350-40ef-ac87-3d1ee0b98fc6\\desktop-0.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvejd1jv56a4682f62a4\\.verification\\66cbf32f-7350-40ef-ac87-3d1ee0b98fc6\\desktop-1.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvejd1jv56a4682f62a4\\.verification\\66cbf32f-7350-40ef-ac87-3d1ee0b98fc6\\desktop-2.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvejd1jv56a4682f62a4\\.verification\\66cbf32f-7350-40ef-ac87-3d1ee0b98fc6\\desktop-3.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvejd1jv56a4682f62a4\\.verification\\66cbf32f-7350-40ef-ac87-3d1ee0b98fc6\\desktop-4.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvejd1jv56a4682f62a4\\.verification\\66cbf32f-7350-40ef-ac87-3d1ee0b98fc6\\desktop-5.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvejd1jv56a4682f62a4\\.verification\\66cbf32f-7350-40ef-ac87-3d1ee0b98fc6\\mobile-0.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvejd1jv56a4682f62a4\\.verification\\66cbf32f-7350-40ef-ac87-3d1ee0b98fc6\\mobile-1.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvejd1jv56a4682f62a4\\.verification\\66cbf32f-7350-40ef-ac87-3d1ee0b98fc6\\mobile-2.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvejd1jv56a4682f62a4\\.verification\\66cbf32f-7350-40ef-ac87-3d1ee0b98fc6\\mobile-3.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvejd1jv56a4682f62a4\\.verification\\66cbf32f-7350-40ef-ac87-3d1ee0b98fc6\\mobile-4.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvejd1jv56a4682f62a4\\.verification\\66cbf32f-7350-40ef-ac87-3d1ee0b98fc6\\mobile-5.png"
+  ],
+  "errors": [],
+  "runtime": {
+    "type": "node",
+    "isolation": "docker-network-none",
+    "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+    "freshBackendPerScenario": true
+  },
+  "visual": {
+    "model": "glm-5.3-flash",
+    "verdict": {
+      "verdict": "pass",
+      "reason": "All six contract scenarios pass on both desktop and mobile viewports with response codes matching the contract (201 on create, 409 on overlap) and SQLite rows in /tmp/bookings.sqlite exactly matching the expected states, including the empty table after reversed-time rejection and persistence after reload. Screenshots confirm the requested UI: Arabic RTL layout with sky-blue/purple gradient design, plain text fields #room/#start/#end with UTC placeholders, #save button, .booking rows showing room badge plus البداية/النهاية timestamps, Arabic #error messages for both conflict (تعارض في الحجز... محجوزة بالفعل) and reversed time (انعكاس في الوقت...), success feedback, server refresh after each operation and on load, and a stacked responsive mobile layout with no overlaps, clipped text, or placeholder-only output.",
+      "issues": [],
+      "notes": [
+        "Mobile captures are cropped at the viewport bottom, so the bookings list itself is below the fold in some mobile screenshots; the passing .booking count checks and desktop captures confirm the list renders correctly.",
+        "Optional polish: the success and error messages could be visually distinguished further (e.g., icon per state), but current green/red styling is already clear."
+      ]
+    },
+    "response": "{\"verdict\":\"pass\",\"reason\":\"All six contract scenarios pass on both desktop and mobile viewports with response codes matching the contract (201 on create, 409 on overlap) and SQLite rows in /tmp/bookings.sqlite exactly matching the expected states, including the empty table after reversed-time rejection and persistence after reload. Screenshots confirm the requested UI: Arabic RTL layout with sky-blue/purple gradient design, plain text fields #room/#start/#end with UTC placeholders, #save button, .booking rows showing room badge plus البداية/النهاية timestamps, Arabic #error messages for both conflict (تعارض في الحجز... محجوزة بالفعل) and reversed time (انعكاس في الوقت...), success feedback, server refresh after each operation and on load, and a stacked responsive mobile layout with no overlaps, clipped text, or placeholder-only output.\",\"issues\":[],\"notes\":[\"Mobile captures are cropped at the viewport bottom, so the bookings list itself is below the fold in some mobile screenshots; the passing .booking count checks and desktop captures confirm the list renders correctly.\",\"Optional polish: the success and error messages could be visually distinguished further (e.g., icon per state), but current green/red styling is already clear.\"]}",
+    "attempts": 1
+  },
+  "sourceHashes": {
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvejd1jv56a4682f62a4\\app-verification.json": "37cb8afe420a6801f4c9aefde992e6508c77fd07d216dca85a238f4d5724c5f0",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvejd1jv56a4682f62a4\\index.html": "318304c8e2c064ec491efd1b100d21ac22dfeb8b0b55e5441dda3521618b4f63",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvejd1jv56a4682f62a4\\server.mjs": "16841bdbdb65b56dbaf06faa8d08aeabd02633620c06725d5ee7af4f6b9928bd"
+  }
+}

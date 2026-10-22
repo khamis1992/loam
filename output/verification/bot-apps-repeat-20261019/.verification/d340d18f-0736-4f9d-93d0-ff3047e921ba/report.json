@@ -1,0 +1,106 @@
+{
+  "pass": true,
+  "reason": "All six contract scenarios pass on desktop and mobile, and the screenshots confirm the requested UI: Arabic RTL layout with cyan/purple gradient design, form with #title/#amount/#category and Arabic category labels (طعام، مواصلات), entries list with .expense items and حذف delete buttons, total card that updates (20 → 9 → 0), visible #error message for negative amounts, category filter #filter (الكل/طعام) with subtotal reflecting displayed items (مجموع مصروفات طعام = 15), and #reset (مسح الكل) clearing entries and storage with empty state persisting after reload. Text is readable, no overlaps, and the mobile layout stacks cleanly.",
+  "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-Y8ZkZ9\\workspace\\.verification\\d340d18f-0736-4f9d-93d0-ff3047e921ba\\report.json",
+  "elapsedMs": 24314,
+  "usage": {
+    "promptTokens": 15013,
+    "completionTokens": 1830,
+    "durationMs": 14533
+  },
+  "checks": [
+    {
+      "viewport": "desktop",
+      "scenario": "Adding entries calculates sum",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Persistence after reload",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Deleting recomputes total",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Invalid input rejected",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Filtering shows matching entries and subtotal",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Reset clears persisted entries",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Adding entries calculates sum",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Persistence after reload",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Deleting recomputes total",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Invalid input rejected",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Filtering shows matching entries and subtotal",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Reset clears persisted entries",
+      "pass": true
+    }
+  ],
+  "screenshots": [
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-Y8ZkZ9\\workspace\\.verification\\d340d18f-0736-4f9d-93d0-ff3047e921ba\\desktop-0.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-Y8ZkZ9\\workspace\\.verification\\d340d18f-0736-4f9d-93d0-ff3047e921ba\\desktop-1.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-Y8ZkZ9\\workspace\\.verification\\d340d18f-0736-4f9d-93d0-ff3047e921ba\\desktop-2.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-Y8ZkZ9\\workspace\\.verification\\d340d18f-0736-4f9d-93d0-ff3047e921ba\\desktop-3.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-Y8ZkZ9\\workspace\\.verification\\d340d18f-0736-4f9d-93d0-ff3047e921ba\\desktop-4.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-Y8ZkZ9\\workspace\\.verification\\d340d18f-0736-4f9d-93d0-ff3047e921ba\\desktop-5.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-Y8ZkZ9\\workspace\\.verification\\d340d18f-0736-4f9d-93d0-ff3047e921ba\\mobile-0.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-Y8ZkZ9\\workspace\\.verification\\d340d18f-0736-4f9d-93d0-ff3047e921ba\\mobile-1.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-Y8ZkZ9\\workspace\\.verification\\d340d18f-0736-4f9d-93d0-ff3047e921ba\\mobile-2.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-Y8ZkZ9\\workspace\\.verification\\d340d18f-0736-4f9d-93d0-ff3047e921ba\\mobile-3.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-Y8ZkZ9\\workspace\\.verification\\d340d18f-0736-4f9d-93d0-ff3047e921ba\\mobile-4.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-Y8ZkZ9\\workspace\\.verification\\d340d18f-0736-4f9d-93d0-ff3047e921ba\\mobile-5.png"
+  ],
+  "errors": [],
+  "visual": {
+    "model": "glm-5.3-flash",
+    "verdict": {
+      "verdict": "pass",
+      "reason": "All six contract scenarios pass on desktop and mobile, and the screenshots confirm the requested UI: Arabic RTL layout with cyan/purple gradient design, form with #title/#amount/#category and Arabic category labels (طعام، مواصلات), entries list with .expense items and حذف delete buttons, total card that updates (20 → 9 → 0), visible #error message for negative amounts, category filter #filter (الكل/طعام) with subtotal reflecting displayed items (مجموع مصروفات طعام = 15), and #reset (مسح الكل) clearing entries and storage with empty state persisting after reload. Text is readable, no overlaps, and the mobile layout stacks cleanly.",
+      "issues": [],
+      "notes": [
+        "The total card header helpfully changes to the filtered category name (e.g., مجموع مصروفات طعام) when a filter is active — a nice touch beyond the contract.",
+        "In mobile-0.png the capture appears scrolled past the app header; other mobile screenshots (mobile-1, mobile-3) show the header rendering correctly, so this is not a layout defect."
+      ]
+    },
+    "response": "{\"verdict\":\"pass\",\"reason\":\"All six contract scenarios pass on desktop and mobile, and the screenshots confirm the requested UI: Arabic RTL layout with cyan/purple gradient design, form with #title/#amount/#category and Arabic category labels (طعام، مواصلات), entries list with .expense items and حذف delete buttons, total card that updates (20 → 9 → 0), visible #error message for negative amounts, category filter #filter (الكل/طعام) with subtotal reflecting displayed items (مجموع مصروفات طعام = 15), and #reset (مسح الكل) clearing entries and storage with empty state persisting after reload. Text is readable, no overlaps, and the mobile layout stacks cleanly.\",\"issues\":[],\"notes\":[\"The total card header helpfully changes to the filtered category name (e.g., مجموع مصروفات طعام) when a filter is active — a nice touch beyond the contract.\",\"In mobile-0.png the capture appears scrolled past the app header; other mobile screenshots (mobile-1, mobile-3) show the header rendering correctly, so this is not a layout defect.\"]}",
+    "attempts": 1
+  },
+  "sourceHashes": {
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-Y8ZkZ9\\workspace\\app-verification.json": "f5539b667c2262e06c50c84681d04b749f3100231a9c131c47da99bfbd48088f",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-Y8ZkZ9\\workspace\\index.html": "a822237fd168a9336f147bc9f5f3589a98036dfe1f132366307f365d6230660f"
+  }
+}

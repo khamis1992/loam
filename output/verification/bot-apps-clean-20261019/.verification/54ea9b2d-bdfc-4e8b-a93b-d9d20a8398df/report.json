@@ -1,0 +1,81 @@
+{
+  "pass": true,
+  "reason": "All four contract scenarios pass on both desktop and mobile viewports. Screenshots confirm the requested UI: Arabic RTL layout with cyan/purple gradient design, form with #title/#amount/#category (Arabic labels طعام/مواصلات), #add button, #error message shown for negative amount, .expense items with .delete buttons, live #total (20, 9, 0 as expected), and persistence after reload (قهوة entry restored). Empty state and delete flow render correctly; mobile layout stacks cleanly without overlap.",
+  "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-1RB372\\workspace\\.verification\\54ea9b2d-bdfc-4e8b-a93b-d9d20a8398df\\report.json",
+  "elapsedMs": 14280,
+  "usage": {
+    "promptTokens": 10025,
+    "completionTokens": 1275,
+    "durationMs": 7882
+  },
+  "checks": [
+    {
+      "viewport": "desktop",
+      "scenario": "Adding entries calculates sum",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Persistence after reload",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Deleting recomputes total",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Invalid input rejected",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Adding entries calculates sum",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Persistence after reload",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Deleting recomputes total",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Invalid input rejected",
+      "pass": true
+    }
+  ],
+  "screenshots": [
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-1RB372\\workspace\\.verification\\54ea9b2d-bdfc-4e8b-a93b-d9d20a8398df\\desktop-0.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-1RB372\\workspace\\.verification\\54ea9b2d-bdfc-4e8b-a93b-d9d20a8398df\\desktop-1.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-1RB372\\workspace\\.verification\\54ea9b2d-bdfc-4e8b-a93b-d9d20a8398df\\desktop-2.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-1RB372\\workspace\\.verification\\54ea9b2d-bdfc-4e8b-a93b-d9d20a8398df\\desktop-3.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-1RB372\\workspace\\.verification\\54ea9b2d-bdfc-4e8b-a93b-d9d20a8398df\\mobile-0.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-1RB372\\workspace\\.verification\\54ea9b2d-bdfc-4e8b-a93b-d9d20a8398df\\mobile-1.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-1RB372\\workspace\\.verification\\54ea9b2d-bdfc-4e8b-a93b-d9d20a8398df\\mobile-2.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-1RB372\\workspace\\.verification\\54ea9b2d-bdfc-4e8b-a93b-d9d20a8398df\\mobile-3.png"
+  ],
+  "errors": [],
+  "visual": {
+    "model": "glm-5.3-flash",
+    "verdict": {
+      "verdict": "pass",
+      "reason": "All four contract scenarios pass on both desktop and mobile viewports. Screenshots confirm the requested UI: Arabic RTL layout with cyan/purple gradient design, form with #title/#amount/#category (Arabic labels طعام/مواصلات), #add button, #error message shown for negative amount, .expense items with .delete buttons, live #total (20, 9, 0 as expected), and persistence after reload (قهوة entry restored). Empty state and delete flow render correctly; mobile layout stacks cleanly without overlap.",
+      "issues": [],
+      "notes": [
+        "Error message wording appears possibly as 'برجي' rather than 'يرجى' in the screenshot, but OCR is uncertain and the message is clear and readable either way.",
+        "Mobile screenshots are cropped at the top (header partially out of frame) — appears to be capture scroll position, not a layout defect."
+      ]
+    },
+    "response": "{\"verdict\":\"pass\",\"reason\":\"All four contract scenarios pass on both desktop and mobile viewports. Screenshots confirm the requested UI: Arabic RTL layout with cyan/purple gradient design, form with #title/#amount/#category (Arabic labels طعام/مواصلات), #add button, #error message shown for negative amount, .expense items with .delete buttons, live #total (20, 9, 0 as expected), and persistence after reload (قهوة entry restored). Empty state and delete flow render correctly; mobile layout stacks cleanly without overlap.\",\"issues\":[],\"notes\":[\"Error message wording appears possibly as 'برجي' rather than 'يرجى' in the screenshot, but OCR is uncertain and the message is clear and readable either way.\",\"Mobile screenshots are cropped at the top (header partially out of frame) — appears to be capture scroll position, not a layout defect.\"]}"
+  },
+  "sourceHashes": {
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-1RB372\\workspace\\app-verification.json": "dd4c29171d695ea3b39774f56a9f72f0fb1ca89cfabbee2f7489a44ad49ce5da",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-1RB372\\workspace\\index.html": "c06010bae4cf310cb64343f4b35574abb511f09a11ad938cbb628d1efa6feaa4"
+  }
+}

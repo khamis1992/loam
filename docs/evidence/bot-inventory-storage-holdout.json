@@ -1,0 +1,21 @@
+{
+  "at": "2026-10-19T00:29:35.625Z",
+  "source": "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-inventory-failed-artifact-20261019",
+  "workspace": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-storage-holdout-ixqwKy",
+  "pass": true,
+  "scope": "Negative control: API status/data/invalid/concurrent assertions pass but independent SQLite rows reject RAM-only storage with empty disk decoy",
+  "rejection": {
+    "actual": [],
+    "expected": [
+      {
+        "sku": "probe",
+        "quantity": 2
+      },
+      {
+        "sku": "x' OR 1=1 --",
+        "quantity": 4
+      }
+    ],
+    "message": "Expected values to be strictly deep-equal:\n+ actual - expected\n\n+ []\n- [\n-   {\n-     quantity: 2,\n-     sku: 'probe'\n-   },\n-   {\n-     quantity: 4,\n-     sku: \"x' OR 1=1 --\"\n-   }\n- ]\n"
+  }
+}

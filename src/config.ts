@@ -57,6 +57,10 @@ export interface Config {
   model: string;
   fallbackModel: string;
   ollamaUrl: string;
+  /** Optional OpenAI-compatible cloud provider (OpenRouter, vLLM, LM Studio, ...).
+   *  Models whose name ends with ":cloud" are routed here; the suffix is stripped
+   *  before the call. The user's own key stays in config.json — never in the repo. */
+  cloudModel?: { baseUrl: string; apiKey?: string };
   server: { host: string; port: number };
   agent: { maxSteps: number; temperature: number; requestTimeoutMs: number };
   workspace: string;
@@ -81,7 +85,7 @@ export interface Config {
     quality: number;
     maxWidth: number;
   };
-  vision: { enabled: boolean; maxImagesPerStep: number };
+  vision: { enabled: boolean; maxImagesPerStep: number; model?: string };
   selfImprove: {
     /** Run the background learning review after a task. */
     enabled: boolean;
@@ -129,6 +133,7 @@ export interface Config {
     /** How many times the plan may be rebuilt after a "fail" verdict. */
     maxReplans: number;
     /** Run the end-to-end verification pass after the plan completes. */
+    /** Legacy configuration field; final verification is mandatory regardless. */
     verifyFinal: boolean;
   };
   mcpServers: Record<string, McpServerConfig>;
@@ -217,6 +222,14 @@ export function loadConfig(): Config {
   const cfg = merge(DEFAULTS, raw);
   if (process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT) cfg.server.port = Number(process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT);
   if (process.env.LOAM_HOST || process.env.MANUS_LOCAL_HOST) cfg.server.host = (process.env.LOAM_HOST || process.env.MANUS_LOCAL_HOST)!;
+  const envRoot = process.env.LOAM_ROOT || process.env.MANUS_LOCAL_ROOT;
+  if (envRoot) {
+    const root = path.resolve(envRoot);
+    // LOAM_ROOT is the install/user-data root: keep workspace and screenshots under it
+    // rather than letting config.json silently override them back into the source tree.
+    cfg.workspace = path.resolve(root, "workspace");
+    cfg.computerUse.screenshotDir = path.resolve(root, "workspace", ".screenshots");
+  }
   cfg.workspace = path.resolve(cfg.workspace);
   cfg.computerUse.screenshotDir = path.resolve(cfg.computerUse.screenshotDir);
   cfg.memory.file = path.resolve(cfg.memory.file);

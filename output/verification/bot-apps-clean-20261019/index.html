@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="مصروفي — تطبيق عربي لتتبع المصروفات يعمل محليًا ويحفظ البيانات في متصفحك">
+  <meta name="color-scheme" content="light">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%B0%3C/text%3E%3C/svg%3E">
+  <title>مصروفي — تتبع المصروفات</title>
+  <style>
+    /* ===== المتغيرات والأساسيات ===== */
+    :root{
+      --cyan:#06b6d4;
+      --cyan-2:#22d3ee;
+      --cyan-soft:#ecfeff;
+      --purple:#8b5cf6;
+      --purple-2:#a78bfa;
+      --purple-deep:#6d28d9;
+      --violet:#7c3aed;
+      --ink:#1e293b;
+      --muted:#64748b;
+      --line:#e2e8f0;
+      --card:#ffffff;
+      --radius:20px;
+      --shadow:0 12px 32px -14px rgba(76,29,149,.28);
+    }
+    *{ box-sizing:border-box; margin:0; padding:0; }
+
+    html{ height:100%; }
+
+    body{
+      min-height:100vh;
+      font-family:"Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, system-ui, sans-serif;
+      color:var(--ink);
+      background:linear-gradient(155deg, #a5f3fc 0%, #c7d2fe 45%, #ddd6fe 100%);
+      background-attachment:fixed;
+      padding:28px 16px 40px;
+      -webkit-font-smoothing:antialiased;
+      line-height:1.6;
+    }
+
+    /* دوائر ضوئية زخرفية (تدرجات CSS خالصة) */
+    body::before,
+    body::after{
+      content:"";
+      position:fixed;
+      border-radius:50%;
+      filter:blur(90px);
+      opacity:.45;
+      z-index:0;
+      pointer-events:none;
+    }
+    body::before{
+      width:340px; height:340px;
+      background:var(--cyan-2);
+      top:-90px; right:-90px;
+    }
+    body::after{
+      width:420px; height:420px;
+      background:var(--purple);
+      bottom:-140px; left:-120px;
+    }
+
+    .app{
+      position:relative;
+      z-index:1;
+      max-width:760px;
+      margin:0 auto;
+    }
+
+    /* ===== الترويسة ===== */
+    .hero{
+      display:flex;
+      align-items:center;
+      gap:16px;
+      background:linear-gradient(135deg, var(--cyan) 0%, var(--violet) 100%);
+      color:#fff;
+      border-radius:24px;
+      padding:24px 26px;
+      margin-bottom:20px;
+      box-shadow:var(--shadow);
+    }
+    .logo{
+      flex:0 0 auto;
+      width:58px; height:58px;
+      display:grid; place-items:center;
+      font-size:30px;
+      border-radius:18px;
+      background:rgba(255,255,255,.22);
+      box-shadow:inset 0 0 0 1px rgba(255,255,255,.35);
+    }
+    .hero h1{
+      font-size:1.5rem;
+      font-weight:800;
+      letter-spacing:.2px;
+    }
+    .hero .tagline{
+      font-size:.9rem;
+      opacity:.92;
+      margin-top:2px;
+    }
+    .hero .today{
+      display:inline-block;
+      margin-top:8px;
+      font-size:.78rem;
+      background:rgba(255,255,255,.18);
+      padding:3px 12px;
+      border-radius:999px;
+    }
+
+    /* ===== البطاقات ===== */
+    .card{
+      background:var(--card);
+      border:1px solid rgba(255,255,255,.65);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:22px;
+      margin-bottom:18px;
+    }
+    .card h2{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      font-size:1.05rem;
+      font-weight:800;
+      margin-bottom:16px;
+    }
+    .card h2::before{
+      content:"";
+      width:5px; height:20px;
+      border-radius:4px;
+      background:linear-gradient(180deg, var(--cyan), var(--purple));
+      flex:0 0 auto;
+    }
+    .badge{
+      display:inline-grid;
+      place-items:center;
+      min-width:26px; height:26px;
+      padding:0 9px;
+      border-radius:999px;
+      font-size:.8rem;
+      font-weight:800;
+      color:#fff;
+      background:linear-gradient(135deg, var(--cyan), var(--purple));
+    }
+
+    /* ===== النموذج ===== */
+    .field label{
+      display:block;
+      font-size:.85rem;
+      font-weight:700;
+      color:var(--muted);
+      margin-bottom:6px;
+    }
+    .field input,
+    .field select{
+      width:100%;
+      padding:12px 14px;
+      font-family:inherit;
+      font-size:1rem;
+      color:var(--ink);
+      background:#f8fafc;
+      border:2px solid var(--line);
+      border-radius:12px;
+      transition:border-color .2s, box-shadow .2s, background .2s;
+    }
+    .field input::placeholder{ color:#94a3b8; }
+    .field input:focus,
+    .field select:focus{
+      outline:none;
+      background:#fff;
+      border-color:var(--cyan);
+      box-shadow:0 0 0 4px rgba(34,211,238,.18);
+    }
+    .row{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:14px;
+      margin-top:14px;
+    }
+
+    /* رسالة الخطأ: مخفية افتراضيًا وتظهر عند الرفض */
+    #error{
+      display:none;
+      margin-top:14px;
+      padding:11px 14px;
+      font-size:.9rem;
+      font-weight:700;
+      color:#b91c1c;
+      background:#fef2f2;
+      border:1px solid #fecaca;
+      border-radius:12px;
+    }
+    #error.show{ display:block; }
+
+    #add{
+      width:100%;
+      margin-top:16px;
+      padding:14px;
+      font-family:inherit;
+      font-size:1.05rem;
+      font-weight:800;
+      color:#fff;
+      border:none;
+      border-radius:14px;
+      cursor:pointer;
+      background:linear-gradient(135deg, var(--cyan) 0%, var(--purple) 100%);
+      box-shadow:0 10px 22px -10px rgba(124,58,237,.55);
+      transition:transform .15s ease, box-shadow .15s ease, filter .15s ease;
+    }
+    #add:hover{ transform:translateY(-2px); filter:brightness(1.05); }
+    #add:active{ transform:translateY(0); filter:brightness(.97); }
+    #add:focus-visible{ outline:3px solid rgba(139,92,246,.45); outline-offset:2px; }
+
+    /* ===== بطاقة المجموع ===== */
+    .total-card{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      color:#fff;
+      background:linear-gradient(135deg, #0891b2 0%, var(--violet) 100%);
+      border:none;
+    }
+    .total-card .total-label{
+      font-size:.95rem;
+      font-weight:700;
+      opacity:.95;
+    }
+    .total-card .total-hint{
+      display:block;
+      font-size:.75rem;
+      font-weight:400;
+      opacity:.8;
+      margin-top:2px;
+    }
+    .total-value{
+      display:flex;
+      align-items:baseline;
+      gap:8px;
+      direction:ltr;
+    }
+    #total{
+      font-size:2.3rem;
+      font-weight:800;
+      line-height:1;
+      text-shadow:0 2px 10px rgba(0,0,0,.15);
+    }
+    .currency{
+      font-size:.95rem;
+      font-weight:700;
+      opacity:.9;
+    }
+
+    /* ===== قائمة المصروفات ===== */
+    #entries{
+      list-style:none;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .expense{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding:12px 14px;
+      background:#f8fafc;
+      border:1px solid var(--line);
+      border-radius:14px;
+      animation:pop .25s ease;
+      transition:border-color .2s, box-shadow .2s;
+    }
+    .expense:hover{
+      border-color:var(--purple-2);
+      box-shadow:0 6px 16px -10px rgba(139,92,246,.45);
+    }
+    .exp-main{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      min-width:0;
+    }
+    .expense-title{
+      font-weight:700;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .chip{
+      flex:0 0 auto;
+      font-size:.72rem;
+      font-weight:800;
+      padding:3px 11px;
+      border-radius:999px;
+    }
+    .chip-food{ background:var(--cyan-soft); color:#0e7490; }
+    .chip-transport{ background:#f5f3ff; color:var(--purple-deep); }
+    .chip-other{ background:#fdf4ff; color:#a21caf; }
+
+    .exp-side{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex:0 0 auto;
+    }
+    .expense-amount{
+      font-weight:800;
+      font-size:1.05rem;
+      color:var(--purple-deep);
+      direction:ltr;
+    }
+    .delete{
+      font-family:inherit;
+      font-size:.8rem;
+      font-weight:700;
+      color:#dc2626;
+      background:#fee2e2;
+      border:1px solid #fecaca;
+      border-radius:10px;
+      padding:7px 12px;
+      cursor:pointer;
+      transition:background .2s, color .2s, transform .15s;
+    }
+    .delete:hover{ background:#dc2626; color:#fff; transform:translateY(-1px); }
+    .delete:focus-visible{ outline:3px solid rgba(220,38,38,.35); outline-offset:2px; }
+
+    .empty{
+      text-align:center;
+      color:var(--muted);
+      font-size:.95rem;
+      padding:28px 12px;
+      background:#f8fafc;
+      border:1px dashed var(--line);
+      border-radius:14px;
+    }
+
+    /* ===== فلتر الفئة ===== */
+    .filter-row{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      margin-bottom:14px;
+      flex-wrap:wrap;
+    }
+    .filter-label{
+      font-size:.85rem;
+      font-weight:700;
+      color:var(--muted);
+      flex:0 0 auto;
+    }
+    #filter{
+      flex:1 1 180px;
+      max-width:240px;
+      padding:10px 14px;
+      font-family:inherit;
+      font-size:.95rem;
+      color:var(--ink);
+      background:#f8fafc;
+      border:2px solid var(--line);
+      border-radius:12px;
+      cursor:pointer;
+      transition:border-color .2s, box-shadow .2s, background .2s;
+    }
+    #filter:focus{
+      outline:none;
+      background:#fff;
+      border-color:var(--purple);
+      box-shadow:0 0 0 4px rgba(139,92,246,.18);
+    }
+
+    /* ===== زر المسح ===== */
+    #reset{
+      display:block;
+      width:100%;
+      margin-top:16px;
+      padding:12px;
+      font-family:inherit;
+      font-size:.95rem;
+      font-weight:800;
+      color:#b91c1c;
+      background:#fff1f2;
+      border:1px solid #fecaca;
+      border-radius:12px;
+      cursor:pointer;
+      transition:background .2s, color .2s, transform .15s, box-shadow .15s;
+    }
+    #reset:hover{
+      background:#dc2626;
+      color:#fff;
+      transform:translateY(-1px);
+      box-shadow:0 8px 18px -10px rgba(220,38,38,.55);
+    }
+    #reset:active{ transform:translateY(0); }
+    #reset:focus-visible{ outline:3px solid rgba(220,38,38,.35); outline-offset:2px; }
+
+    /* ===== التذييل ===== */
+    .app-footer{
+      text-align:center;
+      font-size:.8rem;
+      color:#475569;
+      padding:6px 10px 0;
+    }
+    .app-footer .lock{ opacity:.85; }
+
+    /* ===== حركة ===== */
+    @keyframes pop{
+      from{ opacity:0; transform:translateY(7px); }
+      to{ opacity:1; transform:none; }
+    }
+
+    /* ===== التجاوب ===== */
+    @media (max-width:560px){
+      body{ padding:16px 12px 30px; }
+      .hero{ padding:20px; border-radius:20px; }
+      .hero h1{ font-size:1.25rem; }
+      .card{ padding:18px; }
+      .row{ grid-template-columns:1fr; gap:12px; margin-top:12px; }
+      #total{ font-size:1.9rem; }
+      .expense{ flex-wrap:wrap; }
+      .exp-main{ flex:1 1 100%; }
+      .exp-side{ flex:1 1 100%; justify-content:space-between; }
+      #filter{ flex:1 1 100%; max-width:none; }
+      .filter-row{ gap:8px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+
+    <!-- الترويسة -->
+    <header class="hero">
+      <div class="logo" aria-hidden="true">💰</div>
+      <div>
+        <h1>مصروفي</h1>
+        <p class="tagline">سجّل مصروفاتك اليومية وتابع مجموعها بسهولة</p>
+        <span class="today" id="today"></span>
+      </div>
+    </header>
+
+    <main>
+      <!-- نموذج الإضافة -->
+      <section class="card form-card" aria-labelledby="form-heading">
+        <h2 id="form-heading">إضافة مصروف جديد</h2>
+        <form id="expense-form" novalidate autocomplete="off">
+          <div class="field">
+            <label for="title">عنوان المصروف</label>
+            <input type="text" id="title" name="title" placeholder="مثال: قهوة الصباح">
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label for="amount">المبلغ</label>
+              <input type="number" id="amount" name="amount" placeholder="0.00" step="any" inputmode="decimal">
+            </div>
+            <div class="field">
+              <label for="category">الفئة</label>
+              <select id="category" name="category">
+                <option value="food">طعام</option>
+                <option value="transport">مواصلات</option>
+                <option value="other">أخرى</option>
+              </select>
+            </div>
+          </div>
+
+          <p id="error" role="alert" aria-live="assertive"></p>
+
+          <button type="button" id="add">➕ إضافة المصروف</button>
+        </form>
+      </section>
+
+      <!-- المجموع -->
+      <section class="card total-card" aria-label="إجمالي المصروفات">
+        <div class="total-label">
+          إجمالي المصروفات
+          <span class="total-hint">يعكس العناصر المعروضة — يتحدّث عند الإضافة والحذف والتصفية</span>
+        </div>
+        <div class="total-value">
+          <span id="total">0</span>
+          <span class="currency">ر.س</span>
+        </div>
+      </section>
+
+      <!-- القائمة -->
+      <section class="card list-card" aria-labelledby="list-heading">
+        <h2 id="list-heading">قائمة المصروفات <span class="badge" id="count">0</span></h2>
+
+        <!-- فلتر الفئة -->
+        <div class="filter-row">
+          <label class="filter-label" for="filter">تصفية حسب الفئة</label>
+          <select id="filter" aria-label="تصفية المصروفات حسب الفئة">
+            <option value="all">الكل</option>
+            <option value="food">طعام</option>
+            <option value="transport">مواصلات</option>
+            <option value="other">أخرى</option>
+          </select>
+        </div>
+
+        <ul id="entries"></ul>
+
+        <button type="button" id="reset">🧹 مسح جميع البيانات</button>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <p class="lock">🔒 تُحفظ بياناتك محليًا في متصفحك عبر localStorage — بدون إنترنت أو خوادم خارجية.</p>
+    </footer>
+  </div>
+
+  <script>
+    (function(){
+      'use strict';
+
+      var STORAGE_KEY = 'loam.expenses.v1';
+      var CATS = { food:'طعام', transport:'مواصلات', other:'أخرى' };
+
+      var form          = document.getElementById('expense-form');
+      var titleInput    = document.getElementById('title');
+      var amountInput   = document.getElementById('amount');
+      var categorySelect= document.getElementById('category');
+      var addBtn        = document.getElementById('add');
+      var errorBox      = document.getElementById('error');
+      var entriesList   = document.getElementById('entries');
+      var totalEl       = document.getElementById('total');
+      var countEl       = document.getElementById('count');
+      var todayEl       = document.getElementById('today');
+      var filterSelect  = document.getElementById('filter');
+      var resetBtn      = document.getElementById('reset');
+
+      var expenses = [];
+      var currentFilter = 'all';
+
+      /* ===== أدوات مساعدة ===== */
+
+      // تنسيق المجموع: إزالة الأصفار الزائدة (20.00 -> 20 ، 12.50 -> 12.5 ، 0 -> 0)
+      function fmt(n){
+        var rounded = Math.round((n + Number.EPSILON) * 100) / 100;
+        return String(parseFloat(rounded.toFixed(2)));
+      }
+
+      // المجموع يعكس العناصر المعروضة فقط (بعد تطبيق الفلتر)
+      function visibleExpenses(){
+        if(currentFilter === 'all'){ return expenses; }
+        return expenses.filter(function(it){ return it.category === currentFilter; });
+      }
+
+      function sum(){
+        return visibleExpenses().reduce(function(acc, it){ return acc + Number(it.amount); }, 0);
+      }
+
+      /* ===== التخزين المحلي ===== */
+      function load(){
+        try{
+          var raw = localStorage.getItem(STORAGE_KEY);
+          var data = raw ? JSON.parse(raw) : [];
+          expenses = Array.isArray(data)
+            ? data.filter(function(it){
+                return it && typeof it.title === 'string' && it.title.trim() !== ''
+                  && isFinite(Number(it.amount)) && Number(it.amount) > 0
+                  && Object.prototype.hasOwnProperty.call(CATS, it.category);
+              })
+            : [];
+        }catch(e){
+          expenses = [];
+        }
+      }
+
+      function save(){
+        try{
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
+        }catch(e){ /* التخزين غير متاح — نتجاهل بصمت */ }
+      }
+
+      /* ===== رسالة الخطأ ===== */
+      function showError(msg){
+        errorBox.textContent = msg;
+        errorBox.classList.add('show');
+      }
+      function hideError(){
+        errorBox.classList.remove('show');
+        errorBox.textContent = '';
+      }
+
+      /* ===== العرض ===== */
+      function updateTotal(){
+        totalEl.textContent = fmt(sum());
+        if(countEl){ countEl.textContent = String(visibleExpenses().length); }
+      }
+
+      function render(){
+        entriesList.innerHTML = '';
+        var shown = visibleExpenses();
+
+        if(shown.length === 0){
+          var empty = document.createElement('li');
+          empty.className = 'empty';
+          empty.textContent = (expenses.length === 0)
+            ? 'لا توجد مصروفات بعد. أضف أول مصروف من النموذج أعلاه ✨'
+            : 'لا توجد مصروفات في هذه الفئة. جرّب اختيار «الكل» ✨';
+          entriesList.appendChild(empty);
+          return;
+        }
+
+        shown.forEach(function(it){
+          var li = document.createElement('li');
+          li.className = 'expense';
+          li.dataset.id = String(it.id);
+
+          var main = document.createElement('div');
+          main.className = 'exp-main';
+
+          var t = document.createElement('span');
+          t.className = 'expense-title';
+          t.textContent = it.title;
+
+          var chip = document.createElement('span');
+          chip.className = 'chip chip-' + it.category;
+          chip.textContent = CATS[it.category] || it.category;
+
+          main.appendChild(t);
+          main.appendChild(chip);
+
+          var side = document.createElement('div');
+          side.className = 'exp-side';
+
+          var amt = document.createElement('span');
+          amt.className = 'expense-amount';
+          amt.textContent = fmt(Number(it.amount));
+
+          var del = document.createElement('button');
+          del.type = 'button';
+          del.className = 'delete';
+          del.setAttribute('aria-label', 'حذف ' + it.title);
+          del.textContent = '🗑️ حذف';
+
+          side.appendChild(amt);
+          side.appendChild(del);
+
+          li.appendChild(main);
+          li.appendChild(side);
+          entriesList.appendChild(li);
+        });
+      }
+
+      /* ===== الإضافة مع تحقق يدوي ===== */
+      function addExpense(){
+        var title     = titleInput.value.trim();
+        var amountRaw = amountInput.value.trim();
+        var category  = categorySelect.value;
+        var amount    = Number(amountRaw);
+
+        if(title === ''){
+          showError('⚠️ يرجى إدخال عنوان للمصروف.');
+          titleInput.focus();
+          return;
+        }
+        if(amountRaw === '' || !isFinite(amount) || amount <= 0){
+          showError('⚠️ يرجى إدخال مبلغ موجب صحيح أكبر من صفر.');
+          amountInput.focus();
+          return;
+        }
+        if(!Object.prototype.hasOwnProperty.call(CATS, category)){
+          showError('⚠️ يرجى اختيار فئة صحيحة.');
+          return;
+        }
+
+        hideError();
+        expenses.push({
+          id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+          title: title,
+          amount: amount,
+          category: category
+        });
+        save();
+        render();
+        updateTotal();
+
+        titleInput.value = '';
+        amountInput.value = '';
+        titleInput.focus();
+      }
+
+      /* ===== الحذف (تفويض الأحداث) ===== */
+      entriesList.addEventListener('click', function(ev){
+        var btn = ev.target && ev.target.closest ? ev.target.closest('.delete') : null;
+        if(!btn){ return; }
+        var li = btn.closest('.expense');
+        if(!li){ return; }
+        var id = li.dataset.id;
+        expenses = expenses.filter(function(it){ return String(it.id) !== id; });
+        save();
+        render();
+        updateTotal();
+      });
+
+      /* ===== تصفية الفئة ===== */
+      // إعادة رسم القائمة وتحديث المجموع من العناصر الظاهرة (المفلترة) فقط
+      function applyFilter(){
+        var v = filterSelect.value;
+        currentFilter = (v === 'all' || Object.prototype.hasOwnProperty.call(CATS, v)) ? v : 'all';
+        render();
+        updateTotal();
+      }
+      // الاستماع إلى 'change' و 'input' معًا لضمان الاستجابة لأي طريقة لتغيير قيمة الفلتر
+      filterSelect.addEventListener('change', applyFilter);
+      filterSelect.addEventListener('input', applyFilter);
+
+      /* ===== مسح جميع البيانات فورًا (بدون تأكيد أو تأخير) ===== */
+      resetBtn.addEventListener('click', function(){
+        expenses = [];
+        currentFilter = 'all';
+        filterSelect.value = 'all';
+        try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
+        save();
+        hideError();
+        render();
+        updateTotal();
+      });
+
+      /* ===== الربط ===== */
+      addBtn.addEventListener('click', addExpense);
+
+      form.addEventListener('submit', function(e){
+        e.preventDefault(); // منع الإرسال الأصلي حتى لا يتعارض مع التحقق اليدوي
+        addExpense();
+      });
+
+      // إخفاء رسالة الخطأ عند بدء كتابة قيم جديدة
+      [titleInput, amountInput].forEach(function(el){
+        el.addEventListener('input', hideError);
+      });
+
+      // مزامنة تلقائية إذا تغيّر التخزين من تبويب آخر
+      window.addEventListener('storage', function(e){
+        if(e.key === STORAGE_KEY){
+          load();
+          render();
+          updateTotal();
+        }
+      });
+
+      // إخفاء رسالة الخطأ عند تغيير الفئة المختارة
+      categorySelect.addEventListener('change', hideError);
+
+      /* ===== التهيئة ===== */
+      try{
+        todayEl.textContent = new Date().toLocaleDateString('ar', {
+          weekday:'long', day:'numeric', month:'long', year:'numeric'
+        });
+      }catch(e){ todayEl.textContent = ''; }
+
+      load();      // استعادة البيانات من localStorage عند التحميل
+      render();    // رسم القائمة (حالة فارغة سليمة عند عدم وجود بيانات)
+      updateTotal(); // ضبط المجموع على "0" في الحالة الفارغة
+    })();
+  </script>
+</body>
+</html>

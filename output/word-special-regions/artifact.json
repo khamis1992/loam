@@ -1,0 +1,84 @@
+{
+  "kind": "document",
+  "title": "special",
+  "content": {
+    "blocks": [
+      {
+        "sourceNode": 0,
+        "style": {
+          "color": "#18202b",
+          "fontFamily": "Arial",
+          "fontSize": 11,
+          "alignment": "left"
+        },
+        "type": "paragraph",
+        "text": "Body paragraph before the table.",
+        "bold": false,
+        "italic": false
+      },
+      {
+        "sourceNode": 1,
+        "type": "table",
+        "text": "",
+        "columns": [
+          "Alpha",
+          "Beta",
+          "Gamma"
+        ],
+        "rows": [
+          [
+            "One",
+            "Two",
+            "Three"
+          ]
+        ],
+        "cellImages": [
+          {
+            "row": 0,
+            "column": 1,
+            "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAAcCAIAAAC72etpAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAATklEQVRYhe2XwQkAQAjDnKeTZZSOfRvcV4SAA5SiTZ2UEzPrCqJQdBR3tB5TjaeYo5FMiNDud47YntBRLM71mOrPFHN01pETyYSO8rHgAc+vv5uNR9XbAAAAAElFTkSuQmCC",
+            "alt": "Cell marker"
+          }
+        ]
+      },
+      {
+        "sourceNode": 2,
+        "style": {
+          "color": "#18202b",
+          "fontFamily": "Arial",
+          "fontSize": 11,
+          "alignment": "left"
+        },
+        "type": "paragraph",
+        "text": "Text box host paragraph مربع نص قابل للتحرير",
+        "bold": false,
+        "italic": false
+      }
+    ],
+    "regions": [
+      {
+        "kind": "header",
+        "label": "رأس LOAM SPECIAL REGIONS REVIEW",
+        "text": "LOAM SPECIAL REGIONS REVIEW — تعديل الرأس\nSecond header line",
+        "part": "word/header1.xml"
+      },
+      {
+        "kind": "footer",
+        "label": "تذييل Page footer · تذييل الصفحة",
+        "text": "Page footer · تذييل الصفحة",
+        "part": "word/footer1.xml"
+      },
+      {
+        "kind": "textbox",
+        "label": "مربع نص مربع نص قابل للتحرير",
+        "text": "مربع نص بعد التعديل",
+        "node": 2
+      }
+    ]
+  },
+  "sourceId": "a05e7feb-f408-413d-a78a-48fea00db375",
+  "warnings": [
+    "معاينة مبسطة قابلة للتحرير. تبقى الصور والتنسيقات والعناصر غير المعروضة محفوظة في الملف الأصلي عند التصدير."
+  ],
+  "revision": 1
+}

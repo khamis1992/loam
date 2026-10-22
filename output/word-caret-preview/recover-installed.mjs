@@ -1,0 +1,9 @@
+import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import {chromium} from 'playwright';
+const base='http://127.0.0.1:3939',out='output/word-caret-preview/0.5.13';await fs.mkdir(out,{recursive:true});
+const {taskId}=JSON.parse(await fs.readFile('output/word-caret-preview/installed-task.json','utf8'));
+const {artifact:a}=await(await fetch(base+'/api/studio?taskId='+taskId)).json();assert.equal(a.revision,8);
+for(const [endpoint,ext] of [['export','docx'],['preview','pdf']]){const r=await fetch(base+'/api/studio/'+endpoint+'?taskId='+taskId);assert.ok(r.ok);await fs.writeFile(out+'/installed-caret.'+ext,Buffer.from(await r.arrayBuffer()));}
+await fs.writeFile(out+'/installed-artifact.json',JSON.stringify(a,null,2));await fs.writeFile(out+'/installed-task.json',JSON.stringify({taskId}));
+const browser=await chromium.launch({channel:'msedge',headless:true});try{const page=await browser.newPage({viewport:{width:1500,height:1100}});await page.goto(base+'/#/tasks/'+taskId);await page.locator('[data-action=read-document]').click();const frame=page.frameLocator('iframe.office-file-preview');await frame.locator('.word-page').first().waitFor({timeout:90000});await frame.locator('#status').waitFor({state:'hidden',timeout:90000});for(let i=0;i<await frame.locator('canvas').count();i++){const data=await frame.locator('canvas').nth(i).evaluate(e=>e.toDataURL());await fs.writeFile(`${out}/page-${i+1}.png`,Buffer.from(data.split(',')[1],'base64'));}await frame.locator('[data-target="0/text"]').first().click();await page.screenshot({path:out+'/editor.png'});await fs.writeFile(out+'/result.json',JSON.stringify({taskId,version:'0.5.13',revision:a.revision,pages:await frame.locator('.word-page').count()},null,2));console.log('PASS installed edits and versioned export, visual evidence saved');}finally{await browser.close();}

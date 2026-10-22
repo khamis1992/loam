@@ -1,0 +1,23 @@
+﻿TASK MF2 (finish). Already committed: ba7a5e8 (src/server/scheduleTime.ts, db.ts addSchedule(...,spec)/listSchedulesByAgent/recordScheduleOutcome, scheduler.ts retry-once). Uncommitted new file src/tools/scheduleTools.ts (schedule_create/list/cancel) is written and type-checks; review it and keep it.
+Do:
+1. Register createScheduleTools() in src/index.ts next to createScratchpadTools(), and add schedule_create, schedule_list, schedule_cancel to ALWAYS_ON_TOOLS in src/server/runTools.ts; extend src/server/__tests__/runTools.test.ts to assert schedule_create is in the build-mode run tool list.
+2. New route module src/server/routes/schedules.ts: GET /api/agents/:id/schedules -> {schedules:[{id,prompt,cron,runAt,intervalSeconds,timezone,nextRunAt,lastRunAt,lastStatus,attempts,lastError,enabled}]}. Mount like handleScratchpadRoutes in http.ts (check git status first per rules). Existing POST /api/schedules/:id/run-now and DELETE /api/schedules/:id stay.
+3. Also make the existing POST /api/schedules accept optional cron, at, timezone fields ONLY if that can be done without large http.ts edits; otherwise skip and note it.
+4. UI: AgentInfoPane Routines tab uses GET /api/agents/:id/schedules: each row shows prompt, cron/at/every Ns + timezone, next run (local time), last status badge (ok/retrying/failed) with attempts and lastError tooltip, buttons Run now (POST /api/schedules/:id/run-now) and Cancel (DELETE /api/schedules/:id, confirm). Empty state 'No routines for this agent.'
+5. Unit test for the route module if practical.
+Commit in 2-3 small commits.
+COMMON RULES (apply to every task):
+- Repo C:\Users\khamis\Desktop\manus-local, branch manus-parity. Small commits with explicit paths (git add <paths>, never -A). Never push.
+- NEVER modify these files (another tool owns them): src/server/companionGateway.ts src/setup/runtime.ts src/tools/companionTeamTools.ts src/scripts/* scripts/stt_server.py src/tools/serviceBridgeTools.ts src/tools/serviceGapTools.ts.
+- New server HTTP routes go in NEW modules under src/server/routes/ exporting `async function handleXRoutes(req,res,p,ctx): Promise<boolean>`. To mount them, you may add at most a minimal import + one dispatch call in src/server/http.ts near the other /api/agents handlers, ONLY if `git status --short src/server/http.ts` prints nothing right before you edit; commit that change immediately. If it is dirty, do not edit it; report instead.
+- New agent tools: find how existing tools are registered (search src/tools and the tool registry/gateway) and register new tools in new files plus the minimal registry line; respect the existing tool gateway / approval layers.
+- Persistence: use the existing store (src/server/db.ts / sqliteStore.ts) patterns; add migrations/tables idempotently.
+- Write original code (ideas from Rakazo, Apache-2.0, no verbatim copying).
+- UI work in packages/web/src (agents UI: components/agents/AgentInfoPane.tsx, AgentThreadView.tsx, AgentSidebarList.tsx, AgentEditDrawer.tsx). Use existing Tailwind tokens and t(). Brand Loam; never write 'Cue'.
+- Do not break custom agent create/edit/run or the Grok Bot-style agents page.
+- Add a unit test (use the repo's existing test runner; check package.json) for server logic.
+- Verify before finishing: `npx tsc --noEmit` at repo root (server) AND `npx tsc --noEmit -p packages/web/tsconfig.json` both 0 errors; `npm run build` in packages/web succeeds; tests pass.
+- Finish with a short report: commits, files, new routes/tools (exact names, request/response shapes), how to test live, what's left.
+- TOOL EXPOSURE RECIPE (learned in MF1, commit 6f34b9d): registering a tool is not enough; agent runs only see tools in the gateway allowlist. For low-risk agent tools add names to ALWAYS_ON_TOOLS in src/server/runTools.ts. For risky tools route through the existing approval layer (src/server/approvals.ts). Add a test in src/server/__tests__/ asserting the tool appears in the effective run tool list.
+- Proceed autonomously with tools; do not stop after planning.
+

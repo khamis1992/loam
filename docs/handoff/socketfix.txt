@@ -1,0 +1,9 @@
+Small fix. OWNERSHIP: src/protocol/socket.ts ONLY. Do NOT touch src/server/http.ts or any other file.
+BUG: When a task is started from an agent (the client sends extData.agentId), the created task record stores agentId=null, so the task is not attributed to the agent (/api/tasks?agentId=... and usage attribution miss it). Confirmed live: a task started from a custom agent persisted with agentId=null.
+ROOT CAUSE: around line 433, createTask is called with a hardcoded null for the agentId argument:
+  const task = createTask(text, text.slice(0, 80), um.extData.projectId ?? null, null);
+createTask signature (src/db.ts) is createTask(prompt, title?, projectId?, agentId?).
+FIX: pass the agent id through instead of null:
+  const task = createTask(text, text.slice(0, 80), um.extData.projectId ?? null, um.extData.agentId ?? null);
+Change ONLY that one argument. Do not alter the later runTask call.
+VERIFY: npx tsc --noEmit -p . = 0 errors. Commit only src/protocol/socket.ts. Append a note to docs/handoff/int-fc-report.md describing this fix.

@@ -1,0 +1,15 @@
+﻿Edit ONLY the file src/server/scheduleTime.ts. Do not touch any other file. Do not refactor. Make exactly these two edits with the edit tool:
+
+EDIT 1. Find this exact line:
+    const [rangePart, stepPart] = part.split("/");
+Replace it with these two lines:
+    const [rangePartRaw, stepPart] = part.split("/");
+    const rangePart = rangePartRaw ?? "";
+
+EDIT 2. Find this exact line:
+  const [minutes, hours, doms, months, dows] = fields.map((f, i) => parseCronField(f, i));
+Replace it with:
+  const [minutes, hours, doms, months, dows] = fields.map((f, i) => parseCronField(f, i)) as [CronField, CronField, CronField, CronField, CronField];
+
+Then run with bash: npx tsc --noEmit
+It must print no errors for scheduleTime.ts. Do NOT commit. Reply "DONE" plus the tsc output.

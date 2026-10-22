@@ -29,6 +29,7 @@ export interface Usage {
 }
 
 export type AgentEvent =
+  | { type: "verification_progress"; stage: "creative" | "application" | "independent_author" | "independent_application" | "final_review" }
   | { type: "task-status"; status: string }
   | { type: "task"; taskId: string }
   | { type: "step"; index: number }
@@ -41,6 +42,8 @@ export type AgentEvent =
   | { type: "error"; message: string }
   /** Frontier mode auto-detection: the operational mode activated for this task (app-build, mobile-dev, ...). */
   | { type: "mode"; mode: string; label: string; labelAr: string; reason?: string }
+  /** Companion gateway: the work mode activated for this run (chat, loam, user_device, ...) and its device requirement. */
+  | { type: "workmode"; workMode: string; labelAr: string; deviceRequired: boolean; deviceId?: string; deviceName?: string; reason?: string }
   /** Orchestrator: the full execution plan for this task. */
   | { type: "plan"; goal: string; trivial: boolean; steps: PlanStepInfo[]; source: "model" | "fallback" }
   /** Orchestrator: lifecycle of one plan step (executor worker run). */
@@ -51,6 +54,8 @@ export type AgentEvent =
   | { type: "revise"; id: string; attempt: number; fixes: string[] }
   /** Reflection loop: the plan is being rebuilt after a "fail" verdict. */
   | { type: "replan"; round: number; reason: string }
+  /** Sensitive-action gate: a host input action awaits an explicit user decision. */
+  | { type: "approval_required"; approvalId: string; tool: string; summary: string }
   /** End-to-end verification of the completed task. */
   | { type: "verify"; verdict: Verdict; reason: string; parsed?: boolean };
 

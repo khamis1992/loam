@@ -1,0 +1,63 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import assert from "node:assert/strict";
+import { AcceptanceGuard } from "../agent/acceptanceGuard.js";
+import { verifyFinal } from "../agent/verifier.js";
+import { loadConfig } from "../config.js";
+import type { ChatOptions, OllamaClient } from "../ollama.js";
+import { acceptanceAuditFixture } from './acceptanceAuditFixture.js';
+
+const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "loam-acceptance-"));
+const cfg = loadConfig(); cfg.workspace = workspace;
+const manifest = path.join(workspace, "app-verification.json");
+const entry = path.join(workspace, "index.html");
+const contract = { entry: "index.html", scenarios: [{ name: "increment", steps: [{ action: "click", selector: "#add" }, { action: "textExact", selector: "#count", value: "1" }] }] };
+const write = (value: unknown) => fs.writeFileSync(manifest, JSON.stringify(value));
+const broken = '<!doctype html><meta name="viewport" content="width=device-width"><h1>Counter</h1><button id="add">Add</button><output id="count">0</output>';
+fs.writeFileSync(entry, broken); write(contract);
+let modelCalls = 0;
+let auditCalls = 0;
+const ollama = { chat: async (o: ChatOptions) => {
+  const audit = acceptanceAuditFixture(o);
+  if (audit) auditCalls++; else modelCalls++;
+  const content = audit ?? JSON.stringify(o.messages[0]?.content.startsWith('You are an independent acceptance-test author')
+    ? { contract, basis: ['Working counter increment button'] }
+    : { verdict: "pass", reason: "checked", issues: [], finalAnswer: "Counter passed desktop/mobile execution and visual fixture." });
+  return { model: "fixture", content, toolCalls: [], usage: { promptTokens: 1, completionTokens: 1, durationMs: 1 } };
+} } as unknown as OllamaClient;
+const guard = new AcceptanceGuard();
+const verify = (acceptanceGuard = guard) => verifyFinal({ cfg, ollama, acceptanceGuard, request: "Working counter increment button", goal: "counter", finalText: "done", trace: [], completedSteps: [] });
+const first = await verify();
+assert.equal(first.verdict, "revise", "real broken button must fail first");
+assert.equal(modelCalls, 0);
+assert.equal(auditCalls, 1, 'initial contract is reviewed before the failing browser check');
+const snapshot = guard.snapshot();
+assert.ok(snapshot);
+write({ ...contract, scenarios: [{ name: "title only", steps: [{ action: "visible", selector: "h1" }] }] });
+const weakened = await verify();
+assert.equal(weakened.verdict, "revise"); assert.match(weakened.reason, /Frozen acceptance/);
+assert.equal(modelCalls, 0, "a model PASS cannot override weakened tests");
+const resumed = new AcceptanceGuard(snapshot);
+assert.equal((await verify(resumed)).verdict, "revise", "checkpoint restoration preserves original acceptance");
+fs.unlinkSync(manifest); fs.unlinkSync(entry);
+const deleted = await verify(resumed);
+assert.equal(deleted.verdict, "revise"); assert.match(deleted.reason, /removed/);
+assert.equal(modelCalls, 0, "removing all artifacts cannot bypass the gate as a text-only task");
+write({ ...contract, runtime: { type: "node", entry: "server.mjs" } });
+assert.throws(() => resumed.check(workspace), /entry\/runtime changed/);
+write({ ...contract, scenarios: [{ ...contract.scenarios[0], steps: [{ action: "click", selector: "#add" }, { action: "textExact", selector: "#count", value: "0" }] }] });
+assert.throws(() => resumed.check(workspace), /removed or changed/);
+write({ ...contract, scenarios: [{ name: "renamed only", steps: contract.scenarios[0]!.steps }, { name: "extra", steps: [{ action: "visible", selector: "h1" }] }] });
+resumed.check(workspace);
+write(contract);
+assert.throws(() => resumed.check(workspace), /removed or changed/, "added checks cannot later disappear");
+// Restore the exact original baseline and genuinely fix behavior.
+fs.writeFileSync(entry, broken + '<script>add.onclick=()=>{count.textContent=Number(count.textContent)+1}</script>');
+const fixed = await verify(guard);
+assert.equal(fixed.verdict, "pass", fixed.reason);
+assert.equal(modelCalls, 4, "baseline vision, independent author/vision, then final review");
+assert.equal(auditCalls, 1, 'unchanged frozen contract does not need reauthorization');
+fs.mkdirSync("docs/evidence", { recursive: true });
+fs.writeFileSync("docs/evidence/bot-acceptance.json", JSON.stringify({ at: new Date().toISOString(), workspace, visualJudgment: "fixture; browser interactions are real", first, weakened, deleted, fixed }, null, 2));
+console.log("PASS real failed interaction cannot be hidden by weaker expectations, title-only tests, contract deletion or resume; genuine implementation repair passes");

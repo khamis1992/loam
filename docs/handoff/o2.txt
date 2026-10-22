@@ -1,0 +1,8 @@
+﻿Edit ONLY the file src/server/__tests__/scheduleTime.test.ts. Do not touch any other file.
+The test expectation is wrong: 05:10 UTC is 08:10 in Asia/Qatar, so the next "0,45 9 * * *" run is 09:00 Qatar = 06:00 UTC.
+Find this exact line:
+    assert.equal(listed.toISOString(), "2026-10-20T06:45:00.000Z");
+Replace it with:
+    assert.equal(listed.toISOString(), "2026-10-20T06:00:00.000Z"); // 09:00 Qatar
+Then run with bash: npx tsx --test src/server/__tests__/scheduleTime.test.ts src/server/__tests__/schedulerRetry.test.ts
+Do NOT commit. Reply DONE and the pass/fail summary lines.

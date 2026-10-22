@@ -1,0 +1,98 @@
+{
+  "pass": false,
+  "reason": "Error: Visual/coverage verification did not pass: {\"verdict\":\"pass\",\"reason\":\"All six contract scenarios are visually corroborated on both desktop and mobile screenshots: (1) two entries خبز/حافلة render as .expense items with total 20; (2) قهوة 9 persists after reload with total 9; (3) deleting leaves 0 items and total 0 with a proper empty state; (4) negative amount -1 is rejected with a visible #error box and no entry added; (5) filter set to طعام shows only the food entry with subtotal 15 and subtitle 'مجموع الفئة المعروضة فقط'; (6) #reset empties the list and storage (still empty after reload, total 0). All required selectors (#title, #amount, #category, #add, #error, #entries, #total, #filter, #reset, .expense, .delete) are present and functioning, Arabic RTL layout, cyan/purple gradient design, Arabic category labels (طعام/مواصلات/الكل), and stacked mobile layout are intact with readable text and no overlaps or placeholder content.\",\"issues\":[\"Minor cosmetic only: the error message appears to read 'برجي إدخال مبلغ موجب صحيح' where 'يرجى' would be the standard spelling — a possible one-letter typo that does not impair readability or any required behavior.\"]}",
+  "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\6a8ffb7a-9cad-4f55-b300-c3dc23cebf5c\\report.json",
+  "usage": {
+    "promptTokens": 14968,
+    "completionTokens": 5889,
+    "durationMs": 30590
+  },
+  "checks": [
+    {
+      "viewport": "desktop",
+      "scenario": "Adding entries calculates sum",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Persistence after reload",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Deleting recomputes total",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Invalid input rejected",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Filtering shows matching entries and subtotal",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Reset clears persisted entries",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Adding entries calculates sum",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Persistence after reload",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Deleting recomputes total",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Invalid input rejected",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Filtering shows matching entries and subtotal",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Reset clears persisted entries",
+      "pass": true
+    }
+  ],
+  "screenshots": [
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\6a8ffb7a-9cad-4f55-b300-c3dc23cebf5c\\desktop-0.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\6a8ffb7a-9cad-4f55-b300-c3dc23cebf5c\\desktop-1.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\6a8ffb7a-9cad-4f55-b300-c3dc23cebf5c\\desktop-2.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\6a8ffb7a-9cad-4f55-b300-c3dc23cebf5c\\desktop-3.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\6a8ffb7a-9cad-4f55-b300-c3dc23cebf5c\\desktop-4.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\6a8ffb7a-9cad-4f55-b300-c3dc23cebf5c\\desktop-5.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\6a8ffb7a-9cad-4f55-b300-c3dc23cebf5c\\mobile-0.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\6a8ffb7a-9cad-4f55-b300-c3dc23cebf5c\\mobile-1.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\6a8ffb7a-9cad-4f55-b300-c3dc23cebf5c\\mobile-2.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\6a8ffb7a-9cad-4f55-b300-c3dc23cebf5c\\mobile-3.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\6a8ffb7a-9cad-4f55-b300-c3dc23cebf5c\\mobile-4.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-long-app-LK7YRO\\workspace\\.verification\\6a8ffb7a-9cad-4f55-b300-c3dc23cebf5c\\mobile-5.png"
+  ],
+  "errors": [],
+  "visual": {
+    "model": "glm-5.3-flash",
+    "verdict": {
+      "verdict": "pass",
+      "reason": "All six contract scenarios are visually corroborated on both desktop and mobile screenshots: (1) two entries خبز/حافلة render as .expense items with total 20; (2) قهوة 9 persists after reload with total 9; (3) deleting leaves 0 items and total 0 with a proper empty state; (4) negative amount -1 is rejected with a visible #error box and no entry added; (5) filter set to طعام shows only the food entry with subtotal 15 and subtitle 'مجموع الفئة المعروضة فقط'; (6) #reset empties the list and storage (still empty after reload, total 0). All required selectors (#title, #amount, #category, #add, #error, #entries, #total, #filter, #reset, .expense, .delete) are present and functioning, Arabic RTL layout, cyan/purple gradient design, Arabic category labels (طعام/مواصلات/الكل), and stacked mobile layout are intact with readable text and no overlaps or placeholder content.",
+      "issues": [
+        "Minor cosmetic only: the error message appears to read 'برجي إدخال مبلغ موجب صحيح' where 'يرجى' would be the standard spelling — a possible one-letter typo that does not impair readability or any required behavior."
+      ]
+    },
+    "response": "{\"verdict\":\"pass\",\"reason\":\"All six contract scenarios are visually corroborated on both desktop and mobile screenshots: (1) two entries خبز/حافلة render as .expense items with total 20; (2) قهوة 9 persists after reload with total 9; (3) deleting leaves 0 items and total 0 with a proper empty state; (4) negative amount -1 is rejected with a visible #error box and no entry added; (5) filter set to طعام shows only the food entry with subtotal 15 and subtitle 'مجموع الفئة المعروضة فقط'; (6) #reset empties the list and storage (still empty after reload, total 0). All required selectors (#title, #amount, #category, #add, #error, #entries, #total, #filter, #reset, .expense, .delete) are present and functioning, Arabic RTL layout, cyan/purple gradient design, Arabic category labels (طعام/مواصلات/الكل), and stacked mobile layout are intact with readable text and no overlaps or placeholder content.\",\"issues\":[\"Minor cosmetic only: the error message appears to read 'برجي إدخال مبلغ موجب صحيح' where 'يرجى' would be the standard spelling — a possible one-letter typo that does not impair readability or any required behavior.\"]}"
+  }
+}

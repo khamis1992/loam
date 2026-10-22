@@ -1,0 +1,5 @@
+﻿Edit ONLY src/server/http.ts in C:\Users\khamis\Desktop\manus-local (branch manus-parity). First run `git status --short src/server/http.ts`; if it prints anything, STOP and report.
+1. Next to the line `import { handleSchedulesRoutes } from "./routes/schedules.js";` add: `import { handleAgentThreadRoutes } from "./routes/agentThreads.js";`
+2. Read src/server/routes/agentThreads.ts to see the handler's exact signature and return value, then add a dispatch right after the line `if (await handleScratchpadRoutes(req, res, p)) return;` in the same style (adapt args to the signature).
+3. Also ensure src/protocol/socket.ts changes from the merge compile.
+Run `npx tsc --noEmit` (0 errors) and `npx tsx --test src/server/__tests__/agentThreads.test.ts`. Commit only src/server/http.ts with message "mount agent thread routes (MF5)". Reply with diff summary.

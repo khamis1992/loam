@@ -1,0 +1,40 @@
+{
+  "taskId": "task_mvfef87673cad0ca75b7",
+  "observedAt": "2026-10-19T15:38:52.3627060+00:00",
+  "status": "running",
+  "scope": "Observed plan-step wall time and tool counts only. Open-stage duration is provisional; source reads are not runtime verification.",
+  "stages": [
+    {
+      "id": "s1",
+      "title": "إنشاء server.mjs",
+      "finished": true,
+      "elapsedSeconds": 169.0,
+      "toolCalls": 4,
+      "fileReads": 3
+    },
+    {
+      "id": "s2",
+      "title": "إنشاء index.html",
+      "finished": true,
+      "elapsedSeconds": 301.0,
+      "toolCalls": 8,
+      "fileReads": 4
+    },
+    {
+      "id": "s3",
+      "title": "إنشاء app-verification.json",
+      "finished": true,
+      "elapsedSeconds": 651.0,
+      "toolCalls": 19,
+      "fileReads": 13
+    },
+    {
+      "id": "s4",
+      "title": "المراجعة والتسليم النهائي",
+      "finished": true,
+      "elapsedSeconds": 75.0,
+      "toolCalls": 16,
+      "fileReads": 11
+    }
+  ]
+}

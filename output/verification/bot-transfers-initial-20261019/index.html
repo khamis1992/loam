@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>نقل المخزون بين المستودعات</title>
+  <style>
+    /* ===== أساسيات ===== */
+    *, *::before, *::after { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+
+    :root {
+      --cyan-50:#ecfeff;  --cyan-300:#67e8f9; --cyan-400:#22d3ee;
+      --cyan-500:#06b6d4; --cyan-600:#0891b2; --cyan-700:#0e7490;
+      --purple-50:#f5f3ff; --purple-300:#d8b4fe; --purple-400:#a78bfa;
+      --purple-500:#8b5cf6; --purple-600:#7c3aed; --purple-700:#6d28d9;
+      --ink:#16243a; --muted:#5a6b80; --line:#e4e9f2; --card:#ffffff;
+      --danger:#be123c; --danger-bg:#fff1f2; --danger-line:#fbcfe0;
+      --ok:#0f766e; --ok-bg:#ecfdf8; --ok-line:#99f0e0;
+      --radius:18px;
+    }
+
+    html { -webkit-text-size-adjust: 100%; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: "Segoe UI", "Tahoma", "Noto Kufi Arabic", "Noto Sans Arabic", system-ui, sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+      background:
+        radial-gradient(900px 480px at 88% -8%, rgba(139, 92, 246, .16), transparent 60%),
+        radial-gradient(800px 420px at 8% -4%, rgba(34, 211, 238, .18), transparent 55%),
+        linear-gradient(165deg, #effbff 0%, #f5f1ff 60%, #fbf6ff 100%);
+      background-attachment: fixed;
+    }
+
+    /* ===== الترويسة ===== */
+    .page-header {
+      background: linear-gradient(115deg, var(--cyan-600) 0%, var(--cyan-500) 35%, var(--purple-500) 72%, var(--purple-600) 100%);
+      color: #fff;
+      padding: 34px 20px 80px;
+      box-shadow: 0 12px 32px rgba(109, 40, 217, .22);
+    }
+    .header-inner { max-width: 1080px; margin: 0 auto; }
+    .page-header h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.5rem, 4vw, 2.2rem);
+      font-weight: 800;
+      letter-spacing: .2px;
+    }
+    .page-header p { margin: 0; max-width: 62ch; color: rgba(255, 255, 255, .93); }
+
+    /* ===== الشبكة المتجاوبة ===== */
+    .layout {
+      max-width: 1080px;
+      margin: -50px auto 36px;
+      padding: 0 16px;
+      display: grid;
+      gap: 20px;
+      grid-template-columns: 1fr;
+    }
+    @media (min-width: 940px) {
+      .layout { grid-template-columns: 1fr 1fr; align-items: start; }
+      .log-panel { grid-column: 1 / -1; }
+    }
+
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 22px;
+      box-shadow: 0 14px 34px rgba(76, 29, 149, .10), 0 4px 14px rgba(8, 145, 178, .08);
+    }
+    .panel h2 {
+      margin: 0 0 16px;
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--purple-700);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .panel h2::before {
+      content: "";
+      width: 10px;
+      height: 22px;
+      border-radius: 6px;
+      background: linear-gradient(180deg, var(--cyan-400), var(--purple-500));
+      flex: none;
+    }
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .panel-head h2 { margin: 0; }
+
+    .ghost-btn {
+      border: 1.5px solid var(--cyan-500);
+      color: var(--cyan-700);
+      background: var(--cyan-50);
+      border-radius: 10px;
+      padding: 7px 16px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    .ghost-btn:hover { background: var(--cyan-500); color: #fff; }
+    .ghost-btn:focus-visible { outline: 3px solid rgba(34, 211, 238, .45); outline-offset: 2px; }
+
+    /* ===== صفوف المستودعات ===== */
+    .stock {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #f7feff 0%, #faf7ff 100%);
+    }
+    .stock:last-child { margin-bottom: 0; }
+    .stock-info { display: flex; align-items: center; gap: 12px; min-width: 0; }
+
+    .wh-badge {
+      width: 44px;
+      height: 44px;
+      border-radius: 13px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 800;
+      font-size: 1.15rem;
+      flex: none;
+      box-shadow: 0 6px 14px rgba(8, 145, 178, .25);
+    }
+    .stock[data-warehouse="A"] .wh-badge { background: linear-gradient(135deg, var(--cyan-400), var(--cyan-600)); }
+    .stock[data-warehouse="B"] .wh-badge { background: linear-gradient(135deg, var(--purple-400), var(--purple-600)); box-shadow: 0 6px 14px rgba(124, 58, 237, .25); }
+    .stock[data-warehouse="C"] .wh-badge { background: linear-gradient(120deg, var(--cyan-500), var(--purple-500)); }
+
+    .wh-name { font-weight: 800; font-size: 1.02rem; }
+    .wh-sub { display: block; font-size: .8rem; color: var(--muted); font-weight: 600; }
+
+    .qty-chip {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      background: #fff;
+      border: 1.5px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 18px;
+      flex: none;
+    }
+    .qty-label { font-size: .78rem; font-weight: 700; color: var(--muted); }
+    [data-quantity] {
+      font-size: 1.55rem;
+      font-weight: 800;
+      min-width: 2ch;
+      text-align: center;
+      color: var(--cyan-700);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ===== نموذج النقل ===== */
+    .field { margin-bottom: 14px; }
+    .field label {
+      display: block;
+      font-weight: 700;
+      font-size: .88rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .field input {
+      width: 100%;
+      padding: 12px 14px;
+      font: inherit;
+      color: var(--ink);
+      border: 1.5px solid var(--line);
+      border-radius: 12px;
+      background: #fbfdff;
+      transition: border-color .15s, box-shadow .15s, background .15s;
+    }
+    .field input::placeholder { color: #9fb0c3; }
+    .field input:focus {
+      outline: none;
+      border-color: var(--cyan-500);
+      box-shadow: 0 0 0 4px rgba(34, 211, 238, .16);
+      background: #fff;
+    }
+    .field-row { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+    @media (max-width: 560px) { .field-row { grid-template-columns: 1fr; } }
+
+    .hint { margin: 4px 0 0; font-size: .8rem; color: var(--muted); }
+
+    #transfer {
+      width: 100%;
+      margin-top: 6px;
+      padding: 14px 18px;
+      border: none;
+      border-radius: 13px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: #fff;
+      background: linear-gradient(120deg, var(--cyan-600), var(--purple-600));
+      box-shadow: 0 10px 22px rgba(124, 58, 237, .28);
+      transition: transform .15s, box-shadow .15s, opacity .15s;
+    }
+    #transfer:hover { transform: translateY(-1px); box-shadow: 0 14px 26px rgba(124, 58, 237, .32); }
+    #transfer:active { transform: translateY(0); }
+    #transfer:disabled { opacity: .65; cursor: progress; transform: none; }
+    #transfer:focus-visible { outline: 3px solid rgba(139, 92, 246, .5); outline-offset: 2px; }
+
+    #error, #success {
+      margin: 14px 0 0;
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: .95rem;
+    }
+    #error { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger-line); }
+    #success { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok-line); }
+
+    /* ===== سجل العمليات ===== */
+    #transfers-list { display: grid; gap: 10px; }
+    .empty-log {
+      margin: 0;
+      padding: 18px;
+      text-align: center;
+      color: var(--muted);
+      background: #fbfdff;
+      border: 1.5px dashed var(--line);
+      border-radius: 12px;
+      font-weight: 600;
+    }
+    .transfer {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 14px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fbfdff;
+    }
+    .t-id {
+      font-weight: 800;
+      color: var(--purple-700);
+      background: var(--purple-50);
+      border: 1px solid #e9d5ff;
+      padding: 3px 12px;
+      border-radius: 999px;
+      font-size: .85rem;
+      word-break: break-word;
+    }
+    .t-route { font-weight: 700; color: var(--cyan-700); }
+    .t-qty {
+      margin-inline-start: auto;
+      font-weight: 800;
+      color: var(--ink);
+      background: linear-gradient(120deg, var(--cyan-50), var(--purple-50));
+      border: 1px solid var(--line);
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: .85rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .page-footer {
+      max-width: 1080px;
+      margin: 0 auto 30px;
+      padding: 0 16px;
+      text-align: center;
+      color: var(--muted);
+      font-size: .85rem;
+    }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="header-inner">
+      <h1>نقل المخزون بين المستودعات</h1>
+      <p>نظام ذرّي وآمن لنقل الكميات بين المستودعات A وB وC — تُنفَّذ كل عملية داخل معاملة واحدة وتُحفظ في قاعدة بيانات فورية على الخادم.</p>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- أرصدة المستودعات -->
+    <section class="panel stock-panel" aria-labelledby="stock-title">
+      <div class="panel-head">
+        <h2 id="stock-title">أرصدة المستودعات</h2>
+        <button type="button" id="refresh" class="ghost-btn">تحديث</button>
+      </div>
+
+      <article class="stock" data-warehouse="A">
+        <div class="stock-info">
+          <span class="wh-badge" aria-hidden="true">A</span>
+          <span class="wh-name">المستودع A
+            <span class="wh-sub">المستودع الرئيسي</span>
+          </span>
+        </div>
+        <div class="qty-chip">
+          <span class="qty-label">الرصيد</span>
+          <span class="qty-value" data-quantity>—</span>
+        </div>
+      </article>
+
+      <article class="stock" data-warehouse="B">
+        <div class="stock-info">
+          <span class="wh-badge" aria-hidden="true">B</span>
+          <span class="wh-name">المستودع B
+            <span class="wh-sub">مستودع التوزيع</span>
+          </span>
+        </div>
+        <div class="qty-chip">
+          <span class="qty-label">الرصيد</span>
+          <span class="qty-value" data-quantity>—</span>
+        </div>
+      </article>
+
+      <article class="stock" data-warehouse="C">
+        <div class="stock-info">
+          <span class="wh-badge" aria-hidden="true">C</span>
+          <span class="wh-name">المستودع C
+            <span class="wh-sub">مستودع المخرجات</span>
+          </span>
+        </div>
+        <div class="qty-chip">
+          <span class="qty-label">الرصيد</span>
+          <span class="qty-value" data-quantity>—</span>
+        </div>
+      </article>
+    </section>
+
+    <!-- نموذج النقل -->
+    <section class="panel form-panel" aria-labelledby="form-title">
+      <h2 id="form-title">عملية نقل جديدة</h2>
+      <form id="transfer-form" novalidate>
+        <div class="field">
+          <label for="requestId">معرّف الطلب</label>
+          <input type="text" id="requestId" name="requestId" autocomplete="off" placeholder="مثال: order-101" />
+          <p class="hint">معرّف فريد لكل عملية؛ إعادة إرسال نفس المعرّف بنفس البيانات لا تكرّر التأثير.</p>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="from">من مستودع</label>
+            <input type="text" id="from" name="from" autocomplete="off" placeholder="A" />
+          </div>
+          <div class="field">
+            <label for="to">إلى مستودع</label>
+            <input type="text" id="to" name="to" autocomplete="off" placeholder="B" />
+          </div>
+        </div>
+        <p class="hint">المستودعات المتاحة: A وB وC (حرف واحد لكل مستودع).</p>
+
+        <div class="field">
+          <label for="quantity">الكمية</label>
+          <input type="text" id="quantity" name="quantity" inputmode="numeric" autocomplete="off" placeholder="مثال: 3" />
+          <p class="hint">عدد صحيح موجب فقط.</p>
+        </div>
+
+        <button type="button" id="transfer">تنفيذ النقل</button>
+
+        <p id="error" role="alert" aria-live="assertive" hidden></p>
+        <p id="success" aria-live="polite" hidden></p>
+      </form>
+    </section>
+
+    <!-- سجل العمليات -->
+    <section class="panel log-panel" aria-labelledby="log-title">
+      <h2 id="log-title">سجل عمليات النقل</h2>
+      <div id="transfers-list"></div>
+    </section>
+  </main>
+
+  <footer class="page-footer">
+    تُدار جميع البيانات عبر خادم SQLite حقيقي — لا تخزين محلي في المتصفح ولا بيانات وهمية.
+  </footer>
+
+  <noscript>
+    <p style="text-align:center;font-weight:700">يتطلب هذا التطبيق تفعيل JavaScript في المتصفح.</p>
+  </noscript>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var WAREHOUSES = ['A', 'B', 'C'];
+
+      var requestIdInput = document.getElementById('requestId');
+      var fromInput = document.getElementById('from');
+      var toInput = document.getElementById('to');
+      var quantityInput = document.getElementById('quantity');
+      var transferBtn = document.getElementById('transfer');
+      var refreshBtn = document.getElementById('refresh');
+      var errorBox = document.getElementById('error');
+      var successBox = document.getElementById('success');
+      var transfersList = document.getElementById('transfers-list');
+      var form = document.getElementById('transfer-form');
+
+      /* ---------- الرسائل ---------- */
+      function showError(message) {
+        errorBox.textContent = message;
+        errorBox.hidden = false;
+        successBox.hidden = true;
+      }
+      function showSuccess(message) {
+        successBox.textContent = message;
+        successBox.hidden = false;
+        errorBox.hidden = true;
+      }
+
+      /* ---------- تحويل الأرقام العربية إلى لاتينية قبل الفحص ---------- */
+      function normalizeDigits(text) {
+        var eastern = '٠١٢٣٤٥٦٧٨٩';
+        var persian = '۰۱۲۳۴۵۶۷۸۹';
+        return String(text).replace(/[٠-٩۰-۹]/g, function (ch) {
+          var e = eastern.indexOf(ch);
+          if (e !== -1) return String(e);
+          return String(persian.indexOf(ch));
+        });
+      }
+
+      /* ---------- تحقق الواجهة قبل الإرسال ---------- */
+      function validate() {
+        var requestId = requestIdInput.value.trim();
+        if (!requestId) {
+          return { error: 'يرجى إدخال معرّف الطلب أولًا.' };
+        }
+
+        var from = fromInput.value.trim().toUpperCase();
+        var to = toInput.value.trim().toUpperCase();
+        if (WAREHOUSES.indexOf(from) === -1) {
+          return { error: 'المستودع المصدر يجب أن يكون A أو B أو C.' };
+        }
+        if (WAREHOUSES.indexOf(to) === -1) {
+          return { error: 'المستودع الوجهة يجب أن يكون A أو B أو C.' };
+        }
+        if (from === to) {
+          return { error: 'لا يمكن النقل بين نفس المستودع: اختر مصدرًا ووجهة مختلفين.' };
+        }
+
+        var rawQuantity = normalizeDigits(quantityInput.value.trim());
+        if (!/^\d+$/.test(rawQuantity)) {
+          return { error: 'الكمية يجب أن تكون عددًا صحيحًا موجبًا (بدون كسور أو إشارات).' };
+        }
+        var quantity = Number(rawQuantity); // تحويل الكمية الصالحة إلى number
+        if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+          return { error: 'الكمية يجب أن تكون عددًا صحيحًا موجبًا ضمن الحدود المسموحة.' };
+        }
+
+        return {
+          data: { requestId: requestId, from: from, to: to, quantity: quantity }
+        };
+      }
+
+      /* ---------- عرض الأرصدة من الخادم ---------- */
+      function renderStock(items) {
+        var quantities = new Map();
+        for (var i = 0; i < items.length; i++) {
+          quantities.set(items[i].warehouse, items[i].quantity);
+        }
+        for (var j = 0; j < WAREHOUSES.length; j++) {
+          var wh = WAREHOUSES[j];
+          var cell = document.querySelector('.stock[data-warehouse="' + wh + '"] [data-quantity]');
+          if (!cell) continue;
+          var value = quantities.get(wh);
+          cell.textContent = (typeof value === 'number') ? String(value) : '—';
+        }
+      }
+
+      /* ---------- عرض سجل النقل من الخادم ---------- */
+      function renderTransfers(items) {
+        transfersList.textContent = '';
+        if (!items.length) {
+          var empty = document.createElement('p');
+          empty.className = 'empty-log';
+          empty.textContent = 'لا توجد عمليات نقل مسجّلة بعد.';
+          transfersList.appendChild(empty);
+          return;
+        }
+        for (var i = 0; i < items.length; i++) {
+          var t = items[i];
+          var row = document.createElement('article');
+          row.className = 'transfer';
+
+          var id = document.createElement('span');
+          id.className = 't-id';
+          id.textContent = t.requestId;
+
+          var route = document.createElement('span');
+          route.className = 't-route';
+          route.textContent = 'من ' + t.source + ' إلى ' + t.destination;
+
+          var qty = document.createElement('span');
+          qty.className = 't-qty';
+          qty.textContent = 'الكمية: ' + t.quantity;
+
+          row.appendChild(id);
+          row.appendChild(route);
+          row.appendChild(qty);
+          transfersList.appendChild(row);
+        }
+      }
+
+      /* ---------- جلب الحالة من الخادم (GET /api/stock و GET /api/transfers) ---------- */
+      function refresh(silent) {
+        return Promise.all([
+          fetch('/api/stock', { cache: 'no-store' }),
+          fetch('/api/transfers', { cache: 'no-store' })
+        ]).then(function (responses) {
+          var stockRes = responses[0];
+          var transfersRes = responses[1];
+          if (!stockRes.ok || !transfersRes.ok) throw new Error('bad-status');
+          return Promise.all([stockRes.json(), transfersRes.json()]);
+        }).then(function (payloads) {
+          var stockData = payloads[0];
+          var transfersData = payloads[1];
+          renderStock(Array.isArray(stockData.items) ? stockData.items : []);
+          renderTransfers(Array.isArray(transfersData.items) ? transfersData.items : []);
+        }).catch(function () {
+          if (!silent) showError('تعذر جلب البيانات من الخادم، أعد المحاولة بعد قليل.');
+        });
+      }
+
+      /* ---------- إرسال النقل (POST /api/transfers) ---------- */
+      var inFlight = false;
+      function doTransfer() {
+        if (inFlight) return;
+
+        var result = validate();
+        if (result.error) {
+          showError(result.error); // رفض الواجهة قبل الإرسال: دون أي طلب شبكي
+          return;
+        }
+
+        inFlight = true;
+        transferBtn.disabled = true;
+
+        fetch('/api/transfers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(result.data)
+        }).then(function (res) {
+          return res.json().catch(function () { return null; }).then(function (payload) {
+            if (res.ok) {
+              var duplicated = payload && payload.duplicate;
+              showSuccess(duplicated
+                ? 'هذا الطلب نُفِّذ سابقًا بنفس البيانات، ولم يطرأ أي أثر إضافي.'
+                : 'تم تنفيذ النقل بنجاح وحفظه في السجل.');
+            } else {
+              showError((payload && payload.error) || 'تعذر تنفيذ النقل، حاول مرة أخرى.');
+            }
+            // تحديث المخزون والسجل من الخادم بعد كل عملية
+            return refresh(true);
+          });
+        }).catch(function () {
+          showError('تعذر الاتصال بالخادم، تحقق من تشغيله ثم أعد المحاولة.');
+        }).then(function () {
+          inFlight = false;
+          transferBtn.disabled = false;
+        });
+      }
+
+      /* ---------- الربط ---------- */
+      transferBtn.addEventListener('click', doTransfer);
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        doTransfer();
+      });
+      refreshBtn.addEventListener('click', function () { refresh(false); });
+
+      // تحميل الحالة من الخادم عند فتح الصفحة (دون بيانات وهمية)
+      refresh(false);
+    })();
+  </script>
+</body>
+</html>

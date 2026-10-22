@@ -1,0 +1,17 @@
+# Fixed-build cohort observation interruption
+
+Original cohort `bot-pinned-cohort-1792396550073.json` stopped after first trial's SSE connection terminated at 641309 ms. The task remained running; no task cancellation, execution restart, or new task was performed. Original report `bot-cohort-1792396550073-1-quote.json` and its hash are preserved.
+
+Observer session **57327** attaches to `task_mveymll94409cd147f72`, writing `bot-cohort-1792396550073-1-quote-observed.json`. Its duration is only the reattached observation period, not the whole task duration.
+
+The cohort runner now accepts paired `--continue-from=<prior cohort filename>` and `--resolved-observation=<reattached report filename>`. It verifies the original plan, installed-build provenance, entry-script hashes, original report hashes, same task and prompt, and a terminal outcome. It preserves the original observer error and adds the resolved observation separately; the original JSON is not overwritten. Remaining tasks begin after the inherited prefix rather than repeating it. Live queue detection still stops execution.
+
+Validation: TypeScript passed; attempting continuation against the currently running report correctly rejected `Observation is not terminal` before starting any task. Successful continuation remains untested until the real task terminates. The installed application is unchanged by this runner-only addition.
+
+Additional validation passed: `src/scripts/check-bot-cohort-recovery.ts` launches dry runs from an isolated temporary fixture directory. A valid resolved observation retains the first trial and schedules exactly eight remaining tasks; a genuine terminal failure is retained too. Live tasks, wrong task IDs, changed runtime/request provenance, missing successful external probe, absent terminal outcome, and changed original evidence all reject continuation. No real server request or task is performed. End-to-end continuation still awaits the live task's terminal outcome.
+
+After observer 57327 ends, inspect the task and evidence. If valid and idle, use the same pinned runtime SHA `4CAAED2B99C94E8765988474E663F7CAB636CCCFA144F63DA8065839AB14BB3C` with `--run --collect-all --continue-from=bot-pinned-cohort-1792396550073.json --resolved-observation=bot-cohort-1792396550073-1-quote-observed.json`. Do not use this command to interrupt or re-execute the live first task.
+
+Provider observation at 08:17:07 UTC: the running task emitted an HTTP 502 cloud-model failure and announced fallback from `glm-5.3-flash:cloud` to `qwen2.5:14b`. This event did not terminate the task. Cohort provenance pins the installed application build, not exclusive use of the requested model, cloud weights, or provider availability. Preserve this routing event and do not describe the eventual result as an isolated GLM-only benchmark. The installed settings were not changed by the evaluator.
+
+Terminal update: observer 57327 exited 1. Task error at 08:22:47 UTC was unavailable independent acceptance (`SyntaxError: "undefined" is not valid JSON`), after complete baseline pass (20 checks/images). This is not a proven application defect and not a successful task. Continuation session 74938 launched using the validated pair of reports, retained item 1 as not passed, and started only item 2 bookings (`task_mvezlyg47071e894b129`). New cohort report `bot-pinned-cohort-1792398199414.json` links to the immutable prior report; its total remains nine tasks rather than nine new tasks.

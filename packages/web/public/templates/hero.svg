@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="112" viewBox="0 0 200 112" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="heroBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="50%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#334155"/>
+    </linearGradient>
+  </defs>
+  <rect width="200" height="112" fill="url(#heroBg)"/>
+  <circle cx="160" cy="28" r="28" fill="#38bdf8" opacity="0.15"/>
+  <circle cx="160" cy="28" r="16" fill="#38bdf8" opacity="0.25"/>
+  <path d="M44 70 L76 46 L96 62 L124 38 L156 66" stroke="#94a3b8" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/>
+  <path d="M44 78 L76 54 L96 70 L124 46 L156 74" stroke="#64748b" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.3"/>
+  <text x="20" y="40" font-family="Georgia, 'Times New Roman', serif" font-size="10" font-weight="600" fill="#f8fafc">Making the intangible</text>
+  <text x="20" y="54" font-family="Georgia, 'Times New Roman', serif" font-size="10" font-weight="600" fill="#f8fafc">feel real.</text>
+  <rect x="20" y="68" width="48" height="14" rx="3" fill="#38bdf8"/>
+  <text x="24" y="78" font-family="system-ui, sans-serif" font-size="6" font-weight="600" fill="#0f172a">Get started</text>
+</svg>

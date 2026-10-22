@@ -1,0 +1,77 @@
+{
+  "pass": false,
+  "reason": "Error: Visual/coverage verification did not pass: {\"verdict\":\"revise\",\"reason\":\"جميع لقطات الشاشة (سطح المكتب والجوال) تُظهر خلفية متدرجة سماوية/بنفسجية فقط دون أي عناصر واجهة مرئية: لا حقول إدخال، لا أزرار، لا قائمة مصروفات، لا مجموع، ولا نصوص. هذا يناقض نتائج الفحوصات المعلنة كناجحة، ويفشل في شرط أن تكون الواجهة والنصوص والأزرار مرئية وواضحة.\",\"issues\":[\"لا توجد أي عناصر واجهة مرئية في لقطات سطح المكتب (desktop-0 إلى desktop-3): الحقول #title و#amount و#category وزر #add غير ظاهرة\",\"لا تظهر قائمة المصروفات (#entries) ولا المجموع (#total) ولا رسالة الخطأ (#error) في أي لقطة\",\"لقطات الجوال (mobile-0 إلى mobile-3) فارغة تماماً باستثناء الخلفية المتدرجة، مما يخالف شرط وضوح الواجهة على الجوال\",\"نتائج الفحوصات المعلنة (8/8 ناجحة) لا تتطابق مع المحتوى المرئي في لقطات الشاشة، مما يشير إلى أن الصفحة المعروضة لا تحتوي على التطبيق المطلوب\"]}",
+  "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-artifact-review-nhddO0\\.verification\\81407900-f143-44e9-9d73-6ec5592bcd34\\report.json",
+  "usage": {
+    "promptTokens": 9839,
+    "completionTokens": 447,
+    "durationMs": 3862
+  },
+  "checks": [
+    {
+      "viewport": "desktop",
+      "scenario": "Adding entries calculates sum",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Persistence after reload",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Deleting recomputes total",
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Invalid input rejected",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Adding entries calculates sum",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Persistence after reload",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Deleting recomputes total",
+      "pass": true
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Invalid input rejected",
+      "pass": true
+    }
+  ],
+  "screenshots": [
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-artifact-review-nhddO0\\.verification\\81407900-f143-44e9-9d73-6ec5592bcd34\\desktop-0.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-artifact-review-nhddO0\\.verification\\81407900-f143-44e9-9d73-6ec5592bcd34\\desktop-1.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-artifact-review-nhddO0\\.verification\\81407900-f143-44e9-9d73-6ec5592bcd34\\desktop-2.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-artifact-review-nhddO0\\.verification\\81407900-f143-44e9-9d73-6ec5592bcd34\\desktop-3.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-artifact-review-nhddO0\\.verification\\81407900-f143-44e9-9d73-6ec5592bcd34\\mobile-0.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-artifact-review-nhddO0\\.verification\\81407900-f143-44e9-9d73-6ec5592bcd34\\mobile-1.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-artifact-review-nhddO0\\.verification\\81407900-f143-44e9-9d73-6ec5592bcd34\\mobile-2.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-artifact-review-nhddO0\\.verification\\81407900-f143-44e9-9d73-6ec5592bcd34\\mobile-3.png"
+  ],
+  "errors": [],
+  "visual": {
+    "model": "glm-5.3-flash",
+    "verdict": {
+      "verdict": "revise",
+      "reason": "جميع لقطات الشاشة (سطح المكتب والجوال) تُظهر خلفية متدرجة سماوية/بنفسجية فقط دون أي عناصر واجهة مرئية: لا حقول إدخال، لا أزرار، لا قائمة مصروفات، لا مجموع، ولا نصوص. هذا يناقض نتائج الفحوصات المعلنة كناجحة، ويفشل في شرط أن تكون الواجهة والنصوص والأزرار مرئية وواضحة.",
+      "issues": [
+        "لا توجد أي عناصر واجهة مرئية في لقطات سطح المكتب (desktop-0 إلى desktop-3): الحقول #title و#amount و#category وزر #add غير ظاهرة",
+        "لا تظهر قائمة المصروفات (#entries) ولا المجموع (#total) ولا رسالة الخطأ (#error) في أي لقطة",
+        "لقطات الجوال (mobile-0 إلى mobile-3) فارغة تماماً باستثناء الخلفية المتدرجة، مما يخالف شرط وضوح الواجهة على الجوال",
+        "نتائج الفحوصات المعلنة (8/8 ناجحة) لا تتطابق مع المحتوى المرئي في لقطات الشاشة، مما يشير إلى أن الصفحة المعروضة لا تحتوي على التطبيق المطلوب"
+      ]
+    },
+    "response": "{\"verdict\":\"revise\",\"reason\":\"جميع لقطات الشاشة (سطح المكتب والجوال) تُظهر خلفية متدرجة سماوية/بنفسجية فقط دون أي عناصر واجهة مرئية: لا حقول إدخال، لا أزرار، لا قائمة مصروفات، لا مجموع، ولا نصوص. هذا يناقض نتائج الفحوصات المعلنة كناجحة، ويفشل في شرط أن تكون الواجهة والنصوص والأزرار مرئية وواضحة.\",\"issues\":[\"لا توجد أي عناصر واجهة مرئية في لقطات سطح المكتب (desktop-0 إلى desktop-3): الحقول #title و#amount و#category وزر #add غير ظاهرة\",\"لا تظهر قائمة المصروفات (#entries) ولا المجموع (#total) ولا رسالة الخطأ (#error) في أي لقطة\",\"لقطات الجوال (mobile-0 إلى mobile-3) فارغة تماماً باستثناء الخلفية المتدرجة، مما يخالف شرط وضوح الواجهة على الجوال\",\"نتائج الفحوصات المعلنة (8/8 ناجحة) لا تتطابق مع المحتوى المرئي في لقطات الشاشة، مما يشير إلى أن الصفحة المعروضة لا تحتوي على التطبيق المطلوب\"]}"
+  }
+}

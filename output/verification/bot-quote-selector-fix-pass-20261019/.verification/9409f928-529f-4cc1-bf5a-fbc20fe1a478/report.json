@@ -1,0 +1,925 @@
+{
+  "pass": true,
+  "reason": "All four scenarios pass on both desktop and mobile viewports, and the executed API checks match the contract exactly: 200 responses return only the four required fields with correct half-up rounding (125→13 discount, 1000→100, max case 1000000000→1000000000 discount with total 1000000), while every invalid case — empty items, blank/whitespace SKU, duplicate SKU, string unitPrice, null quantity, string discountPercent, null shippingCents, quantity 0 and 101, float price 12.5, 110 items, and broken JSON — returns 400 {\"error\":\"invalid\"}. Screenshots confirm the requested UI: Arabic RTL layout, sky-to-purple gradient theme, item rows with SKU/unit-price-cents/quantity fields, add (+ إضافة صنف) and delete (✕ حذف) controls, discount % and shipping cents fields, a results panel (نتيجة الحساب with subtotalCents badge visible in the mobile capture), and clear Arabic error messages (أضف صنفًا واحدًا على الأقل for the empty list, and an invalid-input error for the duplicate SKU). The scenario-1 math is consistent: 1250×3 + 999×2 = 5748 subtotal, 575 discount, 5673 total (56.73). No overlaps, unreadable text, placeholder content, or broken mobile stacking observed.",
+  "reportPath": "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\9409f928-529f-4cc1-bf5a-fbc20fe1a478\\report.json",
+  "elapsedMs": 153813,
+  "usage": {
+    "promptTokens": 14804,
+    "completionTokens": 3489,
+    "durationMs": 23018
+  },
+  "checks": [
+    {
+      "viewport": "desktop",
+      "scenario": "حساب عرض سعر كامل من الواجهة: أصناف متعددة وخصم وشحن مع عرض المجاميع",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "عقد POST /api/quote: ردود 400 للمدخلات المخالفة وJSON المعطوب و200 بحقول دقيقة",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200,
+          "responseJson": {
+            "subtotalCents": 125,
+            "discountCents": 13,
+            "shippingCents": 0,
+            "totalCents": 112
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200,
+          "responseJson": {
+            "subtotalCents": 1000,
+            "discountCents": 100,
+            "shippingCents": 500,
+            "totalCents": 1400
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200,
+          "responseJson": {
+            "subtotalCents": 1000000000,
+            "discountCents": 1000000000,
+            "shippingCents": 1000000,
+            "totalCents": 1000000
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 3,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 3,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 3,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 3,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "رفض SKU المكرر من الخادم وعرض رسالة خطأ مفهومة في الواجهة",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "حذف الأصناف وإعادة الحساب وحالة القائمة الفارغة مع رسالة خطأ مفهومة",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "حساب عرض سعر كامل من الواجهة: أصناف متعددة وخصم وشحن مع عرض المجاميع",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "عقد POST /api/quote: ردود 400 للمدخلات المخالفة وJSON المعطوب و200 بحقول دقيقة",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200,
+          "responseJson": {
+            "subtotalCents": 125,
+            "discountCents": 13,
+            "shippingCents": 0,
+            "totalCents": 112
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200,
+          "responseJson": {
+            "subtotalCents": 1000,
+            "discountCents": 100,
+            "shippingCents": 500,
+            "totalCents": 1400
+          }
+        },
+        {
+          "group": 0,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200,
+          "responseJson": {
+            "subtotalCents": 1000000000,
+            "discountCents": 1000000000,
+            "shippingCents": 1000000,
+            "totalCents": 1000000
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 1,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 2,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 3,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 3,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 3,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        },
+        {
+          "group": 3,
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400,
+          "responseJson": {
+            "error": "invalid"
+          }
+        }
+      ],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "رفض SKU المكرر من الخادم وعرض رسالة خطأ مفهومة في الواجهة",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 400
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "حذف الأصناف وإعادة الحساب وحالة القائمة الفارغة مع رسالة خطأ مفهومة",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/quote",
+          "status": 200
+        }
+      ],
+      "databases": [],
+      "api": [],
+      "restarts": []
+    }
+  ],
+  "screenshots": [
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\9409f928-529f-4cc1-bf5a-fbc20fe1a478\\desktop-0.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\9409f928-529f-4cc1-bf5a-fbc20fe1a478\\desktop-1.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\9409f928-529f-4cc1-bf5a-fbc20fe1a478\\desktop-2.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\9409f928-529f-4cc1-bf5a-fbc20fe1a478\\desktop-3.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\9409f928-529f-4cc1-bf5a-fbc20fe1a478\\mobile-0.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\9409f928-529f-4cc1-bf5a-fbc20fe1a478\\mobile-1.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\9409f928-529f-4cc1-bf5a-fbc20fe1a478\\mobile-2.png",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\.verification\\9409f928-529f-4cc1-bf5a-fbc20fe1a478\\mobile-3.png"
+  ],
+  "errors": [],
+  "contractOrigin": "runtime-owned-independent",
+  "executedContract": {
+    "entry": "index.html",
+    "runtime": {
+      "type": "node",
+      "entry": "server.mjs"
+    },
+    "scenarios": [
+      {
+        "name": "حساب عرض سعر كامل من الواجهة: أصناف متعددة وخصم وشحن مع عرض المجاميع",
+        "expectedResponses": [
+          {
+            "method": "POST",
+            "path": "/api/quote",
+            "status": 200,
+            "count": 1
+          }
+        ],
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#sku-1",
+            "value": "KB-001"
+          },
+          {
+            "action": "fill",
+            "selector": "#price-1",
+            "value": "1250"
+          },
+          {
+            "action": "fill",
+            "selector": "#qty-1",
+            "value": "3"
+          },
+          {
+            "action": "click",
+            "selector": "#add-item"
+          },
+          {
+            "action": "fill",
+            "selector": "#sku-2",
+            "value": "KB-002"
+          },
+          {
+            "action": "fill",
+            "selector": "#price-2",
+            "value": "999"
+          },
+          {
+            "action": "fill",
+            "selector": "#qty-2",
+            "value": "2"
+          },
+          {
+            "action": "fill",
+            "selector": "#discount",
+            "value": "10"
+          },
+          {
+            "action": "fill",
+            "selector": "#shipping",
+            "value": "500"
+          },
+          {
+            "action": "click",
+            "selector": "#calculate"
+          },
+          {
+            "action": "visible",
+            "selector": "#results-panel"
+          },
+          {
+            "action": "text",
+            "selector": "#result-subtotal .cents-value",
+            "value": "5,748"
+          },
+          {
+            "action": "text",
+            "selector": "#result-discount .cents-value",
+            "value": "575"
+          },
+          {
+            "action": "text",
+            "selector": "#result-shipping .cents-value",
+            "value": "500"
+          },
+          {
+            "action": "text",
+            "selector": "#result-total .cents-value",
+            "value": "5,673"
+          },
+          {
+            "action": "text",
+            "selector": "#result-total .major-value",
+            "value": "56.73"
+          }
+        ]
+      },
+      {
+        "name": "عقد POST /api/quote: ردود 400 للمدخلات المخالفة وJSON المعطوب و200 بحقول دقيقة",
+        "steps": [
+          {
+            "action": "text",
+            "selector": "h1",
+            "value": "حاسبة عروض الأسعار"
+          }
+        ],
+        "apiChecks": [
+          {
+            "requests": [
+              {
+                "method": "POST",
+                "path": "/api/quote",
+                "body": "{\"items\":[{\"sku\":\"A\",\"unitPriceCents\":125,\"quantity\":1}],\"discountPercent\":10,\"shippingCents\":0}",
+                "expectedJson": {
+                  "subtotalCents": 125,
+                  "discountCents": 13,
+                  "shippingCents": 0,
+                  "totalCents": 112
+                }
+              },
+              {
+                "method": "POST",
+                "path": "/api/quote",
+                "body": "{\"items\":[{\"sku\":\"B\",\"unitPriceCents\":1000,\"quantity\":1}],\"discountPercent\":10,\"shippingCents\":500}",
+                "expectedJson": {
+                  "subtotalCents": 1000,
+                  "discountCents": 100,
+                  "shippingCents": 500,
+                  "totalCents": 1400
+                }
+              },
+              {
+                "method": "POST",
+                "path": "/api/quote",
+                "body": "{\"items\":[{\"sku\":\"MAX\",\"unitPriceCents\":10000000,\"quantity\":100}],\"discountPercent\":100,\"shippingCents\":1000000}",
+                "expectedJson": {
+                  "subtotalCents": 1000000000,
+                  "discountCents": 1000000000,
+                  "shippingCents": 1000000,
+                  "totalCents": 1000000
+                }
+              }
+            ],
+            "statuses": [
+              200,
+              200,
+              200
+            ]
+          },
+          {
+            "requests": [
+              {
+                "method": "POST",
+                "path": "/api/quote",
+                "body": "{\"items\":[],\"discountPercent\":0,\"shippingCents\":0}",
+                "expectedJson": {
+                  "error": "invalid"
+                }
+              },
+              {
+                "method": "POST",
+                "path": "/api/quote",
+                "body": "{\"items\":[{\"sku\":\"   \",\"unitPriceCents\":100,\"quantity\":1}],\"discountPercent\":0,\"shippingCents\":0}",
+                "expectedJson": {
+                  "error": "invalid"
+                }
+              },
+              {
+                "method": "POST",
+                "path": "/api/quote",
+                "body": "{\"items\":[{\"sku\":\"DUP\",\"unitPriceCents\":100,\"quantity\":1},{\"sku\":\"DUP\",\"unitPriceCents\":250,\"quantity\":1}],\"discountPercent\":0,\"shippingCents\":0}",
+                "expectedJson": {
+                  "error": "invalid"
+                }
+              },
+              {
+                "method": "POST",
+                "path": "/api/quote",
+                "body": "{\"items\":[{\"sku\":\"S\",\"unitPriceCents\":\"100\",\"quantity\":1}],\"discountPercent\":0,\"shippingCents\":0}",
+                "expectedJson": {
+                  "error": "invalid"
+                }
+              }
+            ],
+            "statuses": [
+              400,
+              400,
+              400,
+              400
+            ]
+          },
+          {
+            "requests": [
+              {
+                "method": "POST",
+                "path": "/api/quote",
+                "body": "{\"items\":[{\"sku\":\"N\",\"unitPriceCents\":100,\"quantity\":null}],\"discountPercent\":0,\"shippingCents\":0}",
+                "expectedJson": {
+                  "error": "invalid"
+                }
+              },
+              {
+                "method": "POST",
+                "path": "/api/quote",
+                "body": "{\"items\":[{\"sku\":\"Q\",\"unitPriceCents\":100,\"quantity\":1}],\"discountPercent\":\"10\",\"shippingCents\":0}",
+                "expectedJson": {
+                  "error": "invalid"
+                }
+              },
+              {
+                "method": "POST",
+                "path": "/api/quote",
+                "body": "{\"items\":[{\"sku\":\"R\",\"unitPriceCents\":100,\"quantity\":1}],\"discountPercent\":0,\"shippingCents\":null}",
+                "expectedJson": {
+                  "error": "invalid"
+                }
+              },
+              {
+                "method": "POST",
+                "path": "/api/quote",
+                "body": "{\"items\":[{\"sku\":\"BIG\",\"unitPriceCents\":10000000,\"quantity\":101}],\"discountPercent\":0,\"shippingCents\":0}",
+                "expectedJson": {
+                  "error": "invalid"
+                }
+              }
+            ],
+            "statuses": [
+              400,
+              400,
+              400,
+              400
+            ]
+          },
+          {
+            "requests": [
+              {
+                "method": "POST",
+                "path": "/api/quote",
+                "body": "{",
+                "expectedJson": {
+                  "error": "invalid"
+                }
+              },
+              {
+                "method": "POST",
+                "path": "/api/quote",
+                "body": "{\"items\":[{\"sku\":\"F\",\"unitPriceCents\":12.5,\"quantity\":1}],\"discountPercent\":0,\"shippingCents\":0}",
+                "expectedJson": {
+                  "error": "invalid"
+                }
+              },
+              {
+                "method": "POST",
+                "path": "/api/quote",
+                "body": "{\"items\":[{\"sku\":\"Z\",\"unitPriceCents\":100,\"quantity\":0}],\"discountPercent\":0,\"shippingCents\":0}",
+                "expectedJson": {
+                  "error": "invalid"
+                }
+              },
+              {
+                "method": "POST",
+                "path": "/api/quote",
+                "body": "{\"items\":[{\"sku\":\"1\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"2\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"3\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"4\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"5\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"6\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"7\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"8\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"9\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"10\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"11\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"12\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"13\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"14\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"15\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"16\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"17\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"18\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"19\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"20\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"21\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"22\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"23\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"24\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"25\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"26\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"27\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"28\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"29\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"30\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"31\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"32\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"33\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"34\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"35\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"36\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"37\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"38\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"39\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"40\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"41\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"42\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"43\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"44\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"45\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"46\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"47\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"48\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"49\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"50\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"51\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"52\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"53\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"54\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"55\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"56\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"57\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"58\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"59\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"60\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"61\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"62\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"63\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"64\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"65\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"66\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"67\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"68\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"69\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"70\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"71\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"72\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"73\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"74\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"75\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"76\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"77\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"78\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"79\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"80\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"81\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"82\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"83\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"84\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"85\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"86\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"87\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"88\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"89\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"90\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"91\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"92\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"93\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"94\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"95\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"96\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"97\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"98\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"99\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"100\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"101\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"102\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"103\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"104\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"105\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"106\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"107\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"108\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"109\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"110\",\"unitPriceCents\":1,\"quantity\":1}],\"discountPercent\":0,\"shippingCents\":0}",
+                "expectedJson": {
+                  "error": "invalid"
+                }
+              }
+            ],
+            "statuses": [
+              400,
+              400,
+              400,
+              400
+            ]
+          }
+        ]
+      },
+      {
+        "name": "رفض SKU المكرر من الخادم وعرض رسالة خطأ مفهومة في الواجهة",
+        "expectedResponses": [
+          {
+            "method": "POST",
+            "path": "/api/quote",
+            "status": 400,
+            "count": 1
+          }
+        ],
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#sku-1",
+            "value": "DUP-1"
+          },
+          {
+            "action": "fill",
+            "selector": "#price-1",
+            "value": "100"
+          },
+          {
+            "action": "fill",
+            "selector": "#qty-1",
+            "value": "1"
+          },
+          {
+            "action": "click",
+            "selector": "#add-item"
+          },
+          {
+            "action": "fill",
+            "selector": "#sku-2",
+            "value": "DUP-1"
+          },
+          {
+            "action": "fill",
+            "selector": "#price-2",
+            "value": "250"
+          },
+          {
+            "action": "fill",
+            "selector": "#qty-2",
+            "value": "2"
+          },
+          {
+            "action": "click",
+            "selector": "#calculate"
+          },
+          {
+            "action": "visible",
+            "selector": "#error-box"
+          },
+          {
+            "action": "text",
+            "selector": "#error-message",
+            "value": "المدخلات غير صالحة"
+          }
+        ]
+      },
+      {
+        "name": "حذف الأصناف وإعادة الحساب وحالة القائمة الفارغة مع رسالة خطأ مفهومة",
+        "expectedResponses": [
+          {
+            "method": "POST",
+            "path": "/api/quote",
+            "status": 200,
+            "count": 1
+          }
+        ],
+        "steps": [
+          {
+            "action": "fill",
+            "selector": "#sku-1",
+            "value": "AAA-1"
+          },
+          {
+            "action": "fill",
+            "selector": "#price-1",
+            "value": "100"
+          },
+          {
+            "action": "fill",
+            "selector": "#qty-1",
+            "value": "2"
+          },
+          {
+            "action": "click",
+            "selector": "#add-item"
+          },
+          {
+            "action": "fill",
+            "selector": "#sku-2",
+            "value": "BBB-2"
+          },
+          {
+            "action": "fill",
+            "selector": "#price-2",
+            "value": "500"
+          },
+          {
+            "action": "fill",
+            "selector": "#qty-2",
+            "value": "1"
+          },
+          {
+            "action": "click",
+            "selector": "button[aria-label=\"حذف الصنف رقم 1\"]"
+          },
+          {
+            "action": "count",
+            "selector": ".item-row",
+            "count": 1
+          },
+          {
+            "action": "click",
+            "selector": "#calculate"
+          },
+          {
+            "action": "visible",
+            "selector": "#results-panel"
+          },
+          {
+            "action": "text",
+            "selector": "#result-subtotal .cents-value",
+            "value": "500"
+          },
+          {
+            "action": "text",
+            "selector": "#result-total .cents-value",
+            "value": "500"
+          },
+          {
+            "action": "click",
+            "selector": "button[aria-label=\"حذف الصنف رقم 1\"]"
+          },
+          {
+            "action": "count",
+            "selector": ".item-row",
+            "count": 0
+          },
+          {
+            "action": "visible",
+            "selector": "#items-empty"
+          },
+          {
+            "action": "click",
+            "selector": "#calculate"
+          },
+          {
+            "action": "text",
+            "selector": "#error-message",
+            "value": "أضف صنفًا واحدًا على الأقل"
+          }
+        ]
+      }
+    ]
+  },
+  "runtime": {
+    "type": "node",
+    "isolation": "docker-network-none",
+    "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+    "freshBackendPerScenario": true
+  },
+  "visual": {
+    "model": "glm-5.3-flash",
+    "verdict": {
+      "verdict": "pass",
+      "reason": "All four scenarios pass on both desktop and mobile viewports, and the executed API checks match the contract exactly: 200 responses return only the four required fields with correct half-up rounding (125→13 discount, 1000→100, max case 1000000000→1000000000 discount with total 1000000), while every invalid case — empty items, blank/whitespace SKU, duplicate SKU, string unitPrice, null quantity, string discountPercent, null shippingCents, quantity 0 and 101, float price 12.5, 110 items, and broken JSON — returns 400 {\"error\":\"invalid\"}. Screenshots confirm the requested UI: Arabic RTL layout, sky-to-purple gradient theme, item rows with SKU/unit-price-cents/quantity fields, add (+ إضافة صنف) and delete (✕ حذف) controls, discount % and shipping cents fields, a results panel (نتيجة الحساب with subtotalCents badge visible in the mobile capture), and clear Arabic error messages (أضف صنفًا واحدًا على الأقل for the empty list, and an invalid-input error for the duplicate SKU). The scenario-1 math is consistent: 1250×3 + 999×2 = 5748 subtotal, 575 discount, 5673 total (56.73). No overlaps, unreadable text, placeholder content, or broken mobile stacking observed.",
+      "issues": [],
+      "notes": [
+        "The desktop capture for scenario 1 ends at the calculate button, so the asserted results values sit below the fold; they are verified by the executed text checks and partially visible in the mobile capture — full-page screenshots would give clearer visual evidence.",
+        "Numeric inputs render digits left-aligned (LTR) inside the RTL layout, which is a common readable pattern and purely cosmetic."
+      ]
+    },
+    "response": "{\"verdict\":\"pass\",\"reason\":\"All four scenarios pass on both desktop and mobile viewports, and the executed API checks match the contract exactly: 200 responses return only the four required fields with correct half-up rounding (125→13 discount, 1000→100, max case 1000000000→1000000000 discount with total 1000000), while every invalid case — empty items, blank/whitespace SKU, duplicate SKU, string unitPrice, null quantity, string discountPercent, null shippingCents, quantity 0 and 101, float price 12.5, 110 items, and broken JSON — returns 400 {\\\"error\\\":\\\"invalid\\\"}. Screenshots confirm the requested UI: Arabic RTL layout, sky-to-purple gradient theme, item rows with SKU/unit-price-cents/quantity fields, add (+ إضافة صنف) and delete (✕ حذف) controls, discount % and shipping cents fields, a results panel (نتيجة الحساب with subtotalCents badge visible in the mobile capture), and clear Arabic error messages (أضف صنفًا واحدًا على الأقل for the empty list, and an invalid-input error for the duplicate SKU). The scenario-1 math is consistent: 1250×3 + 999×2 = 5748 subtotal, 575 discount, 5673 total (56.73). No overlaps, unreadable text, placeholder content, or broken mobile stacking observed.\",\"issues\":[],\"notes\":[\"The desktop capture for scenario 1 ends at the calculate button, so the asserted results values sit below the fold; they are verified by the executed text checks and partially visible in the mobile capture — full-page screenshots would give clearer visual evidence.\",\"Numeric inputs render digits left-aligned (LTR) inside the RTL layout, which is a common readable pattern and purely cosmetic.\"]}",
+    "attempts": 2
+  },
+  "sourceHashes": {
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\app-verification.json": "9d6efec2de217d3aa55a56f98d993ca409d35c2e8cebe5ed265f44ceee8aac1d",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\index.html": "0e54d9c004f776b2ea3f563965c1cf3855c7135786562f7ea9c61a31c8260880",
+    "C:\\Users\\khamis\\Desktop\\.loam-tasks\\task_mvetmq5qd3a4fb8b48a1\\server.mjs": "ef9295e0ba7f6cf639169f4e15b5c375087b4578de9abfbffcdebca6f87c7932"
+  }
+}

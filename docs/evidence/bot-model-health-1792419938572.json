@@ -1,0 +1,18 @@
+{
+  "at": "2026-10-19T14:25:38.572Z",
+  "scope": "Tiny text transport diagnostic only; no capability, vision or comparative quality claim; no application settings changed",
+  "rows": [
+    {
+      "model": "glm-5.3-flash:cloud",
+      "elapsedMs": 1436,
+      "transportComplete": true,
+      "exactResponse": true,
+      "response": "{\"ok\":true}",
+      "usage": {
+        "promptTokens": 26,
+        "completionTokens": 53,
+        "durationMs": 440
+      }
+    }
+  ]
+}

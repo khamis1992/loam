@@ -1,0 +1,45 @@
+{
+  "checks": [
+    {
+      "file": "dist/server.cjs",
+      "sha256": "ED35B15A8028CD2E10002752A2913EC34A27739D55B6012EE2DF74E968EAFC88",
+      "matches": true
+    },
+    {
+      "file": "ui/studio.js",
+      "sha256": "63F5E56283237DD1E0EDFC82595A76B09DE110B2C3ADBF69CB077B6A68C9387D",
+      "matches": true
+    },
+    {
+      "file": "ui/studio.css",
+      "sha256": "09EDDE32D9E5E7044039013220218F88D6CA11B9E27B9877D06C7D5CCDA32374",
+      "matches": true
+    },
+    {
+      "file": "ui/studio-document.js",
+      "sha256": "9BF5F6CCB678BB30FBB54E070D874AAB3B04FFE33BFD9B7482271AB0BFD3CBCC",
+      "matches": true
+    },
+    {
+      "file": "ui/studio-rich.js",
+      "sha256": "CF584E70238650A47EA302CC8B45C0331A33DFA62475DDFAB076E2B9A870C166",
+      "matches": true
+    },
+    {
+      "file": "ui/studio-preview.js",
+      "sha256": "A4209BCA080E4A8AD39C301C4A823BB333864ADFC8618688F0E48D16CC056535",
+      "matches": true
+    },
+    {
+      "file": "ui/office-preview.html",
+      "sha256": "E711112D21E9F4A214B586FF298DD8FB43C1605B33D98EE9644CB539A81DD65D",
+      "matches": true
+    },
+    {
+      "file": "ui/office-preview.bundle.js",
+      "sha256": "31005CBEFD1DB8C26FFFDC04634E2A3EF772049CAD9A976315D0317DFFEDD225",
+      "matches": true
+    }
+  ],
+  "version": "0.5.9"
+}

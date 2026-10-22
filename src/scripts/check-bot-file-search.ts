@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {loadConfig} from '../config.js';
+import {fileTools} from '../tools/files.js';
+
+const workspace=fs.mkdtempSync(path.join(os.tmpdir(),'loam-file-search-'));
+const cfg=loadConfig();cfg.workspace=workspace;cfg.policy.allowOutsideWorkspaceRead=false;
+const ctx={cfg,workspace,emit:()=>{}};
+const search=fileTools.find(t=>t.name==='file_search')!;
+fs.mkdirSync(path.join(workspace,'.verification'));
+const report=path.join(workspace,'.verification','report.json');
+fs.writeFileSync(report,'first\r\nmobile failure\r\nsecond mobile failure\r\n');
+const direct=await search.run({path:report,pattern:'mobile',maxResults:1},ctx);
+assert.equal(direct.ok,true);assert.match(direct.content,/report\.json:2: mobile failure/);
+assert.ok(!direct.content.includes('second mobile'));
+const directory=await search.run({path:'.verification',pattern:'MOBILE'},ctx);
+assert.equal(directory.ok,true);assert.match(directory.content,/report\.json:3: second mobile failure/);
+assert.equal((await search.run({path:report,pattern:'absent'},ctx)).content,'no matches for absent');
+assert.equal((await search.run({path:'missing.json',pattern:'mobile'},ctx)).ok,false);
+assert.equal((await search.run({path:report,pattern:'['},ctx)).ok,false);
+assert.equal((await search.run({path:report,pattern:'mobile',glob:'.ts'},ctx)).content,'no matches for mobile');
+await assert.rejects(search.run({path:path.join(workspace,'..','outside.txt'),pattern:'mobile'},ctx));
+console.log('PASS file and directory search, line numbers, result limits, missing-path errors and containment');

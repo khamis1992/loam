@@ -14,6 +14,16 @@ export interface Settings {
   /** Custom electron-updater generic feed URL or GitHub repo ("owner/repo"). */
   updateFeedUrl?: string;
   githubRepo?: string;
+  /** In-App Browser (Settings > In-App Browser): headless vs visible window,
+   *  and the page opened when browser_open has no URL. */
+  browserHeadless?: boolean;
+  browserHomepage?: string;
+  /** Option 18 Flex tier: OpenAI-compatible provider base URL (the API key itself lives in the secrets vault). */
+  flexBaseUrl?: string;
+  /** Option 18 Flex tier: model id to call through the Flex provider. */
+  flexModel?: string;
+  /** Settings › Data controls: when true, user data is excluded from model training. */
+  trainingOptOut?: boolean;
 }
 
 const FILE = path.join(DATA_DIR, "settings.json");
@@ -31,6 +41,12 @@ export function loadSettings(): Settings {
         ...(Array.isArray(parsed.recentWorkspaces) ? { recentWorkspaces: parsed.recentWorkspaces.map(String) } : {}),
         ...(typeof parsed.updateFeedUrl === "string" ? { updateFeedUrl: parsed.updateFeedUrl } : {}),
         ...(typeof parsed.githubRepo === "string" ? { githubRepo: parsed.githubRepo } : {}),
+        ...(typeof parsed.browserHeadless === "boolean" ? { browserHeadless: parsed.browserHeadless } : {}),
+        ...(typeof parsed.browserHomepage === "string" ? { browserHomepage: parsed.browserHomepage } : {}),
+        ...(typeof parsed.flexBaseUrl === "string" ? { flexBaseUrl: parsed.flexBaseUrl } : {}),
+        ...(typeof parsed.flexModel === "string" ? { flexModel: parsed.flexModel } : {}),
+        ...(typeof parsed.trainingOptOut === "boolean" ? { trainingOptOut: parsed.trainingOptOut } : {}),
+        ...(typeof parsed.autoApprove === "boolean" ? { autoApprove: parsed.autoApprove } : {}),
       };
     }
   } catch {
@@ -39,9 +55,11 @@ export function loadSettings(): Settings {
   return settings;
 }
 
-/** Live check used by mutating tools: writes apply directly unless auto-approval is off. */
+/** Live check used by mutating tools: writes stage for manual approval unless the
+ *  user explicitly turned auto-approval on. Missing/undefined is the conservative
+ *  default (approval required), so the preference survives an older settings file. */
 export function gateActive(): boolean {
-  return getSettings().autoApprove === false;
+  return getSettings().autoApprove !== true;
 }
 
 export function getSettings(): Settings {
@@ -57,6 +75,11 @@ export function updateSettings(patch: Partial<Settings>): Settings {
   if (typeof patch.updateFeedUrl === "string") settings.updateFeedUrl = patch.updateFeedUrl.trim();
   if (typeof patch.githubRepo === "string") settings.githubRepo = patch.githubRepo.trim();
   if (typeof patch.autoApprove === "boolean") settings.autoApprove = patch.autoApprove;
+  if (typeof patch.browserHeadless === "boolean") settings.browserHeadless = patch.browserHeadless;
+  if (patch.browserHomepage !== undefined) settings.browserHomepage = typeof patch.browserHomepage === "string" ? patch.browserHomepage.trim() : "";
+  if (typeof patch.flexBaseUrl === "string") settings.flexBaseUrl = patch.flexBaseUrl.trim();
+  if (typeof patch.flexModel === "string") settings.flexModel = patch.flexModel.trim();
+  if (typeof patch.trainingOptOut === "boolean") settings.trainingOptOut = patch.trainingOptOut;
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     const tmp = `${FILE}.tmp`;

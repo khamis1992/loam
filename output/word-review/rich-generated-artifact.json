@@ -1,0 +1,79 @@
+{
+  "kind": "document",
+  "title": "Loam — تقرير جاهزية التجربة",
+  "content": {
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "لمحة موجزة عن جاهزية التجربة ضمن مشروع Loam، مع مؤشرات رئيسية وجدول مختصر للمراحل والمخرجات. جميع الأرقام توضيحية لعرض التصميم فقط."
+      },
+      {
+        "type": "stats",
+        "text": "مؤشرات الجاهزية (بيانات توضيحية)",
+        "items": [
+          {
+            "value": "92%",
+            "label": "نسبة الإنجاز",
+            "tone": "teal"
+          },
+          {
+            "value": "24",
+            "label": "مهام التجربة",
+            "tone": "blue"
+          },
+          {
+            "value": "3",
+            "label": "مراحل العمل",
+            "tone": "amber"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "text": "مراحل التجربة والمخرجات"
+      },
+      {
+        "type": "table",
+        "text": "جدول المراحل (بيانات توضيحية)",
+        "columns": [
+          "المرحلة",
+          "المخرج",
+          "الحالة"
+        ],
+        "rows": [
+          [
+            "التحليل",
+            "وثيقة المتطلبات",
+            "مكتملة"
+          ],
+          [
+            "التصميم",
+            "نموذج أولي",
+            "مكتملة"
+          ],
+          [
+            "التنفيذ",
+            "نسخة تجريبية",
+            "جارية"
+          ],
+          [
+            "الاختبار",
+            "تقرير الجودة",
+            "مجدولة"
+          ]
+        ]
+      },
+      {
+        "type": "image",
+        "text": "هوية Loam البصرية المستخدمة في تقرير الجاهزية.",
+        "src": "data:image/jpeg;base64,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",
+        "alt": "شعار Loam"
+      },
+      {
+        "type": "paragraph",
+        "text": "بشكل عام، المؤشرات تعكس جاهزية جيدة للاستمرار في المرحلة التالية، مع الحاجة لمتابعة المهام الجارية والمجدولة وفق الجدول أعلاه."
+      }
+    ]
+  },
+  "revision": 6
+}

@@ -1,0 +1,339 @@
+{
+  "entry": "index.html",
+  "runtime": { "type": "node", "entry": "server.mjs" },
+  "scenarios": [
+    {
+      "name": "API ناجح: صنف واحد 1000 سنت × 3 مع خصم 25% وشحن 500 → subtotal 3000 وdiscount 750 وtotal 2750",
+      "steps": [
+        { "action": "text", "selector": "h1", "value": "حاسبة عروض الأسعار" }
+      ],
+      "apiChecks": [
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{\"items\":[{\"sku\":\"KB-001\",\"unitPriceCents\":1000,\"quantity\":3}],\"discountPercent\":25,\"shippingCents\":500}",
+              "expectedJson": { "subtotalCents": 3000, "discountCents": 750, "shippingCents": 500, "totalCents": 2750 }
+            }
+          ],
+          "statuses": [200]
+        }
+      ]
+    },
+    {
+      "name": "API تقريب النصف للأعلى: 333 سنت بخصم 50% → discount 167 وtotal 166",
+      "steps": [
+        { "action": "text", "selector": "footer", "value": "POST /api/quote" }
+      ],
+      "apiChecks": [
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{\"items\":[{\"sku\":\"ROUND-1\",\"unitPriceCents\":333,\"quantity\":1}],\"discountPercent\":50,\"shippingCents\":0}",
+              "expectedJson": { "subtotalCents": 333, "discountCents": 167, "shippingCents": 0, "totalCents": 166 }
+            }
+          ],
+          "statuses": [200]
+        }
+      ]
+    },
+    {
+      "name": "API الحدود القصوى: 100 صنف بسعر 10000000 وكمية 100 مع خصم 100 وشحن 1000000 → subtotal 1000000000 وdiscount 1000000000 وtotal 1000000",
+      "steps": [
+        { "action": "text", "selector": "h1", "value": "حاسبة عروض الأسعار" }
+      ],
+      "apiChecks": [
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{\"items\":[{\"sku\":\"SKU-1\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-2\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-3\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-4\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-5\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-6\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-7\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-8\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-9\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-10\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-11\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-12\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-13\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-14\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-15\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-16\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-17\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-18\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-19\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-20\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-21\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-22\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-23\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-24\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-25\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-26\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-27\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-28\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-29\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-30\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-31\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-32\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-33\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-34\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-35\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-36\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-37\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-38\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-39\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-40\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-41\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-42\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-43\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-44\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-45\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-46\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-47\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-48\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-49\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-50\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-51\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-52\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-53\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-54\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-55\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-56\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-57\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-58\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-59\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-60\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-61\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-62\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-63\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-64\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-65\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-66\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-67\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-68\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-69\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-70\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-71\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-72\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-73\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-74\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-75\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-76\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-77\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-78\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-79\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-80\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-81\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-82\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-83\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-84\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-85\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-86\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-87\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-88\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-89\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-90\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-91\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-92\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-93\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-94\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-95\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-96\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-97\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-98\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-99\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"SKU-100\",\"unitPriceCents\":10000000,\"quantity\":100}],\"discountPercent\":100,\"shippingCents\":1000000}",
+              "expectedJson": { "subtotalCents": 1000000000, "discountCents": 1000000000, "shippingCents": 1000000, "totalCents": 1000000 }
+            }
+          ],
+          "statuses": [200]
+        }
+      ]
+    },
+    {
+      "name": "API رفض 400: sku فارغ أو مسافات فقط أو مكرر أو مكرر بعد trim",
+      "steps": [
+        { "action": "text", "selector": "h1", "value": "حاسبة عروض الأسعار" }
+      ],
+      "apiChecks": [
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{\"items\":[{\"sku\":\"\",\"unitPriceCents\":100,\"quantity\":1}],\"discountPercent\":0,\"shippingCents\":0}",
+              "expectedJson": { "error": "invalid" }
+            }
+          ],
+          "statuses": [400]
+        },
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{\"items\":[{\"sku\":\"   \",\"unitPriceCents\":100,\"quantity\":1}],\"discountPercent\":0,\"shippingCents\":0}",
+              "expectedJson": { "error": "invalid" }
+            }
+          ],
+          "statuses": [400]
+        },
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{\"items\":[{\"sku\":\"A-1\",\"unitPriceCents\":100,\"quantity\":1},{\"sku\":\"A-1\",\"unitPriceCents\":200,\"quantity\":2}],\"discountPercent\":0,\"shippingCents\":0}",
+              "expectedJson": { "error": "invalid" }
+            }
+          ],
+          "statuses": [400]
+        },
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{\"items\":[{\"sku\":\"X9\",\"unitPriceCents\":100,\"quantity\":1},{\"sku\":\" X9 \",\"unitPriceCents\":100,\"quantity\":1}],\"discountPercent\":0,\"shippingCents\":0}",
+              "expectedJson": { "error": "invalid" }
+            }
+          ],
+          "statuses": [400]
+        }
+      ]
+    },
+    {
+      "name": "API رفض 400: 101 صنف يتجاوز الحد الأقصى 100",
+      "steps": [
+        { "action": "text", "selector": "h1", "value": "حاسبة عروض الأسعار" }
+      ],
+      "apiChecks": [
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{\"items\":[{\"sku\":\"D-1\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-2\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-3\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-4\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-5\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-6\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-7\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-8\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-9\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-10\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-11\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-12\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-13\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-14\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-15\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-16\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-17\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-18\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-19\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-20\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-21\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-22\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-23\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-24\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-25\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-26\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-27\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-28\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-29\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-30\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-31\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-32\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-33\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-34\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-35\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-36\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-37\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-38\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-39\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-40\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-41\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-42\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-43\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-44\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-45\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-46\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-47\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-48\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-49\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-50\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-51\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-52\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-53\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-54\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-55\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-56\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-57\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-58\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-59\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-60\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-61\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-62\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-63\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-64\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-65\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-66\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-67\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-68\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-69\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-70\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-71\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-72\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-73\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-74\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-75\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-76\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-77\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-78\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-79\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-80\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-81\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-82\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-83\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-84\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-85\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-86\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-87\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-88\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-89\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-90\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-91\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-92\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-93\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-94\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-95\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-96\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-97\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-98\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-99\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-100\",\"unitPriceCents\":1,\"quantity\":1},{\"sku\":\"D-101\",\"unitPriceCents\":1,\"quantity\":1}],\"discountPercent\":0,\"shippingCents\":0}",
+              "expectedJson": { "error": "invalid" }
+            }
+          ],
+          "statuses": [400]
+        }
+      ]
+    },
+    {
+      "name": "API رفض 400: سعر الوحدة كنص \"5\" أو null أو 1.5 أو سالب (لا تحويل نصوص أو null إلى أرقام)",
+      "steps": [
+        { "action": "text", "selector": "h1", "value": "حاسبة عروض الأسعار" }
+      ],
+      "apiChecks": [
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{\"items\":[{\"sku\":\"P-1\",\"unitPriceCents\":\"5\",\"quantity\":1}],\"discountPercent\":0,\"shippingCents\":0}",
+              "expectedJson": { "error": "invalid" }
+            }
+          ],
+          "statuses": [400]
+        },
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{\"items\":[{\"sku\":\"P-2\",\"unitPriceCents\":null,\"quantity\":1}],\"discountPercent\":0,\"shippingCents\":0}",
+              "expectedJson": { "error": "invalid" }
+            }
+          ],
+          "statuses": [400]
+        },
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{\"items\":[{\"sku\":\"P-3\",\"unitPriceCents\":1.5,\"quantity\":1}],\"discountPercent\":0,\"shippingCents\":0}",
+              "expectedJson": { "error": "invalid" }
+            }
+          ],
+          "statuses": [400]
+        },
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{\"items\":[{\"sku\":\"P-4\",\"unitPriceCents\":-5,\"quantity\":1}],\"discountPercent\":0,\"shippingCents\":0}",
+              "expectedJson": { "error": "invalid" }
+            }
+          ],
+          "statuses": [400]
+        }
+      ]
+    },
+    {
+      "name": "API رفض 400: كمية 0 أو 10001 وخصم 101 وشحن سالب",
+      "steps": [
+        { "action": "text", "selector": "h1", "value": "حاسبة عروض الأسعار" }
+      ],
+      "apiChecks": [
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{\"items\":[{\"sku\":\"Q-1\",\"unitPriceCents\":100,\"quantity\":0}],\"discountPercent\":0,\"shippingCents\":0}",
+              "expectedJson": { "error": "invalid" }
+            }
+          ],
+          "statuses": [400]
+        },
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{\"items\":[{\"sku\":\"Q-2\",\"unitPriceCents\":100,\"quantity\":10001}],\"discountPercent\":0,\"shippingCents\":0}",
+              "expectedJson": { "error": "invalid" }
+            }
+          ],
+          "statuses": [400]
+        },
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{\"items\":[{\"sku\":\"Q-3\",\"unitPriceCents\":100,\"quantity\":1}],\"discountPercent\":101,\"shippingCents\":0}",
+              "expectedJson": { "error": "invalid" }
+            }
+          ],
+          "statuses": [400]
+        },
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{\"items\":[{\"sku\":\"Q-4\",\"unitPriceCents\":100,\"quantity\":1}],\"discountPercent\":0,\"shippingCents\":-1}",
+              "expectedJson": { "error": "invalid" }
+            }
+          ],
+          "statuses": [400]
+        }
+      ]
+    },
+    {
+      "name": "API رفض 400: تجاوز سقف المجموع بصنفين 10000000×100 و1×1، وجسم JSON معطوب",
+      "steps": [
+        { "action": "text", "selector": "h1", "value": "حاسبة عروض الأسعار" }
+      ],
+      "apiChecks": [
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{\"items\":[{\"sku\":\"CAP-A\",\"unitPriceCents\":10000000,\"quantity\":100},{\"sku\":\"CAP-B\",\"unitPriceCents\":1,\"quantity\":1}],\"discountPercent\":0,\"shippingCents\":0}",
+              "expectedJson": { "error": "invalid" }
+            }
+          ],
+          "statuses": [400]
+        },
+        {
+          "requests": [
+            {
+              "method": "POST",
+              "path": "/api/quote",
+              "body": "{items:}",
+              "expectedJson": { "error": "invalid" }
+            }
+          ],
+          "statuses": [400]
+        }
+      ]
+    },
+    {
+      "name": "واجهة: تحميل الصفحة عربية RTL بتدرجات سماوية وبنفسجية مع نموذج الإدخال",
+      "steps": [
+        { "action": "text", "selector": "h1", "value": "حاسبة عروض الأسعار" },
+        { "action": "text", "selector": "header.hero p", "value": "أضف الأصناف" },
+        { "action": "text", "selector": "label[for=\"sku\"]", "value": "رمز الصنف (SKU)" },
+        { "action": "text", "selector": "label[for=\"unitPriceCents\"]", "value": "سعر الوحدة (سنت)" },
+        { "action": "text", "selector": "label[for=\"discountPercent\"]", "value": "نسبة الخصم (%)" },
+        { "action": "text", "selector": "label[for=\"shippingCentsInput\"]", "value": "رسوم الشحن (سنت)" },
+        { "action": "visible", "selector": "#addItemForm" },
+        { "action": "visible", "selector": "#calculateBtn" },
+        { "action": "text", "selector": "#emptyItems", "value": "لا توجد أصناف بعد" },
+        { "action": "text", "selector": "footer", "value": "POST /api/quote" }
+      ]
+    },
+    {
+      "name": "واجهة: إضافة صنفين ثم حذف أحدهما يحدّث القائمة والعدّاد",
+      "steps": [
+        { "action": "fill", "selector": "#sku", "value": "KB-001" },
+        { "action": "fill", "selector": "#unitPriceCents", "value": "1000" },
+        { "action": "fill", "selector": "#quantity", "value": "3" },
+        { "action": "click", "selector": "#addItem" },
+        { "action": "fill", "selector": "#sku", "value": "KB-002" },
+        { "action": "fill", "selector": "#unitPriceCents", "value": "2500" },
+        { "action": "fill", "selector": "#quantity", "value": "1" },
+        { "action": "click", "selector": "#addItem" },
+        { "action": "count", "selector": "#itemsList li", "count": 2 },
+        { "action": "text", "selector": "#itemsCount", "value": "2" },
+        { "action": "text", "selector": "#itemsList li:first-child .item-sku", "value": "KB-001" },
+        { "action": "click", "selector": "#itemsList li:first-child .delete-item" },
+        { "action": "count", "selector": "#itemsList li", "count": 1 },
+        { "action": "text", "selector": "#itemsCount", "value": "1" },
+        { "action": "text", "selector": "#itemsList .item-sku", "value": "KB-002" }
+      ]
+    },
+    {
+      "name": "واجهة: إدخال خصم 25% وشحن 500 وإرسال الطلب إلى الخادم وعرض المجاميع الأربعة (3000/750/500/2750)",
+      "expectedResponses": [
+        { "method": "POST", "path": "/api/quote", "status": 200, "count": 1 }
+      ],
+      "steps": [
+        { "action": "fill", "selector": "#sku", "value": "KB-001" },
+        { "action": "fill", "selector": "#unitPriceCents", "value": "1000" },
+        { "action": "fill", "selector": "#quantity", "value": "3" },
+        { "action": "click", "selector": "#addItem" },
+        { "action": "fill", "selector": "#discountPercent", "value": "25" },
+        { "action": "fill", "selector": "#shippingCentsInput", "value": "500" },
+        { "action": "click", "selector": "#calculateBtn" },
+        { "action": "visible", "selector": "#results" },
+        { "action": "text", "selector": "#subtotalCents", "value": "3000" },
+        { "action": "text", "selector": "#discountCents", "value": "750" },
+        { "action": "text", "selector": "#shippingCents", "value": "500" },
+        { "action": "text", "selector": "#totalCents", "value": "2750" }
+      ]
+    },
+    {
+      "name": "واجهة: رسالة خطأ عربية مفهومة عند الحساب بدون أصناف وعند خصم غير صالح 150",
+      "steps": [
+        { "action": "click", "selector": "#calculateBtn" },
+        { "action": "visible", "selector": "#errorBox" },
+        { "action": "text", "selector": "#errorBox", "value": "أضف صنفًا واحدًا على الأقل" },
+        { "action": "fill", "selector": "#sku", "value": "KB-001" },
+        { "action": "fill", "selector": "#unitPriceCents", "value": "1000" },
+        { "action": "fill", "selector": "#quantity", "value": "3" },
+        { "action": "click", "selector": "#addItem" },
+        { "action": "fill", "selector": "#discountPercent", "value": "150" },
+        { "action": "click", "selector": "#calculateBtn" },
+        { "action": "visible", "selector": "#errorBox" },
+        { "action": "text", "selector": "#errorBox", "value": "نسبة الخصم" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "desktop": false,
+  "installed": false,
+  "assetBytes": 57600044,
+  "manifestBytes": 1857,
+  "checkpointReused": true,
+  "exactTiming": {
+    "frames": 360,
+    "fps": 30,
+    "firstPTS": 0,
+    "lastPTS": 359
+  },
+  "audioSeams": [
+    {
+      "time": 5,
+      "before": 0.0867022243816491,
+      "across": 0.08645524543101087,
+      "after": 0.08576556620142885
+    },
+    {
+      "time": 10,
+      "before": 0.0862885797173198,
+      "across": 0.08639440680720407,
+      "after": 0.08624562132405464
+    }
+  ],
+  "completedBeforeRestart": 1,
+  "result": {
+    "duration": 12,
+    "pixel": [
+      32,
+      222,
+      112,
+      255
+    ],
+    "rms": 0.06086807908559208
+  },
+  "errors": []
+}

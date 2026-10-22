@@ -1,0 +1,156 @@
+{
+  "at": "2026-10-19T04:16:59.364Z",
+  "source": "C:\\Users\\khamis\\Desktop\\manus-local\\output\\verification\\bot-tickets-recovered-pass-20261019",
+  "workspace": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-ticket-restart-holdout-lBZvt3",
+  "unchangedSourceHashes": {
+    "server.mjs": "0951155bcff0a095e99f00d121b2d70107364e978cea36b99f3b27650007d660",
+    "index.html": "b827142efb9eff3ba21f5e8cc23eaaeb0820327caeba8175473b5428cd0ec720"
+  },
+  "result": {
+    "pass": false,
+    "reason": "Error: Application interaction/runtime checks failed; inspect report and repair",
+    "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-ticket-restart-holdout-lBZvt3\\.verification\\983eff40-6243-4499-9413-f3a49d958efc\\report.json",
+    "elapsedMs": 21907,
+    "usage": {
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "durationMs": 0
+    },
+    "checks": [
+      {
+        "viewport": "desktop",
+        "scenario": "Updated ticket survives backend process restart",
+        "pass": false,
+        "error": "TimeoutError: locator.innerText: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.ticket[data-id=\"a\"] [data-version]')\u001b[22m\n",
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/tickets",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/tickets",
+            "status": 201
+          },
+          {
+            "method": "GET",
+            "path": "/api/tickets",
+            "status": 200
+          },
+          {
+            "method": "PATCH",
+            "path": "/api/tickets/a",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/tickets",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/tickets",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": [
+          {
+            "previousPid": 14,
+            "currentPid": 125
+          }
+        ]
+      },
+      {
+        "viewport": "mobile",
+        "scenario": "Updated ticket survives backend process restart",
+        "pass": false,
+        "error": "TimeoutError: locator.innerText: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.ticket[data-id=\"a\"] [data-version]')\u001b[22m\n",
+        "responses": [
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/tickets",
+            "status": 200
+          },
+          {
+            "method": "POST",
+            "path": "/api/tickets",
+            "status": 201
+          },
+          {
+            "method": "GET",
+            "path": "/api/tickets",
+            "status": 200
+          },
+          {
+            "method": "PATCH",
+            "path": "/api/tickets/a",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/tickets",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/index.html",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/tickets",
+            "status": 200
+          }
+        ],
+        "databases": [],
+        "api": [],
+        "restarts": [
+          {
+            "previousPid": 14,
+            "currentPid": 125
+          }
+        ]
+      }
+    ],
+    "screenshots": [],
+    "errors": [
+      "TimeoutError: locator.innerText: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.ticket[data-id=\"a\"] [data-version]')\u001b[22m\n",
+      "TimeoutError: locator.innerText: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.ticket[data-id=\"a\"] [data-version]')\u001b[22m\n"
+    ],
+    "runtime": {
+      "type": "node",
+      "isolation": "docker-network-none",
+      "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+      "freshBackendPerScenario": true
+    }
+  },
+  "databaseBeforeRestart": [
+    [
+      "holdout",
+      "Must survive",
+      "open",
+      1
+    ]
+  ],
+  "databaseAfterRestart": [],
+  "outcome": "Previously generated application loses data on process restart; new gate rejects both viewports",
+  "visualCalls": 0
+}

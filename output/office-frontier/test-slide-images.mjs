@@ -1,0 +1,12 @@
+import fs from 'node:fs';const p='src/scripts/check-slide-layouts.ts';let s=fs.readFileSync(p,'utf8');const marker="assert.deepEqual(errors,[]);console.log";
+s=s.replace(marker,`await page.locator('[data-slide-image-file]').setInputFiles('output/word-original-edit/replacement.png');await page.locator('[data-slide-image="0"] img').waitFor();
+const frame=page.locator('[data-slide-image="0"]');await frame.hover();let handle=await page.locator('[data-image-move="0"]').boundingBox();assert.ok(handle);await page.mouse.move(handle!.x+8,handle!.y+8);await page.mouse.down();await page.mouse.move(handle!.x-60,handle!.y+40,{steps:6});await page.mouse.up();
+let resize=await page.locator('[data-image-resize="0"]').boundingBox();assert.ok(resize);await page.mouse.move(resize!.x+4,resize!.y+4);await page.mouse.down();await page.mouse.move(resize!.x-60,resize!.y-20,{steps:6});await page.mouse.up();
+await page.locator('[data-action=save]').click();await page.locator('[data-status]').filter({hasText:'تم الحفظ'}).waitFor();
+const withImage=artifact as StudioArtifact;if(withImage.kind!=='presentation')throw Error();const img=withImage.content.slides[0]!.images![0]!;assert.ok(img.x<55);assert.ok(img.y>30);assert.ok(img.w<35);assert.ok(Math.abs(img.w/img.h-9/16)<.001);
+const imageExport=await exportStudio(withImage);await fs.writeFile(out+'/slides-with-image.pptx',imageExport.buffer);const imageZip=await JSZip.loadAsync(imageExport.buffer),imageXml=await imageZip.file('ppt/slides/slide1.xml')!.async('string');assert.equal((imageXml.match(/<p:pic>/g)||[]).length,1);assert.ok(Object.keys(imageZip.files).some(n=>n.startsWith('ppt/media/')&&n.endsWith('.jpeg')));assert.ok(imageXml.includes('r:embed='));
+await page.screenshot({path:out+'/slides-image-editor.png'});
+const invalid=structuredClone(withImage);if(invalid.kind==='presentation')invalid.content.slides[0]!.images![0]!.x=100;assert.throws(()=>validateStudio(invalid),/inside the slide/);
+await page.locator('[data-action=delete-slide-image]').click();assert.equal(await page.locator('[data-slide-image]').count(),0);
+assert.deepEqual(errors,[]);console.log`);
+fs.writeFileSync(p,s);

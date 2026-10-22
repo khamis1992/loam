@@ -1,0 +1,4 @@
+<!doctype html><html><meta charset="utf-8"><title>Loam background renderer</title><canvas></canvas><script type="module">
+import {TimelineEngine} from './creative-timeline-engine.js';
+window.renderPart=async(project,start,end)=>{const engine=new TimelineEngine(document.querySelector('canvas'),()=>{});try{await engine.setProject(project);const blob=await engine.export('webm',()=>{},new AbortController().signal,{start,end});return await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;reader.readAsDataURL(blob);});}finally{engine.dispose();}};
+</script></html>

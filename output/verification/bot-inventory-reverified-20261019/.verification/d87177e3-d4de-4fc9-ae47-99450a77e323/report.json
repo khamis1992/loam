@@ -1,0 +1,389 @@
+{
+  "pass": true,
+  "reason": "All six contract scenarios pass on both desktop and mobile. Screenshots confirm the requested RTL Arabic UI with sky-blue/purple gradient design: add form (#sku, #quantity, #save), withdraw form (#withdraw-sku, #withdraw-quantity, #withdraw), and an #items table whose .stock-item rows render the quantity alone via [data-quantity] (10 after add, 7 after valid withdrawal of 3, unchanged at 10 after overdraw and duplicate rejection, empty state after negative rejection). Arabic #error banners are clearly visible and non-overlapping for overdraw ('غير كافٍ لإتمام عملية السحب'), duplicate SKU ('هذا الرمز موجود مسبقًا في المخزون'), and negative/invalid quantity ('الكمية يجب أن تكون عددًا صحيحًا موجبًا أكبر من صفر'), including the -1 case where client-side validation shows #error without a POST. API traffic matches the contract: 201 on create, 409 on duplicate and overdraw, 200 on valid withdrawal, with a refresh GET /api/stock after each operation and on load (persistence scenario passes after reload). Mobile viewports stack the cards cleanly with no overflow, clipping, or unreadable text.",
+  "reportPath": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-reverify-EtJMmn\\.verification\\d87177e3-d4de-4fc9-ae47-99450a77e323\\report.json",
+  "elapsedMs": 80585,
+  "usage": {
+    "promptTokens": 16637,
+    "completionTokens": 3282,
+    "durationMs": 20952
+  },
+  "checks": [
+    {
+      "viewport": "desktop",
+      "scenario": "Add stock",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Server persistence on reload",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Valid withdrawal",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/withdraw",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Overdraw rejected without changing stock",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/withdraw",
+          "status": 409
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Duplicate SKU rejected",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 409
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "scenario": "Negative amount rejected",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Add stock",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Server persistence on reload",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Valid withdrawal",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/withdraw",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Overdraw rejected without changing stock",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/withdraw",
+          "status": 409
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Duplicate SKU rejected",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 201
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/stock",
+          "status": 409
+        }
+      ]
+    },
+    {
+      "viewport": "mobile",
+      "scenario": "Negative amount rejected",
+      "pass": true,
+      "responses": [
+        {
+          "method": "GET",
+          "path": "/index.html",
+          "status": 200
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-reverify-EtJMmn\\.verification\\d87177e3-d4de-4fc9-ae47-99450a77e323\\desktop-0.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-reverify-EtJMmn\\.verification\\d87177e3-d4de-4fc9-ae47-99450a77e323\\desktop-1.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-reverify-EtJMmn\\.verification\\d87177e3-d4de-4fc9-ae47-99450a77e323\\desktop-2.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-reverify-EtJMmn\\.verification\\d87177e3-d4de-4fc9-ae47-99450a77e323\\desktop-3.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-reverify-EtJMmn\\.verification\\d87177e3-d4de-4fc9-ae47-99450a77e323\\desktop-4.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-reverify-EtJMmn\\.verification\\d87177e3-d4de-4fc9-ae47-99450a77e323\\desktop-5.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-reverify-EtJMmn\\.verification\\d87177e3-d4de-4fc9-ae47-99450a77e323\\mobile-0.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-reverify-EtJMmn\\.verification\\d87177e3-d4de-4fc9-ae47-99450a77e323\\mobile-1.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-reverify-EtJMmn\\.verification\\d87177e3-d4de-4fc9-ae47-99450a77e323\\mobile-2.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-reverify-EtJMmn\\.verification\\d87177e3-d4de-4fc9-ae47-99450a77e323\\mobile-3.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-reverify-EtJMmn\\.verification\\d87177e3-d4de-4fc9-ae47-99450a77e323\\mobile-4.png",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-reverify-EtJMmn\\.verification\\d87177e3-d4de-4fc9-ae47-99450a77e323\\mobile-5.png"
+  ],
+  "errors": [],
+  "runtime": {
+    "type": "node",
+    "isolation": "docker-network-none",
+    "imageId": "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2",
+    "freshBackendPerScenario": true
+  },
+  "visual": {
+    "model": "glm-5.3-flash",
+    "verdict": {
+      "verdict": "pass",
+      "reason": "All six contract scenarios pass on both desktop and mobile. Screenshots confirm the requested RTL Arabic UI with sky-blue/purple gradient design: add form (#sku, #quantity, #save), withdraw form (#withdraw-sku, #withdraw-quantity, #withdraw), and an #items table whose .stock-item rows render the quantity alone via [data-quantity] (10 after add, 7 after valid withdrawal of 3, unchanged at 10 after overdraw and duplicate rejection, empty state after negative rejection). Arabic #error banners are clearly visible and non-overlapping for overdraw ('غير كافٍ لإتمام عملية السحب'), duplicate SKU ('هذا الرمز موجود مسبقًا في المخزون'), and negative/invalid quantity ('الكمية يجب أن تكون عددًا صحيحًا موجبًا أكبر من صفر'), including the -1 case where client-side validation shows #error without a POST. API traffic matches the contract: 201 on create, 409 on duplicate and overdraw, 200 on valid withdrawal, with a refresh GET /api/stock after each operation and on load (persistence scenario passes after reload). Mobile viewports stack the cards cleanly with no overflow, clipping, or unreadable text.",
+      "issues": [],
+      "notes": []
+    },
+    "response": "{\"verdict\":\"pass\",\"reason\":\"All six contract scenarios pass on both desktop and mobile. Screenshots confirm the requested RTL Arabic UI with sky-blue/purple gradient design: add form (#sku, #quantity, #save), withdraw form (#withdraw-sku, #withdraw-quantity, #withdraw), and an #items table whose .stock-item rows render the quantity alone via [data-quantity] (10 after add, 7 after valid withdrawal of 3, unchanged at 10 after overdraw and duplicate rejection, empty state after negative rejection). Arabic #error banners are clearly visible and non-overlapping for overdraw ('غير كافٍ لإتمام عملية السحب'), duplicate SKU ('هذا الرمز موجود مسبقًا في المخزون'), and negative/invalid quantity ('الكمية يجب أن تكون عددًا صحيحًا موجبًا أكبر من صفر'), including the -1 case where client-side validation shows #error without a POST. API traffic matches the contract: 201 on create, 409 on duplicate and overdraw, 200 on valid withdrawal, with a refresh GET /api/stock after each operation and on load (persistence scenario passes after reload). Mobile viewports stack the cards cleanly with no overflow, clipping, or unreadable text.\",\"issues\":[],\"notes\":[]}",
+    "attempts": 1
+  },
+  "sourceHashes": {
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-reverify-EtJMmn\\app-verification.json": "18cbcbac3c7078d26a6ae1dc7fa70ed86dc34274cd15134e1b7528ea1314b72f",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-reverify-EtJMmn\\index.html": "986c478c90c02791da0d29276da125d1295bc81d457141081deb2f3b7a7cf648",
+    "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-inventory-reverify-EtJMmn\\server.mjs": "840b0e167ca5ef254691e2e4bd90351dd2a99261985e6e0ef30b15067762d1c5"
+  }
+}

@@ -1,0 +1,32 @@
+/* Mobile adapter: semantic tokens shared with generation and export.
+   Scoped to the app; never styles the surrounding studio. */
+#mobile-app.designed{color:var(--ds-foreground);background:var(--ds-background);font-family:"Segoe UI",Tahoma,system-ui,sans-serif;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-6:24px}
+.designed header,.designed p,.designed .field,.designed nav button{color:var(--ds-muted-foreground)}
+.designed .app-hero,.designed .hero-heading{background:var(--ds-secondary);color:var(--ds-secondary-foreground);border-radius:var(--ds-radius)}
+.designed .app-hero .hero-icon,.designed .destination-icon{background:var(--ds-muted);color:var(--ds-secondary-foreground)}
+.designed .app-eyebrow,.designed .app-description{color:var(--ds-secondary-foreground)}
+.designed h1,.designed h2{letter-spacing:0}
+.designed .progress-heading strong,.designed .app-progress p{color:var(--ds-muted-foreground)}
+.designed .progress-track{background:var(--ds-border)}
+.designed .progress-track i{background:var(--app-accent)}
+.designed .destination-card,.designed .field,.designed .toggle-card{background:var(--ds-card);color:var(--ds-card-foreground);border-color:var(--ds-border);border-radius:var(--ds-radius)}
+.designed .destination-copy small,.designed .field-help,.designed .destination-arrow,.designed .destination-state{color:var(--ds-muted-foreground)}
+.designed .field input{color:var(--ds-card-foreground);background:var(--ds-card);border-color:var(--ds-input);font-size:16px}
+.designed input::placeholder{color:var(--ds-muted-foreground)}
+.designed .guidance-card{background:var(--ds-muted);border-radius:var(--ds-radius)}
+.designed .guidance-card summary,.designed .guidance-card strong,.designed .guidance-card p,.designed .guidance-icon{color:var(--ds-muted-foreground)}
+.designed .app-back{color:var(--ds-foreground);border-color:var(--ds-input);background:transparent;min-height:44px}
+.designed .app-action,.designed .app-action~.app-action{background:var(--app-accent);color:var(--accent-ink);border-color:transparent}
+.designed nav{background:var(--ds-background);border-color:var(--ds-border);gap:var(--space-1)}
+.designed nav [aria-current=true]{background:var(--ds-primary);color:var(--ds-on-primary);border-color:transparent}
+.designed output{background:var(--ds-secondary);color:var(--ds-secondary-foreground)}
+.designed :focus-visible{outline-color:var(--ds-ring)}
+.designed .editable{outline-color:var(--ds-input)}
+.designed .editable[data-selected=true]{outline-color:var(--ds-ring)}
+.designed button,.designed summary{touch-action:manipulation}
+.designed summary{min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.designed summary::after{content:'+';font-size:18px}
+.designed details[open] summary::after{content:'−'}
+.designed :is(button,input,summary){scroll-margin-block:16px 88px}
+@media(hover:hover){.designed .destination-card:hover{background:var(--ds-secondary);border-color:var(--ds-input)}}
+@media(forced-colors:active){#mobile-app.designed{color:CanvasText;background:Canvas}.designed .app-hero,.designed .destination-card,.designed .field,.designed .toggle-card,.designed .guidance-card,.designed nav{background:Canvas;color:CanvasText;border:1px solid ButtonText}.designed nav [aria-current=true]{background:Highlight;color:HighlightText}.designed :focus-visible{outline-color:Highlight}}

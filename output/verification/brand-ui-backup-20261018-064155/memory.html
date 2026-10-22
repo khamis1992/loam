@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="/theme.js"></script>
+    <title>Loam — الذاكرة</title>
+    <link rel="icon" href="/assets/loam-symbol.svg">
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      body { padding: 0; display: block; height: auto; background: var(--bg); }
+      .page-head {
+        position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px;
+        padding: 12px 22px; border-bottom: 1px solid var(--border);
+        background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px);
+      }
+      .page-head h2 { margin: 0; font-size: 17px; }
+      .stat { margin-inline-start: auto; font-size: 12px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 5px 11px; background: var(--panel); }
+      a.back {
+        display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px;
+        border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2);
+        color: var(--text); text-decoration: none; font-size: 13px;
+      }
+      a.back:hover { border-color: var(--accent); background: var(--panel-3); }
+
+      .page { max-width: 1080px; margin: 0 auto; padding: 18px 22px 60px; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+      .searchbox { position: relative; flex: 1; display: flex; align-items: center; min-width: 220px; }
+      .searchbox .ic { position: absolute; inset-inline-start: 12px; color: var(--muted); }
+      input[type="text"] { flex: 1; min-width: 200px; background: var(--panel); padding: 10px 14px; }
+      .searchbox input[type="text"] { padding-inline-start: 34px; }
+
+      #list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+      .card {
+        position: relative; border: 1px solid var(--border); border-radius: var(--r);
+        background: var(--panel); padding: 14px 14px 14px 18px; margin: 0;
+        transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+      }
+      .card:hover { transform: translateY(-1px); box-shadow: var(--shadow); border-color: color-mix(in srgb, var(--accent) 32%, var(--border)); }
+      .card::before { content: ""; position: absolute; inset-inline-start: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 3px; background: var(--accent); opacity: .5; }
+      .card .meta { font-size: 11.5px; color: var(--muted); margin-bottom: 6px; direction: ltr; text-align: left; }
+      .card > div:not(.meta) { font-size: 13px; line-height: 1.7; }
+      .score { color: var(--ok); font-weight: 700; }
+      .card .ghost { margin-top: 10px; padding: 6px 12px; font-size: 12.5px; border-radius: 9px; }
+    </style>
+    <link rel="stylesheet" href="/loam.css" />
+  <link rel="stylesheet" href="/icons.css"><script type="module" src="/icons.js"></script></head>
+  <body class="loam-secondary">
+    <div class="page-head">
+      <a class="back" href="/"><loam-icon name="back"></loam-icon> مساحة Loam</a>
+      <h2>الذاكرة</h2>
+      <span class="stat" id="model">—</span>
+    </div>
+
+    <div class="page">
+      <div class="row">
+        <div class="searchbox">
+          <span class="ic"><loam-icon name="research"></loam-icon></span>
+          <input id="q" type="text" placeholder="ابحث في الذاكرة دلالياً..." />
+        </div>
+        <button id="search" class="primary">بحث</button>
+        <button id="all" class="ghost">الكل</button>
+      </div>
+
+      <div class="row">
+        <input id="text" type="text" placeholder="أضف ملاحظة/معرفة للذاكرة..." />
+        <input id="kind" type="text" placeholder="kind" value="note" style="max-width:120px" />
+        <button id="add">حفظ</button>
+      </div>
+
+      <div id="list"></div>
+    </div>
+
+    <script src="/memory.js"></script>
+  </body>
+</html>

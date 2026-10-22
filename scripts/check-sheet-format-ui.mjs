@@ -1,0 +1,14 @@
+import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import {createServer} from 'node:http';
+import {chromium} from 'playwright';
+let artifact=JSON.parse(await fs.readFile(process.argv.includes('--import')?'output/office-frontier/complex-artifact.json':'output/office-frontier/sheet-artifact.json','utf8'));
+const server=createServer(async(req,res)=>{try{
+ const url=new URL(req.url,'http://localhost');if(url.pathname==='/api/studio'){if(req.method==='POST'){let raw='';for await(const c of req)raw+=c;const body=JSON.parse(raw);assert.equal(body.expectedRevision,artifact.revision);artifact={...body.artifact,revision:artifact.revision+1};}res.setHeader('content-type','application/json');res.end(JSON.stringify({artifact}));return;}
+ if(url.pathname==='/'){res.setHeader('content-type','text/html');res.end('<html dir="rtl"><link rel="stylesheet" href="/studio.css"><style>body{background:#14291f;margin:30px}#host{max-width:1100px;margin:auto}</style><div id="host"></div><script type="module">import{createStudio}from"/studio.js";createStudio({confirm:async()=>true,ensureDraft:async()=>({id:"sheet"})}).mount(document.getElementById("host"),{mode:"data",taskId:"sheet",key:"sheet"});</script></html>');return;}
+ res.setHeader('content-type',url.pathname.endsWith('.css')?'text/css':'text/javascript');res.end(await fs.readFile('ui'+url.pathname));
+ }catch(e){res.statusCode=500;res.end(String(e));}});
+await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch({channel:'msedge',headless:true});
+try{const page=await browser.newPage({viewport:{width:1450,height:950}});const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('http://127.0.0.1:'+server.address().port);await page.getByLabel('عنوان العمل').filter({visible:true}).waitFor();await page.locator('[data-status]').filter({hasText:'الإصدار 1'}).waitFor();
+ await page.getByRole('button',{name:'تنسيق جدول احترافي'}).click();await page.getByLabel('B3',{exact:true}).click();await page.getByLabel('تنسيق الرقم').selectOption('#,##0.00');await page.getByRole('button',{name:'غامق',exact:true}).click();await page.getByRole('button',{name:'حفظ الآن'}).click();await page.locator('[data-status]').filter({hasText:'تم الحفظ'}).waitFor();assert.equal(artifact.content.sheets[0].styles.B3.bold,true);assert.equal(artifact.content.sheets[0].styles.B3.numberFormat,'#,##0.00');assert.equal(await page.getByLabel('B3',{exact:true}).inputValue(),'98,000.00');assert.deepEqual(errors,[]);await page.screenshot({path:process.argv.includes('--import')?'output/office-frontier/import-format-ui.png':'output/office-frontier/sheet-format-ui.png'});console.log('PASS spreadsheet formatting controls, autosave and formatted grid display');
+}finally{await browser.close();server.closeAllConnections();server.close();}
