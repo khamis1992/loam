@@ -37,11 +37,18 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "web_scaffold",
   "design_create",
   "design_brand_kit_save",
+  "design_image_generate",
+  "design_page_images",
+  "design_brief",
   "watch_url",
   "video_edit",
   "deploy_app",
   "export_build",
   "loam_design",
+  "design_autofix",
+  "workflow_run",
+  "workflow_resume",
+  "workflow_status",
 ];
 
 export interface AlwaysOnMergeInput {
