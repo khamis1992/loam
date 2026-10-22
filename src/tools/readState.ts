@@ -12,7 +12,23 @@ export interface FileReadRecord {
   hash: string;
 }
 
+/** Path of a file this session has read plus the exact content it saw. */
+export interface ReadSnapshot {
+  path: string;
+  content: string;
+}
+
 export type ReadGuardResult = { ok: true } | { ok: false; code: ReadGuardCode; message: string };
+
+/** Cross-session file-touch observer (jcode J8). `read` fires after a read is
+ *  recorded, `write` after a write/edit refreshed the snapshot. Optional so a
+ *  read-only verifier or an isolated unit test runs without a registry. */
+export interface ReadTouchHooks {
+  read?: (abs: string, content?: string) => void;
+  write?: (abs: string, content?: string) => void;
+  /** Fired when a file is deleted or moved away, so readers can be told. */
+  remove?: (abs: string) => void;
+}
 
 function hashContent(content: string): string {
   return crypto.createHash("sha256").update(content, "utf8").digest("hex");
@@ -28,36 +44,58 @@ function hashContent(content: string): string {
  */
 export class ReadState {
   private readonly records = new Map<string, FileReadRecord>();
+  hooks?: ReadTouchHooks;
 
   private key(p: string): string {
     return path.resolve(p);
   }
 
-  /** Record a file as read. Pass the content when the caller already read it. */
-  record(p: string, content?: string): void {
+  /** Snapshot the file on disk and remember it. Returns the absolute path and
+   *  the exact content stored, or undefined when the file cannot be read. */
+  private store(p: string, content?: string): { abs: string; content: string } | undefined {
     const abs = this.key(p);
     let st: fs.Stats;
     try {
       st = fs.statSync(abs);
     } catch {
-      return;
+      return undefined;
     }
-    let hash: string;
+    let text: string;
     if (content !== undefined) {
-      hash = hashContent(content);
+      text = content;
     } else {
       try {
-        hash = hashContent(fs.readFileSync(abs, "utf8"));
+        text = fs.readFileSync(abs, "utf8");
       } catch {
-        return;
+        return undefined;
       }
     }
-    this.records.set(abs, { mtimeMs: st.mtimeMs, size: st.size, hash });
+    this.records.set(abs, { mtimeMs: st.mtimeMs, size: st.size, hash: hashContent(text) });
+    return { abs, content: text };
+  }
+
+  /** Record a file as read. Pass the content when the caller already read it. */
+  record(p: string, content?: string): ReadSnapshot | undefined {
+    const stored = this.store(p, content);
+    if (!stored) return undefined;
+    const snapshot: ReadSnapshot = { path: stored.abs, content: stored.content };
+    this.hooks?.read?.(snapshot.path, snapshot.content);
+    return snapshot;
+  }
+
+  /** Record a file this session just wrote or edited. The new content is
+   *  published to the cross-session touch observer so other live sessions are
+   *  told exactly what changed (jcode J8). */
+  recordWrite(p: string, content?: string): void {
+    const stored = this.store(p, content);
+    if (stored) this.hooks?.write?.(stored.abs, stored.content);
   }
 
   /** Forget a file (for example after it was deleted or moved). */
   forget(p: string): void {
-    this.records.delete(this.key(p));
+    const abs = this.key(p);
+    this.records.delete(abs);
+    this.hooks?.remove?.(abs);
   }
 
   hasRead(p: string): boolean {

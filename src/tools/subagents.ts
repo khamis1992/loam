@@ -222,6 +222,9 @@ async function runProfileSubagent(opts: ProfileSubagentOptions): Promise<ToolRes
     maxSteps,
     signal: ctx.signal,
     taskId: ctx.taskId,
+    // A subagent is its own session in the shared workspace, so its writes are
+    // reported to any session that already read the same file (jcode J8).
+    sessionId: `sub-${ctx.taskId ?? "task"}-${profile.name}-${++subSeq}`,
     suppressFinal: true,
     ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
   });
@@ -231,6 +234,11 @@ async function runProfileSubagent(opts: ProfileSubagentOptions): Promise<ToolRes
     content: `[Subagent "${profile.name}" finished in ${res.steps} step(s), ${toolCalls} tool call(s)]\n\n${res.text}`,
   };
 }
+
+/** Distinguishes subagent sessions of one task so their file reads/writes are tracked separately. */
+let subSeq = 0;
+/** Distinguishes provider-launched child sessions of one task (same reason). */
+let providerSeq = 0;
 
 export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRegistry): Tool[] {
   /** Register the built-in providers once so delegate_task can start them by name. */
@@ -386,6 +394,8 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
           ollama,
           tools: parentRegistry,
           signal: ctx.signal,
+          // Each delegated child is its own session in the shared workspace.
+          sessionId: `sub-${ctx.taskId ?? "task"}-p${++providerSeq}`,
         };
 
         if (provider === "acp" && !acpCommand) {

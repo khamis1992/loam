@@ -129,7 +129,9 @@ export const fileTools: Tool[] = [
       const content = str(args, "content");
       if (bool(args, "append")) fs.appendFileSync(p, content, "utf8");
       else fs.writeFileSync(p, content, "utf8");
-      ctx.readState?.record(p);
+      // Refresh the read snapshot and publish the write to other sessions that
+      // already read this path (jcode J8 file-touch notifications).
+      ctx.readState?.recordWrite(p);
       const size = fs.statSync(p).size;
       return { ok: true, content: await withDiagnostics(`wrote ${size} bytes to ${p}`, p, ctx) };
     },
@@ -173,8 +175,9 @@ export const fileTools: Tool[] = [
       if (occurrences === 0) return { ok: false, content: `old_string not present in ${p}` };
       const replaceAll = bool(args, "replace_all", false);
       if (replaceAll) {
-        fs.writeFileSync(p, original.split(oldString).join(newString), "utf8");
-        ctx.readState?.record(p);
+        const next = original.split(oldString).join(newString);
+        fs.writeFileSync(p, next, "utf8");
+        ctx.readState?.recordWrite(p);
         return { ok: true, content: `replaced ${occurrences} occurrence(s) in ${p} (replace_all)` };
       }
       const want = num(args, "count", 1);
@@ -184,10 +187,12 @@ export const fileTools: Tool[] = [
           content: `Found ${occurrences} matches of old_string in ${p}, but replace_all is false and the match is not unique. Add more surrounding context to old_string (include more lines or words around the change) so it matches exactly once, or set replace_all to true to replace every match.`,
         };
       }
-      fs.writeFileSync(p, original.split(oldString).join(newString), "utf8");
+      const next = original.split(oldString).join(newString);
+      fs.writeFileSync(p, next, "utf8");
       // Refresh the read snapshot so a follow-up edit in the same session is
-      // not rejected as stale; the model already saw the pre-edit content.
-      ctx.readState?.record(p);
+      // not rejected as stale, and publish the write to other sessions that
+      // already read this path (jcode J8 file-touch notifications).
+      ctx.readState?.recordWrite(p);
       return { ok: true, content: await withDiagnostics(`replaced ${occurrences} occurrence(s) in ${p}`, p, ctx) };
     },
   },
@@ -308,6 +313,10 @@ export const fileTools: Tool[] = [
       if (!fs.existsSync(from)) return { ok: false, content: `not found: ${from}` };
       fs.mkdirSync(path.dirname(to), { recursive: true });
       fs.renameSync(from, to);
+      // The old path is gone and the new one changed: tell other sessions that
+      // already read them (jcode J8 file-touch notifications).
+      ctx.readState?.forget(from);
+      ctx.readState?.recordWrite(to);
       return { ok: true, content: `moved ${from} -> ${to}` };
     },
   },
@@ -323,6 +332,8 @@ export const fileTools: Tool[] = [
       const p = resolveWrite(ctx.workspace, str(args, "path"));
       if (!fs.existsSync(p)) return { ok: false, content: `not found: ${p}` };
       fs.rmSync(p, { recursive: bool(args, "recursive"), force: true });
+      // Other sessions that read this path are told it is gone (jcode J8).
+      ctx.readState?.forget(p);
       return { ok: true, content: `deleted ${p}` };
     },
   },

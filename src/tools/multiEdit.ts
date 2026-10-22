@@ -294,8 +294,9 @@ export function createMultiEditTools(): Tool[] {
         }
 
         // Refresh the read snapshot so a follow-up edit in the same session is
-        // not rejected as stale; the model already saw the pre-edit content.
-        ctx.readState?.record(p);
+        // not rejected as stale, and publish the write to other sessions that
+        // already read this path (jcode J8 file-touch notifications).
+        ctx.readState?.recordWrite(p);
 
         const summary = formatSummary(p, edits.length, normalized.split("\n").length, work.split("\n").length, diff);
         let content = summary;

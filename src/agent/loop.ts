@@ -17,6 +17,7 @@ import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/risk
 import { ReminderChannel, TODO_UPDATE_TOOLS, MEMORY_UPDATE_TOOLS, type ReminderChannelOptions } from "./reminders.js";
 import { getTaskPhase } from "../tools/phaseTools.js";
 import { ReadState } from "../tools/readState.js";
+import { fileTouchRegistry, forgetFileTouchSession } from "../tools/fileTouch.js";
 
 export interface RunOptions {
   cfg: Config;
@@ -29,6 +30,11 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** Active task id — lets long-running tools poll for cancellation. */
   taskId?: string;
+  /** Stable id of THIS agent session inside its workspace. Distinct sessions
+   *  (orchestrator workers, sub-agents, map-reduce children) get distinct ids so
+   *  a write by one notifies the others (jcode J8 file-touch notifications).
+   *  Defaults to the task id, so a single run still tracks its own reads. */
+  sessionId?: string;
   /** When set, replaces the default system prompt (used by the background reviewer). */
   systemOverride?: string;
   /** Appended after the built (or overridden) system prompt. Used by orchestrator workers. */
@@ -111,6 +117,17 @@ async function mapWithConcurrency<T, R>(
 }
 
 export async function runAgent(opts: RunOptions): Promise<RunResult> {
+  // A session's file-touch reader marks are worthless once it is gone; forget
+  // them on every exit path so finished sessions are never notified.
+  const sessionId = opts.sessionId ?? opts.taskId ?? `session-${process.pid}-${Date.now()}`;
+  try {
+    return await runAgentInner(opts, sessionId);
+  } finally {
+    forgetFileTouchSession(sessionId);
+  }
+}
+
+async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunResult> {
   if (!opts.suppressFinal) opts = { ...opts, tools: taskScopedTools(opts.tools, opts.prompt, opts.history) };
   const acceptanceGuard = new AcceptanceGuard(undefined, opts.suppressFinal ? undefined : opts.prompt);
   const independentRequest = independentRequirements(opts.prompt, opts.history);
@@ -161,6 +178,18 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // so the model cannot blind-edit content it never saw or clobber a file that
   // changed since it was read. A fresh instance per run matches Claude Code.
   const readState = new ReadState();
+  // Cross-session file-touch tracking (jcode J8): one registry per workspace
+  // root, shared by every live session against that repository. Reads and
+  // writes are published to it, and at each turn this session's queued notices
+  // are drained into the reminder channel as hidden system-reminder blocks.
+  const touch = opts.cfg.workspace ? fileTouchRegistry(opts.cfg.workspace) : undefined;
+  readState.hooks = touch
+    ? {
+        read: (abs, content) => touch.noteRead(sessionId, abs, content),
+        write: (abs, content) => touch.noteWrite(sessionId, abs, content),
+        remove: (abs) => touch.noteDelete(sessionId, abs),
+      }
+    : undefined;
 
   for (step = (restored?.steps ?? 0) + 1; step <= maxSteps; step++) {
     // Stop immediately when the user pressed the cancel button (checked between every step).
@@ -169,6 +198,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
 
     // Plan mode is a read-only work phase; announce it once when it is active.
+    // A file another session in this workspace wrote since we last read it is
+    // stale context: surface it now, before the model acts on the old content.
+    if (touch) for (const notice of touch.drainNotices(sessionId)) reminders.fileTouched(notice);
     if (opts.taskId) reminders.setPlanMode(getTaskPhase(opts.taskId) === "plan");
     for (const message of reminders.drainMessages(step)) messages.push(message);
 

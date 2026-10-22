@@ -123,6 +123,7 @@ export function createMapReduceTool(options: MapReduceOptions): Tool {
             maxSteps,
             signal: ctx.signal,
             taskId: ctx.taskId,
+            sessionId: subSessionId,
             suppressFinal: true,
           });
           results.push({ index: i, item, ok: true, content: res.text, subSessionId, steps: res.steps, toolCalls });
