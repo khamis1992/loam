@@ -9,7 +9,15 @@ export type StudioCellValue = string | number | boolean | { date: string };
 /** Canonical decimal text accepted as a typed number: no grouping, no thousands separators, at most 15 significant digits. */
 export const numericText = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/;
 const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+const hexColor = /^#[0-9a-fA-F]{6}$/;
 const XLSX_DATE_START = 1900, XLSX_NUMBER_LIMIT = 1e15;
+
+/** ExcelJS wants an ARGB string; reject anything that is not a six-digit hex
+ *  colour instead of silently emitting a malformed `FF…` value. */
+function argb(color: string, label: string): string {
+  if (!hexColor.test(color)) throw new StudioError(`Invalid ${label} color: ${color}`);
+  return "FF" + color.slice(1).toUpperCase();
+}
 
 /** Parse one studio grid value into its typed form so numbers, calendar dates, booleans and formulas stay distinct from text. */
 export function typedCellValue(value: unknown): StudioCellValue {
@@ -17,7 +25,11 @@ export function typedCellValue(value: unknown): StudioCellValue {
   if (typeof value === "boolean") return value;
   if (typeof value === "string") {
     if (value.startsWith("=") && value.length > 1) return value;
-    if (isoDate.test(value) && Number(value.slice(0, 4)) >= XLSX_DATE_START && Number.isFinite(Date.parse(value + "T00:00:00Z"))) return { date: value };
+    if (isoDate.test(value)) {
+      const time = Date.parse(value + "T00:00:00Z");
+      // Reject impossible calendar dates ("2021-02-30") that Date.parse silently normalizes.
+      if (Number(value.slice(0, 4)) >= XLSX_DATE_START && Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value) return { date: value };
+    }
     if (numericText.test(value) && value.replace(/[-.]/g, "").length <= 15 && Math.abs(Number(value)) <= XLSX_NUMBER_LIMIT) return Number(value);
     if (value === "true" || value === "TRUE") return true;
     if (value === "false" || value === "FALSE") return false;
@@ -31,7 +43,9 @@ export function applyCellType(cell: ExcelJS.Cell, value: StudioCellValue, style?
   if (typeof value === "number") cell.value = value;
   else if (typeof value === "boolean") cell.value = value;
   else if (typeof value === "object") {
-    cell.value = new Date(Date.parse(value.date + "T00:00:00Z"));
+    const time = Date.parse(value.date + "T00:00:00Z");
+    if (!Number.isFinite(time)) throw new StudioError(`Invalid cell date: ${value.date}`);
+    cell.value = new Date(time);
     if (style?.numberFormat === undefined) cell.numFmt = "yyyy-mm-dd";
   } else if (value.startsWith("=") && value.length > 1) cell.value = { formula: value.slice(1) };
   else cell.value = value;
@@ -69,8 +83,8 @@ export function applySheetFormat(sheet:ExcelJS.Worksheet,source:{cells?:string[]
   for(const [address,style] of Object.entries(source.styles||{})){
   const cell=sheet.getCell(address);
   applyBorders(cell,style);
-  cell.font={...cell.font,...(style.fontFamily?{name:String(style.fontFamily)}:{}),...(style.fontSize?{size:Number(style.fontSize)}:{}),...(style.bold!==undefined?{bold:Boolean(style.bold)}:{}),...(style.italic!==undefined?{italic:Boolean(style.italic)}:{}),...(style.color?{color:{argb:'FF'+String(style.color).slice(1)}}:{})};
-  if(style.background)cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF'+String(style.background).slice(1)}};
+  cell.font={...cell.font,...(style.fontFamily?{name:String(style.fontFamily)}:{}),...(style.fontSize?{size:Number(style.fontSize)}:{}),...(style.bold!==undefined?{bold:Boolean(style.bold)}:{}),...(style.italic!==undefined?{italic:Boolean(style.italic)}:{}),...(style.color?{color:{argb:argb(String(style.color),'font')}}:{})};
+  if(style.background)cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:argb(String(style.background),'fill')}};
   if(style.alignment){const alignment=style.alignment==='both'?'justify':style.alignment==='start'?'left':style.alignment==='end'?'right':style.alignment;if(alignment==='general'){const next={...cell.alignment};delete next.horizontal;cell.alignment=next;}else cell.alignment={...cell.alignment,horizontal:alignment as ExcelJS.Alignment['horizontal']};}
   if(style.numberFormat!==undefined)cell.numFmt=String(style.numberFormat);
   if(style.wrapText!==undefined)cell.alignment={...cell.alignment,wrapText:Boolean(style.wrapText)};

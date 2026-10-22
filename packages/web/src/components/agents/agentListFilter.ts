@@ -17,12 +17,17 @@ export interface SidebarAgent extends AgentCardAgent {
   updatedAt?: string;
 }
 
-/** Combining-mark range stripped when diacritic-folding a name. */
-const COMBINING_MARKS = /[\u0300-\u036f]/g;
+/**
+ * Combining marks stripped when folding a name: Latin diacritics plus the
+ * Arabic harakat/tashkeel (fathatan..waqf) and superscript alef, so searching
+ * an unvocalised Arabic query still matches a fully vocalised agent name.
+ */
+const COMBINING_MARKS = /[\u0300-\u036f\u064b-\u065f\u0670\u06d6-\u06ed]/g;
 
 /**
- * Case/diacritic-insensitive form of a name ("Café Zoé" -> "cafe zoe"),
- * used so searching "cafe" still matches accented agent names.
+ * Case/diacritic-insensitive form of a name ("Café Zoé" -> "cafe zoe",
+ * "مُحَمَّد" -> "محمد"), used so searching "cafe" or "محمد" matches accented
+ * or vocalised agent names.
  */
 export function foldName(value: string): string {
   return value

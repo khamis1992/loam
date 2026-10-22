@@ -90,6 +90,17 @@ function defaultSttUrl(): string {
 }
 
 const MAX_TRANSCRIBE_BYTES = 2 * 1024 * 1024 * 1024;
+/** Upper bound on the PCM WAV bytes buffered for one extraction. A long,
+ *  low-bitrate source can expand far past its own size once decoded to 16 kHz
+ *  mono, so the decoded stream is capped independently of the source file. */
+export const MAX_EXTRACT_BYTES = 512 * 1024 * 1024;
+
+/** Throw when a decoded audio buffer would exceed the extraction budget. */
+export function checkExtractionBudget(bytes: number, limit: number = MAX_EXTRACT_BYTES): void {
+  if (!Number.isFinite(bytes) || bytes > limit) {
+    throw new Error(`audio extraction exceeds the transcription budget (${limit} bytes)`);
+  }
+}
 
 function ffmpegStaticPath(): string {
   const win = process.platform === "win32";
@@ -169,7 +180,18 @@ async function readAudioBytes(mediaPath: string): Promise<Buffer> {
     );
     const chunks: Buffer[] = [];
     let stderr = "";
-    child.stdout!.on("data", (c: Buffer) => chunks.push(c));
+    let received = 0;
+    child.stdout!.on("data", (c: Buffer) => {
+      if (settled) return;
+      received += c.length;
+      if (received > MAX_EXTRACT_BYTES) {
+        settled = true;
+        child.kill();
+        reject(new Error(`audio extraction exceeds the transcription budget (${MAX_EXTRACT_BYTES} bytes)`));
+        return;
+      }
+      chunks.push(c);
+    });
     child.stderr!.on("data", (c: Buffer) => { stderr = (stderr + c.toString()).slice(-2000); });
     child.once("error", (e) => { if (!settled) { settled = true; reject(e); } });
     child.once("exit", (code) => {
@@ -235,19 +257,39 @@ export function mergeCuts(cuts: readonly TimeRange[]): EdlCut[] {
   return merged;
 }
 
+interface SegmentToken { token: string; start: number; end: number }
+
+/** Token timing for one segment: authoritative STT word stamps when the
+ *  transcript provides them, deterministic proportional interpolation
+ *  otherwise. Mirrors `transcriptWords` so a cut and the surviving text always
+ *  agree on which tokens were removed. */
+function segmentTokens(seg: TranscriptSegment): SegmentToken[] {
+  if (seg.words?.length) {
+    const out: SegmentToken[] = [];
+    for (const w of seg.words) {
+      const range = saneTimes(w.start, w.end);
+      if (!range || !normalizeToken(w.word)) continue;
+      out.push({ token: w.word, start: range.start, end: range.end });
+    }
+    return out;
+  }
+  const tokens = seg.text.split(/\s+/).filter(Boolean);
+  const span = Math.max(0, seg.end - seg.start);
+  const slice = tokens.length ? span / tokens.length : 0;
+  return tokens.map((token, i) => ({ token, start: seg.start + i * slice, end: seg.start + (i + 1) * slice }));
+}
+
 function segmentsAfterCuts(transcript: Transcript, cuts: readonly EdlCut[]): TranscriptSegment[] {
   const out: TranscriptSegment[] = [];
   for (const seg of transcript.segments) {
-    const tokens = seg.text.split(/\s+/).filter(Boolean);
-    const span = Math.max(0, seg.end - seg.start);
-    const slice = tokens.length ? span / tokens.length : 0;
+    const tokens = segmentTokens(seg);
+    if (!tokens.length) continue; // fully removed (by segment or token coverage)
     const keptTokens: string[] = [];
-    tokens.forEach((token, i) => {
-      const t = { start: seg.start + i * slice, end: seg.start + (i + 1) * slice };
+    for (const t of tokens) {
       const covered = cuts.some((cut) => t.start >= cut.start && t.end <= cut.end);
-      if (!covered) keptTokens.push(token);
-    });
-    if (!keptTokens.length) continue; // fully removed (by segment or token coverage)
+      if (!covered) keptTokens.push(t.token);
+    }
+    if (!keptTokens.length) continue;
     if (keptTokens.length === tokens.length) out.push(seg);
     else out.push({ ...seg, text: keptTokens.join(" ") });
   }
@@ -256,15 +298,19 @@ function segmentsAfterCuts(transcript: Transcript, cuts: readonly EdlCut[]): Tra
 
 /** Build the EDL (merged cuts, keeps, removed seconds, remaining text) for a set of delete ranges. */
 export function buildEdl(transcript: Transcript, ranges: readonly TimeRange[]): EditDecisionList {
-  const cuts = mergeCuts(ranges);
+  const total = Math.max(0, Number.isFinite(transcript.duration) ? transcript.duration : 0);
+  // Clamp cuts to the media so a range past the end cannot overcount removed
+  // seconds or produce a keep beyond the source.
+  const cuts = mergeCuts(ranges)
+    .map((c) => ({ start: Math.max(0, c.start), end: Math.min(c.end, total) }))
+    .filter((c) => c.end - c.start > 0);
   let removed = 0;
   for (const c of cuts) removed += c.end - c.start;
-  const total = transcript.duration;
   const keeps: EdlCut[] = [];
   let cursor = 0;
   for (const cut of cuts) {
     if (cut.start > cursor) keeps.push({ start: cursor, end: Math.min(cut.start, total) });
-    cursor = Math.max(cursor, cut.end);
+    cursor = Math.max(cursor, Math.min(cut.end, total));
   }
   if (total > cursor) keeps.push({ start: cursor, end: total });
   return { cuts, keeps, removed, textAfter: segmentsAfterCuts(transcript, cuts).map((s) => s.text).join(" ").trim() };
@@ -559,11 +605,11 @@ export function applyTranscriptEdit(transcript: Transcript, edit: TranscriptEdit
   switch (edit.kind) {
     case "words": {
       const edl = deleteWords(transcript, edit.indices);
-      return project(assemblyFromEdl(edl), edit.indices.length, edl);
+      return project(assemblyFromEdl(edl), new Set(edit.indices).size, edl);
     }
     case "segments": {
       const edl = deleteSegments(transcript, edit.indices);
-      return project(assemblyFromEdl(edl), edit.indices.length, edl);
+      return project(assemblyFromEdl(edl), new Set(edit.indices).size, edl);
     }
     case "range": {
       const edl = buildEdl(transcript, [{ start: edit.start, end: edit.end }]);
@@ -575,11 +621,15 @@ export function applyTranscriptEdit(transcript: Transcript, edit: TranscriptEdit
     }
     case "move-words": {
       const assembly = moveWords(transcript, edit.indices, edit.target);
-      return project(assembly, edit.indices.length);
+      return project(assembly, new Set(edit.indices).size);
     }
     case "move-segments": {
       const assembly = moveSegments(transcript, edit.indices, edit.target);
-      return project(assembly, edit.indices.length);
+      return project(assembly, new Set(edit.indices).size);
+    }
+    default: {
+      const exhaustive: never = edit;
+      throw new Error(`unsupported transcript edit kind: ${JSON.stringify(exhaustive)}`);
     }
   }
 }

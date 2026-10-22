@@ -99,14 +99,36 @@ export function resolveScaffoldDir(workspace: string, projectDir: string): strin
   if (normalized !== "" && path.isAbsolute(normalized)) {
     throw new Error("projectDir must be a relative path inside the workspace");
   }
-  if (normalized.includes("..") || normalized.startsWith("/")) {
+  const segments = normalized.split("/");
+  if (normalized.startsWith("/") || segments.some((part) => part === "..")) {
     throw new Error("projectDir must not contain '..' or drive/UNC references");
   }
   const resolved = path.resolve(workspace, normalized);
   if (resolved !== workspace && !resolved.startsWith(workspace + path.sep)) {
     throw new Error("projectDir must resolve inside the workspace");
   }
+  assertNoSymlinkEscape(workspace, resolved);
   return resolved;
+}
+
+/**
+ * Lexical path checks cannot see a symlink that points outside the workspace.
+ * Realpath the deepest existing ancestor of the target and require it to stay
+ * under the real workspace root, so `projectDir` cannot smuggle writes out.
+ */
+function assertNoSymlinkEscape(workspace: string, resolved: string): void {
+  if (!fs.existsSync(workspace)) return; // nothing exists yet: no escape is possible
+  const realWorkspace = fs.realpathSync(workspace);
+  let anchor = resolved;
+  while (!fs.existsSync(anchor)) {
+    const parent = path.dirname(anchor);
+    if (parent === anchor) break;
+    anchor = parent;
+  }
+  const realAnchor = fs.realpathSync(anchor);
+  if (realAnchor !== realWorkspace && !realAnchor.startsWith(realWorkspace + path.sep)) {
+    throw new Error("projectDir resolves outside the workspace (symlink escape)");
+  }
 }
 
 export function scaffoldBackend(kind: ScaffoldKind, dir: string): { ok: boolean; content: string } {

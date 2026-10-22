@@ -24,6 +24,7 @@ import type { ChatEvent } from '@shared/socket';
 import type { AgentCardAgent } from './AgentCard';
 import { AgentContextMenu } from './AgentContextMenu';
 import { AgentRow, RowAccent } from './AgentRow';
+import { PinnedAgentGrid } from './PinnedAgentGrid';
 import { getBuiltInAgents } from './BuiltInAgentCard';
 import type { GroupChat } from './groupTypes';
 import { foldName, searchAgents, sortByLastActivity, splitHidden, sumUnread } from './agentListFilter';
@@ -281,100 +282,6 @@ export function AgentSidebarList({
   );
   const hiddenAgents = useMemo(() => sortByLastActivity(searchHiddenAgents), [searchHiddenAgents]);
 
-  const pinnedById = useMemo(() => new Map(rankedPinned.map((a) => [a.id, a])), [rankedPinned]);
-
-  const [pinnedOrder, setPinnedOrder] = useState<string[]>([]);
-  useEffect(() => {
-    setPinnedOrder(rankedPinned.map((a) => a.id));
-  }, [rankedPinned]);
-
-  const orderMatches = rankedPinned.length === pinnedOrder.length
-    && pinnedOrder.every((id) => pinnedById.has(id));
-  const displayPinned = orderMatches ? pinnedOrder.map((id) => pinnedById.get(id)!) : rankedPinned;
-
-  const [dragOrder, setDragOrder] = useState<string[] | null>(null);
-  const dragOrderRef = useRef<string[]>([]);
-  const dragRef = useRef<{ id: string; startX: number; startY: number; moved: boolean; order: string[] } | null>(null);
-  const suppressClickRef = useRef(false);
-
-  const commitPinnedOrder = (ids: string[]) => {
-    setPinnedOrder(ids);
-    onReorderPinned?.(ids);
-  };
-  const commitPinnedOrderRef = useRef(commitPinnedOrder);
-  commitPinnedOrderRef.current = commitPinnedOrder;
-
-  useEffect(() => {
-    if (!onReorderPinned) return;
-    const onPointerMove = (e: PointerEvent) => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      if (!drag.moved) {
-        const dx = e.clientX - drag.startX;
-        const dy = e.clientY - drag.startY;
-        if (dx * dx + dy * dy < 36) return;
-        drag.moved = true;
-        dragOrderRef.current = [...drag.order];
-        setDragOrder([...drag.order]);
-      }
-      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-      const overId = el?.closest('[data-pinned-id]')?.getAttribute('data-pinned-id') ?? null;
-      if (!overId || overId === drag.id) return;
-      const order = [...dragOrderRef.current];
-      const from = order.indexOf(drag.id);
-      const to = order.indexOf(overId);
-      if (from === -1 || to === -1 || from === to) return;
-      order.splice(from, 1);
-      order.splice(to, 0, drag.id);
-      dragOrderRef.current = order;
-      setDragOrder(order);
-    };
-    const onPointerUp = (e: PointerEvent) => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      dragRef.current = null;
-      setDragOrder(null);
-      if (drag.moved && e.type === 'pointerup') {
-        suppressClickRef.current = true;
-        commitPinnedOrderRef.current(dragOrderRef.current.length ? dragOrderRef.current : drag.order);
-      }
-      dragOrderRef.current = [];
-    };
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-    window.addEventListener('pointercancel', onPointerUp);
-    return () => {
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-      window.removeEventListener('pointercancel', onPointerUp);
-    };
-  }, [onReorderPinned]);
-
-  const handlePinnedPointerDown = (e: React.PointerEvent<HTMLButtonElement>, id: string) => {
-    if (e.button !== 0 || !onReorderPinned) return;
-    dragRef.current = { id, startX: e.clientX, startY: e.clientY, moved: false, order: displayPinned.map((a) => a.id) };
-  };
-
-  const handlePinnedKeyDown = (e: React.KeyboardEvent, id: string) => {
-    if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
-    const order = displayPinned.map((a) => a.id);
-    const from = order.indexOf(id);
-    const to = e.key === 'ArrowUp' ? from - 1 : from + 1;
-    if (from === -1 || to < 0 || to >= order.length) return;
-    e.preventDefault();
-    order.splice(to, 0, order.splice(from, 1)[0]);
-    commitPinnedOrder(order);
-  };
-
-  // Swallow the click that follows a drag so it does not select a new agent.
-  const guardSelect = (agent: AgentWithMeta) => () => {
-    if (suppressClickRef.current) {
-      suppressClickRef.current = false;
-      return;
-    }
-    onSelect(agent);
-  };
-
   // Row meta: prefer the live client store for the open thread, else the server
   // list's additive chat fields, else the agent description.
   const rowMeta = (agent: AgentCardAgent) => {
@@ -387,7 +294,34 @@ export function AgentSidebarList({
     return { subtitle, waitingForYou, unreadCount };
   };
 
-  const renderAgentTree = (agent: AgentWithMeta, pinned = false) => {
+  // One-line preview used by the pinned grid tiles.
+  const threadPreview = (agent: AgentCardAgent): string => rowMeta(agent).subtitle;
+
+  const childRow = (child: ChildAgent): ReactNode => {
+    const childAgent: AgentWithMeta = {
+      id: child.childId,
+      name: child.name,
+      emoji: child.emoji,
+      description: child.description,
+      mode: child.mode,
+    };
+    const meta = rowMeta(childAgent);
+    return (
+      <AgentRow
+        key={child.childId}
+        agent={childAgent}
+        selected={selectedId === child.childId}
+        subtitle={meta.subtitle}
+        waitingForYou={meta.waitingForYou}
+        unreadCount={meta.unreadCount}
+        indent
+        onClick={() => onSelect(childAgent)}
+        onContextMenu={(e) => handleContextMenu(e, childAgent)}
+      />
+    );
+  };
+
+  const renderAgentTree = (agent: AgentWithMeta) => {
     const meta = rowMeta(agent);
     return (
       <div key={agent.id} className="flex flex-col gap-0.5">
@@ -397,37 +331,10 @@ export function AgentSidebarList({
           subtitle={meta.subtitle}
           waitingForYou={meta.waitingForYou}
           unreadCount={meta.unreadCount}
-          onClick={pinned ? guardSelect(agent) : () => onSelect(agent)}
+          onClick={() => onSelect(agent)}
           onContextMenu={(e) => handleContextMenu(e, agent)}
-          drag={pinned ? {
-            'data-pinned-id': agent.id,
-            onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => handlePinnedPointerDown(e, agent.id),
-            onKeyDown: (e: React.KeyboardEvent) => handlePinnedKeyDown(e, agent.id),
-          } : undefined}
         />
-        {(childrenByParent[agent.id] ?? []).map((child) => {
-          const childAgent: AgentWithMeta = {
-            id: child.childId,
-            name: child.name,
-            emoji: child.emoji,
-            description: child.description,
-            mode: child.mode,
-          };
-          const childMeta = rowMeta(childAgent);
-          return (
-            <AgentRow
-              key={child.childId}
-              agent={childAgent}
-              selected={selectedId === child.childId}
-              subtitle={childMeta.subtitle}
-              waitingForYou={childMeta.waitingForYou}
-              unreadCount={childMeta.unreadCount}
-              indent
-              onClick={() => onSelect(childAgent)}
-              onContextMenu={(e) => handleContextMenu(e, childAgent)}
-            />
-          );
-        })}
+        {(childrenByParent[agent.id] ?? []).map(childRow)}
       </div>
     );
   };
@@ -555,12 +462,16 @@ export function AgentSidebarList({
             onToggle={() => toggleSection(SECTIONS.pinned)}
             unread={pinnedUnread}
           >
-            {(dragOrder
-              ? dragOrder
-                  .map((id) => pinnedById.get(id))
-                  .filter((a): a is AgentWithMeta => Boolean(a))
-              : displayPinned
-            ).map((agent) => renderAgentTree(agent, true))}
+            <PinnedAgentGrid
+              agents={rankedPinned}
+              selectedId={selectedId}
+              unreadById={unreadById}
+              subtitleFor={(agent) => threadPreview(agent)}
+              onSelect={onSelect}
+              onContextMenu={handleContextMenu}
+              onReorder={onReorderPinned}
+            />
+            {rankedPinned.flatMap((agent) => (childrenByParent[agent.id] ?? []).map(childRow))}
           </AgentSection>
         )}
 
