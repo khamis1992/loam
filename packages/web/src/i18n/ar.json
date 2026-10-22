@@ -794,4 +794,10 @@
   "Mode": "الوضع",
   "Memory enabled (Loam execution)": "الذاكرة مفعّلة (تنفيذ داخل Loam)",
   "Memory disabled (Chat only)": "الذاكرة معطّلة (دردشة فقط)"
+,
+  "Making progress": "جارٍ التقدم",
+  "Agent info": "معلومات الوكيل",
+  "Message": "رسالة",
+  "Open in task view": "فتح في عرض المهمة",
+  "Toggle info pane": "تبديل لوحة المعلومات"
 }

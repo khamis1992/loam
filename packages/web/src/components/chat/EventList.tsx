@@ -1,4 +1,4 @@
-import { memo, useMemo, Fragment } from 'react';
+import { memo, useMemo, Fragment, type ReactNode } from 'react';
 import type { ChatEvent, ToolUsedEvent, CascadeTaskClockEvent, AttachmentEvent, ModeEvent } from '@shared/socket';
 import { t, PRODUCT } from '@/i18n/t';
 import { Markdown } from './Markdown';
@@ -13,7 +13,7 @@ import { AttachmentCard } from './AttachmentCard';
 import { summarizeTools } from './toolLabels';
 import type { ChatSocket } from '@/services/chatSocket';
 
-type RenderableEvent = ChatEvent | LocalExecutionApprovalRequested;
+export type RenderableEvent = ChatEvent | LocalExecutionApprovalRequested;
 
 interface EventListProps {
   events: ChatEvent[];
@@ -22,16 +22,31 @@ interface EventListProps {
   onOpenComputer?: (e: ToolUsedEvent) => void;
 }
 
-const Row = memo(function Row({ e, sessionId, socket }: { e: RenderableEvent; sessionId: string; socket?: ChatSocket | null }) {
+export interface ChatEventRowProps {
+  e: RenderableEvent;
+  sessionId: string;
+  socket?: ChatSocket | null;
+  /** Optional override for chat rows (e.g. Grok-style bubbles in the agent thread). */
+  renderChat?: (e: ChatEvent) => ReactNode;
+}
+
+/**
+ * Renders one event. Chat rows use the default bubble/markdown styling unless
+ * a `renderChat` override is supplied, which lets the agent thread restyle
+ * messages without duplicating the non-chat event handling.
+ */
+export function ChatEventRow({ e, sessionId, socket, renderChat }: ChatEventRowProps) {
+  if (e.type === 'chat') {
+    if (renderChat) return renderChat(e);
+    if (e.sender === 'user' && isGrokBotNote(e.content)) {
+      // READ-ONLY mirrored note from Grok Bot: muted bubble, chip, no buttons.
+      return <GrokBotNote text={grokBotNoteText(e.content)} />;
+    }
+    return e.sender === 'user'
+      ? <div className="group relative"><CopyMessageButton text={e.content} align="end" /><UserBubble event={e} /></div>
+      : <div className="group relative"><CopyMessageButton text={e.content} /><Markdown className="text-base text-text-primary">{e.content}</Markdown></div>;
+  }
   switch (e.type) {
-    case 'chat':
-      if (e.sender === 'user' && isGrokBotNote(e.content)) {
-        // READ-ONLY mirrored note from Grok Bot: muted bubble, chip, no buttons.
-        return <GrokBotNote text={grokBotNoteText(e.content)} />;
-      }
-      return e.sender === 'user'
-        ? <div className="group relative"><CopyMessageButton text={e.content} align="end" /><UserBubble event={e} /></div>
-        : <div className="group relative"><CopyMessageButton text={e.content} /><Markdown className="text-base text-text-primary">{e.content}</Markdown></div>;
     case 'newPlanStep':
       return <PlanStepRow e={e} />;
     case 'planUpdate':
@@ -99,6 +114,10 @@ const Row = memo(function Row({ e, sessionId, socket }: { e: RenderableEvent; se
     default:
       return <div className="text-xs text-text-disable">{(e as { type: string }).type}</div>;
   }
+}
+
+const Row = memo(function Row({ e, sessionId, socket }: { e: RenderableEvent; sessionId: string; socket?: ChatSocket | null }) {
+  return <ChatEventRow e={e} sessionId={sessionId} socket={socket} />;
 });
 
 export function EventList({ events, sessionId, socket, onOpenComputer }: EventListProps) {
@@ -141,7 +160,7 @@ export function EventList({ events, sessionId, socket, onOpenComputer }: EventLi
 const FINAL_TOOL_STATUSES = new Set<ToolUsedEvent['status']>(['success', 'error', 'failed', 'cancelled', 'stopped', 'rollback']);
 
 /** Merge toolUsed argument/start/finish frames for the same action into a single event. */
-function collapseEvents(events: RenderableEvent[]): RenderableEvent[] {
+export function collapseEvents(events: RenderableEvent[]): RenderableEvent[] {
   const out: RenderableEvent[] = [];
   const indexByAction = new Map<string, number>();
   const hasClosedClock = events.some((e) => e.type === 'cascadeTaskClock' && (e as unknown as CascadeTaskClockEvent).clock?.phase === 'closed');

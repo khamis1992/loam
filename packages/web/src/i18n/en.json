@@ -794,4 +794,10 @@
   "Mode": "Mode",
   "Memory enabled (Loam execution)": "Memory enabled (Loam execution)",
   "Memory disabled (Chat only)": "Memory disabled (Chat only)"
+,
+  "Making progress": "Making progress",
+  "Agent info": "Agent info",
+  "Message": "Message",
+  "Open in task view": "Open in task view",
+  "Toggle info pane": "Toggle info pane"
 }
