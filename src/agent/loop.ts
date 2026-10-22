@@ -12,6 +12,7 @@ import type { ToolRegistry } from "../tools/registry.js";
 import { chatWithFallback } from "./model.js";
 import { chatWithCodingRouter, isCodingTurn } from "../llm/codingRouter.js";
 import { isEditTool, recordEditModel } from "../llm/modelAudit.js";
+import type { CooldownStore, FailoverProvider, ProviderClient } from "../llm/failover.js";
 import { createStallGuard } from "./stallGuard.js";
 import { compressContext } from "./contextCompressor.js";
 import { throwIfCancelled } from "../server/runControl.js";
@@ -49,6 +50,19 @@ export interface RunOptions {
   saveWorker?: (checkpoint: WorkerCheckpoint | undefined) => void;
   /** Resolved sandbox mode for this run; rendered into the system prompt. */
   sandboxMode?: SandboxMode;
+  /** Internal seam for the coding-model router: builds the client for one
+   *  failover provider. Defaults to the real provider client (network). Tests
+   *  inject a fake so routing can be verified without contacting a model. */
+  createProviderClient?: (provider: FailoverProvider) => ProviderClient;
+  /** Internal seam: persisted failover cooldown store. Defaults to the on-disk
+   *  store. Tests inject an in-memory store so a failed provider never leaves a
+   *  process-wide cooldown behind. */
+  cooldownStore?: CooldownStore;
+  /** Internal seam: environment used to resolve provider keys. Defaults to
+   *  `process.env`; tests inject a fake env so no real key is read. */
+  env?: Record<string, string | undefined>;
+  /** Called once per model call with the resolved coding model and chain. */
+  onCodingRoute?: (info: { model: string; chain: string[]; providerId?: string }) => void;
   /** Shared reminder channel. Callers may push external file changes or memory
    *  updates into it; the loop appends due reminders as hidden user messages. */
   reminderChannel?: ReminderChannel;
@@ -216,6 +230,10 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           cfg: opts.cfg,
           chat: chatRequest,
           fallback: opts.ollama,
+          env: opts.env,
+          store: opts.cooldownStore,
+          createClient: opts.createProviderClient,
+          onRoute: opts.onCodingRoute,
         })
       : await chatWithFallback({
           cfg: opts.cfg,
