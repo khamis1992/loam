@@ -73,8 +73,11 @@ export function detectScenes(diffs:FrameDiff[],opts:{threshold?:number;minSceneS
 export function adaptiveThreshold(diffs:FrameDiff[],opts:{sensitivity?:number}={}):number{
   const k=opts.sensitivity??1.5;
   if(!Array.isArray(diffs)||!Number.isFinite(k)||k<=0)return 0.35;
-  if(diffs.length<2)return 0.35;
-  const scores=diffs.map(d=>d.score).sort((a,b)=>a-b);
+  // Ignore malformed samples instead of letting a NaN score poison the median
+  // (which would otherwise make detectScenes throw on a NaN threshold).
+  const scores=diffs.map(d=>d?.score).filter((s):s is number=>typeof s==='number'&&Number.isFinite(s)&&s>=0&&s<=1);
+  if(scores.length<2)return 0.35;
+  scores.sort((a,b)=>a-b);
   const median=scores.length%2?scores[(scores.length-1)/2]!:(scores[scores.length/2-1]!+scores[scores.length/2]!)/2;
   const dev=scores.map(s=>Math.abs(s-median)).sort((a,b)=>a-b);
   const mad=dev.length%2?dev[(dev.length-1)/2]!:(dev[dev.length/2-1]!+dev[dev.length/2]!)/2;
@@ -342,26 +345,34 @@ export type AutoEditOptions={
 };
 export type AutoEditPlan={scenes:Scene[];clips:AutoClip[];reframes:ReframeWindow[];captions:CaptionCue[];warnings:string[]};
 
-/** Orchestrate every lane through the injected probe; unavailable lanes degrade with warnings. */
+const laneError=(e:unknown):string=>e instanceof Error?e.message:String(e);
+
+/** Orchestrate every lane through the injected probe; unavailable or failing
+ *  lanes degrade with a warning instead of rejecting the whole plan. */
 export async function planAutoEdit(videoPath:string,opts:AutoEditOptions,probe:MediaProbe):Promise<AutoEditPlan>{
   if(!videoPath)throw Error('video path is required');
   const warnings:string[]=[];
-  const diffs=probe.frameDiffs?await probe.frameDiffs(videoPath):[];
-  if(!probe.frameDiffs)warnings.push('frame-diff probe unavailable: treating the video as one scene');
-  const energy=probe.audioEnergy?await probe.audioEnergy(videoPath):[];
-  if(!probe.audioEnergy)warnings.push('audio-energy probe unavailable: ranking scenes by visual peaks only');
+  let diffs:FrameDiff[]=[];
+  if(probe.frameDiffs){try{diffs=await probe.frameDiffs(videoPath);}catch(e){warnings.push(`frame-diff probe failed: ${laneError(e)}`);}}
+  else warnings.push('frame-diff probe unavailable: treating the video as one scene');
+  let energy:EnergySample[]=[];
+  if(probe.audioEnergy){try{energy=await probe.audioEnergy(videoPath);}catch(e){warnings.push(`audio-energy probe failed: ${laneError(e)}`);}}
+  else warnings.push('audio-energy probe unavailable: ranking scenes by visual peaks only');
   const duration=opts.duration??diffs.at(-1)?.t??0;
   if(duration<=0){warnings.push('video duration unknown: returning an empty plan');return {scenes:[],clips:[],reframes:[],captions:[],warnings};}
   const threshold=opts.threshold??(opts.adaptive?adaptiveThreshold(diffs,{sensitivity:opts.sensitivity}):undefined);
   const scenes=diffs.length?detectScenes(diffs,{threshold,minSceneSeconds:opts.minSceneSeconds,duration}):[{index:0,start:0,end:duration,peak:0}];
   const clips=pickHighlights(scenes,energy,{targetSeconds:opts.targetSeconds??Math.min(30,duration),minClipSeconds:opts.minClipSeconds,maxClipSeconds:opts.maxClipSeconds,beats:opts.beats,beatsTolerance:opts.beatsTolerance});
-  const subjects=opts.subjects??(probe.subjects?await probe.subjects(videoPath):[]);
+  let subjects:SubjectFrame[]=[];
+  if(opts.subjects)subjects=opts.subjects;
+  else if(probe.subjects){try{subjects=await probe.subjects(videoPath);}catch(e){warnings.push(`subject probe failed: ${laneError(e)}`);}}
   let reframes:ReframeWindow[]=[];
   if(opts.aspect){
     if(!subjects.length)warnings.push('no subject boxes: reframing with centered crops');
     reframes=computeReframe({width:opts.width??1920,height:opts.height??1080,aspect:opts.aspect,subjects,start:0,end:duration,maxPan:opts.maxPan,panTickSeconds:opts.panTickSeconds});
   }
-  const transcript=opts.transcript??(probe.transcribe?await probe.transcribe(videoPath,{language:opts.language}):undefined);
+  let transcript:TranscriptSegment[]|undefined=opts.transcript;
+  if(!transcript&&probe.transcribe){try{transcript=await probe.transcribe(videoPath,{language:opts.language});}catch(e){warnings.push(`transcript probe failed: ${laneError(e)}`);}}
   if(!transcript)warnings.push('no transcript: captions skipped');
   const captions=transcript?buildCaptions(transcript,{maxChars:opts.maxChars,maxSeconds:opts.maxCueSeconds}):[];
   return {scenes,clips,reframes,captions,warnings};
@@ -374,7 +385,7 @@ export function parseSceneLog(text:string):FrameDiff[]{
     const time=/pts_time:([0-9.]+)/.exec(line);
     if(time){pendingTime=Number(time[1]);continue;}
     const score=/lavfi\.scene_score=([0-9.eE+-]+)/.exec(line);
-    if(score&&pendingTime!==undefined){diffs.push({t:pendingTime,score:Math.min(1,Number(score[1]))});pendingTime=undefined;}
+    if(score&&pendingTime!==undefined){const value=Number(score[1]);if(Number.isFinite(value))diffs.push({t:pendingTime,score:Math.min(1,Math.max(0,value))});pendingTime=undefined;}
   }
   return diffs;
 }
