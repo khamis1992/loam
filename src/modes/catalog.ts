@@ -31,7 +31,7 @@ const GEN_RESEARCH = ["search_images", "search_x", "solve_logic"];
 export const LOAM_MODES: LoamMode[] = [
   { id: "ask", label: "Loam Explore", labelAr: "استكشف", icon: "◌", hue: 155, hue2: 135,
     tagline: "وضوح قبل التنفيذ", description: "افهم أفكارك وملفات هذه المهمة واسأل دون تعديل الملفات أو تشغيل أوامر.", outputHint: "إجابة واضحة وخطوات مقترحة", readOnly: true,
-    tools: [...READ, "code_symbols", "code_outline", ...DOCS_LOOKUP, ...CONTROL], panels: ["files"],
+    tools: [...READ, "code_symbols", "code_outline", "semantic_search", ...DOCS_LOOKUP, ...CONTROL], panels: ["files"],
     fields: [{ id: "question", label: "ما الذي تريد فهمه؟", placeholder: "اشرح الفكرة أو أرفق ملفًا", multiline: true }, { id: "audience", label: "مستوى التفاصيل", placeholder: "مختصر، تفصيلي، أو مناسب للمبتدئين" }],
     starters: [{ label: "اشرح مستندًا", prompt: "اقرأ المستند المرفق واشرح أهم النقاط والمصطلحات." }, { label: "قارن فكرتين", prompt: "ساعدني في مقارنة خيارين وتحديد أسئلة القرار." }] },
   { id: "research", label: "Loam Research", labelAr: "ابحث", icon: "⌕", hue: 195, hue2: 170,
@@ -41,7 +41,7 @@ export const LOAM_MODES: LoamMode[] = [
     starters: [{ label: "قارن مصادر", prompt: "قارن المصادر التي سأرفقها، وافصل الحقائق عن الاستنتاجات مع روابط الأدلة." }, { label: "راجع موضوعًا", prompt: "أعد تقرير بحث حول الموضوع التالي، مع توضيح الثغرات وحدود المصادر المتاحة." }] },
   { id: "build", label: "Loam Build", labelAr: "ابنِ", icon: "⌘", hue: 100, hue2: 140,
     tagline: "من الفكرة إلى تجربة تعمل", description: "طوّر ملفات التطبيق وشغّل الاختبارات ومعاينة المشروع في مساحة المهمة.", outputHint: "ملفات مشروع ومعاينة ونتائج اختبارات", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, ...WRITE, ...EDIT_EXTRA, "memory_add", "artifact_publish", ...DOCS_LOOKUP, ...BUILD_EXTRA, ...GIT, "loam_mobile", "code_symbols", "code_outline", "shell_run", "web_fetch", ...BROWSER, ...PREVIEW, ...CONTROL], panels: ["files", "browser", "preview"],
+    tools: ["integration_list", "integration_call", ...READ, ...WRITE, ...EDIT_EXTRA, "memory_add", "artifact_publish", ...DOCS_LOOKUP, ...BUILD_EXTRA, ...GIT, "loam_mobile", "code_symbols", "code_outline", "semantic_search", "shell_run", "web_fetch", ...BROWSER, ...PREVIEW, ...CONTROL], panels: ["files", "browser", "preview"],
     fields: [{ id: "brief", label: "ماذا سنبني؟", placeholder: "المستخدمون والوظائف المطلوبة", multiline: true }, { id: "acceptance", label: "معايير الإنجاز", placeholder: "ما السلوك الذي يجب اختباره قبل التسليم؟", multiline: true }],
     starters: [{ label: "صفحة تعريفية", prompt: "ابنِ صفحة تعريفية عربية متجاوبة مع معاينة محلية واختبر عرض الهاتف." }, { label: "أصلح مشروعًا", prompt: "افحص ملفات المشروع المرفقة، حدد العطل وأصلحه ثم شغّل الاختبارات المناسبة." }] },
   { id: "write", label: "Loam Write", labelAr: "اكتب", icon: "✎", hue: 55, hue2: 75,

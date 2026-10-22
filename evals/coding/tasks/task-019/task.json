@@ -1,0 +1,12 @@
+{
+  "id": "task-019",
+  "title": "Add property-based tests",
+  "category": "add-test",
+  "language": "typescript",
+  "prompt": "`src/sort.ts` exports `insertionSort` but has no tests. Create `test/sort.test.mjs` with property-based checks over many generated arrays: the result must be sorted ascending, must be a permutation of the input, and the input array must not be mutated. It must run with `node test/sort.test.mjs` and exit non-zero on failure. Do not modify `src/sort.ts`.",
+  "testCommand": "node .eval/check.mjs",
+  "timeoutSec": 90,
+  "maxSteps": 22,
+  "requireFiles": ["test/sort.test.mjs"],
+  "tags": ["testing", "property-based", "mutation-check"]
+}

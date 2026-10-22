@@ -36,7 +36,7 @@ import { createPreviewTools } from "../tools/preview.js";
 import { createRorkTools } from "../tools/rork.js";
 import { createFrontierBridgeTools } from "../tools/frontierBridge.js";
 import { writeGate } from "../server/pending.js";
-import { createIntegrationTools } from '../tools/integrations.js';
+import { createIntegrationTools } from "../tools/integrations.js";
 import { createGitWorkflowTools } from "../tools/gitWorkflowTools.js";
 
 import { createPhaseTools } from "../tools/phaseTools.js";
@@ -45,6 +45,7 @@ import { createMultiEditTools } from "../tools/multiEdit.js";
 import { createVaultTools } from "../tools/vaultTools.js";
 import { createCodeSessionTools } from "../tools/codeSession.js";
 import { createDocsLookupTools } from "../tools/docsLookup.js";
+import { createSemanticSearchTools } from "../tools/semanticSearch.js";
 import { createGenExtraTools } from "../tools/genExtra.js";
 import { defaultGenProviders } from "../creative/genProviders.js";
 import { createArtifactTools } from "../tools/artifactTools.js";
@@ -116,6 +117,12 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
 
   registry.registerAll(createCodeSessionTools());
   registry.registerAll(createDocsLookupTools());
+  // Semantic code search shares the memory embedder; without it the index still
+  // answers via the BM25 fallback, so the tool is always registered.
+  registry.registerAll(createSemanticSearchTools({
+    embedder: cfg.memory.enabled && cfg.memory.model ? embedder : undefined,
+    model: cfg.memory.model,
+  }));
   // N12 generator tools: media/search providers from the environment plus the
   // runtime model as the reasoning backend for solve_logic / generate_storyboard.
   registry.registerAll(createGenExtraTools({ providers: defaultGenProviders(cfg), reasoner: ollama }));
