@@ -13,6 +13,7 @@
 import crypto from "node:crypto";
 import { database } from "./sqliteStore.js";
 import { isSandboxMode, type RiskTier, type SandboxMode } from "../policy/riskTier.js";
+import { isLocalPermissionMode, type LocalPermissionMode } from "../policy/permissionModes.js";
 
 export type ApprovalDecision = "allow" | "deny";
 
@@ -65,6 +66,11 @@ function ensureTables(): void {
     updated_at TEXT NOT NULL
   );
   CREATE TABLE IF NOT EXISTS sandbox_task_modes (
+    task_id TEXT PRIMARY KEY,
+    mode TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS permission_task_modes (
     task_id TEXT PRIMARY KEY,
     mode TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -267,4 +273,25 @@ export function setTaskSandboxMode(taskId: string, mode: SandboxMode): void {
 export function taskSandboxMode(taskId: string): SandboxMode | undefined {
   const row = database().prepare("SELECT mode FROM sandbox_task_modes WHERE task_id = ?").get(taskId) as { mode: string } | undefined;
   return row && isSandboxMode(row.mode) ? row.mode : undefined;
+}
+
+/**
+ * Persist the per-task local permission mode (plan / ask_for_approval /
+ * approve_for_me / full_access). `plan_exit` writes `approve_for_me` here once
+ * a plan is approved so later edits in the same task are allowed.
+ */
+export function setTaskPermissionMode(taskId: string, mode: LocalPermissionMode): void {
+  if (!taskId) throw new Error("taskId is required");
+  if (!isLocalPermissionMode(mode)) throw new Error("invalid permission mode");
+  database()
+    .prepare(
+      "INSERT INTO permission_task_modes (task_id, mode, updated_at) VALUES (?, ?, ?) ON CONFLICT(task_id) DO UPDATE SET mode = excluded.mode, updated_at = excluded.updated_at",
+    )
+    .run(taskId, mode, new Date().toISOString());
+}
+
+/** Read the persisted per-task permission mode; undefined when unset. */
+export function taskPermissionMode(taskId: string): LocalPermissionMode | undefined {
+  const row = database().prepare("SELECT mode FROM permission_task_modes WHERE task_id = ?").get(taskId) as { mode: string } | undefined;
+  return row && isLocalPermissionMode(row.mode) ? row.mode : undefined;
 }
