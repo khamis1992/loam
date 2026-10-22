@@ -28,6 +28,22 @@ describe('foldName', () => {
   });
 });
 
+describe('foldName — Arabic and decomposed input', () => {
+  it('strips Arabic harakat/tashkeel from vocalised names', () => {
+    expect(foldName('مُحَمَّد')).toBe('محمد');
+    expect(foldName('عَرَبِيّ')).toBe('عربي');
+  });
+
+  it('folds decomposed Latin input (NFD) to plain ASCII', () => {
+    expect(foldName('Cafe\u0301')).toBe('cafe');
+    expect(foldName('Zoe\u0308')).toBe('zoe');
+  });
+
+  it('leaves Arabic letters without case folding untouched', () => {
+    expect(foldName('وكيل')).toBe('وكيل');
+  });
+});
+
 describe('matchesSearch / searchAgents', () => {
   const agents = [
     make('1', 'Café Bearer'),
@@ -52,6 +68,27 @@ describe('matchesSearch / searchAgents', () => {
 
   it('returns [] when nothing matches', () => {
     expect(searchAgents(agents, 'zzz')).toEqual([]);
+  });
+});
+
+describe('Arabic search', () => {
+  const agents = [
+    make('1', 'مُحَمَّد', { description: 'وكيل الاختبارات' }),
+    make('2', 'عربي', { description: 'مرحبا' }),
+    make('3', 'Plain Bot'),
+  ];
+
+  it('matches an unvocalised Arabic query against a vocalised name', () => {
+    expect(searchAgents(agents, 'محمد')).toEqual([agents[0]]);
+  });
+
+  it('matches Arabic names and descriptions ignoring diacritics', () => {
+    expect(searchAgents(agents, 'عربي')).toEqual([agents[1]]);
+    expect(searchAgents(agents, 'اختبارات')).toEqual([agents[0]]);
+  });
+
+  it('returns [] for an Arabic query that matches nothing', () => {
+    expect(searchAgents(agents, 'غير موجود')).toEqual([]);
   });
 });
 

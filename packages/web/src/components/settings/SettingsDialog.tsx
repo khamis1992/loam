@@ -154,11 +154,11 @@ function SettingsContent({ tab }: { tab: string }) {
 
 function glyphFor(icon: string) {
   const map: Record<string, string> = {
-    SlidersHorizontal: 'âš™', User: 'ðŸ‘¤', Sparkles: 'âœ¨', Palette: 'ðŸŽ¨', Keyboard: 'âŒ¨',
-    Blocks: 'â–¦', Unplug: 'ðŸ”Œ', Database: 'ðŸ—„', Monitor: 'ðŸ–¥', Globe: 'ðŸŒ', Mail: 'âœ‰', Phone: 'ðŸ“ž',
-    Wallet: 'ðŸ‘›', Info: 'â„¹',
+    SlidersHorizontal: '⚙', User: '👤', Sparkles: '✨', Palette: '🎨', Keyboard: '⌨',
+    Blocks: '▦', Unplug: '🔌', Database: '🗄', Monitor: '🖥', Globe: '🌐', Mail: '✉', Phone: '📞',
+    Wallet: '👛', Info: 'ℹ',
   };
-  return map[icon] || 'â€¢';
+  return map[icon] || '•';
 }
 
 export function Row({ label, description, children }: { label: string; description?: string; children: ReactNode }) {

@@ -7,6 +7,7 @@ import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import type { AgentCardAgent } from './AgentCard';
 import type { GroupChat } from './groupTypes';
+import { AgentAvatar } from './AgentAvatar';
 
 interface GroupCreateDialogProps {
   open: boolean;
@@ -95,7 +96,12 @@ export function GroupCreateDialog({ open, agents, onClose, onCreated }: GroupCre
                     onChange={() => toggle(agent.id)}
                     className="size-4 accent-text-primary"
                   />
-                  <span className="text-base">{agent.emoji || '🤖'}</span>
+                  <AgentAvatar
+                    name={agent.name}
+                    id={agent.id}
+                    emoji={agent.emoji}
+                    size={24}
+                  />
                   <span className="min-w-0 flex-1 truncate">{agent.name}</span>
                 </label>
               ))

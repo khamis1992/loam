@@ -219,7 +219,9 @@ export function normalizeCitation(raw: string): string {
   url.search = "";
   for (const [key, val] of params) url.searchParams.append(key, val);
   const path = url.pathname.replace(/\/+$/u, "") || "";
-  return `${url.protocol}//${url.host}${url.port ? `:${url.port}` : ""}${path}${url.search}`;
+  // Use hostname (never includes the port) so a non-default port is not
+  // emitted twice; `host` already carries `host:port` and would duplicate it.
+  return `${url.protocol}//${url.hostname}${url.port ? `:${url.port}` : ""}${path}${url.search}`;
 }
 
 /** Keep the first occurrence of every distinct citation, in order. */
@@ -655,22 +657,33 @@ export function buildChildPrompt(task: WideResearchTask): string {
 }
 
 /** Prompt handed to the merge step. */
-export function buildSynthesisPrompt(query: string, findings: readonly WideResearchFinding[]): string {
+export function buildSynthesisPrompt(
+  query: string,
+  findings: readonly WideResearchFinding[],
+  sources: readonly string[] = [],
+): string {
   const blocks = findings.map((f) => {
     const head = f.source ? `ANGLE: ${f.angle}\nSOURCE: ${f.source}` : `ANGLE: ${f.angle}`;
     const cites = f.citations.length > 0 ? f.citations.join(", ") : "(no citation)";
     return `${head}\nFINDINGS: ${f.summary}\nURLS: ${cites}`;
   });
-  return [
+  const lines = [
     `QUESTION: ${query}`,
     "",
     "Independent research findings:",
     ...blocks,
+  ];
+  if (sources.length > 0) {
+    lines.push("", `Cited sources (${sources.length}):`);
+    for (const source of sources) lines.push(`- ${source}`);
+  }
+  lines.push(
     "",
     "Merge the findings above into ONE coherent report that answers the question.",
     "Rules: keep every distinct fact; do not add facts that are not in the findings; keep the source URLs next to the claims they support; " +
       "state disagreements and gaps explicitly; write in the language of the question; reply with the report only.",
-  ].join("\n");
+  );
+  return lines.join("\n");
 }
 
 function createDefaultDispatcher(options: WideResearchOptions, ctx: ToolContext): WideResearchDispatcher {
@@ -714,7 +727,7 @@ function createDefaultSynthesizer(options: WideResearchOptions, ctx: ToolContext
       emit: () => {
         /* the merge is silent */
       },
-      prompt: buildSynthesisPrompt(input.query, input.findings),
+      prompt: buildSynthesisPrompt(input.query, input.findings, input.sources),
       systemSuffix: "[Wide Research controller]\nYou merge independent research findings into one report. You never invent facts.",
       maxSteps,
       signal: rctx.signal ?? ctx.signal,
