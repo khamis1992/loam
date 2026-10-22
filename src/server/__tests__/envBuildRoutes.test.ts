@@ -112,4 +112,24 @@ describe("env build status routes", () => {
     const bad = await call("GET", "/api/env-builds/%2e%2e%2fetc");
     assert.equal(bad.status, 400, "a traversal project id must be rejected, never resolved");
   });
+
+  it("a project bound to the folder finds a build recorded under the folder basename", async () => {
+    // The build above ran under "routeproj"; a UI asks with the db project id.
+    // The two spellings must reach the same snapshot. Reset the lockfile first so
+    // the lookup is not confused by the previous test's staleness assertion.
+    fs.writeFileSync(path.join(tmpDir, "routeproj", "package-lock.json"), JSON.stringify({ name: "demo", lockfileVersion: 3 }), "utf8");
+    const { createProject, updateProject } = await import("../db.js");
+    const project = createProject("bound project");
+    assert.equal(updateProject(project.id, { folder: path.join(tmpDir, "routeproj") })?.id, project.id);
+
+    const cap = await call("GET", `/api/env-builds/${project.id}`);
+    assert.equal(cap.status, 200, "a folder-bound project must resolve its build");
+    const data = cap.body as { build: { projectId: string }; stale: boolean; current: boolean };
+    assert.equal(data.build.projectId, "routeproj", "the build is the same record the tool wrote");
+    assert.equal(data.current, true, "the snapshot is current once the lockfile is restored");
+    assert.equal(data.stale, false);
+
+    const log = await call("GET", `/api/env-builds/${project.id}/log`);
+    assert.equal(log.status, 200, "the log is reachable through the project id too");
+  });
 });

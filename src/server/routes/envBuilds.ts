@@ -17,6 +17,7 @@ import path from "node:path";
 import {
   BLUEPRINT_FILE,
   blueprintHash,
+  findBuildForFolder,
   envSnapshotDir,
   listBuildStatuses,
   readBlueprint,
@@ -24,6 +25,7 @@ import {
   renderStatus,
   type EnvBuildRecord,
 } from "../../tools/envSnapshot.js";
+import { getProject } from "../db.js";
 
 /**
  * Decode one path segment into a project id. Percent-encoded separators and
@@ -53,6 +55,20 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
 function sendText(res: http.ServerResponse, status: number, body: string): void {
   res.writeHead(status, { "content-type": "text/plain; charset=utf-8", "content-length": Buffer.byteLength(body) });
   res.end(body);
+}
+
+/**
+ * Look up a build for the id a caller asked for. A UI bound to a project asks
+ * with the db project id, but the build may have been recorded under the project
+ * folder basename (the agent tool's default), so fall back to the folder the
+ * project points at. Both spellings must reach the same snapshot.
+ */
+function buildForId(projectId: string): EnvBuildRecord | undefined {
+  const direct = readBuildStatus(projectId);
+  if (direct) return direct;
+  const folder = getProject(projectId)?.folder;
+  if (!folder) return undefined;
+  return findBuildForFolder(folder);
 }
 
 /** The public shape of a build: no absolute host paths beyond the snapshot dir. */
@@ -119,7 +135,7 @@ export async function handleEnvBuildRoutes(
       sendJson(res, 400, { error: "invalid project id" });
       return true;
     }
-    const record = readBuildStatus(projectId);
+    const record = buildForId(projectId);
     if (!record) {
       sendJson(res, 404, { error: `no environment build for ${projectId}` });
       return true;
@@ -137,7 +153,7 @@ export async function handleEnvBuildRoutes(
       sendJson(res, 400, { error: "invalid project id" });
       return true;
     }
-    const record = readBuildStatus(projectId);
+    const record = buildForId(projectId);
     if (!record) {
       sendJson(res, 404, { error: `no environment build for ${projectId}` });
       return true;
