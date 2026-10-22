@@ -38,9 +38,11 @@ export function AgentCard({ agent, onStart, onEdit }: AgentCardProps) {
       <div className="flex items-start gap-3">
         <AgentAvatar
           name={agent.name}
+          id={agent.id}
           avatarShape={agent.avatarShape}
           avatarColor={agent.avatarColor}
           avatarImage={agent.avatarImage}
+          emoji={agent.emoji}
           size={40}
         />
         <div className="min-w-0 flex-1">
