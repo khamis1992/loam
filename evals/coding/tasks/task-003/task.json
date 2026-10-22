@@ -1,0 +1,13 @@
+{
+  "id": "task-003",
+  "title": "Extract shared formatting helper",
+  "category": "refactor",
+  "language": "typescript",
+  "prompt": "`src/checkout.ts` formats money twice with the same inline expression. Move that formatting into a new exported helper `formatCents(cents: number): string` in `src/money.ts`, and call it from both `lineTotal` and `grandTotal`. Behaviour must not change, and the duplicated `toFixed` formatting must no longer appear in `src/checkout.ts`.",
+  "testCommand": "node .eval/check.mjs",
+  "timeoutSec": 60,
+  "maxSteps": 16,
+  "requireFiles": ["src/money.ts"],
+  "forbidPatterns": [{ "path": "src/checkout.ts", "pattern": "toFixed" }],
+  "tags": ["dry", "extract-function"]
+}

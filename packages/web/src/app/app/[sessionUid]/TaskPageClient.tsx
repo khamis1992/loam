@@ -307,9 +307,12 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   useEffect(() => {
     if (!wsDecision) return;
     const { event, target } = wsDecision;
-    if (workspaceOpenActionRef.current === event.actionId) return;
-    workspaceOpenActionRef.current = event.actionId;
-    setSelectedTool(event);
+    // A user-message decision (attached video + edit intent) is not a tool event;
+    // wrap it in a studio stub so the panel can open on the Workspace tab.
+    const actionId = event.type === 'toolUsed' ? event.actionId : event.id;
+    if (workspaceOpenActionRef.current === actionId) return;
+    workspaceOpenActionRef.current = actionId;
+    setSelectedTool(event.type === 'toolUsed' ? event : videoStudioStub(event));
     setWorkspaceTarget(target);
     autoOpenedRef.current.add(sessionUid);
   }, [wsDecision, sessionUid]);
@@ -514,6 +517,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                   live={running}
                   events={events}
                   requestedPath={workspaceTarget?.path ?? null}
+                  requestedKind={workspaceTarget?.kind ?? null}
                   onChatEdit={handleWorkspaceChatEdit}
                 />
               ) : null
@@ -564,6 +568,19 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
       )}
     </div>
   );
+}
+
+/** Wrap a non-tool auto-open decision (attached video + edit intent) in a studio stub. */
+function videoStudioStub(event: ChatEvent): ToolUsedEvent {
+  return {
+    id: event.id,
+    type: 'toolUsed',
+    tool: 'video_studio',
+    actionId: event.id,
+    status: 'running',
+    timestamp: event.timestamp,
+    brief: t('Loam Video'),
+  };
 }
 
 function handleServerMessage(m: ServerMessage, sessionId: string, dispatch: AppDispatch) {

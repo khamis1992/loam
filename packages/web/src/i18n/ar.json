@@ -598,6 +598,7 @@
   "Export": "تصدير",
   "Ready": "جاهز",
   "Unavailable": "غير متوفر",
+  "Loam Video is unavailable, so the built-in video editor is shown instead.": "فيديو Loam غير متوفر، لذا يظهر محرر الفيديو المدمج بدلاً منه.",
   "Studio": "استوديو",
   "Design": "تصميم",
   "Edit and render videos": "تحرير الفيديوهات وعرضها",

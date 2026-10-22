@@ -1,0 +1,12 @@
+{
+  "id": "auth",
+  "prompt": "Design an authentication screen for a productivity app: a single-column card on a quiet background with email and password fields, a show/hide password control, a primary submit button, inline validation states and a link to reset a forgotten password. Labels must be real text, not placeholder-only.",
+  "locale": "en",
+  "direction": "ltr",
+  "expectations": {
+    "must": ["email", "password", "sign in"],
+    "mustNot": ["lorem ipsum", "placeholder-only labels"],
+    "keywords": ["forgot password"],
+    "minLint": 80
+  }
+}
