@@ -23,6 +23,7 @@
  * notifies itself, a write that changes nothing produces no notice, and a
  * reader who re-read the file after the edit is not told about it.
  */
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -83,14 +84,11 @@ interface PathEntry {
   readers: Map<string, ReaderEntry>;
 }
 
-/** Cheap non-cryptographic digest of exact content. Two snapshots are equal iff
- *  their digests are, which is all the notice logic needs. */
+/** Content digest. SHA-256, not a short rolling hash: the notice logic treats
+ *  "same digest" as "the reader already holds this content", so a collision
+ *  would silently suppress a real change. */
 function hash(text: string): string {
-  let h = 0;
-  for (let i = 0; i < text.length; i++) {
-    h = (Math.imul(h, 31) + text.charCodeAt(i)) | 0;
-  }
-  return `h${h}`;
+  return crypto.createHash("sha256").update(text, "utf8").digest("hex");
 }
 
 function preview(lines: string[], max = 3): string[] {
@@ -193,6 +191,11 @@ export class FileTouchRegistry {
   noteWrite(sessionId: string, abs: string, content?: string): FileTouchNotice[] {
     const key = path.resolve(abs);
     const entry = this.entryFor(key);
+    // The content before this write is the diff base for a reader whose own
+    // snapshot was too large to retain. Captured BEFORE entry.content is
+    // overwritten, otherwise that reader would be diffed against the new
+    // content and silently never notified.
+    const previous = entry.content;
     const next = content !== undefined ? content : readText(key);
     entry.content = next;
 
@@ -202,7 +205,7 @@ export class FileTouchRegistry {
       // No self-notices, and no notice for a reader whose snapshot already
       // matches the new content (it re-read the file after the edit).
       if (reader === sessionId || seen.hash === nextHash) continue;
-      const base = seen.content ?? entry.content;
+      const base = seen.content ?? previous;
       const diff = diffLines(base, next);
       if (diff.added === 0 && diff.removed === 0) continue;
       produced.push(this.enqueue(reader, this.noticeFor(key, sessionId, diff)));

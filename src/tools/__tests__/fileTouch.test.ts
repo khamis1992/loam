@@ -78,6 +78,16 @@ describe("diffLines", () => {
     assert.equal(diff.added, 1);
     assert.equal(diff.removed, 0);
   });
+
+  it("does not treat two different files as identical (digest has no collisions)", () => {
+    // These two realistic files share a digest under a short 31x+charCode
+    // rolling hash, which would silently suppress a real change notice.
+    const a = "export const value9939 = 9939;\n";
+    const b = "export const value78675 = 78675;\n";
+    assert.notEqual(diffLines(a, b).added, 0);
+    assert.equal(diffLines(a, b).added, 1);
+    assert.equal(diffLines(a, b).removed, 1);
+  });
 });
 
 describe("file touch registry", () => {
@@ -194,5 +204,25 @@ describe("file touch registry", () => {
       registry.noteWrite(id("session-a"), file, "beta\n");
     }
     assert.ok(registry.pendingCount("session-b") <= 50);
+  });
+
+  it("notifies a reader whose snapshot was too large to retain", () => {
+    // file_read allows files up to 400k bytes, but the registry keeps a
+    // reader's text only below MAX_STORE_CONTENT_CHARS. A reader in that window
+    // must still be told, using the content observed before the write.
+    const big = Array.from({ length: 200_000 }, (_, i) => `line-${i}`).join("\n") + "\n";
+    assert.ok(big.length > 256_000, "fixture must exceed the snapshot threshold");
+    fs.writeFileSync(target("big.ts"), big, "utf8");
+    registry.noteRead(id("session-b"), target("big.ts"), big);
+
+    const produced = registry.noteWrite(id("session-a"), target("big.ts"), "rewritten\n");
+
+    assert.equal(produced.length, 1, "a reader of a large file must still be notified");
+    const queued = registry.drainNotices("session-b");
+    assert.equal(queued.length, 1);
+    // The diff must be against the pre-write content, not against the new
+    // content (which would be an empty diff and suppress the notice entirely).
+    assert.equal(queued[0]!.summary, "+1/-200000", "the notice must diff against the pre-write content");
+    assert.ok(queued[0]!.preview.length > 0, "the notice must carry changed lines");
   });
 });
