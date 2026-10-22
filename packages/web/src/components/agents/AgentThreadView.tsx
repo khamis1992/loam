@@ -517,7 +517,7 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
                 <div className="flex h-full items-center justify-center text-text-secondary">
                   <Loader2 className="mr-2 size-5 animate-spin" /> {t('Loading')}
                 </div>
-              ) : error ? (
+              ) : error && events.length === 0 ? (
                 <div className="flex flex-col items-center justify-center gap-2 py-12 text-function-error">
                   <AlertCircle className="size-6" />
                   <p className="text-sm">{error}</p>

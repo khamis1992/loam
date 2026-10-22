@@ -153,6 +153,7 @@ export interface Config {
     /** Context window size per model prefix (longest-prefix match). Defaults cover common models. */
     contextWindow: Record<string, number>;
   };
+  sessionLog: { enabled: boolean };
 }
 
 const DEFAULTS: Config = {
@@ -237,6 +238,7 @@ const DEFAULTS: Config = {
       "gemini-1.5": 1048576,
     },
   },
+  sessionLog: { enabled: true },
 };
 
 function isObj(v: unknown): v is Record<string, unknown> {

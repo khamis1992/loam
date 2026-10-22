@@ -64,6 +64,11 @@ async function mockBackend(page: Page, initial: MockAgent[]): Promise<MockAgent[
     w.__AGENT_STUDIO_ENV__ = { apiBase: 'http://localhost:8787', socketBase: 'http://localhost:8787' };
   });
 
+  await page.routeWebSocket(/.*\/socket\.io\/.*/, (ws) => {
+    ws.send('0{"sid":"e2e-sid","upgrades":[],"pingInterval":25000,"pingTimeout":20000}');
+    ws.send('40');
+  });
+
   // Catch-all for the desktop protocol base (lowest priority: registered first
   // so the specific handlers below win). The real backend on :8787 answers 401
   // for unauthenticated RPC calls (e.g. ListSessions), and any 401 makes the
@@ -111,7 +116,7 @@ async function mockBackend(page: Page, initial: MockAgent[]): Promise<MockAgent[
     if (path === '/api/channels') return json(route, { channels: [] });
     if (path === '/api/swarm/runs') return json(route, { runs: [] });
     if (path === '/api/tasks') return json(route, { tasks: [] });
-    if (path === '/api/tasks/thr-1') {
+    if (/^\/api\/tasks\/thr-1/.test(path)) {
       return json(route, {
         task: { messages: [{ role: 'user', content: 'Hello from the thread', at: new Date().toISOString() }] },
       });

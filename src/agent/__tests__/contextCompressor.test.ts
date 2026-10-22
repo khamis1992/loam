@@ -64,6 +64,7 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
       model: "",
       contextWindow: { "qwen2.5": 32768 },
     },
+    sessionLog: { enabled: false },
     ...overrides,
   };
 }
