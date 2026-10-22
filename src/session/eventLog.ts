@@ -29,12 +29,8 @@ export interface Migration {
   migrateEvent: (e: LogEvent) => LogEvent;
 }
 
-export interface MigrationChain {
-  from: number;
-  to: number;
-  migrateHeader: (h: SessionHeader) => SessionHeader;
-  migrateEvent: (e: LogEvent) => LogEvent;
-}
+/** A compiled, contiguous migration chain (same shape as a single step). */
+export type MigrationChain = Migration;
 
 export interface Projection<S> {
   key: string;

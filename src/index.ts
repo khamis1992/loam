@@ -393,6 +393,8 @@ async function main(): Promise<void> {
         emit(doneEvent);
         publishTaskEvent(task, doneEvent);
       }
+      // Turn boundary: drain pending appends and fsync the session log.
+      await sessionLog?.flush();
       recordTelemetry("done", { model: result.model, steps: result.steps, usage: { promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens } });
       // Actor-critic reflection memory: non-pass verdicts feed the learning review and the audit log.
       const notable = verdicts.filter((v) => v.verdict !== "pass");
@@ -430,6 +432,8 @@ async function main(): Promise<void> {
         wrappedEmit({ type: "error", message: cancelled ? "⏹ أُوقفت المهمة بناءً على طلبك" : message });
       }
       recordTelemetry("error", { model: effectiveCfg.model, steps: 0, usage: { promptTokens: 0, completionTokens: 0 }, error: cancelled ? "cancelled by user" : message });
+      // Turn boundary on failure/cancel too: fsync whatever was logged so far.
+      await sessionLog?.flush();
       if (!cancelled) throw err;
       return { taskId: task, text: "" };
     }
