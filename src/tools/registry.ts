@@ -3,6 +3,7 @@ import type { Emit } from "../agent/events.js";
 import type { OllamaFunctionTool } from "../ollama.js";
 import { runLifecycleHooks } from "../policy/hooks.js";
 import { getLoamMode } from "../modes/catalog.js";
+import { getToolProfile } from "../agent/taskToolScope.js";
 import type { ReadState } from "./readState.js";
 
 export interface ToolContext {
@@ -72,6 +73,14 @@ export class ToolRegistry {
     const sub = this.cloneFiltered({ allow });
     sub.readOnly = true;
     return sub;
+  }
+
+  /** Named tool-profile subset (e.g. "coding"): an immutable, hook-free view
+   *  exposing only the tools that profile declares. Unknown profiles throw. */
+  forProfile(profileId: string): ToolRegistry {
+    const profile = getToolProfile(profileId);
+    if (!profile) throw new Error(`Unknown tool profile: ${profileId}`);
+    return this.forAllowlist(profile.tools);
   }
 
   /** Copy of this registry plus extra tool instances bound at run start

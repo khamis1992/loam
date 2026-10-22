@@ -27,8 +27,8 @@ export interface MasterPromptSection {
 export function masterSectionId(title: string): string {
   const numbered = /^(\d+)\./.exec(title);
   if (numbered?.[1]) return numbered[1];
-  if (/^Appendix A\b/i.test(title)) return "appendix-a";
-  if (/^Appendix B\b/i.test(title)) return "appendix-b";
+  const appendix = /^Appendix\s+([A-Za-z])\b/i.exec(title);
+  if (appendix?.[1]) return `appendix-${appendix[1].toLowerCase()}`;
   return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
