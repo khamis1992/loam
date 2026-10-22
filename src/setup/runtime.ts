@@ -8,6 +8,7 @@ import path from "node:path";
 import type { Config } from "../config.js";
 import { log } from "../log.js";
 import { OllamaClient } from "../ollama.js";
+import { FailoverClient } from "../llm/failover.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { disposeShellSessions, shellTools } from "../tools/shell.js";
 import { fileTools } from "../tools/files.js";
@@ -37,7 +38,7 @@ import { createIntegrationTools } from '../tools/integrations.js';
 
 export interface Runtime {
   cfg: Config;
-  ollama: OllamaClient;
+  ollama: OllamaClient | FailoverClient;
   registry: ToolRegistry;
   memory: MemoryStore | null;
   screenLive: ScreenLive;
@@ -49,7 +50,7 @@ export interface Runtime {
 }
 
 export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): Promise<Runtime> {
-  const ollama = new OllamaClient(cfg.ollamaUrl, cfg.cloudModel);
+  const ollama = cfg.failover?.providers?.length ? new FailoverClient(cfg.failover.providers) : new OllamaClient(cfg.ollamaUrl, cfg.cloudModel);
   await initPty();
   log.info(`pty: ${ptyStatus()}`);
 

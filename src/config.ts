@@ -137,6 +137,16 @@ export interface Config {
     verifyFinal: boolean;
   };
   mcpServers: Record<string, McpServerConfig>;
+  failover?: {
+    providers: Array<{
+      id: string;
+      kind: "ollama" | "openai-compatible";
+      baseUrl: string;
+      model: string;
+      apiKeyEnv: string;
+      enabled: boolean;
+    }>;
+  };
   sessionLog: { enabled: boolean };
 }
 
@@ -195,6 +205,16 @@ const DEFAULTS: Config = {
     verifyFinal: true,
   },
   mcpServers: {},
+  failover: {
+    providers: [
+      { id: "ollama", kind: "ollama", baseUrl: "http://127.0.0.1:11434", model: "glm-5.3:cloud", apiKeyEnv: "", enabled: true },
+      { id: "opencode-go", kind: "openai-compatible", baseUrl: "https://api.opencode.ai/v1", model: "opencode-go", apiKeyEnv: "OPENCODE_API_KEY", enabled: true },
+      { id: "freellmapi", kind: "openai-compatible", baseUrl: "https://api.freellmapi.com/v1", model: "freellmapi/auto", apiKeyEnv: "FREELLM_API_KEY", enabled: true },
+      { id: "longcat", kind: "openai-compatible", baseUrl: "https://api.longcat.ai/v1", model: "LongCat-2.5-Preview", apiKeyEnv: "LONGCAT_API_KEY", enabled: true },
+      { id: "openrouter", kind: "openai-compatible", baseUrl: "https://openrouter.ai/api/v1", model: "openrouter/free", apiKeyEnv: "OPENROUTER_API_KEY", enabled: true },
+      { id: "ornith", kind: "openai-compatible", baseUrl: "https://api.ornith.ai/v1", model: "ornith", apiKeyEnv: "ORNITH_API_KEY", enabled: true },
+    ],
+  },
   sessionLog: { enabled: true },
 };
 
