@@ -96,7 +96,19 @@ const STOPWORDS = new Set([
   "select", "choose", "tap", "submit", "after", "before", "should", "want", "need", "please",
 ]);
 
-const URL_RE = /(https?:\/\/[^\s"'<>]+|(?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)+(?:\/[^\s"'<>]*)?)/i;
+const URL_RE = /(https?:\/\/[^\s"'<>]+|(?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)+(?::\d{1,5})?(?:\/[^\s"'<>]*)?|localhost(?::\d{1,5})?(?:\/[^\s"'<>]*)?)/i;
+
+/** Loopback / private-network hosts are almost always plain-http dev servers. */
+function isLocalHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return (
+    host === "localhost"
+    || host === "127.0.0.1"
+    || host === "[::1]"
+    || host.endsWith(".local")
+    || /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(host)
+  );
+}
 
 function stripQuotes(raw: string): string {
   return raw.trim().replace(/^["'`]+/, "").replace(/["'`]+$/, "").trim();
@@ -121,15 +133,28 @@ export function tokens(input: string): string[] {
 function normalizeUrl(raw: string): string | null {
   const trimmed = raw.replace(/[),.;]+$/, "").trim();
   if (!trimmed) return null;
-  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const explicitScheme = /^https?:\/\//i.test(trimmed);
+  let url: URL;
   try {
-    const url = new URL(candidate);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    if (!url.hostname.includes(".")) return null;
-    return url.toString();
+    url = new URL(explicitScheme ? trimmed : `https://${trimmed}`);
   } catch {
     return null;
   }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  const hostname = url.hostname.toLowerCase();
+  // Accept FQDN hosts, IP literals, IPv6 literals and localhost; reject bare words.
+  const validHost = hostname === "localhost" || hostname.includes(".") || /^\[[0-9a-f:]+\]$/i.test(hostname);
+  if (!validHost) return null;
+  // No scheme was given: keep the https default for public hosts but fall back to
+  // http for loopback/private hosts, which nearly always serve plain HTTP.
+  if (!explicitScheme && url.protocol === "https:" && isLocalHostname(hostname)) {
+    try {
+      url = new URL(`http://${trimmed}`);
+    } catch {
+      return null;
+    }
+  }
+  return url.toString();
 }
 
 interface IntentCandidate {
@@ -137,6 +162,19 @@ interface IntentCandidate {
   at: number;
   raw: string;
   field?: string;
+}
+
+/**
+ * Reject a candidate payload that carries no signal: an empty string (which
+ * would otherwise match every element/page) or a bare stopword such as "the"
+ * left over by an under-specified goal like `search for`.
+ */
+function hasMeaningfulPayload(payload: string): boolean {
+  const trimmed = payload.trim();
+  if (!trimmed) return false;
+  if (tokens(trimmed).length > 0) return true;
+  // Keep short or symbolic payloads that are not stopwords (e.g. "C++", "R", "42").
+  return !STOPWORDS.has(trimmed.toLowerCase());
 }
 
 export function parseIntent(goal: string): OperatorIntent {
@@ -154,28 +192,37 @@ export function parseIntent(goal: string): OperatorIntent {
   }
 
   const search = /\b(?:search(?:\s+for)?|look\s+up|google|find)\s+(.+)$/i.exec(text);
-  if (search?.[1]) candidates.push({ kind: "search", at: search.index, raw: stripQuotes(search[1]) });
+  if (search?.[1]) {
+    const query = stripQuotes(search[1]).replace(/^(?:me|us)\s+/i, "").trim();
+    if (hasMeaningfulPayload(query)) candidates.push({ kind: "search", at: search.index, raw: query });
+  }
 
   const type = /\b(?:type|enter|fill(?:\s+in)?|write|input)\s+(.+)$/i.exec(text);
   if (type?.[1]) {
     let payload = stripQuotes(type[1]);
     payload = payload.replace(/\s+(?:in|into|on)\s+(?:the\s+)?[^,]+$/i, "").trim();
     if (!payload) payload = stripQuotes(type[1]);
-    candidates.push({ kind: "type", at: type.index, raw: payload });
+    if (hasMeaningfulPayload(payload)) candidates.push({ kind: "type", at: type.index, raw: payload });
   }
 
   const select = /\b(?:select|choose|pick)\s+(.+?)(?:\s+(?:in|from|on)\s+(?:the\s+)?(.+?))?\s*[.!?]?$/i.exec(text);
   if (select?.[1]) {
-    candidates.push({
-      kind: "select",
-      at: select.index,
-      raw: stripQuotes(select[1]),
-      field: select[2] ? cleanClickTarget(select[2]) : undefined,
-    });
+    const option = stripQuotes(select[1]);
+    if (hasMeaningfulPayload(option)) {
+      candidates.push({
+        kind: "select",
+        at: select.index,
+        raw: option,
+        field: select[2] ? cleanClickTarget(select[2]) : undefined,
+      });
+    }
   }
 
   const click = /\b(?:click|press|tap|choose|select)\s+(?:the\s+)?(.+)$/i.exec(text);
-  if (click?.[1]) candidates.push({ kind: "click", at: click.index, raw: cleanClickTarget(click[1]) });
+  if (click?.[1]) {
+    const target = cleanClickTarget(click[1]);
+    if (hasMeaningfulPayload(target)) candidates.push({ kind: "click", at: click.index, raw: target });
+  }
 
   const first = candidates.sort((a, b) => a.at - b.at)[0];
   if (!first) return { kind: "generic" };
@@ -225,8 +272,13 @@ export function goalSatisfied(
   const text = pageText(observation);
   const requireAction = opts.requireAction === true;
   const quoted = /"([^"]{2,})"/.exec(goal)?.[1];
+  // A quoted literal is only a page-level assertion for navigate/search/generic
+  // goals. For click/type/select the quoted text is the operand, so its mere
+  // presence on the page must never satisfy the goal.
+  const quotedIsAssertion = intent.kind === "navigate" || intent.kind === "search" || intent.kind === "generic";
   if (
     quoted
+    && quotedIsAssertion
     && text.includes(quoted.toLowerCase())
     && (requireAction || intent.kind === "navigate" || intent.kind === "search")
   ) {
@@ -237,12 +289,15 @@ export function goalSatisfied(
     case "navigate":
       return urlMatches(observation.url, intent.url);
     case "search": {
-      if (requireAction && !text.includes(intent.query.toLowerCase())) return false;
-      if (!text.includes(intent.query.toLowerCase())) return false;
+      const query = intent.query.toLowerCase().trim();
+      // An empty query would match every page; never treat it as satisfied.
+      if (!query || !text.includes(query)) return false;
       return /(?:[?&](?:q|query|search)=)|search|result/i.test(`${observation.url}\n${observation.title}\n${observation.bodyText}`);
     }
     case "type": {
-      return observation.elements.some((element) => element.value.toLowerCase().includes(intent.text.toLowerCase()));
+      const wanted = intent.text.toLowerCase().trim();
+      if (!wanted) return false;
+      return observation.elements.some((element) => element.value.toLowerCase().includes(wanted));
     }
     case "select": {
       // Only the element VALUE proves a native selection was made; matching the
@@ -276,8 +331,14 @@ function elementHaystack(element: OperatorElement): string {
   return `${element.name} ${element.role} ${element.value}`.toLowerCase();
 }
 
+/** ARIA/DOM roles that accept typed text. Classification is role-first so a
+ *  link or button merely *labelled* "Search" is never treated as an input. */
+const TEXT_INPUT_ROLES = new Set(["input", "textarea", "textbox", "searchbox", "combobox", "spinbutton"]);
+
 function isTextInput(element: OperatorElement): boolean {
-  return /textbox|search|combobox|textarea|input/i.test(`${element.role} ${element.name}`);
+  const role = element.role.trim().toLowerCase();
+  if (TEXT_INPUT_ROLES.has(role)) return true;
+  return /textbox|searchbox|textarea|combobox/.test(role);
 }
 
 function isSelectElement(element: OperatorElement): boolean {
@@ -455,7 +516,7 @@ export async function runBrowserOperatorLoop(input: OperatorLoopInput): Promise<
     final?: OperatorObservation,
   ): Promise<OperatorLoopResult> => {
     let screenshot: string | undefined;
-    if (pageId && input.surface.screenshot) {
+    if (pageId && input.surface.screenshot && !input.signal?.aborted) {
       try {
         screenshot = await input.surface.screenshot(pageId);
       } catch {
@@ -509,6 +570,10 @@ export async function runBrowserOperatorLoop(input: OperatorLoopInput): Promise<
       history.add(actionKey(action, observation));
       if (action.kind === "scroll") scrolls += 1;
 
+      // Cancellation may have arrived while the planner ran; never dispatch an
+      // action after the run was aborted.
+      if (input.signal?.aborted) return finish("cancelled", "run cancelled before acting", observation);
+
       let result: { ok: boolean; message: string };
       try {
         result = await input.surface.act(pageId, action);
@@ -542,6 +607,7 @@ export async function runBrowserOperatorLoop(input: OperatorLoopInput): Promise<
 
       let next: OperatorObservation;
       try {
+        if (input.signal?.aborted) return finish("cancelled", "run cancelled before verification", observation);
         next = await input.surface.observe(pageId);
       } catch (err) {
         return finish("error", `verification failed: ${err instanceof Error ? err.message : String(err)}`, observation);
@@ -615,8 +681,36 @@ function browserTool(name: string): Tool {
   return tool;
 }
 
+/**
+ * Dispatch one inner browser_* call. The operator is an always-on tool, but it
+ * may never widen the calling run's policy: when the run scope is known
+ * (`ctx.allowedTools`) every inner tool must be part of it. This mirrors the
+ * `resolveChildAllowlist` guarantee used by the fan-out research tools, so a
+ * read-only mode that gets browser_operator cannot drive a browser through it.
+ */
 async function runBrowserTool(name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+  const allowed = ctx.allowedTools;
+  if (allowed && !allowed.includes(name)) {
+    return { ok: false, content: `browser_operator cannot use "${name}": it is not allowed in this run` };
+  }
   return browserTool(name).run(args, ctx);
+}
+
+/** The inner tools the operator drives; a run must allow at least one to be useful. */
+const OPERATOR_SURFACE_TOOLS: readonly string[] = [
+  "browser_open",
+  "browser_goto",
+  "browser_table",
+  "browser_eval",
+  "browser_act",
+  "browser_press",
+  "browser_screenshot",
+];
+
+/** True when the current run scope permits the operator to drive a browser at all. */
+export function operatorSurfaceAllowed(allowedTools: readonly string[] | undefined): boolean {
+  if (!allowedTools) return true;
+  return OPERATOR_SURFACE_TOOLS.some((name) => allowedTools.includes(name));
 }
 
 const BODY_JS = `(() => {
@@ -722,7 +816,9 @@ class BrowserToolSurface implements OperatorSurface {
         name: `browser_operator_${Date.now()}`,
       }, this.ctx);
       if (!result.ok) return undefined;
-      const saved = /^saved (.+) \(\d+ bytes\)$/m.exec(result.content)?.[1];
+      // browser_screenshot prints `saved <path> (<bytes> bytes)`; the path may
+      // contain spaces, so anchor on the trailing byte count.
+      const saved = /^saved\s+(.+?)\s+\(\d+\s+bytes\)\s*$/m.exec(result.content)?.[1]?.trim();
       if (!saved) return undefined;
       return fs.readFileSync(saved).toString("base64");
     } catch {
@@ -777,6 +873,9 @@ export const browserOperatorTools: Tool[] = [
       const goal = str(args, "goal").trim();
       if (!goal) return { ok: false, content: "browser_operator needs a goal" };
       if (!ctx.cfg.policy.networkEnabled) return { ok: false, content: "network access is disabled in config" };
+      if (!operatorSurfaceAllowed(ctx.allowedTools)) {
+        return { ok: false, content: "browser_operator is unavailable: this mode/run does not allow the browser tools it drives" };
+      }
 
       const initialUrl = str(args, "url").trim();
       if (initialUrl && !/^https?:\/\//i.test(initialUrl)) {
