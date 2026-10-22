@@ -56,6 +56,8 @@ export type AgentEvent =
   | { type: "replan"; round: number; reason: string }
   /** Sensitive-action gate: a host input action awaits an explicit user decision. */
   | { type: "approval_required"; approvalId: string; tool: string; summary: string }
+  /** Environment-issue report: a step cannot run because of the local environment. */
+  | { type: "environment_issue"; message: string; details?: string }
   /** End-to-end verification of the completed task. */
   | { type: "verify"; verdict: Verdict; reason: string; parsed?: boolean };
 

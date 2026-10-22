@@ -15,6 +15,7 @@ import type {
   ToolStatus,
   LocalExecutionApprovalRequested,
   FolderAccessRequestEvent,
+  EnvironmentIssueEvent,
 } from "./types.js";
 
 const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -406,6 +407,18 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
         },
       };
       out.push(approval);
+      break;
+    }
+
+    case "environment_issue": {
+      const issue: EnvironmentIssueEvent = {
+        id: baseId(),
+        type: "environmentIssue",
+        timestamp: ts,
+        message: event.message,
+        ...(event.details ? { details: event.details } : {}),
+      };
+      out.push(issue);
       break;
     }
 

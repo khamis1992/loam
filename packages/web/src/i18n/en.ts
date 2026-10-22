@@ -62,6 +62,8 @@ export const en = {
   "No approval rules yet.": "No approval rules yet.",
   "Decided": "Decided",
   "Tool": "Tool",
+  "Environment issue": "Environment issue",
+  "Continue by relying on CI, skipping this step with an explicit note, or asking the user to fix the environment. Do not report the step as passed.": "Continue by relying on CI, skipping this step with an explicit note, or asking the user to fix the environment. Do not report the step as passed.",
   "This agent": "This agent",
   "Global": "Global",
   "Remove": "Remove",

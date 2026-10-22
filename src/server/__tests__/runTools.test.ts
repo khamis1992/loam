@@ -110,6 +110,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     // like buildRuntime + index.ts do at startup.
     for (const name of ["file_read", "file_write", "shell_run", "web_fetch", "loam_mobile", "browser_operator", "wide_research"]) registry.register(dummy(name));
     registry.registerAll(createScratchpadTools());
+    registry.registerAll((await import("../../tools/environmentIssueTools.js")).createEnvironmentIssueTools());
     registry.registerAll(createInstructionHistoryTools());
     registry.registerAll(createAgentSpawnTools());
     registry.registerAll(createDeepResearchTools());
@@ -219,6 +220,17 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     for (const workMode of WORK_MODES) {
       assert.ok(buildRunToolSet("build", workMode.id).tools.names().includes("propose_instructions_update"), `work mode ${workMode.id} must expose propose_instructions_update`);
     }
+  });
+
+  it("report_environment_issue is available in every Loam mode and work mode", () => {
+    for (const mode of LOAM_MODES) {
+      assert.ok(buildRunToolSet(mode.id).tools.names().includes("report_environment_issue"), `mode ${mode.id} must expose report_environment_issue`);
+    }
+    for (const workMode of WORK_MODES) {
+      assert.ok(buildRunToolSet("build", workMode.id).tools.names().includes("report_environment_issue"), `work mode ${workMode.id} must expose report_environment_issue`);
+    }
+    const modelToolNames = buildRunToolSet().tools.toOllama().map((t) => t.function.name);
+    assert.ok(modelToolNames.includes("report_environment_issue"), "the model's function list must include report_environment_issue");
   });
 
   it("a build-mode agent task exposes the wide-research tool to the model", () => {
