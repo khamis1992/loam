@@ -68,6 +68,7 @@ import {
   listProjects,
   listSchedules,
   listTasks,
+  publicSchedule,
   updateProject,
 } from "./db.js";
 import { getSettings, updateSettings } from "./settings.js";
@@ -76,6 +77,7 @@ import { createAgent, deleteAgent, getAgent, listAgents, listAgentsWithChatMeta,
 import { handleScratchpadRoutes } from "./routes/scratchpad.js";
 import { handleDesignStudioRoutes } from "./routes/designStudio.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
+import { handleAutomationsRoutes } from "./routes/automations.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
 import { handleInstructionsRoutes } from "./routes/instructions.js";
@@ -1745,6 +1747,8 @@ loadAgents();
         if (await handleAgentThreadRoutes(req, res, p)) return;
         if (await handleRetryLastRoutes(req, res, p)) return;
         if (await handleSchedulesRoutes(req, res, p)) return;
+        // D14: event-trigger deliveries (HMAC-verified webhook / GitHub events).
+        if (await handleAutomationsRoutes(req, res, p)) return;
         if (await handleAutoVideoRoutes(req, res, p)) return;
         if (await handleLiveViewRoutes(req, res, p, { screenLive: live })) return;
         if (await handleTranscriptRoutes(req, res, p, { workspace: cfg.workspace })) return;
@@ -2444,12 +2448,12 @@ loadAgents();
         }
 
         if (req.method === "GET" && p === "/api/schedules") {
-          sendJson(res, 200, { schedules: listSchedules() });
+          sendJson(res, 200, { schedules: listSchedules().map(publicSchedule) });
           return;
         }
 
         if (req.method === "POST" && p === "/api/schedules") {
-          const body = (await readBody(req)) as { prompt?: unknown; intervalSeconds?: unknown; agentId?: unknown; workMode?: unknown; enabled?: unknown; cron?: unknown; at?: unknown; runAt?: unknown; timezone?: unknown };
+          const body = (await readBody(req)) as { prompt?: unknown; intervalSeconds?: unknown; agentId?: unknown; workMode?: unknown; enabled?: unknown; cron?: unknown; at?: unknown; runAt?: unknown; timezone?: unknown; trigger?: unknown; webhookSecret?: unknown; githubEvents?: unknown; projectId?: unknown; playbook?: unknown };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
           const intervalSeconds = Number(body.intervalSeconds ?? 0);
           const agentId = typeof body.agentId === "string" && body.agentId ? body.agentId : undefined;
@@ -2457,15 +2461,28 @@ loadAgents();
           const cron = typeof body.cron === "string" && body.cron.trim() ? body.cron.trim() : undefined;
           const runAt = typeof body.at === "string" && body.at.trim() ? body.at.trim() : typeof body.runAt === "string" && body.runAt.trim() ? body.runAt.trim() : undefined;
           const timezone = typeof body.timezone === "string" && body.timezone.trim() ? body.timezone.trim() : undefined;
+          // D14: event triggers (webhook / github). They carry no schedule of
+          // their own, so the interval/cron requirement only applies to cron.
+          const trigger = body.trigger === "cron" || body.trigger === "webhook" || body.trigger === "github" ? body.trigger : undefined;
+          const webhookSecret = typeof body.webhookSecret === "string" && body.webhookSecret.trim() ? body.webhookSecret.trim() : undefined;
+          const githubEvents = Array.isArray(body.githubEvents)
+            ? body.githubEvents.filter((e): e is string => typeof e === "string" && e.trim().length > 0).map((e) => e.trim()).slice(0, 50)
+            : undefined;
+          const projectId = typeof body.projectId === "string" && body.projectId ? body.projectId : undefined;
+          const playbook = typeof body.playbook === "string" ? body.playbook : undefined;
+          const isEventTrigger = trigger === "webhook" || trigger === "github";
           if (!prompt) return sendJson(res, 400, { error: "prompt required" });
           if (cron && runAt) return sendJson(res, 400, { error: "cron and at are mutually exclusive" });
           if (timezone && !isValidTimezone(timezone)) return sendJson(res, 400, { error: `منطقة زمنية غير معروفة: ${timezone}` });
           if (runAt && Number.isNaN(Date.parse(runAt))) return sendJson(res, 400, { error: "at must be an ISO timestamp" });
-          if (!cron && !runAt && (!Number.isFinite(intervalSeconds) || intervalSeconds < 30)) return sendJson(res, 400, { error: "intervalSeconds must be >= 30" });
+          if (!isEventTrigger && !cron && !runAt && (!Number.isFinite(intervalSeconds) || intervalSeconds < 30)) return sendJson(res, 400, { error: "intervalSeconds must be >= 30" });
           if (agentId && !getAgent(agentId)) return sendJson(res, 400, { error: "الوكيل غير موجود" });
+          if (projectId && !getProject(projectId)) return sendJson(res, 400, { error: "project not found" });
+          if (trigger === "webhook" && !webhookSecret) return sendJson(res, 400, { error: "webhook trigger requires webhookSecret" });
+          if (trigger === "github" && (!githubEvents || githubEvents.length === 0)) return sendJson(res, 400, { error: "github trigger requires githubEvents" });
           try {
-            const schedule = addSchedule(prompt, Number.isFinite(intervalSeconds) ? intervalSeconds : 0, agentId, workMode, cron || runAt ? "cron" : undefined, undefined, body.enabled !== false, { cron, runAt, timezone });
-            sendJson(res, 200, { schedule });
+            const schedule = addSchedule(prompt, isEventTrigger ? 3600 : Number.isFinite(intervalSeconds) ? intervalSeconds : 0, agentId, workMode, cron || runAt ? "cron" : undefined, undefined, body.enabled !== false, { cron, runAt, timezone, trigger, webhookSecret, githubEvents, projectId, playbook });
+            sendJson(res, 200, { schedule: publicSchedule(schedule) });
           } catch (err) {
             sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
           }
