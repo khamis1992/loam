@@ -75,9 +75,10 @@ It never downloads anything itself.
 ## Tests
 
 ```
-npm run test:vendor
+npm run test:vendor:editors
 ```
 
 Offline unit tests build a tiny synthetic zip fixture and cover sha mismatch,
 skip-when-present, the `LOAM_FILMCRAFT_ZIP` path, `.vendor.json`, zip extraction
-(stored + deflated) and path-traversal rejection.
+(stored + deflated) and path-traversal rejection. (`npm run test:vendor` is the
+narrower Craft suite; `test:vendor:editors` runs every vendor test.)
