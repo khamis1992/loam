@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { ChatEvent, ToolUsedEvent } from '@shared/socket';
+import type { ChatEvent, ChatMessageEvent, ServerAttachment, ToolUsedEvent } from '@shared/socket';
 import { registerEditor } from '../registry';
-import { decideWorkspaceOpen, isWorkspaceToolName, latestWorkspaceDecision } from '../autoOpen';
+import {
+  decideUserMessageOpen,
+  decideWorkspaceOpen,
+  hasVideoEditIntent,
+  isWorkspaceToolName,
+  latestWorkspaceDecision,
+} from '../autoOpen';
 
 registerEditor({
   kind: 'doc',
@@ -65,5 +71,74 @@ describe('workspace auto-open decision', () => {
     expect(decision?.event).toBe(second);
     expect(decision?.target).toEqual({ path: 'a.docx', kind: 'doc' });
     expect(latestWorkspaceDecision([first, third] as ChatEvent[])).toBeNull();
+  });
+});
+
+function userMessageEvent(partial: Partial<ChatMessageEvent> & { content: string }): ChatMessageEvent {
+  return {
+    id: `msg-${Math.random()}`,
+    timestamp: Date.now(),
+    type: 'chat',
+    sender: 'user',
+    messageType: 'text',
+    attachments: [],
+    ...partial,
+  } as ChatMessageEvent;
+}
+
+function videoAttachment(overrides: Partial<ServerAttachment> = {}): ServerAttachment {
+  return {
+    id: `att-${Math.random()}`,
+    filename: 'clip.mp4',
+    type: 'file',
+    url: 'https://example.test/clip.mp4',
+    contentType: 'video/mp4',
+    contentLength: 1024,
+    path: 'clip.mp4',
+    ...overrides,
+  };
+}
+
+describe('Loam Video auto-open intent', () => {
+  it('opens loam-video for an English video edit intent', () => {
+    const ev = userMessageEvent({ content: 'Please cut the intro and trim the end', attachments: [videoAttachment()] });
+    expect(decideUserMessageOpen(ev)).toEqual({ path: 'clip.mp4', kind: 'loam-video', importPath: 'clip.mp4' });
+  });
+
+  it('opens loam-video for an Arabic video edit intent', () => {
+    const ev = userMessageEvent({ content: 'عمل مونتاج للفيديو واضف موسيقى', attachments: [videoAttachment()] });
+    expect(decideUserMessageOpen(ev)).toEqual({ path: 'clip.mp4', kind: 'loam-video', importPath: 'clip.mp4' });
+  });
+
+  it('does not open for a video with an unrelated question', () => {
+    const ev = userMessageEvent({ content: 'What is this video about?', attachments: [videoAttachment()] });
+    expect(decideUserMessageOpen(ev)).toBeNull();
+  });
+
+  it('does not open without a video attachment', () => {
+    const ev = userMessageEvent({
+      content: 'Please cut the document',
+      attachments: [videoAttachment({ filename: 'notes.pdf', path: 'notes.pdf', contentType: 'application/pdf' })],
+    });
+    expect(decideUserMessageOpen(ev)).toBeNull();
+  });
+
+  it('detects edit intent keywords in either language', () => {
+    expect(hasVideoEditIntent('trim the last 5 seconds')).toBe(true);
+    expect(hasVideoEditIntent('قص نهاية الفيديو')).toBe(true);
+    expect(hasVideoEditIntent('what is in this video?')).toBe(false);
+  });
+
+  it('opens loam-video when the agent calls video_studio', () => {
+    const ev = toolEvent({ tool: 'video_studio', argumentsDetail: { path: 'clip.mp4' } });
+    expect(decideWorkspaceOpen(ev)).toEqual({ path: 'clip.mp4', kind: 'loam-video', importPath: 'clip.mp4' });
+  });
+
+  it('latestWorkspaceDecision prefers the newest video edit message', () => {
+    const older = toolEvent({ tool: 'office_export', argumentsDetail: { path: 'a.docx' }, timestamp: 1 });
+    const newer = userMessageEvent({ content: 'cut the video', attachments: [videoAttachment()], timestamp: 2 });
+    const decision = latestWorkspaceDecision([older, newer] as ChatEvent[]);
+    expect(decision?.event).toBe(newer);
+    expect(decision?.target.kind).toBe('loam-video');
   });
 });

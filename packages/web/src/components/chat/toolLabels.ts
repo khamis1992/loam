@@ -116,6 +116,14 @@ const TOOL_LABEL: Record<string, ToolLabel> = {
   creative_timeline: { verb: 'Read', noun: 'timeline' },
   creative_image: { verb: 'Generated', noun: 'image' },
 
+  // Generators & search (N12)
+  gen_3d_from_image: { verb: 'Generated', noun: '3D model' },
+  gen_music: { verb: 'Composed', noun: 'music' },
+  generate_storyboard: { verb: 'Planned', noun: 'storyboard' },
+  solve_logic: { verb: 'Solved', noun: 'problem' },
+  search_images: { verb: 'Searched', noun: 'images' },
+  search_x: { verb: 'Searched', noun: 'posts' },
+
   // Memory & knowledge
   memory_store: { verb: 'Saved', noun: 'memory' },
   memory_search: { verb: 'Searched', noun: 'memory' },

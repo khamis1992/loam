@@ -21,6 +21,10 @@ const EDIT_EXTRA = ["file_multi_edit"];
 const BUILD_EXTRA = ["vault_ref", "code_session", "code_session_status", "code_session_collect"];
 /** Documentation lookup for read/research/build modes. */
 const DOCS_LOOKUP = ["docs_lookup"];
+/** N12 generator tools for the media (Studio) mode. */
+const GEN_MEDIA = ["gen_3d_from_image", "gen_music", "generate_storyboard", "search_images"];
+/** N12 research-facing generator tools. */
+const GEN_RESEARCH = ["search_images", "search_x", "solve_logic"];
 
 export const LOAM_MODES: LoamMode[] = [
   { id: "ask", label: "Loam Explore", labelAr: "استكشف", icon: "◌", hue: 155, hue2: 135,
@@ -30,7 +34,7 @@ export const LOAM_MODES: LoamMode[] = [
     starters: [{ label: "اشرح مستندًا", prompt: "اقرأ المستند المرفق واشرح أهم النقاط والمصطلحات." }, { label: "قارن فكرتين", prompt: "ساعدني في مقارنة خيارين وتحديد أسئلة القرار." }] },
   { id: "research", label: "Loam Research", labelAr: "ابحث", icon: "⌕", hue: 195, hue2: 170,
     tagline: "مصادر تقود إلى فهم", description: "اجمع مصادر الويب واقرأها وقارن الأدلة في تقرير موثق داخل المهمة.", outputHint: "تقرير بمصادر وروابط. Use web_search and the browser_* tools for research.", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", ...DOCS_LOOKUP, "web_search", "web_fetch", ...BROWSER, ...CONTROL], panels: ["files", "browser"],
+    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", ...DOCS_LOOKUP, "web_search", "web_fetch", ...BROWSER, ...GEN_RESEARCH, ...CONTROL], panels: ["files", "browser"],
     fields: [{ id: "topic", label: "موضوع البحث", placeholder: "السؤال الذي تبحث عن إجابته", multiline: true }, { id: "sources", label: "المصادر والنطاق", placeholder: "روابط البداية والفترة الزمنية المطلوبة" }],
     starters: [{ label: "قارن مصادر", prompt: "قارن المصادر التي سأرفقها، وافصل الحقائق عن الاستنتاجات مع روابط الأدلة." }, { label: "راجع موضوعًا", prompt: "أعد تقرير بحث حول الموضوع التالي، مع توضيح الثغرات وحدود المصادر المتاحة." }] },
   { id: "build", label: "Loam Build", labelAr: "ابنِ", icon: "⌘", hue: 100, hue2: 140,
@@ -50,7 +54,7 @@ export const LOAM_MODES: LoamMode[] = [
     starters: [{ label: "افحص جودة البيانات", prompt: "افحص ملف CSV المرفق ولخص عدد الصفوف والقيم المفقودة والأعمدة الرقمية دون اختلاق بيانات." }, { label: "استخرج مؤشرات", prompt: "استخرج المؤشرات الرئيسية من البيانات المرفقة واحفظ تقريرًا يشرح الحسابات وحدودها." }] },
   { id: "media", label: "Loam Studio", labelAr: "صمّم", icon: "◇", hue: 25, hue2: 45,
     tagline: "من الفكرة إلى مشهد حي", description: "حرّر المجسّمات والخامات والإضاءة والحركة، واستورد ملفات GLB وصدّر المشهد والصور من مساحة المهمة.", outputHint: "مشهد ثلاثي الأبعاد وصور وملفات GLB. Use loam_creative/loam_canvas for video/image/design work.", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_canvas", "loam_creative", ...PREVIEW, ...CONTROL], panels: ["creative", "files", "preview"],
+    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_canvas", "loam_creative", ...PREVIEW, ...GEN_MEDIA, ...CONTROL], panels: ["creative", "files", "preview"],
     fields: [{ id: "brief", label: "الفكرة البصرية", placeholder: "صف المشهد والمجسّمات التي تريد إنشاءها", multiline: true }, { id: "style", label: "الخامات والإخراج", placeholder: "الألوان والإضاءة وزاوية الكاميرا والحركة" }],
     starters: [{ label: "مشهد منتج", prompt: "أنشئ مشهد منتج من المجسّمات الأساسية مع قاعدة وخامات معدنية وإضاءة مناسبة باستخدام loam_creative." }, { label: "تكوين متحرك", prompt: "أنشئ تكوينًا من حلقات وكرات متناسقة الألوان مع حركة دوران باستخدام loam_creative." }] },
   { id: "security", label: "Loam Security", labelAr: "افحص", icon: "🛡", hue: 0, hue2: 30,
