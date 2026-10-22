@@ -1,13 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { resolveRead, resolveWrite } from "../policy/paths.js";
+import { loadMemoryForFile } from "../agent/projectMemory.js";
 import {
   formatDiagnosticReport,
   resolveDiagnosticsSettings,
   runDiagnostics,
 } from "../agent/diagnostics.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
-import { bool, num, str } from "./registry.js";
+import { bool, num, str, strFirst } from "./registry.js";
 import { guardExistingEdit } from "./readState.js";
 
 /** Append per-edit diagnostics to a successful write result. Never throws and
@@ -100,7 +101,13 @@ export const fileTools: Tool[] = [
       const max = Math.max(1, num(args, "maxLines", 400));
       const slice = lines.slice(start - 1, start - 1 + max);
       const numbered = slice.map((l, i) => `${start + i}: ${l}`).join("\n");
-      return { ok: true, content: `${p} (${lines.length} lines)\n${numbered}` };
+      // Subdirectory memory is loaded on demand when a file there is read; the
+      // workspace root is already part of the system prompt, so it is excluded.
+      const memory = loadMemoryForFile(p, ctx.workspace);
+      const memoryBlock = memory.text
+        ? `\n\n--- project memory (${memory.files.map((f) => path.relative(ctx.workspace, f) || f).join(", ")}) ---\n${memory.text}`
+        : "";
+      return { ok: true, content: `${p} (${lines.length} lines)\n${numbered}${memoryBlock}` };
     },
   },
   {
@@ -132,16 +139,20 @@ export const fileTools: Tool[] = [
   {
     name: "file_edit",
     description:
-      "Replace exact text inside a workspace file with a targeted edit. Give the exact find string and its replace string; the match must be unique unless you pass count, which must equal the number of occurrences. Include enough surrounding context (a full line or more) so the find text matches exactly once, and remember the match is literal, not a regular expression. Read the file first: an unread or stale file is refused, and a successful edit refreshes the read snapshot. A find equal to replace is reported as a no-op and writes nothing. When NOT to use: use file_multi_edit for several changes to the same file (it is atomic and reports a diff); use file_write to create a file or fully rewrite one you have read; use file_search to find text; never build a file through repeated shell echo/Set-Content, which bypasses read tracking and can corrupt line endings.",
+      "Replace exact text inside a workspace file with a targeted edit. Pass the exact old_string to find and the new_string to write in its place; find/replace are accepted as aliases. The match must be unique unless you pass replace_all, which replaces every occurrence, or count, which must equal the number of occurrences. Include enough surrounding context (a full line or more) so the find text matches exactly once, and remember the match is literal, not a regular expression. Read the file first: an unread or stale file is refused, and a successful edit refreshes the read snapshot. An old_string equal to new_string is reported as a no-op and writes nothing. When NOT to use: use file_multi_edit for several changes to the same file (it is atomic and reports a diff); use file_write to create a file or fully rewrite one you have read; use file_search to find text; never build a file through repeated shell echo/Set-Content, which bypasses read tracking and can corrupt line endings.",
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string" },
-        find: { type: "string", description: "Exact text to find." },
-        replace: { type: "string", description: "Replacement text." },
-        count: { type: "number", description: "Expected occurrences to replace (default 1)." },
+        path: { type: "string", description: "Target file path inside the workspace." },
+        old_string: { type: "string", description: "Exact text to find. Must occur exactly once unless replace_all is true." },
+        new_string: { type: "string", description: "Replacement text. Must differ from old_string." },
+        find: { type: "string", description: "Alias for old_string." },
+        replace: { type: "string", description: "Alias for new_string." },
+        replace_all: { type: "boolean", description: "Replace every occurrence instead of requiring a single unique match (default false)." },
+        count: { type: "number", description: "Legacy: expected occurrence count when replace_all is false (default 1)." },
       },
-      required: ["path", "find", "replace"],
+      required: ["path"],
+      anyOf: [{ required: ["old_string", "new_string"] }, { required: ["find", "replace"] }],
     },
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
       const p = resolveWrite(ctx.workspace, str(args, "path"));
@@ -149,14 +160,33 @@ export const fileTools: Tool[] = [
       if (guard) return guard;
       if (!fs.existsSync(p)) return { ok: false, content: `not found: ${p}` };
       const original = fs.readFileSync(p, "utf8");
-      const find = str(args, "find");
-      const replace = str(args, "replace");
-      const occurrences = original.split(find).length - 1;
+      const oldString = strFirst(args, "old_string", "find");
+      const newString = strFirst(args, "new_string", "replace");
+      if (oldString === undefined) return { ok: false, content: "file_edit requires old_string (or its alias find)" };
+      if (newString === undefined) return { ok: false, content: "file_edit requires new_string (or its alias replace)" };
+      if (oldString.length === 0) return { ok: false, content: "old_string must be non-empty" };
+      if (oldString === newString) {
+        return {
+          ok: false,
+          content: `old_string and new_string are identical, so this edit would change nothing. Provide a new_string that actually differs from old_string (or drop this no-op edit).`,
+        };
+      }
+      const occurrences = original.split(oldString).length - 1;
+      if (occurrences === 0) return { ok: false, content: `old_string not present in ${p}` };
+      const replaceAll = bool(args, "replace_all", false);
+      if (replaceAll) {
+        fs.writeFileSync(p, original.split(oldString).join(newString), "utf8");
+        ctx.readState?.record(p);
+        return { ok: true, content: `replaced ${occurrences} occurrence(s) in ${p} (replace_all)` };
+      }
       const want = num(args, "count", 1);
-      if (occurrences === 0) return { ok: false, content: `find string not present in ${p}` };
-      if (occurrences !== want) return { ok: false, content: `find string appears ${occurrences} times (expected ${want}); refine the search text` };
-      if (find === replace) return { ok: true, content: `no change: find and replace are identical; ${p} was not written. This is not evidence of a new modification.` };
-      fs.writeFileSync(p, original.split(find).join(replace), "utf8");
+      if (occurrences !== want) {
+        return {
+          ok: false,
+          content: `Found ${occurrences} matches of old_string in ${p}, but replace_all is false and the match is not unique. Add more surrounding context to old_string (include more lines or words around the change) so it matches exactly once, or set replace_all to true to replace every match.`,
+        };
+      }
+      fs.writeFileSync(p, original.split(oldString).join(newString), "utf8");
       // Refresh the read snapshot so a follow-up edit in the same session is
       // not rejected as stale; the model already saw the pre-edit content.
       ctx.readState?.record(p);

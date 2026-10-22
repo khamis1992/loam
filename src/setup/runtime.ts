@@ -12,8 +12,10 @@ import { FailoverClient } from "../llm/failover.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { disposeShellSessions, shellTools } from "../tools/shell.js";
 import { fileTools } from "../tools/files.js";
+import { projectMemoryTools } from "../tools/projectMemoryTools.js";
 import { attachmentTools } from "../tools/attachments.js";
 import { symbolTools } from "../tools/symbols.js";
+import { searchTools } from "../tools/search.js";
 import { pentestTools } from "../tools/pentest.js";
 import { mirofishTools } from "../tools/mirofish.js";
 import { createSubagentTools } from "../tools/subagents.js";
@@ -43,6 +45,7 @@ import { createCodeSessionTools } from "../tools/codeSession.js";
 import { createDocsLookupTools } from "../tools/docsLookup.js";
 import { createArtifactTools } from "../tools/artifactTools.js";
 import { planTool, messageTool } from "../tools/specAliases.js";
+import { createTodoTools } from "../tools/todoTools.js";
 
 export interface Runtime {
   cfg: Config;
@@ -63,13 +66,14 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   log.info(`pty: ${ptyStatus()}`);
 
   const registry = new ToolRegistry();
-  registry.registerAll([...fileTools, ...shellTools, ...ptyTools, ...webTools, ...browserTools, ...computerUseTools, ...attachmentTools(), ...symbolTools(), ...pentestTools()]);
+  registry.registerAll([...fileTools, ...projectMemoryTools, ...shellTools, ...ptyTools, ...webTools, ...browserTools, ...computerUseTools, ...attachmentTools(), ...symbolTools(), ...searchTools(), ...pentestTools()]);
   registry.registerAll(createPhaseTools());
   registry.registerAll(createFinishTools());
   registry.registerAll(createMultiEditTools());
   registry.registerAll(createVaultTools());
   registry.registerAll(createArtifactTools());
   registry.registerAll([planTool(), messageTool()]);
+  registry.registerAll(createTodoTools());
   registry.registerAll(mirofishTools().map(tool => ({ ...tool, integration: true })));
 
   const embedder = new OllamaEmbedder(cfg.ollamaUrl, cfg.memory.model);
