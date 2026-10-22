@@ -143,7 +143,7 @@ function thinkTool(): Tool {
   return {
     name: "think",
     description:
-      "Private scratchpad. Record reasoning or notes without emitting an assistant message or any visible side effect. Returns 'noted'.",
+      "Private scratchpad for reasoning or notes. It records the note without emitting an assistant message or any visible side effect, and returns 'noted'. Use it to work through a problem step by step or to park a reminder for a later step without polluting the conversation; the note never reaches the user. When NOT to use: use file_write to persist notes to disk, the plan tool to track progress visibly, and finish to close the task; never use it as a substitute for taking action.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -168,7 +168,7 @@ function finishTool(options: FinishToolsOptions): Tool {
   return {
     name: "finish",
     description:
-      "Finish the task. Validates any proof paths, runs the project's .loam/verify.json gates when present, and only then emits the done event with the summary.",
+      "Finish the task and report the result. Before the done event is emitted, the tool validates that every proof path resolves inside the workspace and exists, and runs the project's .loam/verify.json gate commands when that trusted file is present — every gate must pass or the finish is rejected. Provide a concise summary, a confidence level (high, medium or low), optional workspace-relative proof paths and optional follow-ups. When NOT to use: call it only when the work is genuinely complete and verified; use the plan tool to present a plan for approval, and keep working with file_*/shell_* instead of finishing early; never cite proof paths that do not exist.",
     parameters: {
       type: "object",
       additionalProperties: false,
