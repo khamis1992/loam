@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { EventLog } from "./session/eventLog.js";
 import { ensureTaskWorkspace } from "./server/taskWorkspace.js";
 import path from "node:path";
 import { loadConfig, ROOT, DATA_DIR } from "./config.js";
