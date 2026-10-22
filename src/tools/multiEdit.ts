@@ -1,8 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { resolveWrite } from "../policy/paths.js";
+import {
+  formatDiagnosticReport,
+  resolveDiagnosticsSettings,
+  runDiagnostics,
+} from "../agent/diagnostics.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { bool, str } from "./registry.js";
+import { guardExistingEdit } from "./readState.js";
 
 const MAX_EDITS = 50;
 /** Above this many lines on either side, fall back to a coarse prefix/suffix diff. */
@@ -210,6 +216,9 @@ export function createMultiEditTools(): Tool[] {
           return { ok: false, content: err instanceof Error ? err.message : String(err) };
         }
 
+        const guard = guardExistingEdit(ctx, p);
+        if (guard) return guard;
+
         const rawEdits = args.edits;
         if (!Array.isArray(rawEdits)) return { ok: false, content: "edits must be an array" };
         if (rawEdits.length < 1 || rawEdits.length > MAX_EDITS) {
@@ -270,7 +279,22 @@ export function createMultiEditTools(): Tool[] {
           return { ok: false, content: `cannot write ${p}: ${err instanceof Error ? err.message : String(err)}` };
         }
 
-        return { ok: true, content: formatSummary(p, edits.length, normalized.split("\n").length, work.split("\n").length, diff) };
+        // Refresh the read snapshot so a follow-up edit in the same session is
+        // not rejected as stale; the model already saw the pre-edit content.
+        ctx.readState?.record(p);
+
+        const summary = formatSummary(p, edits.length, normalized.split("\n").length, work.split("\n").length, diff);
+        let content = summary;
+        try {
+          const settings = resolveDiagnosticsSettings(ctx.workspace, ctx.cfg);
+          if (settings.enabled) {
+            const outcome = await runDiagnostics(p, settings);
+            if (outcome) content = `${summary}\n\n${formatDiagnosticReport(outcome)}`;
+          }
+        } catch {
+          /* diagnostics are advisory and never fail the edit */
+        }
+        return { ok: true, content };
       },
     },
   ];
