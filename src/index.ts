@@ -46,6 +46,7 @@ import { createWorkflowTools } from "./tools/workflow.js";
 import { applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
+import { SIDE_CHAT_READ_ONLY_TOOLS } from "./agent/sideChat.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
 import { publishTaskEvent } from "./server/streams.js";
 import { videoStudioRelay } from "./server/videoStudioRelay.js";
@@ -286,6 +287,9 @@ async function main(): Promise<void> {
       effectiveMode === "ask"
         ? "وضع السؤال (Ask): أجب بالقراءة والتحليل فقط — لا تعدّل الملفات، لا تنفّذ أوامر نظام، ولا تبدأ مهام تنفيذية؛ إن أحبّت اقترح الخطوات دون تنفيذها."
         : undefined;
+    const sideChatSuffix = opts.savedRun.sideChat
+      ? "سؤال جانبي (Side chat): أجب عن سؤال المستخدم بالقراءة والتحليل فقط. المهمة الرئيسية ما زالت تعمل؛ لا تعدّل أي ملف، لا تنفّذ أوامر، ولا تتدخّل في سير المهمة."
+      : undefined;
 
     const recordTelemetry = (status: "done" | "error", extra: { model: string; steps: number; usage: { promptTokens: number; completionTokens: number }; error?: string }): void => {
       appendTelemetry({
@@ -339,7 +343,7 @@ async function main(): Promise<void> {
         workModeDefinition.policy,
         memoryContextSuffix,
         memoryIndexSummary,
-        agentSuffix, askModeSuffix,
+        agentSuffix, askModeSuffix, sideChatSuffix,
       ].filter(Boolean).join("\n\n");
       // The gateway's resolved allowlist is the base tool set for this run: mode ∪
       // work-mode grants − revoked services − agent service/tool denials. Always-on
@@ -348,8 +352,15 @@ async function main(): Promise<void> {
       // device_* tools are bound to the companion's device; companion-memory tools
       // are bound to this agent in every mode.
       const dynamicAllow = new Set(capabilities.allow);
-      const runAllow = mergeAlwaysOnTools({ resolvedAllow: [...capabilities.allow, ...connectedConnectorToolNames(agent?.disabledTools)], registeredTools: registry.names(), disabledTools: agent?.disabledTools });
-      const agentTools = registry.forAllowlist(runAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name)));
+      const baseRunAllow = mergeAlwaysOnTools({ resolvedAllow: [...capabilities.allow, ...connectedConnectorToolNames(agent?.disabledTools)], registeredTools: registry.names(), disabledTools: agent?.disabledTools });
+      // Side-chat ("/btw question") runs are read-only: even when a mutating
+      // tool is granted by the mode/work mode, the side-chat question may never
+      // modify files, run commands or drive the browser while the main run lives.
+      const runAllow = opts.savedRun.sideChat
+        ? baseRunAllow.filter((name) => SIDE_CHAT_READ_ONLY_TOOLS.includes(name))
+        : baseRunAllow;
+      const runAllowSet = new Set(runAllow);
+      const agentTools = registry.forAllowlist(runAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
 
       // Sensitive host-input actions need an explicit user decision first (section 18).
       // MF4 (option 14): the gate resolves each request idempotently — replay of a
@@ -512,6 +523,7 @@ async function main(): Promise<void> {
         projectId, agentId, mode: getLoamMode(opts.mode ?? previous?.mode ?? agent?.mode).id, effort: opts.effort ?? agent?.effort ?? "",
         workMode: normalizeWorkMode(opts.workMode ?? agent?.workMode),
         orchestrated: cfg.orchestrator.enabled, started: false,
+        sideChat: opts.sideChat === true,
       };
     }
     const task = previous ?? createTask(saved.prompt, opts.title, saved.projectId, saved.agentId);
@@ -570,6 +582,8 @@ async function main(): Promise<void> {
   // Bridge for src/server/routes/retryLast.ts: the route module cannot receive
   // runTask through startServer deps, so it reads this global per request.
   (globalThis as { __loamRunTask?: typeof runTask }).__loamRunTask = runTask;
+  // Tool registry bridge for route modules that narrow tool sets (D16 side chat).
+  (globalThis as { __loamRegistry?: unknown }).__loamRegistry = registry;
 
   // Companion-to-companion delegation: the delegate task is created and queued
   // under the TARGET companion; we return its id immediately — the execution
