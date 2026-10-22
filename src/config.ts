@@ -36,12 +36,16 @@ export const EVALS_DIR = fromEnv("MANUS_LOCAL_EVALS_DIR", path.join(ROOT, "evals
 export const UI_DIR = path.join(ROOT, "ui");
 export const SCRIPTS_DIR = path.join(ROOT, "scripts");
 
+export type SandboxMode = "read-only" | "workspace-write" | "danger-full-access";
+
 export interface PolicyConfig {
   networkEnabled: boolean;
   allowOutsideWorkspaceRead: boolean;
   denyCommandPatterns: string[];
   allowCommandPatterns: string[];
   maxCommandSeconds: number;
+  /** Default sandbox mode for a task; overridden per session/task when set. */
+  sandboxMode: SandboxMode;
 }
 
 export interface McpServerConfig {
@@ -176,6 +180,7 @@ const DEFAULTS: Config = {
     ],
     allowCommandPatterns: [],
     maxCommandSeconds: 180,
+    sandboxMode: "workspace-write",
   },
   browser: { channel: "msedge", headless: false, viewport: { width: 1280, height: 800 } },
   computerUse: { enabled: true, screenshotDir: path.join(ROOT, "workspace", ".screenshots") },

@@ -4,6 +4,7 @@ import type { Config } from "../config.js";
 import { APP_CONTRACT_INSTRUCTIONS } from "./appVerification.js";
 import { BUILD_PHASE_PROMPT } from "../modes/buildPhases.js";
 import { personalizationBlock } from "../server/personalization.js";
+import { renderPolicyContext } from "../policy/riskTier.js";
 
 export interface Skill {
   name: string;
@@ -50,6 +51,7 @@ export function buildSystemPrompt(
   toolNames: string[],
   memories: RecalledMemory[] = [],
   extraContext?: string,
+  sandboxMode?: import("../policy/riskTier.js").SandboxMode,
 ): string {
   const lines: string[] = [
     "You are Loam, a local assistant working in the current task's isolated workspace.",
@@ -65,6 +67,9 @@ export function buildSystemPrompt(
     `Network access: ${cfg.policy.networkEnabled ? "enabled" : "disabled"}`,
     `Available tools (${toolNames.length}): ${toolNames.join(", ")}`,
   ];
+  if (sandboxMode) {
+    lines.push(renderPolicyContext(sandboxMode));
+  }
   if (toolNames.includes("browser_table")) lines.push("Browser workflow: open page, inspect browser_table, then act on observed indexes and inspect again. Never guess selectors or report actions without evidence.");
   if (toolNames.includes("shell_run")) lines.push("Commands run on the user's machine. Stay within this task's workspace, avoid destructive commands, and verify the result.");
   if (toolNames.includes("loam_dataset")) lines.push("Use loam_dataset to calculate CSV statistics. Report missing values and assumptions; never invent data.");

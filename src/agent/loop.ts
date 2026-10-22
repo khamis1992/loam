@@ -12,6 +12,7 @@ import type { ToolRegistry } from "../tools/registry.js";
 import { chatWithFallback } from "./model.js";
 import { createStallGuard } from "./stallGuard.js";
 import { throwIfCancelled } from "../server/runControl.js";
+import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/riskTier.js";
 
 export interface RunOptions {
   cfg: Config;
@@ -38,6 +39,8 @@ export interface RunOptions {
   onProgress?: (progress: Pick<RunResult, "steps" | "model" | "usage">) => void;
   resumeWorker?: WorkerCheckpoint;
   saveWorker?: (checkpoint: WorkerCheckpoint | undefined) => void;
+  /** Resolved sandbox mode for this run; rendered into the system prompt. */
+  sandboxMode?: SandboxMode;
 }
 
 export interface RunResult {
@@ -61,6 +64,11 @@ function summarize(text: string, lines = 10): string {
   return parts.join("\n").slice(0, 600);
 }
 
+/** Web/email/browser output is external data; wrap it so the model never follows it as instructions. */
+function toolMessageContent(name: string, content: string): string {
+  return isUntrustedTool(name) ? markUntrusted(content, name) : content;
+}
+
 export async function runAgent(opts: RunOptions): Promise<RunResult> {
   if (!opts.suppressFinal) opts = { ...opts, tools: taskScopedTools(opts.tools, opts.prompt, opts.history) };
   const acceptanceGuard = new AcceptanceGuard(undefined, opts.suppressFinal ? undefined : opts.prompt);
@@ -68,7 +76,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   const independentGuard = new IndependentAcceptanceGuard(independentRequest);
   const baseSystem =
     opts.systemOverride ??
-    buildSystemPrompt(opts.cfg, loadSkills(SKILLS_DIR), opts.tools.names(), opts.memories ?? []);
+    buildSystemPrompt(opts.cfg, loadSkills(SKILLS_DIR), opts.tools.names(), opts.memories ?? [], undefined, opts.sandboxMode);
   const system =
     opts.systemSuffix && opts.systemSuffix.trim().length > 0
       ? `${baseSystem}\n\n${opts.systemSuffix.trim()}`
@@ -222,7 +230,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           summary: summarize(toolResult.content),
           ms: Date.now() - item.t0,
         });
-        messages.push({ role: "tool", tool_name: item.name, content: toolResult.content });
+        messages.push({ role: "tool", tool_name: item.name, content: toolMessageContent(item.name, toolResult.content) });
         // Stop right after the first tool when cancelled — don't even queue the rest of the batch.
         throwIfCancelled(opts.signal, opts.taskId);
       }
@@ -248,7 +256,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.onToolEvidence?.(evidence);
         const notice = stallGuard(name, args, toolResult.ok);
         if (notice) stallNotices.push(notice);
-        messages.push({ role: "tool", tool_name: name, content: toolResult.content });
+        messages.push({ role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) });
         // Cancel pressed while the tool ran? Stop before the next tool/step.
         throwIfCancelled(opts.signal, opts.taskId);
 
