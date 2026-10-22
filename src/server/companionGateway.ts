@@ -37,7 +37,7 @@ export const COMPANION_SERVICES: CompanionService[] = [
   { id: "code", labelAr: "فهم الكود", description: "رموز المشروع وهيكلته والبحث الدلالي في الملفات", tools: ["code_symbols", "code_outline", "semantic_search"] },
   { id: "memory", labelAr: "الذاكرة والمعرفة", description: "ذاكرة دائمة وبحث في الجلسات", tools: ["memory_store", "memory_search", "memory_list", "memory_delete", "session_search"] },
   { id: "skills", labelAr: "المهارات", description: "اكتشاف المهارات وتشغيلها", tools: ["skill_list", "skill_view", "skill_create", "skill_patch", "skill_delete", "skill_search", "skill_install"] },
-  { id: "preview", labelAr: "المعاينة", description: "تشغيل معاينات المشروع محليًا", tools: ["preview_serve", "preview_status", "preview_stop"] },
+  { id: "preview", labelAr: "المعاينة", description: "تشغيل معاينات المشروع محليًا", tools: ["preview_serve", "preview_status", "preview_stop", "preview_screenshot"] },
   { id: "screen", labelAr: "متابعة الشاشة", description: "قراءة شاشة المستخدم الحية (يتطلب وضع العمل على جهازي)", tools: ["screen_look", "screen_stream_start", "screen_stream_status", "screen_stream_stop", "screen_watch"] },
   { id: "computer", labelAr: "التحكم بالكمبيوتر", description: "أدوات واجهة أصلية على جهاز المستخدم (يتطلب وضع العمل على جهازي)", tools: ["computer_screenshot", "computer_list_windows", "computer_focus_window", "computer_ui_tree", "computer_ui_list", "computer_ui_click", "computer_ui_set_text", "computer_click", "computer_type", "computer_key"] },
   { id: "integrations", labelAr: "الخدمات المتصلة", description: "موصلات خارجية مصرّح بها للمساعد", tools: ["integration_list", "integration_call", "mirofish_chat", "lovable_studio"] },
