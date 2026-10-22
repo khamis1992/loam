@@ -154,6 +154,17 @@ describe("ffmpeg log parsers", () => {
     assert.strictEqual(out[0]!.energy, 40 / 60);
     assert.strictEqual(out[1]!.energy, 0);
   });
+  it("ignores non-finite scene scores instead of producing NaN samples", () => {
+    const log = [
+      "pts_time:1",
+      "lavfi.scene_score=1-2",
+      "pts_time:2",
+      "lavfi.scene_score=0.5",
+      "pts_time:3",
+      "lavfi.scene_score=-3",
+    ].join("\n");
+    assert.deepStrictEqual(parseSceneLog(log), [{ t: 2, score: 0.5 }, { t: 3, score: 0 }]);
+  });
 });
 
 describe("adaptiveThreshold", () => {
@@ -172,6 +183,13 @@ describe("adaptiveThreshold", () => {
   it("never flags constant low-level noise", () => {
     const flat = Array.from({ length: 30 }, (_, i) => ({ t: i, score: 0.05 }));
     assert.strictEqual(detectScenes(flat, { threshold: adaptiveThreshold(flat) }).length, 1);
+  });
+  it("falls back instead of returning NaN for malformed scores", () => {
+    const malformed = [{ t: 0, score: undefined }, { t: 1, score: 0.5 }, { t: 2, score: Number.NaN }] as unknown as FrameDiff[];
+    const threshold = adaptiveThreshold(malformed);
+    assert.strictEqual(threshold, 0.35);
+    // A NaN threshold would throw in detectScenes; the fallback must not.
+    assert.strictEqual(detectScenes([{ t: 0, score: 0.1 }, { t: 1, score: 0.5 }, { t: 2, score: 0.1 }], { threshold }).length, 2);
   });
 });
 
@@ -308,6 +326,20 @@ describe("planAutoEdit", () => {
     assert.ok(plan.warnings.some(w => /transcript/), "transcript warning");
     assert.strictEqual(plan.scenes[0]!.end, 8);
     assert.strictEqual(plan.clips.length, 1);
+  });
+  it("degrades with warnings when a probe lane throws", async () => {
+    const failing: MediaProbe = {
+      frameDiffs: async () => { throw new Error("ffmpeg boom"); },
+      audioEnergy: async () => { throw new Error("ebur128 boom"); },
+      transcribe: async () => { throw new Error("stt boom"); },
+    };
+    const plan = await planAutoEdit("clip.mp4", { duration: 6, targetSeconds: 3 }, failing);
+    assert.ok(plan.warnings.some(w => /frame-diff probe failed: ffmpeg boom/.test(w)));
+    assert.ok(plan.warnings.some(w => /audio-energy probe failed: ebur128 boom/.test(w)));
+    assert.ok(plan.warnings.some(w => /transcript probe failed: stt boom/.test(w)));
+    assert.strictEqual(plan.scenes.length, 1);
+    assert.strictEqual(plan.clips.length, 1);
+    assert.strictEqual(plan.captions.length, 0);
   });
   it("falls back to one centered reframe window and peak-only ranking", async () => {
     const plan = await planAutoEdit("clip.mp4", { aspect: 1 / 2 }, { frameDiffs: probe.frameDiffs });

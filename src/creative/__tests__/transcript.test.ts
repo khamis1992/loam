@@ -19,6 +19,7 @@ import {
   moveSegments,
   assemblyFromEdl,
   applyTranscriptEdit,
+  checkExtractionBudget,
   MIN_TIMELINE_CLIP_SECONDS,
   type EdlAssembly,
   type Transcript,
@@ -319,5 +320,55 @@ describe("transcript", () => {
     assert.deepEqual(result.clips, [{ start: 1, end: 2 }, { start: 0, end: 0.02 }]);
     assert.deepEqual(result.timeline!.clips, [{ id: "clip-1", in: 1, out: 2 }]);
     assert.equal(result.timeline!.clips.length, 1);
+  });
+
+  // ---- hardening: token timing, budgeting, validation ----
+
+  it("uses STT word timings for surviving text, matching the cut range", () => {
+    const t: Transcript = {
+      mediaPath: "m.wav", duration: 4,
+      segments: [{
+        start: 0, end: 4, text: "one two three four",
+        words: [
+          { word: "one", start: 0, end: 0.2 },
+          { word: "two", start: 0.2, end: 0.4 },
+          { word: "three", start: 2.9, end: 3.5 },
+          { word: "four", start: 3.5, end: 4 },
+        ],
+      }],
+    };
+    const edl = deleteWords(t, [2]); // "three" at 2.9-3.5, not the interpolated 2-3
+    assert.deepEqual(edl.cuts, [{ start: 2.9, end: 3.5 }]);
+    assert.equal(edl.textAfter, "one two four");
+  });
+
+  it("clamps cuts beyond the media duration when building the EDL", () => {
+    const t: Transcript = { mediaPath: "m.wav", duration: 50, segments: [{ start: 0, end: 4, text: "hi" }] };
+    const edl = buildEdl(t, [{ start: 40, end: 999 }]);
+    assert.deepEqual(edl.cuts, [{ start: 40, end: 50 }]);
+    assert.deepEqual(edl.keeps, [{ start: 0, end: 40 }]);
+    assert.equal(edl.removed, 10);
+  });
+
+  it("reports the deduplicated selection count for word and segment edits", () => {
+    const t: Transcript = { mediaPath: "m.wav", duration: 3, segments: [{ start: 0, end: 3, text: "a b c" }] };
+    assert.equal(applyTranscriptEdit(t, { kind: "words", indices: [1, 1, 2] }).count, 2);
+    assert.equal(applyTranscriptEdit(t, { kind: "segments", indices: [0, 0] }).count, 1);
+    assert.equal(applyTranscriptEdit(t, { kind: "move-words", indices: [1, 1], target: 0 }).count, 1);
+  });
+
+  it("throws on an unknown transcript edit kind instead of returning undefined", () => {
+    const t: Transcript = { mediaPath: "m.wav", duration: 1, segments: [{ start: 0, end: 1, text: "x" }] };
+    assert.throws(
+      () => applyTranscriptEdit(t, { kind: "rotate" } as unknown as Parameters<typeof applyTranscriptEdit>[1]),
+      /unsupported transcript edit kind/,
+    );
+  });
+
+  it("enforces the audio extraction budget", () => {
+    checkExtractionBudget(0);
+    checkExtractionBudget(10, 10);
+    assert.throws(() => checkExtractionBudget(11, 10), /transcription budget/);
+    assert.throws(() => checkExtractionBudget(Number.NaN), /transcription budget/);
   });
 });
