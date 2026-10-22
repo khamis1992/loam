@@ -44,6 +44,7 @@
     "ollama:check": "tsx src/scripts/check-ollama.ts",
     "check:modes": "tsx src/scripts/check-modes.ts",
     "check:isolation": "tsx src/scripts/check-isolation-http.ts",
+    "check:test-isolation": "tsx src/scripts/check-test-isolation.ts",
     "check:loam-ui": "tsx src/scripts/check-loam-ui.mjs",
     "check:promo-carousel": "node src/scripts/check-promo-carousel.mjs",
     "check:loam-ancillary": "node src/scripts/check-loam-ancillary.mjs",

@@ -25,6 +25,9 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "loam-coding-bench-e2e-"));
 // constant, so anything importing it earlier would pin the real data folder.
 process.env.MANUS_LOCAL_DATA_DIR = path.join(tmp, "data");
 process.env.MANUS_LOCAL_EVALS_DIR = path.join(tmp, "evals");
+// `loadConfig()` mkdirs `workspace/` and `workspace/.screenshots/` from this
+// root, so the eval run must not create them in the repository.
+process.env.LOAM_ROOT = tmp;
 
 const { runSuite } = await import("../runner.js");
 const { runCodingBenchmark, formatBenchmarkReport } = await import("../codingBenchmark.js");
