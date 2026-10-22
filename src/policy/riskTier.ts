@@ -181,6 +181,7 @@ const EXEC_TOOL_NAMES = new Set<string>([
   "pty_kill",
   "deploy_app",
   "scaffold_backend",
+  "web_scaffold",
   "preview_serve",
   "preview_stop",
   "screen_stream_start",
