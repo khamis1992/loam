@@ -34,6 +34,8 @@ export interface RunOptions {
   maxSteps?: number;
   /** Skip the terminal assistant_message/done events (the orchestrator emits its own). */
   suppressFinal?: boolean;
+  /** Subagent delegation depth for this run (0 = top-level). */
+  depth?: number;
   /** Internal evidence channel, independent of abbreviated UI tool events. */
   onToolEvidence?: (item: ToolTraceItem) => void;
   /** Internal accounting snapshot, including work preceding a worker failure. */
@@ -222,6 +224,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
             emit: opts.emit,
             signal: opts.signal,
             allowedTools: runAllowedTools,
+            ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
             ...(opts.taskId ? { taskId: opts.taskId } : {}),
           }),
         ),
@@ -258,6 +261,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           emit: opts.emit,
           signal: opts.signal,
           allowedTools: runAllowedTools,
+          ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
           ...(opts.taskId ? { taskId: opts.taskId } : {}),
         });
 
