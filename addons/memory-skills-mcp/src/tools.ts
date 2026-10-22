@@ -1,9 +1,11 @@
+import type { Db } from "./db.js";
 import type { Episodes } from "./episodes.js";
 import { toEpisodeInput } from "./episodes.js";
 import type { Facts } from "./facts.js";
 import { toFactInput } from "./facts.js";
 import { buildRecall } from "./recall.js";
 import type { Skills } from "./skills.js";
+import { searchSessions } from "./session_search.js";
 import { clamp, num, str, stringArray } from "./util.js";
 
 export interface ToolOutcome {
@@ -22,13 +24,14 @@ export interface Stores {
   episodes: Episodes;
   facts: Facts;
   skills: Skills;
+  db: Db;
 }
 
 const outcomeSchema = { type: "string", enum: ["success", "partial", "failed"] };
 const reportOutcomeSchema = { type: "string", enum: ["success", "failure", "partial"] };
 
 export function createTools(stores: Stores): ToolDef[] {
-  const { episodes, facts, skills } = stores;
+  const { episodes, facts, skills, db } = stores;
 
   return [
     {
@@ -240,6 +243,7 @@ export function createTools(stores: Stores): ToolDef[] {
           `path: ${detail.path}`,
           `uses=${detail.stats.uses} success=${detail.stats.successes} failure=${detail.stats.failures} partial=${detail.stats.partials} (${Math.round(detail.stats.successRate * 100)}%)`,
           `last used: ${detail.lastUsed ?? "never"} · updated: ${detail.updatedAt} · source: ${detail.source}`,
+          `state: ${detail.lifecycleState} · reads: ${detail.reads} · last read: ${detail.lastReadAt ?? "never"}`,
           detail.pendingNotes.length > 0 ? `pending notes (${detail.pendingNotes.length}): ${detail.pendingNotes.map((n) => n.note).join(" | ")}` : "",
           detail.history.length > 0 ? `history: ${detail.history.join(", ")}` : "",
         ].filter((l) => l.length > 0);
@@ -399,6 +403,7 @@ export function createTools(stores: Stores): ToolDef[] {
             name: h.name,
             description: h.description,
             version: h.version,
+            lifecycleState: h.lifecycleState,
             uses: h.stats.uses,
             successes: h.stats.successes,
             failures: h.stats.failures,
@@ -411,6 +416,31 @@ export function createTools(stores: Stores): ToolDef[] {
           review,
         };
         return { text: JSON.stringify(payload, null, 1) };
+      },
+    },
+    {
+      name: "session_search",
+      description:
+        "Search past task sessions (user goals, assistant summaries and tool traces) with FTS5 BM25 ranking and highlighted snippets. Falls back to trigram/LIKE substring matching for Arabic/CJK. Use it to find how a similar task was handled before.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Keywords or a literal substring (capped at 2048 chars)." },
+          limit: { type: "number", description: "Max results (default 20)." },
+        },
+        required: ["query"],
+      },
+      async handler(args) {
+        const results = await searchSessions(db, str(args, "query"), num(args, "limit", 20));
+        if (results.length === 0) return { text: "(no matching sessions)" };
+        return {
+          text: results
+            .map((r) => {
+              const snippet = r.snippet ? ` — ${r.snippet}` : "";
+              return `[${r.createdAt.slice(0, 10)} · ${r.outcome} · ${r.score.toFixed(2)} · ${r.source}] ${r.goal}${snippet} (${r.id})`;
+            })
+            .join("\n"),
+        };
       },
     },
   ];

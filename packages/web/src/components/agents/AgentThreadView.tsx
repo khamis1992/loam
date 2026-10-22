@@ -27,6 +27,7 @@ import { GROKBOT_NOTE_HEADER } from '@/components/chat/GrokBotNote';
 import { InstructionProposalCard, useInstructionProposals } from './InstructionHistory';
 import { AgentThreadMessages } from './AgentThreadMessages';
 import { AgentThreadComposer } from './AgentThreadComposer';
+import { visibleMessages } from '@/lib/reminders';
 
 function getSocketBase(): string {
   if (typeof window === 'undefined') return '/';
@@ -105,7 +106,7 @@ export async function loadAgentThreadMessages(uid: string): Promise<ChatEvent[]>
     if (!res.ok) return [];
     const data = (await res.json()) as { task?: { messages?: TaskMessage[] } };
     const messages = data.task?.messages ?? [];
-    return messages
+    return visibleMessages(messages)
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .map((m, i) => {
         const ts = Date.parse(m.at) || Date.now();
