@@ -3,10 +3,12 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { Curator, DEFAULT_CURATOR_CONFIG, type CuratorConfig } from "./curator.js";
 import { openDatabase } from "./db.js";
 import { Embedder } from "./embed.js";
 import { Episodes } from "./episodes.js";
 import { Facts } from "./facts.js";
+import { SessionSearch } from "./session_search.js";
 import { Skills } from "./skills.js";
 import { createTools } from "./tools.js";
 import { envValue, resolvePaths } from "./util.js";
@@ -26,7 +28,39 @@ const INSTRUCTIONS = [
   "6. After a failure: `skill_improve` to fold the notes back into the skill; `skill_review` lists what needs attention.",
   "7. To plan a multi-step job from known procedures: `skill_compose`; to convert a recorded browser session into a draft skill: `skill_from_trace`.",
   "8. For a UI/report snapshot (stats, recent episodes, facts, skills, review queue): `dashboard`.",
+  "9. To find how a similar past task was handled (goals, summaries, tool traces): `session_search`.",
 ].join("\n");
+
+function intEnv(name: string, fallback: number): number {
+  const raw = envValue(name);
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+/** Scheduled-job skill slugs can be declared by the host (comma-separated). */
+function scheduledSlugsFromEnv(): Set<string> {
+  const raw = envValue("MEMSKILLS_SCHEDULED_SKILLS");
+  if (!raw) return new Set();
+  return new Set(
+    raw
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s.length > 0),
+  );
+}
+
+function curatorConfigFromEnv(): CuratorConfig {
+  return {
+    ...DEFAULT_CURATOR_CONFIG,
+    staleDays: intEnv("MEMSKILLS_CURATOR_STALE_DAYS", DEFAULT_CURATOR_CONFIG.staleDays),
+    archivedDays: intEnv("MEMSKILLS_CURATOR_ARCHIVED_DAYS", DEFAULT_CURATOR_CONFIG.archivedDays),
+    inactivityIdleHours: intEnv("MEMSKILLS_CURATOR_IDLE_HOURS", DEFAULT_CURATOR_CONFIG.inactivityIdleHours),
+    inactivityLastRunDays: intEnv("MEMSKILLS_CURATOR_LAST_RUN_DAYS", DEFAULT_CURATOR_CONFIG.inactivityLastRunDays),
+    minToolCallsForProposal: intEnv("MEMSKILLS_MIN_TOOL_CALLS", DEFAULT_CURATOR_CONFIG.minToolCallsForProposal),
+    consolidate: envValue("MEMSKILLS_CURATOR_CONSOLIDATE") === "1",
+  };
+}
 
 async function main(): Promise<void> {
   const paths = resolvePaths();
@@ -35,7 +69,12 @@ async function main(): Promise<void> {
   const episodes = new Episodes(db, embedder);
   const facts = new Facts(db, embedder);
   const skills = new Skills(db, embedder, paths.skillsDir);
-  const tools = createTools({ episodes, facts, skills });
+  const tools = createTools({ episodes, facts, skills, db });
+
+  const curator = new Curator(db, curatorConfigFromEnv(), {
+    skills,
+    exemptScheduledSlugs: scheduledSlugsFromEnv,
+  });
 
   try {
     const res = await skills.sync(true);
@@ -44,6 +83,23 @@ async function main(): Promise<void> {
     }
   } catch (err) {
     console.error(`[memory-skills] initial skills sync failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // Keep the optional trigram index warm for substring (Arabic/CJK) search.
+  try {
+    new SessionSearch(db).syncIndexIfStale();
+  } catch {
+    /* trigram is best-effort */
+  }
+
+  // Inactivity-driven curator: only acts when the system has been quiet.
+  try {
+    const { ran, result } = await curator.maybeRun();
+    if (ran && envValue("MEMSKILLS_DEBUG") === "1") {
+      console.error(`[memory-skills] curator ran (${result?.updated ?? 0} updated, ${result?.skipped ?? 0} skipped)`);
+    }
+  } catch (err) {
+    console.error(`[memory-skills] curator run failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   const server = new Server(
