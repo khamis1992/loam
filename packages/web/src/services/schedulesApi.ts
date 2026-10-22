@@ -12,6 +12,10 @@ export interface Schedule {
   timezone?: string;
   agentId?: string;
   kind?: string;
+  trigger?: string;
+  githubEvents?: string[] | null;
+  projectId?: string | null;
+  playbook?: string | null;
 }
 
 export interface ScheduleDraft {

@@ -1,0 +1,11 @@
+{
+  "id": "task-020",
+  "title": "Fix JavaScript type error",
+  "category": "bug-fix",
+  "language": "javascript",
+  "prompt": "`addPrices` in `src/cart.js` receives values from the form layer, where they arrive as strings, so `+` concatenates instead of adding. Make it return the numeric sum for string and number inputs alike. Keep the function name and arity; an empty string should count as 0.",
+  "testCommand": "node .eval/check.mjs",
+  "timeoutSec": 60,
+  "maxSteps": 12,
+  "tags": ["coercion", "javascript"]
+}
