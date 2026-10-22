@@ -1,0 +1,18 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "empty-state",
+  "name": "Empty State",
+  "description": "A friendly empty state with an icon, a short explanation and a primary action for the first item.",
+  "category": "empty-state",
+  "license": "MIT",
+  "source": "shadcn/ui blocks",
+  "tags": ["empty-state", "onboarding", "placeholder"],
+  "intent": "Tell a user a list is empty and give them one obvious next step.",
+  "deps": ["react"],
+  "rtl": false,
+  "dir": "ltr",
+  "lang": "en",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"]
+}
