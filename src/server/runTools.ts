@@ -20,6 +20,7 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "scratchpad_add",
   "scratchpad_list",
   "scratchpad_complete",
+  "todo_write",
   "browser_operator",
   "propose_instructions_update",
   "spawn_agent",
@@ -33,6 +34,7 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "ticket_update",
   "handoff_to_agent",
   "scaffold_backend",
+  "web_scaffold",
   "design_create",
   "design_brand_kit_save",
   "watch_url",
@@ -40,6 +42,9 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "deploy_app",
   "export_build",
   "loam_design",
+  "workflow_run",
+  "workflow_resume",
+  "workflow_status",
 ];
 
 export interface AlwaysOnMergeInput {

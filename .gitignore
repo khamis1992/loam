@@ -33,3 +33,7 @@ nul
 # Coding-eval harness: the committed fixtures live in evals/coding/tasks/, but the
 # generated sandboxes and reports are throwaway run output.
 /evals/coding/results/
+
+# Vendored wasm app bundles (fetched by scripts/vendor/fetch-craft.mjs; never committed)
+electron/craft/*/dist/
+electron/filmcraft/dist/
