@@ -54,9 +54,10 @@ interface WorkerOutcome {
 
 async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: string, maxSteps: number): Promise<WorkerOutcome> {
   const trace: ToolTraceItem[] = [];
+  const preferredModel = o.model && o.model.trim() ? o.model.trim() : o.cfg.model;
   let progress = o.resumeWorker
     ? { steps: o.resumeWorker.steps, model: o.resumeWorker.model, usage: { ...o.resumeWorker.usage } }
-    : { steps: 0, model: o.cfg.model, usage: { promptTokens: 0, completionTokens: 0, durationMs: 0 } };
+    : { steps: 0, model: preferredModel, usage: { promptTokens: 0, completionTokens: 0, durationMs: 0 } };
   const emit: Emit = (event) => {
     o.emit(event);
   };
@@ -74,6 +75,7 @@ async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: s
     ...(o.taskId ? { taskId: o.taskId } : {}),
       systemSuffix: `${inherited}${systemSuffix}`,
       maxSteps,
+      ...(o.model && o.model.trim() ? { model: o.model.trim() } : {}),
       suppressFinal: true,
       onToolEvidence: (item) => trace.push(item),
       onProgress: (value) => { progress = value; },

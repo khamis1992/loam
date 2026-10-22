@@ -1,0 +1,18 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "pricing-3-tier",
+  "name": "Three-Tier Pricing",
+  "description": "A three-column pricing table with a highlighted middle plan, feature lists and per-plan calls to action.",
+  "category": "pricing",
+  "license": "MIT",
+  "source": "shadcn/ui blocks",
+  "tags": ["pricing", "plans", "billing"],
+  "intent": "Pricing page that steers visitors toward a recommended middle plan.",
+  "deps": ["react"],
+  "rtl": false,
+  "dir": "ltr",
+  "lang": "en",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"]
+}

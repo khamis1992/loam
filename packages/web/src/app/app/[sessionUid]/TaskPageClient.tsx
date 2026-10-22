@@ -16,6 +16,8 @@ import { Composer } from '@/components/chat/Composer';
 import { EventList } from '@/components/chat/EventList';
 import { SessionStatusBadge } from '@/components/chat/SessionStatusBadge';
 import { useSessionRuntime } from '@/components/chat/useSessionRuntime';
+import { StepTimeline, type TimelineStep } from '@/components/chat/StepTimeline';
+import { SideChatPanel } from '@/components/chat/SideChatPanel';
 import { AttachmentCard, kindFromName, type AttachmentKind } from '@/components/chat/AttachmentCard';
 import { ComputerPanel } from '@/components/computer/ComputerPanel';
 import {
@@ -136,6 +138,10 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const [approveForMe, setApproveForMe] = useState(false);
   // D19 session runtime: sleep state + compute budget, shown by the badge.
   const runtime = useSessionRuntime(sessionUid);
+  const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
+  const [paused, setPaused] = useState(false);
+  const [takeoverNote, setTakeoverNote] = useState('');
+  const [controlBusy, setControlBusy] = useState(false);
 
   useEffect(() => {
     try {
@@ -311,9 +317,12 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   useEffect(() => {
     if (!wsDecision) return;
     const { event, target } = wsDecision;
-    if (workspaceOpenActionRef.current === event.actionId) return;
-    workspaceOpenActionRef.current = event.actionId;
-    setSelectedTool(event);
+    // A user-message decision (attached video + edit intent) is not a tool event;
+    // wrap it in a studio stub so the panel can open on the Workspace tab.
+    const actionId = event.type === 'toolUsed' ? event.actionId : event.id;
+    if (workspaceOpenActionRef.current === actionId) return;
+    workspaceOpenActionRef.current = actionId;
+    setSelectedTool(event.type === 'toolUsed' ? event : videoStudioStub(event));
     setWorkspaceTarget(target);
     autoOpenedRef.current.add(sessionUid);
   }, [wsDecision, sessionUid]);
@@ -341,6 +350,50 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     const socket = socketRef.current;
     if (!socket) return;
     socket.stop(sessionUid);
+  };
+
+  // Time-travel: clicking a timeline step selects it and greys later steps.
+  const handleSelectStep = (step: TimelineStep) => {
+    setSelectedActionId(step.actionId);
+    const ev = events.find((e): e is ToolUsedEvent => e.type === 'toolUsed' && e.actionId === step.actionId);
+    if (ev) setSelectedTool(ev);
+    if (step.actionId !== workspaceOpenActionRef.current) setWorkspaceTarget(null);
+  };
+
+  // D16: Pause the running agent, then take over with a "user changed X" note.
+  const handlePause = async () => {
+    if (!taskId) return;
+    setControlBusy(true);
+    try {
+      const headers = await getApiHeaders();
+      const res = await fetch(`${getApiBase()}/api/tasks/${encodeURIComponent(taskId)}/pause`, { method: 'POST', headers });
+      if (res.ok) setPaused(true);
+    } catch {
+      // Best effort; the run keeps going if the control plane is unavailable.
+    } finally {
+      setControlBusy(false);
+    }
+  };
+
+  const handleResume = async () => {
+    if (!taskId) return;
+    setControlBusy(true);
+    try {
+      const headers = await getApiHeaders();
+      const res = await fetch(`${getApiBase()}/api/tasks/${encodeURIComponent(taskId)}/resume`, {
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ note: takeoverNote }),
+      });
+      if (res.ok) {
+        setPaused(false);
+        setTakeoverNote('');
+      }
+    } catch {
+      // Best effort.
+    } finally {
+      setControlBusy(false);
+    }
   };
 
   // Option 14: "Approve for me" chip — toggles per-task auto-approve. The flag
@@ -376,6 +429,16 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex h-row items-center justify-end gap-2 px-6">
+        {running && taskId && !paused && (
+          <button
+            type="button"
+            onClick={() => void handlePause()}
+            disabled={controlBusy}
+            className="flex h-row-sm items-center gap-1 rounded-control px-2 text-sm text-text-secondary hover:bg-fill-hover disabled:opacity-40"
+          >
+            {t('Pause')}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setShareOpen(true)}
@@ -387,6 +450,28 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
         <button className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><MoreHorizontal className="size-4" /></button>
         <button className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><PanelRight className="size-4" /></button>
       </div>
+
+      {paused && (
+        <div className="flex items-center gap-2 border-b border-border-main bg-fill-tsp px-6 py-2">
+          <span className="text-sm text-function-warning">{t('Paused')}</span>
+          <input
+            type="text"
+            value={takeoverNote}
+            onChange={(e) => setTakeoverNote(e.target.value)}
+            placeholder={t('What did you change?')}
+            aria-label={t('What did you change?')}
+            className="h-8 flex-1 rounded-control border border-border-main bg-bg-menu px-2 text-sm text-text-primary outline-none focus:border-icon-blue"
+          />
+          <button
+            type="button"
+            onClick={() => void handleResume()}
+            disabled={controlBusy}
+            className="flex h-8 items-center rounded-control bg-icon-blue px-3 text-sm font-medium text-white disabled:opacity-40"
+          >
+            {t('Take over')}
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-1 flex-col overflow-hidden">
@@ -420,12 +505,14 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                   {error}
                 </div>
               )}
+              <StepTimeline events={events} selectedActionId={selectedActionId} onSelect={handleSelectStep} />
               <EventList
                 events={events}
                 sessionId={sessionUid}
                 socket={socketRef.current}
                 onOpenComputer={(e) => {
                   setSelectedTool(e);
+                  setSelectedActionId(e.actionId);
                   if (e.actionId !== workspaceOpenActionRef.current) setWorkspaceTarget(null);
                 }}
               />
@@ -509,6 +596,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               approveForMe={approveForMe}
               onToggleApproveForMe={handleToggleApproveForMe}
             />
+            <SideChatPanel taskId={taskId ?? null} />
           </div>
         </div>
         {selectedTool && (
@@ -528,6 +616,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                   live={running}
                   events={events}
                   requestedPath={workspaceTarget?.path ?? null}
+                  requestedKind={workspaceTarget?.kind ?? null}
                   onChatEdit={handleWorkspaceChatEdit}
                 />
               ) : null
@@ -578,6 +667,19 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
       )}
     </div>
   );
+}
+
+/** Wrap a non-tool auto-open decision (attached video + edit intent) in a studio stub. */
+function videoStudioStub(event: ChatEvent): ToolUsedEvent {
+  return {
+    id: event.id,
+    type: 'toolUsed',
+    tool: 'video_studio',
+    actionId: event.id,
+    status: 'running',
+    timestamp: event.timestamp,
+    brief: t('Loam Video'),
+  };
 }
 
 function handleServerMessage(m: ServerMessage, sessionId: string, dispatch: AppDispatch) {

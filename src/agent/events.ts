@@ -85,8 +85,14 @@ export type AgentEvent =
   /** End-to-end verification of the completed task. */
   | { type: "verify"; verdict: Verdict; reason: string; parsed?: boolean }
   /** Context compression happened. */
-  | { type: "compaction"; step: 1 | 2; originalTokens: number; afterPruneTokens: number; finalTokens: number; summaryChars?: number; fallback?: boolean }
+  | { type: "compaction"; step: 1 | 2; originalTokens: number; afterPruneTokens: number; finalTokens: number; summaryChars?: number; fallback?: boolean; blocked?: boolean }
   /** A workspace file was published as a task artifact via artifact_publish. */
-  | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string };
+  | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string }
+  /**
+   * Loam Video Studio relay: one command for the panel attached to this task's
+   * event stream. The panel executes it with its editor bridge and posts the
+   * result back to /api/tasks/:id/video-studio/result.
+   */
+  | { type: "video_studio_command"; id: string; target: "film" | "effects"; method: string; params: Record<string, unknown> };
 
 export type Emit = (event: AgentEvent) => void;
