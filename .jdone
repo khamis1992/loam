@@ -1,0 +1,41 @@
+V4 (Loam UI Kit / v0-parity design system) complete.
+
+Task: Loam UI Kit token linter (raw colours, >5 colours, >2 fonts, arbitrary px,
+emoji icons, missing alt text, gradients) + `design_lint` agent tool.
+
+Commits on khamis1992/v0-v4:
+  17b288d feat(design): add Loam UI Kit token linter and design_lint tool (V4)
+  da9d6c6 fix(design): exempt every declaration on a shared token-definition line (V4)
+
+What was finished this session (continuing the interrupted one):
+- Resolved the stale interrupted merge: a leftover MERGE_HEAD pointed at an
+  unreachable commit, blocking commits. The merge resolution had already been
+  committed as 17b288d, so the marker was removed (no work discarded).
+- Root cause of the failing acceptance test
+  (`minimalDesignLinter > scores a clean site 100 with no issues`): the token
+  definition exemption only exempted a line declaring exactly ONE custom
+  property, so a one-line `:root { --background: oklch(...); --font-sans: ...; }`
+  had only its first token exempt and the rest flagged as raw colours.
+  Fixed in src/design/tokenLint.ts by computing byte-offset ranges for every
+  declaration on a token-definition line (lookbehind avoids `var(--x)` false
+  positives; a declaration separator avoids `red --note` false positives) and
+  reusing one `tokenRanges` array for the raw-colour rule, the palette counter
+  and the summary colour count, so they cannot drift.
+- Added three regression tests in src/design/__tests__/tokenLint.test.ts.
+
+Tests (all pass from the worktree root):
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  node --import tsx --test src/design/__tests__/tokenLint.test.ts src/tools/__tests__/designLint.test.ts src/design/__tests__/evalDesign.test.ts
+  -> 81 tests, 81 pass, 0 fail (15 acceptance fixture cases + linter + tool + eval)
+
+Notes:
+- 15 design-eval fixture cases pass/fail as expected (acceptance criterion met).
+- Committed only V4's own files with an explicit pathspec; the pre-existing
+  staged pile from other workstreams is left in the index untouched.
+- Known pre-existing failure unrelated to V4: `src/agent/__tests__/codingPrompt.test.ts
+  > matches the committed snapshot` in the staged (uncommitted) merge pile. The
+  index carries a parity-era `masterPromptSha256` (890670...) while the resolved
+  `src/agent/masterPromptText.ts` yields c63a440... (the value parity and every
+  sibling branch commit). It is not caused by and not touched by V4.
