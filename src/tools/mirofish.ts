@@ -3,6 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { scanWorkspaceRoutesAndRisks } from "./pentest.js";
 import { num, str, type Tool, type ToolContext, type ToolResult } from "./registry.js";
+import {
+  classifyWithSession,
+  extractMirofishSettings,
+  type MirofishIntentKind,
+} from "./mirofish/intent.js";
 
 export interface MirofishActiveSession {
   project_id: string;
@@ -277,19 +282,8 @@ function saveActiveSession(workspace: string, session: MirofishActiveSession): v
 export function shouldAutoTriggerMirofishInChat(prompt: string, workspace: string): boolean {
   const text = (prompt || "").trim();
   if (!text) return false;
-  if (/(?:mirofish|ميروفش|محاكاة\s*(?:ال)?سرب|ذكاء\s*(?:ال)?سرب|توصيات\s*(?:ال)?سرب|طاولة\s*مستديرة\s*بين\s*(?:ال)?وكلاء)/iu.test(text)) {
-    return true;
-  }
   const active = loadActiveMirofishSession(workspace);
-  if (
-    active &&
-    /(?:طبق\s+توصيات\s+(?:ال)?سرب|اعقد\s+جلسة\s+نقاش|حول\s+نتائج\s+المحاكاة|اسأل\s+وكيل\s+الأمان|قابل\s+الوكلاء|اختبر\s+صمود|سيناريو\s+الكارثة|وضع\s+الفوضى|حاكي\s+دخول\s+منافس|ولد\s+اختبارات|ولّد\s+اختبارات|ارجع\s+(?:إلى|الى|ل)\s*(?:ال)?جولة|أفضل\s+خطة\s+تسعير|محاكاة\s+التسعير|ذاكرة\s+السرب|بمشاريعي\s+السابقة)/iu.test(
-      text,
-    )
-  ) {
-    return true;
-  }
-  return false;
+  return classifyWithSession(text, Boolean(active)) !== "unrelated";
 }
 
 export function runConversationalMirofish(
@@ -305,6 +299,12 @@ export function runConversationalMirofish(
   const text = (opts.message || "").trim();
   const isAr = /[\u0600-\u06FF]/.test(text);
   const active = loadActiveMirofishSession(workspace);
+  // M5 intent routing: classify the message once (Arabic MSA + Gulf and English)
+  // and let the result drive the follow-up branches below. `active` decides
+  // whether a what-if / interview request is a follow-up on the existing session
+  // or a brand-new simulation.
+  const intent: MirofishIntentKind = classifyWithSession(text, Boolean(active));
+  const settings = extractMirofishSettings(text);
 
   const isAutoFix =
     Boolean(active) &&
@@ -498,6 +498,11 @@ export function runConversationalMirofish(
     /(?:قابل\s+(?:ال)?وكلاء|اسأل\s+(?:ال)?وكيل|اسال\s+(?:ال)?وكيل|اسأل\s+(?:ال)?مستخدمين|ما\s+رأي\s+(?:ال)?وكلاء|interview\s+(?:the\s+)?(?:agent|agents|user|security|auditor|developer))/iu.test(
       text,
     );
+
+  // M5: the classified intent is authoritative. A follow-up what-if or an
+  // agent interview is routed even when the legacy regexes miss the spelling.
+  const intentWhatIf = Boolean(active) && !opts.target && !anySpecial && intent === "what_if_injection";
+  const intentInterview = Boolean(active) && !opts.target && !anySpecial && intent === "agent_interview";
 
   // Proposal 1: Swarm-to-AutoFix Loop
   if (isAutoFix && active) {
@@ -1016,8 +1021,8 @@ export function runConversationalMirofish(
     };
   }
 
-  if (isWhatIf && active) {
-    const variableText = opts.injectedVariable || text;
+  if ((isWhatIf || intentWhatIf) && active) {
+    const variableText = opts.injectedVariable || settings.variables.map((v) => `${v.name}=${v.value}`).join(", ") || text;
     const newRounds = active.rounds_completed + 2;
     const simDir = path.join(root, "simulations", active.simulation_id);
     fs.mkdirSync(path.join(simDir, "twitter"), { recursive: true });
@@ -1068,7 +1073,7 @@ export function runConversationalMirofish(
     };
   }
 
-  if (isInterview && active) {
+  if ((isInterview || intentInterview) && active) {
     const interviews = [
       {
         agent_name: `${active.target_name} Security Auditor`,
