@@ -1,0 +1,357 @@
+{
+  "id": "coding-prompt",
+  "name": "Coding prompt eval (10 SWE-style fixtures)",
+  "version": 1,
+  "cases": [
+    {
+      "id": "sum-array",
+      "prompt": "The `sum` function in `index.js` is buggy. Fix it in place so that `node verify.cjs` exits 0. Do not modify `verify.cjs`.",
+      "setup": [
+        {
+          "type": "write_file",
+          "path": "package.json",
+          "text": "{\n  \"name\": \"sum-array\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"scripts\": {\n    \"test\": \"node verify.cjs\"\n  }\n}\n"
+        },
+        {
+          "type": "write_file",
+          "path": "index.js",
+          "text": "// fixture: buggy on purpose. Fix index.js so `node verify.cjs` exits 0.\nfunction sum(nums) {\n  let total = 0;\n  for (let i = 1; i < nums.length; i++) total += nums[i];\n  return total;\n}\n\nmodule.exports = { sum };\n"
+        },
+        {
+          "type": "write_file",
+          "path": "verify.cjs",
+          "text": "\"use strict\";\nconst assert = require(\"node:assert/strict\");\nconst { sum } = require(\"./index.js\");\nassert.equal(sum([1, 2, 3]), 6);\nassert.equal(sum([]), 0);\nassert.equal(sum([-1, 1]), 0);\nconsole.log(\"ok\");\n"
+        }
+      ],
+      "verify": [
+        {
+          "type": "shell_exit",
+          "command": "node verify.cjs",
+          "exitCode": 0
+        }
+      ],
+      "budget": {
+        "maxSteps": 14,
+        "timeoutSec": 180
+      },
+      "tags": [
+        "coding"
+      ]
+    },
+    {
+      "id": "reverse-string",
+      "prompt": "The `reverseString` function in `index.js` is buggy. Fix it in place so that `node verify.cjs` exits 0. Do not modify `verify.cjs`.",
+      "setup": [
+        {
+          "type": "write_file",
+          "path": "package.json",
+          "text": "{\n  \"name\": \"reverse-string\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"scripts\": {\n    \"test\": \"node verify.cjs\"\n  }\n}\n"
+        },
+        {
+          "type": "write_file",
+          "path": "index.js",
+          "text": "// fixture: buggy on purpose. Fix index.js so `node verify.cjs` exits 0.\nfunction reverseString(value) {\n  return value;\n}\n\nmodule.exports = { reverseString };\n"
+        },
+        {
+          "type": "write_file",
+          "path": "verify.cjs",
+          "text": "\"use strict\";\nconst assert = require(\"node:assert/strict\");\nconst { reverseString } = require(\"./index.js\");\nassert.equal(reverseString(\"abc\"), \"cba\");\nassert.equal(reverseString(\"\"), \"\");\nassert.equal(reverseString(\"a\"), \"a\");\nconsole.log(\"ok\");\n"
+        }
+      ],
+      "verify": [
+        {
+          "type": "shell_exit",
+          "command": "node verify.cjs",
+          "exitCode": 0
+        }
+      ],
+      "budget": {
+        "maxSteps": 14,
+        "timeoutSec": 180
+      },
+      "tags": [
+        "coding"
+      ]
+    },
+    {
+      "id": "fizzbuzz-range",
+      "prompt": "The `fizzbuzz` function in `index.js` is buggy. Fix it in place so that `node verify.cjs` exits 0. Do not modify `verify.cjs`.",
+      "setup": [
+        {
+          "type": "write_file",
+          "path": "package.json",
+          "text": "{\n  \"name\": \"fizzbuzz-range\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"scripts\": {\n    \"test\": \"node verify.cjs\"\n  }\n}\n"
+        },
+        {
+          "type": "write_file",
+          "path": "index.js",
+          "text": "// fixture: buggy on purpose. Fix index.js so `node verify.cjs` exits 0.\nfunction fizzbuzz(n) {\n  const out = [];\n  for (let i = 1; i < n; i++) {\n    if (i % 15 === 0) out.push(\"FizzBuzz\");\n    else if (i % 3 === 0) out.push(\"Fizz\");\n    else if (i % 5 === 0) out.push(\"Buzz\");\n    else out.push(String(i));\n  }\n  return out;\n}\n\nmodule.exports = { fizzbuzz };\n"
+        },
+        {
+          "type": "write_file",
+          "path": "verify.cjs",
+          "text": "\"use strict\";\nconst assert = require(\"node:assert/strict\");\nconst { fizzbuzz } = require(\"./index.js\");\nassert.deepEqual(fizzbuzz(5), [\"1\", \"2\", \"Fizz\", \"4\", \"Buzz\"]);\nassert.deepEqual(fizzbuzz(1), [\"1\"]);\nconsole.log(\"ok\");\n"
+        }
+      ],
+      "verify": [
+        {
+          "type": "shell_exit",
+          "command": "node verify.cjs",
+          "exitCode": 0
+        }
+      ],
+      "budget": {
+        "maxSteps": 14,
+        "timeoutSec": 180
+      },
+      "tags": [
+        "coding"
+      ]
+    },
+    {
+      "id": "unique-values",
+      "prompt": "The `unique` function in `index.js` is buggy. Fix it in place so that `node verify.cjs` exits 0. Do not modify `verify.cjs`.",
+      "setup": [
+        {
+          "type": "write_file",
+          "path": "package.json",
+          "text": "{\n  \"name\": \"unique-values\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"scripts\": {\n    \"test\": \"node verify.cjs\"\n  }\n}\n"
+        },
+        {
+          "type": "write_file",
+          "path": "index.js",
+          "text": "// fixture: buggy on purpose. Fix index.js so `node verify.cjs` exits 0.\nfunction unique(values) {\n  return values;\n}\n\nmodule.exports = { unique };\n"
+        },
+        {
+          "type": "write_file",
+          "path": "verify.cjs",
+          "text": "\"use strict\";\nconst assert = require(\"node:assert/strict\");\nconst { unique } = require(\"./index.js\");\nassert.deepEqual(unique([1, 2, 2, 3, 1]), [1, 2, 3]);\nassert.deepEqual(unique([]), []);\nconsole.log(\"ok\");\n"
+        }
+      ],
+      "verify": [
+        {
+          "type": "shell_exit",
+          "command": "node verify.cjs",
+          "exitCode": 0
+        }
+      ],
+      "budget": {
+        "maxSteps": 14,
+        "timeoutSec": 180
+      },
+      "tags": [
+        "coding"
+      ]
+    },
+    {
+      "id": "clamp-number",
+      "prompt": "The `clamp` function in `index.js` is buggy. Fix it in place so that `node verify.cjs` exits 0. Do not modify `verify.cjs`.",
+      "setup": [
+        {
+          "type": "write_file",
+          "path": "package.json",
+          "text": "{\n  \"name\": \"clamp-number\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"scripts\": {\n    \"test\": \"node verify.cjs\"\n  }\n}\n"
+        },
+        {
+          "type": "write_file",
+          "path": "index.js",
+          "text": "// fixture: buggy on purpose. Fix index.js so `node verify.cjs` exits 0.\nfunction clamp(value, min, max) {\n  if (value < min) return max;\n  if (value > max) return min;\n  return value;\n}\n\nmodule.exports = { clamp };\n"
+        },
+        {
+          "type": "write_file",
+          "path": "verify.cjs",
+          "text": "\"use strict\";\nconst assert = require(\"node:assert/strict\");\nconst { clamp } = require(\"./index.js\");\nassert.equal(clamp(5, 0, 10), 5);\nassert.equal(clamp(-1, 0, 10), 0);\nassert.equal(clamp(11, 0, 10), 10);\nconsole.log(\"ok\");\n"
+        }
+      ],
+      "verify": [
+        {
+          "type": "shell_exit",
+          "command": "node verify.cjs",
+          "exitCode": 0
+        }
+      ],
+      "budget": {
+        "maxSteps": 14,
+        "timeoutSec": 180
+      },
+      "tags": [
+        "coding"
+      ]
+    },
+    {
+      "id": "flatten-one-level",
+      "prompt": "The `flatten` function in `index.js` is buggy. Fix it in place so that `node verify.cjs` exits 0. Do not modify `verify.cjs`.",
+      "setup": [
+        {
+          "type": "write_file",
+          "path": "package.json",
+          "text": "{\n  \"name\": \"flatten-one-level\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"scripts\": {\n    \"test\": \"node verify.cjs\"\n  }\n}\n"
+        },
+        {
+          "type": "write_file",
+          "path": "index.js",
+          "text": "// fixture: buggy on purpose. Fix index.js so `node verify.cjs` exits 0.\nfunction flatten(values) {\n  const out = [];\n  for (const value of values) {\n    if (Array.isArray(value)) out.push(value[0]);\n    else out.push(value);\n  }\n  return out;\n}\n\nmodule.exports = { flatten };\n"
+        },
+        {
+          "type": "write_file",
+          "path": "verify.cjs",
+          "text": "\"use strict\";\nconst assert = require(\"node:assert/strict\");\nconst { flatten } = require(\"./index.js\");\nassert.deepEqual(flatten([1, [2, 3], [4]]), [1, 2, 3, 4]);\nassert.deepEqual(flatten([]), []);\nconsole.log(\"ok\");\n"
+        }
+      ],
+      "verify": [
+        {
+          "type": "shell_exit",
+          "command": "node verify.cjs",
+          "exitCode": 0
+        }
+      ],
+      "budget": {
+        "maxSteps": 14,
+        "timeoutSec": 180
+      },
+      "tags": [
+        "coding"
+      ]
+    },
+    {
+      "id": "title-case",
+      "prompt": "The `titleCase` function in `index.js` is buggy. Fix it in place so that `node verify.cjs` exits 0. Do not modify `verify.cjs`.",
+      "setup": [
+        {
+          "type": "write_file",
+          "path": "package.json",
+          "text": "{\n  \"name\": \"title-case\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"scripts\": {\n    \"test\": \"node verify.cjs\"\n  }\n}\n"
+        },
+        {
+          "type": "write_file",
+          "path": "index.js",
+          "text": "// fixture: buggy on purpose. Fix index.js so `node verify.cjs` exits 0.\nfunction titleCase(text) {\n  return text;\n}\n\nmodule.exports = { titleCase };\n"
+        },
+        {
+          "type": "write_file",
+          "path": "verify.cjs",
+          "text": "\"use strict\";\nconst assert = require(\"node:assert/strict\");\nconst { titleCase } = require(\"./index.js\");\nassert.equal(titleCase(\"hello world\"), \"Hello World\");\nassert.equal(titleCase(\"a\"), \"A\");\nassert.equal(titleCase(\"\"), \"\");\nconsole.log(\"ok\");\n"
+        }
+      ],
+      "verify": [
+        {
+          "type": "shell_exit",
+          "command": "node verify.cjs",
+          "exitCode": 0
+        }
+      ],
+      "budget": {
+        "maxSteps": 14,
+        "timeoutSec": 180
+      },
+      "tags": [
+        "coding"
+      ]
+    },
+    {
+      "id": "group-by",
+      "prompt": "The `groupBy` function in `index.js` is buggy. Fix it in place so that `node verify.cjs` exits 0. Do not modify `verify.cjs`.",
+      "setup": [
+        {
+          "type": "write_file",
+          "path": "package.json",
+          "text": "{\n  \"name\": \"group-by\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"scripts\": {\n    \"test\": \"node verify.cjs\"\n  }\n}\n"
+        },
+        {
+          "type": "write_file",
+          "path": "index.js",
+          "text": "// fixture: buggy on purpose. Fix index.js so `node verify.cjs` exits 0.\nfunction groupBy(items, keyFn) {\n  const out = {};\n  for (const item of items) {\n    const key = item;\n    if (!out[key]) out[key] = [];\n    out[key].push(item);\n  }\n  return out;\n}\n\nmodule.exports = { groupBy };\n"
+        },
+        {
+          "type": "write_file",
+          "path": "verify.cjs",
+          "text": "\"use strict\";\nconst assert = require(\"node:assert/strict\");\nconst { groupBy } = require(\"./index.js\");\nassert.deepEqual(groupBy([1, 2, 3, 4], (x) => x % 2), { 1: [1, 3], 0: [2, 4] });\nassert.deepEqual(groupBy([], () => \"k\"), {});\nconsole.log(\"ok\");\n"
+        }
+      ],
+      "verify": [
+        {
+          "type": "shell_exit",
+          "command": "node verify.cjs",
+          "exitCode": 0
+        }
+      ],
+      "budget": {
+        "maxSteps": 14,
+        "timeoutSec": 180
+      },
+      "tags": [
+        "coding"
+      ]
+    },
+    {
+      "id": "debounce-clear",
+      "prompt": "The `debounce` function in `index.js` is buggy. Fix it in place so that `node verify.cjs` exits 0. Do not modify `verify.cjs`.",
+      "setup": [
+        {
+          "type": "write_file",
+          "path": "package.json",
+          "text": "{\n  \"name\": \"debounce-clear\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"scripts\": {\n    \"test\": \"node verify.cjs\"\n  }\n}\n"
+        },
+        {
+          "type": "write_file",
+          "path": "index.js",
+          "text": "// fixture: buggy on purpose. Fix index.js so `node verify.cjs` exits 0.\nfunction debounce(fn, wait) {\n  return function (...args) {\n    setTimeout(() => fn.apply(this, args), wait);\n  };\n}\n\nmodule.exports = { debounce };\n"
+        },
+        {
+          "type": "write_file",
+          "path": "verify.cjs",
+          "text": "\"use strict\";\nconst assert = require(\"node:assert/strict\");\nconst { debounce } = require(\"./index.js\");\nlet calls = 0;\nconst debounced = debounce(() => {\n  calls++;\n}, 30);\ndebounced();\ndebounced();\ndebounced();\nsetTimeout(() => {\n  assert.equal(calls, 1);\n  console.log(\"ok\");\n}, 90);\n"
+        }
+      ],
+      "verify": [
+        {
+          "type": "shell_exit",
+          "command": "node verify.cjs",
+          "exitCode": 0
+        }
+      ],
+      "budget": {
+        "maxSteps": 14,
+        "timeoutSec": 180
+      },
+      "tags": [
+        "coding"
+      ]
+    },
+    {
+      "id": "format-date-pad",
+      "prompt": "The `formatDate` function in `index.js` is buggy. Fix it in place so that `node verify.cjs` exits 0. Do not modify `verify.cjs`.",
+      "setup": [
+        {
+          "type": "write_file",
+          "path": "package.json",
+          "text": "{\n  \"name\": \"format-date-pad\",\n  \"version\": \"1.0.0\",\n  \"private\": true,\n  \"scripts\": {\n    \"test\": \"node verify.cjs\"\n  }\n}\n"
+        },
+        {
+          "type": "write_file",
+          "path": "index.js",
+          "text": "// fixture: buggy on purpose. Fix index.js so `node verify.cjs` exits 0.\nfunction formatDate(iso) {\n  const d = new Date(iso);\n  return `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;\n}\n\nmodule.exports = { formatDate };\n"
+        },
+        {
+          "type": "write_file",
+          "path": "verify.cjs",
+          "text": "\"use strict\";\nconst assert = require(\"node:assert/strict\");\nconst { formatDate } = require(\"./index.js\");\nassert.equal(formatDate(\"2026-03-09T00:00:00Z\"), \"2026-03-09\");\nassert.equal(formatDate(\"1999-12-31T00:00:00Z\"), \"1999-12-31\");\nconsole.log(\"ok\");\n"
+        }
+      ],
+      "verify": [
+        {
+          "type": "shell_exit",
+          "command": "node verify.cjs",
+          "exitCode": 0
+        }
+      ],
+      "budget": {
+        "maxSteps": 14,
+        "timeoutSec": 180
+      },
+      "tags": [
+        "coding"
+      ]
+    }
+  ]
+}

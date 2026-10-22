@@ -107,7 +107,13 @@ describe("office tool prompt directive", () => {
   it("stays out of the prompt when the mode has no office tools", () => {
     const mode = getLoamMode("research");
     const prompt = buildSystemPrompt(cfg, [], mode.tools);
-    assert.ok(!prompt.includes("office_export"));
+    // The master prompt's generic tool catalogue names office_export, so the
+    // mode-specific office *directive* and the advertised tool list are what
+    // must stay out of a mode that cannot use office tools.
     assert.ok(!/Do not generate office files through shell or Python/i.test(prompt));
+    const available = prompt.split("\n").find((line) => line.startsWith("Available tools"));
+    assert.ok(available, "expected an Available tools line");
+    assert.ok(!available!.includes("office_export"), "research mode advertises office_export");
+    assert.ok(!available!.includes("loam_studio"), "research mode advertises loam_studio");
   });
 });
