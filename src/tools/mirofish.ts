@@ -19,6 +19,8 @@ export interface MirofishActiveSession {
   simulation_requirement: string;
   rounds_completed: number;
   updated_at: string;
+  /** Location the user named for the simulation (city/country/region), if any. */
+  location?: { city: string | null; country: string | null; region: string | null };
 }
 
 const DEFAULT_ONTOLOGY_TYPES = [
@@ -274,6 +276,18 @@ export function loadActiveMirofishSession(workspace: string): MirofishActiveSess
 function saveActiveSession(workspace: string, session: MirofishActiveSession): void {
   const f = path.join(getMirofishRoot(workspace), "active_session.json");
   fs.writeFileSync(f, JSON.stringify(session, null, 2), "utf8");
+}
+
+/**
+ * Render an extracted location as a short human label. Returns "Global" when the
+ * user named no place, so no country is ever hard-coded into a simulation.
+ */
+function locationLabel(loc: { city: string | null; country: string | null; region: string | null }): string {
+  if (loc.city && loc.country) return `${loc.city}, ${loc.country}`;
+  if (loc.city) return loc.city;
+  if (loc.country) return loc.country;
+  if (loc.region) return loc.region;
+  return "Global";
 }
 
 /**
@@ -1156,7 +1170,7 @@ export function runConversationalMirofish(
     age: 26 + idx * 3,
     gender: idx === 6 ? "other" : idx % 2 === 0 ? "male" : "female",
     mbti: ["INTJ", "ENTP", "ISTJ", "ENFJ", "INTP", "ENTJ", "ISTJ", "INFJ"][idx] ?? "INTJ",
-    country: "Global",
+    country: settings.location.country ?? settings.location.city ?? settings.location.region ?? "Global",
     profession: et.name,
   }));
 
@@ -1171,6 +1185,8 @@ export function runConversationalMirofish(
     `# MiroFish Swarm Intelligence Report: ${targetInfo.targetName}`,
     "",
     `> ${targetInfo.summary} — Requirement: ${text || "Full Application Analysis"}`,
+    "",
+    `**Market Location**: ${locationLabel(settings.location)}${settings.variables.length ? ` — **Injected Variables**: ${settings.variables.map((v) => `${v.name}=${v.value}`).join(", ")}` : ""}`,
     "",
     "## 1. Architecture & Temporal Knowledge Graph (InsightForge & PanoramaSearch)",
     "",
@@ -1204,6 +1220,9 @@ export function runConversationalMirofish(
     simulation_requirement: text || `Analyze ${targetInfo.targetName}`,
     rounds_completed: rounds,
     updated_at: new Date().toISOString(),
+    ...(settings.location.country || settings.location.city || settings.location.region
+      ? { location: settings.location }
+      : {}),
   };
   saveActiveSession(workspace, session);
 

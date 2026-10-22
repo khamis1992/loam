@@ -6,7 +6,7 @@
  * hand-picked spellings (Gulf users type «محاكاة», «لو رفعنا السعر»,
  * «ايش بيصير لو», «توقع ردة فعل العملاء» and none of them matched), and any
  * Arabic string that had been written through the Windows shell came back as
- * `???` so the pattern could never match.
+ * question-mark mojibake so the pattern could never match.
  *
  * This module therefore does the opposite of a literal match:
  *   1. normalize the message (strip Arabic diacritics/tatweel, unify
@@ -207,7 +207,9 @@ const TRIGGERS: TriggerRule[] = [
       'فهم السوق', 'استكشف السوق', 'ادرس المنافسين', 'حلل المنافسين',
       'شوف رده فعل السوق', 'شوف رد فعل السوق', 'ورني رده فعل العملاء',
       // English.
-      'mirofish', 'swarm simulation', 'swarm intelligence', 'simulate the market',
+      'mirofish', 'ميرافيش', 'ميروفش', 'ميروفيش', 'swarm simulation', 'swarm intelligence', 'simulate', 'simulate it', 'simulate this',
+      'run a simulation', 'start a simulation', 'do a simulation', 'run simulation', 'start simulation',
+      'simulate the market',
       'simulate customers', 'simulate users', 'simulate the audience', 'simulate the product',
       'simulate the app', 'simulate the application', 'market simulation', 'market test',
       'market testing', 'predict customer reaction', 'predict customer response',
@@ -238,11 +240,20 @@ const TRIGGERS: TriggerRule[] = [
       'لو اضفت', 'لو طرح', 'لو طرحنا', 'لو اوقف', 'لو وقف', 'لو وقفنا', 'لو انطلق',
       'لو انطلقنا', 'لو افتتح', 'لو افتتحنا', 'لو قللت', 'لو زدت', 'لو غيرنا', 'لو ضرب',
       'لو خفضا', 'لو اقفلنا', 'لو طلعنا', 'لو قلبنا',
+      // Gulf: «لو زدنا الترافيك», «لو ضاعفنا الميزانية».
+      'لو زدنا', 'لو قلنا', 'لو ضاعفنا', 'لو ضاعف', 'لو خففنا', 'لو رفعنا', 'لو انخفضنا',
+      'لو رفعناه', 'لو زيدنا', 'لو ضاعفنا الترافيك', 'لو زدنا الترافيك', 'لو ضاعفنا الميزانيه',
+      'لو ضاعفنا الميزانية', 'لو رفعنا الترافيك', 'لو رفعنا الميزانيه', 'لو رفعنا الميزانية',
+      'لو رفعنا السعر', 'لو رفعنا الاسعار', 'لو رفعنا الأسعار', 'لو رفعنا الرسوم', 'لو رفعت السعر',
       // MSA: "suppose that", "imagine if".
       'افترض ان', 'افترض انه', 'لو افترضنا', 'بفرض ان', 'تخيل لو', 'تخيل ان',
       'ماذا لو تغير', 'ماذا لو تغيير',
+      // «لو السعر 1300؟» - a bare conditional on a variable with a value.
+      'لو السعر', 'لو سعر', 'لو الترافيك', 'لو الترافك', 'لو النسبه', 'لو النسبة', 'لو العموله', 'لو العمولة',
+      'لو الميزانيه', 'لو الميزانية', 'لو التكلفه', 'لو التكلفة', 'لو عدد الوكلاء', 'لو عدد الجولات',
     ],
     patterns: [
+      /\b(?:لو|law)\s+(?:السعر|سعر|الاسعار|الأسعار|نسبة|معدل|الترافيك|الترافك|العمولة|العموله|الميزانية|ميزانية|التكلفة|التكلفه|عدد)\b/u,
       /\bwhat\s+if\b/i,
       /\bwhat\s+would\s+happen\s+if\b/i,
       /\bwhat\s+will\s+happen\s+if\b/i,
@@ -462,38 +473,88 @@ const VARIABLE_NAME_GROUPS: Array<{ name: string; phrases: string[] }> = [
 /** Known cities / countries / regions. Data-driven; not tied to any locale. */
 const KNOWN_PLACES: Array<{ name: string; kind: 'city' | 'country' | 'region' }> = [
   // Gulf / MENA
-  { name: 'الرياض', kind: 'city' }, { name: 'جده', kind: 'city' }, { name: 'جدة', kind: 'city' },
-  { name: 'الدمام', kind: 'city' }, { name: 'مكه', kind: 'city' }, { name: 'مكة', kind: 'city' },
-  { name: 'المدينه', kind: 'city' }, { name: 'المدينة', kind: 'city' }, { name: 'الخبر', kind: 'city' },
-  { name: 'الدوحه', kind: 'city' }, { name: 'الدوحة', kind: 'city' }, { name: 'دبي', kind: 'city' },
-  { name: 'ابوظبي', kind: 'city' }, { name: 'أبوظبي', kind: 'city' }, { name: 'الشارقه', kind: 'city' },
-  { name: 'الشارقة', kind: 'city' }, { name: 'المنامه', kind: 'city' }, { name: 'المنامة', kind: 'city' },
-  { name: 'مسقط', kind: 'city' }, { name: 'الكويت', kind: 'city' }, { name: 'عمان', kind: 'city' },
-  { name: 'السعوديه', kind: 'country' }, { name: 'السعودية', kind: 'country' },
-  { name: 'قطر', kind: 'country' }, { name: 'الامارات', kind: 'country' }, { name: 'الإمارات', kind: 'country' },
+  { name: 'الرياض', kind: 'city' }, { name: 'جدة', kind: 'city' },
+  { name: 'الدمام', kind: 'city' }, { name: 'مكة', kind: 'city' },
+  { name: 'المدينة', kind: 'city' }, { name: 'الخبر', kind: 'city' },
+  { name: 'الدوحة', kind: 'city' }, { name: 'دبي', kind: 'city' },
+  { name: 'أبوظبي', kind: 'city' }, { name: 'الشارقة', kind: 'city' },
+  { name: 'المنامة', kind: 'city' }, { name: 'مسقط', kind: 'city' },
+  { name: 'السعودية', kind: 'country' },
+  { name: 'قطر', kind: 'country' }, { name: 'الإمارات', kind: 'country' },
   { name: 'البحرين', kind: 'country' }, { name: 'عمان', kind: 'country' }, { name: 'الكويت', kind: 'country' },
-  { name: 'مصر', kind: 'country' }, { name: 'الاردن', kind: 'country' }, { name: 'الأردن', kind: 'country' },
+  { name: 'مصر', kind: 'country' }, { name: 'الأردن', kind: 'country' },
   { name: 'العراق', kind: 'country' }, { name: 'المغرب', kind: 'country' }, { name: 'تونس', kind: 'country' },
   { name: 'لبنان', kind: 'country' }, { name: 'سوريا', kind: 'country' }, { name: 'اليمن', kind: 'country' },
   { name: 'ليبيا', kind: 'country' }, { name: 'الجزائر', kind: 'country' }, { name: 'السودان', kind: 'country' },
   { name: 'الخليج', kind: 'region' }, { name: 'الخليج العربي', kind: 'region' },
   // Europe
-  { name: 'berlin', kind: 'city' }, { name: 'munich', kind: 'city' }, { name: 'paris', kind: 'city' },
-  { name: 'london', kind: 'city' }, { name: 'amsterdam', kind: 'city' }, { name: 'madrid', kind: 'city' },
-  { name: 'rome', kind: 'city' }, { name: 'istanbul', kind: 'city' }, { name: 'lisbon', kind: 'city' },
-  { name: 'germany', kind: 'country' }, { name: 'france', kind: 'country' },
-  { name: 'united kingdom', kind: 'country' }, { name: 'uk', kind: 'country' },
-  { name: 'spain', kind: 'country' }, { name: 'italy', kind: 'country' },
-  { name: 'turkiye', kind: 'country' }, { name: 'turkey', kind: 'country' },
-  { name: 'netherlands', kind: 'country' }, { name: 'portugal', kind: 'country' },
+  { name: 'Berlin', kind: 'city' }, { name: 'Munich', kind: 'city' }, { name: 'Paris', kind: 'city' },
+  { name: 'London', kind: 'city' }, { name: 'Amsterdam', kind: 'city' }, { name: 'Madrid', kind: 'city' },
+  { name: 'Rome', kind: 'city' }, { name: 'Istanbul', kind: 'city' }, { name: 'Lisbon', kind: 'city' },
+  { name: 'Germany', kind: 'country' }, { name: 'France', kind: 'country' },
+  { name: 'United Kingdom', kind: 'country' }, { name: 'UK', kind: 'country' },
+  { name: 'Spain', kind: 'country' }, { name: 'Italy', kind: 'country' },
+  { name: 'Türkiye', kind: 'country' }, { name: 'Turkey', kind: 'country' },
+  { name: 'Netherlands', kind: 'country' }, { name: 'Portugal', kind: 'country' },
   // Americas / Asia
-  { name: 'new york', kind: 'city' }, { name: 'san francisco', kind: 'city' }, { name: 'tokyo', kind: 'city' },
-  { name: 'singapore', kind: 'city' }, { name: 'mumbai', kind: 'city' }, { name: 'shanghai', kind: 'city' },
-  { name: 'sao paulo', kind: 'city' }, { name: 'dubai', kind: 'city' },
-  { name: 'united states', kind: 'country' }, { name: 'usa', kind: 'country' }, { name: 'us', kind: 'country' },
-  { name: 'canada', kind: 'country' }, { name: 'japan', kind: 'country' }, { name: 'india', kind: 'country' },
-  { name: 'brazil', kind: 'country' }, { name: 'china', kind: 'country' },
+  { name: 'New York', kind: 'city' }, { name: 'San Francisco', kind: 'city' }, { name: 'Tokyo', kind: 'city' },
+  { name: 'Singapore', kind: 'city' }, { name: 'Mumbai', kind: 'city' }, { name: 'Shanghai', kind: 'city' },
+  { name: 'São Paulo', kind: 'city' }, { name: 'Dubai', kind: 'city' },
+  { name: 'United States', kind: 'country' }, { name: 'USA', kind: 'country' }, { name: 'US', kind: 'country' },
+  { name: 'Canada', kind: 'country' }, { name: 'Japan', kind: 'country' }, { name: 'India', kind: 'country' },
+  { name: 'Brazil', kind: 'country' }, { name: 'China', kind: 'country' },
 ];
+
+/**
+ * Alternative spellings of a place name. `canonical()` is many-to-one, so an
+ * Arabic name and its English equivalent (and sometimes an unrelated
+ * language's word, e.g. "Catar") can collapse onto the same canonical form;
+ * the alias list resolves the match back to one canonical display name.
+ */
+const PLACE_ALIASES: Record<string, string[]> = {
+  // Keys are `canonical(known place name)`; see canonicalText().
+  سعوديه: ["saudi arabia", "saudi"],
+  قطر: ["qatar", "catar"],
+  امارات: ["united arab emirates", "uae", "emirates", "u a e"],
+  عمان: ["oman"],
+  كويت: ["kuwait"],
+  اردن: ["jordan"],
+  عراق: ["iraq"],
+  سوريا: ["syria"],
+  يمن: ["yemen"],
+  بنان: ["lebanon"],
+  مصر: ["egypt"],
+  بحرين: ["bahrain"],
+  مغرب: ["morocco"],
+  تونس: ["tunisia"],
+  ليبيا: ["libya"],
+  جزاير: ["algeria"],
+  سودان: ["sudan"],
+  جده: ["jeddah", "jiddah"],
+  رياض: ["riyadh"],
+  دوحه: ["doha"],
+  ابوظبي: ["abu dhabi"],
+  شارقه: ["sharjah"],
+  منامه: ["manama"],
+  مسقط: ["muscat"],
+  دمام: ["dammam"],
+  مكه: ["mecca", "makkah"],
+  مدينه: ["medina", "madinah"],
+  خبر: ["khobar", "al khobar"],
+};
+
+/** Expand KNOWN_PLACES with their aliases, longest name first. */
+function placeEntries(): Array<{ name: string; kind: 'city' | 'country' | 'region' }> {
+  const entries: Array<{ name: string; kind: 'city' | 'country' | 'region' }> = [];
+  for (const place of KNOWN_PLACES) {
+    const aliases = PLACE_ALIASES[canonical(place.name)] ?? [];
+    for (const alias of aliases) entries.push({ name: alias, kind: place.kind });
+    entries.push(place);
+  }
+  // Longer names first so "united states" beats "us" and "saudi arabia" beats
+  // "saudi". Stable order keeps the declared spelling ahead of its aliases.
+  return entries.sort((a, b) => b.name.length - a.name.length);
+}
 
 /** Prepositions that introduce a location in Arabic and English. */
 const LOCATION_PREFIXES = ['في', 'داخل', 'حول', 'عند', 'من', 'الي', 'الى', 'ب', 'في', 'in', 'inside', 'around', 'at', 'for', 'from', 'of'];
@@ -554,35 +615,42 @@ export function extractLocation(raw: string): ExtractedLocation {
   // Prefer a location introduced by a preposition, then fall back to a bare
   // known place. Longer names first so "united states" beats "us". Patterns
   // are built from the canonical place name («الرياض» -> «رياض») because the
-  // text is canonicalized here too, so both spellings collapse to one form.
-  const sorted = [...KNOWN_PLACES].sort((a, b) => b.name.length - a.name.length);
+  // text is canonicalized here too, so every spelling variant collapses to one
+  // canonical form; the match is then mapped back to the canonical display name.
+  // Alias spellings (English, Spanish "Catar", ...) are emitted first so a
+  // non-Arabic message still resolves to the canonical place.
+  const sorted = placeEntries();
   const names = sorted.map((p) => escapeRe(canonical(p.name))).join('|');
 
   let found: string | null = null;
+  let foundPlace: { name: string; kind: 'city' | 'country' | 'region' } | null = null;
   for (const prefix of LOCATION_PREFIXES) {
     const re = new RegExp(wholeWord(canonical(prefix)) + '\\s*(' + names + ')', 'iu');
     const m = text.match(re);
     if (m) {
-      found = m[1]!.toLowerCase();
+      foundPlace = sorted.find((p) => canonical(p.name) === canonical(m[1]!)) ?? null;
       break;
     }
   }
-  if (!found) {
+  if (!foundPlace) {
     // Note: `names` is inserted raw (not through escapeRe) so the `|`
     // alternation survives; place names contain no regex metacharacters.
     const bare = new RegExp('(?:(?<![\\p{L}\\p{N}])(' + names + ')(?![\\p{L}\\p{N}]))', 'iu');
     const m = text.match(bare);
-    if (m) found = m[1]!.toLowerCase();
+    if (m) foundPlace = sorted.find((p) => canonical(p.name) === canonical(m[1]!)) ?? null;
   }
-
-  if (!found) return result;
-  const place = sorted.find(
-    (p) =>
-      p.name.toLowerCase() === found ||
-      // «الرياض» canonicalizes to «رياض», so also compare article-stripped
-      // place names («السعر» -> «سعر» is the same rule used for variables).
-      stripArabicDefiniteArticle(p.name).toLowerCase() === found,
-  );
+  if (!foundPlace) return result;
+  // Report the canonical display name, not the alias spelling the user happened
+  // to type. Prefer the KNOWN_PLACES entry whose canonical form matches, then
+  // fall back to the entry whose alias list contains the matched spelling (so
+  // «in Qatar» -> "قطر" while «in Berlin» keeps the Latin "Berlin").
+  const canonicalName =
+    KNOWN_PLACES.find((p) => canonical(p.name) === canonical(foundPlace.name))?.name ??
+    KNOWN_PLACES.find(
+      (p) => (PLACE_ALIASES[canonical(p.name)] ?? []).some((a) => canonical(a) === canonical(foundPlace.name)),
+    )?.name;
+  found = canonicalName ?? foundPlace.name;
+  const place = foundPlace;
   if (!place) return result;
   // Regions («الخليج») are meaningful without a preposition, but cities and
   // countries are far too common as ordinary nouns, so only accept them when
@@ -595,9 +663,9 @@ export function extractLocation(raw: string): ExtractedLocation {
     );
     if (!introduced) return result;
   }
-  if (place.kind === 'city') result.city = place.name;
-  else if (place.kind === 'country') result.country = place.name;
-  else result.region = place.name;
+  if (place.kind === 'city') result.city = found;
+  else if (place.kind === 'country') result.country = found;
+  else result.region = found;
   return result;
 }
 

@@ -68,6 +68,11 @@ describe("classifyMirofishIntent: Arabic positive", () => {
     ["لو رفعنا السعر", "what_if_injection"],
     ["ايش بيصير لو رفعنا السعر", "what_if_injection"],
     ["ماذا لو ارتفع السعر", "what_if_injection"],
+    // Spec M5 examples that previously fell through to "unrelated".
+    ["لو السعر 1300؟", "what_if_injection"],
+    ["لو زدنا الترافيك 50%", "what_if_injection"],
+    ["لو رفعنا السعر 1300", "what_if_injection"],
+    ["ميروفش", "full_application_analysis"],
     ["قابل الوكلاء", "agent_interview"],
     ["اسأل وكيل الأمان", "agent_interview"],
     ["اعقد جلسة نقاش", "follow_up"],
@@ -84,6 +89,9 @@ describe("classifyMirofishIntent: Arabic positive", () => {
 describe("classifyMirofishIntent: English positive", () => {
   const cases: Array<[string, string]> = [
     ["simulate the market", "full_application_analysis"],
+    // Spec M5 examples that previously fell through to "unrelated".
+    ["simulate", "full_application_analysis"],
+    ["what if", "what_if_injection"],
     ["market test", "full_application_analysis"],
     ["swarm intelligence analysis", "full_application_analysis"],
     ["predict customer reaction", "full_application_analysis"],
@@ -106,6 +114,11 @@ describe("classifyMirofishIntent: must NOT trigger (negative)", () => {
   const cases: string[] = [
     // Arabic «محاكاة» in a coding context.
     "محاكاة في سياق البرمجة",
+    // Bare variable nouns are a question, not a simulation request.
+    "مراجعة السعر",
+    "تغيير السعر",
+    "كم السعر",
+    "ميزانية المشروع",
     "برمجة تطبيق",
     "أصلح الخطأ في الكود",
     "this is a unit test",
@@ -215,7 +228,7 @@ describe("extractLocation", () => {
   });
 
   it("finds an English city", () => {
-    assert.deepEqual(extractLocation("simulate in Berlin"), { city: "berlin", country: null, region: null });
+    assert.deepEqual(extractLocation("simulate in Berlin"), { city: "Berlin", country: null, region: null });
   });
 
   it("finds a country", () => {
@@ -300,6 +313,49 @@ describe("runConversationalMirofish intent routing", () => {
     // full simulation; what matters is that the intent router did not treat
     // it as a follow-up, so no session mutation happened.
     assert.equal(out.intent, "full_application_analysis");
+  });
+
+  it("carries an extracted location into the new simulation", async () => {
+    const out = await run("simulate the market in Berlin");
+    assert.equal(out.intent, "full_application_analysis");
+    assert.equal((out.data.location as { city: string } | undefined)?.city, "Berlin");
+    const { loadActiveMirofishSession } = await import("../mirofish.js");
+    const session = loadActiveMirofishSession(workspace);
+    assert.equal(session?.location?.city, "Berlin");
+    assert.equal(session?.location?.country, null);
+    // Personas must inherit the user's location instead of a hard-coded country.
+    const simDir = path.join(workspace, ".manus", "mirofish", "simulations", session!.simulation_id);
+    const profiles = JSON.parse(fs.readFileSync(path.join(simDir, "reddit_profiles.json"), "utf8"));
+    assert.ok(profiles.length > 0);
+    assert.ok(profiles.every((p: { country: string }) => p.country === "Berlin"));
+    // The report must name the market location the user chose.
+    const report = fs.readFileSync(
+      path.join(workspace, ".manus", "mirofish", "reports", session!.report_id, "report.md"),
+      "utf8",
+    );
+    assert.match(report, /Market Location.*Berlin/);
+  });
+
+  it("uses a named country as the persona country", async () => {
+    await run("simulate the market in Saudi Arabia");
+    const { loadActiveMirofishSession } = await import("../mirofish.js");
+    const session = loadActiveMirofishSession(workspace);
+    // The canonical display name is the Arabic place name from KNOWN_PLACES.
+    assert.equal(session?.location?.country, "السعودية");
+    const simDir = path.join(workspace, ".manus", "mirofish", "simulations", session!.simulation_id);
+    const profiles = JSON.parse(fs.readFileSync(path.join(simDir, "reddit_profiles.json"), "utf8"));
+    assert.ok(profiles.every((p: { country: string }) => p.country === "السعودية"));
+  });
+
+  it("keeps the location Global when the user names no place", async () => {
+    const out = await run("simulate the market");
+    assert.equal(out.data.location, undefined);
+    const { loadActiveMirofishSession } = await import("../mirofish.js");
+    const session = loadActiveMirofishSession(workspace);
+    assert.equal(session?.location, undefined);
+    const simDir = path.join(workspace, ".manus", "mirofish", "simulations", session!.simulation_id);
+    const profiles = JSON.parse(fs.readFileSync(path.join(simDir, "reddit_profiles.json"), "utf8"));
+    assert.ok(profiles.every((p: { country: string }) => p.country === "Global"));
   });
 });
 
