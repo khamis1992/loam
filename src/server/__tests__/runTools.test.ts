@@ -125,6 +125,10 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll(createBackendScaffoldTools());
     registry.registerAll(createWebScaffoldTools());
     registry.registerAll(createDesignStudioTools());
+    // D9: playbook_create_from_session ships as an always-on tool.
+    const { createPlaybookTools } = await import("../../tools/playbookTools.js");
+    const ollamaStub = { chat: async () => ({ content: "" }) } as unknown as Parameters<typeof createPlaybookTools>[0]["ollama"];
+    registry.registerAll(createPlaybookTools({ ollama: ollamaStub }));
     registry.registerAll(createDesignAssetsTools());
     registry.registerAll(createTodoTools());
     // MF7: watch_url ships as an always-on tool, so it must be registered too.

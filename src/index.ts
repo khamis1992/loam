@@ -34,6 +34,7 @@ import { createGroupTools } from "./tools/groupTools.js";
 import { createBackendScaffoldTools } from "./tools/backendScaffold.js";
 import { createWebScaffoldTools } from "./tools/webScaffold.js";
 import { createDesignStudioTools } from "./tools/designStudio.js";
+import { createPlaybookTools } from "./tools/playbookTools.js";
 import { createOfficeEditTools } from "./tools/officeEditAgent.js";
 import { createVideoEditTools } from "./tools/videoEditAgent.js";
 import { createDeployTools } from "./tools/deploy.js";
@@ -134,6 +135,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createBackendScaffoldTools());
   rt.registry.registerAll(createWebScaffoldTools());
   rt.registry.registerAll(createDesignStudioTools());
+  rt.registry.registerAll(createPlaybookTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createOfficeEditTools());
   rt.registry.registerAll(createVideoEditTools());
   rt.registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview: rt.preview }));
