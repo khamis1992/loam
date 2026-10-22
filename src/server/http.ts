@@ -91,6 +91,7 @@ import { handleMemorySkillsRoutes } from "./routes/memorySkills.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
 import { handleRetryLastRoutes } from "./routes/retryLast.js";
+import { handleSessionControlRoutes } from "./routes/sessionControl.js";
 import { handleShareRoutes } from "./routes/shares.js";
 import { handleProjectContextRoutes } from "./routes/projectContext.js";
 import { handleVoiceRoutes } from "./routes/voice.js";
@@ -141,6 +142,8 @@ export interface RunTaskOptions {
   resume?: boolean;
   retryInterruptedStep?: boolean;
   scheduleId?: string;
+  /** Side-chat ("/btw") run: restricted to read-only inspection tools. */
+  sideChat?: boolean;
 }
 
 export interface ServerDeps {
@@ -1744,6 +1747,8 @@ loadAgents();
         if (await handleAgentSpawnRoutes(req, res, p)) return;
         if (await handleAgentThreadRoutes(req, res, p)) return;
         if (await handleRetryLastRoutes(req, res, p)) return;
+        // Session timeline UX (D16): side-chat questions + pause/take-over.
+        if (await handleSessionControlRoutes(req, res, p)) return;
         if (await handleSchedulesRoutes(req, res, p)) return;
         if (await handleAutoVideoRoutes(req, res, p)) return;
         if (await handleLiveViewRoutes(req, res, p, { screenLive: live })) return;
