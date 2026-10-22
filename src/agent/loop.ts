@@ -72,9 +72,10 @@ function editTargetPath(args: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
-/** Attribute a workspace edit to the model that produced it. */
-function auditEdit(name: string, args: Record<string, unknown>, model: string, ok: boolean, step: number, taskId?: string): void {
-  if (!isEditTool(name)) return;
+/** Attribute a workspace edit to the model that produced it. No-op when the
+ *  operator disabled edit auditing through `coding.logEdits`. */
+function auditEdit(name: string, args: Record<string, unknown>, model: string, ok: boolean, step: number, enabled: boolean, taskId?: string): void {
+  if (!enabled || !isEditTool(name)) return;
   recordEditModel({ taskId, step, model, tool: name, path: editTargetPath(args), ok });
 }
 
@@ -134,6 +135,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   const runAllowedTools = opts.tools.names();
   // Coding turns route through the strongest coder in the configured chain.
   const routeCoding = opts.cfg.coding?.enabled !== false && isCodingTurn(opts.prompt, opts.history);
+  // Edit attribution is on by default and can be disabled per config.
+  const auditEdits = opts.cfg.coding?.logEdits !== false;
 
   for (step = (restored?.steps ?? 0) + 1; step <= maxSteps; step++) {
     // Stop immediately when the user pressed the cancel button (checked between every step).
@@ -264,7 +267,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         const evidence = { name: item.name, args: item.args, ok: toolResult.ok, summary: toolResult.content };
         trace.push(evidence);
         opts.onToolEvidence?.(evidence);
-        auditEdit(item.name, item.args, usedModel, toolResult.ok, step, opts.taskId);
+        auditEdit(item.name, item.args, usedModel, toolResult.ok, step, auditEdits, opts.taskId);
         const notice = stallGuard(item.name, item.args, toolResult.ok);
         if (notice) stallNotices.push(notice);
         opts.emit({
@@ -299,7 +302,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         const evidence = { name, args, ok: toolResult.ok, summary: toolResult.content };
         trace.push(evidence);
         opts.onToolEvidence?.(evidence);
-        auditEdit(name, args, usedModel, toolResult.ok, step, opts.taskId);
+        auditEdit(name, args, usedModel, toolResult.ok, step, auditEdits, opts.taskId);
         const notice = stallGuard(name, args, toolResult.ok);
         if (notice) stallNotices.push(notice);
         messages.push({ role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) });
