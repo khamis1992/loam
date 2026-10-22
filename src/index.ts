@@ -38,6 +38,7 @@ import { createVideoEditTools } from "./tools/videoEditAgent.js";
 import { createDeployTools } from "./tools/deploy.js";
 import { createDesignExploreTools } from "./tools/designExplore.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
+import { createWorkflowTools } from "./tools/workflow.js";
 import { applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
@@ -131,6 +132,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview: rt.preview }));
   rt.registry.registerAll(createDesignExploreTools());
   rt.registry.registerAll(createConnectorTools());
+  rt.registry.registerAll(createWorkflowTools({ ollama: rt.ollama, registry: rt.registry }));
   rt.registry.registerAll(createPlanTools());
   const { ollama, registry, memory, mcp } = rt;
 
