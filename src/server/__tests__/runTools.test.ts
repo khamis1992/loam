@@ -40,6 +40,7 @@ let createDeepResearchTools: () => Tool[];
 let createBoardTools: () => Tool[];
 let createGroupTools: () => Tool[];
 let createDesignStudioTools: () => Tool[];
+let createDesignAssetsTools: () => Tool[];
 let createLoamServiceTools: () => Tool[];
 let createTodoTools: () => Tool[];
 
@@ -88,6 +89,8 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     const agentSpawnToolsMod = await import("../../tools/agentSpawnTools.js");
     const deepResearchToolsMod = await import("../../tools/deepResearch.js");
     const designStudioToolsMod = await import("../../tools/designStudio.js");
+    const designAssetsToolsMod = await import("../../tools/designAssets.js");
+    createDesignAssetsTools = designAssetsToolsMod.createDesignAssetsTools;
     const loamServicesMod = await import("../../tools/loamServices.js");
     createLoamServiceTools = loamServicesMod.createLoamServiceTools;
     const todoToolsMod = await import("../../tools/todoTools.js");
@@ -122,6 +125,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll(createBackendScaffoldTools());
     registry.registerAll(createWebScaffoldTools());
     registry.registerAll(createDesignStudioTools());
+    registry.registerAll(createDesignAssetsTools());
     registry.registerAll(createTodoTools());
     // MF7: watch_url ships as an always-on tool, so it must be registered too.
     registry.registerAll(createLoamServiceTools().filter((tool) => tool.name === "watch_url"));
