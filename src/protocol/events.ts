@@ -8,6 +8,7 @@ import type {
   ToolDetail,
   PlanUpdateEvent,
   NewPlanStepEvent,
+  TodoUpdateEvent,
   LiveStatusEvent,
   ModeEvent,
   UserStopEvent,
@@ -278,6 +279,17 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
       break;
     }
 
+    case "todo": {
+      const todoUpdate: TodoUpdateEvent = {
+        id: baseId(),
+        type: "todoUpdate",
+        timestamp: ts,
+        todos: event.todos.map((todo) => ({ id: todo.id, content: todo.content, status: todo.status })),
+      };
+      out.push(todoUpdate);
+      break;
+    }
+
     case "plan_step": {
       if (event.phase === "start") {
         state.lastPlanStepId = event.id;
@@ -433,6 +445,7 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
     case "replan":
     case "verify":
     case "verification_progress":
+    case "permission_mode_changed":
       break;
   }
 
