@@ -1,0 +1,12 @@
+{
+  "id": "task-007",
+  "title": "Modernise variable declarations",
+  "category": "refactor",
+  "language": "javascript",
+  "prompt": "`src/format.js` still uses `var` and a loose null check. Rewrite it with `const`/`let` and an explicit nullish check so no `var` remains, while keeping every observable behaviour identical (both `null` and `undefined` must still render as anonymous). Do not rename the exports.",
+  "testCommand": "node .eval/check.mjs",
+  "timeoutSec": 60,
+  "maxSteps": 12,
+  "forbidPatterns": [{ "path": "src/format.js", "pattern": "\\bvar\\b" }],
+  "tags": ["modernisation", "strictness"]
+}

@@ -1,0 +1,153 @@
+{
+  "recordedAt": "2026-10-22T18:27:58.876Z",
+  "mode": "self-check",
+  "model": "glm-5.3-flash:cloud",
+  "passAt1": 1,
+  "total": 20,
+  "passed": 20,
+  "failed": 0,
+  "errors": 0,
+  "durationMs": 6989,
+  "tasks": [
+    {
+      "id": "task-001",
+      "category": "bug-fix",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 106
+    },
+    {
+      "id": "task-002",
+      "category": "bug-fix",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 116
+    },
+    {
+      "id": "task-003",
+      "category": "refactor",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 96
+    },
+    {
+      "id": "task-004",
+      "category": "refactor",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 110
+    },
+    {
+      "id": "task-005",
+      "category": "add-test",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 265
+    },
+    {
+      "id": "task-006",
+      "category": "bug-fix",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 83
+    },
+    {
+      "id": "task-007",
+      "category": "refactor",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 75
+    },
+    {
+      "id": "task-008",
+      "category": "add-test",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 194
+    },
+    {
+      "id": "task-009",
+      "category": "bug-fix",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 112
+    },
+    {
+      "id": "task-010",
+      "category": "refactor",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 119
+    },
+    {
+      "id": "task-011",
+      "category": "bug-fix",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 316
+    },
+    {
+      "id": "task-012",
+      "category": "refactor",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 176
+    },
+    {
+      "id": "task-013",
+      "category": "add-test",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 697
+    },
+    {
+      "id": "task-014",
+      "category": "bug-fix",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 400
+    },
+    {
+      "id": "task-015",
+      "category": "refactor",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 343
+    },
+    {
+      "id": "task-016",
+      "category": "add-test",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 1856
+    },
+    {
+      "id": "task-017",
+      "category": "bug-fix",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 222
+    },
+    {
+      "id": "task-018",
+      "category": "refactor",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 232
+    },
+    {
+      "id": "task-019",
+      "category": "add-test",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 1269
+    },
+    {
+      "id": "task-020",
+      "category": "bug-fix",
+      "status": "pass",
+      "steps": null,
+      "durationMs": 196
+    }
+  ]
+}

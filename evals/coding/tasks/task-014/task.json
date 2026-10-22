@@ -1,0 +1,11 @@
+{
+  "id": "task-014",
+  "title": "Fix incorrect loop in JavaScript",
+  "category": "bug-fix",
+  "language": "javascript",
+  "prompt": "`sum` in `src/sum.js` drops the last value of every array because its loop bound is wrong. Fix the bound so `sum` adds every element, including single-element and empty arrays. Change only the loop condition.",
+  "testCommand": "node .eval/check.mjs",
+  "timeoutSec": 60,
+  "maxSteps": 12,
+  "tags": ["loop", "boundary"]
+}
