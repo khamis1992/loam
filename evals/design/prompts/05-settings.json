@@ -1,0 +1,12 @@
+{
+  "id": "settings",
+  "prompt": "Build a settings page with grouped sections: profile, notifications, appearance and danger zone. Each control needs a visible label, a helper line and a sensible default state. Keep the form accessible with a clear focus ring and a sticky save action.",
+  "locale": "en",
+  "direction": "ltr",
+  "expectations": {
+    "must": ["profile", "notifications", "danger zone"],
+    "mustNot": ["lorem ipsum", "unlabelled inputs"],
+    "keywords": ["settings", "save"],
+    "minLint": 80
+  }
+}
