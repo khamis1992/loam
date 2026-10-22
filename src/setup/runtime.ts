@@ -112,7 +112,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createMobileTools());
   if (cfg.screen.enabled) registry.registerAll(createScreenTools(screenLive, cfg));
   const preview = new PreviewService();
-  registry.registerAll(createPreviewTools(preview));
+  registry.registerAll(createPreviewTools(preview, cfg));
   registry.registerAll(createRorkTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createFrontierBridgeTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createSubagentTools(ollama, registry));
