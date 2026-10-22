@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Loader2, MonitorPlay, X } from 'lucide-react';
+import { Clapperboard, Loader2, MonitorPlay, X } from 'lucide-react';
 import type { ChatEvent, ToolUsedEvent } from '@shared/socket';
 import { t } from '@/i18n/t';
 import { useAppSelector } from '@/store';
@@ -10,11 +10,18 @@ import { getApiBase, getApiHeaders, getSessionToken } from '@/services/rpc';
 import {
   extensionOf,
   getEditorForFile,
+  getEditorForKind,
   getEditorForPath,
   subscribeWorkspaceEditors,
   workspaceEditorsVersion,
 } from './registry';
-import type { WorkspaceEditorDef, WorkspaceEditorProps, WorkspaceFile } from './types';
+import {
+  LOAM_VIDEO_STUDIO_PATH,
+  type WorkspaceEditorDef,
+  type WorkspaceEditorProps,
+  type WorkspaceFile,
+  type WorkspaceKind,
+} from './types';
 
 function getSocketBase(): string {
   if (typeof window === 'undefined') return '/';
@@ -144,6 +151,8 @@ export interface WorkspacePanelProps {
   live: boolean; // task running
   events: ChatEvent[];
   requestedPath?: string | null;
+  /** Editor kind the auto-open decision asked for (e.g. loam-video). */
+  requestedKind?: WorkspaceKind | null;
   onChatEdit: (instruction: string, file: WorkspaceFile) => void;
 }
 
@@ -180,7 +189,7 @@ function toWorkspaceFile(taskId: string, entry: FileEntry, def: WorkspaceEditorD
   };
 }
 
-export function WorkspacePanel({ taskId, live, events, requestedPath, onChatEdit }: WorkspacePanelProps) {
+export function WorkspacePanel({ taskId, live, events, requestedPath, requestedKind, onChatEdit }: WorkspacePanelProps) {
   const apiBase = useMemo(() => getApiBase(), []);
   const version = useSyncExternalStore(subscribeWorkspaceEditors, workspaceEditorsVersion, workspaceEditorsVersion);
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
@@ -225,23 +234,54 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, onChatEdit
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiBase, taskId, lastTool?.timestamp, version]);
 
+  // Auto-open override: applies once per distinct target so a manual file
+  // selection is never clobbered by a stale requestedPath.
+  const autoOpenKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (requestedPath && files.some((f) => f.path === requestedPath)) {
-      setSelectedPath(requestedPath);
+    if (!requestedKind && !requestedPath) return;
+    const key = `${requestedKind ?? ''}:${requestedPath ?? ''}`;
+    if (autoOpenKeyRef.current === key) return;
+    autoOpenKeyRef.current = key;
+    if (requestedKind === 'loam-video') {
+      const match = requestedPath ? files.find((f) => f.path === requestedPath) : undefined;
+      if (match) setSelectedPath(match.path);
+      else if (requestedPath) setSelectedPath(requestedPath);
+      else {
+        const firstVideo = files.find((f) => getEditorForPath(f.path)?.kind === 'loam-video');
+        setSelectedPath(firstVideo ? firstVideo.path : LOAM_VIDEO_STUDIO_PATH);
+      }
       return;
     }
-    if (requestedPath && files.length > 0 && !files.some((f) => f.path === requestedPath)) {
-      setSelectedPath(files[0]?.path ?? null);
+    if (requestedPath && files.some((f) => f.path === requestedPath)) setSelectedPath(requestedPath);
+    else if (requestedPath && files.length > 0) setSelectedPath(files[0].path);
+  }, [files, requestedPath, requestedKind]);
+
+  // Default selection + keep the selection valid as the file list changes.
+  useEffect(() => {
+    if (!selectedPath && files.length > 0) {
+      setSelectedPath(files[0].path);
       return;
     }
-    if (!selectedPath && files.length > 0) setSelectedPath(files[0].path);
-    if (selectedPath && files.length > 0 && !files.some((f) => f.path === selectedPath)) {
+    if (
+      selectedPath &&
+      files.length > 0 &&
+      !files.some((f) => f.path === selectedPath) &&
+      selectedPath !== LOAM_VIDEO_STUDIO_PATH &&
+      selectedPath !== requestedPath
+    ) {
       setSelectedPath(files[0].path);
     }
-  }, [files, requestedPath, selectedPath]);
+  }, [files, selectedPath, requestedPath]);
 
-  const selected = useMemo(() => files.find((f) => f.path === selectedPath) ?? null, [files, selectedPath]);
-  const def = selected ? getEditorForPath(selected.path) : null;
+  const selected = useMemo(() => {
+    if (selectedPath === LOAM_VIDEO_STUDIO_PATH) {
+      return { taskId, path: LOAM_VIDEO_STUDIO_PATH, name: t('Loam Video'), kind: 'loam-video' as const };
+    }
+    return files.find((f) => f.path === selectedPath) ?? null;
+  }, [files, selectedPath, taskId]);
+
+  const def = useMemo(() => (selected ? getEditorForFile(selected) : null), [selected]);
+  const loamVideoDef = getEditorForKind('loam-video');
 
   const onSave = useMemo(() => {
     if (!selected) return async () => undefined;
@@ -287,8 +327,23 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, onChatEdit
         {loading && <Loader2 className="size-3.5 animate-spin text-text-tertiary" />}
       </div>
 
-      {files.length > 1 && (
+      {(files.length > 1 || loamVideoDef) && (
         <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border-main px-2 py-1.5">
+          {loamVideoDef && (
+            <button
+              type="button"
+              onClick={() => setSelectedPath(LOAM_VIDEO_STUDIO_PATH)}
+              title={t('Loam Video')}
+              className={
+                selectedPath === LOAM_VIDEO_STUDIO_PATH
+                  ? 'flex items-center gap-1 whitespace-nowrap rounded-control bg-fill-tsp px-2 py-1 text-xs font-medium text-text-primary'
+                  : 'flex items-center gap-1 whitespace-nowrap rounded-control px-2 py-1 text-xs text-text-tertiary hover:bg-fill-hover hover:text-text-secondary'
+              }
+            >
+              <Clapperboard className="size-3" />
+              {t('Loam Video')}
+            </button>
+          )}
           {files.map((f) => (
             <button
               key={f.path}
