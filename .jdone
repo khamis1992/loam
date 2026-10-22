@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 V13 (quick-edit route) is complete, and the merge gate now passes.
 
 ## Merge gate (the failure that was fixed)
@@ -49,40 +50,48 @@ Working tree is clean; no existing test was weakened.
 
 ## Incoming manus-parity report (D16 gate fix)
 
-Task: resolve the merge conflict with manus-parity (keeping both sides) and get the
-gates green (typecheck, builds, tests) on khamis1992/devin-d16.
+### Incoming manus-parity report (V10 gate fix)
+
+V10 complete.
+
+Task: resolve the merge conflict with the LATEST manus-parity (keeping both sides)
+and get the gates green on khamis1992/v0-v10.
 
 What was done:
-- Merged manus-parity into khamis1992/devin-d16. Conflicts resolved by keeping both
-  sides (never dropping either):
-  - src/index.ts: memoryIndexSummary (parity) + agentSuffix/askModeSuffix/sideChatSuffix (D16).
-  - src/server/http.ts: handleSessionControlRoutes (D16) + handleInsightsRoutes (D18 parity).
-  Branch is now 0 commits behind manus-parity.
-- Refreshed the stale coding-prompt snapshot: src/agent/__tests__/__snapshots__/coding-prompt.snap.json
-  masterPromptSha256 was stale (prompt text changed upstream at c958f4e/39e51bf after the
-  snapshot was written at ded58f0). Set it to the real sha256 of buildMasterPrompt:
-  c63a440fb6b1289b3b9d2314b61305796bdb73e66e25977f0f06723e0f0f142a1a
-  (the test asserts the snapshot matches the live prompt hash; refreshing the value is not
-  test-weakening).
-- scripts/repair-mojibake.cjs (added upstream by 092d1b3): the two comment lines that quote
-  the cp1252 sequences the script repairs tripped check:encoding. Added the checker's own
-  documented opt-out marker "encoding-check: allow" to those two comment lines only. No
-  logic changed; the repair script still runs.
+- Merged the latest manus-parity tip (58fc2f8, which had advanced past the 3f76f82 the
+  first merge used) into khamis1992/v0-v10. The re-merge was conflict-free and kept both
+  sides: V10's preview_screenshot work + parity's V12 design assets/brief, M2/M5 mirofish,
+  D16 side-chat/session-control, and the rest.
+- Branch is now 0 commits behind manus-parity.
+- V10 feature (preview_screenshot at 3 viewports with console capture) verified intact:
+  - src/preview/shot.ts: PreviewScreenshotService renders a fixture site at mobile/tablet/
+    desktop, pins network to the captured origin, and records console/pageerror/http errors.
+  - src/tools/preview.ts: preview_screenshot tool registered in createPreviewTools.
+  - src/modes/catalog.ts + src/server/companionGateway.ts: preview_screenshot added to the
+    PREVIEW mode set and the preview service catalog (so it is covered, not uncovered).
+  - src/index.ts, src/policy/riskTier.ts, packages/web/src/components/chat/toolLabels.ts
+    wired for the new tool.
 
-Gates (all pass):
-  npx tsc --noEmit
-  npm run build:server
-  (cd packages/web && npx next build)
-  npm run verify
-    - encoding check: OK (no BOM, no mojibake, all JSON valid)
-    - eval harness smoke: PASS
-    - orchestrator smoke: PASS (114/114)
-    - recovery checks: PASS
-    - modes check: PASS
-  node --import tsx --test src/{agent,server,tools,design,scripts}/__tests__/*.test.ts
-    - tests 1166, pass 1166, fail 0
-  (cd packages/web && npx vitest run)
-    - 61 files, 361 tests passed
-  bench tests: 23 pass
+Gates (all pass, from the worktree root):
+  npx tsc --noEmit                              -> exit 0
+  npm run build:server                          -> exit 0 (dist/server.cjs 19.0mb)
+  (cd packages/web && npx next build)           -> exit 0
+  npm run verify                                -> exit 0
+    - check:encoding OK (no BOM, no mojibake, all JSON valid)
+    - check:eval PASS, check:orchestrator PASS (114/114), check:recovery PASS,
+      check:modes PASS
+  node --import tsx --test src/{agent,server,tools,design,scripts,preview}/__tests__/*.test.ts
+    - tests 1230, pass 1230, fail 0
+  (cd packages/web && npx vitest run)           -> 61 files, 361 tests passed
+  bench tests (fakeModel/rssSampler/memBench)   -> 23 pass
+  check:design-registry                         -> OK (30 blocks, 8 RTL)
+  check:promptwire                              -> PASS (all promptwire tools ok:true)
 
-No test was weakened. Forbidden paths untouched.
+Note: `npx tsx src/scripts/check-companions.ts` fails with "mode tools missing from the
+service catalog" (grep, glob, docs_lookup, think, finish, plan, ... security_assess,
+security_status). This is PRE-EXISTING on manus-parity and unrelated to V10: the parity
+side of src/modes/catalog.ts and src/server/companionGateway.ts is byte-identical to HEAD
+except for the preview_screenshot addition, and preview_screenshot is NOT in the uncovered
+list. It is documented in docs/handoff/o2-report.md as already failing at base 0e9c3bf, and
+check-companions is not part of this task's gate list. No test was weakened and no forbidden
+path was touched.

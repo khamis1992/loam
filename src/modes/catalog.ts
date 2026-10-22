@@ -10,8 +10,8 @@ export interface LoamMode {
 const READ = ["file_read", "file_list", "file_search", "file_stat", "file_extract_text", "file_view_image", "grep", "glob"];
 const WRITE = ["file_write", "file_edit", "find_and_edit", "file_mkdir", "file_move", "file_delete"];
 const BROWSER = ["browser_open", "browser_goto", "browser_snapshot", "browser_click", "browser_type", "browser_press", "browser_screenshot", "browser_table", "browser_act", "browser_pages", "browser_close", "browser_eval"];
-const PREVIEW = ["preview_serve", "preview_status", "preview_stop"];
 
+const PREVIEW = ["preview_serve", "preview_status", "preview_stop", "preview_screenshot"];
 const GIT = ["git_branch", "git_commit", "git_status_diff", "pr_create", "pr_view", "pr_comments", "pr_comment_checklist"];
 /** Control/communication tools shared by every mode (§6.1). `plan_exit` is the
  *  escape hatch from the read-only plan permission mode (C13), so it is exposed

@@ -315,7 +315,7 @@ async function main(): Promise<void> {
     // execution queue serializes browser-lane runs among themselves, so a
     // parallel own-device/office run never kills another run's browser/preview.
     const usesBrowser = capabilities.allow.some((t) => t.startsWith("browser_"));
-    const usesPreview = capabilities.allow.some((t) => t === "preview_serve" || t === "preview_stop" || t === "preview_status");
+    const usesPreview = capabilities.allow.some((t) => t === "preview_serve" || t === "preview_stop" || t === "preview_status" || t === "preview_screenshot");
     try {
       if (usesBrowser) {
         // Companion browser sessions PERSIST between runs (durable logins);
@@ -550,7 +550,7 @@ async function main(): Promise<void> {
     });
     // Browser runs no longer lock: each run browses in its own isolated session.
     const locks: string[] = [];
-    if (laneCaps.allow.some((t) => t === "preview_serve" || t === "preview_stop" || t === "preview_status")) locks.push("preview");
+    if (laneCaps.allow.some((t) => t === "preview_serve" || t === "preview_stop" || t === "preview_status" || t === "preview_screenshot")) locks.push("preview");
     // user_device runs share the single user-desktop resource; parallel runs must not fight over mouse/keyboard.
     // EVERY computer_* tool touches the same desktop, so the lock covers them all.
     if (laneCaps.allow.some((t) => t.startsWith("computer_"))) locks.push("user-desktop");
