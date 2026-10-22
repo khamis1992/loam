@@ -66,7 +66,9 @@
     "gen:master-prompt": "tsx src/scripts/gen-master-prompt.ts",
     "gen:web-app-template": "tsx src/scripts/gen-web-app-template.ts",
     "check:web-scaffold": "tsx src/scripts/check-web-scaffold.ts",
-    "check:promptwire": "tsx src/scripts/check-promptwire.ts"
+    "check:promptwire": "tsx src/scripts/check-promptwire.ts",
+    "bench:mem": "node --import tsx bench/memBench.ts",
+    "test:bench": "node --import tsx --test bench/__tests__/fakeModel.test.ts bench/__tests__/rssSampler.test.ts bench/__tests__/memBench.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
