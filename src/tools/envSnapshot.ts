@@ -464,6 +464,37 @@ export function writeBuildStatus(record: EnvBuildRecord): void {
   fs.renameSync(tmp, file);
 }
 
+/**
+ * The build id recorded for a project FOLDER, if any.
+ *
+ * A build id can come from three callers that do not share a namespace: the
+ * agent tool (the folder basename), the task boot (the db project id) and a
+ * direct call. Matching on the folder instead keeps them all pointed at the same
+ * snapshot, which is what the reuse guarantee depends on.
+ */
+export function findBuildForFolder(projectFolder: string): EnvBuildRecord | undefined {
+  const wanted = normalizeFolderKey(projectFolder);
+  return listBuildStatuses().find((record) => record.projectFolder && normalizeFolderKey(record.projectFolder) === wanted);
+}
+
+function normalizeFolderKey(folder: string): string {
+  const resolved = path.resolve(folder);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+/**
+ * Resolve the build id to use for a project folder: the id already recorded for
+ * that folder when one exists, else `preferred`, else the folder basename. Every
+ * caller (tool, boot hook, route) goes through this so they never disagree.
+ */
+export function resolveEnvProjectId(projectFolder: string, preferred?: string): string {
+  const recorded = findBuildForFolder(projectFolder);
+  if (recorded) return recorded.projectId;
+  const trimmed = preferred?.trim();
+  if (trimmed) return trimmed;
+  return path.basename(path.resolve(projectFolder)) || "project";
+}
+
 // ----------------------------------------------------------------------------
 // Copy helpers
 // ----------------------------------------------------------------------------
@@ -732,7 +763,6 @@ function repoRelDest(repoPath: string): string {
 // Snapshot → task worktree
 // ----------------------------------------------------------------------------
 
-/** Paths (relative to the project root) that never join a snapshot clone. */
 /**
  * Paths (relative to the project root) that never join a snapshot clone.
  *
@@ -908,7 +938,9 @@ export function createEnvSnapshotTools(): Tool[] {
         }
         const buildArg = str(args, "build");
         const writeArg = str(args, "writeBlueprint");
-        const projectId = path.basename(path.resolve(dir));
+        // Same id every other caller uses for this folder, so a build recorded
+        // under a db project id is still visible here.
+        const projectId = resolveEnvProjectId(dir);
         try {
           const blueprint = readBlueprint(dir);
 
@@ -1003,11 +1035,14 @@ export function bootTaskFromSnapshot(input: TaskEnvBootInput): { ok: boolean; pr
     }
     const blueprint = readBlueprint(input.projectFolder);
     const hash = blueprintHash(input.projectFolder, blueprint);
-    const status = readBuildStatus(input.projectId);
+    // Prefer the id the build was actually recorded under: the caller may pass a
+    // db project id while the build ran under the folder basename.
+    const projectId = resolveEnvProjectId(input.projectFolder, input.projectId);
+    const status = readBuildStatus(projectId);
     if (!status || status.hash !== hash || status.status !== "built") {
       return { ok: false, reason: `no snapshot for hash ${hash}` };
     }
-    const cloned = cloneEnvSnapshot(input.projectId, hash, root, blueprint, destSubdir);
+    const cloned = cloneEnvSnapshot(projectId, hash, root, blueprint, destSubdir);
     if (!cloned.ok) return { ok: false, reason: cloned.error };
     return { ok: true, projectDir: cloned.projectDir, hash, reason: `reused snapshot ${hash}` };
   } catch (err) {

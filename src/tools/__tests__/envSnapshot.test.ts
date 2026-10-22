@@ -354,6 +354,27 @@ describe("env blueprint + snapshot", () => {
     assert.match(bad.content, /no built snapshot/);
   });
 
+  it("env_build_status finds a build recorded under a different project id for the same folder", async () => {
+    const dir = path.join(tmpDir, "proj14");
+    writeProject(dir);
+    const blueprint = env.readBlueprint(dir);
+    // A caller that is not the tool (the task boot uses the db project id).
+    assert.equal((await build("db-project-id", dir, blueprint, recorder())).ok, true);
+
+    // The tool resolves the same folder to the id the build was recorded under,
+    // so it reports that build instead of claiming there is none.
+    const res = await statusTool().run({}, ctx(dir));
+    assert.equal(res.ok, true);
+    assert.match(res.content, /db-project-id/, "the tool must report the recorded build id");
+    assert.match(res.content, /status: built/);
+
+    // And the boot hook agrees with the tool, so reuse actually happens.
+    const workspace = path.join(tmpDir, "ws14");
+    fs.mkdirSync(workspace, { recursive: true });
+    const boot = env.bootTaskFromSnapshot({ taskWorkspace: workspace, projectId: "some-other-id", projectFolder: dir });
+    assert.equal(boot.ok, true, `boot must find the build recorded under another id: ${boot.reason}`);
+  });
+
   it("normalizeBlueprint rejects absolute repo paths and traversal", () => {
     assert.throws(() => env.normalizeBlueprint({ repos: [{ path: "C:\\abs" }] }), /relative/);
     assert.throws(() => env.normalizeBlueprint({ cache: ["../outside"] }), /relative/);
