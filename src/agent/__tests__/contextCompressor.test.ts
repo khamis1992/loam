@@ -66,6 +66,7 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
       contextWindow: { "qwen2.5": 32768 },
     },
     sessionLog: { enabled: false },
+    subagent: { maxDepth: 2, maxConcurrentChildren: 4 },
     ...overrides,
   };
 }
