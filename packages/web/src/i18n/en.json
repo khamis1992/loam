@@ -793,14 +793,12 @@
   "Companion description": "Companion description",
   "Mode": "Mode",
   "Memory enabled (Loam execution)": "Memory enabled (Loam execution)",
-  "Memory disabled (Chat only)": "Memory disabled (Chat only)"
-,
+  "Memory disabled (Chat only)": "Memory disabled (Chat only)",
   "Making progress": "Making progress",
   "Agent info": "Agent info",
   "Message": "Message",
   "Open in task view": "Open in task view",
   "Toggle info pane": "Toggle info pane",
-  "Memory disabled (Chat only)": "Memory disabled (Chat only)",
   "Overview": "Overview",
   "Members": "Members",
   "Advanced": "Advanced",
@@ -817,8 +815,10 @@
   "Work mode": "Work mode",
   "Allowed services": "Allowed services",
   "All services": "All services",
-  "Memory disabled (Chat only)": "Memory disabled (Chat only)",
   "Pinned": "Pinned",
   "{count} unread": "{count} unread",
-  "Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder.": "Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder."
+  "Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder.": "Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder.",
+  "Waiting for you": "Waiting for you",
+  "Waiting for you: {message}": "Waiting for you: {message}",
+  "Role": "Role"
 }

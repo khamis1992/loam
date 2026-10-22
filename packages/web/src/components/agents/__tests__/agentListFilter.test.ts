@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   foldName,
+  lastActivityKey,
   matchesSearch,
   searchAgents,
+  sortByLastActivity,
   splitHidden,
   sumUnread,
   type SidebarAgent,
@@ -135,5 +137,51 @@ describe('sumUnread', () => {
   it('stubs to 0 when no unread source is wired (or ids are empty)', () => {
     expect(sumUnread(['a'], undefined)).toBe(0);
     expect(sumUnread([], unread)).toBe(0);
+  });
+});
+
+describe('lastActivityKey / sortByLastActivity', () => {
+  it('uses the thread activity when present, else updatedAt then createdAt', () => {
+    expect(lastActivityKey(make('a', 'A', { lastActivityAt: 123 }))).toBe(123);
+    expect(lastActivityKey(make('a', 'A', { updatedAt: '2026-03-01T00:00:00.000Z' })))
+      .toBe(Date.parse('2026-03-01T00:00:00.000Z'));
+    expect(lastActivityKey(make('a', 'A', { createdAt: '2026-01-01T00:00:00.000Z' })))
+      .toBe(Date.parse('2026-01-01T00:00:00.000Z'));
+    // updatedAt wins over createdAt for the same agent.
+    expect(lastActivityKey(make('a', 'A', {
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-05-01T00:00:00.000Z',
+    }))).toBe(Date.parse('2026-05-01T00:00:00.000Z'));
+    expect(lastActivityKey(make('a', 'A'))).toBe(0);
+  });
+
+  it('orders rows by last activity, most recent first', () => {
+    const agents = [
+      make('a', 'A', { lastActivityAt: 100 }),
+      make('b', 'B', { lastActivityAt: 300 }),
+      make('c', 'C', { lastActivityAt: 200 }),
+    ];
+    expect(sortByLastActivity(agents).map((x) => x.id)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('places agents without any timestamp last and keeps equal keys stable', () => {
+    const agents = [
+      make('none', 'None'),
+      make('hot', 'Hot', { lastActivityAt: 1000 }),
+      make('first', 'First', { lastActivityAt: 5 }),
+      make('second', 'Second', { lastActivityAt: 5 }),
+    ];
+    expect(sortByLastActivity(agents).map((x) => x.id)).toEqual(['hot', 'first', 'second', 'none']);
+  });
+
+  it('returns a new array and never mutates the input order', () => {
+    const agents = [
+      make('a', 'A', { lastActivityAt: 1 }),
+      make('b', 'B', { lastActivityAt: 2 }),
+    ];
+    const sorted = sortByLastActivity(agents);
+    expect(sorted).not.toBe(agents);
+    expect(agents.map((x) => x.id)).toEqual(['a', 'b']);
+    expect(sorted.map((x) => x.id)).toEqual(['b', 'a']);
   });
 });

@@ -4,6 +4,17 @@ import type { AgentCardAgent } from './AgentCard';
 export interface SidebarAgent extends AgentCardAgent {
   /** Soft-hide timestamp: set puts the agent in the collapsible "Hidden" section. */
   hiddenAt?: string;
+  /** Additive chat metadata served with the agents list (GET /api/agents). */
+  lastMessage?: string;
+  /** True when the agent replied last, so the user's turn is next. */
+  waitingForYou?: boolean;
+  /** Unread message count for the row's far-right dot. */
+  unreadCount?: number;
+  /** Epoch ms of the latest thread message (primary "last activity" sort key). */
+  lastActivityAt?: number;
+  /** ISO timestamps used as the sort fallback for agents without a thread. */
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 /**
@@ -60,4 +71,25 @@ export function sumUnread(
 ): number {
   if (!unreadById) return 0;
   return ids.reduce((sum, id) => sum + (unreadById[id]?.count ?? 0), 0);
+}
+
+/**
+ * Recency key for the "last activity desc" row sort: the latest thread message
+ * when known, else the agent's updatedAt/createdAt, else 0.
+ */
+export function lastActivityKey(agent: SidebarAgent): number {
+  if (typeof agent.lastActivityAt === 'number' && Number.isFinite(agent.lastActivityAt)) {
+    return agent.lastActivityAt;
+  }
+  for (const iso of [agent.updatedAt, agent.createdAt]) {
+    if (!iso) continue;
+    const at = Date.parse(iso);
+    if (Number.isFinite(at)) return at;
+  }
+  return 0;
+}
+
+/** Stable copy of the list ordered by last activity, most recent first. */
+export function sortByLastActivity<T extends SidebarAgent>(agents: T[]): T[] {
+  return [...agents].sort((a, b) => lastActivityKey(b) - lastActivityKey(a));
 }

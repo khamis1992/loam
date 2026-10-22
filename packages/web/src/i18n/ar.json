@@ -793,14 +793,12 @@
   "Companion description": "وصف المساعد",
   "Mode": "الوضع",
   "Memory enabled (Loam execution)": "الذاكرة مفعّلة (تنفيذ داخل Loam)",
-  "Memory disabled (Chat only)": "الذاكرة معطّلة (دردشة فقط)"
-,
+  "Memory disabled (Chat only)": "الذاكرة معطّلة (دردشة فقط)",
   "Making progress": "جارٍ التقدم",
   "Agent info": "معلومات الوكيل",
   "Message": "رسالة",
   "Open in task view": "فتح في عرض المهمة",
   "Toggle info pane": "تبديل لوحة المعلومات",
-  "Memory disabled (Chat only)": "الذاكرة معطّلة (دردشة فقط)",
   "Overview": "نظرة عامة",
   "Members": "الأعضاء",
   "Advanced": "متقدم",
@@ -817,8 +815,10 @@
   "Work mode": "وضع العمل",
   "Allowed services": "الخدمات المسموح بها",
   "All services": "كل الخدمات",
-  "Memory disabled (Chat only)": "الذاكرة معطّلة (دردشة فقط)",
   "Pinned": "المثبّتة",
   "{count} unread": "{count} غير مقروءة",
-  "Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder.": "وكيل مثبّت {name}. اضغط Alt+السهم لأعلى أو Alt+السهم لأسفل لإعادة الترتيب، أو اسحب لإعادة الترتيب."
+  "Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder.": "وكيل مثبّت {name}. اضغط Alt+السهم لأعلى أو Alt+السهم لأسفل لإعادة الترتيب، أو اسحب لإعادة الترتيب.",
+  "Waiting for you": "بانتظارك",
+  "Waiting for you: {message}": "بانتظارك: {message}",
+  "Role": "الدور"
 }

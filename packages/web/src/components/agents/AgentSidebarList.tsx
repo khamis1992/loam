@@ -23,12 +23,11 @@ import { grokBotNoteText } from '@/components/chat/GrokBotNote';
 import type { ChatEvent } from '@shared/socket';
 import type { AgentCardAgent } from './AgentCard';
 import { AgentContextMenu } from './AgentContextMenu';
-import { isGrokBotAgent } from './GrokBotBadge';
-import { AgentAvatar } from './AgentAvatar';
+import { AgentRow, RowAccent } from './AgentRow';
 import { PinnedAgentGrid } from './PinnedAgentGrid';
 import { getBuiltInAgents } from './BuiltInAgentCard';
 import type { GroupChat } from './groupTypes';
-import { foldName, searchAgents, splitHidden, sumUnread } from './agentListFilter';
+import { foldName, searchAgents, sortByLastActivity, splitHidden, sumUnread } from './agentListFilter';
 
 interface AgentWithMeta extends AgentCardAgent {
   /** Soft-hide timestamp: hidden agents live in the bottom "Hidden" section. */
@@ -38,6 +37,13 @@ interface AgentWithMeta extends AgentCardAgent {
   instructions?: string;
   effort?: string;
   allowedServices?: string[];
+  /** Additive chat metadata served with the agents list (GET /api/agents). */
+  lastMessage?: string;
+  waitingForYou?: boolean;
+  unreadCount?: number;
+  lastActivityAt?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface UnreadInfo {
@@ -109,16 +115,16 @@ function previewLine(text: string): string {
   return flat.length > SUBTITLE_MAX_CHARS ? `${flat.slice(0, SUBTITLE_MAX_CHARS)}…` : flat;
 }
 
-/** Latest user/assistant chat message of a thread as a preview line ('' when none). */
-function lastThreadPreview(events: ChatEvent[] | undefined): string {
-  if (!events) return '';
+/** Latest user/assistant chat message of a thread as a preview (null when none). */
+function lastThreadEvent(events: ChatEvent[] | undefined): { text: string; waiting: boolean } | null {
+  if (!events) return null;
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i];
-    if (e.type !== 'chat') continue;
+    if (!e || e.type !== 'chat') continue;
     const line = previewLine(e.content ?? '');
-    if (line) return line;
+    if (line) return { text: line, waiting: e.sender === 'assistant' };
   }
-  return '';
+  return null;
 }
 
 export function AgentSidebarList({
@@ -269,17 +275,27 @@ export function AgentSidebarList({
       .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity)),
     [topLevelAgents],
   );
+  // Grok Bot parity: non-pinned rows are a flat conversation list, most recent activity first.
   const myAgents = useMemo(
-    () => topLevelAgents.filter((a) => typeof a.pinnedAt !== 'number'),
+    () => sortByLastActivity(topLevelAgents.filter((a) => typeof a.pinnedAt !== 'number')),
     [topLevelAgents],
   );
+  const hiddenAgents = useMemo(() => sortByLastActivity(searchHiddenAgents), [searchHiddenAgents]);
 
-  // Gray preview line: latest thread message when the store has one, else description.
-  const threadPreview = (agent: AgentCardAgent): string => {
+  // Row meta: prefer the live client store for the open thread, else the server
+  // list's additive chat fields, else the agent description.
+  const rowMeta = (agent: AgentCardAgent) => {
     const uid = threadUidByAgent[agent.id];
-    const fromThread = uid ? lastThreadPreview(eventsBySession[uid]) : '';
-    return fromThread || (agent.description ? previewLine(agent.description) : '');
+    const live = uid ? lastThreadEvent(eventsBySession[uid]) : null;
+    const meta = agent as AgentWithMeta;
+    const subtitle = live?.text || meta.lastMessage || (agent.description ? previewLine(agent.description) : '');
+    const waitingForYou = live ? live.waiting : Boolean(meta.waitingForYou);
+    const unreadCount = unreadById?.[agent.id]?.count ?? meta.unreadCount ?? 0;
+    return { subtitle, waitingForYou, unreadCount };
   };
+
+  // One-line preview used by the pinned grid tiles.
+  const threadPreview = (agent: AgentCardAgent): string => rowMeta(agent).subtitle;
 
   const childRow = (child: ChildAgent): ReactNode => {
     const childAgent: AgentWithMeta = {
@@ -289,13 +305,15 @@ export function AgentSidebarList({
       description: child.description,
       mode: child.mode,
     };
+    const meta = rowMeta(childAgent);
     return (
       <AgentRow
         key={child.childId}
         agent={childAgent}
         selected={selectedId === child.childId}
-        unread={unreadById?.[child.childId]?.count ?? 0}
-        subtitle={threadPreview(childAgent)}
+        subtitle={meta.subtitle}
+        waitingForYou={meta.waitingForYou}
+        unreadCount={meta.unreadCount}
         indent
         onClick={() => onSelect(childAgent)}
         onContextMenu={(e) => handleContextMenu(e, childAgent)}
@@ -303,19 +321,23 @@ export function AgentSidebarList({
     );
   };
 
-  const renderAgentTree = (agent: AgentWithMeta) => (
-    <div key={agent.id} className="flex flex-col gap-0.5">
-      <AgentRow
-        agent={agent}
-        selected={selectedId === agent.id}
-        unread={unreadById?.[agent.id]?.count ?? 0}
-        subtitle={threadPreview(agent)}
-        onClick={() => onSelect(agent)}
-        onContextMenu={(e) => handleContextMenu(e, agent)}
-      />
-      {(childrenByParent[agent.id] ?? []).map(childRow)}
-    </div>
-  );
+  const renderAgentTree = (agent: AgentWithMeta) => {
+    const meta = rowMeta(agent);
+    return (
+      <div key={agent.id} className="flex flex-col gap-0.5">
+        <AgentRow
+          agent={agent}
+          selected={selectedId === agent.id}
+          subtitle={meta.subtitle}
+          waitingForYou={meta.waitingForYou}
+          unreadCount={meta.unreadCount}
+          onClick={() => onSelect(agent)}
+          onContextMenu={(e) => handleContextMenu(e, agent)}
+        />
+        {(childrenByParent[agent.id] ?? []).map(childRow)}
+      </div>
+    );
+  };
 
   // Section-header unread sums; sumUnread stubs to 0 when no unread source is wired.
   const pinnedAgentIds = useMemo(
@@ -535,7 +557,7 @@ export function AgentSidebarList({
                 key={agent.id}
                 agent={agent}
                 selected={false}
-                subtitle={threadPreview(agent)}
+                subtitle={agent.description ? previewLine(agent.description) : undefined}
                 onClick={() => onStartBuiltIn?.(agent)}
                 onContextMenu={() => {}}
               />
@@ -563,19 +585,23 @@ export function AgentSidebarList({
             onToggle={() => toggleSection(SECTIONS.hidden)}
             unread={hiddenUnread}
           >
-            {searchHiddenAgents.map((agent) => (
-              <AgentRow
-                key={agent.id}
-                agent={agent}
-                selected={selectedId === agent.id}
-                unread={unreadById?.[agent.id]?.count ?? 0}
-                subtitle={threadPreview(agent)}
-                indent
-                dim
-                onClick={() => onSelect(agent)}
-                onContextMenu={(e) => handleContextMenu(e, agent)}
-              />
-            ))}
+            {hiddenAgents.map((agent) => {
+              const meta = rowMeta(agent);
+              return (
+                <AgentRow
+                  key={agent.id}
+                  agent={agent}
+                  selected={selectedId === agent.id}
+                  subtitle={meta.subtitle}
+                  waitingForYou={meta.waitingForYou}
+                  unreadCount={meta.unreadCount}
+                  indent
+                  dim
+                  onClick={() => onSelect(agent)}
+                  onContextMenu={(e) => handleContextMenu(e, agent)}
+                />
+              );
+            })}
           </AgentSection>
         )}
 
@@ -684,85 +710,6 @@ function AgentSection({
       />
       {expanded && <div className="flex flex-col gap-0.5">{children}</div>}
     </section>
-  );
-}
-
-function AgentRow({
-  agent,
-  selected,
-  unread,
-  indent,
-  dim,
-  subtitle,
-  onClick,
-  onContextMenu,
-}: {
-  agent: AgentCardAgent;
-  selected: boolean;
-  unread?: number;
-  /** Gray preview line under the name: latest thread message or description. */
-  subtitle?: string;
-  indent?: boolean;
-  dim?: boolean;
-  onClick: () => void;
-  onContextMenu: (e: React.MouseEvent) => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      onContextMenu={onContextMenu}
-      aria-current={selected ? 'true' : undefined}
-      className={[
-        'group relative flex min-h-[48px] items-center gap-2 rounded-control px-2 py-1.5 text-start transition-colors',
-        indent ? 'ps-6' : '',
-        dim ? 'opacity-60' : '',
-        selected ? 'bg-fill-tsp' : 'hover:bg-fill-hover',
-      ].join(' ')}
-    >
-      {selected && <RowAccent />}
-      <AgentAvatar
-        name={agent.name}
-        id={agent.id}
-        avatarShape={agent.avatarShape}
-        avatarColor={agent.avatarColor}
-        avatarImage={agent.avatarImage}
-        emoji={agent.emoji}
-        size={32}
-        selected={selected}
-      />
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="min-w-0 truncate text-sm text-text-primary">{agent.name}</span>
-        {subtitle ? (
-          <span className="min-w-0 truncate text-xs text-text-tertiary opacity-80">{subtitle}</span>
-        ) : null}
-      </span>
-      {isGrokBotAgent(agent.source) && (
-        <span
-          className="size-1.5 shrink-0 rounded-full opacity-60"
-          style={{ backgroundColor: 'var(--text-tertiary)' }}
-          title={t('Imported from Grok Bot')}
-        />
-      )}
-      {!!unread && unread > 0 && (
-        <span
-          className="size-2 shrink-0 rounded-full"
-          style={{ backgroundColor: 'var(--activity-indicator-running)' }}
-          aria-label={t('{count} unread', { count: unread })}
-          title={t('{count} unread', { count: unread })}
-        />
-      )}
-    </button>
-  );
-}
-
-function RowAccent() {
-  return (
-    <span
-      className="pointer-events-none absolute inset-y-1 start-0 w-[3px] rounded-full"
-      style={{ backgroundColor: 'var(--activity-indicator-running)' }}
-      aria-hidden
-    />
   );
 }
 
