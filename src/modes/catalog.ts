@@ -11,8 +11,10 @@ const READ = ["file_read", "file_list", "file_search", "file_stat", "file_extrac
 const WRITE = ["file_write", "file_edit", "file_mkdir", "file_move", "file_delete"];
 const BROWSER = ["browser_open", "browser_goto", "browser_snapshot", "browser_click", "browser_type", "browser_press", "browser_screenshot", "browser_table", "browser_act", "browser_pages", "browser_close", "browser_eval"];
 const PREVIEW = ["preview_serve", "preview_status", "preview_stop"];
-/** Control/communication tools shared by every mode (§6.1). */
-const CONTROL = ["think", "finish", "plan", "phase_set", "message"];
+/** Control/communication tools shared by every mode (§6.1). `plan_exit` is the
+ *  escape hatch from the read-only plan permission mode (C13), so it is exposed
+ *  in every mode the way `finish` is. */
+const CONTROL = ["think", "finish", "plan", "phase_set", "message", "plan_exit"];
 /** Tools added to modes that can edit files. */
 const EDIT_EXTRA = ["file_multi_edit"];
 /** Build-only tools: secrets vault and the OpenCode coding sessions. */
@@ -37,7 +39,7 @@ export const LOAM_MODES: LoamMode[] = [
     starters: [{ label: "قارن مصادر", prompt: "قارن المصادر التي سأرفقها، وافصل الحقائق عن الاستنتاجات مع روابط الأدلة." }, { label: "راجع موضوعًا", prompt: "أعد تقرير بحث حول الموضوع التالي، مع توضيح الثغرات وحدود المصادر المتاحة." }] },
   { id: "build", label: "Loam Build", labelAr: "ابنِ", icon: "⌘", hue: 100, hue2: 140,
     tagline: "من الفكرة إلى تجربة تعمل", description: "طوّر ملفات التطبيق وشغّل الاختبارات ومعاينة المشروع في مساحة المهمة.", outputHint: "ملفات مشروع ومعاينة ونتائج اختبارات", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, ...WRITE, ...EDIT_EXTRA, "artifact_publish", ...DOCS_LOOKUP, ...BUILD_EXTRA, "loam_mobile", "code_symbols", "code_outline", "shell_run", "web_fetch", ...BROWSER, ...PREVIEW, ...CONTROL], panels: ["files", "browser", "preview"],
+    tools: ["integration_list", "integration_call", ...READ, ...WRITE, ...EDIT_EXTRA, "memory_add", "artifact_publish", ...DOCS_LOOKUP, ...BUILD_EXTRA, "loam_mobile", "code_symbols", "code_outline", "shell_run", "web_fetch", ...BROWSER, ...PREVIEW, ...CONTROL], panels: ["files", "browser", "preview"],
     fields: [{ id: "brief", label: "ماذا سنبني؟", placeholder: "المستخدمون والوظائف المطلوبة", multiline: true }, { id: "acceptance", label: "معايير الإنجاز", placeholder: "ما السلوك الذي يجب اختباره قبل التسليم؟", multiline: true }],
     starters: [{ label: "صفحة تعريفية", prompt: "ابنِ صفحة تعريفية عربية متجاوبة مع معاينة محلية واختبر عرض الهاتف." }, { label: "أصلح مشروعًا", prompt: "افحص ملفات المشروع المرفقة، حدد العطل وأصلحه ثم شغّل الاختبارات المناسبة." }] },
   { id: "write", label: "Loam Write", labelAr: "اكتب", icon: "✎", hue: 55, hue2: 75,
