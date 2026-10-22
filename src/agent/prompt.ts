@@ -5,12 +5,19 @@ import { APP_CONTRACT_INSTRUCTIONS } from "./appVerification.js";
 import { BUILD_PHASE_PROMPT } from "../modes/buildPhases.js";
 import { personalizationBlock } from "../server/personalization.js";
 import { renderPolicyContext } from "../policy/riskTier.js";
-import { buildMasterPrompt, deriveMasterSlots } from "./masterPrompt.js";
+import { buildMasterPrompt, codingModeSection, deriveMasterSlots, isCodingTask } from "./masterPrompt.js";
 
 /** The master prompt is on by default; LOAM_MASTER_PROMPT=0 falls back to the
  *  legacy Loam prompt for A/B or recovery. */
 export function masterPromptEnabled(): boolean {
   const raw = process.env.LOAM_MASTER_PROMPT ?? process.env.MANUS_LOCAL_MASTER_PROMPT ?? "";
+  return !["0", "false", "no", "off"].includes(raw.trim().toLowerCase());
+}
+
+/** Appendix C (coding mode) is on by default; LOAM_CODING_PROMPT=0 disables it
+ *  so the coding eval can measure the section with and without it. */
+export function codingPromptEnabled(): boolean {
+  const raw = process.env.LOAM_CODING_PROMPT ?? process.env.MANUS_LOCAL_CODING_PROMPT ?? "";
   return !["0", "false", "no", "off"].includes(raw.trim().toLowerCase());
 }
 
@@ -64,6 +71,12 @@ export function buildSystemPrompt(
   const lines: string[] = [];
   if (masterPromptEnabled()) {
     lines.push(buildMasterPrompt(deriveMasterSlots(cfg, toolNames), { model: cfg.model }));
+  }
+  if (codingPromptEnabled() && isCodingTask(toolNames)) {
+    const coding = codingModeSection();
+    if (coding && !lines.some((line) => line.includes(coding.split("\n")[0]!))) {
+      lines.push(coding);
+    }
   }
   lines.push(
     "You are Loam, a local assistant working in the current task's isolated workspace.",
