@@ -5,6 +5,8 @@ import { DATA_DIR } from "../config.js";
 import { log } from "../log.js";
 import { getLoamMode } from "../modes/catalog.js";
 import { normalizeWorkMode, validateServiceIds } from "./companionGateway.js";
+import { getThread } from "./agentThreads.js";
+import { getTask, type TaskMessage } from "./db.js";
 
 export interface AgentRecord {
   id: string;
@@ -13,6 +15,8 @@ export interface AgentRecord {
   description: string;
   /** System-level instructions injected for every run of this agent. */
   instructions: string;
+  /** Optional short role/subtitle shown under the agent name in the info pane. */
+  title?: string;
   /** Optional model override for this agent. */
   model?: string;
   /** Default run mode for this agent (build = act, ask = read-only answers). */
@@ -41,6 +45,8 @@ export interface AgentRecord {
   avatarImage?: string;
   /** Soft-archive timestamp: archived companions keep all data but leave the active list. */
   archivedAt?: string;
+  /** Per-agent notifications toggle (default true when undefined). */
+  notifications?: boolean;
   /** Soft-hide timestamp: hidden companions stay in the UI's collapsible "Hidden" section. */
   hiddenAt?: string;
   /** Pin timestamp (epoch ms): pinned agents show in a "Pinned" section at the top. */
@@ -98,6 +104,89 @@ export function listAgents(includeArchived = false): AgentRecord[] {
     if (firstPinned === 0) return pinOrder(first, second);
     return first.createdAt.localeCompare(second.createdAt);
   });
+}
+
+/**
+ * Additive per-agent chat metadata served with the agents list so the sidebar
+ * rows can show a Grok Bot-style last-message snippet, a waiting/unread dot and
+ * a "last activity" sort key without an extra request per agent.
+ */
+export interface AgentChatMeta {
+  /** One-line preview of the thread's latest user/assistant message. */
+  lastMessage?: string;
+  /** True when the thread's latest message is the assistant's (the user's turn is next). */
+  waitingForYou?: boolean;
+  /** Unread user/assistant message count (0 when seen or when there is no thread). */
+  unreadCount?: number;
+  /** Epoch ms of the latest thread message; drives the "last activity" row sort. */
+  lastActivityAt?: number;
+}
+
+/** Agent record plus the additive chat metadata (agents list endpoint shape). */
+export type AgentWithChatMeta = AgentRecord & AgentChatMeta;
+
+/** Character cap for the one-line preview snippet (CSS truncates the rest). */
+const LAST_MESSAGE_MAX_CHARS = 140;
+
+function previewSnippet(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > LAST_MESSAGE_MAX_CHARS ? `${flat.slice(0, LAST_MESSAGE_MAX_CHARS)}…` : flat;
+}
+
+function isChatMessage(message: TaskMessage): boolean {
+  return (
+    (message.role === "user" || message.role === "assistant") &&
+    typeof message.content === "string" &&
+    message.content.trim().length > 0
+  );
+}
+
+/** Latest user/assistant message of a thread's task, if any. */
+function latestThreadMessage(threadUid: string): TaskMessage | undefined {
+  const messages = getTask(threadUid)?.messages;
+  if (!messages || messages.length === 0) return undefined;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message && isChatMessage(message)) return message;
+  }
+  return undefined;
+}
+
+/** Count chat messages newer than lastSeenAt (all of them when never seen). */
+function unreadMessageCount(threadUid: string, lastSeenAt?: string): number {
+  const messages = getTask(threadUid)?.messages;
+  if (!messages || messages.length === 0) return 0;
+  let count = 0;
+  for (const message of messages) {
+    if (!message || !isChatMessage(message)) continue;
+    if (!lastSeenAt || (typeof message.at === "string" && message.at > lastSeenAt)) count++;
+  }
+  return count;
+}
+
+/** Additive chat metadata for one agent's thread (empty object when it has none). */
+export function agentChatMeta(agentId: string): AgentChatMeta {
+  const thread = getThread(agentId);
+  if (!thread) return {};
+  const meta: AgentChatMeta = {};
+  const last = latestThreadMessage(thread.threadUid);
+  if (last) {
+    meta.lastMessage = previewSnippet(last.content);
+    meta.waitingForYou = last.role === "assistant";
+    const at = last.at ? Date.parse(last.at) : Number.NaN;
+    if (Number.isFinite(at)) meta.lastActivityAt = at;
+  }
+  if (thread.unread) meta.unreadCount = Math.max(1, unreadMessageCount(thread.threadUid, thread.lastSeenAt));
+  return meta;
+}
+
+/**
+ * Agents list with additive chat metadata. Every AgentRecord field is
+ * unchanged; the chat fields are additive and safe for existing consumers to
+ * ignore.
+ */
+export function listAgentsWithChatMeta(includeArchived = false): AgentWithChatMeta[] {
+  return listAgents(includeArchived).map((agent) => ({ ...agent, ...agentChatMeta(agent.id) }));
 }
 
 /** Pin or unpin an agent. Pinning appends it to the end of the pinned order; idempotent. */
@@ -197,7 +286,10 @@ function sanitizeServices(value: unknown): { allowedServices?: string[] } {
 export const AVATAR_SHAPES: readonly string[] = ["squircle", "teardrop", "pebble", "hex", "blob", "cloud", "wedge", "tablet"];
 
 /** Grok Bot-style avatar color tokens (concrete hex values live in the web palette). */
-export const AVATAR_COLORS: readonly string[] = ["red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "brown", "gray"];
+export const AVATAR_COLORS: readonly string[] = ["red", "orange", "yellow", "green", "teal", "cyan", "blue", "indigo", "violet", "purple", "magenta", "pink", "brown", "olive", "gray", "slate"];
+
+/** Alternate spellings accepted on input and mapped onto a canonical token. */
+const AVATAR_COLOR_ALIASES: Record<string, string> = { grey: "gray" };
 
 /** Cap for embedded avatar images (data URLs), roughly 256KB. */
 const AVATAR_IMAGE_MAX_BYTES = 256 * 1024;
@@ -211,7 +303,9 @@ function sanitizeAvatarShape(value: unknown): string | undefined {
 function sanitizeAvatarColor(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const v = value.trim().toLowerCase();
-  return AVATAR_COLORS.includes(v) ? v : undefined;
+  if (!v) return undefined;
+  const normalized = AVATAR_COLOR_ALIASES[v] ?? v;
+  return AVATAR_COLORS.includes(normalized) ? normalized : undefined;
 }
 
 function sanitizeAvatarImage(value: unknown): string | undefined {
@@ -235,7 +329,7 @@ export function sanitizeAvatarFields(input: { avatarShape?: unknown; avatarColor
   return out;
 }
 
-export function createAgent(input: { name: string; emoji?: string; description?: string; instructions?: string; model?: string; mode?: string; effort?: string; disabledTools?: unknown; workMode?: string; allowedServices?: unknown; voice?: string; voiceRate?: number; voiceAuto?: boolean; source?: string; avatarShape?: string; avatarColor?: string; avatarImage?: string; pinned?: boolean; pinnedAt?: number; sortOrder?: number }): AgentRecord {
+export function createAgent(input: { name: string; emoji?: string; description?: string; instructions?: string; model?: string; mode?: string; effort?: string; disabledTools?: unknown; workMode?: string; allowedServices?: unknown; voice?: string; voiceRate?: number; voiceAuto?: boolean; source?: string; avatarShape?: string; avatarColor?: string; avatarImage?: string; pinned?: boolean; pinnedAt?: number; sortOrder?: number; title?: string; notifications?: boolean }): AgentRecord {
   const mode = input.mode ? getLoamMode(input.mode).id : undefined;
   const workMode = input.workMode ? normalizeWorkMode(input.workMode) : undefined;
   const wantsPin = (input.pinned === true) || typeof input.pinnedAt === "number";
@@ -250,6 +344,7 @@ export function createAgent(input: { name: string; emoji?: string; description?:
     name: input.name.trim().slice(0, 80),
     emoji: (input.emoji ?? "🤖").trim().slice(0, 8) || "🤖",
     description: (input.description ?? "").trim().slice(0, 300),
+    ...(input.title && input.title.trim() ? { title: input.title.trim().slice(0, 80) } : {}),
     instructions: (input.instructions ?? "").trim().slice(0, 8000),
     ...(input.model && input.model.trim() ? { model: input.model.trim() } : {}),
     ...(mode ? { mode } : {}),
@@ -260,6 +355,7 @@ export function createAgent(input: { name: string; emoji?: string; description?:
     ...(input.voice && input.voice.trim() ? { voice: input.voice.trim().slice(0, 60) } : {}),
     ...(Number.isFinite(Number(input.voiceRate)) ? { voiceRate: Math.max(0.5, Math.min(2, Number(input.voiceRate))) } : {}),
     ...(typeof input.voiceAuto === "boolean" ? { voiceAuto: input.voiceAuto } : {}),
+    ...(typeof input.notifications === "boolean" ? { notifications: input.notifications } : {}),
     ...(input.source && input.source.trim() ? { source: input.source.trim().slice(0, 32) } : {}),
     ...sanitizeAvatarFields(input),
     ...(wantsPin ? { pinnedAt: typeof input.pinnedAt === "number" && Number.isFinite(input.pinnedAt) ? input.pinnedAt : Date.now() } : {}),
@@ -279,7 +375,7 @@ function sanitizeDisabled(value: unknown): { disabledTools?: string[] } {
   return list.length > 0 ? { disabledTools: [...new Set(list)].slice(0, 500) } : { disabledTools: [] };
 }
 
-export function updateAgent(id: string, patch: { name?: string; emoji?: string; description?: string; instructions?: string; model?: string | null; mode?: string | null; effort?: string | null; disabledTools?: unknown; workMode?: string | null; allowedServices?: unknown; voice?: string | null; voiceRate?: number | null; voiceAuto?: boolean | null; avatarShape?: string | null; avatarColor?: string | null; avatarImage?: string | null; pinned?: boolean | null; pinnedAt?: number | null; sortOrder?: number | null }): AgentRecord | undefined {
+export function updateAgent(id: string, patch: { name?: string; emoji?: string; description?: string; title?: string | null; instructions?: string; model?: string | null; mode?: string | null; effort?: string | null; disabledTools?: unknown; workMode?: string | null; allowedServices?: unknown; voice?: string | null; voiceRate?: number | null; voiceAuto?: boolean | null; notifications?: boolean | null; avatarShape?: string | null; avatarColor?: string | null; avatarImage?: string | null; pinned?: boolean | null; pinnedAt?: number | null; sortOrder?: number | null }): AgentRecord | undefined {
   const agent = agents.find((a) => a.id === id);
   if (!agent) return undefined;
   const mode = typeof patch.mode === "string" ? getLoamMode(patch.mode).id : undefined;
@@ -287,6 +383,12 @@ export function updateAgent(id: string, patch: { name?: string; emoji?: string; 
   if (typeof patch.name === "string" && patch.name.trim()) agent.name = patch.name.trim().slice(0, 80);
   if (typeof patch.emoji === "string" && patch.emoji.trim()) agent.emoji = patch.emoji.trim().slice(0, 8);
   if (typeof patch.description === "string") agent.description = patch.description.trim().slice(0, 300);
+  if (patch.title === null) delete agent.title;
+  else if (typeof patch.title === "string") {
+    const title = patch.title.trim().slice(0, 80);
+    if (title) agent.title = title;
+    else delete agent.title;
+  }
   if (typeof patch.instructions === "string") agent.instructions = patch.instructions.trim().slice(0, 8000);
   if (patch.model === null) delete agent.model;
   else if (typeof patch.model === "string" && patch.model.trim()) agent.model = patch.model.trim();
@@ -307,6 +409,10 @@ export function updateAgent(id: string, patch: { name?: string; emoji?: string; 
   else if (Number.isFinite(Number(patch.voiceRate))) agent.voiceRate = Math.max(0.5, Math.min(2, Number(patch.voiceRate)));
   if (patch.voiceAuto === null) delete agent.voiceAuto;
   else if (typeof patch.voiceAuto === "boolean") agent.voiceAuto = patch.voiceAuto;
+  if (patch.notifications !== undefined) {
+    if (patch.notifications === null) delete agent.notifications;
+    else if (typeof patch.notifications === "boolean") agent.notifications = patch.notifications;
+  }
   if (patch.allowedServices !== undefined) {
     const s = sanitizeServices(patch.allowedServices);
     if (s.allowedServices) agent.allowedServices = s.allowedServices;

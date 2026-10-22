@@ -4,14 +4,30 @@ import type { AgentCardAgent } from './AgentCard';
 export interface SidebarAgent extends AgentCardAgent {
   /** Soft-hide timestamp: set puts the agent in the collapsible "Hidden" section. */
   hiddenAt?: string;
+  /** Additive chat metadata served with the agents list (GET /api/agents). */
+  lastMessage?: string;
+  /** True when the agent replied last, so the user's turn is next. */
+  waitingForYou?: boolean;
+  /** Unread message count for the row's far-right dot. */
+  unreadCount?: number;
+  /** Epoch ms of the latest thread message (primary "last activity" sort key). */
+  lastActivityAt?: number;
+  /** ISO timestamps used as the sort fallback for agents without a thread. */
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-/** Combining-mark range stripped when diacritic-folding a name. */
-const COMBINING_MARKS = /[\u0300-\u036f]/g;
+/**
+ * Combining marks stripped when folding a name: Latin diacritics plus the
+ * Arabic harakat/tashkeel (fathatan..waqf) and superscript alef, so searching
+ * an unvocalised Arabic query still matches a fully vocalised agent name.
+ */
+const COMBINING_MARKS = /[\u0300-\u036f\u064b-\u065f\u0670\u06d6-\u06ed]/g;
 
 /**
- * Case/diacritic-insensitive form of a name ("Café Zoé" -> "cafe zoe"),
- * used so searching "cafe" still matches accented agent names.
+ * Case/diacritic-insensitive form of a name ("Café Zoé" -> "cafe zoe",
+ * "مُحَمَّد" -> "محمد"), used so searching "cafe" or "محمد" matches accented
+ * or vocalised agent names.
  */
 export function foldName(value: string): string {
   return value
@@ -71,4 +87,25 @@ export function nextUnreadIndex(unread: readonly boolean[], from: number): numbe
     if (unread[i]) return i;
   }
   return -1;
+}
+
+/**
+ * Recency key for the "last activity desc" row sort: the latest thread message
+ * when known, else the agent's updatedAt/createdAt, else 0.
+ */
+export function lastActivityKey(agent: SidebarAgent): number {
+  if (typeof agent.lastActivityAt === 'number' && Number.isFinite(agent.lastActivityAt)) {
+    return agent.lastActivityAt;
+  }
+  for (const iso of [agent.updatedAt, agent.createdAt]) {
+    if (!iso) continue;
+    const at = Date.parse(iso);
+    if (Number.isFinite(at)) return at;
+  }
+  return 0;
+}
+
+/** Stable copy of the list ordered by last activity, most recent first. */
+export function sortByLastActivity<T extends SidebarAgent>(agents: T[]): T[] {
+  return [...agents].sort((a, b) => lastActivityKey(b) - lastActivityKey(a));
 }

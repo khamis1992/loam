@@ -27,11 +27,11 @@ import { grokBotNoteText } from '@/components/chat/GrokBotNote';
 import type { ChatEvent } from '@shared/socket';
 import type { AgentCardAgent } from './AgentCard';
 import { AgentContextMenu } from './AgentContextMenu';
-import { isGrokBotAgent } from './GrokBotBadge';
-import { AgentAvatar } from './AgentAvatar';
+import { AgentRow, RowAccent } from './AgentRow';
+import { PinnedAgentGrid } from './PinnedAgentGrid';
 import { getBuiltInAgents } from './BuiltInAgentCard';
 import type { GroupChat } from './groupTypes';
-import { foldName, nextUnreadIndex, searchAgents, splitHidden, sumUnread } from './agentListFilter';
+import { foldName, nextUnreadIndex, searchAgents, sortByLastActivity, splitHidden, sumUnread } from './agentListFilter';
 
 interface AgentWithMeta extends AgentCardAgent {
   /** Soft-hide timestamp: hidden agents live in the bottom "Hidden" section. */
@@ -41,6 +41,13 @@ interface AgentWithMeta extends AgentCardAgent {
   instructions?: string;
   effort?: string;
   allowedServices?: string[];
+  /** Additive chat metadata served with the agents list (GET /api/agents). */
+  lastMessage?: string;
+  waitingForYou?: boolean;
+  unreadCount?: number;
+  lastActivityAt?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface UnreadInfo {
@@ -112,16 +119,16 @@ function previewLine(text: string): string {
   return flat.length > SUBTITLE_MAX_CHARS ? `${flat.slice(0, SUBTITLE_MAX_CHARS)}…` : flat;
 }
 
-/** Latest user/assistant chat message of a thread as a preview line ('' when none). */
-function lastThreadPreview(events: ChatEvent[] | undefined): string {
-  if (!events) return '';
+/** Latest user/assistant chat message of a thread as a preview (null when none). */
+function lastThreadEvent(events: ChatEvent[] | undefined): { text: string; waiting: boolean } | null {
+  if (!events) return null;
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i];
-    if (e.type !== 'chat') continue;
+    if (!e || e.type !== 'chat') continue;
     const line = previewLine(e.content ?? '');
-    if (line) return line;
+    if (line) return { text: line, waiting: e.sender === 'assistant' };
   }
-  return '';
+  return null;
 }
 
 /** Up-to-two-letter monogram for the footer avatar ("Khamis Al" -> "KA"). */
@@ -305,21 +312,12 @@ export function AgentSidebarList({
       .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity)),
     [topLevelAgents],
   );
+  // Grok Bot parity: non-pinned rows are a flat conversation list, most recent activity first.
   const myAgents = useMemo(
-    () => topLevelAgents.filter((a) => typeof a.pinnedAt !== 'number'),
+    () => sortByLastActivity(topLevelAgents.filter((a) => typeof a.pinnedAt !== 'number')),
     [topLevelAgents],
   );
-
-  const pinnedById = useMemo(() => new Map(rankedPinned.map((a) => [a.id, a])), [rankedPinned]);
-
-  const [pinnedOrder, setPinnedOrder] = useState<string[]>([]);
-  useEffect(() => {
-    setPinnedOrder(rankedPinned.map((a) => a.id));
-  }, [rankedPinned]);
-
-  const orderMatches = rankedPinned.length === pinnedOrder.length
-    && pinnedOrder.every((id) => pinnedById.has(id));
-  const displayPinned = orderMatches ? pinnedOrder.map((id) => pinnedById.get(id)!) : rankedPinned;
+  const hiddenAgents = useMemo(() => sortByLastActivity(searchHiddenAgents), [searchHiddenAgents]);
 
   // Unread agent rows in DOM order; drives the floating "More unreads" pill.
   const unreadRowIds = useMemo(() => {
@@ -331,11 +329,11 @@ export function AgentSidebarList({
         if (unreadOf(child.childId)) ids.push(child.childId);
       }
     };
-    displayPinned.forEach(collect);
+    rankedPinned.forEach(collect);
     myAgents.forEach(collect);
     searchHiddenAgents.forEach((a) => { if (unreadOf(a.id)) ids.push(a.id); });
     return ids;
-  }, [displayPinned, myAgents, searchHiddenAgents, childrenByParent, unreadById]);
+  }, [rankedPinned, myAgents, searchHiddenAgents, childrenByParent, unreadById]);
 
   const [unreadOutOfView, setUnreadOutOfView] = useState(false);
   // A string key (not the array) keeps the observer effect from re-running on
@@ -374,134 +372,62 @@ export function AgentSidebarList({
     target.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
-  const [dragOrder, setDragOrder] = useState<string[] | null>(null);
-  const dragOrderRef = useRef<string[]>([]);
-  const dragRef = useRef<{ id: string; startX: number; startY: number; moved: boolean; order: string[] } | null>(null);
-  const suppressClickRef = useRef(false);
-
-  const commitPinnedOrder = (ids: string[]) => {
-    setPinnedOrder(ids);
-    onReorderPinned?.(ids);
-  };
-  const commitPinnedOrderRef = useRef(commitPinnedOrder);
-  commitPinnedOrderRef.current = commitPinnedOrder;
-
-  useEffect(() => {
-    if (!onReorderPinned) return;
-    const onPointerMove = (e: PointerEvent) => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      if (!drag.moved) {
-        const dx = e.clientX - drag.startX;
-        const dy = e.clientY - drag.startY;
-        if (dx * dx + dy * dy < 36) return;
-        drag.moved = true;
-        dragOrderRef.current = [...drag.order];
-        setDragOrder([...drag.order]);
-      }
-      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-      const overId = el?.closest('[data-pinned-id]')?.getAttribute('data-pinned-id') ?? null;
-      if (!overId || overId === drag.id) return;
-      const order = [...dragOrderRef.current];
-      const from = order.indexOf(drag.id);
-      const to = order.indexOf(overId);
-      if (from === -1 || to === -1 || from === to) return;
-      order.splice(from, 1);
-      order.splice(to, 0, drag.id);
-      dragOrderRef.current = order;
-      setDragOrder(order);
-    };
-    const onPointerUp = (e: PointerEvent) => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      dragRef.current = null;
-      setDragOrder(null);
-      if (drag.moved && e.type === 'pointerup') {
-        suppressClickRef.current = true;
-        commitPinnedOrderRef.current(dragOrderRef.current.length ? dragOrderRef.current : drag.order);
-      }
-      dragOrderRef.current = [];
-    };
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-    window.addEventListener('pointercancel', onPointerUp);
-    return () => {
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-      window.removeEventListener('pointercancel', onPointerUp);
-    };
-  }, [onReorderPinned]);
-
-  const handlePinnedPointerDown = (e: React.PointerEvent<HTMLButtonElement>, id: string) => {
-    if (e.button !== 0 || !onReorderPinned) return;
-    dragRef.current = { id, startX: e.clientX, startY: e.clientY, moved: false, order: displayPinned.map((a) => a.id) };
-  };
-
-  const handlePinnedKeyDown = (e: React.KeyboardEvent, id: string) => {
-    if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
-    const order = displayPinned.map((a) => a.id);
-    const from = order.indexOf(id);
-    const to = e.key === 'ArrowUp' ? from - 1 : from + 1;
-    if (from === -1 || to < 0 || to >= order.length) return;
-    e.preventDefault();
-    order.splice(to, 0, order.splice(from, 1)[0]);
-    commitPinnedOrder(order);
-  };
-
-  // Swallow the click that follows a drag so it does not select a new agent.
-  const guardSelect = (agent: AgentWithMeta) => () => {
-    if (suppressClickRef.current) {
-      suppressClickRef.current = false;
-      return;
-    }
-    onSelect(agent);
-  };
-
-  // Gray preview line: latest thread message when the store has one, else description.
-  const threadPreview = (agent: AgentCardAgent): string => {
+  // Row meta: prefer the live client store for the open thread, else the server
+  // list's additive chat fields, else the agent description.
+  const rowMeta = (agent: AgentCardAgent) => {
     const uid = threadUidByAgent[agent.id];
-    const fromThread = uid ? lastThreadPreview(eventsBySession[uid]) : '';
-    return fromThread || (agent.description ? previewLine(agent.description) : '');
+    const live = uid ? lastThreadEvent(eventsBySession[uid]) : null;
+    const meta = agent as AgentWithMeta;
+    const subtitle = live?.text || meta.lastMessage || (agent.description ? previewLine(agent.description) : '');
+    const waitingForYou = live ? live.waiting : Boolean(meta.waitingForYou);
+    const unreadCount = unreadById?.[agent.id]?.count ?? meta.unreadCount ?? 0;
+    return { subtitle, waitingForYou, unreadCount };
   };
 
-  const renderAgentTree = (agent: AgentWithMeta, pinned = false) => (
-    <div key={agent.id} className="flex flex-col gap-0.5">
+  // One-line preview used by the pinned grid tiles.
+  const threadPreview = (agent: AgentCardAgent): string => rowMeta(agent).subtitle;
+
+  const childRow = (child: ChildAgent): ReactNode => {
+    const childAgent: AgentWithMeta = {
+      id: child.childId,
+      name: child.name,
+      emoji: child.emoji,
+      description: child.description,
+      mode: child.mode,
+    };
+    const meta = rowMeta(childAgent);
+    return (
       <AgentRow
-        agent={agent}
-        selected={selectedId === agent.id}
-        unread={unreadById?.[agent.id]?.count ?? 0}
-        subtitle={threadPreview(agent)}
-        onClick={pinned ? guardSelect(agent) : () => onSelect(agent)}
-        onContextMenu={(e) => handleContextMenu(e, agent)}
-        drag={pinned ? {
-          'data-pinned-id': agent.id,
-          onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => handlePinnedPointerDown(e, agent.id),
-          onKeyDown: (e: React.KeyboardEvent) => handlePinnedKeyDown(e, agent.id),
-        } : undefined}
+        key={child.childId}
+        agent={childAgent}
+        selected={selectedId === child.childId}
+        subtitle={meta.subtitle}
+        waitingForYou={meta.waitingForYou}
+        unreadCount={meta.unreadCount}
+        indent
+        onClick={() => onSelect(childAgent)}
+        onContextMenu={(e) => handleContextMenu(e, childAgent)}
       />
-      {(childrenByParent[agent.id] ?? []).map((child) => {
-        const childAgent: AgentWithMeta = {
-          id: child.childId,
-          name: child.name,
-          emoji: child.emoji,
-          description: child.description,
-          mode: child.mode,
-        };
-        return (
-          <AgentRow
-            key={child.childId}
-            agent={childAgent}
-            selected={selectedId === child.childId}
-            unread={unreadById?.[child.childId]?.count ?? 0}
-            subtitle={threadPreview(childAgent)}
-            indent
-            onClick={() => onSelect(childAgent)}
-            onContextMenu={(e) => handleContextMenu(e, childAgent)}
-          />
-        );
-      })}
-    </div>
-  );
+    );
+  };
+
+  const renderAgentTree = (agent: AgentWithMeta) => {
+    const meta = rowMeta(agent);
+    return (
+      <div key={agent.id} className="flex flex-col gap-0.5">
+        <AgentRow
+          agent={agent}
+          selected={selectedId === agent.id}
+          subtitle={meta.subtitle}
+          waitingForYou={meta.waitingForYou}
+          unreadCount={meta.unreadCount}
+          onClick={() => onSelect(agent)}
+          onContextMenu={(e) => handleContextMenu(e, agent)}
+        />
+        {(childrenByParent[agent.id] ?? []).map(childRow)}
+      </div>
+    );
+  };
 
   // Section-header unread sums; sumUnread stubs to 0 when no unread source is wired.
   const pinnedAgentIds = useMemo(
@@ -626,12 +552,16 @@ export function AgentSidebarList({
               onToggle={() => toggleSection(SECTIONS.pinned)}
               unread={pinnedUnread}
             >
-              {(dragOrder
-                ? dragOrder
-                    .map((id) => pinnedById.get(id))
-                    .filter((a): a is AgentWithMeta => Boolean(a))
-                : displayPinned
-              ).map((agent) => renderAgentTree(agent, true))}
+              <PinnedAgentGrid
+                agents={rankedPinned}
+                selectedId={selectedId}
+                unreadById={unreadById}
+                subtitleFor={(agent) => threadPreview(agent)}
+                onSelect={onSelect}
+                onContextMenu={handleContextMenu}
+                onReorder={onReorderPinned}
+              />
+              {rankedPinned.flatMap((agent) => (childrenByParent[agent.id] ?? []).map(childRow))}
             </AgentSection>
           )}
 
@@ -717,7 +647,7 @@ export function AgentSidebarList({
                   key={agent.id}
                   agent={agent}
                   selected={false}
-                  subtitle={threadPreview(agent)}
+                  subtitle={agent.description ? previewLine(agent.description) : undefined}
                   onClick={() => onStartBuiltIn?.(agent)}
                   onContextMenu={() => {}}
                 />
@@ -745,19 +675,23 @@ export function AgentSidebarList({
               onToggle={() => toggleSection(SECTIONS.hidden)}
               unread={hiddenUnread}
             >
-              {searchHiddenAgents.map((agent) => (
-                <AgentRow
-                  key={agent.id}
-                  agent={agent}
-                  selected={selectedId === agent.id}
-                  unread={unreadById?.[agent.id]?.count ?? 0}
-                  subtitle={threadPreview(agent)}
-                  indent
-                  dim
-                  onClick={() => onSelect(agent)}
-                  onContextMenu={(e) => handleContextMenu(e, agent)}
-                />
-              ))}
+              {hiddenAgents.map((agent) => {
+                const meta = rowMeta(agent);
+                return (
+                  <AgentRow
+                    key={agent.id}
+                    agent={agent}
+                    selected={selectedId === agent.id}
+                    subtitle={meta.subtitle}
+                    waitingForYou={meta.waitingForYou}
+                    unreadCount={meta.unreadCount}
+                    indent
+                    dim
+                    onClick={() => onSelect(agent)}
+                    onContextMenu={(e) => handleContextMenu(e, agent)}
+                  />
+                );
+              })}
             </AgentSection>
           )}
 
@@ -903,97 +837,6 @@ function AgentSection({
       />
       {expanded && <div className="flex flex-col gap-0.5">{children}</div>}
     </section>
-  );
-}
-
-/** Pointer/keyboard drag handles attached to pinned AgentRow buttons. */
-interface DragRowProps {
-  'data-pinned-id': string;
-  onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => void;
-  onKeyDown: (e: React.KeyboardEvent) => void;
-}
-
-function AgentRow({
-  agent,
-  selected,
-  unread,
-  indent,
-  dim,
-  subtitle,
-  onClick,
-  onContextMenu,
-  drag,
-}: {
-  agent: AgentCardAgent;
-  selected: boolean;
-  unread?: number;
-  /** Gray preview line under the name: latest thread message or description. */
-  subtitle?: string;
-  indent?: boolean;
-  dim?: boolean;
-  onClick: () => void;
-  onContextMenu: (e: React.MouseEvent) => void;
-  drag?: DragRowProps;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      onContextMenu={onContextMenu}
-      aria-current={selected ? 'true' : undefined}
-      data-agent-row={agent.id}
-      {...(unread && unread > 0 ? { 'data-unread-row': '' } : {})}
-      {...(drag ?? {})}
-      className={[
-        'group relative flex min-h-[48px] items-center gap-2 rounded-control px-2 py-1.5 text-start transition-colors',
-        indent ? 'ps-6' : '',
-        dim ? 'opacity-60' : '',
-        selected ? 'bg-fill-tsp' : 'hover:bg-fill-hover',
-        drag ? 'cursor-grab select-none active:cursor-grabbing' : '',
-      ].join(' ')}
-      aria-label={drag ? t('Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder.', { name: agent.name }) : undefined}
-    >
-      {selected && <RowAccent />}
-      <AgentAvatar
-        name={agent.name}
-        avatarShape={agent.avatarShape}
-        avatarColor={agent.avatarColor}
-        avatarImage={agent.avatarImage}
-        size={32}
-        selected={selected}
-      />
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="min-w-0 truncate text-sm text-text-primary">{agent.name}</span>
-        {subtitle ? (
-          <span className="min-w-0 truncate text-xs text-text-tertiary opacity-80">{subtitle}</span>
-        ) : null}
-      </span>
-      {isGrokBotAgent(agent.source) && (
-        <span
-          className="size-1.5 shrink-0 rounded-full opacity-60"
-          style={{ backgroundColor: 'var(--text-tertiary)' }}
-          title={t('Imported from Grok Bot')}
-        />
-      )}
-      {!!unread && unread > 0 && (
-        <span
-          className="size-2 shrink-0 rounded-full"
-          style={{ backgroundColor: 'var(--activity-indicator-running)' }}
-          aria-label={t('{count} unread', { count: unread })}
-          title={t('{count} unread', { count: unread })}
-        />
-      )}
-    </button>
-  );
-}
-
-function RowAccent() {
-  return (
-    <span
-      className="pointer-events-none absolute inset-y-1 start-0 w-[3px] rounded-full"
-      style={{ backgroundColor: 'var(--activity-indicator-running)' }}
-      aria-hidden
-    />
   );
 }
 

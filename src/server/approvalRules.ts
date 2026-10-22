@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Approval rules + idempotent approval replay (MF4 option 14).
  *
  *  - `approval_rules`: saved permission rules per agent/tool ("always allow").

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * workspace/sheet editor IO + routes: xlsx JSON round-trip and HTTP status paths.
  *
  * Like the other server tests, the data directory env var is set before any

@@ -208,8 +208,11 @@ export async function runDeepResearch(topic: string, depth: number, ctx: ToolCon
   const sources: ReadSource[] = [];
   const covered = new Set<string>();
   let iterations = 0;
+  const cancelled = (): boolean => Boolean(ctx.signal?.aborted);
+  const rounds = Math.max(1, Math.min(3, Math.floor(Number.isFinite(depth) ? depth : 2)));
 
-  for (let round = 0; round < Math.max(1, Math.min(3, depth)); round += 1) {
+  for (let round = 0; round < rounds; round += 1) {
+    if (cancelled()) break;
     iterations = round + 1;
     // PLAN: first round probes the topic; later rounds target uncovered aspects.
     const planned =
@@ -245,6 +248,7 @@ export async function runDeepResearch(topic: string, depth: number, ctx: ToolCon
     const toRead = candidates.filter((c) => !readUrls.has(urlKey(c.url))).slice(0, MAX_READS_PER_ITER);
     if (!toRead.length && !searchFailed) break;
     for (const page of toRead) {
+      if (cancelled()) break;
       const key = urlKey(page.url);
       readUrls.add(key);
       const body = await fetchText(page.url, ctx);
@@ -273,7 +277,9 @@ export async function runDeepResearch(topic: string, depth: number, ctx: ToolCon
       sourceCount: 0,
       coveredAspects: [],
       uncoveredAspects: [...ASPECTS.map((a) => a.id)],
-      reason: "No sources could be fetched or none contained quotable text about the topic (check network access or refine the topic).",
+      reason: cancelled()
+        ? "Research was cancelled before any source could be read."
+        : "No sources could be fetched or none contained quotable text about the topic (check network access or refine the topic).",
     };
   }
 
@@ -496,7 +502,8 @@ export function deliverResearchToStudio(input: StudioInput, workspace: string): 
       conflict = error;
     }
   }
-  throw conflict;
+  if (conflict) throw conflict;
+  throw new StudioError("Studio delivery failed after repeated revision conflicts.");
 }
 
 export function createDeepResearchTools(): Tool[] {

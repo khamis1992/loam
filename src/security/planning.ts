@@ -54,6 +54,19 @@ export function buildPlan(run: PlanEvidence): CampaignPlan {
   const risks = run.scan?.staticRisks ?? [];
   const flows = run.flowScan?.flows ?? [];
 
+  // Source surface D: ranked source-to-sink taint candidates (see the taint
+  // model below). These are static review candidates with their full hop
+  // chain; they carry the strongest source-level evidence, so they are added
+  // first — before the capped page/operation/route suggestions can exhaust the
+  // suggestion budget — but they still require explicit operator input.
+  // Evidence-gated: hints come either from explicitly supplied `taintHints`
+  // or, when absent, are derived from this run's own flowScan flows — a run
+  // without a flow scan simply gets no taint surface.
+  const hints = run.taintHints ?? (run.flowScan?.flows?.length ? flowScanTaintHints(run.flowScan) : []);
+  for (const hint of hints) {
+    push({ engine: hint.engine, surface: "source", target: hint.target, rationale: hint.rationale, operatorInput: hint.operatorInput });
+  }
+
   // Web surface: discovered pages suggest parameter-driven checks.
   for (const page of pages.slice(0, 20)) {
     push({ engine: "xssReflected", surface: "web", target: page.url, rationale: "Discovered page reachable in scope; any reflected parameter could carry a canary", operatorInput: "Declare the parameter name that reaches the response (browser.xssReflected case)" });
@@ -78,18 +91,6 @@ export function buildPlan(run: PlanEvidence): CampaignPlan {
     const engine = flow.sink.kind === "sql_like" ? "injection" : flow.sink.kind === "html_like" ? "xssReflected" : "command";
     push({ engine, surface: "source", target: flow.source.file + " → " + flow.sink.file + ":" + flow.sink.line, rationale: "Cross-file flow reaches a " + flow.sink.kind.replace("_like", "") + " sink; a dynamic case on the route in " + flow.source.file + " would link statically and dynamically", operatorInput: "Declare the engine case on that route; linkFlowsToDynamicEvidence will join the proofs" });
   }
-  // Source surface D: ranked source-to-sink taint candidates (see the taint
-  // model below). These are static review candidates with their full hop
-  // chain; they are prepended to the plan because they carry the strongest
-  // source-level evidence, but they still require explicit operator input.
-  // Evidence-gated: hints come either from explicitly supplied `taintHints`
-  // or, when absent, are derived from this run's own flowScan flows — a run
-  // without a flow scan simply gets no taint surface.
-  const hints = run.taintHints ?? (run.flowScan?.flows?.length ? flowScanTaintHints(run.flowScan) : []);
-  for (const hint of hints) {
-    push({ engine: hint.engine, surface: "source", target: hint.target, rationale: hint.rationale, operatorInput: hint.operatorInput });
-  }
-
   const surfaces: CampaignPlan["surfaces"] = [
     { id: "web", present: pages.length > 0, evidence: pages.length + " discovered page(s)" },
     { id: "api", present: operations.length > 0, evidence: operations.length + " OpenAPI operation(s)" },
@@ -99,7 +100,7 @@ export function buildPlan(run: PlanEvidence): CampaignPlan {
   const limitations = [
     "Plan-only output: nothing executes and no case is created by this plan; every suggestion requires explicit operator declarations.",
     "Derived from this assessment's evidence alone — pages beyond discovery limits, undocumented operations and unscanned files are invisible to it.",
-    "Suggestion ordering follows evidence order, not risk ranking (hypothesis ranking is a separate open item).",
+    "Suggestion ordering places the ranked taint hints first, then follows evidence order; the remaining suggestions are not risk-ranked (hypothesis ranking is a separate open item).",
   ];
   if (run.flowScan?.coverage.bounded) limitations.push("Source-flow analysis was bounded; flows beyond the bound are not suggested.");
   if (hints.length) limitations.push("Taint hints are bounded syntactic candidates from caller-supplied graph input, not proof; absence of a hint proves nothing.");
@@ -177,6 +178,11 @@ export interface PlannerHint {
 }
 
 const MAX_HINTS = 50;
+// Safety bound on the analysis scan itself, deliberately larger than the
+// reporting cap so ranking (in planTaintHints) sees every reachable sink
+// before the top-N selection — a low-severity sink reached first must not
+// crowd a critical sink reached later out of the scan.
+const MAX_FLOWS_SCAN = 1000;
 const MAX_HOPS = 8;
 const SOURCE_WEIGHT: Record<TaintSourceKind, number> = { user_input: 30, body: 25, query: 20, param: 18, header: 15, cookie: 15, path: 12, env: 10, file: 8 };
 const SINK_WEIGHT: Record<TaintSinkKind, number> = { exec: 100, query: 85, fs: 80, template: 60, deserialize: 55, html: 50, redirect: 40 };
@@ -249,7 +255,7 @@ export function analyzeTaint(graph: TaintGraph): TaintResult {
       const better = !existing || hops < existing.hops || (hops === existing.hops && sourceScore > existingScore);
       if (better) { if (existing) flows.splice(flows.indexOf(existing), 1); flows.push(flow); }
     }
-    if (flows.length >= MAX_HINTS) { coverage.bounded = true; coverage.reason = `stopped at the ${MAX_HINTS}-flow reporting limit`; break; }
+    if (flows.length >= MAX_FLOWS_SCAN) { coverage.bounded = true; coverage.reason = `stopped after the ${MAX_FLOWS_SCAN}-flow scan safety limit`; break; }
   }
   return { flows, sources: sources.length, sinks: sinks.length, sinksReached: flows.length, sanitizedEdges, guardedEdges, coverage };
 }
@@ -383,6 +389,7 @@ export const FLOW_TAINT_MAX_FLOWS = 20;
 export function taintHintsSourceSpec(flowScan: FlowScan, maxFlows: number = FLOW_TAINT_MAX_FLOWS): TaintGraphSpec {
   const spec: TaintGraphSpec = { sources: [], sinks: [], nodes: [], edges: [] };
   const nodes: NonNullable<TaintGraphSpec["nodes"]> = spec.nodes ?? (spec.nodes = []);
+  const seenPairs = new Set<string>();
   for (const flow of flowScan.flows.slice(0, maxFlows)) {
     const source: TaintSourceSpec = {
       id: `src:${flow.source.file}:${flow.source.line}`,
@@ -396,19 +403,23 @@ export function taintHintsSourceSpec(flowScan: FlowScan, maxFlows: number = FLOW
       kind: FLOW_SINK_KIND[flow.sink.kind],
       location: `${flow.sink.file}:${flow.sink.line}`,
     };
-    if (!spec.edges.some(edge => edge.from === source.id && edge.to === sink.id)) {
-      spec.sources.push(source);
-      spec.sinks.push(sink);
-      const carriers = new Map<string, TaintNodeSpec>();
-      for (const hop of flow.hops) carriers.set(`${hop.file}:${hop.line}`, { id: `node:${hop.file}:${hop.line}`, name: hop.what.slice(0, 60), location: `${hop.file}:${hop.line}` });
-      let prev = source.id;
-      for (const [key, node] of carriers) {
-        if (!nodes.some(existing => existing.id === node.id)) nodes.push(node);
-        spec.edges.push({ from: prev, to: node.id, label: key });
-        prev = node.id;
-      }
-      spec.edges.push({ from: prev, to: sink.id });
+    // Dedupe on the (source, sink) pair itself. The previous check looked for a
+    // direct edge, which only exists for hop-free flows, so multi-hop duplicates
+    // were re-added and accumulated redundant parallel edge chains.
+    const pairKey = `${source.id}->${sink.id}`;
+    if (seenPairs.has(pairKey)) continue;
+    seenPairs.add(pairKey);
+    spec.sources.push(source);
+    spec.sinks.push(sink);
+    const carriers = new Map<string, TaintNodeSpec>();
+    for (const hop of flow.hops) carriers.set(`${hop.file}:${hop.line}`, { id: `node:${hop.file}:${hop.line}`, name: hop.what.slice(0, 60), location: `${hop.file}:${hop.line}` });
+    let prev = source.id;
+    for (const [key, node] of carriers) {
+      if (!nodes.some(existing => existing.id === node.id)) nodes.push(node);
+      spec.edges.push({ from: prev, to: node.id, label: key });
+      prev = node.id;
     }
+    spec.edges.push({ from: prev, to: sink.id });
   }
   return spec;
 }
