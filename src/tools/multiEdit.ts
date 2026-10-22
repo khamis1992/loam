@@ -21,7 +21,7 @@ interface MultiEdit {
   replaceAll: boolean;
 }
 
-interface DiffHunk {
+export interface DiffHunk {
   oldStart: number;
   oldEnd: number;
   newStart: number;
@@ -30,13 +30,13 @@ interface DiffHunk {
   removed: number;
 }
 
-interface DiffSummary {
+export interface DiffSummary {
   added: number;
   removed: number;
   hunks: DiffHunk[];
 }
 
-function countOccurrences(haystack: string, needle: string): number {
+export function countOccurrences(haystack: string, needle: string): number {
   if (needle.length === 0) return 0;
   let count = 0;
   let idx = haystack.indexOf(needle);
@@ -47,12 +47,12 @@ function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
-function normalizeNewlines(value: string): string {
+export function normalizeNewlines(value: string): string {
   return value.replace(/\r\n|\r/g, "\n");
 }
 
 /** Write via a sibling temp file + rename so readers never observe a partial write. */
-function atomicWrite(target: string, data: string): void {
+export function atomicWrite(target: string, data: string): void {
   const dir = path.dirname(target);
   const tmp = path.join(dir, `.${path.basename(target)}.${process.pid}.${Date.now()}.tmp`);
   try {
@@ -69,7 +69,7 @@ function atomicWrite(target: string, data: string): void {
 }
 
 /** Coarse diff used when the file is too large for the LCS table. */
-function coarseDiff(a: string[], b: string[]): DiffSummary {
+export function coarseDiff(a: string[], b: string[]): DiffSummary {
   let prefix = 0;
   while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix]) prefix++;
   let suffix = 0;
@@ -90,7 +90,7 @@ function coarseDiff(a: string[], b: string[]): DiffSummary {
 }
 
 /** Line diff via LCS, producing unified-diff-style hunks. */
-function diffLines(a: string[], b: string[]): DiffSummary {
+export function diffLines(a: string[], b: string[]): DiffSummary {
   const n = a.length;
   const m = b.length;
   if (n > MAX_DIFF_LINES || m > MAX_DIFF_LINES) return coarseDiff(a, b);

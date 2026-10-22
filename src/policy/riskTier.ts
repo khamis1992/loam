@@ -85,6 +85,7 @@ const READ_TOOL_NAMES = new Set<string>([
   "session_search",
   "code_outline",
   "code_symbols",
+  "semantic_search",
   "explore",
   "task_get",
   "task_list",
