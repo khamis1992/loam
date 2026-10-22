@@ -24,6 +24,9 @@ dist/
 Thumbs.db
 /graphify-out/
 /.testsprite/runs/
+# Per-task done reports and gate-failure logs are session markers, not project files.
+/.cc-report-*.md
+/.jgatefail.txt
 /.github/workflows/release.yml
 
 nul
