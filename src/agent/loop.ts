@@ -80,7 +80,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   const independentGuard = new IndependentAcceptanceGuard(independentRequest);
   const baseSystem =
     opts.systemOverride ??
-    buildSystemPrompt(opts.cfg, loadSkills(SKILLS_DIR), opts.tools.names(), opts.memories ?? [], undefined, opts.sandboxMode);
+    buildSystemPrompt(opts.cfg, loadSkills(SKILLS_DIR), opts.tools.names(), opts.memories ?? [], undefined, opts.sandboxMode, opts.prompt);
   const system =
     opts.systemSuffix && opts.systemSuffix.trim().length > 0
       ? `${baseSystem}\n\n${opts.systemSuffix.trim()}`
