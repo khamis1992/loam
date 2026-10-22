@@ -78,6 +78,7 @@ import { handleDesignStudioRoutes } from "./routes/designStudio.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
+import { handleCraftRoutes } from "./routes/craft.js";
 import { handleInstructionsRoutes } from "./routes/instructions.js";
 import { handleAgentSpawnRoutes } from "./routes/agentSpawn.js";
 import { handleAutoVideoRoutes } from "./routes/autoVideo.js";
@@ -1740,6 +1741,8 @@ loadAgents();
         // Design Studio (/api/design/*): brand kits, templates, generate, outputs.
         if (await handleDesignStudioRoutes(req, res, p)) return;
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        // Craft apps (/api/craft/status): which vendored dists are installed.
+        if (await handleCraftRoutes(req, res, p)) return;
         if (await handleInstructionsRoutes(req, res, p)) return;
         if (await handleAgentSpawnRoutes(req, res, p)) return;
         if (await handleAgentThreadRoutes(req, res, p)) return;
