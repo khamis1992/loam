@@ -354,6 +354,31 @@ describe("video_studio actions produce the expected command sequence", () => {
     assert.equal(parsed.fallback, "video_edit");
     assert.equal(parsed.reason, "cancelled");
   });
+
+  it("keeps the video_edit fallback for a rejected command but reports the editor's own error", async () => {
+    relay = new MockRelay();
+    relay.commands = CATALOG;
+    relay.failWith = { code: "COMMAND_REJECTED", message: "unsupported transition type: bogus" };
+    const res = await tool().run({ action: "transition_basic", atSec: 5, type: "bogus" }, ctx());
+    assert.equal(res.ok, false);
+    const parsed = JSON.parse(res.content) as { fallback: string; reason: string; message: string; hint: string };
+    assert.equal(parsed.reason, "command_rejected");
+    assert.equal(parsed.fallback, "video_edit");
+    assert.match(parsed.message, /unsupported transition type: bogus/);
+    assert.match(parsed.hint, /fix the command/);
+  });
+
+  it("falls back to video_edit for a transport error that carries no relay code", async () => {
+    relay = new MockRelay();
+    relay.commands = CATALOG;
+    relay.failWith = { code: "", message: "socket closed" };
+    const res = await tool().run({ action: "cut", atSec: 5 }, ctx());
+    assert.equal(res.ok, false);
+    const parsed = JSON.parse(res.content) as { fallback: string; reason: string; message: string };
+    assert.equal(parsed.fallback, "video_edit");
+    assert.equal(parsed.reason, "bridge_unavailable");
+    assert.match(parsed.message, /socket closed/);
+  });
 });
 
 describe("video_studio helpers", () => {

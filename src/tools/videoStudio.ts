@@ -23,7 +23,9 @@
  *    `00:01:30.500`) via the shared `parseTimeToken` grammar.
  *  - When the FilmCraft dist is missing or the bridge fails, the tool returns
  *    a structured fallback pointing the agent at `video_edit` (the EDL +
- *    ffmpeg path that needs no editor).
+ *    ffmpeg path that needs no editor). A command the editor itself refuses is
+ *    reported with `reason: "command_rejected"` and the editor's own error, so
+ *    a bad command is never confused with an unreachable editor.
  *
  * The mapping table and the fallback contract are documented in
  * docs/filmcraft-integration.md.
@@ -83,6 +85,7 @@ export type VideoStudioFallbackReason =
   | "filmcraft_dist_missing"
   | "panel_not_open"
   | "bridge_unavailable"
+  | "command_rejected"
   | "cancelled";
 
 /** Absolute path of the vendored editor entry point. */
@@ -495,7 +498,7 @@ function buildAction(
 // Result envelopes
 // ---------------------------------------------------------------------------
 
-function fallbackResult(reason: VideoStudioFallbackReason, message: string): ToolResult {
+function fallbackResult(reason: VideoStudioFallbackReason, message: string, hint?: string): ToolResult {
   return {
     ok: false,
     content: JSON.stringify({
@@ -503,7 +506,7 @@ function fallbackResult(reason: VideoStudioFallbackReason, message: string): Too
       fallback: VIDEO_STUDIO_FALLBACK_TOOL,
       reason,
       message,
-      hint: `Use the ${VIDEO_STUDIO_FALLBACK_TOOL} tool instead: it compiles an edit-decision-list and renders via ffmpeg, so it needs neither the Loam Video dist nor the editor bridge.`,
+      hint: hint ?? `Use the ${VIDEO_STUDIO_FALLBACK_TOOL} tool instead: it compiles an edit-decision-list and renders via ffmpeg, so it needs neither the Loam Video dist nor the editor bridge.`,
     }),
   };
 }
@@ -526,6 +529,20 @@ function relayErrorResult(err: unknown): ToolResult {
   }
   if (code === "CANCELLED") {
     return fallbackResult("cancelled", `The task stopped before the Loam Video command finished (${detail}).`);
+  }
+  // The panel reported a failed command. It uses the same ok:false channel both
+  // when the editor refused a command (bad url, missing clip, unsupported
+  // effect, ...) and when the editor API never loaded ("not ready or missing
+  // method"), and it does not say which. The spec requires the video_edit
+  // fallback whenever the bridge fails, so keep the fallback in both cases, but
+  // classify the reason and keep the editor's own message so the failure is
+  // never swallowed.
+  if (code === "COMMAND_REJECTED") {
+    return fallbackResult(
+      "command_rejected",
+      `The Loam Video editor refused the command (${detail}).`,
+      `The panel executed the command but the editor rejected it, so retrying the same command will fail again: read the state action for the current clips/tracks, fix the command and retry video_studio. If the editor API itself did not load, use the ${VIDEO_STUDIO_FALLBACK_TOOL} tool instead (it compiles an edit-decision-list and renders via ffmpeg, so it needs no editor).`,
+    );
   }
   return fallbackResult(
     "bridge_unavailable",
@@ -567,7 +584,8 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
         "Always call state first to read the current project (sequences, tracks, clips, playhead) so manual edits made in the panel are never lost, then apply the edit. " +
         "Timestamps accept seconds (90) or timecode (1:30, 00:01:30.500). " +
         "Mutating actions resolve their real engine command ids from the editor's own command list at runtime; raw executes any command id you name, but only after validating it against that list. " +
-        "When the Loam Video dist is missing or the editor bridge fails, the tool returns a structured fallback telling you to use video_edit instead (an edit-decision-list rendered by ffmpeg, which needs no editor).",
+        "When the Loam Video dist is missing or the editor bridge fails, the tool returns a structured fallback telling you to use video_edit instead (an edit-decision-list rendered by ffmpeg, which needs no editor). " +
+        "A command the editor refuses is reported with `reason: command_rejected` and the editor's own error, so a bad command is never confused with an unreachable editor.",
       parameters: {
         type: "object",
         additionalProperties: false,

@@ -182,7 +182,8 @@ telling the agent what to do next:
 | `reason` | When | Body |
 | --- | --- | --- |
 | `filmcraft_dist_missing` | `electron/filmcraft/dist/index.html` is absent | `fallback: "video_edit"` |
-| `bridge_unavailable` | The relay rejects with `TIMEOUT` or any other code | `fallback: "video_edit"` |
+| `bridge_unavailable` | The panel never answered (`TIMEOUT`) or the transport failed | `fallback: "video_edit"` |
+| `command_rejected` | The panel ran the command and the editor refused it (`COMMAND_REJECTED`) | `fallback: "video_edit"`, the editor's own error in `message` and a hint to fix the command first |
 | `cancelled` | The task stopped mid-command (`CANCELLED`) | `fallback: "video_edit"` |
 | `panel_not_open` | The relay rejects with `PANEL_NOT_OPEN` | `retry: true` (the Workspace panel opens automatically; retry once attached) |
 
