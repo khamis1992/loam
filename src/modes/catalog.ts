@@ -11,6 +11,7 @@ const READ = ["file_read", "file_list", "file_search", "file_stat", "file_extrac
 const WRITE = ["file_write", "file_edit", "file_mkdir", "file_move", "file_delete"];
 const BROWSER = ["browser_open", "browser_goto", "browser_snapshot", "browser_click", "browser_type", "browser_press", "browser_screenshot", "browser_table", "browser_act", "browser_pages", "browser_close", "browser_eval"];
 const PREVIEW = ["preview_serve", "preview_status", "preview_stop"];
+const GIT = ["git_branch", "git_commit", "git_status_diff", "pr_create", "pr_view", "pr_comments", "pr_comment_checklist"];
 
 export const LOAM_MODES: LoamMode[] = [
   { id: "ask", label: "Loam Explore", labelAr: "استكشف", icon: "◌", hue: 155, hue2: 135,
@@ -25,7 +26,7 @@ export const LOAM_MODES: LoamMode[] = [
     starters: [{ label: "قارن مصادر", prompt: "قارن المصادر التي سأرفقها، وافصل الحقائق عن الاستنتاجات مع روابط الأدلة." }, { label: "راجع موضوعًا", prompt: "أعد تقرير بحث حول الموضوع التالي، مع توضيح الثغرات وحدود المصادر المتاحة." }] },
   { id: "build", label: "Loam Build", labelAr: "ابنِ", icon: "⌘", hue: 100, hue2: 140,
     tagline: "من الفكرة إلى تجربة تعمل", description: "طوّر ملفات التطبيق وشغّل الاختبارات ومعاينة المشروع في مساحة المهمة.", outputHint: "ملفات مشروع ومعاينة ونتائج اختبارات", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, ...WRITE, "loam_mobile", "code_symbols", "code_outline", "shell_run", "web_fetch", ...BROWSER, ...PREVIEW], panels: ["files", "browser", "preview"],
+    tools: ["integration_list", "integration_call", ...READ, ...WRITE, "loam_mobile", "code_symbols", "code_outline", "shell_run", "web_fetch", ...BROWSER, ...PREVIEW, ...GIT], panels: ["files", "browser", "preview"],
     fields: [{ id: "brief", label: "ماذا سنبني؟", placeholder: "المستخدمون والوظائف المطلوبة", multiline: true }, { id: "acceptance", label: "معايير الإنجاز", placeholder: "ما السلوك الذي يجب اختباره قبل التسليم؟", multiline: true }],
     starters: [{ label: "صفحة تعريفية", prompt: "ابنِ صفحة تعريفية عربية متجاوبة مع معاينة محلية واختبر عرض الهاتف." }, { label: "أصلح مشروعًا", prompt: "افحص ملفات المشروع المرفقة، حدد العطل وأصلحه ثم شغّل الاختبارات المناسبة." }] },
   { id: "write", label: "Loam Write", labelAr: "اكتب", icon: "✎", hue: 55, hue2: 75,

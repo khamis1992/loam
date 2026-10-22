@@ -34,6 +34,7 @@ import { createRorkTools } from "../tools/rork.js";
 import { createFrontierBridgeTools } from "../tools/frontierBridge.js";
 import { writeGate } from "../server/pending.js";
 import { createIntegrationTools } from '../tools/integrations.js';
+import { createGitWorkflowTools } from "../tools/gitWorkflowTools.js";
 
 export interface Runtime {
   cfg: Config;
@@ -84,6 +85,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createRorkTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createFrontierBridgeTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createSubagentTools(ollama, registry));
+  registry.registerAll(createGitWorkflowTools());
 
   const mcp = opts.mcp === false ? null : await registerMcpTools(registry, cfg.mcpServers, cfg.workspace);
   registry.registerAll(createIntegrationTools(registry));
