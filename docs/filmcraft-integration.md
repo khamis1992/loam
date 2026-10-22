@@ -131,13 +131,13 @@ panel executes it with `FilmcraftBridge` → `POST
 | `cut` | `execute` × n | One razor per time; `atSec` accepts a single time or an array. |
 | `trim` | `execute` | Requires `fromSec`/`toSec`; an empty range is refused. |
 | `delete` | `execute` | Same range plus optional `ripple`. |
-| `move` / `reorder` | `execute` | `move` takes `clipId` + `toIndex`; `reorder` takes a full 1-based `order` permutation. |
+| `move` / `reorder` | `execute` | `move` takes `clipId` + `toIndex`; `reorder` takes a full 1-based `order` permutation, exactly `1..n` each once (anything else is refused before dispatch). |
 | `split` | `execute` | Splits at `atSec`. |
 | `speed` | `execute` | `clipId` + positive `rate` (1 = normal). |
 | `add_text` | `execute` | Title/graphics layer with `position`, `size`, `color`, `atSec`, `durationSec`. |
 | `add_audio` / `music` | `importFiles`/`importUrl`, then `execute` | Imports the audio, then places it on the audio track with `gain`, `fadeInSec`, `fadeOutSec`, `trackId`. |
 | `transition_basic` | `execute` | FilmCraft-native video transition, falling back to the audio transition id. |
-| `effect_basic` | `execute` | `effects.apply` with the effect `name` plus free-form `params`. |
+| `effect_basic` | `execute` | `effects.apply` with the effect `name` plus free-form `params` (a `params.name` is ignored: the positional `name` wins). |
 | `undo` | `execute` | History undo. |
 | `raw` | `execute` | Any command id, validated against the live catalog. |
 
