@@ -2,14 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Info, PanelRight, Loader2, AlertCircle, ExternalLink } from 'lucide-react';
+import { ChevronDown, Info, Loader2, AlertCircle, ExternalLink, MoreHorizontal } from 'lucide-react';
 import clsx from 'clsx';
 import { useAppDispatch, useAppSelector, type AppDispatch } from '@/store';
 import { appendEvent, applyDelta, setStatus, setError, replaceEvents } from '@/store/chatSlice';
 import { addSession } from '@/store/sessionsSlice';
-import { t, PRODUCT } from '@/i18n/t';
-import { Composer } from '@/components/chat/Composer';
-import { EventList } from '@/components/chat/EventList';
+import { t } from '@/i18n/t';
 import { ChatSocket, shortUid } from '@/services/chatSocket';
 import { getApiBase, getApiHeaders, getSessionToken } from '@/services/rpc';
 import { uploadFile } from '@/services/upload';
@@ -18,7 +16,6 @@ import type {
   ChatEvent,
   ChatMessageEvent,
   StatusUpdateEvent,
-  CascadeTaskClockEvent,
   ChatDeltaEvent,
   EventsNotifyEventsAfterEvent,
   ServerMessage,
@@ -28,6 +25,8 @@ import type { AgentCardAgent } from './AgentCard';
 import { AgentAvatar } from './AgentAvatar';
 import { GROKBOT_NOTE_HEADER } from '@/components/chat/GrokBotNote';
 import { InstructionProposalCard, useInstructionProposals } from './InstructionHistory';
+import { AgentThreadMessages } from './AgentThreadMessages';
+import { AgentThreadComposer } from './AgentThreadComposer';
 
 function getSocketBase(): string {
   if (typeof window === 'undefined') return '/';
@@ -175,9 +174,10 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
   const [error, setLocalError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [approveForMe, setApproveForMe] = useState(false);
+  const [overflowOpen, setOverflowOpen] = useState(false);
   const socketRef = useRef<ChatSocket | null>(null);
+  const overflowRef = useRef<HTMLDivElement>(null);
   const apiBase = useMemo(() => getApiBase(), []);
-  const composerRef = useRef<React.ElementRef<typeof Composer>>(null);
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -185,6 +185,15 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!overflowOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!overflowRef.current?.contains(e.target as Node)) setOverflowOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [overflowOpen]);
 
   const events = useAppSelector((s) => (threadUid ? s.chat.eventsBySession[threadUid] ?? [] : []));
   const running = useAppSelector((s) => (threadUid ? s.chat.running[threadUid] ?? false : false));
@@ -264,16 +273,6 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
       socketRef.current = null;
     };
   }, [threadUid, dispatch, onAuthFailure]);
-
-  const clockEvent = useMemo(
-    () => [...events].reverse().find((e): e is CascadeTaskClockEvent => e.type === 'cascadeTaskClock'),
-    [events],
-  );
-
-  const userText = useMemo(
-    () => [...events].reverse().find((e): e is ChatMessageEvent => e.type === 'chat' && e.sender === 'user')?.content ?? '',
-    [events],
-  );
 
   const assistantText = useMemo(
     () =>
@@ -420,59 +419,88 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
 
   return (
     <div className={clsx('flex flex-1 flex-col overflow-hidden bg-bg-main', infoOpen && 'min-w-[360px]')}>
-      <header className="flex h-row shrink-0 items-center justify-between border-b border-border-main px-4">
-        <div className="flex min-w-0 items-center gap-2">
+      <header className="relative flex h-row shrink-0 items-center justify-end px-3">
+        {/* Centered floating header pill: avatar + agent name opens the info pane. */}
+        <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
           <button
             type="button"
             onClick={onToggleInfo}
-            className="flex min-w-0 items-center gap-2 rounded-control px-2 py-1 text-start hover:bg-fill-hover"
+            aria-expanded={infoOpen}
+            aria-label={t('Agent info')}
+            title={t('Agent info')}
+            className="pointer-events-auto flex items-center gap-2 rounded-full border border-border-main bg-bg-menu px-2.5 py-1 shadow-card transition-colors hover:bg-fill-hover"
           >
             <AgentAvatar
               name={agent.name}
               avatarShape={agent.avatarShape}
               avatarColor={agent.avatarColor}
               avatarImage={agent.avatarImage}
-              size={28}
+              size={22}
               working={running}
               typing={running}
             />
-            <span className="min-w-0 truncate text-sm font-medium text-text-primary">{agent.name}</span>
-            <PanelRight className={`size-3.5 shrink-0 text-text-tertiary transition-transform ${infoOpen ? 'rotate-180' : ''}`} />
+            <span className="max-w-[40vw] truncate text-sm font-medium text-text-primary">{agent.name}</span>
+            <ChevronDown
+              className={clsx('size-3.5 shrink-0 text-text-tertiary transition-transform', infoOpen && 'rotate-180')}
+            />
           </button>
-          <span className="hidden text-xs text-text-tertiary sm:inline">
-            {agent.mode || 'loam'} · {agent.model || PRODUCT}
-          </span>
         </div>
 
-        <div className="flex items-center gap-1">
-          {threadUid && (
-            <button
-              type="button"
-              onClick={handleOpenTaskView}
-              className="flex h-row-sm items-center gap-1 rounded-control px-2 text-xs text-text-secondary hover:bg-fill-hover"
-            >
-              <ExternalLink className="size-3.5" />
-              <span className="hidden sm:inline">{t('Open in task view')}</span>
-            </button>
-          )}
+        {/* Compact overflow for the remaining header actions. */}
+        <div className="relative flex items-center" ref={overflowRef}>
           <button
             type="button"
-            onClick={onToggleInfo}
-            className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"
-            aria-label={t('Toggle info pane')}
-            title={t('Toggle info pane')}
+            onClick={() => setOverflowOpen((v) => !v)}
+            aria-label={t('More')}
+            aria-haspopup="menu"
+            aria-expanded={overflowOpen}
+            title={t('More')}
+            className="flex size-8 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-fill-hover hover:text-text-primary"
           >
-            <Info className="size-4" />
+            <MoreHorizontal className="size-4" />
           </button>
+          {overflowOpen && (
+            <div
+              role="menu"
+              className="absolute end-0 top-full z-50 mt-1 min-w-[180px] rounded-card border border-border-main bg-bg-menu p-1 shadow-menu"
+            >
+              {threadUid && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setOverflowOpen(false);
+                    handleOpenTaskView();
+                  }}
+                  className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-start text-sm text-text-primary hover:bg-fill-hover"
+                >
+                  <ExternalLink className="size-4 shrink-0 text-text-tertiary" />
+                  {t('Open in task view')}
+                </button>
+              )}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOverflowOpen(false);
+                  onToggleInfo();
+                }}
+                className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-start text-sm text-text-primary hover:bg-fill-hover"
+              >
+                <Info className="size-4 shrink-0 text-text-tertiary" />
+                {t('Toggle info pane')}
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-[768px] px-4 py-4">
+            <div className="mx-auto w-full max-w-[768px]">
               {!resolving && proposals.length > 0 && (
-                <div className="mb-4 flex flex-col gap-2">
+                <div className="flex flex-col gap-2 px-4 pt-4">
                   {proposals.map((p) => (
                     <InstructionProposalCard
                       key={p.id}
@@ -500,69 +528,29 @@ export function AgentThreadView({ agent, onToggleInfo, infoOpen, onTaskCreated }
                   </p>
                 </div>
               ) : (
-                <>
-                  <div className="mb-4 flex items-center gap-2">
-                    <AgentAvatar
-                      name={agent.name}
-                      avatarShape={agent.avatarShape}
-                      avatarColor={agent.avatarColor}
-                      avatarImage={agent.avatarImage}
-                      size={24}
-                      working={running}
-                      typing={running}
-                    />
-                    <span className="text-base font-semibold text-text-primary">{agent.name}</span>
-                  </div>
-                  {running && <div className="mb-2 text-sm text-text-tertiary">{t('{name} is thinking', { name: PRODUCT })}…</div>}
-                  {clockEvent && !running && (
-                    <div className="mb-2 text-sm text-text-tertiary">
-                      {t('Active')} · {new Date(clockEvent.clock.startedAt).toLocaleString()}
-                    </div>
-                  )}
-                  {userText && !assistantText && !running && !wasStoppedByUser && !error && (
-                    <div className="mb-2 text-sm text-text-tertiary">{t('{name} is thinking', { name: PRODUCT })}…</div>
-                  )}
-                  <EventList
-                    events={events}
-                    sessionId={threadUid ?? ''}
-                    socket={socketRef.current}
-                    onOpenComputer={() => {}}
-                  />
-                  {hasResult && hasClockClosed && !running && !wasStoppedByUser && (
-                    <div className="mt-2 text-sm text-func-success">{t('Task completed')}</div>
-                  )}
-                </>
+                <AgentThreadMessages
+                  events={events}
+                  sessionId={threadUid ?? ''}
+                  socket={socketRef.current}
+                  running={running}
+                  onOpenComputer={() => {}}
+                />
+              )}
+              {!resolving && !error && events.length > 0 && hasResult && hasClockClosed && !running && !wasStoppedByUser && (
+                <p className="px-4 pt-1 pb-2 text-center text-sm text-func-success">{t('Task completed')}</p>
               )}
             </div>
           </div>
 
-          <div className="mx-auto w-full max-w-[768px] px-4 pb-4">
-            <div className="mb-2 flex h-row-sm items-center gap-2 rounded-control bg-fill-tsp px-2 text-sm text-text-secondary">
-              <span
-                className={
-                  running
-                    ? 'animate-pulse text-icon-blue'
-                    : wasStoppedByUser
-                      ? 'text-function-warning'
-                      : hasResult && hasClockClosed
-                        ? 'text-func-success'
-                        : 'text-text-tertiary'
-                }
-              >
-                {running ? '●' : wasStoppedByUser ? '◼' : hasResult && hasClockClosed ? '✓' : '○'}
-              </span>
-              {running ? t('Working') : wasStoppedByUser ? t('Stopped') : hasResult && hasClockClosed ? t('Task completed') : t('Thinking')}
-            </div>
-            <Composer
-              ref={composerRef}
+          <div className="mx-auto w-full max-w-[768px] px-4 pt-2 pb-4">
+            <AgentThreadComposer
               onSend={handleSend}
               onStop={handleStop}
               running={running || sending}
-              defaultLoamMode={agent.mode}
+              placeholder={t('Message {name}', { name: agent.name })}
+              assistantReply={assistantText}
               approveForMe={approveForMe}
               onToggleApproveForMe={handleToggleApproveForMe}
-              assistantReply={assistantText}
-              placeholder={t('Message {name}', { name: agent.name })}
             />
           </div>
         </div>
