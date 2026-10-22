@@ -158,6 +158,11 @@ export interface NewPlanStepEvent extends ChatEventBase {
   title: string;
 }
 
+export interface TodoUpdateEvent extends ChatEventBase {
+  type: "todoUpdate";
+  todos: { id: string; content: string; status: "pending" | "in_progress" | "completed" | (string & {}) }[];
+}
+
 export interface LiveStatusEvent extends ChatEventBase {
   type: "liveStatus";
   text: string;
@@ -324,6 +329,7 @@ export type ChatEvent =
   | QueueStatusChangeEvent
   | PlanUpdateEvent
   | NewPlanStepEvent
+  | TodoUpdateEvent
   | LiveStatusEvent
   | ModeEvent
   | AttachmentEvent
