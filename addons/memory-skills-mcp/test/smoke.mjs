@@ -52,10 +52,10 @@ async function call(name, args = {}) {
 try {
   const tools = (await client.listTools()).tools;
   const names = new Set(tools.map((t) => t.name));
-  check("tools/list advertises 17 tools", tools.length === 17, `got ${tools.length}: ${[...names].join(",")}`);
+  check("tools/list advertises 18 tools", tools.length === 18, `got ${tools.length}: ${[...names].join(",")}`);
   check(
     "expected tool names present",
-    ["recall", "episode_record", "episode_search", "episode_get", "episode_stats", "fact_remember", "fact_search", "fact_forget", "skill_record", "skill_search", "skill_get", "skill_report", "skill_improve", "skill_review", "skill_compose", "skill_from_trace", "dashboard"].every((n) => names.has(n)),
+    ["recall", "episode_record", "episode_search", "episode_get", "episode_stats", "fact_remember", "fact_search", "fact_forget", "skill_record", "skill_search", "skill_get", "skill_report", "skill_improve", "skill_review", "skill_compose", "skill_from_trace", "dashboard", "session_search"].every((n) => names.has(n)),
   );
 
   const ep1 = await call("episode_record", {
@@ -85,6 +85,9 @@ try {
 
   const search2 = await call("episode_search", { query: "deploy", outcome: "failed" });
   check("episode_search filters by failed outcome", search2.text.includes("Netlify") && !search2.text.includes(ep1Id));
+
+  const sess = await call("session_search", { query: "playwright chromium" });
+  check("session_search finds past sessions", !sess.isError && sess.text.includes(ep1Id), sess.text.slice(0, 200));
 
   const got = await call("episode_get", { id: ep1Id });
   let gotJson = null;

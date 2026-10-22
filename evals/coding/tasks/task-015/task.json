@@ -1,0 +1,13 @@
+{
+  "id": "task-015",
+  "title": "Remove code duplication in JavaScript",
+  "category": "refactor",
+  "language": "javascript",
+  "prompt": "`src/users.js` repeats the same email normalisation in two places. Extract it into an exported `normalizeKey` in a new module `src/text.js` and call that from both functions. Behaviour must not change and the inline `trim().toLowerCase()` chain must no longer appear in `src/users.js`.",
+  "testCommand": "node .eval/check.mjs",
+  "timeoutSec": 60,
+  "maxSteps": 16,
+  "requireFiles": ["src/text.js"],
+  "forbidPatterns": [{ "path": "src/users.js", "pattern": "trim\\(\\)\\.toLowerCase\\(\\)" }],
+  "tags": ["dry", "extract-function"]
+}

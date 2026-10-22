@@ -4,6 +4,24 @@ import type { Config } from "../config.js";
 import { APP_CONTRACT_INSTRUCTIONS } from "./appVerification.js";
 import { BUILD_PHASE_PROMPT } from "../modes/buildPhases.js";
 import { personalizationBlock } from "../server/personalization.js";
+import { renderPolicyContext } from "../policy/riskTier.js";
+import { buildMasterPrompt, codingModeSection, deriveMasterSlots, isCodingTask } from "./masterPrompt.js";
+import { loadProjectMemory, type ProjectMemoryResult } from "./projectMemory.js";
+import { DESIGN_RULES_PROMPT, isUiIntent } from "./designPrompt.js";
+
+/** The master prompt is on by default; LOAM_MASTER_PROMPT=0 falls back to the
+ *  legacy Loam prompt for A/B or recovery. */
+export function masterPromptEnabled(): boolean {
+  const raw = process.env.LOAM_MASTER_PROMPT ?? process.env.MANUS_LOCAL_MASTER_PROMPT ?? "";
+  return !["0", "false", "no", "off"].includes(raw.trim().toLowerCase());
+}
+
+/** Appendix C (coding mode) is on by default; LOAM_CODING_PROMPT=0 disables it
+ *  so the coding eval can measure the section with and without it. */
+export function codingPromptEnabled(): boolean {
+  const raw = process.env.LOAM_CODING_PROMPT ?? process.env.MANUS_LOCAL_CODING_PROMPT ?? "";
+  return !["0", "false", "no", "off"].includes(raw.trim().toLowerCase());
+}
 
 export interface Skill {
   name: string;
@@ -50,8 +68,28 @@ export function buildSystemPrompt(
   toolNames: string[],
   memories: RecalledMemory[] = [],
   extraContext?: string,
+  sandboxMode?: import("../policy/riskTier.js").SandboxMode,
+  /** Pre-loaded project memory; pass null to skip loading, omit to load from cfg.workspace. */
+  projectMemory?: ProjectMemoryResult | null,
+  /** The user's request text; used only to gate the UI design-rules section. */
+  userPrompt?: string,
 ): string {
-  const lines: string[] = [
+  const lines: string[] = [];
+  if (masterPromptEnabled()) {
+    lines.push(buildMasterPrompt(deriveMasterSlots(cfg, toolNames), { model: cfg.model }));
+  }
+  // UI intents get the binding design-rules section (G1/G12). Injected only
+  // for UI tasks, so a non-UI request never pays for it.
+  if (isUiIntent(userPrompt)) {
+    lines.push(DESIGN_RULES_PROMPT);
+  }
+  if (codingPromptEnabled() && isCodingTask(toolNames)) {
+    const coding = codingModeSection();
+    if (coding && !lines.some((line) => line.includes(coding.split("\n")[0]!))) {
+      lines.push(coding);
+    }
+  }
+  lines.push(
     "You are Loam, a local assistant working in the current task's isolated workspace.",
     "Reply in the user's language. Use the provided tools and observed results; never invent success.",
     APP_CONTRACT_INSTRUCTIONS,
@@ -64,7 +102,10 @@ export function buildSystemPrompt(
     `Workspace: ${cfg.workspace}`,
     `Network access: ${cfg.policy.networkEnabled ? "enabled" : "disabled"}`,
     `Available tools (${toolNames.length}): ${toolNames.join(", ")}`,
-  ];
+  );
+  if (sandboxMode) {
+    lines.push(renderPolicyContext(sandboxMode));
+  }
   if (toolNames.includes("browser_table")) lines.push("Browser workflow: open page, inspect browser_table, then act on observed indexes and inspect again. Never guess selectors or report actions without evidence.");
   if (toolNames.includes("shell_run")) lines.push("Commands run on the user's machine. Stay within this task's workspace, avoid destructive commands, and verify the result.");
   if (toolNames.includes("loam_dataset")) lines.push("Use loam_dataset to calculate CSV statistics. Report missing values and assumptions; never invent data.");
@@ -74,13 +115,18 @@ export function buildSystemPrompt(
   if (toolNames.includes("loam_studio")) lines.push("For imported Office files, preserve sourceIndex, styles and all other content metadata returned by read. Edit imported presentation textBoxes directly, retaining their ids and geometry. Do not flatten imported content or discard source mappings. Tell the user when a requested structural change is not supported by the original-file-preserving exporter.");
   if (toolNames.includes("office_export")) lines.push("Native office files: build the content in loam_studio (or loam_dataset for spreadsheets and charts), then call office_export to write the .docx/.pptx/.xlsx into the task. Use office_import first when editing an uploaded office file. Do not generate office files through shell or Python while these tools are available.");
   if (toolNames.includes("loam_canvas")) lines.push("loam_canvas produces vector SVG artwork, not generated photographs. File tools can create custom SVG or HTML designs.");
-  if (toolNames.includes("loam_design")) lines.push(BUILD_PHASE_PROMPT);
+  if (toolNames.includes("loam_design") || toolNames.includes("design_brief")) lines.push(BUILD_PHASE_PROMPT);
+  if (toolNames.includes("design_page_images") || toolNames.includes("design_image_generate")) lines.push("Images: never link a placeholder service (placehold.co, picsum.photos, via.placeholder.com and similar) or an unsplash/stock URL. Use design_image_generate to write real local assets into public/assets/ui/ and reference the returned src, or run design_page_images action=rewrite to replace every placeholder in a finished page with a generated asset. Every <img> needs meaningful alt text (Arabic pages use Arabic alt and dir=rtl); decorative images use alt=\"\". Verify with design_page_images action=audit that the page reports no placeholders and no missing alt before finishing.");
   if (toolNames.includes("loam_creative")) lines.push("For 3D scene requests, use loam_creative to read and update the live scene, preserving user work and using the returned revision. The scene supports primitives, imported self-contained GLB assets, materials, environment, camera, and spin animation. Do not claim Blender rendering, image generation, or video production unless a real available tool produced those outputs.");
   if (memories.length > 0) {
     lines.push("Context explicitly supplied by this task:");
     for (const memory of memories) lines.push(memory.text);
   }
   if (extraContext?.trim()) lines.push(extraContext.trim());
+  // Project rules files (LOAM.md / AGENTS.md / CLAUDE.md + imports) apply to every run.
+  const projectMemoryBlock =
+    projectMemory === undefined ? (cfg.workspace ? loadProjectMemory(cfg.workspace) : null) : projectMemory;
+  if (projectMemoryBlock && projectMemoryBlock.text) lines.push(projectMemoryBlock.text);
   // User custom instructions ("about me" / "how to respond") apply to every run.
   const personal = personalizationBlock();
   if (personal) lines.push(personal);

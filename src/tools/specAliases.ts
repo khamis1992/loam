@@ -1,7 +1,118 @@
 import type { Tool, ToolContext, ToolResult, ToolRegistry } from "./registry.js";
-import { bool, num, str, strs } from "./registry.js";
+import { bool, num, str, strFirst, strs } from "./registry.js";
 import { createMapReduceTool } from "./mapReduce.js";
 import type { OllamaClient } from "../ollama.js";
+import type { PlanStepStatus } from "../agent/events.js";
+
+const PLAN_STEP_STATUSES: readonly PlanStepStatus[] = ["pending", "doing", "done", "blocked", "cancelled"];
+
+interface ResolvedPlanStep {
+  id: string;
+  index: number;
+  total: number;
+  title: string;
+  status: PlanStepStatus;
+  note?: string;
+}
+
+function parsePlanSteps(rawSteps: unknown[], currentStep: number): { steps: ResolvedPlanStep[]; error?: string } {
+  const steps: ResolvedPlanStep[] = [];
+  for (const raw of rawSteps) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const step = raw as Record<string, unknown>;
+    const title = str(step, "title").trim();
+    if (!title) continue;
+
+    const provided = step.status;
+    if (provided !== undefined && (typeof provided !== "string" || !PLAN_STEP_STATUSES.includes(provided as PlanStepStatus))) {
+      return { steps, error: `step "${title}" has invalid status ${JSON.stringify(provided)}; expected one of ${PLAN_STEP_STATUSES.join(", ")}` };
+    }
+
+    const status: PlanStepStatus = provided
+      ? (provided as PlanStepStatus)
+      : steps.length < currentStep
+        ? "done"
+        : steps.length === currentStep
+          ? "doing"
+          : "pending";
+
+    const note = str(step, "note").trim();
+    if ((status === "blocked" || status === "cancelled") && !note) {
+      return { steps, error: `step "${title}" requires a note when status is ${status}` };
+    }
+
+    steps.push({
+      id: str(step, "id").trim() || `plan-step-${steps.length}`,
+      index: steps.length,
+      total: rawSteps.length,
+      title,
+      status,
+      ...(note ? { note } : {}),
+    });
+  }
+  return { steps };
+}
+
+export function planTool(): Tool {
+  return {
+    name: "plan",
+    description: "Create or update the task plan shown in the UI.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["steps", "currentStep"],
+      properties: {
+        steps: {
+          type: "array",
+          minItems: 1,
+          maxItems: 20,
+          items: {
+            type: "object",
+            required: ["title"],
+            properties: {
+              title: { type: "string", maxLength: 120 },
+              id: { type: "string", maxLength: 80 },
+              status: { enum: [...PLAN_STEP_STATUSES] },
+              note: { type: "string", maxLength: 400 },
+            },
+          },
+        },
+        currentStep: { type: "integer", minimum: 0 },
+        parallel: { type: "boolean", default: false, description: "Allow more than one step to be marked doing." },
+      },
+    },
+    async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+      const rawSteps = Array.isArray(args.steps) ? args.steps : [];
+      const currentStep = num(args, "currentStep", 0);
+      const parallel = bool(args, "parallel", false);
+
+      const { steps, error } = parsePlanSteps(rawSteps, currentStep);
+      if (error) return { ok: false, content: error };
+      if (steps.length === 0) return { ok: false, content: "plan requires at least one step with a title" };
+
+      const doing = steps.filter((s) => s.status === "doing");
+      if (doing.length > 1 && !parallel) {
+        return { ok: false, content: `at most one step may be "doing" unless parallel is true (found ${doing.length}: ${doing.map((s) => s.title).join(", ")})` };
+      }
+
+      ctx.emit({
+        type: "plan",
+        goal: "Task plan",
+        trivial: false,
+        steps: steps.map((s) => ({ id: s.id, title: s.title, instruction: s.title, successCriteria: "", status: s.status, ...(s.note ? { note: s.note } : {}) })),
+        source: "model",
+      });
+      for (const s of steps) ctx.emit({ type: "plan_step", id: s.id, index: s.index, total: s.total, title: s.title, phase: s.status === "done" ? "done" : "start" });
+
+      const done = steps.filter((s) => s.status === "done").length;
+      const blocked = steps.filter((s) => s.status === "blocked").length;
+      const parts = [`${done}/${steps.length} done`];
+      if (doing.length > 0) parts.push(`doing: ${doing.map((s) => s.title).join(", ")}`);
+      if (blocked > 0) parts.push(`blocked: ${blocked}`);
+      return { ok: true, content: parts.join("; ") };
+    },
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Spec alias adapters: expose the §8.5.1 tool schemas (terminal, text_editor,
@@ -104,8 +215,11 @@ function textEditorTool(registry: ToolRegistry): Tool {
         action: { enum: ["read", "write", "append", "str_replace", "find_in_file", "find_by_name"] },
         path: { type: "string" },
         content: { type: "string" },
-        oldStr: { type: "string" },
-        newStr: { type: "string" },
+        old_string: { type: "string", description: "Exact text to find (alias: oldStr)." },
+        new_string: { type: "string", description: "Replacement text (alias: newStr)." },
+        oldStr: { type: "string", description: "Alias for old_string." },
+        newStr: { type: "string", description: "Alias for new_string." },
+        replace_all: { type: "boolean", description: "Replace every occurrence instead of requiring a single unique match." },
         startLine: { type: "integer", minimum: 1 },
         endLine: { type: "integer", minimum: 1 },
         regex: { type: "string" },
@@ -129,8 +243,18 @@ function textEditorTool(registry: ToolRegistry): Tool {
           return execNative(registry, "file_write", { path: p, content: str(args, "content") }, ctx);
         case "append":
           return execNative(registry, "file_write", { path: p, content: str(args, "content"), append: true }, ctx);
-        case "str_replace":
-          return execNative(registry, "file_edit", { path: p, find: str(args, "oldStr"), replace: str(args, "newStr") }, ctx);
+        case "str_replace": {
+          const oldString = strFirst(args, "old_string", "oldStr");
+          const newString = strFirst(args, "new_string", "newStr");
+          if (oldString === undefined) return { ok: false, content: "text_editor str_replace requires old_string (or oldStr)" };
+          if (newString === undefined) return { ok: false, content: "text_editor str_replace requires new_string (or newStr)" };
+          return execNative(
+            registry,
+            "file_edit",
+            { path: p, old_string: oldString, new_string: newString, replace_all: bool(args, "replace_all", false) },
+            ctx,
+          );
+        }
         case "find_in_file":
           return execNative(registry, "file_search", { pattern: str(args, "regex"), path: p }, ctx);
         case "find_by_name":
@@ -282,36 +406,7 @@ function browserTool(registry: ToolRegistry): Tool {
   };
 }
 
-function planTool(): Tool {
-  return {
-    name: "plan",
-    description: "Create or update the task plan shown in the UI.",
-    parameters: {
-      type: "object",
-      additionalProperties: false,
-      required: ["steps", "currentStep"],
-      properties: {
-        steps: { type: "array", minItems: 1, maxItems: 20, items: { type: "object", required: ["title"], properties: { title: { type: "string", maxLength: 120 } } } },
-        currentStep: { type: "integer", minimum: 0 },
-      },
-    },
-    async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
-      const rawSteps = Array.isArray(args.steps) ? args.steps : [];
-      const steps = rawSteps
-        .map((s, i) => {
-          if (typeof s !== "object" || s === null) return null;
-          const title = str(s as Record<string, unknown>, "title");
-          return title ? { id: `plan-step-${i}`, index: i, total: rawSteps.length, title, phase: "start" as const } : null;
-        })
-        .filter(Boolean);
-      ctx.emit({ type: "plan", goal: "Task plan", trivial: false, steps: steps.map((s) => ({ id: s!.id, title: s!.title, instruction: s!.title, successCriteria: "" })), source: "model" });
-      for (const s of steps) ctx.emit({ type: "plan_step", id: s!.id, index: s!.index, total: s!.total, title: s!.title, phase: "start" });
-      return { ok: true, content: `plan updated: ${steps.length} step(s), current=${num(args, "currentStep", 0)}` };
-    },
-  };
-}
-
-function messageTool(): Tool {
+export function messageTool(): Tool {
   return {
     name: "message",
     description: "Talk to the user. kind=notify does not block; kind=ask pauses the task until the user replies.",

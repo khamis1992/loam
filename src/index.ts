@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { EventLog } from "./session/eventLog.js";
 import { ensureTaskWorkspace } from "./server/taskWorkspace.js";
 import path from "node:path";
 import { loadConfig, ROOT, DATA_DIR } from "./config.js";
@@ -17,7 +18,9 @@ import { memoryContext, setMemoryEmbedder } from "./server/companionMemory.js";
 import { createCompanionTeamTools } from "./tools/companionTeamTools.js";
 import { setDelegationRunner } from "./server/companionTeam.js";
 import { createApproval, waitForDecision } from "./server/approvals.js";
-import { approvalStableKey, getReplayDecision, matchApprovalRule, saveApprovalDecision, taskApprovalAuto } from "./server/approvalRules.js";
+import { approvalStableKey, getReplayDecision, matchApprovalRule, saveApprovalDecision, taskApprovalAuto, taskSandboxMode, taskPermissionMode } from "./server/approvalRules.js";
+import { resolveSandboxPolicy } from "./policy/riskTier.js";
+import { DEFAULT_PERMISSION_MODE, isPlanMode } from "./policy/permissionModes.js";
 import type { Tool } from "./tools/registry.js";
 import { createScratchpadTools } from "./tools/scratchpadTools.js";
 import { createDeepResearchTools } from "./tools/deepResearch.js";
@@ -26,19 +29,28 @@ import { createInstructionHistoryTools } from "./tools/instructionTools.js";
 import { createAgentSpawnTools } from "./tools/agentSpawnTools.js";
 import { createBrowserOperatorTools } from "./tools/browserOperator.js";
 import { createWideResearchTool } from "./tools/wideResearch.js";
+import { createFindAndEditTools } from "./tools/findAndEdit.js";
 import { createGroupTools } from "./tools/groupTools.js";
 import { createBackendScaffoldTools } from "./tools/backendScaffold.js";
+import { createWebScaffoldTools } from "./tools/webScaffold.js";
 import { createDesignStudioTools } from "./tools/designStudio.js";
 import { createPlaybookTools } from "./tools/playbookTools.js";
 import { createOfficeEditTools } from "./tools/officeEditAgent.js";
 import { createVideoEditTools } from "./tools/videoEditAgent.js";
 import { createDeployTools } from "./tools/deploy.js";
 import { createDesignExploreTools } from "./tools/designExplore.js";
+import { createDesignAssetsTools } from "./tools/designAssets.js";
+import { createDesignBriefTools } from "./tools/designBrief.js";
+import { createDesignAutofixTools } from "./tools/designAutofix.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
+import { createWorkflowTools } from "./tools/workflow.js";
+import { applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
+import { SIDE_CHAT_READ_ONLY_TOOLS } from "./agent/sideChat.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
 import { publishTaskEvent } from "./server/streams.js";
+import { videoStudioRelay } from "./server/videoStudioRelay.js";
 import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { runAgent } from "./agent/loop.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
@@ -46,6 +58,7 @@ import type { Emit } from "./agent/events.js";
 import { OllamaClient } from "./ollama.js";
 import { flexCredentials } from "./server/modelTiers.js";
 import { startServer, type RunTaskOptions } from "./server/http.js";
+import { logMissingCraftDists } from "./server/craftStatus.js";
 import { appendMessage, appendStep, createTask, getProject, getTask, loadDb, setTaskStatus, listSchedules, setTaskDelegator } from "./server/db.js";
 import { conversationHistory } from "./agent/history.js";
 import { startScheduler } from "./server/scheduler.js";
@@ -116,15 +129,22 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createBrowserOperatorTools());
   rt.registry.registerAll(createDeepResearchTools());
   rt.registry.register(createWideResearchTool({ ollama: rt.ollama, parentRegistry: rt.registry }));
+  rt.registry.registerAll(createFindAndEditTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createGroupTools());
   rt.registry.registerAll(createBackendScaffoldTools());
+  rt.registry.registerAll(createWebScaffoldTools());
   rt.registry.registerAll(createDesignStudioTools());
   rt.registry.registerAll(createPlaybookTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createOfficeEditTools());
   rt.registry.registerAll(createVideoEditTools());
   rt.registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview: rt.preview }));
   rt.registry.registerAll(createDesignExploreTools());
+  rt.registry.registerAll(createDesignAssetsTools());
+  rt.registry.registerAll(createDesignBriefTools({ ollama: rt.ollama }));
+  rt.registry.registerAll(createDesignAutofixTools());
   rt.registry.registerAll(createConnectorTools());
+  rt.registry.registerAll(createWorkflowTools({ ollama: rt.ollama, registry: rt.registry }));
+  rt.registry.registerAll(createPlanTools());
   const { ollama, registry, memory, mcp } = rt;
 
   const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal; lease?: RunLease }): Promise<{ taskId: string; text: string }> => {
@@ -154,10 +174,32 @@ async function main(): Promise<void> {
     const startedAt = Date.now();
     const promptHash = hashPrompt(effectivePrompt);
 
+    // Session event log: mirror agent emit() events into a per-task append-only log.
+    // Logging must never break the task, so open/append failures are caught and warned.
+    let sessionLog: EventLog | undefined;
+    if (cfg.sessionLog?.enabled !== false) {
+      try {
+        const log = new EventLog(task);
+        await log.init(task, process.cwd());
+        sessionLog = log;
+      } catch (err) {
+        console.warn(`[sessionLog] failed to open log for task ${task}: ${String(err)}`);
+      }
+    }
+
     const trace: ToolTraceItem[] = [];
     const lastArgs = new Map<string, unknown>();
     let doneEvent: Parameters<Emit>[0] | undefined;
     const wrappedEmit: Emit = (event) => {
+      if (sessionLog) {
+        try {
+          void sessionLog.append(event.type, event).catch((err) => {
+            console.warn(`[sessionLog] failed to append event: ${String(err)}`);
+          });
+        } catch (err) {
+          console.warn(`[sessionLog] failed to append event: ${String(err)}`);
+        }
+      }
       if (event.type === "done") { doneEvent = event; return; }
       emit(event);
       publishTaskEvent(task, event);
@@ -247,6 +289,9 @@ async function main(): Promise<void> {
       effectiveMode === "ask"
         ? "وضع السؤال (Ask): أجب بالقراءة والتحليل فقط — لا تعدّل الملفات، لا تنفّذ أوامر نظام، ولا تبدأ مهام تنفيذية؛ إن أحبّت اقترح الخطوات دون تنفيذها."
         : undefined;
+    const sideChatSuffix = opts.savedRun.sideChat
+      ? "سؤال جانبي (Side chat): أجب عن سؤال المستخدم بالقراءة والتحليل فقط. المهمة الرئيسية ما زالت تعمل؛ لا تعدّل أي ملف، لا تنفّذ أوامر، ولا تتدخّل في سير المهمة."
+      : undefined;
 
     const recordTelemetry = (status: "done" | "error", extra: { model: string; steps: number; usage: { promptTokens: number; completionTokens: number }; error?: string }): void => {
       appendTelemetry({
@@ -291,12 +336,16 @@ async function main(): Promise<void> {
         reason: "selected work mode",
       });
       const agentSuffix = agent ? agentSystemSuffix(agent) : undefined;
+      // Provenance-aware index summary: a bounded digest of long-term memory so
+      // the agent knows what it already knows without a tool call.
+      const memoryIndexSummary = memory && memory.count > 0 ? memory.indexSummary(8) : undefined;
       const suffix = [
         `You are Loam. Active mode: ${modeDefinition.labelAr}. ${modeDefinition.description} Only use the provided tool capabilities.`,
         modeDefinition.outputHint,
         workModeDefinition.policy,
         memoryContextSuffix,
-        agentSuffix, askModeSuffix,
+        memoryIndexSummary,
+        agentSuffix, askModeSuffix, sideChatSuffix,
       ].filter(Boolean).join("\n\n");
       // The gateway's resolved allowlist is the base tool set for this run: mode ∪
       // work-mode grants − revoked services − agent service/tool denials. Always-on
@@ -305,8 +354,15 @@ async function main(): Promise<void> {
       // device_* tools are bound to the companion's device; companion-memory tools
       // are bound to this agent in every mode.
       const dynamicAllow = new Set(capabilities.allow);
-      const runAllow = mergeAlwaysOnTools({ resolvedAllow: [...capabilities.allow, ...connectedConnectorToolNames(agent?.disabledTools)], registeredTools: registry.names(), disabledTools: agent?.disabledTools });
-      const agentTools = registry.forAllowlist(runAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name)));
+      const baseRunAllow = mergeAlwaysOnTools({ resolvedAllow: [...capabilities.allow, ...connectedConnectorToolNames(agent?.disabledTools)], registeredTools: registry.names(), disabledTools: agent?.disabledTools });
+      // Side-chat ("/btw question") runs are read-only: even when a mutating
+      // tool is granted by the mode/work mode, the side-chat question may never
+      // modify files, run commands or drive the browser while the main run lives.
+      const runAllow = opts.savedRun.sideChat
+        ? baseRunAllow.filter((name) => SIDE_CHAT_READ_ONLY_TOOLS.includes(name))
+        : baseRunAllow;
+      const runAllowSet = new Set(runAllow);
+      const agentTools = registry.forAllowlist(runAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
 
       // Sensitive host-input actions need an explicit user decision first (section 18).
       // MF4 (option 14): the gate resolves each request idempotently — replay of a
@@ -344,6 +400,28 @@ async function main(): Promise<void> {
           },
         } satisfies Tool);
       }
+      // Plan mode (C13): a task whose local permission mode is `plan` is strictly
+      // read-only. Every tool call is gated before it runs — reads and read-only
+      // web research pass, while writes, commands, destructive and secret actions
+      // are refused with an actionable message. `plan_exit` is the escape hatch:
+      // it presents the plan through the existing approval card and, once the
+      // user approves, switches the task to acceptEdits (`approve_for_me`). The
+      // wrapper re-reads the mode on each call so later edits in the same run are
+      // allowed after approval.
+      if (isPlanMode(taskPermissionMode(task) ?? DEFAULT_PERMISSION_MODE)) {
+        applyPlanModeGate(agentTools, { taskId: task, workspaceRoot: effectiveCfg.workspace });
+      }
+      // Sandbox gate (risk-tier approval): config default < per-task persisted
+      // override < explicit approved override. The resolved mode is rendered into
+      // the system prompt so the model knows what it may do without asking.
+      const sandboxPolicy = resolveSandboxPolicy({
+        session: {
+          policy: effectiveCfg.policy.sandboxMode,
+          override: taskSandboxMode(task),
+          workspaceRoot: effectiveCfg.workspace,
+        },
+        workspaceRoot: effectiveCfg.workspace,
+      });
       const agentOpts = {
         cfg: effectiveCfg,
         ollama: runOllama,
@@ -356,6 +434,7 @@ async function main(): Promise<void> {
         ...(effortMaxSteps ? { maxSteps: effortMaxSteps } : {}),
         signal: runSignal,
         taskId: task,
+        sandboxMode: sandboxPolicy.mode,
       };
       const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
         ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint,
@@ -372,6 +451,8 @@ async function main(): Promise<void> {
         emit(doneEvent);
         publishTaskEvent(task, doneEvent);
       }
+      // Turn boundary: drain pending appends and fsync the session log.
+      await sessionLog?.flush();
       recordTelemetry("done", { model: result.model, steps: result.steps, usage: { promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens } });
       // Actor-critic reflection memory: non-pass verdicts feed the learning review and the audit log.
       const notable = verdicts.filter((v) => v.verdict !== "pass");
@@ -409,6 +490,8 @@ async function main(): Promise<void> {
         wrappedEmit({ type: "error", message: cancelled ? "⏹ أُوقفت المهمة بناءً على طلبك" : message });
       }
       recordTelemetry("error", { model: effectiveCfg.model, steps: 0, usage: { promptTokens: 0, completionTokens: 0 }, error: cancelled ? "cancelled by user" : message });
+      // Turn boundary on failure/cancel too: fsync whatever was logged so far.
+      await sessionLog?.flush();
       if (!cancelled) throw err;
       return { taskId: task, text: "" };
     }
@@ -442,6 +525,7 @@ async function main(): Promise<void> {
         projectId, agentId, mode: getLoamMode(opts.mode ?? previous?.mode ?? agent?.mode).id, effort: opts.effort ?? agent?.effort ?? "",
         workMode: normalizeWorkMode(opts.workMode ?? agent?.workMode),
         orchestrated: cfg.orchestrator.enabled, started: false,
+        sideChat: opts.sideChat === true,
       };
     }
     const task = previous ?? createTask(saved.prompt, opts.title, saved.projectId, saved.agentId);
@@ -494,12 +578,14 @@ async function main(): Promise<void> {
         opts.emit(event); publishTaskEvent(task.id, event);
       }
       throw error;
-    } finally { clearRunSignal(task.id); heartbeat?.stop(); if (lease) releaseRunLease(lease); }
+    } finally { clearRunSignal(task.id); heartbeat?.stop(); if (lease) releaseRunLease(lease); videoStudioRelay.cancelTask(task.id); }
   };
 
   // Bridge for src/server/routes/retryLast.ts: the route module cannot receive
   // runTask through startServer deps, so it reads this global per request.
   (globalThis as { __loamRunTask?: typeof runTask }).__loamRunTask = runTask;
+  // Tool registry bridge for route modules that narrow tool sets (D16 side chat).
+  (globalThis as { __loamRegistry?: unknown }).__loamRegistry = registry;
 
   // Companion-to-companion delegation: the delegate task is created and queued
   // under the TARGET companion; we return its id immediately — the execution
@@ -524,6 +610,11 @@ async function main(): Promise<void> {
     preview: rt.preview,
     mcp,
   });
+
+  // Non-failing startup check: log how to install any missing Craft dists.
+  // Never downloads; a missing dist just means the app falls back to Loam's
+  // own editor for that file type.
+  logMissingCraftDists();
 
   // A1: Start the Manus-style protocol adapter (Connect RPC + socket.io) on top of Loam.
   const protocolAdapter = await startProtocolAdapter({ cfg, runTask, getTask });

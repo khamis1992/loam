@@ -1,6 +1,6 @@
 import type { Config } from "../config.js";
 import type { OllamaClient, ChatMessage } from "../ollama.js";
-import type { Emit, Usage, ToolTraceItem } from "./events.js";
+import type { Emit, Usage, ToolTraceItem, TodoItem, TodoStatus } from "./events.js";
 import { verifyFinal } from "./verifier.js";
 import { AcceptanceGuard } from "./acceptanceGuard.js";
 import { IndependentAcceptanceGuard, independentRequirements } from "./independentAcceptance.js";
@@ -11,7 +11,12 @@ import type { WorkerCheckpoint } from "./checkpoint.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { chatWithFallback } from "./model.js";
 import { createStallGuard } from "./stallGuard.js";
+import { compressContext } from "./contextCompressor.js";
 import { throwIfCancelled } from "../server/runControl.js";
+import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/riskTier.js";
+import { ReminderChannel, TODO_UPDATE_TOOLS, MEMORY_UPDATE_TOOLS, type ReminderChannelOptions } from "./reminders.js";
+import { getTaskPhase } from "../tools/phaseTools.js";
+import { ReadState } from "../tools/readState.js";
 
 export interface RunOptions {
   cfg: Config;
@@ -32,12 +37,21 @@ export interface RunOptions {
   maxSteps?: number;
   /** Skip the terminal assistant_message/done events (the orchestrator emits its own). */
   suppressFinal?: boolean;
+  /** Subagent delegation depth for this run (0 = top-level). */
+  depth?: number;
   /** Internal evidence channel, independent of abbreviated UI tool events. */
   onToolEvidence?: (item: ToolTraceItem) => void;
   /** Internal accounting snapshot, including work preceding a worker failure. */
   onProgress?: (progress: Pick<RunResult, "steps" | "model" | "usage">) => void;
   resumeWorker?: WorkerCheckpoint;
   saveWorker?: (checkpoint: WorkerCheckpoint | undefined) => void;
+  /** Resolved sandbox mode for this run; rendered into the system prompt. */
+  sandboxMode?: SandboxMode;
+  /** Shared reminder channel. Callers may push external file changes or memory
+   *  updates into it; the loop appends due reminders as hidden user messages. */
+  reminderChannel?: ReminderChannel;
+  /** Overrides the stale-todo threshold and initial plan mode for this run. */
+  reminders?: ReminderChannelOptions;
 }
 
 export interface RunResult {
@@ -61,6 +75,41 @@ function summarize(text: string, lines = 10): string {
   return parts.join("\n").slice(0, 600);
 }
 
+/** Web/email/browser output is external data; wrap it so the model never follows it as instructions. */
+function toolMessageContent(name: string, content: string): string {
+  return isUntrustedTool(name) ? markUntrusted(content, name) : content;
+}
+
+/** Maximum number of independent read-only tool calls executed concurrently from
+ *  one assistant turn. Writes never enter the parallel path and stay serial. */
+const PARALLEL_READ_LIMIT = 8;
+
+/**
+ * Run `fn` over `items` with at most `limit` invocations in flight and return the
+ * results in the original item order. Results are index-mapped rather than
+ * collected in completion order, so the tool results stay aligned with the
+ * assistant's tool_call order even when the calls finish out of order.
+ */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  const workers = Math.max(1, Math.min(limit, items.length));
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: workers }, async () => {
+      for (;;) {
+        const index = next++;
+        if (index >= items.length) return;
+        results[index] = await fn(items[index] as T, index);
+      }
+    }),
+  );
+  return results;
+}
+
 export async function runAgent(opts: RunOptions): Promise<RunResult> {
   if (!opts.suppressFinal) opts = { ...opts, tools: taskScopedTools(opts.tools, opts.prompt, opts.history) };
   const acceptanceGuard = new AcceptanceGuard(undefined, opts.suppressFinal ? undefined : opts.prompt);
@@ -68,12 +117,12 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   const independentGuard = new IndependentAcceptanceGuard(independentRequest);
   const baseSystem =
     opts.systemOverride ??
-    buildSystemPrompt(opts.cfg, loadSkills(SKILLS_DIR), opts.tools.names(), opts.memories ?? []);
+    buildSystemPrompt(opts.cfg, loadSkills(SKILLS_DIR), opts.tools.names(), opts.memories ?? [], undefined, opts.sandboxMode, undefined, opts.prompt);
   const system =
     opts.systemSuffix && opts.systemSuffix.trim().length > 0
       ? `${baseSystem}\n\n${opts.systemSuffix.trim()}`
       : baseSystem;
-  const messages: ChatMessage[] = [{ role: "system", content: system }];
+  let messages: ChatMessage[] = [{ role: "system", content: system }];
 
   if (opts.history && opts.history.length > 0) {
     // History selection already preserves user constraints under its explicit
@@ -104,12 +153,39 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // The tool names this run may use. Tools that fan out to child agents read
   // it from the tool context so a child never exceeds the parent's reach.
   const runAllowedTools = opts.tools.names();
+  // Harness reminders (stale todo list, external file change, plan mode, memory
+  // update) are injected as hidden user-role blocks. They are never emitted as
+  // events, so the UI cannot render them.
+  const reminders = opts.reminderChannel ?? new ReminderChannel(opts.reminders);
+  // Per-session read tracking: file_read fills it, edit/write tools consult it
+  // so the model cannot blind-edit content it never saw or clobber a file that
+  // changed since it was read. A fresh instance per run matches Claude Code.
+  const readState = new ReadState();
+  // The model's live task list, mirrored here so a compaction can re-attach it
+  // as a hidden reminder after the conversation is folded away.
+  let currentTodos: TodoItem[] = [];
 
   for (step = (restored?.steps ?? 0) + 1; step <= maxSteps; step++) {
     // Stop immediately when the user pressed the cancel button (checked between every step).
     throwIfCancelled(opts.signal, opts.taskId);
     opts.emit({ type: "step", index: step });
     opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
+
+    // Plan mode is a read-only work phase; announce it once when it is active.
+    if (opts.taskId) reminders.setPlanMode(getTaskPhase(opts.taskId) === "plan");
+    for (const message of reminders.drainMessages(step)) messages.push(message);
+
+    if (opts.cfg.compression.enabled) {
+      const compressed = await compressContext(opts.cfg, opts.ollama, messages, opts.emit, opts.signal, { readState, todos: currentTodos, model: usedModel });
+      if (compressed.compressed) {
+        messages = compressed.messages;
+        usage.promptTokens += compressed.usage.promptTokens;
+        usage.completionTokens += compressed.usage.completionTokens;
+        usage.durationMs += compressed.usage.durationMs;
+      }
+      // Re-attach recent file reads and the live task list as hidden reminders.
+      for (const reminder of compressed.reminders) messages.push(reminder);
+    }
 
     const result = await chatWithFallback({
       cfg: opts.cfg,
@@ -195,17 +271,17 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.emit({ type: "tool_call", name, args });
         return { name, args, t0: Date.now() };
       });
-      const batchResults = await Promise.all(
-        prepared.map((item) =>
-          opts.tools.exec(item.name, item.args, {
-            cfg: opts.cfg,
-            workspace: opts.cfg.workspace,
-            emit: opts.emit,
-            signal: opts.signal,
-            allowedTools: runAllowedTools,
-            ...(opts.taskId ? { taskId: opts.taskId } : {}),
-          }),
-        ),
+      const batchResults = await mapWithConcurrency(prepared, PARALLEL_READ_LIMIT, (item) =>
+        opts.tools.exec(item.name, item.args, {
+          cfg: opts.cfg,
+          workspace: opts.cfg.workspace,
+          emit: opts.emit,
+          signal: opts.signal,
+          allowedTools: runAllowedTools,
+          readState,
+          ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
+          ...(opts.taskId ? { taskId: opts.taskId } : {}),
+        }),
       );
       for (let i = 0; i < prepared.length; i++) {
         const item = prepared[i]!;
@@ -215,6 +291,11 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.onToolEvidence?.(evidence);
         const notice = stallGuard(item.name, item.args, toolResult.ok);
         if (notice) stallNotices.push(notice);
+        if (TODO_UPDATE_TOOLS.has(item.name) && toolResult.ok) {
+          reminders.noteTodoUpdate(step);
+          currentTodos = parseTaskList(item.name, item.args);
+        }
+        if (MEMORY_UPDATE_TOOLS.has(item.name) && toolResult.ok) reminders.memoryUpdated();
         opts.emit({
           type: "tool_result",
           name: item.name,
@@ -222,7 +303,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           summary: summarize(toolResult.content),
           ms: Date.now() - item.t0,
         });
-        messages.push({ role: "tool", tool_name: item.name, content: toolResult.content });
+        messages.push({ role: "tool", tool_name: item.name, content: toolMessageContent(item.name, toolResult.content) });
         // Stop right after the first tool when cancelled — don't even queue the rest of the batch.
         throwIfCancelled(opts.signal, opts.taskId);
       }
@@ -239,6 +320,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           emit: opts.emit,
           signal: opts.signal,
           allowedTools: runAllowedTools,
+          readState,
+          ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
           ...(opts.taskId ? { taskId: opts.taskId } : {}),
         });
 
@@ -248,7 +331,12 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.onToolEvidence?.(evidence);
         const notice = stallGuard(name, args, toolResult.ok);
         if (notice) stallNotices.push(notice);
-        messages.push({ role: "tool", tool_name: name, content: toolResult.content });
+        if (TODO_UPDATE_TOOLS.has(name) && toolResult.ok) {
+          reminders.noteTodoUpdate(step);
+          currentTodos = parseTaskList(name, args);
+        }
+        if (MEMORY_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.memoryUpdated();
+        messages.push({ role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) });
         // Cancel pressed while the tool ran? Stop before the next tool/step.
         throwIfCancelled(opts.signal, opts.taskId);
 
@@ -277,4 +365,38 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   const msg = `stopped after ${maxSteps} steps without finishing`;
   opts.emit({ type: "error", message: msg });
   throw new Error(msg);
+}
+
+/**
+ * Mirror the live task list the model just sent into the run-local copy used for
+ * post-compaction re-attachment. Two tools maintain that list, with different
+ * shapes: `todo_write` sends `{ todos: [{ content, status }] }` and `plan` sends
+ * `{ steps: [{ title, status? }] }` with statuses in a different vocabulary.
+ * Parsing is best-effort: a malformed list leaves the previous mirror in place
+ * rather than throwing.
+ */
+export function parseTaskList(toolName: string, args: Record<string, unknown>): TodoItem[] {
+  const raw = args.todos ?? args.steps;
+  if (!Array.isArray(raw)) return [];
+  const items: TodoItem[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    const content = typeof record.content === "string" ? record.content.trim()
+      : typeof record.title === "string" ? record.title.trim() : "";
+    if (!content) continue;
+    const status = normalizeTodoStatus(String(record.status ?? ""), toolName);
+    items.push({ id: `todo-${items.length}`, content, status });
+  }
+  return items.length > 0 ? items : [];
+}
+
+/** Fold the `plan` tool's status vocabulary onto the todo one. */
+function normalizeTodoStatus(status: string, toolName: string): TodoStatus {
+  if (toolName === "plan") {
+    if (status === "doing") return "in_progress";
+    if (status === "done") return "completed";
+  }
+  if (status === "pending" || status === "in_progress" || status === "completed") return status;
+  return "pending";
 }

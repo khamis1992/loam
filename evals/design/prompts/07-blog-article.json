@@ -1,0 +1,12 @@
+{
+  "id": "blog-article",
+  "prompt": "Build a long-form blog article page with a clear reading measure, a table of contents, pull quotes, a byline and a related-articles footer. The typography should reward reading: generous line height, strong heading scale and no layout shifts between sections.",
+  "locale": "en",
+  "direction": "ltr",
+  "expectations": {
+    "must": ["byline", "table of contents", "related articles"],
+    "mustNot": ["lorem ipsum", "justified text with rivers"],
+    "keywords": ["article", "reading"],
+    "minLint": 80
+  }
+}

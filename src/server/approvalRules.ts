@@ -12,6 +12,8 @@
  */
 import crypto from "node:crypto";
 import { database } from "./sqliteStore.js";
+import { isSandboxMode, type RiskTier, type SandboxMode } from "../policy/riskTier.js";
+import { isLocalPermissionMode, type LocalPermissionMode } from "../policy/permissionModes.js";
 
 export type ApprovalDecision = "allow" | "deny";
 
@@ -23,6 +25,13 @@ export interface ApprovalRule {
   /** null = any arguments; otherwise a case-insensitive substring match on the canonical JSON of the args. */
   pattern: string | null;
   decision: ApprovalDecision;
+  /**
+   * Optional risk tier this rule is scoped to. A `destructive`/`secret` call can
+   * only be auto-approved by a rule that names that exact tier; every other rule
+   * is ignored for those tiers. null = tier-agnostic (never matches
+   * destructive/secret auto-approval).
+   */
+  tier?: RiskTier | null;
   createdAt: string;
 }
 
@@ -41,6 +50,7 @@ function ensureTables(): void {
     tool TEXT NOT NULL,
     pattern TEXT,
     decision TEXT NOT NULL CHECK (decision IN ('allow','deny')),
+    tier TEXT,
     created_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS approval_rules_scope ON approval_rules(agent_id, tool);
@@ -54,6 +64,16 @@ function ensureTables(): void {
     task_id TEXT PRIMARY KEY,
     auto INTEGER NOT NULL,
     updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS sandbox_task_modes (
+    task_id TEXT PRIMARY KEY,
+    mode TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS permission_task_modes (
+    task_id TEXT PRIMARY KEY,
+    mode TEXT NOT NULL,
+    updated_at TEXT NOT NULL
   );`);
 }
 
@@ -66,6 +86,7 @@ function rowToRule(row: unknown): ApprovalRule {
     tool: string;
     pattern: string | null;
     decision: string;
+    tier: string | null;
     created_at: string;
   };
   return {
@@ -74,6 +95,7 @@ function rowToRule(row: unknown): ApprovalRule {
     tool: r.tool,
     pattern: r.pattern ?? null,
     decision: r.decision === "deny" ? "deny" : "allow",
+    tier: (r.tier as RiskTier | null | undefined) ?? null,
     createdAt: r.created_at,
   };
 }
@@ -108,8 +130,11 @@ interface RuleRow {
   tool: string;
   pattern: string | null;
   decision: string;
+  tier: string | null;
   created_at: string;
 }
+
+const RULE_COLUMNS = "id, agent_id, tool, pattern, decision, tier, created_at";
 
 function patternMatches(pattern: string | null, argsSource: string): boolean {
   const p = (pattern ?? "").trim();
@@ -121,7 +146,7 @@ function patternMatches(pattern: string | null, argsSource: string): boolean {
  *  ones; within a scope the newest rule wins. */
 export function matchApprovalRule(input: { agentId?: string | null; tool: string; args?: unknown }): ApprovalRule | undefined {
   const rows = database()
-    .prepare("SELECT id, agent_id, tool, pattern, decision, created_at FROM approval_rules WHERE tool = ? ORDER BY created_at DESC, id DESC")
+    .prepare(`SELECT ${RULE_COLUMNS} FROM approval_rules WHERE tool = ? ORDER BY created_at DESC, id DESC`)
     .all(input.tool) as unknown as RuleRow[];
   const argsSource = canonicalArgsJson(input.args ?? {});
   const pick = (scopeAgentId: string | null): ApprovalRule | undefined => {
@@ -141,7 +166,7 @@ export function matchApprovalRule(input: { agentId?: string | null; tool: string
 /** Rules for one agent (its own rules plus global ones). Without an agentId every rule is returned. */
 export function listApprovalRules(agentId?: string | null): ApprovalRule[] {
   const rows = database()
-    .prepare("SELECT id, agent_id, tool, pattern, decision, created_at FROM approval_rules ORDER BY created_at DESC, id DESC")
+    .prepare(`SELECT ${RULE_COLUMNS} FROM approval_rules ORDER BY created_at DESC, id DESC`)
     .all() as unknown as RuleRow[];
   return rows
     .map(rowToRule)
@@ -150,30 +175,41 @@ export function listApprovalRules(agentId?: string | null): ApprovalRule[] {
 
 /** Create-or-update: an existing rule with the same scope (agent, tool, pattern)
  *  keeps its identity and only its decision is replaced. */
-export function createApprovalRule(input: { agentId?: string | null; tool: string; pattern?: string | null; decision: ApprovalDecision }): ApprovalRule {
+export function createApprovalRule(input: {
+  agentId?: string | null;
+  tool: string;
+  pattern?: string | null;
+  decision: ApprovalDecision;
+  /** Optional risk-tier scope; required to auto-approve destructive/secret calls. */
+  tier?: RiskTier | null;
+}): ApprovalRule {
   const tool = input.tool.trim();
   if (!tool) throw new Error("tool is required");
   if (input.decision !== "allow" && input.decision !== "deny") throw new Error("decision must be allow or deny");
   const agentId = input.agentId && input.agentId.trim() ? input.agentId.trim() : null;
   const patternRaw = typeof input.pattern === "string" ? input.pattern.trim() : "";
   const pattern = patternRaw || null;
+  const tier = input.tier ?? null;
   const db = database();
   const existing = db
-    .prepare("SELECT id, agent_id, tool, pattern, decision, created_at FROM approval_rules WHERE tool = ? AND IFNULL(agent_id,'') = IFNULL(?, '') AND IFNULL(pattern,'') = IFNULL(?, '')")
-    .get(tool, agentId, pattern) as unknown as RuleRow | undefined;
+    .prepare(
+      `SELECT ${RULE_COLUMNS} FROM approval_rules WHERE tool = ? AND IFNULL(agent_id,'') = IFNULL(?, '') AND IFNULL(pattern,'') = IFNULL(?, '') AND IFNULL(tier,'') = IFNULL(?, '')`,
+    )
+    .get(tool, agentId, pattern, tier) as unknown as RuleRow | undefined;
   if (existing) {
-    db.prepare("UPDATE approval_rules SET decision = ? WHERE id = ?").run(input.decision, existing.id);
-    const updated = db.prepare("SELECT id, agent_id, tool, pattern, decision, created_at FROM approval_rules WHERE id = ?").get(existing.id) as unknown as RuleRow;
+    db.prepare("UPDATE approval_rules SET decision = ?, tier = ? WHERE id = ?").run(input.decision, tier, existing.id);
+    const updated = db.prepare(`SELECT ${RULE_COLUMNS} FROM approval_rules WHERE id = ?`).get(existing.id) as unknown as RuleRow;
     return rowToRule(updated);
   }
   const now = new Date().toISOString();
-  const rule: ApprovalRule = { id: newRuleId(), agentId, tool, pattern, decision: input.decision, createdAt: now };
-  db.prepare("INSERT INTO approval_rules (id, agent_id, tool, pattern, decision, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(
+  const rule: ApprovalRule = { id: newRuleId(), agentId, tool, pattern, decision: input.decision, tier, createdAt: now };
+  db.prepare("INSERT INTO approval_rules (id, agent_id, tool, pattern, decision, tier, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(
     rule.id,
     rule.agentId,
     rule.tool,
     rule.pattern,
     rule.decision,
+    rule.tier ?? null,
     rule.createdAt,
   );
   return rule;
@@ -220,4 +256,42 @@ export function setTaskApprovalAuto(taskId: string, auto: boolean): void {
 export function taskApprovalAuto(taskId: string): boolean {
   const row = database().prepare("SELECT auto FROM approval_task_modes WHERE task_id = ?").get(taskId) as { auto: number } | undefined;
   return row?.auto === 1;
+}
+
+/** Persist the per-task sandbox override (used as the session override). */
+export function setTaskSandboxMode(taskId: string, mode: SandboxMode): void {
+  if (!taskId) throw new Error("taskId is required");
+  if (!isSandboxMode(mode)) throw new Error("invalid sandbox mode");
+  database()
+    .prepare(
+      "INSERT INTO sandbox_task_modes (task_id, mode, updated_at) VALUES (?, ?, ?) ON CONFLICT(task_id) DO UPDATE SET mode = excluded.mode, updated_at = excluded.updated_at",
+    )
+    .run(taskId, mode, new Date().toISOString());
+}
+
+/** Read the persisted per-task sandbox override; undefined when unset. */
+export function taskSandboxMode(taskId: string): SandboxMode | undefined {
+  const row = database().prepare("SELECT mode FROM sandbox_task_modes WHERE task_id = ?").get(taskId) as { mode: string } | undefined;
+  return row && isSandboxMode(row.mode) ? row.mode : undefined;
+}
+
+/**
+ * Persist the per-task local permission mode (plan / ask_for_approval /
+ * approve_for_me / full_access). `plan_exit` writes `approve_for_me` here once
+ * a plan is approved so later edits in the same task are allowed.
+ */
+export function setTaskPermissionMode(taskId: string, mode: LocalPermissionMode): void {
+  if (!taskId) throw new Error("taskId is required");
+  if (!isLocalPermissionMode(mode)) throw new Error("invalid permission mode");
+  database()
+    .prepare(
+      "INSERT INTO permission_task_modes (task_id, mode, updated_at) VALUES (?, ?, ?) ON CONFLICT(task_id) DO UPDATE SET mode = excluded.mode, updated_at = excluded.updated_at",
+    )
+    .run(taskId, mode, new Date().toISOString());
+}
+
+/** Read the persisted per-task permission mode; undefined when unset. */
+export function taskPermissionMode(taskId: string): LocalPermissionMode | undefined {
+  const row = database().prepare("SELECT mode FROM permission_task_modes WHERE task_id = ?").get(taskId) as { mode: string } | undefined;
+  return row && isLocalPermissionMode(row.mode) ? row.mode : undefined;
 }
