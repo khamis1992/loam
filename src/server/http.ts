@@ -375,7 +375,8 @@ async function applyPendingItem(item: PendingItem, memory?: MemoryStore): Promis
     if (!text) throw new Error("staged memory entry has no text");
     const kind = typeof item.payload["kind"] === "string" ? item.payload["kind"] : "note";
     const tags = Array.isArray(item.payload["tags"]) ? (item.payload["tags"] as unknown[]).map((t) => String(t)) : [];
-    const entry = await memory.add(text, { kind, tags });
+    const sessionId = typeof item.payload["sessionId"] === "string" ? item.payload["sessionId"] : undefined;
+    const entry = await memory.add(text, { kind, tags, ...(sessionId ? { sessionId } : {}) });
     return `memory_store ${entry.id}`;
   }
   if (item.kind === "skill_install") {
@@ -979,12 +980,13 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
 
         if (req.method === "POST" && p === "/api/memory") {
           if (!memory) return sendJson(res, 503, { error: "memory disabled in config" });
-          const body = (await readBody(req)) as { text?: unknown; kind?: unknown; tags?: unknown };
+          const body = (await readBody(req)) as { text?: unknown; kind?: unknown; tags?: unknown; sessionId?: unknown };
           const text = typeof body.text === "string" ? body.text.trim() : "";
           if (!text) return sendJson(res, 400, { error: "text required" });
           const tags = Array.isArray(body.tags) ? (body.tags as unknown[]).map((t) => String(t)) : [];
+          const sessionId = typeof body.sessionId === "string" ? body.sessionId : undefined;
           try {
-            const entry = await memory.add(text, { kind: typeof body.kind === "string" ? body.kind : "note", tags });
+            const entry = await memory.add(text, { kind: typeof body.kind === "string" ? body.kind : "note", tags, ...(sessionId ? { sessionId } : {}) });
             sendJson(res, 200, { entry });
           } catch (err) {
             sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
