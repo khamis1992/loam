@@ -46,6 +46,7 @@ export function loadSettings(): Settings {
         ...(typeof parsed.flexBaseUrl === "string" ? { flexBaseUrl: parsed.flexBaseUrl } : {}),
         ...(typeof parsed.flexModel === "string" ? { flexModel: parsed.flexModel } : {}),
         ...(typeof parsed.trainingOptOut === "boolean" ? { trainingOptOut: parsed.trainingOptOut } : {}),
+        ...(typeof parsed.autoApprove === "boolean" ? { autoApprove: parsed.autoApprove } : {}),
       };
     }
   } catch {
@@ -54,9 +55,11 @@ export function loadSettings(): Settings {
   return settings;
 }
 
-/** Live check used by mutating tools: writes apply directly unless auto-approval is off. */
+/** Live check used by mutating tools: writes stage for manual approval unless the
+ *  user explicitly turned auto-approval on. Missing/undefined is the conservative
+ *  default (approval required), so the preference survives an older settings file. */
 export function gateActive(): boolean {
-  return getSettings().autoApprove === false;
+  return getSettings().autoApprove !== true;
 }
 
 export function getSettings(): Settings {
