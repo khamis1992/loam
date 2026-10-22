@@ -276,18 +276,18 @@ describe('CraftPanel task-file helpers', () => {
     vi.restoreAllMocks();
   });
 
-  it('reads a task file as bytes through /api/files', async () => {
+  it('reads a task file as raw bytes through /api/media', async () => {
     const fetchMock = vi.fn(
       async () =>
-        new Response(JSON.stringify({ entries: [{ data: 'aGVsbG8=' }] }), {
+        new Response('hello', {
           status: 200,
-          headers: { 'content-type': 'application/json' },
+          headers: { 'content-type': 'application/octet-stream' },
         }),
     );
     vi.stubGlobal('fetch', fetchMock);
     const bytes = await fetchTaskFileBytes('t1', 'notes/a.txt');
     expect(new TextDecoder().decode(bytes)).toBe('hello');
-    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toContain('/api/files?');
+    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toContain('/api/media?');
     expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toContain('taskId=t1');
   });
 

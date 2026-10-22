@@ -122,24 +122,14 @@ export async function fetchCraftStatus(): Promise<CraftStatus> {
   }
 }
 
-/** Read one task file's bytes through the existing task-files API. */
+/** Read one task file's raw bytes through the media endpoint (serves any extension). */
 export async function fetchTaskFileBytes(taskId: string, path: string): Promise<Uint8Array> {
   const params = new URLSearchParams({ taskId, path });
-  const res = await fetch(`${getApiBase()}/api/files?${params.toString()}`, {
+  const res = await fetch(`${getApiBase()}/api/media?${params.toString()}`, {
     headers: await getApiHeaders(),
   });
   if (!res.ok) throw new Error(`failed to fetch ${path} (${res.status})`);
-  const data = (await res.json()) as { entries?: Array<{ data?: string }> };
-  const encoded = data.entries?.[0]?.data;
-  if (!encoded) throw new Error(`file not found in task: ${path}`);
-  return base64ToBytes(encoded);
-}
-
-export function base64ToBytes(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+  return new Uint8Array(await res.arrayBuffer());
 }
 
 /** MIME type used when storing saved bytes, derived from the file extension. */

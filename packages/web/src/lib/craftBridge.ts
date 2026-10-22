@@ -2,7 +2,7 @@
  * Agent bridge for the vendored Loam Craft editors.
  *
  * Five editors ship as wasm web builds and are served from the privileged
- * `loamcraft://` scheme (see docs/craft-bridge-protocol and .cr-ref/CRAFT_PLAN.md):
+ * `loamcraft://` scheme (see .cr-ref/CRAFT_PLAN.md and .cr-ref/craft/loam_bridge.rs):
  *   docs -> Loam Docs, sheets -> Loam Sheets, slides -> Loam Slides,
  *   photo -> Loam Photo, design -> Loam Design.
  * Each page runs an injected relay (electron/craft/bridge-relay.js) that exposes
