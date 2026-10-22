@@ -209,7 +209,7 @@ Shell rules:
 |---|---|---|
 | `code_session` | `task`, `acceptance`, `files_hint?`, `model?`, `base?`, `name?` | Runs OpenCode in an isolated git worktree on its own branch. You write the brief, supervise and verify (§8.4, §12). |
 | `code_session_status` / `code_session_collect` | `id` | Monitor the session, then collect its commits and diff. It never merges or pushes. |
-| `delegate_subagent` | `subagent: explore\|coder\|reviewer\|…`, `task` | An in-process specialist with a restricted toolset. |
+| `delegate_subagent`, `delegate_task` | `subagent` or `subagent_type`: `explore\|coder\|reviewer\|<repo-name>`, `task`/`prompt` | An in-process specialist with its own restricted toolset and optional model, loaded from `agents/*.md`, `.claude/agents/*.md` or `.loam/agents/*.md`. Only its final report returns, so the parent context stays clean. |
 
 ### 6.6 Browser and computer
 | Tool | Key parameters | Use |
