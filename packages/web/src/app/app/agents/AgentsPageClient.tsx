@@ -7,6 +7,7 @@ import { t } from '@/i18n/t';
 import { Button } from '@/components/ui/Button';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { setAgentPinned, reorderPinnedAgents } from '@/services/agentsPinsApi';
+import { isToggleAgentInfoPaneEvent } from '@/lib/agentInfoPaneShortcut';
 import { AgentSidebarList } from '@/components/agents/AgentSidebarList';
 import { AgentThreadView, resolveAgentThread } from '@/components/agents/AgentThreadView';
 import { AgentInfoPane } from '@/components/agents/AgentInfoPane';
@@ -27,6 +28,8 @@ interface Agent extends AgentCardAgent {
   instructions?: string;
   effort?: string;
   allowedServices?: string[];
+  title?: string;
+  notifications?: boolean;
 }
 
 interface AgentThreadSummary {
@@ -137,10 +140,10 @@ export default function AgentsPageClient() {
     return () => { mounted = false; };
   }, [agents]);
 
-  // Toggle info pane with Ctrl+Shift+I.
+  // Toggle info pane with Cmd/Ctrl+Shift+I.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'i') {
+      if (isToggleAgentInfoPaneEvent(e)) {
         e.preventDefault();
         setInfoOpen((v) => !v);
       }
@@ -381,7 +384,6 @@ export default function AgentsPageClient() {
           agent={{ id: selectedGroup.id, name: selectedGroup.name, emoji: '👥' }}
           threadUid={null}
           onClose={() => setInfoOpen(false)}
-          onEdit={() => undefined}
           group={selectedGroup}
           onGroupChanged={handleGroupChanged}
         />
@@ -390,9 +392,9 @@ export default function AgentsPageClient() {
           agent={selectedAgent}
           threadUid={infoThreadUid}
           onClose={() => setInfoOpen(false)}
-          onEdit={() => setEditAgent(selectedAgent)}
           onRenameAgent={() => setRenameAgent(selectedAgent)}
           onDeleteAgent={() => void handleDeleteAgent(selectedAgent)}
+          onSaved={() => void loadAgents()}
         />
       ) : null}
 

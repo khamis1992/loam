@@ -799,5 +799,22 @@
   "Agent info": "Agent info",
   "Message": "Message",
   "Open in task view": "Open in task view",
-  "Toggle info pane": "Toggle info pane"
+  "Toggle info pane": "Toggle info pane",
+  "Memory disabled (Chat only)": "Memory disabled (Chat only)",
+  "Overview": "Overview",
+  "Members": "Members",
+  "Advanced": "Advanced",
+  "Title": "Title",
+  "Agent settings": "Agent settings",
+  "Per-agent notifications": "Per-agent notifications",
+  "Notifications for this agent": "Notifications for this agent",
+  "Toggle agent info pane": "Toggle agent info pane",
+  "Avatar": "Avatar",
+  "Shape": "Shape",
+  "Color": "Color",
+  "Default avatar": "Default avatar",
+  "Group chat": "Group chat",
+  "Work mode": "Work mode",
+  "Allowed services": "Allowed services",
+  "All services": "All services"
 }
