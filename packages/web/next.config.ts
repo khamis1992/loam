@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   distDir: 'out',
   images: { unoptimized: true },
   turbopack: {
-    root: '.',
+    root: '../../../../..',
   },
 };
 
