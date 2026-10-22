@@ -8,6 +8,8 @@ Ran `git merge manus-parity`; conflicts were resolved keeping BOTH sides (never 
   additions (`SIDE_CHAT_READ_ONLY_TOOLS` import, `sideChatSuffix` in the prompt suffix array, the
   read-only `baseRunAllow`/`runAllow` filtering, and `sideChat: opts.sideChat === true` on the saved run).
 - `.jdone`: this file merges the V13 report and the incoming D16 report instead of choosing one.
+Resolution committed as `872addf Merge branch 'manus-parity' into khamis1992/v0-v13`.
+`git merge-tree --write-tree manus-parity HEAD` exits 0, so no conflict re-emerges.
 
 Earlier in the task, a merge of manus-parity also resolved these files keeping both sides:
 - `src/index.ts`: quick-edit route + memory index summary (`memoryIndexSummary` from `memory.indexSummary(8)`).
@@ -33,9 +35,15 @@ That resolution was committed as `7d52e7c merge manus-parity: keep quick-edit ro
 - `npx tsc --noEmit` -> clean
 - `npm run build:server` -> dist/server.cjs built, pdf worker copied
 - `(cd packages/web && npx next build)` -> compiled successfully, 25/25 static pages generated
-- `node --import tsx --test src/agent/__tests__/*.test.ts` -> 144 pass, 0 fail
-- `node --import tsx --test src/tools/__tests__/*.test.ts` -> 435 pass, 0 fail
-  (includes quickEdit, editSchemaAlias, findAndEdit, fileLock, mapReduce)
+- `node --import tsx --test src/agent/__tests__/*.test.ts src/server/__tests__/*.test.ts` -> 527 pass, 0 fail
+- `node --import tsx --test src/tools/__tests__/quickEdit.test.ts src/tools/__tests__/findAndEdit.test.ts src/tools/__tests__/editSchemaAlias.test.ts` -> 27 pass, 0 fail
+
+One pre-existing environment-only flake remains, NOT caused by this merge:
+`src/tools/__tests__/search.test.ts` asserts a wall-clock budget (`elapsed < 1000`) for a real
+repository grep. On this machine it measures ~1.1-1.5s. Verified pre-existing by running the same
+test on a clean `manus-parity` worktree at `C:/Users/khamis/Desktop/manus-local`, which fails
+identically at 1526ms (this branch measures faster, 1139ms). The test is a machine-speed assertion,
+not a regression, so it was not weakened. Every other test in the suite passes.
 
 Working tree is clean; no existing test was weakened.
 
