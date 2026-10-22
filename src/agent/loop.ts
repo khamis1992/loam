@@ -35,6 +35,9 @@ export interface RunOptions {
   systemSuffix?: string;
   /** Overrides cfg.agent.maxSteps for this run (orchestrator workers get a tighter budget). */
   maxSteps?: number;
+  /** Preferred model for this run. Used by the quick-edit route to send a
+   *  narrow edit to the fast model; defaults to cfg.model. */
+  model?: string;
   /** Skip the terminal assistant_message/done events (the orchestrator emits its own). */
   suppressFinal?: boolean;
   /** Subagent delegation depth for this run (0 = top-level). */
@@ -133,7 +136,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   messages.push({ role: "user", content: opts.prompt });
 
   let finalText = "";
-  let usedModel = opts.cfg.model;
+  let usedModel = opts.model && opts.model.trim() ? opts.model.trim() : opts.cfg.model;
   let step = 0;
   const usage = { promptTokens: 0, completionTokens: 0, durationMs: 0 };
   const trace: ToolTraceItem[] = [];
@@ -188,6 +191,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
       messages,
       tools: opts.tools.toOllama(),
       temperature: opts.cfg.agent.temperature,
+      ...(opts.model && opts.model.trim() ? { model: opts.model.trim() } : {}),
       signal: opts.signal,
       // Buffer candidate answers: streaming an unverified success claim would
       // expose a result that the completion gate may subsequently reject.

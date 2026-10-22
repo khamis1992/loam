@@ -21,7 +21,11 @@ interface MultiEdit {
   replaceAll: boolean;
 }
 
-interface DiffHunk {
+/** One changed range in a line diff. `oldStart`/`newStart` are 1-based first
+ *  lines; `oldEnd`/`newEnd` are 1-based last lines (equal to the start minus one
+ *  when nothing was removed/added). Exported so callers can build targeted
+ *  patches from the same diff the edit tool reports. */
+export interface DiffHunk {
   oldStart: number;
   oldEnd: number;
   newStart: number;
@@ -30,7 +34,7 @@ interface DiffHunk {
   removed: number;
 }
 
-interface DiffSummary {
+export interface DiffSummary {
   added: number;
   removed: number;
   hunks: DiffHunk[];
@@ -89,8 +93,9 @@ function coarseDiff(a: string[], b: string[]): DiffSummary {
   return { added, removed, hunks };
 }
 
-/** Line diff via LCS, producing unified-diff-style hunks. */
-function diffLines(a: string[], b: string[]): DiffSummary {
+/** Line diff via LCS, producing unified-diff-style hunks. Exported so the
+ *  quick-edit route can turn a before/after pair into targeted patches. */
+export function diffLines(a: string[], b: string[]): DiffSummary {
   const n = a.length;
   const m = b.length;
   if (n > MAX_DIFF_LINES || m > MAX_DIFF_LINES) return coarseDiff(a, b);
