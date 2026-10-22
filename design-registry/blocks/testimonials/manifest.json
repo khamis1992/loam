@@ -1,0 +1,18 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "testimonials",
+  "name": "Testimonials",
+  "description": "A three-up testimonial row with quote text, an avatar, a name and a role for social proof.",
+  "category": "social-proof",
+  "license": "MIT",
+  "source": "shadcn/ui blocks",
+  "tags": ["testimonials", "social-proof", "quotes"],
+  "intent": "Build trust with short customer quotes attributed to real roles.",
+  "deps": ["react"],
+  "rtl": false,
+  "dir": "ltr",
+  "lang": "en",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"]
+}

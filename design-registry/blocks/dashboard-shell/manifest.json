@@ -1,0 +1,18 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "dashboard-shell",
+  "name": "Dashboard Shell",
+  "description": "An app dashboard frame with a collapsible sidebar, top navigation and a content area ready for widgets.",
+  "category": "dashboard",
+  "license": "MIT",
+  "source": "shadcn/ui blocks",
+  "tags": ["dashboard", "shell", "sidebar"],
+  "intent": "Application frame that gives a product a persistent navigation and content region.",
+  "deps": ["react"],
+  "rtl": false,
+  "dir": "ltr",
+  "lang": "en",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"]
+}

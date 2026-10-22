@@ -1,0 +1,19 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "rtl-testimonials",
+  "name": "Testimonials (Arabic RTL)",
+  "description": "The Arabic RTL variant of the testimonials row with real Arabic quotes and right-to-left attribution.",
+  "category": "social-proof",
+  "license": "original",
+  "source": "Loam",
+  "tags": ["testimonials", "social-proof", "rtl", "arabic"],
+  "intent": "Arabic social proof with short, genuine customer quotes.",
+  "deps": ["react"],
+  "rtl": true,
+  "dir": "rtl",
+  "lang": "ar",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"],
+  "base": "testimonials"
+}
