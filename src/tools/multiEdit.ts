@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { resolveWrite } from "../policy/paths.js";
+import {
+  formatDiagnosticReport,
+  resolveDiagnosticsSettings,
+  runDiagnostics,
+} from "../agent/diagnostics.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { bool, str } from "./registry.js";
 
@@ -270,7 +275,18 @@ export function createMultiEditTools(): Tool[] {
           return { ok: false, content: `cannot write ${p}: ${err instanceof Error ? err.message : String(err)}` };
         }
 
-        return { ok: true, content: formatSummary(p, edits.length, normalized.split("\n").length, work.split("\n").length, diff) };
+        const summary = formatSummary(p, edits.length, normalized.split("\n").length, work.split("\n").length, diff);
+        let content = summary;
+        try {
+          const settings = resolveDiagnosticsSettings(ctx.workspace, ctx.cfg);
+          if (settings.enabled) {
+            const outcome = await runDiagnostics(p, settings);
+            if (outcome) content = `${summary}\n\n${formatDiagnosticReport(outcome)}`;
+          }
+        } catch {
+          /* diagnostics are advisory and never fail the edit */
+        }
+        return { ok: true, content };
       },
     },
   ];

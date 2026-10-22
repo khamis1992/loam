@@ -1,8 +1,27 @@
 import fs from "node:fs";
 import path from "node:path";
 import { resolveRead, resolveWrite } from "../policy/paths.js";
+import {
+  formatDiagnosticReport,
+  resolveDiagnosticsSettings,
+  runDiagnostics,
+} from "../agent/diagnostics.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { bool, num, str } from "./registry.js";
+
+/** Append per-edit diagnostics to a successful write result. Never throws and
+ *  never turns a successful edit into a failure. */
+async function withDiagnostics(content: string, file: string, ctx: ToolContext): Promise<string> {
+  try {
+    const settings = resolveDiagnosticsSettings(ctx.workspace, ctx.cfg);
+    if (!settings.enabled) return content;
+    const outcome = await runDiagnostics(file, settings);
+    if (!outcome) return content;
+    return `${content}\n\n${formatDiagnosticReport(outcome)}`;
+  } catch {
+    return content;
+  }
+}
 
 const IGNORE_DIRS = new Set([
   "node_modules",
@@ -99,7 +118,7 @@ export const fileTools: Tool[] = [
       if (bool(args, "append")) fs.appendFileSync(p, content, "utf8");
       else fs.writeFileSync(p, content, "utf8");
       const size = fs.statSync(p).size;
-      return { ok: true, content: `wrote ${size} bytes to ${p}` };
+      return { ok: true, content: await withDiagnostics(`wrote ${size} bytes to ${p}`, p, ctx) };
     },
   },
   {
@@ -127,7 +146,7 @@ export const fileTools: Tool[] = [
       if (occurrences !== want) return { ok: false, content: `find string appears ${occurrences} times (expected ${want}); refine the search text` };
       if (find === replace) return { ok: true, content: `no change: find and replace are identical; ${p} was not written. This is not evidence of a new modification.` };
       fs.writeFileSync(p, original.split(find).join(replace), "utf8");
-      return { ok: true, content: `replaced ${occurrences} occurrence(s) in ${p}` };
+      return { ok: true, content: await withDiagnostics(`replaced ${occurrences} occurrence(s) in ${p}`, p, ctx) };
     },
   },
   {
