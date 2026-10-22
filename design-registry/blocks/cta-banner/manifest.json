@@ -1,0 +1,17 @@
+{
+  "id": "cta-banner",
+  "name": "Call to action banner",
+  "description": "A full-width call-to-action band with a headline, supporting sentence and one primary button. Solid token background only, no decorative gradients or blobs.",
+  "type": "cta",
+  "tags": ["cta", "call to action", "banner", "conversion", "دعوة لاتخاذ إجراء", "بانر"],
+  "intents": ["call to action section", "cta banner", "conversion band", "دعوة لاتخاذ إجراء مع زر"],
+  "dependencies": ["button"],
+  "tokens": ["primary", "primary-foreground", "muted-foreground", "border"],
+  "file": "blocks/cta-banner/example.tsx",
+  "screenshot": "blocks/cta-banner/screenshot.png",
+  "rtl": false,
+  "accessibility": ["one clear action", "contrast-checked text on the band", "visible focus ring"],
+  "license": "MIT",
+  "source": "shadcn/ui",
+  "code": "export function CtaBanner() {\n  return (\n    <section className=\"bg-primary text-primary-foreground\">\n      <div className=\"mx-auto max-w-3xl px-6 py-16 text-center\">\n        <h2 className=\"text-3xl font-semibold\">Start building today</h2>\n        <p className=\"mt-3 opacity-90\">Free for small teams, no credit card required.</p>\n        <Button variant=\"secondary\" className=\"mt-6\">Create your workspace</Button>\n      </div>\n    </section>\n  );\n}"
+}

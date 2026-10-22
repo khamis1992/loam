@@ -1,0 +1,17 @@
+{
+  "id": "pricing-tiered-rtl",
+  "name": "Tiered pricing table (Arabic RTL)",
+  "description": "The tiered pricing table adapted for Arabic: dir=\"rtl\", logical spacing properties (ms/me/ps/pe), an Arabic-capable font pair, and prices rendered with Arabic-Indic numerals where appropriate.",
+  "type": "pricing",
+  "tags": ["pricing", "plans", "subscription", "billing", "rtl", "arabic", "عربي", "تسعير", "أسعار", "خطط", "اشتراك"],
+  "intents": ["pricing page in Arabic", "rtl pricing section", "صفحة أسعار عربية", "خطط اشتراك بالعربية", "مقارنة خطط من اليمين لليسار"],
+  "dependencies": ["card", "button", "badge", "switch", "table"],
+  "tokens": ["card", "card-foreground", "primary", "primary-foreground", "muted", "muted-foreground", "border"],
+  "file": "blocks/pricing-tiered-rtl/example.tsx",
+  "screenshot": "blocks/pricing-tiered-rtl/screenshot.png",
+  "rtl": true,
+  "accessibility": ["dir=rtl on section", "logical ms/me/ps/pe properties", "Arabic-capable font (IBM Plex Sans Arabic / Noto Kufi Arabic)", "labelled billing toggle"],
+  "license": "MIT",
+  "source": "Loam UI Kit",
+  "code": "export function PricingTieredRtl({ annual }) {\n  return (\n    <section dir=\"rtl\" className=\"mx-auto max-w-5xl px-6 py-16\">\n      <h1 className=\"text-3xl font-semibold\">خطط الأسعار</h1>\n      <div className=\"mt-6 flex items-center gap-3\">\n        <span>شهري</span>\n        <Switch aria-label=\"التبديل إلى الفوترة السنوية\" checked={annual} onCheckedChange={() => {}} />\n        <span>سنوي</span>\n      </div>\n      <div className=\"mt-10 grid gap-6 md:grid-cols-3\">\n        {PLANS_AR.map((plan) => (\n          <Card key={plan.name}><CardHeader><CardTitle>{plan.name}</CardTitle></CardHeader>\n            <CardContent><p className=\"text-3xl font-semibold\">{plan.price}</p></CardContent>\n          </Card>\n        ))}\n      </div>\n    </section>\n  );\n}"
+}

@@ -33,6 +33,8 @@ function fromEnv(name: string, fallback: string): string {
 export const DATA_DIR = fromEnv("MANUS_LOCAL_DATA_DIR", path.join(ROOT, "data"));
 export const SKILLS_DIR = fromEnv("MANUS_LOCAL_SKILLS_DIR", path.join(ROOT, "skills"));
 export const EVALS_DIR = fromEnv("MANUS_LOCAL_EVALS_DIR", path.join(ROOT, "evals"));
+/** Vetted Loam UI Kit blocks (design-registry/blocks/<id>/manifest.json) used by ui_examples_search. */
+export const DESIGN_REGISTRY_DIR = fromEnv("MANUS_LOCAL_DESIGN_REGISTRY_DIR", path.join(ROOT, "design-registry"));
 export const UI_DIR = path.join(ROOT, "ui");
 export const SCRIPTS_DIR = path.join(ROOT, "scripts");
 

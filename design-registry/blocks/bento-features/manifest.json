@@ -1,0 +1,17 @@
+{
+  "id": "bento-features",
+  "name": "Bento feature grid",
+  "description": "An asymmetric bento grid of feature cards with proportional tiles. Works best with three to six items and one tile sized larger to carry the primary message.",
+  "type": "bento",
+  "tags": ["bento", "grid", "features", "cards", "showcase", "شبكة", "مزايا"],
+  "intents": ["bento grid", "feature showcase", "asymmetric card grid", "product capabilities", "شبكة مزايا غير متماثلة"],
+  "dependencies": ["card"],
+  "tokens": ["card", "card-foreground", "muted", "border", "accent"],
+  "file": "blocks/bento-features/example.tsx",
+  "screenshot": "blocks/bento-features/screenshot.png",
+  "rtl": false,
+  "accessibility": ["logical reading order", "headings for each tile", "sufficient color contrast"],
+  "license": "MIT",
+  "source": "shadcn/ui",
+  "code": "export function BentoFeatures({ items }) {\n  return (\n    <div className=\"grid gap-4 sm:grid-cols-3\">\n      {items.map((item, i) => (\n        <Card key={item.title} className={i === 0 ? \"sm:col-span-2\" : \"\"}>\n          <CardHeader><CardTitle>{item.title}</CardTitle></CardHeader>\n          <CardContent>{item.body}</CardContent>\n        </Card>\n      ))}\n    </div>\n  );\n}"
+}

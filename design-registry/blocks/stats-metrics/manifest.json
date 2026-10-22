@@ -1,0 +1,17 @@
+{
+  "id": "stats-metrics",
+  "name": "Metric cards",
+  "description": "A row of KPI metric cards: value, label, delta and a small sparkline. Uses the shadcn chart for the sparkline and semantic tokens for the delta colors.",
+  "type": "stats",
+  "tags": ["stats", "metrics", "kpi", "numbers", "chart", "إحصائيات", "مؤشرات"],
+  "intents": ["metrics row", "kpi cards", "statistics section", "dashboard numbers", "بطاقات مؤشرات أداء"],
+  "dependencies": ["card", "chart"],
+  "tokens": ["card", "card-foreground", "muted-foreground", "chart-1", "border"],
+  "file": "blocks/stats-metrics/example.tsx",
+  "screenshot": "blocks/stats-metrics/screenshot.png",
+  "rtl": false,
+  "accessibility": ["labelled chart", "delta announced as text not color only", "tabular values for screen readers"],
+  "license": "MIT",
+  "source": "shadcn/ui",
+  "code": "export function MetricCards({ metrics }) {\n  return (\n    <div className=\"grid gap-4 sm:grid-cols-3\">\n      {metrics.map((m) => (\n        <Card key={m.label}><CardHeader><CardDescription>{m.label}</CardDescription></CardHeader>\n          <CardContent><p className=\"text-2xl font-semibold\">{m.value}</p><span>{m.delta}</span></CardContent>\n        </Card>\n      ))}\n    </div>\n  );\n}"
+}

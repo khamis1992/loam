@@ -1,0 +1,17 @@
+{
+  "id": "dashboard-shell",
+  "name": "Dashboard shell",
+  "description": "A dashboard application shell: collapsible sidebar navigation, top bar with search and account menu, and a main content region that holds metrics and charts.",
+  "type": "dashboard",
+  "tags": ["dashboard", "shell", "sidebar", "admin", "analytics", "layout", "لوحة تحكم", "لوحة قياسية"],
+  "intents": ["dashboard layout", "app shell with sidebar", "admin panel frame", "analytics page", "لوحة تحكم مع قائمة جانبية"],
+  "dependencies": ["sidebar", "button", "input", "dropdown-menu", "card", "chart"],
+  "tokens": ["sidebar", "sidebar-foreground", "card", "muted", "border", "primary"],
+  "file": "blocks/dashboard-shell/example.tsx",
+  "screenshot": "blocks/dashboard-shell/screenshot.png",
+  "rtl": false,
+  "accessibility": ["nav landmark for sidebar", "main landmark for content", "labelled search input", "keyboard-reachable menu"],
+  "license": "MIT",
+  "source": "shadcn/ui",
+  "code": "export function DashboardShell({ children }) {\n  return (\n    <div className=\"grid min-h-screen sm:grid-cols-[240px_1fr]\">\n      <aside className=\"border-r bg-sidebar text-sidebar-foreground\"><nav>...</nav></aside>\n      <div className=\"flex flex-col\">\n        <header className=\"flex h-14 items-center gap-4 border-b px-6\"><Input placeholder=\"Search\" /></header>\n        <main className=\"flex-1 p-6\">{children}</main>\n      </div>\n    </div>\n  );\n}"
+}

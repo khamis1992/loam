@@ -1,0 +1,17 @@
+{
+  "id": "auth-signin",
+  "name": "Sign in / sign up card",
+  "description": "A centered authentication card with email and password fields, client-side validation, a submit button with loading state, and a link to the alternate mode. Includes password visibility toggle and error messaging.",
+  "type": "auth",
+  "tags": ["auth", "login", "signin", "signup", "form", "password", "تسجيل الدخول", "دخول", "حساب"],
+  "intents": ["sign in form", "login card", "signup page", "authentication form", "نموذج تسجيل الدخول"],
+  "dependencies": ["card", "button", "input", "label", "alert"],
+  "tokens": ["card", "card-foreground", "input", "primary", "destructive", "muted-foreground"],
+  "file": "blocks/auth-signin/example.tsx",
+  "screenshot": "blocks/auth-signin/screenshot.png",
+  "rtl": false,
+  "accessibility": ["labelled inputs", "inline error text linked with aria-describedby", "autocomplete attributes", "focus-visible rings"],
+  "license": "MIT",
+  "source": "shadcn/ui",
+  "code": "export function SignInCard() {\n  return (\n    <Card className=\"mx-auto w-full max-w-sm\">\n      <CardHeader><CardTitle>Sign in</CardTitle></CardHeader>\n      <CardContent className=\"space-y-4\">\n        <div><Label htmlFor=\"email\">Email</Label><Input id=\"email\" type=\"email\" autoComplete=\"email\" /></div>\n        <div><Label htmlFor=\"password\">Password</Label><Input id=\"password\" type=\"password\" autoComplete=\"current-password\" /></div>\n        <Button className=\"w-full\">Sign in</Button>\n      </CardContent>\n    </Card>\n  );\n}"
+}

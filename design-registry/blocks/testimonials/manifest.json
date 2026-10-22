@@ -1,0 +1,17 @@
+{
+  "id": "testimonials",
+  "name": "Testimonials",
+  "description": "A three-up testimonial row with quote, name, role and avatar. Cards share a consistent height and use semantic tokens; avatars always carry alt text.",
+  "type": "testimonials",
+  "tags": ["testimonials", "quotes", "reviews", "social proof", "آراء", "شهادات"],
+  "intents": ["customer testimonials", "reviews section", "social proof", "آراء العملاء"],
+  "dependencies": ["card", "avatar"],
+  "tokens": ["card", "card-foreground", "muted", "muted-foreground", "border"],
+  "file": "blocks/testimonials/example.tsx",
+  "screenshot": "blocks/testimonials/screenshot.png",
+  "rtl": false,
+  "accessibility": ["alt text on avatars", "semantic blockquote", "readable line length"],
+  "license": "MIT",
+  "source": "shadcn/ui",
+  "code": "export function Testimonials({ items }) {\n  return (\n    <section className=\"mx-auto max-w-5xl px-6 py-16\">\n      <div className=\"grid gap-6 md:grid-cols-3\">\n        {items.map((t) => (\n          <Card key={t.name}><CardContent className=\"pt-6\">\n            <blockquote className=\"text-muted-foreground\">{t.quote}</blockquote>\n            <div className=\"mt-4 flex items-center gap-3\"><Avatar /><span>{t.name}</span></div>\n          </CardContent></Card>\n        ))}\n      </div>\n    </section>\n  );\n}"
+}

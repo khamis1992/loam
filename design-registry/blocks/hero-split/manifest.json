@@ -1,0 +1,17 @@
+{
+  "id": "hero-split",
+  "name": "Split hero",
+  "description": "A two-column hero: headline, supporting copy and calls to action on one side, a product visual or dashboard preview on the other. Collapses to a single column on mobile.",
+  "type": "hero",
+  "tags": ["hero", "split", "landing", "two column", "preview", "صفحة هبوط", "واجهة مقسومة"],
+  "intents": ["split hero", "hero with product screenshot", "landing header with preview panel", "صفحة تعريفية مع صورة المنتج"],
+  "dependencies": ["button", "card"],
+  "tokens": ["background", "card", "card-foreground", "primary", "muted-foreground", "border"],
+  "file": "blocks/hero-split/example.tsx",
+  "screenshot": "blocks/hero-split/screenshot.png",
+  "rtl": false,
+  "accessibility": ["semantic header", "one h1 per page", "alt text on preview image"],
+  "license": "MIT",
+  "source": "shadcn/ui",
+  "code": "export function HeroSplit() {\n  return (\n    <section className=\"grid gap-10 px-6 py-16 sm:grid-cols-2 sm:items-center\">\n      <div>\n        <h1 className=\"text-4xl font-semibold tracking-tight\">Run your studio in one place</h1>\n        <p className=\"mt-4 text-muted-foreground\">Track work, clients and invoices.</p>\n        <Button className=\"mt-6\">Start free</Button>\n      </div>\n      <Card><CardHeader><CardTitle>Overview</CardTitle></CardHeader><CardContent>preview</CardContent></Card>\n    </section>\n  );\n}"
+}

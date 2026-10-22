@@ -1,0 +1,17 @@
+{
+  "id": "footer",
+  "name": "Site footer",
+  "description": "A multi-column site footer with brand, grouped navigation links, a newsletter input and a legal line. Uses semantic tokens and a clear heading structure.",
+  "type": "footer",
+  "tags": ["footer", "links", "legal", "newsletter", "تذييل", "روابط"],
+  "intents": ["site footer", "footer with link columns", "legal footer", "تذييل الموقع"],
+  "dependencies": ["button", "input"],
+  "tokens": ["muted", "muted-foreground", "border", "primary"],
+  "file": "blocks/footer/example.tsx",
+  "screenshot": "blocks/footer/screenshot.png",
+  "rtl": false,
+  "accessibility": ["contentinfo landmark", "labelled newsletter input", "group headings", "sufficient contrast"],
+  "license": "MIT",
+  "source": "shadcn/ui",
+  "code": "export function SiteFooter() {\n  return (\n    <footer className=\"border-t\">\n      <div className=\"mx-auto grid max-w-5xl gap-8 px-6 py-12 sm:grid-cols-4\">\n        <div className=\"font-semibold\">Loam</div>\n        <nav aria-label=\"Product\"><h3>Product</h3><a href=\"/features\">Features</a></nav>\n        <nav aria-label=\"Company\"><h3>Company</h3><a href=\"/about\">About</a></nav>\n        <form><Label htmlFor=\"newsletter\">Newsletter</Label><Input id=\"newsletter\" type=\"email\" /><Button>Subscribe</Button></form>\n      </div>\n    </footer>\n  );\n}"
+}

@@ -1,0 +1,17 @@
+{
+  "id": "settings-profile",
+  "name": "Settings profile form",
+  "description": "A settings page with a left navigation of setting groups and a profile form on the right: name, email, avatar upload and a save action with pending state.",
+  "type": "settings",
+  "tags": ["settings", "profile", "form", "account", "preferences", "إعدادات", "الملف الشخصي"],
+  "intents": ["settings page", "profile form", "account preferences", "user settings", "نموذج إعدادات الملف الشخصي"],
+  "dependencies": ["card", "button", "input", "label", "tabs"],
+  "tokens": ["card", "card-foreground", "muted", "primary", "border"],
+  "file": "blocks/settings-profile/example.tsx",
+  "screenshot": "blocks/settings-profile/screenshot.png",
+  "rtl": false,
+  "accessibility": ["labelled inputs", "grouped settings navigation", "status text for save result", "focus management on tab change"],
+  "license": "MIT",
+  "source": "shadcn/ui",
+  "code": "export function SettingsProfile() {\n  return (\n    <div className=\"grid gap-8 md:grid-cols-[200px_1fr]\">\n      <nav aria-label=\"Settings\"><Button variant=\"ghost\">Profile</Button><Button variant=\"ghost\">Billing</Button></nav>\n      <Card><CardHeader><CardTitle>Profile</CardTitle></CardHeader>\n        <CardContent className=\"space-y-4\">\n          <div><Label htmlFor=\"name\">Name</Label><Input id=\"name\" /></div>\n          <div><Label htmlFor=\"email\">Email</Label><Input id=\"email\" type=\"email\" /></div>\n          <Button>Save changes</Button>\n        </CardContent>\n      </Card>\n    </div>\n  );\n}"
+}

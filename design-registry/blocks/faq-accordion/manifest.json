@@ -1,0 +1,17 @@
+{
+  "id": "faq-accordion",
+  "name": "FAQ accordion",
+  "description": "An accessible frequently-asked-questions accordion. Each item uses a native button trigger with aria-expanded and a region, so it works with keyboard and screen readers.",
+  "type": "faq",
+  "tags": ["faq", "accordion", "questions", "answers", "help", "أسئلة شائعة", "أسئلة"],
+  "intents": ["faq section", "frequently asked questions", "help accordion", "أسئلة شائعة"],
+  "dependencies": ["accordion"],
+  "tokens": ["card", "muted-foreground", "border", "primary"],
+  "file": "blocks/faq-accordion/example.tsx",
+  "screenshot": "blocks/faq-accordion/screenshot.png",
+  "rtl": false,
+  "accessibility": ["button trigger per item", "aria-expanded state", "region associated with trigger", "keyboard operable"],
+  "license": "MIT",
+  "source": "shadcn/ui",
+  "code": "export function FaqAccordion({ items }) {\n  return (\n    <div className=\"mx-auto max-w-3xl px-6 py-16\">\n      {items.map((item) => (\n        <Accordion key={item.q} type=\"single\" collapsible>\n          <AccordionItem value={item.q}>\n            <AccordionTrigger>{item.q}</AccordionTrigger>\n            <AccordionContent>{item.a}</AccordionContent>\n          </AccordionItem>\n        </Accordion>\n      ))}\n    </div>\n  );\n}"
+}
