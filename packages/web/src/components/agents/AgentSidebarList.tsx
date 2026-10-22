@@ -374,43 +374,67 @@ export function AgentSidebarList({
     return fromThread || (agent.description ? previewLine(agent.description) : '');
   };
 
-  const renderAgentTree = (agent: AgentWithMeta, pinned = false) => (
+  const childRow = (child: ChildAgent): ReactNode => {
+    const childAgent: AgentWithMeta = {
+      id: child.childId,
+      name: child.name,
+      emoji: child.emoji,
+      description: child.description,
+      mode: child.mode,
+    };
+    return (
+      <AgentRow
+        key={child.childId}
+        agent={childAgent}
+        selected={selectedId === child.childId}
+        unread={unreadById?.[child.childId]?.count ?? 0}
+        subtitle={threadPreview(childAgent)}
+        indent
+        onClick={() => onSelect(childAgent)}
+        onContextMenu={(e) => handleContextMenu(e, childAgent)}
+      />
+    );
+  };
+
+  const renderAgentTree = (agent: AgentWithMeta) => (
     <div key={agent.id} className="flex flex-col gap-0.5">
       <AgentRow
         agent={agent}
         selected={selectedId === agent.id}
         unread={unreadById?.[agent.id]?.count ?? 0}
         subtitle={threadPreview(agent)}
-        onClick={pinned ? guardSelect(agent) : () => onSelect(agent)}
+        onClick={() => onSelect(agent)}
         onContextMenu={(e) => handleContextMenu(e, agent)}
-        drag={pinned ? {
-          'data-pinned-id': agent.id,
-          onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => handlePinnedPointerDown(e, agent.id),
-          onKeyDown: (e: React.KeyboardEvent) => handlePinnedKeyDown(e, agent.id),
-        } : undefined}
       />
-      {(childrenByParent[agent.id] ?? []).map((child) => {
-        const childAgent: AgentWithMeta = {
-          id: child.childId,
-          name: child.name,
-          emoji: child.emoji,
-          description: child.description,
-          mode: child.mode,
-        };
-        return (
-          <AgentRow
-            key={child.childId}
-            agent={childAgent}
-            selected={selectedId === child.childId}
-            unread={unreadById?.[child.childId]?.count ?? 0}
-            subtitle={threadPreview(childAgent)}
-            indent
-            onClick={() => onSelect(childAgent)}
-            onContextMenu={(e) => handleContextMenu(e, childAgent)}
-          />
-        );
-      })}
+      {(childrenByParent[agent.id] ?? []).map(childRow)}
     </div>
+  );
+
+  const orderedPinned = dragOrder
+    ? dragOrder.map((id) => pinnedById.get(id)).filter((a): a is AgentWithMeta => Boolean(a))
+    : displayPinned;
+  const renderPinned = (
+    <>
+      <div className="grid grid-cols-3 gap-1.5 pt-1">
+        {orderedPinned.map((agent) => (
+          <PinnedTile
+            key={agent.id}
+            agent={agent}
+            selected={selectedId === agent.id}
+            unread={unreadById?.[agent.id]?.count ?? 0}
+            subtitle={threadPreview(agent)}
+            onClick={guardSelect(agent)}
+            onContextMenu={(e) => handleContextMenu(e, agent)}
+            drag={{
+              'data-pinned-id': agent.id,
+              onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => handlePinnedPointerDown(e, agent.id),
+              onKeyDown: (e: React.KeyboardEvent) => handlePinnedKeyDown(e, agent.id),
+            }}
+          />
+        ))}
+      </div>
+      {orderedPinned.flatMap((agent) => (childrenByParent[agent.id] ?? []).map(childRow))}
+    </>
   );
 
   // Section-header unread sums; sumUnread stubs to 0 when no unread source is wired.
@@ -536,12 +560,7 @@ export function AgentSidebarList({
             onToggle={() => toggleSection(SECTIONS.pinned)}
             unread={pinnedUnread}
           >
-            {(dragOrder
-              ? dragOrder
-                  .map((id) => pinnedById.get(id))
-                  .filter((a): a is AgentWithMeta => Boolean(a))
-              : displayPinned
-            ).map((agent) => renderAgentTree(agent, true))}
+            {renderPinned}
           </AgentSection>
         )}
 
@@ -827,9 +846,11 @@ function AgentRow({
       {selected && <RowAccent />}
       <AgentAvatar
         name={agent.name}
+        id={agent.id}
         avatarShape={agent.avatarShape}
         avatarColor={agent.avatarColor}
         avatarImage={agent.avatarImage}
+        emoji={agent.emoji}
         size={32}
         selected={selected}
       />
@@ -849,6 +870,72 @@ function AgentRow({
       {!!unread && unread > 0 && (
         <span
           className="size-2 shrink-0 rounded-full"
+          style={{ backgroundColor: 'var(--activity-indicator-running)' }}
+          aria-label={t('{count} unread', { count: unread })}
+          title={t('{count} unread', { count: unread })}
+        />
+      )}
+    </button>
+  );
+}
+
+/** Grok Bot-style pinned tile: a large round avatar with the name (and role) under it. */
+function PinnedTile({
+  agent,
+  selected,
+  unread,
+  subtitle,
+  onClick,
+  onContextMenu,
+  drag,
+}: {
+  agent: AgentCardAgent;
+  selected: boolean;
+  unread?: number;
+  /** One-line gray preview (role / last message / description). */
+  subtitle?: string;
+  onClick: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+  drag: DragRowProps;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      aria-current={selected ? 'true' : undefined}
+      {...drag}
+      className={[
+        'group relative flex flex-col items-center gap-1 rounded-card p-2 text-center transition-colors',
+        selected ? 'bg-fill-tsp' : 'hover:bg-fill-hover',
+        'cursor-grab select-none active:cursor-grabbing',
+      ].join(' ')}
+      aria-label={t('Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder.', { name: agent.name })}
+    >
+      <AgentAvatar
+        name={agent.name}
+        id={agent.id}
+        avatarShape={agent.avatarShape}
+        avatarColor={agent.avatarColor}
+        avatarImage={agent.avatarImage}
+        emoji={agent.emoji}
+        size={48}
+        selected={selected}
+      />
+      <span className="w-full truncate text-[11px] font-medium text-text-primary">{agent.name}</span>
+      {subtitle ? (
+        <span className="w-full truncate text-[10px] text-text-tertiary opacity-80">{subtitle}</span>
+      ) : null}
+      {isGrokBotAgent(agent.source) && (
+        <span
+          className="absolute start-1.5 top-1.5 size-1.5 rounded-full opacity-60"
+          style={{ backgroundColor: 'var(--text-tertiary)' }}
+          title={t('Imported from Grok Bot')}
+        />
+      )}
+      {!!unread && unread > 0 && (
+        <span
+          className="absolute end-1.5 top-1.5 size-2 rounded-full"
           style={{ backgroundColor: 'var(--activity-indicator-running)' }}
           aria-label={t('{count} unread', { count: unread })}
           title={t('{count} unread', { count: unread })}
