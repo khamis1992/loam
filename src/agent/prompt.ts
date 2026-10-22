@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Config } from "../config.js";
 import { APP_CONTRACT_INSTRUCTIONS } from "./appVerification.js";
 import { BUILD_PHASE_PROMPT } from "../modes/buildPhases.js";
+import { DESIGN_LINT_PROMPT } from "../modes/designRules.js";
 import { personalizationBlock } from "../server/personalization.js";
 import { renderPolicyContext } from "../policy/riskTier.js";
 import { buildMasterPrompt, deriveMasterSlots } from "./masterPrompt.js";
@@ -92,6 +93,7 @@ export function buildSystemPrompt(
   if (toolNames.includes("office_export")) lines.push("Native office files: build the content in loam_studio (or loam_dataset for spreadsheets and charts), then call office_export to write the .docx/.pptx/.xlsx into the task. Use office_import first when editing an uploaded office file. Do not generate office files through shell or Python while these tools are available.");
   if (toolNames.includes("loam_canvas")) lines.push("loam_canvas produces vector SVG artwork, not generated photographs. File tools can create custom SVG or HTML designs.");
   if (toolNames.includes("loam_design")) lines.push(BUILD_PHASE_PROMPT);
+  if (toolNames.includes("design_lint")) lines.push(DESIGN_LINT_PROMPT);
   if (toolNames.includes("loam_creative")) lines.push("For 3D scene requests, use loam_creative to read and update the live scene, preserving user work and using the returned revision. The scene supports primitives, imported self-contained GLB assets, materials, environment, camera, and spin animation. Do not claim Blender rendering, image generation, or video production unless a real available tool produced those outputs.");
   if (memories.length > 0) {
     lines.push("Context explicitly supplied by this task:");

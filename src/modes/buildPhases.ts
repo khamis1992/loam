@@ -34,16 +34,16 @@ const PHASES: BuildPhase[] = [
     title: "Design exploration",
     titleAr: "استكشاف التصميم",
     instruction:
-      "Design phase: before writing any code, produce 2-3 design directions with loam_design (explore): each direction must state a palette, a layout and a hero concept. Pick a direction with the user or proceed with the strongest one, optionally generate the hero image (loam_design generate_hero), then implement it faithfully.",
-    tools: ["loam_design"],
+      "Design phase: before writing any code, produce 2-3 design directions with loam_design (explore): each direction must state a palette, a layout and a hero concept. Pick a direction with the user or proceed with the strongest one, optionally generate the hero image (loam_design generate_hero), then implement it faithfully. Express the palette as semantic tokens, and make sure the finished UI passes design_lint with no violations.",
+    tools: ["loam_design", "design_lint"],
   },
   {
     id: "implement",
     order: 1,
     title: "Implement",
     titleAr: "تنفيذ",
-    instruction: "Implement the chosen design directly in the task workspace without renegotiating the visual concept mid-run.",
-    tools: [],
+    instruction: "Implement the chosen design directly in the task workspace without renegotiating the visual concept mid-run. Lint the UI with design_lint before finishing and fix every reported violation.",
+    tools: ["design_lint"],
   },
 ];
 
