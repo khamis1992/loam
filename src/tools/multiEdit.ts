@@ -22,7 +22,7 @@ interface MultiEdit {
   replaceAll: boolean;
 }
 
-interface DiffHunk {
+export interface DiffHunk {
   oldStart: number;
   oldEnd: number;
   newStart: number;
@@ -31,13 +31,13 @@ interface DiffHunk {
   removed: number;
 }
 
-interface DiffSummary {
+export interface DiffSummary {
   added: number;
   removed: number;
   hunks: DiffHunk[];
 }
 
-function countOccurrences(haystack: string, needle: string): number {
+export function countOccurrences(haystack: string, needle: string): number {
   if (needle.length === 0) return 0;
   let count = 0;
   let idx = haystack.indexOf(needle);
@@ -48,12 +48,12 @@ function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
-function normalizeNewlines(value: string): string {
+export function normalizeNewlines(value: string): string {
   return value.replace(/\r\n|\r/g, "\n");
 }
 
 /** Write via a sibling temp file + rename so readers never observe a partial write. */
-function atomicWrite(target: string, data: string): void {
+export function atomicWrite(target: string, data: string): void {
   const dir = path.dirname(target);
   const tmp = path.join(dir, `.${path.basename(target)}.${process.pid}.${Date.now()}.tmp`);
   try {
@@ -70,7 +70,7 @@ function atomicWrite(target: string, data: string): void {
 }
 
 /** Coarse diff used when the file is too large for the LCS table. */
-function coarseDiff(a: string[], b: string[]): DiffSummary {
+export function coarseDiff(a: string[], b: string[]): DiffSummary {
   let prefix = 0;
   while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix]) prefix++;
   let suffix = 0;
@@ -91,7 +91,7 @@ function coarseDiff(a: string[], b: string[]): DiffSummary {
 }
 
 /** Line diff via LCS, producing unified-diff-style hunks. */
-function diffLines(a: string[], b: string[]): DiffSummary {
+export function diffLines(a: string[], b: string[]): DiffSummary {
   const n = a.length;
   const m = b.length;
   if (n > MAX_DIFF_LINES || m > MAX_DIFF_LINES) return coarseDiff(a, b);
@@ -284,7 +284,7 @@ export function createMultiEditTools(): Tool[] {
     {
       name: "file_multi_edit",
       description:
-        "Apply several exact string replacements to one workspace file in a single atomic operation. Each edit uses `old_string`/`new_string`; `find`/`replace` are accepted as aliases. Each old_string must match exactly once unless replace_all is true. The file is only rewritten if every edit succeeds; otherwise it is left untouched. Preserves line endings and BOM.",
+        "Apply several exact string replacements to one workspace file in a single atomic operation. Each edit uses old_string/new_string; find/replace are accepted as aliases. Each old_string must match exactly once unless you set replace_all, which replaces every occurrence. The file is only rewritten if every edit succeeds; if any find is missing or ambiguous, nothing is written and the original is left untouched. Edits are applied in order to the in-memory content, line endings and a BOM are preserved, and a successful call refreshes the read snapshot. It is a mutating effect, so keep it serial. When NOT to use: use file_edit for a single change, file_write to create or fully rewrite a file, and file_search to locate text; never build a file through repeated shell echoes, which bypasses read tracking and can corrupt line endings.",
       parameters: {
         type: "object",
         properties: {

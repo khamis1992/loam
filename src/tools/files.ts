@@ -79,7 +79,8 @@ function listDir(dir: string, recursive: boolean, maxEntries: number): string[] 
 export const fileTools: Tool[] = [
   {
     name: "file_read",
-    description: "Read a text file. Paths outside the workspace are allowed only for reading if the config permits.",
+    description:
+      "Read a UTF-8 text file and get it back with 1-based line numbers, so you can cite exact locations in later edits. Read a file before you edit or overwrite it: file_edit and file_write refuse an existing file you have not read this session and refuse one whose contents changed on disk since your last read. Use startLine/maxLines to page through a large file instead of pulling it all in; omit them to start at line 1 (default 400 lines). Paths may be workspace-relative or absolute; reading outside the workspace requires policy.allowOutsideWorkspaceRead. A read records the snapshot, so a follow-up edit is accepted. Independent reads are safe to issue together in one turn (up to 8 run concurrently); keep writes serial. When NOT to use: use file_search or code_symbols to locate text or definitions, file_list to see a directory, file_extract_text / file_view_image for PDFs, Office files or images, and shell_run with head/Get-Content only for files over the 400 KB limit; never read a file through shell cat/type because that skips read tracking and line numbering.",
     parameters: {
       type: "object",
       properties: {
@@ -112,7 +113,8 @@ export const fileTools: Tool[] = [
   },
   {
     name: "file_write",
-    description: "Create or overwrite a text file inside the workspace (parent directories are created).",
+    description:
+      "Create a new text file or overwrite an existing one inside the workspace; parent directories are created for you. Pass the full content unless append is true, which adds to the end. Read an existing file first: the tool rejects an unread or stale file (read-before-edit / mtime guard) so you never clobber changes you have not seen, and it records the write so later edits are accepted. Writing is a mutating effect, so keep it serial — never batch a write with other calls in the same turn. When NOT to use: use file_edit or file_multi_edit for targeted changes to a file you have read (they preserve line endings and avoid rewriting the whole file); use file_mkdir to create a directory and file_move to rename; do not write outside the workspace — paths are confined to it.",
     parameters: {
       type: "object",
       properties: {
@@ -142,7 +144,7 @@ export const fileTools: Tool[] = [
   {
     name: "file_edit",
     description:
-      "Replace text inside a workspace file. Pass the exact `old_string` to find and the `new_string` to write in its place. The match must be unique unless `replace_all` is true. Use enough surrounding context (whole lines or a distinctive snippet) so the match is unambiguous. `find`/`replace` are accepted as aliases for `old_string`/`new_string`.",
+      "Replace exact text inside a workspace file with a targeted edit. Pass the exact old_string to find and the new_string to write in its place; find/replace are accepted as aliases. The match must be unique unless you pass replace_all, which replaces every occurrence, or count, which must equal the number of occurrences. Include enough surrounding context (a full line or more) so the find text matches exactly once, and remember the match is literal, not a regular expression. Read the file first: an unread or stale file is refused, and a successful edit refreshes the read snapshot. An old_string equal to new_string is reported as a no-op and writes nothing. When NOT to use: use file_multi_edit for several changes to the same file (it is atomic and reports a diff); use file_write to create a file or fully rewrite one you have read; use file_search to find text; never build a file through repeated shell echo/Set-Content, which bypasses read tracking and can corrupt line endings.",
     parameters: {
       type: "object",
       properties: {
@@ -203,7 +205,8 @@ export const fileTools: Tool[] = [
   },
   {
     name: "file_list",
-    description: "List files/directories in the workspace.",
+    description:
+      "List the entries in a workspace directory so you can see what exists before reading or editing it. Pass recursive to walk subdirectories (dependency and VCS folders such as node_modules and .git are skipped automatically) and maxEntries to cap the output (default 300). Prefer this over a shell directory listing when you only need a folder's shape. Listing is a read, so independent listings may be issued together with other reads in the same turn. When NOT to use: use file_read to open a file's contents, file_search to find text across files, and code_symbols to navigate definitions; do not use it to inspect what is inside a file.",
     parameters: {
       type: "object",
       properties: {
@@ -222,7 +225,8 @@ export const fileTools: Tool[] = [
   },
   {
     name: "file_search",
-    description: "Text search in a workspace file or recursively in a directory (regular expression). Returns file:line:match.",
+    description:
+      "Search for a regular expression in one file or recursively across a workspace directory, returning file:line:match hits. The pattern is a case-insensitive regex; pass path to scope it to a file or subtree and glob as a substring filter on the file path (for example .ts). Results are capped by maxResults (default 60) and the walker skips dot-directories and dependency folders, so it stays cheap. When NOT to use: use file_read to open a file you already know, code_symbols for symbol definitions, and shell_run only when you need a fuller ripgrep feature set; prefer this for quick in-workspace lookups because it reports numbered lines.",
     parameters: {
       type: "object",
       properties: {
@@ -286,7 +290,8 @@ export const fileTools: Tool[] = [
   },
   {
     name: "file_stat",
-    description: "Show metadata (type, size, mtime) for a path.",
+    description:
+      "Show metadata for a path — whether it is a file or a directory, its byte size and its last-modified time — without reading its contents. Use it to confirm a file exists, to judge whether a file is too large for file_read before opening it, or to verify that a change landed. It is a cheap read and may be batched with other reads. When NOT to use: use file_read for contents, file_list for a directory's entries, and file_search to find text inside it; never use it to modify anything.",
     parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
       const p = resolveRead(ctx.workspace, str(args, "path"), ctx.cfg.policy.allowOutsideWorkspaceRead);
@@ -300,7 +305,8 @@ export const fileTools: Tool[] = [
   },
   {
     name: "file_mkdir",
-    description: "Create a directory inside the workspace.",
+    description:
+      "Create a directory inside the workspace, including any missing parent directories. Prefer this over a shell mkdir/New-Item so the path stays confined to the workspace and is reported consistently. It is a mutating effect, so keep it serial with other writes rather than batching it in one turn. When NOT to use: use file_write to create a file (it creates parent directories automatically) and file_move to relocate an existing path; do not create directories outside the workspace.",
     parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
       const p = resolveWrite(ctx.workspace, str(args, "path"));
@@ -310,7 +316,8 @@ export const fileTools: Tool[] = [
   },
   {
     name: "file_move",
-    description: "Move/rename a file or directory inside the workspace.",
+    description:
+      "Move or rename a file or directory inside the workspace, creating the destination's parent directories as needed. Both the from and to paths must resolve inside the workspace. It changes location only, never contents. It is a mutating effect, so issue it on its own rather than batched with other writes. When NOT to use: use file_edit or file_write to change contents, file_delete to remove a path, and a shell move only when you need shell-specific behaviour.",
     parameters: { type: "object", properties: { from: { type: "string" }, to: { type: "string" } }, required: ["from", "to"] },
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
       const from = resolveWrite(ctx.workspace, str(args, "from"));
@@ -327,7 +334,8 @@ export const fileTools: Tool[] = [
   },
   {
     name: "file_delete",
-    description: "Delete a file or directory inside the workspace (directory requires recursive=true).",
+    description:
+      "Delete a file or directory inside the workspace. A directory requires recursive=true, and the removal is forced so it will not prompt. Deletion is destructive and irreversible, so confirm the exact target before calling and prefer version control for anything you may need to recover. It is a mutating effect; keep it serial and never target anything outside the workspace, which is confined. When NOT to use: use file_move to relocate a path instead of removing it, and use file_edit/file_write to change contents.",
     parameters: {
       type: "object",
       properties: { path: { type: "string" }, recursive: { type: "boolean" } },
