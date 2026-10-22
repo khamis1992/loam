@@ -38,16 +38,29 @@ async function mockBackend(page: Page, initial: MockAgent[]): Promise<MockAgent[
 
   await page.addInitScript(() => {
     const w = window as unknown as Record<string, unknown>;
+    // Mirror the Electron preload: auth.getToken is synchronous and the session
+    // token is also mirrored into desktopLocalStorage under "session_token"
+    // (services/rpc.ts reads that fallback when __apis is absent).
     w.__apis = {
       auth: {
-        getToken: async () => 'e2e-token',
-        setToken: async () => undefined,
-        removeToken: async () => undefined,
-        notifyLoginSuccess: async () => undefined,
+        getToken: () => 'e2e-token',
+        setToken: () => undefined,
+        removeToken: () => undefined,
+        notifyLoginSuccess: () => undefined,
       },
-      system: { openExternal: async () => undefined },
+      system: { openExternal: () => undefined },
       theme: { setTheme: () => undefined },
     };
+    w.desktopLocalStorage = {
+      getItem: (key: string) => (key === 'session_token' ? 'e2e-token' : null),
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    };
+    try {
+      window.localStorage.setItem('session_token', 'e2e-token');
+    } catch {
+      // The API stub above is the source of truth; ignore unavailable storage.
+    }
     w.__AGENT_STUDIO_ENV__ = { apiBase: 'http://localhost:8787', socketBase: 'http://localhost:8787' };
   });
 
@@ -57,6 +70,8 @@ async function mockBackend(page: Page, initial: MockAgent[]): Promise<MockAgent[
   // app bounce to /login.
   await page.route('http://localhost:8787/**', (route) => json(route, {}));
 
+  // Exact session-validation endpoint the layout calls before rendering
+  // (desktopApis.validateSessionToken -> POST /user.v1.UserService/UserInfo).
   await page.route('**/user.v1.UserService/UserInfo', (route) =>
     json(route, { firstname: 'E2E', lastname: 'User', displayname: 'E2E User', email: 'e2e@example.com', avatar: null }),
   );
