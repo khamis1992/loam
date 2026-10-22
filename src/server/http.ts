@@ -109,6 +109,7 @@ import { setSecret, listSecrets, deleteSecret } from "./secretsVault.js";
 import { createApproval, decideApproval, getApproval, listApprovals } from "./approvals.js";
 import { setTaskAgent } from "./db.js";
 import { subscribeTask } from "./streams.js";
+import { videoStudioRelay, type VideoStudioResult } from "./videoStudioRelay.js";
 import { appendLearning, readLearning } from "./learning.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { installDraft, listSuites, loadSuite } from "../eval/suites.js";
@@ -2404,6 +2405,26 @@ loadAgents();
             tasks: list.map(({ messages, steps, ...rest }) => ({ ...rest, messageCount: messages.length, stepCount: steps.length })),
           });
           return;
+        }
+
+        // Loam Video Studio relay: the panel attached to this task posts the
+        // result of a command that was dispatched over the task's event stream.
+        if (req.method === "POST" && /^\/api\/tasks\/[^/]+\/video-studio\/result$/.test(p)) {
+          const origin = req.headers.origin;
+          if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") {
+            return sendJson(res, 403, { error: "same-origin requests required" });
+          }
+          const taskId = decodeURIComponent(p.slice("/api/tasks/".length, -"/video-studio/result".length));
+          if (!getTask(taskId)) return sendJson(res, 404, { error: "task not found" });
+          let raw: unknown;
+          try { raw = await readBody(req, 64_000); } catch { return sendJson(res, 400, { error: "invalid JSON body" }); }
+          const result = raw as VideoStudioResult;
+          if (!result || typeof result !== "object" || typeof result.id !== "string" || typeof result.taskId !== "string") {
+            return sendJson(res, 400, { error: "id and taskId are required" });
+          }
+          if (result.taskId !== taskId) return sendJson(res, 400, { error: "taskId mismatch" });
+          const handled = videoStudioRelay.resolve(result);
+          return sendJson(res, 200, { ok: handled, ...(handled ? {} : { ignored: true }) });
         }
 
         if (req.method === "GET" && p.startsWith("/api/tasks/") && p.endsWith("/stream")) {
