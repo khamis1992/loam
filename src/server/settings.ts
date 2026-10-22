@@ -24,10 +24,19 @@ export interface Settings {
   flexModel?: string;
   /** Settings › Data controls: when true, user data is excluded from model training. */
   trainingOptOut?: boolean;
+  /** MiroFish swarm simulation: user-selected location (any country/city/region). */
+  location?: { country?: string; city?: string; region?: string };
 }
 
 const FILE = path.join(DATA_DIR, "settings.json");
 let settings: Settings = { theme: "dark", projectId: null };
+
+/** True when a persisted value is a plausible location setting. */
+function isLocationSetting(value: unknown): value is NonNullable<Settings["location"]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const rec = value as Record<string, unknown>;
+  return typeof rec.country === "string" || typeof rec.city === "string" || typeof rec.region === "string";
+}
 
 export function loadSettings(): Settings {
   try {
@@ -47,6 +56,7 @@ export function loadSettings(): Settings {
         ...(typeof parsed.flexModel === "string" ? { flexModel: parsed.flexModel } : {}),
         ...(typeof parsed.trainingOptOut === "boolean" ? { trainingOptOut: parsed.trainingOptOut } : {}),
         ...(typeof parsed.autoApprove === "boolean" ? { autoApprove: parsed.autoApprove } : {}),
+        ...(isLocationSetting(parsed.location) ? { location: parsed.location } : {}),
       };
     }
   } catch {
@@ -80,6 +90,15 @@ export function updateSettings(patch: Partial<Settings>): Settings {
   if (typeof patch.flexBaseUrl === "string") settings.flexBaseUrl = patch.flexBaseUrl.trim();
   if (typeof patch.flexModel === "string") settings.flexModel = patch.flexModel.trim();
   if (typeof patch.trainingOptOut === "boolean") settings.trainingOptOut = patch.trainingOptOut;
+  if (patch.location !== undefined) {
+    settings.location = isLocationSetting(patch.location)
+      ? {
+          ...(typeof patch.location.country === "string" && patch.location.country.trim() ? { country: patch.location.country.trim() } : {}),
+          ...(typeof patch.location.city === "string" && patch.location.city.trim() ? { city: patch.location.city.trim() } : {}),
+          ...(typeof patch.location.region === "string" && patch.location.region.trim() ? { region: patch.location.region.trim() } : {}),
+        }
+      : undefined;
+  }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     const tmp = `${FILE}.tmp`;
