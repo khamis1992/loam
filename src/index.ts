@@ -18,8 +18,9 @@ import { memoryContext, setMemoryEmbedder } from "./server/companionMemory.js";
 import { createCompanionTeamTools } from "./tools/companionTeamTools.js";
 import { setDelegationRunner } from "./server/companionTeam.js";
 import { createApproval, waitForDecision } from "./server/approvals.js";
-import { approvalStableKey, getReplayDecision, matchApprovalRule, saveApprovalDecision, taskApprovalAuto, taskSandboxMode } from "./server/approvalRules.js";
+import { approvalStableKey, getReplayDecision, matchApprovalRule, saveApprovalDecision, taskApprovalAuto, taskSandboxMode, taskPermissionMode } from "./server/approvalRules.js";
 import { resolveSandboxPolicy } from "./policy/riskTier.js";
+import { DEFAULT_PERMISSION_MODE, isPlanMode } from "./policy/permissionModes.js";
 import type { Tool } from "./tools/registry.js";
 import { createScratchpadTools } from "./tools/scratchpadTools.js";
 import { createDeepResearchTools } from "./tools/deepResearch.js";
@@ -36,6 +37,7 @@ import { createVideoEditTools } from "./tools/videoEditAgent.js";
 import { createDeployTools } from "./tools/deploy.js";
 import { createDesignExploreTools } from "./tools/designExplore.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
+import { applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
@@ -125,6 +127,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview: rt.preview }));
   rt.registry.registerAll(createDesignExploreTools());
   rt.registry.registerAll(createConnectorTools());
+  rt.registry.registerAll(createPlanTools());
   const { ollama, registry, memory, mcp } = rt;
 
   const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal; lease?: RunLease }): Promise<{ taskId: string; text: string }> => {
@@ -365,6 +368,17 @@ async function main(): Promise<void> {
             return original.run(args, ctx);
           },
         } satisfies Tool);
+      }
+      // Plan mode (C13): a task whose local permission mode is `plan` is strictly
+      // read-only. Every tool call is gated before it runs — reads and read-only
+      // web research pass, while writes, commands, destructive and secret actions
+      // are refused with an actionable message. `plan_exit` is the escape hatch:
+      // it presents the plan through the existing approval card and, once the
+      // user approves, switches the task to acceptEdits (`approve_for_me`). The
+      // wrapper re-reads the mode on each call so later edits in the same run are
+      // allowed after approval.
+      if (isPlanMode(taskPermissionMode(task) ?? DEFAULT_PERMISSION_MODE)) {
+        applyPlanModeGate(agentTools, { taskId: task, workspaceRoot: effectiveCfg.workspace });
       }
       // Sandbox gate (risk-tier approval): config default < per-task persisted
       // override < explicit approved override. The resolved mode is rendered into

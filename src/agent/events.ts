@@ -68,6 +68,8 @@ export type AgentEvent =
   | { type: "replan"; round: number; reason: string }
   /** Sensitive-action gate: a host input action awaits an explicit user decision. */
   | { type: "approval_required"; approvalId: string; tool: string; summary: string }
+  /** Plan mode: the task's local permission mode changed (plan_exit approval, user switch). */
+  | { type: "permission_mode_changed"; mode: import("../policy/permissionModes.js").LocalPermissionMode; previousMode: import("../policy/permissionModes.js").LocalPermissionMode; reason: string }
   /** End-to-end verification of the completed task. */
   | { type: "verify"; verdict: Verdict; reason: string; parsed?: boolean }
   /** Context compression happened. */
