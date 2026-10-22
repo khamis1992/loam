@@ -469,7 +469,13 @@ function buildAction(
       const params: Record<string, unknown> = { name };
       const extra = args["params"];
       if (extra && typeof extra === "object" && !Array.isArray(extra)) {
-        Object.assign(params, extra as Record<string, unknown>);
+        // Free-form effect parameters, but the positional `name` is the effect
+        // id the action was asked to apply; a stray `params.name` would silently
+        // swap the effect, so drop it instead of overriding.
+        for (const [key, value] of Object.entries(extra as Record<string, unknown>)) {
+          if (key === "name") continue;
+          params[key] = value;
+        }
       }
       return { steps: [execStep(id, params)] };
     }
