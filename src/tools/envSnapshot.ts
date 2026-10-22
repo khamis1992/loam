@@ -759,19 +759,30 @@ function pruneCloneTarget(dest: string): void {
 /**
  * Clone the cached base snapshot into a task worktree. Returns the absolute
  * project path inside the task workspace; the caller owns that directory.
+ *
+ * `destSubdir` defaults to `project/`, the subdirectory the env tools treat as
+ * the project when the task workspace is shared. Pass `.` to materialize the
+ * snapshot AT the task workspace root, which is what a fresh task boot wants.
  */
 export function cloneEnvSnapshot(
   projectId: string,
   hash: string,
   taskWorkspace: string,
   blueprint: EnvBlueprint,
+  destSubdir = "project",
 ): { ok: true; projectDir: string; reused: boolean } | { ok: false; error: string } {
   const snapshotDir = envSnapshotDir(projectId, hash);
   const base = path.join(snapshotDir, "project");
   if (!fs.existsSync(path.join(snapshotDir, "BLUEPRINT.json")) || !fs.existsSync(base)) {
     return { ok: false, error: `no built snapshot for ${envBuildId(projectId, hash)} — run env_build_status with build=` };
   }
-  const dest = path.join(taskWorkspace, "project");
+  const root = path.resolve(taskWorkspace);
+  const dest = path.resolve(root, destSubdir);
+  // The clone target must stay inside the task workspace: a blueprint can never
+  // redirect it elsewhere.
+  if (dest !== root && !isInside(root, dest)) {
+    return { ok: false, error: `clone target escapes the task workspace: ${destSubdir}` };
+  }
   try {
     if (fs.existsSync(dest)) pruneCloneTarget(dest);
     copyTree(base, dest);
@@ -954,6 +965,13 @@ export interface TaskEnvBootInput {
   projectId: string;
   /** Project folder carrying loam.env.yaml. */
   projectFolder: string;
+  /**
+   * Where inside the task workspace the snapshot lands. Defaults to `.` (the
+   * workspace root) because a task boot wants the project files where the agent
+   * already works. The clone is refused unless the target is empty, so a
+   * workspace bound to a real user folder is never overwritten.
+   */
+  destSubdir?: string;
 }
 
 /**
@@ -962,16 +980,34 @@ export interface TaskEnvBootInput {
  * the task simply starts from an empty worktree, exactly as before.
  *
  * Never throws: environment reuse is an optimization, not a task requirement.
+ * Never overwrites: the clone target must be empty first, so a task workspace
+ * that is already bound to a user's folder (composer folder / git worktree) is
+ * left exactly as it was.
  */
 export function bootTaskFromSnapshot(input: TaskEnvBootInput): { ok: boolean; projectDir?: string; hash?: string; reason: string } {
   try {
+    const destSubdir = input.destSubdir ?? ".";
+    const root = path.resolve(input.taskWorkspace);
+    const dest = path.resolve(root, destSubdir);
+    if (dest !== root && !isInside(root, dest)) {
+      return { ok: false, reason: `clone target escapes the task workspace: ${destSubdir}` };
+    }
+    let occupied: string[] = [];
+    try {
+      occupied = fs.readdirSync(dest);
+    } catch {
+      occupied = [];
+    }
+    if (occupied.length > 0) {
+      return { ok: false, reason: `task workspace is not empty (${occupied.length} entries) — refusing to overwrite it` };
+    }
     const blueprint = readBlueprint(input.projectFolder);
     const hash = blueprintHash(input.projectFolder, blueprint);
     const status = readBuildStatus(input.projectId);
     if (!status || status.hash !== hash || status.status !== "built") {
       return { ok: false, reason: `no snapshot for hash ${hash}` };
     }
-    const cloned = cloneEnvSnapshot(input.projectId, hash, input.taskWorkspace, blueprint);
+    const cloned = cloneEnvSnapshot(input.projectId, hash, root, blueprint, destSubdir);
     if (!cloned.ok) return { ok: false, reason: cloned.error };
     return { ok: true, projectDir: cloned.projectDir, hash, reason: `reused snapshot ${hash}` };
   } catch (err) {

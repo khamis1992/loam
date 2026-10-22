@@ -293,6 +293,44 @@ describe("env blueprint + snapshot", () => {
     assert.ok(fs.existsSync(path.join(boot.projectDir!, "index.js")), "the snapshot clone carries the project files");
   });
 
+  it("bootTaskFromSnapshot boots a fresh task worktree at its root and never overwrites it", async () => {
+    const dir = path.join(tmpDir, "proj12");
+    writeProject(dir);
+    const blueprint = env.readBlueprint(dir);
+    assert.equal((await build("proj12", dir, blueprint, recorder())).ok, true);
+
+    // A brand-new task workspace: the snapshot lands at the root, like a boot.
+    const fresh = path.join(tmpDir, "ws12");
+    fs.mkdirSync(fresh, { recursive: true });
+    const boot = env.bootTaskFromSnapshot({ taskWorkspace: fresh, projectId: "proj12", projectFolder: dir });
+    assert.equal(boot.ok, true);
+    assert.equal(boot.projectDir, path.resolve(fresh), "a task boot materializes the snapshot at the workspace root");
+    assert.ok(fs.existsSync(path.join(fresh, "index.js")));
+
+    // A workspace already holding the agent's work is left untouched.
+    const occupied = path.join(tmpDir, "ws12b");
+    fs.mkdirSync(occupied, { recursive: true });
+    fs.writeFileSync(path.join(occupied, "agent-work.txt"), "keep me\n", "utf8");
+    const refused = env.bootTaskFromSnapshot({ taskWorkspace: occupied, projectId: "proj12", projectFolder: dir });
+    assert.equal(refused.ok, false, "a non-empty task workspace must never be overwritten");
+    assert.match(refused.reason, /not empty/);
+    assert.equal(fs.readFileSync(path.join(occupied, "agent-work.txt"), "utf8"), "keep me\n");
+    assert.ok(!fs.existsSync(path.join(occupied, "index.js")), "nothing was cloned over the existing work");
+  });
+
+  it("bootTaskFromSnapshot ignores a stale snapshot after the lockfile changes", async () => {
+    const dir = path.join(tmpDir, "proj13");
+    writeProject(dir);
+    const blueprint = env.readBlueprint(dir);
+    assert.equal((await build("proj13", dir, blueprint, recorder())).ok, true);
+    fs.writeFileSync(path.join(dir, "package-lock.json"), JSON.stringify({ name: "demo", lockfileVersion: 3, changed: true }), "utf8");
+    const workspace = path.join(tmpDir, "ws13");
+    fs.mkdirSync(workspace, { recursive: true });
+    const boot = env.bootTaskFromSnapshot({ taskWorkspace: workspace, projectId: "proj13", projectFolder: dir });
+    assert.equal(boot.ok, false, "a stale hash must not reuse the old snapshot");
+    assert.match(boot.reason, /no snapshot for hash/);
+  });
+
   it("cloneEnvSnapshot refuses a snapshot that was never built", () => {
     const dir = path.join(tmpDir, "proj10");
     writeProject(dir);

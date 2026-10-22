@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { EventLog } from "./session/eventLog.js";
 import { ensureTaskWorkspace } from "./server/taskWorkspace.js";
+import { BLUEPRINT_FILE, bootTaskFromSnapshot } from "./tools/envSnapshot.js";
 import path from "node:path";
 import { loadConfig, ROOT, DATA_DIR } from "./config.js";
 import { setLocalAuthUserDataDir } from "./security/localAuth.js";
@@ -503,6 +504,24 @@ async function main(): Promise<void> {
     saved.mode = getLoamMode(saved.mode).id;
     setTaskMode(task.id, saved.mode);
     saved.workspace = ensureTaskWorkspace(task.id, cfg.workspace);
+    // D3: when the project carries a `loam.env.yaml` and its environment snapshot
+    // was already built, boot the task worktree from that cached snapshot so the
+    // setup steps (npm ci, …) never run again. Purely an optimization: a missing
+    // or stale snapshot, an occupied workspace or a bound composer folder all
+    // leave the task exactly as it was, and a resume must not re-clone.
+    if (opts.resume !== true) {
+      const envProject = saved.projectId ? getProject(saved.projectId) : undefined;
+      const envFolder = envProject?.folder;
+      if (envFolder && fs.existsSync(path.join(envFolder, BLUEPRINT_FILE))) {
+        const boot = bootTaskFromSnapshot({
+          taskWorkspace: saved.workspace,
+          projectId: saved.projectId ?? path.basename(envFolder),
+          projectFolder: envFolder,
+        });
+        if (boot.ok) log.info(`env snapshot reused for ${task.id}: ${boot.hash} → ${boot.projectDir}`);
+        else log.debug(`env snapshot not reused for ${task.id}: ${boot.reason}`);
+      }
+    }
     queueTaskRun(task.id, saved, opts.resume === true, opts.scheduleId, opts.title);
     // Resource locks (parallel lanes): browser/preview are the only shared
     // runtime states a run may reset — everything else (own devices, files,
