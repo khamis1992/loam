@@ -100,7 +100,10 @@ export function summarizeBenchmarkModel(
   };
 }
 
-/** Build the full report and pick the best model (pass rate, then speed). */
+/** Build the full report and pick the best model (pass rate, then speed).
+ *  `best` is only set when a model actually passed something: naming a "best
+ *  coder" when every candidate scored zero would misreport a failed benchmark,
+ *  and callers use `best` to decide the exit code. */
 export function buildBenchmarkReport(suite: EvalSuite, startedAt: string, models: BenchmarkModelResult[]): BenchmarkReport {
   const ordered = [...models].sort((a, b) => b.passRate - a.passRate || a.durationMs - b.durationMs);
   const best = ordered[0];
@@ -110,7 +113,7 @@ export function buildBenchmarkReport(suite: EvalSuite, startedAt: string, models
     startedAt,
     finishedAt: new Date().toISOString(),
     models: ordered,
-    ...(best && best.total > 0 ? { best: { model: best.model, passRate: best.passRate, providerId: best.providerId } } : {}),
+    ...(best && best.total > 0 && best.passRate > 0 ? { best: { model: best.model, passRate: best.passRate, providerId: best.providerId } } : {}),
   };
 }
 
@@ -132,6 +135,8 @@ export function formatBenchmarkReport(report: BenchmarkReport): string {
   }
   if (report.best) {
     lines.push("", `Best coder: **${report.best.model}** (${(report.best.passRate * 100).toFixed(1)}% pass rate).`);
+  } else {
+    lines.push("", "No coder passed any case; the benchmark run is a failure.");
   }
   return `${lines.join("\n")}\n`;
 }
