@@ -72,7 +72,7 @@ import {
 } from "./db.js";
 import { getSettings, updateSettings } from "./settings.js";
 import { cancelRunSignal } from "./runControl.js";
-import { createAgent, deleteAgent, getAgent, listAgents, reorderAgents, sanitizeAvatarFields, setAgentArchived, setAgentHidden, setAgentPinned, updateAgent } from "./agents.js";
+import { createAgent, deleteAgent, getAgent, listAgents, listAgentsWithChatMeta, reorderAgents, sanitizeAvatarFields, setAgentArchived, setAgentHidden, setAgentPinned, updateAgent } from "./agents.js";
 import { handleScratchpadRoutes } from "./routes/scratchpad.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
@@ -1252,7 +1252,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (req.method === "GET" && p === "/api/agents") {
-          sendJson(res, 200, { agents: listAgents() });
+          sendJson(res, 200, { agents: listAgentsWithChatMeta() });
           return;
         }
 

@@ -803,5 +803,8 @@
   "Companion description": "Companion description",
   "Mode": "Mode",
   "Memory enabled (Loam execution)": "Memory enabled (Loam execution)",
-  "Memory disabled (Chat only)": "Memory disabled (Chat only)"
+  "Memory disabled (Chat only)": "Memory disabled (Chat only)",
+  "Waiting for you": "Waiting for you",
+  "Waiting for you: {message}": "Waiting for you: {message}",
+  "Role": "Role"
 }

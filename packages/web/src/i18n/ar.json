@@ -1258,5 +1258,8 @@
   "Companion description": "وصف المساعد",
   "Mode": "الوضع",
   "Memory enabled (Loam execution)": "الذاكرة مفعّلة (تنفيذ داخل Loam)",
-  "Memory disabled (Chat only)": "الذاكرة معطّلة (دردشة فقط)"
+  "Memory disabled (Chat only)": "الذاكرة معطّلة (دردشة فقط)",
+  "Waiting for you": "بانتظارك",
+  "Waiting for you: {message}": "بانتظارك: {message}",
+  "Role": "الدور"
 }

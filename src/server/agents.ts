@@ -5,6 +5,8 @@ import { DATA_DIR } from "../config.js";
 import { log } from "../log.js";
 import { getLoamMode } from "../modes/catalog.js";
 import { normalizeWorkMode, validateServiceIds } from "./companionGateway.js";
+import { getThread } from "./agentThreads.js";
+import { getTask, type TaskMessage } from "./db.js";
 
 export interface AgentRecord {
   id: string;
@@ -98,6 +100,89 @@ export function listAgents(includeArchived = false): AgentRecord[] {
     if (firstPinned === 0) return pinOrder(first, second);
     return first.createdAt.localeCompare(second.createdAt);
   });
+}
+
+/**
+ * Additive per-agent chat metadata served with the agents list so the sidebar
+ * rows can show a Grok Bot-style last-message snippet, a waiting/unread dot and
+ * a "last activity" sort key without an extra request per agent.
+ */
+export interface AgentChatMeta {
+  /** One-line preview of the thread's latest user/assistant message. */
+  lastMessage?: string;
+  /** True when the thread's latest message is the assistant's (the user's turn is next). */
+  waitingForYou?: boolean;
+  /** Unread user/assistant message count (0 when seen or when there is no thread). */
+  unreadCount?: number;
+  /** Epoch ms of the latest thread message; drives the "last activity" row sort. */
+  lastActivityAt?: number;
+}
+
+/** Agent record plus the additive chat metadata (agents list endpoint shape). */
+export type AgentWithChatMeta = AgentRecord & AgentChatMeta;
+
+/** Character cap for the one-line preview snippet (CSS truncates the rest). */
+const LAST_MESSAGE_MAX_CHARS = 140;
+
+function previewSnippet(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > LAST_MESSAGE_MAX_CHARS ? `${flat.slice(0, LAST_MESSAGE_MAX_CHARS)}…` : flat;
+}
+
+function isChatMessage(message: TaskMessage): boolean {
+  return (
+    (message.role === "user" || message.role === "assistant") &&
+    typeof message.content === "string" &&
+    message.content.trim().length > 0
+  );
+}
+
+/** Latest user/assistant message of a thread's task, if any. */
+function latestThreadMessage(threadUid: string): TaskMessage | undefined {
+  const messages = getTask(threadUid)?.messages;
+  if (!messages || messages.length === 0) return undefined;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message && isChatMessage(message)) return message;
+  }
+  return undefined;
+}
+
+/** Count chat messages newer than lastSeenAt (all of them when never seen). */
+function unreadMessageCount(threadUid: string, lastSeenAt?: string): number {
+  const messages = getTask(threadUid)?.messages;
+  if (!messages || messages.length === 0) return 0;
+  let count = 0;
+  for (const message of messages) {
+    if (!message || !isChatMessage(message)) continue;
+    if (!lastSeenAt || (typeof message.at === "string" && message.at > lastSeenAt)) count++;
+  }
+  return count;
+}
+
+/** Additive chat metadata for one agent's thread (empty object when it has none). */
+export function agentChatMeta(agentId: string): AgentChatMeta {
+  const thread = getThread(agentId);
+  if (!thread) return {};
+  const meta: AgentChatMeta = {};
+  const last = latestThreadMessage(thread.threadUid);
+  if (last) {
+    meta.lastMessage = previewSnippet(last.content);
+    meta.waitingForYou = last.role === "assistant";
+    const at = last.at ? Date.parse(last.at) : Number.NaN;
+    if (Number.isFinite(at)) meta.lastActivityAt = at;
+  }
+  if (thread.unread) meta.unreadCount = Math.max(1, unreadMessageCount(thread.threadUid, thread.lastSeenAt));
+  return meta;
+}
+
+/**
+ * Agents list with additive chat metadata. Every AgentRecord field is
+ * unchanged; the chat fields are additive and safe for existing consumers to
+ * ignore.
+ */
+export function listAgentsWithChatMeta(includeArchived = false): AgentWithChatMeta[] {
+  return listAgents(includeArchived).map((agent) => ({ ...agent, ...agentChatMeta(agent.id) }));
 }
 
 /** Pin or unpin an agent. Pinning appends it to the end of the pinned order; idempotent. */
