@@ -38,7 +38,9 @@ export function resolveBuildOutput(root: string): BuildOutput | null {
   }
   const rootIndex = path.join(base, "index.html");
   if (fs.existsSync(rootIndex) && fs.statSync(rootIndex).isFile()) {
-    return { dir: base, relative: ".", fileCount: countFiles(base) };
+    // The workspace root doubles as the build output; exclude `.loam` staging
+    // (exports/deploy copies) so the reported file count reflects real assets.
+    return { dir: base, relative: ".", fileCount: countFiles(base, true) };
   }
   return null;
 }
@@ -52,12 +54,13 @@ function hasAnyFile(dir: string): boolean {
   return false;
 }
 
-function countFiles(dir: string): number {
+function countFiles(dir: string, skipRootLoam = false): number {
   let count = 0;
   for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
     if (item.isSymbolicLink()) continue;
+    if (skipRootLoam && item.name === ".loam") continue;
     if (item.isFile()) count += 1;
-    else if (item.isDirectory()) count += countFiles(path.join(dir, item.name));
+    else if (item.isDirectory()) count += countFiles(path.join(dir, item.name), false);
   }
   return count;
 }
@@ -83,10 +86,19 @@ export function exportBuild(root: string, taskId: string): ExportResult {
   }
   const exportsDir = taskStagingDir(root);
   fs.mkdirSync(exportsDir, { recursive: true });
-  const zipPath = path.join(exportsDir, `deploy-${safeSegment(taskId)}-${timestampSegment()}.zip`);
+  const zipPath = uniqueArchivePath(exportsDir, `deploy-${safeSegment(taskId)}`, ".zip");
   const zip = zipBuffer(buildEntries(out.dir));
   fs.writeFileSync(zipPath, zip);
   return { zipPath, bytes: zip.length, fileCount: out.fileCount, buildDir: out.dir };
+}
+
+/**
+ * Archive path that never collides: `timestampSegment()` is millisecond
+ * precision, so two exports/deploys in the same millisecond would otherwise
+ * overwrite each other. The first free candidate is returned.
+ */
+function uniqueArchivePath(dir: string, base: string, ext: string): string {
+  return withCollisionSuffix(path.join(dir, `${base}-${timestampSegment()}${ext}`));
 }
 
 /** Staging directories live under `.loam` and are always excluded from packaged builds. */
@@ -171,6 +183,29 @@ export function localDistDir(distRoot: string, taskId: string): string {
 }
 
 /**
+ * Append the first free `-N` suffix to `base` so a same-millisecond collision
+ * never overwrites an existing copy. Pure given the filesystem state.
+ */
+export function withCollisionSuffix(base: string): string {
+  if (!fs.existsSync(base)) return base;
+  let n = 1;
+  let candidate = `${base}-${n}`;
+  while (fs.existsSync(candidate)) {
+    n += 1;
+    candidate = `${base}-${n}`;
+  }
+  return candidate;
+}
+
+/**
+ * Collision-free variant of {@link localDistDir}: keeps every deploy's copy on
+ * disk even when two deploys land in the same millisecond (history preserved).
+ */
+export function uniqueLocalDistDir(distRoot: string, taskId: string): string {
+  return withCollisionSuffix(localDistDir(distRoot, taskId));
+}
+
+/**
  * The always-available local/mock target: writes the build output into a dist
  * directory and returns a local URL (via the serve hook, else file://). Nothing
  * leaves the machine.
@@ -186,22 +221,25 @@ export function createLocalDeployTarget(opts: LocalDeployTargetOptions): DeployT
       return "نشر محلي: ينسخ مخرجات البناء إلى مجلد dist ويعيد رابطًا محليًا.";
     },
     async deploy(input: DeployInput): Promise<DeployResult> {
-      const distDir = localDistDir(opts.distRoot, input.taskId);
+      const distDir = uniqueLocalDistDir(opts.distRoot, input.taskId);
       const tmpDir = `${distDir}.deploying`;
       fs.rmSync(tmpDir, { recursive: true, force: true });
-      fs.rmSync(distDir, { recursive: true, force: true });
+      // Stage the full copy first; only swap it into place once the write has
+      // fully succeeded so a failed deploy never destroys the previous copy.
       writer.write(input.buildDir, tmpDir);
+      fs.rmSync(distDir, { recursive: true, force: true });
       fs.renameSync(tmpDir, distDir);
       const files = collectFiles(distDir);
       const zip = zipBuffer(buildEntries(input.buildDir));
-      const zipPath = path.join(path.dirname(distDir), `local-${timestampSegment()}.zip`);
+      const zipPath = uniqueArchivePath(path.dirname(distDir), "local", ".zip");
       fs.writeFileSync(zipPath, zip);
 
       let url: string | null;
       if (opts.serve) {
         url = await opts.serve(distDir);
       } else {
-        url = pathToFileURL(path.resolve(distDir, "index.html")).toString();
+        const indexPath = path.resolve(distDir, "index.html");
+        url = pathToFileURL(fs.existsSync(indexPath) ? indexPath : distDir).toString();
       }
       return {
         ok: true,

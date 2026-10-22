@@ -126,17 +126,15 @@ export function AgentInfoPane({ agent, threadUid, onClose, onRenameAgent, onDele
         }
       >
         <div className="flex min-w-0 items-center gap-2">
-          {group ? (
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-control bg-fill-tsp text-base">👥</div>
-          ) : (
-            <AgentAvatar
-              name={agent.name}
-              avatarShape={agent.avatarShape}
-              avatarColor={agent.avatarColor}
-              avatarImage={agent.avatarImage}
-              size={32}
-            />
-          )}
+          <AgentAvatar
+            name={group ? group.name : agent.name}
+            id={group ? group.id : agent.id}
+            avatarShape={agent.avatarShape}
+            avatarColor={agent.avatarColor}
+            avatarImage={agent.avatarImage}
+            emoji={group ? '👥' : agent.emoji}
+            size={32}
+          />
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-text-primary">{headerTitle}</p>
             <p className="truncate text-xs text-text-tertiary">{headerSubtitle}</p>
@@ -1373,9 +1371,12 @@ function ChildrenSection({ agentId }: { agentId: string }) {
         <ul className="flex flex-col gap-2">
           {children.map((child) => (
             <li key={child.childId} className="flex items-start gap-2 rounded-card border border-border-main bg-bg-main p-2">
-              <div className="flex size-7 shrink-0 items-center justify-center rounded-control bg-fill-tsp text-base">
-                {child.emoji || '🤖'}
-              </div>
+              <AgentAvatar
+                name={child.name}
+                id={child.childId}
+                emoji={child.emoji}
+                size={28}
+              />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm text-text-primary">{child.name}</p>
                 {child.description && (

@@ -12,6 +12,7 @@ import { getSessionToken, getApiBase } from '@/services/rpc';
 import { shortUid } from '@/utils/uid';
 import type { TaskMode } from '@shared/socket';
 import type { AgentCardAgent } from './AgentCard';
+import { AgentAvatar } from './AgentAvatar';
 
 function getSocketBase(): string {
   if (typeof window === 'undefined') return '/';
@@ -113,7 +114,19 @@ export function AgentStartDialog({ open, onClose, agent }: AgentStartDialogProps
     <Dialog open={open} onClose={onClose} title={title} width={560}>
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-2 text-sm text-text-secondary">
-          <span className="text-lg">{agent?.emoji || '🤖'}</span>
+          {agent ? (
+            <AgentAvatar
+              name={agent.name}
+              id={agent.id}
+              avatarShape={agent.avatarShape}
+              avatarColor={agent.avatarColor}
+              avatarImage={agent.avatarImage}
+              emoji={agent.emoji}
+              size={28}
+            />
+          ) : (
+            <span className="text-lg">🤖</span>
+          )}
           <span className="font-medium text-text-primary">{agent?.name}</span>
           <span className="text-text-tertiary">· {agent?.mode || 'loam'} · {agent?.workMode || 'loam'}</span>
         </div>

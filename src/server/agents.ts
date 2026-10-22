@@ -201,7 +201,10 @@ function sanitizeServices(value: unknown): { allowedServices?: string[] } {
 export const AVATAR_SHAPES: readonly string[] = ["squircle", "teardrop", "pebble", "hex", "blob", "cloud", "wedge", "tablet"];
 
 /** Grok Bot-style avatar color tokens (concrete hex values live in the web palette). */
-export const AVATAR_COLORS: readonly string[] = ["red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "brown", "gray"];
+export const AVATAR_COLORS: readonly string[] = ["red", "orange", "yellow", "green", "teal", "cyan", "blue", "indigo", "violet", "purple", "magenta", "pink", "brown", "olive", "gray", "slate"];
+
+/** Alternate spellings accepted on input and mapped onto a canonical token. */
+const AVATAR_COLOR_ALIASES: Record<string, string> = { grey: "gray" };
 
 /** Cap for embedded avatar images (data URLs), roughly 256KB. */
 const AVATAR_IMAGE_MAX_BYTES = 256 * 1024;
@@ -215,7 +218,9 @@ function sanitizeAvatarShape(value: unknown): string | undefined {
 function sanitizeAvatarColor(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const v = value.trim().toLowerCase();
-  return AVATAR_COLORS.includes(v) ? v : undefined;
+  if (!v) return undefined;
+  const normalized = AVATAR_COLOR_ALIASES[v] ?? v;
+  return AVATAR_COLORS.includes(normalized) ? normalized : undefined;
 }
 
 function sanitizeAvatarImage(value: unknown): string | undefined {

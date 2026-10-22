@@ -38,7 +38,12 @@ export function assertLocalhost(target: string): string {
     throw new LocalhostScopeError(target);
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new LocalhostScopeError(target);
-  if (!LOCAL_HOSTNAMES.has(url.hostname.toLowerCase())) throw new LocalhostScopeError(target);
+  // Embedded credentials would be normalized into `url.href` and then persisted
+  // verbatim into captured evidence, so refuse them outright.
+  if (url.username || url.password) throw new LocalhostScopeError(target);
+  // A trailing dot is a legal FQDN spelling of the same host; normalize it so
+  // `localhost.` cannot slip past the loopback allow-list.
+  if (!LOCAL_HOSTNAMES.has(url.hostname.toLowerCase().replace(/\.$/, ""))) throw new LocalhostScopeError(target);
   return url.href;
 }
 
@@ -76,6 +81,23 @@ let evidenceSeq = 0;
 export const nextEvidenceId = (): string => `EV${String(++evidenceSeq).padStart(4, "0")}`;
 
 const REDACTED_COOKIE = "<redacted>";
+
+/**
+ * Response headers that must never be persisted into evidence. `set-cookie`
+ * carries the raw cookie values that `summarizeCookies` deliberately redacts,
+ * so it is dropped here instead of being stored verbatim alongside the summary.
+ */
+const SENSITIVE_EVIDENCE_HEADERS = new Set(["set-cookie", "cookie", "authorization", "proxy-authorization"]);
+
+/** Copy response headers for evidence, omitting values that must not be retained. */
+export function redactEvidenceHeaders(headers: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (SENSITIVE_EVIDENCE_HEADERS.has(key.toLowerCase())) continue;
+    out[key] = value;
+  }
+  return out;
+}
 
 function summarizeCookies(setCookie: string[]): string[] {
   return setCookie.map((raw) => {
@@ -122,7 +144,7 @@ export class RecordingRunner implements PentestRunner {
       request: `${options.method ?? "GET"} ${input}`,
       status: result.status,
       response: result.body.slice(0, 2000),
-      headers: { ...result.headers },
+      headers: redactEvidenceHeaders(result.headers),
       cookieFlags: result.setCookie.length ? summarizeCookies(result.setCookie) : undefined,
       ...(result.bodyOmitted ? { bodyOmitted: true } : {}),
       ...(result.bodyTruncated ? { bodyTruncated: true } : {}),
@@ -258,6 +280,9 @@ export async function reconAgent(opts: {
     try {
       findings = await opts.runner.check(opts.target, check, opts.signal);
     } catch (err) {
+      // A check that fails mid-flight may already have recorded evidence; keep
+      // it so the failed observation stays auditable instead of being erased.
+      const recorded = opts.runner.evidence?.slice(before) ?? [];
       observations.push({
         id: nextObservationId(),
         check,
@@ -266,7 +291,7 @@ export async function reconAgent(opts: {
         severity: "info",
         title: "Recon check failed",
         detail: (err as Error).message,
-        evidence: [],
+        evidence: recorded,
       });
       continue;
     }
@@ -318,8 +343,9 @@ function parseExposedPaths(detail: string): string[] {
   return [...new Set(out)];
 }
 
-function missingCoreHeaders(headers: Record<string, string>): string[] {
+function missingCoreHeaders(headers: Record<string, string>, isHttps = false): string[] {
   const missing: string[] = [];
+  if (isHttps && !headers["strict-transport-security"]) missing.push("Strict-Transport-Security");
   if (!headers["content-security-policy"]) missing.push("Content-Security-Policy");
   if (!headers["x-frame-options"] && !(headers["content-security-policy"] ?? "").includes("frame-ancestors")) missing.push("X-Frame-Options");
   if (!headers["x-content-type-options"]) missing.push("X-Content-Type-Options");
@@ -343,21 +369,28 @@ interface HypothesisRule {
 const HYPOTHESIS_RULES: HypothesisRule[] = [
   {
     applies: (o) => o.check === "security_headers" && o.verdict === "finding",
-    make: (o) => [
-      {
-        id: nextHypothesisId(),
-        source: o.id,
-        check: o.check,
-        target: o.target,
-        title: "Missing response security headers can enable injection or clickjacking",
-        rationale: `Recon reported: ${o.detail}`,
-        probe: { url: o.target, method: "GET", demonstrates: "absence of a core response security header" },
-        confirm: (r) => {
-          const missing = missingCoreHeaders(r.headers);
-          return missing.length ? `Missing ${missing.join(", ")} on HTTP ${r.status}` : null;
+    make: (o) => {
+      const isHttps = o.target.startsWith("https:");
+      return [
+        {
+          id: nextHypothesisId(),
+          source: o.id,
+          check: o.check,
+          target: o.target,
+          title: "Missing response security headers can enable injection or clickjacking",
+          rationale: `Recon reported: ${o.detail}`,
+          probe: { url: o.target, method: "GET", demonstrates: "absence of a core response security header" },
+          confirm: (r) => {
+            // A failed probe (status 0, empty headers) or a non-2xx response is
+            // not evidence of a missing header; the shipped check treats those
+            // as errors, so the PoC must require an ok response too.
+            if (!r.ok) return null;
+            const missing = missingCoreHeaders(r.headers, isHttps);
+            return missing.length ? `Missing ${missing.join(", ")} on HTTP ${r.status}` : null;
+          },
         },
-      },
-    ],
+      ];
+    },
   },
   {
     applies: (o) => o.check === "cookie_flags" && o.verdict === "finding",
@@ -398,7 +431,8 @@ const HYPOTHESIS_RULES: HypothesisRule[] = [
   {
     applies: (o) => o.check === "exposed_files" && o.verdict === "finding",
     make: (o) => {
-      const paths = parseExposedPaths(o.detail).length ? parseExposedPaths(o.detail) : SENSITIVE_PATHS;
+      const parsed = parseExposedPaths(o.detail);
+      const paths = parsed.length ? parsed : SENSITIVE_PATHS;
       return paths.map((p) => ({
         id: nextHypothesisId(),
         source: o.id,
@@ -512,7 +546,15 @@ export async function validateAgent(opts: {
       continue;
     }
     const recorded = opts.runner.evidence?.slice(before) ?? [];
-    const observed = h.confirm(result);
+    let observed: string | null;
+    try {
+      observed = h.confirm(result);
+    } catch (err) {
+      // A faulty assertion must never abort the whole validate phase; treat it
+      // as an inconclusive probe and keep the evidence already recorded.
+      outcomes.push({ hypothesisId: h.id, status: "inconclusive", claim: h.title, evidence: recorded, detail: `PoC assertion failed: ${(err as Error).message}` });
+      continue;
+    }
     if (observed) {
       const poc: Evidence = {
         id: nextEvidenceId(),

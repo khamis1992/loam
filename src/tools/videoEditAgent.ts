@@ -260,7 +260,7 @@ function extractRanges(clause: string, durationSec: number | undefined, warnings
     if (r) results.push(r);
     pos = best.end;
   }
-  if (/\bfirst\s+\d|\blast\s+\d/.test(lc) && durationSec === undefined && results.length === 0 && !warnings.some((w) => w.includes("needs a known video duration"))) {
+  if (/\bfirst\s+\d|\blast\s+\d|\bthe\s+end\b|\bonwards?\b|\bforward\b/.test(lc) && durationSec === undefined && results.length === 0 && !warnings.some((w) => w.includes("needs a known video duration"))) {
     warnings.push(`"${clause.trim()}" needs a known video duration; skipped`);
   }
   return results;
@@ -368,7 +368,6 @@ function extractAtSec(clause: string, durationSec: number | undefined, warnings:
 export function compileEdl(input: CompileInput): VideoEdl {
   const warnings: string[] = [];
   const instruction = input.instruction ?? "";
-  const durationSec = input.durationSec;
   let previous = input.previous ?? null;
   if (previous && RESET_RE.test(instruction)) {
     warnings.push("previous EDL discarded (reset requested)");
@@ -377,6 +376,10 @@ export function compileEdl(input: CompileInput): VideoEdl {
     warnings.push("previous EDL was for a different source; starting fresh");
     previous = null;
   }
+  // A saved EDL knows the source duration even when the ffmpeg probe is
+  // unavailable (missing binary, unreadable file); reuse it so duration-
+  // dependent ops keep working across successive instructions.
+  const durationSec = input.durationSec ?? previous?.source.durationSec;
   const ops: EdlOp[] = (previous?.ops ?? []).map((op) => ({ ...op }));
   let lastVerb: VerbKind | null = null;
 
@@ -395,6 +398,10 @@ export function compileEdl(input: CompileInput): VideoEdl {
       if (!text) { warnings.push(`overlay-text needs quoted or plain text: "${clause}"`); continue; }
       const atSec = extractAtSec(clause, durationSec, warnings);
       if (atSec === null) { warnings.push(`overlay-text needs a timestamp ("at Xs"): "${clause}"`); continue; }
+      if (durationSec !== undefined && atSec >= durationSec) {
+        warnings.push(`overlay-text at ${atSec}s is at or beyond the video end: "${clause}"`);
+        continue;
+      }
       const durationMs = extractDurationSec(clause);
       const op: OverlayTextOp = { id: "", op: "overlay-text", text, atSec };
       if (durationMs !== null) op.durationSec = durationSec === undefined ? durationMs : Math.min(durationMs, Math.max(0, durationSec - atSec));
@@ -413,8 +420,10 @@ export function compileEdl(input: CompileInput): VideoEdl {
         order = move;
       } else {
         const idx = Array.from(clause.toLowerCase().matchAll(/(?:segment|clip|position|#)?\s*(\d+)/g))
-          .map((m) => Number(m[1]))
-          .filter((n) => n >= 1 && n <= segments.length);
+          .map((m) => Number(m[1]));
+        // A reorder must name every surviving segment exactly once. Dropping
+        // out-of-range indices before validating would silently turn a bad
+        // permutation ("reorder 1 2" on a single segment) into a valid no-op.
         if (idx.length > 0) order = isPermutationOf(idx, segments.length) ? idx : null;
       }
       if (!order) { warnings.push(`reorder needs a full permutation of ${segments.length} segment(s): "${clause}"`); continue; }
@@ -497,9 +506,40 @@ function atomicWrite(file: string, value: unknown): void {
   fs.renameSync(temp, file);
 }
 
+const EDL_OP_KINDS = new Set(["trim", "split", "delete", "reorder", "overlay-text"]);
+const isFiniteNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/** Reject a saved EDL whose ops are not the v1 shapes this compiler emits; a
+ *  corrupt sidecar must be discarded rather than carried into a new edit. */
+function isValidEdlOp(op: unknown): op is EdlOp {
+  if (!op || typeof op !== "object") return false;
+  const o = op as Record<string, unknown>;
+  if (typeof o.id !== "string" || typeof o.op !== "string" || !EDL_OP_KINDS.has(o.op)) return false;
+  switch (o.op) {
+    case "trim":
+    case "delete":
+      return isFiniteNum(o.fromSec) && isFiniteNum(o.toSec);
+    case "split":
+      return isFiniteNum(o.atSec);
+    case "reorder":
+      return Array.isArray(o.order) && o.order.every((n) => typeof n === "number" && Number.isInteger(n));
+    case "overlay-text":
+      return typeof o.text === "string" && isFiniteNum(o.atSec);
+    default:
+      return false;
+  }
+}
+
 function looksLikeEdl(v: unknown): v is VideoEdl {
   const e = v as VideoEdl | undefined;
-  return !!e && e.version === 1 && Array.isArray(e.ops) && !!e.source && typeof e.source.path === "string";
+  return (
+    !!e &&
+    e.version === 1 &&
+    Array.isArray(e.ops) &&
+    e.ops.every(isValidEdlOp) &&
+    !!e.source &&
+    typeof e.source.path === "string"
+  );
 }
 
 export function createWorkspaceTimelineService(): TimelineService {
