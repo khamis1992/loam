@@ -1258,5 +1258,8 @@
   "Companion description": "وصف المساعد",
   "Mode": "الوضع",
   "Memory enabled (Loam execution)": "الذاكرة مفعّلة (تنفيذ داخل Loam)",
-  "Memory disabled (Chat only)": "الذاكرة معطّلة (دردشة فقط)"
+  "Memory disabled (Chat only)": "الذاكرة معطّلة (دردشة فقط)",
+  "Pinned": "المثبّتة",
+  "{count} unread": "{count} غير مقروءة",
+  "Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder.": "وكيل مثبّت {name}. اضغط Alt+السهم لأعلى أو Alt+السهم لأسفل لإعادة الترتيب، أو اسحب لإعادة الترتيب."
 }

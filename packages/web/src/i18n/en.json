@@ -803,5 +803,8 @@
   "Companion description": "Companion description",
   "Mode": "Mode",
   "Memory enabled (Loam execution)": "Memory enabled (Loam execution)",
-  "Memory disabled (Chat only)": "Memory disabled (Chat only)"
+  "Memory disabled (Chat only)": "Memory disabled (Chat only)",
+  "Pinned": "Pinned",
+  "{count} unread": "{count} unread",
+  "Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder.": "Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder."
 }
