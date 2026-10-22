@@ -11,6 +11,7 @@ const READ = ["file_read", "file_list", "file_search", "file_stat", "file_extrac
 const WRITE = ["file_write", "file_edit", "file_mkdir", "file_move", "file_delete"];
 const BROWSER = ["browser_open", "browser_goto", "browser_snapshot", "browser_click", "browser_type", "browser_press", "browser_screenshot", "browser_table", "browser_act", "browser_pages", "browser_close", "browser_eval"];
 const PREVIEW = ["preview_serve", "preview_status", "preview_stop"];
+const MANAGED_SESSIONS = ["managed_child_start", "managed_child_message", "managed_child_sleep", "managed_child_wake", "managed_child_terminate", "managed_child_answer", "managed_child_status", "managed_child_events", "schedule_self_reminder"];
 
 export const LOAM_MODES: LoamMode[] = [
   { id: "ask", label: "Loam Explore", labelAr: "استكشف", icon: "◌", hue: 155, hue2: 135,
@@ -25,7 +26,7 @@ export const LOAM_MODES: LoamMode[] = [
     starters: [{ label: "قارن مصادر", prompt: "قارن المصادر التي سأرفقها، وافصل الحقائق عن الاستنتاجات مع روابط الأدلة." }, { label: "راجع موضوعًا", prompt: "أعد تقرير بحث حول الموضوع التالي، مع توضيح الثغرات وحدود المصادر المتاحة." }] },
   { id: "build", label: "Loam Build", labelAr: "ابنِ", icon: "⌘", hue: 100, hue2: 140,
     tagline: "من الفكرة إلى تجربة تعمل", description: "طوّر ملفات التطبيق وشغّل الاختبارات ومعاينة المشروع في مساحة المهمة.", outputHint: "ملفات مشروع ومعاينة ونتائج اختبارات", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, ...WRITE, "loam_mobile", "code_symbols", "code_outline", "shell_run", "web_fetch", ...BROWSER, ...PREVIEW], panels: ["files", "browser", "preview"],
+    tools: ["integration_list", "integration_call", ...READ, ...WRITE, "loam_mobile", "code_symbols", "code_outline", "shell_run", "web_fetch", ...BROWSER, ...PREVIEW, ...MANAGED_SESSIONS], panels: ["files", "browser", "preview"],
     fields: [{ id: "brief", label: "ماذا سنبني؟", placeholder: "المستخدمون والوظائف المطلوبة", multiline: true }, { id: "acceptance", label: "معايير الإنجاز", placeholder: "ما السلوك الذي يجب اختباره قبل التسليم؟", multiline: true }],
     starters: [{ label: "صفحة تعريفية", prompt: "ابنِ صفحة تعريفية عربية متجاوبة مع معاينة محلية واختبر عرض الهاتف." }, { label: "أصلح مشروعًا", prompt: "افحص ملفات المشروع المرفقة، حدد العطل وأصلحه ثم شغّل الاختبارات المناسبة." }] },
   { id: "write", label: "Loam Write", labelAr: "اكتب", icon: "✎", hue: 55, hue2: 75,
@@ -50,7 +51,7 @@ export const LOAM_MODES: LoamMode[] = [
     starters: [{ label: "فحص ترويسات", prompt: "افحص ترويسات الأمان لـ http://127.0.0.1:3000 باستخدام pentest_check واحفظ النتائج." }, { label: "تقرير ثغرات", prompt: "شغّل فحص pentest_check شامل ثم أنشئ تقرير pentest_report داخل مساحة المهمة." }] },
   { id: "automate", label: "Loam Flow", labelAr: "أنجز", icon: "↗", hue: 220, hue2: 195,
     tagline: "خطوات متكررة، عمل أوضح", description: "نفّذ خطوات تفاعل المتصفح وسجّل الأدلة. راجع تفاصيل الإجراءات الخارجية قبل طلبها.", outputHint: "سجل إجراءات ولقطات توثيق", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_mkdir", ...BROWSER, "task_create", "task_list", "task_get", "task_cancel", "schedule_create", "schedule_list", "schedule_delete"], panels: ["files", "browser"],
+    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_mkdir", ...BROWSER, "task_create", "task_list", "task_get", "task_cancel", "schedule_create", "schedule_list", "schedule_delete", ...MANAGED_SESSIONS], panels: ["files", "browser"],
     fields: [{ id: "workflow", label: "خطوات العمل", placeholder: "الرابط والخطوات المطلوبة والنتيجة المتوقعة", multiline: true }, { id: "limits", label: "حدود التنفيذ", placeholder: "الإجراءات المسموحة وما يتطلب الرجوع إليك" }],
     starters: [{ label: "تحقق من صفحة", prompt: "افتح الرابط الذي سأقدمه وافحص العناصر المرئية وسجّل لقطة ودليلًا على النتيجة." }, { label: "نفّذ إجراء متكرر", prompt: "ساعدني في تنفيذ خطوات المتصفح التالية، وتحقق من نتيجة كل خطوة قبل المتابعة." }] },
 ];

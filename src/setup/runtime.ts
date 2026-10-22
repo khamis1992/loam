@@ -16,6 +16,7 @@ import { symbolTools } from "../tools/symbols.js";
 import { pentestTools } from "../tools/pentest.js";
 import { mirofishTools } from "../tools/mirofish.js";
 import { createSubagentTools } from "../tools/subagents.js";
+import { createManagedSessionTools } from "../tools/managedSessionTools.js";
 import { webTools } from "../tools/web.js";
 import { browserTools, closeBrowser } from "../tools/browser.js";
 import { computerUseTools } from "../tools/computerUse.js";
@@ -84,6 +85,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createRorkTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createFrontierBridgeTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createSubagentTools(ollama, registry));
+  registry.registerAll(createManagedSessionTools({ ollama, parentRegistry: registry }));
 
   const mcp = opts.mcp === false ? null : await registerMcpTools(registry, cfg.mcpServers, cfg.workspace);
   registry.registerAll(createIntegrationTools(registry));
