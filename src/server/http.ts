@@ -1651,7 +1651,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
 
         // ---- remote continuity channel (22): keyed access from the LAN (phone/web) ----
         const LOAM_REMOTE_PAGE = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Loam بعيد</title><style>body{font-family:system-ui;max-width:640px;margin:0 auto;padding:1.2rem;background:#101613;color:#e8efe9}textarea,select,button{font-family:inherit;font-size:1rem}textarea{width:100%;min-height:96px;padding:.7rem;border-radius:10px;border:1px solid #2c3a30;background:#0b100d;color:#e8efe9}button{background:#4f7d5c;color:#fff;border:0;border-radius:10px;padding:.65rem 1.4rem;margin-top:.5rem}#st{margin-top:.8rem;font-size:.9rem;color:#9fb8a8;white-space:pre-wrap}</style></head><body>
-<h2>ðŸ¤– Loam — من هاتفك</h2>
+<h2>🤖 Loam — من هاتفك</h2>
 <p style="color:#9fb8a8;font-size:.9rem">أرسل مهمة لمساعدك على جهازك المنزلي، وتابع حالتها هنا.</p>
 <select id="ag" style="width:100%;padding:.6rem;border-radius:10px;background:#0b100d;color:#e8efe9;border:1px solid #2c3a30"></select>
 <textarea id="p" placeholder="اكتب المهمة…"></textarea><br>
@@ -1663,7 +1663,7 @@ const KEY=new URLSearchParams(location.search).get('key')||'';
 const H={'content-type':'application/json','x-loam-key':KEY};
 async function loadAgents(){try{const r=await fetch('/api/agents',{headers:H});const d=await r.json();const s=document.getElementById('ag');s.innerHTML=(d.agents||[]).map(a=>'<option value="'+a.id+'">'+a.name+' — '+(a.description||'')+'</option>').join('');}catch(e){document.getElementById('st').textContent='تعذر تحميل المساعدين: '+e.message;}}
 async function send(){const p=document.getElementById('p').value.trim();if(!p)return;const ag=document.getElementById('ag').value;const st=document.getElementById('st');st.textContent='⏳ جارٍ الإرسال…';try{const r=await fetch('/api/remote/trigger',{method:'POST',headers:H,body:JSON.stringify({prompt:p,agentId:ag||undefined})});const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);st.textContent='✅ بدأت المهمة ('+d.taskId+') — أتابعها…';poll(d.taskId);}catch(e){st.textContent='✗ '+e.message;}}
-async function poll(id){for(let i=0;i<120;i++){await new Promise(r=>setTimeout(r,3000));try{const r=await fetch('/api/remote/status?taskId='+encodeURIComponent(id),{headers:H});const d=await r.json();if(d.status==='done'){document.getElementById('st').textContent='ðŸŽ‰ اكتملت المهمة!
+async function poll(id){for(let i=0;i<120;i++){await new Promise(r=>setTimeout(r,3000));try{const r=await fetch('/api/remote/status?taskId='+encodeURIComponent(id),{headers:H});const d=await r.json();if(d.status==='done'){document.getElementById('st').textContent='🎉 اكتملت المهمة!
 
 '+(d.notification?.body||'');return;}if(d.status==='error'||d.status==='cancelled'){document.getElementById('st').textContent='✗ انتهت: '+d.status;return;}document.getElementById('st').textContent='⏳ الحالة: '+d.status+'…';}catch(e){}}document.getElementById('st').textContent='انتهت مهلة المتابعة — المهمة ما زالت تعمل على جهازك.';}
 loadAgents();
