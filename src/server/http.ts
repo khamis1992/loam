@@ -94,6 +94,7 @@ import { handleMemorySkillsRoutes } from "./routes/memorySkills.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
 import { handleRetryLastRoutes } from "./routes/retryLast.js";
+import { handleInsightsRoutes } from "./routes/insights.js";
 import { handleShareRoutes } from "./routes/shares.js";
 import { handleProjectContextRoutes } from "./routes/projectContext.js";
 import { handleVoiceRoutes } from "./routes/voice.js";
@@ -1752,6 +1753,8 @@ loadAgents();
         if (await handleAgentSpawnRoutes(req, res, p)) return;
         if (await handleAgentThreadRoutes(req, res, p)) return;
         if (await handleRetryLastRoutes(req, res, p)) return;
+        // Session insights (D18): post-mortem metrics, issue timeline, feedback.
+        if (await handleInsightsRoutes(req, res, p, { ollama, model: cfg.model })) return;
         if (await handleSchedulesRoutes(req, res, p)) return;
         // D14: event-trigger deliveries (HMAC-verified webhook / GitHub events).
         if (await handleAutomationsRoutes(req, res, p)) return;
