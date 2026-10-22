@@ -39,6 +39,7 @@ import { createDeployTools } from "./tools/deploy.js";
 import { createDesignExploreTools } from "./tools/designExplore.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
 import { applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
+import { createSemanticSearchTools } from "./tools/semanticSearch.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
@@ -131,6 +132,12 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createDesignExploreTools());
   rt.registry.registerAll(createConnectorTools());
   rt.registry.registerAll(createPlanTools());
+  rt.registry.registerAll(
+    createSemanticSearchTools({
+      embedder: cfg.memory.enabled && cfg.memory.model ? new OllamaEmbedder(cfg.ollamaUrl, cfg.memory.model) : undefined,
+      model: cfg.memory.model,
+    }),
+  );
   const { ollama, registry, memory, mcp } = rt;
 
   const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal; lease?: RunLease }): Promise<{ taskId: string; text: string }> => {
