@@ -39,7 +39,7 @@ describe("craft status", () => {
     writeDist(tmpDir, "wordcraft", { rev: "abc123", sha256: "deadbeef", source: "cache" });
     server = http.createServer((req, res) => {
       const p = new URL(req.url ?? "/", "http://x").pathname;
-      void handleCraftRoutes(req, res, p).then((handled) => {
+      void handleCraftRoutes(req, res, p, { root: tmpDir }).then((handled) => {
         if (!handled) res.writeHead(404).end();
       });
     });
