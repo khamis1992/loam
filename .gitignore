@@ -29,3 +29,7 @@ nul
 /packages/web/e2e/results/
 /packages/web/e2e/visual/
 /packages/web/e2e/snapshots/
+
+# Coding-eval harness: the committed fixtures live in evals/coding/tasks/, but the
+# generated sandboxes and reports are throwaway run output.
+/evals/coding/results/
