@@ -393,7 +393,7 @@ function browserTool(registry: ToolRegistry): Tool {
   };
 }
 
-function messageTool(): Tool {
+export function messageTool(): Tool {
   return {
     name: "message",
     description: "Talk to the user. kind=notify does not block; kind=ask pauses the task until the user replies.",

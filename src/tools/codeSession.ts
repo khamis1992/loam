@@ -157,8 +157,14 @@ function buildBrief(task: string, acceptance: string, filesHint: string[]): stri
 
 export function createCodeSessionTools(options: CreateCodeSessionToolsOptions = {}): Tool[] {
   const opencodeBin = options.opencodeBin ?? process.env.LOAM_OPENCODE_BIN ?? "opencode";
+  // A JS fixture/bin is not directly executable on every platform (Windows
+  // throws EFTYPE/EINVAL for .js/.cjs/.cmd), so run it through the current
+  // Node runtime. Native executables are spawned as-is.
+  const isScriptBin = /\.(?:[cm]?js)$/i.test(opencodeBin);
   const spawnImpl: CodeSessionSpawnImpl =
-    options.spawnImpl ?? ((file, args, spawnOptions) => spawn(file, args, spawnOptions));
+    options.spawnImpl ??
+    ((file, args, spawnOptions) =>
+      isScriptBin ? spawn(process.execPath, [file, ...args], spawnOptions) : spawn(file, args, spawnOptions));
   const dataDir = options.dataDir ?? DATA_DIR;
   const maxConcurrent = Math.max(1, options.maxConcurrent ?? DEFAULT_MAX_CONCURRENT);
   const sessions = new Map<string, CodeSession>();

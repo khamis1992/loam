@@ -34,6 +34,14 @@ import { createRorkTools } from "../tools/rork.js";
 import { createFrontierBridgeTools } from "../tools/frontierBridge.js";
 import { writeGate } from "../server/pending.js";
 import { createIntegrationTools } from '../tools/integrations.js';
+import { createPhaseTools } from "../tools/phaseTools.js";
+import { createFinishTools } from "../tools/finishTools.js";
+import { createMultiEditTools } from "../tools/multiEdit.js";
+import { createVaultTools } from "../tools/vaultTools.js";
+import { createCodeSessionTools } from "../tools/codeSession.js";
+import { createDocsLookupTools } from "../tools/docsLookup.js";
+import { createArtifactTools } from "../tools/artifactTools.js";
+import { planTool, messageTool } from "../tools/specAliases.js";
 
 export interface Runtime {
   cfg: Config;
@@ -55,6 +63,12 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
 
   const registry = new ToolRegistry();
   registry.registerAll([...fileTools, ...shellTools, ...ptyTools, ...webTools, ...browserTools, ...computerUseTools, ...attachmentTools(), ...symbolTools(), ...pentestTools()]);
+  registry.registerAll(createPhaseTools());
+  registry.registerAll(createFinishTools());
+  registry.registerAll(createMultiEditTools());
+  registry.registerAll(createVaultTools());
+  registry.registerAll(createArtifactTools());
+  registry.registerAll([planTool(), messageTool()]);
   registry.registerAll(mirofishTools().map(tool => ({ ...tool, integration: true })));
 
   const embedder = new OllamaEmbedder(cfg.ollamaUrl, cfg.memory.model);
@@ -84,6 +98,8 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createRorkTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createFrontierBridgeTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createSubagentTools(ollama, registry));
+  registry.registerAll(createCodeSessionTools());
+  registry.registerAll(createDocsLookupTools());
 
   const mcp = opts.mcp === false ? null : await registerMcpTools(registry, cfg.mcpServers, cfg.workspace);
   registry.registerAll(createIntegrationTools(registry));
