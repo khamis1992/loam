@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { resolveWrite } from "../policy/paths.js";
+import {
+  formatDiagnosticReport,
+  resolveDiagnosticsSettings,
+  runDiagnostics,
+} from "../agent/diagnostics.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { bool, str } from "./registry.js";
 import { guardExistingEdit } from "./readState.js";
@@ -278,7 +283,18 @@ export function createMultiEditTools(): Tool[] {
         // not rejected as stale; the model already saw the pre-edit content.
         ctx.readState?.record(p);
 
-        return { ok: true, content: formatSummary(p, edits.length, normalized.split("\n").length, work.split("\n").length, diff) };
+        const summary = formatSummary(p, edits.length, normalized.split("\n").length, work.split("\n").length, diff);
+        let content = summary;
+        try {
+          const settings = resolveDiagnosticsSettings(ctx.workspace, ctx.cfg);
+          if (settings.enabled) {
+            const outcome = await runDiagnostics(p, settings);
+            if (outcome) content = `${summary}\n\n${formatDiagnosticReport(outcome)}`;
+          }
+        } catch {
+          /* diagnostics are advisory and never fail the edit */
+        }
+        return { ok: true, content };
       },
     },
   ];
