@@ -74,6 +74,22 @@ export function sumUnread(
 }
 
 /**
+ * Index of the next unread row after `from` in list order, wrapping back to the
+ * top; -1 when no row is unread. `from` may be -1 to start at the first row.
+ * Drives the floating "More unreads" pill jump-to-next-unread behavior.
+ */
+export function nextUnreadIndex(unread: readonly boolean[], from: number): number {
+  const n = unread.length;
+  if (n === 0) return -1;
+  const anchor = from >= 0 && from < n ? from : -1;
+  for (let k = 1; k <= n; k++) {
+    const i = (anchor + k) % n;
+    if (unread[i]) return i;
+  }
+  return -1;
+}
+
+/**
  * Recency key for the "last activity desc" row sort: the latest thread message
  * when known, else the agent's updatedAt/createdAt, else 0.
  */

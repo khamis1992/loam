@@ -84,6 +84,8 @@ export function AgentRow({
       onClick={onClick}
       onContextMenu={onContextMenu}
       aria-current={selected ? 'true' : undefined}
+      data-agent-row={agent.id}
+      {...(unreadCount > 0 ? { 'data-unread-row': '' } : {})}
       {...(drag ?? {})}
       className={[
         'group relative flex min-h-[52px] items-center gap-2 rounded-control px-2 py-1.5 text-start transition-colors',

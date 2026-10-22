@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   Plus,
   Search,
+  ChevronDown,
   ChevronRight,
   Users,
   MoreHorizontal,
@@ -14,11 +15,14 @@ import {
   Kanban,
   MessageSquare,
   Pin,
+  Github,
+  Mail,
+  Calendar,
 } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
-import { useAppSelector } from '@/store';
-import { Button, Spinner } from '@/components/ui/Button';
+import { useAppDispatch, useAppSelector, openSettings } from '@/store';
+import { Button, IconButton, Spinner } from '@/components/ui/Button';
 import { grokBotNoteText } from '@/components/chat/GrokBotNote';
 import type { ChatEvent } from '@shared/socket';
 import type { AgentCardAgent } from './AgentCard';
@@ -27,7 +31,7 @@ import { AgentRow, RowAccent } from './AgentRow';
 import { PinnedAgentGrid } from './PinnedAgentGrid';
 import { getBuiltInAgents } from './BuiltInAgentCard';
 import type { GroupChat } from './groupTypes';
-import { foldName, searchAgents, sortByLastActivity, splitHidden, sumUnread } from './agentListFilter';
+import { foldName, nextUnreadIndex, searchAgents, sortByLastActivity, splitHidden, sumUnread } from './agentListFilter';
 
 interface AgentWithMeta extends AgentCardAgent {
   /** Soft-hide timestamp: hidden agents live in the bottom "Hidden" section. */
@@ -127,6 +131,15 @@ function lastThreadEvent(events: ChatEvent[] | undefined): { text: string; waiti
   return null;
 }
 
+/** Up-to-two-letter monogram for the footer avatar ("Khamis Al" -> "KA"). */
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  const first = Array.from(parts[0])[0] ?? '';
+  const last = parts.length > 1 ? Array.from(parts[parts.length - 1])[0] ?? '' : '';
+  return (first + last).toLocaleUpperCase() || '?';
+}
+
 export function AgentSidebarList({
   agents,
   selectedId,
@@ -170,6 +183,30 @@ export function AgentSidebarList({
   } | null>(null);
   const [childrenByParent, setChildrenByParent] = useState<Record<string, ChildAgent[]>>({});
   const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const lastUnreadTargetRef = useRef<string | null>(null);
+  const dispatch = useAppDispatch();
+  const user = useAppSelector((s) => s.auth.user);
+  const displayName = user?.displayname || 'Demo User';
+
+  // Grok Bot parity: the header search icon toggles (and focuses) the field.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const toggleSearch = () => {
+    if (searchOpen) {
+      if (search.trim()) {
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      } else {
+        setSearchOpen(false);
+      }
+    } else {
+      setSearchOpen(true);
+    }
+  };
+
+  useEffect(() => {
+    if (searchOpen) searchRef.current?.focus();
+  }, [searchOpen]);
 
   const trimmedSearch = search.trim();
   // Search spans all sections: visible, hidden, groups and built-in (diacritic-insensitive).
@@ -281,6 +318,59 @@ export function AgentSidebarList({
     [topLevelAgents],
   );
   const hiddenAgents = useMemo(() => sortByLastActivity(searchHiddenAgents), [searchHiddenAgents]);
+
+  // Unread agent rows in DOM order; drives the floating "More unreads" pill.
+  const unreadRowIds = useMemo(() => {
+    const ids: string[] = [];
+    const unreadOf = (id: string) => (unreadById?.[id]?.count ?? 0) > 0;
+    const collect = (agent: AgentWithMeta) => {
+      if (unreadOf(agent.id)) ids.push(agent.id);
+      for (const child of childrenByParent[agent.id] ?? []) {
+        if (unreadOf(child.childId)) ids.push(child.childId);
+      }
+    };
+    rankedPinned.forEach(collect);
+    myAgents.forEach(collect);
+    searchHiddenAgents.forEach((a) => { if (unreadOf(a.id)) ids.push(a.id); });
+    return ids;
+  }, [rankedPinned, myAgents, searchHiddenAgents, childrenByParent, unreadById]);
+
+  const [unreadOutOfView, setUnreadOutOfView] = useState(false);
+  // A string key (not the array) keeps the observer effect from re-running on
+  // every render, which would reset the pill to hidden.
+  const unreadRowsKey = unreadRowIds.join(',');
+  useEffect(() => {
+    const container = listRef.current;
+    if (!container || typeof IntersectionObserver === 'undefined') return;
+    const rows = Array.from(container.querySelectorAll<HTMLElement>('[data-unread-row]'));
+    setUnreadOutOfView(false);
+    if (rows.length === 0) return;
+    const visible = new Set<Element>();
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) visible.add(entry.target);
+        else visible.delete(entry.target);
+      }
+      setUnreadOutOfView(visible.size < rows.length);
+    }, { root: container });
+    rows.forEach((row) => observer.observe(row));
+    return () => observer.disconnect();
+  }, [unreadRowsKey, sections]);
+
+  const scrollToNextUnread = () => {
+    const container = listRef.current;
+    if (!container) return;
+    const rows = Array.from(container.querySelectorAll<HTMLElement>('[data-agent-row]'));
+    const flags = rows.map((row) => row.hasAttribute('data-unread-row'));
+    const from = lastUnreadTargetRef.current
+      ? rows.findIndex((row) => row.dataset.agentRow === lastUnreadTargetRef.current)
+      : -1;
+    const next = nextUnreadIndex(flags, from);
+    if (next === -1) return;
+    const target = rows[next];
+    lastUnreadTargetRef.current = target.dataset.agentRow ?? null;
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
 
   // Row meta: prefer the live client store for the open thread, else the server
   // list's additive chat fields, else the agent description.
@@ -416,200 +506,237 @@ export function AgentSidebarList({
     <aside className="flex w-[260px] shrink-0 flex-col border-e border-border-main bg-bg-menu">
       <div className="flex h-row items-center justify-between border-b border-border-main px-3">
         <span className="text-sm font-medium text-text-primary">{t('Agents')}</span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={onNew}
-          className="h-row-sm w-row-sm px-0"
-          aria-label={t('New agent')}
-          title={t('New agent')}
-        >
-          <Plus className="size-4" />
-        </Button>
+        <div className="flex items-center gap-0.5">
+          <IconButton label={t('Search agents')} title={t('Search agents')} onClick={toggleSearch}>
+            <Search className="size-4" />
+          </IconButton>
+          <IconButton label={t('New agent')} title={t('New agent')} onClick={onNew}>
+            <Plus className="size-4" />
+          </IconButton>
+        </div>
       </div>
 
       <div className="p-2">
-        <div className="flex items-center gap-2 rounded-control border border-border-main bg-bg-main px-2 py-1.5">
-          <Search className="size-3.5 text-text-tertiary" />
-          <input
-            ref={searchRef}
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t('Search agents')}
-            className="flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-tertiary"
-          />
-        </div>
+        {searchOpen && (
+          <div className="flex items-center gap-2 rounded-control border border-border-main bg-bg-main px-2 py-1.5">
+            <Search className="size-3.5 text-text-tertiary" />
+            <input
+              ref={searchRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('Search agents')}
+              className="flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-tertiary"
+            />
+          </div>
+        )}
         <button
           type="button"
           onClick={() => router.push('/app/marketplace')}
-          className="mt-1 flex h-row-sm w-full items-center gap-2 rounded-control px-2 text-sm text-text-secondary hover:bg-fill-hover"
+          className="mt-1 flex h-7 w-full items-center gap-1.5 rounded-control px-2 text-xs text-text-secondary hover:bg-fill-hover"
         >
-          <Store className="size-4" />
+          <Store className="size-3.5 shrink-0" />
           <span className="flex-1 truncate text-start">{t('Marketplace')}</span>
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 pb-4">
-        {rankedPinned.length > 0 && (
-          <AgentSection
-            id={SECTIONS.pinned}
-            label={t('Pinned')}
-            count={rankedPinned.length}
-            icon={Pin}
-            expanded={!!sections[SECTIONS.pinned]}
-            onToggle={() => toggleSection(SECTIONS.pinned)}
-            unread={pinnedUnread}
-          >
-            <PinnedAgentGrid
-              agents={rankedPinned}
-              selectedId={selectedId}
-              unreadById={unreadById}
-              subtitleFor={(agent) => threadPreview(agent)}
-              onSelect={onSelect}
-              onContextMenu={handleContextMenu}
-              onReorder={onReorderPinned}
-            />
-            {rankedPinned.flatMap((agent) => (childrenByParent[agent.id] ?? []).map(childRow))}
-          </AgentSection>
-        )}
-
-        <AgentSection
-          id={SECTIONS.myAgents}
-          label={t('My agents')}
-          count={myAgents.length}
-          expanded={!!sections[SECTIONS.myAgents]}
-          onToggle={() => toggleSection(SECTIONS.myAgents)}
-          unread={myAgentsUnread}
-        >
-          {myAgents.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-text-tertiary">
-              {searchActive ? EMPTY_SEARCH_TEXT : t('No agents yet.')}
-            </p>
-          ) : (
-            myAgents.map((agent) => renderAgentTree(agent))
-          )}
-        </AgentSection>
-
-        <AgentSection
-          id={SECTIONS.groups}
-          label={t('Groups')}
-          count={filteredGroups.length}
-          icon={MessageSquare}
-          expanded={!!sections[SECTIONS.groups]}
-          onToggle={() => toggleSection(SECTIONS.groups)}
-          action={
-            onNewGroup ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onNewGroup();
-                }}
-                className="rounded-control p-0.5 text-text-tertiary hover:text-text-primary"
-                aria-label={t('New group')}
-                title={t('New group')}
-              >
-                <Plus className="size-3.5" />
-              </button>
-            ) : undefined
-          }
-        >
-          {filteredGroups.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-text-tertiary">
-              {searchActive ? EMPTY_SEARCH_TEXT : t('No groups yet.')}
-            </p>
-          ) : (
-            filteredGroups.map((group) => (
-              <button
-                key={group.id}
-                type="button"
-                onClick={() => onSelectGroup?.(group)}
-                className={[
-                  'group relative flex h-row items-center gap-2 rounded-control px-2 text-start transition-colors',
-                  selectedGroupId === group.id ? 'bg-fill-tsp' : 'hover:bg-fill-hover',
-                ].join(' ')}
-              >
-                {selectedGroupId === group.id && <RowAccent />}
-                <div className="flex size-7 shrink-0 items-center justify-center rounded-control bg-fill-tsp">
-                  <Users className="size-3.5 text-text-secondary" />
-                </div>
-                <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{group.name}</span>
-                <span className="shrink-0 text-[11px] text-text-tertiary">{group.memberIds.length}</span>
-              </button>
-            ))
-          )}
-        </AgentSection>
-
-        <AgentSection
-          id={SECTIONS.builtIn}
-          label={t('Built-in')}
-          count={filteredBuiltIn.length}
-          expanded={!!sections[SECTIONS.builtIn]}
-          onToggle={() => toggleSection(SECTIONS.builtIn)}
-        >
-          {filteredBuiltIn.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-text-tertiary">{EMPTY_SEARCH_TEXT}</p>
-          ) : (
-            filteredBuiltIn.map((agent) => (
-              <AgentRow
-                key={agent.id}
-                agent={agent}
-                selected={false}
-                subtitle={agent.description ? previewLine(agent.description) : undefined}
-                onClick={() => onStartBuiltIn?.(agent)}
-                onContextMenu={() => {}}
+      <div className="relative min-h-0 flex-1">
+        <div ref={listRef} className="h-full overflow-y-auto px-2 pb-4">
+          {rankedPinned.length > 0 && (
+            <AgentSection
+              id={SECTIONS.pinned}
+              label={t('Pinned')}
+              count={rankedPinned.length}
+              icon={Pin}
+              expanded={!!sections[SECTIONS.pinned]}
+              onToggle={() => toggleSection(SECTIONS.pinned)}
+              unread={pinnedUnread}
+            >
+              <PinnedAgentGrid
+                agents={rankedPinned}
+                selectedId={selectedId}
+                unreadById={unreadById}
+                subtitleFor={(agent) => threadPreview(agent)}
+                onSelect={onSelect}
+                onContextMenu={handleContextMenu}
+                onReorder={onReorderPinned}
               />
-            ))
+              {rankedPinned.flatMap((agent) => (childrenByParent[agent.id] ?? []).map(childRow))}
+            </AgentSection>
           )}
-        </AgentSection>
 
-        <BoardLink />
-        <AgentSection
-          id={SECTIONS.teamRuns}
-          label={t('Team runs')}
-          icon={Users}
-          expanded={!!sections[SECTIONS.teamRuns]}
-          onToggle={() => toggleSection(SECTIONS.teamRuns)}
-        >
-          <TeamRunsCompact />
-        </AgentSection>
-
-        {searchHiddenAgents.length > 0 && (
           <AgentSection
-            id={SECTIONS.hidden}
-            label={t('Hidden')}
-            count={searchHiddenAgents.length}
-            expanded={!!sections[SECTIONS.hidden]}
-            onToggle={() => toggleSection(SECTIONS.hidden)}
-            unread={hiddenUnread}
+            id={SECTIONS.myAgents}
+            label={t('My agents')}
+            count={myAgents.length}
+            expanded={!!sections[SECTIONS.myAgents]}
+            onToggle={() => toggleSection(SECTIONS.myAgents)}
+            unread={myAgentsUnread}
           >
-            {hiddenAgents.map((agent) => {
-              const meta = rowMeta(agent);
-              return (
+            {myAgents.length === 0 ? (
+              <p className="px-2 py-3 text-xs text-text-tertiary">
+                {searchActive ? EMPTY_SEARCH_TEXT : t('No agents yet.')}
+              </p>
+            ) : (
+              myAgents.map((agent) => renderAgentTree(agent))
+            )}
+          </AgentSection>
+
+          <AgentSection
+            id={SECTIONS.groups}
+            label={t('Groups')}
+            count={filteredGroups.length}
+            icon={MessageSquare}
+            expanded={!!sections[SECTIONS.groups]}
+            onToggle={() => toggleSection(SECTIONS.groups)}
+            action={
+              onNewGroup ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNewGroup();
+                  }}
+                  className="rounded-control p-0.5 text-text-tertiary hover:text-text-primary"
+                  aria-label={t('New group')}
+                  title={t('New group')}
+                >
+                  <Plus className="size-3.5" />
+                </button>
+              ) : undefined
+            }
+          >
+            {filteredGroups.length === 0 ? (
+              <p className="px-2 py-3 text-xs text-text-tertiary">
+                {searchActive ? EMPTY_SEARCH_TEXT : t('No groups yet.')}
+              </p>
+            ) : (
+              filteredGroups.map((group) => (
+                <button
+                  key={group.id}
+                  type="button"
+                  onClick={() => onSelectGroup?.(group)}
+                  className={[
+                    'group relative flex h-row items-center gap-2 rounded-control px-2 text-start transition-colors',
+                    selectedGroupId === group.id ? 'bg-fill-tsp' : 'hover:bg-fill-hover',
+                  ].join(' ')}
+                >
+                  {selectedGroupId === group.id && <RowAccent />}
+                  <div className="flex size-7 shrink-0 items-center justify-center rounded-control bg-fill-tsp">
+                    <Users className="size-3.5 text-text-secondary" />
+                  </div>
+                  <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{group.name}</span>
+                  <span className="shrink-0 text-[11px] text-text-tertiary">{group.memberIds.length}</span>
+                </button>
+              ))
+            )}
+          </AgentSection>
+
+          <AgentSection
+            id={SECTIONS.builtIn}
+            label={t('Built-in')}
+            count={filteredBuiltIn.length}
+            expanded={!!sections[SECTIONS.builtIn]}
+            onToggle={() => toggleSection(SECTIONS.builtIn)}
+          >
+            {filteredBuiltIn.length === 0 ? (
+              <p className="px-2 py-3 text-xs text-text-tertiary">{EMPTY_SEARCH_TEXT}</p>
+            ) : (
+              filteredBuiltIn.map((agent) => (
                 <AgentRow
                   key={agent.id}
                   agent={agent}
-                  selected={selectedId === agent.id}
-                  subtitle={meta.subtitle}
-                  waitingForYou={meta.waitingForYou}
-                  unreadCount={meta.unreadCount}
-                  indent
-                  dim
-                  onClick={() => onSelect(agent)}
-                  onContextMenu={(e) => handleContextMenu(e, agent)}
+                  selected={false}
+                  subtitle={agent.description ? previewLine(agent.description) : undefined}
+                  onClick={() => onStartBuiltIn?.(agent)}
+                  onContextMenu={() => {}}
                 />
-              );
-            })}
+              ))
+            )}
           </AgentSection>
-        )}
 
-        {noSearchMatches && (
-          <p className="px-2 py-6 text-center text-xs text-text-tertiary">
-            {t('No agents match "{search}"', { search })}
-          </p>
+          <BoardLink />
+          <AgentSection
+            id={SECTIONS.teamRuns}
+            label={t('Team runs')}
+            icon={Users}
+            expanded={!!sections[SECTIONS.teamRuns]}
+            onToggle={() => toggleSection(SECTIONS.teamRuns)}
+          >
+            <TeamRunsCompact />
+          </AgentSection>
+
+          {searchHiddenAgents.length > 0 && (
+            <AgentSection
+              id={SECTIONS.hidden}
+              label={t('Hidden')}
+              count={searchHiddenAgents.length}
+              expanded={!!sections[SECTIONS.hidden]}
+              onToggle={() => toggleSection(SECTIONS.hidden)}
+              unread={hiddenUnread}
+            >
+              {hiddenAgents.map((agent) => {
+                const meta = rowMeta(agent);
+                return (
+                  <AgentRow
+                    key={agent.id}
+                    agent={agent}
+                    selected={selectedId === agent.id}
+                    subtitle={meta.subtitle}
+                    waitingForYou={meta.waitingForYou}
+                    unreadCount={meta.unreadCount}
+                    indent
+                    dim
+                    onClick={() => onSelect(agent)}
+                    onContextMenu={(e) => handleContextMenu(e, agent)}
+                  />
+                );
+              })}
+            </AgentSection>
+          )}
+
+          {noSearchMatches && (
+            <p className="px-2 py-6 text-center text-xs text-text-tertiary">
+              {t('No agents match "{search}"', { search })}
+            </p>
+          )}
+        </div>
+
+        {unreadOutOfView && (
+          <button
+            type="button"
+            onClick={scrollToNextUnread}
+            aria-label={t('More unreads')}
+            title={t('More unreads')}
+            className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium text-white shadow-card transition-opacity hover:opacity-90"
+            style={{ backgroundColor: 'var(--Button-blue)' }}
+          >
+            <ChevronDown className="size-3.5" />
+            {t('More unreads')}
+          </button>
         )}
+      </div>
+
+      <div className="flex items-center gap-2 border-t border-border-main p-2">
+        <span
+          className="flex size-7 shrink-0 items-center justify-center rounded-full bg-fill-tsp text-xs font-medium text-text-primary"
+          title={displayName}
+          aria-hidden
+        >
+          {initialsOf(displayName)}
+        </span>
+        <button
+          type="button"
+          onClick={() => dispatch(openSettings('Connectors'))}
+          className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-full bg-fill-tsp px-3 text-xs font-medium text-text-secondary hover:bg-fill-hover hover:text-text-primary"
+        >
+          <span className="flex items-center gap-0.5 text-text-tertiary" aria-hidden>
+            <Github className="size-3" />
+            <Mail className="size-3" />
+            <Calendar className="size-3" />
+          </span>
+          {t('Connect apps')}
+        </button>
       </div>
 
       {contextMenu && (
