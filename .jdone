@@ -1,0 +1,39 @@
+D16 gate fix complete.
+
+Task: resolve the merge conflict with manus-parity (keeping both sides) and get the
+gates green (typecheck, builds, tests) on khamis1992/devin-d16.
+
+What was done:
+- Merged manus-parity into khamis1992/devin-d16. Conflicts resolved by keeping both
+  sides (never dropping either):
+  - src/index.ts: memoryIndexSummary (parity) + agentSuffix/askModeSuffix/sideChatSuffix (D16).
+  - src/server/http.ts: handleSessionControlRoutes (D16) + handleInsightsRoutes (D18 parity).
+  Branch is now 0 commits behind manus-parity.
+- Refreshed the stale coding-prompt snapshot: src/agent/__tests__/__snapshots__/coding-prompt.snap.json
+  masterPromptSha256 was stale (prompt text changed upstream at c958f4e/39e51bf after the
+  snapshot was written at ded58f0). Set it to the real sha256 of buildMasterPrompt:
+  c63a440fb6b1289b3b9d2314b61305796bdb73e66e25977f0f06723e0f0f142a1a
+  (the test asserts the snapshot matches the live prompt hash; refreshing the value is not
+  test-weakening).
+- scripts/repair-mojibake.cjs (added upstream by 092d1b3): the two comment lines that quote
+  the cp1252 sequences the script repairs tripped check:encoding. Added the checker's own
+  documented opt-out marker "encoding-check: allow" to those two comment lines only. No
+  logic changed; the repair script still runs.
+
+Gates (all pass):
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run verify
+    - encoding check: OK (no BOM, no mojibake, all JSON valid)
+    - eval harness smoke: PASS
+    - orchestrator smoke: PASS (114/114)
+    - recovery checks: PASS
+    - modes check: PASS
+  node --import tsx --test src/{agent,server,tools,design,scripts}/__tests__/*.test.ts
+    - tests 1166, pass 1166, fail 0
+  (cd packages/web && npx vitest run)
+    - 61 files, 361 tests passed
+  bench tests: 23 pass
+
+No test was weakened. Forbidden paths untouched.
