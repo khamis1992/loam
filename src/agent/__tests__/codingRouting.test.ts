@@ -30,7 +30,12 @@ process.env.MANUS_LOCAL_DATA_DIR = path.join(tmp, "data");
 
 const { runAgent } = await import("../loop.js");
 const { ToolRegistry: RegistryCtor, str } = await import("../../tools/registry.js");
-const { editModelCounts, recentEditModels, resetEditModelMemory } = await import("../../llm/modelAudit.js");
+const { editModelCounts, readEditModelLog, recentEditModels, resetEditModelMemory } = await import("../../llm/modelAudit.js");
+const { DATA_DIR } = await import("../../config.js");
+// Importing the loop pulls in `server/runControl.js`; the eval runner pulls in
+// `server/db.js`, whose `newId` lazily opens a SQLite file under DATA_DIR. Close
+// it in `after()` so the temp data dir can be removed.
+const { closeDb } = await import("../../server/sqliteStore.js");
 
 type ToolRegistry = import("../../tools/registry.js").ToolRegistry;
 
@@ -42,11 +47,14 @@ before(() => {
 });
 
 after(() => {
+  // Release the lazily-opened SQLite handle before deleting the temp data dir;
+  // on Windows an open handle makes the directory removal fail with EPERM.
+  closeDb();
   delete process.env.MANUS_LOCAL_DATA_DIR;
   try {
-    fs.rmSync(tmp, { recursive: true, force: true });
-  } catch {
-    /* ignore */
+    fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  } catch (err) {
+    console.error(`[codingRouting] temp cleanup failed: ${String(err)}`);
   }
 });
 
@@ -209,6 +217,21 @@ describe("runAgent coding-model routing", () => {
     assert.equal(record.path, "src/app.ts");
     assert.equal(record.ok, true);
     assert.ok(!JSON.stringify(record).includes("super-secret"), "no key material in the audit log");
+
+    // The audit is persisted, not just kept in memory, and it must land in the
+    // redirected DATA_DIR. Asserting where the write actually went (rather than
+    // only that the repo stays clean) proves the isolation redirects the write
+    // instead of the write silently failing, which would let the pollution check
+    // pass vacuously.
+    assert.equal(
+      fs.realpathSync(DATA_DIR),
+      fs.realpathSync(path.join(tmp, "data")),
+      "DATA_DIR must resolve to the temp folder, not the repository",
+    );
+    const persisted = readEditModelLog();
+    assert.ok(persisted.length >= 1, "the edit must be persisted to the audit file");
+    assert.equal(persisted.at(-1)!.model, "coder-x");
+    assert.ok(fs.existsSync(path.join(DATA_DIR, "model-edits.jsonl")), "the audit file must exist under the redirected data dir");
   });
 
   it("keeps the weak default model when routing is disabled", async () => {

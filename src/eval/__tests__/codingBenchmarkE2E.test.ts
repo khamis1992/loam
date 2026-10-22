@@ -32,6 +32,9 @@ const { ToolRegistry } = await import("../../tools/registry.js");
 const { OllamaClient } = await import("../../ollama.js");
 const { loadSuite } = await import("../suites.js");
 const { loadConfig } = await import("../../config.js");
+// The eval runner imports `server/db.js`, whose `newId` lazily opens a SQLite
+// file under DATA_DIR. Close it in `after()` so the temp data dir can be removed.
+const { closeDb } = await import("../../server/sqliteStore.js");
 
 import type { Config } from "../../config.js";
 import type { RunOptions, RunResult } from "../../agent/loop.js";
@@ -45,10 +48,13 @@ before(() => {
 });
 
 after(() => {
+  // Release the lazily-opened SQLite handle before deleting the temp data dir;
+  // on Windows an open handle makes the directory removal fail with EPERM.
+  closeDb();
   try {
-    fs.rmSync(tmp, { recursive: true, force: true });
-  } catch {
-    /* ignore */
+    fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  } catch (err) {
+    console.error(`[codingBenchmarkE2E] temp cleanup failed: ${String(err)}`);
   }
 });
 
