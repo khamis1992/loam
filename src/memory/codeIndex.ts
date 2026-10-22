@@ -339,8 +339,14 @@ export class CodeIndex {
       return true;
     }
     const hash = hashContent(content);
-    const existing = this.db.prepare("SELECT hash FROM chunks WHERE file=? LIMIT 1").get(rel) as { hash?: string } | undefined;
-    if (existing && existing.hash === hash) return false;
+    // A chunk is reusable only when the content AND the embedding model are
+    // unchanged. Without the model check, an index first built with embeddings
+    // disabled would keep its vectorless chunks forever once a backend appears.
+    const existing = this.db
+      .prepare("SELECT hash, model FROM chunks WHERE file=? LIMIT 1")
+      .get(rel) as { hash?: string; model?: string | null } | undefined;
+    const wantModel = this.embedder ? this.model : null;
+    if (existing && existing.hash === hash && (existing.model ?? null) === wantModel) return false;
     const pieces = chunkSource(content, this.chunkChars);
     // A pathologically large file is truncated at MAX_CHUNKS_PER_FILE so one file
     // cannot stall a step. Say so, rather than silently dropping its tail.

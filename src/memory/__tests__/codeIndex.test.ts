@@ -333,6 +333,28 @@ describe("CodeIndex", () => {
     write("src/permissions.ts", PERMISSIONS_FILE);
   });
 
+  it("upgrades a BM25 index to vectors when an embedder appears", async () => {
+    const dbPath = path.join(root, "idx-upgrade.db");
+    const plain = new CodeIndex(root, { dbPath });
+    await plain.index();
+    assert.equal(plain.scoringMode, "bm25", "the index starts without vectors");
+    assert.ok(plain.stats().chunks > 0);
+    plain.close();
+
+    const embedder = hashingEmbedder();
+    const upgraded = new CodeIndex(root, { dbPath, embedder, model: "fake-embed" });
+    try {
+      const result = await upgraded.index();
+      assert.equal(result.reindexed, FILE_COUNT, "unchanged files are re-embedded when the model changes");
+      assert.equal(result.mode, "vector");
+      const hits = await upgraded.search(QUERY, 5);
+      assert.ok(hits.every((h) => h.via === "vector"), "search now uses the vectors");
+      assertPermissionFileFound(hits);
+    } finally {
+      upgraded.close();
+    }
+  });
+
   it("falls back to BM25 when the embedder fails", async () => {
     const index = new CodeIndex(root, { dbPath: path.join(root, "idx-f.db"), embedder: brokenEmbedder, model: "fake-embed" });
     try {

@@ -16,9 +16,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
+import { loadConfig } from "../../config.js";
 import { tokenize } from "../../memory/codeIndex.js";
 import { LOAM_MODES } from "../../modes/catalog.js";
 import { COMPANION_SERVICES, uncoveredModeTools } from "../../server/companionGateway.js";
+import { buildRuntime } from "../../setup/runtime.js";
 import type { Tool, ToolContext } from "../registry.js";
 import { ToolRegistry } from "../registry.js";
 import { createSemanticSearchTools, resetSemanticSearchCache, resolveIndexDir } from "../semanticSearch.js";
@@ -122,6 +124,30 @@ describe("semantic_search wiring", () => {
   it("defaults the index directory to <workspace>/.loam", () => {
     assert.equal(resolveIndexDir(root, {}), path.join(path.resolve(root), ".loam"));
     assert.equal(resolveIndexDir(root, { indexDir: path.join(root, "custom") }), path.resolve(root, "custom"));
+  });
+});
+
+describe("semantic_search boot wiring", () => {
+  it("is registered by buildRuntime and answers from the real boot path", async () => {
+    const dataDir = path.join(root, "boot-data");
+    process.env.MANUS_LOCAL_DATA_DIR = dataDir;
+    const cfg = loadConfig();
+    cfg.workspace = root;
+    cfg.memory.enabled = false; // exercise the BM25 fallback with no backend
+    cfg.policy.networkEnabled = false;
+
+    const runtime = await buildRuntime(cfg, { mcp: false });
+    try {
+      assert.ok(runtime.registry.names().includes("semantic_search"), "buildRuntime must register semantic_search");
+      const tool = runtime.registry.forMode("build").get("semantic_search");
+      assert.ok(tool, "build mode must expose semantic_search");
+      const result = await tool!.run({ query: "where are permissions checked", k: 5 }, ctx(root));
+      assert.equal(result.ok, true, result.content);
+      assert.match(result.content, /src[\\/]permissions\.ts:\d+-\d+/, `expected the permission file, got:\n${result.content}`);
+    } finally {
+      await runtime.dispose();
+      delete process.env.MANUS_LOCAL_DATA_DIR;
+    }
   });
 });
 

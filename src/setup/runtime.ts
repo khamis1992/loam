@@ -42,6 +42,7 @@ import { createMultiEditTools } from "../tools/multiEdit.js";
 import { createVaultTools } from "../tools/vaultTools.js";
 import { createCodeSessionTools } from "../tools/codeSession.js";
 import { createDocsLookupTools } from "../tools/docsLookup.js";
+import { createSemanticSearchTools } from "../tools/semanticSearch.js";
 import { createArtifactTools } from "../tools/artifactTools.js";
 import { planTool, messageTool } from "../tools/specAliases.js";
 import { createTodoTools } from "../tools/todoTools.js";
@@ -104,6 +105,12 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createSubagentTools(ollama, registry));
   registry.registerAll(createCodeSessionTools());
   registry.registerAll(createDocsLookupTools());
+  // Semantic code search shares the memory embedder; without it the index still
+  // answers via the BM25 fallback, so the tool is always registered.
+  registry.registerAll(createSemanticSearchTools({
+    embedder: cfg.memory.enabled && cfg.memory.model ? embedder : undefined,
+    model: cfg.memory.model,
+  }));
 
   const mcp = opts.mcp === false ? null : await registerMcpTools(registry, cfg.mcpServers, cfg.workspace);
   registry.registerAll(createIntegrationTools(registry));
