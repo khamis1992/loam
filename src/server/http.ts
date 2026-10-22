@@ -78,6 +78,7 @@ import { handleDesignStudioRoutes } from "./routes/designStudio.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
+import { handleCraftRoutes } from "./routes/craft.js";
 import { handleInstructionsRoutes } from "./routes/instructions.js";
 import { handleAgentSpawnRoutes } from "./routes/agentSpawn.js";
 import { handleAutoVideoRoutes } from "./routes/autoVideo.js";
@@ -109,6 +110,7 @@ import { setSecret, listSecrets, deleteSecret } from "./secretsVault.js";
 import { createApproval, decideApproval, getApproval, listApprovals } from "./approvals.js";
 import { setTaskAgent } from "./db.js";
 import { subscribeTask } from "./streams.js";
+import { videoStudioRelay, type VideoStudioResult } from "./videoStudioRelay.js";
 import { appendLearning, readLearning } from "./learning.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { installDraft, listSuites, loadSuite } from "../eval/suites.js";
@@ -373,7 +375,8 @@ async function applyPendingItem(item: PendingItem, memory?: MemoryStore): Promis
     if (!text) throw new Error("staged memory entry has no text");
     const kind = typeof item.payload["kind"] === "string" ? item.payload["kind"] : "note";
     const tags = Array.isArray(item.payload["tags"]) ? (item.payload["tags"] as unknown[]).map((t) => String(t)) : [];
-    const entry = await memory.add(text, { kind, tags });
+    const sessionId = typeof item.payload["sessionId"] === "string" ? item.payload["sessionId"] : undefined;
+    const entry = await memory.add(text, { kind, tags, ...(sessionId ? { sessionId } : {}) });
     return `memory_store ${entry.id}`;
   }
   if (item.kind === "skill_install") {
@@ -977,12 +980,13 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
 
         if (req.method === "POST" && p === "/api/memory") {
           if (!memory) return sendJson(res, 503, { error: "memory disabled in config" });
-          const body = (await readBody(req)) as { text?: unknown; kind?: unknown; tags?: unknown };
+          const body = (await readBody(req)) as { text?: unknown; kind?: unknown; tags?: unknown; sessionId?: unknown };
           const text = typeof body.text === "string" ? body.text.trim() : "";
           if (!text) return sendJson(res, 400, { error: "text required" });
           const tags = Array.isArray(body.tags) ? (body.tags as unknown[]).map((t) => String(t)) : [];
+          const sessionId = typeof body.sessionId === "string" ? body.sessionId : undefined;
           try {
-            const entry = await memory.add(text, { kind: typeof body.kind === "string" ? body.kind : "note", tags });
+            const entry = await memory.add(text, { kind: typeof body.kind === "string" ? body.kind : "note", tags, ...(sessionId ? { sessionId } : {}) });
             sendJson(res, 200, { entry });
           } catch (err) {
             sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
@@ -1740,6 +1744,8 @@ loadAgents();
         // Design Studio (/api/design/*): brand kits, templates, generate, outputs.
         if (await handleDesignStudioRoutes(req, res, p)) return;
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        // Craft apps (/api/craft/status): which vendored dists are installed.
+        if (await handleCraftRoutes(req, res, p)) return;
         if (await handleInstructionsRoutes(req, res, p)) return;
         if (await handleAgentSpawnRoutes(req, res, p)) return;
         if (await handleAgentThreadRoutes(req, res, p)) return;
@@ -2404,6 +2410,26 @@ loadAgents();
             tasks: list.map(({ messages, steps, ...rest }) => ({ ...rest, messageCount: messages.length, stepCount: steps.length })),
           });
           return;
+        }
+
+        // Loam Video Studio relay: the panel attached to this task posts the
+        // result of a command that was dispatched over the task's event stream.
+        if (req.method === "POST" && /^\/api\/tasks\/[^/]+\/video-studio\/result$/.test(p)) {
+          const origin = req.headers.origin;
+          if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") {
+            return sendJson(res, 403, { error: "same-origin requests required" });
+          }
+          const taskId = decodeURIComponent(p.slice("/api/tasks/".length, -"/video-studio/result".length));
+          if (!getTask(taskId)) return sendJson(res, 404, { error: "task not found" });
+          let raw: unknown;
+          try { raw = await readBody(req, 64_000); } catch { return sendJson(res, 400, { error: "invalid JSON body" }); }
+          const result = raw as VideoStudioResult;
+          if (!result || typeof result !== "object" || typeof result.id !== "string" || typeof result.taskId !== "string") {
+            return sendJson(res, 400, { error: "id and taskId are required" });
+          }
+          if (result.taskId !== taskId) return sendJson(res, 400, { error: "taskId mismatch" });
+          const handled = videoStudioRelay.resolve(result);
+          return sendJson(res, 200, { ok: handled, ...(handled ? {} : { ignored: true }) });
         }
 
         if (req.method === "GET" && p.startsWith("/api/tasks/") && p.endsWith("/stream")) {

@@ -445,6 +445,7 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
     case "replan":
     case "verify":
     case "verification_progress":
+    case "permission_mode_changed":
       break;
   }
 
