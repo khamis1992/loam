@@ -153,10 +153,32 @@ async function main(): Promise<void> {
     const startedAt = Date.now();
     const promptHash = hashPrompt(effectivePrompt);
 
+    // Session event log: mirror agent emit() events into a per-task append-only log.
+    // Logging must never break the task, so open/append failures are caught and warned.
+    let sessionLog: EventLog | undefined;
+    if (cfg.sessionLog?.enabled !== false) {
+      try {
+        const log = new EventLog(task);
+        await log.init(task, process.cwd());
+        sessionLog = log;
+      } catch (err) {
+        console.warn(`[sessionLog] failed to open log for task ${task}: ${String(err)}`);
+      }
+    }
+
     const trace: ToolTraceItem[] = [];
     const lastArgs = new Map<string, unknown>();
     let doneEvent: Parameters<Emit>[0] | undefined;
     const wrappedEmit: Emit = (event) => {
+      if (sessionLog) {
+        try {
+          void sessionLog.append(event.type, event).catch((err) => {
+            console.warn(`[sessionLog] failed to append event: ${String(err)}`);
+          });
+        } catch (err) {
+          console.warn(`[sessionLog] failed to append event: ${String(err)}`);
+        }
+      }
       if (event.type === "done") { doneEvent = event; return; }
       emit(event);
       publishTaskEvent(task, event);

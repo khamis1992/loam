@@ -137,6 +137,7 @@ export interface Config {
     verifyFinal: boolean;
   };
   mcpServers: Record<string, McpServerConfig>;
+  sessionLog: { enabled: boolean };
 }
 
 const DEFAULTS: Config = {
@@ -194,6 +195,7 @@ const DEFAULTS: Config = {
     verifyFinal: true,
   },
   mcpServers: {},
+  sessionLog: { enabled: true },
 };
 
 function isObj(v: unknown): v is Record<string, unknown> {
