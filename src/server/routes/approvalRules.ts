@@ -1,6 +1,7 @@
 import http from "node:http";
-import { createApprovalRule, deleteApprovalRule, listApprovalRules, setTaskApprovalAuto, taskApprovalAuto, type ApprovalDecision, type ApprovalRule } from "../approvalRules.js";
+import { createApprovalRule, deleteApprovalRule, listApprovalRules, setTaskApprovalAuto, taskApprovalAuto, setTaskSandboxMode, taskSandboxMode, type ApprovalDecision, type ApprovalRule } from "../approvalRules.js";
 import { getTask } from "../db.js";
+import { RISK_TIERS, isSandboxMode, type RiskTier } from "../../policy/riskTier.js";
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
@@ -57,7 +58,7 @@ export async function handleApprovalRuleRoutes(
         return true;
       }
       if (req.method === "POST") {
-        const body = (await readJson(req)) as { agentId?: unknown; tool?: unknown; pattern?: unknown; decision?: unknown };
+        const body = (await readJson(req)) as { agentId?: unknown; tool?: unknown; pattern?: unknown; decision?: unknown; tier?: unknown };
         if (typeof body.tool !== "string" || !body.tool.trim()) {
           sendJson(res, 400, { error: "tool is required" });
           return true;
@@ -66,12 +67,18 @@ export async function handleApprovalRuleRoutes(
           sendJson(res, 400, { error: "decision must be allow or deny" });
           return true;
         }
+        const tier = body.tier === undefined || body.tier === null ? null : (body.tier as string);
+        if (tier !== null && !(RISK_TIERS as string[]).includes(tier)) {
+          sendJson(res, 400, { error: `tier must be one of: ${RISK_TIERS.join(", ")}` });
+          return true;
+        }
         try {
           const rule = createApprovalRule({
             agentId: typeof body.agentId === "string" && body.agentId.trim() ? body.agentId.trim() : null,
             tool: body.tool,
             pattern: typeof body.pattern === "string" ? body.pattern : null,
             decision: body.decision as ApprovalDecision,
+            tier: tier as RiskTier | null,
           });
           sendJson(res, 200, { rule });
         } catch (err) {
@@ -104,17 +111,24 @@ export async function handleApprovalRuleRoutes(
         return true;
       }
       if (req.method === "GET") {
-        sendJson(res, 200, { taskId, auto: taskApprovalAuto(taskId) });
+        sendJson(res, 200, { taskId, auto: taskApprovalAuto(taskId), sandboxMode: taskSandboxMode(taskId) ?? null });
         return true;
       }
       if (req.method === "PUT" || req.method === "POST") {
-        const body = (await readJson(req)) as { auto?: unknown };
+        const body = (await readJson(req)) as { auto?: unknown; sandboxMode?: unknown };
         if (typeof body.auto !== "boolean") {
           sendJson(res, 400, { error: "auto must be a boolean" });
           return true;
         }
         setTaskApprovalAuto(taskId, body.auto);
-        sendJson(res, 200, { taskId, auto: body.auto });
+        if (body.sandboxMode !== undefined && body.sandboxMode !== null) {
+          if (!isSandboxMode(body.sandboxMode)) {
+            sendJson(res, 400, { error: "sandboxMode is invalid" });
+            return true;
+          }
+          setTaskSandboxMode(taskId, body.sandboxMode);
+        }
+        sendJson(res, 200, { taskId, auto: body.auto, sandboxMode: taskSandboxMode(taskId) ?? null });
         return true;
       }
       return false;

@@ -17,7 +17,8 @@ import { memoryContext, setMemoryEmbedder } from "./server/companionMemory.js";
 import { createCompanionTeamTools } from "./tools/companionTeamTools.js";
 import { setDelegationRunner } from "./server/companionTeam.js";
 import { createApproval, waitForDecision } from "./server/approvals.js";
-import { approvalStableKey, getReplayDecision, matchApprovalRule, saveApprovalDecision, taskApprovalAuto } from "./server/approvalRules.js";
+import { approvalStableKey, getReplayDecision, matchApprovalRule, saveApprovalDecision, taskApprovalAuto, taskSandboxMode } from "./server/approvalRules.js";
+import { resolveSandboxPolicy } from "./policy/riskTier.js";
 import type { Tool } from "./tools/registry.js";
 import { createScratchpadTools } from "./tools/scratchpadTools.js";
 import { createDeepResearchTools } from "./tools/deepResearch.js";
@@ -342,6 +343,17 @@ async function main(): Promise<void> {
           },
         } satisfies Tool);
       }
+      // Sandbox gate (risk-tier approval): config default < per-task persisted
+      // override < explicit approved override. The resolved mode is rendered into
+      // the system prompt so the model knows what it may do without asking.
+      const sandboxPolicy = resolveSandboxPolicy({
+        session: {
+          policy: effectiveCfg.policy.sandboxMode,
+          override: taskSandboxMode(task),
+          workspaceRoot: effectiveCfg.workspace,
+        },
+        workspaceRoot: effectiveCfg.workspace,
+      });
       const agentOpts = {
         cfg: effectiveCfg,
         ollama: runOllama,
@@ -354,6 +366,7 @@ async function main(): Promise<void> {
         ...(effortMaxSteps ? { maxSteps: effortMaxSteps } : {}),
         signal: runSignal,
         taskId: task,
+        sandboxMode: sandboxPolicy.mode,
       };
       const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
         ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint,
