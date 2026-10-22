@@ -2,6 +2,117 @@ import type { Tool, ToolContext, ToolResult, ToolRegistry } from "./registry.js"
 import { bool, num, str, strs } from "./registry.js";
 import { createMapReduceTool } from "./mapReduce.js";
 import type { OllamaClient } from "../ollama.js";
+import type { PlanStepStatus } from "../agent/events.js";
+
+const PLAN_STEP_STATUSES: readonly PlanStepStatus[] = ["pending", "doing", "done", "blocked", "cancelled"];
+
+interface ResolvedPlanStep {
+  id: string;
+  index: number;
+  total: number;
+  title: string;
+  status: PlanStepStatus;
+  note?: string;
+}
+
+function parsePlanSteps(rawSteps: unknown[], currentStep: number): { steps: ResolvedPlanStep[]; error?: string } {
+  const steps: ResolvedPlanStep[] = [];
+  for (const raw of rawSteps) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const step = raw as Record<string, unknown>;
+    const title = str(step, "title").trim();
+    if (!title) continue;
+
+    const provided = step.status;
+    if (provided !== undefined && (typeof provided !== "string" || !PLAN_STEP_STATUSES.includes(provided as PlanStepStatus))) {
+      return { steps, error: `step "${title}" has invalid status ${JSON.stringify(provided)}; expected one of ${PLAN_STEP_STATUSES.join(", ")}` };
+    }
+
+    const status: PlanStepStatus = provided
+      ? (provided as PlanStepStatus)
+      : steps.length < currentStep
+        ? "done"
+        : steps.length === currentStep
+          ? "doing"
+          : "pending";
+
+    const note = str(step, "note").trim();
+    if ((status === "blocked" || status === "cancelled") && !note) {
+      return { steps, error: `step "${title}" requires a note when status is ${status}` };
+    }
+
+    steps.push({
+      id: str(step, "id").trim() || `plan-step-${steps.length}`,
+      index: steps.length,
+      total: rawSteps.length,
+      title,
+      status,
+      ...(note ? { note } : {}),
+    });
+  }
+  return { steps };
+}
+
+export function planTool(): Tool {
+  return {
+    name: "plan",
+    description: "Create or update the task plan shown in the UI.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["steps", "currentStep"],
+      properties: {
+        steps: {
+          type: "array",
+          minItems: 1,
+          maxItems: 20,
+          items: {
+            type: "object",
+            required: ["title"],
+            properties: {
+              title: { type: "string", maxLength: 120 },
+              id: { type: "string", maxLength: 80 },
+              status: { enum: [...PLAN_STEP_STATUSES] },
+              note: { type: "string", maxLength: 400 },
+            },
+          },
+        },
+        currentStep: { type: "integer", minimum: 0 },
+        parallel: { type: "boolean", default: false, description: "Allow more than one step to be marked doing." },
+      },
+    },
+    async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+      const rawSteps = Array.isArray(args.steps) ? args.steps : [];
+      const currentStep = num(args, "currentStep", 0);
+      const parallel = bool(args, "parallel", false);
+
+      const { steps, error } = parsePlanSteps(rawSteps, currentStep);
+      if (error) return { ok: false, content: error };
+      if (steps.length === 0) return { ok: false, content: "plan requires at least one step with a title" };
+
+      const doing = steps.filter((s) => s.status === "doing");
+      if (doing.length > 1 && !parallel) {
+        return { ok: false, content: `at most one step may be "doing" unless parallel is true (found ${doing.length}: ${doing.map((s) => s.title).join(", ")})` };
+      }
+
+      ctx.emit({
+        type: "plan",
+        goal: "Task plan",
+        trivial: false,
+        steps: steps.map((s) => ({ id: s.id, title: s.title, instruction: s.title, successCriteria: "", status: s.status, ...(s.note ? { note: s.note } : {}) })),
+        source: "model",
+      });
+      for (const s of steps) ctx.emit({ type: "plan_step", id: s.id, index: s.index, total: s.total, title: s.title, phase: s.status === "done" ? "done" : "start" });
+
+      const done = steps.filter((s) => s.status === "done").length;
+      const blocked = steps.filter((s) => s.status === "blocked").length;
+      const parts = [`${done}/${steps.length} done`];
+      if (doing.length > 0) parts.push(`doing: ${doing.map((s) => s.title).join(", ")}`);
+      if (blocked > 0) parts.push(`blocked: ${blocked}`);
+      return { ok: true, content: parts.join("; ") };
+    },
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Spec alias adapters: expose the §8.5.1 tool schemas (terminal, text_editor,
@@ -278,35 +389,6 @@ function browserTool(registry: ToolRegistry): Tool {
         default:
           return { ok: false, content: `unknown browser action ${action}` };
       }
-    },
-  };
-}
-
-function planTool(): Tool {
-  return {
-    name: "plan",
-    description: "Create or update the task plan shown in the UI.",
-    parameters: {
-      type: "object",
-      additionalProperties: false,
-      required: ["steps", "currentStep"],
-      properties: {
-        steps: { type: "array", minItems: 1, maxItems: 20, items: { type: "object", required: ["title"], properties: { title: { type: "string", maxLength: 120 } } } },
-        currentStep: { type: "integer", minimum: 0 },
-      },
-    },
-    async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
-      const rawSteps = Array.isArray(args.steps) ? args.steps : [];
-      const steps = rawSteps
-        .map((s, i) => {
-          if (typeof s !== "object" || s === null) return null;
-          const title = str(s as Record<string, unknown>, "title");
-          return title ? { id: `plan-step-${i}`, index: i, total: rawSteps.length, title, phase: "start" as const } : null;
-        })
-        .filter(Boolean);
-      ctx.emit({ type: "plan", goal: "Task plan", trivial: false, steps: steps.map((s) => ({ id: s!.id, title: s!.title, instruction: s!.title, successCriteria: "" })), source: "model" });
-      for (const s of steps) ctx.emit({ type: "plan_step", id: s!.id, index: s!.index, total: s!.total, title: s!.title, phase: "start" });
-      return { ok: true, content: `plan updated: ${steps.length} step(s), current=${num(args, "currentStep", 0)}` };
     },
   };
 }
