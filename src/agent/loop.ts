@@ -11,6 +11,7 @@ import type { WorkerCheckpoint } from "./checkpoint.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { chatWithFallback } from "./model.js";
 import { createStallGuard } from "./stallGuard.js";
+import { compressContext } from "./contextCompressor.js";
 import { throwIfCancelled } from "../server/runControl.js";
 
 export interface RunOptions {
@@ -73,7 +74,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     opts.systemSuffix && opts.systemSuffix.trim().length > 0
       ? `${baseSystem}\n\n${opts.systemSuffix.trim()}`
       : baseSystem;
-  const messages: ChatMessage[] = [{ role: "system", content: system }];
+  let messages: ChatMessage[] = [{ role: "system", content: system }];
 
   if (opts.history && opts.history.length > 0) {
     // History selection already preserves user constraints under its explicit
@@ -110,6 +111,16 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     throwIfCancelled(opts.signal, opts.taskId);
     opts.emit({ type: "step", index: step });
     opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
+
+    if (opts.cfg.compression.enabled) {
+      const compressed = await compressContext(opts.cfg, opts.ollama, messages, opts.emit, opts.signal);
+      if (compressed.compressed) {
+        messages = compressed.messages;
+        usage.promptTokens += compressed.usage.promptTokens;
+        usage.completionTokens += compressed.usage.completionTokens;
+        usage.durationMs += compressed.usage.durationMs;
+      }
+    }
 
     const result = await chatWithFallback({
       cfg: opts.cfg,

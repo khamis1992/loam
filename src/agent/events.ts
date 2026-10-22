@@ -57,6 +57,8 @@ export type AgentEvent =
   /** Sensitive-action gate: a host input action awaits an explicit user decision. */
   | { type: "approval_required"; approvalId: string; tool: string; summary: string }
   /** End-to-end verification of the completed task. */
-  | { type: "verify"; verdict: Verdict; reason: string; parsed?: boolean };
+  | { type: "verify"; verdict: Verdict; reason: string; parsed?: boolean }
+  /** Context compression happened. */
+  | { type: "compaction"; step: 1 | 2; originalTokens: number; afterPruneTokens: number; finalTokens: number; summaryChars?: number; fallback?: boolean };
 
 export type Emit = (event: AgentEvent) => void;

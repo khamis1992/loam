@@ -137,6 +137,22 @@ export interface Config {
     verifyFinal: boolean;
   };
   mcpServers: Record<string, McpServerConfig>;
+  compression: {
+    /** Enable/disable context compression (default: true). */
+    enabled: boolean;
+    /** Trigger compression when estimated tokens exceed this fraction of the model's context window (default: 0.50). */
+    thresholdPercent: number;
+    /** Number of leading messages to always protect from compression (default: 3 = system + first user + first assistant). */
+    protectLead: number;
+    /** Number of trailing messages to always protect from compression (default: 20). */
+    protectTail: number;
+    /** Target compression ratio for summarization step (default: 0.20, clamped to 0.10-0.80). */
+    targetRatio: number;
+    /** Model to use for summarization ("" = main model). */
+    model: string;
+    /** Context window size per model prefix (longest-prefix match). Defaults cover common models. */
+    contextWindow: Record<string, number>;
+  };
 }
 
 const DEFAULTS: Config = {
@@ -194,6 +210,33 @@ const DEFAULTS: Config = {
     verifyFinal: true,
   },
   mcpServers: {},
+  compression: {
+    enabled: true,
+    thresholdPercent: 0.5,
+    protectLead: 3,
+    protectTail: 20,
+    targetRatio: 0.2,
+    model: "",
+    contextWindow: {
+      "gpt-4": 8192,
+      "gpt-4-32k": 32768,
+      "gpt-4-turbo": 128000,
+      "gpt-4o": 128000,
+      "claude-3": 200000,
+      "claude-3.5": 200000,
+      "llama-3": 8192,
+      "llama-3.1": 128000,
+      "mistral": 32768,
+      "mixtral": 32768,
+      "qwen": 32768,
+      "qwen2": 32768,
+      "qwen2.5": 32768,
+      "glm": 32768,
+      "deepseek": 32768,
+      "gemini": 1048576,
+      "gemini-1.5": 1048576,
+    },
+  },
 };
 
 function isObj(v: unknown): v is Record<string, unknown> {
