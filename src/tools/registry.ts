@@ -4,6 +4,7 @@ import type { OllamaFunctionTool } from "../ollama.js";
 import { runLifecycleHooks } from "../policy/hooks.js";
 import { getLoamMode } from "../modes/catalog.js";
 import { getToolProfile } from "../agent/taskToolScope.js";
+import type { ReadState } from "./readState.js";
 
 export interface ToolContext {
   cfg: Config;
@@ -21,6 +22,9 @@ export interface ToolContext {
   allowedTools?: readonly string[];
   /** Current subagent delegation depth (0 = top-level). Used by delegate_task. */
   depth?: number;
+  /** Per-session read tracking. Edit/write tools reject unread or stale
+   *  existing files while it is present. */
+  readState?: ReadState;
 }
 
 export interface ToolResult {

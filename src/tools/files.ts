@@ -3,6 +3,7 @@ import path from "node:path";
 import { resolveRead, resolveWrite } from "../policy/paths.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { bool, num, str } from "./registry.js";
+import { guardExistingEdit } from "./readState.js";
 
 const IGNORE_DIRS = new Set([
   "node_modules",
@@ -72,7 +73,9 @@ export const fileTools: Tool[] = [
       if (!fs.existsSync(p)) return { ok: false, content: `not found: ${p}` };
       const st = fs.statSync(p);
       if (st.size > MAX_READ_BYTES) return { ok: false, content: `file too large (${st.size} bytes) for file_read; use shell_run with head/get-content` };
-      const lines = fs.readFileSync(p, "utf8").split(/\r?\n/);
+      const content = fs.readFileSync(p, "utf8");
+      ctx.readState?.record(p, content);
+      const lines = content.split(/\r?\n/);
       const start = Math.max(1, num(args, "startLine", 1));
       const max = Math.max(1, num(args, "maxLines", 400));
       const slice = lines.slice(start - 1, start - 1 + max);
@@ -94,10 +97,13 @@ export const fileTools: Tool[] = [
     },
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
       const p = resolveWrite(ctx.workspace, str(args, "path"));
+      const guard = guardExistingEdit(ctx, p);
+      if (guard) return guard;
       fs.mkdirSync(path.dirname(p), { recursive: true });
       const content = str(args, "content");
       if (bool(args, "append")) fs.appendFileSync(p, content, "utf8");
       else fs.writeFileSync(p, content, "utf8");
+      ctx.readState?.record(p);
       const size = fs.statSync(p).size;
       return { ok: true, content: `wrote ${size} bytes to ${p}` };
     },
@@ -117,6 +123,8 @@ export const fileTools: Tool[] = [
     },
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
       const p = resolveWrite(ctx.workspace, str(args, "path"));
+      const guard = guardExistingEdit(ctx, p);
+      if (guard) return guard;
       if (!fs.existsSync(p)) return { ok: false, content: `not found: ${p}` };
       const original = fs.readFileSync(p, "utf8");
       const find = str(args, "find");
@@ -127,6 +135,9 @@ export const fileTools: Tool[] = [
       if (occurrences !== want) return { ok: false, content: `find string appears ${occurrences} times (expected ${want}); refine the search text` };
       if (find === replace) return { ok: true, content: `no change: find and replace are identical; ${p} was not written. This is not evidence of a new modification.` };
       fs.writeFileSync(p, original.split(find).join(replace), "utf8");
+      // Refresh the read snapshot so a follow-up edit in the same session is
+      // not rejected as stale; the model already saw the pre-edit content.
+      ctx.readState?.record(p);
       return { ok: true, content: `replaced ${occurrences} occurrence(s) in ${p}` };
     },
   },
