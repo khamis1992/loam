@@ -43,6 +43,7 @@ import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
 import { publishTaskEvent } from "./server/streams.js";
+import { videoStudioRelay } from "./server/videoStudioRelay.js";
 import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { runAgent } from "./agent/loop.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
@@ -549,7 +550,7 @@ async function main(): Promise<void> {
         opts.emit(event); publishTaskEvent(task.id, event);
       }
       throw error;
-    } finally { clearRunSignal(task.id); heartbeat?.stop(); if (lease) releaseRunLease(lease); }
+    } finally { clearRunSignal(task.id); heartbeat?.stop(); if (lease) releaseRunLease(lease); videoStudioRelay.cancelTask(task.id); }
   };
 
   // Bridge for src/server/routes/retryLast.ts: the route module cannot receive
