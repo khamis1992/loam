@@ -262,6 +262,30 @@ describe("tokenLint: options", () => {
     assert.equal(result.summary.colours, 1);
   });
 
+  it("exempts every declaration on a shared token-definition line", () => {
+    // A one-line `:root` block (or a `style` attribute) declares several
+    // tokens on a single line. Each of them is a token definition, so none may
+    // be reported as a raw colour and none may count toward the palette.
+    const tokens = `:root { --background: oklch(98% 0 0); --primary: #6366f1; --muted: #94a3b8; }`;
+    const result = lintDesignSource(tokens);
+    assert.equal(result.violations.some((v) => v.category === "raw-colour"), false);
+    assert.equal(result.violations.some((v) => v.category === "too-many-colours"), false);
+    assert.equal(result.summary.colours, 0);
+  });
+
+  it("still flags a raw colour that follows a token declaration on one line", () => {
+    const source = `:root { --primary: #6366f1; } .badge { color: #ff0000; }`;
+    const result = lintDesignSource(source);
+    assert.equal(result.violations.filter((v) => v.category === "raw-colour").length, 1);
+    assert.equal(result.summary.colours, 1);
+  });
+
+  it("does not treat a var() reference as a token definition", () => {
+    const source = `.card { color: var(--primary); background: #f8fafc; }`;
+    const result = lintDesignSource(source);
+    assert.equal(result.violations.filter((v) => v.category === "raw-colour").length, 1);
+  });
+
   it("exposes the documented defaults", () => {
     assert.equal(DEFAULT_MAX_COLOURS, 5);
     assert.equal(DEFAULT_MAX_FONTS, 2);

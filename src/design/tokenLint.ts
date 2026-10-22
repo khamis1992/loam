@@ -1,35 +1,43 @@
 /**
  * Loam UI Kit token linter.
  *
- * Static, dependency-free checks for the design rules the Loam UI Kit asks
- * generated web UIs to follow: semantic colour tokens instead of raw colours,
- * a bounded palette, a bounded number of font families, the Tailwind spacing
- * scale instead of arbitrary pixel values, real icons instead of emoji, alt
- * text on images, no decorative gradients, and RTL-correct logical properties
- * for right-to-left layouts.
+ * This module offers two complementary, dependency-free views of the same design
+ * rules, and both are part of the public contract:
  *
- * The linter never executes the input and never reads the filesystem: callers
- * hand it a source string (a TSX/HTML/CSS/JS file, or a whole concatenated
- * bundle) and get back a deterministic list of violations with line/column
- * coordinates. The companion `design_lint` agent tool wraps it so the model can
- * lint a task workspace without a shell round-trip; the pipeline can also call
- * this module directly before/after `design_autofix`.
+ *  1. {@link lintDesignSource} checks a single in-memory source string (a
+ *     TSX/HTML/CSS/JS file, or a whole concatenated bundle). It never executes
+ *     the input and never reads the filesystem; it returns a deterministic list
+ *     of violations with 1-based line/column coordinates. The `design_lint`
+ *     agent tool wraps it so the model can audit a task workspace without a
+ *     shell round-trip, and the pipeline can call it directly.
+ *  2. {@link minimalDesignLinter} walks a generated site directory and reports a
+ *     0-100 score plus a compact issue list. The design eval harness
+ *     (src/scripts/eval-design.ts) and its critique step consume this shape, and
+ *     its pluggable {@link DesignLinter} interface lets the harness run with a
+ *     deterministic mock offline.
  *
- * Rules implemented here:
- *  - raw-colour            literal colours (hex/rgb/hsl/oklch/named/Tailwind
- *                          colour utilities) where a semantic token is expected
- *  - too-many-colours      more than `maxColours` distinct colours in one source
- *  - too-many-fonts        more than `maxFonts` distinct font families in one source
- *  - arbitrary-px          arbitrary `[Npx]` Tailwind values and inline px on layout
- *  - emoji-icon            emoji used as UI affordances
- *  - missing-alt           `<img>` without an `alt` attribute
- *  - gradient              decorative gradient backgrounds
- *  - rtl-logical-properties physical directional properties under an RTL layout
- *  - rtl-direction         Arabic content without `dir="rtl"`
+ * Rules enforced for every source:
+ *  - raw-colour              literal colours (hex/rgb/hsl/oklch/named/Tailwind
+ *                            colour utilities) where a semantic token is expected
+ *  - too-many-colours        more than `maxColours` distinct colours in one source
+ *  - too-many-fonts          more than `maxFonts` distinct font families in one source
+ *  - arbitrary-px            arbitrary `[Npx]` Tailwind values and inline px on layout
+ *  - emoji-icon              emoji used as UI affordances
+ *  - missing-alt             `<img>` without an `alt` attribute
+ *  - gradient                decorative gradient backgrounds
+ *  - rtl-logical-properties  physical directional properties under an RTL layout
+ *  - rtl-direction           Arabic content without `dir="rtl"`
  *
  * Written in Loam's own words; the thresholds mirror the UI Kit spec, not any
  * third-party prompt text.
  */
+
+import fs from "node:fs";
+import path from "node:path";
+
+/* -------------------------------------------------------------------------- */
+/* Shared rule constants                                                      */
+/* -------------------------------------------------------------------------- */
 
 export type DesignViolationCategory =
   | "raw-colour"
@@ -136,12 +144,39 @@ const COLOUR_DECL_RE =
 
 /** Tailwind arbitrary value that is a pixel length, e.g. `text-[13px]`. */
 const ARBITRARY_PX_RE = /-\[(\d+(?:\.\d+)?)px\]/g;
-/** Inline-style numeric px on layout/typography properties. */
+/** Inline-style numeric px on layout/typography properties. The lookbehind keeps
+ * the shorthand sides (`bottom` in `border-bottom`, `left` in `border-left`) from
+ * matching, so a 1px border is not misread as an off-scale layout value. */
 const INLINE_PX_RE =
-  /(?:fontSize|width|height|padding|paddingTop|paddingRight|paddingBottom|paddingLeft|margin|marginTop|marginRight|marginBottom|marginLeft|gap|top|left|right|bottom|borderRadius)\s*:\s*['"]?(\d+(?:\.\d+)?)px\b/gi;
+  /(?<![-\w])(?:fontSize|width|height|padding|paddingTop|paddingRight|paddingBottom|paddingLeft|margin|marginTop|marginRight|marginBottom|marginLeft|gap|top|left|right|bottom|borderRadius)\s*:\s*['"]?(\d+(?:\.\d+)?)px\b/gi;
 
-const FONT_FAMILY_RE = /(?:font-family|fontFamily)\s*:\s*["']?([^;}"'`]+)["']?/gi;
-const FONT_UTILITY_RE = /(?:^|[\s"'`])font-([a-z0-9-]+)/gi;
+const FONT_FAMILY_RE = /(?:^|[;{\s])(?:font-family|fontFamily)\s*:\s*["']?([^;}"'`]+)["']?/gi;
+/**
+ * Tailwind font utilities (`font-sans`, `font-heading`). The negative lookahead
+ * keeps the CSS keyword `font-family:` from being read as a `font-` utility,
+ * which would otherwise inject a phantom family into every stylesheet.
+ */
+const FONT_UTILITY_RE = /(?:^|[\s"'`])font-(?!family\b)([a-z0-9-]+)/gi;
+
+/**
+ * Generic CSS font families. They are fallbacks, not design decisions, so they
+ * never count against the two-family limit.
+ */
+const GENERIC_FAMILIES = new Set([
+  "sans-serif",
+  "serif",
+  "monospace",
+  "system-ui",
+  "ui-sans-serif",
+  "ui-serif",
+  "ui-monospace",
+  "ui-rounded",
+  "cursive",
+  "fantasy",
+  "emoji",
+  "math",
+  "fangsong",
+]);
 
 const IMG_RE = /<img\b[^>]*>/gi;
 const ALT_ATTR_RE = /\balt\s*=/i;
@@ -152,11 +187,24 @@ const GRADIENT_RE =
 const EMOJI_RE =
   /\p{Emoji_Presentation}(?:\uFE0F|\u{1F3FB}-\u{1F3FF})*(?:\u200D\p{Emoji_Presentation}(?:\uFE0F|\u{1F3FB}-\u{1F3FF})*)*/gu;
 
-/** CSS custom-property definition line, e.g. `--primary: oklch(...)`. */
-const TOKEN_DEFINITION_LINE_RE = /^\s*--[\w-]+\s*:/;
+/**
+ * A declaration of CSS custom properties, e.g. `--primary: oklch(...)`.
+ * The lookbehind keeps a hand-written `var(--x)` reference from looking like a
+ * declaration, and the separator is required so a value such as `red --note`
+ * is not mistaken for a second declaration.
+ */
+const TOKEN_DEFINITION_RE = /(?<![\w-])--[\w-]+\s*:\s*[^;]*?(?:;|(?=\s+--[\w-]+\s*:)|$)/g;
 
 /** A declared right-to-left direction, in JSX, HTML or inline style form. */
 const RTL_DIR_RE = /(?:dir\s*=\s*["']?rtl["']?|dir\s*:\s*["']rtl["'])/i;
+
+/**
+ * Logical (direction-agnostic) properties that make a layout RTL-safe. Their
+ * presence is what lets a right-to-left page mirror instead of staying pinned
+ * to one side.
+ */
+const LOGICAL_PROPERTY_RE =
+  /(?:\b(?:ms|me|ps|pe|start|end)-|\btext-(?:start|end)\b|\bborder-[se]\b|\brounded-[se]\b|\b(?:ms|me|ps|pe)-\[)/;
 
 /** Arabic script (letters, presentation forms and extended blocks). */
 const ARABIC_RE =
@@ -294,8 +342,17 @@ function isRawTailwindColour(suffix: string): boolean {
   return NAMED_COLOURS.has(s);
 }
 
-/** Literal colour tokens (hex/rgb/hsl/oklch) not on token-definition lines. */
-function literalColourHits(source: string, ignoreTokenDefinitions: boolean): RawHit[] {
+/**
+ * Literal colour tokens (hex/rgb/hsl/oklch) not inside a token declaration.
+ *
+ * `ranges` are the byte offsets covered by CSS custom-property declarations
+ * (see {@link tokenDefinitionRanges}); the same array is reused by the palette
+ * counter so the two views of the palette cannot drift apart.
+ */
+function literalColourHits(
+  source: string,
+  ranges: Array<[number, number]>,
+): RawHit[] {
   const hits: RawHit[] = [];
   const patterns: Array<[RegExp, (m: string) => string]> = [
     [HEX_RE, (m) => normaliseHex(m)],
@@ -308,18 +365,35 @@ function literalColourHits(source: string, ignoreTokenDefinitions: boolean): Raw
     let match: RegExpExecArray | null;
     while ((match = re.exec(source)) !== null) {
       const index = match.index;
-      if (ignoreTokenDefinitions && isTokenDefinitionLine(source, index)) continue;
+      if (isTokenDefinitionIndex(ranges, index)) continue;
       hits.push({ value: normalise(match[0]), index });
     }
   }
   return hits;
 }
 
-function isTokenDefinitionLine(source: string, index: number): boolean {
-  const start = source.lastIndexOf("\n", index - 1) + 1;
-  const end = source.indexOf("\n", start);
-  const line = source.slice(start, end === -1 ? source.length : end);
-  return TOKEN_DEFINITION_LINE_RE.test(line);
+/**
+ * Offsets (in the whole source) covered by a CSS custom-property declaration.
+ *
+ * A token stylesheet often packs several declarations onto one line, inside a
+ * `style` attribute, a JS object literal or a one-line `:root` block. The
+ * exemption therefore has to cover every declaration on the line, not just the
+ * first one, or a second `--x: oklch(...)` on the same line would be reported as
+ * a raw colour while the first one is exempt.
+ */
+function tokenDefinitionRanges(source: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  TOKEN_DEFINITION_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = TOKEN_DEFINITION_RE.exec(source)) !== null) {
+    ranges.push([match.index, match.index + match[0].length]);
+  }
+  return ranges;
+}
+
+/** True when `index` falls inside a CSS custom-property declaration. */
+function isTokenDefinitionIndex(ranges: Array<[number, number]>, index: number): boolean {
+  return ranges.some(([start, end]) => index >= start && index < end);
 }
 
 /** Named colours used as CSS/inline-style declaration values. */
@@ -352,30 +426,32 @@ function tailwindColourHits(source: string): RawHit[] {
   return hits;
 }
 
-function distinctColourValues(source: string, ignoreTokenDefinitions: boolean): Set<string> {
+function distinctColourValues(source: string, ranges: Array<[number, number]>): Set<string> {
   const values = new Set<string>();
-  for (const hit of literalColourHits(source, ignoreTokenDefinitions)) values.add(normaliseColour(hit.value));
+  for (const hit of literalColourHits(source, ranges)) values.add(normaliseColour(hit.value));
   for (const hit of namedColourHits(source)) values.add(hit.value);
   for (const hit of tailwindColourHits(source)) values.add(normaliseColour(hit.value));
   return values;
 }
 
-function firstFamily(stack: string): string | undefined {
-  for (const part of stack.split(",")) {
-    const token = part.trim().replace(/^['"]|['"]$/g, "").trim().toLowerCase();
-    if (!token) continue;
-    return token;
-  }
-  return undefined;
-}
-
+/**
+ * Named font families a source actually chooses.
+ *
+ * Generic fallbacks (`system-ui`, `serif`, ...) and token references
+ * (`var(--font-sans)`) are not design decisions, so they are excluded: only the
+ * families the author deliberately picked count toward the two-family limit.
+ */
 function collectFontFamilies(source: string): Set<string> {
   const families = new Set<string>();
   FONT_FAMILY_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = FONT_FAMILY_RE.exec(source)) !== null) {
-    const family = firstFamily(match[1] ?? "");
-    if (family) families.add(family);
+    for (const part of (match[1] ?? "").split(",")) {
+      const token = part.trim().replace(/^['"]|['"]$/g, "").trim().toLowerCase();
+      if (!token || token.startsWith("[") || token.includes("var(")) continue;
+      if (GENERIC_FAMILIES.has(token)) continue;
+      families.add(token);
+    }
   }
   FONT_UTILITY_RE.lastIndex = 0;
   while ((match = FONT_UTILITY_RE.exec(source)) !== null) {
@@ -492,10 +568,14 @@ export function lintDesignSource(source: string, options: DesignLintOptions = {}
   const allowed = new Set((options.allowedColours ?? []).map((c) => normaliseColour(c)));
   const starts = lineStarts(source);
   const violations: DesignViolation[] = [];
+  // One declaration-range scan serves both the raw-colour rule and the palette
+  // counter, so a token definition is never counted by one and ignored by the
+  // other.
+  const tokenRanges = ignoreTokenDefinitions ? tokenDefinitionRanges(source) : [];
 
   if (!disabled.has("raw-colour")) {
     const rawHits = [
-      ...literalColourHits(source, ignoreTokenDefinitions),
+      ...literalColourHits(source, tokenRanges),
       ...namedColourHits(source),
       ...tailwindColourHits(source),
     ];
@@ -515,7 +595,7 @@ export function lintDesignSource(source: string, options: DesignLintOptions = {}
   }
 
   if (!disabled.has("too-many-colours")) {
-    const colours = distinctColourValues(source, ignoreTokenDefinitions);
+    const colours = distinctColourValues(source, tokenRanges);
     if (colours.size > maxColours) {
       violations.push({
         category: "too-many-colours",
@@ -627,7 +707,7 @@ export function lintDesignSource(source: string, options: DesignLintOptions = {}
   const counts = emptyCounts();
   for (const violation of violations) counts[violation.category] += 1;
   const summary: DesignLintSummary = {
-    colours: distinctColourValues(source, ignoreTokenDefinitions).size,
+    colours: distinctColourValues(source, tokenRanges).size,
     fonts: collectFontFamilies(source).size,
     counts,
   };
@@ -653,4 +733,225 @@ export function formatDesignLintResult(result: DesignLintResult): string {
 /** Convenience predicate: true when the source is free of violations. */
 export function isDesignLintClean(source: string, options: DesignLintOptions = {}): boolean {
   return lintDesignSource(source, options).ok;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Site-directory linter (eval harness contract)                              */
+/* -------------------------------------------------------------------------- */
+
+export type LintSeverity = "error" | "warn";
+
+export interface LintIssue {
+  rule: string;
+  severity: LintSeverity;
+  file: string;
+  message: string;
+}
+
+export interface LintMetrics {
+  /** Number of UI source files that were scanned. */
+  files: number;
+  rawColors: number;
+  arbitraryPx: number;
+  fontFamilies: number;
+  emoji: number;
+  gradients: number;
+  missingAlt: number;
+  /** False only when an RTL locale is requested and the site is not RTL-ready. */
+  rtlReady: boolean;
+}
+
+export interface LintResult {
+  /** 0-100; 100 means no violations. */
+  score: number;
+  issues: LintIssue[];
+  metrics: LintMetrics;
+}
+
+export interface LintOptions {
+  locale?: string;
+  direction?: "ltr" | "rtl";
+}
+
+export interface DesignLinter {
+  lintSite(siteDir: string, options?: LintOptions): Promise<LintResult>;
+}
+
+const UI_EXTENSIONS = new Set([".html", ".css", ".tsx", ".jsx", ".vue", ".svelte", ".ts", ".js", ".mjs", ".cjs"]);
+const SKIP_DIRS = new Set(["node_modules", "dist", "build", "out", ".next", ".nuxt", "coverage", ".turbo", ".git"]);
+
+/** Arabic and other RTL-script locales that require `dir="rtl"`. */
+export function isRtl(locale: string): boolean {
+  const tag = (locale || "").trim().toLowerCase();
+  return /^(ar|he|fa|ur|ps|sd|ug|yi)\b/.test(tag);
+}
+
+/** Resolve the effective text direction for a fixture locale. */
+export function resolveDirection(locale: string, explicit?: "ltr" | "rtl"): "ltr" | "rtl" {
+  return explicit ?? (isRtl(locale) ? "rtl" : "ltr");
+}
+
+/**
+ * Site-level lint issue rules, in the coarse vocabulary the eval harness and its
+ * critique step understand. They map onto the finer-grained categories that
+ * {@link lintDesignSource} reports, so the two views cannot drift apart.
+ */
+type SiteRule =
+  | "raw-color"
+  | "too-many-colors"
+  | "too-many-fonts"
+  | "arbitrary-px"
+  | "emoji-icon"
+  | "gradient"
+  | "missing-alt"
+  | "rtl-dir"
+  | "rtl-logical"
+  | "rtl-direction";
+
+/** Rules that block an RTL layout from being judged ready. */
+const RTL_BLOCKING_RULES: ReadonlySet<SiteRule> = new Set(["rtl-dir", "rtl-logical"]);
+
+/** Penalty per issue severity, mirroring the UI Kit rubric. */
+const ERROR_PENALTY = 8;
+const WARN_PENALTY = 3;
+
+interface ScannedFile {
+  relative: string;
+  text: string;
+}
+
+function collectFiles(dir: string, out: string[] = []): string[] {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const entry of entries) {
+    if (entry.name.startsWith(".") && entry.name !== "." && SKIP_DIRS.has(entry.name)) continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (SKIP_DIRS.has(entry.name)) continue;
+      collectFiles(full, out);
+    } else if (entry.isFile() && UI_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+/**
+ * Fold the fine-grained source violations into the coarse site rules the eval
+ * harness consumes. A violation contributes to a rule only once per file, so a
+ * repeated raw colour still reads as "raw colours used here" rather than as an
+ * unbounded count.
+ */
+function toSiteIssue(rule: SiteRule, file: string, message: string): LintIssue {
+  const severity: LintSeverity =
+    rule === "raw-color" || rule === "missing-alt" || rule === "rtl-dir" || rule === "rtl-direction"
+      ? "error"
+      : "warn";
+  return { rule, severity, file, message };
+}
+
+function lintScannedFile(file: ScannedFile, options: LintOptions, issues: LintIssue[]): void {
+  const { relative, text } = file;
+  const result = lintDesignSource(text, {
+    // Token definition files are expected to hold literal palette values, so a
+    // site that defines its tokens is not penalised for defining them.
+    ignoreTokenDefinitions: true,
+  });
+
+  const seen = new Set<SiteRule>();
+  const push = (rule: SiteRule, message: string): void => {
+    if (seen.has(rule)) return;
+    seen.add(rule);
+    issues.push(toSiteIssue(rule, relative, message));
+  };
+
+  const counts = result.summary.counts;
+  if (counts["raw-colour"] > 0) push("raw-color", `raw colour value(s) used instead of a semantic token (${counts["raw-colour"]})`);
+  if (counts["too-many-colours"] > 0) push("too-many-colors", "palette limit exceeded");
+  if (counts["too-many-fonts"] > 0) push("too-many-fonts", `more than two font families used (${result.summary.fonts})`);
+  if (counts["arbitrary-px"] > 0) push("arbitrary-px", `arbitrary pixel value(s) used instead of the spacing scale (${counts["arbitrary-px"]})`);
+  if (counts["emoji-icon"] > 0) push("emoji-icon", `emoji used as an icon or decoration (${counts["emoji-icon"]})`);
+  if (counts["missing-alt"] > 0) push("missing-alt", `image(s) without alt text (${counts["missing-alt"]})`);
+  if (counts["gradient"] > 0) push("gradient", `gradient used without an explicit opt-in (${counts["gradient"]})`);
+
+  const rtlRequested = resolveDirection(options.locale ?? "", options.direction) === "rtl";
+  if (!rtlRequested) return;
+
+  // A root document that omits dir="rtl" is reported once for the site, not
+  // once per Arabic file, so the issue list stays readable.
+  const htmlFile = /\.html$/i.test(relative);
+  const hasDirRtl = RTL_DIR_RE.test(text);
+  if (htmlFile && !hasDirRtl) push("rtl-dir", 'missing dir="rtl" on the root element for an RTL locale');
+  if (!hasDirRtl) push("rtl-direction", 'Arabic content without dir="rtl" on the root element');
+  if (counts["rtl-logical-properties"] > 0) {
+    push("rtl-logical", `physical directional property(ies) under an RTL layout (${counts["rtl-logical-properties"]})`);
+  } else if (!LOGICAL_PROPERTY_RE.test(text)) {
+    // No direction-agnostic property anywhere in the file: the layout cannot
+    // mirror, so the site is not RTL-ready even if no physical property was
+    // spotted yet.
+    push("rtl-logical", "no logical properties (ms-/me-/ps-/pe-) found for an RTL locale");
+  }
+}
+
+function computeScore(issues: LintIssue[]): number {
+  let score = 100;
+  for (const issue of issues) score -= issue.severity === "error" ? ERROR_PENALTY : WARN_PENALTY;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+/**
+ * Filesystem linter for a generated site directory.
+ *
+ * It delegates every rule to {@link lintDesignSource} and folds the result into
+ * the compact {@link LintResult} the design eval harness scores, so the harness
+ * and the `design_lint` agent tool always agree on whether a UI is compliant.
+ */
+export function minimalDesignLinter(): DesignLinter {
+  return {
+    async lintSite(siteDir: string, options: LintOptions = {}): Promise<LintResult> {
+      const root = path.resolve(siteDir);
+      const files = collectFiles(root);
+      const issues: LintIssue[] = [];
+      const scanned: ScannedFile[] = [];
+      for (const absolute of files) {
+        let text: string;
+        try {
+          text = fs.readFileSync(absolute, "utf8");
+        } catch {
+          continue;
+        }
+        scanned.push({ relative: path.relative(root, absolute).split(path.sep).join("/"), text });
+      }
+      for (const file of scanned) lintScannedFile(file, options, issues);
+
+      const rtlRequested = resolveDirection(options.locale ?? "", options.direction) === "rtl";
+      const hasDirRtl = scanned.some((f) => /\.html$/i.test(f.relative) && RTL_DIR_RE.test(f.text));
+      const hasLogical = scanned.some((f) => LOGICAL_PROPERTY_RE.test(f.text));
+      const rtlReady = !rtlRequested || (hasDirRtl && hasLogical);
+
+      return {
+        score: computeScore(issues),
+        issues,
+        metrics: {
+          files: scanned.length,
+          rawColors: issues.filter((i) => i.rule === "raw-color").length,
+          arbitraryPx: issues.filter((i) => i.rule === "arbitrary-px").length,
+          fontFamilies: new Set(scanned.flatMap((f) => [...collectFontFamilies(f.text)])).size,
+          emoji: issues.filter((i) => i.rule === "emoji-icon").length,
+          gradients: issues.filter((i) => i.rule === "gradient").length,
+          missingAlt: issues.filter((i) => i.rule === "missing-alt").length,
+          rtlReady,
+        },
+      };
+    },
+  };
+}
+
+/** Exposed for callers that need the blocking-rule set for an RTL layout. */
+export function isRtlBlockingRule(rule: SiteRule): boolean {
+  return RTL_BLOCKING_RULES.has(rule);
 }
