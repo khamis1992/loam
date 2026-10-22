@@ -52,9 +52,16 @@ export async function runSemanticSearch(
     await index.index({ signal: ctx?.signal });
     const hits = await index.search(trimmed, k);
     const mode = index.scoringMode;
-    const content = hits.length === 0
-      ? `(no matches for "${trimmed}"; index has ${index.stats().chunks} chunks over ${index.stats().files} files, ${mode})`
-      : hits.map((h) => `${h.file}:${h.startLine}-${h.endLine}  (${mode} ${h.score.toFixed(3)})\n  ${h.snippet}`).join("\n\n");
+    if (hits.length === 0) {
+      const stats = index.stats();
+      return {
+        ok: true,
+        hits,
+        mode,
+        content: `(no matches for "${trimmed}"; index has ${stats.chunks} chunks over ${stats.files} files, ${mode})`,
+      };
+    }
+    const content = hits.map((h) => `${h.file}:${h.startLine}-${h.endLine}  (${mode} ${h.score.toFixed(3)})\n  ${h.snippet}`).join("\n\n");
     return { ok: true, hits, mode, content };
   } catch (err) {
     return { ok: false, hits: [], mode: "none", content: `semantic_search failed: ${err instanceof Error ? err.message : String(err)}` };
