@@ -37,6 +37,7 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "web_scaffold",
   "design_create",
   "design_brand_kit_save",
+  "design_brief",
   "watch_url",
   "video_edit",
   "deploy_app",

@@ -1,0 +1,15 @@
+V7 complete.
+
+- Merged latest manus-parity into khamis1992/v0-v7, resolving conflicts in src/index.ts and src/server/__tests__/runTools.test.ts by keeping both sides (V7 design_brief + manus-parity design_autofix/workflow tools).
+- src/design/brief.ts: generateDesignBrief() validates against DESIGN_BRIEF_JSON_SCHEMA (palette 3-5 colours, at most 2 fonts), retries once on invalid output, falls back deterministically; RTL/Arabic detection included.
+- src/tools/designBrief.ts: design_brief agent tool, optional writeTokens.
+- Registered in src/index.ts and ALWAYS_ON_TOOLS (src/server/runTools.ts); design-explore phase and BUILD_PHASE_PROMPT updated.
+
+Tests:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npx tsx --test src/design/__tests__/brief.test.ts
+  npx tsx --test src/tools/__tests__/designBrief.test.ts
+  npx tsx --test src/server/__tests__/runTools.test.ts
+All pass.
