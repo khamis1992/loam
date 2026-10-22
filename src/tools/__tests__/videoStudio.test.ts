@@ -132,6 +132,30 @@ describe("video_studio actions produce the expected command sequence", () => {
     assert.deepEqual(commandsDispatched(), [{ method: "inspect", params: {} }]);
   });
 
+  it("add_audio imports from a url then places it on the audio track", async () => {
+    relay = new MockRelay();
+    relay.commands = CATALOG;
+    await tool().run(
+      { action: "add_audio", url: "https://example.com/track.mp3", atSec: 12, gain: 0.5, trackId: "a1" },
+      ctx(),
+    );
+    const steps = commandsDispatched();
+    assert.equal(steps[0]!.method, "importUrl");
+    assert.deepEqual(steps[0]!.params, { url: "https://example.com/track.mp3" });
+    assert.deepEqual(steps[1], {
+      method: "execute",
+      params: { command: "audio.add", params: { atSec: 12, gain: 0.5, trackId: "a1" } },
+    });
+  });
+
+  it("add_audio refuses when neither url nor path is given", async () => {
+    relay = new MockRelay();
+    relay.commands = CATALOG;
+    const res = await tool().run({ action: "add_audio" }, ctx());
+    assert.equal(res.ok, false);
+    assert.match(res.content, /requires "url" or "path"/);
+  });
+
   it("import dispatches importUrl for a url and importFiles for a task file", async () => {
     relay = new MockRelay();
     await tool().run({ action: "import", url: "https://example.com/clip.mp4" }, ctx());
