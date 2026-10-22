@@ -56,7 +56,9 @@
     "check:studio": "tsx src/scripts/check-studio.ts",
     "check:studio-http": "tsx src/scripts/check-studio-http.ts",
     "check:studio-ui": "node src/scripts/check-studio-ui.mjs",
-    "check:studio-export": "tsx src/scripts/check-studio-export.ts"
+    "check:studio-export": "tsx src/scripts/check-studio-export.ts",
+    "gen:master-prompt": "tsx src/scripts/gen-master-prompt.ts",
+    "check:promptwire": "tsx src/scripts/check-promptwire.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",

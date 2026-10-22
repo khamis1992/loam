@@ -5,6 +5,14 @@ import { APP_CONTRACT_INSTRUCTIONS } from "./appVerification.js";
 import { BUILD_PHASE_PROMPT } from "../modes/buildPhases.js";
 import { personalizationBlock } from "../server/personalization.js";
 import { renderPolicyContext } from "../policy/riskTier.js";
+import { buildMasterPrompt, deriveMasterSlots } from "./masterPrompt.js";
+
+/** The master prompt is on by default; LOAM_MASTER_PROMPT=0 falls back to the
+ *  legacy Loam prompt for A/B or recovery. */
+export function masterPromptEnabled(): boolean {
+  const raw = process.env.LOAM_MASTER_PROMPT ?? process.env.MANUS_LOCAL_MASTER_PROMPT ?? "";
+  return !["0", "false", "no", "off"].includes(raw.trim().toLowerCase());
+}
 
 export interface Skill {
   name: string;
@@ -53,7 +61,11 @@ export function buildSystemPrompt(
   extraContext?: string,
   sandboxMode?: import("../policy/riskTier.js").SandboxMode,
 ): string {
-  const lines: string[] = [
+  const lines: string[] = [];
+  if (masterPromptEnabled()) {
+    lines.push(buildMasterPrompt(deriveMasterSlots(cfg, toolNames), { model: cfg.model }));
+  }
+  lines.push(
     "You are Loam, a local assistant working in the current task's isolated workspace.",
     "Reply in the user's language. Use the provided tools and observed results; never invent success.",
     APP_CONTRACT_INSTRUCTIONS,
@@ -66,7 +78,7 @@ export function buildSystemPrompt(
     `Workspace: ${cfg.workspace}`,
     `Network access: ${cfg.policy.networkEnabled ? "enabled" : "disabled"}`,
     `Available tools (${toolNames.length}): ${toolNames.join(", ")}`,
-  ];
+  );
   if (sandboxMode) {
     lines.push(renderPolicyContext(sandboxMode));
   }
