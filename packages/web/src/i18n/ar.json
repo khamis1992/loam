@@ -816,5 +816,9 @@
   "Group chat": "محادثة جماعية",
   "Work mode": "وضع العمل",
   "Allowed services": "الخدمات المسموح بها",
-  "All services": "كل الخدمات"
+  "All services": "كل الخدمات",
+  "Memory disabled (Chat only)": "الذاكرة معطّلة (دردشة فقط)",
+  "Pinned": "المثبّتة",
+  "{count} unread": "{count} غير مقروءة",
+  "Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder.": "وكيل مثبّت {name}. اضغط Alt+السهم لأعلى أو Alt+السهم لأسفل لإعادة الترتيب، أو اسحب لإعادة الترتيب."
 }

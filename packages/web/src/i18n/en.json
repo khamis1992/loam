@@ -816,5 +816,9 @@
   "Group chat": "Group chat",
   "Work mode": "Work mode",
   "Allowed services": "Allowed services",
-  "All services": "All services"
+  "All services": "All services",
+  "Memory disabled (Chat only)": "Memory disabled (Chat only)",
+  "Pinned": "Pinned",
+  "{count} unread": "{count} unread",
+  "Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder.": "Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder."
 }
