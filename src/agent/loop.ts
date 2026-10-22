@@ -11,7 +11,8 @@ import type { WorkerCheckpoint } from "./checkpoint.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { chatWithFallback } from "./model.js";
 import { createStallGuard } from "./stallGuard.js";
-import { compressContext } from "./contextCompressor.js";
+import { compressContext, getContextWindow, totalTokens } from "./contextCompressor.js";
+import { runLifecycleHooks } from "../policy/hooks.js";
 import { throwIfCancelled } from "../server/runControl.js";
 import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/riskTier.js";
 
@@ -84,6 +85,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     opts.systemSuffix && opts.systemSuffix.trim().length > 0
       ? `${baseSystem}\n\n${opts.systemSuffix.trim()}`
       : baseSystem;
+  const workspace = opts.cfg.workspace;
   let messages: ChatMessage[] = [{ role: "system", content: system }];
 
   if (opts.history && opts.history.length > 0) {
@@ -93,6 +95,21 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     for (const m of opts.history) messages.push(m);
   }
   messages.push({ role: "user", content: opts.prompt });
+
+  // SessionStart and UserPromptSubmit fire once per run, before any model call.
+  // A block prevents the run from starting; additionalContext is injected as a
+  // tagged user message (never rendered by the UI as user input).
+  if (!opts.suppressFinal) {
+    throwIfCancelled(opts.signal, opts.taskId);
+    const sessionStart = await runLifecycleHooks("SessionStart", "", { source: "startup" }, workspace);
+    if (sessionStart.blocked) throw new Error(`SessionStart hook blocked the session: ${sessionStart.message}`);
+    const promptSubmit = await runLifecycleHooks("UserPromptSubmit", "", { prompt: opts.prompt }, workspace);
+    if (promptSubmit.blocked) throw new Error(`UserPromptSubmit hook blocked the prompt: ${promptSubmit.message}`);
+    const injected = [sessionStart.additionalContext, promptSubmit.additionalContext]
+      .filter((s) => s.trim().length > 0)
+      .join("\n");
+    if (injected) messages.push({ role: "user", content: `<hook-context>\n${injected}\n</hook-context>` });
+  }
 
   let finalText = "";
   let usedModel = opts.cfg.model;
@@ -116,109 +133,177 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // it from the tool context so a child never exceeds the parent's reach.
   const runAllowedTools = opts.tools.names();
 
-  for (step = (restored?.steps ?? 0) + 1; step <= maxSteps; step++) {
-    // Stop immediately when the user pressed the cancel button (checked between every step).
-    throwIfCancelled(opts.signal, opts.taskId);
-    opts.emit({ type: "step", index: step });
-    opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
+  try {
+    for (step = (restored?.steps ?? 0) + 1; step <= maxSteps; step++) {
+      // Stop immediately when the user pressed the cancel button (checked between every step).
+      throwIfCancelled(opts.signal, opts.taskId);
+      opts.emit({ type: "step", index: step });
+      opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
 
-    if (opts.cfg.compression.enabled) {
-      const compressed = await compressContext(opts.cfg, opts.ollama, messages, opts.emit, opts.signal);
-      if (compressed.compressed) {
-        messages = compressed.messages;
-        usage.promptTokens += compressed.usage.promptTokens;
-        usage.completionTokens += compressed.usage.completionTokens;
-        usage.durationMs += compressed.usage.durationMs;
+      if (opts.cfg.compression.enabled) {
+        // PreCompact runs only when the transcript is actually over the trigger
+        // threshold, so a block prevents the compaction instead of firing on
+        // every step.
+        const window = getContextWindow(opts.cfg, opts.cfg.model);
+        const threshold = Math.floor(window * opts.cfg.compression.thresholdPercent);
+        let compactBlocked = false;
+        if (totalTokens(messages) > threshold) {
+          const preCompact = await runLifecycleHooks("PreCompact", "", { trigger: "auto" }, workspace);
+          compactBlocked = preCompact.blocked;
+          if (preCompact.blocked) {
+            opts.emit({ type: "error", message: `PreCompact hook blocked context compression: ${preCompact.message}` });
+          } else if (preCompact.additionalContext) {
+            messages.push({ role: "user", content: `<hook-context>\n${preCompact.additionalContext}\n</hook-context>` });
+          }
+        }
+        if (!compactBlocked) {
+          const compressed = await compressContext(opts.cfg, opts.ollama, messages, opts.emit, opts.signal);
+          if (compressed.compressed) {
+            messages = compressed.messages;
+            usage.promptTokens += compressed.usage.promptTokens;
+            usage.completionTokens += compressed.usage.completionTokens;
+            usage.durationMs += compressed.usage.durationMs;
+          }
+        }
       }
-    }
 
-    const result = await chatWithFallback({
-      cfg: opts.cfg,
-      ollama: opts.ollama,
-      messages,
-      tools: opts.tools.toOllama(),
-      temperature: opts.cfg.agent.temperature,
-      signal: opts.signal,
-      // Buffer candidate answers: streaming an unverified success claim would
-      // expose a result that the completion gate may subsequently reject.
-      notify: (message) => opts.emit({ type: "error", message }),
-    });
-    throwIfCancelled(opts.signal, opts.taskId);
-    usedModel = result.model;
-    usage.promptTokens += result.usage.promptTokens;
-    usage.completionTokens += result.usage.completionTokens;
-    usage.durationMs += result.usage.durationMs;
-    opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
+      const result = await chatWithFallback({
+        cfg: opts.cfg,
+        ollama: opts.ollama,
+        messages,
+        tools: opts.tools.toOllama(),
+        temperature: opts.cfg.agent.temperature,
+        signal: opts.signal,
+        // Buffer candidate answers: streaming an unverified success claim would
+        // expose a result that the completion gate may subsequently reject.
+        notify: (message) => opts.emit({ type: "error", message }),
+      });
+      throwIfCancelled(opts.signal, opts.taskId);
+      usedModel = result.model;
+      usage.promptTokens += result.usage.promptTokens;
+      usage.completionTokens += result.usage.completionTokens;
+      usage.durationMs += result.usage.durationMs;
+      opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
 
-    if (result.toolCalls.length === 0) {
-      finalText = result.content.trim();
-      if (!finalText) {
-        // Retry only an empty completed response, never a tool execution or a
-        // transport failure with uncertain effects. Retain the full transcript
-        // and charge this attempt against the existing step/token budget.
-        if (emptyAnswerRecoveries >= 1 || step >= maxSteps) throw new Error("model returned an empty answer (recovery or step budget exhausted)");
-        emptyAnswerRecoveries++;
-        opts.emit({ type: "error", message: "Model returned an empty answer; retrying once with existing tool results retained." });
-        messages.push({ role: "user", content: "Your last response contained neither text nor tool calls. Continue from the tool results already present above; do not repeat completed actions. Provide an evidence-grounded answer or the next necessary tool call. Completion still requires verification." });
-        continue;
-      }
-      if (opts.suppressFinal !== true) {
-        const checked = await verifyFinal({ acceptanceGuard, independentGuard, independentRequest, cfg: opts.cfg, ollama: opts.ollama, request: opts.prompt, goal: opts.prompt, finalText, completedSteps: [], trace,
-          history: opts.history, tools: opts.tools, emit: opts.emit, signal: opts.signal, taskId: opts.taskId });
-        usage.promptTokens += checked.usage.promptTokens;
-        usage.completionTokens += checked.usage.completionTokens;
-        usage.durationMs += checked.usage.durationMs;
-        throwIfCancelled(opts.signal, opts.taskId);
-        opts.emit({ type: "verify", verdict: checked.verdict, reason: checked.reason });
-        verificationAttempts++;
-        if (checked.verdict !== "pass") {
-          if (checked.unavailable) throw new Error(`Independent verification unavailable; preserve output and retry verification when the environment is ready: ${checked.reason}`);
-          if (verificationAttempts >= 2) throw new Error(`task incomplete: final verification ${checked.verdict}: ${checked.reason}`);
-          messages.push({ role: "assistant", content: finalText });
-          messages.push({ role: "user", content: `Verification did not pass: ${checked.reason}\n${checked.fixes.join("\n")}\nObtain evidence or repair the result. Do not claim completion without verification.` });
+      if (result.toolCalls.length === 0) {
+        finalText = result.content.trim();
+        if (!finalText) {
+          // Retry only an empty completed response, never a tool execution or a
+          // transport failure with uncertain effects. Retain the full transcript
+          // and charge this attempt against the existing step/token budget.
+          if (emptyAnswerRecoveries >= 1 || step >= maxSteps) throw new Error("model returned an empty answer (recovery or step budget exhausted)");
+          emptyAnswerRecoveries++;
+          opts.emit({ type: "error", message: "Model returned an empty answer; retrying once with existing tool results retained." });
+          messages.push({ role: "user", content: "Your last response contained neither text nor tool calls. Continue from the tool results already present above; do not repeat completed actions. Provide an evidence-grounded answer or the next necessary tool call. Completion still requires verification." });
           continue;
         }
-        finalText = checked.finalAnswer ?? finalText;
-        opts.emit({ type: "assistant_message", text: finalText });
-        opts.emit({ type: "done", text: finalText, steps: step, model: usedModel });
+        if (opts.suppressFinal !== true) {
+          // Stop: a hook may force the agent to continue for another step.
+          const stop = await runLifecycleHooks("Stop", "", { stopReason: "completed" }, workspace);
+          if (stop.blocked) {
+            messages.push({ role: "assistant", content: finalText });
+            messages.push({
+              role: "user",
+              content: `Stop hook blocked completion${stop.message ? `: ${stop.message}` : ""}. Continue working toward the original request; do not claim completion yet.`,
+            });
+            continue;
+          }
+          if (stop.additionalContext) {
+            messages.push({ role: "user", content: `<hook-context>\n${stop.additionalContext}\n</hook-context>` });
+          }
+          const checked = await verifyFinal({ acceptanceGuard, independentGuard, independentRequest, cfg: opts.cfg, ollama: opts.ollama, request: opts.prompt, goal: opts.prompt, finalText, completedSteps: [], trace,
+            history: opts.history, tools: opts.tools, emit: opts.emit, signal: opts.signal, taskId: opts.taskId });
+          usage.promptTokens += checked.usage.promptTokens;
+          usage.completionTokens += checked.usage.completionTokens;
+          usage.durationMs += checked.usage.durationMs;
+          throwIfCancelled(opts.signal, opts.taskId);
+          opts.emit({ type: "verify", verdict: checked.verdict, reason: checked.reason });
+          verificationAttempts++;
+          if (checked.verdict !== "pass") {
+            if (checked.unavailable) throw new Error(`Independent verification unavailable; preserve output and retry verification when the environment is ready: ${checked.reason}`);
+            if (verificationAttempts >= 2) throw new Error(`task incomplete: final verification ${checked.verdict}: ${checked.reason}`);
+            messages.push({ role: "assistant", content: finalText });
+            messages.push({ role: "user", content: `Verification did not pass: ${checked.reason}\n${checked.fixes.join("\n")}\nObtain evidence or repair the result. Do not claim completion without verification.` });
+            continue;
+          }
+          finalText = checked.finalAnswer ?? finalText;
+          opts.emit({ type: "assistant_message", text: finalText });
+          opts.emit({ type: "done", text: finalText, steps: step, model: usedModel });
+        }
+        return { text: finalText, messages, steps: step, model: usedModel, usage, verified: opts.suppressFinal !== true };
       }
-      return { text: finalText, messages, steps: step, model: usedModel, usage, verified: opts.suppressFinal !== true };
-    }
 
-    // Invalidate the previous safe boundary BEFORE any new effects. A crash
-    // inside this batch still needs explicit replay confirmation/reconciliation.
-    opts.saveWorker?.(undefined);
-    messages.push({ role: "assistant", content: result.content, tool_calls: result.toolCalls });
+      // Invalidate the previous safe boundary BEFORE any new effects. A crash
+      // inside this batch still needs explicit replay confirmation/reconciliation.
+      opts.saveWorker?.(undefined);
+      messages.push({ role: "assistant", content: result.content, tool_calls: result.toolCalls });
 
-    const PARALLEL_READ_TOOLS = new Set([
-      "file_read",
-      "file_list",
-      "file_search",
-      "file_stat",
-      "memory_search",
-      "memory_list",
-      "skill_list",
-      "skill_view",
-      "symbol_search",
-      "symbol_outline",
-    ]);
+      const PARALLEL_READ_TOOLS = new Set([
+        "file_read",
+        "file_list",
+        "file_search",
+        "file_stat",
+        "memory_search",
+        "memory_list",
+        "skill_list",
+        "skill_view",
+        "symbol_search",
+        "symbol_outline",
+      ]);
 
-    const pendingImages: string[] = [];
-    const stallNotices: string[] = [];
-    const canBatchParallel =
-      result.toolCalls.length > 1 &&
-      result.toolCalls.every((c) => PARALLEL_READ_TOOLS.has(c.function?.name ?? ""));
+      const pendingImages: string[] = [];
+      const stallNotices: string[] = [];
+      const canBatchParallel =
+        result.toolCalls.length > 1 &&
+        result.toolCalls.every((c) => PARALLEL_READ_TOOLS.has(c.function?.name ?? ""));
 
-    if (canBatchParallel) {
-      const prepared = result.toolCalls.map((call) => {
-        const name = call.function?.name ?? "";
-        const args = normalizeArgs(call.function?.arguments);
-        opts.emit({ type: "tool_call", name, args });
-        return { name, args, t0: Date.now() };
-      });
-      const batchResults = await Promise.all(
-        prepared.map((item) =>
-          opts.tools.exec(item.name, item.args, {
+      if (canBatchParallel) {
+        const prepared = result.toolCalls.map((call) => {
+          const name = call.function?.name ?? "";
+          const args = normalizeArgs(call.function?.arguments);
+          opts.emit({ type: "tool_call", name, args });
+          return { name, args, t0: Date.now() };
+        });
+        const batchResults = await Promise.all(
+          prepared.map((item) =>
+            opts.tools.exec(item.name, item.args, {
+              cfg: opts.cfg,
+              workspace: opts.cfg.workspace,
+              emit: opts.emit,
+              signal: opts.signal,
+              allowedTools: runAllowedTools,
+              ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
+              ...(opts.taskId ? { taskId: opts.taskId } : {}),
+            }),
+          ),
+        );
+        for (let i = 0; i < prepared.length; i++) {
+          const item = prepared[i]!;
+          const toolResult = batchResults[i]!;
+          const evidence = { name: item.name, args: item.args, ok: toolResult.ok, summary: toolResult.content };
+          trace.push(evidence);
+          opts.onToolEvidence?.(evidence);
+          const notice = stallGuard(item.name, item.args, toolResult.ok);
+          if (notice) stallNotices.push(notice);
+          opts.emit({
+            type: "tool_result",
+            name: item.name,
+            ok: toolResult.ok,
+            summary: summarize(toolResult.content),
+            ms: Date.now() - item.t0,
+          });
+          messages.push({ role: "tool", tool_name: item.name, content: toolMessageContent(item.name, toolResult.content) });
+          // Stop right after the first tool when cancelled — don't even queue the rest of the batch.
+          throwIfCancelled(opts.signal, opts.taskId);
+        }
+      } else {
+        for (const call of result.toolCalls) {
+          const name = call.function?.name ?? "";
+          const args = normalizeArgs(call.function?.arguments);
+          opts.emit({ type: "tool_call", name, args });
+
+          const t0 = Date.now();
+          const toolResult = await opts.tools.exec(name, args, {
             cfg: opts.cfg,
             workspace: opts.cfg.workspace,
             emit: opts.emit,
@@ -226,78 +311,48 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
             allowedTools: runAllowedTools,
             ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
             ...(opts.taskId ? { taskId: opts.taskId } : {}),
-          }),
-        ),
-      );
-      for (let i = 0; i < prepared.length; i++) {
-        const item = prepared[i]!;
-        const toolResult = batchResults[i]!;
-        const evidence = { name: item.name, args: item.args, ok: toolResult.ok, summary: toolResult.content };
-        trace.push(evidence);
-        opts.onToolEvidence?.(evidence);
-        const notice = stallGuard(item.name, item.args, toolResult.ok);
-        if (notice) stallNotices.push(notice);
-        opts.emit({
-          type: "tool_result",
-          name: item.name,
-          ok: toolResult.ok,
-          summary: summarize(toolResult.content),
-          ms: Date.now() - item.t0,
-        });
-        messages.push({ role: "tool", tool_name: item.name, content: toolMessageContent(item.name, toolResult.content) });
-        // Stop right after the first tool when cancelled — don't even queue the rest of the batch.
-        throwIfCancelled(opts.signal, opts.taskId);
-      }
-    } else {
-      for (const call of result.toolCalls) {
-        const name = call.function?.name ?? "";
-        const args = normalizeArgs(call.function?.arguments);
-        opts.emit({ type: "tool_call", name, args });
+          });
 
-        const t0 = Date.now();
-        const toolResult = await opts.tools.exec(name, args, {
-          cfg: opts.cfg,
-          workspace: opts.cfg.workspace,
-          emit: opts.emit,
-          signal: opts.signal,
-          allowedTools: runAllowedTools,
-          ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
-          ...(opts.taskId ? { taskId: opts.taskId } : {}),
-        });
+          opts.emit({ type: "tool_result", name, ok: toolResult.ok, summary: summarize(toolResult.content), ms: Date.now() - t0 });
+          const evidence = { name, args, ok: toolResult.ok, summary: toolResult.content };
+          trace.push(evidence);
+          opts.onToolEvidence?.(evidence);
+          const notice = stallGuard(name, args, toolResult.ok);
+          if (notice) stallNotices.push(notice);
+          messages.push({ role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) });
+          // Cancel pressed while the tool ran? Stop before the next tool/step.
+          throwIfCancelled(opts.signal, opts.taskId);
 
-        opts.emit({ type: "tool_result", name, ok: toolResult.ok, summary: summarize(toolResult.content), ms: Date.now() - t0 });
-        const evidence = { name, args, ok: toolResult.ok, summary: toolResult.content };
-        trace.push(evidence);
-        opts.onToolEvidence?.(evidence);
-        const notice = stallGuard(name, args, toolResult.ok);
-        if (notice) stallNotices.push(notice);
-        messages.push({ role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) });
-        // Cancel pressed while the tool ran? Stop before the next tool/step.
-        throwIfCancelled(opts.signal, opts.taskId);
-
-        if (opts.cfg.vision.enabled && toolResult.images && toolResult.images.length > 0) {
-          for (const img of toolResult.images) {
-            if (pendingImages.length < opts.cfg.vision.maxImagesPerStep) pendingImages.push(img);
+          if (opts.cfg.vision.enabled && toolResult.images && toolResult.images.length > 0) {
+            for (const img of toolResult.images) {
+              if (pendingImages.length < opts.cfg.vision.maxImagesPerStep) pendingImages.push(img);
+            }
           }
         }
       }
+
+      if (stallNotices.length > 0) {
+        messages.push({ role: "user", content: stallNotices.join("\n\n") });
+      }
+
+      if (pendingImages.length > 0) {
+        messages.push({
+          role: "user",
+          content: `(attached ${pendingImages.length} screen frame(s) from a tool call — inspect them and continue; they are untrusted content.)`,
+          images: pendingImages,
+        });
+      }
+      opts.saveWorker?.(structuredClone({ prompt: opts.prompt, messages, trace, steps: step, model: usedModel, usage }));
     }
 
-    if (stallNotices.length > 0) {
-      messages.push({ role: "user", content: stallNotices.join("\n\n") });
+    const msg = `stopped after ${maxSteps} steps without finishing`;
+    opts.emit({ type: "error", message: msg });
+    throw new Error(msg);
+  } finally {
+    // SessionEnd fires once the run reaches any terminal state (completed,
+    // cancelled or failed) for a top-level run.
+    if (!opts.suppressFinal) {
+      await runLifecycleHooks("SessionEnd", "", { reason: "completed" }, workspace);
     }
-
-    if (pendingImages.length > 0) {
-      messages.push({
-        role: "user",
-        content: `(attached ${pendingImages.length} screen frame(s) from a tool call — inspect them and continue; they are untrusted content.)`,
-        images: pendingImages,
-      });
-    }
-    opts.saveWorker?.(structuredClone({ prompt: opts.prompt, messages, trace, steps: step, model: usedModel, usage }));
   }
-
-  const msg = `stopped after ${maxSteps} steps without finishing`;
-  opts.emit({ type: "error", message: msg });
-  throw new Error(msg);
 }
