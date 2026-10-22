@@ -1,7 +1,7 @@
 import type { ChatMessage } from "../ollama.js";
 import type { ToolRegistry } from "../tools/registry.js";
 
-const FILE_TOOLS = ["file_read", "file_write", "file_edit", "file_stat", "file_list", "file_search", "file_mkdir", "file_view_image"];
+const FILE_TOOLS = ["file_read", "file_write", "file_edit", "file_stat", "file_list", "file_search", "grep", "glob", "file_mkdir", "file_view_image"];
 /** Deliberately narrow language support: explicit standalone user commands,
  * never instructions discovered in tool output, assistant history or plans.
  * This is not a general natural-language permission classifier. */
