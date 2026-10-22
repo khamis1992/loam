@@ -8,11 +8,14 @@ import path from "node:path";
 import type { Config } from "../config.js";
 import { log } from "../log.js";
 import { OllamaClient } from "../ollama.js";
+import { FailoverClient } from "../llm/failover.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { disposeShellSessions, shellTools } from "../tools/shell.js";
 import { fileTools } from "../tools/files.js";
+import { projectMemoryTools } from "../tools/projectMemoryTools.js";
 import { attachmentTools } from "../tools/attachments.js";
 import { symbolTools } from "../tools/symbols.js";
+import { searchTools } from "../tools/search.js";
 import { pentestTools } from "../tools/pentest.js";
 import { mirofishTools } from "../tools/mirofish.js";
 import { createSubagentTools } from "../tools/subagents.js";
@@ -34,10 +37,19 @@ import { createRorkTools } from "../tools/rork.js";
 import { createFrontierBridgeTools } from "../tools/frontierBridge.js";
 import { writeGate } from "../server/pending.js";
 import { createIntegrationTools } from '../tools/integrations.js';
+import { createPhaseTools } from "../tools/phaseTools.js";
+import { createFinishTools } from "../tools/finishTools.js";
+import { createMultiEditTools } from "../tools/multiEdit.js";
+import { createVaultTools } from "../tools/vaultTools.js";
+import { createCodeSessionTools } from "../tools/codeSession.js";
+import { createDocsLookupTools } from "../tools/docsLookup.js";
+import { createArtifactTools } from "../tools/artifactTools.js";
+import { planTool, messageTool } from "../tools/specAliases.js";
+import { createTodoTools } from "../tools/todoTools.js";
 
 export interface Runtime {
   cfg: Config;
-  ollama: OllamaClient;
+  ollama: OllamaClient | FailoverClient;
   registry: ToolRegistry;
   memory: MemoryStore | null;
   screenLive: ScreenLive;
@@ -49,12 +61,19 @@ export interface Runtime {
 }
 
 export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): Promise<Runtime> {
-  const ollama = new OllamaClient(cfg.ollamaUrl, cfg.cloudModel);
+  const ollama = cfg.failover?.providers?.length ? new FailoverClient(cfg.failover.providers) : new OllamaClient(cfg.ollamaUrl, cfg.cloudModel);
   await initPty();
   log.info(`pty: ${ptyStatus()}`);
 
   const registry = new ToolRegistry();
-  registry.registerAll([...fileTools, ...shellTools, ...ptyTools, ...webTools, ...browserTools, ...computerUseTools, ...attachmentTools(), ...symbolTools(), ...pentestTools()]);
+  registry.registerAll([...fileTools, ...projectMemoryTools, ...shellTools, ...ptyTools, ...webTools, ...browserTools, ...computerUseTools, ...attachmentTools(), ...symbolTools(), ...searchTools(), ...pentestTools()]);
+  registry.registerAll(createPhaseTools());
+  registry.registerAll(createFinishTools());
+  registry.registerAll(createMultiEditTools());
+  registry.registerAll(createVaultTools());
+  registry.registerAll(createArtifactTools());
+  registry.registerAll([planTool(), messageTool()]);
+  registry.registerAll(createTodoTools());
   registry.registerAll(mirofishTools().map(tool => ({ ...tool, integration: true })));
 
   const embedder = new OllamaEmbedder(cfg.ollamaUrl, cfg.memory.model);
@@ -84,6 +103,8 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createRorkTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createFrontierBridgeTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createSubagentTools(ollama, registry));
+  registry.registerAll(createCodeSessionTools());
+  registry.registerAll(createDocsLookupTools());
 
   const mcp = opts.mcp === false ? null : await registerMcpTools(registry, cfg.mcpServers, cfg.workspace);
   registry.registerAll(createIntegrationTools(registry));

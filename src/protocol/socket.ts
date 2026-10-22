@@ -16,7 +16,8 @@ import type { RunTaskOptions } from "../server/http.js";
 import { log } from "../log.js";
 import { mapAgentEvent, shortUid, baseId, createEventMapperState, makeBrief, mapToolName } from "./events.js";
 import { getApproval, decideApproval } from "../server/approvals.js";
-import { setTaskApprovalAuto, createApprovalRule } from "../server/approvalRules.js";
+import { setTaskApprovalAuto, setTaskPermissionMode, createApprovalRule } from "../server/approvalRules.js";
+import { isLocalPermissionMode } from "../policy/permissionModes.js";
 import { resolveLoamMode, modeEventInfo } from "../modes/detect.js";
 import { getLoamMode, normalizeModeId, LOAM_MODES } from "../modes/catalog.js";
 import { appendTelemetry } from "../telemetry/store.js";
@@ -489,6 +490,13 @@ export function createChatSocket(deps: SocketDeps): Server {
           // every message, so a brand-new session lands on the right task too.
           if (typeof um.extData.approveForMe === "boolean") {
             setTaskApprovalAuto(taskId, um.extData.approveForMe);
+          }
+
+          // C13: a message can start (or continue) the task in the read-only
+          // `plan` permission mode; the run gate then refuses every mutating tool
+          // call until `plan_exit` is approved and switches the task to acceptEdits.
+          if (isLocalPermissionMode(um.extData.localPermissionMode)) {
+            setTaskPermissionMode(taskId, um.extData.localPermissionMode);
           }
 
           // Forward the UI locale to Loam. Because Loam has no per-request locale

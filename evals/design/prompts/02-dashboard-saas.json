@@ -1,0 +1,12 @@
+{
+  "id": "dashboard-saas",
+  "prompt": "Build a SaaS analytics dashboard shell: a persistent left sidebar, a top bar with search and account menu, and a main area with a KPI row, a primary chart and a recent-activity table. Use a dense but calm layout, a single accent colour, and a data table that stays usable on a narrow viewport.",
+  "locale": "en",
+  "direction": "ltr",
+  "expectations": {
+    "must": ["sidebar navigation", "KPI", "data table"],
+    "mustNot": ["lorem ipsum", "emoji icon"],
+    "keywords": ["analytics", "dashboard"],
+    "minLint": 80
+  }
+}

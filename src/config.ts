@@ -36,12 +36,16 @@ export const EVALS_DIR = fromEnv("MANUS_LOCAL_EVALS_DIR", path.join(ROOT, "evals
 export const UI_DIR = path.join(ROOT, "ui");
 export const SCRIPTS_DIR = path.join(ROOT, "scripts");
 
+export type SandboxMode = "read-only" | "workspace-write" | "danger-full-access";
+
 export interface PolicyConfig {
   networkEnabled: boolean;
   allowOutsideWorkspaceRead: boolean;
   denyCommandPatterns: string[];
   allowCommandPatterns: string[];
   maxCommandSeconds: number;
+  /** Default sandbox mode for a task; overridden per session/task when set. */
+  sandboxMode: SandboxMode;
 }
 
 export interface McpServerConfig {
@@ -136,7 +140,43 @@ export interface Config {
     /** Legacy configuration field; final verification is mandatory regardless. */
     verifyFinal: boolean;
   };
+  /** ACP-style subagent delegation (delegate_task). */
+  subagent: {
+    /** Maximum delegation depth: a child may delegate up to this many levels. */
+    maxDepth: number;
+    /** Maximum number of concurrently running child subagents. */
+    maxConcurrentChildren: number;
+  };
   mcpServers: Record<string, McpServerConfig>;
+  failover?: {
+    providers: Array<{
+      id: string;
+      kind: "ollama" | "openai-compatible";
+      baseUrl: string;
+      model: string;
+      apiKeyEnv: string;
+      enabled: boolean;
+    }>;
+  },
+  compression: {
+    /** Enable/disable context compression (default: true). */
+    enabled: boolean;
+    /** Trigger compression when estimated tokens exceed this fraction of the model's context window (default: 0.50). */
+    thresholdPercent: number;
+    /** Number of leading messages to always protect from compression (default: 3 = system + first user + first assistant). */
+    protectLead: number;
+    /** Number of trailing messages to always protect from compression (default: 20). */
+    protectTail: number;
+    /** Target compression ratio for summarization step (default: 0.20, clamped to 0.10-0.80). */
+    targetRatio: number;
+    /** Model to use for summarization ("" = main model). */
+    model: string;
+    /** Context window size per model prefix (longest-prefix match). Defaults cover common models. */
+    contextWindow: Record<string, number>;
+  };
+  sessionLog: { enabled: boolean };
+  /** Optional per-edit diagnostics overrides (LOAM.md may override these). */
+  diagnostics?: import("./agent/diagnostics.js").DiagnosticSettings;
 }
 
 const DEFAULTS: Config = {
@@ -165,6 +205,7 @@ const DEFAULTS: Config = {
     ],
     allowCommandPatterns: [],
     maxCommandSeconds: 180,
+    sandboxMode: "workspace-write",
   },
   browser: { channel: "msedge", headless: false, viewport: { width: 1280, height: 800 } },
   computerUse: { enabled: true, screenshotDir: path.join(ROOT, "workspace", ".screenshots") },
@@ -193,7 +234,46 @@ const DEFAULTS: Config = {
     maxReplans: 1,
     verifyFinal: true,
   },
+  subagent: { maxDepth: 2, maxConcurrentChildren: 4 },
   mcpServers: {},
+  failover: {
+    providers: [
+      { id: "ollama", kind: "ollama", baseUrl: "http://127.0.0.1:11434", model: "glm-5.3:cloud", apiKeyEnv: "", enabled: true },
+      { id: "opencode-go", kind: "openai-compatible", baseUrl: "https://api.opencode.ai/v1", model: "opencode-go", apiKeyEnv: "OPENCODE_API_KEY", enabled: true },
+      { id: "freellmapi", kind: "openai-compatible", baseUrl: "https://api.freellmapi.com/v1", model: "freellmapi/auto", apiKeyEnv: "FREELLM_API_KEY", enabled: true },
+      { id: "longcat", kind: "openai-compatible", baseUrl: "https://api.longcat.ai/v1", model: "LongCat-2.5-Preview", apiKeyEnv: "LONGCAT_API_KEY", enabled: true },
+      { id: "openrouter", kind: "openai-compatible", baseUrl: "https://openrouter.ai/api/v1", model: "openrouter/free", apiKeyEnv: "OPENROUTER_API_KEY", enabled: true },
+      { id: "ornith", kind: "openai-compatible", baseUrl: "https://api.ornith.ai/v1", model: "ornith", apiKeyEnv: "ORNITH_API_KEY", enabled: true },
+    ],
+  },
+  compression: {
+    enabled: true,
+    thresholdPercent: 0.5,
+    protectLead: 3,
+    protectTail: 20,
+    targetRatio: 0.2,
+    model: "",
+    contextWindow: {
+      "gpt-4": 8192,
+      "gpt-4-32k": 32768,
+      "gpt-4-turbo": 128000,
+      "gpt-4o": 128000,
+      "claude-3": 200000,
+      "claude-3.5": 200000,
+      "llama-3": 8192,
+      "llama-3.1": 128000,
+      "mistral": 32768,
+      "mixtral": 32768,
+      "qwen": 32768,
+      "qwen2": 32768,
+      "qwen2.5": 32768,
+      "glm": 32768,
+      "deepseek": 32768,
+      "gemini": 1048576,
+      "gemini-1.5": 1048576,
+    },
+  },
+  sessionLog: { enabled: true },
 };
 
 function isObj(v: unknown): v is Record<string, unknown> {

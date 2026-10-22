@@ -6,11 +6,31 @@ export interface VerdictInfo {
   fixes: string[];
 }
 
+/** Live status of one plan step. Defaults are derived from the step index. */
+export type PlanStepStatus = "pending" | "doing" | "done" | "blocked" | "cancelled";
+
+/** Live status of one todo item. Exactly one item may be `in_progress`. */
+export type TodoStatus = "pending" | "in_progress" | "completed";
+
+/** One item in the model's live task list, maintained with `todo_write`. */
+export interface TodoItem {
+  id: string;
+  content: string;
+  status: TodoStatus;
+}
+
+/** Coarse work phase of a task, set explicitly via the phase_set tool. */
+export type WorkPhase = "chat" | "plan" | "build" | "verify";
+
 export interface PlanStepInfo {
   id: string;
   title: string;
   instruction: string;
   successCriteria: string;
+  /** Explicit status supplied by the plan tool; otherwise derived from the index. */
+  status?: PlanStepStatus;
+  /** Optional note; required by validation when status is blocked or cancelled. */
+  note?: string;
 }
 
 export interface ToolTraceItem {
@@ -48,6 +68,10 @@ export type AgentEvent =
   | { type: "plan"; goal: string; trivial: boolean; steps: PlanStepInfo[]; source: "model" | "fallback" }
   /** Orchestrator: lifecycle of one plan step (executor worker run). */
   | { type: "plan_step"; id: string; index: number; total: number; title: string; phase: "start" | "done"; summary?: string }
+  /** The model's live task list, replaced in full by the `todo_write` tool. */
+  | { type: "todo"; todos: TodoItem[]; source: "model" }
+  /** Work phase of the current task, set explicitly via the phase_set tool. */
+  | { type: "phase"; phase: WorkPhase; reason: string }
   /** Verifier verdict on one plan step (Actor-Critic: critique). */
   | { type: "critique"; id: string; verdict: Verdict; reason: string; parsed?: boolean }
   /** Reflection loop: the step is being retried with the critique's fixes. */
@@ -58,7 +82,19 @@ export type AgentEvent =
   | { type: "approval_required"; approvalId: string; tool: string; summary: string }
   /** Environment-issue report: a step cannot run because of the local environment. */
   | { type: "environment_issue"; message: string; details?: string }
+  /** Plan mode: the task's local permission mode changed (plan_exit approval, user switch). */
+  | { type: "permission_mode_changed"; mode: import("../policy/permissionModes.js").LocalPermissionMode; previousMode: import("../policy/permissionModes.js").LocalPermissionMode; reason: string }
   /** End-to-end verification of the completed task. */
-  | { type: "verify"; verdict: Verdict; reason: string; parsed?: boolean };
+  | { type: "verify"; verdict: Verdict; reason: string; parsed?: boolean }
+  /** Context compression happened. */
+  | { type: "compaction"; step: 1 | 2; originalTokens: number; afterPruneTokens: number; finalTokens: number; summaryChars?: number; fallback?: boolean }
+  /** A workspace file was published as a task artifact via artifact_publish. */
+  | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string }
+  /**
+   * Loam Video Studio relay: one command for the panel attached to this task's
+   * event stream. The panel executes it with its editor bridge and posts the
+   * result back to /api/tasks/:id/video-studio/result.
+   */
+  | { type: "video_studio_command"; id: string; target: "film" | "effects"; method: string; params: Record<string, unknown> };
 
 export type Emit = (event: AgentEvent) => void;
