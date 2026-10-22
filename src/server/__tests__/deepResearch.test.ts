@@ -8,7 +8,7 @@ import { describe, it, after } from "node:test";
 
 import type { Tool, ToolContext } from "../../tools/registry.js";
 import { ToolRegistry } from "../../tools/registry.js";
-import { createDeepResearchTools, runDeepResearch } from "../../tools/deepResearch.js";
+import { createDeepResearchTools, isStudioDeliverKind, reportToStudioInput, runDeepResearch, type ReportData } from "../../tools/deepResearch.js";
 import { mergeAlwaysOnTools, ALWAYS_ON_TOOLS } from "../runTools.js";
 
 const realFetch = globalThis.fetch;
@@ -187,5 +187,44 @@ describe("deep_research tool", () => {
     const long = await tool.run({ topic: "a".repeat(2001) }, fakeCtx(true));
     assert.equal(long.ok, false);
     assert.equal(searchCalls().length, 0, "no fetches for invalid input");
+  });
+});
+
+describe("deep_research — cancellation and studio kinds", () => {
+  it("accepts the three deliver kinds and rejects anything else", () => {
+    for (const kind of ["document", "spreadsheet", "presentation"]) {
+      assert.equal(isStudioDeliverKind(kind), true, kind);
+    }
+    assert.equal(isStudioDeliverKind("none"), false);
+    assert.equal(isStudioDeliverKind("postcard"), false);
+  });
+
+  it("returns a cancelled result without touching the network when already aborted", async () => {
+    resetFixtures();
+    const controller = new AbortController();
+    controller.abort();
+    const ctx = fakeCtx();
+    ctx.signal = controller.signal;
+    const result = await runDeepResearch(TOPIC, 2, ctx);
+    assert.equal(result.ok, false);
+    assert.match(result.reason ?? "", /cancelled/i);
+    assert.equal(searchCalls().length, 0, "an aborted run must not search");
+    assert.equal(fetchCalls().length, 0, "an aborted run must not fetch");
+  });
+
+  it("builds a valid empty-canvas artifact for every deliver kind", () => {
+    const empty: ReportData = {
+      topic: "Empty topic",
+      sources: [],
+      summary: [],
+      sections: [],
+      gaps: [{ id: "how", heading: "How It Works" }],
+      iterations: 1,
+    };
+    for (const kind of ["document", "spreadsheet", "presentation"] as const) {
+      const input = reportToStudioInput(empty, kind);
+      assert.equal(input.kind, kind);
+      assert.equal(input.title, "Deep Research: Empty topic");
+    }
   });
 });
