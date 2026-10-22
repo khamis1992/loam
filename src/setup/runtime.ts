@@ -15,6 +15,7 @@ import { fileTools } from "../tools/files.js";
 import { projectMemoryTools } from "../tools/projectMemoryTools.js";
 import { attachmentTools } from "../tools/attachments.js";
 import { symbolTools } from "../tools/symbols.js";
+import { searchTools } from "../tools/search.js";
 import { pentestTools } from "../tools/pentest.js";
 import { mirofishTools } from "../tools/mirofish.js";
 import { createSubagentTools } from "../tools/subagents.js";
@@ -67,7 +68,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   log.info(`pty: ${ptyStatus()}`);
 
   const registry = new ToolRegistry();
-  registry.registerAll([...fileTools, ...projectMemoryTools, ...shellTools, ...ptyTools, ...webTools, ...browserTools, ...computerUseTools, ...attachmentTools(), ...symbolTools(), ...pentestTools()]);
+  registry.registerAll([...fileTools, ...projectMemoryTools, ...shellTools, ...ptyTools, ...webTools, ...browserTools, ...computerUseTools, ...attachmentTools(), ...symbolTools(), ...searchTools(), ...pentestTools()]);
   registry.registerAll(createPhaseTools());
   registry.registerAll(createFinishTools());
   registry.registerAll(createMultiEditTools());

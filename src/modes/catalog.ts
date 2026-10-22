@@ -7,7 +7,7 @@ export interface LoamMode {
   starters: Array<{ label: string; prompt: string }>;
 }
 
-const READ = ["file_read", "file_list", "file_search", "file_stat", "file_extract_text", "file_view_image"];
+const READ = ["file_read", "file_list", "file_search", "file_stat", "file_extract_text", "file_view_image", "grep", "glob"];
 const WRITE = ["file_write", "file_edit", "file_mkdir", "file_move", "file_delete"];
 const BROWSER = ["browser_open", "browser_goto", "browser_snapshot", "browser_click", "browser_type", "browser_press", "browser_screenshot", "browser_table", "browser_act", "browser_pages", "browser_close", "browser_eval"];
 const PREVIEW = ["preview_serve", "preview_status", "preview_stop"];
