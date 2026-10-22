@@ -76,6 +76,10 @@
     "maxSteps": 10,
     "writeApproval": false
   },
+  "skills": {
+    "autoSuggest": true,
+    "suggestModel": ""
+  },
   "evaluation": {
     "enabled": true,
     "intervalMinutes": 360,

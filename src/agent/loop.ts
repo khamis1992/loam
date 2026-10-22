@@ -5,8 +5,8 @@ import { verifyFinal } from "./verifier.js";
 import { AcceptanceGuard } from "./acceptanceGuard.js";
 import { IndependentAcceptanceGuard, independentRequirements } from "./independentAcceptance.js";
 import { taskScopedTools } from "./taskToolScope.js";
-import { buildSystemPrompt, loadSkills } from "./prompt.js";
-import { SKILLS_DIR } from "../config.js";
+import { buildSystemPrompt } from "./prompt.js";
+import { loadProjectSkills } from "../tools/skills.js";
 import type { WorkerCheckpoint } from "./checkpoint.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { chatWithFallback } from "./model.js";
@@ -68,7 +68,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   const independentGuard = new IndependentAcceptanceGuard(independentRequest);
   const baseSystem =
     opts.systemOverride ??
-    buildSystemPrompt(opts.cfg, loadSkills(SKILLS_DIR), opts.tools.names(), opts.memories ?? []);
+    buildSystemPrompt(opts.cfg, loadProjectSkills(opts.cfg.workspace).skills, opts.tools.names(), opts.memories ?? []);
   const system =
     opts.systemSuffix && opts.systemSuffix.trim().length > 0
       ? `${baseSystem}\n\n${opts.systemSuffix.trim()}`

@@ -98,6 +98,13 @@ export interface Config {
     /** Stage skill/memory writes for human approval instead of applying them. */
     writeApproval: boolean;
   };
+  /** Repo-local skills (`.loam/skills`, `.agents/skills`) + post-session auto-suggest. */
+  skills: {
+    /** After a successful session, propose a new repo-local SKILL.md for approval. */
+    autoSuggest: boolean;
+    /** Model for suggestions ("" = the main model). */
+    suggestModel: string;
+  };
   evaluation: {
     /** Run the configured suite on a fixed interval (continuous harness). */
     enabled: boolean;
@@ -181,6 +188,7 @@ const DEFAULTS: Config = {
   screen: { enabled: true, fps: 1, quality: 60, maxWidth: 1280 },
   vision: { enabled: true, maxImagesPerStep: 2 },
   selfImprove: { enabled: true, reviewEvery: 1, model: "", maxSteps: 10, writeApproval: false },
+  skills: { autoSuggest: true, suggestModel: "" },
   evaluation: { enabled: false, intervalMinutes: 360, suite: "core", critique: true, keepRuns: 30, transcripts: true },
   selfPlay: { maxCases: 5 },
   orchestrator: {
