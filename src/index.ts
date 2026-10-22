@@ -31,6 +31,7 @@ import { createBrowserOperatorTools } from "./tools/browserOperator.js";
 import { createWideResearchTool } from "./tools/wideResearch.js";
 import { createGroupTools } from "./tools/groupTools.js";
 import { createBackendScaffoldTools } from "./tools/backendScaffold.js";
+import { createWebScaffoldTools } from "./tools/webScaffold.js";
 import { createDesignStudioTools } from "./tools/designStudio.js";
 import { createOfficeEditTools } from "./tools/officeEditAgent.js";
 import { createVideoEditTools } from "./tools/videoEditAgent.js";
@@ -121,6 +122,7 @@ async function main(): Promise<void> {
   rt.registry.register(createWideResearchTool({ ollama: rt.ollama, parentRegistry: rt.registry }));
   rt.registry.registerAll(createGroupTools());
   rt.registry.registerAll(createBackendScaffoldTools());
+  rt.registry.registerAll(createWebScaffoldTools());
   rt.registry.registerAll(createDesignStudioTools());
   rt.registry.registerAll(createOfficeEditTools());
   rt.registry.registerAll(createVideoEditTools());

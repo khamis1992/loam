@@ -8,6 +8,7 @@ import type {
   ToolDetail,
   PlanUpdateEvent,
   NewPlanStepEvent,
+  TodoUpdateEvent,
   LiveStatusEvent,
   ModeEvent,
   UserStopEvent,
@@ -275,6 +276,17 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
         })),
       };
       out.push(planUpdate);
+      break;
+    }
+
+    case "todo": {
+      const todoUpdate: TodoUpdateEvent = {
+        id: baseId(),
+        type: "todoUpdate",
+        timestamp: ts,
+        todos: event.todos.map((todo) => ({ id: todo.id, content: todo.content, status: todo.status })),
+      };
+      out.push(todoUpdate);
       break;
     }
 
