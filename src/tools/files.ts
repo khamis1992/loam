@@ -10,6 +10,7 @@ import {
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { bool, num, str, strFirst } from "./registry.js";
 import { guardExistingEdit } from "./readState.js";
+import { withLock, withLocks } from "./fileLock.js";
 
 /** Append per-edit diagnostics to a successful write result. Never throws and
  *  never turns a successful edit into a failure. */
@@ -125,15 +126,19 @@ export const fileTools: Tool[] = [
     },
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
       const p = resolveWrite(ctx.workspace, str(args, "path"));
-      const guard = guardExistingEdit(ctx, p);
-      if (guard) return guard;
-      fs.mkdirSync(path.dirname(p), { recursive: true });
-      const content = str(args, "content");
-      if (bool(args, "append")) fs.appendFileSync(p, content, "utf8");
-      else fs.writeFileSync(p, content, "utf8");
-      ctx.readState?.record(p);
-      const size = fs.statSync(p).size;
-      return { ok: true, content: await withDiagnostics(`wrote ${size} bytes to ${p}`, p, ctx) };
+      // Read-guard + write is one read-modify-write cycle, so hold the per-path
+      // lock across all of it: a concurrent edit cannot read the file in between.
+      return withLock(p, async () => {
+        const guard = guardExistingEdit(ctx, p);
+        if (guard) return guard;
+        fs.mkdirSync(path.dirname(p), { recursive: true });
+        const content = str(args, "content");
+        if (bool(args, "append")) fs.appendFileSync(p, content, "utf8");
+        else fs.writeFileSync(p, content, "utf8");
+        ctx.readState?.record(p);
+        const size = fs.statSync(p).size;
+        return { ok: true, content: await withDiagnostics(`wrote ${size} bytes to ${p}`, p, ctx) };
+      });
     },
   },
   {
@@ -156,41 +161,46 @@ export const fileTools: Tool[] = [
     },
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
       const p = resolveWrite(ctx.workspace, str(args, "path"));
-      const guard = guardExistingEdit(ctx, p);
-      if (guard) return guard;
-      if (!fs.existsSync(p)) return { ok: false, content: `not found: ${p}` };
-      const original = fs.readFileSync(p, "utf8");
-      const oldString = strFirst(args, "old_string", "find");
-      const newString = strFirst(args, "new_string", "replace");
-      if (oldString === undefined) return { ok: false, content: "file_edit requires old_string (or its alias find)" };
-      if (newString === undefined) return { ok: false, content: "file_edit requires new_string (or its alias replace)" };
-      if (oldString.length === 0) return { ok: false, content: "old_string must be non-empty" };
-      if (oldString === newString) {
-        return {
-          ok: false,
-          content: `old_string and new_string are identical, so this edit would change nothing. Provide a new_string that actually differs from old_string (or drop this no-op edit).`,
-        };
-      }
-      const occurrences = original.split(oldString).length - 1;
-      if (occurrences === 0) return { ok: false, content: `old_string not present in ${p}` };
-      const replaceAll = bool(args, "replace_all", false);
-      if (replaceAll) {
+      // Read the file, verify the match and write the replacement under one
+      // per-path lock, so two concurrent edits cannot both read the same
+      // original and race their writes (a lost update).
+      return withLock(p, async () => {
+        const guard = guardExistingEdit(ctx, p);
+        if (guard) return guard;
+        if (!fs.existsSync(p)) return { ok: false, content: `not found: ${p}` };
+        const original = fs.readFileSync(p, "utf8");
+        const oldString = strFirst(args, "old_string", "find");
+        const newString = strFirst(args, "new_string", "replace");
+        if (oldString === undefined) return { ok: false, content: "file_edit requires old_string (or its alias find)" };
+        if (newString === undefined) return { ok: false, content: "file_edit requires new_string (or its alias replace)" };
+        if (oldString.length === 0) return { ok: false, content: "old_string must be non-empty" };
+        if (oldString === newString) {
+          return {
+            ok: false,
+            content: `old_string and new_string are identical, so this edit would change nothing. Provide a new_string that actually differs from old_string (or drop this no-op edit).`,
+          };
+        }
+        const occurrences = original.split(oldString).length - 1;
+        if (occurrences === 0) return { ok: false, content: `old_string not present in ${p}` };
+        const replaceAll = bool(args, "replace_all", false);
+        if (replaceAll) {
+          fs.writeFileSync(p, original.split(oldString).join(newString), "utf8");
+          ctx.readState?.record(p);
+          return { ok: true, content: `replaced ${occurrences} occurrence(s) in ${p} (replace_all)` };
+        }
+        const want = num(args, "count", 1);
+        if (occurrences !== want) {
+          return {
+            ok: false,
+            content: `Found ${occurrences} matches of old_string in ${p}, but replace_all is false and the match is not unique. Add more surrounding context to old_string (include more lines or words around the change) so it matches exactly once, or set replace_all to true to replace every match.`,
+          };
+        }
         fs.writeFileSync(p, original.split(oldString).join(newString), "utf8");
+        // Refresh the read snapshot so a follow-up edit in the same session is
+        // not rejected as stale; the model already saw the pre-edit content.
         ctx.readState?.record(p);
-        return { ok: true, content: `replaced ${occurrences} occurrence(s) in ${p} (replace_all)` };
-      }
-      const want = num(args, "count", 1);
-      if (occurrences !== want) {
-        return {
-          ok: false,
-          content: `Found ${occurrences} matches of old_string in ${p}, but replace_all is false and the match is not unique. Add more surrounding context to old_string (include more lines or words around the change) so it matches exactly once, or set replace_all to true to replace every match.`,
-        };
-      }
-      fs.writeFileSync(p, original.split(oldString).join(newString), "utf8");
-      // Refresh the read snapshot so a follow-up edit in the same session is
-      // not rejected as stale; the model already saw the pre-edit content.
-      ctx.readState?.record(p);
-      return { ok: true, content: await withDiagnostics(`replaced ${occurrences} occurrence(s) in ${p}`, p, ctx) };
+        return { ok: true, content: await withDiagnostics(`replaced ${occurrences} occurrence(s) in ${p}`, p, ctx) };
+      });
     },
   },
   {
@@ -312,10 +322,14 @@ export const fileTools: Tool[] = [
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
       const from = resolveWrite(ctx.workspace, str(args, "from"));
       const to = resolveWrite(ctx.workspace, str(args, "to"));
-      if (!fs.existsSync(from)) return { ok: false, content: `not found: ${from}` };
-      fs.mkdirSync(path.dirname(to), { recursive: true });
-      fs.renameSync(from, to);
-      return { ok: true, content: `moved ${from} -> ${to}` };
+      // Rename touches both paths; acquire them in sorted order (lockAll) so a
+      // move and an edit racing on the same two paths cannot deadlock.
+      return withLocks([from, to], async () => {
+        if (!fs.existsSync(from)) return { ok: false, content: `not found: ${from}` };
+        fs.mkdirSync(path.dirname(to), { recursive: true });
+        fs.renameSync(from, to);
+        return { ok: true, content: `moved ${from} -> ${to}` };
+      });
     },
   },
   {
@@ -329,9 +343,11 @@ export const fileTools: Tool[] = [
     },
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
       const p = resolveWrite(ctx.workspace, str(args, "path"));
-      if (!fs.existsSync(p)) return { ok: false, content: `not found: ${p}` };
-      fs.rmSync(p, { recursive: bool(args, "recursive"), force: true });
-      return { ok: true, content: `deleted ${p}` };
+      return withLock(p, async () => {
+        if (!fs.existsSync(p)) return { ok: false, content: `not found: ${p}` };
+        fs.rmSync(p, { recursive: bool(args, "recursive"), force: true });
+        return { ok: true, content: `deleted ${p}` };
+      });
     },
   },
 ];
