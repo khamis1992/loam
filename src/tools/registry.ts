@@ -11,6 +11,9 @@ export interface ToolContext {
   signal?: AbortSignal;
   /** Active task id, so long-running tools can poll for cancellation. */
   taskId?: string;
+  /** Owning companion agent id (vault/memory scope). Optional: tools fall back
+   *  to a neutral scope when the run context does not carry one. */
+  agentId?: string;
   /** Tool names the current run is allowed to use. Tools that fan out to
    *  child agents use it so a child can never exceed the parent run's
    *  capabilities. Undefined means "no run scope known". */

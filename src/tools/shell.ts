@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { checkCommand, headOutput, tailOutput } from "../policy/commands.js";
 import { resolveWrite } from "../policy/paths.js";
 import { currentCancelEpoch, isCancelled } from "../server/runControl.js";
+import { planVaultEnv, redactVaultValues, vaultScope } from "./vaultTools.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { num, str } from "./registry.js";
 
@@ -14,6 +15,19 @@ interface ExecOutcome {
 }
 
 const MAX_CAPTURE = 200_000;
+
+/** Read an optional object of string values from tool args (null when absent/invalid). */
+function strObj(args: Record<string, unknown>, key: string): Record<string, string> | null {
+  const v = args[key];
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "object" || Array.isArray(v)) return null;
+  const out: Record<string, string> = {};
+  for (const [k, val] of Object.entries(v)) {
+    if (typeof val !== "string") return null;
+    out[k] = val;
+  }
+  return out;
+}
 
 /** Kill the shell and its children (taskkill /T /F) — Windows keeps grandchildren alive otherwise. */
 function killTree(child: ChildProcessWithoutNullStreams): void {
@@ -36,9 +50,9 @@ function killTree(child: ChildProcessWithoutNullStreams): void {
   }
 }
 
-function runOnce(command: string, cwd: string, timeoutMs: number, signal?: AbortSignal, taskId?: string): Promise<ExecOutcome> {
+function runOnce(command: string, cwd: string, timeoutMs: number, signal?: AbortSignal, taskId?: string, env?: NodeJS.ProcessEnv): Promise<ExecOutcome> {
   return new Promise((resolve) => {
-    const child = spawn(command, { cwd, shell: true, windowsHide: true, env: { ...process.env } });
+    const child = spawn(command, { cwd, shell: true, windowsHide: true, env: env ?? { ...process.env } });
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -137,6 +151,11 @@ export const shellTools: Tool[] = [
         command: { type: "string", description: "Command line to execute." },
         cwd: { type: "string", description: "Working directory (inside workspace). Defaults to workspace root." },
         timeoutSeconds: { type: "number", description: "Timeout in seconds (policy max enforced)." },
+        env: {
+          type: "object",
+          description: "Extra environment variables for the child process. Values may contain {{vault:NAME}} references.",
+          additionalProperties: { type: "string" },
+        },
       },
       required: ["command"],
     },
@@ -145,16 +164,46 @@ export const shellTools: Tool[] = [
       if (!command) return { ok: false, content: "command is required" };
       const check = checkCommand(ctx.cfg, command);
       if (!check.ok) return { ok: false, content: `blocked by policy: ${check.reason ?? "denied"}` };
+      const rawEnv = strObj(args, "env");
+      if (rawEnv === null && args.env !== undefined && args.env !== null) {
+        return { ok: false, content: "env must be an object of string values" };
+      }
       const cwd = resolveWrite(ctx.workspace, str(args, "cwd") || undefined);
       const timeoutMs = Math.min(num(args, "timeoutSeconds", ctx.cfg.policy.maxCommandSeconds), 900) * 1000;
-      const res = await runOnce(command, cwd, timeoutMs, ctx.signal, ctx.taskId);
+
+      // Vault refs: resolve ONLY into the child environment (never inline into
+      // the command), then redact the values from the returned output.
+      let execCommand = command;
+      let injected: Record<string, string> = {};
+      let childEnv: Record<string, string> = rawEnv ?? {};
+      let secrets: string[] = [];
+      const envValues = rawEnv ? Object.values(rawEnv) : [];
+      if (command.includes("{{vault:") || envValues.some((v) => v.includes("{{vault:"))) {
+        try {
+          const plan = planVaultEnv([command, ...envValues], vaultScope(ctx));
+          injected = plan.env;
+          secrets = plan.secrets;
+          execCommand = plan.rewrite(command);
+          if (rawEnv) {
+            const rewritten: Record<string, string> = {};
+            for (const [k, v] of Object.entries(rawEnv)) rewritten[k] = plan.inline(v);
+            childEnv = rewritten;
+          }
+        } catch (err) {
+          return { ok: false, content: `vault: ${err instanceof Error ? err.message : String(err)}` };
+        }
+      }
+
+      const res = await runOnce(execCommand, cwd, timeoutMs, ctx.signal, ctx.taskId, { ...process.env, ...injected, ...childEnv });
+      const stdout = redactVaultValues(res.stdout, secrets);
+      const stderr = redactVaultValues(res.stderr, secrets);
       const parts = [
         `exit=${res.code ?? "null"}${res.timedOut ? " (timeout, killed)" : ""}`,
         `cwd=${cwd}`,
       ];
-      if (res.stdout.trim()) parts.push(`stdout:\n${tailOutput(res.stdout, 6000)}`);
-      if (res.stderr.trim()) parts.push(`stderr:\n${tailOutput(res.stderr, 4000)}`);
-      if (!res.stdout.trim() && !res.stderr.trim()) parts.push("(no output)");
+      if (stdout.trim()) parts.push(`stdout:\n${tailOutput(stdout, 6000)}`);
+      if (stderr.trim()) parts.push(`stderr:\n${tailOutput(stderr, 4000)}`);
+      if (!stdout.trim() && !stderr.trim()) parts.push("(no output)");
       return { ok: res.code === 0, content: parts.join("\n") };
     },
   },
