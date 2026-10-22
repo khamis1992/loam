@@ -69,6 +69,8 @@ export type AgentEvent =
   /** Sensitive-action gate: a host input action awaits an explicit user decision. */
   | { type: "approval_required"; approvalId: string; tool: string; summary: string }
   /** End-to-end verification of the completed task. */
-  | { type: "verify"; verdict: Verdict; reason: string; parsed?: boolean };
+  | { type: "verify"; verdict: Verdict; reason: string; parsed?: boolean }
+  /** A workspace file was published as a task artifact via artifact_publish. */
+  | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string };
 
 export type Emit = (event: AgentEvent) => void;
