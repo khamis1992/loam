@@ -40,6 +40,9 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "deploy_app",
   "export_build",
   "loam_design",
+  "workflow_run",
+  "workflow_resume",
+  "workflow_status",
 ];
 
 export interface AlwaysOnMergeInput {

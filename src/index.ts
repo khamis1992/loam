@@ -34,6 +34,7 @@ import { createVideoEditTools } from "./tools/videoEditAgent.js";
 import { createDeployTools } from "./tools/deploy.js";
 import { createDesignExploreTools } from "./tools/designExplore.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
+import { createWorkflowTools } from "./tools/workflow.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
@@ -123,6 +124,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview: rt.preview }));
   rt.registry.registerAll(createDesignExploreTools());
   rt.registry.registerAll(createConnectorTools());
+  rt.registry.registerAll(createWorkflowTools({ ollama: rt.ollama, registry: rt.registry }));
   const { ollama, registry, memory, mcp } = rt;
 
   const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal; lease?: RunLease }): Promise<{ taskId: string; text: string }> => {
