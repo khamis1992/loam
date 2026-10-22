@@ -15,6 +15,7 @@ import { fileTools } from "../tools/files.js";
 import { projectMemoryTools } from "../tools/projectMemoryTools.js";
 import { attachmentTools } from "../tools/attachments.js";
 import { symbolTools } from "../tools/symbols.js";
+import { searchTools } from "../tools/search.js";
 import { pentestTools } from "../tools/pentest.js";
 import { mirofishTools } from "../tools/mirofish.js";
 import { createSubagentTools } from "../tools/subagents.js";
@@ -24,7 +25,7 @@ import { computerUseTools } from "../tools/computerUse.js";
 import { initPty, disposePty, ptyStatus, ptyTools } from "../tools/pty.js";
 import { registerMcpTools, type McpToolset } from "../tools/mcp.js";
 import { OllamaEmbedder } from "../memory/embeddings.js";
-import { MemoryStore } from "../memory/store.js";
+import { MemoryStore, startMemoryDreamJob } from "../memory/store.js";
 import { createMemoryTools } from "../tools/memory.js";
 import { createSkillTools } from "../tools/skills.js";
 import { sessionTools } from "../tools/sessions.js";
@@ -36,12 +37,16 @@ import { createRorkTools } from "../tools/rork.js";
 import { createFrontierBridgeTools } from "../tools/frontierBridge.js";
 import { writeGate } from "../server/pending.js";
 import { createIntegrationTools } from '../tools/integrations.js';
+import { createGitWorkflowTools } from "../tools/gitWorkflowTools.js";
+
 import { createPhaseTools } from "../tools/phaseTools.js";
 import { createFinishTools } from "../tools/finishTools.js";
 import { createMultiEditTools } from "../tools/multiEdit.js";
 import { createVaultTools } from "../tools/vaultTools.js";
 import { createCodeSessionTools } from "../tools/codeSession.js";
 import { createDocsLookupTools } from "../tools/docsLookup.js";
+import { createGenExtraTools } from "../tools/genExtra.js";
+import { defaultGenProviders } from "../creative/genProviders.js";
 import { createArtifactTools } from "../tools/artifactTools.js";
 import { planTool, messageTool } from "../tools/specAliases.js";
 import { createTodoTools } from "../tools/todoTools.js";
@@ -65,7 +70,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   log.info(`pty: ${ptyStatus()}`);
 
   const registry = new ToolRegistry();
-  registry.registerAll([...fileTools, ...projectMemoryTools, ...shellTools, ...ptyTools, ...webTools, ...browserTools, ...computerUseTools, ...attachmentTools(), ...symbolTools(), ...pentestTools()]);
+  registry.registerAll([...fileTools, ...projectMemoryTools, ...shellTools, ...ptyTools, ...webTools, ...browserTools, ...computerUseTools, ...attachmentTools(), ...symbolTools(), ...searchTools(), ...pentestTools()]);
   registry.registerAll(createPhaseTools());
   registry.registerAll(createFinishTools());
   registry.registerAll(createMultiEditTools());
@@ -79,6 +84,11 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   const memory = cfg.memory.enabled
     ? new MemoryStore(cfg.memory.file, embedder, cfg.memory.model, cfg.memory.dedupeThreshold)
     : null;
+  // Background consolidation ("dreaming"): merges duplicates and drops stale
+  // unused entries while preserving user preferences. Idempotent; unref'd timer.
+  const stopDream = memory
+    ? startMemoryDreamJob(memory, { maxEntries: cfg.memory.maxEntries })
+    : undefined;
   const screenLive = new ScreenLive({
     dir: path.join(cfg.workspace, ".screenshots"),
     fps: cfg.screen.fps,
@@ -102,8 +112,13 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createRorkTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createFrontierBridgeTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createSubagentTools(ollama, registry));
+  registry.registerAll(createGitWorkflowTools());
+
   registry.registerAll(createCodeSessionTools());
   registry.registerAll(createDocsLookupTools());
+  // N12 generator tools: media/search providers from the environment plus the
+  // runtime model as the reasoning backend for solve_logic / generate_storyboard.
+  registry.registerAll(createGenExtraTools({ providers: defaultGenProviders(cfg), reasoner: ollama }));
 
   const mcp = opts.mcp === false ? null : await registerMcpTools(registry, cfg.mcpServers, cfg.workspace);
   registry.registerAll(createIntegrationTools(registry));
@@ -118,6 +133,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
     mcpServers: mcp?.servers ?? [],
     mcp,
     dispose: async (): Promise<void> => {
+      stopDream?.();
       screenLive.stop();
       preview.stop();
       disposeShellSessions();
