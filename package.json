@@ -60,6 +60,8 @@
     "check:studio-ui": "node src/scripts/check-studio-ui.mjs",
     "check:studio-export": "tsx src/scripts/check-studio-export.ts",
     "gen:master-prompt": "tsx src/scripts/gen-master-prompt.ts",
+    "gen:web-app-template": "tsx src/scripts/gen-web-app-template.ts",
+    "check:web-scaffold": "tsx src/scripts/check-web-scaffold.ts",
     "check:promptwire": "tsx src/scripts/check-promptwire.ts"
   },
   "dependencies": {

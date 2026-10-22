@@ -106,6 +106,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     createBoardTools = boardToolsMod.createBoardTools;
     createGroupTools = (await import("../../tools/groupTools.js")).createGroupTools;
     const { createBackendScaffoldTools } = await import("../../tools/backendScaffold.js");
+    const { createWebScaffoldTools } = await import("../../tools/webScaffold.js");
     createDesignStudioTools = designStudioToolsMod.createDesignStudioTools;
     const { ToolRegistry: Registry } = registryMod;
     registry = new Registry();
@@ -119,6 +120,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll(createBoardTools());
     registry.registerAll(createGroupTools());
     registry.registerAll(createBackendScaffoldTools());
+    registry.registerAll(createWebScaffoldTools());
     registry.registerAll(createDesignStudioTools());
     registry.registerAll(createTodoTools());
     // MF7: watch_url ships as an always-on tool, so it must be registered too.
