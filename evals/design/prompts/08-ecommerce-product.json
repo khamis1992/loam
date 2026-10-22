@@ -1,0 +1,12 @@
+{
+  "id": "ecommerce-product",
+  "prompt": "Create an e-commerce product detail page for a mechanical keyboard: a gallery with alt text, a variant selector, a price block, a sticky add-to-cart action, a specifications table and a shipping/returns accordion. The buy action must stay reachable on mobile.",
+  "locale": "en",
+  "direction": "ltr",
+  "expectations": {
+    "must": ["gallery", "add to cart", "specifications"],
+    "mustNot": ["lorem ipsum", "images without alt text"],
+    "keywords": ["keyboard", "shipping"],
+    "minLint": 80
+  }
+}

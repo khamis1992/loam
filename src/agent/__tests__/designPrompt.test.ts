@@ -82,20 +82,20 @@ describe("isUiIntent", () => {
 
 describe("design-rules injection", () => {
   it("includes the section for a UI intent", () => {
-    const prompt = buildSystemPrompt(cfg, [], ["file_read", "shell_run"], [], undefined, undefined, "Design a landing page for my shop");
+    const prompt = buildSystemPrompt(cfg, [], ["file_read", "shell_run"], [], undefined, undefined, undefined, "Design a landing page for my shop");
     assert.match(prompt, /## Design Rules/);
     assert.match(prompt, /Colour discipline/);
     assert.match(prompt, /Mobile-first layout/);
   });
 
   it("excludes the section for a non-UI intent", () => {
-    const prompt = buildSystemPrompt(cfg, [], ["file_read", "shell_run"], [], undefined, undefined, "Fix the failing unit test");
+    const prompt = buildSystemPrompt(cfg, [], ["file_read", "shell_run"], [], undefined, undefined, undefined, "Fix the failing unit test");
     assert.ok(!prompt.includes("## Design Rules"));
     assert.ok(!prompt.includes("Colour discipline"));
   });
 
   it("injects the Arabic UI intent too", () => {
-    const prompt = buildSystemPrompt(cfg, [], [], [], undefined, undefined, "صمّم لي صفحة هبوط متجاوبة");
+    const prompt = buildSystemPrompt(cfg, [], [], [], undefined, undefined, undefined, "صمّم لي صفحة هبوط متجاوبة");
     assert.match(prompt, /## Design Rules/);
     assert.match(prompt, /Arabic and RTL/);
   });

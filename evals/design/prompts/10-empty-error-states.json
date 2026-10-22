@@ -1,0 +1,12 @@
+{
+  "id": "empty-error-states",
+  "prompt": "Build a focused set of empty and error states: no-search-results, offline, 404, and a destructive-action confirmation. Each state needs a headline, a one-line explanation and a single next action. Never leave a blank screen.",
+  "locale": "en",
+  "direction": "ltr",
+  "expectations": {
+    "must": ["no results", "offline", "404", "confirmation"],
+    "mustNot": ["lorem ipsum", "blank screen"],
+    "keywords": ["error", "empty state"],
+    "minLint": 80
+  }
+}
