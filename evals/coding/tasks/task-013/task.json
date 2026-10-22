@@ -1,0 +1,12 @@
+{
+  "id": "task-013",
+  "title": "Add TypeScript test coverage",
+  "category": "add-test",
+  "language": "typescript",
+  "prompt": "`src/range.ts` exports `range` but has no tests. Create `test/range.test.mjs` that covers ascending, descending and stepped ranges, the empty range, and the zero-step error, asserting real values and exiting non-zero on failure. It must run with `node test/range.test.mjs`. Do not modify `src/range.ts`.",
+  "testCommand": "node .eval/check.mjs",
+  "timeoutSec": 90,
+  "maxSteps": 20,
+  "requireFiles": ["test/range.test.mjs"],
+  "tags": ["testing", "mutation-check"]
+}
