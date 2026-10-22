@@ -7,6 +7,7 @@ const { spawn } = require("node:child_process");
 const updater = require("./updater.cjs");
 const inAppBrowser = require("./inAppBrowser.cjs");
 const mcpBridge = require("./mcp-bridge.cjs");
+const vendorProtocol = require("./vendorProtocol.cjs");
 const { IPC_INVOKE, IPC_EVENT_PREFIX, IPC_META, IPC_SYNC, NAMESPACES } = require("./ipc-constants.cjs");
 
 const ASAR_ROOT = path.resolve(__dirname, "..");
@@ -519,12 +520,15 @@ app.setAppUserModelId("app.loam.desktop");
 
 // Register the privileged custom protocol used to serve the Agent Studio UI,
 // plus the loamfilm:// protocol used to serve the vendored Loam Video wasm video
-// editor from electron/filmcraft/dist and the loameffect:// protocol used to
-// serve the vendored Loam Effects wasm engine from electron/effectcraft/dist.
-// Both must be registered before app ready.
+// editor from electron/filmcraft/dist, the loamcraft:// protocol used to serve
+// the vendored Loam Docs/Sheets/Slides/Photo/Design wasm apps from
+// electron/craft/<app>/dist, and the loameffect:// protocol used to serve the
+// vendored Loam Effects wasm engine from electron/effectcraft/dist.
+// All must be registered before app ready.
 protocol.registerSchemesAsPrivileged([
   { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
   { scheme: "loamfilm", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: "loamcraft", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
   { scheme: "loameffect", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
 ]);
 
@@ -749,45 +753,49 @@ app.whenReady().then(async () => {
   // loamfilm:// protocol. Files come from electron/filmcraft/dist; overlay
   // files (e.g. bridge-relay.js) may live directly in electron/filmcraft/ so
   // they survive re-copying a fresh dist folder. .wasm must be served as
-  // application/wasm so the editor boots.
+  // application/wasm so the editor boots. File resolution and MIME mapping are
+  // shared with loamcraft:// via vendorProtocol.cjs.
   const FILMCRAFT_DIST = path.join(ROOT, "electron", "filmcraft", "dist");
   const FILMCRAFT_OVERLAY = path.join(ROOT, "electron", "filmcraft");
-  const FILMCRAFT_MIME = {
-    ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript",
-    ".json": "application/json", ".png": "image/png", ".wasm": "application/wasm",
-  };
-  function filmcraftFile(relPath) {
-    const cleaned = relPath.replace(/^\/+/, "");
-    for (const baseDir of [FILMCRAFT_DIST, FILMCRAFT_OVERLAY]) {
-      const baseRoot = path.resolve(baseDir) + path.sep;
-      const filePath = path.normalize(path.join(baseDir, cleaned));
-      if (!filePath.startsWith(baseRoot)) continue;
-      if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) return filePath;
-    }
-    return null;
-  }
+  const FILMCRAFT_BASE_DIRS = [FILMCRAFT_DIST, FILMCRAFT_OVERLAY];
   protocol.handle("loamfilm", async (request) => {
     const url = new URL(request.url);
     let pathname = decodeURIComponent(url.pathname);
     if (pathname === "/" || pathname.endsWith("/")) pathname += "index.html";
-    const filePath = filmcraftFile(pathname);
-    if (!filePath) return new Response("Not Found", { status: 404 });
+    const filePath = vendorProtocol.resolveVendorFile(pathname, FILMCRAFT_BASE_DIRS);
+    if (!filePath) return vendorProtocol.vendorNotFound();
     const ext = path.extname(filePath).toLowerCase();
-    const mime = FILMCRAFT_MIME[ext] || "application/octet-stream";
-    const body = fs.readFileSync(filePath);
     if (ext === ".html") {
       // Inject the agent bridge relay into the vendored page so the host app
       // can drive window.filmcraft over postMessage without editing the
       // dist files themselves (fresh dist copies keep working).
-      let html = body.toString("utf8");
+      let html = fs.readFileSync(filePath).toString("utf8");
       if (!html.includes("bridge-relay.js")) {
         html = /<\/head>/i.test(html)
           ? html.replace(/<\/head>/i, '<script src="bridge-relay.js"></script></head>')
           : html + '<script src="bridge-relay.js"></script>';
       }
-      return new Response(html, { headers: { "Content-Type": mime } });
+      return new Response(html, { headers: { "Content-Type": vendorProtocol.vendorMime(filePath) } });
     }
-    return new Response(body, { headers: { "Content-Type": mime } });
+    return vendorProtocol.vendorResponse(filePath);
+  });
+
+  // Serve the vendored Loam Docs/Sheets/Slides/Photo/Design wasm apps over the
+  // privileged loamcraft://<app>/<path> protocol. Only the five known app ids
+  // are served (404 otherwise); paths are confined to
+  // electron/craft/<app>/dist and traversal is rejected by the shared helper.
+  // The apps expose their own postMessage bridge (loam_bridge.rs) built into
+  // the wasm, so no overlay/relay file is needed here.
+  protocol.handle("loamcraft", async (request) => {
+    const filePath = vendorProtocol.resolveCraftFile(ROOT, request);
+    if (!filePath) return vendorProtocol.vendorNotFound();
+    // Never cache: a re-fetched dist must be picked up immediately.
+    return new Response(fs.readFileSync(filePath), {
+      headers: {
+        "Content-Type": vendorProtocol.vendorMime(filePath),
+        "Cache-Control": "no-store",
+      },
+    });
   });
 
   // Serve the vendored Loam Effects wasm engine over the privileged

@@ -1,6 +1,13 @@
 import type React from "react";
 
-export type WorkspaceKind = "video" | "doc" | "sheet" | "slides";
+export type WorkspaceKind = "video" | "loam-video" | "doc" | "sheet" | "slides";
+
+/**
+ * Sentinel path for the Workspace panel's always-available "Loam Video" entry.
+ * It opens the video studio without a specific file; the attached video to
+ * import rides on `WorkspaceOpenTarget.importPath` instead.
+ */
+export const LOAM_VIDEO_STUDIO_PATH = "__loam_video_studio__";
 
 export interface WorkspaceFile {
   taskId: string;
