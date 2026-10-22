@@ -20,6 +20,7 @@ import { tokenize } from "../../memory/codeIndex.js";
 import { LOAM_MODES } from "../../modes/catalog.js";
 import { COMPANION_SERVICES, uncoveredModeTools } from "../../server/companionGateway.js";
 import type { Tool, ToolContext } from "../registry.js";
+import { ToolRegistry } from "../registry.js";
 import { createSemanticSearchTools, resetSemanticSearchCache, resolveIndexDir } from "../semanticSearch.js";
 
 const PERMISSIONS_FILE = `export function canWrite(role: string): boolean {
@@ -107,6 +108,15 @@ describe("semantic_search wiring", () => {
     );
     const code = COMPANION_SERVICES.find((s) => s.id === "code");
     assert.ok(code?.tools.includes("semantic_search"), "the code service must list semantic_search");
+  });
+
+  it("survives the registry's mode filter where it is advertised", () => {
+    const registry = new ToolRegistry();
+    registry.registerAll(createSemanticSearchTools({ indexDir: path.join(root, ".loam-filter") }));
+    assert.ok(registry.get("semantic_search"), "the tool must register");
+    assert.ok(registry.forMode("ask").get("semantic_search"), "ask mode must expose it");
+    assert.ok(registry.forMode("build").get("semantic_search"), "build mode must expose it");
+    assert.ok(!registry.forMode("research").get("semantic_search"), "modes that do not list it must not expose it");
   });
 
   it("defaults the index directory to <workspace>/.loam", () => {
