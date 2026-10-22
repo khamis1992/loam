@@ -7,48 +7,56 @@ export interface LoamMode {
   starters: Array<{ label: string; prompt: string }>;
 }
 
-const READ = ["file_read", "file_list", "file_search", "file_stat", "file_extract_text", "file_view_image"];
-const WRITE = ["file_write", "file_edit", "file_mkdir", "file_move", "file_delete"];
+const READ = ["file_read", "file_list", "file_search", "file_stat", "file_extract_text", "file_view_image", "grep", "glob"];
+const WRITE = ["file_write", "file_edit", "find_and_edit", "file_mkdir", "file_move", "file_delete"];
 const BROWSER = ["browser_open", "browser_goto", "browser_snapshot", "browser_click", "browser_type", "browser_press", "browser_screenshot", "browser_table", "browser_act", "browser_pages", "browser_close", "browser_eval"];
 const PREVIEW = ["preview_serve", "preview_status", "preview_stop"];
-/** Control/communication tools shared by every mode (§6.1). */
-const CONTROL = ["think", "finish", "plan", "phase_set", "message"];
+
+const GIT = ["git_branch", "git_commit", "git_status_diff", "pr_create", "pr_view", "pr_comments", "pr_comment_checklist"];
+/** Control/communication tools shared by every mode (§6.1). `plan_exit` is the
+ *  escape hatch from the read-only plan permission mode (C13), so it is exposed
+ *  in every mode the way `finish` is. */
+const CONTROL = ["think", "finish", "plan", "phase_set", "message", "plan_exit"];
 /** Tools added to modes that can edit files. */
 const EDIT_EXTRA = ["file_multi_edit"];
 /** Build-only tools: secrets vault and the OpenCode coding sessions. */
 const BUILD_EXTRA = ["vault_ref", "code_session", "code_session_status", "code_session_collect"];
 /** Documentation lookup for read/research/build modes. */
 const DOCS_LOOKUP = ["docs_lookup"];
+/** N12 generator tools for the media (Studio) mode. */
+const GEN_MEDIA = ["gen_3d_from_image", "gen_music", "generate_storyboard", "search_images"];
+/** N12 research-facing generator tools. */
+const GEN_RESEARCH = ["search_images", "search_x", "solve_logic"];
 
 export const LOAM_MODES: LoamMode[] = [
   { id: "ask", label: "Loam Explore", labelAr: "استكشف", icon: "◌", hue: 155, hue2: 135,
     tagline: "وضوح قبل التنفيذ", description: "افهم أفكارك وملفات هذه المهمة واسأل دون تعديل الملفات أو تشغيل أوامر.", outputHint: "إجابة واضحة وخطوات مقترحة", readOnly: true,
-    tools: [...READ, "code_symbols", "code_outline", ...DOCS_LOOKUP, ...CONTROL], panels: ["files"],
+    tools: [...READ, "code_symbols", "code_outline", "semantic_search", ...DOCS_LOOKUP, ...CONTROL, "ask_codebase"], panels: ["files"],
     fields: [{ id: "question", label: "ما الذي تريد فهمه؟", placeholder: "اشرح الفكرة أو أرفق ملفًا", multiline: true }, { id: "audience", label: "مستوى التفاصيل", placeholder: "مختصر، تفصيلي، أو مناسب للمبتدئين" }],
     starters: [{ label: "اشرح مستندًا", prompt: "اقرأ المستند المرفق واشرح أهم النقاط والمصطلحات." }, { label: "قارن فكرتين", prompt: "ساعدني في مقارنة خيارين وتحديد أسئلة القرار." }] },
   { id: "research", label: "Loam Research", labelAr: "ابحث", icon: "⌕", hue: 195, hue2: 170,
     tagline: "مصادر تقود إلى فهم", description: "اجمع مصادر الويب واقرأها وقارن الأدلة في تقرير موثق داخل المهمة.", outputHint: "تقرير بمصادر وروابط. Use web_search and the browser_* tools for research.", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", ...DOCS_LOOKUP, "web_search", "web_fetch", ...BROWSER, ...CONTROL], panels: ["files", "browser"],
+    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", ...DOCS_LOOKUP, "web_search", "web_fetch", ...BROWSER, ...GEN_RESEARCH, ...CONTROL], panels: ["files", "browser"],
     fields: [{ id: "topic", label: "موضوع البحث", placeholder: "السؤال الذي تبحث عن إجابته", multiline: true }, { id: "sources", label: "المصادر والنطاق", placeholder: "روابط البداية والفترة الزمنية المطلوبة" }],
     starters: [{ label: "قارن مصادر", prompt: "قارن المصادر التي سأرفقها، وافصل الحقائق عن الاستنتاجات مع روابط الأدلة." }, { label: "راجع موضوعًا", prompt: "أعد تقرير بحث حول الموضوع التالي، مع توضيح الثغرات وحدود المصادر المتاحة." }] },
   { id: "build", label: "Loam Build", labelAr: "ابنِ", icon: "⌘", hue: 100, hue2: 140,
     tagline: "من الفكرة إلى تجربة تعمل", description: "طوّر ملفات التطبيق وشغّل الاختبارات ومعاينة المشروع في مساحة المهمة.", outputHint: "ملفات مشروع ومعاينة ونتائج اختبارات", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, ...WRITE, ...EDIT_EXTRA, "artifact_publish", ...DOCS_LOOKUP, ...BUILD_EXTRA, "loam_mobile", "code_symbols", "code_outline", "shell_run", "web_fetch", ...BROWSER, ...PREVIEW, ...CONTROL], panels: ["files", "browser", "preview"],
+    tools: ["integration_list", "integration_call", ...READ, ...WRITE, ...EDIT_EXTRA, "memory_add", "artifact_publish", ...DOCS_LOOKUP, ...BUILD_EXTRA, ...GIT, "loam_mobile", "code_symbols", "code_outline", "semantic_search", "wiki_generate", "ask_codebase", "shell_run", "web_fetch", ...BROWSER, ...PREVIEW, ...CONTROL], panels: ["files", "browser", "preview"],
     fields: [{ id: "brief", label: "ماذا سنبني؟", placeholder: "المستخدمون والوظائف المطلوبة", multiline: true }, { id: "acceptance", label: "معايير الإنجاز", placeholder: "ما السلوك الذي يجب اختباره قبل التسليم؟", multiline: true }],
     starters: [{ label: "صفحة تعريفية", prompt: "ابنِ صفحة تعريفية عربية متجاوبة مع معاينة محلية واختبر عرض الهاتف." }, { label: "أصلح مشروعًا", prompt: "افحص ملفات المشروع المرفقة، حدد العطل وأصلحه ثم شغّل الاختبارات المناسبة." }] },
   { id: "write", label: "Loam Write", labelAr: "اكتب", icon: "✎", hue: 55, hue2: 75,
     tagline: "أفكار تجد صياغتها", description: "اكتب المستندات وأنشئ العروض شريحة بشريحة في محرر حي قابل للتعديل مباشرة.", outputHint: "مستند منسق قابل للتنزيل. Use loam_studio (or loam_document) for the content, then office_export for the .docx/.pptx file, and office_import first for an uploaded file; do not generate office files via shell/python unless a tool is missing.", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_document", "loam_studio", "office_import", "office_export", "office_status", "office_edit", ...CONTROL], panels: ["studio", "files"],
+    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_document", "loam_studio", "office_import", "office_export", "office_status", "office_edit", ...CONTROL], panels: ["studio", "files"],
     fields: [{ id: "brief", label: "نوع المستند ومحتواه", placeholder: "تقرير، رسالة، مقترح أو قصة", multiline: true }, { id: "tone", label: "الجمهور والنبرة", placeholder: "لمن نكتب؟ وما الطول والأسلوب المطلوبان؟" }],
     starters: [{ label: "مقترح عمل", prompt: "صغ مقترح عمل منظمًا بالأهداف والنطاق والجدول والمخرجات، واحفظه مستندًا." }, { label: "حرر مسودة", prompt: "راجع المسودة المرفقة وحسّن وضوحها مع المحافظة على المعنى." }] },
   { id: "data", label: "Loam Data", labelAr: "حلّل", icon: "▥", hue: 175, hue2: 150,
     tagline: "أرقام تشرح ما يحدث", description: "أنشئ الجداول وحرّر الخلايا مباشرة، وافحص بياناتك في مساحة عمل خاصة بالمهمة.", outputHint: "ملخص بيانات ونتائج قابلة للتدقيق. Use loam_dataset/loam_studio for spreadsheets and charts, then office_export for the file; do not generate office files via shell/python unless a tool is missing.", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_dataset", "loam_studio", "office_import", "office_export", "office_status", "office_edit", ...CONTROL], panels: ["studio", "files"],
+    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_dataset", "loam_studio", "office_import", "office_export", "office_status", "office_edit", ...CONTROL], panels: ["studio", "files"],
     fields: [{ id: "question", label: "سؤال التحليل", placeholder: "ما القرار الذي تريد أن تدعمه البيانات؟", multiline: true }, { id: "columns", label: "المقاييس والأعمدة", placeholder: "حدّد الأعمدة أو الفترة أو قواعد جودة البيانات" }],
     starters: [{ label: "افحص جودة البيانات", prompt: "افحص ملف CSV المرفق ولخص عدد الصفوف والقيم المفقودة والأعمدة الرقمية دون اختلاق بيانات." }, { label: "استخرج مؤشرات", prompt: "استخرج المؤشرات الرئيسية من البيانات المرفقة واحفظ تقريرًا يشرح الحسابات وحدودها." }] },
   { id: "media", label: "Loam Studio", labelAr: "صمّم", icon: "◇", hue: 25, hue2: 45,
     tagline: "من الفكرة إلى مشهد حي", description: "حرّر المجسّمات والخامات والإضاءة والحركة، واستورد ملفات GLB وصدّر المشهد والصور من مساحة المهمة.", outputHint: "مشهد ثلاثي الأبعاد وصور وملفات GLB. Use loam_creative/loam_canvas for video/image/design work.", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_canvas", "loam_creative", ...PREVIEW, ...CONTROL], panels: ["creative", "files", "preview"],
+    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_canvas", "loam_creative", ...PREVIEW, ...GEN_MEDIA, ...CONTROL], panels: ["creative", "files", "preview"],
     fields: [{ id: "brief", label: "الفكرة البصرية", placeholder: "صف المشهد والمجسّمات التي تريد إنشاءها", multiline: true }, { id: "style", label: "الخامات والإخراج", placeholder: "الألوان والإضاءة وزاوية الكاميرا والحركة" }],
     starters: [{ label: "مشهد منتج", prompt: "أنشئ مشهد منتج من المجسّمات الأساسية مع قاعدة وخامات معدنية وإضاءة مناسبة باستخدام loam_creative." }, { label: "تكوين متحرك", prompt: "أنشئ تكوينًا من حلقات وكرات متناسقة الألوان مع حركة دوران باستخدام loam_creative." }] },
   { id: "security", label: "Loam Security", labelAr: "افحص", icon: "🛡", hue: 0, hue2: 30,

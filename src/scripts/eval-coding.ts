@@ -1,25 +1,31 @@
 /**
- * Coding-prompt eval (task C11).
+ * Coding eval harness (task C18) — the measuring stick for the Claude-Code
+ * parity work.
  *
- * Runs the `coding-prompt` suite twice against the real configured model and reports
- * the pass rate with and without the coding section (Appendix C):
+ * Runs the 20 small fixture repos under `evals/coding/tasks/` headless against
+ * the Loam coding agent and prints pass@1. Grading is the fixture's hidden test
+ * command exit code, so the suite is deterministic and offline.
  *
- *   - before: LOAM_CODING_PROMPT=0 (master prompt, no coding section)
- *   - after:  default (master prompt + Appendix C for coding tasks)
- *
- * The suite is 10 SWE-style fixtures; each case's hidden verifier is a Node
- * script that fails on the untouched baseline (see
- * src/scripts/__tests__/eval-coding-fixtures.test.ts). This script calls the
- * real model, so it is a manual benchmark, not a unit test.
+ * Modes:
+ *   --mode=agent       run the real coding agent (default; this is the benchmark)
+ *   --mode=self-check  apply each fixture's reference solution; every task must pass
+ *   --mode=baseline    run untouched trees; every hidden test must FAIL (fixtures bite)
  *
  * Usage:
  *   npm run eval:coding
- *   npm run eval:coding -- --case=sum-array --json
+ *   npm run eval:coding -- --only=task-001,task-005
+ *   npm run eval:coding -- --mode=self-check --json
+ *   npm run eval:coding -- --record-baseline
+ *
+ * The C11 coding-prompt eval lives at `npm run eval:coding-prompt`.
  */
+import fs from "node:fs";
+import path from "node:path";
 import { loadConfig } from "../config.js";
 import { buildRuntime } from "../setup/runtime.js";
-import { loadSuite } from "../eval/suites.js";
-import { runSuiteLocked } from "../eval/service.js";
+import { codingEvalsDir } from "../eval/coding/tasks.js";
+import { defaultResultsDir, runCodingEval } from "../eval/coding/runner.js";
+import type { CodingRunReport, EvalMode } from "../eval/coding/types.js";
 
 function flag(name: string): string | undefined {
   const prefix = `--${name}=`;
@@ -34,50 +40,144 @@ function flag(name: string): string | undefined {
   return undefined;
 }
 
-interface RunSummary {
-  label: string;
-  passRate: number;
-  pass: number;
-  fail: number;
-  error: number;
+function has(name: string): boolean {
+  return flag(name) !== undefined;
 }
 
-async function runOnce(
-  label: string,
-  coding: boolean,
-  runtime: Awaited<ReturnType<typeof buildRuntime>>,
-  caseFilter?: string,
-): Promise<RunSummary> {
-  if (coding) delete process.env.LOAM_CODING_PROMPT;
-  else process.env.LOAM_CODING_PROMPT = "0";
-  const suite = loadSuite("coding-prompt");
-  const run = await runSuiteLocked(
-    suite,
-    { cfg: loadConfig(), ollama: runtime.ollama, registry: runtime.registry, critique: false, offline: true },
-    { caseFilter },
-  );
-  const s = run.summary;
-  return { label, passRate: s.passRate, pass: s.pass, fail: s.fail, error: s.error };
+const MODES: readonly EvalMode[] = ["agent", "self-check", "baseline"];
+
+function parseMode(raw: string | undefined): EvalMode {
+  const mode = (raw ?? "agent") as EvalMode;
+  if (!MODES.includes(mode)) throw new Error(`--mode must be one of ${MODES.join(", ")} (got ${raw})`);
+  return mode;
+}
+
+function baselinePath(): string {
+  return path.join(codingEvalsDir(), "baseline.json");
+}
+
+function baselineMarkdownPath(): string {
+  return path.join(codingEvalsDir(), "BASELINE.md");
+}
+
+/** Render the human-readable baseline note committed with the fixtures. */
+function baselineMarkdown(report: CodingRunReport): string {
+  const lines: string[] = [
+    "# Coding eval baseline",
+    "",
+    `Recorded ${report.finishedAt} in \`${report.mode}\` mode.`,
+    "",
+    `- pass@1: ${(report.passAt1 * 100).toFixed(1)}%`,
+    `- passed: ${report.passed}/${report.total}`,
+    `- failed: ${report.failed}`,
+    `- errors: ${report.errors}`,
+    `- skipped: ${report.skipped}`,
+    `- duration: ${report.durationMs}ms`,
+    "",
+    "## Per task",
+    "",
+    "| task | category | status | steps | duration |",
+    "| --- | --- | --- | --- | --- |",
+    ...report.results.map(
+      (r) => `| ${r.id} | ${r.category} | ${r.status} | ${r.steps ?? "-"} | ${r.durationMs}ms |`,
+    ),
+    "",
+    "## Notes",
+    "",
+    "`self-check` applies each fixture's reference solution, so pass@1=100% means every",
+    "fixture and its hidden test agree. `baseline` runs the untouched tree and inverts the",
+    "verdict, so pass@1=100% there means every hidden test actually fails without a fix.",
+    "The `agent` mode is the real benchmark; it is only meaningful when a model is reachable.",
+    "",
+  ];
+  return lines.join("\n");
+}
+
+function pct(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+/** Write the recorded baseline: the committed evidence for C18. */
+function recordBaseline(report: CodingRunReport, outPath: string): void {
+  const payload = {
+    recordedAt: report.finishedAt,
+    mode: report.mode,
+    model: report.model,
+    passAt1: report.passAt1,
+    total: report.total,
+    passed: report.passed,
+    failed: report.failed,
+    errors: report.errors,
+    durationMs: report.durationMs,
+    tasks: report.results.map((r) => ({
+      id: r.id,
+      category: r.category,
+      status: r.status,
+      steps: r.steps ?? null,
+      durationMs: r.durationMs,
+    })),
+  };
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  fs.writeFileSync(outPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  fs.writeFileSync(baselineMarkdownPath(), baselineMarkdown(report), "utf8");
 }
 
 async function main(): Promise<void> {
+  // `--self-check` and `--baseline` are accepted as bare flags for convenience;
+  // `--mode=<...>` remains the explicit form.
+  const flagMode = flag("mode");
+  const bareMode = has("self-check") ? "self-check" : has("baseline") ? "baseline" : undefined;
+  const mode = parseMode(bareMode ?? flagMode);
+  const only = (flag("only") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  const json = has("json");
+  const record = has("record-baseline");
+  const min = Number(flag("min") ?? "0");
   const cfg = loadConfig();
-  const caseFilter = flag("case");
-  const runtime = await buildRuntime(cfg, { mcp: false });
+  const workDir = flag("workdir") ?? defaultResultsDir();
+
+  console.log(`coding-eval: mode=${mode} model=${cfg.model} workdir=${workDir}`);
+
+  const runtime = mode === "agent" ? await buildRuntime(cfg, { mcp: false }) : null;
+  let report: CodingRunReport;
   try {
-    const before = await runOnce("before (no Appendix C)", false, runtime, caseFilter);
-    const after = await runOnce("after (Appendix C)", true, runtime, caseFilter);
-    const pct = (r: { passRate: number }): string => `${(r.passRate * 100).toFixed(0)}%`;
-    console.log(`suite=coding-prompt model=${cfg.model} cases=${before.pass + before.fail + before.error}`);
-    console.log(`${before.label}: pass=${before.pass} fail=${before.fail} error=${before.error} passRate=${pct(before)}`);
-    console.log(`${after.label}: pass=${after.pass} fail=${after.fail} error=${after.error} passRate=${pct(after)}`);
-    if (flag("json")) {
-      console.log(JSON.stringify({ before, after }, null, 2));
-    }
-    process.exitCode = after.passRate >= before.passRate ? 0 : 1;
+    report = await runCodingEval({
+      mode,
+      model: cfg.model,
+      ...(only.length > 0 ? { only } : {}),
+      workDir,
+      ...(runtime ? { agent: { cfg, ollama: runtime.ollama as never, registry: runtime.registry } } : {}),
+      onTask: (r) => {
+        const mark = r.status === "pass" ? "PASS" : r.status.toUpperCase();
+        console.log(`  ${mark} ${r.id} (${r.category}) ${r.durationMs}ms${r.error ? ` — ${r.error}` : ""}`);
+      },
+    });
   } finally {
-    await runtime.dispose();
+    await runtime?.dispose();
   }
+
+  console.log(
+    `pass@1=${pct(report.passAt1)} passed=${report.passed}/${report.total} failed=${report.failed} errors=${report.errors} skipped=${report.skipped} in ${report.durationMs}ms`,
+  );
+
+  if (record) {
+    const out = baselinePath();
+    recordBaseline(report, out);
+    console.log(`baseline recorded: ${out}`);
+    console.log(`baseline note: ${baselineMarkdownPath()}`);
+  }
+
+  const reportFile = path.join(workDir, `report-${mode}.json`);
+  fs.mkdirSync(workDir, { recursive: true });
+  fs.writeFileSync(reportFile, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  console.log(`report: ${reportFile}`);
+
+  if (json) console.log(JSON.stringify(report, null, 2));
+
+  const threshold = Number.isFinite(min) ? min : 0;
+  process.exitCode = report.passAt1 >= threshold && report.errors === 0 ? 0 : 1;
 }
 
 main().catch((err) => {

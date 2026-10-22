@@ -42,7 +42,8 @@ function htmlToText(html: string): string {
 export const webTools: Tool[] = [
   {
     name: 'web_search',
-    description: 'Search the web for sources. Returns titles, URLs and snippets; use web_fetch to read sources. Requires networkEnabled.',
+    description:
+      "Search the web for sources and get back titles, URLs and snippets as JSON. Requires network access (policy.networkEnabled). Use it to find authoritative references, documentation or current facts, then open the promising links with web_fetch. Queries are limited to 1-2000 characters and results to 1-10. When NOT to use: use web_fetch to read a URL you already have, the browser tools when you need interaction or an authenticated page, and local file_search/code_symbols for anything already in the workspace; never call it when the network is disabled.",
     parameters: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'number', minimum: 1, maximum: 10 } }, required: ['query'] },
     async run(args, ctx) {
       if (!ctx.cfg.policy.networkEnabled) return { ok: false, content: 'Network access is disabled' };
@@ -61,7 +62,8 @@ export const webTools: Tool[] = [
   },
   {
     name: "web_fetch",
-    description: "Fetch a URL and return readable text (HTML is converted to text). Requires networkEnabled in config.",
+    description:
+      "Fetch a URL and return its readable content; HTML is converted to plain text so it is easy to scan. Requires network access (policy.networkEnabled). Use maxBytes to cap the response (default 400000) and raw=true to get the unmodified body. Use it to read a page or document that web_search surfaced, or any URL you already know. When NOT to use: use web_search to discover URLs, the browser tools for interactive or authenticated content, and file_read for local files; never fetch non-http(s) URLs or rely on it when the network is disabled.",
     parameters: {
       type: "object",
       properties: {

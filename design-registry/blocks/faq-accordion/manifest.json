@@ -1,0 +1,18 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "faq-accordion",
+  "name": "FAQ Accordion",
+  "description": "A native-details FAQ accordion that answers common questions without JavaScript and stays accessible.",
+  "category": "faq",
+  "license": "MIT",
+  "source": "shadcn/ui blocks",
+  "tags": ["faq", "accordion", "support"],
+  "intent": "Answer the questions users actually ask, in a collapsible list.",
+  "deps": ["react"],
+  "rtl": false,
+  "dir": "ltr",
+  "lang": "en",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"]
+}
