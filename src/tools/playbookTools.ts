@@ -29,6 +29,8 @@ export interface PlaybookToolsOptions {
 const TRANSCRIPT_MAX = 24_000;
 const MESSAGE_MAX = 4_000;
 const MAX_STEPS = 60;
+/** Upper bound for the `sessionLimit` argument (how many recent tasks to scan). */
+export const SESSION_LIMIT_MAX = 5;
 
 function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max)}\n[...truncated ${value.length - max} chars]` : value;
@@ -54,10 +56,13 @@ export function buildSessionTranscript(task: Task): string {
   return truncate(lines.join("\n"), TRANSCRIPT_MAX);
 }
 
-/** Find a task by id, or the most recent finished task when none is given. */
-export function findSessionTask(taskId?: string): Task | undefined {
+/** Find a task by id, or the most recent finished task among the last `limit` tasks. */
+export function findSessionTask(taskId?: string, limit = 1): Task | undefined {
   if (taskId && taskId.trim()) return getTask(taskId.trim());
-  return listTasks().find((t) => t.status === "done" || t.status === "error") ?? listTasks()[0];
+  const recent = listTasks();
+  const bounded = Number.isFinite(limit) ? Math.min(Math.max(Math.trunc(limit), 1), SESSION_LIMIT_MAX) : 1;
+  const window = recent.slice(0, bounded);
+  return window.find((t) => t.status === "done" || t.status === "error") ?? window[0];
 }
 
 const DRAFT_INSTRUCTIONS = `You are drafting a reusable playbook from a finished session.
@@ -129,7 +134,7 @@ export function createPlaybookTools(options: PlaybookToolsOptions): Tool[] {
           name: { type: "string", description: "Playbook name, e.g. 'Release checklist'." },
           taskId: { type: "string", description: "Session/task id to learn from. Defaults to the current task, then the latest finished task." },
           macro: { type: "string", description: "Optional !macro (lowercase letters/digits/underscores). Derived from the name when omitted." },
-          sessionLimit: { type: "number", description: "How many recent tasks to consider when no taskId is given (default 1, max 5)." },
+          sessionLimit: { type: "number", description: `How many recent tasks to scan for a finished session when no taskId is given (default 1, max ${SESSION_LIMIT_MAX}).` },
         },
       },
       async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
@@ -137,7 +142,8 @@ export function createPlaybookTools(options: PlaybookToolsOptions): Tool[] {
         if (!name) return { ok: false, content: "playbook_create_from_session requires a name" };
 
         const explicitTaskId = str(args, "taskId").trim();
-        const task = findSessionTask(explicitTaskId || ctx.taskId);
+        const limit = Math.min(Math.max(Math.trunc(num(args, "sessionLimit", 1)), 1), SESSION_LIMIT_MAX);
+        const task = findSessionTask(explicitTaskId || ctx.taskId, limit);
         if (!task) {
           return { ok: false, content: "no session found to draft a playbook from" };
         }
@@ -155,7 +161,6 @@ export function createPlaybookTools(options: PlaybookToolsOptions): Tool[] {
         if (requestedMacro && getPlaybookByMacro(requestedMacro)) {
           return { ok: false, content: `macro "${requestedMacro}" already exists` };
         }
-        void num(args, "sessionLimit", 1);
 
         const prompt = `## Session transcript\n\n${buildSessionTranscript(task)}\n\nDraft the playbook JSON now.`;
         ctx.emit({ type: "tool_call", name: "playbook_create_from_session", args: { name, macro, taskId: task.id } });

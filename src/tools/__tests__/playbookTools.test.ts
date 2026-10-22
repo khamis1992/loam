@@ -188,6 +188,32 @@ describe("playbook_create_from_session tool", () => {
     assert.equal((JSON.parse(res.content) as { fromSession: string }).fromSession, task.id);
   });
 
+  it("honours sessionLimit by scanning that many recent tasks for a finished one", async () => {
+    // A fresh db state: one finished session, then newer unfinished ones on top.
+    const finished = db.createTask("finished target", "finished", null, null);
+    db.appendMessage(finished.id, "user", "the one that actually finished");
+    db.setTaskStatus(finished.id, "done");
+    const newerA = db.createTask("newer queued A", "a", null, null);
+    db.appendMessage(newerA.id, "user", "queued A");
+    const newerB = db.createTask("newer queued B", "b", null, null);
+    db.appendMessage(newerB.id, "user", "queued B");
+
+    const tool = draftTool(DRAFT_JSON);
+    // Default limit (1) sees only the newest task, which is not finished -> picks it.
+    const shallow = await tool.run({ name: "Shallow" }, ctx(tmpDir));
+    assert.ok(shallow.ok, shallow.content);
+    assert.equal((JSON.parse(shallow.content) as { fromSession: string }).fromSession, newerB.id);
+
+    // A wider limit reaches back to the finished session.
+    const wide = await tool.run({ name: "Wide", sessionLimit: 5 }, ctx(tmpDir));
+    assert.ok(wide.ok, wide.content);
+    assert.equal((JSON.parse(wide.content) as { fromSession: string }).fromSession, finished.id);
+
+    // The helper itself clamps out-of-range limits instead of throwing.
+    assert.equal(tools.findSessionTask(undefined, 0)?.id, newerB.id, "0 clamps to 1");
+    assert.equal(tools.findSessionTask(undefined, 999)?.id, finished.id, "999 clamps to the max");
+  });
+
   it("fails honestly when there is no session to learn from", async () => {
     const tool = draftTool(DRAFT_JSON);
     const res = await tool.run({ name: "Nope", taskId: "task_missing" }, ctx(tmpDir));
@@ -235,5 +261,13 @@ describe("playbook_create_from_session tool", () => {
   it("is registered as an always-on tool name", async () => {
     const { ALWAYS_ON_TOOLS } = await import("../../server/runTools.js");
     assert.ok(ALWAYS_ON_TOOLS.includes("playbook_create_from_session"));
+  });
+
+  it("documents sessionLimit in its schema", async () => {
+    const tool = tools.createPlaybookTools({ ollama, draft: async () => DRAFT_JSON })
+      .find((t) => t.name === "playbook_create_from_session")!;
+    const props = tool.parameters.properties as Record<string, { description?: string }>;
+    assert.ok(props.sessionLimit, "sessionLimit is exposed in the schema");
+    assert.match(props.sessionLimit!.description ?? "", /recent tasks/);
   });
 });
