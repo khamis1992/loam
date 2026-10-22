@@ -39,6 +39,7 @@ import { createVideoEditTools } from "./tools/videoEditAgent.js";
 import { createDeployTools } from "./tools/deploy.js";
 import { createDesignExploreTools } from "./tools/designExplore.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
+import { createWorkflowTools } from "./tools/workflow.js";
 import { applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
@@ -133,6 +134,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview: rt.preview }));
   rt.registry.registerAll(createDesignExploreTools());
   rt.registry.registerAll(createConnectorTools());
+  rt.registry.registerAll(createWorkflowTools({ ollama: rt.ollama, registry: rt.registry }));
   rt.registry.registerAll(createPlanTools());
   const { ollama, registry, memory, mcp } = rt;
 
@@ -322,11 +324,15 @@ async function main(): Promise<void> {
         reason: "selected work mode",
       });
       const agentSuffix = agent ? agentSystemSuffix(agent) : undefined;
+      // Provenance-aware index summary: a bounded digest of long-term memory so
+      // the agent knows what it already knows without a tool call.
+      const memoryIndexSummary = memory && memory.count > 0 ? memory.indexSummary(8) : undefined;
       const suffix = [
         `You are Loam. Active mode: ${modeDefinition.labelAr}. ${modeDefinition.description} Only use the provided tool capabilities.`,
         modeDefinition.outputHint,
         workModeDefinition.policy,
         memoryContextSuffix,
+        memoryIndexSummary,
         agentSuffix, askModeSuffix,
       ].filter(Boolean).join("\n\n");
       // The gateway's resolved allowlist is the base tool set for this run: mode ∪
