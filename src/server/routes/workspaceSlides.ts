@@ -1,4 +1,4 @@
-﻿import http from "node:http";
+import http from "node:http";
 import { getTask } from "../db.js";
 import { loadConfig } from "../../config.js";
 import { requireTaskWorkspace } from "../taskWorkspace.js";

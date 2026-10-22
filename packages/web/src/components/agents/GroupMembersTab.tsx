@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import type { AgentCardAgent } from './AgentCard';
 import type { GroupChat } from './groupTypes';
+import { AgentAvatar } from './AgentAvatar';
 
 interface GroupMembersTabProps {
   groupId: string;
@@ -121,7 +122,12 @@ export function GroupMembersTab({ groupId, onChanged }: GroupMembersTabProps) {
               key={member.id}
               className="flex items-center gap-2 rounded-card border border-border-main bg-bg-main p-2"
             >
-              <span className="text-base">{member.emoji || '🤖'}</span>
+              <AgentAvatar
+                name={member.name}
+                id={member.id}
+                emoji={member.emoji}
+                size={24}
+              />
               <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{member.name}</span>
               <Button
                 type="button"

@@ -2,6 +2,7 @@
 
 import { t } from '@/i18n/t';
 import type { AgentCardAgent } from './AgentCard';
+import { AgentAvatar } from './AgentAvatar';
 
 const BUILT_IN_AGENTS: AgentCardAgent[] = [
   { id: 'explore', name: 'Explore', emoji: '◌', mode: 'ask', workMode: 'chat' },
@@ -13,9 +14,12 @@ export function BuiltInAgentCard({ agent }: { agent: AgentCardAgent }) {
   return (
     <div className="flex flex-col gap-3 rounded-card border border-dashed border-border-main bg-bg-menu/50 p-3 opacity-80">
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-fill-tsp text-lg">
-          {agent.emoji || '🤖'}
-        </div>
+        <AgentAvatar
+          name={agent.name}
+          id={agent.id}
+          emoji={agent.emoji}
+          size={40}
+        />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-text-primary">{agent.name}</p>
           <p className="text-xs text-text-tertiary">{t('Built-in agent')}</p>

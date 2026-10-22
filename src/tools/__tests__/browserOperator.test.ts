@@ -8,7 +8,9 @@ import { describe, it } from "node:test";
 
 import {
   actionKey,
+  browserOperatorTools,
   goalSatisfied,
+  operatorSurfaceAllowed,
   parseIntent,
   parseObservationTable,
   planOperatorAction,
@@ -17,6 +19,7 @@ import {
   type OperatorObservation,
   type OperatorSurface,
 } from "../browserOperator.js";
+import type { ToolContext } from "../registry.js";
 
 function observation(partial: Partial<OperatorObservation> = {}): OperatorObservation {
   return {
@@ -444,5 +447,127 @@ describe("browser_operator deepen", () => {
     ]);
     const verified = await runBrowserOperatorLoop({ goal: "click Sign in", surface: present, expectText: "welcome back" });
     assert.equal(verified.status, "goal-reached");
+  });
+});
+
+describe("browser_operator hardening", () => {
+  it("never treats an empty or stopword-only payload as a goal", () => {
+    assert.equal(parseIntent('type ""').kind, "generic");
+    assert.equal(parseIntent('search for ""').kind, "generic");
+    assert.equal(parseIntent('select ""').kind, "generic");
+    assert.equal(parseIntent("search for").kind, "generic");
+    assert.equal(parseIntent("click the button").kind, "generic");
+
+    // An empty payload must not be verified against any element value.
+    const current = observation({ elements: [{ index: 1, role: "textbox", name: "Search", value: "" }] });
+    assert.equal(goalSatisfied('type ""', current), false);
+    assert.equal(goalSatisfied('type ""', current, parseIntent('type ""'), { requireAction: true }), false);
+  });
+
+  it("does not report goal-reached for an empty type goal", async () => {
+    const surface = new FakeSurface([observation({ elements: [{ index: 1, role: "textbox", name: "Search", value: "" }] })]);
+    const result = await runBrowserOperatorLoop({ goal: 'type ""', surface });
+    assert.notEqual(result.status, "goal-reached");
+  });
+
+  it("keeps the port and uses http for loopback/localhost targets", () => {
+    assert.deepEqual(parseIntent("go to localhost:3000"), { kind: "navigate", url: "http://localhost:3000/" });
+    assert.deepEqual(parseIntent("go to 127.0.0.1:3000"), { kind: "navigate", url: "http://127.0.0.1:3000/" });
+    assert.deepEqual(parseIntent("open http://127.0.0.1:5173/app"), { kind: "navigate", url: "http://127.0.0.1:5173/app" });
+    // Public hosts keep the https default and an explicit port.
+    assert.deepEqual(parseIntent("go to example.com"), { kind: "navigate", url: "https://example.com/" });
+    assert.deepEqual(parseIntent("go to example.com:8443"), { kind: "navigate", url: "https://example.com:8443/" });
+  });
+
+  it("navigates the loop to a local dev server with its port intact", async () => {
+    const surface = new FakeSurface([
+      observation({ url: "about:blank" }),
+      observation({ url: "http://127.0.0.1:3000/", title: "Dev", bodyText: "Dev" }),
+    ]);
+    const result = await runBrowserOperatorLoop({ goal: "go to 127.0.0.1:3000", surface });
+    assert.equal(result.status, "goal-reached");
+    assert.deepEqual(surface.acts[0], { kind: "navigate", url: "http://127.0.0.1:3000/" });
+  });
+
+  it("classifies text inputs by role, not by label", () => {
+    // A link merely labelled "Search" (capabilities unknown) must not be typed into.
+    const current = observation({ elements: [{ index: 1, role: "link", name: "Search", value: "" }] });
+    const action = planOperatorAction('type "hello"', current);
+    assert.notEqual(action.kind, "type");
+  });
+
+  it("refuses to drive browser tools the run does not allow", () => {
+    assert.equal(operatorSurfaceAllowed(undefined), true);
+    assert.equal(operatorSurfaceAllowed(["file_read", "browser_open"]), true);
+    assert.equal(operatorSurfaceAllowed(["file_read"]), false);
+
+    const tool = browserOperatorTools.find((entry) => entry.name === "browser_operator");
+    assert.ok(tool);
+    const ctx = {
+      cfg: { policy: { networkEnabled: true } },
+      workspace: ".",
+      emit: () => {},
+      allowedTools: ["file_read"],
+    } as unknown as ToolContext;
+    return tool!.run({ goal: "open example.com" }, ctx).then((res) => {
+      assert.equal(res.ok, false);
+      assert.match(res.content, /does not allow the browser tools/i);
+    });
+  });
+
+  it("does not satisfy a quoted click/type/select goal from page text alone", () => {
+    const page = observation({
+      url: "https://app.test/checkout",
+      bodyText: "Germany is shown here",
+      elements: [{ index: 1, role: "combobox", name: "Country", value: "", ops: ["SELECT"] }],
+    });
+    const before = observation({ url: "https://app.test/checkout" });
+    assert.equal(
+      goalSatisfied('select "Germany"', page, parseIntent('select "Germany"'), { requireAction: true, before }),
+      false,
+    );
+    assert.equal(
+      goalSatisfied('type "Germany"', page, parseIntent('type "Germany"'), { requireAction: true }),
+      false,
+    );
+  });
+
+  it("reports an observation failure as an error status", async () => {
+    class ThrowingSurface implements OperatorSurface {
+      async open(): Promise<{ pageId: string }> {
+        return { pageId: "page_throw" };
+      }
+      async observe(): Promise<OperatorObservation> {
+        throw new Error("page crashed");
+      }
+      async act(): Promise<{ ok: boolean; message: string }> {
+        return { ok: true, message: "ok" };
+      }
+    }
+    const result = await runBrowserOperatorLoop({ goal: "click Next", surface: new ThrowingSurface() });
+    assert.equal(result.status, "error");
+    assert.match(result.message, /page crashed/);
+  });
+
+  it("does not dispatch an action when cancellation arrives during planning", async () => {
+    const controller = new AbortController();
+    class AbortingSurface implements OperatorSurface {
+      readonly acts: OperatorAction[] = [];
+      async open(): Promise<{ pageId: string }> {
+        return { pageId: "page_abort" };
+      }
+      async observe(): Promise<OperatorObservation> {
+        controller.abort();
+        return observation({ elements: [{ index: 1, role: "button", name: "Next", value: "" }] });
+      }
+      async act(_pageId: string, action: OperatorAction): Promise<{ ok: boolean; message: string }> {
+        this.acts.push(action);
+        return { ok: true, message: "ok" };
+      }
+    }
+    const surface = new AbortingSurface();
+    const result = await runBrowserOperatorLoop({ goal: "click Next", surface, signal: controller.signal });
+    assert.equal(result.status, "cancelled");
+    assert.equal(surface.acts.length, 0);
   });
 });

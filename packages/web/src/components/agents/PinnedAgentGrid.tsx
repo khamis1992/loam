@@ -4,11 +4,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '@/i18n/t';
 import type { AgentCardAgent } from './AgentCard';
 import { AgentAvatar } from './AgentAvatar';
+import { isGrokBotAgent } from './GrokBotBadge';
 
 /** Tile avatar edge length in px (Grok Bot parity: large ~48px avatar tiles). */
 const TILE_AVATAR_SIZE = 48;
 
-/** One-line role text under the tile name (mode chip, else description). */
+/** Fallback one-line role text under the tile name (mode chip, else description). */
 function tileRole(agent: AgentCardAgent): string {
   const raw = (agent.mode ?? agent.description ?? '').trim();
   return raw ? raw.replace(/\s+/g, ' ') : '';
@@ -19,6 +20,8 @@ interface PinnedAgentGridProps<T extends AgentCardAgent> {
   agents: T[];
   selectedId?: string;
   unreadById?: Record<string, { count?: number }>;
+  /** One-line tile subtitle (e.g. latest thread message); falls back to mode/description. */
+  subtitleFor?: (agent: T) => string;
   onSelect: (agent: T) => void;
   onContextMenu: (e: React.MouseEvent, agent: T) => void;
   /** Persists a new pinned order (ids from first to last). */
@@ -28,14 +31,15 @@ interface PinnedAgentGridProps<T extends AgentCardAgent> {
 /**
  * Grok Bot-style pinned section body: a grid of large avatar tiles
  * (3 per row) with the agent name and a one-line role under the avatar,
- * an unread/status dot on the avatar corner, and a light grey rounded
- * fill on the selected tile. Tiles stay drag-reorderable (pointer drag
- * or Alt+ArrowUp/ArrowDown) and keep the row context menu.
+ * an unread/status dot and Grok Bot badge on the avatar corner, and a
+ * light grey rounded fill on the selected tile. Tiles stay drag-reorderable
+ * (pointer drag or Alt+ArrowUp/ArrowDown) and keep the row context menu.
  */
 export function PinnedAgentGrid<T extends AgentCardAgent>({
   agents,
   selectedId,
   unreadById,
+  subtitleFor,
   onSelect,
   onContextMenu,
   onReorder,
@@ -145,11 +149,11 @@ export function PinnedAgentGrid<T extends AgentCardAgent>({
   if (tiles.length === 0) return null;
 
   return (
-    <div className="grid grid-cols-3 gap-1 py-1">
+    <div className="grid grid-cols-3 gap-1.5 pt-1">
       {tiles.map((agent) => {
         const selected = selectedId === agent.id;
         const unread = unreadById?.[agent.id]?.count ?? 0;
-        const role = tileRole(agent);
+        const subtitle = subtitleFor ? subtitleFor(agent) : tileRole(agent);
         return (
           <button
             key={agent.id}
@@ -162,34 +166,40 @@ export function PinnedAgentGrid<T extends AgentCardAgent>({
             onPointerDown={(e) => handlePointerDown(e, agent.id)}
             onKeyDown={(e) => handleKeyDown(e, agent.id)}
             className={[
-              'flex min-w-0 cursor-grab select-none flex-col items-center gap-1 rounded-control px-1 pb-1.5 pt-2 text-center transition-colors active:cursor-grabbing',
+              'group relative flex flex-col items-center gap-1 rounded-card p-2 text-center transition-colors',
               selected ? 'bg-fill-tsp' : 'hover:bg-fill-hover',
+              'cursor-grab select-none active:cursor-grabbing',
             ].join(' ')}
           >
-            <span className="relative inline-flex leading-none">
-              <AgentAvatar
-                name={agent.name}
-                avatarShape={agent.avatarShape}
-                avatarColor={agent.avatarColor}
-                avatarImage={agent.avatarImage}
-                size={TILE_AVATAR_SIZE}
-              />
-              {unread > 0 && (
-                <span
-                  className="absolute -end-1 -top-1 size-2.5 rounded-full"
-                  style={{
-                    backgroundColor: 'var(--activity-indicator-running)',
-                    boxShadow: '0 0 0 2px var(--background-gray-main)',
-                  }}
-                  aria-label={t('{count} unread', { count: unread })}
-                  title={t('{count} unread', { count: unread })}
-                />
-              )}
-            </span>
-            <span className="w-full truncate text-xs font-medium text-text-primary">{agent.name}</span>
-            {role ? (
-              <span className="w-full truncate text-[10px] leading-tight text-text-tertiary">{role}</span>
+            <AgentAvatar
+              name={agent.name}
+              id={agent.id}
+              avatarShape={agent.avatarShape}
+              avatarColor={agent.avatarColor}
+              avatarImage={agent.avatarImage}
+              emoji={agent.emoji}
+              size={TILE_AVATAR_SIZE}
+              selected={selected}
+            />
+            <span className="w-full truncate text-[11px] font-medium text-text-primary">{agent.name}</span>
+            {subtitle ? (
+              <span className="w-full truncate text-[10px] text-text-tertiary opacity-80">{subtitle}</span>
             ) : null}
+            {isGrokBotAgent(agent.source) && (
+              <span
+                className="absolute start-1.5 top-1.5 size-1.5 rounded-full opacity-60"
+                style={{ backgroundColor: 'var(--text-tertiary)' }}
+                title={t('Imported from Grok Bot')}
+              />
+            )}
+            {unread > 0 && (
+              <span
+                className="absolute end-1.5 top-1.5 size-2 rounded-full"
+                style={{ backgroundColor: 'var(--activity-indicator-running)' }}
+                aria-label={t('{count} unread', { count: unread })}
+                title={t('{count} unread', { count: unread })}
+              />
+            )}
           </button>
         );
       })}

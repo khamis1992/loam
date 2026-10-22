@@ -281,6 +281,28 @@ export function AgentSidebarList({
     return fromThread || (agent.description ? previewLine(agent.description) : '');
   };
 
+  const childRow = (child: ChildAgent): ReactNode => {
+    const childAgent: AgentWithMeta = {
+      id: child.childId,
+      name: child.name,
+      emoji: child.emoji,
+      description: child.description,
+      mode: child.mode,
+    };
+    return (
+      <AgentRow
+        key={child.childId}
+        agent={childAgent}
+        selected={selectedId === child.childId}
+        unread={unreadById?.[child.childId]?.count ?? 0}
+        subtitle={threadPreview(childAgent)}
+        indent
+        onClick={() => onSelect(childAgent)}
+        onContextMenu={(e) => handleContextMenu(e, childAgent)}
+      />
+    );
+  };
+
   const renderAgentTree = (agent: AgentWithMeta) => (
     <div key={agent.id} className="flex flex-col gap-0.5">
       <AgentRow
@@ -291,27 +313,7 @@ export function AgentSidebarList({
         onClick={() => onSelect(agent)}
         onContextMenu={(e) => handleContextMenu(e, agent)}
       />
-      {(childrenByParent[agent.id] ?? []).map((child) => {
-        const childAgent: AgentWithMeta = {
-          id: child.childId,
-          name: child.name,
-          emoji: child.emoji,
-          description: child.description,
-          mode: child.mode,
-        };
-        return (
-          <AgentRow
-            key={child.childId}
-            agent={childAgent}
-            selected={selectedId === child.childId}
-            unread={unreadById?.[child.childId]?.count ?? 0}
-            subtitle={threadPreview(childAgent)}
-            indent
-            onClick={() => onSelect(childAgent)}
-            onContextMenu={(e) => handleContextMenu(e, childAgent)}
-          />
-        );
-      })}
+      {(childrenByParent[agent.id] ?? []).map(childRow)}
     </div>
   );
 
@@ -442,33 +444,12 @@ export function AgentSidebarList({
               agents={rankedPinned}
               selectedId={selectedId}
               unreadById={unreadById}
+              subtitleFor={(agent) => threadPreview(agent)}
               onSelect={onSelect}
               onContextMenu={handleContextMenu}
               onReorder={onReorderPinned}
             />
-            {rankedPinned.flatMap((agent) =>
-              (childrenByParent[agent.id] ?? []).map((child) => {
-                const childAgent: AgentWithMeta = {
-                  id: child.childId,
-                  name: child.name,
-                  emoji: child.emoji,
-                  description: child.description,
-                  mode: child.mode,
-                };
-                return (
-                  <AgentRow
-                    key={child.childId}
-                    agent={childAgent}
-                    selected={selectedId === child.childId}
-                    unread={unreadById?.[child.childId]?.count ?? 0}
-                    subtitle={threadPreview(childAgent)}
-                    indent
-                    onClick={() => onSelect(childAgent)}
-                    onContextMenu={(e) => handleContextMenu(e, childAgent)}
-                  />
-                );
-              }),
-            )}
+            {rankedPinned.flatMap((agent) => (childrenByParent[agent.id] ?? []).map(childRow))}
           </AgentSection>
         )}
 
@@ -742,9 +723,11 @@ function AgentRow({
       {selected && <RowAccent />}
       <AgentAvatar
         name={agent.name}
+        id={agent.id}
         avatarShape={agent.avatarShape}
         avatarColor={agent.avatarColor}
         avatarImage={agent.avatarImage}
+        emoji={agent.emoji}
         size={32}
         selected={selected}
       />

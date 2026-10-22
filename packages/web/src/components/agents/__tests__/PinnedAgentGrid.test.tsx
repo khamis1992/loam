@@ -66,7 +66,7 @@ describe('PinnedAgentGrid rendering', () => {
     const selected = screen.getByRole('button', { name: /Beta/ });
     expect(selected).toHaveAttribute('aria-current', 'true');
     expect(selected).toHaveClass('bg-fill-tsp');
-    expect(selected).toHaveClass('rounded-control');
+    expect(selected).toHaveClass('rounded-card');
     const others = screen.getByRole('button', { name: /Aster/ });
     expect(others).not.toHaveClass('bg-fill-tsp');
     expect(others).toHaveClass('hover:bg-fill-hover');

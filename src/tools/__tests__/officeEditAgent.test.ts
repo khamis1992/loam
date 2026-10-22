@@ -20,6 +20,7 @@ import {
   parseCellAddress,
   columnLetters,
   createOfficeEditTools,
+  splitClauses,
   type OfficeEditOp,
 } from "../officeEditAgent.js";
 import { LOAM_MODES } from "../../modes/catalog.js";
@@ -267,5 +268,144 @@ describe("O2 office edit agent", () => {
     }
     const ask = LOAM_MODES.find((m) => m.id === "ask");
     assert.ok(ask && !ask.tools.includes("office_edit"), "ask (read-only) mode never exposes a file-writing tool");
+  });
+
+  it("plans Arabic title/notes/paragraph/إلى instructions (Unicode word boundaries)", () => {
+    const doc = documentArtifact();
+    assert.deepEqual(
+      planOfficeEdits("عنوان المستند إلى «تقرير المبيعات»", doc).ops,
+      [{ op: "set-title", value: "تقرير المبيعات" }],
+    );
+    assert.deepEqual(
+      planOfficeEdits("عنوان المستند إلى قيمة جديدة", doc).ops,
+      [{ op: "set-title", value: "قيمة جديدة" }],
+      "unquoted Arabic value after إلى",
+    );
+    assert.deepEqual(
+      planOfficeEdits("عنوان الشريحة 2 إلى «نظرة عامة»", presentationArtifact()).ops,
+      [{ op: "set-slide-title", slide: 2, value: "نظرة عامة" }],
+    );
+    assert.deepEqual(
+      planOfficeEdits("شريحة 2 ملاحظات إلى «نص المتحدث»", presentationArtifact()).ops,
+      [{ op: "set-slide-notes", slide: 2, value: "نص المتحدث" }],
+    );
+    assert.deepEqual(
+      planOfficeEdits("فقرة 3 إلى «سطر جديد»", doc).ops,
+      [{ op: "set-block-text", block: 3, value: "سطر جديد" }],
+    );
+  });
+
+  it("rejects an empty replace-text search term instead of corrupting the text", () => {
+    const artifact = documentArtifact();
+    const plan = planOfficeEdits('replace "" with "X"', artifact);
+    assert.equal(plan.ops.length, 0, "an empty find is not a usable op");
+    const forced = applyOfficeEdits(artifact, [{ op: "replace-text", find: "", replace: "X" }]);
+    assert.equal(forced.applied.length, 0);
+    assert.match(forced.skipped[0]!.reason, /empty/i);
+    assert.equal(
+      (artifact.content as Extract<StudioArtifact, { kind: "document" }>["content"]).blocks[0]!.text,
+      "Alpha summary of the quarter.",
+      "the original artifact is never mutated",
+    );
+  });
+
+  it("pads a ragged row so set-cell never leaves a hole that fails validation", () => {
+    const artifact: StudioArtifact = {
+      kind: "spreadsheet",
+      title: "Ragged",
+      revision: 1,
+      content: { sheets: [{ name: "S", cells: [["a", "b", "c"], ["d"]] }] },
+    };
+    const result = applyOfficeEdits(artifact, [{ op: "set-cell", address: "C2", value: "z", sheet: "S" }]);
+    assert.equal(result.applied.length, 1);
+    const cells = (result.artifact as Extract<StudioArtifact, { kind: "spreadsheet" }>).content.sheets[0]!.cells;
+    assert.deepEqual(cells[1], ["d", "", "z"]);
+    assert.ok(cells[1]!.every((cell) => typeof cell === "string"), "no holes in the padded row");
+    const outside = applyOfficeEdits(artifact, [{ op: "set-cell", address: "D1", value: "z", sheet: "S" }]);
+    assert.equal(outside.applied.length, 0);
+    assert.match(outside.skipped[0]!.reason, /outside the existing grid/);
+  });
+
+  it("keeps semicolons inside quoted values when splitting clauses", () => {
+    assert.deepEqual(splitClauses('set cell B2 to "a;b"; set cell B3 to "c"'), [
+      'set cell B2 to "a;b"',
+      'set cell B3 to "c"',
+    ]);
+    assert.deepEqual(
+      planOfficeEdits('set cell B2 to "a;b"', spreadsheetArtifact()).ops,
+      [{ op: "set-cell", address: "B2", value: "a;b" }],
+    );
+  });
+
+  it("office_edit does not save when the export fails", async (t) => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "loam-office-edit4-"));
+    t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+    const fileRel = "uploads/report.docx";
+    const fileAbsolute = path.join(tmp, fileRel);
+    fs.mkdirSync(path.dirname(fileAbsolute), { recursive: true });
+    fs.writeFileSync(fileAbsolute, Buffer.from("orig"));
+    let saveCalls = 0;
+    const tools = createOfficeEditTools({
+      readStudio: () => documentArtifact(),
+      saveStudio() { saveCalls++; throw new Error("must not save"); },
+      async exportStudio() { throw new Error("export exploded"); },
+    });
+    const result = await tools[0]!.run(
+      { path: fileRel, instruction: 'Replace "Alpha" with "Zeta"' },
+      { cfg: {} as never, workspace: tmp, emit: () => {} },
+    );
+    assert.ok(!result.ok, result.content);
+    assert.equal(saveCalls, 0, "a failed export must not commit the studio");
+    assert.ok(fs.readFileSync(fileAbsolute).equals(Buffer.from("orig")));
+  });
+
+  it("office_edit reports the saved revision when the file write fails", async (t) => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "loam-office-edit5-"));
+    t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+    const fileRel = "uploads/report.docx";
+    const fileAbsolute = path.join(tmp, fileRel);
+    fs.mkdirSync(fileAbsolute, { recursive: true }); // a directory cannot be written as a file
+    const tools = createOfficeEditTools({
+      readStudio: () => documentArtifact(),
+      saveStudio: (_workspace, input, expected) => ({ ...(input as StudioArtifact), revision: (expected as number) + 1 }),
+      async exportStudio() { return { buffer: Buffer.from("patched"), filename: "report.docx", contentType: "x" }; },
+    });
+    const result = await tools[0]!.run(
+      { path: fileRel, instruction: 'Replace "Alpha" with "Zeta"' },
+      { cfg: {} as never, workspace: tmp, emit: () => {} },
+    );
+    assert.ok(!result.ok, result.content);
+    assert.match(result.content, /المراجعة 4/, "the committed revision is reported so the user can re-export");
+  });
+
+  it("office_edit re-imports a different-kind file using the current revision", async (t) => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "loam-office-edit3-"));
+    t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+    const fileRel = "uploads/deck.pptx";
+    const fileAbsolute = path.join(tmp, fileRel);
+    fs.mkdirSync(path.dirname(fileAbsolute), { recursive: true });
+    fs.writeFileSync(fileAbsolute, Buffer.from("orig"));
+
+    const sheetStudio: StudioArtifact = { ...spreadsheetArtifact(), revision: 7 };
+    const imported: StudioArtifact = { ...presentationArtifact(), revision: 8 };
+    let seenRevision: unknown;
+    const tools = createOfficeEditTools({
+      readStudio: () => sheetStudio,
+      importStudio: async (_workspace, _buffer, _filename, expectedRevision) => {
+        seenRevision = expectedRevision;
+        return imported;
+      },
+      saveStudio: (_workspace, input, expected) => ({ ...(input as StudioArtifact), revision: (expected as number) + 1 }),
+      async exportStudio() {
+        return { buffer: Buffer.from("deck"), filename: "deck.pptx", contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" };
+      },
+    });
+    const result = await tools[0]!.run(
+      { path: fileRel, instruction: 'set slide 1 title to "Overview"' },
+      { cfg: {} as never, workspace: tmp, emit: () => {} },
+    );
+    assert.ok(result.ok, result.content);
+    assert.equal(seenRevision, 7, "import carries the existing revision so the concurrency check passes");
+    assert.ok(fs.readFileSync(fileAbsolute).equals(Buffer.from("deck")));
   });
 });

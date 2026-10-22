@@ -46,6 +46,13 @@ const isPlainBlock = (block: DocumentBlock) =>
 
 const QUOTE_PAIRS: Array<[string, string]> = [["«", "»"], ["\"", "\""], ["'", "'"]];
 
+/** Unicode-aware word boundaries: JS `\b` is ASCII-only and never matches around
+ *  Arabic letters, so `/\bعنوان\b/` silently fails. Lookarounds keep the same
+ *  "whole word" intent for both scripts. */
+const NOT_WORD = "(?<![\\p{L}\\p{N}_])";
+const NOT_WORD_END = "(?![\\p{L}\\p{N}_])";
+const word = (alternation: string): RegExp => new RegExp(`${NOT_WORD}(?:${alternation})${NOT_WORD_END}`, "iu");
+
 /** Extract quoted spans «…», "…" or '…' in order of appearance. */
 export function quotedSpans(text: string): Array<{ text: string; start: number }> {
   const spans: Array<{ text: string; start: number }> = [];
@@ -63,7 +70,7 @@ export function quotedSpans(text: string): Array<{ text: string; start: number }
 function valueOf(remainder: string): string {
   const spans = quotedSpans(remainder);
   if (spans.length) return spans[0]!.text.trim();
-  const marker = /\b(?:to|إلى)\b|→|←|[:=]/g;
+  const marker = new RegExp(`${NOT_WORD}(?:to|إلى)${NOT_WORD_END}|→|←|[:=]`, "gu");
   let cut = -1;
   for (let match = marker.exec(remainder); match; match = marker.exec(remainder)) {
     cut = match.index + match[0].length;
@@ -114,13 +121,41 @@ export interface OfficeEditDeps {
 
 export interface EditPlan { ops: OfficeEditOp[]; error?: string; scopes: string[] }
 
+/** Split a multi-edit instruction on newlines and semicolons while keeping
+ *  quoted spans (`"a;b"`, `«a;b»`) intact, so a value may contain a separator. */
+export function splitClauses(instruction: string): string[] {
+  const clauses: string[] = [];
+  let current = "";
+  let closing: string | null = null;
+  for (const char of instruction) {
+    if (closing) {
+      current += char;
+      if (char === closing) closing = null;
+      continue;
+    }
+    if (char === "\"" || char === "'" || char === "«") {
+      closing = char === "«" ? "»" : char;
+      current += char;
+      continue;
+    }
+    if (char === "\n" || char === ";") {
+      clauses.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  clauses.push(current);
+  return clauses.map((clause) => clause.trim()).filter(Boolean);
+}
+
 /** Turn an instruction into ops given the current artifact's actual shape.
  *  Splitting on line/`;` allows multi-edit instructions in one call; each clause
  *  yields at most one op. All slide/paragraph/row numbers are 1-based. */
 export function planOfficeEdits(instruction: string, artifact: StudioArtifact): EditPlan {
   const ops: OfficeEditOp[] = [];
   const scopes = new Set<string>();
-  const clauses = instruction.split(/\n|;\s*/).map((c) => c.trim()).filter(Boolean);
+  const clauses = splitClauses(instruction);
   for (const clause of clauses) {
     const op = planClause(clause, artifact);
     if (!op) continue;
@@ -147,10 +182,14 @@ function planClause(clause: string, artifact: StudioArtifact): OfficeEditOp | st
   if (replaceRegex.test(clause)) {
     const slide = slideNum(clause);
     if (spans.length >= 2) {
-      return { op: "replace-text", find: spans[0]!.text, replace: spans[1]!.text, ...(slide !== undefined ? { slide } : {}) };
+      const find = spans[0]!.text;
+      // An empty search term would make `split("").join(replace)` corrupt the
+      // whole document; treat the clause as unsupported instead.
+      if (!find) return null;
+      return { op: "replace-text", find, replace: spans[1]!.text, ...(slide !== undefined ? { slide } : {}) };
     }
     const literal = new RegExp(`${KEYWORD}\\s+(.+?)\\s+(?:with|by|بـ?|ב)\\s+`, "i").exec(clause);
-    if (literal && literal[1]) return { op: "replace-text", find: literal[1].trim(), replace: valueOf(clause.slice(literal.index + literal[0].length)), ...(slide !== undefined ? { slide } : {}) };
+    if (literal && literal[1] && literal[1].trim()) return { op: "replace-text", find: literal[1].trim(), replace: valueOf(clause.slice(literal.index + literal[0].length)), ...(slide !== undefined ? { slide } : {}) };
   }
 
   // 2. set-cell: set/write cell B2 to "…" (optionally `in Sheet1`), or Sheet1 B2.
@@ -158,18 +197,19 @@ function planClause(clause: string, artifact: StudioArtifact): OfficeEditOp | st
   const cellMatch = cellRegex.exec(clause);
   if (cellMatch) {
     const sheetMatch = /\bin\s+([^\s«"',;.]+)|(?:ورقة|sheet)\s+([^\s«"',;.«»"]+)\s*(?:في)?/i.exec(clause);
+    const sheet = sheetMatch1(sheetMatch);
     const value = spans.length ? spans[spans.length - 1]!.text : valueOf(clause.slice(cellMatch.index + cellMatch[0].length));
-    return { op: "set-cell", address: cellMatch[1]!.toUpperCase(), value, ...(sheetMatch1(sheetMatch) ? { sheet: sheetMatch1(sheetMatch) } : {}) };
+    return { op: "set-cell", address: cellMatch[1]!.toUpperCase(), value, ...(sheet ? { sheet } : {}) };
   }
 
   // 3. set-slide-title: slide 2 title to "…" / title of slide 2 / عنوان الشريحة 2.
   const slide = slideNum(clause);
-  if (slide !== undefined && /\b(?:title|عنوان)\b/i.test(clause) && !/(?:notes|ملاحظات)/i.test(clause)) {
+  if (slide !== undefined && word("title|عنوان").test(clause) && !word("notes|ملاحظات").test(clause)) {
     return { op: "set-slide-title", slide, value: valueOf(clause) };
   }
 
   // 4. set-slide-notes.
-  if (slide !== undefined && /\b(?:notes?|ملاحظات)\b/i.test(clause)) {
+  if (slide !== undefined && word("notes?|ملاحظات").test(clause)) {
     return { op: "set-slide-notes", slide, value: valueOf(clause) };
   }
 
@@ -190,7 +230,7 @@ function planClause(clause: string, artifact: StudioArtifact): OfficeEditOp | st
   }
 
   // 7. set-title: document title / عنوان المستند / bare "title to" when no slide keyword.
-  if (!/(?:slide|شريحة)\s+\d/i.test(clause) && /\b(?:title|عنوان)\b/i.test(clause)) {
+  if (!/(?:slide|شريحة)\s+\d/i.test(clause) && word("title|عنوان").test(clause)) {
     return { op: "set-title", value: valueOf(clause) };
   }
   return null;
@@ -231,13 +271,19 @@ function applyOne(artifact: StudioArtifact, op: OfficeEditOp): string | null {
       if (!sheet) return `sheet not found: ${op.sheet}`;
       const position = parseCellAddress(op.address);
       if (!position) return `invalid cell address: ${op.address}`;
-      if (position.row > sheet.cells.length || position.column > (sheet.cells[0]?.length ?? 0)) {
+      // Bound the cell by the grid's widest row (rows may be ragged) and pad the
+      // target row so the assignment never leaves a hole that fails validation.
+      const gridColumns = sheet.cells.reduce((max, row) => Math.max(max, row.length), 0);
+      if (position.row > sheet.cells.length || position.column > gridColumns) {
         return `cell ${op.address} is outside the existing grid`;
       }
-      sheet.cells[position.row - 1]![position.column - 1] = op.value;
+      const row = sheet.cells[position.row - 1]!;
+      while (row.length < position.column) row.push("");
+      row[position.column - 1] = op.value;
       return null;
     }
     case "replace-text": {
+      if (op.find === "") return "find text must not be empty";
       if (op.find === op.replace) return "find and replace text are identical";
       let touched = false;
       if (artifact.kind === "document") {
@@ -362,10 +408,15 @@ export function createOfficeEditTools(deps: OfficeEditDeps = {}): Tool[] {
         let file: string;
         try { file = taskPath(ctx.workspace, rel); } catch (error) { return { ok: false, content: `مسار غير مسموح: ${error instanceof Error ? error.message : String(error)}` }; }
         try {
-          let artifact = doRead(ctx.workspace);
-          if (!artifact || artifact.kind !== kind) {
+          const existing = doRead(ctx.workspace);
+          let artifact: StudioArtifact;
+          if (existing && existing.kind === kind) {
+            artifact = existing;
+          } else {
             if (!fs.existsSync(file)) return { ok: false, content: `الملف غير موجود: ${rel}` };
-            artifact = await doImport(ctx.workspace, fs.readFileSync(file), path.basename(rel), 0);
+            // A file of a different kind replaces the active studio; carry the
+            // current revision so the optimistic-concurrency check still passes.
+            artifact = await doImport(ctx.workspace, fs.readFileSync(file), path.basename(rel), existing?.revision ?? 0);
           }
           const plan = planOfficeEdits(instruction, artifact);
           if (plan.error && !plan.ops.length) return { ok: false, content: `تعذر التخطيط: ${plan.error}` };
@@ -374,9 +425,20 @@ export function createOfficeEditTools(deps: OfficeEditDeps = {}): Tool[] {
             const reasons = result.skipped.map((s) => `— ${s.reason}`).join("\n");
             return { ok: false, content: `لم يُطبَّق أي تعديل.\n${reasons || plan.error || OP_GRAMMAR}` };
           }
+          // Export before committing: a failed export must leave both the studio
+          // and the file untouched, so a retry can re-plan from the same revision.
+          let output: { buffer: Buffer; filename: string };
+          try {
+            output = await doExport(result.artifact, ctx.workspace);
+          } catch (error) {
+            return { ok: false, content: `تعذّر تصدير الملف: ${error instanceof Error ? error.message : String(error)}` };
+          }
           const saved = doSave(ctx.workspace, result.artifact, artifact.revision);
-          const output = await doExport(saved, ctx.workspace);
-          fs.writeFileSync(file, output.buffer);
+          try {
+            fs.writeFileSync(file, output.buffer);
+          } catch (error) {
+            return { ok: false, content: `حُفظت المراجعة ${saved.revision} في الاستوديو لكن تعذّرت كتابة الملف: ${error instanceof Error ? error.message : String(error)}` };
+          }
           const skipped = result.skipped.length ? ` • تخطّي: ${result.skipped.map((s) => s.reason).join("؛ ")}` : "";
           return { ok: true, content: `طُبِّق ${result.applied.length} تعديلًا هدفًا على ${rel} (${output.filename === path.basename(rel) ? "نفس الملف" : output.filename}) — المراجعة الآن ${saved.revision} وبقية الملف كما هو.${skipped}` };
         } catch (error) {

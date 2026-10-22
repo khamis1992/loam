@@ -21,35 +21,68 @@ export const AVATAR_SHAPES = [
 
 export type AvatarShape = (typeof AVATAR_SHAPES)[number];
 
-/** The 10 named color tokens (mirrors AVATAR_COLORS in src/server/agents.ts). */
+/** The 16 named color tokens (mirrors AVATAR_COLORS in src/server/agents.ts). */
 export const AVATAR_COLORS = [
   'red',
   'orange',
   'yellow',
   'green',
+  'teal',
   'cyan',
   'blue',
+  'indigo',
   'violet',
+  'purple',
   'magenta',
+  'pink',
   'brown',
+  'olive',
   'gray',
+  'slate',
 ] as const;
 
 export type AvatarColor = (typeof AVATAR_COLORS)[number];
 
-/** Vivid, tasteful hex per token; `ink` keeps the monogram readable. */
-const PALETTE: Record<AvatarColor, { base: string; ink: string }> = {
+/** Alternate spellings accepted on input and mapped onto a canonical token. */
+const COLOR_ALIASES: Record<string, AvatarColor> = { grey: 'gray' };
+
+export const AVATAR_PALETTE: Record<AvatarColor, { base: string; ink: string }> = {
   red: { base: '#e5484d', ink: '#ffffff' },
   orange: { base: '#f76b15', ink: '#ffffff' },
   yellow: { base: '#ffc53d', ink: '#4a3200' },
   green: { base: '#30a46c', ink: '#ffffff' },
-  cyan: { base: '#12a594', ink: '#ffffff' },
+  teal: { base: '#12a594', ink: '#ffffff' },
+  cyan: { base: '#00a2c7', ink: '#ffffff' },
   blue: { base: '#0090ff', ink: '#ffffff' },
+  indigo: { base: '#3e63dd', ink: '#ffffff' },
   violet: { base: '#6e56cf', ink: '#ffffff' },
+  purple: { base: '#8e4ec6', ink: '#ffffff' },
   magenta: { base: '#d6409f', ink: '#ffffff' },
+  pink: { base: '#ec4899', ink: '#ffffff' },
   brown: { base: '#ad7f58', ink: '#ffffff' },
+  olive: { base: '#8a9a2b', ink: '#222b00' },
   gray: { base: '#6e6f77', ink: '#ffffff' },
+  slate: { base: '#64748b', ink: '#ffffff' },
 };
+
+/** Normalize an input color token, honoring aliases and case; undefined when unknown. */
+export function normalizeAvatarColor(value?: string): AvatarColor | undefined {
+  if (typeof value !== 'string') return undefined;
+  const key = value.trim().toLowerCase();
+  if (!key) return undefined;
+  const aliased = COLOR_ALIASES[key];
+  if (aliased) return aliased;
+  return (AVATAR_COLORS as readonly string[]).includes(key) ? (key as AvatarColor) : undefined;
+}
+
+/**
+ * Resolve the avatar color for an agent. An explicit token wins; otherwise the
+ * color is derived deterministically from `seed` (the agent id) so that a given
+ * agent always renders the same mark across renders and sessions.
+ */
+export function resolveAvatarColor(seed: string, avatarColor?: string): AvatarColor {
+  return normalizeAvatarColor(avatarColor) ?? AVATAR_COLORS[mix32(hashString(seed || 'agent', 0x9dc5811c)) % AVATAR_COLORS.length];
+}
 
 /**
  * Shared stroke width. Every silhouette is filled and stroked in its own color
@@ -91,9 +124,16 @@ const SHAPE_PATHS: Record<AvatarShape, React.ReactNode> = {
 
 interface AgentAvatarProps {
   name: string;
+  /** Stable agent id used to derive the default color/shape when no tokens are set. */
+  id?: string;
   avatarShape?: string;
   avatarColor?: string;
   avatarImage?: string;
+  /**
+   * Optional emoji mark. A custom emoji is drawn on top of the colored shape;
+   * the default robot emoji is ignored so it never overrides the agent's color.
+   */
+  emoji?: string;
   /** Rendered edge length in px (default 32). */
   size?: number;
   selected?: boolean;
@@ -103,7 +143,7 @@ interface AgentAvatarProps {
   typing?: boolean;
 }
 
-/** FNV-1a 32-bit string hash — stable default derivation from the name. */
+/** FNV-1a 32-bit string hash — stable default derivation from the seed. */
 function hashString(input: string, seed = 0x811c9dc5): number {
   let h = seed >>> 0;
   for (let i = 0; i < input.length; i++) {
@@ -111,6 +151,20 @@ function hashString(input: string, seed = 0x811c9dc5): number {
     h = Math.imul(h, 0x01000193) >>> 0;
   }
   return h >>> 0;
+}
+
+/**
+ * Murmur3-style finalizer. The low bits that select a palette entry otherwise
+ * repeat too often for short ids, so high entropy is folded back into them.
+ */
+function mix32(h: number): number {
+  let x = h >>> 0;
+  x ^= x >>> 16;
+  x = Math.imul(x, 0x7feb352d);
+  x ^= x >>> 15;
+  x = Math.imul(x, 0x846ca68b);
+  x ^= x >>> 16;
+  return x >>> 0;
 }
 
 /** First grapheme of the name (Intl.Segmenter when available, code point fallback). */
@@ -135,6 +189,16 @@ function isValidImage(value?: string): value is string {
   return value.startsWith('data:image/') || value.startsWith('/api/');
 }
 
+/** The default robot emoji; it must never replace an agent's colored mark. */
+const DEFAULT_ROBOT_EMOJI = '🤖';
+
+/** A custom emoji mark (default robot excluded), or undefined to use the monogram. */
+function resolveMark(emoji: string | undefined, monogram: string): string | undefined {
+  const trimmed = (emoji ?? '').trim();
+  if (!trimmed || trimmed === DEFAULT_ROBOT_EMOJI) return undefined;
+  return trimmed.slice(0, 8);
+}
+
 /**
  * Tracks the user's reduced-motion preference so animated states render
  * statically. Starts as `false` (no hydration mismatch) and syncs after mount.
@@ -154,9 +218,11 @@ function usePrefersReducedMotion(): boolean {
 
 export function AgentAvatar({
   name,
+  id,
   avatarShape,
   avatarColor,
   avatarImage,
+  emoji,
   size = 32,
   selected = false,
   working = false,
@@ -164,22 +230,24 @@ export function AgentAvatar({
 }: AgentAvatarProps) {
   const reducedMotion = usePrefersReducedMotion();
   const resolved = useMemo(() => {
+    const seed = id?.trim() ? id : name;
     const shape: AvatarShape = (AVATAR_SHAPES as readonly string[]).includes(avatarShape ?? '')
       ? (avatarShape as AvatarShape)
-      : AVATAR_SHAPES[hashString(name) % AVATAR_SHAPES.length];
-    const color: AvatarColor = (AVATAR_COLORS as readonly string[]).includes(avatarColor ?? '')
-      ? (avatarColor as AvatarColor)
-      : AVATAR_COLORS[hashString(name, 0x9dc5811c) % AVATAR_COLORS.length];
+      : AVATAR_SHAPES[mix32(hashString(seed)) % AVATAR_SHAPES.length];
+    const color = resolveAvatarColor(seed, avatarColor);
     const image = isValidImage(avatarImage) ? avatarImage : undefined;
     const monogram = firstGrapheme(name).toLocaleUpperCase();
-    return { shape, color, image, monogram };
-  }, [name, avatarShape, avatarColor, avatarImage]);
+    const mark = resolveMark(emoji, monogram) ?? monogram;
+    return { shape, color, image, monogram, mark };
+  }, [name, id, avatarShape, avatarColor, avatarImage, emoji]);
 
-  const palette = PALETTE[resolved.color];
+  const palette = AVATAR_PALETTE[resolved.color];
   const dotSize = Math.max(8, Math.round(size * 0.3));
   const ringSpan = Math.max(3, Math.round(size / 16) + 1);
   // Monogram size expressed in 64-unit viewBox space so it scales with `size`.
   const monogramSize = (Math.max(9, Math.round(size * 0.42)) * 64) / size;
+  // Emoji marks render slightly larger because their glyphs carry their own ink.
+  const markSize = resolved.mark === resolved.monogram ? monogramSize : (Math.max(14, Math.round(size * 0.52)) * 64) / size;
   const animate = !reducedMotion && typing;
 
   return (
@@ -224,11 +292,11 @@ export function AgentAvatar({
             textAnchor="middle"
             dominantBaseline="central"
             fill={palette.ink}
-            fontSize={monogramSize}
+            fontSize={markSize}
             fontWeight={500}
             fontFamily="inherit"
           >
-            {resolved.monogram}
+            {resolved.mark}
           </text>
         </svg>
       )}
