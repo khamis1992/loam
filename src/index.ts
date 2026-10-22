@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { EventLog } from "./session/eventLog.js";
-import { ensureTaskWorkspace } from "./server/taskWorkspace.js";
+import { ensureTaskWorkspace, isManagedTaskWorkspace } from "./server/taskWorkspace.js";
 import { BLUEPRINT_FILE, bootTaskFromSnapshot } from "./tools/envSnapshot.js";
 import path from "node:path";
 import { loadConfig, ROOT, DATA_DIR } from "./config.js";
@@ -509,7 +509,10 @@ async function main(): Promise<void> {
     // setup steps (npm ci, …) never run again. Purely an optimization: a missing
     // or stale snapshot, an occupied workspace or a bound composer folder all
     // leave the task exactly as it was, and a resume must not re-clone.
-    if (opts.resume !== true) {
+    // Only Loam's own `.loam-tasks/<taskId>` workspace may be seeded: a task
+    // bound to the user's real folder (composer folder / git worktree) is never
+    // filled with a snapshot, even when it happens to be empty.
+    if (opts.resume !== true && isManagedTaskWorkspace(saved.workspace)) {
       const envProject = saved.projectId ? getProject(saved.projectId) : undefined;
       const envFolder = envProject?.folder;
       if (envFolder && fs.existsSync(path.join(envFolder, BLUEPRINT_FILE))) {
