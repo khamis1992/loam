@@ -75,4 +75,31 @@ describe('TemplateGallery (#16)', () => {
     expect(screen.getByText('Custom spec')).toBeTruthy();
     expect(screen.queryByText('Kanban board')).toBeNull();
   });
+
+  it('matches prompt text, not just titles', () => {
+    render(<TemplateGallery onSelect={() => {}} />);
+
+    fireEvent.change(screen.getByPlaceholderText('Search templates...'), {
+      target: { value: 'streak counters' },
+    });
+    expect(screen.getByText('Habit tracker')).toBeTruthy();
+    expect(screen.queryByText('Kanban board')).toBeNull();
+  });
+
+  it('toggles a category chip off when clicked again', () => {
+    render(<TemplateGallery onSelect={() => {}} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Slides' }));
+    expect(screen.getByText('Investor pitch')).toBeTruthy();
+    expect(screen.queryByText('Kanban board')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Slides' }));
+    expect(screen.getByText('Kanban board')).toBeTruthy();
+    expect(screen.getByText('Investor pitch')).toBeTruthy();
+  });
+
+  it('shows the empty state for a custom list with no templates', () => {
+    render(<TemplateGallery templates={[]} onSelect={() => {}} />);
+    expect(screen.getByText('No results')).toBeTruthy();
+  });
 });
