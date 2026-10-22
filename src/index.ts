@@ -320,11 +320,15 @@ async function main(): Promise<void> {
         reason: "selected work mode",
       });
       const agentSuffix = agent ? agentSystemSuffix(agent) : undefined;
+      // Provenance-aware index summary: a bounded digest of long-term memory so
+      // the agent knows what it already knows without a tool call.
+      const memoryIndexSummary = memory && memory.count > 0 ? memory.indexSummary(8) : undefined;
       const suffix = [
         `You are Loam. Active mode: ${modeDefinition.labelAr}. ${modeDefinition.description} Only use the provided tool capabilities.`,
         modeDefinition.outputHint,
         workModeDefinition.policy,
         memoryContextSuffix,
+        memoryIndexSummary,
         agentSuffix, askModeSuffix,
       ].filter(Boolean).join("\n\n");
       // The gateway's resolved allowlist is the base tool set for this run: mode ∪
