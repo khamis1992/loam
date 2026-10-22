@@ -95,10 +95,12 @@ import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
 import { handleRetryLastRoutes } from "./routes/retryLast.js";
 import { handleSessionControlRoutes } from "./routes/sessionControl.js";
+import { handleInsightsRoutes } from "./routes/insights.js";
 import { handleShareRoutes } from "./routes/shares.js";
 import { handleProjectContextRoutes } from "./routes/projectContext.js";
 import { handleVoiceRoutes } from "./routes/voice.js";
 import { handleConnectorsRoutes } from "./routes/connectors.js";
+import { handleWikiRoutes } from "./routes/wiki.js";
 import { importGrokbotBundle, sanitizeGrokbotBundle } from "./grokbotImport.js";
 import { isValidTimezone } from "./scheduleTime.js";
 import { getWorkModesUi, normalizeWorkMode, resolveCompanionCapabilities } from "./companionGateway.js";
@@ -1757,6 +1759,8 @@ loadAgents();
         if (await handleRetryLastRoutes(req, res, p)) return;
         // Session timeline UX (D16): side-chat questions + pause/take-over.
         if (await handleSessionControlRoutes(req, res, p)) return;
+        // Session insights (D18): post-mortem metrics, issue timeline, feedback.
+        if (await handleInsightsRoutes(req, res, p, { ollama, model: cfg.model })) return;
         if (await handleSchedulesRoutes(req, res, p)) return;
         // D14: event-trigger deliveries (HMAC-verified webhook / GitHub events).
         if (await handleAutomationsRoutes(req, res, p)) return;
@@ -1783,6 +1787,8 @@ loadAgents();
         // Project context + model tiers (options 17/18/22): must precede the
         // generic /api/projects/ and /api/schedules/ handlers below.
         if (await handleProjectContextRoutes(req, res, p)) return;
+        // Repo wiki (D8): list/generate/read DeepWiki-style pages.
+        if (await handleWikiRoutes(req, res, p, { workspace: cfg.workspace, ollama, model: cfg.model })) return;
 
         // ---- avatar (Grok Bot-style): set shape/color/image on an existing agent ----
         // Must run before the generic /api/agents/:id prefix block.

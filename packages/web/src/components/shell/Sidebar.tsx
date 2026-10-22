@@ -48,6 +48,7 @@ export function Sidebar() {
     { id: 'search', label: t('Search'), icon: Search, shortcut: t('Ctrl+K'), onClick: 'search' },
     { id: 'library', label: t('Library'), icon: BookOpen, href: '/app/library' },
     { id: 'creations', label: t('Creations'), icon: Sparkles, href: '/app/creations' },
+    { id: 'wiki', label: t('Wiki'), icon: BookOpen, href: '/app/wiki' },
     { id: 'studio', label: t('Studio'), icon: Palette, href: '/app/studio' },
     { id: 'automations', label: t('Automations'), icon: Workflow, href: '/app/automations' },
     { id: 'plugins', label: t('Plugins'), icon: LayoutGrid, href: '/app/plugins' },

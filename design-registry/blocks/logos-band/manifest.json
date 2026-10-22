@@ -1,0 +1,18 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "logos-band",
+  "name": "Logo Band",
+  "description": "A muted row of customer logos used as a trust signal above or below a hero.",
+  "category": "logos",
+  "license": "MIT",
+  "source": "shadcn/ui blocks",
+  "tags": ["logos", "social-proof", "trust"],
+  "intent": "Signal that known teams use the product without shouting.",
+  "deps": ["react"],
+  "rtl": false,
+  "dir": "ltr",
+  "lang": "en",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"]
+}

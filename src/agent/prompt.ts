@@ -7,6 +7,7 @@ import { personalizationBlock } from "../server/personalization.js";
 import { renderPolicyContext } from "../policy/riskTier.js";
 import { buildMasterPrompt, codingModeSection, deriveMasterSlots, isCodingTask } from "./masterPrompt.js";
 import { loadProjectMemory, type ProjectMemoryResult } from "./projectMemory.js";
+import { DESIGN_RULES_PROMPT, isUiIntent } from "./designPrompt.js";
 
 /** The master prompt is on by default; LOAM_MASTER_PROMPT=0 falls back to the
  *  legacy Loam prompt for A/B or recovery. */
@@ -70,10 +71,17 @@ export function buildSystemPrompt(
   sandboxMode?: import("../policy/riskTier.js").SandboxMode,
   /** Pre-loaded project memory; pass null to skip loading, omit to load from cfg.workspace. */
   projectMemory?: ProjectMemoryResult | null,
+  /** The user's request text; used only to gate the UI design-rules section. */
+  userPrompt?: string,
 ): string {
   const lines: string[] = [];
   if (masterPromptEnabled()) {
     lines.push(buildMasterPrompt(deriveMasterSlots(cfg, toolNames), { model: cfg.model }));
+  }
+  // UI intents get the binding design-rules section (G1/G12). Injected only
+  // for UI tasks, so a non-UI request never pays for it.
+  if (isUiIntent(userPrompt)) {
+    lines.push(DESIGN_RULES_PROMPT);
   }
   if (codingPromptEnabled() && isCodingTask(toolNames)) {
     const coding = codingModeSection();
@@ -107,7 +115,7 @@ export function buildSystemPrompt(
   if (toolNames.includes("loam_studio")) lines.push("For imported Office files, preserve sourceIndex, styles and all other content metadata returned by read. Edit imported presentation textBoxes directly, retaining their ids and geometry. Do not flatten imported content or discard source mappings. Tell the user when a requested structural change is not supported by the original-file-preserving exporter.");
   if (toolNames.includes("office_export")) lines.push("Native office files: build the content in loam_studio (or loam_dataset for spreadsheets and charts), then call office_export to write the .docx/.pptx/.xlsx into the task. Use office_import first when editing an uploaded office file. Do not generate office files through shell or Python while these tools are available.");
   if (toolNames.includes("loam_canvas")) lines.push("loam_canvas produces vector SVG artwork, not generated photographs. File tools can create custom SVG or HTML designs.");
-  if (toolNames.includes("loam_design")) lines.push(BUILD_PHASE_PROMPT);
+  if (toolNames.includes("loam_design") || toolNames.includes("design_brief")) lines.push(BUILD_PHASE_PROMPT);
   if (toolNames.includes("loam_creative")) lines.push("For 3D scene requests, use loam_creative to read and update the live scene, preserving user work and using the returned revision. The scene supports primitives, imported self-contained GLB assets, materials, environment, camera, and spin animation. Do not claim Blender rendering, image generation, or video production unless a real available tool produced those outputs.");
   if (memories.length > 0) {
     lines.push("Context explicitly supplied by this task:");

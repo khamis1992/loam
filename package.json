@@ -14,6 +14,7 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "check:encoding": "tsx src/scripts/check-encoding.ts --run",
+    "check:design-registry": "tsx src/scripts/check-design-registry.ts",
     "check:pentest-bench": "tsx src/scripts/check-pentest-bench.ts",
     "test:pentest-bench": "node --import tsx --test src/scripts/__tests__/check-pentest-bench.test.ts",
     "test:browser-operator": "node --import tsx --test src/tools/__tests__/browserOperator.test.ts",
@@ -68,7 +69,9 @@
     "gen:master-prompt": "tsx src/scripts/gen-master-prompt.ts",
     "gen:web-app-template": "tsx src/scripts/gen-web-app-template.ts",
     "check:web-scaffold": "tsx src/scripts/check-web-scaffold.ts",
-    "check:promptwire": "tsx src/scripts/check-promptwire.ts"
+    "check:promptwire": "tsx src/scripts/check-promptwire.ts",
+    "bench:mem": "node --import tsx bench/memBench.ts",
+    "test:bench": "node --import tsx --test bench/__tests__/fakeModel.test.ts bench/__tests__/rssSampler.test.ts bench/__tests__/memBench.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
