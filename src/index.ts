@@ -43,6 +43,7 @@ import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
 import { publishTaskEvent } from "./server/streams.js";
+import { videoStudioRelay } from "./server/videoStudioRelay.js";
 import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { runAgent } from "./agent/loop.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
@@ -50,6 +51,7 @@ import type { Emit } from "./agent/events.js";
 import { OllamaClient } from "./ollama.js";
 import { flexCredentials } from "./server/modelTiers.js";
 import { startServer, type RunTaskOptions } from "./server/http.js";
+import { logMissingCraftDists } from "./server/craftStatus.js";
 import { appendMessage, appendStep, createTask, getProject, getTask, loadDb, setTaskStatus, listSchedules, setTaskDelegator } from "./server/db.js";
 import { conversationHistory } from "./agent/history.js";
 import { startScheduler } from "./server/scheduler.js";
@@ -548,7 +550,7 @@ async function main(): Promise<void> {
         opts.emit(event); publishTaskEvent(task.id, event);
       }
       throw error;
-    } finally { clearRunSignal(task.id); heartbeat?.stop(); if (lease) releaseRunLease(lease); }
+    } finally { clearRunSignal(task.id); heartbeat?.stop(); if (lease) releaseRunLease(lease); videoStudioRelay.cancelTask(task.id); }
   };
 
   // Bridge for src/server/routes/retryLast.ts: the route module cannot receive
@@ -578,6 +580,11 @@ async function main(): Promise<void> {
     preview: rt.preview,
     mcp,
   });
+
+  // Non-failing startup check: log how to install any missing Craft dists.
+  // Never downloads; a missing dist just means the app falls back to Loam's
+  // own editor for that file type.
+  logMissingCraftDists();
 
   // A1: Start the Manus-style protocol adapter (Connect RPC + socket.io) on top of Loam.
   const protocolAdapter = await startProtocolAdapter({ cfg, runTask, getTask });

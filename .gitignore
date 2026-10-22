@@ -34,3 +34,7 @@ nul
 /electron/filmcraft/dist/
 /electron/effectcraft/dist/
 /.cache/vendor/
+
+# Vendored wasm app bundles (fetched by scripts/vendor/fetch-craft.mjs; never committed)
+electron/craft/*/dist/
+electron/filmcraft/dist/
