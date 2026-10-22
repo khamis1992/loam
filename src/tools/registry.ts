@@ -189,3 +189,17 @@ export function strs(args: Record<string, unknown>, key: string): string[] {
   if (!Array.isArray(v)) return [];
   return v.filter((item): item is string => typeof item === "string");
 }
+
+/**
+ * Return the first present string among `keys`, in order. Used to accept two
+ * spellings of the same argument (for example the canonical `old_string` and
+ * its legacy alias `find`) without coercing a legitimately empty string to a
+ * default. Returns undefined when no key holds a string.
+ */
+export function strFirst(args: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const v = args[key];
+    if (typeof v === "string") return v;
+  }
+  return undefined;
+}

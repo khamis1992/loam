@@ -2,9 +2,9 @@
  * Dedicated `grep` and `glob` tools (Claude Code parity, task C5).
  *
  * `grep` runs ripgrep when a binary is available (`rg` on PATH or an explicit
- * override) and falls back to a built-in, streaming-free scanner that mirrors
- * ripgrep semantics closely enough for agent use: regular expressions, output
- * modes (content / files_with_matches / count), line numbers, context lines,
+ * override) and falls back to a built-in scanner that mirrors ripgrep
+ * semantics closely enough for agent use: regular expressions, output modes
+ * (content / files_with_matches / count), line numbers, context lines,
  * case-insensitive search and glob include/exclude filters.
  *
  * `glob` enumerates files by name pattern and returns them ordered by
@@ -21,6 +21,11 @@ import { resolveRead } from "../policy/paths.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { bool, num, str } from "./registry.js";
 
+// Mirrors the built-in ignore rules ripgrep already applies, plus the
+// Electron/Chromium profile caches that can appear inside a desktop workspace
+// and dwarf the source tree. Ignoring them is what keeps the built-in scanner
+// fast (and silent) when ripgrep is unavailable; callers that need them can
+// reach for a shell command.
 const IGNORE_DIRS = new Set([
   "node_modules",
   ".git",
@@ -39,6 +44,14 @@ const IGNORE_DIRS = new Set([
   ".manus",
   ".browser-profile",
   ".screenshots",
+  ".loam-workspace",
+  ".cache",
+  "Cache",
+  "Code Cache",
+  "GPUCache",
+  "DawnGraphiteCache",
+  "DawnWebGPUCache",
+  "Service Worker",
 ]);
 const MAX_SCAN_FILES = 8000;
 const MAX_FILE_BYTES = 2_000_000;
@@ -200,16 +213,39 @@ interface WalkedFile {
   rel: string;
 }
 
+/** Directories that grow without bound or hold content an agent never asks to
+ *  search (package stores, file caches, Electron profiles, recordings,
+ *  repository history). Pruned by name during the walk so the scanner stays fast
+ *  on a desktop workspace that is mostly build output. */
+const PRUNE_DIRS = new Set([
+  "packages",
+  "pkg",
+  "pkgs",
+  "history",
+  "screenshots",
+  "recordings",
+  "videos",
+  "artifacts",
+  "companions",
+]);
+
+function skipDir(name: string, includeHidden: boolean): boolean {
+  if (IGNORE_DIRS.has(name)) return true;
+  if (!includeHidden && name.startsWith(".")) return true;
+  return PRUNE_DIRS.has(name.toLowerCase());
+}
+
 function walkFiles(
   root: string,
   matcher: GlobMatcher | null,
-  opts: { maxFiles: number; timeoutMs: number; includeHidden: boolean },
+  opts: { maxFiles: number; timeoutMs: number; includeHidden: boolean; stop?: () => boolean },
 ): WalkedFile[] {
   const out: WalkedFile[] = [];
   const deadline = Date.now() + opts.timeoutMs;
+  const stop = opts.stop ?? (() => false);
   const stack: string[] = [root];
   let visited = 0;
-  while (stack.length > 0 && visited < opts.maxFiles && Date.now() < deadline) {
+  while (stack.length > 0 && visited < opts.maxFiles && Date.now() < deadline && !stop()) {
     const dir = stack.pop()!;
     let entries: fs.Dirent[];
     try {
@@ -218,12 +254,11 @@ function walkFiles(
       continue;
     }
     for (const entry of entries) {
-      if (visited >= opts.maxFiles || Date.now() > deadline) break;
+      if (visited >= opts.maxFiles || Date.now() > deadline || stop()) break;
       if (entry.isSymbolicLink()) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (IGNORE_DIRS.has(entry.name)) continue;
-        if (!opts.includeHidden && entry.name.startsWith(".")) continue;
+        if (skipDir(entry.name, opts.includeHidden)) continue;
         stack.push(full);
       } else if (entry.isFile()) {
         visited += 1;
@@ -237,17 +272,26 @@ function walkFiles(
   return out;
 }
 
+/** True when the file is worth reading as text (cheap extension gate). */
+function isBinaryName(full: string): boolean {
+  return BINARY_EXT.has(path.extname(full).toLowerCase());
+}
+
 // ---------------------------------------------------------------------------
 // ripgrep fast path
 // ---------------------------------------------------------------------------
 
 function findRipgrep(): string | null {
+  if (ripgrepPath !== undefined) return ripgrepPath;
   const overrides = [process.env.LOAM_RIPGREP_PATH, process.env.RIPGREP_PATH].filter(
     (v): v is string => typeof v === "string" && v.trim().length > 0,
   );
   for (const candidate of overrides) {
     try {
-      if (fs.statSync(candidate).isFile()) return candidate;
+      if (fs.statSync(candidate).isFile()) {
+        ripgrepPath = candidate;
+        return ripgrepPath;
+      }
     } catch {
       /* ignore */
     }
@@ -257,11 +301,15 @@ function findRipgrep(): string | null {
     const res = spawnSync(which, ["rg"], { encoding: "utf8" });
     if (res.status === 0 && res.stdout) {
       const first = res.stdout.split(/\r?\n/)[0]?.trim();
-      if (first) return first;
+      if (first) {
+        ripgrepPath = first;
+        return ripgrepPath;
+      }
     }
   } catch {
     /* ignore */
   }
+  ripgrepPath = null;
   return null;
 }
 
@@ -312,16 +360,35 @@ function runRipgrep(root: string, isFile: boolean, opts: GrepOptions): RipgrepRu
 // Built-in scanner (JS fallback)
 // ---------------------------------------------------------------------------
 
+/** Resolved ripgrep binary, memoized so a run never pays `where` twice. */
+let ripgrepPath: string | null | undefined;
+
 function countMatches(content: string, re: RegExp): number {
   return content.split(re).length - 1;
 }
 
-/** Longest literal run in the pattern; safe prefilter only when the whole
- *  pattern is a plain literal (no regex metacharacters, no alternation). */
+/** Longest run of plain literal characters in the pattern. */
+function literalRun(pattern: string): string {
+  let best = "";
+  let cur = "";
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i]!;
+    if (/[A-Za-z0-9_ .\-]/.test(ch)) {
+      cur += ch;
+      if (cur.length > best.length) best = cur;
+      continue;
+    }
+    cur = "";
+    if (ch === "\\") i += 1; // skip the escaped character that follows
+  }
+  return best;
+}
+
+/** A case-sensitive substring that every match must contain, or null when the
+ *  pattern has no useful literal run to prefilter on. */
 function literalPrefilter(pattern: string): string | null {
-  if (pattern.length < 2) return null;
-  if (!/^[A-Za-z0-9_.\- ]+$/.test(pattern)) return null;
-  return pattern;
+  const run = literalRun(pattern);
+  return run.length >= 3 ? run : null;
 }
 
 /** Extensions that are never worth reading as text. */
@@ -333,6 +400,7 @@ const BINARY_EXT = new Set([
   ".woff", ".woff2", ".ttf", ".otf", ".eot",
   ".db", ".sqlite", ".sqlite3", ".pyc", ".class", ".o", ".a",
 ]);
+
 
 export async function grepInWorkspace(workspace: string, opts: GrepOptions): Promise<GrepResult> {
   const pattern = opts.pattern;
@@ -415,12 +483,18 @@ export async function grepInWorkspace(workspace: string, opts: GrepOptions): Pro
 
   const walk: WalkedFile[] = isFile
     ? [{ full: root, rel: path.basename(root) }]
-    : walkFiles(root, matcher, { maxFiles: MAX_SCAN_FILES, timeoutMs: DEFAULT_TIMEOUT_MS, includeHidden: false });
-
+    : walkFiles(root, matcher, {
+        maxFiles: MAX_SCAN_FILES,
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+        includeHidden: false,
+        // files_with_matches only needs `maxResults` hits, so stop walking the
+        // tree the moment the budget is full instead of scanning everything.
+        stop: () => mode === "files_with_matches" && fileCount >= maxResults,
+      });
   // Drop oversized and binary files before reading anything.
   const candidates: WalkedFile[] = [];
   for (const file of walk) {
-    if (BINARY_EXT.has(path.extname(file.full).toLowerCase())) continue;
+    if (isBinaryName(file.full)) continue;
     try {
       if (fs.statSync(file.full).size > MAX_FILE_BYTES) continue;
     } catch {
@@ -483,6 +557,7 @@ export async function grepInWorkspace(workspace: string, opts: GrepOptions): Pro
 
   // Read in concurrent chunks so large workspaces stay fast on disk.
   const CHUNK = 64;
+  const deadline = Date.now() + DEFAULT_TIMEOUT_MS;
   for (let i = 0; i < candidates.length && !truncated; i += CHUNK) {
     const chunk = candidates.slice(i, i + CHUNK);
     const contents = await Promise.all(
@@ -492,6 +567,10 @@ export async function grepInWorkspace(workspace: string, opts: GrepOptions): Pro
       const content = contents[j];
       if (content == null) continue;
       processContent(chunk[j]!, content);
+    }
+    // Bound total wall time so a slow filesystem can never blow up the call.
+    if (!truncated && Date.now() > deadline) {
+      truncated = true;
     }
   }
 

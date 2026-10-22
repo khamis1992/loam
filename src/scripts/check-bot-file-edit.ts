@@ -13,11 +13,11 @@ const file=path.join(workspace,'example.txt');fs.writeFileSync(file,'alpha beta 
 fs.utimesSync(file,new Date('2001-01-01'),new Date('2001-01-01'));
 const before=fs.statSync(file).mtimeMs;
 const unchanged=await edit.run({path:'example.txt',find:'beta',replace:'beta'},ctx);
-assert.equal(unchanged.ok,true);assert.match(unchanged.content,/no change/i);
+assert.equal(unchanged.ok,false);assert.match(unchanged.content,/identical/i);
 assert.equal(fs.statSync(file).mtimeMs,before,'Identical replacement must not write');
 const missing=await edit.run({path:'example.txt',find:'missing',replace:'missing'},ctx);
 assert.equal(missing.ok,false,'A nonexistent match is not an already-satisfied edit');
 assert.equal((await edit.run({path:'example.txt',find:'alpha',replace:'gamma'},ctx)).ok,false,'Ambiguity still fails');
 const changed=await edit.run({path:'example.txt',find:'alpha',replace:'gamma',count:2},ctx);
 assert.equal(changed.ok,true);assert.equal(fs.readFileSync(file,'utf8'),'gamma beta gamma');
-console.log('PASS identical edit is truthful and does not write; missing/ambiguous matches still reject; exact edits apply');
+console.log('PASS identical edit is rejected without writing; missing/ambiguous matches still reject; exact edits apply');
