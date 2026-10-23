@@ -12,8 +12,14 @@ and result body ~L159-270). MIT notice extended in `THIRD_PARTY_NOTICES`;
 - **Reject old_string == new_string** -> reported as a no-op, nothing written.
 - **Reject a non-unique match unless replace_all**, naming the count and both
   options: "old_string found 2 times. Either:\n1. Provide more context to make it
-  unique, or\n2. Set replace_all: true to replace all occurrences". The legacy
-  `count` argument is still honoured on the single-edit path.
+  unique, or\n2. Set replace_all: true to replace all occurrences".
+- **Legacy `count` is preserved.** An explicit `count` on the single-edit path
+  asserts the occurrence count in place of the uniqueness rule, and (as before
+  this task) every occurrence is replaced; the count is verified against what was
+  actually replaced before anything is written. Omitting `count` applies the spec
+  rule (unique unless replace_all). See "Defects found and fixed" below: the first
+  version of this port silently broke `count`, and that is now fixed and pinned
+  by tests.
 - **Miss hints** (`flexibleMatchHint`): trimming whitespace -> "found after
   trimming whitespace"; same lines modulo indentation -> "found with different
   indentation around line N" with the correct 1-based line; otherwise a plain
@@ -26,16 +32,28 @@ and result body ~L159-270). MIT notice extended in `THIRD_PARTY_NOTICES`;
 - **Post-edit context**: a line-numbered snippet of the file around the change
   (+/-3 lines, clamped to the file bounds), one per edit for a batch.
 
-## Defect found and fixed while porting
-The first port used `String.prototype.replace(str, str)`, which still expands
-`$&`, `` $` ``, `$'` and `$$` in the replacement, whereas the spec substitutes
-new_string verbatim (Rust `replacen`). A new_string containing `$&` was silently
-rewritten to the matched text. Replaced with a slice-based literal substitution
-(the same approach the sibling tools `multiEdit.ts` and `findAndEdit.ts` already
-use), and the replacement's line count now follows Rust `str::lines` (a trailing
-newline starts no further line) so the context window ends on the right line.
-Six regression tests were added; the `$&` case was confirmed to fail against the
-previous implementation.
+## Defects found and fixed while porting
+**1. `new_string` was not substituted verbatim.** The first port used
+`String.prototype.replace(str, str)`, which still expands `$&`, `` $` ``, `$'` and
+`$$` in the replacement, whereas the spec substitutes new_string verbatim (Rust
+`replacen`). A new_string containing `$&` was silently rewritten to the matched
+text. Replaced with a slice-based literal substitution (the same approach the
+sibling tools `multiEdit.ts` and `findAndEdit.ts` already use), and the
+replacement's line count now follows Rust `str::lines` (a trailing newline starts
+no further line) so the context window ends on the right line. Six regression
+tests were added; the `$&` case was confirmed to fail against the previous
+implementation.
+
+**2. The legacy `count` parameter was silently broken by the port.** Routing the
+single-edit path through `applyEditOperations` applied the spec uniqueness rule
+unconditionally, so `count: 3` on a file with three occurrences was rejected as
+non-unique. At the base commit the same call replaced all three (verified by
+running the base and the port side by side). `count` is a documented parameter
+that the port kept in the schema, so this was a public-contract break. An explicit
+`count` now asserts the occurrence count in place of the uniqueness rule and
+replaces every occurrence, exactly as before; omitting it keeps the spec rule.
+Three regression tests were added and the `count: 3` case was confirmed to fail
+against the broken implementation and to match the base behaviour after the fix.
 
 ## Files
 - `src/tools/files.ts` - helpers `findLineNumber`, `extractContext`,
@@ -53,18 +71,33 @@ previous implementation.
 - `npm run build:server`                            -> exit 0 (pdf worker copied)
 - `(cd packages/web && npx next build)`             -> exit 0 (compiled, 25/25 static pages)
 - touched tests (editHints, editSchemaAlias, multiEdit, readState, fileLock,
-  diagnostics, findAndEdit)                         -> tests 93, pass 93, fail 0
-- `node --import tsx --test "src/**/*.test.ts"`     -> tests 2160, pass 2159, fail 1
+  diagnostics, findAndEdit)                         -> tests 96, pass 96, fail 0
+- `node --import tsx --test "src/**/*.test.ts"`     -> tests 2163, pass 2160, fail 3
 - `(cd packages/web && npx vitest run)`             -> 72 files / 472 tests, all pass
 - `check:encoding` / `check:modes` / `check:orchestrator` (114/114) /
   `check:promptwire` / `check:recovery` / `check:design-registry` -> PASS
 
-The single node failure is pre-existing and NOT caused by this task:
-`src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither
-registered nor listed in PENDING_CODING_TOOLS" (3 pass / 1 fail on its own). That
-test file, `src/agent/taskToolScope.ts` and `src/tools/planTools.ts` are
-byte-identical to the base (`git diff manus-parity HEAD -- <file>` is empty for
-each); it is the inherited D4 defect already documented in the reports below.
+None of the three node failures is caused by this task; the diff touches only
+`src/tools/files.ts`, `src/tools/__tests__/editHints.test.ts`,
+`src/tools/__tests__/editSchemaAlias.test.ts`, `THIRD_PARTY_NOTICES` and
+`.jdone` (`git diff a8130cc HEAD --name-only`), so no other module is affected.
+
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither
+   registered nor listed in PENDING_CODING_TOOLS" (3 pass / 1 fail on its own).
+   That test file, `src/agent/taskToolScope.ts` and `src/tools/planTools.ts` are
+   byte-identical to the base (`git diff manus-parity HEAD -- <file>` is empty
+   for each); it is the inherited D4 defect already documented below.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+   throwing". Environmental: the test asserts that a fresh `os.tmpdir()` folder
+   is not a git repo, but `%TEMP%` on this machine sits inside the git repo
+   `C:/Users/khamis`, so `git -C <tmp> rev-parse` succeeds and `isGit` is true.
+   Reproduced identically on the untouched base commit `a8130cc` in the `cc-c20`
+   worktree (3 pass / 1 fail), and this task touches no file under `src/server`.
+3. `src/tools/__tests__/search.test.ts` -> "greps and globs the repository in
+   under 1 second" (observed 1057ms against a 1000ms budget). Load-sensitive
+   timing flake under the parallel full-suite run: the file passes 19/19 on its
+   own and 3/3 across three consecutive isolated runs. Unrelated to this task
+   (nothing in the diff affects search).
 
 Test command:
   node --import tsx --test src/tools/__tests__/editHints.test.ts
