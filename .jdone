@@ -716,3 +716,38 @@ mapping`. `git merge-tree --write-tree manus-parity HEAD` exits 0.
 No test was weakened or deleted; no forbidden path was touched; working tree is
 clean (only the pre-existing untracked `src/server/__tests__/.setuptiming.test.ts`
 and `.timingprobe.test.ts` remain, left alone).
+
+## Independent re-validation (2026-10-23, sixth pass)
+
+This pass checked the merge range as a whole, the validation commits themselves, a
+live functional run of the D3 feature, and the full suite at the final HEAD.
+
+- **Only `.jdone` changed since the merge.** `git diff --name-only ac0cf67..HEAD`
+  returns exactly one path (`.jdone`); the five validation commits touched nothing
+  else.
+- **Parity's `.jdone` history is preserved.** `git diff --numstat 03f8aef HEAD --
+  .jdone` is `260 0` — 260 lines inserted, 0 removed, so every prior parity entry
+  survives verbatim.
+- **Live functional run of the D3 feature.** A throwaway harness (created with a
+  file tool, run, then deleted) imported `createEnvSnapshotTools()` and drove both
+  tools against a Node fixture project in a temp data dir. Output:
+  `TOOLS=["env_blueprint_generate","env_build_status"]`, `BLUEPRINT_OK=true`,
+  `HAS_YAML=true`, `BLUEPRINT_SNIPPET=loam.env.yaml for <proj> hash:
+  98eb089cd9efcee0a1f363a058edebc4 hash inputs: loam.env.yaml,
+  package-lock.json`, `STATUS_OK=true`, `STATUS_SNIPPET=(no environment build for
+  this project)`. The blueprint tool wrote `loam.env.yaml` and hashed it; the status
+  tool correctly reported no build yet. (The harness first failed twice because it
+  passed an absolute `projectDir` / an empty context; the fixes were made to the
+  harness, not to the source, which enforces a relative in-workspace path by design.)
+- **Full suite at final HEAD.** `node --import tsx --test src/tools/__tests__/*.test.ts
+  src/server/__tests__/*.test.ts` -> `# tests 1945, # pass 1945, # fail 0, # cancelled
+  0, # skipped 0` (166 suite files, exit 0). The `src/server/__tests__` subset alone
+  reports `# tests 414, # pass 414, # fail 0, # skipped 0, # todo 0`.
+- **No skipped or todo tests in the D3 feature files.** A regex scan of
+  `envSnapshot.ts`, `src/server/routes/envBuilds.ts`, `check-env-builds.ts`, and
+  `src/server/taskWorkspace.ts` for `skip:`/`todo:` markers returns **0 hits**.
+- **No leftover artifacts.** No `.jcode-smoke-d3.ts`, no `.jcode/` dir, no temp
+  smoke paths tracked (`git ls-files | grep -E 'jcode-smoke|parity-suite|d3-smoke'`
+  = 0 hits); `git status --porcelain` empty.
+- **Final state.** `.jdone` 753 lines, committed and clean (`git status --porcelain
+  -- .jdone` = 0 entries); HEAD `a56f5f0`.
