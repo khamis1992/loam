@@ -452,17 +452,31 @@ is empty for each):
    nearest enclosing repository, so a temp folder on this host reports `isGit: true`.
 
 ## J6 acceptance recap (already on this branch, re-verified after the merge)
+- **Re-validation passes 1-4 (2026-10-23)** made every claim in this marker and in
+  `docs/MEMORY_BUDGET.md` measurable. `9110370` corrected the lazy count (five, not three) and
+  the driven-cap count (32 of 43, not 27); `67a5419` removed the two remaining blanket-coverage
+  phrasings and added a guard rejecting them; `98afe78` added `maxBytes` to `CacheStats` and the
+  parity assertion, and surfaced `protocol-blobs`'s real 64 MiB ceiling; `7df1d2a` fixed a **real
+  defect** the checks exposed — a single entry larger than the ceiling was retained because both
+  eviction loops protect the just-written key, leaving `bytes > maxBytes` permanently.
+  `LruCache.set` now refuses such a value, `storeBlob` returns `"rejected"`, and the `/blob/` PUT
+  route answers 413 `payload_too_large` instead of buffering.
 - **Eviction tests**: `src/memory/__tests__/cache.test.ts` (LruCache, BoundedMap,
-  stats registry, byte ceiling) + `src/memory/__tests__/caps.test.ts` drives 32 of the 43
-  documented caps past their bound through the real public APIs, including `run-active-flags`
-  and `browser-operator-snapshots`. The other 11 caps (`browser-sessions`, `ollama-tags`,
+  stats registry, byte ceiling, oversize-entry refusal) + `src/memory/__tests__/caps.test.ts`
+  drives 32 of the 43 documented caps past their bound through the real public APIs, including
+  `run-active-flags` and `browser-operator-snapshots`. The other 11 caps (`browser-sessions`,
+  `ollama-tags`,
   `timeline-jobs`, `timeline-proxy-jobs`, `video-render-jobs`, `video-render-children`,
   `slide-preview`, `slide-preview-pending`, `word-preview`, `word-preview-pending`,
   `skills-desc`) need a live browser, an ffmpeg child, the video sidecar or a render
   round-trip to reach, so they are covered by the doc↔code parity check instead.
+  `src/protocol/__tests__/blobRoute.test.ts` drives the live `/blob/` PUT route (200 in-budget,
+  413 over-ceiling, 200 exactly at the ceiling).
 - **docs**: `docs/MEMORY_BUDGET.md` lists every cap, and
   `src/memory/__tests__/caps.test.ts`'s "docs/MEMORY_BUDGET.md stays in sync with the code"
-  asserts a documented cap for every registered cache.
+  asserts a documented cap and the matching `maxBytes` for every registered cache; the doc states
+  each byte ceiling (`slide-preview` 96 MiB, `word-preview` 128 MiB, `skills-desc` 4 MiB,
+  `protocol-blobs` 64 MiB).
 - **debug surface**: `GET /api/debug/memory` (`src/server/routes/debugMemory.ts`) returns
   per-process RSS and one counter row per registered cache with its configured cap; covered
   by `src/server/__tests__/debugMemory.test.ts` (10 tests). The desktop surfaces the same
