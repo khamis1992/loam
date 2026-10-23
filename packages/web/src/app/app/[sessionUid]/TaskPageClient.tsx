@@ -184,6 +184,16 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     socketRef.current = socket;
     let mounted = true;
 
+    // BUILD_SPEC §6.4: remember the highest durable log `seq` the server has
+    // sent for this session, so a reconnect resumes by sequence and never
+    // re-renders a frame it already has. Declared outside the async closure so
+    // the effect's cleanup can unsubscribe it.
+    const onSeqFrame = (m: ServerMessage) => {
+      if (m.type !== 'event') return;
+      socket.noteSeq(sessionUid, m.seq);
+    };
+    const offSeqFrame = socket.onMessage(onSeqFrame);
+
     (async () => {
       // Read the pending prompt once from the URL when this session first mounts.
       // We intentionally do not list searchParams/router as effect deps so a URL
@@ -249,6 +259,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
 
     return () => {
       mounted = false;
+      offSeqFrame();
       socket.disconnect();
       socketRef.current = null;
     };
