@@ -1,0 +1,12 @@
+{
+  "id": "task-008",
+  "title": "Add unit tests for math operations",
+  "category": "add-test",
+  "language": "javascript",
+  "prompt": "`src/math.js` exports `add`, `multiply` and `average` but ships no tests. Create `test/math.test.mjs` that asserts the real behaviour of all three, including the empty-array case for `average`, and exits non-zero on any failure. It must run with `node test/math.test.mjs`. Do not modify `src/math.js`.",
+  "testCommand": "node .eval/check.mjs",
+  "timeoutSec": 90,
+  "maxSteps": 20,
+  "requireFiles": ["test/math.test.mjs"],
+  "tags": ["testing", "mutation-check"]
+}
