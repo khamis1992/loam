@@ -45,6 +45,82 @@ the `.jcode-done` numbers.
 
 ---
 
+# N5 round 5: mutation-tested the acceptance, closed a coverage gap, merged parity D3
+
+## Mutation testing (the acceptance suite can actually fail)
+
+The N5 claims were probed by deliberately breaking the code and checking that a test
+notices. Both probes were reverted immediately and the tree is byte-identical to HEAD
+(`git diff HEAD` empty) between probes.
+
+| Mutation | Expected detection | Observed |
+| --- | --- | --- |
+| `ContextSelector.apply` returns `fail(...)` unconditionally (selector neutered) | the long-horizon contract must fail | **caught**: 3 of 4 passed, `retrieves the needle recorded at step 5 at step 180` failed with "the needle was not in the prompt at step 180 (present at 6)" |
+| `runGraph` `case "context_selected":` renamed to a non-existent event | the graph must not silently drop an event type | **caught at compile time**: `TS2678` on the bogus case and `TS2322` at the `const _exhaustive: never = event` guard, so the switch is exhaustive by construction |
+
+An honest nuance from the first probe: with the selector neutered, the *bounded* and
+*flatness* assertions still passed, because the compressor alone keeps those two
+properties (which is exactly what the control arm documents). The needle-recall
+assertion is the one that isolates the selector's contribution, and it fired.
+
+## Coverage gap found and closed
+
+`git grep -rn context_selected -- "**/__tests__/*"` returned **nothing**: the loop's
+emission at `loop.ts:595` was never asserted by any test, so a regression that skipped
+`apply` or stopped emitting would not have been caught by the suite (the three
+properties can all hold while the signal disappears). A fourth long-horizon test was
+added, `emits context_selected each step it re-shapes, and never when disabled`, which
+asserts the signal fires only after the activation step, never beyond the run's own step
+count, and always carries a positive token count, a positive artefact count and a
+non-empty reason, plus that a disabled selector emits nothing at all.
+
+That test was itself mutation-verified: deleting the `opts.emit({ type:
+"context_selected", ... })` line makes it fail with "the selector reported at least one
+applied step". The emit was restored and the suite is green again.
+
+## Other re-checks
+
+- **`.jcode-done` restoration is byte-exact.** The restored block is not merely
+  line-equivalent: `worktree.includes(<parity's whole .jcode-done>)` is `true`, the block
+  starts at offset 2043, and **nothing follows it** (the N5 report is the prefix), so
+  parity's J11 text is present verbatim with no truncation or reflow.
+- **No test was weakened.** The only test files in the N5 diff are the two new
+  `contextSelector*.test.ts` additions (607 lines added, 0 deleted). No parity test file
+  differs from its parity version, no test file was deleted anywhere, and the three N5
+  deliverables contain **0** `it.skip` / `describe.skip` / `xit` / `@ts-ignore` /
+  `eslint-disable` / `.only(` markers (selector unit suite: 26 `it()`, 62 assertions;
+  long-horizon: 5 `it()`, 13 assertions after this round).
+- **No forbidden path or secret.** The N5 diff touches no `node_modules`, `.env`,
+  `*.pem`, `id_rsa`, credential or secret path, and adds no `api_key` / `sk-` / `ghp_` /
+  `AKIA` / `password` string.
+
+## Parity D3 merged (`17024c5`)
+
+Parity advanced to `17024c5` ("merge `khamis1992/devin-d3` (D3) into manus-parity"),
+merged here as `12f4fa4`. D3 adds the environment blueprint/snapshot feature
+(`src/tools/envSnapshot.ts` +1051, `src/server/routes/envBuilds.ts`, `src/scripts/check-env-builds.ts`
+and their tests, 18 files, +2150/-6). It touches **none** of N5's files (`contextSelector.ts`,
+`loop.ts`, `runGraph.ts`, `events.ts`, `config.ts` are all absent from the D3 diff), so the
+merge was conflict-free and N5's wiring is untouched: `ContextSelector` still imported and
+constructed in `loop.ts`, `context_selected` still declared in `events.ts` and handled in
+`runGraph.ts`.
+
+| Gate | Result |
+| --- | --- |
+| `npx tsc --noEmit` | exit 0 |
+| `npm run build:server` | exit 0 (`server bundle + pdf worker written to dist/`) |
+| `(cd packages/web && npx next build)` | exit 0 (compiled successfully) |
+| full node suite | 3017 tests, 3017 pass, 0 fail |
+| web suite | 91 files, 624 tests, 624 pass |
+| focused N5 (selector + long-horizon + runGraph + loopBudget + loopHooks) | 77 tests, 77 pass, 0 fail |
+| `eval-neo` | 10/10 PASS, verdict PASS, "baseline: no regression" |
+
+Both markers verified after the merge: `.jdone` (29,822 lines) and `.jcode-done` (262
+lines, J11 present) each report missing 0 non-blank lines against `manus-parity`,
+`a7c0e79` and `839cdff`.
+
+---
+
 # N5 round 4: parity J8 merged (it touches `src/agent/loop.ts`, N5's own file)
 
 Parity advanced to `cd414a5` ("merge `khamis1992/jcode-j8` (J8) into manus-parity"), merged
