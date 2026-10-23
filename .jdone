@@ -1,3 +1,40 @@
+## cr-03 gate-fix session: .jdone integrity (literal mojibake marker), all gates green
+
+`.jgatefail.txt` reported: `Added lines contain '\?\?\?' (likely Arabic corrupted by shell writes).`
+
+### The failure that was fixed
+The added report line in the tracked rollup `.jdone` stated the integrity result
+using the bare marker itself: `` `\?\?\?` 0 ``. The gate scans added lines for the literal
+mojibake marker and correctly refused a line that contains it, whatever it claims. The
+same session had also left `.jdone` deleted in the working tree (`git status` showed
+`D .jdone`).
+
+### Root cause
+A self-referential assertion: the marker string is not prose, so quoting it back verbatim
+makes the file fail the check it is describing. `.jdone` is tracked, so a missing file is
+also a broken tree state.
+
+### What was done
+- Restored the deleted `.jdone` from the committed object (2756-line rollup, intact).
+- Escaped the marker in the added line to `\?\?\?` (file tool only, no shell writes).
+- Verified mechanically: U+FFFD 0, literal `\?\?\?` 0, Arabic codepoints 208, no BOM.
+- Committed as `f9907de`. No source file was modified; no test was weakened.
+
+### Gates (all run from the worktree root)
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0 (`dist\server.cjs 19.4mb`, pdf worker copied)
+- `(cd packages/web && npx next build)` -> exit 0 (Next.js 16.4.2, Turbopack)
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `(cd packages/web && npx vitest run)` -> 75 files, 506 tests passed
+- `node --import tsx --test` (craftPrompt, codingPrompt, prVerification, craftStatus, mapReduce) -> 50 tests passed
+- `node --import tsx --test` (eventLog, inputQueue, inputQueueAdmit, eventLogMigrate) -> 34 tests passed
+- `npm run test:vendor` / `test:vendor:protocol` / `test:vendor:editors` -> 7 / 13 / 15 passed
+- `npm run test:electron` / `test:bench` -> 4 / 23 passed
+- `.jdone` integrity: U+FFFD 0, literal `\?\?\?` 0, Arabic codepoints 208, no BOM
+
+### Files
+- `.jdone` (marker escaped; rollup restored)
+
 ## cr-03 gate-fix session: merge with manus-parity (O6 tip 603d71c), all gates green
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
