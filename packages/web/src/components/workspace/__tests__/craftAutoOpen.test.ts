@@ -105,6 +105,53 @@ describe('craft edit intent', () => {
     expect(hasCraftEditIntent('')).toBe(false);
   });
 
+  it('does not match innocent questions that only mention a file', () => {
+    const innocent = [
+      'what is this document about?',
+      'what does this file contain?',
+      'what do you think of the layout?',
+      'can you summarize this document?',
+      'how many pages are in this document?',
+      'what is the file size?',
+      'is this document editable?',
+      'what format is this file?',
+      'explain the table in this sheet',
+      'what does the chart show?',
+      'read the first paragraph',
+      'what is on slide three?',
+      'what are the image dimensions?',
+      'summarize the deck',
+      'translate the document',
+      'what color is the background?',
+      'thanks, looks great',
+      'what size is this file?',
+      'the file is too large',
+      'can you download this for me?',
+      'I want to download a file',
+    ];
+    for (const text of innocent) {
+      expect(hasCraftEditIntent(text), text).toBe(false);
+    }
+  });
+
+  it('still matches real edit requests', () => {
+    const edits = [
+      'please edit the first slide',
+      'retouch this photo and crop it',
+      'resize the image',
+      'how do I change the font?',
+      'add a paragraph',
+      'remove the second slide',
+      'replace the logo',
+      'save as pdf',
+      'please fix the typo',
+      'can you make the background darker',
+    ];
+    for (const text of edits) {
+      expect(hasCraftEditIntent(text), text).toBe(true);
+    }
+  });
+
   it('opens craft for an English edit request with an attached document', () => {
     const ev = userMessageEvent({ content: 'please edit the first slide and fix the typo', attachments: [attachment()] });
     expect(decideUserMessageOpen(ev)).toEqual({ path: 'plan.docx', kind: 'craft', craftApp: 'docs' });

@@ -48,115 +48,43 @@ export function isVideoStudioTool(tool: string): boolean {
 
 /**
  * Edit intent in the user's own words (Arabic + English) for a document, sheet,
- * slide deck, image or layout. A bare mention of the file is not enough: the user
- * must be asking for a change, so a question about an attachment opens nothing.
+ * slide deck, image or layout.
+ *
+ * Detection is verb-first on purpose: the *only* reliable signal that the user wants
+ * a change is an imperative or request form of an edit verb ("edit the first
+ * paragraph", "crop this photo", "صيغ الجدول"). Bare nouns are NOT intent, so
+ * "what is this document about?", "how many pages are in this document?" and
+ * "is this document editable?" must not match — they ask about the file rather than
+ * asking for a change. Keeping the lists to verbs and verb phrases is what makes a
+ * mention of `document`/`layout`/`paragraph` harmless.
  */
 const CRAFT_EDIT_INTENT_RE = new RegExp(
   [
-    // Arabic: edit verbs, formatting, layout and photo vocabulary.
-    'عدل',
-    'عدّل',
-    'تعديل',
-    'تحرير',
-    'تنسيق',
-    'نسخ',
-    'نسّق',
-    'صمّم',
-    'صمم',
-    'تصميم',
-    'أضف',
-    'اضف',
-    'إضافة',
-    'اضافة',
-    'أدرج',
-    'ادرج',
-    'ادراج',
-    'إدراج',
-    'حذف',
-    'احذف',
-    'غير',
-    'غيّر',
-    'غيرر',
-    'رتب',
-    'رتّب',
-    'رتبّر',
-    'حرّر',
-    'حرر',
-    'أعد',
-    'اعد',
-    'إعادة',
-    'اعادة',
-    'صحح',
-    'صحّح',
-    'أصحح',
-    'اصحح',
-    'احفر',
-    'اقتصص',
-    'قصّ',
-    'قص',
-    'غي',
-    'دمج',
-    'دمجّ',
-    'تقسيم',
-    'لوّن',
-    'لون',
-    'تلوين',
-    'تأثير',
-    'تأثيرات',
-    'فلتر',
-    'فلاتر',
-    'دقة',
-    'جودة',
-    'أبعاد',
-    'ابعاد',
-    'حجم',
-    'تدوير',
-    'دوران',
-    'استبدل',
-    'بدّل',
-    'بدل',
-    'ترميم',
-    'ازالة',
-    'إزالة',
-    'ترانسبار',
-    'خلفية',
-    'خطوط',
-    'خط',
-    'جدول',
-    'جداول',
-    'رسم',
-    'رسوم',
-    'شكل',
-    'أشكال',
-    'اشكال',
-    'طباعة',
-    'تصدير',
-    'حفظ',
-    'مخطط',
-    'صفحة',
-    'شريحة',
-    'شرائح',
-    'مستند',
-    'وثيقة',
-    'عرض',
-    'تقديمي',
-    'بيانات',
-    'معادلات',
-    'خلية',
-    'خلايا',
-    // English: edit verbs and nouns, including layout/photo vocabulary.
-    '\\b(?:edit|modify|format|fix|change|update|reformat|restyle|copy|paste|duplicate|'
-      + 'add|insert|append|remove|delete|replace|rearrange|reorder|sort|filter|'
-      + 'design|layout|retouch|crop|resize|rotate|flip|scale|zoom|enhance|color|colour|'
-      + 'tone|brightness|contrast|saturation|blur|sharpen|mask|filter|effect|overlay|'
-      + 'background|gradient|border|shadow|opacity|blend|'
-      + 'typography|typeface|font|heading|paragraph|spacing|margin|align|indent|'
-      + 'table|chart|graph|diagram|shape|icon|logo|'
-      + 'slide|deck|presentation|document|doc|sheet|spreadsheet|workbook|'
-      + 'formula|cell|range|column|row|'
-      + 'export|save|download|redesign)\\b',
+    // Arabic edit verbs. Arabic letters are not \\b word characters in JS
+    // regexes, so use Unicode property lookarounds instead of \\b.
+'(?<![\\p{L}\\p{N}])(?:\\u0639\\u062f\\u0644|\\u0639\\u062f\\u0651\\u0644|\\u062a\\u0639\\u062f\\u064a\\u0644|\\u062a\\u062d\\u0631\\u064a\\u0631|\\u062d\\u0631\\u0651\\u0631|\\u062d\\u0631\\u0631|\\u0646\\u0633\\u0651\\u0642|\\u0646\\u0633\\u0642|\\u062a\\u0646\\u0633\\u064a\\u0642|\\u0635\\u0645\\u0651\\u0645|\\u0635\\u0645\\u0645|\\u062a\\u0635\\u0645\\u064a\\u0645|\\u0623\\u0636\\u0641|\\u0627\\u0636\\u0641|\\u0625\\u0636\\u0627\\u0641\\u0629|\\u0627\\u0636\\u0627\\u0641\\u0629|\\u0623\\u062f\\u0631\\u062c|\\u0627\\u062f\\u0631\\u062c|\\u0625\\u062f\\u0631\\u0627\\u062c|\\u0627\\u062f\\u0631\\u0627\\u062c|\\u062d\\u0630\\u0641|\\u0627\\u062d\\u0630\\u0641|\\u063a\\u064a\\u0651\\u0631|\\u0623\\u0639\\u062f|\\u0627\\u0639\\u062f|\\u0625\\u0639\\u0627\\u062f\\u0629|\\u0627\\u0639\\u0627\\u062f\\u0629|\\u0635\\u062d\\u0651\\u062d|\\u0635\\u062d\\u062d|\\u0623\\u0635\\u062d\\u062d|\\u0627\\u0635\\u062d\\u062d|\\u0627\\u0642\\u062a\\u0635|\\u0642\\u0635\\u0651|\\u0642\\u0635|\\u062f\\u0645\\u062c|\\u062a\\u0642\\u0633\\u064a\\u0645|\\u0644\\u0648\\u0651\\u0646|\\u062a\\u0644\\u0648\\u064a\\u0646|\\u0627\\u0633\\u062a\\u0628\\u062f\\u0644|\\u0628\\u062f\\u0651\\u0644|\\u0628\\u062f\\u0644|\\u062a\\u0631\\u0645\\u064a\\u0645|\\u0625\\u0632\\u0627\\u0644\\u0629|\\u0627\\u0632\\u0627\\u0644\\u0629|\\u0623\\u0639\\u062f\\u0020\\u062a\\u0631\\u062a\\u064a\\u0628|\\u0631\\u062a\\u0651\\u0628|\\u0631\\u062a\\u0628|\\u0627\\u062d\\u0641\\u0638|\\u0627\\u062d\\u0641\\u0638\\u0020\\u0643|\\u062a\\u0635\\u062f\\u064a\\u0631|\\u062a\\u0635\\u062f\\u064a\\u0631\\u0020\\u0625\\u0644\\u0649|\\u0643\\u064a\\u0641\\u0020\\u0623\\u0639\\u062f\\u0644|\\u0643\\u064a\\u0641\\u0020\\u0627\\u0639\\u062f\\u0644|\\u0643\\u064a\\u0641\\u0020\\u0623\\u0636\\u064a\\u0641|\\u0643\\u064a\\u0641\\u0020\\u0627\\u0636\\u064a\\u0641|\\u0645\\u0645\\u0643\\u0646\\u0020\\u0627\\u0646\\u0020\\u062a\\u0639\\u062f\\u0644|\\u0645\\u0645\\u0643\\u0646\\u0020\\u0627\\u0646\\u0020\\u0627\\u0639\\u062f\\u0644)(?!\\p{L}\\p{N})',
+    // Arabic soft requests ("I want", "please"). A bare opener matches almost any
+    // message, so it only counts with an edit verb right after it.
+'(?<![\\p{L}\\p{N}])(?:\\u0623\\u0631\\u064a\\u062f|\\u0627\\u0631\\u064a\\u062f|\\u0623\\u062d\\u062a\\u0627\\u062c|\\u0627\\u062d\\u062a\\u0627\\u062c|\\u0644\\u0648\\u0020\\u0633\\u0645\\u062d\\u062a|\\u0645\\u0646\\u0020\\u0641\\u0636\\u0644\\u0643)\\s*(?:\\u0639\\u062f\\u0644|\\u0639\\u062f\\u0651\\u0644|\\u062a\\u0639\\u062f\\u064a\\u0644|\\u062a\\u062d\\u0631\\u064a\\u0631|\\u062d\\u0631\\u0651\\u0631|\\u062d\\u0631\\u0631|\\u0646\\u0633\\u0651\\u0642|\\u0646\\u0633\\u0642|\\u062a\\u0646\\u0633\\u064a\\u0642|\\u0635\\u0645\\u0651\\u0645|\\u0635\\u0645\\u0645|\\u062a\\u0635\\u0645\\u064a\\u0645|\\u0623\\u0636\\u0641|\\u0627\\u0636\\u0641|\\u0625\\u0636\\u0627\\u0641\\u0629|\\u0627\\u0636\\u0627\\u0641\\u0629|\\u0623\\u062f\\u0631\\u062c|\\u0627\\u062f\\u0631\\u062c|\\u0625\\u062f\\u0631\\u0627\\u062c|\\u0627\\u062f\\u0631\\u0627\\u062c|\\u062d\\u0630\\u0641|\\u0627\\u062d\\u0630\\u0641|\\u063a\\u064a\\u0651\\u0631|\\u0623\\u0639\\u062f|\\u0627\\u0639\\u062f|\\u0625\\u0639\\u0627\\u062f\\u0629|\\u0627\\u0639\\u0627\\u062f\\u0629|\\u0635\\u062d\\u0651\\u062d|\\u0635\\u062d\\u062d|\\u0623\\u0635\\u062d\\u062d|\\u0627\\u0635\\u062d\\u062d|\\u0627\\u0642\\u062a\\u0635|\\u0642\\u0635\\u0651|\\u0642\\u0635|\\u062f\\u0645\\u062c|\\u062a\\u0642\\u0633\\u064a\\u0645|\\u0644\\u0648\\u0651\\u0646|\\u062a\\u0644\\u0648\\u064a\\u0646|\\u0627\\u0633\\u062a\\u0628\\u062f\\u0644|\\u0628\\u062f\\u0651\\u0644|\\u0628\\u062f\\u0644|\\u062a\\u0631\\u0645\\u064a\\u0645|\\u0625\\u0632\\u0627\\u0644\\u0629|\\u0627\\u0632\\u0627\\u0644\\u0629|\\u0623\\u0639\\u062f\\u0020\\u062a\\u0631\\u062a\\u064a\\u0628|\\u0631\\u062a\\u0651\\u0628|\\u0631\\u062a\\u0628|\\u0627\\u062d\\u0641\\u0638|\\u0627\\u062d\\u0641\\u0638\\u0020\\u0643|\\u062a\\u0635\\u062f\\u064a\\u0631|\\u062a\\u0635\\u062f\\u064a\\u0631\\u0020\\u0625\\u0644\\u0649|\\u0643\\u064a\\u0641\\u0020\\u0623\\u0639\\u062f\\u0644|\\u0643\\u064a\\u0641\\u0020\\u0627\\u0639\\u062f\\u0644|\\u0643\\u064a\\u0641\\u0020\\u0623\\u0636\\u064a\\u0641|\\u0643\\u064a\\u0641\\u0020\\u0627\\u0636\\u064a\\u0641|\\u0645\\u0645\\u0643\\u0646\\u0020\\u0627\\u0646\\u0020\\u062a\\u0639\\u062f\\u0644|\\u0645\\u0645\\u0643\\u0646\\u0020\\u0627\\u0646\\u0020\\u0627\\u0639\\u062f\\u0644)(?!\\p{L}\\p{N})',
+    // English edit verbs. Bare nouns are not intent, so a mention of
+    // `document`/`layout`/`paragraph` alone never matches.
+    '\\b(?:edit|modify|reformat|restyle|retouch|redesign|reframe|'
+      + 'fix|update|change|revise|polish|tweak|'
+      + 'add|insert|append|remove|delete|replace|rearrange|reorder|resort|'
+      + 'crop|cut|trim|resize|rescale|rotate|flip|scale|zoom|'
+      + 'enhance|brighten|darken|sharpen|blur|'
+      + 'recolor|recolour|'
+      + 'realign|align|indent|'
+      + 'merge|split|'
+      + 'export|print|save as|download as)\\b',
+    // "make the background darker": the comparative is the request, so require `make`.
+'\\bmake\\s+(?:\\w+\\s+){0,2}(?:darker|brighter|bolder|bigger|smaller|larger|lighter|sharper)\\b',
+    // English soft requests: an opener only counts when an edit verb follows.
+    '\\b(?:please|can you|could you|would you|i want|i need|lets)\\s+'
+      + '(?:edit|add|fix|change|remove|delete|crop|cut|resize|retouch|update|insert|'
+      + 'replace|rearrange|reorder|merge|split)\\b',
   ].join('|'),
-  'i',
+  'iu',
 );
 
 export function hasCraftEditIntent(text: string): boolean {
