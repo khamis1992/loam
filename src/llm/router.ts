@@ -29,22 +29,19 @@ import type { FailoverProvider } from "./failover.js";
 // Output types (§4.2 `agent_type`, §8.1 composer row)
 // ---------------------------------------------------------------------------
 
-export const OUTPUT_TYPES = ["auto", "text", "image", "video", "slides", "website"] as const;
-export type OutputType = (typeof OUTPUT_TYPES)[number];
+// The vocabulary and the output-type -> mode table live in `src/modes/` so the
+// detector (`src/modes/detect.ts`) and the tool narrowing below cannot drift
+// apart. They are re-exported here because this module is the historical home
+// of the composer selectors and its importers (http.ts, loop.ts, index.ts) keep
+// their existing import sites.
+export {
+  OUTPUT_TYPES,
+  OUTPUT_TYPE_MODE,
+  isOutputType,
+  type OutputType,
+} from "../modes/outputTypeMap.js";
 
-export function isOutputType(value: unknown): value is OutputType {
-  return typeof value === "string" && (OUTPUT_TYPES as readonly string[]).includes(value);
-}
-
-/** Loam mode each output type targets. `auto` defers to the prompt detector. */
-export const OUTPUT_TYPE_MODE: Record<OutputType, string> = {
-  auto: "build",
-  text: "write",
-  image: "media",
-  video: "media",
-  slides: "write",
-  website: "build",
-};
+import { OUTPUT_TYPE_MODE, isOutputType, type OutputType } from "../modes/outputTypeMap.js";
 
 /** Tools whose presence pins a run to its output type's pipeline. */
 export const OUTPUT_TYPE_TOOLS: Record<OutputType, readonly string[]> = {
