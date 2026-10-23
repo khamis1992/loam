@@ -134,11 +134,15 @@ h1 { font-size:28px; } h2 { font-size:18px; } .lede { font-size:14px; }
 .primary { background:linear-gradient(135deg,var(--chat-accent-2,var(--accent-2)),var(--chat-accent,var(--accent))); border-color:transparent; color:var(--chat-accent-ink,white); box-shadow:0 5px 16px color-mix(in srgb,var(--chat-accent-2,var(--accent-2)) 22%,transparent); }
 /* C20 overrides for index.html. `ui/icons.css` is loaded after this sheet and
    `.loam-shell .primary` (0,2,0) outranks `.primary`, so these must out-specify it.
-   Scoped to #view-chat so no other screen is touched. */
-#view-chat #sendChat{background:linear-gradient(135deg,var(--chat-accent-2),var(--chat-accent));border-color:transparent;color:var(--chat-accent-ink);box-shadow:0 8px 22px color-mix(in srgb,var(--chat-accent-2) 36%,transparent);}
-#view-chat #sendChat:hover{filter:none;background:linear-gradient(135deg,var(--chat-accent),var(--chat-accent-2));}
-#view-chat .composer textarea:focus{border-color:var(--chat-accent);}
-#view-chat .log-entry.user{border-color:color-mix(in srgb,var(--chat-accent) 40%,var(--border));}
+   Scoped to #view-chat so no other screen is touched, and gated on
+   [data-chat-accent="bot"] so that a task with no companion does not match at
+   all: an unguarded `var(--chat-accent)` here has no fallback and, when the
+   property is unset, goes invalid-at-computed-value-time, which collapses the
+   gradient to `background-image:none` and erases the accent fill entirely. */
+#view-chat[data-chat-accent="bot"] #sendChat{background:linear-gradient(135deg,var(--chat-accent-2),var(--chat-accent));border-color:transparent;color:var(--chat-accent-ink);box-shadow:0 8px 22px color-mix(in srgb,var(--chat-accent-2) 36%,transparent);}
+#view-chat[data-chat-accent="bot"] #sendChat:hover{filter:none;background:linear-gradient(135deg,var(--chat-accent),var(--chat-accent-2));}
+#view-chat[data-chat-accent="bot"] .composer textarea:focus{border-color:var(--chat-accent);}
+#view-chat[data-chat-accent="bot"] .log-entry.user{border-color:color-mix(in srgb,var(--chat-accent) 40%,var(--border));}
 .sidebar { width:332px; padding:0; flex-direction:row; overflow:hidden; background:var(--bg-2); }
 .rail { display:flex; flex-direction:column; gap:7px; width:62px; flex-shrink:0; padding:16px 8px; border-inline-end:1px solid var(--border); background:color-mix(in srgb,var(--bg) 70%,transparent); overflow:auto; }
 .rail-btn { display:flex; align-items:center; justify-content:center; min-height:42px; width:44px; flex-shrink:0; border:1px solid transparent; border-radius:11px; background:transparent; color:var(--muted); font-size:20px; }

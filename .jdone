@@ -696,3 +696,78 @@ green.
 
 Working tree clean; no forbidden path touched; no real external model API was
 called by the tests (the scripted `neo-mock` model is used throughout).
+
+# C20 - Per-bot chat color (UI1): DONE
+
+Each conversation now takes the color of the bot it belongs to. The user
+bubble, send button and composer focus ring follow the companion's avatar
+instead of the single global accent; a conversation with no bot keeps the
+app accent exactly as before.
+
+## What changed
+
+New pure module `ui/chat-color.js` + `ui/chat-color.d.ts`
+- `AVATAR_HEX` / `AVATAR_COLORS`: a hex for every server `AVATAR_COLORS`
+  token (a test enforces the two stay in sync).
+- `chatAccentFor(agent, {cache})`: (a) `avatarColor` token -> hex,
+  (b) dominant color extracted client-side from `avatarImage` via a small
+  canvas downsample (near-white / near-black / transparent pixels ignored),
+  cached in `localStorage` under `loam.chatColor.<agentId>` keyed by a hash
+  of the image URL, (c) deterministic hash of the agent id into the palette,
+  (d) no agent -> `null`.
+- `accentVars(hex, theme)`: `--chat-accent`, `--chat-accent-2`,
+  `--chat-accent-ink`; a lightness ladder tuned per theme so the chosen ink
+  clears WCAG AA 4.5:1 against the fill in both themes.
+- Reuses the existing `readableInk` contrast helper rather than duplicating it.
+
+Wiring
+- `ui/app.js`: `applyChatAccent` resolves the task's agent and writes the vars
+  on `#view-chat` only while a companion owns the task; it removes them
+  otherwise and recomputes on the theme toggle.
+- `ui/companions.js`: same shape on `.rk-main`, plus a `MutationObserver` on
+  `data-theme` so the lightness/ink follow a theme change without a reload.
+
+CSS (fallback pattern)
+- `ui/loam.css`: `.primary` uses `var(--chat-accent-2,var(--accent-2))` /
+  `var(--chat-accent,var(--accent))` and `color:var(--chat-accent-ink,white)`,
+  plus chat-scoped `#view-chat[data-chat-accent="bot"] #sendChat`, composer
+  focus and `.log-entry.user` overrides (needed because `ui/icons.css`
+  `.loam-shell .primary` outranks a bare `.primary`).
+- `ui/styles.css`: `.msg.user .user-bubble` falls back to the app accent.
+- `ui/companions.html`: `.rk-msg.user .rk-bubble` falls back to the app accent;
+  the companion send button and focus-within ring overrides sit at the end of
+  the sheet so they out-rank `.rk-send:disabled` and the global focus rule.
+
+## Verification
+
+Gates, all run from the worktree root:
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0
+- `(cd packages/web && npx next build)` -> exit 0
+- `node --import tsx --test src/__tests__/chatColor.test.ts src/design/__tests__/contrast.test.ts`
+  -> tests 60, pass 60, fail 0
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+
+Browser check (Playwright, both chat surfaces, view made visible first):
+- task chat with a violet agent: send button gradient
+  `rgb(139,123,216) -> rgb(166,152,226)`, ink `rgb(11,18,32)`, composer
+  focus border `rgb(166,152,226)`, user entry border tinted. Without a bot
+  every one of those falls back to the app accent.
+- companion chat with the same agent: send button background
+  `rgb(166,152,226)`, ink `rgb(11,18,32)`, accent border, and
+  `.rk-bar:focus-within` ring all switch; without a bot they revert to the
+  defaults.
+
+Note: `.rk-send` carries `transition: background .12s`, so a measurement taken
+in the same tick as the button becoming enabled reads the in-flight value.
+The accent is present once the transition settles (~150 ms).
+
+## Notes
+- Pre-existing gate failures unrelated to this task (proved by stashing the C20
+  work and re-running on the clean base, which fails identically):
+  `check:loam-ui` asserts `#homeModes button` == 7 but finds 8, and the
+  Playwright-based `check:loam-ancillary` / `check:isolation` time out. Neither
+  touches a file this task changed.
+- `ui/loam.css` was normalized to uniform CRLF to match every other file under
+  `ui/` (it was the only mixed-EOL file in the tree).
+- No forbidden path touched, no test weakened or deleted, no secrets committed.
