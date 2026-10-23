@@ -91,9 +91,8 @@ describe("file_edit schema aliases", () => {
     fs.writeFileSync(file, "x\nx\n", "utf8");
     const res = await edit({ path: "sample.txt", old_string: "x", new_string: "y" });
     assert.equal(res.ok, false);
-    assert.match(res.content, /not unique/i);
-    assert.match(res.content, /2 matches/);
-    assert.match(res.content, /add more surrounding context/i);
+    assert.match(res.content, /found 2 times/i);
+    assert.match(res.content, /Provide more context/i);
     assert.match(res.content, /replace_all/);
     assert.equal(fs.readFileSync(file, "utf8"), "x\nx\n");
   });
@@ -102,7 +101,8 @@ describe("file_edit schema aliases", () => {
     fs.writeFileSync(file, "alpha\n", "utf8");
     const missing = await edit({ path: "sample.txt", old_string: "zzz", new_string: "y" });
     assert.equal(missing.ok, false);
-    assert.match(missing.content, /not present/i);
+    assert.match(missing.content, /not found in/i);
+    assert.match(missing.content, /file_read/i);
 
     const noArgs = await edit({ path: "sample.txt" });
     assert.equal(noArgs.ok, false);

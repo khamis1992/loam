@@ -23,6 +23,8 @@ export const RUN_NODE_TYPES = [
   "media",
   "ask_user",
   "complete",
+  /** Multi-model A/B arm: one sibling run of the same prompt under one model. */
+  "sibling",
   "note",
   "failed",
 ] as const;
@@ -358,6 +360,17 @@ export function parseExport(data: unknown): RunGraphExport {
     if (!row) throw new RunGraphStoreError("run graph export contains an invalid node");
   }
   return { run_id: obj.run_id, format: typeof obj.format === "number" ? obj.format : 1, nodes: obj.nodes as RunGraphExport["nodes"] };
+}
+
+/**
+ * Deterministic node id for one A/B sibling arm.
+ *
+ * A sibling is not derived from an agent event, so it needs its own seed: the
+ * same arm index and model always produce the same id, which keeps a re-rendered
+ * canvas stable instead of duplicating nodes.
+ */
+export function siblingNodeId(runId: string, arm: number, model: string): string {
+  return eventNodeId("sibling", `${runId}:${arm}:${model}`);
 }
 
 /** Stable graph order: event order first, then position, then id. */
