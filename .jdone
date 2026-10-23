@@ -52,6 +52,45 @@ All 7 are pre-existing and environmental/parity issues, documented in manus-pari
      `os.tmpdir()` folder is *not* a git repo, but this worktree's temp dir resolves under a git
      repository, so `info.isGit` is true.
 
+**manus-parity advanced again during this session** (tip `3fc4529`, F5 `fc-05` video-studio state
+sync). `git merge manus-parity` was run again and auto-merged cleanly (no conflicts; the only
+divergence was the tracked rollup `.jdone`). Verified mechanically that the resulting `.jdone` is a
+**superset of both sides**: `git diff <parity-side> HEAD -- .jdone` and `git diff <our-side> HEAD
+-- .jdone` both produce zero removed (`<`) lines, and parity's new `## fc-05: Video Studio state
+sync (preserve manual edits)` section is present. Committed as `a39f249`;
+`git rev-list --left-right --count manus-parity...HEAD` = `0  11` and `git merge manus-parity`
+reports "Already up to date."
+
+### Gates re-run on the final merged tree (HEAD `a39f249`)
+
+  1. `npx tsc --noEmit`                        -> exit 0
+  2. `npm run build:server`                    -> exit 0 (dist/server.cjs 19.4mb, pdf worker copied)
+  3. `(cd packages/web && npx next build)`     -> exit 0 (25/25 static pages)
+  4. `npm run check:encoding`                  -> OK (no BOM, no mojibake, all JSON valid)
+
+Parity's newly merged video-studio suites also pass:
+  `node --import tsx --test src/tools/__tests__/videoStudio.test.ts src/tools/__tests__/videoStudioState.test.ts src/server/__tests__/videoStudioE2E.test.ts`
+                                                -> tests 63, pass 63, fail 0
+
+Full-suite run `node --import tsx --test "src/**/*.test.ts"` -> tests 2304, pass 2301, fail 3.
+All 3 are the pre-existing environmental/inherited issues documented in manus-parity's own
+`.jdone`; none is caused by this merge and none touches J11:
+  1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered nor
+     listed in PENDING_CODING_TOOLS". Inherited from parity: D4 added `suggest_plan` to
+     `CODING_PROFILE.tools` and the mode catalog but not to the test's `PENDING_CODING_TOOLS`,
+     and the test's registry does not include `createPlanTools`.
+  2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing".
+     Environment-dependent: this worktree's `%TEMP%` resolves under a git repository, so a plain
+     temp folder reports `isGit: true`.
+  3. `src/tools/__tests__/search.test.ts` -> "greps and globs the repository in under 1
+     second" (1052ms against a 1000ms budget). Load-sensitive under the parallel full-suite run.
+
+Proven not merge-induced: every one of the six involved files
+(`src/agent/__tests__/toolDescriptions.test.ts`, `src/agent/taskToolScope.ts`,
+`src/tools/planTools.ts`, `src/server/__tests__/worktrees.test.ts`, `src/server/worktrees.ts`,
+`src/tools/__tests__/search.test.ts`) is byte-identical to manus-parity
+(`git diff manus-parity HEAD -- <file>` is empty for each).
+
 ## Acceptance criteria (all covered)
 
 - Doc committed: `docs/COMPACTION_SPEC.md` is present at HEAD and compares every jcode
@@ -72,12 +111,14 @@ All 7 are pre-existing and environmental/parity issues, documented in manus-pari
   node --import tsx --test src/agent/__tests__/contextCompressor.test.ts src/agent/__tests__/cacheUsageAccounting.test.ts src/agent/__tests__/codingPrompt.test.ts
   (cd packages/web && npx vitest run)
   node --import tsx --test "src/**/*.test.ts"
+  node --import tsx --test src/tools/__tests__/videoStudio.test.ts src/tools/__tests__/videoStudioState.test.ts src/server/__tests__/videoStudioE2E.test.ts
+  npm run check:encoding
 
 ## Measured RAM
 
 No RAM measurement taken for this task: the change is documentation plus four config
 constants, and no long-running or memory-intensive process was exercised. The heaviest gate
-was the full node test suite (tests 2284, ~1.5 min wall clock), which ran without a memory
+was the full node test suite (tests 2304, ~1.7 min wall clock), which ran without a memory
 limit being hit; no peak-RSS figure was captured.
 
 No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
