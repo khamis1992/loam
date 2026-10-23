@@ -52,6 +52,14 @@ registered through `registerCacheStats()` and therefore shows up as a counter
 row on the `debug:memory` surface, so a violated cap is observable rather than
 theoretical.
 
+The tables list 43 caps. A process does not register all 43 at once: three are
+lazy, bound to the first object that owns them (`browser-operator-snapshots` is
+created per `browser_operator` call, and `policy-glob` / `workspace-directory-requests`
+register when their module is first imported). The server registers 38 at boot and
+the bench's chat scenario brings it to 40, which is the `cacheCount` in
+`bench/results/J6-after.json`. Every cap, lazy or eager, is enforced in code and
+has an eviction test in `src/memory/__tests__/caps.test.ts`.
+
 ### Agent and session caches
 
 | Counter | Cap | Source | Why |
