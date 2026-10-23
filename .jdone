@@ -1,4 +1,88 @@
-J6 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
+## J6 gate-fix: fifth manus-parity merge (O6) resolved, all gates green
+
+manus-parity advanced once more while this was being finalised, from `6b9b453` (O2/D5) to
+`603d71c` ("merge khamis1992/om-o6 (O6 via loam-jcode-run) into manus-parity"), carrying the
+O6 durable input queue. `git merge manus-parity` conflicted in exactly one file, `.jdone`
+(add/add: this J6 report vs parity's new O6 report prepended at the top-of-file anchor). The
+incoming O6 code merged cleanly with no manual edits.
+
+### Conflict resolution
+Removed the three conflict markers with the file edit tool, keeping BOTH reports verbatim and
+separating them with the existing `---` rule. `.jdone` is CRLF, so the edit strings carry
+explicit `\r\n`. Mechanical verification against all three merge stages:
+- base `:1` 1435 non-blank lines -> 0 missing
+- ours `:2` 1621 non-blank lines -> 0 missing
+- theirs `:3` 1513 non-blank lines -> 0 missing
+- `SUPERSET_OF_ALL_THREE_STAGES = true`, marker lines remaining in file = 0
+Committed as merge commit `1388b1c`.
+
+### Incoming O6 change (merged cleanly, no manual edits)
+`git diff --stat 1388b1c^1 1388b1c`:
+```
+ .jdone                                       |  97 ++++++++++++
+ src/agent/loop.ts                            |  28 ++++
+ src/index.ts                                 |  26 +++-
+ src/protocol/socket.ts                       |  19 +++
+ src/server/__tests__/inputQueue.test.ts      | 218 +++++++++++++++++++++++++++
+ src/server/__tests__/inputQueueAdmit.test.ts | 179 ++++++++++++++++++++++++
+ src/server/http.ts                           |  17 +++
+ src/server/inputQueue.ts                     | 132 ++++++++++++++++
+ 8 files changed, 715 insertions(+), 1 deletion(-)
+```
+Neither `ui/` nor `src/scripts/check-loam-ui.mjs` / `check-loam-ancillary.mjs` /
+`check-test-isolation.ts` is in that set, so the pre-existing failures described below cannot
+have been affected by this merge.
+
+### Gate condition verified (final)
+- `git merge manus-parity` reports "Already up to date."
+- `git merge-base --is-ancestor manus-parity HEAD` exits 0
+- `git rev-list --left-right --count manus-parity...HEAD` = `0  22`
+- `git status --porcelain` is empty (working tree clean)
+
+### Gates on committed HEAD 1388b1c
+- `npx tsc --noEmit`                          -> exit 0 (no output)
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.4mb, pdf worker copied)
+- `(cd packages/web && npx tsc --noEmit)`     -> exit 0
+- `(cd packages/web && npx next build)`       -> exit 0 ("Compiled successfully", 25/25 static pages)
+- `(cd packages/web && npx vitest run)`       -> 72 files / 472 tests, all pass
+- `npm run verify`                            -> exit 0 (recovery PASS, FIFO ownership PASS, modes PASS)
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                       -> PASS
+- `npm run check:promptwire`                  -> PASS
+- `npm run check:orchestrator`                -> PASS (114/114)
+- `npm run check:design-registry`             -> OK (30 blocks, 8 RTL, all manifests valid, all built)
+- `npm run test:vendor`                       -> tests 7, pass 7, fail 0
+- `npm run test:vendor:editors`               -> tests 15, pass 15, fail 0
+- `npm run test:memory`                       -> tests 49, pass 49, fail 0
+- `npm run test:bench`                        -> tests 40, pass 40, fail 0
+- incoming O6 suites `src/server/__tests__/inputQueue.test.ts` +
+  `src/server/__tests__/inputQueueAdmit.test.ts` -> tests 15, pass 15, fail 0
+- `node --import tsx --test "src/**/*.test.ts"` -> tests 2384, pass 2382, fail 2
+
+The two remaining failures are pre-existing on the manus-parity lineage and are byte-identical
+to parity (blob hashes match exactly on both sides, `git diff manus-parity HEAD -- <file>` is
+empty for each):
+1. `src/agent/__tests__/toolDescriptions.test.ts` (blob `30574930`) -> "keeps every coding-profile
+   tool either linted or explicitly pending": `suggest_plan is neither registered nor listed in
+   PENDING_CODING_TOOLS`. The inherited D4 defect carried in the preserved reports below.
+2. `src/server/__tests__/worktrees.test.ts` (blob `2f3e37d2`) -> "reports non-git folders without
+   throwing": `readGitBranch` shells out to `git rev-parse`, which resolves to the nearest
+   enclosing repository, so a temp folder on this host reports `isGit: true`.
+
+The third flake seen in earlier runs, `src/tools/__tests__/search.test.ts` (blob `4da4e0d7`,
+also byte-identical to parity), passed in this run; it is load-sensitive and has been observed
+to pass 19/19 in isolation.
+
+`check:test-isolation`, `check:loam-ui` and `check:loam-ancillary` remain failing on this host
+exactly as they fail on manus-parity, with byte-identical residue / byte-identical `ui/` and
+check scripts. Pre-existing, not regressions.
+
+No secrets committed. No forbidden path touched. No test was weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added.
+
+---
+
+## J6 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
 
 ---
 
