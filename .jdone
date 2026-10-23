@@ -1,5 +1,48 @@
 fc-07 complete: the Loam Video / Loam Effects router and a full "Video editing" prompt section. One product, one workflow, Arabic + English routing, FilmCraft-native fallback.
 
+## Merge gate fix, round 5 (merge commit `96dbfae`)
+
+Parity advanced a fifth time while the round-4 gate was being re-verified (`d57df77`,
+neo-n15 Case Playbook, 26 files). Merged as `96dbfae`, keeping BOTH sides of every conflict.
+Only `.jdone` conflicted (one hunk, both sides appending their report at the same end-of-file
+anchor); resolved as the lossless union of both sides, removing only the three conflict-marker
+lines. Verified with a fresh multiset-inclusion checker against both merge parents (`eebf6d6`
+and `d57df77`) and their union: 0 non-empty lines missing from either parent or the union, 0
+conflict markers, CRLF endings preserved (8886 CRLF / 0 bare-LF). `manus-parity` (`d57df77`)
+is an ancestor of HEAD and `git log HEAD..manus-parity` is empty, so the gate is satisfied.
+
+Gates on the merged tree (`96dbfae`), each with its real exit code:
+
+- `npx tsc --noEmit` -> 0
+- `npm run build:server` -> 0 (server bundle + pdf worker written)
+- `cd packages/web && npx next build` -> 0 (25/25 static pages)
+- `check:encoding`, `check:promptwire`, `check:modes`, `check:eval` -> 0
+- `check:orchestrator`, `check:loam-agents`, `check:recovery` -> 0
+- touched-file tests (`videoStudio.test.ts`, `videoStudioRouter.test.ts`,
+  `videoPrompt.test.ts`) -> 102 tests / 102 pass / 0 fail
+- full server suite -> 2829 tests / 2829 pass / 0 fail (includes N15's 13 new flow tests)
+- web vitest -> 82 files / 554 tests, 553 pass + 1 intermittent
+- `check:isolation` / `check:loam-e2e` still fail with the inherited `duplicate tool:
+  fanout` (masked by `EADDRINUSE 8787` underneath), unchanged from round 4.
+
+### The one web-vitest failure is an inherited flake, not a merge regression
+
+`src/app/app/wiki/__tests__/wikiPage.test.tsx` ("opens a page through GET /api/wiki/:project/:slug")
+failed once in the first full run with `TestingLibraryElementError: Unable to find an element
+with the text: /Hello wiki/`. It is not fc-07 or N15 code:
+
+- `git diff --name-only d57df77 HEAD -- . | grep wiki` is empty: the merge touched no wiki file.
+- `git log --oneline -- packages/web/src/app/app/wiki/` shows only `9536efe`
+  ("feat(wiki): add repo wiki generator + ask_codebase (D8)"), and `git merge-base
+  --is-ancestor 9536efe manus-parity` exits 0: the wiki feature is inherited from parity.
+- The same test passes 2/2 in isolation and 554/554 in a second full-suite run, so it is an
+  intermittent race (async fetch settling before the assertion), not a deterministic failure.
+
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path touched.
+No conflict markers remain anywhere in the tracked tree, and the merge is committed.
+
+---
+
 ## Merge gate fix, round 4 (merge commit `8338619`)
 
 Parity advanced a fourth time while the gate was being fixed (`851b3fe`, N7
