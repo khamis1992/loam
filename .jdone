@@ -288,12 +288,19 @@ Gates (all pass, from the worktree root):
   Conflict-file re-run: hooks.test.ts + orchestratorHooks.test.ts + loopHooks.test.ts
     - tests 47, pass 47, fail 0
 
-Pre-existing, not a regression: `npm run check:orchestrator` exits 1 with no verdict on
-BOTH this tip and the manus-parity baseline (a5d0cf3), with the identical crash
-(runFinalRepair -> all providers failed/cooled -> longcat:cloud HTTP 404). Cause is the
-smoke harness's testCfg() calling loadConfig() without overriding coding/failover, so
-real defaults apply and a worker coding turn escapes to the network. It is an upstream
-harness defect, not introduced by this merge; it was not masked or altered here.
+Fixed a gate parity broke: `npm run check:orchestrator` exited 1 with no verdict on
+both this tip and the manus-parity baseline (a5d0cf3), with the identical crash
+(runFinalRepair -> all providers failed/cooled -> longcat:cloud HTTP 404). Cause: the
+smoke harness's testCfg() called loadConfig() without overriding coding/failover, so the
+real defaults applied (coding enabled; six failover providers) and a worker coding turn
+escaped the injected fake client to the real provider chain. Since this gate passed
+before parity landed the coding router (C17 recorded 114/114), it was a real regression
+in the harness, not merely upstream noise. src/scripts/check-orchestrator.ts now sets
+cfg.coding = { enabled: true, chain: [], logEdits: false } and cfg.failover = { providers: [] }
+in testCfg(): with no coder in the chain the router falls back to the harness's fake
+client for every turn. No assertion was weakened or removed; the smoke is unchanged in
+what it verifies, only hermetic in where a coding turn resolves. Now exits 0 at
+"orchestrator smoke: PASS (114/114)", and the full `npm run verify` exits 0.
 
 Note: src/agent/masterPromptText.ts shows as "modified" after a test run because
 src/tools/__tests__/promptwire.test.ts imports src/scripts/gen-master-prompt.ts, which
