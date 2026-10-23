@@ -1,6 +1,140 @@
 
 ---
 
+# J8 - Cross-session file-touch notifications: DONE
+
+## What J8 delivers
+
+jcode notifies a session when another session writes a file it has already read,
+so a stale read is caught instead of silently producing a conflicting edit. Loam
+runs several agent sessions against one repository (sub-agents, delegated tasks,
+orchestrator workers, swarm stages), so the port is a per-workspace notice queue
+shared by every live session against that root.
+
+Spec: `ref/SWARM_ARCHITECTURE.md` "File Touch and Intent" and `ref/JCODE_RE.md`
+task J8. Ported to TypeScript; jcode's notice semantics are kept.
+
+## What was added
+
+- `src/tools/fileTouch.ts` (new, 353 lines): `FileTouchRegistry` with
+  `noteRead` / `noteWrite` / `noteDelete` / `drainNotices` / `forgetSession`;
+  `fileTouchRegistry(workspace)` returns one registry per repository root;
+  `forgetFileTouchSession(sessionId)` drops a finished session's marks.
+  Notices are deduped per (session, path) so repeated edits update one pending
+  notice instead of flooding the reader. A writer never notifies itself, a write
+  that changes nothing produces no notice, and a reader who re-read the file
+  after the edit is not told about it. `diffLines` is an LCS line diff with a
+  multiset fallback above 300 lines (where the quadratic table would cost more
+  than the notice is worth); `formatDiffSummary` renders `+2/-1` and
+  `formatDiffPreview` returns up to 3 changed lines prefixed `-`/`+`. Content is
+  identified by SHA-256, not a short rolling hash, because "same digest" is
+  treated as "the reader already holds this content" and a collision would
+  silently suppress a real change. Bounded throughout: 50 pending notices per
+  session, 5000 tracked paths, 50 live registries, a 1-hour pending TTL, and a
+  256k cap above which a reader's snapshot is kept as a digest only.
+- `src/tools/readState.ts`: `ReadTouchHooks` (`read` / `write` / `remove`) fired
+  by `record` / `recordWrite` / `forget`, so read tracking publishes to the
+  registry. Also `recent(limit)` with a `readAtMs` timestamp.
+- `src/agent/loop.ts`: one registry per workspace root, the `readState.hooks`
+  wiring, `touch.drainNotices(sessionId)` into the reminder channel at each
+  turn, `forgetFileTouchSession` when a session ends, and a `subSeq` per-subagent
+  session id so a child is a distinct session.
+- `src/agent/reminders.ts`: `fileTouchedReminder` plus `ReminderChannel.fileTouched`,
+  delivered as a hidden user-role block that the UI cannot render.
+- Write-side publishing: `src/tools/files.ts` (`recordWrite` on write,
+  `forget` + `recordWrite` on `file_move`, `forget` on `file_delete`),
+  `src/tools/multiEdit.ts`, `src/tools/subagents.ts`, `src/tools/wideResearch.ts`,
+  `src/tools/mapReduce.ts`, `src/swarm/service.ts`,
+  `src/subagent/inProcessProvider.ts`, `src/subagent/types.ts`.
+- `packages/web/public/marketplace/THIRD_PARTY_NOTICES`: jcode (MIT) attribution
+  for the file-touch feature.
+
+The follow-up fix `b02e220` closed two defects: notices for snapshots too large
+to retain (the digest-only path) and digest collisions.
+
+## Acceptance criteria (automated, all passing)
+
+| Requirement | Test |
+| --- | --- |
+| session B is told when session A writes a file B read | `fileTouch.test.ts` "notifies a reader when another session writes a file it read" |
+| no notice for a file the session never read | "sends no notice for a file nobody read" |
+| a writer is never notified of its own write | "never notifies the writer about its own write" |
+| an unchanged write produces no notice | "sends no notice when the write changes nothing" |
+| a reader who re-read after the edit is not told | "does not notify a reader who re-read the file after the edit" |
+| repeated edits collapse into one pending notice | "collapses repeated edits to one path into a single pending notice" |
+| every reader is told, the writer is not | "notifies every reader but not the writer" |
+| readers are told about a delete | "tells readers when a file is deleted" |
+| a finished session's queue and marks are dropped | "forgets a finished session's queue and reader marks" |
+| the per-session queue is bounded | "keeps the per-session queue bounded" |
+| a reader whose snapshot was too large is still told | "notifies a reader whose snapshot was too large to retain" |
+| line diff summary and preview | `diffLines` "reports added and removed lines and keeps a short preview" |
+| identical content is no change | "treats identical content as no change" |
+| large files use the multiset fallback | "falls back to a multiset count for very large files" |
+| the digest does not collide across files | "does not treat two different files as identical (digest has no collisions)" |
+| notices reach the agent loop | `fileTouchLoop.test.ts` "file-touch notices in the agent loop" (3 tests) |
+| read-tracking guard still holds (NOT_READ / STALE) | `readState.test.ts` "read-tracking guard" (9 tests) |
+| read / write / remove hooks publish the content each saw | "publishes read, write, and remove with the content each one saw" |
+| a moved file is forgotten and republished at the new path | "forgets a moved file and publishes the new path as a write" |
+| the notice is injected as a hidden reminder | `reminders.test.ts` file-touch block (13 tests in the suite) |
+
+## Gates (all run from the worktree root on the merged tree)
+
+1. `npx tsc --noEmit` -> exit 0
+2. `npm run build:server` -> exit 0 (`dist/server.cjs` + pdf worker written)
+3. `(cd packages/web && npx next build)` -> exit 0 (compiled successfully, 25/25 static pages)
+4. `node --import tsx --test "src/**/*.test.ts"` -> tests 2962, pass 2962, fail 0
+5. `(cd packages/web && npx vitest run)` -> 91 files / 624 tests, all pass, 0 fail
+6. J8 suites (`fileTouch` + `readState` + `fileTouchLoop` + `reminders`) -> tests 42, pass 42, fail 0
+7. `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+
+No test was weakened, deleted, relaxed or skipped. `src/tools/fileTouch.ts` is
+byte-identical to the fix commit `b02e220`. No secrets committed. No forbidden
+path touched. No Arabic text was written.
+
+## Merge with manus-parity (gate fix)
+
+`.jgatefail.txt` reported `MERGE CONFLICT with latest manus-parity`. `manus-parity`
+is a live branch other workstreams keep merging into, so "latest" is a moving
+target and the gate condition `git merge-base --is-ancestor manus-parity HEAD`
+(exit 0) is only true for the CURRENT tip. The in-progress merge targeted a stale
+snapshot (`bdae2ca`, an ancestor of the current tip but not the tip), which would
+not satisfy the check, so it was aborted and re-merged against the real tips as
+they advanced:
+
+1. parity tip `ca08d4c` -> merge commit `3d49cd8` (conflicts: `.jdone`, `loop.ts`, `THIRD_PARTY_NOTICES`)
+2. parity tip `3c86ecf` -> merge commit `f269b43` (auto-merged by the union driver)
+3. parity tip `519f889` -> merge commit `17240488` (clean)
+
+`git merge` conflicted in three files, all resolved keeping BOTH sides:
+
+- `.jdone`: `.gitattributes` (added by parity) declares this file
+  `merge=union`, so the resolution is git's OWN union driver, which retains every
+  distinct line of the J8 report and of the parity rollup. The union is
+  hunk-based, so 64 duplicate occurrences that landed below the multiset sum were
+  appended verbatim from the merge parents. Verified a multiset superset of ours,
+  theirs and the merge base: 0 distinct lines and 0 occurrences missing, 0
+  conflict markers, 0 U+FFFD, no BOM.
+- `src/agent/loop.ts`: J8's per-workspace file-touch registry wiring kept
+  together with parity's O5 durable event-log bracket (independent additions, no
+  shared line).
+- `THIRD_PARTY_NOTICES`: J8's file-touch provenance paragraph kept together with
+  parity's `bench/` and `src/memory/` jcode entries.
+
+Gate condition verified on the final tree: `git merge-base --is-ancestor
+manus-parity HEAD` -> exit 0, `git merge --no-edit manus-parity` -> "Already up
+to date.", working tree clean.
+
+## Scope and follow-ups
+
+- One registry per workspace root, keyed by the resolved repository path; a
+  session outside a workspace gets no touch tracking.
+- A reader's snapshot above 256k chars is kept as a digest only, so the notice
+  for it carries a summary but no line preview.
+- The diff is line-based; there is no semantic or moved-block detection.
+- Notices are delivered at turn boundaries, not pushed mid-turn.
+
+---
+
 # N2 gate-fix session: merge with latest manus-parity
 # N9 round 12: parity auto-unioned .jdone, full suite green on the final tip
 
