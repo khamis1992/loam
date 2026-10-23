@@ -304,7 +304,15 @@ describe("context compressor", () => {
 
   it("asks the summarizer for the eight required sections", async () => {
     const cfg = makeConfig({
-      compression: { ...makeConfig().compression, thresholdPercent: 0.01, protectLead: 1, protectTail: 1 },
+      compression: {
+        ...makeConfig().compression,
+        thresholdPercent: 0.01,
+        protectLead: 1,
+        protectTail: 1,
+        // A large window keeps the transcript below the critical ratio so the
+        // summarizer path is reached instead of the emergency hard-compact.
+        contextWindow: { "qwen2.5": 1000000 },
+      },
     });
     const { ollama, chat } = makeOllama(() => okResult("summary"));
     const { emit } = makeEmit();
@@ -392,7 +400,16 @@ describe("context compressor", () => {
 
   it("falls back to pruning when the summarizer returns an empty summary", async () => {
     const cfg = makeConfig({
-      compression: { ...makeConfig().compression, thresholdPercent: 0.01, protectLead: 1, protectTail: 1 },
+      compression: {
+        ...makeConfig().compression,
+        thresholdPercent: 0.01,
+        protectLead: 1,
+        protectTail: 1,
+        // A large window keeps the transcript below the critical ratio so the
+        // summarizer is reached (and can return an empty summary) instead of
+        // the emergency hard-compact.
+        contextWindow: { "qwen2.5": 1000000 },
+      },
     });
     const { ollama } = makeOllama(() => okResult("   "));
     const { emit, events } = makeEmit();
@@ -597,7 +614,15 @@ describe("context compressor", () => {
 
   it("re-attaches the live todo list as a hidden reminder after compaction", async () => {
     const cfg = makeConfig({
-      compression: { ...makeConfig().compression, thresholdPercent: 0.01, protectLead: 1, protectTail: 1 },
+      compression: {
+        ...makeConfig().compression,
+        thresholdPercent: 0.01,
+        protectLead: 1,
+        protectTail: 1,
+        // A large window keeps the transcript below the critical ratio so the
+        // summarizer path runs and emits its re-attach reminder.
+        contextWindow: { "qwen2.5": 1000000 },
+      },
     });
     const { ollama } = makeOllama(() => okResult("Summary."));
     const { emit } = makeEmit();
