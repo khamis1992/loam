@@ -219,6 +219,38 @@ source is byte-identical to the original commit; the only `http.ts` delta is par
 One earlier observation is **not** a defect: a full-suite run once reported 1 failure, but 5/5
 consecutive runs on `b35d086` were 2674/2674 pass, 0 fail, so it was not reproducible.
 
+## Independent validation, fifth pass
+
+A further re-validation pass over the same tree, exercising behaviours the fourth pass did
+not: **33 checks, 33 pass** on the real dispatcher (auth enabled).
+
+- **Spec §8 mock log, verbatim.** The five mock rows (including the two Arabic payloads,
+  `اختبار` and `اكتب ملف hello.txt`) were appended and read back over HTTP. Seqs 1..5 in order,
+  kinds in spec order (`status, input, tool_result, tool_result, checkpoint`), both Arabic
+  strings intact, the checkpoint payload byte-equal, `evt_<sid>_<i>` ids, a positive
+  `createdAt` and the stamped `sessionId` on every row. The same five rows round-tripped
+  through the SSE stream with every kind present and both Arabic strings intact.
+- **`chat_event` arm over the wire.** A `chat_event` row streams as its stored envelope plus
+  the durable `seq` stamped on (`{ ...envelope, seq: 1 }`), with the frame `id` equal to that
+  seq; a neighbouring `status` row streams through the generic arm with `kind` + `event`
+  payload. Every `data:` line is preceded by an `id:` line, so no frame loses its id.
+- **Cursor encoding.** A session id containing reserved characters (`ses a/b?c&d#e f%g`)
+  resolves when percent-encoded and returns that session's row; an unknown session returns
+  200 with empty `data`, `next_after_seq: 0`, `has_more: false`.
+- **Concurrent consumers.** Five interleaved cursors (0, 2, 4, 6, 8) each returned exactly
+  its own window with no duplicate seq within a window and no seq past `headSeq`; two
+  concurrent SSE streams from cursors 5 and 0 resumed independently (5..10 and 0..10).
+  Cross-cursor overlap is correct behaviour, not a duplicate.
+- **Heartbeat on a busy stream.** While rows were appended every ~2 s, two `: hb` comments
+  still arrived (5 appends), i.e. the beat is not starved by a busy tail.
+
+Also re-checked on this pass: the O8 module contains no `log.`/`redact`/`console.` call at
+all (§10's "do not log payloads with `log.info`" is satisfied by construction, not just by
+convention); it adds no sensitive-tool handling of its own (§10 leaves that to the writer, and
+this module is read-only); `events.ts` and `eventsRoutes.test.ts` are both tracked; `tsc`
+exit 0; `eventsRoutes.test.ts` 13/13; `check:encoding` OK; `check:modes` and `check:recovery`
+PASS.
+
 
 # Merge with manus-parity `61aca0c` (N9): `.jdone` add/add resolved
 
