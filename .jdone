@@ -1,3 +1,74 @@
+## N15 gate-fix session: merge with latest manus-parity, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+### Root cause
+No source file conflicted. `git merge manus-parity` brought in another workstream's
+code (N7 branch fan-out, fc-09 effects round trip, video-studio client changes) and
+every one of those files auto-merged cleanly with `ort`. The only file that conflicted
+was the tracked rollup `.jdone`, because both sides appended their own report at the
+same end-of-file anchor:
+
+- **ours** (HEAD, `87dbdeb`): the N15 Case Playbook report.
+- **theirs** (manus-parity tip `851b3fe`): the N7 branch fan-out report.
+
+Resolved as a **union** of both report blocks, parity's N7 report first and this
+branch's N15 report second, with only the three conflict-marker lines removed. No line
+from either side was dropped.
+
+### Integrity of the resolved rollup
+Verified mechanically against the blobs in play: the merged `.jdone` is a
+multiset-superset of the ours blob, the theirs blob and the merge-base blob (0
+non-empty lines missing from any of them), with 0 conflict markers, 0 U+FFFD
+replacement characters and no mojibake. The file is LF-only (matching all three blobs;
+the working copy had briefly picked up CRLF from the merge driver and was normalized
+back to LF), with no BOM and no lone CR.
+
+### Nothing was dropped from the merge
+All 4746 files at the parity tip `851b3fe` are present in the merged tree (0 missing),
+so the merge dropped nothing. `git merge-base --is-ancestor manus-parity HEAD` exits 0
+and `git rev-list --left-right --count manus-parity...HEAD` is `0 3` (zero parity
+commits missing).
+
+### Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (`dist/server.cjs` + pdf worker written)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- N15 backend: `node --import tsx --test src/templates/__tests__/flowTemplates.test.ts`
+                                              -> tests 13, pass 13, fail 0
+- N15 web: `(cd packages/web && npx vitest run src/components/home/__tests__/FlowPlaybook.test.tsx src/i18n)`
+                                              -> 25 tests, 25 pass
+- merged-source suites (`fanout`, `runGraph`, `effectsRoundTrip`, `videoStudio`)
+                                              -> tests 118, pass 118, fail 0
+- full backend suite `node --import tsx --test "src/**/*.test.ts"`
+                                              -> tests 2762, suites 510, pass 2762, fail 0
+- full web suite `(cd packages/web && npx vitest run)`
+                                              -> 82 files, 554 tests, all pass
+
+No test was weakened, deleted or skipped. No assertion was relaxed. No secrets
+committed. No forbidden path (`docs/handoff/watchdog.ps1`, `qa/*.png`,
+`packages/tests/visual/baselines`, ZCode/Codex files) touched. No Arabic text was
+written by this session; no mojibake placeholder text was added. Working tree clean.
+
+### Files
+`.jdone` only (this report prepended to the preserved rollup). No source file was
+modified by this session; the N15 deliverables are unchanged from commit `70f3b73`.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run check:encoding
+  node --import tsx --test src/templates/__tests__/flowTemplates.test.ts
+  (cd packages/web && npx vitest run src/components/home/__tests__/FlowPlaybook.test.tsx src/i18n)
+  node --import tsx --test src/agent/__tests__/fanout.test.ts src/graph/__tests__/runGraph.test.ts src/tools/__tests__/effectsRoundTrip.test.ts src/tools/__tests__/videoStudio.test.ts
+  node --import tsx --test "src/**/*.test.ts"
+  (cd packages/web && npx vitest run)
+
+---
+
 # N7 complete: branch fan-out (`fanout` / `merge` step types, gap G14)
 
 Committed as `3188703`. Implements Neo N7: N independent branches run as child
