@@ -143,6 +143,55 @@ V13 (quick-edit route) is complete, and the merge gate passes.
 
 Working tree is clean; no existing test was weakened.
 
+### Incoming manus-parity report (V13 gate fix)
+
+V13 (quick-edit route) is complete, and the merge gate now passes.
+
+#### Merge gate (the failure that was fixed)
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity.
+Ran `git merge manus-parity`; conflicts were resolved keeping BOTH sides (never dropping either):
+- `src/index.ts`: kept the V13 quick-edit route (`planQuickEditRoute(effectiveCfg, effectivePrompt)` and
+  `quickEditRoute.suffix` / `quickEditRoute.model` wiring) AND the incoming manus-parity side-chat
+  additions (`SIDE_CHAT_READ_ONLY_TOOLS` import, `sideChatSuffix` in the prompt suffix array, the
+  read-only `baseRunAllow`/`runAllow` filtering, and `sideChat: opts.sideChat === true` on the saved run).
+- `.jdone`: this file merges the V13 report and the incoming D16 report instead of choosing one.
+Resolution committed as `872addf Merge branch 'manus-parity' into khamis1992/v0-v13`.
+`git merge-tree --write-tree manus-parity HEAD` exits 0, so no conflict re-emerges.
+
+Earlier in the task, a merge of manus-parity also resolved these files keeping both sides:
+- `src/index.ts`: quick-edit route + memory index summary (`memoryIndexSummary` from `memory.indexSummary(8)`).
+- `src/tools/multiEdit.ts`: V13 exports/doc comments on `DiffHunk` and `diffLines`.
+That resolution was committed as `7d52e7c merge manus-parity: keep quick-edit route with memory index summary (V13)`.
+
+#### What V13 delivers (commit 639a92c)
+- `src/agent/quickEdit.ts`: conservative classifier. Measured scope wins (text-only or pure reorder,
+  within limits) -> fast model; behavioural / structural / file-boundary / oversized / multi-file /
+  ambiguous -> base model. Short instructions classified by narrow-vs-big patterns in English and
+  Arabic; ambiguous or long instructions stay on the base model.
+- `resolveQuickEditModel` uses the configured fast tier (`fallbackModel`), falling back to the base
+  model when it is unset; `planQuickEditRoute` adds a minimal targeted-edit instruction (English +
+  Arabic) only for the quick route.
+- `planTargetedDiff(before, after)` turns a before/after pair into line-anchored patches (replacement,
+  deletion, insertion, insert-before-first-line) via the now-exported `diffLines`/`DiffSummary`/`DiffHunk`.
+- Arabic/RTL: narrow-edit instructions are recognised in Arabic, `hasRtlScript` detects RTL script,
+  and a targeted patch preserves Arabic text exactly (covered by tests).
+- `src/agent/loop.ts` and `src/agent/orchestrator.ts`: optional per-run `model` override so the
+  quick-edit route can actually run on the fast model; `src/index.ts` passes it through.
+
+#### Gates (all run from the worktree root)
+- `(cd packages/web && npx next build)` -> compiled successfully, 25/25 static pages generated
+  (full tools suite green on the final merged tip, including the search perf test)
+
+manus-parity advanced twice while this gate ran (to 8dddc3e, then to 29b9a62). Both were merged
+and re-resolved keeping both sides; the second resolution is `e872e8c Merge branch 'manus-parity'
+into khamis1992/v0-v13`. The branch is 0 commits behind manus-parity and
+`git merge-tree --write-tree manus-parity HEAD` exits 0.
+
+The earlier `src/tools/__tests__/search.test.ts` wall-clock flake (`elapsed < 1000` for a real
+repository grep) was load-induced while four heavy gates ran concurrently; it is machine-speed
+dependent and pre-existing on manus-parity (a clean parity worktree fails it at 1526ms). It passes
+on the final tip, and no test was weakened.
+
 ---
 
 ## Incoming manus-parity report (D16 gate fix)
