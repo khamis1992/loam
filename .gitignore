@@ -1,5 +1,7 @@
 node_modules/
 dist/
+/electron/filmcraft/dist/
+/electron/effectcraft/dist/
 /release/
 /feed/
 /data/
@@ -22,6 +24,9 @@ dist/
 Thumbs.db
 /graphify-out/
 /.testsprite/runs/
+# Per-task done reports and gate-failure logs are session markers, not project files.
+/.cc-report-*.md
+/.jgatefail.txt
 /.github/workflows/release.yml
 
 nul
@@ -29,6 +34,12 @@ nul
 /packages/web/e2e/results/
 /packages/web/e2e/visual/
 /packages/web/e2e/snapshots/
+
+# Vendored editor dists (fetched with `npm run vendor`; never committed)
+/.cache/vendor/
+# Coding-eval harness: the committed fixtures live in evals/coding/tasks/, but the
+# generated sandboxes and reports are throwaway run output.
+/evals/coding/results/
 
 # Vendored wasm app bundles (fetched by scripts/vendor/fetch-craft.mjs; never committed)
 electron/craft/*/dist/

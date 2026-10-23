@@ -1,0 +1,18 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "table-basic",
+  "name": "Data Table",
+  "description": "A styled data table with a header row, zebra rows and a right-aligned numeric column for dashboards.",
+  "category": "table",
+  "license": "MIT",
+  "source": "shadcn/ui blocks",
+  "tags": ["table", "data", "dashboard"],
+  "intent": "Present rows of records with aligned columns and readable numeric values.",
+  "deps": ["react"],
+  "rtl": false,
+  "dir": "ltr",
+  "lang": "en",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"]
+}
