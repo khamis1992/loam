@@ -1,3 +1,152 @@
+# N9 - Ask-User-More node: DONE (merge gate resolved on the current parity tip)
+
+## Outcome
+
+The gate failure was not a code defect. `.jgatefail.txt` reported:
+
+    MERGE CONFLICT with latest manus-parity: run git merge manus-parity, resolve all
+    conflicts keeping both sides, commit.
+
+`manus-parity` had advanced twice since the last N9 report (N2's canvas view, then
+N10's output-type routing), so `.jdone` conflicted again. Both merges are now
+resolved, committed, and every gate has been re-run on the resulting tree.
+
+## What was done
+
+### Merge 1: parity tip `ed26550` (N2) -> merge commit `ca2141e`
+
+ONE conflict, `.jdone` (add/add): this branch's N9 report vs parity's accumulated
+N2 rollup. Resolved keeping BOTH sides, following the precedent set by the earlier
+N2/N4 resolutions:
+
+- This branch's N9 report stays at the top of the rollup.
+- The full parity rollup follows verbatim.
+- Verified mechanically against both stage blobs (`:2:.jdone` 5475 lines,
+  `:3:.jdone` 5447 lines): **0 non-empty lines missing from the ours side, 0
+  non-empty lines missing from the theirs side**.
+
+Every other file auto-merged cleanly, so no code, test or prompt was touched by the
+resolution. The auto-merged results were checked for both sides surviving:
+
+- `packages/web/src/i18n/en.json` and `ar.json`: N9's ask-user strings and N2's
+  canvas strings are both present in the same objects (Arabic UTF-8 intact).
+- `src/server/http.ts`: N2's `handleGraphRoutes` and N9's `handleAskUserRoutes`
+  are both registered.
+- N2's canvas module and N9's ask-user module are disjoint file sets.
+
+### Merge 2: parity tip `26befe6` (N10) -> merge commit `75b0989`
+
+The verification step's own `git merge manus-parity` produced a second merge,
+because the ref moved again mid-session. ONE conflict, `.jdone` (modify/delete):
+parity no longer tracks `.jdone` at all (N10's merge dropped it), while this
+branch's rollup is the only copy. Resolved by keeping THIS branch's `.jdone`
+(`git add .jdone`), because deleting it would have discarded this branch's report
+and the accumulated parity history. Every other file auto-merged cleanly.
+
+N10's output-type routing came in (`src/llm/router.ts`,
+`src/tools/routingModel.ts`, `src/modes/outputTypeMap.ts`, `src/modes/detect.ts`,
+`src/agent/loop.ts`, `src/config.ts`, `src/index.ts`,
+`packages/web/src/components/chat/*`) plus its tests. N9's ask-user wiring was
+re-verified intact on the merged tree: `src/index.ts` still imports and registers
+`applyAskUserGate` / `createAskUserTools`, and `src/server/http.ts` still registers
+both `handleGraphRoutes` and `handleAskUserRoutes`.
+
+## Acceptance criteria (automated, all passing on the final merged tree)
+
+Both N9 acceptance criteria are covered by passing tests:
+
+1. **Vague prompt fixture -> ask node appears before any tool call**
+   `src/agent/__tests__/askUserAutoTrigger.test.ts`:
+   "a vague prompt raises the ask-user card before anything is planned",
+   "a concrete prompt never raises a card", "does not fire for an empty prompt",
+   "treats an unresolved pronoun as missing context",
+   "stays quiet when the conversation already supplies the context".
+2. **Answer + file -> run resumes and uses the file**
+   `src/tools/__tests__/askUser.test.ts`:
+   "an answer with an uploaded file resumes the run with the file path attached",
+   "returns per-question answers and an uploaded file to the model",
+   "rejects an empty request payload",
+   "drops an answer file path that escapes the workspace".
+   `src/protocol/__tests__/askUserSocket.test.ts`: the socket bridge delivers the
+   card and resumes the waiting run, and the HTTP route path works too.
+
+The UI component is covered by vitest + @testing-library (Playwright was not used):
+
+- `packages/web/src/components/approval/__tests__/askUserCard.test.tsx` -> 7 tests, all pass.
+
+## N9 deliverables (unchanged by this session)
+
+- `src/tools/askUserTools.ts` - the `ask_user` agent tool (questions with options,
+  free-text answers, an uploaded file) and the fail-closed gate the orchestrator calls.
+- `src/tools/askUserGate.ts` - the seam the orchestrator calls.
+- `src/tools/askUserStore.ts` - durable pending-request records with a TTL.
+- `src/server/routes/askUser.ts` - the HTTP route the web client answers through.
+- `packages/web/src/components/approval/AskUserCard.tsx` - the Workspace right-panel
+  card (Arabic + RTL aware), plus the `askUserRequested` / `askUserResolved` event
+  pair and `resolve_ask_user`.
+- Registered in the existing tool registry and the mode-catalog CONTROL set;
+  `prompts/loam-master.md` and the i18n JSON carry the user-facing wording.
+
+## Gates (all run from the worktree root on the final merged tree `9a43b10`)
+
+- `npx tsc --noEmit`                                       -> exit 0
+- `npm run build:server`                                   -> exit 0 (`dist/server.cjs` 19.5mb, pdf worker copied)
+- `(cd packages/web && npx next build)`                    -> exit 0 (compiled successfully)
+- `npm run check:encoding`                                  -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                                     -> PASS (seven fail-closed modes)
+- `npm run check:orchestrator`                              -> PASS (114/114)
+- `npm run check:eval`                                      -> exit 0
+- `npm run check:recovery`                                  -> exit 0
+- `node --import tsx --test "src/agent/__tests__/*.test.ts"`-> tests 312, pass 312, fail 0
+
+N9 acceptance suites:
+
+- `node --import tsx --test src/tools/__tests__/askUser.test.ts
+  src/agent/__tests__/askUserAutoTrigger.test.ts
+  src/protocol/__tests__/askUserSocket.test.ts`             -> tests 25, pass 25, fail 0
+- `(cd packages/web && npx vitest run
+  src/components/approval/__tests__/askUserCard.test.tsx)` -> 7 tests, all pass
+
+Parity-side files from both merges, re-run on the final tree:
+
+- `node --import tsx --test src/server/__tests__/graphRoutes.test.ts
+  src/agent/__tests__/toolDescriptions.test.ts
+  src/agent/__tests__/toolProfile.test.ts
+  src/server/__tests__/runTools.test.ts`                    -> tests 34, pass 34, fail 0
+- `(cd packages/web && npx vitest run src/components/workspace/canvas
+  src/components/workspace/__tests__/autoOpen.test.ts
+  src/components/chat/__tests__/routingControls.test.ts)`   -> 8 files, 76 tests, all pass
+
+## Merge safety checks on the final tree
+
+- `git merge manus-parity` -> `Already up to date.`
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
+- `git rev-list --left-right --count manus-parity...HEAD` -> `0  12`
+  (parity commits still missing: 0)
+- `git grep -n "^<<<<<<<\|^=======$\|^>>>>>>>\|^|||||||" -- src packages` -> empty
+
+No test was weakened, deleted or skipped; no assertion was relaxed; no source file
+was edited. No secrets committed. No forbidden path touched. No `.neo-*` or
+`.jcode-*` marker file was staged.
+
+## Seams left for other workstreams
+
+- `.jdone` is a tracked rollup every workstream appends to, so it will keep
+  conflicting on each `git merge manus-parity`. The resolution that satisfies the
+  gate is always: keep BOTH sides (this branch's report at the top, the parity
+  rollup verbatim after it). Verify mechanically by comparing both stage blobs
+  (`:2:.jdone`, `:3:.jdone`) against the resolved file and requiring 0 non-empty
+  lines missing from either side. Note that N10's merge dropped `.jdone` from
+  parity, so a future conflict may be modify/delete rather than add/add.
+- The ask-user auto-trigger classifier is heuristic (keyword/pronoun based). A
+  later workstream could replace it with a model-judged confidence signal without
+  changing the gate seam in `src/tools/askUserGate.ts`.
+- `resolve_ask_user` and the `askUserRequested` / `askUserResolved` event pair are
+  the extension point if a workstream wants to attach answers to the run graph
+  as a first-class node rather than a prompt prefix.
+
+---
+
 # N9 merge gate, fourth pass: parity advanced twice more (N2, then N10)
 
 ## Why this section exists
