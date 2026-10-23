@@ -41459,3 +41459,72 @@ is a true multiset superset of both sides.
 - `npm run check:recovery`                     -> PASS
 - `npm run check:orchestrator`                 -> PASS (114/114)
 - `npm run check:encoding`                         -> OK (no BOM, no mojibake, all JSON valid)
+
+---
+
+# Merge with manus-parity `6e17246`: the union driver auto-resolved `.jdone` (no conflict)
+
+Parity advanced again, from the previous merge tip `519f889` to `6e17246` (106 commits,
+merge base `519f889`). This is the first parity merge where the `.gitattributes` union
+rule added by the previous round was already in effect, and it worked exactly as
+intended: **no conflict at all**.
+
+## What happened mechanically
+
+`git merge --no-edit manus-parity` reported:
+
+- `Auto-merging .jdone` (union driver: concatenates both sides)
+- `Auto-merging src/server/http.ts`
+- `Merge made by the 'ort' strategy.` -> exit 0, `git ls-files -u` empty.
+
+Contrast with the previous round, where `.gitattributes` was introduced *by* the merge
+and therefore was not yet in effect during its own 3-way pass, producing an add/add
+conflict that had to be hand-resolved to the union tree.
+
+## Resolution
+
+None needed. Kept BOTH sides by construction (that is what `merge=union` does). Verified
+mechanically against the two real merge parents (`23d9286` ours, `6e17246` theirs):
+
+- merged `.jdone` = 41461 lines, ours = 25621, theirs = 39645
+- multiset lines dropped from ours   = 0
+- multiset lines dropped from theirs = 0
+- conflict markers = 0, U+FFFD replacement characters = 0
+- line endings CRLF throughout (41461 CRLF, 0 bare LF)
+
+68 files changed by the merge (28314 insertions, 4050 deletions), all auto-merged.
+
+## Gates (all run from the worktree root on the merged tree)
+
+- `npx tsc --noEmit`                              -> exit 0
+- `npm run build:server`                          -> exit 0 (server bundle written)
+- `(cd packages/web && npx next build)`           -> exit 0 (compiled, 25/25 static pages)
+- `node --import tsx --test src/server/__tests__/eventsRoutes.test.ts`
+  -> tests 13, suites 2, pass 13, fail 0 (O8 deliverable unchanged)
+- `node --import tsx --test src/protocol/__tests__/eventLog.test.ts
+   src/protocol/__tests__/eventLogMigrate.test.ts src/protocol/__tests__/seqReplay.test.ts
+   src/protocol/__tests__/storeCompat.test.ts src/session/__tests__/eventLog.test.ts`
+  -> tests 47, suites 4, pass 47, fail 0
+- `npm run check:encoding`                         -> OK (no BOM, no mojibake, all JSON valid)
+- `git grep -E "^(<{7} |={7}$|>{7} )"`           -> no matches (no markers anywhere)
+
+## Integrity
+
+- O8 source is byte-identical to `e335eb7`: `git diff --numstat e335eb7 --
+  src/server/routes/events.ts src/server/__tests__/eventsRoutes.test.ts` is empty.
+- `src/server/http.ts` auto-merged cleanly (no markers), keeping both sides: parity's
+  `handleDebugMemoryRoutes`, bounded `ollamaTagCache`, and the
+  `workspaceRelay` / `videoStudioExport` additions, alongside O8's
+  `handleEventsRoutes` import (line 82) and dispatch (line 1787) - both still wired.
+- Merge commit `392c2a2` (parents `23d9286` ours + `6e17246` theirs).
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0;
+  `git rev-list --left-right --count manus-parity...HEAD` -> `0  20`; working tree clean.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+
+## Seams left
+
+- The union driver now covers `.jdone` and `.jcode-done`, so future parity merges should
+  keep auto-resolving these rollups. Still check `git ls-files -u` after each merge.
+- Parity is advancing under a live runner; if `manus-parity` moves again, merge it and
+  re-run the gates rather than editing source to satisfy a conflict.
