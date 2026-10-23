@@ -182,4 +182,48 @@ describe('ChatSocket', () => {
 
     client.disconnect();
   });
+
+  it('forwards the Knowledge Garden choice on the wire extData', async () => {
+    const client = new ChatSocket({
+      getToken: async () => 'valid-token',
+      onMessage: () => undefined,
+      socketBase: server.url,
+    });
+
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const sessionId = shortUid();
+    client.sendText(sessionId, 'search my garden', 'standard', [], { knowledge: true });
+    await new Promise((r) => setTimeout(r, 50));
+
+    const sent = server.received.find((m) => m.type === 'user_message');
+    expect(sent).toBeDefined();
+    expect((sent!.extData as Record<string, unknown>).knowledge).toBe(true);
+    // The capability block must survive the extra extData merge.
+    expect((sent!.extData as Record<string, unknown>).capabilities).toBeDefined();
+
+    client.disconnect();
+  });
+
+  it('omits the Knowledge Garden choice by default', async () => {
+    const client = new ChatSocket({
+      getToken: async () => 'valid-token',
+      onMessage: () => undefined,
+      socketBase: server.url,
+    });
+
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const sessionId = shortUid();
+    client.sendText(sessionId, 'plain run', 'standard');
+    await new Promise((r) => setTimeout(r, 50));
+
+    const sent = server.received.find((m) => m.type === 'user_message');
+    expect(sent).toBeDefined();
+    expect((sent!.extData as Record<string, unknown>).knowledge).toBeUndefined();
+
+    client.disconnect();
+  });
 });
