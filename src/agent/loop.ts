@@ -1,5 +1,5 @@
 import type { Config } from "../config.js";
-import type { OllamaClient, ChatMessage } from "../ollama.js";
+import type { ChatResult, OllamaClient, ChatMessage } from "../ollama.js";
 import type { Emit, Usage, ToolTraceItem, TodoItem, TodoStatus } from "./events.js";
 import { verifyFinal } from "./verifier.js";
 import { AcceptanceGuard } from "./acceptanceGuard.js";
@@ -11,6 +11,16 @@ import type { WorkerCheckpoint } from "./checkpoint.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { chatWithFallback } from "./model.js";
 import { chatWithCodingRouter, isCodingTurn } from "../llm/codingRouter.js";
+import { chatWithRouting } from "../tools/routingModel.js";
+import {
+  effortStepBudget,
+  isOutputType,
+  normalizeEffort,
+  outputTypeSuffix,
+  outputTypeTools,
+  type EffortLevel,
+  type OutputType,
+} from "../llm/router.js";
 import { isEditTool, recordEditModel } from "../llm/modelAudit.js";
 import type { CooldownStore, FailoverProvider, ProviderClient } from "../llm/failover.js";
 import { createStallGuard } from "./stallGuard.js";
@@ -26,8 +36,18 @@ import { ReadState } from "../tools/readState.js";
 import { checkBudget, consumeSteps, consumeTokens, type ComputeBudget } from "./computeBudget.js";
 import { KvCacheMonitor, missMessage, type RequestRoute, type RequestSignature } from "./kvCacheMonitor.js";
 import { addUsage } from "./usageAccounting.js";
+import { log } from "../log.js";
+import { addRunSiblings, getRunNodes } from "./runGraphAdapter.js";
+import { eventNodeId } from "../graph/store.js";
 import { admitPending, hasPending, type QueuedInput } from "../server/inputQueue.js";
 
+/** Neo N10 A/B: the run's root node is the natural parent of its sibling arms. */
+function siblingParentFor(opts: RunOptions): string {
+  const taskId = opts.taskId ?? "";
+  const root = getRunNodes(taskId).find((node) => node.type === "question");
+  if (root) return root.id;
+  return eventNodeId("run", taskId);
+}
 export interface RunOptions {
   cfg: Config;
   ollama: OllamaClient;
@@ -90,6 +110,14 @@ export interface RunOptions {
   cacheTtlIsEstimate?: boolean;
   /** OAuth account label bound to every request of this run; caches are per account. */
   account?: string;
+  /** Neo N10: the composer's output type (Auto/Text/Image/Video/Slides/Website). */
+  outputType?: OutputType | "";
+  /** Neo N10: the composer's effort level (Fast/Max). */
+  effort?: EffortLevel | "";
+  /** Neo N10: also run the same prompt on 2-4 other models as sibling canvas nodes. */
+  abModels?: string[];
+  /** Neo N10: create the A/B sibling nodes on this parent node of the run graph. */
+  abParentNodeId?: string;
   /**
    * O6 durable input queue: a user message sent while this run is busy is stored
    * as `received` and admitted here, at a step boundary, so it is never lost.
@@ -224,6 +252,18 @@ async function mapWithConcurrency<T, R>(
 
 export async function runAgent(opts: RunOptions): Promise<RunResult> {
   if (!opts.suppressFinal) opts = { ...opts, tools: taskScopedTools(opts.tools, opts.prompt, opts.history) };
+  // Neo N10: resolve the composer's selectors once, before anything is built.
+  // An unrecognized value degrades to the pre-N10 behaviour (auto / unset).
+  const outputType: OutputType = isOutputType(opts.outputType) ? opts.outputType : "auto";
+  const effortLevel = normalizeEffort(opts.effort ?? "");
+  if (effortLevel) opts = { ...opts, maxSteps: opts.maxSteps ?? effortStepBudget(effortLevel) };
+  // An output type pins the run to its pipeline: only the tools that can produce
+  // that deliverable stay in the registry, so a Slides run cannot drift into a
+  // file-writing detour. `auto` keeps the whole run scope untouched.
+  if (outputType !== "auto") {
+    const wanted = outputTypeTools(outputType, opts.tools.names());
+    if (wanted.length > 0) opts = { ...opts, tools: opts.tools.forAllowlist(wanted) };
+  }
   const acceptanceGuard = new AcceptanceGuard(undefined, opts.suppressFinal ? undefined : opts.prompt);
   const independentRequest = independentRequirements(opts.prompt, opts.history);
   const independentGuard = new IndependentAcceptanceGuard(independentRequest);
@@ -243,7 +283,12 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     opts.systemSuffix && opts.systemSuffix.trim().length > 0
       ? `${baseSystem}\n\n${opts.systemSuffix.trim()}`
       : baseSystem;
-  let messages: ChatMessage[] = [{ role: "system", content: system }];
+  // Neo N10: the output type is a binding constraint, so it is appended after
+  // every other suffix (including an agent's own instructions) rather than
+  // before them. `auto` adds nothing, which keeps pre-N10 prompts byte-identical.
+  const outputInstruction = outputTypeSuffix(outputType);
+  const routingSystem = outputInstruction ? `${system}\n\n${outputInstruction}` : system;
+  let messages: ChatMessage[] = [{ role: "system", content: routingSystem }];
 
   if (opts.history && opts.history.length > 0) {
     // History selection already preserves user constraints under its explicit
@@ -264,9 +309,30 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // the previously reusable prefix was not read back.
   const cacheMonitor = new KvCacheMonitor();
   const trace: ToolTraceItem[] = [];
+  // Neo N10: the last tool this run asked for, so the next model call can take
+  // the per-tool routing entry when one is configured. Cleared each step.
+  let lastToolCallName: string | null = null;
+  // Neo N10 multi-model A/B: the sibling arms of this run. Created once, right
+  // after the run's root node exists, so the canvas shows the same prompt fanned
+  // out to several models before any of them answers.
+  const siblingArms = opts.abModels ?? [];
   let verificationAttempts = 0;
   let emptyAnswerRecoveries = 0;
   const stallGuard = createStallGuard();
+  // Neo N10 A/B: one sibling node per model, hanging off the parent node (the
+  // run's root unless the caller named another). Recording must never break the
+  // task, so a graph failure is logged and the run continues without arms.
+  if (siblingArms.length > 0 && !opts.suppressFinal) {
+    try {
+      const created = addRunSiblings(opts.taskId ?? "", opts.abParentNodeId ?? siblingParentFor(opts), siblingArms);
+      for (const arm of created) {
+        const model = (arm.data as { model?: string } | undefined)?.model ?? "";
+        opts.emit({ type: "assistant_message", text: `A/B arm started on ${model}.` });
+      }
+    } catch (err) {
+      log.warn(`A/B siblings not recorded: ${String(err)}`);
+    }
+  }
   const restored = opts.resumeWorker;
   if (restored) {
     if (!opts.suppressFinal || restored.prompt !== opts.prompt) throw new Error("Worker checkpoint does not match this execution");
@@ -359,13 +425,16 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     }
 
     const requestTools = opts.tools.toOllama();
+    // Neo N10: the tool about to be called can narrow the model for this
+    // request only. `null` means "not yet known", so the run's own plan applies.
+    const routingTool: string | null = lastToolCallName;
     const route: RequestRoute = {
       ...providerRouteFor(usedModel, opts.provider),
       ...(opts.account ? { account: opts.account } : {}),
       ...(opts.cacheTtlSecs !== undefined ? { cacheTtlSecs: opts.cacheTtlSecs } : {}),
       ...(opts.cacheTtlIsEstimate !== undefined ? { ttlIsEstimate: opts.cacheTtlIsEstimate } : {}),
     };
-    cacheMonitor.beginRequest(route, requestSignature(system, requestTools, messages));
+    cacheMonitor.beginRequest(route, requestSignature(routingSystem, requestTools, messages));
 
     const chatRequest = {
       model: opts.cfg.model,
@@ -378,7 +447,10 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
       ...(opts.model && opts.model.trim() ? { model: opts.model.trim() } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}),
     };
-    const result = routeCoding
+    // Neo N10: one dispatch point. A mapped route (per-tool, then effort) takes
+    // precedence; otherwise the existing coding-turn routing applies, and a run
+    // with no map at all keeps the plain fallback chain it had before N10.
+    const result: ChatResult = routeCoding
       ? await chatWithCodingRouter({
           cfg: opts.cfg,
           chat: chatRequest,
@@ -388,10 +460,21 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           createClient: opts.createProviderClient,
           onRoute: opts.onCodingRoute,
         })
-      : await chatWithFallback({
+      : await chatWithRouting({
           cfg: opts.cfg,
           ollama: opts.ollama,
-          ...chatRequest,
+          messages,
+          tools: requestTools,
+          temperature: opts.cfg.agent.temperature,
+          timeoutMs: opts.cfg.agent.requestTimeoutMs,
+          ...(opts.signal ? { signal: opts.signal } : {}),
+          ...(opts.model && opts.model.trim() ? { model: opts.model.trim() } : {}),
+          ...(outputType !== "auto" ? { outputType } : {}),
+          ...(effortLevel ? { effort: effortLevel } : {}),
+          ...(routingTool ? { tool: routingTool } : {}),
+          env: opts.env,
+          store: opts.cooldownStore,
+          createClient: opts.createProviderClient,
           // Buffer candidate answers: streaming an unverified success claim would
           // expose a result that the completion gate may subsequently reject.
           notify: (message) => opts.emit({ type: "error", message }),
@@ -516,6 +599,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.emit({ type: "tool_call", name, args });
         return { name, args, t0: Date.now() };
       });
+      // Neo N10: remember the batch's tool so the next request can honour a
+      // per-tool routing entry. Parallel reads share one tool, so this is exact.
+      lastToolCallName = prepared.length === 1 ? prepared[0]!.name : null;
       const batchResults = await mapWithConcurrency(prepared, PARALLEL_READ_LIMIT, (item) =>
         opts.tools.exec(item.name, item.args, {
           cfg: opts.cfg,
@@ -560,6 +646,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         const name = call.function?.name ?? "";
         const args = normalizeArgs(call.function?.arguments);
         opts.emit({ type: "tool_call", name, args });
+        lastToolCallName = name;
 
         const t0 = Date.now();
         const toolResult = await opts.tools.exec(name, args, {

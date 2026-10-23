@@ -17,10 +17,12 @@ import { log } from "../log.js";
 import { mapAgentEvent, shortUid, baseId, createEventMapperState, makeBrief, mapToolName } from "./events.js";
 import { getApproval, decideApproval } from "../server/approvals.js";
 import { decidePlanApproval } from "../tools/planApprovalStore.js";
+import { answerAskUser, dismissAskUser, getAskUser } from "../tools/askUserStore.js";
 import { setTaskApprovalAuto, setTaskPermissionMode, createApprovalRule } from "../server/approvalRules.js";
 import { isLocalPermissionMode } from "../policy/permissionModes.js";
 import { resolveLoamMode, modeEventInfo } from "../modes/detect.js";
 import { getLoamMode, normalizeModeId, LOAM_MODES } from "../modes/catalog.js";
+import { isOutputType } from "../modes/outputTypeMap.js";
 import { appendTelemetry } from "../telemetry/store.js";
 import { getBlob } from "./blobStore.js";
 import type {
@@ -31,6 +33,7 @@ import type {
   SubmitWorkspaceDirectoryAccess,
   ResolveLocalExecutionApproval,
   ResolvePlanApproval,
+  ResolveAskUser,
   TaskMode,
   ChatEvent,
   ServerAttachment,
@@ -288,6 +291,24 @@ function stepToAgentEvent(step: StepRecord): AgentEvent | undefined {
       trivial: Boolean(data.trivial),
     };
   }
+  if (type === "ask_user_required") {
+    return {
+      type: "ask_user_required",
+      askUserId: String(data.askUserId ?? ""),
+      taskId: String(data.taskId ?? ""),
+      tool: String(data.tool ?? ""),
+      title: String(data.title ?? ""),
+      reason: String(data.reason ?? ""),
+      questions: Array.isArray(data.questions)
+        ? data.questions.map((q: Record<string, unknown>) => ({
+            id: String(q.id ?? ""),
+            prompt: String(q.prompt ?? ""),
+            ...(Array.isArray(q.options) ? { options: q.options.map(String) } : {}),
+            ...(q.allowFile === true ? { allowFile: true } : {}),
+          }))
+        : [],
+    };
+  }
   return undefined;
 }
 
@@ -537,6 +558,62 @@ export function createChatSocket(deps: SocketDeps): Server {
           return;
         }
 
+        if (m.type === "resolve_ask_user") {
+          const resolve = m as ResolveAskUser;
+          const ts = Date.now();
+          // N9: wire the ask-user card decision to the pending-request store.
+          // A dismiss closes the card without an answer; anything else carries
+          // the user's answer (free text, per-question answers, files).
+          const existing = getAskUser(resolve.requestId);
+          const record = resolve.decision === "dismiss"
+            ? dismissAskUser(resolve.requestId)
+            : answerAskUser(resolve.requestId, {
+                text: typeof resolve.answer?.text === "string" ? resolve.answer.text : "",
+                answers: resolve.answer?.answers && typeof resolve.answer.answers === "object"
+                  ? Object.fromEntries(
+                      Object.entries(resolve.answer.answers).map(([k, v]) => [k, String(v)]),
+                    )
+                  : {},
+                files: Array.isArray(resolve.answer?.files)
+                  ? resolve.answer!.files
+                      .filter((f) => f && typeof f.path === "string" && !f.path.includes(".."))
+                      .map((f) => ({
+                        path: f.path,
+                        name: f.name || f.path.split("/").pop() || "attachment",
+                        bytes: typeof f.bytes === "number" ? f.bytes : 0,
+                        contentType: f.contentType || "application/octet-stream",
+                      }))
+                  : [],
+              });
+          const resolved: ServerEnvelope = {
+            id: baseId(),
+            type: "event",
+            sessionId: resolve.sessionId,
+            timestamp: ts,
+            event: {
+              id: baseId(),
+              type: "askUserResolved",
+              timestamp: ts,
+              requestId: resolve.requestId,
+              taskId: record?.taskId ?? existing?.taskId ?? "",
+              reviewer: "user",
+              result: record && record.status !== "pending" ? record.status : resolve.decision === "dismiss" ? "dismissed" : "answered",
+              ...(record?.answer
+                ? {
+                    answer: {
+                      text: record.answer.text,
+                      answers: record.answer.answers,
+                      files: record.answer.files,
+                    },
+                  }
+                : {}),
+            },
+          };
+          store.appendEvent(resolve.sessionId, resolved);
+          io.to(resolve.sessionId).emit("message", resolved);
+          return;
+        }
+
         if (m.type === "user_message") {
           const um = m as UserMessage;
           const text = um.contents.map((c) => c.value).join("").trim();
@@ -681,10 +758,15 @@ export function createChatSocket(deps: SocketDeps): Server {
           };
 
           try {
+            // Neo N10: the composer's output type is part of mode resolution. It
+            // travels in `extData` and `resolveLoamMode` applies the precedence
+            // (explicit loamMode > explicit outputType > keywords > build), so an
+            // explicit deliverable pins the run to its pipeline tools.
             const resolvedMode = resolveLoamMode(um, prompt);
 
             const explicitRaw = (um.extData.loamMode ?? "").trim();
             const explicitValid = explicitRaw && LOAM_MODES.some((m) => m.id === normalizeModeId(explicitRaw));
+            const outputTypeValid = um.extData.outputType !== undefined && isOutputType(um.extData.outputType);
             const modeDef = getLoamMode(resolvedMode);
             const dedicatedToolPattern = /^(office_|loam_document|loam_studio|loam_creative|loam_canvas|loam_dataset|data_chart|pentest_|security_|browser_|web_search)$/;
             appendTelemetry({
@@ -694,7 +776,10 @@ export function createChatSocket(deps: SocketDeps): Server {
               mode: resolvedMode,
               toolset: modeDef.tools,
               dedicatedTools: modeDef.tools.filter((name) => dedicatedToolPattern.test(name)),
-              source: explicitValid ? "explicit" : "detected",
+              // `output-type` is reported only when it is what actually decided
+              // the mode: an explicit loamMode outranks it, so claiming it would
+              // misreport a run the user placed in a mode by hand.
+              source: explicitValid ? "explicit" : outputTypeValid ? "output-type" : "detected",
               // TelemetryRecord keeps task/eval-case fields required; fill with
               // neutral values for mode-only rows so existing consumers compile.
               model: "",
@@ -725,6 +810,10 @@ export function createChatSocket(deps: SocketDeps): Server {
               // arriving mid-run are admitted at the next step boundary.
               inputSessionId: um.sessionId,
               ...(tierModel ? { model: tierModel } : {}),
+              // Neo N10: output type, effort and A/B arms travel with the message.
+              ...(um.extData.outputType ? { outputType: um.extData.outputType } : {}),
+              ...(um.extData.effort ? { effort: um.extData.effort } : {}),
+              ...(um.extData.abModels && um.extData.abModels.length > 0 ? { abModels: um.extData.abModels } : {}),
             });
 
             // Final assistant result if the agent stream did not already emit one.

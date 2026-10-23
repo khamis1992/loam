@@ -98,6 +98,7 @@ import { handleDataControlsRoutes } from "./routes/dataControls.js";
 import { handleMemorySkillsRoutes } from "./routes/memorySkills.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
 import { handlePlanApprovalRoutes } from "./routes/planApproval.js";
+import { handleAskUserRoutes } from "./routes/askUser.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
 import { handleRetryLastRoutes } from "./routes/retryLast.js";
 import { handleSessionControlRoutes } from "./routes/sessionControl.js";
@@ -135,6 +136,7 @@ import { exportDatasets } from "../eval/export.js";
 import type { PreviewService } from "../preview/serve.js";
 import { getBrowserState } from "../tools/browser.js";
 import { getSavedRun } from "./db.js";
+import { isOutputType } from "../llm/router.js";
 import { requiresReplayConfirmation } from "./recovery.js";
 import { executionQueue } from "./executionQueue.js";
 import { SwarmService, SwarmError } from "../swarm/service.js";
@@ -151,6 +153,10 @@ export interface RunTaskOptions {
   projectId?: string | null;
   mode?: string;
   effort?: string;
+  /** Neo N10: output type selector (Auto/Text/Image/Video/Slides/Website). */
+  outputType?: string;
+  /** Neo N10: also run the same prompt on other models as sibling canvas nodes. */
+  abModels?: string[];
   agentId?: string;
   workMode?: string;
   resume?: boolean;
@@ -1800,6 +1806,8 @@ loadAgents();
         if (await handleApprovalRuleRoutes(req, res, p, url)) return;
         // Pending plan approvals (D4): the suggest_plan gate's approve/edit/reject.
         if (await handlePlanApprovalRoutes(req, res, p)) return;
+        // Pending ask-user requests (N9): list, read, answer or dismiss.
+        if (await handleAskUserRoutes(req, res, p)) return;
         if (await handleGrokbotBridgeRoutes(req, res, p, url)) return;
         // Public read-only task shares (option #11): create/revoke are authed,
         // GET /api/share/:token is the anonymous replay feed exempted above.
@@ -2616,6 +2624,8 @@ loadAgents();
             attachments?: unknown;
             mode?: unknown;
             effort?: unknown;
+            outputType?: unknown;
+            abModels?: unknown;
             agentId?: unknown;
             workMode?: unknown;
           };
@@ -2631,6 +2641,12 @@ loadAgents();
           try { mode = getLoamMode(typeof body.mode === "string" ? body.mode : (taskId ? getTask(taskId)?.mode : undefined)).id; }
           catch (error) { return sendJson(res, 400, { error: String(error) }); }
           const effort = typeof body.effort === "string" && body.effort ? body.effort : undefined;
+          // Neo N10: output type and A/B arm list come from the composer. Anything
+          // malformed is ignored rather than failing the whole run.
+          const outputType = isOutputType(body.outputType) ? body.outputType : undefined;
+          const abModels = Array.isArray(body.abModels)
+            ? [...new Set(body.abModels.filter((m): m is string => typeof m === "string" && m.trim().length > 0).map((m) => m.trim()))].slice(0, 4)
+            : undefined;
           const agentId = typeof body.agentId === "string" && body.agentId ? body.agentId : undefined;
           let workMode: string | undefined;
           try {
@@ -2672,6 +2688,8 @@ loadAgents();
               projectId,
               mode,
               effort,
+              ...(outputType ? { outputType } : {}),
+              ...(abModels && abModels.length > 0 ? { abModels } : {}),
               agentId,
               workMode,
             });
@@ -2735,11 +2753,15 @@ loadAgents();
           const rawName = url.searchParams.get("name") ?? "upload.bin";
           const safe = path.basename(rawName).replace(/[^\w.\u0600-\u06ff -]+/g, "_").slice(0, 120) || "upload.bin";
           const root = requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace);
-          const dir = taskPath(root, "uploads");
+          // N9: an ask-user card uploads into `<workspace>/uploads/<requestId>/` so
+          // the request's attachments stay together and the recorded path is stable.
+          const askUser = url.searchParams.get("askUser");
+          const sub = askUser ? path.join("uploads", path.basename(askUser).replace(/[^\w-]+/g, "_")) : "uploads";
+          const dir = taskPath(root, sub);
           fs.mkdirSync(dir, { recursive: true });
           const buf = await readRawBody(req);
           if (buf.length === 0) return sendJson(res, 400, { error: "empty upload" });
-          const abs = taskPath(root, path.join("uploads", `${Date.now()}-${safe}`));
+          const abs = taskPath(root, path.join(sub, `${Date.now()}-${safe}`));
           fs.writeFileSync(abs, buf);
           sendJson(res, 200, {
             name: safe,
