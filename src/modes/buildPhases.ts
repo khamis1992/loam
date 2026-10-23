@@ -34,16 +34,16 @@ const PHASES: BuildPhase[] = [
     title: "Design exploration",
     titleAr: "استكشاف التصميم",
     instruction:
-      "Design phase: before writing any code, produce 2-3 design directions with loam_design (explore): each direction must state a palette, a layout and a hero concept. Pick a direction with the user or proceed with the strongest one, optionally generate the hero image (loam_design generate_hero), then implement it faithfully.",
-    tools: ["loam_design"],
+      "Design phase: before writing any code, call design_brief to produce one validated visual system — a 3-5 colour semantic palette, at most two typefaces, a mobile-first layout plan, the imagery the page needs and the accessibility rules — and keep it consistent throughout the build. Use loam_design (explore) for 2-3 deterministic hero directions and generate_hero for the hero image, then implement the chosen design faithfully. Reference the returned semantic tokens, never raw colours, and make sure the finished UI passes design_lint with no violations.",
+    tools: ["design_brief", "loam_design", "design_lint"],
   },
   {
     id: "implement",
     order: 1,
     title: "Implement",
     titleAr: "تنفيذ",
-    instruction: "Implement the chosen design directly in the task workspace without renegotiating the visual concept mid-run.",
-    tools: [],
+    instruction: "Implement the chosen design directly in the task workspace without renegotiating the visual concept mid-run. Lint the UI with design_lint before finishing and fix every reported violation, then capture the site with preview_screenshot and have it judged with design_critique; apply the returned fix instruction, rebuild and capture again until the rubric accepts or the round limit is reached.",
+    tools: ["design_lint", "preview_screenshot", "design_critique"],
   },
 ];
 

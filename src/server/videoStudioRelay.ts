@@ -14,6 +14,9 @@
  *  - a per-command timeout (default 120 s, configurable);
  *  - PANEL_NOT_OPEN when no client is attached to the task stream, so callers
  *    can auto-open the panel and retry;
+ *  - COMMAND_REJECTED when the panel executed the command and the editor
+ *    refused it, so callers can report the editor's own error instead of
+ *    treating the editor as unavailable;
  *  - results for unknown/already-settled command ids are ignored;
  *  - cancelTask() rejects every pending command when the task stops.
  */
@@ -38,7 +41,7 @@ export interface VideoStudioResult {
   error?: string;
 }
 
-export type VideoStudioRelayErrorCode = "PANEL_NOT_OPEN" | "TIMEOUT" | "CANCELLED";
+export type VideoStudioRelayErrorCode = "PANEL_NOT_OPEN" | "TIMEOUT" | "CANCELLED" | "COMMAND_REJECTED";
 
 export class VideoStudioRelayError extends Error {
   readonly code: VideoStudioRelayErrorCode;
@@ -103,7 +106,9 @@ export class VideoStudioRelay {
 
   /**
    * Enqueue a command for a task. Resolves with the panel's result, or rejects
-   * with a {@link VideoStudioRelayError} (PANEL_NOT_OPEN / TIMEOUT / CANCELLED).
+   * with a {@link VideoStudioRelayError}: PANEL_NOT_OPEN (no panel attached),
+   * TIMEOUT (panel never answered), CANCELLED (task stopped) or
+   * COMMAND_REJECTED (the editor refused the command).
    */
   enqueue(taskId: string, target: VideoStudioTarget, method: string, params: Record<string, unknown> = {}): Promise<unknown> {
     if (!this.isAttached(taskId)) {
@@ -141,7 +146,7 @@ export class VideoStudioRelay {
     clearTimeout(pending.timer);
     this.clearInFlight(pending.taskId);
     if (result.ok) pending.resolve(result.result);
-    else pending.reject(new Error(result.error ?? `video studio command ${result.id} failed`));
+    else pending.reject(new VideoStudioRelayError("COMMAND_REJECTED", result.error ?? `video studio command ${result.id} failed`));
     void this.pump(pending.taskId);
     return true;
   }

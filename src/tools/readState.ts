@@ -10,6 +10,8 @@ export interface FileReadRecord {
   mtimeMs: number;
   size: number;
   hash: string;
+  /** Wall-clock time the read was recorded, used to order re-attachment. */
+  readAtMs: number;
 }
 
 /** Path of a file this session has read plus the exact content it saw. */
@@ -34,6 +36,14 @@ function hashContent(content: string): string {
   return crypto.createHash("sha256").update(content, "utf8").digest("hex");
 }
 
+/** One entry returned by `ReadState.recent`. */
+export interface ReadEntry {
+  /** Absolute path of the file that was read. */
+  path: string;
+  /** Wall-clock time the read was recorded. */
+  readAt: Date;
+}
+
 /**
  * Per-session record of which files the agent has read and in what state.
  *
@@ -50,9 +60,15 @@ export class ReadState {
     return path.resolve(p);
   }
 
-  /** Snapshot the file on disk and remember it. Returns the absolute path and
-   *  the exact content stored, or undefined when the file cannot be read. */
-  private store(p: string, content?: string): { abs: string; content: string } | undefined {
+  /**
+   * Snapshot the file on disk and remember it. Returns the absolute path and
+   * the exact content stored, or undefined when the file cannot be read.
+   *
+   * `readAtMs` overrides the wall-clock read time, which keeps the newest-first
+   * ordering of `recent()` deterministic when several reads land in the same
+   * millisecond.
+   */
+  private store(p: string, content?: string, readAtMs?: number): { abs: string; content: string } | undefined {
     const abs = this.key(p);
     let st: fs.Stats;
     try {
@@ -70,13 +86,15 @@ export class ReadState {
         return undefined;
       }
     }
-    this.records.set(abs, { mtimeMs: st.mtimeMs, size: st.size, hash: hashContent(text) });
+    const at = Number.isFinite(readAtMs) ? (readAtMs as number) : Date.now();
+    this.records.set(abs, { mtimeMs: st.mtimeMs, size: st.size, hash: hashContent(text), readAtMs: at });
     return { abs, content: text };
   }
 
-  /** Record a file as read. Pass the content when the caller already read it. */
-  record(p: string, content?: string): ReadSnapshot | undefined {
-    const stored = this.store(p, content);
+  /** Record a file as read. Pass the content when the caller already read it.
+   *  `readAtMs` overrides the wall-clock read time. */
+  record(p: string, content?: string, readAtMs?: number): ReadSnapshot | undefined {
+    const stored = this.store(p, content, readAtMs);
     if (!stored) return undefined;
     const snapshot: ReadSnapshot = { path: stored.abs, content: stored.content };
     this.hooks?.read?.(snapshot.path, snapshot.content);
@@ -96,6 +114,21 @@ export class ReadState {
     const abs = this.key(p);
     this.records.delete(abs);
     this.hooks?.remove?.(abs);
+  }
+
+  /**
+   * The most recently read files, newest first, capped at `limit`.
+   *
+   * Post-compaction re-attachment uses this to hand the model back the files it
+   * was working from without re-reading them all.
+   */
+  recent(limit: number): ReadEntry[] {
+    const entries: ReadEntry[] = [];
+    for (const [abs, record] of this.records) {
+      entries.push({ path: abs, readAt: new Date(record.readAtMs) });
+    }
+    entries.sort((a, b) => b.readAt.getTime() - a.readAt.getTime());
+    return entries.slice(0, Math.max(0, limit));
   }
 
   hasRead(p: string): boolean {

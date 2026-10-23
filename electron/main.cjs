@@ -1,20 +1,22 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain, protocol } = require("electron");
+const { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain, protocol, utilityProcess } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
 const { createHash } = require("node:crypto");
-const { spawn } = require("node:child_process");
 const updater = require("./updater.cjs");
 const inAppBrowser = require("./inAppBrowser.cjs");
 const mcpBridge = require("./mcp-bridge.cjs");
 const vendorProtocol = require("./vendorProtocol.cjs");
 const { IPC_INVOKE, IPC_EVENT_PREFIX, IPC_META, IPC_SYNC, NAMESPACES } = require("./ipc-constants.cjs");
 
-const ASAR_ROOT = path.resolve(__dirname, "..");
-const ROOT =
-  ASAR_ROOT.endsWith(".asar") && fs.existsSync(ASAR_ROOT + ".unpacked")
-    ? ASAR_ROOT + ".unpacked"
-    : ASAR_ROOT;
+// App root: the repo folder in dev, resources/app.asar when packaged. Electron's
+// fs patch reads files inside the asar transparently, so ROOT stays the asar path.
+// Files that must exist on real disk (native modules, ffmpeg, three jsm addons)
+// live in app.asar.unpacked; see asarUnpack/extraResources in electron-builder.yml.
+const ASAR_ROOT = app.getAppPath();
+const ROOT = ASAR_ROOT;
+const UNPACKED_ROOT = ASAR_ROOT.endsWith(".asar") ? ASAR_ROOT + ".unpacked" : ASAR_ROOT;
+const DISK_ROOT = fs.existsSync(UNPACKED_ROOT) ? UNPACKED_ROOT : path.dirname(ASAR_ROOT);
 app.setName("Loam");
 if (process.env.LOAM_USER_DATA_DIR) {
   app.setPath("userData", path.resolve(process.env.LOAM_USER_DATA_DIR));
@@ -30,6 +32,7 @@ const BRIDGE_PORT = Number(process.env.LOAM_MCP_BRIDGE_PORT || 3002);
 process.env.MANUS_LOCAL_ROOT = ROOT;
 process.env.MANUS_LOCAL_PORT = String(PORT);
 process.env.LOAM_ROOT = ROOT;
+process.env.LOAM_UNPACKED_ROOT = UNPACKED_ROOT;
 process.env.LOAM_PORT = String(PORT);
 const EXPECTED_VERSION = require(path.join(ROOT, "package.json")).version;
 
@@ -44,6 +47,14 @@ const MIME_TYPES = {
   ".ttf": "font/ttf", ".otf": "font/otf", ".eot": "application/vnd.ms-fontobject",
   ".wasm": "application/wasm",
 };
+
+// Non-failing vendored-dist check: when a dist is missing, print how to fetch it.
+// Never auto-downloads (see scripts/vendor/*); the app falls back gracefully.
+function warnIfVendorDistMissing(label, distDir, npmScript) {
+  if (fs.existsSync(path.join(distDir, "index.html"))) return;
+  console.warn(`[electron] ${label} dist not found at ${distDir}.`);
+  console.warn(`[electron] Fetch it with: npm run ${npmScript}`);
+}
 
 let serverChild = null;
 let win = null;
@@ -160,27 +171,35 @@ async function ensureServer() {
   if (!fs.existsSync(bundle)) throw new Error("dist/server.cjs missing - run: npm run build:server");
   for (let attempt = 1; attempt <= 3; attempt++) {
     const nodePaths = [
+      path.join(UNPACKED_ROOT, "node_modules"),
       path.join(ROOT, "node_modules"),
-      path.join(ASAR_ROOT, "node_modules"),
       process.env.NODE_PATH || "",
     ]
       .filter(Boolean)
       .join(path.delimiter);
-    serverChild = spawn(process.execPath, [bundle], {
-      cwd: ROOT,
-      env: Object.assign({}, process.env, {
-        ELECTRON_RUN_AS_NODE: "1",
-        MANUS_LOCAL_ROOT: ROOT,
-        MANUS_LOCAL_PORT: String(PORT),
-        NODE_PATH: nodePaths,
-      }),
-      stdio: ["ignore", "pipe", "pipe"],
+    // Run the server in an Electron utility process instead of re-launching the
+    // executable with ELECTRON_RUN_AS_NODE (works with asar and does not depend on
+    // the RunAsNode fuse for the server itself).
+    const serverEnv = Object.assign({}, process.env, {
+      LOAM_SERVER_BUNDLE: bundle,
+      MANUS_LOCAL_ROOT: ROOT,
+      LOAM_ROOT: ROOT,
+      LOAM_UNPACKED_ROOT: UNPACKED_ROOT,
+      MANUS_LOCAL_PORT: String(PORT),
+      NODE_PATH: nodePaths,
+    });
+    delete serverEnv.ELECTRON_RUN_AS_NODE;
+    serverChild = utilityProcess.fork(path.join(__dirname, "server-host.cjs"), [], {
+      cwd: DISK_ROOT,
+      env: serverEnv,
+      stdio: "pipe",
+      serviceName: "Loam Server",
     });
     let exited = false;
     serverChild.on("exit", () => { exited = true; });
     serverChild.on("error", error => { exited = true; console.error("[electron] server: " + error.message); });
-    serverChild.stdout.on("data", (d) => process.stdout.write("[server] " + d));
-    serverChild.stderr.on("data", (d) => process.stderr.write("[server] " + d));
+    serverChild.stdout?.on("data", (d) => process.stdout.write("[server] " + d));
+    serverChild.stderr?.on("data", (d) => process.stderr.write("[server] " + d));
     const startupDeadline = Date.now() + 120_000;
     while (Date.now() < startupDeadline) {
       if (await ping()) return attempt === 1 ? "spawned" : "spawned-retry" + attempt;
@@ -520,13 +539,16 @@ app.setAppUserModelId("app.loam.desktop");
 
 // Register the privileged custom protocol used to serve the Agent Studio UI,
 // plus the loamfilm:// protocol used to serve the vendored Loam Video wasm video
-// editor from electron/filmcraft/dist, and the loamcraft:// protocol used to
-// serve the vendored Loam Docs/Sheets/Slides/Photo/Design wasm apps from
-// electron/craft/<app>/dist. All must be registered before app ready.
+// editor from electron/filmcraft/dist, the loamcraft:// protocol used to serve
+// the vendored Loam Docs/Sheets/Slides/Photo/Design wasm apps from
+// electron/craft/<app>/dist, and the loameffect:// protocol used to serve the
+// vendored Loam Effects wasm engine from electron/effectcraft/dist.
+// All must be registered before app ready.
 protocol.registerSchemesAsPrivileged([
   { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
   { scheme: "loamfilm", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
   { scheme: "loamcraft", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: "loameffect", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
 ]);
 
 // Native folder picker for choosing the working repo/folder.
@@ -755,6 +777,10 @@ app.whenReady().then(async () => {
   const FILMCRAFT_DIST = path.join(ROOT, "electron", "filmcraft", "dist");
   const FILMCRAFT_OVERLAY = path.join(ROOT, "electron", "filmcraft");
   const FILMCRAFT_BASE_DIRS = [FILMCRAFT_DIST, FILMCRAFT_OVERLAY];
+  // Non-failing startup hints: a fresh clone has no vendored dists yet, so
+  // tell the developer how to fetch them instead of failing to boot.
+  warnIfVendorDistMissing("Loam Video", FILMCRAFT_DIST, "vendor:filmcraft");
+  warnIfVendorDistMissing("Loam Effects", path.join(ROOT, "electron", "effectcraft", "dist"), "vendor:effectcraft");
   protocol.handle("loamfilm", async (request) => {
     const url = new URL(request.url);
     let pathname = decodeURIComponent(url.pathname);
@@ -795,6 +821,60 @@ app.whenReady().then(async () => {
     });
   });
 
+  // Serve the vendored Loam Effects wasm engine over the privileged
+  // loameffect:// protocol. Files come from electron/effectcraft/dist; overlay
+  // files (e.g. bridge-relay.js) may live directly in electron/effectcraft/ so
+  // they survive re-copying a fresh dist folder. .wasm must be served as
+  // application/wasm so the engine boots. The page is served cross-origin
+  // isolated (COOP/COEP) so the render queue can use SharedArrayBuffer in Web
+  // Workers; every response also carries CORP so same-origin subresources
+  // satisfy COEP.
+  const EFFECTCRAFT_DIST = path.join(ROOT, "electron", "effectcraft", "dist");
+  const EFFECTCRAFT_OVERLAY = path.join(ROOT, "electron", "effectcraft");
+  const EFFECTCRAFT_MIME = {
+    ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript",
+    ".json": "application/json", ".png": "image/png", ".wasm": "application/wasm",
+  };
+  function effectcraftFile(relPath) {
+    const cleaned = relPath.replace(/^\/+/, "");
+    for (const baseDir of [EFFECTCRAFT_DIST, EFFECTCRAFT_OVERLAY]) {
+      const baseRoot = path.resolve(baseDir) + path.sep;
+      const filePath = path.normalize(path.join(baseDir, cleaned));
+      if (!filePath.startsWith(baseRoot)) continue;
+      if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) return filePath;
+    }
+    return null;
+  }
+  protocol.handle("loameffect", async (request) => {
+    const url = new URL(request.url);
+    let pathname = decodeURIComponent(url.pathname);
+    if (pathname === "/" || pathname.endsWith("/")) pathname += "index.html";
+    const filePath = effectcraftFile(pathname);
+    if (!filePath) return new Response("Not Found", { status: 404 });
+    const ext = path.extname(filePath).toLowerCase();
+    const mime = EFFECTCRAFT_MIME[ext] || "application/octet-stream";
+    const body = fs.readFileSync(filePath);
+    const headers = {
+      "Content-Type": mime,
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+      "Cross-Origin-Resource-Policy": "same-origin",
+    };
+    if (ext === ".html") {
+      // Inject the agent bridge relay into the vendored page so the host app
+      // can drive window.effectcraft over postMessage without editing the
+      // dist files themselves (fresh dist copies keep working).
+      let html = body.toString("utf8");
+      if (!html.includes("bridge-relay.js")) {
+        html = /<\/head>/i.test(html)
+          ? html.replace(/<\/head>/i, '<script src="bridge-relay.js"></script></head>')
+          : html + '<script src="bridge-relay.js"></script>';
+      }
+      return new Response(html, { headers });
+    }
+    return new Response(body, { headers });
+  });
+
   // Health-check the Agent Studio backend; do not block the UI if it is down.
   try {
     const health = await fetch(AGENT_STUDIO_BACKEND + "/api/health", { signal: AbortSignal.timeout(3000) });
@@ -806,7 +886,7 @@ app.whenReady().then(async () => {
 
   buildMenu();
   createTray();
-  await mcpBridge.start(ROOT, BRIDGE_PORT);
+  await mcpBridge.start(ROOT, BRIDGE_PORT, DISK_ROOT);
   try {
     console.log("[electron] server mode: " + (await ensureServer()));
     loamServerReady = true;

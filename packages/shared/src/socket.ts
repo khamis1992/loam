@@ -133,6 +133,42 @@ export interface NewPlanStepEvent extends ChatEventBase {
   title: string;
 }
 
+/**
+ * Neo N4 incremental Recipe engine: the live step list of a recipe-mode run.
+ *
+ * Sent whenever the recipe changes (after each step's result, after a restart).
+ * Unlike `planUpdate`, which describes the plan as it was at the start, this
+ * event carries the *current* recipe with per-step status and the remaining-work
+ * estimate, so the right panel can show the recipe shrinking as the run proceeds.
+ */
+export interface RecipeUpdateEvent extends ChatEventBase {
+  type: 'recipeUpdate';
+  goal: string;
+  steps: {
+    id: string;
+    title: string;
+    instruction: string;
+    successCriteria: string;
+    status: 'proposed' | 'ready' | 'doing' | 'done' | 'blocked' | 'skipped';
+    nodeId?: string;
+    replaces?: string[];
+    completedCount: number;
+  }[];
+  remainingEstimate: number;
+  change: 'init' | 'propose' | 'advance' | 'rewrite' | 'drop' | 'restart';
+  source: 'planner' | 'restart' | 'auto';
+}
+
+/** Neo N4: the recipe restarted from one step; downstream is regenerated. */
+export interface RecipeRestartEvent extends ChatEventBase {
+  type: 'recipeRestart';
+  stepId: string;
+  nodeId: string;
+  keptSteps: string[];
+  regeneratedSteps: string[];
+  reason: string;
+}
+
 export interface TodoUpdateEvent extends ChatEventBase {
   type: 'todoUpdate';
   todos: { id: string; content: string; status: 'pending' | 'in_progress' | 'completed' | (string & {}) }[];
@@ -229,6 +265,24 @@ export interface ExplanationEvent extends ChatEventBase {
   content: string;
 }
 
+/** Prompt-cache (KV cache) accounting for one completed provider request. */
+export interface CacheUsageEvent extends ChatEventBase {
+  type: 'cache_usage';
+  provider: string;
+  model: string;
+  promptTokens: number;
+  cachedTokens: number;
+  /** Present only when the provider reported a real miss/refresh. */
+  miss?: {
+    reason: string;
+    expectedTokens: number;
+    readTokens: number;
+    missedTokens: number;
+    documentedCause?: string;
+    message: string;
+  };
+}
+
 export interface FolderAccessRequestEvent extends ChatEventBase {
   type: 'folderAccessRequest';
   requestId: string;
@@ -269,6 +323,34 @@ export interface LocalExecutionApprovalResolvedEvent extends ChatEventBase {
   result: 'approve' | 'deny';
 }
 
+/** D17: environment-issue report surfaced as an informational card. */
+export interface EnvironmentIssueEvent extends ChatEventBase {
+  type: 'environmentIssue';
+  message: string;
+  details?: string;
+}
+
+/** D4: a `suggest_plan` plan awaiting the user's decision (plan-approval card). */
+export interface PlanApprovalRequestedEvent extends ChatEventBase {
+  type: 'planApprovalRequested';
+  requestId: string;
+  taskId: string;
+  summary: string;
+  steps: string[];
+  filesToEdit: string[];
+  trivial: boolean;
+}
+
+/** D4: the user decided a pending plan-approval card. */
+export interface PlanApprovalResolvedEvent extends ChatEventBase {
+  type: 'planApprovalResolved';
+  requestId: string;
+  taskId: string;
+  reviewer: 'user' | 'auto';
+  result: 'approve' | 'reject' | 'edit';
+  plan?: { summary?: string; steps?: string[]; files_to_edit?: string[]; trivial?: boolean };
+}
+
 export type ChatEvent =
   | ChatMessageEvent
   | ChatDeltaEvent
@@ -288,9 +370,15 @@ export type ChatEvent =
   | LocalPermissionModeChangeResultEvent
   | EventsNotifyEventsAfterEvent
   | ExplanationEvent
+  | CacheUsageEvent
   | FolderAccessRequestEvent
   | BrowserFrameEvent
   | LocalExecutionApprovalRequestedEvent
-  | LocalExecutionApprovalResolvedEvent;
+  | LocalExecutionApprovalResolvedEvent
+  | EnvironmentIssueEvent
+  | PlanApprovalRequestedEvent
+  | PlanApprovalResolvedEvent
+  | RecipeUpdateEvent
+  | RecipeRestartEvent;
 
 export type ServerMessage = ServerEnvelope | { type: 'session_write_access'; sessionId: string; writable: boolean };

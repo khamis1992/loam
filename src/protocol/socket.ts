@@ -16,6 +16,7 @@ import type { RunTaskOptions } from "../server/http.js";
 import { log } from "../log.js";
 import { mapAgentEvent, shortUid, baseId, createEventMapperState, makeBrief, mapToolName } from "./events.js";
 import { getApproval, decideApproval } from "../server/approvals.js";
+import { decidePlanApproval } from "../tools/planApprovalStore.js";
 import { setTaskApprovalAuto, setTaskPermissionMode, createApprovalRule } from "../server/approvalRules.js";
 import { isLocalPermissionMode } from "../policy/permissionModes.js";
 import { resolveLoamMode, modeEventInfo } from "../modes/detect.js";
@@ -29,6 +30,7 @@ import type {
   ChatMessageEvent,
   SubmitWorkspaceDirectoryAccess,
   ResolveLocalExecutionApproval,
+  ResolvePlanApproval,
   TaskMode,
   ChatEvent,
   ServerAttachment,
@@ -37,6 +39,7 @@ import type {
 } from "./types.js";
 import type { ProtocolStore } from "./store.js";
 import { tokenToUserUid } from "./rpc.js";
+import { enqueue, newInputId, type InputDelivery } from "../server/inputQueue.js";
 
 // Re-export for callers.
 export { Server } from "socket.io";
@@ -196,6 +199,40 @@ function stepToAgentEvent(step: StepRecord): AgentEvent | undefined {
       : [];
     return { type: "plan", goal, trivial: Boolean(data.trivial), steps, source: String(data.source ?? "fallback") as "model" | "fallback" };
   }
+  if (type === "recipe_update") {
+    // Neo N4: the live recipe is the recipe row the UI renders. It has to be
+    // rebuildable from the persisted step, or reopening the session loses the
+    // recipe the run actually executed (including the estimate and the restart).
+    return {
+      type: "recipe_update",
+      goal: String(data.goal ?? ""),
+      steps: Array.isArray(data.steps)
+        ? data.steps.map((s: Record<string, unknown>) => ({
+            id: String(s.id ?? ""),
+            title: String(s.title ?? ""),
+            instruction: String(s.instruction ?? ""),
+            successCriteria: String(s.successCriteria ?? ""),
+            status: String(s.status ?? "proposed") as "proposed" | "ready" | "doing" | "done" | "blocked" | "skipped",
+            ...(typeof s.nodeId === "string" ? { nodeId: s.nodeId } : {}),
+            ...(Array.isArray(s.replaces) ? { replaces: s.replaces.map(String) } : {}),
+            completedCount: Number(s.completedCount ?? 0),
+          }))
+        : [],
+      remainingEstimate: Number(data.remainingEstimate ?? 0),
+      change: String(data.change ?? "advance") as "init" | "propose" | "advance" | "rewrite" | "drop" | "restart",
+      source: (data.source === "planner" || data.source === "restart" ? data.source : "auto") as "planner" | "restart" | "auto",
+    };
+  }
+  if (type === "recipe_restart") {
+    return {
+      type: "recipe_restart",
+      stepId: String(data.stepId ?? ""),
+      nodeId: String(data.nodeId ?? ""),
+      keptSteps: Array.isArray(data.keptSteps) ? data.keptSteps.map(String) : [],
+      regeneratedSteps: Array.isArray(data.regeneratedSteps) ? data.regeneratedSteps.map(String) : [],
+      reason: String(data.reason ?? ""),
+    };
+  }
   if (type === "plan_step") {
     return {
       type: "plan_step",
@@ -233,6 +270,23 @@ function stepToAgentEvent(step: StepRecord): AgentEvent | undefined {
   }
   if (type === "mode") {
     return { type: "mode", mode: String(data.mode ?? ""), label: String(data.label ?? ""), labelAr: String(data.labelAr ?? ""), reason: typeof data.reason === "string" ? data.reason : undefined };
+  }
+  if (type === "environment_issue") {
+    // Rebuild the agent's environment-issue report so a persisted task replays
+    // the same card instead of dropping it.
+    return { type: "environment_issue", message: String(data.message ?? ""), ...(typeof data.details === "string" ? { details: data.details } : {}) };
+  }
+  if (type === "plan_approval_required") {
+    return {
+      type: "plan_approval_required",
+      planApprovalId: String(data.planApprovalId ?? ""),
+      taskId: String(data.taskId ?? ""),
+      tool: String(data.tool ?? ""),
+      summary: String(data.summary ?? ""),
+      steps: Array.isArray(data.steps) ? data.steps.map(String) : [],
+      filesToEdit: Array.isArray(data.filesToEdit) ? data.filesToEdit.map(String) : [],
+      trivial: Boolean(data.trivial),
+    };
   }
   return undefined;
 }
@@ -444,10 +498,64 @@ export function createChatSocket(deps: SocketDeps): Server {
           return;
         }
 
+        if (m.type === "resolve_plan_approval") {
+          const resolve = m as ResolvePlanApproval;
+          const ts = Date.now();
+          // D4: wire the plan-approval card decision to the pending-plan store.
+          // "edit" stores the revised plan so the agent can re-present it.
+          const record = decidePlanApproval(resolve.requestId, {
+            decision: resolve.decision,
+            ...(resolve.decision === "edit" && resolve.plan
+              ? {
+                  plan: {
+                    ...(typeof resolve.plan.summary === "string" ? { summary: resolve.plan.summary } : {}),
+                    ...(Array.isArray(resolve.plan.steps) ? { steps: resolve.plan.steps } : {}),
+                    ...(Array.isArray(resolve.plan.files_to_edit) ? { files_to_edit: resolve.plan.files_to_edit } : {}),
+                    ...(typeof resolve.plan.trivial === "boolean" ? { trivial: resolve.plan.trivial } : {}),
+                  },
+                }
+              : {}),
+          });
+          const resolved: ServerEnvelope = {
+            id: baseId(),
+            type: "event",
+            sessionId: resolve.sessionId,
+            timestamp: ts,
+            event: {
+              id: baseId(),
+              type: "planApprovalResolved",
+              timestamp: ts,
+              requestId: resolve.requestId,
+              taskId: record?.taskId ?? "",
+              reviewer: "user",
+              result: resolve.decision,
+              ...(resolve.decision === "edit" && resolve.plan ? { plan: resolve.plan } : {}),
+            },
+          };
+          store.appendEvent(resolve.sessionId, resolved);
+          io.to(resolve.sessionId).emit("message", resolved);
+          return;
+        }
+
         if (m.type === "user_message") {
           const um = m as UserMessage;
           const text = um.contents.map((c) => c.value).join("").trim();
           const session = store.ensureSession(um.sessionId, "", text.slice(0, 80));
+
+          // O6 durable input queue: the message is stored *before* it is admitted
+          // to the run, so it survives a restart even if the run is busy or the
+          // process dies right here. `interrupt` is treated as a queued message
+          // too: Loam has no mid-run interrupt channel yet, and losing it would
+          // be worse than delivering it at the next step boundary.
+          const delivery: InputDelivery = um.deliveryMode === "interrupt" ? "steering" : "queued";
+          // The run below admits it at its first step boundary, so this message
+          // becomes a durable `input` event without any extra plumbing here.
+          enqueue({
+            id: newInputId(),
+            sessionId: um.sessionId,
+            text,
+            delivery,
+          });
 
           let taskId = session.taskId;
           if (!taskId || !getTask(taskId)) {
@@ -613,6 +721,9 @@ export function createChatSocket(deps: SocketDeps): Server {
               projectId: um.extData.projectId ?? null,
               agentId: um.extData.agentId ?? undefined,
               workMode: um.extData.workMode ?? undefined,
+              // O6: this run owns the session's durable inbound queue, so messages
+              // arriving mid-run are admitted at the next step boundary.
+              inputSessionId: um.sessionId,
               ...(tierModel ? { model: tierModel } : {}),
             });
 

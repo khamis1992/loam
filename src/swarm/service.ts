@@ -103,7 +103,7 @@ const copy = <T>(v: T): T => structuredClone(v);
 /** Distinguishes parallel swarm stage sessions so a file one stage writes is
  *  reported to another stage that already read it (jcode J8 file-touch). */
 let stageSeq = 0;
-const READ = ["file_read", "file_list", "file_search", "file_stat", "grep", "glob", "code_symbols", "code_outline"];
+const READ = ["file_read", "file_list", "file_search", "file_stat", "grep", "glob", "code_symbols", "code_outline", "semantic_search"];
 const WRITE = ["file_write", "file_edit", "file_mkdir"];
 const stages = [
   ["discovery", "pm", "اكتشاف المنتج", []],

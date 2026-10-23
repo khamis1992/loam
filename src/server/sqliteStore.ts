@@ -1,13 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { DATA_DIR } from "../config.js";
+import { dataDir } from "../config.js";
+
+/** In-process caches to forget when the connection is reset (test isolation). */
+const resets: Array<() => void> = [];
+export function onDatabaseReset(reset: () => void): void { resets.push(reset); }
 
 let connection: DatabaseSync | undefined;
 export function database(): DatabaseSync {
   if (connection) return connection;
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  const db = new DatabaseSync(path.join(DATA_DIR, "manus.db"));
+  const dir = dataDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const db = new DatabaseSync(path.join(dir, "manus.db"));
   db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;");
   db.exec(`CREATE TABLE IF NOT EXISTS entities (kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id));
     CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);`);
@@ -15,7 +20,7 @@ export function database(): DatabaseSync {
   try {
     transaction(() => {
       if (db.prepare("SELECT value FROM metadata WHERE key='legacy-import'").get()) return;
-      const legacy = path.join(DATA_DIR, "db.json");
+      const legacy = path.join(dir, "db.json");
       if (fs.existsSync(legacy)) {
         const parsed = JSON.parse(fs.readFileSync(legacy, "utf8")) as Record<string, unknown>;
         for (const kind of ["tasks", "projects", "schedules"]) {
@@ -32,7 +37,7 @@ export function database(): DatabaseSync {
             db.prepare("INSERT INTO entities(kind,id,payload) VALUES(?,?,?)").run(kind, row.id, JSON.stringify(row));
           }
         }
-        const backup = path.join(DATA_DIR, "db.pre-sqlite.json");
+        const backup = path.join(dir, "db.pre-sqlite.json");
         if (!fs.existsSync(backup)) fs.copyFileSync(legacy, backup, fs.constants.COPYFILE_EXCL);
       }
       db.prepare("INSERT INTO metadata(key,value) VALUES('legacy-import','1')").run();
@@ -46,6 +51,17 @@ export function transaction<T>(fn: () => T): T {
   try { const result = fn(); db.exec("COMMIT"); return result; }
   catch (error) { db.exec("ROLLBACK"); throw error; }
 }
+/** Read one `metadata` row (the key/value bag used for import markers and the runtime lease). */
+export function getMeta(key: string): string | undefined {
+  const row = database().prepare("SELECT value FROM metadata WHERE key=?").get(key) as { value: string } | undefined;
+  return row?.value;
+}
+
+/** Insert or replace one `metadata` row. Safe to call inside a `transaction()`. */
+export function setMeta(key: string, value: string): void {
+  database().prepare("INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, value);
+}
+
 export function putEntity(kind: string, value: { id: string }): void {
   database().prepare("INSERT INTO entities(kind,id,payload) VALUES(?,?,?) ON CONFLICT(kind,id) DO UPDATE SET payload=excluded.payload")
     .run(kind, value.id, JSON.stringify(value));
@@ -61,20 +77,31 @@ export function allEntities<T>(kind: string): T[] {
 export function removeEntity(kind: string, id: string): boolean {
   return Number(database().prepare("DELETE FROM entities WHERE kind=? AND id=?").run(kind, id).changes) > 0;
 }
-export function closeDb(): void { connection?.close(); connection = undefined; }
+export function closeDb(): void {
+  connection?.close();
+  connection = undefined;
+  for (const reset of resets) reset();
+}
+
+/** Test helper: forget the current connection. The next `database()` call opens a
+ *  fresh file, so a test can isolate its data without touching the app's real
+ *  `data/` folder. */
+export function resetDb(): void {
+  closeDb();
+}
 
 /** Prevent two local server processes from independently owning the same task queue. */
 export function acquireRuntimeLease(): void {
   transaction(() => {
-    const row = database().prepare("SELECT value FROM metadata WHERE key='runtime-pid'").get();
-    if (row) {
-      const pid = Number(row.value);
+    const existing = getMeta("runtime-pid");
+    if (existing) {
+      const pid = Number(existing);
       if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error("Invalid runtime owner record");
       let alive = true;
       try { process.kill(pid, 0); } catch (error) { alive = (error as NodeJS.ErrnoException).code !== "ESRCH"; }
       if (alive) throw new Error(`Another runtime owns this data directory (PID ${pid})`);
     }
-    database().prepare("INSERT INTO metadata(key,value) VALUES('runtime-pid',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(process.pid));
+    setMeta("runtime-pid", String(process.pid));
   });
 }
 export function releaseRuntimeLease(): void {
@@ -82,7 +109,7 @@ export function releaseRuntimeLease(): void {
 }
 /** A consistent daily snapshot; unfinished temporary files are never treated as backups. */
 export function backupDatabase(): string {
-  const dir = path.join(DATA_DIR, "backups");
+  const dir = path.join(dataDir(), "backups");
   fs.mkdirSync(dir, { recursive: true });
   const target = path.join(dir, `manus-${new Date().toISOString().slice(0, 10)}.db`);
   if (!fs.existsSync(target)) {

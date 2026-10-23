@@ -10,6 +10,7 @@ import { registry as subagentRegistry } from "../subagent/index.js";
 import type { SubagentRunHandle, SubagentStartOptions } from "../subagent/index.js";
 import { createInProcessProvider } from "../subagent/inProcessProvider.js";
 import { createAcpProvider } from "../subagent/acpProvider.js";
+import { runLifecycleHooks } from "../policy/hooks.js";
 
 export interface SubagentProfile {
   name: string;
@@ -208,31 +209,49 @@ async function runProfileSubagent(opts: ProfileSubagentOptions): Promise<ToolRes
   const subRegistry = buildSubagentToolRegistry(parentRegistry, profile);
   const maxSteps = Math.min(Math.max(opts.maxSteps ?? profile.maxSteps ?? 12, 1), 30);
   const effectiveCfg = profile.model && profile.model !== "inherit" ? { ...ctx.cfg, model: profile.model } : ctx.cfg;
+
+  const subStart = await runLifecycleHooks("SubagentStart", "", { subagent: profile.name, task: taskPrompt }, ctx.workspace);
+  if (subStart.blocked) {
+    return { ok: false, content: `SubagentStart hook blocked subagent "${profile.name}": ${subStart.message}` };
+  }
+  const systemSuffix = [subStart.additionalContext, `[Subagent: ${profile.name}]`, profile.instructions]
+    .filter((s) => s.trim().length > 0)
+    .join("\n");
+
   let toolCalls = 0;
-
-  const res = await runAgent({
-    cfg: effectiveCfg,
-    ollama,
-    tools: subRegistry,
-    emit: (ev) => {
-      if (ev.type === "tool_call") toolCalls += 1;
-    },
-    prompt: taskPrompt,
-    systemSuffix: `[Subagent: ${profile.name}]\n${profile.instructions}`,
-    maxSteps,
-    signal: ctx.signal,
-    taskId: ctx.taskId,
-    // A subagent is its own session in the shared workspace, so its writes are
-    // reported to any session that already read the same file (jcode J8).
-    sessionId: `sub-${ctx.taskId ?? "task"}-${profile.name}-${++subSeq}`,
-    suppressFinal: true,
-    ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
-  });
-
-  return {
-    ok: true,
-    content: `[Subagent "${profile.name}" finished in ${res.steps} step(s), ${toolCalls} tool call(s)]\n\n${res.text}`,
-  };
+  let stopFired = false;
+  let stopContext = "";
+  try {
+    const res = await runAgent({
+      cfg: effectiveCfg,
+      ollama,
+      tools: subRegistry,
+      emit: (ev) => {
+        if (ev.type === "tool_call") toolCalls += 1;
+      },
+      prompt: taskPrompt,
+      systemSuffix,
+      maxSteps,
+      signal: ctx.signal,
+      taskId: ctx.taskId,
+      // A subagent is its own session in the shared workspace, so its writes are
+      // reported to any session that already read the same file (jcode J8).
+      sessionId: `sub-${ctx.taskId ?? "task"}-${profile.name}-${++subSeq}`,
+      suppressFinal: true,
+      ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
+    });
+    const subStop = await runLifecycleHooks("SubagentStop", "", { subagent: profile.name, steps: res.steps, stopReason: "completed" }, ctx.workspace);
+    stopFired = true;
+    stopContext = subStop.additionalContext;
+    return {
+      ok: true,
+      content: `[Subagent "${profile.name}" finished in ${res.steps} step(s), ${toolCalls} tool call(s)]\n\n${res.text}${stopContext ? `\n\n${stopContext}` : ""}`,
+    };
+  } finally {
+    if (!stopFired) {
+      await runLifecycleHooks("SubagentStop", "", { subagent: profile.name, stopReason: "failed" }, ctx.workspace);
+    }
+  }
 }
 
 /** Distinguishes subagent sessions of one task so their file reads/writes are tracked separately. */
@@ -302,7 +321,7 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
     {
       name: "delegate_task",
       description:
-        "Delegate a self-contained task to a subagent and get back only its final report. Pass subagent_type to run a repo-defined agent loaded from .loam/agents/*.md (also agents/*.md and .claude/agents/*.md); the agent runs in-process with its own tool allowlist and model. Or omit subagent_type and pass provider (in-process|acp) plus cwd to run an external/in-process child. Depth limit 2, max concurrent children configurable (default 4).",
+        "Delegate a self-contained task to a subagent and get back only its final report. Pass subagent_type to run a repo-defined agent loaded from .loam/agents/*.md (also agents/*.md and .claude/agents/*.md); the agent runs in-process with its own tool allowlist and model. Or omit subagent_type and pass provider (in-process|acp) plus cwd to run an external or in-process child, providing acpCommand and optional acpArgs for the ACP provider. The child runs with its own context in a cwd that must be inside the workspace, so put everything it needs in the prompt. Delegation depth is limited (default 2) and concurrent children are capped (default 4). Use it for parallel, isolated work such as exploration or independent edits. When NOT to use: do the work directly when it needs your conversation context, use file_*/shell_* for simple steps, and remember the child cannot see the parent's history; never delegate work that requires an approval gate or a secret.",
       parameters: {
         type: "object",
         properties: {
@@ -402,6 +421,11 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
           return { ok: false, content: "ACP provider requires acpCommand" };
         }
 
+        const subStart = await runLifecycleHooks("SubagentStart", "", { subagent: provider, task: prompt }, ctx.workspace);
+        if (subStart.blocked) {
+          return { ok: false, content: `SubagentStart hook blocked subagent "${provider}": ${subStart.message}` };
+        }
+
         ensureDefaultProviders();
         subagentRegistry.setMaxConcurrentChildren(subagentCfg.maxConcurrentChildren);
         const release = await subagentRegistry.acquireChild();
@@ -411,9 +435,11 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
           handle = await subagentRegistry.start(startOpts);
         } catch (e) {
           release();
+          await runLifecycleHooks("SubagentStop", "", { subagent: provider, stopReason: "failed", error: String(e) }, ctx.workspace);
           return { ok: false, content: `Failed to start subagent: ${e instanceof Error ? e.message : String(e)}` };
         }
 
+        let stopFired = false;
         try {
           // Drain the event stream so late notifications (and failures) surface
           // through result(); the provider's accumulated text is authoritative.
@@ -421,11 +447,19 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
             /* consumed for liveness */
           }
           const result = await handle.result();
-          if (result.stopReason === "completed") return { ok: true, content: result.text };
+          stopFired = true;
+          const subStop = await runLifecycleHooks("SubagentStop", "", { subagent: provider, stopReason: result.stopReason }, ctx.workspace);
+          const stopContext = subStop.additionalContext;
+          if (result.stopReason === "completed") return { ok: true, content: stopContext ? `${result.text}\n\n${stopContext}` : result.text };
           return { ok: false, content: `[subagent ${result.stopReason}] ${result.text}`.trim() };
         } catch (e) {
+          stopFired = true;
+          await runLifecycleHooks("SubagentStop", "", { subagent: provider, stopReason: "failed", error: String(e) }, ctx.workspace);
           return { ok: false, content: `Subagent failed: ${e instanceof Error ? e.message : String(e)}` };
         } finally {
+          if (!stopFired) {
+            await runLifecycleHooks("SubagentStop", "", { subagent: provider, stopReason: "failed" }, ctx.workspace);
+          }
           release();
         }
       },
