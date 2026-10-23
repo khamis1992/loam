@@ -1,3 +1,125 @@
+# N9 merge gate, second pass: parity advanced again, all conflicts resolved
+
+## Why this section exists
+
+The report below recorded the merge gate as fixed on tree `1f2b7a4`. That is no
+longer the tip: `manus-parity` kept advancing while this branch was idle, so the
+gate failed again with the same instruction:
+
+    MERGE CONFLICT with latest manus-parity: run git merge manus-parity, resolve all
+    conflicts keeping both sides, commit.
+
+This section records the two further merges, every conflict and its resolution, and
+the gates re-run on the resulting tree. It supersedes the "Gates" block below,
+which was measured on the older tree.
+
+## The two further merges
+
+1. `git merge manus-parity` (parity tip `640219b`, N4 incremental Recipe engine)
+   -> merge commit `baef124`. FOUR conflicts, all resolved keeping BOTH sides:
+   - `packages/shared/src/socket.ts`: kept N9's `AskUserRequestedEvent` and
+     `AskUserResolvedEvent` in the `ClientEvent` union alongside N4's
+     `RecipeUpdateEvent` and `RecipeRestartEvent` (all four are members of the
+     union today, lines 409-412).
+   - `src/protocol/types.ts`: kept both new unions. The resolved file carries
+     `DeviceAttachmentUploadNotify` (line 500) and `ResolvePlanApproval`
+     (line 127) in the same union.
+   - `src/agent/orchestrator.ts`: kept N9's `ask_user` imports and N4's recipe
+     imports; the single `./events.js` import now pulls
+     `Emit, PlanStepInfo, RecipeChange, RecipeStepInfo, ToolTraceItem, Usage,
+     VerdictInfo` together, and the `./planner.js` import carries `planTask`,
+     `proposeNextSteps`, `Plan` and `PlanResult`. The N9 clarification block
+     (`needsAskUser`, `clarifiedPrompt`) and N4's recipe `prompt: o.prompt` usage
+     are both present.
+   - `.jdone`: kept both the N9 report and the N4 report.
+
+2. `git merge manus-parity` (parity tip `0a946d3`, "Merge main (packaging asar+fuses
+   fix, 0.5.28) into manus-parity") -> merge commit `6a16b27`. TWO conflicts:
+   - `src/agent/__tests__/toolDescriptions.test.ts`: kept N9's
+     `createAskUserTools` import and its `registry.registerAll(createAskUserTools())`
+     call, and kept parity's `createPlanTools()` registration and its
+     "suggest_plan (D4) is a coding-profile tool" comment. Both register calls and
+     both comments are in the resolved file; all four test cases from both sides are
+     present.
+   - `src/tools/planTools.ts`: the `suggest_plan` and `plan_exit` description tail
+     merged to N9's longer superset wording, which already contains parity's
+     sentence verbatim ("Do not call this tool to ask a question or to report
+     progress - use the message tool for that.") plus the `ask_user` referral, so
+     no parity guidance was dropped while the N9 wording was preserved.
+
+## Where the three-way merge was allowed to pick a side (and why that is correct)
+
+Two cosmetic differences were auto-merged rather than conflicting, and both follow
+standard 3-way semantics with no N9-authored content lost:
+
+- `toolDescriptions.test.ts` header comment: parity's `e854d58` deliberately
+  shortened "todo_write by C6, plan_exit by C13)" to "todo_write by C6)" (it added
+  `plan_exit` to the linted set, so the "pending" note no longer applied). N9 never
+  touched that line, so git took parity's newer intent. `PENDING_CODING_TOOLS`
+  stayed `["grep", "glob", "todo_write"]`, matching parity.
+- `toolDescriptions.test.ts` "~16 names" -> "~19 names": N9 raised the coding tool
+  budget when it added `ask_user`, and `toolProfile.test.ts` asserts the 19-name
+  ceiling, so N9's number is the one that matches the live profile.
+
+No test was weakened, deleted or skipped; no tool, event, type or prompt line from
+either side was dropped.
+
+## Final merge state
+
+    git merge manus-parity                              -> "Already up to date."
+    git rev-list --left-right --count manus-parity...HEAD -> 0  9
+    git merge-base --is-ancestor manus-parity HEAD      -> exit 0
+    git status --porcelain                              -> empty
+    git ls-files -u                                     -> empty (no unmerged entries)
+    git grep -E "^(<{7}|={7}|>{7})( |$)"                -> no matches
+
+## Gates, all re-run from the worktree root on the merged tree `6a16b27`
+
+  1. `npx tsc --noEmit`                            -> exit 0
+  2. `npm run build:server`                        -> exit 0 (dist/server.cjs 19.5mb,
+                                                         pdf worker copied)
+  3. `(cd packages/web && npx next build)`         -> exit 0 (compiled, 25/25 static pages)
+  4. N9 acceptance suites:
+     `node --import tsx --test src/tools/__tests__/askUser.test.ts
+       src/agent/__tests__/askUserAutoTrigger.test.ts
+       src/protocol/__tests__/askUserSocket.test.ts`
+                                                  -> tests 25, pass 25, fail 0
+     adjacent suites for every touched file
+     `node --import tsx --test src/graph/__tests__/runGraph.test.ts
+       src/server/__tests__/runTools.test.ts src/agent/__tests__/toolProfile.test.ts
+       src/agent/__tests__/toolDescriptions.test.ts
+       src/agent/__tests__/askUserAutoTrigger.test.ts`
+                                                  -> tests 46, pass 46, fail 0
+     `(cd packages/web && npx vitest run src/components/approval/__tests__/askUserCard.test.tsx)`
+                                                  -> 1 file / 7 tests, all pass
+  5. `npm run check:encoding`                      -> exit 0 (no BOM, no mojibake, all JSON valid)
+  6. `npm run check:modes`                         -> exit 0 (PASS)
+  7. `npm run check:orchestrator`                  -> exit 0
+  8. `npm run check:eval`                          -> exit 0
+  9. `npm run check:recovery`                      -> exit 0
+
+Full-suite validation on the merged tree:
+
+  `node --import tsx --test "src/**/*.test.ts"`    -> tests 2548, pass 2547, fail 1
+
+The single failure is again `src/server/__tests__/worktrees.test.ts`
+("reports non-git folders without throwing", `true == false` at line 44),
+environmental and **not** caused by N9: the test asserts a fresh `os.tmpdir()`
+folder is not inside a git work tree, but `%TEMP%` on this machine is inside one.
+`git diff manus-parity -- src/server/worktrees.ts src/server/__tests__/worktrees.test.ts`
+is empty, so both files are byte-identical to parity, and the failure reproduces on
+parity alone.
+
+Safety checks on the merged tree: no added line contains the mojibake marker; the
+only mojibake-pattern hits in the tree are pre-existing untracked
+`output/verification/*.json` build artefacts and parity-identical files
+(`packages/web/src/i18n/__tests__/encoding.test.ts` exists precisely to assert
+the i18n files are clean, and `scripts/repair-mojibake.cjs` is parity's repair
+tool). Arabic in `packages/web/src/i18n/ar.json` is valid UTF-8. No secrets. No
+forbidden path touched. Working tree clean, no marker files committed.
+
+---
+
 # N9 - Ask-User-More clarification node: complete (merge gate fixed)
 
 ## The failure that was fixed
