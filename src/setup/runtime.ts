@@ -40,6 +40,7 @@ import { createFrontierBridgeTools } from "../tools/frontierBridge.js";
 import { writeGate } from "../server/pending.js";
 import { createIntegrationTools } from "../tools/integrations.js";
 import { createGitWorkflowTools } from "../tools/gitWorkflowTools.js";
+import { createCiWatchTool } from "../tools/ciWatchTools.js";
 
 import { createPhaseTools } from "../tools/phaseTools.js";
 import { createFinishTools } from "../tools/finishTools.js";
@@ -119,6 +120,10 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createSubagentTools(ollama, registry));
   registry.registerAll(createManagedSessionTools({ ollama, parentRegistry: registry }));
   registry.registerAll(createGitWorkflowTools());
+  // D2: CI watch polls the same D1 PR provider's check-runs; the local provider
+  // serves scripted results, so no network is required in tests.
+  registry.register(createCiWatchTool());
+
   registry.registerAll(createCodeSessionTools());
   registry.registerAll(createDocsLookupTools());
   // Semantic code search shares the memory embedder; without it the index still

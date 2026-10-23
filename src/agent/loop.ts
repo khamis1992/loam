@@ -14,6 +14,7 @@ import { chatWithCodingRouter, isCodingTurn } from "../llm/codingRouter.js";
 import { isEditTool, recordEditModel } from "../llm/modelAudit.js";
 import type { CooldownStore, FailoverProvider, ProviderClient } from "../llm/failover.js";
 import { createStallGuard } from "./stallGuard.js";
+import { ciWatchEscalationNotice } from "./ciWatchLoop.js";
 import { compressContext } from "./contextCompressor.js";
 import { runLifecycleHooks, wrapHookContext } from "../policy/hooks.js";
 import { throwIfCancelled, isCancelled } from "../server/runControl.js";
@@ -508,6 +509,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         auditEdit(item.name, item.args, usedModel, toolResult.ok, step, auditEdits, opts.taskId);
         const notice = stallGuard(item.name, item.args, toolResult.ok);
         if (notice) stallNotices.push(notice);
+        const ciNotice = ciWatchEscalationNotice(toolResult.content);
+        if (ciNotice) stallNotices.push(ciNotice);
         if (TODO_UPDATE_TOOLS.has(item.name) && toolResult.ok) {
           reminders.noteTodoUpdate(step);
           currentTodos = parseTaskList(item.name, item.args);
@@ -549,6 +552,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         auditEdit(name, args, usedModel, toolResult.ok, step, auditEdits, opts.taskId);
         const notice = stallGuard(name, args, toolResult.ok);
         if (notice) stallNotices.push(notice);
+        const ciNotice = ciWatchEscalationNotice(toolResult.content);
+        if (ciNotice) stallNotices.push(ciNotice);
         if (TODO_UPDATE_TOOLS.has(name) && toolResult.ok) {
           reminders.noteTodoUpdate(step);
           currentTodos = parseTaskList(name, args);
