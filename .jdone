@@ -1,3 +1,102 @@
+H4 distill: DONE (Harness2 correction learning)
+===============================================
+
+Summary
+-------
+Implemented the Harness2 distiller exactly as `.h2-ref/BUILD_SPEC.md` section 6.4
+specifies: turn ONE user correction into ONE reusable 4-field rule, and reject
+anything incomplete. The `(o.ollama as any).chatText(...)` placeholder printed in
+the spec was replaced with the exact call `critiqueCase` makes (spec U2) and the
+`any` is gone.
+
+  - `src/learning/harness/distill.ts` (78 lines, new; commit `76e5a0a` "H4: distill"):
+    `DISTILL_SYSTEM` (the strict 4-field JSON contract), `parseDistill` (salvages the
+    object out of prose and fenced markdown the same way `critic.parseCritique` does,
+    caps cue/lesson/evidence at 300/500/500 chars, defaults an unknown confidence to
+    `medium`, and rejects incomplete answers through `isCompleteLesson`), and
+    `distillCorrection`.
+  - `distillCorrection` calls `o.ollama.chat({ model, messages: [system, user],
+    temperature: 0.1, timeoutMs: 180_000 })`, the same shape as `critiqueCase`
+    (`src/learning/critic.ts:76-84`), model from `cfg.selfImprove.model` falling back
+    to `cfg.model`. No `any`, no `chatText`.
+  - `src/learning/harness/__tests__/distill.test.ts` (193 lines, new): `node:test`,
+    no model API is called (the client is a fake `OllamaClient`). 18 tests.
+
+Acceptance criteria (BUILD_SPEC row H4)
+---------------------------------------
+  - `parseDistill` handles fenced JSON (```json ... ```) -> parsed.
+  - `{}` -> null.
+  - missing evidence -> null. Also covered: empty evidence, whitespace-only cue,
+    text with no JSON, malformed JSON, an unclosed brace, missing/unknown confidence.
+  - a fake client returning the section 8 mock -> a complete result whose four fields
+    equal the mock's Arabic values, and the recorded call shape is asserted (2
+    messages, system content == `DISTILL_SYSTEM`, user content carries the task and
+    the correction, temperature 0.1, timeout 180000, model `critic-model`).
+
+The `???` mojibake gate failure was stale and false
+---------------------------------------------------
+`.jgatefail.txt` claimed the added lines had been corrupted with Arabic `???`
+mojibake. Re-verified mechanically on the merged tree and on the committed blobs:
+
+  - of the 13652 added lines in the merge diff, 0 contain `???`, 0 contain U+FFFD
+    and 0 contain any Arabic code point (the H4 diff is ASCII plus the test file's
+    Arabic fixtures).
+  - `src/learning/harness/__tests__/distill.test.ts` contains «نتريو» byte-intact.
+    Verified by reading the file as UTF-8 in Node, not through the console (the
+    Windows console renders UTF-8 as cp1252, which is what produced the false read).
+  - `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid).
+  - `.jdone` itself: no U+FFFD and no `???`.
+
+The gate premise was stale, so `.jgatefail.txt` was removed.
+
+Merge with manus-parity
+-----------------------
+`manus-parity` had advanced to `0a946d3` (78 commits past the branch). The branch was
+`9ca50b9`; the merge base was `b073763`.
+
+  - `git merge manus-parity` reported "Automatic merge went well", with no conflicts at
+    all, including `.jdone`, which git resolved cleanly. Committed as `e4fa443`
+    (80 files, +13653 / -224).
+  - The merged `.jdone` blob (`551e861`) is byte-identical to `manus-parity`'s blob
+    and is a strict superset of BOTH merge sides: 0 of HEAD's 1292 lines and 0 of
+    parity's 5237 lines are missing from the merged 5237-line file. Nothing was
+    dropped from either side.
+  - `git rev-list --left-right --count manus-parity...HEAD` is `0  3` (parity fully
+    merged, zero parity commits missing) and `git merge-base --is-ancestor
+    manus-parity HEAD` exits 0.
+
+Gates (all run from the worktree root on the committed tree)
+------------------------------------------------------------
+  - `npx tsc --noEmit`                                        -> exit 0
+  - `node --import tsx --test src/learning/harness/__tests__/distill.test.ts`
+                                                              -> tests 18, pass 18, fail 0
+  - `node --import tsx --test src/learning/harness/__tests__/*.test.ts`
+                                                              -> tests 35, pass 35, fail 0
+  - `node --import tsx --test src/protocol/__tests__/*.test.ts
+     src/policy/commandRisk/__tests__/*.test.ts`              -> tests 190, pass 190, fail 0
+  - `node --import tsx --test src/tools/__tests__/verifyAndRecord.test.ts
+     src/server/__tests__/inputQueue.test.ts
+     src/server/__tests__/inputQueueAdmit.test.ts`            -> tests 22, pass 22, fail 0
+  - `node --import tsx --test src/agent/__tests__/recipeEngine.test.ts
+     src/agent/__tests__/recipeIds.test.ts
+     src/agent/__tests__/orchestratorRecipe.test.ts
+     src/agent/__tests__/prVerification.test.ts`              -> tests 45, pass 45, fail 0
+  - `npm run build:server`                                    -> exit 0 (dist/server.cjs 19.5mb, pdf worker copied)
+  - `(cd packages/web && npx next build)`                     -> exit 0
+  - `(cd packages/web && npx vitest run)`                     -> 72 files / 472 tests, all pass
+  - `npm run check:encoding`                                  -> OK (no BOM, no mojibake, all JSON valid)
+
+Full suite `node --import tsx --test "src/**/*.test.ts"` -> tests 2541, pass 2540,
+fail 1. The single failure is the pre-existing environmental `worktrees` case
+(`src/server/__tests__/worktrees.test.ts` "reports non-git folders without throwing":
+`%TEMP%` sits inside a git repo on this host). It is byte-identical to `manus-parity`
+(`git diff manus-parity HEAD` is empty for that file) and is not related to H4.
+
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path
+touched. `git status --porcelain` shows only the benign `core.autocrlf` phantom on
+`src/agent/masterPromptText.ts` (working blob hash `f4fe52f` == HEAD's blob hash,
+`git diff --stat` empty), not staged and not committed.
+
 N4 — Incremental Recipe engine: DONE
 
 Summary
