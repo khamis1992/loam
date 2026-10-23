@@ -3,20 +3,20 @@
   "launcher": "app-scenario",
   "iterations": 4,
   "port": 3948,
-  "sourceCommit": "f031b85c26a5be6b46733972e97b22895f0de436",
+  "sourceCommit": "be6a44ba3806a8abeac8a7adf6c05551b0d2861e-dirty",
   "debugRoutePresent": true,
-  "idleMB": 548.5,
-  "peakMB": 548.5,
-  "finalMB": 458.2,
+  "idleMB": 538.2,
+  "peakMB": 538.2,
+  "finalMB": 467.8,
   "growthMB": 0,
-  "lastSampleMB": 458.2,
+  "lastSampleMB": 467.8,
   "retainedCacheBytes": 0,
   "cacheEntries": 2,
-  "cacheCount": 39,
+  "cacheCount": 40,
   "sessions": [
     {
       "iteration": 1,
-      "taskId": "task_mvl1155a5ae354488699",
+      "taskId": "task_mvl3qs7yb3ed730c89a4",
       "chatStatus": 200,
       "memoryStatus": 500,
       "chatBytes": 424520,
@@ -25,7 +25,7 @@
     },
     {
       "iteration": 2,
-      "taskId": "task_mvl12lh69e0edec27af1",
+      "taskId": "task_mvl3s7ud0d5b1f18d6d2",
       "chatStatus": 200,
       "memoryStatus": 500,
       "chatBytes": 424468,
@@ -34,7 +34,7 @@
     },
     {
       "iteration": 3,
-      "taskId": "task_mvl12psp84959d4d91c4",
+      "taskId": "task_mvl3sce56be912c0edb7",
       "chatStatus": 200,
       "memoryStatus": 500,
       "chatBytes": 424468,
@@ -43,7 +43,7 @@
     },
     {
       "iteration": 4,
-      "taskId": "task_mvl12ygj29e8840e3f08",
+      "taskId": "task_mvl3sgqd2eef91e444bd",
       "chatStatus": 200,
       "memoryStatus": 500,
       "chatBytes": 424468,
@@ -53,43 +53,23 @@
   ],
   "thresholdMB": 64,
   "thresholdExceeded": false,
-  "durationMs": 95771,
+  "durationMs": 95275,
   "platform": "win32",
   "notes": [],
   "samples": [
     {
-      "at": 1792763476160,
-      "totalMB": 456.9,
+      "at": 1792768031378,
+      "totalMB": 467.6,
       "processCount": 5
     },
     {
-      "at": 1792763476805,
-      "totalMB": 456.1,
+      "at": 1792768033292,
+      "totalMB": 467.1,
       "processCount": 5
     },
     {
-      "at": 1792763477451,
-      "totalMB": 457.3,
-      "processCount": 5
-    },
-    {
-      "at": 1792763478090,
-      "totalMB": 456.9,
-      "processCount": 5
-    },
-    {
-      "at": 1792763478756,
-      "totalMB": 457.9,
-      "processCount": 5
-    },
-    {
-      "at": 1792763479422,
-      "totalMB": 458.2,
-      "processCount": 5
-    },
-    {
-      "at": 1792763480081,
-      "totalMB": 458.2,
+      "at": 1792768034374,
+      "totalMB": 467.8,
       "processCount": 5
     }
   ]
