@@ -1,4 +1,4 @@
-## J11 gate-fix session (round 6): re-merged the real manus-parity tips, all gates green
+## J11 gate-fix session (round 7): re-merged the real manus-parity tips, all gates green
 
 `.jgatefail.txt` reported `MERGE CONFLICT with latest manus-parity`. The in-progress merge was
 stale: it targeted parity tip `411df5e` while `manus-parity` had advanced, so it was aborted and
@@ -7,7 +7,8 @@ merge was performed twice, each time resolved by keeping BOTH sides and never dr
 
 1. parity tip `411df5e` (M3/C21 mirofish) -> merge commit `3ae046b`
 2. parity tip `6fa63b8` (O4 seqReplay + socket) -> merge commit `becf760`
-3. parity tip `26fcd6b` (fc-09 effects round-trip, fc-09/H3 merges) -> this merge
+3. parity tip `26fcd6b` (fc-09 effects round-trip, fc-09/H3 merges) -> merge commit `c18bb8d`
+4. parity tip `851b3fe` (N7 fanout, fc-09 effects) -> merge commit `a24e7d5`
 
 Each round conflicted in exactly one file, the tracked rollup `.jdone`. Every source file
 auto-merged cleanly and was staged unmodified. Both resolutions were verified mechanically to be
@@ -16,11 +17,11 @@ file, 0 non-empty lines missing from either, 0 conflict markers, 0 U+FFFD replac
 All three resolutions were also verified as multiset supersets: every non-blank line of each side
 is present with at least equal multiplicity. The merged file is BOM-free, valid UTF-8, CRLF.
 
-Gate condition verified on the committed tree (HEAD `c18bb8d`, which is `becf760` plus the third
-merge with parity tip `26fcd6b`):
+Gate condition verified on the committed tree (HEAD `a24e7d5`, which is `c18bb8d` plus the fourth
+merge with parity tip `851b3fe`):
 `git merge-base --is-ancestor manus-parity HEAD` exits 0,
 `git merge --no-edit manus-parity` reports "Already up to date.", and
-`git rev-list --count manus-parity..HEAD` = 19.
+`git rev-list --count manus-parity..HEAD` = 21.
 
 ### Gates (all run from the worktree root on the committed merge tree)
 
@@ -28,7 +29,7 @@ merge with parity tip `26fcd6b`):
   2. `npm run build:server`                      -> exit 0 (dist/server.cjs 19.6mb, pdf worker copied)
   3. `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
   4. `node --import tsx --test "src/**/*.test.ts"`
-                                                  -> tests 2749, pass 2749, fail 0 (503 suites)
+                                                  -> tests 2760, pass 2760, fail 0 (507 suites)
   5. `(cd packages/web && npx vitest run)`        -> 81 files / 545 tests, all pass, 0 fail
   6. `npm run check:encoding`                     -> OK (no BOM, no mojibake, all JSON valid)
 
@@ -45,6 +46,16 @@ Gate condition verified on the committed tree (HEAD `becf760`):
 `git rev-list --count manus-parity..HEAD` = 17.
                                                   -> tests 2679, pass 2679, fail 0
   5. `(cd packages/web && npx vitest run)`        -> 79 files / 538 tests, all pass, 0 fail
+
+The six lines below are the round-6 wording retained verbatim for rollup fidelity; the figures in
+the header above are the current ones for this final tree:
+
+## J11 gate-fix session (round 6): re-merged the real manus-parity tips, all gates green
+3. parity tip `26fcd6b` (fc-09 effects round-trip, fc-09/H3 merges) -> this merge
+Gate condition verified on the committed tree (HEAD `c18bb8d`, which is `becf760` plus the third
+merge with parity tip `26fcd6b`):
+`git rev-list --count manus-parity..HEAD` = 19.
+                                                  -> tests 2749, pass 2749, fail 0 (503 suites)
 
 ---
 
