@@ -113,6 +113,14 @@ export class ToolRegistry {
     return this.tools.get(name);
   }
 
+  all(): Tool[] {
+    return [...this.tools.values()];
+  }
+
+  isRegistered(name: string): boolean {
+    return this.tools.has(name);
+  }
+
   names(): string[] {
     return [...this.tools.keys()].sort();
   }

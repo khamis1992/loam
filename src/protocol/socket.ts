@@ -21,6 +21,7 @@ import { setTaskApprovalAuto, setTaskPermissionMode, createApprovalRule } from "
 import { isLocalPermissionMode } from "../policy/permissionModes.js";
 import { resolveLoamMode, modeEventInfo } from "../modes/detect.js";
 import { getLoamMode, normalizeModeId, LOAM_MODES } from "../modes/catalog.js";
+import { isOutputType } from "../modes/outputTypeMap.js";
 import { appendTelemetry } from "../telemetry/store.js";
 import { getBlob } from "./blobStore.js";
 import type {
@@ -691,10 +692,15 @@ export function createChatSocket(deps: SocketDeps): Server {
           };
 
           try {
+            // Neo N10: the composer's output type is part of mode resolution. It
+            // travels in `extData` and `resolveLoamMode` applies the precedence
+            // (explicit loamMode > explicit outputType > keywords > build), so an
+            // explicit deliverable pins the run to its pipeline tools.
             const resolvedMode = resolveLoamMode(um, prompt);
 
             const explicitRaw = (um.extData.loamMode ?? "").trim();
             const explicitValid = explicitRaw && LOAM_MODES.some((m) => m.id === normalizeModeId(explicitRaw));
+            const outputTypeValid = um.extData.outputType !== undefined && isOutputType(um.extData.outputType);
             const modeDef = getLoamMode(resolvedMode);
             const dedicatedToolPattern = /^(office_|loam_document|loam_studio|loam_creative|loam_canvas|loam_dataset|data_chart|pentest_|security_|browser_|web_search)$/;
             appendTelemetry({
@@ -704,7 +710,10 @@ export function createChatSocket(deps: SocketDeps): Server {
               mode: resolvedMode,
               toolset: modeDef.tools,
               dedicatedTools: modeDef.tools.filter((name) => dedicatedToolPattern.test(name)),
-              source: explicitValid ? "explicit" : "detected",
+              // `output-type` is reported only when it is what actually decided
+              // the mode: an explicit loamMode outranks it, so claiming it would
+              // misreport a run the user placed in a mode by hand.
+              source: explicitValid ? "explicit" : outputTypeValid ? "output-type" : "detected",
               // TelemetryRecord keeps task/eval-case fields required; fill with
               // neutral values for mode-only rows so existing consumers compile.
               model: "",
@@ -735,6 +744,10 @@ export function createChatSocket(deps: SocketDeps): Server {
               // arriving mid-run are admitted at the next step boundary.
               inputSessionId: um.sessionId,
               ...(tierModel ? { model: tierModel } : {}),
+              // Neo N10: output type, effort and A/B arms travel with the message.
+              ...(um.extData.outputType ? { outputType: um.extData.outputType } : {}),
+              ...(um.extData.effort ? { effort: um.extData.effort } : {}),
+              ...(um.extData.abModels && um.extData.abModels.length > 0 ? { abModels: um.extData.abModels } : {}),
             });
 
             // Final assistant result if the agent stream did not already emit one.

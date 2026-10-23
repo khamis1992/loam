@@ -4,43 +4,75 @@
 manus-parity, resolve all conflicts keeping both sides, commit.`
 
 ### Root cause
-No source file conflicted. `git merge manus-parity` (parity tip `ed26550`, the N2
-merge) brought in the N2 canvas, N4 recipe engine, C19 failover and J5 command-risk
-workstreams (`src/agent/recipe.ts`, `src/policy/commandRisk/*`, `src/server/routes/graph.ts`,
-`src/tools/shell.ts`, `packages/web/src/components/workspace/canvas/*`, the i18n files,
-`package.json` / `electron-builder.yml` / `package-lock.json`), and every one of those
-auto-merged cleanly with `ort`. The only file that conflicted was the tracked rollup
-`.jdone`, where both sides prepend a report at the same top-of-file anchor (O4's report
-here; the N2/C19/J3/O3/O6/O2/D5/O1/V11/fc-05 rollup on parity).
+No source file conflicted in either merge round. `git merge manus-parity` brought in
+other workstreams' code (N2 canvas, N4 recipe engine, C19 failover, J5 command-risk, N10
+output-type/effort routing) and every one of those files auto-merged cleanly with `ort`.
+The only file that ever conflicted was the tracked rollup `.jdone`:
 
-Nothing in the O4 change set was at risk: `src/protocol/{types,store,socket}.ts`,
-`packages/shared/src/socket.ts`, `packages/web/src/services/chatSocket.ts`,
-`packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx` and
-`src/protocol/__tests__/seqReplay.test.ts` are byte-identical to commit `5114c89`.
+- Round 1, parity tip `ed26550` (N2 merge): **add/add**. Both sides prepend a report at
+  the same top-of-file anchor (O4's report here; the N2/C19/J3/O3/O6/O2/D5/O1/V11/fc-05
+  rollup on parity). Six conflict-marker lines, resolved as a superset.
+- Round 2, parity tip `26befe6` (N10 merge): **modify/delete**. Parity's N10 commit
+  `e3d05f6` deleted `.jdone` outright (`git ls-tree manus-parity -- .jdone` is empty),
+  while this branch modified it. Kept our side, since `.jdone` is this task's required
+  deliverable and the branch must not lose its report.
+
+Nothing in the O4 change set was at risk. The O4 files
+(`src/protocol/__tests__/seqReplay.test.ts`, `src/protocol/store.ts`,
+`packages/web/src/services/chatSocket.ts`, `packages/web/src/services/chatSocket.test.ts`,
+`packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx`) are byte-identical to commit
+`5114c89`. `src/protocol/types.ts`, `src/protocol/socket.ts` and
+`packages/shared/src/socket.ts` differ from `5114c89` only by purely additive
+other-workstream lines (the N4 `RecipeUpdateEvent` / `RecipeRestartEvent`), which is why
+they auto-merged; the O4 `lastSeq` / `seq` / `eventsAfterSeq` additions are all still
+present.
 
 ### What was done
-The `.jdone` conflict was resolved as a **superset**: the O4 report stays at the top and
-the full parity rollup follows verbatim, with the six conflict-marker lines removed and
-no report text altered. Verified mechanically after the resolution: 0 non-empty lines
-missing from the stage-2 (ours) blob, 0 non-empty lines missing from the stage-3 (theirs)
-blob, 0 non-empty lines missing from the merge-base blob, and 0 conflict markers left in
-the tree.
+- Round 1: the `.jdone` add/add conflict was resolved as a **superset** - the O4 report
+  stays at the top and the full parity rollup follows verbatim, with the six
+  conflict-marker lines removed and no report text altered.
+- Round 2: the `.jdone` modify/delete conflict was resolved by keeping the modified
+  version (`git add .jdone`), which is the union of the O4 report and the parity rollup
+  carried forward from round 1.
+
+Both resolutions were verified mechanically against the blobs in play: 0 non-empty lines
+missing from the ours blob, 0 non-empty lines missing from the theirs blob (round 1), 0
+non-empty lines missing from the merge-base blob, and 0 conflict markers left in the tree.
 
 No source file was edited by this session and no test was weakened, deleted or skipped.
 
 ### Gate condition verified
-`git merge manus-parity` reports "Already up to date.", `git merge-base --is-ancestor
-manus-parity HEAD` exits 0, and `git rev-list --left-right --count manus-parity...HEAD`
-has `0` on the parity side. No conflict marker remains in any tracked file and
-`git status --porcelain` is empty.
+`git merge-base --is-ancestor manus-parity HEAD` exits 0, and
+`git rev-list --left-right --count manus-parity...HEAD` has `0` on the parity side. No
+conflict marker remains in any tracked file and `git status --porcelain` is empty.
 
-### Gates (all run from the worktree root on the committed merge tree)
+### Gates (all run from the worktree root on the merged tree)
 - `npx tsc --noEmit`                          -> exit 0
 - `npm run build:server`                      -> exit 0 (dist/server.cjs, pdf worker copied)
-- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25 static pages)
+- `npm run verify`                            -> exit 0 (typecheck, encoding, eval, orchestrator
+                                                114/114, recovery, modes)
+- `node --import tsx --test "src/**/*.test.ts"`
+                                              -> tests 2576, pass 2575, fail 1 (the one
+                                                 failure is the inherited `worktrees.test.ts`
+                                                 environment defect, see below)
 - `node --import tsx --test src/protocol/__tests__/*.test.ts`
-                                              -> O4 seqReplay included, all pass
+                                              -> tests 52, pass 52, fail 0 (O4 seqReplay included)
+- `(cd packages/web && npx vitest run src/services/chatSocket.test.ts)`
+                                              -> 7 passed
 - `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+
+### Inherited failure, not introduced here
+`src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing"
+(`true == false` at `src/server/__tests__/worktrees.test.ts:44`). Both
+`src/server/__tests__/worktrees.test.ts` and `src/server/worktrees.ts` are byte-identical
+to `manus-parity` and are untouched by the merge. The cause is environmental: this
+machine's home directory `C:\Users\khamis` contains a stray `.git`, so a `mkdtemp`'d
+directory under `%TEMP%` still resolves a repository when git walks upward
+(`git -C <tmp> rev-parse --show-toplevel` prints `C:/Users/khamis`). Confirmed with
+`GIT_CEILING_DIRECTORIES=%TEMP%`, under which the probe fails as the test expects. The
+test passes 3/4 here and the same single failure reproduces on the untouched
+`manus-parity` worktree. This task touches no file under `src/server`.
 
 ### Files
 - `.jdone` only (this report prepended to the preserved rollup). No source file was
@@ -50,7 +82,10 @@ Test commands:
   npx tsc --noEmit
   npm run build:server
   (cd packages/web && npx next build)
+  npm run verify
+  node --import tsx --test "src/**/*.test.ts"
   node --import tsx --test src/protocol/__tests__/*.test.ts
+  (cd packages/web && npx vitest run src/services/chatSocket.test.ts)
   npm run check:encoding
 
 No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
