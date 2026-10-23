@@ -1,3 +1,17 @@
+## Gate fix (this commit): merge with manus-parity resolved, both sides kept
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity.
+
+`git merge manus-parity` (tip 63e6f70, O0 recon) conflicted in exactly one file: `.jdone`
+(add/add). Resolution keeps BOTH sides: the V8 design-system report above and parity's O0
+Omnara recon report below, neither trimmed. No code file changed, no test was weakened,
+deleted or skipped. The resolution is committed as the real two-parent merge `5ff2ebe`
+(parents 6021eba + 63e6f70), so `manus-parity` is an ancestor
+(`git merge-base --is-ancestor manus-parity HEAD` exit 0; `rev-list --left-right --count
+manus-parity...HEAD` = `0 6`) and a re-run of `git merge manus-parity` says "Already up to
+date.".
+
+## V8: Loam UI Kit / v0 design-system parity
+
 V8 complete: Loam UI Kit / v0 design-system parity - a vetted design-block registry plus the
 `ui_examples_search` agent tool, so the model retrieves proven interface blocks (and their
 source code) before writing UI by hand.
