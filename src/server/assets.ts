@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { database, transaction, putEntity, allEntities, removeEntity } from "./sqliteStore.js";
+import { database, getMeta, setMeta, transaction, putEntity, allEntities, removeEntity } from "./sqliteStore.js";
 import { getBalance } from "./credits.js";
 
 /**
@@ -48,15 +48,6 @@ const WALLET_PLACEHOLDER_KEY = "mock-wallet-placeholder";
 const EMAIL_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789";
 
 interface StoredEmail extends InboundEmail {}
-
-function getMeta(key: string): string | undefined {
-  const row = database().prepare("SELECT value FROM metadata WHERE key=?").get(key) as { value: string } | undefined;
-  return row?.value;
-}
-
-function setMeta(key: string, value: string): void {
-  database().prepare("INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, value);
-}
 
 class MockEmailProvider implements EmailProvider {
   readonly id = "mock";
