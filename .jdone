@@ -144,6 +144,50 @@ repository rather than trusting the earlier report.
   here vs parity's 1921/1921 (parity's earlier `# fail 1` was a flake and did not
   reproduce on a clean parity run).
 
+## Independent re-validation (2026-10-23, fourth pass)
+
+The earlier passes compared line *multisets*, which is order-blind: a merge could
+keep every line from both sides and still break structure. This pass closes that
+gap and runs the repository's own canonical gate.
+
+- **Order-sensitive additivity of the whole diff.** `git diff --numstat 03f8aef HEAD`
+  over all 17 changed files: 16 files are pure insertions (+N/-0). The single
+  exception is `src/index.ts` (+23/-1), and the one removed line is
+  `-import { ensureTaskWorkspace } from "./server/taskWorkspace.js";` replaced by
+  `+import { ensureTaskWorkspace, isManagedTaskWorkspace } from "./server/taskWorkspace.js";`
+  - an import-line expansion required by D3's `isManagedTaskWorkspace` call, not a
+  dropped parity feature. No parity-added line was rewritten anywhere.
+- **Per-file pure-insertion proof for the 3 conflicted files.** Counting `+`/`-`
+  lines in `git diff 03f8aef HEAD -- <file>` (excluding `+++`/`---` headers):
+  `package.json` +1/-0, `src/server/http.ts` +3/-0, `src/server/runTools.ts` +2/-0.
+  All three are **pure insertion** - parity's bytes are untouched.
+- **Every parity-added line survives.** For each of the 16 non-`.jdone` delta files,
+  extracted parity's own additions from `git diff 088b4f2 03f8aef` and checked each
+  is present in the merge. Result: **`FILES-WITH-MISSING-PARITY-LINES=0`**
+  (`package.json` 13, `src/index.ts` 55, `src/policy/riskTier.ts` 3,
+  `src/server/__tests__/runTools.test.ts` 17, `src/server/http.ts` 66,
+  `src/server/runTools.ts` 11, `src/setup/runtime.ts` 30 parity-added lines, all
+  present).
+- **Repository's own canonical gate.** `npm run verify` (typecheck + check:encoding
+  + check:eval + check:orchestrator + check:recovery + check:modes) exits **0**:
+  orchestrator smoke PASS (114/114), recovery PASS, modes PASS.
+- **Additional suites not previously run.** `npm run test:vendor` exit 0 (7 pass),
+  `npm run test:vendor:protocol` exit 0, `npm run test:electron` exit 0 (4 pass).
+- **Graph state re-confirmed at the new HEAD.** `git merge-tree --write-tree
+  manus-parity HEAD` exit 0; `git rev-list --count HEAD..manus-parity` = 0;
+  `git diff --diff-filter=D --name-only manus-parity HEAD` = 0; `git status
+  --porcelain` empty (0 entries). HEAD is `d2932a0`, branch `khamis1992/devin-d3`.
+- **`check:test-isolation` proven pre-existing, definitively.** Cloned the shared
+  object store, checked out parity tip `03f8aef` into a clean temp worktree, linked
+  `node_modules`, and ran parity's own `src/scripts/check-test-isolation.ts` there.
+  Result: **exit 1**, same `AssertionError: the test suite wrote into the repository
+  tree: data, workspace`, same residue (`data/manus.db`, `data/model-edits.jsonl`),
+  and a clean suite (1921 pass / 0 fail). The failure is intrinsic to parity, not to
+  this merge. The `data/` residue in this worktree (`manus.db`, `model-edits.jsonl`,
+  `backups/`, `env-snapshots/`, `secrets-vault/`, `swarm/`) is gitignored
+  (`.gitignore:7` `/data/`, `.gitignore:8` `/workspace/`) and 0 files under either are
+  tracked, so the working tree stays clean.
+
 
 ## Gates (all pass, run from the worktree root)
 1. `npx tsc --noEmit` — PASS
