@@ -404,6 +404,7 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
               live={live}
               onSave={onSave}
               onChatEdit={(instruction: string) => onChatEdit(instruction, selected)}
+              events={events}
             />
           </Suspense>
         ) : (
