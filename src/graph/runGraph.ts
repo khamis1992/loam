@@ -13,6 +13,8 @@ import {
   RUN_NODE_TYPES,
   RunGraphStore,
   eventNodeId,
+  branchNodeId,
+  mergeNodeId,
   siblingNodeId,
   type RunGraphExport,
   type RunNode,
@@ -74,6 +76,8 @@ interface RunState {
   pending: Array<{ name: string; nodeId: string }>;
   /** Plan step id -> the node created for it, so a later event updates it. */
   steps: Map<string, string>;
+  /** Fan-out id -> the branch count it was opened with (labels the branches). */
+  fanouts: Map<string, { total: number }>;
 }
 
 /** Graph projection returned to the canvas and the stats panel. */
@@ -119,7 +123,7 @@ export class RunGraph {
   private stateFor(runId: string): RunState {
     let state = this.runs.get(runId);
     if (!state) {
-      state = { runId, rootId: "", lastId: "", seq: 0, pending: [], steps: new Map() };
+      state = { runId, rootId: "", lastId: "", seq: 0, pending: [], steps: new Map(), fanouts: new Map() };
       this.runs.set(runId, state);
     }
     return state;
@@ -292,6 +296,77 @@ export class RunGraph {
     });
     this.invalidate(runId);
     return created;
+  }
+
+  /**
+   * N7 branch fan-out: open one branch of a fan-out as its own canvas subtree.
+   *
+   * The branch root hangs off the step that fanned out (or the last node when
+   * no step is running) and carries the branch index and label, so the canvas
+   * renders N parallel branch roots instead of flattening every child tool call
+   * into one column. Node ids are deterministic, so re-rendering the same
+   * fan-out never duplicates branch roots.
+   */
+  createBranch(
+    runId: string,
+    fanoutId: string,
+    index: number,
+    label = "",
+    parentNodeId?: string,
+  ): RunNode {
+    const state = this.stateFor(runId);
+    if (!state.rootId) this.ensureRoot(runId, "");
+    const parent = parentNodeId ?? state.stepId ?? state.lastId;
+    if (!parent) throw new Error(`run node not found: ${parentNodeId ?? ""}`);
+    const node = this.addNode(runId, state, {
+      type: "branch",
+      seed: `fanout:${fanoutId}:${index}`,
+      status: "running",
+      data: {
+        fanoutId,
+        index,
+        ...(label ? { label: oneLine(label, 200) } : {}),
+        total: state.fanouts.get(fanoutId)?.total,
+      },
+      parent,
+    });
+    return node;
+  }
+
+  /**
+   * N7 branch fan-out: the merge step that consumes every branch of a fan-out.
+   *
+   * One node with one parent per branch, so the canvas shows the fan-in edge and
+   * the node data names every branch node id it merged.
+   */
+  createMerge(
+    runId: string,
+    fanoutId: string,
+    branchNodeIds: string[],
+    summary: string,
+    parentNodeId?: string,
+  ): RunNode {
+    const state = this.stateFor(runId);
+    if (!state.rootId) this.ensureRoot(runId, "");
+    const parents = [...new Set(branchNodeIds)].filter((id) => this.store.getNode(id, runId));
+    const parent = parentNodeId ?? state.lastId;
+    const node = this.addNode(runId, state, {
+      type: "merge",
+      seed: `fanout-merge:${fanoutId}`,
+      status: "finished",
+      data: {
+        fanoutId,
+        branchNodeIds: parents,
+        summary: oneLine(summary, 1000),
+      },
+      parent: parents[0] ?? parent,
+    });
+    // A merge is a fan-in: every branch is a parent, not just the first.
+    if (parents.length > 1) {
+      this.store.update(node.id, { parent_ids: parents });
+      this.invalidate(runId);
+    }
+    return this.store.getNode(node.id, runId) ?? node;
   }
 
   /** Layered layout plus aggregate stats. Deterministic, no dependencies. */
@@ -536,11 +611,93 @@ export class RunGraph {
       case "simulation_progress":
         // Live-only signals with no canvas node of their own.
         return [];
+      case "fanout_branch":
+        return this.onFanoutBranch(
+          runId,
+          state,
+          event.fanoutId,
+          event.index,
+          event.phase,
+          event.label,
+          event.summary,
+          event.nodeId,
+        );
+      case "fanout_merge":
+        return this.onFanoutMerge(runId, state, event.fanoutId, event.branchNodeIds, event.summary);
       default: {
         const _exhaustive: never = event;
         return _exhaustive;
       }
     }
+  }
+
+  /**
+   * N7 branch fan-out: one branch started (a new `branch` node) or finished
+   * (the same node moves to its terminal status). The fan-out total is recorded
+   * on the first branch so the canvas can label "branch 2 of 4".
+   */
+  private onFanoutBranch(
+    runId: string,
+    state: RunState,
+    fanoutId: string,
+    index: number,
+    phase: "start" | "done",
+    label?: string,
+    summary?: string,
+    nodeId?: string,
+  ): string[] {
+    if (phase === "start") {
+      if (!state.fanouts.has(fanoutId)) state.fanouts.set(fanoutId, { total: index + 1 });
+      // Branches arrive in flight order, so the label's "of N" grows to the
+      // highest index seen rather than freezing at the first branch.
+      const known = state.fanouts.get(fanoutId)!;
+      if (index + 1 > known.total) known.total = index + 1;
+      const existing = nodeId ? this.store.getNode(nodeId, runId) : undefined;
+      if (existing) {
+        const data = { ...(existing.data as Record<string, unknown>), fanoutId, index, ...(label ? { label: oneLine(label, 200) } : {}) };
+        this.store.update(existing.id, { status: "running", data });
+        return [existing.id];
+      }
+      const created = this.addNode(runId, state, {
+        type: "branch",
+        seed: `fanout:${fanoutId}:${index}`,
+        status: "running",
+        data: {
+          fanoutId,
+          index,
+          total: state.fanouts.get(fanoutId)?.total,
+          ...(label ? { label: oneLine(label, 200) } : {}),
+        },
+        parent: state.stepId ?? state.lastId,
+      });
+      return [created.id];
+    }
+
+    // `done`: the branch root is terminal. The caller supplies the node id it
+    // opened, which keeps the branch subtree on the canvas intact.
+    const target = nodeId ? this.store.getNode(nodeId, runId) : undefined;
+    if (!target) return [];
+    const ok = !summary || !/^failed\b/i.test(summary);
+    const nextStatus: RunNodeStatus = ok ? "finished" : "failed";
+    if (canTransition(target.status, nextStatus)) {
+      this.store.update(target.id, {
+        status: nextStatus,
+        data: { ...(target.data as Record<string, unknown>), ...(summary ? { summary: oneLine(summary, 600) } : {}) },
+      });
+    }
+    return [target.id];
+  }
+
+  /** N7 branch fan-out: the merge node that consumes every branch of a fan-out. */
+  private onFanoutMerge(
+    runId: string,
+    state: RunState,
+    fanoutId: string,
+    branchNodeIds: string[],
+    summary: string,
+  ): string[] {
+    const node = this.createMerge(runId, fanoutId, branchNodeIds, summary, state.stepId);
+    return [node.id];
   }
 
   private onPlan(runId: string, state: RunState, goal: string, stepIds: string[], total: number): string[] {

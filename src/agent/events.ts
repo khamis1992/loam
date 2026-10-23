@@ -203,6 +203,35 @@ export type AgentEvent =
    * event stream. The panel executes it with its editor bridge and posts the
    * result back to /api/tasks/:id/video-studio/result.
    */
-  | { type: "video_studio_command"; id: string; target: "film" | "effects"; method: string; params: Record<string, unknown> };
+  | { type: "video_studio_command"; id: string; target: "film" | "effects"; method: string; params: Record<string, unknown> }
+  /**
+   * N7 branch fan-out: one independent branch of a fan-out started or finished.
+   *
+   * A branch is a whole subtree of its own, so it gets its own canvas node off
+   * the parent step instead of one node per tool call inside the child.
+   */
+  | {
+      type: "fanout_branch";
+      /** Stable id of the fan-out this branch belongs to. */
+      fanoutId: string;
+      /** Zero-based branch index within the fan-out. */
+      index: number;
+      phase: "start" | "done";
+      /** Run-graph node id of the branch root (also present on `done`). */
+      nodeId?: string;
+      /** Branch label (the prompt or model this branch ran). */
+      label?: string;
+      /** Short summary of what the branch produced, on `done`. */
+      summary?: string;
+    }
+  /** N7 branch fan-out: the merge step consumed every branch of a fan-out. */
+  | {
+      type: "fanout_merge";
+      fanoutId: string;
+      /** Run-graph node ids of every branch this merge consumed. */
+      branchNodeIds: string[];
+      /** The merged result. */
+      summary: string;
+    };
 
 export type Emit = (event: AgentEvent) => void;
