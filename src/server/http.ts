@@ -129,6 +129,7 @@ import { createApproval, decideApproval, getApproval, listApprovals } from "./ap
 import { setTaskAgent } from "./db.js";
 import { subscribeTask } from "./streams.js";
 import { workspaceRelay, workspaceRelay as videoStudioRelay, type WorkspaceRelayResult } from "./workspaceRelay.js";
+import { runVideoStudioExport, type VideoStudioExportOptions } from "./videoStudioExport.js";
 import { appendLearning, readLearning } from "./learning.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { installDraft, listSuites, loadSuite } from "../eval/suites.js";
@@ -2503,6 +2504,49 @@ loadAgents();
           if (result.taskId !== taskId) return sendJson(res, 400, { error: "taskId mismatch" });
           const handled = workspaceRelay.resolve(result);
           return sendJson(res, 200, { ok: handled, ...(handled ? {} : { ignored: true }) });
+        }
+
+        // fc-06: the Loam Video panel's Export button. Same flow as the
+        // `video_studio` export action (one implementation, two entry points): the
+        // editor renders, the bytes come back through the relay and the file is
+        // written into this task's workspace under exports/.
+        if (req.method === "POST" && /^\/api\/tasks\/[^/]+\/video-studio\/export$/.test(p)) {
+          const origin = req.headers.origin;
+          if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") {
+            return sendJson(res, 403, { error: "same-origin requests required" });
+          }
+          const taskId = decodeURIComponent(p.slice("/api/tasks/".length, -"/video-studio/export".length));
+          if (!getTask(taskId)) return sendJson(res, 404, { error: "task not found" });
+          let raw: unknown;
+          try { raw = await readBody(req, 16_000); } catch { return sendJson(res, 400, { error: "invalid JSON body" }); }
+          const body = (raw ?? {}) as { options?: Record<string, unknown> };
+          const options = (body.options ?? {}) as VideoStudioExportOptions;
+          if (options.quality && !["low", "medium", "high", "best"].includes(options.quality)) {
+            return sendJson(res, 400, { error: "options.quality must be one of low, medium, high, best" });
+          }
+          if (options.range && !["entire", "inOut", "workArea", "custom"].includes(options.range)) {
+            return sendJson(res, 400, { error: "options.range must be one of entire, inOut, workArea, custom" });
+          }
+          let taskRoot: string;
+          try {
+            taskRoot = requireTaskWorkspace(taskId, cfg.workspace);
+          } catch (error) {
+            return sendJson(res, 400, { error: (error as Error).message });
+          }
+          try {
+            const result = await runVideoStudioExport({ taskId, relay: videoStudioRelay, taskRoot, options });
+            return sendJson(res, 200, result);
+          } catch (error) {
+            const err = error as { code?: string; message?: string };
+            if (err.code === "PANEL_NOT_OPEN") {
+              return sendJson(res, 409, { ok: false, reason: "panel_not_open", retry: true, message: err.message });
+            }
+            if (err.code === "CANCELLED") {
+              return sendJson(res, 499, { ok: false, reason: "cancelled", message: err.message });
+            }
+            const timedOut = /did not finish within/.test(err.message ?? "");
+            return sendJson(res, timedOut ? 504 : 502, { ok: false, reason: "export_failed", message: err.message });
+          }
         }
 
         if (req.method === "GET" && p.startsWith("/api/tasks/") && p.endsWith("/stream")) {

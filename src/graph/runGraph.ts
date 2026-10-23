@@ -650,6 +650,7 @@ export class RunGraph {
       case "cache_usage":
       case "workspace_command":
       case "video_studio_command":
+      case "video_studio_export":
       case "workspace_open_request":
       case "simulation_progress":
         // Live-only signals with no canvas node of their own.

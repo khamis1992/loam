@@ -1,4 +1,5 @@
 import type { ChatMessage } from "../ollama.js";
+import type { Config } from "../config.js";
 import type { Emit, PlanStepInfo, RecipeChange, RecipeStepInfo, ToolTraceItem, Usage, VerdictInfo } from "./events.js";
 import { log } from "../log.js";
 import { runAgent, type RunOptions, type RunResult } from "./loop.js";
@@ -9,6 +10,7 @@ import type { ExecutionCheckpoint, WorkerCheckpoint } from "./checkpoint.js";
 import { AcceptanceGuard } from "./acceptanceGuard.js";
 import { IndependentAcceptanceGuard, independentRequirements } from "./independentAcceptance.js";
 import { taskScopedTools, fileOnlyRequested } from "./taskToolScope.js";
+import { missionSection, fillMasterSlots, deriveMasterSlots } from "./masterPrompt.js";
 import { checkBudget, consumeTokens, consumeWallClock, type ComputeBudget } from "./computeBudget.js";
 import {
   budgetStoppedCheckpoint,
@@ -88,6 +90,17 @@ const WORKER_SUFFIX = [
   "Leave concrete evidence (file paths, command output, URLs) because a verifier checks your work against the success criteria.",
   "If the current step is the last one, end with the complete, user-facing answer.",
 ].join("\n");
+
+/** §25 (long-horizon missions) sent only to recipe-mode workers.
+ *
+ *  A plain plan run has no Recipe, so it must not pay for the mission rules;
+ *  the orchestrator is the only place that knows the run is a mission. The
+ *  section carries runtime `{{slots}}`, so they are filled here with the same
+ *  derivation the assembled master prompt uses; a raw placeholder must never
+ *  reach the model. */
+function missionSuffix(cfg: Config): string {
+  return fillMasterSlots(missionSection(), deriveMasterSlots(cfg));
+}
 
 function oneLine(text: string, max = 300): string {
   const t = text.trim().replace(/\s+/g, " ");
@@ -549,20 +562,25 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
     const workerLimit = restored && resumeWorker && resumeWorker.steps >= oc.maxStepsPerWorker
       ? resumeWorker.steps + oc.maxStepsPerWorker
       : oc.maxStepsPerWorker;
-    const w = await runWorker({
-      ...o,
-      resumeWorker,
-      saveWorker: value => { worker = value; checkpoint(true); },
-      // Neo N6: a mission worker is itself a mission: the per-worker step cap is
-      // lifted (the budget is the ceiling) and a checkpoint is written after each
-      // step so a restart resumes the mission instead of losing it.
-      ...(o.mission === true ? {
-        mission: true,
-        ...(o.resumeMission ? { resumeMission: o.resumeMission } : {}),
-        maxSteps: undefined,
-        ...(o.saveMissionCheckpoint ? { saveMissionCheckpoint: o.saveMissionCheckpoint } : {}),
-      } : {}),
-    }, prompt, suffix, workerLimit);
+    const w = await runWorker(
+      {
+        ...o,
+        resumeWorker,
+        saveWorker: value => { worker = value; checkpoint(true); },
+        // Neo N6: a mission worker is itself a mission: the per-worker step cap is
+        // lifted (the budget is the ceiling) and a checkpoint is written after each
+        // step so a restart resumes the mission instead of losing it.
+        ...(o.mission === true ? {
+          mission: true,
+          ...(o.resumeMission ? { resumeMission: o.resumeMission } : {}),
+          maxSteps: undefined,
+          ...(o.saveMissionCheckpoint ? { saveMissionCheckpoint: o.saveMissionCheckpoint } : {}),
+        } : {}),
+      },
+      prompt,
+      recipeMode ? `${suffix}\n\n${missionSuffix(o.cfg)}` : suffix,
+      workerLimit,
+    );
     worker = undefined;
     totalSteps += w.steps;
     addUsage(usage, w.usage);
