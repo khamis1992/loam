@@ -27,6 +27,15 @@ Thumbs.db
 # Per-task done reports and gate-failure logs are session markers, not project files.
 /.cc-report-*.md
 /.jgatefail.txt
+# Runner markers written by the task harness into each worktree. They must never be
+# tracked: a tracked `.jdone` makes every freshly-created branch look already-done,
+# and since every workstream appends its report at the end of the file, tracking it
+# turns every merge into manus-parity into a `.jdone` conflict.
+/.jdone
+/.jcode-done
+/.jblocked
+/.neo-done
+/.neo-blocked
 /.github/workflows/release.yml
 
 nul
