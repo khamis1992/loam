@@ -13,7 +13,13 @@ module.exports = async function afterPack(context) {
 
   await flipFuses(exePath, {
     version: FuseVersion.V1,
-    [FuseV1Options.RunAsNode]: false,
+    // RunAsNode stays ENABLED on purpose. The server and MCP bridge no longer need
+    // it (they run via utilityProcess.fork), but server tools still spawn
+    // process.execPath with ELECTRON_RUN_AS_NODE=1 to run plain Node scripts
+    // (design build checks: "node build.mjs", TypeScript/ESLint diagnostics).
+    // Disabling it would make those children launch a second Loam window.
+    // Follow-up: route those through utilityProcess or a bundled node, then set false.
+    [FuseV1Options.RunAsNode]: true,
     [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
     [FuseV1Options.EnableNodeCliInspectArguments]: false,
     [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
