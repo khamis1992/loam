@@ -684,6 +684,46 @@ describe("run graph: N7 branch fan-out", () => {
     );
   });
 
+  it("hangs every branch off the same parent when they are opened concurrently", async () => {
+    // `runFanout` opens one branch per worker without awaiting, so the branches
+    // are created in flight. Each must anchor to the fan-out's own parent, not to
+    // whichever branch happened to be written last.
+    const graph = new RunGraph();
+    const root = graph.beginRun(RUN, "Fan out");
+
+    // Interleave the two creations the way concurrent workers do, so the second
+    // one runs after the first has already advanced `state.lastId`.
+    const opened = await Promise.all([
+      Promise.resolve(graph.createBranch(RUN, FANOUT_ID, 0, BRANCH_LABELS[0]!)),
+      Promise.resolve(graph.createBranch(RUN, FANOUT_ID, 1, BRANCH_LABELS[1]!)),
+    ]);
+
+    assert.deepEqual(opened.map((node) => node.parent_ids), [[root.id], [root.id]], "every branch shares the run root");
+    const branches = graph.getRunNodes(RUN).filter((node) => node.type === "branch");
+    assert.equal(new Set(branches.map((node) => node.parent_ids[0])).size, 1, "one parent for the whole fan-out");
+  });
+
+  it("replays a fan-out whose branches were opened concurrently", () => {
+    // The replay must reproduce the same shared parent as the concurrent live run,
+    // not chain each branch off the one before it.
+    const live = new RunGraph();
+    const root = live.beginRun(RUN, "Fan out");
+    live.createBranch(RUN, FANOUT_ID, 0, BRANCH_LABELS[0]!);
+    live.createBranch(RUN, FANOUT_ID, 1, BRANCH_LABELS[1]!);
+    for (const event of fanoutEvents()) live.applyEvent(RUN, event);
+    live.createMerge(RUN, FANOUT_ID, BRANCH_IDS, "merged result");
+
+    const replayed = new RunGraph();
+    replayed.replay(RUN, fanoutEvents());
+
+    const replayedBranches = replayed.getRunNodes(RUN).filter((node) => node.type === "branch");
+    assert.equal(replayedBranches.length, 2);
+    for (const branch of replayedBranches) {
+      assert.deepEqual(branch.parent_ids, [root.id], "a replayed branch hangs off the same root as a live one");
+    }
+    assert.deepEqual(fanoutShape(replayed), fanoutShape(live));
+  });
+
   it("replays a fan-out that begins with a branch, with no root event", () => {
     // A trimmed log may start at the first branch; it must still hang off a root
     // rather than orphaning, and the branch must land on the deterministic id.

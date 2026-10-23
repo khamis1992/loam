@@ -316,7 +316,13 @@ export class RunGraph {
   ): RunNode {
     const state = this.stateFor(runId);
     if (!state.rootId) this.ensureRoot(runId, "");
-    const parent = parentNodeId ?? state.stepId ?? state.lastId;
+    // Branches are opened lazily, one per concurrent worker, so `state.lastId`
+    // is whatever the previously-scheduled branch happened to set: without an
+    // explicit anchor they chain onto each other instead of fanning out. The
+    // fan-out's own parent is captured once, when the first branch is opened,
+    // and every later branch reuses it.
+    const parent = parentNodeId ?? this.fanoutAnchors.get(`${runId}:${fanoutId}`) ?? state.stepId ?? state.lastId;
+    this.fanoutAnchors.set(`${runId}:${fanoutId}`, parent);
     if (!parent) throw new Error(`run node not found: ${parentNodeId ?? ""}`);
     const node = this.addNode(runId, state, {
       type: "branch",
@@ -426,6 +432,14 @@ export class RunGraph {
 
   private depthCache = new Map<string, Map<string, number>>();
   private statsCache = new Map<string, RunGraphStats>();
+  /**
+   * N7 branch fan-out: the parent each fan-out's branch roots hang off.
+   *
+   * Captured on the first branch a fan-out opens and reused by the rest, so the
+   * branches of one fan-out all share a parent even though `runFanout` opens
+   * them lazily from concurrent workers.
+   */
+  private fanoutAnchors = new Map<string, string>();
 
   private depthMap(runId: string): Map<string, number> {
     const cached = this.depthCache.get(runId);
@@ -655,6 +669,10 @@ export class RunGraph {
       // root (a live run always has one, because `beginRun` runs first). Creating
       // it here is what gives a replayed branch the same parent as a live one.
       if (!state.rootId) this.ensureRoot(runId, "");
+      // Record the fan-out's anchor the first time a replay sees a branch, so the
+      // rest of the replayed branches share it instead of chaining off each other.
+      const anchorKey = `${runId}:${fanoutId}`;
+      if (!this.fanoutAnchors.has(anchorKey)) this.fanoutAnchors.set(anchorKey, state.stepId ?? state.lastId);
       if (!state.fanouts.has(fanoutId)) state.fanouts.set(fanoutId, { total: index + 1 });
       // Branches arrive in flight order, so the label's "of N" grows to the
       // highest index seen rather than freezing at the first branch.
@@ -694,7 +712,9 @@ export class RunGraph {
           ...(label ? { label: oneLine(label, 200) } : {}),
           total: known.total,
         },
-        parent: state.stepId ?? state.lastId,
+        // Same anchor the live path uses, so a replayed fan-out has the same
+        // branch roots as the run that produced the log.
+        parent: this.fanoutAnchors.get(`${runId}:${fanoutId}`) ?? state.stepId ?? state.lastId,
       });
       return [created.id];
     }
