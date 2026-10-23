@@ -1,5 +1,37 @@
 fc-07 complete: the Loam Video / Loam Effects router and a full "Video editing" prompt section. One product, one workflow, Arabic + English routing, FilmCraft-native fallback.
 
+## Third validation pass (no new defects)
+Re-verified the snapshot and the routing contract end to end, then re-ran every gate.
+The earlier `TypeError [ERR_INVALID_ARG_TYPE]` while recomputing the snapshot hash was
+an artifact of importing the wrong export: the module exports `MASTER_PROMPT_SECTIONS`
+(an array), not a `masterPromptText` string. Hashing the real assembly
+(`buildMasterPrompt(ALL_SLOTS, { model: "qwen2.5:14b" })`, exactly as
+`codingPrompt.test.ts` does) reproduces the committed value byte for byte:
+`masterPromptSha256 = 80b1235fae56672d72a128d71971a72660c8955699adc6f3c3487b36cd4c34ab`,
+`codingSectionSha256 = ef715eb596edf9d39281878ee278a18a64cef025e38f4bbb82d576eeb327249f`
+(unchanged). Also confirmed:
+- `plan()` is live, not dead code: `src/tools/videoStudio.ts:708` calls
+  `router.plan(action, routingHint(args))`. `plan.action` has no consumers, but a
+  `git grep` for `\.plan(` shows the only other call sites are the router's own tests.
+- Arabic is scoped correctly: 165 Arabic words live only in `videoStudioRouter.ts`
+  (the bilingual phrase tables) and 92 only in `prompts/loam-master.md` /
+  `masterPromptText.ts` (the §6.12 examples). `videoPrompt.ts`, `prompt.ts` and
+  `planner.ts` contain none, so no Arabic leaks into unrelated guidance.
+- Branding holds under the real assembly path: `videoPrompt.ts`'s exported strings
+  contain zero occurrences of filmcraft/effectcraft/artcraft, and §6.12's body matches
+  the generated asset.
+- The 237-test gate figure is real, not a phantom: the file list in this report had
+  abbreviated the `src/server/` and `src/policy/` prefixes. The actual paths are
+  `src/server/__tests__/{videoStudioE2E,videoStudioRelay,autoVideo,runTools}.test.ts`
+  and `src/policy/__tests__/riskTier.test.ts`; run individually they total
+  40+47+16+21+8+4+8+4+16+73 = 237 tests, 237 pass, 0 fail.
+- One unrelated pre-existing failure was found and ruled out of scope:
+  `src/agent/__tests__/toolDescriptions.test.ts` fails on `suggest_plan` ("neither
+  registered nor listed in PENDING_CODING_TOOLS"). It reproduces identically on the
+  clean `manus-parity` worktree, and fc-07 never modified that test or
+  `src/agent/toolDescriptions.ts` (both are byte-identical to base), so it is not a
+  regression from this task.
+
 ## Second validation pass (commit `5579808`)
 A third look at the `video_studio` run body found a contract gap the first two passes
 missed: the tool description promises "Every result carries a `routing` object", but the
@@ -70,7 +102,12 @@ order (§6.11 < §6.12 < §7), carries no upstream engine name, and `videoPrompt
 - `npm run check:modes`                     -> PASS (seven fail-closed modes)
 - `npm run check:loam-agents`               -> PASS (seven modes accepted, unknown rejected)
 - node --import tsx --test (videoStudio, videoStudioRouter, videoPrompt, craftPrompt,
-  codingPrompt, videoStudioE2E, videoStudioRelay, autoVideo, runTools, riskTier)
+  codingPrompt, server/videoStudioE2E, server/videoStudioRelay, server/autoVideo,
+  server/runTools, policy/riskTier)
+  (full paths: src/tools/__tests__/{videoStudio,videoStudioRouter}.test.ts,
+  src/agent/__tests__/{videoPrompt,craftPrompt,codingPrompt}.test.ts,
+  src/server/__tests__/{videoStudioE2E,videoStudioRelay,autoVideo,runTools}.test.ts,
+  src/policy/__tests__/riskTier.test.ts -> 237 tests total)
   -> tests 237, pass 237, fail 0
 
 Branding: one product ("Loam Video" / "Loam Effects"); upstream names (FilmCraft /
