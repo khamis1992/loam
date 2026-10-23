@@ -126,15 +126,23 @@ relative to its own side.
 
 ### Nothing else was touched
 
-No source file was edited beyond removing the three marker lines in `runGraph.ts`. The
-three auto-merged files were committed as merged (`src/agent/events.ts` gains parity's
+No source file was edited beyond removing the conflict-marker lines. The
+`src/graph/runGraph.ts` resolution keeps both sides of its `case` run; the three files that
+auto-merged with it were committed as merged (`src/agent/events.ts` gains parity's
 `workspace_command` / `workspace_open_request` events plus N7's `ok` flag;
 `src/agent/loop.ts` keeps N10's `runAbArm` / `armPromises` / `eventLogSession` wiring and
 parity's A/B and O5 additions; `src/config.ts` gains parity's `DESIGN_REGISTRY_DIR`).
-`git merge-base --is-ancestor manus-parity HEAD` exits 0 and a fresh `git merge manus-parity`
-on the committed tree reports "Already up to date."
 
-### Gates (all run from the worktree root on the committed merge `c42bfc9`)
+`src/agent/events.ts` conflicted again on the next parity tip (`839e7cc`, the fc-06 merge)
+for the same additive reason: ours added `context_selected` and parity added
+`video_studio_export` to the `AgentEvent` union. Resolved the same way (markers removed,
+both members kept). `src/graph/runGraph.ts` auto-merged at `fff7a7f` and was not hand-edited
+again; it already carried parity's `case "video_studio_export":`.
+
+### Gates (all run from the worktree root on the final merged tree `7b96c28`)
+
+`git grep -n "^<<<<<<<\|^=======$\|^>>>>>>>" -- src packages` is empty and `git diff --check`
+is clean.
 
 | Gate | Command | Result |
 | --- | --- | --- |
@@ -144,20 +152,25 @@ on the committed tree reports "Already up to date."
 | N5 selector suites | `node --import tsx --test src/agent/__tests__/contextSelector.test.ts src/agent/__tests__/contextSelectorLongHorizon.test.ts` | 30 tests, 30 pass, 0 fail |
 | runGraph suite (conflicted file) | `node --import tsx --test src/graph/__tests__/runGraph.test.ts` | 27 tests, 27 pass, 0 fail |
 | loop suites (auto-merged) | `node --import tsx --test src/agent/__tests__/loop*.test.ts` | 19 tests, 19 pass, 0 fail |
-
-`git grep -n "^<<<<<<<\|^=======$\|^>>>>>>>" -- src packages` is empty and `git diff --check`
-is clean.
+| selector + graph + loop combined | `node --import tsx --test src/agent/__tests__/contextSelector.test.ts src/agent/__tests__/contextSelectorLongHorizon.test.ts src/graph/__tests__/runGraph.test.ts src/agent/__tests__/loop.test.ts` | 57 tests, 57 pass, 0 fail |
+| N19 suites (brought in by the final merge) | `node --import tsx --test src/agent/__tests__/codingPrompt.test.ts src/agent/__tests__/orchestratorRecipe.test.ts src/tools/__tests__/promptwire.test.ts` | 37 tests, 37 pass, 0 fail |
 
 ### Final state
 
-`HEAD` is the merge `c42bfc9` (first parent `8d55bdc`, second parent `495ac5f`) plus this
-report. `git status --porcelain` is clean apart from this rollup file and untracked `tmp-*`
-scratch from earlier sessions.
+`HEAD` is the tip of two parity merges on top of the resolution. `src/graph/runGraph.ts`
+was resolved at merge `c42bfc9` (first parent `8d55bdc`, second parent `495ac5f`); parity
+then advanced twice more, so two further merges were needed: `fff7a7f` (parity tip `839e7cc`,
+resolving `src/agent/events.ts`) and `7b96c28` (parity tip `ca08d4c`, clean). After the last
+one, `git merge-base --is-ancestor manus-parity HEAD` exits 0 and a fresh
+`git merge manus-parity` reports "Already up to date."
+
+`git status --porcelain` is clean apart from this rollup file and untracked `tmp-*` scratch
+from earlier sessions.
 
 ### Files
 
 `.jdone` (this report prepended to the preserved rollup), plus the resolved
-`src/graph/runGraph.ts` in the merge commit.
+`src/graph/runGraph.ts` at `c42bfc9` and the resolved `src/agent/events.ts` at `fff7a7f`.
 
 Test command:
 
