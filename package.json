@@ -78,6 +78,7 @@
     "vendor:effectcraft": "node scripts/vendor/fetch-effectcraft.mjs",
     "vendor": "npm run vendor:filmcraft && npm run vendor:effectcraft",
     "bench:mem": "node --import tsx bench/memBench.ts",
+    "bench:j1": "node --import tsx bench/launchers.ts",
     "test:bench": "node --import tsx --test bench/__tests__/fakeModel.test.ts bench/__tests__/rssSampler.test.ts bench/__tests__/memBench.test.ts"
   },
   "dependencies": {
