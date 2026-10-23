@@ -38,26 +38,38 @@ parity's tip (`519f889`) carried it. The union driver was never in play here.
 3. Verified the merge is idempotent: a second `git merge manus-parity` -> `Already up to date.`
 4. Restored the tracked state after an earlier probe (`git rm --cached .jdone`) left it
    staged-deleted; the file is tracked again and the tree is clean.
+5. Parity advanced again mid-work (`519f889` -> `cd414a5`, "merge khamis1992/jcode-j8 (J8 via
+   loam-jcode-run) into manus-parity"). Re-merged it: `.jdone` auto-unioned again with **no
+   conflict**, which is the real proof the fix is durable across parity advances, not just this one.
+   What that advance brought: `src/tools/fileTouch.ts` (353) + `src/tools/__tests__/fileTouch.test.ts`
+   (228), `src/tools/readState.ts` (64) + test (42), `src/agent/loop.ts` (32) +
+   `src/agent/__tests__/fileTouchLoop.test.ts` (253), `src/agent/reminders.ts` (+30) + test (24),
+   plus small wiring in `orchestrator.ts`, `files.ts`, `multiEdit.ts`, `subagents.ts`, `mapReduce.ts`,
+   `wideResearch.ts`, `swarm/service.ts`, `subagent/*`, and
+   `packages/web/public/marketplace/THIRD_PARTY_NOTICES`.
 
-## Verification on the final tip (`658ff2e`)
+## Verification on the final tip (`4d538a1`)
 
 1. `npm run verify` -> exit 0 (typecheck, check:encoding, check:eval, check:orchestrator,
    check:recovery, check:modes)
 2. `npm run build:server` -> exit 0
-3. `node --import tsx --test "src/**/*.test.ts"` -> tests 2953, pass 2953, fail 0, skipped 0
+3. `node --import tsx --test "src/**/*.test.ts"` -> tests 2974, pass 2974, fail 0, skipped 0
 4. `(cd packages/web && npx tsc --noEmit)` -> exit 0
 5. `(cd packages/web && npx vitest run)` -> 93 files / 634 tests, all pass
 6. `(cd packages/web && npx next build)` -> exit 0
 
-Merge fidelity, verified mechanically against the real merge parents (`9e0be31` ours,
-`519f889` theirs):
+Merge fidelity, verified mechanically against the real merge parents:
 
-- `.jdone` auto-merged by the union driver: **0 lines under-present from either side**
+- First merge (`658ff2e`, parents `9e0be31` ours / `519f889` theirs): `.jdone` auto-merged by the
+  union driver with **0 lines under-present from either side**
   (ours 18237 distinct lines present, theirs 20629 present; 0 missing from either), 0 conflict
-  markers, no BOM, no U+FFFD, and the encoding gate passes on the merged file.
+  markers, no BOM, no U+FFFD.
+- Second merge (`4d538a1`, parents `c31dd51` ours / `cd414a5` theirs): again **0 lines missing from
+  either side**, 0 conflict markers, no BOM, no U+FFFD, and the encoding gate passes on the merged
+  file.
 - `.gitattributes` is byte-identical to parity's; `.jcode-done` is byte-identical to parity's.
 - `git merge-base --is-ancestor manus-parity HEAD` -> exit 0;
-  `git rev-list --left-right --count manus-parity...HEAD` -> `18  10`; working tree clean.
+  `git rev-list --left-right --count manus-parity...HEAD` -> `0  12`; working tree clean.
 - All N14 deliverables are tracked and intact: `packages/web/src/components/replay/ReplayViewer.tsx`
   + `__tests__/ReplayViewer.test.tsx`, `packages/web/src/components/share/ShareReplay.tsx` +
   `__tests__/ShareReplay.test.tsx`, `src/graph/export.ts`, `src/graph/__tests__/export.test.ts`.
