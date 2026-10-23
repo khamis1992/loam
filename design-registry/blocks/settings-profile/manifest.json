@@ -1,0 +1,18 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "settings-profile",
+  "name": "Profile Settings",
+  "description": "A settings form with a display-name field, an avatar picker and a save action with a sticky footer.",
+  "category": "settings",
+  "license": "MIT",
+  "source": "shadcn/ui blocks",
+  "tags": ["settings", "profile", "form"],
+  "intent": "Account settings screen for editing a user's public profile.",
+  "deps": ["react"],
+  "rtl": false,
+  "dir": "ltr",
+  "lang": "en",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"]
+}

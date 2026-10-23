@@ -85,13 +85,32 @@ export interface Schedule {
   lastError?: string;
   /** MF2: last run outcome; "retrying" means the single retry is pending. */
   lastStatus?: "ok" | "retrying" | "failed";
+  /** D14: how this automation fires. Defaults to "cron" when absent. */
+  trigger?: AutomationTrigger;
+  /** D14: HMAC secret for webhook triggers. Never exposed by list routes. */
+  webhookSecret?: string;
+  /** D14: GitHub events that fire this automation (e.g. "issues.opened"). */
+  githubEvents?: string[];
+  /** D14: project this automation belongs to. */
+  projectId?: string;
+  /** D14: optional playbook text; prompt is used when absent. */
+  playbook?: string;
 }
+
+/** D14: automation trigger kinds. */
+export type AutomationTrigger = "cron" | "webhook" | "github";
 
 /** MF2: timing spec for a schedule (cron / one-shot at / recurring interval). */
 export interface ScheduleSpec {
   cron?: string;
   runAt?: string;
   timezone?: string;
+  /** D14: event trigger configuration (webhook / github). */
+  trigger?: AutomationTrigger;
+  webhookSecret?: string;
+  githubEvents?: string[];
+  projectId?: string;
+  playbook?: string;
 }
 
 
@@ -152,13 +171,43 @@ export function updateProject(id: string, patch: {name?: string; instruction?: s
 export function deleteProjectR(id: string): boolean {
   return transaction(() => { const removed = remove("projects",id); for (const t of listTasks(id)) { t.projectId = null; put("tasks",t); } return removed; });
 }
+const AUTOMATION_TRIGGERS: readonly AutomationTrigger[] = ["cron", "webhook", "github"];
+export function isAutomationTrigger(value: unknown): value is AutomationTrigger {
+  return typeof value === "string" && (AUTOMATION_TRIGGERS as readonly string[]).includes(value);
+}
+/** D14: normalize a trigger config: validate the trigger, its secret/events and project. */
+function normalizeTriggerSpec(spec?: ScheduleSpec): Pick<Schedule, "trigger" | "webhookSecret" | "githubEvents" | "projectId" | "playbook"> {
+  const trigger = spec?.trigger;
+  if (trigger !== undefined && !isAutomationTrigger(trigger)) throw new Error(`unknown automation trigger: ${String(trigger)}`);
+  const webhookSecret = spec?.webhookSecret?.trim();
+  const githubEvents = spec?.githubEvents?.map((e) => String(e).trim()).filter(Boolean).slice(0, 50);
+  const projectId = spec?.projectId?.trim();
+  const playbook = spec?.playbook;
+  if (trigger === "webhook" && !webhookSecret) throw new Error("webhook trigger requires webhookSecret");
+  if (trigger === "github" && (!githubEvents || githubEvents.length === 0)) throw new Error("github trigger requires at least one githubEvents entry");
+  if (projectId && !getProject(projectId)) throw new Error(`project not found: ${projectId}`);
+  return {
+    ...(trigger ? { trigger } : {}),
+    ...(webhookSecret ? { webhookSecret } : {}),
+    ...(githubEvents?.length ? { githubEvents } : {}),
+    ...(projectId ? { projectId } : {}),
+    ...(typeof playbook === "string" && playbook.trim() ? { playbook: playbook.trim() } : {}),
+  };
+}
+
 export function addSchedule(prompt: string, intervalSeconds: number, agentId?: string, workMode?: string, kind?: "cron" | "file-watch" | "service-watch" | "url-watch", watchPath?: string, enabled = true, spec?: ScheduleSpec): Schedule {
   const interval = Math.max(30, Math.floor(intervalSeconds));
   // Reject invalid cron/timezone specs eagerly so a bad routine never persists.
   if (spec?.cron) parseCron(spec.cron);
   if (spec?.timezone?.trim() && !isValidTimezone(spec.timezone.trim())) throw new Error(`منطقة زمنية غير معروفة: ${spec.timezone}`);
+  const triggerFields = normalizeTriggerSpec(spec);
   const timing = { intervalSeconds: interval, ...(spec?.cron ? { cron: spec.cron } : {}), ...(spec?.runAt && !spec?.cron ? { runAt: spec.runAt } : {}), ...(spec?.timezone?.trim() ? { timezone: spec.timezone.trim() } : {}) };
-  const s: Schedule = {id:newId("sched"),prompt,intervalSeconds:interval,enabled,nextRunAt:initialNextRunAt(timing,new Date()),...(agentId?{agentId}:{}),...(workMode?{workMode}:{}),...(kind?{kind}:{}),...(watchPath?{watchPath}:{}),...(timing.cron?{cron:timing.cron}:{}),...(timing.runAt?{runAt:timing.runAt}:{}),...(timing.timezone?{timezone:timing.timezone}:{})}; put("schedules",s); return s;
+  const s: Schedule = {id:newId("sched"),prompt,intervalSeconds:interval,enabled,nextRunAt:initialNextRunAt(timing,new Date()),...(agentId?{agentId}:{}),...(workMode?{workMode}:{}),...(kind?{kind}:{}),...(watchPath?{watchPath}:{}),...(timing.cron?{cron:timing.cron}:{}),...(timing.runAt?{runAt:timing.runAt}:{}),...(timing.timezone?{timezone:timing.timezone}:{}),...triggerFields}; put("schedules",s); return s;
+}
+/** D14: list/create payload projection that never leaks a webhook secret. */
+export function publicSchedule(s: Schedule): Schedule {
+  const { webhookSecret: _webhookSecret, ...rest } = s;
+  return rest;
 }
 export function setScheduleEnabled(id: string, enabled: boolean): boolean {
   return transaction(() => { const s = get<Schedule>("schedules", id); if (!s) return false; s.enabled = enabled; if (enabled && s.nextRunAt && Date.parse(s.nextRunAt) < Date.now()) s.nextRunAt = new Date(Date.now() + s.intervalSeconds * 1000).toISOString(); put("schedules", s); return true; });

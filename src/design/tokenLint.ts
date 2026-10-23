@@ -30,6 +30,12 @@
  *
  * Written in Loam's own words; the thresholds mirror the UI Kit spec, not any
  * third-party prompt text.
+ *
+ * Provenance: this module is the V4 implementation of the design linter. It
+ * supersedes the V1 seed carried by manus-parity, which walked the same site
+ * directory and reported the same UI Kit rules in a coarser vocabulary. V4
+ * keeps the same {@link DesignLinter} contract while adding a source-string
+ * view and a finer rule set; callers must not depend on the concrete class.
  */
 
 import fs from "node:fs";
@@ -780,7 +786,9 @@ export interface DesignLinter {
 const UI_EXTENSIONS = new Set([".html", ".css", ".tsx", ".jsx", ".vue", ".svelte", ".ts", ".js", ".mjs", ".cjs"]);
 const SKIP_DIRS = new Set(["node_modules", "dist", "build", "out", ".next", ".nuxt", "coverage", ".turbo", ".git"]);
 
-/** Arabic and other RTL-script locales that require `dir="rtl"`. */
+
+
+
 export function isRtl(locale: string): boolean {
   const tag = (locale || "").trim().toLowerCase();
   return /^(ar|he|fa|ur|ps|sd|ug|yi)\b/.test(tag);

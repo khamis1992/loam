@@ -1,0 +1,18 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "stats-band",
+  "name": "Statistics Band",
+  "description": "A four-up row of key metrics with large numerals and small labels for landing-page credibility.",
+  "category": "stats",
+  "license": "MIT",
+  "source": "shadcn/ui blocks",
+  "tags": ["stats", "metrics", "landing"],
+  "intent": "Show a few hard numbers that establish scale and momentum.",
+  "deps": ["react"],
+  "rtl": false,
+  "dir": "ltr",
+  "lang": "en",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"]
+}

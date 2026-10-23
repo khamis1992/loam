@@ -1,0 +1,11 @@
+{
+  "id": "task-002",
+  "title": "Fix off-by-one error",
+  "category": "bug-fix",
+  "language": "typescript",
+  "prompt": "`lastN` in `src/window.ts` should return the final `n` items of a list, but it returns one item too many. Fix the slice so it returns exactly the last `n` items. Keep the function signature and the empty-list and `n <= 0` behaviour as they are.",
+  "testCommand": "node .eval/check.mjs",
+  "timeoutSec": 60,
+  "maxSteps": 12,
+  "tags": ["off-by-one", "array"]
+}

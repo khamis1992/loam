@@ -137,6 +137,9 @@ describe("workspace sheet IO", () => {
     workspaceDir = path.join(tmpDir, "tasks");
     fs.mkdirSync(workspaceDir, { recursive: true });
     process.env.MANUS_LOCAL_DATA_DIR = path.join(tmpDir, "data");
+    // `routes/workspaceSheet.js` calls `loadConfig()`, which mkdirs `workspace/`
+    // and `workspace/.screenshots/`; LOAM_ROOT keeps them inside the temp dir.
+    process.env.LOAM_ROOT = tmpDir;
     const sqlite = await import("../sqliteStore.js");
     closeDb = sqlite.closeDb;
     io = (await import("../workspace/sheetIO.js")) as unknown as SheetIOApi;
