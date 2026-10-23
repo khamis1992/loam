@@ -16,7 +16,9 @@ import type { RunTaskOptions } from "../server/http.js";
 import { log } from "../log.js";
 import { mapAgentEvent, shortUid, baseId, createEventMapperState, makeBrief, mapToolName } from "./events.js";
 import { getApproval, decideApproval } from "../server/approvals.js";
-import { setTaskApprovalAuto, createApprovalRule } from "../server/approvalRules.js";
+import { decidePlanApproval } from "../tools/planApprovalStore.js";
+import { setTaskApprovalAuto, setTaskPermissionMode, createApprovalRule } from "../server/approvalRules.js";
+import { isLocalPermissionMode } from "../policy/permissionModes.js";
 import { resolveLoamMode, modeEventInfo } from "../modes/detect.js";
 import { getLoamMode, normalizeModeId, LOAM_MODES } from "../modes/catalog.js";
 import { appendTelemetry } from "../telemetry/store.js";
@@ -28,6 +30,7 @@ import type {
   ChatMessageEvent,
   SubmitWorkspaceDirectoryAccess,
   ResolveLocalExecutionApproval,
+  ResolvePlanApproval,
   TaskMode,
   ChatEvent,
   ServerAttachment,
@@ -232,6 +235,23 @@ function stepToAgentEvent(step: StepRecord): AgentEvent | undefined {
   }
   if (type === "mode") {
     return { type: "mode", mode: String(data.mode ?? ""), label: String(data.label ?? ""), labelAr: String(data.labelAr ?? ""), reason: typeof data.reason === "string" ? data.reason : undefined };
+  }
+  if (type === "environment_issue") {
+    // Rebuild the agent's environment-issue report so a persisted task replays
+    // the same card instead of dropping it.
+    return { type: "environment_issue", message: String(data.message ?? ""), ...(typeof data.details === "string" ? { details: data.details } : {}) };
+  }
+  if (type === "plan_approval_required") {
+    return {
+      type: "plan_approval_required",
+      planApprovalId: String(data.planApprovalId ?? ""),
+      taskId: String(data.taskId ?? ""),
+      tool: String(data.tool ?? ""),
+      summary: String(data.summary ?? ""),
+      steps: Array.isArray(data.steps) ? data.steps.map(String) : [],
+      filesToEdit: Array.isArray(data.filesToEdit) ? data.filesToEdit.map(String) : [],
+      trivial: Boolean(data.trivial),
+    };
   }
   return undefined;
 }
@@ -443,6 +463,45 @@ export function createChatSocket(deps: SocketDeps): Server {
           return;
         }
 
+        if (m.type === "resolve_plan_approval") {
+          const resolve = m as ResolvePlanApproval;
+          const ts = Date.now();
+          // D4: wire the plan-approval card decision to the pending-plan store.
+          // "edit" stores the revised plan so the agent can re-present it.
+          const record = decidePlanApproval(resolve.requestId, {
+            decision: resolve.decision,
+            ...(resolve.decision === "edit" && resolve.plan
+              ? {
+                  plan: {
+                    ...(typeof resolve.plan.summary === "string" ? { summary: resolve.plan.summary } : {}),
+                    ...(Array.isArray(resolve.plan.steps) ? { steps: resolve.plan.steps } : {}),
+                    ...(Array.isArray(resolve.plan.files_to_edit) ? { files_to_edit: resolve.plan.files_to_edit } : {}),
+                    ...(typeof resolve.plan.trivial === "boolean" ? { trivial: resolve.plan.trivial } : {}),
+                  },
+                }
+              : {}),
+          });
+          const resolved: ServerEnvelope = {
+            id: baseId(),
+            type: "event",
+            sessionId: resolve.sessionId,
+            timestamp: ts,
+            event: {
+              id: baseId(),
+              type: "planApprovalResolved",
+              timestamp: ts,
+              requestId: resolve.requestId,
+              taskId: record?.taskId ?? "",
+              reviewer: "user",
+              result: resolve.decision,
+              ...(resolve.decision === "edit" && resolve.plan ? { plan: resolve.plan } : {}),
+            },
+          };
+          store.appendEvent(resolve.sessionId, resolved);
+          io.to(resolve.sessionId).emit("message", resolved);
+          return;
+        }
+
         if (m.type === "user_message") {
           const um = m as UserMessage;
           const text = um.contents.map((c) => c.value).join("").trim();
@@ -484,6 +543,13 @@ export function createChatSocket(deps: SocketDeps): Server {
           // every message, so a brand-new session lands on the right task too.
           if (typeof um.extData.approveForMe === "boolean") {
             setTaskApprovalAuto(taskId, um.extData.approveForMe);
+          }
+
+          // C13: a message can start (or continue) the task in the read-only
+          // `plan` permission mode; the run gate then refuses every mutating tool
+          // call until `plan_exit` is approved and switches the task to acceptEdits.
+          if (isLocalPermissionMode(um.extData.localPermissionMode)) {
+            setTaskPermissionMode(taskId, um.extData.localPermissionMode);
           }
 
           // Forward the UI locale to Loam. Because Loam has no per-request locale

@@ -7,6 +7,7 @@ const { spawn } = require("node:child_process");
 const updater = require("./updater.cjs");
 const inAppBrowser = require("./inAppBrowser.cjs");
 const mcpBridge = require("./mcp-bridge.cjs");
+const vendorProtocol = require("./vendorProtocol.cjs");
 const { IPC_INVOKE, IPC_EVENT_PREFIX, IPC_META, IPC_SYNC, NAMESPACES } = require("./ipc-constants.cjs");
 
 const ASAR_ROOT = path.resolve(__dirname, "..");
@@ -43,6 +44,14 @@ const MIME_TYPES = {
   ".ttf": "font/ttf", ".otf": "font/otf", ".eot": "application/vnd.ms-fontobject",
   ".wasm": "application/wasm",
 };
+
+// Non-failing vendored-dist check: when a dist is missing, print how to fetch it.
+// Never auto-downloads (see scripts/vendor/*); the app falls back gracefully.
+function warnIfVendorDistMissing(label, distDir, npmScript) {
+  if (fs.existsSync(path.join(distDir, "index.html"))) return;
+  console.warn(`[electron] ${label} dist not found at ${distDir}.`);
+  console.warn(`[electron] Fetch it with: npm run ${npmScript}`);
+}
 
 let serverChild = null;
 let win = null;
@@ -519,10 +528,16 @@ app.setAppUserModelId("app.loam.desktop");
 
 // Register the privileged custom protocol used to serve the Agent Studio UI,
 // plus the loamfilm:// protocol used to serve the vendored Loam Video wasm video
-// editor from electron/filmcraft/dist. Both must be registered before app ready.
+// editor from electron/filmcraft/dist, the loamcraft:// protocol used to serve
+// the vendored Loam Docs/Sheets/Slides/Photo/Design wasm apps from
+// electron/craft/<app>/dist, and the loameffect:// protocol used to serve the
+// vendored Loam Effects wasm engine from electron/effectcraft/dist.
+// All must be registered before app ready.
 protocol.registerSchemesAsPrivileged([
   { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
   { scheme: "loamfilm", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: "loamcraft", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: "loameffect", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
 ]);
 
 // Native folder picker for choosing the working repo/folder.
@@ -746,16 +761,72 @@ app.whenReady().then(async () => {
   // loamfilm:// protocol. Files come from electron/filmcraft/dist; overlay
   // files (e.g. bridge-relay.js) may live directly in electron/filmcraft/ so
   // they survive re-copying a fresh dist folder. .wasm must be served as
-  // application/wasm so the editor boots.
+  // application/wasm so the editor boots. File resolution and MIME mapping are
+  // shared with loamcraft:// via vendorProtocol.cjs.
   const FILMCRAFT_DIST = path.join(ROOT, "electron", "filmcraft", "dist");
   const FILMCRAFT_OVERLAY = path.join(ROOT, "electron", "filmcraft");
-  const FILMCRAFT_MIME = {
+  const FILMCRAFT_BASE_DIRS = [FILMCRAFT_DIST, FILMCRAFT_OVERLAY];
+  // Non-failing startup hints: a fresh clone has no vendored dists yet, so
+  // tell the developer how to fetch them instead of failing to boot.
+  warnIfVendorDistMissing("Loam Video", FILMCRAFT_DIST, "vendor:filmcraft");
+  warnIfVendorDistMissing("Loam Effects", path.join(ROOT, "electron", "effectcraft", "dist"), "vendor:effectcraft");
+  protocol.handle("loamfilm", async (request) => {
+    const url = new URL(request.url);
+    let pathname = decodeURIComponent(url.pathname);
+    if (pathname === "/" || pathname.endsWith("/")) pathname += "index.html";
+    const filePath = vendorProtocol.resolveVendorFile(pathname, FILMCRAFT_BASE_DIRS);
+    if (!filePath) return vendorProtocol.vendorNotFound();
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === ".html") {
+      // Inject the agent bridge relay into the vendored page so the host app
+      // can drive window.filmcraft over postMessage without editing the
+      // dist files themselves (fresh dist copies keep working).
+      let html = fs.readFileSync(filePath).toString("utf8");
+      if (!html.includes("bridge-relay.js")) {
+        html = /<\/head>/i.test(html)
+          ? html.replace(/<\/head>/i, '<script src="bridge-relay.js"></script></head>')
+          : html + '<script src="bridge-relay.js"></script>';
+      }
+      return new Response(html, { headers: { "Content-Type": vendorProtocol.vendorMime(filePath) } });
+    }
+    return vendorProtocol.vendorResponse(filePath);
+  });
+
+  // Serve the vendored Loam Docs/Sheets/Slides/Photo/Design wasm apps over the
+  // privileged loamcraft://<app>/<path> protocol. Only the five known app ids
+  // are served (404 otherwise); paths are confined to
+  // electron/craft/<app>/dist and traversal is rejected by the shared helper.
+  // The apps expose their own postMessage bridge (loam_bridge.rs) built into
+  // the wasm, so no overlay/relay file is needed here.
+  protocol.handle("loamcraft", async (request) => {
+    const filePath = vendorProtocol.resolveCraftFile(ROOT, request);
+    if (!filePath) return vendorProtocol.vendorNotFound();
+    // Never cache: a re-fetched dist must be picked up immediately.
+    return new Response(fs.readFileSync(filePath), {
+      headers: {
+        "Content-Type": vendorProtocol.vendorMime(filePath),
+        "Cache-Control": "no-store",
+      },
+    });
+  });
+
+  // Serve the vendored Loam Effects wasm engine over the privileged
+  // loameffect:// protocol. Files come from electron/effectcraft/dist; overlay
+  // files (e.g. bridge-relay.js) may live directly in electron/effectcraft/ so
+  // they survive re-copying a fresh dist folder. .wasm must be served as
+  // application/wasm so the engine boots. The page is served cross-origin
+  // isolated (COOP/COEP) so the render queue can use SharedArrayBuffer in Web
+  // Workers; every response also carries CORP so same-origin subresources
+  // satisfy COEP.
+  const EFFECTCRAFT_DIST = path.join(ROOT, "electron", "effectcraft", "dist");
+  const EFFECTCRAFT_OVERLAY = path.join(ROOT, "electron", "effectcraft");
+  const EFFECTCRAFT_MIME = {
     ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript",
     ".json": "application/json", ".png": "image/png", ".wasm": "application/wasm",
   };
-  function filmcraftFile(relPath) {
+  function effectcraftFile(relPath) {
     const cleaned = relPath.replace(/^\/+/, "");
-    for (const baseDir of [FILMCRAFT_DIST, FILMCRAFT_OVERLAY]) {
+    for (const baseDir of [EFFECTCRAFT_DIST, EFFECTCRAFT_OVERLAY]) {
       const baseRoot = path.resolve(baseDir) + path.sep;
       const filePath = path.normalize(path.join(baseDir, cleaned));
       if (!filePath.startsWith(baseRoot)) continue;
@@ -763,18 +834,24 @@ app.whenReady().then(async () => {
     }
     return null;
   }
-  protocol.handle("loamfilm", async (request) => {
+  protocol.handle("loameffect", async (request) => {
     const url = new URL(request.url);
     let pathname = decodeURIComponent(url.pathname);
     if (pathname === "/" || pathname.endsWith("/")) pathname += "index.html";
-    const filePath = filmcraftFile(pathname);
+    const filePath = effectcraftFile(pathname);
     if (!filePath) return new Response("Not Found", { status: 404 });
     const ext = path.extname(filePath).toLowerCase();
-    const mime = FILMCRAFT_MIME[ext] || "application/octet-stream";
+    const mime = EFFECTCRAFT_MIME[ext] || "application/octet-stream";
     const body = fs.readFileSync(filePath);
+    const headers = {
+      "Content-Type": mime,
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+      "Cross-Origin-Resource-Policy": "same-origin",
+    };
     if (ext === ".html") {
       // Inject the agent bridge relay into the vendored page so the host app
-      // can drive window.filmcraft over postMessage without editing the
+      // can drive window.effectcraft over postMessage without editing the
       // dist files themselves (fresh dist copies keep working).
       let html = body.toString("utf8");
       if (!html.includes("bridge-relay.js")) {
@@ -782,9 +859,9 @@ app.whenReady().then(async () => {
           ? html.replace(/<\/head>/i, '<script src="bridge-relay.js"></script></head>')
           : html + '<script src="bridge-relay.js"></script>';
       }
-      return new Response(html, { headers: { "Content-Type": mime } });
+      return new Response(html, { headers });
     }
-    return new Response(body, { headers: { "Content-Type": mime } });
+    return new Response(body, { headers });
   });
 
   // Health-check the Agent Studio backend; do not block the UI if it is down.

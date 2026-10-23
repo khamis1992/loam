@@ -1,0 +1,12 @@
+{
+  "id": "task-016",
+  "title": "Add Python test suite",
+  "category": "add-test",
+  "language": "python",
+  "prompt": "`src/geometry.py` exports `area` and `perimeter` for rectangles but has no tests. Create `test/test_geometry.py` using `unittest` that asserts the real behaviour of both, including the degenerate zero-size case, and exits non-zero on failure when run with `py -3 test/test_geometry.py`. Do not modify `src/geometry.py`.",
+  "testCommand": "py -3 .eval/check.py",
+  "timeoutSec": 90,
+  "maxSteps": 20,
+  "requireFiles": ["test/test_geometry.py"],
+  "tags": ["python", "testing", "mutation-check"]
+}

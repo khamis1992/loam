@@ -8,6 +8,7 @@ import type {
   ToolDetail,
   PlanUpdateEvent,
   NewPlanStepEvent,
+  TodoUpdateEvent,
   LiveStatusEvent,
   ModeEvent,
   UserStopEvent,
@@ -15,6 +16,9 @@ import type {
   ToolStatus,
   LocalExecutionApprovalRequested,
   FolderAccessRequestEvent,
+  EnvironmentIssueEvent,
+  PlanApprovalRequestedEvent,
+  CacheUsageEvent,
 } from "./types.js";
 
 const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -270,11 +274,22 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
         timestamp: ts,
         tasks: event.steps.map((s, i) => ({
           title: s.title,
-          status: i === 0 ? "doing" : "done",
+          status: s.status ?? (i === 0 ? "doing" : "done"),
           startedAt: ts,
         })),
       };
       out.push(planUpdate);
+      break;
+    }
+
+    case "todo": {
+      const todoUpdate: TodoUpdateEvent = {
+        id: baseId(),
+        type: "todoUpdate",
+        timestamp: ts,
+        todos: event.todos.map((todo) => ({ id: todo.id, content: todo.content, status: todo.status })),
+      };
+      out.push(todoUpdate);
       break;
     }
 
@@ -409,6 +424,34 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
       break;
     }
 
+    case "environment_issue": {
+      const issue: EnvironmentIssueEvent = {
+        id: baseId(),
+        type: "environmentIssue",
+        timestamp: ts,
+        message: event.message,
+        ...(event.details ? { details: event.details } : {}),
+      };
+      out.push(issue);
+      break;
+    }
+
+    case "plan_approval_required": {
+      const plan: PlanApprovalRequestedEvent = {
+        id: baseId(),
+        type: "planApprovalRequested",
+        timestamp: ts,
+        requestId: event.planApprovalId,
+        taskId: event.taskId,
+        summary: event.summary,
+        steps: event.steps,
+        filesToEdit: event.filesToEdit,
+        trivial: event.trivial,
+      };
+      out.push(plan);
+      break;
+    }
+
     case "mode": {
       const modeEv: ModeEvent = {
         id: baseId(),
@@ -423,15 +466,34 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
       break;
     }
 
+    case "cache_usage": {
+      // Prompt-cache accounting is a persistent chat row (never replayed as a
+      // miss when telemetry is absent), so it stays in the session history.
+      const cacheUsage: CacheUsageEvent = {
+        id: baseId(),
+        type: "cache_usage",
+        timestamp: ts,
+        provider: event.provider,
+        model: event.model,
+        promptTokens: event.promptTokens,
+        cachedTokens: event.cachedTokens,
+        ...(event.miss ? { miss: { ...event.miss } } : {}),
+      };
+      out.push(cacheUsage);
+      break;
+    }
+
     // State-only Loam events that do not have a chat-row rendering equivalent.
     case "task":
     case "step":
     case "workmode":
+    case "phase":
     case "critique":
     case "revise":
     case "replan":
     case "verify":
     case "verification_progress":
+    case "permission_mode_changed":
       break;
   }
 

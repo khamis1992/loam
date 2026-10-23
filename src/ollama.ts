@@ -8,6 +8,20 @@ export class IncompleteModelStream extends Error {
   }
 }
 
+/** HTTP failure from a provider. Carries the status code and response headers so
+ *  the failover layer can honor Retry-After / rate-limit reset headers instead of
+ *  guessing a backoff. */
+export class ProviderHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly headers?: Headers,
+  ) {
+    super(message);
+    this.name = "ProviderHttpError";
+  }
+}
+
 export interface OllamaFunctionTool {
   type: "function";
   function: { name: string; description: string; parameters: Record<string, unknown> };
@@ -42,7 +56,15 @@ export interface ChatResult {
   toolCalls: OllamaToolCall[];
   model: string;
   doneReason?: string;
-  usage: { promptTokens: number; completionTokens: number; durationMs: number };
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    durationMs: number;
+    /** Tokens served from the provider's prompt cache; undefined when not reported. */
+    cachedTokens?: number;
+    /** Tokens written into the cache on this request, when reported. */
+    cacheWriteTokens?: number;
+  };
 }
 
 interface OllamaStreamChunk {
@@ -77,21 +99,33 @@ export interface CloudModelConfig {
   apiKey?: string;
 }
 
+interface OpenAIUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number };
+  /** Azure-compatible nested shape. */
+  cached_tokens?: { tokens?: number };
+}
+
 interface OpenAIStreamChunk {
   model?: string;
   choices?: Array<{
     delta?: { content?: string | null; tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }> };
     finish_reason?: string | null;
   }>;
-  usage?: { prompt_tokens?: number; completion_tokens?: number };
+  usage?: OpenAIUsage;
   error?: { message?: string };
 }
 
 export class OllamaClient {
-  constructor(private readonly baseUrl: string, private readonly cloud?: CloudModelConfig) {}
+  constructor(private readonly _baseUrl: string, private readonly cloud?: CloudModelConfig) {}
 
-  private url(p: string): string {
-    return `${this.baseUrl.replace(/\/+$/, "")}${p}`;
+  get baseUrl(): string {
+    return this._baseUrl;
+  }
+
+  url(p: string): string {
+    return `${this._baseUrl.replace(/\/+$/, "")}${p}`;
   }
 
   async listModels(): Promise<string[]> {
@@ -100,22 +134,22 @@ export class OllamaClient {
     return [...local, ...cloud.filter((c) => !local.includes(c))];
   }
 
-  private async listLocalModels(): Promise<string[]> {
+  async listLocalModels(): Promise<string[]> {
     const res = await fetch(this.url("/api/tags"));
-    if (!res.ok) throw new Error(`ollama /api/tags HTTP ${res.status}`);
+    if (!res.ok) throw new ProviderHttpError(`ollama /api/tags HTTP ${res.status}`, res.status, res.headers);
     const data = (await res.json()) as { models?: Array<{ name?: string }> };
     return (data.models ?? []).map((m) => m.name ?? "").filter((n) => n.length > 0);
   }
 
-  private async listCloudModels(): Promise<string[]> {
+  async listCloudModels(): Promise<string[]> {
     if (!this.hasCloudKey()) return [];
     const res = await fetch(`${this.cloud!.baseUrl.replace(/\/+$/, "")}/models`, { headers: this.cloudHeaders(), signal: AbortSignal.timeout(15_000) });
-    if (!res.ok) throw new Error(`cloud /models HTTP ${res.status}`);
+    if (!res.ok) throw new ProviderHttpError(`cloud /models HTTP ${res.status}`, res.status, res.headers);
     const data = (await res.json()) as { data?: Array<{ id?: string }> };
     return (data.data ?? []).map((m) => (m.id ?? "").trim()).filter((id) => id.length > 0).map((id) => `${id}:cloud`);
   }
 
-  private cloudHeaders(): Record<string, string> {
+  cloudHeaders(): Record<string, string> {
     const headers: Record<string, string> = { "content-type": "application/json" };
     const key = typeof this.cloud?.apiKey === "string" ? this.cloud.apiKey.trim() : "";
     if (key.length > 0) {
@@ -127,7 +161,7 @@ export class OllamaClient {
     return headers;
   }
 
-  private hasCloudKey(): boolean {
+  hasCloudKey(): boolean {
     return typeof this.cloud?.apiKey === "string" && this.cloud.apiKey.trim().length > 0;
   }
 
@@ -139,7 +173,7 @@ export class OllamaClient {
   }
 
   /** OpenAI-compatible chat completions (OpenRouter and friends) with Ollama-style streaming and tool calls. */
-  private async chatCloud(opts: ChatOptions): Promise<ChatResult> {
+  async chatCloud(opts: ChatOptions): Promise<ChatResult> {
     if (!this.hasCloudKey()) {
       throw new Error(
         "No cloud API key configured. Add cloudModel.apiKey to config.json to use cloud models."
@@ -198,7 +232,7 @@ export class OllamaClient {
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`cloud /chat/completions HTTP ${res.status}${text ? `: ${text.slice(0, 800)}` : ""}`);
+      throw new ProviderHttpError(`cloud /chat/completions HTTP ${res.status}${text ? `: ${text.slice(0, 800)}` : ""}`, res.status, res.headers);
     }
     if (!res.body) throw new Error("cloud provider returned empty body");
 
@@ -210,6 +244,7 @@ export class OllamaClient {
     let doneReason: string | undefined;
     let promptTokens = 0;
     let completionTokens = 0;
+    let cachedTokens: number | undefined;
     const started = Date.now();
     let sawFinish = false;
 
@@ -243,6 +278,7 @@ export class OllamaClient {
       if (parsed.usage) {
         promptTokens = parsed.usage.prompt_tokens ?? promptTokens;
         completionTokens = parsed.usage.completion_tokens ?? completionTokens;
+        cachedTokens = parsed.usage.prompt_tokens_details?.cached_tokens ?? parsed.usage.cached_tokens?.tokens ?? cachedTokens;
       }
     };
     for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
@@ -259,10 +295,16 @@ export class OllamaClient {
     if (!sawFinish) throw new IncompleteModelStream("cloud");
     const toolCalls = [...toolAcc.entries()].sort((a, b) => a[0] - b[0]).map(([, call]) => ({ function: { name: call.name, arguments: normalizeArgs(call.args) } }));
     log.debug(`cloud chat model=${model} tools=${toolCalls.length} chars=${content.length}`);
-    return { content, toolCalls, model, doneReason, usage: { promptTokens, completionTokens, durationMs: Date.now() - started } };
+    return {
+      content,
+      toolCalls,
+      model,
+      doneReason,
+      usage: { promptTokens, completionTokens, durationMs: Date.now() - started, ...(cachedTokens !== undefined ? { cachedTokens } : {}) },
+    };
   }
 
-  private async chatLocal(opts: ChatOptions): Promise<ChatResult> {
+  async chatLocal(opts: ChatOptions): Promise<ChatResult> {
     const body = {
       model: opts.model,
       stream: true,
@@ -292,7 +334,7 @@ export class OllamaClient {
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`ollama /api/chat HTTP ${res.status}${text ? `: ${text.slice(0, 800)}` : ""}`);
+      throw new ProviderHttpError(`ollama /api/chat HTTP ${res.status}${text ? `: ${text.slice(0, 800)}` : ""}`, res.status, res.headers);
     }
     if (!res.body) throw new Error("ollama returned empty body");
 

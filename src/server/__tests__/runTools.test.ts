@@ -40,7 +40,9 @@ let createDeepResearchTools: () => Tool[];
 let createBoardTools: () => Tool[];
 let createGroupTools: () => Tool[];
 let createDesignStudioTools: () => Tool[];
+let createDesignAssetsTools: () => Tool[];
 let createLoamServiceTools: () => Tool[];
+let createTodoTools: () => Tool[];
 
 function dummy(name: string): Tool {
   return {
@@ -87,8 +89,12 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     const agentSpawnToolsMod = await import("../../tools/agentSpawnTools.js");
     const deepResearchToolsMod = await import("../../tools/deepResearch.js");
     const designStudioToolsMod = await import("../../tools/designStudio.js");
+    const designAssetsToolsMod = await import("../../tools/designAssets.js");
+    createDesignAssetsTools = designAssetsToolsMod.createDesignAssetsTools;
     const loamServicesMod = await import("../../tools/loamServices.js");
     createLoamServiceTools = loamServicesMod.createLoamServiceTools;
+    const todoToolsMod = await import("../../tools/todoTools.js");
+    createTodoTools = todoToolsMod.createTodoTools;
     const gatewayMod = await import("../companionGateway.js");
     const catalogMod = await import("../../modes/catalog.js");
     const runToolsMod = await import("../runTools.js");
@@ -103,6 +109,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     createBoardTools = boardToolsMod.createBoardTools;
     createGroupTools = (await import("../../tools/groupTools.js")).createGroupTools;
     const { createBackendScaffoldTools } = await import("../../tools/backendScaffold.js");
+    const { createWebScaffoldTools } = await import("../../tools/webScaffold.js");
     createDesignStudioTools = designStudioToolsMod.createDesignStudioTools;
     const { ToolRegistry: Registry } = registryMod;
     registry = new Registry();
@@ -110,20 +117,39 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     // like buildRuntime + index.ts do at startup.
     for (const name of ["file_read", "file_write", "shell_run", "web_fetch", "loam_mobile", "browser_operator", "wide_research"]) registry.register(dummy(name));
     registry.registerAll(createScratchpadTools());
+    registry.registerAll((await import("../../tools/environmentIssueTools.js")).createEnvironmentIssueTools());
     registry.registerAll(createInstructionHistoryTools());
     registry.registerAll(createAgentSpawnTools());
     registry.registerAll(createDeepResearchTools());
     registry.registerAll(createBoardTools());
     registry.registerAll(createGroupTools());
     registry.registerAll(createBackendScaffoldTools());
+    registry.registerAll(createWebScaffoldTools());
     registry.registerAll(createDesignStudioTools());
+    // D9: playbook_create_from_session ships as an always-on tool.
+    const { createPlaybookTools } = await import("../../tools/playbookTools.js");
+    const ollamaStub = { chat: async () => ({ content: "" }) } as unknown as Parameters<typeof createPlaybookTools>[0]["ollama"];
+    registry.registerAll(createPlaybookTools({ ollama: ollamaStub }));
+    registry.registerAll(createDesignAssetsTools());
+    registry.registerAll(createTodoTools());
     // MF7: watch_url ships as an always-on tool, so it must be registered too.
     registry.registerAll(createLoamServiceTools().filter((tool) => tool.name === "watch_url"));
     const videoEditToolsMod = await import("../../tools/videoEditAgent.js");
     registry.registerAll(videoEditToolsMod.createVideoEditTools());
+    const videoStudioToolsMod = await import("../../tools/videoStudio.js");
+    registry.registerAll(videoStudioToolsMod.createVideoStudioTools());
     const deployToolsMod = await import("../../tools/deploy.js");
     registry.registerAll(deployToolsMod.createDeployTools({ workspace: tmpDir }));
     registry.register(dummy("loam_design")); // W3 build-phase design tool (always-on grant)
+    registry.registerAll((await import("../../tools/designLint.js")).createDesignLintTools()); // V4 token linter
+    registry.register(dummy("design_brief")); // V7 LLM-authored design brief (always-on grant)
+    registry.register(dummy("design_autofix")); // V5 deterministic design repair pass (always-on grant)
+    // V11: the vision rubric ships as an always-on tool, so register the real one.
+    const { createDesignCritiqueTools } = await import("../../tools/designCritique.js");
+    registry.registerAll(createDesignCritiqueTools({ status: { running: false, url: null, root: null, requests: 0, startedAt: null } } as never, { ollama: ollamaStub }));
+    // D13: resumable workflow tools ship as always-on, so register the real set.
+    const workflowToolsMod = await import("../../tools/workflow.js");
+    registry.registerAll(workflowToolsMod.createWorkflowTools({ ollama: {} as never, registry }));
   });
 
   after(() => {
@@ -157,6 +183,13 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     for (const name of ["file_read", "file_write", "shell_run"]) {
       assert.ok(tools.names().includes(name), `build-mode tool ${name} must survive the merge`);
     }
+  });
+
+  it("a build-mode agent task exposes todo_write to the model", () => {
+    const { tools } = buildRunToolSet();
+    assert.ok(tools.names().includes("todo_write"), "effective tool list must include todo_write");
+    const modelToolNames = tools.toOllama().map((t) => t.function.name);
+    assert.ok(modelToolNames.includes("todo_write"), "the model's function list must include todo_write");
   });
 
   it("a build-mode agent task exposes browser_operator to the model", () => {
@@ -219,6 +252,17 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     for (const workMode of WORK_MODES) {
       assert.ok(buildRunToolSet("build", workMode.id).tools.names().includes("propose_instructions_update"), `work mode ${workMode.id} must expose propose_instructions_update`);
     }
+  });
+
+  it("report_environment_issue is available in every Loam mode and work mode", () => {
+    for (const mode of LOAM_MODES) {
+      assert.ok(buildRunToolSet(mode.id).tools.names().includes("report_environment_issue"), `mode ${mode.id} must expose report_environment_issue`);
+    }
+    for (const workMode of WORK_MODES) {
+      assert.ok(buildRunToolSet("build", workMode.id).tools.names().includes("report_environment_issue"), `work mode ${workMode.id} must expose report_environment_issue`);
+    }
+    const modelToolNames = buildRunToolSet().tools.toOllama().map((t) => t.function.name);
+    assert.ok(modelToolNames.includes("report_environment_issue"), "the model's function list must include report_environment_issue");
   });
 
   it("a build-mode agent task exposes the wide-research tool to the model", () => {

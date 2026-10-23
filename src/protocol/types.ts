@@ -1,5 +1,6 @@
 /** Manus-style socket message types (§7.2). Mirror of packages/shared/src/socket.ts
  *  until A2 lands the canonical shared package. */
+import type { LocalPermissionMode } from "../policy/permissionModes.js";
 
 export type TaskMode = "standard" | "lite" | "max" | "discuss" | "cascade";
 export type AgentStatus = "running" | "waiting" | "stopped" | "error";
@@ -61,7 +62,7 @@ export interface UserMessage extends Base {
     workMode?: string;
     executionTarget?: { kind: "sandbox" | "desktop" };
     desktopBinding?: { deviceId: string; folderPath: string };
-    localPermissionMode?: "ask_for_approval" | "approve_for_me" | "full_access";
+    localPermissionMode?: LocalPermissionMode;
     /** MF4: per-task "Approve for me" toggle carried with each message. */
     approveForMe?: boolean;
     worktreeEnabled?: boolean;
@@ -92,7 +93,24 @@ export interface ResolveLocalExecutionApproval extends Base {
   targetActionEventId?: string;
 }
 
-export type ClientMessage = JoinSession | LeaveSession | UserMessage | StopSession | SubmitWorkspaceDirectoryAccess | ResolveLocalExecutionApproval;
+/** D4: user decision for a pending `suggest_plan` plan-approval card. */
+export interface ResolvePlanApproval extends Base {
+  type: "resolve_plan_approval";
+  sessionId: string;
+  requestId: string;
+  decision: "approve" | "reject" | "edit";
+  /** Revised plan when `decision` is "edit". */
+  plan?: { summary?: string; steps?: string[]; files_to_edit?: string[]; trivial?: boolean };
+}
+
+export type ClientMessage =
+  | JoinSession
+  | LeaveSession
+  | UserMessage
+  | StopSession
+  | SubmitWorkspaceDirectoryAccess
+  | ResolveLocalExecutionApproval
+  | ResolvePlanApproval;
 
 export interface ServerEnvelope<E extends ChatEvent = ChatEvent> {
   id: string;
@@ -156,6 +174,11 @@ export interface NewPlanStepEvent extends ChatEventBase {
   type: "newPlanStep";
   stepId: string;
   title: string;
+}
+
+export interface TodoUpdateEvent extends ChatEventBase {
+  type: "todoUpdate";
+  todos: { id: string; content: string; status: "pending" | "in_progress" | "completed" | (string & {}) }[];
 }
 
 export interface LiveStatusEvent extends ChatEventBase {
@@ -259,6 +282,24 @@ export interface ExplanationEvent extends ChatEventBase {
   content: string;
 }
 
+/** Prompt-cache (KV cache) accounting for one completed provider request. */
+export interface CacheUsageEvent extends ChatEventBase {
+  type: "cache_usage";
+  provider: string;
+  model: string;
+  promptTokens: number;
+  cachedTokens: number;
+  /** Present only when the provider reported a real miss/refresh. */
+  miss?: {
+    reason: string;
+    expectedTokens: number;
+    readTokens: number;
+    missedTokens: number;
+    documentedCause?: string;
+    message: string;
+  };
+}
+
 export interface FolderAccessRequestEvent extends ChatEventBase {
   type: "folderAccessRequest";
   requestId: string;
@@ -307,6 +348,34 @@ export interface LocalExecutionApprovalResolved extends ChatEventBase {
   result: "approve" | "deny";
 }
 
+/** D17: environment-issue report surfaced as an informational card. */
+export interface EnvironmentIssueEvent extends ChatEventBase {
+  type: "environmentIssue";
+  message: string;
+  details?: string;
+}
+
+/** D4: a `suggest_plan` plan awaiting the user's decision (plan-approval card). */
+export interface PlanApprovalRequestedEvent extends ChatEventBase {
+  type: "planApprovalRequested";
+  requestId: string;
+  taskId: string;
+  summary: string;
+  steps: string[];
+  filesToEdit: string[];
+  trivial: boolean;
+}
+
+/** D4: the user decided a pending plan-approval card. */
+export interface PlanApprovalResolvedEvent extends ChatEventBase {
+  type: "planApprovalResolved";
+  requestId: string;
+  taskId: string;
+  reviewer: "user" | "auto";
+  result: "approve" | "reject" | "edit";
+  plan?: { summary?: string; steps?: string[]; files_to_edit?: string[]; trivial?: boolean };
+}
+
 export interface DeviceAttachmentUploadNotify extends ChatEventBase {
   type: "deviceAttachmentUploadNotify";
   targetEventId: string;
@@ -324,6 +393,7 @@ export type ChatEvent =
   | QueueStatusChangeEvent
   | PlanUpdateEvent
   | NewPlanStepEvent
+  | TodoUpdateEvent
   | LiveStatusEvent
   | ModeEvent
   | AttachmentEvent
@@ -335,11 +405,15 @@ export type ChatEvent =
   | LocalPermissionModeChangeResultEvent
   | EventsNotifyEventsAfterEvent
   | ExplanationEvent
+  | CacheUsageEvent
   | FolderAccessRequestEvent
   | WorkspaceDirectoryAccessRequest
   | WorkspaceDirectoryAccessResult
   | LocalExecutionApprovalRequested
+  | PlanApprovalRequestedEvent
+  | PlanApprovalResolvedEvent
   | LocalExecutionApprovalResolved
+  | EnvironmentIssueEvent
   | DeviceAttachmentUploadNotify;
 
 export type ServerMessage = ServerEnvelope | { type: "session_write_access"; sessionId: string; writable: boolean };

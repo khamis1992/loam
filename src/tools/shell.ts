@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { checkCommand, headOutput, tailOutput } from "../policy/commands.js";
 import { resolveWrite } from "../policy/paths.js";
 import { currentCancelEpoch, isCancelled } from "../server/runControl.js";
+import { planVaultEnv, redactVaultValues, vaultScope } from "./vaultTools.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { num, str } from "./registry.js";
 
@@ -14,6 +15,19 @@ interface ExecOutcome {
 }
 
 const MAX_CAPTURE = 200_000;
+
+/** Read an optional object of string values from tool args (null when absent/invalid). */
+function strObj(args: Record<string, unknown>, key: string): Record<string, string> | null {
+  const v = args[key];
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "object" || Array.isArray(v)) return null;
+  const out: Record<string, string> = {};
+  for (const [k, val] of Object.entries(v)) {
+    if (typeof val !== "string") return null;
+    out[k] = val;
+  }
+  return out;
+}
 
 /** Kill the shell and its children (taskkill /T /F) — Windows keeps grandchildren alive otherwise. */
 function killTree(child: ChildProcessWithoutNullStreams): void {
@@ -36,9 +50,9 @@ function killTree(child: ChildProcessWithoutNullStreams): void {
   }
 }
 
-function runOnce(command: string, cwd: string, timeoutMs: number, signal?: AbortSignal, taskId?: string): Promise<ExecOutcome> {
+function runOnce(command: string, cwd: string, timeoutMs: number, signal?: AbortSignal, taskId?: string, env?: NodeJS.ProcessEnv): Promise<ExecOutcome> {
   return new Promise((resolve) => {
-    const child = spawn(command, { cwd, shell: true, windowsHide: true, env: { ...process.env } });
+    const child = spawn(command, { cwd, shell: true, windowsHide: true, env: env ?? { ...process.env } });
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -130,13 +144,18 @@ export const shellTools: Tool[] = [
   {
     name: "shell_run",
     description:
-      "Run a shell command once in the workspace and return exit code + stdout/stderr. Destructive commands are blocked by policy.",
+      "Run a single shell command in the workspace and get back its exit code plus captured stdout and stderr. Destructive commands are blocked by policy before execution, and {{vault:NAME}} references are resolved into the child environment and redacted from the returned output. Use cwd to run in a subdirectory (defaults to the workspace root), timeoutSeconds to bound it (the policy maximum is enforced), and env for extra variables. Independent read-only commands may be issued in parallel; keep mutating commands serial. When NOT to use: use shell_start/shell_write/shell_read for an interactive session, file_read/file_search for in-workspace files, and code_symbols instead of a shell grep; never pipe file contents through shell cat/type when file_read fits.",
     parameters: {
       type: "object",
       properties: {
         command: { type: "string", description: "Command line to execute." },
         cwd: { type: "string", description: "Working directory (inside workspace). Defaults to workspace root." },
         timeoutSeconds: { type: "number", description: "Timeout in seconds (policy max enforced)." },
+        env: {
+          type: "object",
+          description: "Extra environment variables for the child process. Values may contain {{vault:NAME}} references.",
+          additionalProperties: { type: "string" },
+        },
       },
       required: ["command"],
     },
@@ -145,22 +164,53 @@ export const shellTools: Tool[] = [
       if (!command) return { ok: false, content: "command is required" };
       const check = checkCommand(ctx.cfg, command);
       if (!check.ok) return { ok: false, content: `blocked by policy: ${check.reason ?? "denied"}` };
+      const rawEnv = strObj(args, "env");
+      if (rawEnv === null && args.env !== undefined && args.env !== null) {
+        return { ok: false, content: "env must be an object of string values" };
+      }
       const cwd = resolveWrite(ctx.workspace, str(args, "cwd") || undefined);
       const timeoutMs = Math.min(num(args, "timeoutSeconds", ctx.cfg.policy.maxCommandSeconds), 900) * 1000;
-      const res = await runOnce(command, cwd, timeoutMs, ctx.signal, ctx.taskId);
+
+      // Vault refs: resolve ONLY into the child environment (never inline into
+      // the command), then redact the values from the returned output.
+      let execCommand = command;
+      let injected: Record<string, string> = {};
+      let childEnv: Record<string, string> = rawEnv ?? {};
+      let secrets: string[] = [];
+      const envValues = rawEnv ? Object.values(rawEnv) : [];
+      if (command.includes("{{vault:") || envValues.some((v) => v.includes("{{vault:"))) {
+        try {
+          const plan = planVaultEnv([command, ...envValues], vaultScope(ctx));
+          injected = plan.env;
+          secrets = plan.secrets;
+          execCommand = plan.rewrite(command);
+          if (rawEnv) {
+            const rewritten: Record<string, string> = {};
+            for (const [k, v] of Object.entries(rawEnv)) rewritten[k] = plan.inline(v);
+            childEnv = rewritten;
+          }
+        } catch (err) {
+          return { ok: false, content: `vault: ${err instanceof Error ? err.message : String(err)}` };
+        }
+      }
+
+      const res = await runOnce(execCommand, cwd, timeoutMs, ctx.signal, ctx.taskId, { ...process.env, ...injected, ...childEnv });
+      const stdout = redactVaultValues(res.stdout, secrets);
+      const stderr = redactVaultValues(res.stderr, secrets);
       const parts = [
         `exit=${res.code ?? "null"}${res.timedOut ? " (timeout, killed)" : ""}`,
         `cwd=${cwd}`,
       ];
-      if (res.stdout.trim()) parts.push(`stdout:\n${tailOutput(res.stdout, 6000)}`);
-      if (res.stderr.trim()) parts.push(`stderr:\n${tailOutput(res.stderr, 4000)}`);
-      if (!res.stdout.trim() && !res.stderr.trim()) parts.push("(no output)");
+      if (stdout.trim()) parts.push(`stdout:\n${tailOutput(stdout, 6000)}`);
+      if (stderr.trim()) parts.push(`stderr:\n${tailOutput(stderr, 4000)}`);
+      if (!stdout.trim() && !stderr.trim()) parts.push("(no output)");
       return { ok: res.code === 0, content: parts.join("\n") };
     },
   },
   {
     name: "shell_start",
-    description: "Start a persistent interactive shell session (powershell or cmd) in a workspace directory. Returns a session id.",
+    description:
+      "Start a persistent interactive shell session (powershell or cmd) in a workspace directory and get a session id back. Use it when you need a stateful shell — a long-running server, a REPL, or a command whose environment must survive across steps. Drive it with shell_write to send input and shell_read to collect output, and end it with shell_kill. Independent sessions may run concurrently. When NOT to use: use shell_run for a one-shot command that finishes on its own, and always kill a session when the task ends rather than leaving it running.",
     parameters: {
       type: "object",
       properties: {
@@ -191,7 +241,8 @@ export const shellTools: Tool[] = [
   },
   {
     name: "shell_write",
-    description: "Send a line of input to a persistent shell session (a newline is appended).",
+    description:
+      "Send a line of input to a persistent shell session started with shell_start; a newline is appended automatically. The input is still checked against policy before it is written. Use it to drive an interactive program step by step, then follow with shell_read to see what happened. When NOT to use: use shell_run for a self-contained command, and shell_start to create the session before writing to it.",
     parameters: {
       type: "object",
       properties: {
@@ -213,7 +264,8 @@ export const shellTools: Tool[] = [
   },
   {
     name: "shell_read",
-    description: "Read any new output from a persistent shell session since the last read (waits up to waitMs).",
+    description:
+      "Read any output a persistent shell session has produced since your last read, waiting up to waitMs (default 700, maximum 10000) for new data. Use it after shell_write to collect results, or on its own to poll a long-running process. The buffer is consumed, so each call returns only fresh output while the session keeps its own history. When NOT to use: use shell_run for one-shot output, shell_list to enumerate sessions, and shell_kill to terminate one.",
     parameters: {
       type: "object",
       properties: {
@@ -239,7 +291,8 @@ export const shellTools: Tool[] = [
   },
   {
     name: "shell_list",
-    description: "List active persistent shell sessions.",
+    description:
+      "List the active persistent shell sessions with their id, shell and working directory. Use it to recover a session id you have lost track of, or to check for sessions that should be cleaned up before the task ends. It is a cheap read and may be batched with other reads. When NOT to use: use shell_read/shell_write to interact with a known session, shell_start to create one, and shell_kill to end one.",
     parameters: { type: "object", properties: {} },
     async run(): Promise<ToolResult> {
       if (sessions.size === 0) return { ok: true, content: "(no active sessions)" };
@@ -248,7 +301,8 @@ export const shellTools: Tool[] = [
   },
   {
     name: "shell_kill",
-    description: "Terminate a persistent shell session.",
+    description:
+      "Terminate a persistent shell session and free its resources. Use it when a session is no longer needed or has stalled, and always when a task finishes with a session still open. It is a mutating effect. When NOT to use: use shell_read to drain the final output first if you need it, and shell_list to confirm the id before killing.",
     parameters: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
     async run(args: Record<string, unknown>): Promise<ToolResult> {
       const id = str(args, "id");

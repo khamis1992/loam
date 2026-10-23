@@ -7,7 +7,19 @@
  * wrote Python instead of using loam_studio/office_export.
  */
 import assert from "node:assert";
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
+
+// Must come before any import that evaluates `config.js`: `buildSystemPrompt`
+// reads user personalization from the SQLite store under DATA_DIR, so without
+// this redirect the prompt assertions create the repository's real
+// `data/manus.db`.
+import { cleanupIsolatedDataDir } from "../../test/isolation.js";
+import { closeDb } from "../../server/sqliteStore.js";
+
+after(() => {
+  closeDb();
+  cleanupIsolatedDataDir();
+});
 
 import { LOAM_MODES, getLoamMode, getLoamModesUi } from "../catalog.js";
 import { ToolRegistry } from "../../tools/registry.js";
@@ -107,7 +119,13 @@ describe("office tool prompt directive", () => {
   it("stays out of the prompt when the mode has no office tools", () => {
     const mode = getLoamMode("research");
     const prompt = buildSystemPrompt(cfg, [], mode.tools);
-    assert.ok(!prompt.includes("office_export"));
+    // The master prompt's generic tool catalogue names office_export, so the
+    // mode-specific office *directive* and the advertised tool list are what
+    // must stay out of a mode that cannot use office tools.
     assert.ok(!/Do not generate office files through shell or Python/i.test(prompt));
+    const available = prompt.split("\n").find((line) => line.startsWith("Available tools"));
+    assert.ok(available, "expected an Available tools line");
+    assert.ok(!available!.includes("office_export"), "research mode advertises office_export");
+    assert.ok(!available!.includes("loam_studio"), "research mode advertises loam_studio");
   });
 });

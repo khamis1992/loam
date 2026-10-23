@@ -3,6 +3,8 @@ import type { Emit } from "../agent/events.js";
 import type { OllamaFunctionTool } from "../ollama.js";
 import { runLifecycleHooks } from "../policy/hooks.js";
 import { getLoamMode } from "../modes/catalog.js";
+import { getToolProfile } from "../agent/taskToolScope.js";
+import type { ReadState } from "./readState.js";
 
 export interface ToolContext {
   cfg: Config;
@@ -11,10 +13,18 @@ export interface ToolContext {
   signal?: AbortSignal;
   /** Active task id, so long-running tools can poll for cancellation. */
   taskId?: string;
+  /** Owning companion agent id (vault/memory scope). Optional: tools fall back
+   *  to a neutral scope when the run context does not carry one. */
+  agentId?: string;
   /** Tool names the current run is allowed to use. Tools that fan out to
    *  child agents use it so a child can never exceed the parent run's
    *  capabilities. Undefined means "no run scope known". */
   allowedTools?: readonly string[];
+  /** Current subagent delegation depth (0 = top-level). Used by delegate_task. */
+  depth?: number;
+  /** Per-session read tracking. Edit/write tools reject unread or stale
+   *  existing files while it is present. */
+  readState?: ReadState;
 }
 
 export interface ToolResult {
@@ -63,6 +73,14 @@ export class ToolRegistry {
     const sub = this.cloneFiltered({ allow });
     sub.readOnly = true;
     return sub;
+  }
+
+  /** Named tool-profile subset (e.g. "coding"): an immutable, hook-free view
+   *  exposing only the tools that profile declares. Unknown profiles throw. */
+  forProfile(profileId: string): ToolRegistry {
+    const profile = getToolProfile(profileId);
+    if (!profile) throw new Error(`Unknown tool profile: ${profileId}`);
+    return this.forAllowlist(profile.tools);
   }
 
   /** Copy of this registry plus extra tool instances bound at run start
@@ -170,4 +188,18 @@ export function strs(args: Record<string, unknown>, key: string): string[] {
   const v = args[key];
   if (!Array.isArray(v)) return [];
   return v.filter((item): item is string => typeof item === "string");
+}
+
+/**
+ * Return the first present string among `keys`, in order. Used to accept two
+ * spellings of the same argument (for example the canonical `old_string` and
+ * its legacy alias `find`) without coercing a legitimately empty string to a
+ * default. Returns undefined when no key holds a string.
+ */
+export function strFirst(args: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const v = args[key];
+    if (typeof v === "string") return v;
+  }
+  return undefined;
 }

@@ -1,0 +1,19 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "rtl-empty-state",
+  "name": "Empty State (Arabic RTL)",
+  "description": "The Arabic RTL variant of the empty state with an Arabic explanation and a single primary action.",
+  "category": "empty-state",
+  "license": "original",
+  "source": "Loam",
+  "tags": ["empty-state", "onboarding", "rtl", "arabic"],
+  "intent": "Tell an Arabic reader a list is empty and offer one obvious next step.",
+  "deps": ["react"],
+  "rtl": true,
+  "dir": "rtl",
+  "lang": "ar",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"],
+  "base": "empty-state"
+}
