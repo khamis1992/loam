@@ -5,24 +5,30 @@ H4 distill: gate-fix session: merge with latest manus-parity
 manus-parity, resolve all conflicts keeping both sides, commit.`
 
 ## The failure that was fixed
-`git merge manus-parity` (parity tip `ed26550`, the N2 merge) conflicted in exactly
-ONE file: the tracked rollup `.jdone` (add/add: this branch's H4 report vs parity's
-accumulated rollup). Every source file auto-merged cleanly, so no code, test or prompt
-was touched by the resolution.
+`refs/heads/manus-parity` advanced twice while this session ran, so the merge gate
+was satisfied in two passes:
+
+  1. parity tip `ed26550` (the N2 merge) -> conflicted in exactly ONE file, the
+     tracked rollup `.jdone` (add/add: this branch's H4 report vs parity's
+     accumulated rollup). Every source file auto-merged cleanly. Committed as merge
+     commit `83191fb`.
+  2. parity tip `61aca0c` (the N9 ask-user merge) -> again conflicted in exactly ONE
+     file, `.jdone` only. Every source file auto-merged cleanly. Committed as merge
+     commit `e30aae8`.
+
+No code, test or prompt was touched by either resolution.
 
 ## What the resolution produced
-`.jdone` was resolved by keeping BOTH sides verbatim: the H4 report stays at the top,
-then the full parity rollup follows. Verified mechanically against both stage blobs
-(`:2:.jdone` 5338 lines, `:3:.jdone` 5448 lines): **0 non-empty lines missing from
-the ours side, 0 non-empty lines missing from the theirs side**, 0 conflict markers
-anywhere in the tree, strict UTF-8 (no BOM, no replacement character). Committed as
-merge commit `83191fb`.
+Each time `.jdone` was resolved by keeping BOTH sides verbatim: this branch's report
+stays at the top, then the full parity rollup follows. Verified mechanically against
+both stage blobs of the second merge (`:2:.jdone` and `:3:.jdone`): **0 non-empty
+lines missing from the ours side, 0 non-empty lines missing from the theirs side**,
+0 conflict markers anywhere in the tree, strict UTF-8 (no BOM, no replacement
+character).
 
 ## Gate condition verified
 - `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
 - `git merge manus-parity`                        -> already up to date
-- `git rev-list --left-right --count manus-parity...HEAD` -> `6  6`
-  (zero parity commits missing; the left count is the gate)
 - `git grep -nE "^(<{7}|={7}|>{7})( |$)"` -> no matches (no conflict markers)
 - `git status --porcelain` -> only the benign `core.autocrlf` phantom on
   `src/agent/masterPromptText.ts` (no content diff, not staged, not committed)
@@ -33,20 +39,24 @@ merge commit `83191fb`.
 - `(cd packages/web && npx next build)`               -> exit 0 (compiled successfully)
 - `node --import tsx --test src/learning/harness/__tests__/distill.test.ts`
                                                      -> tests 18, pass 18, fail 0
-- `node --import tsx --test src/server/__tests__/graphRoutes.test.ts` (parity's N2)
-                                                     -> tests 6, pass 6, fail 0
-- `(cd packages/web && npx vitest run)`               -> 77 files / 521 tests, all pass
+- `(cd packages/web && npx vitest run)`               -> 79 files / 535 tests, all pass
 - `npm run check:encoding`                            -> OK (no BOM, no mojibake, all JSON valid)
 
-## The one remaining node failure (pre-existing, environmental, not caused by this merge)
-`node --import tsx --test "src/**/*.test.ts"` -> tests 2547, pass 2546, fail 1.
-The single failure is `src/server/__tests__/worktrees.test.ts` -> "reports non-git
-folders without throwing" (`true == false` at `src/server/__tests__/worktrees.test.ts:44`).
-Neither that file nor `src/server/worktrees.ts` is touched by this merge
-(`git diff manus-parity HEAD` is empty for both), and the cause is environmental:
-`%TEMP%` on this machine is `C:\Users\khamis\AppData\Local\Temp`, and `git -C %TEMP%
-rev-parse` walks up and resolves to `C:/Users/khamis`, which is itself a git repository,
-so a fresh temp folder is reported as a git folder.
+## The remaining node-sweep failures (both pre-existing, neither caused by this merge)
+`node --import tsx --test "src/**/*.test.ts"` -> tests 2612, pass 2610, fail 2.
+
+1. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+   throwing" (`true == false` at `src/server/__tests__/worktrees.test.ts:44`).
+   Environmental: the temp directory on this machine is
+   `C:/Users/khamis/AppData/Local/Temp`, and `git -C <temp> rev-parse` walks up and
+   resolves to `C:/Users/khamis`, which is itself a git repository, so a fresh temp
+   folder is reported as a git folder. That file and `src/server/worktrees.ts` are
+   byte-identical to `manus-parity` (`git diff manus-parity HEAD` is empty for both).
+2. `src/tools/__tests__/search.test.ts` -> "greps and globs the repository in under
+   1 second" (`grep took 1007ms`). A timing assertion under a whole-tree sweep; the
+   file is byte-identical to `manus-parity` and the suite passes 19/19 when run on its
+   own (`node --import tsx --test src/tools/__tests__/search.test.ts` -> pass 19,
+   fail 0). Flaky under load, not a regression.
 
 No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
 No Arabic text was written by this session; the distill test fixtures were already
