@@ -69,6 +69,11 @@ Adapted files
                                               ref/bench_memory_cli.py's
                                               app-level tests.
 
+  src/policy/commandRisk/{index,lib,paths,tokenize,gate}.ts
+                         — adapted from crates/command-risk/src/{lib,paths,tokenize,gate}.rs
+                           (blast-radius shell command risk classifier; stage 1 of the
+                           shell approval gate, wired into src/policy/riskTier.ts and
+                           src/tools/shell.ts).
   src/tools/files.ts     — the file_edit miss hints (findLineNumber,
                           flexibleMatchHint, extractContext) and the all-or-
                           nothing batch semantics are adapted from

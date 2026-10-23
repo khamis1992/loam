@@ -5,14 +5,14 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { ROOT } from "../../config.js";
+import { ROOT, rootAsset } from "../../config.js";
 import { taskPath } from "../taskWorkspace.js";
 import { getEntity, putEntity } from "../sqliteStore.js";
 import { BoundedMap } from "../../memory/cache.js";
 import { registerCacheStats } from "../../memory/stats.js";
 
 export const ffmpegPath = (): string =>
-  path.join(ROOT, "node_modules", "ffmpeg-static", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
+  rootAsset("node_modules", "ffmpeg-static", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
 
 export function ffmpegAvailable(): boolean {
   try { return fs.statSync(ffmpegPath()).isFile(); } catch { return false; }
