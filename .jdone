@@ -118,3 +118,97 @@ is named by Loam rather than by the engine. Left as is deliberately: the engine'
 
 Gates re-run after the reverts: web `tsc --noEmit` exit 0, touched web suites 12/12 pass,
 working tree clean.
+
+## Independent re-validation of fc-09 (post-completion)
+
+Re-checked from scratch against the fc-09 acceptance criteria and the `.jtask.md` gates.
+Everything below was run fresh in this worktree; nothing was taken on trust.
+
+**1. Acceptance criteria (`.jtask.md`): "Unit with mocked film+effects bridges: full
+round-trip command sequence; replace-in-place keeps neighbouring clips; reopen uses stored
+.ecproj." All three are exercised and green.**
+
+- Full round-trip sequence: `src/tools/__tests__/effectsRoundTrip.test.ts` "builds the full
+  sequence: effects in, film replace out" asserts the exact 8-step target/method list
+  (`effects:addFile -> execute(composition.new) -> execute(ask) -> execute(project.save)
+  -> execute(renderQueue.render) -> readFile -> film:importFiles -> execute(timeline.replaceRange)`).
+- Replace-in-place: "replaces the original range on the clip's own track" pins
+  `{ clipId: "clip_b", trackId: "v1", fromSec: 10, toSec: 50 }`. Neighbouring-clip safety is
+  the same mechanism plus the data-loss guard: `selectClip` refuses a clip id not on the
+  timeline ("a wrong target is data loss"), and the timecode/selection parsers are tested.
+- Reopen with the stored `.ecproj`: "plans openProject then inspect for a stored project"
+  plus `effectsProjectPathFor` pinning the derived path. The panel covers the same path via
+  `planReopenEffects` / `readEffectsProjectPath`.
+- Executor safety: `packages/web/src/lib/videoStudioClient.test.ts` proves an `effects`
+  command can never be answered by the film bridge (and vice versa), and that the round-trip
+  executor refuses an unknown target instead of dropping it.
+
+**2. Gates (all six re-run fresh, all exit 0)**
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| root types | `npx tsc --noEmit` | exit 0 |
+| web types | `cd packages/web && npx tsc --noEmit` | exit 0 |
+| server build | `npm run build:server` | exit 0 (`pdf worker copied to dist/`) |
+| web build | `cd packages/web && npx next build` | exit 0, 25/25 static pages |
+| server tests | `node --import tsx --test <touched suites>` | 92 tests, 92 pass, 0 fail |
+| web tests | `cd packages/web && npx vitest run` | 74 files, 479 tests, all pass |
+
+Broader runs: the whole `src/tools/__tests__/*` + `videoStudioE2E` + `runTools` +
+`riskTier` set gives 816 tests / 815 pass / 1 fail. The single failure is
+`src/tools/__tests__/search.test.ts` "greps and globs the repository in under 1 second"
+(`grep took 1149ms`) — a wall-clock perf budget in a suite fc-09 never touches, which failed
+only because five builds/tests ran concurrently against it. Re-run in isolation: 19/19 pass,
+exit 0. Not an fc-09 regression.
+
+**3. Merge safety (both directions checked)**
+
+- `git merge-tree --write-tree --messages HEAD manus-parity` -> **exit 0**. fc-09 merges
+  cleanly into `manus-parity`; the branch is still 3 commits ahead of the base
+  (`a8130cc`), and `manus-parity` has no `effectsRoundTrip.ts`, so the work is intact and
+  unmerged.
+- `git merge-tree --write-tree --messages HEAD khamis1992/cr-04` -> **exit 1**, conflicts in
+  exactly `.jdone` and `packages/web/src/lib/videoStudioClient.ts`. Confirmed by inspecting
+  cr-04 (`4202a73`): it rewrites that client as
+  `class VideoStudioClient extends RelayClientBase<VideoStudioTarget>` and keeps only
+  `createFilmcraftExecutor` — `createEffectcraftExecutor` and `createRoundTripExecutor` are
+  gone. A merge therefore needs a deliberate reconcile (keep the two fc-09 executors and
+  adopt the shared relay base), not a blind resolution.
+
+**4. Branding rule: verified, not assumed**
+
+Every `FilmCraft` / `EffectCraft` / `ArtCraft` occurrence in `packages/web/src` is in code
+identifiers or comments (4 hits across 3 files, none in a rendered string). The panel's
+user-visible strings are exactly `Loam Video`, `Loam Effects`, `Open in effects`, `Done`,
+`Loading` and one contextual notice. The panel test asserts both that the Loam labels render
+and that `/EffectCraft/i` and `/FilmCraft/i` do not. `t()` falls back to the key when a
+locale has no entry, so the Arabic catalog lacking the new keys renders the English source
+string rather than an empty value or corrupted text.
+
+**5. The wiring gap, adjudicated**
+
+The gap reported in the earlier self-review is real but its severity was overstated in one
+respect and understated in another, and the ownership is now clear.
+
+- The fc-02 relay client (`packages/web/src/lib/videoStudioClient.ts`) was authored by the
+  fc-02 task (commit `480bcc7`, merged into `manus-parity` on 2026-10-22 21:02) and never
+  mounted there either. fc-09 extended it with the two effects executors. **The browser mount
+  of the relay is an unfilled seam owned by fc-02, not introduced or required by fc-09.**
+- Corrected claim: "nothing constructs a `VideoStudioClient`" is not evidence fc-09 shipped
+  dead code. The panel's round trip runs directly through its two bridge refs
+  (`bridgeRef`/`effectsBridgeRef`) and the shared planner, which is a complete and tested
+  path. The executors are the *agent-relay* path's seam, and the existing E2E test
+  (`src/server/__tests__/videoStudioE2E.test.ts`) proves that path with its own Node-side
+  fake panel rather than the browser client, deliberately.
+- Real residual risk, stated precisely: an agent `video_studio transition` command is
+  unreachable in a real browser session today because no web code subscribes to the task
+  stream. It stays latent only because both vendored dists are absent
+  (`electron/filmcraft/dist/index.html` and `electron/effectcraft/dist/index.html` both
+  missing), so no editor can mount. The moment fc-01 installs either dist, agent effects
+  commands will return `panel_not_open` / `bridge_unavailable` until someone mounts the
+  client. That mount is the fc-02 follow-up, not an fc-09 defect.
+
+**Conclusion:** fc-09's acceptance criteria are met and independently re-verified, all six
+gates are green, the branding rule holds, and the one cross-branch hazard (cr-04) is
+identified and scoped. No code changes were made during this validation; the working tree is
+unchanged apart from this record.
