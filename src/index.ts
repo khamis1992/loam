@@ -17,6 +17,7 @@ import { createCompanionMemoryTools } from "./tools/companionMemoryTools.js";
 import { memoryContext, setMemoryEmbedder } from "./server/companionMemory.js";
 import { createCompanionTeamTools } from "./tools/companionTeamTools.js";
 import { setDelegationRunner } from "./server/companionTeam.js";
+import { managedSessions } from "./server/managedSessions.js";
 import { createApproval, waitForDecision } from "./server/approvals.js";
 import { approvalStableKey, getReplayDecision, matchApprovalRule, saveApprovalDecision, taskApprovalAuto, taskSandboxMode, taskPermissionMode } from "./server/approvalRules.js";
 import { resolveSandboxPolicy } from "./policy/riskTier.js";
@@ -679,6 +680,32 @@ async function main(): Promise<void> {
     void runTask({ taskId: task.id, prompt: req.brief, agentId: req.toAgentId, ...(req.mode ? { mode: req.mode } : {}), emit: () => {} })
       .catch((error) => log.warn(`delegation run ${task.id}: ${String(error)}`));
     return Promise.resolve({ taskId: task.id, queued: true });
+  });
+
+  // D12: managed child sessions wake the coordinator by event, not polling.
+  // A child finishing (or asking for input) enqueues a fresh run for the parent
+  // agent with a synthesized prompt, so the coordinator resumes exactly once.
+  managedSessions.onAnyCoordinatorWake((event) => {
+    if (event.type === "needs_input") {
+      void runTask({
+        prompt: `[managed child ${event.childId} needs input]\n${event.question ?? "(no question provided)"}\nAnswer it with managed_child_answer.`,
+        agentId: event.parentAgentId,
+        emit: () => {
+          /* triggered runs are persisted in db, no SSE consumer */
+        },
+      }).catch((error) => log.warn(`managed child input wake run: ${String(error)}`));
+      return;
+    }
+    const summary = event.status === "done"
+      ? (event.output || "(no output)")
+      : `status=${event.status}${event.error ? `: ${event.error}` : ""}`;
+    void runTask({
+      prompt: `[managed child ${event.childId} finished: ${event.status}]\n${summary}`,
+      agentId: event.parentAgentId,
+      emit: () => {
+        /* triggered runs are persisted in db, no SSE consumer */
+      },
+    }).catch((error) => log.warn(`managed child wake run: ${String(error)}`));
   });
 
   const server = await startServer({
