@@ -1,0 +1,264 @@
+{
+  "version": "neo-eval-2",
+  "passBar": 60,
+  "total": 100,
+  "passed": 10,
+  "failed": 0,
+  "cases": [
+    {
+      "id": "research-to-report",
+      "total": 100,
+      "verdict": "pass",
+      "completion": 100,
+      "citation": 100,
+      "flatness": 100,
+      "recovery": null,
+      "recurring": null,
+      "steps": 6,
+      "dimensions": [
+        {
+          "name": "completion",
+          "score": 100,
+          "detail": "5/5 assertions passed; score 100"
+        },
+        {
+          "name": "citation",
+          "score": 100,
+          "detail": "4/4 citations resolve to a seed; no expected seeds declared; score 100"
+        },
+        {
+          "name": "flatness",
+          "score": 100,
+          "detail": "first step 15817 prompt tokens, last 16268, peak 16268; growth 1.03x (limit 3x); flat up to 1.1x; score 100"
+        }
+      ]
+    },
+    {
+      "id": "recurring-tracker",
+      "total": 100,
+      "verdict": "pass",
+      "completion": 100,
+      "citation": null,
+      "flatness": 100,
+      "recovery": 100,
+      "recurring": 100,
+      "steps": 4,
+      "dimensions": [
+        {
+          "name": "completion",
+          "score": 100,
+          "detail": "3/3 assertions passed; score 100"
+        },
+        {
+          "name": "flatness",
+          "score": 100,
+          "detail": "first step 15783 prompt tokens, last 15949, peak 15949; growth 1.01x (limit 3x); flat up to 1.1x; score 100"
+        },
+        {
+          "name": "recovery",
+          "score": 100,
+          "detail": "1 failure(s) injected (file_read); 1 recovered; score 100"
+        },
+        {
+          "name": "recurring",
+          "score": 100,
+          "detail": "4/4 round(s) ran; 4 append(s) vs 4 declared; score 100"
+        }
+      ]
+    },
+    {
+      "id": "long-document-assembly",
+      "total": 100,
+      "verdict": "pass",
+      "completion": 100,
+      "citation": null,
+      "flatness": null,
+      "recovery": null,
+      "recurring": null,
+      "steps": 3,
+      "dimensions": [
+        {
+          "name": "completion",
+          "score": 100,
+          "detail": "4/4 assertions passed; score 100"
+        }
+      ]
+    },
+    {
+      "id": "kb-grounded-answer",
+      "total": 100,
+      "verdict": "pass",
+      "completion": 100,
+      "citation": 100,
+      "flatness": 100,
+      "recovery": null,
+      "recurring": null,
+      "steps": 5,
+      "dimensions": [
+        {
+          "name": "completion",
+          "score": 100,
+          "detail": "5/5 assertions passed; score 100"
+        },
+        {
+          "name": "citation",
+          "score": 100,
+          "detail": "3/3 citations resolve to a seed; no expected seeds declared; score 100"
+        },
+        {
+          "name": "flatness",
+          "score": 100,
+          "detail": "first step 15810 prompt tokens, last 16113, peak 16113; growth 1.02x (limit 3x); flat up to 1.1x; score 100"
+        }
+      ]
+    },
+    {
+      "id": "tool-failure-recovery",
+      "total": 100,
+      "verdict": "pass",
+      "completion": 100,
+      "citation": null,
+      "flatness": 100,
+      "recovery": 100,
+      "recurring": null,
+      "steps": 5,
+      "dimensions": [
+        {
+          "name": "completion",
+          "score": 100,
+          "detail": "3/3 assertions passed; score 100"
+        },
+        {
+          "name": "flatness",
+          "score": 100,
+          "detail": "first step 15811 prompt tokens, last 15918, peak 15918; growth 1.01x (limit 3x); flat up to 1.1x; score 100"
+        },
+        {
+          "name": "recovery",
+          "score": 100,
+          "detail": "2 failure(s) injected (file_write); 1 recovered; score 100"
+        }
+      ]
+    },
+    {
+      "id": "restart-from-step",
+      "total": 100,
+      "verdict": "pass",
+      "completion": 100,
+      "citation": 100,
+      "flatness": 100,
+      "recovery": null,
+      "recurring": null,
+      "steps": 4,
+      "dimensions": [
+        {
+          "name": "completion",
+          "score": 100,
+          "detail": "4/4 assertions passed; score 100"
+        },
+        {
+          "name": "citation",
+          "score": 100,
+          "detail": "2/2 citations resolve to a seed; no expected seeds declared; score 100"
+        },
+        {
+          "name": "flatness",
+          "score": 100,
+          "detail": "first step 15810 prompt tokens, last 16042, peak 16042; growth 1.01x (limit 3x); flat up to 1.1x; score 100"
+        }
+      ]
+    },
+    {
+      "id": "step-budget",
+      "total": 100,
+      "verdict": "pass",
+      "completion": 100,
+      "citation": 100,
+      "flatness": null,
+      "recovery": null,
+      "recurring": null,
+      "steps": 3,
+      "dimensions": [
+        {
+          "name": "completion",
+          "score": 100,
+          "detail": "3/3 assertions passed; score 100"
+        },
+        {
+          "name": "citation",
+          "score": 100,
+          "detail": "3/3 citations resolve to a seed; no expected seeds declared; score 100"
+        }
+      ]
+    },
+    {
+      "id": "no-hallucinated-citations",
+      "total": 100,
+      "verdict": "pass",
+      "completion": 100,
+      "citation": 100,
+      "flatness": null,
+      "recovery": null,
+      "recurring": null,
+      "steps": 3,
+      "dimensions": [
+        {
+          "name": "completion",
+          "score": 100,
+          "detail": "3/3 assertions passed; score 100"
+        },
+        {
+          "name": "citation",
+          "score": 100,
+          "detail": "1/1 citations resolve to a seed; no expected seeds declared; score 100"
+        }
+      ]
+    },
+    {
+      "id": "deep-file-triage",
+      "total": 100,
+      "verdict": "pass",
+      "completion": 100,
+      "citation": null,
+      "flatness": 100,
+      "recovery": null,
+      "recurring": null,
+      "steps": 6,
+      "dimensions": [
+        {
+          "name": "completion",
+          "score": 100,
+          "detail": "4/4 assertions passed; score 100"
+        },
+        {
+          "name": "flatness",
+          "score": 100,
+          "detail": "first step 15803 prompt tokens, last 15991, peak 15991; growth 1.01x (limit 3x); flat up to 1.1x; score 100"
+        }
+      ]
+    },
+    {
+      "id": "uninterrupted-baseline",
+      "total": 100,
+      "verdict": "pass",
+      "completion": 100,
+      "citation": 100,
+      "flatness": null,
+      "recovery": null,
+      "recurring": null,
+      "steps": 3,
+      "dimensions": [
+        {
+          "name": "completion",
+          "score": 100,
+          "detail": "2/2 assertions passed; score 100"
+        },
+        {
+          "name": "citation",
+          "score": 100,
+          "detail": "1/1 citations resolve to a seed; no expected seeds declared; score 100"
+        }
+      ]
+    }
+  ]
+}

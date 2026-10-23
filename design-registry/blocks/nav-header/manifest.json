@@ -1,0 +1,18 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "nav-header",
+  "name": "Site Header",
+  "description": "A sticky site header with a logo, primary navigation, a collapsed mobile menu button and a sign-in action.",
+  "category": "navigation",
+  "license": "MIT",
+  "source": "shadcn/ui blocks",
+  "tags": ["navigation", "header", "menu"],
+  "intent": "Give a marketing site a persistent, responsive top navigation bar.",
+  "deps": ["react"],
+  "rtl": false,
+  "dir": "ltr",
+  "lang": "en",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"]
+}

@@ -1,0 +1,18 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "hero-split",
+  "name": "Split Hero",
+  "description": "A two-column hero pairing a headline and call to action with a real product image on the right.",
+  "category": "hero",
+  "license": "MIT",
+  "source": "shadcn/ui blocks",
+  "tags": ["hero", "landing", "image"],
+  "intent": "Landing hero that leads with a value proposition beside a product screenshot.",
+  "deps": ["react"],
+  "rtl": false,
+  "dir": "ltr",
+  "lang": "en",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"]
+}

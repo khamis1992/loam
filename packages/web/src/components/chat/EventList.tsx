@@ -1,5 +1,5 @@
 import { memo, useMemo, Fragment, type ReactNode } from 'react';
-import type { ChatEvent, ToolUsedEvent, CascadeTaskClockEvent, AttachmentEvent, ModeEvent } from '@shared/socket';
+import type { ChatEvent, ToolUsedEvent, CascadeTaskClockEvent, AttachmentEvent, ModeEvent, CacheUsageEvent } from '@shared/socket';
 import { t, PRODUCT } from '@/i18n/t';
 import { Markdown } from './Markdown';
 import { UserBubble } from './ChatBubble';
@@ -7,6 +7,7 @@ import { GrokBotNote, grokBotNoteText, isGrokBotNote } from './GrokBotNote';
 import { CopyMessageButton } from './CopyMessageButton';
 import { ToolUsedRow } from './ToolUsedRow';
 import { StatusUpdateRow } from './StatusUpdateRow';
+import { CacheUsageRow } from './CacheUsageRow';
 import { PlanStepRow, PlanUpdateRow, TodoListRow } from './PlanStep';
 import { ApprovalCard, FolderAccessApprovalCard, PlanApprovalCard, type LocalExecutionApprovalRequested, type PlanApprovalRequested } from '@/components/approval';
 import { AttachmentCard } from './AttachmentCard';
@@ -57,6 +58,8 @@ export function ChatEventRow({ e, sessionId, socket, renderChat }: ChatEventRowP
       return <ToolUsedRow e={e as ToolUsedEvent} />;
     case 'statusUpdate':
       return <StatusUpdateRow e={e} />;
+    case 'cache_usage':
+      return <CacheUsageRow e={e as CacheUsageEvent} />;
     case 'explanation':
       return <p className="text-sm text-text-secondary">{e.content}</p>;
     case 'mode': {

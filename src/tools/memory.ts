@@ -7,10 +7,12 @@ import { num, str } from "./registry.js";
 export interface MemoryToolOptions {
   onApply?: (label: string) => void;
   gate?: WriteGate;
+  /** Provenance: session/task id bound to these tools, if known. */
+  sessionId?: string;
 }
 
 export function createMemoryTools(store: MemoryStore, opts: MemoryToolOptions = {}): Tool[] {
-  const { onApply, gate } = opts;
+  const { onApply, gate, sessionId } = opts;
   return [
     {
       name: "memory_store",
@@ -31,7 +33,7 @@ export function createMemoryTools(store: MemoryStore, opts: MemoryToolOptions = 
         const kind = str(args, "kind", "note");
         const tags = Array.isArray(args["tags"]) ? (args["tags"] as unknown[]).map((t) => String(t)) : [];
         if (gate && gateActive()) {
-          const item = gate.stage("memory_store", `memory_store [${kind}]: ${text.slice(0, 100)}`, { text, kind, tags });
+          const item = gate.stage("memory_store", `memory_store [${kind}]: ${text.slice(0, 100)}`, { text, kind, tags, ...(sessionId ? { sessionId } : {}) });
           onApply?.(`staged memory_store (${item.id})`);
           return {
             ok: true,
@@ -39,7 +41,7 @@ export function createMemoryTools(store: MemoryStore, opts: MemoryToolOptions = 
           };
         }
         try {
-          const entry = await store.add(text, { kind, tags });
+          const entry = await store.add(text, { kind, tags, ...(sessionId ? { sessionId } : {}) });
           onApply?.(`memory_store ${entry.id}`);
           return { ok: true, content: `stored ${entry.id} (kind=${entry.kind}, dim=${entry.dim}); memory now has ${store.count} entries` };
         } catch (err) {

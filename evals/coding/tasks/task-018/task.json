@@ -1,0 +1,12 @@
+{
+  "id": "task-018",
+  "title": "Inline single-use helpers",
+  "category": "refactor",
+  "language": "typescript",
+  "prompt": "`src/limits.ts` defines two predicate helpers that each have exactly one call site. Inline both predicates into their callers and delete the helpers, so the identifiers `isPositive` and `isEven` no longer appear in the file. Behaviour must not change.",
+  "testCommand": "node .eval/check.mjs",
+  "timeoutSec": 60,
+  "maxSteps": 14,
+  "forbidPatterns": [{ "path": "src/limits.ts", "pattern": "isPositive|isEven" }],
+  "tags": ["inline", "simplify"]
+}
