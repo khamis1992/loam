@@ -95,6 +95,9 @@ import { handleMarketplaceRoutes } from "./routes/marketplace.js";
 import { handlePersonalizationRoutes } from "./routes/personalization.js";
 import { handleApiKeysRoutes } from "./routes/apiKeys.js";
 import { handleDataControlsRoutes } from "./routes/dataControls.js";
+import { handleDebugMemoryRoutes } from "./routes/debugMemory.js";
+import { LruCache } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 import { handleMemorySkillsRoutes } from "./routes/memorySkills.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
 import { handlePlanApprovalRoutes } from "./routes/planApproval.js";
@@ -106,8 +109,10 @@ import { handleInsightsRoutes } from "./routes/insights.js";
 import { handleShareRoutes } from "./routes/shares.js";
 import { handleProjectContextRoutes } from "./routes/projectContext.js";
 import { handlePlaybookRoutes } from "./routes/playbooks.js";
+import { handleFlowTemplateRoutes } from "./routes/flowTemplates.js";
 import { handleVoiceRoutes } from "./routes/voice.js";
 import { handleConnectorsRoutes } from "./routes/connectors.js";
+import { handleKnowledgeRoutes } from "./routes/knowledge.js";
 import { handleWikiRoutes } from "./routes/wiki.js";
 import { importGrokbotBundle, sanitizeGrokbotBundle } from "./grokbotImport.js";
 import { isValidTimezone } from "./scheduleTime.js";
@@ -123,7 +128,7 @@ import { setSecret, listSecrets, deleteSecret } from "./secretsVault.js";
 import { createApproval, decideApproval, getApproval, listApprovals } from "./approvals.js";
 import { setTaskAgent } from "./db.js";
 import { subscribeTask } from "./streams.js";
-import { videoStudioRelay, type VideoStudioResult } from "./videoStudioRelay.js";
+import { workspaceRelay, workspaceRelay as videoStudioRelay, type WorkspaceRelayResult } from "./workspaceRelay.js";
 import { appendLearning, readLearning } from "./learning.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { installDraft, listSuites, loadSuite } from "../eval/suites.js";
@@ -164,6 +169,7 @@ export interface RunTaskOptions {
   scheduleId?: string;
   /** Side-chat ("/btw") run: restricted to read-only inspection tools. */
   sideChat?: boolean;
+  knowledge?: boolean;
   /** O6: protocol session whose durable inbound queue this run should drain. */
   inputSessionId?: string;
   /**
@@ -182,6 +188,8 @@ export interface ServerDeps {
   registry?: ToolRegistry;
   mcp?: McpToolset | null;
   runTask: (opts: RunTaskOptions) => Promise<{ taskId: string; text: string }>;
+  /** N3 Knowledge Garden vector channel; absent => lexical-only search. */
+  embedder?: { embed(texts: string[]): Promise<number[][]> };
 }
 
 const MIME: Record<string, string> = {
@@ -233,7 +241,9 @@ function parseWorktrees(porcelainOut: string): Array<{ path: string; head: strin
 /** A ":cloud"-suffixed model may be served verbatim by the local Ollama (router
  *  setups register the full name); only demand a cloudModel.apiKey when Ollama
  *  does not actually have it — otherwise the request dies before it starts. */
-const ollamaTagCache = new Map<string, { names: string[]; at: number }>();
+/** Bounded (J6): keyed by base URL, but a user can point Loam at many hosts. */
+const ollamaTagCache = new LruCache<{ names: string[]; at: number }>({ capacity: 32, name: "ollama-tags" });
+registerCacheStats("ollama-tags", () => ollamaTagCache.stats());
 async function cloudSuffixedModelServedByOllama(model: string): Promise<boolean> {
   const baseUrl = process.env.OLLAMA_HOST && /^http/.test(process.env.OLLAMA_HOST) ? process.env.OLLAMA_HOST : "http://127.0.0.1:11434";
   const cached = ollamaTagCache.get(baseUrl);
@@ -1804,6 +1814,8 @@ loadAgents();
         if (await handlePersonalizationRoutes(req, res, p)) return;
         if (await handleApiKeysRoutes(req, res, p)) return;
         if (await handleDataControlsRoutes(req, res, p)) return;
+        // Local-only memory profile (J6): loopback + install token, GET only.
+        if (await handleDebugMemoryRoutes(req, res, p)) return;
         // Settings › Connectors (UNIMPLEMENTED_OPTIONS #3): list/connect/callback/disconnect.
         if (await handleConnectorsRoutes(req, res, p)) return;
         // Settings › Skills (UNIMPLEMENTED_OPTIONS #4): proxy the memory-skills MCP.
@@ -1822,8 +1834,17 @@ loadAgents();
         if (await handleProjectContextRoutes(req, res, p)) return;
         // Playbooks (D9): versioned reusable prompt library + macro expansion.
         if (await handlePlaybookRoutes(req, res, p)) return;
+
+        if (await handleFlowTemplateRoutes(req, res, p)) return;
         // Repo wiki (D8): list/generate/read DeepWiki-style pages.
         if (await handleWikiRoutes(req, res, p, { workspace: cfg.workspace, ollama, model: cfg.model })) return;
+
+        // Knowledge Garden (N3): bases, seeds, import and hybrid search.
+        if (await handleKnowledgeRoutes(req, res, p, {
+          workspace: cfg.workspace,
+          ...(deps.embedder ? { embedder: deps.embedder } : {}),
+          model: cfg.memory.model || cfg.model,
+        })) return;
 
         // ---- avatar (Grok Bot-style): set shape/color/image on an existing agent ----
         // Must run before the generic /api/agents/:id prefix block.
@@ -2462,23 +2483,25 @@ loadAgents();
           return;
         }
 
-        // Loam Video Studio relay: the panel attached to this task posts the
+        // Workspace relay: the editor panel attached to this task posts the
         // result of a command that was dispatched over the task's event stream.
-        if (req.method === "POST" && /^\/api\/tasks\/[^/]+\/video-studio\/result$/.test(p)) {
+        // The /video-studio/result path stays as the fc-02 (Video Studio) alias.
+        if (req.method === "POST" && /^\/api\/tasks\/[^/]+\/(?:workspace|video-studio)\/result$/.test(p)) {
           const origin = req.headers.origin;
           if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") {
             return sendJson(res, 403, { error: "same-origin requests required" });
           }
-          const taskId = decodeURIComponent(p.slice("/api/tasks/".length, -"/video-studio/result".length));
+          const route = p.includes("/video-studio/result") ? "/video-studio/result" : "/workspace/result";
+          const taskId = decodeURIComponent(p.slice("/api/tasks/".length, -route.length));
           if (!getTask(taskId)) return sendJson(res, 404, { error: "task not found" });
           let raw: unknown;
           try { raw = await readBody(req, 64_000); } catch { return sendJson(res, 400, { error: "invalid JSON body" }); }
-          const result = raw as VideoStudioResult;
+          const result = raw as WorkspaceRelayResult;
           if (!result || typeof result !== "object" || typeof result.id !== "string" || typeof result.taskId !== "string") {
             return sendJson(res, 400, { error: "id and taskId are required" });
           }
           if (result.taskId !== taskId) return sendJson(res, 400, { error: "taskId mismatch" });
-          const handled = videoStudioRelay.resolve(result);
+          const handled = workspaceRelay.resolve(result);
           return sendJson(res, 200, { ok: handled, ...(handled ? {} : { ignored: true }) });
         }
 
@@ -2634,6 +2657,7 @@ loadAgents();
             agentId?: unknown;
             workMode?: unknown;
             mission?: unknown;
+            knowledge?: unknown;
           };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
           if (!prompt) return sendJson(res, 400, { error: "prompt required" });
@@ -2663,6 +2687,9 @@ loadAgents();
           // Neo N6: run type `mission` is a request flag. Anything malformed is
           // ignored rather than failing the run.
           const mission = body.mission === true;
+          // N3 Knowledge Garden: the run only reaches the kb_* tools when the
+          // caller switched the garden on for THIS run (default off).
+          const knowledge = body.knowledge === true;
 
           res.writeHead(200, {
             "content-type": "text/event-stream; charset=utf-8",
@@ -2702,6 +2729,7 @@ loadAgents();
               agentId,
               workMode,
               ...(mission ? { mission: true } : {}),
+              knowledge,
             });
             if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify({ type: "task", taskId: result.taskId })}\n\n`);
           } catch (err) {

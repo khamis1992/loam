@@ -142,6 +142,9 @@ async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: s
       ...(o.onCodingRoute ? { onCodingRoute: o.onCodingRoute } : {}),
       ...(o.resumeWorker ? { resumeWorker: o.resumeWorker } : {}),
       ...(o.saveWorker ? { saveWorker: o.saveWorker } : {}),
+      // O5: workers append their own tool-call lifecycle rows to the same durable
+      // log, so a crash inside a worker is visible to the resume gate too.
+      ...(o.eventLogSession ? { eventLogSession: o.eventLogSession } : {}),
       // D19 compute budget: workers inherit the session budget so the ceiling
       // is enforced on the default (orchestrated) path, not only the linear one.
       ...(o.budget ? { budget: o.budget } : {}),

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  PanelRight, Hammer, Pencil, AppWindow, Video, LayoutGrid, Database, Shield,
+  PanelRight, Hammer, Pencil, AppWindow, Video, LayoutGrid, Database, Shield, BookOpenText, Play,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAppDispatch } from '@/store';
@@ -12,6 +12,7 @@ import { t } from '@/i18n/t';
 import { Composer, ComposerContextBar, type ComposerHandle, type ProjectOption } from '@/components/chat/Composer';
 import { HomeCard } from '@/components/home/HomeCard';
 import { CreditsPopover } from '@/components/home/CreditsPopover';
+import { FlowPlaybook } from '@/components/home/FlowPlaybook';
 import { TemplateCard } from '@/components/home/TemplateCard';
 import { TemplateGalleryDialog } from '@/components/home/TemplateGalleryDialog';
 import { ModelMenu, type AgentModel } from '@/components/home/ModelMenu';
@@ -60,6 +61,7 @@ export default function HomePage() {
   const composerRef = useRef<ComposerHandle>(null);
 
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [playbookOpen, setPlaybookOpen] = useState(false);
   const [model, setModel] = useState<AgentModel>(readStoredModel);
   const [panelOpen, setPanelOpen] = useState(false);
   const [activeFolder, setActiveFolder] = useState<'project' | 'downloads' | null>(null);
@@ -415,6 +417,22 @@ export default function HomePage() {
             </button>
           </div>
 
+          {/* Case Playbook (Neo N15): the seeded Loam flows. */}
+          <button
+            type="button"
+            onClick={() => setPlaybookOpen(true)}
+            className="mb-3 flex items-center gap-3 rounded-card border border-border-main px-4 py-3 text-start transition-colors hover:bg-fill-hover"
+          >
+            <BookOpenText className="size-5 text-text-tertiary" />
+            <span>
+              <span className="block text-[13px] font-medium text-text-primary">{t('Case Playbook')}</span>
+              <span className="block text-[11px] text-text-tertiary">
+                {t('Twelve ready Loam flows. Pick one to start from a proven prompt.')}
+              </span>
+            </span>
+            <Play className="size-4 text-text-tertiary" />
+          </button>
+
           {/* Composer */}
           <div className="mt-auto">
             <ComposerContextBar
@@ -449,6 +467,7 @@ export default function HomePage() {
         onClose={() => setGalleryOpen(false)}
         onSelect={(tpl) => prefillComposer(tpl.prompt)}
       />
+      <FlowPlaybook open={playbookOpen} onClose={() => setPlaybookOpen(false)} />
     </div>
   );
 }
