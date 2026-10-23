@@ -7789,3 +7789,108 @@ Gates (all run from the worktree root on the merged tree):
 
 No test was weakened, deleted or skipped. No secrets committed. No forbidden path
 touched. No Arabic text was written; no mojibake placeholder text was added.
+
+# N19 - Master-prompt section for Recipe mode: DONE
+
+Commit `3094fb0` on `khamis1992/neo-n19` (base `manus-parity` at `eb17ea0`).
+Depends on N4 + N9, both already merged into `manus-parity`.
+
+## What shipped
+- `prompts/loam-master.md` (+73): an original **§25 "Long-Horizon Missions (Recipe mode)"**
+  with subsections 25.1-25.8. Nothing is copied from Flowith; the wording is written for
+  Loam and describes the real harness:
+  - 25.1 the seed is a hypothesis, not a contract (executed steps are evidence; the recipe
+    wins over the frozen plan);
+  - 25.2 incremental planning discipline (plan the next step, atomic + checkable steps,
+    the last step is always delivery, a failed tool is information, drop dead steps, keep
+    `remaining_estimate` honest, no meta-work steps);
+  - 25.3 when to ask vs keep working (local/reversible R0-R1 defaults vs blocking
+    `ask_user`; ask once in batch; never ask for progress);
+  - 25.4 when to fan out (right grain: `spawn_agent` / `delegate_to_child` / `code_session`
+    / `wide_research` / `deep_research`; self-contained branch briefs; respect
+    `{{max_parallel_agents}}`, depth and budget; integrate like a reviewer);
+  - 25.5 citing seeds, steps and evidence (recipe `id`s survive replans, run-graph node ids,
+    `file:line`, evidence in `{{project_path}}/.loam/runs/<run-id>/`);
+  - 25.6 budget awareness (know the ceiling, spend on the critical path, warn at ~80%,
+    stop cleanly at the ceiling, charge planning to the budget);
+  - 25.7 the completion node (created by the terminal `done` event; finish only through
+    `finish`, which runs `.loam/verify.json`; on `blocked` leave a resumable state);
+  - 25.8 mission hygiene (`progress.md`, live step status, restart-from-step is a user
+    action not a retry, clean up, report at phase boundaries).
+- `src/agent/masterPrompt.ts`: `MISSION_SECTION_ID = "25"` and `missionSection()`.
+  **§25 is deliberately outside `MASTER_ORDER`** - the same precedent as Appendix C
+  (`CODING_MODE_SECTION_ID`), which `codingPrompt.test.ts` already documents as
+  intentionally unassembled. A plain chat or build run therefore never pays for the
+  mission rules.
+- `src/agent/orchestrator.ts`: `missionSuffix(cfg)` = `fillMasterSlots(missionSection(),
+  deriveMasterSlots(cfg))`, appended to the worker system suffix **only when
+  `recipeMode`**. Filling here means no raw `{{slot}}` can reach the model.
+- `src/agent/masterPromptText.ts`: regenerated via `npm run gen:master-prompt` (28 sections).
+
+## A correctness fix made while authoring
+The first draft of 25.4 named `map_reduce` and `delegate_subagent` for fan-out. `git grep`
+against the registry showed neither exists; the reachable fan-out tools in
+`src/tools/runTools.ts` (`ALWAYS_ON_TOOLS`) are `spawn_agent`, `delegate_to_child`,
+`code_session`, `wide_research` and `deep_research`. The prompt now names only real tools,
+and a test asserts the two ghosts never appear.
+
+## Facts checked against the code before they were written into the prompt
+- completion node `done:${seq}` -> `type: "complete"` (`src/agent/runGraph.ts:411`);
+- `message` semantics (`src/agent/specAliases.ts:409`);
+- the `finish` gate reads `.loam/verify.json` (`src/agent/finishTools.ts:15`);
+- `ask_user` (`src/agent/askUserGate.ts:25`);
+- budget badge `budget.percent` (`src/server/__tests__/sessionRuntime.test.ts`);
+- the R0-R1 tiers of §16 and the phase-boundary reporting rule of §19.
+
+## Acceptance tests (automated, all passing)
+- `src/agent/__tests__/codingPrompt.test.ts`: new suite "long-horizon mission prompt
+  section (N19)" asserts §25 is authored in the asset but **not** in `MASTER_ORDER`,
+  that `buildMasterPrompt` does not emit it, that it renders with its heading, that all
+  nine required rules are present, that it names only real tools, and that
+  `fillMasterSlots` leaves no placeholder behind.
+- `src/agent/__tests__/orchestratorRecipe.test.ts`: new e2e with the mock model. The
+  harness now records the system prompt of every model turn. The test runs the same
+  fixture twice - once with `recipeMode: true`, once with `recipeMode: false` - and
+  asserts every recipe-mode worker receives `## 25. Long-Horizon Missions (Recipe mode)`
+  with all slots filled and the workspace path substituted, while **no** turn of the plain
+  run receives §25. This is the ask/fanout/complete proof the task asked for, driven by a
+  mock model only (no real API).
+- `src/tools/__tests__/promptwire.test.ts` + `coding-prompt.snap.json`: the section-id
+  index is now 25 numbered sections followed by `appendix-a`/`b`/`c` at 25/26/27.
+
+## Gates (all run from the worktree root on commit 3094fb0)
+- `npx tsc --noEmit`                                            -> exit 0
+- `npm run build:server`                                        -> exit 0
+- `(cd packages/web && npx next build)`                          -> exit 0 (25/25 static pages)
+- `npx tsx src/scripts/check-promptwire.ts`                      -> PASS (prompt lint green)
+- `npx tsx --test src/tools/__tests__/promptwire.test.ts src/agent/__tests__/codingPrompt.test.ts`
+                                                                -> tests 28, pass 28, fail 0
+- `npx tsx --test src/agent/__tests__/orchestratorRecipe.test.ts` -> tests 9, pass 9, fail 0
+- `npx tsx --test craftPrompt.test.ts designPrompt.test.ts prompt.test.ts`
+                                                                -> tests 31, pass 31, fail 0
+No test was weakened, deleted or skipped. No real external model API was called; the e2e
+uses the mock model only. No secrets committed. No forbidden path touched.
+
+## Pre-existing failure, proven not introduced here
+`npm run check:isolation` fails on this machine, but **it fails identically at base
+`eb17ea0`** (verified in a throwaway detached worktree with `node_modules` junctioned in).
+Two independent causes, both environmental and unrelated to §25:
+1. `check-isolation-http.ts:68` probes `GET /api/tasks` with no install token, but
+   `src/server/http.ts:469` rejects anything outside `/api/health` and `/api/identity`
+   with 401 unless `LOAM_AUTH_DISABLED=true`. Reproduced by hand: without the flag the
+   route answers **401**, with it answers **200**.
+2. With the flag set the script gets past startup and then fails later at line 130 because
+   the fake model's 429 makes Loam fail over to the real network providers
+   (`ollama > longcat > ornith`), which never satisfy the fixture's "WRITE_SECOND" handshake.
+`check:isolation` is not in N19's mandatory gate list, and §25 contains none of the
+script's branch markers (`planner role`, `ONE executed plan step`, `COMPLETED task as a
+whole`, `WRITE_FIRST`, `WRITE_SECOND`), so the section cannot perturb the fixture.
+
+## Seams left for other workstreams
+- §25 is wired at one call site (`runWorker` in `orchestrator.ts`). If a future worker path
+  is added (for example a recipe-planner turn that should also see mission rules), it must
+  opt in the same way - the section is intentionally not in `MASTER_ORDER`.
+- The section is model-agnostic. A per-model tuning block belongs in Appendix A, not here.
+- N19 only *prompts* the behaviour. Enforcement of the budget ceiling, the completion node
+  and restart-from-step already lives in the harness; §25 points at it and does not
+  duplicate it.
