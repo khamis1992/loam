@@ -8,6 +8,8 @@
  * evaluated in the schedule's timezone (default Asia/Qatar) and converted to
  * the UTC instants the scheduler stores in nextRunAt.
  */
+import { LruCache } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 /** Default schedule timezone (MF2 task spec). */
 export const DEFAULT_TIMEZONE = "Asia/Qatar";
@@ -28,7 +30,13 @@ function requireTimezone(tz: string): void {
   if (!isValidTimezone(tz)) throw new Error(`unknown IANA timezone: ${tz}`);
 }
 
-const formatters = new Map<string, Intl.DateTimeFormat>();
+/**
+ * Timezone formatters (J6). An `Intl.DateTimeFormat` is expensive to build and
+ * holds locale data, so it is cached — but the key is user-supplied, so the
+ * cache is bounded instead of growing with every distinct timezone string.
+ */
+const formatters = new LruCache<Intl.DateTimeFormat>({ capacity: 32, name: "schedule-time-formatters" });
+registerCacheStats("schedule-time-formatters", () => formatters.stats());
 
 function zoneFormatter(tz: string): Intl.DateTimeFormat {
   let dtf = formatters.get(tz);

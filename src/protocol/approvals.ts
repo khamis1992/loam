@@ -8,6 +8,8 @@
  *  - route `change_local_permission_mode` frames to `changeLocalPermissionMode`
  */
 import crypto from "node:crypto";
+import { BoundedMap } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 import {
   createApproval,
   decideApproval,
@@ -159,7 +161,16 @@ interface PendingDirectoryRequest {
   timeout: ReturnType<typeof setTimeout>;
 }
 
-const pendingDirectoryRequests = new Map<string, PendingDirectoryRequest>();
+/** Pending directory-access requests (J6). Each holds a resolver and a 15-minute
+ *  timer; the map was unbounded, so an aborted request (process crash, a socket
+ *  that closed without resolving) left its entry and timer behind. Bounded LRU;
+ *  eviction clears the timer so the pending promise settles as cancelled. */
+const pendingDirectoryRequests = new BoundedMap<string, PendingDirectoryRequest>(
+  128,
+  "workspace-directory-requests",
+  (_id, entry) => clearTimeout(entry.timeout),
+);
+registerCacheStats("workspace-directory-requests", () => pendingDirectoryRequests.stats());
 const DIRECTORY_TIMEOUT_MS = 15 * 60_000;
 
 export function createWorkspaceDirectoryAccessRequest(

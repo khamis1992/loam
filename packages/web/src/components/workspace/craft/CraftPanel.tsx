@@ -6,6 +6,7 @@ import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { CRAFT_APPS, CraftBridge, type CraftApp, type CraftReady, type CraftSave } from '@/lib/craftBridge';
 import type { WorkspaceEditorProps, WorkspaceFile, WorkspaceKind } from '../types';
+import { isPreviewOnlyExt, unsupportedNoticeFor } from '../craft';
 
 /** How long the embedded app gets to announce `craft:ready` before we fall back. */
 export const CRAFT_READY_TIMEOUT_MS = 20_000;
@@ -29,6 +30,15 @@ export interface CraftPanelProps {
   uploadBytes?: (taskId: string, name: string, bytes: Uint8Array) => Promise<void>;
   /** Lazily load the built-in editor for a fallback kind. */
   loadFallback?: (kind: WorkspaceKind) => Promise<CraftFallbackEditor | null>;
+  /**
+   * Hide the panel's own header. The workspace shell already renders one (file
+   * name + close), so the craft editor hides its duplicate when hosted there.
+   */
+  hideHeader?: boolean;
+  /** Report the panel status so the owning workspace editor can react (cr-03). */
+  onStatusChange?: (status: PanelStatus) => void;
+  /** Notify the host about every save (name + bytes) it should store (cr-03). */
+  onSave?: (name: string, bytes: Uint8Array) => void;
 }
 
 /** Task-file status from the cr-01 endpoint; a 404 (or a network error) means unknown. */
@@ -184,9 +194,13 @@ export function CraftPanel({
   fetchBytes = (filePath) => fetchTaskFileBytes(taskId, filePath),
   uploadBytes = uploadSave,
   loadFallback = defaultLoadFallback,
+  hideHeader = false,
+  onStatusChange,
+  onSave,
 }: CraftPanelProps) {
   const info = CRAFT_APPS[app];
   const fallbackKind = fallbackKindFor(app);
+  const notice = unsupportedNoticeFor(path);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const bridgeRef = useRef<CraftBridge | null>(null);
 
@@ -203,6 +217,7 @@ export function CraftPanel({
       setError(null);
       try {
         await uploadBytes(taskId, save.name, save.bytes);
+        onSave?.(save.name, save.bytes);
         setSavedName(save.name);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -210,7 +225,7 @@ export function CraftPanel({
         setSaving(false);
       }
     },
-    [taskId, uploadBytes],
+    [onSave, taskId, uploadBytes],
   );
 
   // Save from a built-in fallback editor through its per-kind file endpoint.
@@ -243,6 +258,11 @@ export function CraftPanel({
     },
     [fallbackKind, path, taskId],
   );
+
+  // Report the panel status to the owning workspace editor (cr-03).
+  useEffect(() => {
+    onStatusChange?.(status);
+  }, [onStatusChange, status]);
 
   // Whether the Craft dist for this app is installed at all (cr-01 endpoint).
   useEffect(() => {
@@ -354,10 +374,37 @@ export function CraftPanel({
     kind: fallbackKind ?? 'doc',
   };
 
+  // Preview-only types (`.indd` upstream limitation): never embed the app, show the
+  // notice and the media preview instead, so the user is not left with a broken editor.
+  if (isPreviewOnlyExt(path)) {
+    return (
+      <div className="flex h-full w-full flex-col border-s border-border-main bg-bg-menu text-sm text-text-secondary">
+        {hideHeader ? null : (
+          <PanelHeader
+            name={info.displayName}
+            statusLabel={t('Preview only')}
+            status="fallback"
+            saving={false}
+            onClose={onClose}
+          />
+        )}
+        <div className="flex items-center gap-2 border-b border-border-main px-4 py-2 text-[11px] text-function-warning">
+          <AlertCircle className="size-3.5 shrink-0" />
+          <span>{notice}</span>
+        </div>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <CraftPreview file={fallbackFile} />
+        </div>
+      </div>
+    );
+  }
+
   if (status === 'fallback' || forceFallback) {
     return (
       <div className="flex h-full w-full flex-col border-s border-border-main bg-bg-menu text-sm text-text-secondary">
-        <PanelHeader name={info.displayName} statusLabel={error ?? t('Built-in editor')} status={status} saving={saving} onClose={onClose} />
+        {hideHeader ? null : (
+          <PanelHeader name={info.displayName} statusLabel={error ?? t('Built-in editor')} status={status} saving={saving} onClose={onClose} />
+        )}
         {error && (
           <div className="flex items-center gap-2 border-b border-border-main px-4 py-2 text-[11px] text-text-tertiary">
             <AlertCircle className="size-3.5 shrink-0" />
@@ -372,7 +419,7 @@ export function CraftPanel({
               <Loader2 className="size-4 animate-spin" /> {t('Loading')}
             </div>
           ) : (
-            <Preview file={fallbackFile} />
+            <CraftPreview file={fallbackFile} />
           )}
         </div>
       </div>
@@ -382,13 +429,15 @@ export function CraftPanel({
   if (status === 'error') {
     return (
       <div className="flex h-full w-full flex-col border-s border-border-main bg-bg-menu">
-        <PanelHeader
-          name={info.displayName}
-          statusLabel={error ?? t('The editor could not be loaded.')}
-          status={status}
-          saving={saving}
-          onClose={onClose}
-        />
+        {hideHeader ? null : (
+          <PanelHeader
+            name={info.displayName}
+            statusLabel={error ?? t('The editor could not be loaded.')}
+            status={status}
+            saving={saving}
+            onClose={onClose}
+          />
+        )}
         <div className="flex flex-1 items-center justify-center gap-2 text-text-secondary">
           <AlertCircle className="size-5" />
           <p>{error ?? t('The editor could not be loaded.')}</p>
@@ -403,14 +452,16 @@ export function CraftPanel({
 
   return (
     <div className="flex h-full w-full flex-col border-s border-border-main bg-bg-menu">
-      <PanelHeader
-        name={info.displayName}
-        statusLabel={error ?? (loading ? t('Loading {name}', { name: info.displayName }) : t('Ready'))}
-        status={loading ? 'loading' : status}
-        saving={saving}
-        onClose={onClose}
-        onSave={() => void handleSave()}
-      />
+      {hideHeader ? null : (
+        <PanelHeader
+          name={info.displayName}
+          statusLabel={error ?? (loading ? t('Loading {name}', { name: info.displayName }) : t('Ready'))}
+          status={loading ? 'loading' : status}
+          saving={saving}
+          onClose={onClose}
+          onSave={() => void handleSave()}
+        />
+      )}
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <iframe
           ref={iframeRef}
@@ -490,7 +541,7 @@ function PanelHeader({
 }
 
 /** Preview-only fallback for the apps with no built-in editor (Photo, Design). */
-function Preview({ file }: { file: WorkspaceFile }) {
+export function CraftPreview({ file }: { file: WorkspaceFile }) {
   const src = `${getApiBase()}/api/media?taskId=${encodeURIComponent(file.taskId)}&path=${encodeURIComponent(file.path)}`;
   const ext = file.path.split('.').pop()?.toLowerCase() ?? '';
   if (ext === 'pdf') {
