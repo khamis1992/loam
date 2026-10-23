@@ -226,8 +226,12 @@ const PHYSICAL_DIRECTIONAL: Array<{ re: RegExp; logical: string }> = [
   { re: /(?:^|[\s"'`])mr-[a-z0-9\[]/gi, logical: "me-*" },
   { re: /(?:^|[\s"'`])pl-[a-z0-9\[]/gi, logical: "ps-*" },
   { re: /(?:^|[\s"'`])pr-[a-z0-9\[]/gi, logical: "pe-*" },
-  { re: /(?:^|[\s"'`])left-[a-z0-9\[]/gi, logical: "start-*" },
-  { re: /(?:^|[\s"'`])right-[a-z0-9\[]/gi, logical: "end-*" },
+  // Same guard as `right-`: "left-to-right" is prose, not the utility `left-1`.
+  { re: /(?:^|[\s"'`])left-(?![a-z])/gi, logical: "start-*" },
+  // The lookahead keeps prose such as "right-to-left" (or "right-to-vote") from
+  // being read as the utility class `right-1`, while still matching `right-1`,
+  // `right-1/2` and the arbitrary-value form `right-[20px]`.
+  { re: /(?:^|[\s"'`])right-(?![a-z])/gi, logical: "end-*" },
   { re: /(?:^|[\s"'`])text-left\b/gi, logical: "text-start" },
   { re: /(?:^|[\s"'`])text-right\b/gi, logical: "text-end" },
   { re: /(?:^|[\s"'`])border-l-[a-z0-9\[]/gi, logical: "border-s-*" },
@@ -828,6 +832,32 @@ interface ScannedFile {
   text: string;
 }
 
+/**
+ * A lintable UI source: a markup, style or script file. Build tooling and asset
+ * manifests are not UI sources, so they are never held to a page's RTL rules.
+ */
+function isUiSource(relative: string): boolean {
+  return /\.(?:html|css|tsx|jsx|vue|svelte|ts|js|mjs|cjs)$/i.test(relative)
+    && !/(?:^|\/)(?:build|dist|out|node_modules)(?:\/|$)/i.test(relative);
+}
+
+/**
+ * The RTL rules are document-level. They are evaluated once over the whole site
+ * rather than once per file, so a JavaScript or stylesheet module is never told
+ * it is "missing dir=rtl" (only the document can declare one), and a directory
+ * of source files is never penalised because one module happens to use physical
+ * spacing while another uses logical spacing.
+ *
+ * True when at least one UI source declares the direction and at least one
+ * declares a direction-agnostic property.
+ */
+function rtlReadyFor(scanned: ScannedFile[]): boolean {
+  const sources = scanned.filter((file) => isUiSource(file.relative));
+  const hasDirRtl = sources.some((file) => /\.html$/i.test(file.relative) && RTL_DIR_RE.test(file.text));
+  const hasLogical = sources.some((file) => LOGICAL_PROPERTY_RE.test(file.text));
+  return hasDirRtl && hasLogical;
+}
+
 function collectFiles(dir: string, out: string[] = []): string[] {
   let entries: fs.Dirent[];
   try {
@@ -885,23 +915,37 @@ function lintScannedFile(file: ScannedFile, options: LintOptions, issues: LintIs
   if (counts["emoji-icon"] > 0) push("emoji-icon", `emoji used as an icon or decoration (${counts["emoji-icon"]})`);
   if (counts["missing-alt"] > 0) push("missing-alt", `image(s) without alt text (${counts["missing-alt"]})`);
   if (counts["gradient"] > 0) push("gradient", `gradient used without an explicit opt-in (${counts["gradient"]})`);
+  // The RTL rules are folded in once per site, not per file; see
+  // `foldRtlIssues` below.
+}
 
+/**
+ * Fold the RTL rules once per site. `scanned` is every UI source file, so the
+ * result describes the site's layout rather than one module of it.
+ *
+ * Only the document can declare `dir="rtl"`, and only the layout can declare a
+ * logical property, so evaluating these per file would report a violation on a
+ * script or stylesheet that never had either. Folding per site keeps the rule
+ * meaningful: a site is RTL-ready when its document declares the direction and
+ * some UI source uses direction-agnostic spacing.
+ */
+function foldRtlIssues(scanned: ScannedFile[], options: LintOptions, issues: LintIssue[]): void {
   const rtlRequested = resolveDirection(options.locale ?? "", options.direction) === "rtl";
   if (!rtlRequested) return;
 
-  // A root document that omits dir="rtl" is reported once for the site, not
-  // once per Arabic file, so the issue list stays readable.
-  const htmlFile = /\.html$/i.test(relative);
-  const hasDirRtl = RTL_DIR_RE.test(text);
-  if (htmlFile && !hasDirRtl) push("rtl-dir", 'missing dir="rtl" on the root element for an RTL locale');
-  if (!hasDirRtl) push("rtl-direction", 'Arabic content without dir="rtl" on the root element');
-  if (counts["rtl-logical-properties"] > 0) {
-    push("rtl-logical", `physical directional property(ies) under an RTL layout (${counts["rtl-logical-properties"]})`);
-  } else if (!LOGICAL_PROPERTY_RE.test(text)) {
-    // No direction-agnostic property anywhere in the file: the layout cannot
-    // mirror, so the site is not RTL-ready even if no physical property was
-    // spotted yet.
-    push("rtl-logical", "no logical properties (ms-/me-/ps-/pe-) found for an RTL locale");
+  const sources = scanned.filter((file) => isUiSource(file.relative));
+  if (sources.length === 0) return;
+
+  const hasDirRtl = sources.some((file) => /\.html$/i.test(file.relative) && RTL_DIR_RE.test(file.text));
+  const hasLogical = sources.some((file) => LOGICAL_PROPERTY_RE.test(file.text));
+
+  if (!hasDirRtl) {
+    const document = sources.find((file) => /\.html$/i.test(file.relative)) ?? sources[0]!;
+    issues.push(toSiteIssue("rtl-dir", document.relative, 'missing dir="rtl" on the root element for an RTL locale'));
+  }
+  if (!hasLogical) {
+    const anchor = sources.find((file) => /\.css$/i.test(file.relative)) ?? sources[0]!;
+    issues.push(toSiteIssue("rtl-logical", anchor.relative, "no logical properties (ms-/me-/ps-/pe-) found for an RTL locale"));
   }
 }
 
@@ -920,10 +964,10 @@ function computeScore(issues: LintIssue[]): number {
 export function lintSiteSource(source: string, options: LintOptions = {}): LintResult {
   const text = source ?? "";
   const issues: LintIssue[] = [];
-  lintScannedFile({ relative: "inline", text }, options, issues);
+  const scanned: ScannedFile[] = [{ relative: "inline", text }];
+  lintScannedFile(scanned[0]!, options, issues);
+  foldRtlIssues(scanned, options, issues);
   const rtlRequested = resolveDirection(options.locale ?? "", options.direction) === "rtl";
-  const hasDirRtl = RTL_DIR_RE.test(text);
-  const hasLogical = LOGICAL_PROPERTY_RE.test(text);
   return {
     score: computeScore(issues),
     issues,
@@ -935,7 +979,7 @@ export function lintSiteSource(source: string, options: LintOptions = {}): LintR
       emoji: issues.filter((issue) => issue.rule === "emoji-icon").length,
       gradients: issues.filter((issue) => issue.rule === "gradient").length,
       missingAlt: issues.filter((issue) => issue.rule === "missing-alt").length,
-      rtlReady: !rtlRequested || (hasDirRtl && hasLogical),
+      rtlReady: !rtlRequested || rtlReadyFor(scanned),
     },
   };
 }
@@ -964,11 +1008,7 @@ export function minimalDesignLinter(): DesignLinter {
         scanned.push({ relative: path.relative(root, absolute).split(path.sep).join("/"), text });
       }
       for (const file of scanned) lintScannedFile(file, options, issues);
-
-      const rtlRequested = resolveDirection(options.locale ?? "", options.direction) === "rtl";
-      const hasDirRtl = scanned.some((f) => /\.html$/i.test(f.relative) && RTL_DIR_RE.test(f.text));
-      const hasLogical = scanned.some((f) => LOGICAL_PROPERTY_RE.test(f.text));
-      const rtlReady = !rtlRequested || (hasDirRtl && hasLogical);
+      foldRtlIssues(scanned, options, issues);
 
       return {
         score: computeScore(issues),
@@ -981,7 +1021,7 @@ export function minimalDesignLinter(): DesignLinter {
           emoji: issues.filter((i) => i.rule === "emoji-icon").length,
           gradients: issues.filter((i) => i.rule === "gradient").length,
           missingAlt: issues.filter((i) => i.rule === "missing-alt").length,
-          rtlReady,
+          rtlReady: rtlReadyFor(scanned),
         },
       };
     },
