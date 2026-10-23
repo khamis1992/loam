@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { database, transaction } from "./sqliteStore.js";
+import { database, getMeta, setMeta, transaction } from "./sqliteStore.js";
 
 /**
  * Local mock credit ledger (OPD option #9).
@@ -93,15 +93,6 @@ function currentBalanceLocked(): number {
 function refExistsLocked(ref: string): boolean {
   const row = database().prepare("SELECT 1 FROM credit_ledger WHERE ref=? LIMIT 1").get(ref);
   return Boolean(row);
-}
-
-function getMeta(key: string): string | undefined {
-  const row = database().prepare("SELECT value FROM metadata WHERE key=?").get(key) as { value: string } | undefined;
-  return row?.value;
-}
-
-function setMeta(key: string, value: string): void {
-  database().prepare("INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, value);
 }
 
 /** Append a signed amount to the ledger atomically. Fails on duplicate ref. */
