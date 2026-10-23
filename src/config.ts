@@ -220,6 +220,19 @@ export interface Config {
     reattachFiles: number;
     /** Characters of each re-attached file snapshot to keep (default: 4000). */
     reattachFileChars: number;
+    /**
+     * Trigger a synchronous emergency hard-compact when the estimate exceeds this
+     * fraction of the context window (default: 0.95, jcode parity). Above this point
+     * the transcript is dropped/truncated immediately instead of waiting for the
+     * summarizer, so the next API call is guaranteed to fit.
+     */
+    criticalThresholdPercent: number;
+    /** Recent turns kept verbatim during emergency compaction (default: 10, jcode parity). */
+    recentTurnsToKeep: number;
+    /** Absolute minimum turns kept during emergency compaction (default: 2, jcode parity). */
+    minTurnsToKeep: number;
+    /** Max characters kept for a single tool result during emergency truncation (default: 4000, jcode parity). */
+    emergencyToolResultMaxChars: number;
     /** Model to use for summarization ("" = main model). */
     model: string;
     /** Context window size per model prefix (longest-prefix match). Defaults cover common models. */
@@ -344,6 +357,10 @@ export const DEFAULTS: Config = {
     bufferTokens: 20000,
     reattachFiles: 5,
     reattachFileChars: 4000,
+    criticalThresholdPercent: 0.95,
+    recentTurnsToKeep: 10,
+    minTurnsToKeep: 2,
+    emergencyToolResultMaxChars: 4000,
     model: "",
     contextWindow: {
       "gpt-4": 8192,
