@@ -1,5 +1,5 @@
 const path = require("node:path");
-const { flipFuses, FuseVersion, FuseV1Name, FuseV1Options } = require("@electron/fuses");
+const { flipFuses, FuseVersion, FuseV1Options } = require("@electron/fuses");
 
 /** Flip the security fuses required by BUILD_SPEC §10.4 after the packaged
  *  Electron executable has been produced.
@@ -13,12 +13,12 @@ module.exports = async function afterPack(context) {
 
   await flipFuses(exePath, {
     version: FuseVersion.V1,
-    [FuseV1Name.RunAsNode]: FuseV1Options.Disable,
-    [FuseV1Name.EnableNodeOptionsEnvironmentVariable]: FuseV1Options.Disable,
-    [FuseV1Name.EnableNodeCliInspectArguments]: FuseV1Options.Disable,
-    [FuseV1Name.EnableEmbeddedAsarIntegrityValidation]: FuseV1Options.Enable,
-    [FuseV1Name.OnlyLoadAppFromAsar]: FuseV1Options.Enable,
-    [FuseV1Name.EnableCookieEncryption]: FuseV1Options.Enable,
-    [FuseV1Name.GrantFileProtocolExtraPrivileges]: FuseV1Options.Disable,
+    [FuseV1Options.RunAsNode]: false,
+    [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+    [FuseV1Options.EnableNodeCliInspectArguments]: false,
+    [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+    [FuseV1Options.OnlyLoadAppFromAsar]: true,
+    [FuseV1Options.EnableCookieEncryption]: true,
+    [FuseV1Options.GrantFileProtocolExtraPrivileges]: false,
   });
 };
