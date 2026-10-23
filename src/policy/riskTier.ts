@@ -176,6 +176,7 @@ const WRITE_TOOL_NAMES = new Set<string>([
   "office_export",
   "office_import",
   "propose_instructions_update",
+  "video_studio",
 ]);
 
 const EXEC_TOOL_NAMES = new Set<string>([

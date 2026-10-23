@@ -37,6 +37,7 @@ import { createDesignStudioTools } from "./tools/designStudio.js";
 import { createPlaybookTools } from "./tools/playbookTools.js";
 import { createOfficeEditTools } from "./tools/officeEditAgent.js";
 import { createVideoEditTools } from "./tools/videoEditAgent.js";
+import { createVideoStudioTools } from "./tools/videoStudio.js";
 import { createDeployTools } from "./tools/deploy.js";
 import { createDesignExploreTools } from "./tools/designExplore.js";
 import { createDesignLintTools } from "./tools/designLint.js";
@@ -139,6 +140,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createPlaybookTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createOfficeEditTools());
   rt.registry.registerAll(createVideoEditTools());
+  rt.registry.registerAll(createVideoStudioTools({ relay: videoStudioRelay }));
   rt.registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview: rt.preview }));
   rt.registry.registerAll(createDesignExploreTools());
   rt.registry.registerAll(createDesignLintTools());

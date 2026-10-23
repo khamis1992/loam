@@ -352,3 +352,54 @@ Gates re-run after the full merge (all pass, worktree root):
   (cd packages/web && npx vitest run)           -> 66 files, 437 tests passed
 
 Branch is now 0 commits behind manus-parity (a5d0cf3 is an ancestor of HEAD).
+
+---
+
+## fc-03: `video_studio` agent tool (FilmCraft actions)
+
+fc-03 complete. The merge gate failure was a single conflict in
+`docs/filmcraft-integration.md` (manus-parity tip `dc1c68d`, merge base
+`6ad123d`). Resolved keeping BOTH sides: the incoming fc-01 vendor-fetch refresh
+section (`npm run vendor:filmcraft` / `scripts/vendor/fetch-filmcraft.mjs` /
+`docs/vendor-dists.md`) and this branch's `video_studio` action/command-mapping
+documentation are both present. Resolution committed as `5b3766d Merge
+manus-parity into fc-03: keep both the vendor fetch docs and the video_studio
+mapping`. `git merge-tree --write-tree manus-parity HEAD` exits 0.
+
+### What fc-03 delivers
+- `src/tools/videoStudio.ts`: the single `video_studio` agent tool driving the
+  FilmCraft editor through the fc-02 relay (`src/server/videoStudioRelay.ts`).
+  Actions: `open`, `state`, `import`, `cut`, `trim`, `delete` (ripple), `move`,
+  `reorder`, `split`, `speed`, `add_text`, `add_audio` / `music`,
+  `transition_basic`, `effect_basic`, `undo`, `raw`.
+  - Command ids are never hardcoded: `VIDEO_STUDIO_COMMAND_CANDIDATES` is
+    resolved against the live `commands()` catalog at runtime via
+    `resolveCommandId`; an unexposed id returns the looked-for ids, Levenshtein
+    close matches and the full catalog so the agent can retry with `raw`.
+  - Time args accept seconds and timecode (`toSeconds` / `toSecondsArray`).
+  - Fallback contract returns `ok:false` with `fallback: "video_edit"` for
+    `filmcraft_dist_missing` / `bridge_unavailable` / `command_rejected` /
+    `cancelled`, and `retry: true` for `panel_not_open`.
+- `src/server/videoStudioRelay.ts`: enqueues commands per task, streams them over
+  SSE, settles one at a time, times out, rejects with `COMMAND_REJECTED`,
+  ignores unknown ids, and cancels queued/in-flight commands on task stop.
+- Registration: `video_studio` in `src/server/runTools.ts` (`ALWAYS_ON_TOOLS`)
+  and in `src/policy/riskTier.ts`.
+- Docs: `docs/filmcraft-integration.md` gains the actions table, the
+  command-candidate mapping, the time-argument grammar and the fallback table.
+- Tests: `src/tools/__tests__/videoStudio.test.ts` (mocked relay: every action's
+  command sequence, unknown-id rejection with close matches, fallback paths,
+  reorder permutation contract, effect_basic name precedence),
+  `src/server/__tests__/videoStudioRelay.test.ts`,
+  `src/server/__tests__/videoStudioE2E.test.ts` (real server + relay + SSE route).
+
+### Gates (all run from the worktree root, on merged tip `5b3766d`)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.2mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (Next.js 16.4.2, 25/25 static pages)
+- `node --import tsx --test src/tools/__tests__/videoStudio.test.ts src/server/__tests__/videoStudioRelay.test.ts src/server/__tests__/videoStudioE2E.test.ts src/server/__tests__/runTools.test.ts`
+  -> tests 66, pass 66, fail 0
+
+No test was weakened or deleted; no forbidden path was touched; working tree is
+clean (only the pre-existing untracked `src/server/__tests__/.setuptiming.test.ts`
+and `.timingprobe.test.ts` remain, left alone).
