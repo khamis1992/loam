@@ -17,6 +17,7 @@
 
 /** Low-risk tools exposed to every agent run in every mode. */
 export const ALWAYS_ON_TOOLS: readonly string[] = [
+  "codemode",
   "scratchpad_add",
   "scratchpad_list",
   "scratchpad_complete",
