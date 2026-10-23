@@ -45,10 +45,10 @@ skipped, and no code was dropped:
    including `model_chain`'s `→` arrow) and the test now passes.
 
 ## Gate condition verified
-`git merge manus-parity` reports "Already up to date." and
-`git merge-base --is-ancestor manus-parity HEAD` exits 0, so parity is fully merged
-(rev-list --left-right --count manus-parity...HEAD = 0  2). No conflict markers remain
-anywhere in `src/`.
+After the resolution is committed as the merge commit, `git merge manus-parity` reports
+"Already up to date." and `git merge-base --is-ancestor manus-parity HEAD` exits 0, so
+parity is fully merged (rev-list --left-right --count manus-parity...HEAD = 0  3). No
+conflict markers remain anywhere in the tree.
 
 ## D2 acceptance criteria (ci_watch)
 - fail -> fail -> pass drives exactly 2 fix iterations
