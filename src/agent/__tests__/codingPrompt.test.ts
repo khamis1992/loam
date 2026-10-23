@@ -28,9 +28,12 @@ after(() => {
 import {
   CODING_MODE_SECTION_ID,
   MASTER_ORDER,
+  MISSION_SECTION_ID,
   buildMasterPrompt,
   codingModeSection,
   isCodingTask,
+  missionSection,
+  fillMasterSlots,
 } from "../masterPrompt.js";
 import { MASTER_PROMPT_SECTIONS } from "../masterPromptText.js";
 import { buildSystemPrompt, codingPromptEnabled } from "../prompt.js";
@@ -57,6 +60,22 @@ const ALL_SLOTS = {
   deliverables_dir: "C:/work/task/deliverables",
   local_timeout_s: "600",
 } as const;
+
+/** The rules §25 must carry, as patterns over the rendered section. */
+const MISSION_RULES: Array<[string, RegExp]> = [
+  ["seed is a hypothesis", /seed is a hypothesis/i],
+  ["plan the next step", /Plan the next step, not the whole mountain/i],
+  ["last step is delivery", /The last step is always delivery/i],
+  ["ask once in batch", /Ask once, in batch/i],
+  ["fan out with the right grain", /Use the right grain/i],
+  ["cite recipe step ids", /identified by its recipe `id`/i],
+  ["budget awareness", /Budget awareness/i],
+  ["completion node", /completion node/i],
+  ["mission hygiene", /Mission hygiene/i],
+];
+
+/** Runtime slots left behind by a section, except the literal vault examples. */
+const UNFILLED = /\{\{(?!vault:)[^{}]+\}\}/;
 
 const CODING_TOOLS = ["file_read", "file_edit", "file_write", "file_multi_edit", "shell_run", "code_session"];
 const READ_ONLY_TOOLS = ["file_read", "file_list", "file_search", "code_symbols"];
@@ -141,6 +160,41 @@ describe("runtime prompt builder", () => {
       if (previous === undefined) delete process.env.LOAM_CODING_PROMPT;
       else process.env.LOAM_CODING_PROMPT = previous;
     }
+  });
+});
+
+describe("long-horizon mission prompt section (N19)", () => {
+  it("is authored in the master asset but not in the default assembly order", () => {
+    const section = MASTER_PROMPT_SECTIONS.find((s) => s.id === MISSION_SECTION_ID);
+    assert.ok(section, `master asset is missing section ${MISSION_SECTION_ID}`);
+    assert.equal(section!.title, "25. Long-Horizon Missions (Recipe mode)");
+
+    const ordered = MASTER_ORDER.flat();
+    assert.ok(!ordered.includes(MISSION_SECTION_ID), "§25 must stay mission-conditional");
+
+    const assembled = buildMasterPrompt(ALL_SLOTS, { model: "qwen2.5:14b" });
+    assert.ok(!assembled.includes(section!.title), "buildMasterPrompt must not emit §25 unconditionally");
+  });
+
+  it("renders with its heading and names only real registry tools", () => {
+    const section = missionSection();
+    assert.ok(section.startsWith(`## ${MISSION_SECTION_ID}.`), "mission section must render with its heading");
+    for (const [name, pattern] of MISSION_RULES) {
+      assert.match(section, pattern, `mission section is missing the rule: ${name}`);
+    }
+    for (const tool of ["spawn_agent", "delegate_to_child", "code_session", "wide_research", "ask_user", "finish"]) {
+      assert.ok(section.includes(`\`${tool}\``), `mission section must name the real tool ${tool}`);
+    }
+    for (const ghost of ["map_reduce", "delegate_subagent"]) {
+      assert.ok(!section.includes(`\`${ghost}\``), `mission section must not name the unreachable tool ${ghost}`);
+    }
+  });
+
+  it("fills its runtime slots so no raw placeholder reaches the model", () => {
+    const filled = fillMasterSlots(missionSection(), ALL_SLOTS);
+    assert.ok(!UNFILLED.test(filled), `mission section left an unfilled slot: ${filled.match(UNFILLED)?.[0] ?? ""}`);
+    assert.ok(filled.includes(ALL_SLOTS.project_path), "project_path slot is not filled");
+    assert.ok(filled.includes(ALL_SLOTS.max_parallel_agents), "max_parallel_agents slot is not filled");
   });
 });
 
