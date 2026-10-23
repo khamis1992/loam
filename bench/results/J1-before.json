@@ -1,0 +1,346 @@
+[
+  {
+    "launcher": "per-process",
+    "kind": "per-process",
+    "N": 1,
+    "idleMB": 249.1,
+    "peakMB": 409.5,
+    "finalMB": 253.1,
+    "perSessionMB": 160.4,
+    "baselineMB": null,
+    "marginalSessionMB": null,
+    "fixed": 1,
+    "sessions": [
+      {
+        "index": 0,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-QxKE6j\\s0",
+        "pid": 67500,
+        "fixed": true,
+        "output": ""
+      }
+    ],
+    "durationMs": 2933,
+    "platform": "win32",
+    "notes": [
+      "fake model http://127.0.0.1:49929"
+    ]
+  },
+  {
+    "launcher": "per-process",
+    "kind": "per-process",
+    "N": 10,
+    "idleMB": 248.8,
+    "peakMB": 1523,
+    "finalMB": 273.3,
+    "perSessionMB": 127.4,
+    "baselineMB": 409.5,
+    "marginalSessionMB": 123.7,
+    "fixed": 10,
+    "sessions": [
+      {
+        "index": 0,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-1ElgCs\\s0",
+        "pid": 46028,
+        "fixed": true,
+        "output": ""
+      },
+      {
+        "index": 1,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-1ElgCs\\s1",
+        "pid": 26916,
+        "fixed": true,
+        "output": ""
+      },
+      {
+        "index": 2,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-1ElgCs\\s2",
+        "pid": 59584,
+        "fixed": true,
+        "output": ""
+      },
+      {
+        "index": 3,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-1ElgCs\\s3",
+        "pid": 52868,
+        "fixed": true,
+        "output": ""
+      },
+      {
+        "index": 4,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-1ElgCs\\s4",
+        "pid": 48620,
+        "fixed": true,
+        "output": ""
+      },
+      {
+        "index": 5,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-1ElgCs\\s5",
+        "pid": 65888,
+        "fixed": true,
+        "output": ""
+      },
+      {
+        "index": 6,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-1ElgCs\\s6",
+        "pid": 42752,
+        "fixed": true,
+        "output": ""
+      },
+      {
+        "index": 7,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-1ElgCs\\s7",
+        "pid": 71768,
+        "fixed": true,
+        "output": ""
+      },
+      {
+        "index": 8,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-1ElgCs\\s8",
+        "pid": 70652,
+        "fixed": true,
+        "output": ""
+      },
+      {
+        "index": 9,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-1ElgCs\\s9",
+        "pid": 43372,
+        "fixed": true,
+        "output": ""
+      }
+    ],
+    "durationMs": 3892,
+    "platform": "win32",
+    "notes": [
+      "fake model http://127.0.0.1:53175"
+    ]
+  },
+  {
+    "launcher": "per-process",
+    "kind": "per-process",
+    "N": 30,
+    "idleMB": 249.1,
+    "peakMB": 2476.7,
+    "finalMB": 292.2,
+    "perSessionMB": 74.3,
+    "baselineMB": 409.5,
+    "marginalSessionMB": 71.3,
+    "fixed": 30,
+    "sessions": [
+      {
+        "index": 0,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s0",
+        "pid": 69952,
+        "fixed": true,
+        "output": ""
+      },
+      {
+        "index": 1,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s1",
+        "pid": 61848,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:19.654Z] INFO model_request {\"requestId\":\"53adcaf3-466c-4051-9f20-8a9bc6501613\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.018Z] INFO model_request {\"requestId\":\"53adcaf3-466c-4051-9f20-8a9bc6501613\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":364,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.021Z] INFO model_request {\"requestId\":\"86114d41-47a8-450f-88db-b5338f8cb346\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.028Z] INFO model_request {\"requestId\":\"86114d41-47a8-450f-88db-b5338f8cb346\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":7,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.038Z] INFO model_request {\"requestId\":\"b688c086-fa71-4448-930b-0065cfc3a022\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.044Z] INFO model_request {\"requestId\":\"b688c086-fa71-4448-930b-0065cfc3a022\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:61848) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.541Z] INFO model_request {\"requestId\":\"b31b0b33-25b4-4eeb-ad35-5146bbb0b6fd\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.546Z] INFO model_request {\"requestId\":\"b31b0b33-25b4-4eeb-ad35-5146bbb0b6fd\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +2291ms sess"
+      },
+      {
+        "index": 2,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s2",
+        "pid": 72384,
+        "fixed": true,
+        "output": ""
+      },
+      {
+        "index": 3,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s3",
+        "pid": 63316,
+        "fixed": true,
+        "output": ""
+      },
+      {
+        "index": 4,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s4",
+        "pid": 54468,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:20.331Z] INFO model_request {\"requestId\":\"42761937-e795-4839-af0a-29433499f153\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.358Z] INFO model_request {\"requestId\":\"42761937-e795-4839-af0a-29433499f153\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":27,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.361Z] INFO model_request {\"requestId\":\"7a1a1376-9c44-40e2-a52c-5f156ac95472\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.369Z] INFO model_request {\"requestId\":\"7a1a1376-9c44-40e2-a52c-5f156ac95472\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":7,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.379Z] INFO model_request {\"requestId\":\"d7152a94-fb61-47a3-8fb6-38edfb8ee46e\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.385Z] INFO model_request {\"requestId\":\"d7152a94-fb61-47a3-8fb6-38edfb8ee46e\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:54468) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.669Z] INFO model_request {\"requestId\":\"b5c58bf7-a5fe-46e8-8ce6-87544d61c15b\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.674Z] INFO model_request {\"requestId\":\"b5c58bf7-a5fe-46e8-8ce6-87544d61c15b\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +1965ms sessi"
+      },
+      {
+        "index": 5,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s5",
+        "pid": 45236,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:19.976Z] INFO model_request {\"requestId\":\"97617997-c594-4b54-b9f3-6884cb43f4d4\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.021Z] INFO model_request {\"requestId\":\"97617997-c594-4b54-b9f3-6884cb43f4d4\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":45,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.025Z] INFO model_request {\"requestId\":\"a71472e1-16e0-45b6-adca-3b92f728bffb\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.033Z] INFO model_request {\"requestId\":\"a71472e1-16e0-45b6-adca-3b92f728bffb\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":8,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.045Z] INFO model_request {\"requestId\":\"536bcbb1-dabd-45e4-b89c-fb950a5db79a\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.051Z] INFO model_request {\"requestId\":\"536bcbb1-dabd-45e4-b89c-fb950a5db79a\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:45236) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.715Z] INFO model_request {\"requestId\":\"4334c5c6-6ba7-4890-988b-3df7776facf4\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.721Z] INFO model_request {\"requestId\":\"4334c5c6-6ba7-4890-988b-3df7776facf4\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +2132ms sessi"
+      },
+      {
+        "index": 6,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s6",
+        "pid": 61644,
+        "fixed": true,
+        "output": ""
+      },
+      {
+        "index": 7,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s7",
+        "pid": 57864,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:20.588Z] INFO model_request {\"requestId\":\"8f570b44-16ac-4779-9989-cdded917ce0d\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.614Z] INFO model_request {\"requestId\":\"8f570b44-16ac-4779-9989-cdded917ce0d\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":26,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.617Z] INFO model_request {\"requestId\":\"e1106c9b-e13b-4c92-a075-760f7150c564\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.624Z] INFO model_request {\"requestId\":\"e1106c9b-e13b-4c92-a075-760f7150c564\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":8,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.634Z] INFO model_request {\"requestId\":\"29c1105f-aa61-486f-bc94-ef865fef8ab7\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.643Z] INFO model_request {\"requestId\":\"29c1105f-aa61-486f-bc94-ef865fef8ab7\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":9,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:57864) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.822Z] INFO model_request {\"requestId\":\"35c6e38d-43d9-49c8-835e-bebafb4750b0\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.827Z] INFO model_request {\"requestId\":\"35c6e38d-43d9-49c8-835e-bebafb4750b0\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +1940ms sessi"
+      },
+      {
+        "index": 8,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s8",
+        "pid": 81352,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:20.684Z] INFO model_request {\"requestId\":\"78fa44b8-dfc0-4ea1-95b7-9a098e6ebb61\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.712Z] INFO model_request {\"requestId\":\"78fa44b8-dfc0-4ea1-95b7-9a098e6ebb61\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":28,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.714Z] INFO model_request {\"requestId\":\"4f26a3e0-b3f3-4f7e-b6ea-546dd10fd96d\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.722Z] INFO model_request {\"requestId\":\"4f26a3e0-b3f3-4f7e-b6ea-546dd10fd96d\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":7,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.732Z] INFO model_request {\"requestId\":\"ea0db1ef-b2a5-4528-90cc-fa41c87b370e\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.738Z] INFO model_request {\"requestId\":\"ea0db1ef-b2a5-4528-90cc-fa41c87b370e\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:81352) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.779Z] INFO model_request {\"requestId\":\"9e5605bc-4546-4720-92f0-5f3ef3c80347\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.785Z] INFO model_request {\"requestId\":\"9e5605bc-4546-4720-92f0-5f3ef3c80347\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +1467ms sessi"
+      },
+      {
+        "index": 9,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s9",
+        "pid": 78912,
+        "fixed": true,
+        "output": ""
+      },
+      {
+        "index": 10,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s10",
+        "pid": 23212,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:20.496Z] INFO model_request {\"requestId\":\"1eb4c7a4-e8ec-401a-8e60-2e6678042131\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.523Z] INFO model_request {\"requestId\":\"1eb4c7a4-e8ec-401a-8e60-2e6678042131\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":27,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.526Z] INFO model_request {\"requestId\":\"a5fc2881-90a9-44d1-9ff5-cae2fa53ba09\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.534Z] INFO model_request {\"requestId\":\"a5fc2881-90a9-44d1-9ff5-cae2fa53ba09\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":8,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.545Z] INFO model_request {\"requestId\":\"c6640664-6cf1-4a4d-8f5f-1010e29eeb00\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.551Z] INFO model_request {\"requestId\":\"c6640664-6cf1-4a4d-8f5f-1010e29eeb00\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:23212) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.779Z] INFO model_request {\"requestId\":\"ec2e7a58-ebf0-438f-89fc-9d11975f8664\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.783Z] INFO model_request {\"requestId\":\"ec2e7a58-ebf0-438f-89fc-9d11975f8664\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +1789ms sessi"
+      },
+      {
+        "index": 11,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s11",
+        "pid": 51340,
+        "fixed": true,
+        "output": ""
+      },
+      {
+        "index": 12,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s12",
+        "pid": 23524,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:20.818Z] INFO model_request {\"requestId\":\"d442b131-576a-4a26-bbb3-2168270b01ce\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.845Z] INFO model_request {\"requestId\":\"d442b131-576a-4a26-bbb3-2168270b01ce\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":27,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.848Z] INFO model_request {\"requestId\":\"3e527473-c8a9-4065-947b-be2472091c03\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.856Z] INFO model_request {\"requestId\":\"3e527473-c8a9-4065-947b-be2472091c03\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":8,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.866Z] INFO model_request {\"requestId\":\"b7d5b716-24d1-48e8-902f-a2081c70543c\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.871Z] INFO model_request {\"requestId\":\"b7d5b716-24d1-48e8-902f-a2081c70543c\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:23524) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.667Z] INFO model_request {\"requestId\":\"e00ec20d-3f85-47a4-a877-ab50aa263b89\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.672Z] INFO model_request {\"requestId\":\"e00ec20d-3f85-47a4-a877-ab50aa263b89\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +1312ms sessi"
+      },
+      {
+        "index": 13,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s13",
+        "pid": 44136,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:20.774Z] INFO model_request {\"requestId\":\"74c5776b-2706-444f-b7d0-43af221358f8\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.800Z] INFO model_request {\"requestId\":\"74c5776b-2706-444f-b7d0-43af221358f8\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":25,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.803Z] INFO model_request {\"requestId\":\"8c21be95-9766-49c5-b26b-109d59aa6a45\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.810Z] INFO model_request {\"requestId\":\"8c21be95-9766-49c5-b26b-109d59aa6a45\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":7,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.820Z] INFO model_request {\"requestId\":\"05cc3004-59ba-4fb6-af36-1c5af545540d\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.825Z] INFO model_request {\"requestId\":\"05cc3004-59ba-4fb6-af36-1c5af545540d\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:44136) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.872Z] INFO model_request {\"requestId\":\"b1fa5a56-dae4-4ab0-b988-0e91d3f5cec0\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.877Z] INFO model_request {\"requestId\":\"b1fa5a56-dae4-4ab0-b988-0e91d3f5cec0\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +1565ms sessi"
+      },
+      {
+        "index": 14,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s14",
+        "pid": 39752,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:20.741Z] INFO model_request {\"requestId\":\"41abbc30-a86e-476d-843c-dd8b06de35fa\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.769Z] INFO model_request {\"requestId\":\"41abbc30-a86e-476d-843c-dd8b06de35fa\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":28,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.772Z] INFO model_request {\"requestId\":\"f247d586-78f2-443d-a2db-92baee0bead3\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.789Z] INFO model_request {\"requestId\":\"f247d586-78f2-443d-a2db-92baee0bead3\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":17,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.802Z] INFO model_request {\"requestId\":\"6895ba84-8d90-4809-9f25-b3c66191b07b\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.807Z] INFO model_request {\"requestId\":\"6895ba84-8d90-4809-9f25-b3c66191b07b\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:39752) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.715Z] INFO model_request {\"requestId\":\"e3f88560-f5a9-4398-b88e-d530bca000a5\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.721Z] INFO model_request {\"requestId\":\"e3f88560-f5a9-4398-b88e-d530bca000a5\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +1449ms sess"
+      },
+      {
+        "index": 15,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s15",
+        "pid": 80492,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:21.184Z] INFO model_request {\"requestId\":\"0f251cfa-f706-4299-a92a-f2d7025d238b\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.212Z] INFO model_request {\"requestId\":\"0f251cfa-f706-4299-a92a-f2d7025d238b\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":28,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.215Z] INFO model_request {\"requestId\":\"3a5e5e2d-2263-4ce3-ac3e-3383c7c38936\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.223Z] INFO model_request {\"requestId\":\"3a5e5e2d-2263-4ce3-ac3e-3383c7c38936\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":8,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.234Z] INFO model_request {\"requestId\":\"9bf1958d-57ac-4d35-95e3-e5084d0383f9\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.239Z] INFO model_request {\"requestId\":\"9bf1958d-57ac-4d35-95e3-e5084d0383f9\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:80492) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.963Z] INFO model_request {\"requestId\":\"ea9aa78e-9b30-4acd-bfa0-3313e3421bac\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.968Z] INFO model_request {\"requestId\":\"ea9aa78e-9b30-4acd-bfa0-3313e3421bac\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +1139ms sessi"
+      },
+      {
+        "index": 16,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s16",
+        "pid": 65356,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:21.065Z] INFO model_request {\"requestId\":\"1033ee76-4f5e-4012-8c22-4853e5c72d06\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.090Z] INFO model_request {\"requestId\":\"1033ee76-4f5e-4012-8c22-4853e5c72d06\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":25,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.093Z] INFO model_request {\"requestId\":\"b0ea3ea9-a651-4de7-b1a1-98375e792757\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.101Z] INFO model_request {\"requestId\":\"b0ea3ea9-a651-4de7-b1a1-98375e792757\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":8,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.111Z] INFO model_request {\"requestId\":\"46324797-bcb9-4760-880e-87199ff45a78\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.116Z] INFO model_request {\"requestId\":\"46324797-bcb9-4760-880e-87199ff45a78\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:65356) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.907Z] INFO model_request {\"requestId\":\"2c3758eb-6080-4a8d-9158-96e4500d3c35\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.912Z] INFO model_request {\"requestId\":\"2c3758eb-6080-4a8d-9158-96e4500d3c35\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +1371ms sessi"
+      },
+      {
+        "index": 17,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s17",
+        "pid": 48496,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:20.936Z] INFO model_request {\"requestId\":\"c05f5e6b-a54b-4623-ac20-6610bf408d92\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.962Z] INFO model_request {\"requestId\":\"c05f5e6b-a54b-4623-ac20-6610bf408d92\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":26,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.965Z] INFO model_request {\"requestId\":\"98d641c8-8e25-4ad7-9e9a-2efd59a070f7\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.972Z] INFO model_request {\"requestId\":\"98d641c8-8e25-4ad7-9e9a-2efd59a070f7\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":7,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:20.984Z] INFO model_request {\"requestId\":\"bf22a254-9cb0-45bb-9fb7-039f190a5e92\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:20.990Z] INFO model_request {\"requestId\":\"bf22a254-9cb0-45bb-9fb7-039f190a5e92\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:48496) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.778Z] INFO model_request {\"requestId\":\"923568d2-2c92-45e5-ac7d-30d2cf5e048d\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.784Z] INFO model_request {\"requestId\":\"923568d2-2c92-45e5-ac7d-30d2cf5e048d\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +1196ms sessi"
+      },
+      {
+        "index": 18,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s18",
+        "pid": 66464,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:21.210Z] INFO model_request {\"requestId\":\"3f452211-10b4-4b03-adba-e8f5c63d702e\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.246Z] INFO model_request {\"requestId\":\"3f452211-10b4-4b03-adba-e8f5c63d702e\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":36,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.249Z] INFO model_request {\"requestId\":\"38eda643-96a2-44ec-8993-755646ec08cf\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.257Z] INFO model_request {\"requestId\":\"38eda643-96a2-44ec-8993-755646ec08cf\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":8,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.267Z] INFO model_request {\"requestId\":\"43533383-ed91-47fb-9dda-43dc39a0cb0f\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.273Z] INFO model_request {\"requestId\":\"43533383-ed91-47fb-9dda-43dc39a0cb0f\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:66464) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:22.080Z] INFO model_request {\"requestId\":\"96a9c703-4b69-4c86-ac61-ec91eda7e1dd\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:22.085Z] INFO model_request {\"requestId\":\"96a9c703-4b69-4c86-ac61-ec91eda7e1dd\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +1206ms sessi"
+      },
+      {
+        "index": 19,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s19",
+        "pid": 66492,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:21.144Z] INFO model_request {\"requestId\":\"6c7cd7db-3550-4b2f-9a41-57e0fd573417\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.168Z] INFO model_request {\"requestId\":\"6c7cd7db-3550-4b2f-9a41-57e0fd573417\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":24,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.171Z] INFO model_request {\"requestId\":\"4298d08a-308a-45e3-810c-453390c744c1\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.179Z] INFO model_request {\"requestId\":\"4298d08a-308a-45e3-810c-453390c744c1\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":7,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.189Z] INFO model_request {\"requestId\":\"7bb83c22-ec49-4869-8cb0-2d36d502c658\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.195Z] INFO model_request {\"requestId\":\"7bb83c22-ec49-4869-8cb0-2d36d502c658\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:66492) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.829Z] INFO model_request {\"requestId\":\"8d2d80b8-2ca6-4a3f-b787-9f46a24fe453\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.834Z] INFO model_request {\"requestId\":\"8d2d80b8-2ca6-4a3f-b787-9f46a24fe453\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +1011ms sessi"
+      },
+      {
+        "index": 20,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s20",
+        "pid": 61812,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:21.339Z] INFO model_request {\"requestId\":\"c3bda8e7-ef68-4026-8efb-7268550a2cc2\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.363Z] INFO model_request {\"requestId\":\"c3bda8e7-ef68-4026-8efb-7268550a2cc2\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":24,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.367Z] INFO model_request {\"requestId\":\"1425069d-8e37-483e-8645-7b804d4738fc\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.375Z] INFO model_request {\"requestId\":\"1425069d-8e37-483e-8645-7b804d4738fc\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":8,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.386Z] INFO model_request {\"requestId\":\"80d0b56f-37fb-4b22-b6f2-30598c13149f\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.392Z] INFO model_request {\"requestId\":\"80d0b56f-37fb-4b22-b6f2-30598c13149f\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:61812) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:22.073Z] INFO model_request {\"requestId\":\"7b0c0999-18f6-4d02-b1a3-d52910a1d81b\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:22.080Z] INFO model_request {\"requestId\":\"7b0c0999-18f6-4d02-b1a3-d52910a1d81b\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +1003ms sessi"
+      },
+      {
+        "index": 21,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s21",
+        "pid": 43036,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:21.229Z] INFO model_request {\"requestId\":\"594472ac-e504-4d88-83bf-c94732915395\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.257Z] INFO model_request {\"requestId\":\"594472ac-e504-4d88-83bf-c94732915395\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":27,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.260Z] INFO model_request {\"requestId\":\"09c22d11-7594-4b06-9753-de8b06cac92c\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.274Z] INFO model_request {\"requestId\":\"09c22d11-7594-4b06-9753-de8b06cac92c\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":15,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.284Z] INFO model_request {\"requestId\":\"eb53d6b2-f742-41e7-9ee6-2301841ff83a\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.289Z] INFO model_request {\"requestId\":\"eb53d6b2-f742-41e7-9ee6-2301841ff83a\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:43036) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:22.058Z] INFO model_request {\"requestId\":\"639d3d09-b86d-461a-b303-b67f9fd27221\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:22.063Z] INFO model_request {\"requestId\":\"639d3d09-b86d-461a-b303-b67f9fd27221\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +1122ms sess"
+      },
+      {
+        "index": 22,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s22",
+        "pid": 55836,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:21.266Z] INFO model_request {\"requestId\":\"c3c72ca5-955f-45cc-ad58-c5c8552dd693\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.293Z] INFO model_request {\"requestId\":\"c3c72ca5-955f-45cc-ad58-c5c8552dd693\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":27,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.297Z] INFO model_request {\"requestId\":\"1eec507c-c779-4d2d-bdf1-253392730807\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.304Z] INFO model_request {\"requestId\":\"1eec507c-c779-4d2d-bdf1-253392730807\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":7,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.315Z] INFO model_request {\"requestId\":\"59720f0f-36df-4a9a-8ed2-990d40cbcf7e\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.321Z] INFO model_request {\"requestId\":\"59720f0f-36df-4a9a-8ed2-990d40cbcf7e\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:55836) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:22.001Z] INFO model_request {\"requestId\":\"ee7d9487-86c4-45a7-9eaf-d88bae124844\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:22.007Z] INFO model_request {\"requestId\":\"ee7d9487-86c4-45a7-9eaf-d88bae124844\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +1000ms sessi"
+      },
+      {
+        "index": 23,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s23",
+        "pid": 59816,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:21.267Z] INFO model_request {\"requestId\":\"51b0c2f0-5cfc-40e3-8c3b-72271481cf1a\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.292Z] INFO model_request {\"requestId\":\"51b0c2f0-5cfc-40e3-8c3b-72271481cf1a\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":26,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.295Z] INFO model_request {\"requestId\":\"aa71aa1c-d4ed-4caa-959f-8ada61ccdf59\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.302Z] INFO model_request {\"requestId\":\"aa71aa1c-d4ed-4caa-959f-8ada61ccdf59\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":7,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.312Z] INFO model_request {\"requestId\":\"dd679e89-dcf9-4524-a167-2619d08ef895\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.319Z] INFO model_request {\"requestId\":\"dd679e89-dcf9-4524-a167-2619d08ef895\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n(node:59816) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.900Z] INFO model_request {\"requestId\":\"3e9859f1-5f3e-45c8-b02b-b37daad6d427\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.906Z] INFO model_request {\"requestId\":\"3e9859f1-5f3e-45c8-b02b-b37daad6d427\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +982ms sessio"
+      },
+      {
+        "index": 24,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s24",
+        "pid": 80640,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:21.459Z] INFO model_request {\"requestId\":\"8011ae64-7219-4eee-8870-0cb923d42016\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.496Z] INFO model_request {\"requestId\":\"8011ae64-7219-4eee-8870-0cb923d42016\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":36,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.499Z] INFO model_request {\"requestId\":\"99759201-11d0-4ce6-a1d6-b9397abd1da0\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n(node:80640) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.507Z] INFO model_request {\"requestId\":\"99759201-11d0-4ce6-a1d6-b9397abd1da0\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":8,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.517Z] INFO model_request {\"requestId\":\"041d6c30-6e0d-4f0a-aeca-0f58200f7416\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.522Z] INFO model_request {\"requestId\":\"041d6c30-6e0d-4f0a-aeca-0f58200f7416\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:22.177Z] INFO model_request {\"requestId\":\"8f75d867-3103-47a3-b12f-c9e289cff6f5\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:22.182Z] INFO model_request {\"requestId\":\"8f75d867-3103-47a3-b12f-c9e289cff6f5\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +957ms sessio"
+      },
+      {
+        "index": 25,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s25",
+        "pid": 62228,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:21.626Z] INFO model_request {\"requestId\":\"6c385912-1b4d-46c6-934c-ff431b2a653b\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n(node:62228) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.652Z] INFO model_request {\"requestId\":\"6c385912-1b4d-46c6-934c-ff431b2a653b\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":26,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.657Z] INFO model_request {\"requestId\":\"f7286b1d-653d-4709-8694-2dfcfe7cebd8\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.664Z] INFO model_request {\"requestId\":\"f7286b1d-653d-4709-8694-2dfcfe7cebd8\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":8,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.675Z] INFO model_request {\"requestId\":\"3d527f3a-67f9-4b13-8b41-7f55c75a1f98\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.680Z] INFO model_request {\"requestId\":\"3d527f3a-67f9-4b13-8b41-7f55c75a1f98\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:22.176Z] INFO model_request {\"requestId\":\"3ca36512-8523-4e1f-83ca-3e77e2ca6f62\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:22.183Z] INFO model_request {\"requestId\":\"3ca36512-8523-4e1f-83ca-3e77e2ca6f62\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":7,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +849ms sessio"
+      },
+      {
+        "index": 26,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s26",
+        "pid": 72220,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:21.852Z] INFO model_request {\"requestId\":\"0735b145-661e-4d31-8e7d-7ebe233fcace\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n(node:72220) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.878Z] INFO model_request {\"requestId\":\"0735b145-661e-4d31-8e7d-7ebe233fcace\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":26,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.881Z] INFO model_request {\"requestId\":\"b33e1163-ac8e-47ca-a585-9d8a933c0f37\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.888Z] INFO model_request {\"requestId\":\"b33e1163-ac8e-47ca-a585-9d8a933c0f37\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":7,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.899Z] INFO model_request {\"requestId\":\"3e2b5643-43cb-428b-acbf-2fc5ef04d15b\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.905Z] INFO model_request {\"requestId\":\"3e2b5643-43cb-428b-acbf-2fc5ef04d15b\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:22.248Z] INFO model_request {\"requestId\":\"27664f6a-a224-4c4f-be3c-d205cf000042\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:22.254Z] INFO model_request {\"requestId\":\"27664f6a-a224-4c4f-be3c-d205cf000042\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +789ms sessio"
+      },
+      {
+        "index": 27,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s27",
+        "pid": 52980,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:21.972Z] INFO model_request {\"requestId\":\"81e4a22d-4995-4e59-aa9c-616751210420\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n(node:52980) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.995Z] INFO model_request {\"requestId\":\"81e4a22d-4995-4e59-aa9c-616751210420\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":23,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.998Z] INFO model_request {\"requestId\":\"034139c0-7510-4bdb-982c-2cdfca91448b\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:22.006Z] INFO model_request {\"requestId\":\"034139c0-7510-4bdb-982c-2cdfca91448b\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":8,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:22.016Z] INFO model_request {\"requestId\":\"5dec0939-22c0-4243-8622-7b872f24919a\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:22.023Z] INFO model_request {\"requestId\":\"5dec0939-22c0-4243-8622-7b872f24919a\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:22.463Z] INFO model_request {\"requestId\":\"732c3dd8-3ecb-48f4-b00e-d6af6bc9fece\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:22.468Z] INFO model_request {\"requestId\":\"732c3dd8-3ecb-48f4-b00e-d6af6bc9fece\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +858ms sessio"
+      },
+      {
+        "index": 28,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s28",
+        "pid": 82608,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:21.804Z] INFO model_request {\"requestId\":\"f81e2a8c-4859-4d5d-8ecc-66e853a8beb9\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n(node:82608) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:21.830Z] INFO model_request {\"requestId\":\"f81e2a8c-4859-4d5d-8ecc-66e853a8beb9\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":26,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.833Z] INFO model_request {\"requestId\":\"24b329d4-bcae-4139-90cc-62f0765f686c\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.839Z] INFO model_request {\"requestId\":\"24b329d4-bcae-4139-90cc-62f0765f686c\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:21.849Z] INFO model_request {\"requestId\":\"0ebe5ec2-e1d3-44c0-8485-d115f251a7dd\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:21.855Z] INFO model_request {\"requestId\":\"0ebe5ec2-e1d3-44c0-8485-d115f251a7dd\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:22.290Z] INFO model_request {\"requestId\":\"a6779a31-67f1-4bf7-ba6c-b9253ee92745\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:22.297Z] INFO model_request {\"requestId\":\"a6779a31-67f1-4bf7-ba6c-b9253ee92745\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":7,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +805ms sessio"
+      },
+      {
+        "index": 29,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-UAlaZq\\s29",
+        "pid": 65152,
+        "fixed": true,
+        "output": "[j1-probe] +0ms entry\n[2026-10-23T17:50:21.998Z] INFO model_request {\"requestId\":\"fffc50a1-374a-4e52-b419-4d192410c79c\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":2,\"toolCount\":17,\"timeoutMs\":120000}\n(node:65152) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n[2026-10-23T17:50:22.025Z] INFO model_request {\"requestId\":\"fffc50a1-374a-4e52-b419-4d192410c79c\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":27,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:22.029Z] INFO model_request {\"requestId\":\"ac57df72-c8f4-4550-a3e6-2819a7e14ae5\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":4,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:22.036Z] INFO model_request {\"requestId\":\"ac57df72-c8f4-4550-a3e6-2819a7e14ae5\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":8,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:22.047Z] INFO model_request {\"requestId\":\"6dc0a0b4-1722-4ba6-ba8b-db17e5f3ccf9\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":6,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:22.054Z] INFO model_request {\"requestId\":\"6dc0a0b4-1722-4ba6-ba8b-db17e5f3ccf9\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":6,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":1}\n[2026-10-23T17:50:22.545Z] INFO model_request {\"requestId\":\"0f0c63ed-f798-4caf-b0dd-ad391376a10a\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"start\",\"messageCount\":8,\"toolCount\":17,\"timeoutMs\":120000}\n[2026-10-23T17:50:22.551Z] INFO model_request {\"requestId\":\"0f0c63ed-f798-4caf-b0dd-ad391376a10a\",\"attempt\":1,\"model\":\"mock-coder\",\"phase\":\"complete\",\"elapsedMs\":5,\"providerDurationMs\":1,\"promptTokens\":100,\"completionTokens\":10,\"toolCallCount\":0}\n[j1-probe] +760ms sessio"
+      }
+    ],
+    "durationMs": 9195,
+    "platform": "win32",
+    "notes": [
+      "fake model http://127.0.0.1:54740"
+    ]
+  }
+]

@@ -59,6 +59,8 @@ export const MEMORY_WINDOW = 4;
 export const FEED_WINDOW = 6;
 /** Maximum characters of a single post kept in the feed/memory. */
 export const SNIPPET_MAX = 400;
+/** Maximum entries kept in one turn's `sharedWith` list. */
+export const MAX_SHARED_WITH = 8;
 /** Maximum `reasons` entries kept per turn. */
 export const MAX_REASONS = 8;
 
@@ -114,6 +116,8 @@ export function validateAgentTurn(value: unknown): AgentTurnOutput {
     stance: clamp(stanceRaw, -1, 1),
     purchaseIntent: clamp(intentRaw, 0, 1),
     reasons: asStringArray(rec.reasons ?? rec.reason, MAX_REASONS),
+    // Share provenance, per the output schema: who the agent amplified or answered.
+    sharedWith: asStringArray(rec.sharedWith ?? rec.shared_with ?? rec.sharedAgents, MAX_SHARED_WITH),
   };
 }
 
@@ -310,10 +314,12 @@ function agentUserPrompt(input: {
     '  "stance": -1.0,',
     '  "purchaseIntent": 0.0,',
     '  "reasons": ["why you did this, from your persona\'s point of view"]',
+    '  "sharedWith": []',
     "}",
     "",
     "Rules:",
     "- `action`: post = start a new topic; comment = reply to something in your feed; share = amplify someone else's post; ignore = do nothing online this round; buy = you purchase now; cancel = you cancel/leave.",
+    "- `sharedWith`: the ids or names of the people whose post you are amplifying or answering. Fill it for `share` (required) and for `comment` when you are replying to someone specific; leave it empty for `post`, `ignore`, `buy` and `cancel`. Only name people you actually saw in the feed.",
     "- `stance`: -1 hostile/negative about the product, 0 neutral, 1 enthusiastic. A price or fee increase usually moves this negative for price-sensitive personas.",
     "- `purchaseIntent`: 0 you will never buy, 1 you buy immediately. It must be consistent with your action (buy implies 1, cancel implies 0).",
     "- `text` must be written by the persona, in the persona's own language and dialect, and must reflect the variable value for this arm.",
@@ -435,6 +441,7 @@ async function runAgentTurn(input: {
       stance: 0,
       purchaseIntent: 0,
       reasons: [],
+      sharedWith: [],
       ok: false,
       latencyMs: Date.now() - started,
       error: err instanceof Error ? err.message : String(err),
@@ -710,6 +717,7 @@ async function runArm(input: {
           stance: 0,
           purchaseIntent: 0,
           reasons: [],
+          sharedWith: [],
           ok: false,
           error: "no model caller available",
         };

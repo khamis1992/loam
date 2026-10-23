@@ -259,12 +259,224 @@ describe("canvas graph routes", () => {
     res.destroy();
   });
 
-  it("stops forwarding changes once the client disconnects", async () => {
+ it("stops forwarding changes once the client disconnects", async () => {
     const res = new FakeResponse();
     await handler(fakeRequest("GET", `/api/graph/${RUN}/stream`), res, `/api/graph/${RUN}/stream`, {});
     const unsubscribe = subscribeRunGraph(RUN, () => undefined);
     res.destroy();
     unsubscribe();
     assert.equal(res.frames().length, 1, "no change is written after the client is gone");
+  });
+});
+
+/**
+ * Neo N18: the annotation layer and node search on the same routes.
+ *
+ * These pin the guarantees the canvas depends on: an annotation is only written
+ * for a node that belongs to the run in the URL, it is read back whole, and `?q=`
+ * returns the matching nodes alongside the layout.
+ */
+describe("canvas annotation routes", () => {
+  beforeEach(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-canvas-notes-routes-"));
+    prevDataDir = process.env.MANUS_LOCAL_DATA_DIR;
+    process.env.MANUS_LOCAL_DATA_DIR = tmpDir;
+    closeDb();
+    resetRunGraph();
+    handler = (await import("../routes/graph.js")).handleGraphRoutes as unknown as Handler;
+    sixStepRun();
+  });
+
+  afterEach(() => {
+    closeDb();
+    resetRunGraph();
+    if (prevDataDir === undefined) delete process.env.MANUS_LOCAL_DATA_DIR;
+    else process.env.MANUS_LOCAL_DATA_DIR = prevDataDir;
+    try {
+      if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+    tmpDir = "";
+  });
+
+  it("reads an empty annotation layer for a run that has none", async () => {
+    const res = new FakeResponse();
+    assert.equal(await handler(fakeRequest("GET", `/api/graph/${RUN}/annotations`), res, `/api/graph/${RUN}/annotations`, {}), true);
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.json(), { runId: RUN, tags: {}, comments: {}, notes: [] });
+  });
+
+  it("writes a colour tag for a node of this run and reads it back", async () => {
+    const nodeId = applyRunEvent(RUN, { type: "tool_call", name: "web_search", args: { query: "x" } })[0]!;
+
+    const tagged = new FakeResponse();
+    assert.equal(
+      await handler(fakeRequest("PATCH", `/api/graph/${RUN}/nodes/${nodeId}/colour`, { colour: "amber" }), tagged, `/api/graph/${RUN}/nodes/${nodeId}/colour`, {}),
+      true,
+    );
+    assert.equal(tagged.status, 200);
+    assert.equal((tagged.json().node as { colour: string }).colour, "amber");
+
+    const read = new FakeResponse();
+    await handler(fakeRequest("GET", `/api/graph/${RUN}/annotations`), read, `/api/graph/${RUN}/annotations`, {});
+    assert.deepEqual(read.json().tags, { [nodeId]: "amber" }, "the tag survives a round trip");
+
+    // "none" clears it again.
+    const cleared = new FakeResponse();
+    await handler(
+      fakeRequest("PATCH", `/api/graph/${RUN}/nodes/${nodeId}/colour`, { colour: "none" }),
+      cleared,
+      `/api/graph/${RUN}/nodes/${nodeId}/colour`,
+      {},
+    );
+    assert.equal(cleared.status, 200);
+    const after = new FakeResponse();
+    await handler(fakeRequest("GET", `/api/graph/${RUN}/annotations`), after, `/api/graph/${RUN}/annotations`, {});
+    assert.deepEqual(after.json().tags, {});
+  });
+
+  it("refuses a foreign node, an unknown colour and a cross-site write", async () => {
+    const nodeId = applyRunEvent(RUN, { type: "tool_call", name: "web_search", args: { query: "x" } })[0]!;
+    const other = "task_canvas_notes_other";
+    beginRun(other, "Another task");
+    const foreignId = applyRunEvent(other, { type: "tool_call", name: "web_search", args: { query: "y" } })[0]!;
+
+    const foreign = new FakeResponse();
+    await handler(
+      fakeRequest("PATCH", `/api/graph/${RUN}/nodes/${foreignId}/colour`, { colour: "red" }),
+      foreign,
+      `/api/graph/${RUN}/nodes/${foreignId}/colour`,
+      {},
+    );
+    assert.equal(foreign.status, 404, "a node of another run cannot be tagged from here");
+
+    const unknown = new FakeResponse();
+    await handler(
+      fakeRequest("PATCH", `/api/graph/${RUN}/nodes/${nodeId}/colour`, { colour: "pink" }),
+      unknown,
+      `/api/graph/${RUN}/nodes/${nodeId}/colour`,
+      {},
+    );
+    assert.equal(unknown.status, 400, "a colour outside the palette is rejected");
+
+    const crossSite = new FakeResponse();
+    await handler(
+      fakeRequest("PATCH", `/api/graph/${RUN}/nodes/${nodeId}/colour`, { colour: "red" }, { origin: "https://evil.example" }),
+      crossSite,
+      `/api/graph/${RUN}/nodes/${nodeId}/colour`,
+      {},
+    );
+    assert.equal(crossSite.status, 403, "a cross-site mutation is refused");
+  });
+
+  it("adds a comment to a node thread and removes it again", async () => {
+    const nodeId = applyRunEvent(RUN, { type: "tool_call", name: "web_search", args: { query: "x" } })[0]!;
+
+    const added = new FakeResponse();
+    assert.equal(
+      await handler(fakeRequest("POST", `/api/graph/${RUN}/nodes/${nodeId}/comments`, { text: "Looks good" }), added, `/api/graph/${RUN}/nodes/${nodeId}/comments`, {}),
+      true,
+    );
+    assert.equal(added.status, 200);
+    const comment = added.json().comment as { id: string; author: string; text: string };
+    assert.equal(comment.author, "user");
+    assert.equal(comment.text, "Looks good");
+
+    const read = new FakeResponse();
+    await handler(fakeRequest("GET", `/api/graph/${RUN}/annotations`), read, `/api/graph/${RUN}/annotations`, {});
+    assert.deepEqual((read.json().comments as Record<string, Array<{ text: string }>>)[nodeId]!.map((entry) => entry.text), ["Looks good"]);
+
+    const removed = new FakeResponse();
+    await handler(
+      fakeRequest("DELETE", `/api/graph/${RUN}/nodes/${nodeId}/comments/${comment.id}`),
+      removed,
+      `/api/graph/${RUN}/nodes/${nodeId}/comments/${comment.id}`,
+      {},
+    );
+    assert.equal(removed.status, 200);
+    const after = new FakeResponse();
+    await handler(fakeRequest("GET", `/api/graph/${RUN}/annotations`), after, `/api/graph/${RUN}/annotations`, {});
+    assert.deepEqual(after.json().comments, {}, "removing the last comment drops the thread");
+
+    const empty = new FakeResponse();
+    await handler(
+      fakeRequest("POST", `/api/graph/${RUN}/nodes/${nodeId}/comments`, { text: "   " }),
+      empty,
+      `/api/graph/${RUN}/nodes/${nodeId}/comments`,
+      {},
+    );
+    assert.equal(empty.status, 400, "a blank comment is rejected");
+  });
+
+  it("creates, moves, edits and deletes a free note", async () => {
+    const created = new FakeResponse();
+    assert.equal(
+      await handler(fakeRequest("POST", `/api/graph/${RUN}/notes`, { text: "Check the budget", x: 40, y: 12, colour: "green" }), created, `/api/graph/${RUN}/notes`, {}),
+      true,
+    );
+    assert.equal(created.status, 200);
+    const note = created.json().note as { id: string; x: number; y: number; colour: string };
+    assert.deepEqual({ x: note.x, y: note.y, colour: note.colour }, { x: 40, y: 12, colour: "green" });
+
+    // A move and an edit travel in one PATCH.
+    const moved = new FakeResponse();
+    await handler(
+      fakeRequest("PATCH", `/api/graph/${RUN}/notes/${note.id}`, { x: 80, y: 60, text: "Check the Q3 budget" }),
+      moved,
+      `/api/graph/${RUN}/notes/${note.id}`,
+      {},
+    );
+    assert.equal(moved.status, 200);
+    const movedNote = moved.json().note as { x: number; y: number; text: string };
+    assert.deepEqual({ x: movedNote.x, y: movedNote.y }, { x: 80, y: 60 });
+    assert.equal(movedNote.text, "Check the Q3 budget");
+
+    const read = new FakeResponse();
+    await handler(fakeRequest("GET", `/api/graph/${RUN}/annotations`), read, `/api/graph/${RUN}/annotations`, {});
+    assert.deepEqual(
+      (read.json().notes as Array<{ text: string; x: number }>).map((entry) => [entry.text, entry.x]),
+      [["Check the Q3 budget", 80]],
+    );
+
+    const deleted = new FakeResponse();
+    await handler(fakeRequest("DELETE", `/api/graph/${RUN}/notes/${note.id}`), deleted, `/api/graph/${RUN}/notes/${note.id}`, {});
+    assert.equal(deleted.status, 200);
+    const gone = new FakeResponse();
+    await handler(fakeRequest("DELETE", `/api/graph/${RUN}/notes/${note.id}`), gone, `/api/graph/${RUN}/notes/${note.id}`, {});
+    assert.equal(gone.status, 404, "an unknown note is a 404");
+  });
+
+  it("searches the run's nodes with ?q= and highlights the matches", async () => {
+    applyRunEvent(RUN, { type: "tool_call", name: "web_search", args: { query: "quarterly revenue" } });
+    applyRunEvent(RUN, { type: "tool_call", name: "web_search", args: { query: "unrelated" } });
+
+    const res = new FakeResponse();
+    assert.equal(await handler(fakeRequest("GET", `/api/graph/${RUN}?q=QUARTERLY`), res, `/api/graph/${RUN}`, {}), true);
+    const search = res.json().search as { query: string; hits: Array<{ nodeId: string; title: string; matches: Array<{ field: string; snippet: string }> }> };
+    assert.equal(search.query, "QUARTERLY");
+    const hits = search.hits;
+    assert.equal(hits.length, 1, "only the node that mentions the term matches");
+    assert.equal(hits[0]!.matches[0]!.field, "query");
+    assert.equal(hits[0]!.matches[0]!.snippet, "quarterly", "the snippet is the node's own text");
+
+    // Without `q` the reply carries no search block at all.
+    const plain = new FakeResponse();
+    await handler(fakeRequest("GET", `/api/graph/${RUN}`), plain, `/api/graph/${RUN}`, {});
+    assert.equal("search" in plain.json(), false);
+
+    const none = new FakeResponse();
+    await handler(fakeRequest("GET", `/api/graph/${RUN}?q=zzz`), none, `/api/graph/${RUN}`, {});
+    assert.deepEqual((none.json().search as { hits: unknown[] }).hits, [], "an unmatched term yields no hits");
+  });
+
+  it("refuses methods the annotation routes do not support", async () => {
+    const res = new FakeResponse();
+    await handler(fakeRequest("POST", `/api/graph/${RUN}/annotations`, {}), res, `/api/graph/${RUN}/annotations`, {});
+    assert.equal(res.status, 405);
+
+    const notes = new FakeResponse();
+    await handler(fakeRequest("PATCH", `/api/graph/${RUN}/notes`, {}), notes, `/api/graph/${RUN}/notes`, {});
+    assert.equal(notes.status, 405);
   });
 });

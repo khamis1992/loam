@@ -255,8 +255,11 @@ export interface AgentTurnOutput {
   /** 0 (will never buy) .. 1 (will buy immediately). */
   purchaseIntent: number;
   reasons: string[];
-  /** Optional list of agent ids this post was shared with. */
-  sharedWith?: string[];
+  /**
+   * Share provenance: the people whose post the agent amplified or answered.
+   * Populated for `share` (required) and `comment`; empty otherwise.
+   */
+  sharedWith: string[];
 }
 
 /** One recorded agent-turn, including its model-call outcome. */
@@ -486,7 +489,8 @@ export interface PipelineResult {
 /** Input to the core pipeline. */
 export interface PipelineInput {
   settings: SimulationSettings;
-  caller: ModelCaller;
+  /** Omitted on the deterministic no-model path. */
+  caller?: ModelCaller;
   workspace: string;
   /** RAM-light default: 2 concurrent model calls. */
   concurrency?: number;
@@ -503,7 +507,8 @@ export interface MirofishChatRequest {
   message: string;
   target?: string;
   settings?: SimulationSettings;
-  caller: ModelCaller;
+  /** Omitted on the deterministic no-model path. */
+  caller?: ModelCaller;
   concurrency?: number;
   onProgress?: (event: { stage: string; message: string }) => void;
 }
