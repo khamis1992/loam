@@ -72,7 +72,8 @@ against the broken implementation and to match the base behaviour after the fix.
 - `(cd packages/web && npx next build)`             -> exit 0 (compiled, 25/25 static pages)
 - touched tests (editHints, editSchemaAlias, multiEdit, readState, fileLock,
   diagnostics, findAndEdit)                         -> tests 96, pass 96, fail 0
-- `node --import tsx --test "src/**/*.test.ts"`     -> tests 2163, pass 2160, fail 3
+- `node --import tsx --test "src/**/*.test.ts"`     -> tests 2163, pass 2161, fail 2
+  (a third, load-sensitive failure appears in some runs; see item 3)
 - `(cd packages/web && npx vitest run)`             -> 72 files / 472 tests, all pass
 - `check:encoding` / `check:modes` / `check:orchestrator` (114/114) /
   `check:promptwire` / `check:recovery` / `check:design-registry` -> PASS
@@ -94,10 +95,16 @@ None of the three node failures is caused by this task; the diff touches only
    Reproduced identically on the untouched base commit `a8130cc` in the `cc-c20`
    worktree (3 pass / 1 fail), and this task touches no file under `src/server`.
 3. `src/tools/__tests__/search.test.ts` -> "greps and globs the repository in
-   under 1 second" (observed 1057ms against a 1000ms budget). Load-sensitive
-   timing flake under the parallel full-suite run: the file passes 19/19 on its
-   own and 3/3 across three consecutive isolated runs. Unrelated to this task
-   (nothing in the diff affects search).
+   under 1 second" (observed 1057ms against a 1000ms budget). Intermittent and
+   load-sensitive: it failed once under the parallel full-suite run and did not
+   recur in the final run (hence 2 failures rather than 3). The file passes 19/19
+   on its own and 3/3 across three consecutive isolated runs. Unrelated to this
+   task (nothing in the diff affects search).
+
+Also re-verified after merging the latest `manus-parity` (which brought H0 into
+`.jdone`): merge gate "Already up to date", tsc exit 0, touched tests 96/96,
+build:server exit 0, web build exit 0 (25/25), check:encoding / check:modes PASS.
+The `.jdone` conflict was resolved keeping both reports (J3 + H0 + O0).
 
 Test command:
   node --import tsx --test src/tools/__tests__/editHints.test.ts
