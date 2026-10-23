@@ -36,6 +36,10 @@ export const COMPANION_SERVICES: CompanionService[] = [
   { id: "shell", labelAr: "بيئة الأوامر", description: "أوامر وطرفيات داخل مساحة المهمة", tools: ["shell_run", "shell_start", "shell_write", "shell_read", "shell_list", "shell_kill", "pty_start", "pty_write", "pty_read", "pty_list", "pty_kill"] },
   { id: "code", labelAr: "فهم الكود", description: "رموز المشروع وهيكلته والبحث الدلالي في الملفات", tools: ["code_symbols", "code_outline", "semantic_search"] },
   { id: "memory", labelAr: "الذاكرة والمعرفة", description: "ذاكرة دائمة وبحث في الجلسات", tools: ["memory_store", "memory_search", "memory_list", "memory_delete", "session_search"] },
+  // N3 Knowledge Garden: the user's own imported documents, split into
+  // retrievable seeds. Reachable only when the run's KB toggle is on, so the
+  // service grants the names and src/index.ts applies the per-run gate.
+  { id: "knowledge", labelAr: "حديقة المعرفة", description: "مستنداتك المستوردة مقسّمة إلى بذور قابلة للبحث مع الوسوم والاسترجاع الهجين (يقرأها الوكيل فقط عند تفعيل مفتاح الحديقة في التشغيل)", tools: ["kb_search", "kb_ingest", "kb_manage"] },
   { id: "skills", labelAr: "المهارات", description: "اكتشاف المهارات وتشغيلها", tools: ["skill_list", "skill_view", "skill_create", "skill_patch", "skill_delete", "skill_search", "skill_install"] },
   { id: "preview", labelAr: "المعاينة", description: "تشغيل معاينات المشروع محليًا", tools: ["preview_serve", "preview_status", "preview_stop", "preview_screenshot"] },
   { id: "screen", labelAr: "متابعة الشاشة", description: "قراءة شاشة المستخدم الحية (يتطلب وضع العمل على جهازي)", tools: ["screen_look", "screen_stream_start", "screen_stream_status", "screen_stream_stop", "screen_watch"] },

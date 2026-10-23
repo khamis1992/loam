@@ -106,6 +106,7 @@ import { handleProjectContextRoutes } from "./routes/projectContext.js";
 import { handlePlaybookRoutes } from "./routes/playbooks.js";
 import { handleVoiceRoutes } from "./routes/voice.js";
 import { handleConnectorsRoutes } from "./routes/connectors.js";
+import { handleKnowledgeRoutes } from "./routes/knowledge.js";
 import { handleWikiRoutes } from "./routes/wiki.js";
 import { importGrokbotBundle, sanitizeGrokbotBundle } from "./grokbotImport.js";
 import { isValidTimezone } from "./scheduleTime.js";
@@ -156,6 +157,7 @@ export interface RunTaskOptions {
   scheduleId?: string;
   /** Side-chat ("/btw") run: restricted to read-only inspection tools. */
   sideChat?: boolean;
+  knowledge?: boolean;
 }
 
 export interface ServerDeps {
@@ -167,6 +169,8 @@ export interface ServerDeps {
   registry?: ToolRegistry;
   mcp?: McpToolset | null;
   runTask: (opts: RunTaskOptions) => Promise<{ taskId: string; text: string }>;
+  /** N3 Knowledge Garden vector channel; absent => lexical-only search. */
+  embedder?: { embed(texts: string[]): Promise<number[][]> };
 }
 
 const MIME: Record<string, string> = {
@@ -1803,8 +1807,16 @@ loadAgents();
         if (await handleProjectContextRoutes(req, res, p)) return;
         // Playbooks (D9): versioned reusable prompt library + macro expansion.
         if (await handlePlaybookRoutes(req, res, p)) return;
+
         // Repo wiki (D8): list/generate/read DeepWiki-style pages.
         if (await handleWikiRoutes(req, res, p, { workspace: cfg.workspace, ollama, model: cfg.model })) return;
+
+        // Knowledge Garden (N3): bases, seeds, import and hybrid search.
+        if (await handleKnowledgeRoutes(req, res, p, {
+          workspace: cfg.workspace,
+          ...(deps.embedder ? { embedder: deps.embedder } : {}),
+          model: cfg.memory.model || cfg.model,
+        })) return;
 
         // ---- avatar (Grok Bot-style): set shape/color/image on an existing agent ----
         // Must run before the generic /api/agents/:id prefix block.
@@ -2612,6 +2624,7 @@ loadAgents();
             effort?: unknown;
             agentId?: unknown;
             workMode?: unknown;
+            knowledge?: unknown;
           };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
           if (!prompt) return sendJson(res, 400, { error: "prompt required" });

@@ -337,7 +337,62 @@ describe("run graph: status transitions", () => {
       "complete",
       "note",
       "failed",
+      "kb_seed",
     ]);
+  });
+});
+
+describe("run graph: knowledge garden seeds", () => {
+  beforeEach(() => freshDataDir("loam-rungraph-kb-"));
+  afterEach(() => restoreDataDir());
+
+  it("hangs one kb_seed node per cited seed off the search that read it", () => {
+    const graph = new RunGraph();
+    graph.replay(RUN, [
+      { type: "task", taskId: RUN },
+      { type: "tool_call", name: "kb_search", args: { query: "billing" } },
+      {
+        type: "tool_result",
+        name: "kb_search",
+        ok: true,
+        summary: "2 seeds found",
+        kbSeedIds: ["seed-1", "seed-2"],
+        kbSeeds: [
+          { id: "seed-1", title: "Billing policy", tags: ["billing"], preview: "charges per seat" },
+          { id: "seed-2", title: "Deploy notes", tags: ["infra"], preview: "runs on Actions" },
+        ],
+      },
+    ]);
+
+    const nodes = graph.getRunNodes(RUN);
+    const search = nodes.find((node) => node.type === "search")!;
+    assert.ok(search, "kb_search still produces a search node");
+    const seeds = nodes.filter((node) => node.type === "kb_seed");
+    assert.equal(seeds.length, 2, "one kb_seed node per cited seed");
+    for (const seed of seeds) {
+      assert.deepEqual(seed.parent_ids, [search.id], "each seed hangs off the search node");
+      assert.equal(seed.status, "finished");
+    }
+    assert.deepEqual(
+      seeds.map((seed) => (seed.data as { seedId: string }).seedId),
+      ["seed-1", "seed-2"],
+      "seed nodes keep their tool-reported order",
+    );
+    assert.equal((seeds[0]!.data as { title: string }).title, "Billing policy");
+    assert.deepEqual((seeds[0]!.data as { tags: string[] }).tags, ["billing"]);
+  });
+
+  it("leaves the graph untouched when a kb tool reports no seeds", () => {
+    const graph = new RunGraph();
+    graph.replay(RUN, [
+      { type: "task", taskId: RUN },
+      { type: "plan", goal: "Search the garden", trivial: true, steps: [], source: "fallback" },
+      { type: "tool_call", name: "kb_search", args: { query: "nothing matches" } },
+      { type: "tool_result", name: "kb_search", ok: true, summary: "no seeds found" },
+    ]);
+    const nodes = graph.getRunNodes(RUN);
+    assert.deepEqual(nodes.map((node) => node.type), ["question", "search"]);
+    assert.equal(nodes.filter((node) => node.type === "kb_seed").length, 0, "no seed nodes are invented");
   });
 });
 

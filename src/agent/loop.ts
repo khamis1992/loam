@@ -467,6 +467,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
       "file_list",
       "file_search",
       "file_stat",
+      "kb_search",
       "memory_search",
       "memory_list",
       "skill_list",
@@ -522,6 +523,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           ok: toolResult.ok,
           summary: summarize(toolResult.content),
           ms: Date.now() - item.t0,
+          ...(toolResult.kbSeedIds && toolResult.kbSeedIds.length > 0 ? { kbSeedIds: toolResult.kbSeedIds } : {}),
+          ...(toolResult.kbSeeds && toolResult.kbSeeds.length > 0 ? { kbSeeds: toolResult.kbSeeds } : {}),
         });
         messages.push({ role: "tool", tool_name: item.name, content: toolMessageContent(item.name, toolResult.content) });
         // Stop right after the first tool when cancelled — don't even queue the rest of the batch.
@@ -545,7 +548,15 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           ...(opts.taskId ? { taskId: opts.taskId } : {}),
         });
 
-        opts.emit({ type: "tool_result", name, ok: toolResult.ok, summary: summarize(toolResult.content), ms: Date.now() - t0 });
+        opts.emit({
+          type: "tool_result",
+          name,
+          ok: toolResult.ok,
+          summary: summarize(toolResult.content),
+          ms: Date.now() - t0,
+          ...(toolResult.kbSeedIds && toolResult.kbSeedIds.length > 0 ? { kbSeedIds: toolResult.kbSeedIds } : {}),
+          ...(toolResult.kbSeeds && toolResult.kbSeeds.length > 0 ? { kbSeeds: toolResult.kbSeeds } : {}),
+        });
         const evidence = { name, args, ok: toolResult.ok, summary: toolResult.content };
         trace.push(evidence);
         opts.onToolEvidence?.(evidence);
