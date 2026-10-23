@@ -62,15 +62,18 @@ was run and resolved by keeping both sides.
   adds the `inspectProject` override and the "reports a manual edit" test), so it
   was kept. No test was weakened, deleted or skipped.
 
-Two merges were required because `manus-parity` advanced during the session
-(`d05e4b1` -> `cf45585`). The second merge (which brought in the C19 command-risk
-gate work) auto-resolved with no source conflict. After both, no conflict markers
-remain and `git merge-base --is-ancestor manus-parity HEAD` exits 0.
+Three merges were required because `manus-parity` advanced during the session
+(`d05e4b1` -> `cf45585` -> `0a946d3`). The second merge (C19 command-risk gate work)
+and the third (N4 recipe engine + main packaging, `0a946d3`) auto-resolved their
+source; only the tracked `.jdone` rollup conflicted, and that was resolved by
+keeping both reports (fc-06 on top, parity's N4 report below, and the preserved
+C19 / parity rollups after that). After all three, no conflict markers remain and
+`git merge-base --is-ancestor manus-parity HEAD` exits 0.
 
 ## Gate condition verified
 
 - `git merge-base --is-ancestor manus-parity HEAD` -> exit 0 (the parity tip
-  `cf45585` is an ancestor of the merge commit `f127c5f`).
+  `0a946d3` is an ancestor of the merge commit `682db35`).
 - `git grep -e '^<<<<<<<' -e '^>>>>>>>'` over `*.ts`, `*.tsx`, `*.json`, `*.md`
   -> no matches (no leftover conflict markers).
 - `git diff --name-only --diff-filter=U` -> empty (no unmerged paths).
@@ -97,16 +100,19 @@ remain and `git merge-base --is-ancestor manus-parity HEAD` exits 0.
   src/components/workspace/loamVideo/__tests__/LoamVideoPanel.export.test.tsx)`
   -> 2 files / 10 tests, all pass
 - `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
-- `node --import tsx --test "src/**/*.test.ts"` -> tests 2502, pass 2500, fail 2
+- `node --import tsx --test "src/**/*.test.ts"` -> tests 2546, pass 2545, fail 1
 
-The two node failures are pre-existing on the manus-parity lineage and untouched
-by fc-06; both files are byte-identical to manus-parity (`git diff manus-parity
-HEAD` is empty for each):
-1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither
-   registered nor listed in PENDING_CODING_TOOLS". The inherited D4 defect.
-2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+The one node failure is pre-existing on the manus-parity lineage and untouched by
+fc-06; the file is byte-identical to manus-parity (`git diff manus-parity HEAD` is
+empty for it):
+1. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
    throwing". Environmental: `readGitBranch` shells out to `git rev-parse`, which
    walks up to the nearest enclosing repository.
+
+(An earlier run also showed `src/agent/__tests__/toolDescriptions.test.ts` failing
+with "suggest_plan is neither registered nor listed in PENDING_CODING_TOOLS". That
+inherited D4 defect was fixed by the N4 work that arrived with the third merge, and
+it passes on the final tree.)
 
 No test was weakened, deleted or skipped. No secrets committed. No forbidden path
 touched.
