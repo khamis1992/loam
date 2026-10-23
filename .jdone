@@ -771,3 +771,66 @@ The accent is present once the transition settles (~150 ms).
 - `ui/loam.css` was normalized to uniform CRLF to match every other file under
   `ui/` (it was the only mixed-EOL file in the tree).
 - No forbidden path touched, no test weakened or deleted, no secrets committed.
+
+## Round 2 - deeper validation (after the first pass was accepted)
+
+A second pass drove the previously-untested runtime paths in a real browser
+(Playwright) instead of only re-reading the code, and found one real defect.
+
+### Defect found and fixed: the extracted avatar color was never painted
+
+`chatAccentFor` samples an `avatarImage` asynchronously and returns the id-hash
+fallback for the first paint, reporting the extracted color through the
+`onAccent` callback. Both chat call sites called it **without** that callback:
+
+- `ui/app.js` `applyChatAccent` (`#view-chat`)
+- `ui/companions.js` `applyChatAccent` (`.rk-main`)
+
+So on a cold cache (first time a bot with only an `avatarImage` was opened) the
+conversation painted the id-hash fallback and the extracted avatar color was
+never applied. It was only written to `localStorage`, so the correct color
+appeared only after leaving and re-opening the conversation. A bot-less
+conversation was unaffected, which is why the first pass (which used named-color
+bots) did not catch it.
+
+Fix (commit `f767cfa`): both call sites now pass `onAccent` and repaint as soon
+as the sample lands. A monotonically increasing `applyChatAccentToken` per call
+site drops a late sample that belongs to a conversation the user has already
+left, so switching bots cannot be crossed by an out-of-order callback.
+
+### What the deep probe confirmed (0 page errors, 0 console errors, 0 stub 404s)
+
+- Real canvas extraction end to end: a hand-built 1x1 PNG served at
+  `/avatar.png` (magenta `#c94fb0`) is sampled through the app's own
+  `extractWithCanvas` path and painted as `#e09ad1` in dark, `#d16bbc` in light.
+- Cold cache: selecting the image bot for the first time now paints the
+  extracted color, not the id-hash fallback (`#f387bc`).
+- Cache reuse: leaving for a hash bot (`#87f2e6`) and returning to the image bot
+  restores the cached extracted color immediately, with no re-sample.
+- Offline / ghost id: a task whose `agentId` is not in `/api/agents` still gets
+  a deterministic id-hash color (`#98e1be`), matching the "offline: the id hash
+  still colors the chat" fallback.
+- Isolation: the accent lives only on `.rk-main` / `#view-chat`; `:root`,
+  `body` and the sidebar carry no inline accent.
+- Theme flip: the `MutationObserver` on `data-theme` recomputes lightness and
+  ink in both themes (`#a698e2`/`#0b1220` dark, `#7760d2`/`#ffffff` light) and
+  returns correctly to dark.
+- Task chat: violet gradient `rgb(187,176,232) -> rgb(166,152,226)`, ink
+  `rgb(11,18,32)`; a bot-less task leaves every accent property unset and falls
+  back to the app accent.
+
+### Gates re-run after the fix
+
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0
+- `node --import tsx --test src/__tests__/chatColor.test.ts src/design/__tests__/contrast.test.ts`
+  -> tests 60, pass 60, fail 0
+- `node --import tsx --test src/design/__tests__/*.test.ts`
+  -> tests 171, pass 171, fail 0
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`, `check:orchestrator` (114/114), `check:recovery`,
+  `check:design-registry`, `check:promo-carousel`, `check:loam-agents` -> all pass
+
+The deep probe was a scratch artifact and was removed before committing; the fix
+itself is covered by the existing `chatColor.test.ts` async-callback tests plus
+this browser-verified behaviour.
