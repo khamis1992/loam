@@ -1,3 +1,100 @@
+## O6 gate-fix session: merge with manus-parity, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+### Root cause
+No source file conflicted. `git merge manus-parity` applied cleanly with the `ort`
+strategy both times; the only file the merge touched on our side that parity also
+touched was the tracked rollup `.jdone`, and even that auto-merged (parity's O2 report
+was appended below). The O6 deliverables (`src/server/inputQueue.ts`,
+`src/server/__tests__/inputQueue.test.ts`, `src/server/__tests__/inputQueueAdmit.test.ts`
+and the loop/socket/http wiring, commits `050652b` + `0b1d991`) were already committed,
+present and untouched.
+
+`manus-parity` advanced twice while the session ran, so the merge was run twice:
+1. tip `d05e4b1` (D5) -> clean auto-merge, commit `24bc149`.
+2. tip `6b9b453` (O2, +5 commits incl. D5) -> clean auto-merge, commit `d131ff5`.
+
+Nothing was dropped, no test was weakened, deleted or skipped, and no source file was
+edited by this session.
+
+### Gate condition verified
+`git merge manus-parity` reports "Already up to date.", `git merge-base --is-ancestor
+manus-parity HEAD` exits 0 and `git rev-list --left-right --count manus-parity...HEAD` is
+`0  4` (parity fully merged, zero parity commits missing). No conflict marker remains in
+the tree and `git status --porcelain` is empty.
+
+### Gates (all run from the worktree root on the committed tree `d131ff5`)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.4mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled, 25/25 static pages)
+- `node --import tsx --test src/server/__tests__/inputQueue.test.ts src/server/__tests__/inputQueueAdmit.test.ts`
+                                              -> tests 15, pass 15, fail 0
+- `node --import tsx --test src/protocol/__tests__/*.test.ts`
+                                              -> tests 41, pass 41, fail 0
+- `(cd packages/web && npx vitest run)`       -> 72 files / 472 tests, all pass
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                       -> PASS
+- `npm run check:promptwire`                  -> PASS (every promptwire tool ok:true)
+
+Full-suite run `node --import tsx --test "src/**/__tests__/*.test.ts"`
+-> tests 2327, pass 2324, fail 3. All three are the pre-existing, documented failures and
+each file is byte-identical to manus-parity (`git diff manus-parity HEAD -- <file>` is
+empty for all seven):
+
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered
+   nor listed in PENDING_CODING_TOOLS". The inherited D4 defect.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing"
+   (`info.isGit` is true for a plain temp dir because `%TEMP%` sits inside a git repo on
+   this host). Environmental.
+3. `src/tools/__tests__/search.test.ts` -> "grep took 1128ms" against a 1000ms budget.
+   Load-sensitive: 19/19 pass when run on its own (re-verified on this tree).
+
+`git diff manus-parity...HEAD` contains 0 added lines with the mojibake marker and 0
+conflict markers.
+
+### Files
+- `.jdone` only (this report prepended to the preserved rollup). No source file was
+  modified by this session; the O6 deliverables are unchanged from commits `050652b`
+  and `0b1d991`.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  node --import tsx --test src/server/__tests__/inputQueue.test.ts src/server/__tests__/inputQueueAdmit.test.ts
+  npm run check:encoding
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added. Working tree clean.
+
+---
+
+## O6 complete: durable input queue + agent-loop admit hook
+
+`src/server/inputQueue.ts` (132 lines, from BUILD_SPEC §6.6) with `enqueue` /
+`admitPending` / `markAdmitted` / `cancel` / `drop` / `admitAllPending`, plus the loop
+wiring that admits a queued message at an agent step boundary via
+`append('input', ..., { idempotencyKey: q.id })` + `markAdmitted`.
+
+Acceptance (plan row O6: "message sent during a busy run survives restart and is
+admitted once") is covered by passing automated tests:
+- `src/server/__tests__/inputQueue.test.ts` (12 tests): stores as received without
+  appending a log event, session isolation, admits pending once in arrival order,
+  idempotent across a crash between append and markAdmitted, survives a restart,
+  no re-admit after a restart, markAdmitted records the sequence and ignores unknown
+  ids, cancel/drop semantics, boot sweep, arrival order on tied timestamps, steering
+  distinct from queued delivery.
+- `src/server/__tests__/inputQueueAdmit.test.ts` (3 tests): the loop admit hook admits a
+  message that arrives mid-run exactly once at a step boundary, admits nothing when no
+  hook is wired, and never fails the run when the hook throws.
+
+Test commands:
+  node --import tsx --test src/server/__tests__/inputQueue.test.ts src/server/__tests__/inputQueueAdmit.test.ts
+
+---
+
 ## O2 gate-fix session: merge with manus-parity, all gates green
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
