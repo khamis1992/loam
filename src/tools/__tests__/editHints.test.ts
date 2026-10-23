@@ -298,4 +298,53 @@ describe("edit helper functions", () => {
     assert.equal(good.ok, true);
     if (good.ok) assert.equal(good.content, "y y");
   });
+
+  // The spec substitutes new_string verbatim (Rust `replacen`). JS
+  // `String.prototype.replace` would expand `$&`, `` $` ``, `$'` and `$$`, so
+  // these pin the literal behaviour a shell/regex-shaped replacement would break.
+  it("writes a new_string containing $ patterns literally", () => {
+    const patterns = [
+      ["price", "cost $5"],
+      ["price", "a $& b"],
+      ["price", "$`"],
+      ["price", "$'"],
+      ["price", "$$"],
+      ["price", "$1 $2"],
+    ] as const;
+    for (const [find, replacement] of patterns) {
+      const res = applyEditOperations(`line: ${find}\n`, [op(find, replacement)], "f");
+      assert.equal(res.ok, true, `replace ${JSON.stringify(replacement)}`);
+      if (res.ok) assert.equal(res.content, `line: ${replacement}\n`);
+    }
+  });
+
+  it("writes $ patterns literally through the tool and in a batch", async () => {
+    fs.writeFileSync(file, "alpha\nbeta\n", "utf8");
+    const single = await run({ path: "sample.txt", old_string: "alpha", new_string: "a $$ b $& c" });
+    assert.equal(single.ok, true);
+    assert.equal(fs.readFileSync(file, "utf8"), "a $$ b $& c\nbeta\n");
+
+    fs.writeFileSync(file, "alpha\nbeta\n", "utf8");
+    const batch = await run({
+      path: "sample.txt",
+      edits: [
+        { old_string: "alpha", new_string: "x $1" },
+        { old_string: "beta", new_string: "$& y" },
+      ],
+    });
+    assert.equal(batch.ok, true);
+    assert.equal(fs.readFileSync(file, "utf8"), "x $1\n$& y\n");
+  });
+
+  it("does not treat a trailing newline in new_string as an extra line", () => {
+    // Mirrors the spec: end_line = start_line + new_string.lines().count() - 1,
+    // and Rust's `lines()` does not count a trailing newline as a new line.
+    const res = applyEditOperations("one\ntwo\nthree\n", [op("two\n", "TWO\n")], "f");
+    assert.equal(res.ok, true);
+    if (res.ok) assert.deepEqual(res.applied, [{ occurrences: 1, startLine: 2, endLine: 2 }]);
+
+    const multi = applyEditOperations("one\ntwo\n", [op("one", "A\nB")], "f");
+    assert.equal(multi.ok, true);
+    if (multi.ok) assert.deepEqual(multi.applied, [{ occurrences: 1, startLine: 1, endLine: 2 }]);
+  });
 });

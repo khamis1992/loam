@@ -85,6 +85,29 @@ export interface EditOperation {
   replaceAll: boolean;
 }
 
+/**
+ * Replace the first literal occurrence. `String.prototype.replace` is NOT used
+ * here: with a string pattern it still expands `$&`, `` $` ``, `$'` and `$$` in
+ * the replacement, whereas the spec (jcode `ref/edit.rs`) substitutes the text
+ * verbatim. Replacing via slice keeps `$` in the new_string literal.
+ */
+function replaceFirstLiteral(content: string, find: string, replacement: string): string {
+  const at = content.indexOf(find);
+  if (at < 0) return content;
+  return content.slice(0, at) + replacement + content.slice(at + find.length);
+}
+
+/**
+ * Number of lines a replacement occupies, counted the way Rust's `str::lines`
+ * does: a trailing newline does not start a further line, and "" is 0 lines.
+ * Used only to place the end of the post-edit context window.
+ */
+function countLines(text: string): number {
+  if (text.length === 0) return 0;
+  const segments = text.split("\n").length;
+  return text.endsWith("\n") ? segments - 1 : segments;
+}
+
 /** Where one replacement landed. */
 interface AppliedEdit {
   occurrences: number;
@@ -137,8 +160,8 @@ export function applyEditOperations(
       continue;
     }
     const startLine = findLineNumber(work, op.oldString);
-    work = op.replaceAll ? work.split(op.oldString).join(op.newString) : work.replace(op.oldString, op.newString);
-    applied.push({ occurrences, startLine, endLine: startLine + op.newString.split("\n").length - 1 });
+    work = op.replaceAll ? work.split(op.oldString).join(op.newString) : replaceFirstLiteral(work, op.oldString, op.newString);
+    applied.push({ occurrences, startLine, endLine: startLine + countLines(op.newString) - 1 });
   }
 
   if (failures.length > 0) return { ok: false, failures };
