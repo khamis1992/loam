@@ -1,9 +1,19 @@
 import type { AgentEvent } from "../agent/events.js";
+import { BoundedMap } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 type Listener = (event: AgentEvent) => void;
 
-/** In-memory pub/sub so the UI can watch a running task live (in addition to persisted steps). */
-const subs = new Map<string, Set<Listener>>();
+/**
+ * In-memory pub/sub so the UI can watch a running task live (in addition to
+ * persisted steps).
+ *
+ * Bounded (J6): `subscribeTask`'s unsubscribe removes its entry, so reaching the
+ * cap means abandoned listeners (a client that vanished without closing its
+ * stream). The cap therefore only ever drops streams nobody is reading.
+ */
+const subs = new BoundedMap<string, Set<Listener>>(512, "task-event-subs");
+registerCacheStats("task-event-subs", () => subs.stats());
 
 export function publishTaskEvent(taskId: string, event: AgentEvent): void {
   const set = subs.get(taskId);

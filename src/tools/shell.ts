@@ -6,6 +6,8 @@ import { currentCancelEpoch, isCancelled } from "../server/runControl.js";
 import { planVaultEnv, redactVaultValues, vaultScope } from "./vaultTools.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { num, str } from "./registry.js";
+import { BoundedMap } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 interface ExecOutcome {
   code: number | null;
@@ -127,7 +129,20 @@ interface Session {
   exitCode: number | null;
 }
 
-const sessions = new Map<string, Session>();
+/**
+ * Persistent shell sessions (J6). Each entry owns a live child process, so the
+ * map is capped and the evicted session's process tree is killed — otherwise a
+ * long run that starts many shells leaks a process (and its buffer) each time.
+ * Sessions still close explicitly through shell_kill / process exit.
+ */
+const sessions = new BoundedMap<string, Session>(32, "shell-sessions", (_id, session) => {
+  try {
+    killTree(session.child);
+  } catch {
+    /* already gone */
+  }
+});
+registerCacheStats("shell-sessions", () => sessions.stats());
 
 function spawnShell(shell: string, cwd: string): ChildProcessWithoutNullStreams {
   if (shell === "cmd") {

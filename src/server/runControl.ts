@@ -1,7 +1,21 @@
 /** Per-run cancellation registry: taskId → AbortController for the active agent run. */
-const controllers = new Map<string, AbortController>();
-const cancelled = new Set<string>();
+import { BoundedMap } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
+
+/**
+ * Per-run cancellation registry (J6). `clearRunSignal` removes entries when a
+ * run ends, but a run that is abandoned (the process dies mid-run, a caller
+ * that never awaited its `finally`) left its controller and cancelled flag
+ * behind forever. Bounded: `active` (in-flight runs) is the meaningful size;
+ * `cancelled` and `controllers` share one budget so an abandoned task can never
+ * grow either of them without bound.
+ */
+const RUN_REGISTRY_CAPACITY = 512;
+const controllers = new BoundedMap<string, AbortController>(RUN_REGISTRY_CAPACITY, "run-controllers");
+const cancelled = new BoundedMap<string, true>(RUN_REGISTRY_CAPACITY, "run-cancelled-flags");
 const active = new Set<string>();
+registerCacheStats("run-controllers", () => ({ ...controllers.stats(), capacity: RUN_REGISTRY_CAPACITY }));
+registerCacheStats("run-cancelled-flags", () => ({ ...cancelled.stats(), capacity: RUN_REGISTRY_CAPACITY }));
 /** Monotonic counter bumped on every cancel — lets any in-flight tool notice it. */
 let cancelEpoch = 0;
 
@@ -45,7 +59,7 @@ export function activateRunSignal(taskId: string): void { active.add(taskId); }
 
 export function cancelRunSignal(taskId: string): boolean {
   if (active.has(taskId)) cancelEpoch += 1;
-  cancelled.add(taskId);
+  cancelled.set(taskId, true);
   const ac = controllers.get(taskId);
   if (!ac) return false;
   try {

@@ -88,6 +88,9 @@ import { handleMarketplaceRoutes } from "./routes/marketplace.js";
 import { handlePersonalizationRoutes } from "./routes/personalization.js";
 import { handleApiKeysRoutes } from "./routes/apiKeys.js";
 import { handleDataControlsRoutes } from "./routes/dataControls.js";
+import { handleDebugMemoryRoutes } from "./routes/debugMemory.js";
+import { LruCache } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 import { handleMemorySkillsRoutes } from "./routes/memorySkills.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
@@ -205,7 +208,9 @@ function parseWorktrees(porcelainOut: string): Array<{ path: string; head: strin
 /** A ":cloud"-suffixed model may be served verbatim by the local Ollama (router
  *  setups register the full name); only demand a cloudModel.apiKey when Ollama
  *  does not actually have it — otherwise the request dies before it starts. */
-const ollamaTagCache = new Map<string, { names: string[]; at: number }>();
+/** Bounded (J6): keyed by base URL, but a user can point Loam at many hosts. */
+const ollamaTagCache = new LruCache<{ names: string[]; at: number }>({ capacity: 32, name: "ollama-tags" });
+registerCacheStats("ollama-tags", () => ollamaTagCache.stats());
 async function cloudSuffixedModelServedByOllama(model: string): Promise<boolean> {
   const baseUrl = process.env.OLLAMA_HOST && /^http/.test(process.env.OLLAMA_HOST) ? process.env.OLLAMA_HOST : "http://127.0.0.1:11434";
   const cached = ollamaTagCache.get(baseUrl);
@@ -1760,6 +1765,8 @@ loadAgents();
         if (await handlePersonalizationRoutes(req, res, p)) return;
         if (await handleApiKeysRoutes(req, res, p)) return;
         if (await handleDataControlsRoutes(req, res, p)) return;
+        // Local-only memory profile (J6): loopback + install token, GET only.
+        if (await handleDebugMemoryRoutes(req, res, p)) return;
         // Settings › Connectors (UNIMPLEMENTED_OPTIONS #3): list/connect/callback/disconnect.
         if (await handleConnectorsRoutes(req, res, p)) return;
         // Settings › Skills (UNIMPLEMENTED_OPTIONS #4): proxy the memory-skills MCP.

@@ -1,11 +1,16 @@
 import type { WorkPhase } from "../agent/events.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { str } from "./registry.js";
+import { BoundedMap } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 const WORK_PHASES: readonly WorkPhase[] = ["chat", "plan", "build", "verify"];
 
-/** Current work phase per task, shared across the process lifetime. */
-const taskPhases = new Map<string, WorkPhase>();
+/** Current work phase per task, shared across the process lifetime. Bounded
+ *  (J6): a long-lived server sees thousands of tasks, so only the most recently
+ *  touched task phases are retained. */
+const taskPhases = new BoundedMap<string, WorkPhase>(512, "task-phases");
+registerCacheStats("task-phases", () => taskPhases.stats());
 
 /** Read the stored work phase for a task, or undefined when it was never set. */
 export function getTaskPhase(taskId: string): WorkPhase | undefined {

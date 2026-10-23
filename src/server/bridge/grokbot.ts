@@ -7,6 +7,8 @@ import { database, transaction } from "../sqliteStore.js";
 import { newId, appendMessage, getTask, createTask } from "../db.js";
 import { getThread } from "../agentThreads.js";
 import { getAgent, listAgents } from "../agents.js";
+import { BoundedMap } from "../../memory/cache.js";
+import { registerCacheStats } from "../../memory/stats.js";
 
 /**
  * One-way Grok Bot -> Loam bridge (Phase 3).
@@ -66,7 +68,11 @@ function ensureTableSafe(): void {
 }
 
 // Small in-memory cache of the most recent messages per agent for fast reads.
-const recentByAgent = new Map<string, GrokBotMirrorMessage[]>();
+// Bounded (J6): each agent keeps at most RECENT_CACHE_LIMIT messages, and the
+// number of agents retained is capped too (an unbounded agent count is a leak
+// in a long-lived bridge process).
+const recentByAgent = new BoundedMap<string, GrokBotMirrorMessage[]>(128, "grokbot-recent");
+registerCacheStats("grokbot-recent", () => recentByAgent.stats());
 const RECENT_CACHE_LIMIT = 100;
 
 export function resetGrokbotBridgeForTests(): void {
@@ -161,7 +167,9 @@ export function bridgeToken(): string {
 
 const RATE_LIMIT_WIN_MS = 60_000;
 const RATE_LIMIT_MAX = 20;
-const executeRate = new Map<string, number[]>();
+/** Bounded (J6): one hit list per calling agent reference. */
+const executeRate = new BoundedMap<string, number[]>(256, "grokbot-rate");
+registerCacheStats("grokbot-rate", () => executeRate.stats());
 
 export function checkExecuteRate(agentRef: string): boolean {
   const now = Date.now();

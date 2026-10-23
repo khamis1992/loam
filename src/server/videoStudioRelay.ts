@@ -19,6 +19,8 @@
  */
 import crypto from "node:crypto";
 import { publishTaskEvent, subscriberCount } from "./streams.js";
+import { BoundedMap } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 export type VideoStudioTarget = "film" | "effects";
 
@@ -83,11 +85,21 @@ function envTimeoutMs(): number {
 
 export class VideoStudioRelay {
   private readonly timeoutMs: number;
-  private readonly pending = new Map<string, PendingCommand>();
-  private readonly tasks = new Map<string, TaskQueue>();
+  /** In-flight commands (J6: bounded). One entry per awaiting panel command; a
+   *  panel that never answers holds its timer until the timeout, so the map is
+   *  capped and the oldest entry's timer is cleared (its caller already failed). */
+  private readonly pending = new BoundedMap<string, PendingCommand>(64, "video-studio-pending", (_id, entry) => {
+    clearTimeout(entry.timer);
+  });
+  /** Per-task command queues (J6: bounded). `clearInFlight` and `cancelTask`
+   *  drop a task once it has nothing left to do, so reaching the cap means an
+   *  abandoned task queue. */
+  private readonly tasks = new BoundedMap<string, TaskQueue>(128, "video-studio-tasks");
 
   constructor(options: VideoStudioRelayOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? envTimeoutMs();
+    registerCacheStats("video-studio-pending", () => this.pending.stats());
+    registerCacheStats("video-studio-tasks", () => this.tasks.stats());
   }
 
   /** True when at least one client is attached to the task's event stream. */

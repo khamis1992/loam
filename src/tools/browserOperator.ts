@@ -15,6 +15,8 @@ import fs from "node:fs";
 import { browserTools } from "./browser.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { num, str } from "./registry.js";
+import { BoundedMap } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 export interface OperatorElement {
   index: number;
@@ -725,9 +727,14 @@ const BODY_JS = `(() => {
 })()`;
 
 class BrowserToolSurface implements OperatorSurface {
-  private readonly snapshots = new Map<string, number>();
+  /** Last observation id per page (J6: bounded). A loop that opens many pages
+   *  must not retain every snapshot id; the oldest page is dropped, and a
+   *  dropped page simply re-observes before its next action. */
+  private readonly snapshots = new BoundedMap<string, number>(64, "browser-operator-snapshots");
 
-  constructor(private readonly ctx: ToolContext) {}
+  constructor(private readonly ctx: ToolContext) {
+    registerCacheStats("browser-operator-snapshots", () => this.snapshots.stats());
+  }
 
   async open(url?: string): Promise<{ pageId: string }> {
     const args: Record<string, unknown> = {};
