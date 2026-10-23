@@ -1057,3 +1057,51 @@ the source level: route dispatch order, secret handling, and registry registrati
 - HEAD `cf65d48` (eleventh-pass record) at the time these checks ran; `.jdone` is
   appended below and committed. Working tree clean (`git status --porcelain
   --untracked-files=all` = 0). `src/tools/vaultTools.ts` tracked and present.
+
+## Independent re-validation (2026-10-23, thirteenth pass)
+
+This pass ran every remaining repo gate and settled the last open question: whether
+`check:isolation` (HTTP) fails because of this merge or was already failing.
+
+### All repo gates pass
+
+`npm run verify` (typecheck + encoding + eval + orchestrator + recovery + modes)
+-> exit 0, ending with `PASS: seven distinct fail-closed modes, ...`; a grep for
+`error TS`/`FAIL`/`Error:` over its output returns **0 hits**. Individually:
+`check:design-registry` 0, `check:orchestrator` 0, `check:recovery` 0,
+`check:modes` 0, `check:eval` 0, `check:mcp` 0. Working tree stayed clean
+(`git status --porcelain --untracked-files=all` = 0) throughout.
+
+### `check:isolation` (HTTP) fails on pristine parity too
+
+`npm run check:isolation` exits **1** with `Error: Timed out` at
+`check-isolation-http.ts:58`. It is not one of the four required gates, but I
+checked whether this merge caused it:
+
+- `src/scripts/check-isolation-http.ts` is **byte-identical to parity**
+  (`git diff --quiet 03f8aef HEAD` exits 0; 0 lines in the delta).
+- The server does start correctly: the log shows `Loam ready -> http://127.0.0.1:<port>`
+  on the probe's own port (`config.ts:345` maps `MANUS_LOCAL_PORT` to
+  `cfg.server.port`), so the port plumbing is fine. The probe's 25s poll simply
+  never sees `/api/tasks` respond.
+- To prove it is pre-existing, I created a git worktree at parity tip `03f8aef`
+  (`%TEMP%\d3-parity-wt`), junctioned `node_modules`, and ran the same command
+  there. Result: **exit 1**, same `Error: Timed out` at
+  `check-isolation-http.ts:58`, same `Loam ready` line. The failure signature is
+  byte-for-byte the same as on the D3 worktree.
+
+So `check:isolation` is a pre-existing environmental failure (the child server
+starts but the probe never gets a response), not a regression from this merge.
+`check:isolation` is only part of the optional `verify:loam` script, not the four
+required gates, which all pass.
+
+### Cleanup
+
+- The temporary parity worktree was removed (`git worktree remove --force`) and
+  `git worktree list` no longer shows it. This worktree remains clean at
+  `089e56c`; no stray files were left behind.
+
+### Final state
+
+- HEAD `089e56c` (twelfth-pass record) at the time these checks ran; `.jdone` is
+  appended below and committed. Working tree clean.
