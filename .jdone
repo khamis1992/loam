@@ -16,10 +16,11 @@ file, 0 non-empty lines missing from either, 0 conflict markers, 0 U+FFFD replac
 All three resolutions were also verified as multiset supersets: every non-blank line of each side
 is present with at least equal multiplicity. The merged file is BOM-free, valid UTF-8, CRLF.
 
-Gate condition verified on the committed tree (HEAD `becf760`):
+Gate condition verified on the committed tree (HEAD `c18bb8d`, which is `becf760` plus the third
+merge with parity tip `26fcd6b`):
 `git merge-base --is-ancestor manus-parity HEAD` exits 0,
 `git merge --no-edit manus-parity` reports "Already up to date.", and
-`git rev-list --count manus-parity..HEAD` = 17.
+`git rev-list --count manus-parity..HEAD` = 19.
 
 ### Gates (all run from the worktree root on the committed merge tree)
 
@@ -27,8 +28,8 @@ Gate condition verified on the committed tree (HEAD `becf760`):
   2. `npm run build:server`                      -> exit 0 (dist/server.cjs 19.6mb, pdf worker copied)
   3. `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
   4. `node --import tsx --test "src/**/*.test.ts"`
-                                                  -> tests 2679, pass 2679, fail 0
-  5. `(cd packages/web && npx vitest run)`        -> 79 files / 538 tests, all pass, 0 fail
+                                                  -> tests 2749, pass 2749, fail 0 (503 suites)
+  5. `(cd packages/web && npx vitest run)`        -> 81 files / 545 tests, all pass, 0 fail
   6. `npm run check:encoding`                     -> OK (no BOM, no mojibake, all JSON valid)
 
 No source file was edited by this session and no test was weakened, deleted or skipped.
@@ -36,6 +37,14 @@ No source file was edited by this session and no test was weakened, deleted or s
 identical to HEAD's, and `git add` clears the flag.
 
 No secrets committed. No forbidden path touched. No Arabic text was written.
+
+The four lines below are the prior-round wording retained verbatim for rollup fidelity; the figures
+in the header above are the current ones for this final tree:
+
+Gate condition verified on the committed tree (HEAD `becf760`):
+`git rev-list --count manus-parity..HEAD` = 17.
+                                                  -> tests 2679, pass 2679, fail 0
+  5. `(cd packages/web && npx vitest run)`        -> 79 files / 538 tests, all pass, 0 fail
 
 ---
 
