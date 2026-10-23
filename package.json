@@ -35,6 +35,8 @@
     "eval": "tsx src/scripts/eval-run.ts",
     "eval:coding-bench": "tsx src/scripts/eval-coding-bench.ts",
     "eval:design": "tsx src/scripts/eval-design.ts",
+    "check:design-pipeline": "tsx src/scripts/check-design-pipeline.ts",
+    "test:design-pipeline": "node --import tsx --test src/design/__tests__/pipeline.test.ts src/models/__tests__/route.test.ts src/scripts/__tests__/check-design-pipeline.test.ts",
     "eval:selfplay": "tsx src/scripts/eval-selfplay.ts",
     "eval:coding": "tsx src/scripts/eval-coding.ts",
     "eval:neo": "tsx src/scripts/eval-neo.ts",
