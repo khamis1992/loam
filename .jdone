@@ -1,3 +1,130 @@
+# N9 done: ask-user clarification node
+
+## What shipped (already merged upstream before this session)
+
+The N9 implementation is intact in the tree and was not re-implemented:
+
+- `src/tools/askUserStore.ts` - in-memory pending-request records with a TTL.
+- `src/tools/askUserGate.ts` - the `ask_user` payload type/parsing plus the two classifiers
+  (pending-request tool-call blocker, vague-prompt auto-trigger).
+- `src/tools/askUserTools.ts` - the `ask_user` agent tool (questions with options, free-text
+  answers, an uploaded file) and `applyAskUserGate`, which wraps every mutating tool.
+- `src/server/routes/askUser.ts` - the HTTP route the web client answers through.
+- `packages/web/src/components/approval/AskUserCard.tsx` - the chat-event card, localized
+  (Arabic included) with logical CSS properties.
+- Registered in the tool registry (`src/index.ts`) and the mode-catalog CONTROL set
+  (`src/modes/catalog.ts`); wording in `src/agent/prompt.ts` and the web i18n catalogs.
+- `packages/shared/src/socket.ts` carries the `askUserRequested` / `askUserResolved` shapes.
+
+## What this session changed
+
+No source file was edited and no test was weakened. This session fixed the gate failures, which
+were merge conflicts in the tracked rollup `.jdone`, and then kept merging an advancing
+`manus-parity` under a live runner:
+
+1. `f14c3d1` merge manus-parity (bdae2ca, J11 round 9): resolved `.jdone` keeping both sides.
+2. `14e04b3` merge manus-parity (84c9af8, N3): resolved `.jdone` keeping both sides.
+3. `2d99ac8` recorded the session in the rollup.
+4. `085cfb5` merge manus-parity (d3d7b88): parity untracked `.jdone`/`.jcode-done`
+   ("chore: untrack runner markers .jdone/.jcode-done ... caused .jdone merge conflicts"), so the
+   modify/delete conflict was resolved by deleting the local copies to match upstream.
+5. `f923e19` merge manus-parity (bec4181, packaging 0.5.29): clean, no conflict.
+6. `41890e1` merge manus-parity (cde859f, memory subsystem): clean, no conflict.
+7. `5f3072f` merge manus-parity (c77161b, cr-03): clean, no conflict.
+8. `da4ddcf` merge manus-parity (0ea829f, om-o5): clean, no conflict.
+9. `8590e50` merge manus-parity (109617a, desktop/electron bridge): clean, no conflict.
+10. `76906c0` merge manus-parity (9ffdb16, cr-04/N10/N7): clean merge, **but see the defect
+    below** - parity re-tracked `.jdone` and the merge silently replaced the working-tree copy.
+
+## Defect found and fixed by independent validation (not by the gate runner)
+
+`9ffdb16` re-added `.jdone` to the parity tree (`git ls-tree manus-parity -- .jdone` is
+`100644 blob`), while this branch still matched it in `.gitignore:50`. A gitignore entry does
+**not** stop a merge that brings a tracked path in from the other side, and git did not warn:
+the untracked working-tree `.jdone` (which held this report) was overwritten by parity's rollup
+with no conflict, no error and no entry in `git status`. The N9 report was silently dropped.
+
+Detected by re-checking rather than trusting the green merge: `git ls-tree HEAD -- .jdone` was
+non-empty while `git status` stayed clean, and the N9 heading was absent from both the working
+tree and `HEAD:.jdone`. Fix: the report is restored below, prepended to the tracked rollup and
+committed, so the marker is both present on disk and tracked at HEAD.
+
+## Acceptance criteria (automated, passing)
+
+1. Vague prompt fixture -> ask node appears before any tool call:
+   `src/agent/__tests__/askUserAutoTrigger.test.ts` passes. A vague prompt emits
+   `ask_user_required` and the planner is never called while the card waits; the classifier block
+   sits before `planTask`, so no agent loop and no tool call can run first.
+2. Answer + file -> run resumes and uses the file:
+   `src/tools/__tests__/askUser.test.ts` and `src/protocol/__tests__/askUserSocket.test.ts` pass,
+   including the uploaded-file resume case. The card component is covered by vitest +
+   @testing-library (`askUserCard.test.tsx`, 7 tests); Playwright was not used.
+
+## Gates (all from the worktree root on the final tree, HEAD `76906c0`)
+
+1. `npx tsc --noEmit` -> exit 0
+2. `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+3. `node --import tsx --test "src/**/*.test.ts"` -> tests 2898, pass 2898, fail 0,
+   cancelled 0, skipped 0
+4. `node --import tsx --test src/tools/__tests__/askUser.test.ts src/agent/__tests__/askUserAutoTrigger.test.ts src/protocol/__tests__/askUserSocket.test.ts`
+   -> tests 25, pass 25, fail 0
+5. `(cd packages/web && npx vitest run)` -> 89 files / 614 tests, all pass
+6. `(cd packages/web && npx vitest run src/components/approval/__tests__/askUserCard.test.tsx)`
+   -> 1 file / 7 tests, all pass
+
+Note: an earlier full web run on a previous tip reported 1 failure in
+`packages/web/src/app/app/wiki/__tests__/wikiPage.test.tsx` ("Unable to find an element with the
+text: /Hello wiki/"). It is not related to N9 or to any file the merges touched, the file passes
+in isolation (2/2), and the immediately following full run passed. Recorded as an observed flake,
+not a regression.
+
+## Merge integrity (independently re-verified this session)
+
+Replayed every merge commit against its real parents (`^1` / `^2` / merge-base), for every file
+the merge touched, with `verify-merges.cjs` and `check-merge-loss.cjs`:
+
+- `f14c3d1`, `14e04b3`, `085cfb5`, `f923e19`: **0 lines of real content lost** from either side.
+  The only lines absent from a merge result that appear in a parent are lines that were also in
+  the merge base and unchanged on the other side (a normal union-merge artifact), not drops.
+- `.jdone` in rounds 1 and 2: 0 missing from ours, 0 missing from theirs, no conflict markers,
+  Arabic intact, no BOM, no U+FFFD.
+- `085cfb5`: `.jdone` deleted to match upstream, which had no content for it.
+- `41890e1`, `5f3072f`, `da4ddcf`, `8590e50`, `76906c0`: clean `ort` merges, no conflict markers,
+  N9 source files untouched.
+
+N9 blob hashes at `76906c0` are identical to the N9 commit `3136f14` for all five files
+(`askUserStore.ts` 668daff2, `askUserGate.ts` 339ccd31, `askUserTools.ts` c935f8b2,
+`src/server/routes/askUser.ts` 7f743ed1, `AskUserCard.tsx` 6430e51e). `git diff --stat 3136f14
+HEAD` over those five paths is empty. The only N9-path commit since `3136f14` is `c6c5ba6`,
+which is additive only (345 insertions, 0 deletions in
+`src/protocol/__tests__/askUserSocket.test.ts`).
+
+## Merge state
+
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
+- `git rev-list --left-right --count manus-parity...HEAD` -> `0  11`
+- `git status --porcelain=v1` -> empty (working tree clean)
+- `manus-parity` at `9ffdb16` (cr-04 + N10 + N7), already an ancestor of HEAD
+
+## Seams left
+
+- The ask-user auto-trigger classifier is heuristic (keyword/pronoun based). A model-judged
+  confidence signal can replace it behind the `src/tools/askUserGate.ts` seam.
+- `resolve_ask_user` plus the `askUserRequested`/`askUserResolved` pair is the extension point for
+  attaching answers to the run graph as a first-class node rather than a prompt prefix.
+- N3's knowledge garden (`src/knowledge/*`, `src/tools/knowledge.ts`,
+  `src/server/routes/knowledge.ts`, `KnowledgeGardenPane.tsx`) is in the tree and can consume those
+  answers as knowledge material.
+- **Operational seam:** `.jdone` is tracked again on parity, so the marker must be edited with the
+  file tools and committed rather than left untracked. Any future parity merge that re-adds or
+  deletes `.jdone` must be checked with `git ls-tree HEAD -- .jdone` and by searching for this
+  report's heading, because a gitignore entry does not protect an untracked working-tree copy
+  from being silently overwritten by a merge.
+- Parity is still advancing under a live runner; if `manus-parity` moves again, merge it and
+  re-run the gates rather than editing source to satisfy a conflict.
+
+---
+
 # N10 final merge gate: parity advanced 3x again, all re-merged, .jdone kept, full suites green
 
 This pass started from the previous `.jdone` merge report. Parity's local ref had advanced again
