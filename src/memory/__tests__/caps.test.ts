@@ -301,24 +301,241 @@ describe("J6 hard caps (eviction through the real public APIs)", () => {
     await expectCap("video-studio-tasks", 128, () => { attach("vs_more"); });
     await expectCap("video-studio-pending", 64, () => { attach("vs_pend"); });
   });
+
+  it("stall-guard-warned", async () => {
+    // A single run can call the whole tool list; the "already nudged" flags are
+    // per tool name, so 64+ distinct dedicated tools saturate the map. Failing a
+    // dedicated tool twice is what sets the flag.
+    const { createStallGuard } = await import("../../agent/stallGuard.js");
+    const guard = createStallGuard();
+    for (let i = 0; i < 72; i++) {
+      guard(`office_tool_${i}`, { i }, false);
+      guard(`office_tool_${i}`, { i }, false);
+    }
+    const row = cache("stall-guard-warned");
+    assert.equal(row.capacity, 64, "stall-guard-warned: registered capacity changed");
+    assert.equal(row.size, 64, `expected 64 live flags at saturation, got ${row.size}`);
+  });
+
+  it("protocol-session-tokens", async () => {
+    // One row per active Connect-RPC session. `GenerateTempAuthCode` is public
+    // and needs no credentials; `ExchangeTokenByCode` consumes the code and
+    // issues a session token, which is the only public path that inserts one.
+    const { makeRpcHandlers } = await import("../../protocol/rpc.js");
+    const handlers = makeRpcHandlers({} as never);
+    const generate = handlers["user.v1.UserAuthService/GenerateTempAuthCode"] as (
+      body: Record<string, unknown>,
+      ctx: unknown,
+    ) => Record<string, unknown>;
+    const exchange = handlers["user.v1.UserAuthPublicService/ExchangeTokenByCode"] as (
+      body: Record<string, unknown>,
+    ) => Record<string, unknown>;
+    assert.ok(
+      "user.v1.UserAuthService/GenerateTempAuthCode" in handlers
+      && "user.v1.UserAuthPublicService/ExchangeTokenByCode" in handlers,
+      "the Connect-RPC auth handlers are exported",
+    );
+    await expectCap("protocol-session-tokens", 512, (i) => {
+      // Each exchange consumes one freshly issued temp code and stores a new
+      // session token, so `i` distinct round-trips add `i` tokens to the map.
+      const issued = generate({}, { isPublic: true, userUid: null });
+      exchange({ token: issued["token"] as string });
+    });
+  });
+
+  it("oauth-pending-flows", async () => {
+    // An abandoned authorization keeps its PKCE verifier until the TTL prune.
+    // `buildAuthUrl` is the only public path that inserts a pending flow, and it
+    // needs no network round-trip.
+    const { buildAuthUrl } = await import("../../server/connectors/oauth.js");
+    // `buildAuthUrl` refuses to start a flow for an unconfigured connector, so
+    // give the probe credentials for the duration of the test.
+    process.env.J6_CAPS_TEST_CLIENT_ID = "probe-client";
+    process.env.J6_CAPS_TEST_CLIENT_SECRET = "probe-secret";
+    const def = {
+      id: "probe",
+      name: "Probe",
+      oauth: {
+        authorizeUrl: "https://example.test/auth",
+        tokenUrl: "https://example.test/token",
+        scopes: ["read"],
+        envVars: { clientId: "J6_CAPS_TEST_CLIENT_ID", clientSecret: "J6_CAPS_TEST_CLIENT_SECRET" },
+      },
+      fetchAccount: async () => "acct",
+    } as never;
+    try {
+      await expectCap("oauth-pending-flows", 64, () => { buildAuthUrl(def, "https://app.test/cb"); });
+    } finally {
+      delete process.env.J6_CAPS_TEST_CLIENT_ID;
+      delete process.env.J6_CAPS_TEST_CLIENT_SECRET;
+    }
+  });
+
+  it("pty-sessions", async () => {
+    // The backend is injected via `setPtyModule` (the same seam the pty suite
+    // uses), so no real terminal is spawned. The eviction hook must kill the
+    // dropped session's process, which is the resource the cap exists to bound.
+    const { ptyTools, setPtyModule, disposePty } = await import("../../tools/pty.js");
+    let killed = 0;
+    const fakeProc = {
+      pid: 1234,
+      write: () => {},
+      resize: () => {},
+      kill: () => { killed += 1; },
+      onData: () => {},
+      onExit: () => {},
+    };
+    setPtyModule({ spawn: () => fakeProc } as never);
+    const start = ptyTools.find((t) => t.name === "pty_start");
+    assert.ok(start, "pty_start tool is exported");
+    try {
+      await expectCap("pty-sessions", 16, () => {
+        start!.run({ shell: "cmd", cwd: W }, ctx(W, "pty"));
+      });
+      assert.ok(killed > 0, `expected the eviction hook to kill dropped pty sessions, killed ${killed}`);
+    } finally {
+      disposePty();
+      setPtyModule(null);
+    }
+  });
+
+  it("browser-operator-snapshots", async () => {
+    // The operator's per-call surface owns this counter; `observe` records the
+    // page's snapshot id after each observation. The inner browser_* dispatch is
+    // replaced with a stub (`setBrowserOperatorToolSource`), so 64+ distinct page
+    // ids saturate the map without a browser binary.
+    const { BrowserToolSurface, setBrowserOperatorToolSource } = await import("../../tools/browserOperator.js");
+    const calls: string[] = [];
+    const stub: Record<string, { ok: boolean; content: string }> = {
+      browser_table: { ok: true, content: "snapshot #1  page\nurl: about:blank\nscrollY=0" },
+      browser_eval: { ok: true, content: JSON.stringify({ text: "page", scrollY: 0, canScrollDown: false }) },
+    };
+    setBrowserOperatorToolSource((name) => ({
+      name,
+      description: "stub",
+      parameters: { type: "object", properties: {} },
+      run: async () => {
+        calls.push(name);
+        return stub[name] ?? { ok: false, content: `no stub for ${name}` };
+      },
+    }));
+    const surface = new BrowserToolSurface(ctx(W, "operator"));
+    try {
+      await expectCap("browser-operator-snapshots", 64, async (i) => {
+        await surface.observe(`page_${i}`);
+      });
+      assert.ok(calls.includes("browser_table"), "the driver observed real pages through the stub");
+    } finally {
+      setBrowserOperatorToolSource(null);
+    }
+  });
 });
 
 describe("docs/MEMORY_BUDGET.md stays in sync with the code", () => {
   it("lists a cap for every registered cache", async () => {
-    // Importing the modules above registered their counters; importing the doc
-    // table's sources keeps the parity check honest even on a partial run.
+    // Import every module that owns a documented cap, so the parity check covers
+    // all of them in one run instead of skipping whichever module this process
+    // happened not to load. A cap whose source module fails to import would
+    // otherwise be silently unchecked.
     await import("../../memory/cache.js");
+    const { createStallGuard } = await import("../../agent/stallGuard.js");
+    await import("../../protocol/rpc.js");
+    await import("../../protocol/blobStore.js");
+    await import("../../protocol/approvals.js");
+    await import("../../policy/permissionRules.js");
+    await import("../../server/approvals.js");
+    await import("../../server/runControl.js");
+    await import("../../server/fileWatchers.js");
+    await import("../../server/streams.js");
+    await import("../../server/urlWatch.js");
+    await import("../../server/scheduleTime.js");
+    await import("../../server/http.js");
+    await import("../../server/connectors/oauth.js");
+    await import("../../server/bridge/grokbot.js");
+    await import("../../session/eventLog.js");
+    await import("../../server/videoStudioRelay.js");
+    await import("../../server/workspace/videoRender.js");
+    await import("../../studio/slide-preview.js");
+    await import("../../studio/word-preview.js");
+    await import("../../tools/skillsRegistry.js");
+    await import("../../tools/vaultTools.js");
+    await import("../../tools/browser.js");
+    await import("../../tools/browserFrames.js");
+    await import("../../tools/pty.js");
+    await import("../../tools/shell.js");
+    await import("../../tools/specAliases.js");
+    // Three caps register per owning instance rather than at import time, so the
+    // check builds one owner of each: a stall guard, a TimelineService, and a
+    // BrowserToolSurface (the operator's per-call page-snapshot counter).
+    createStallGuard();
+    new (await import("../../creative/timeline.js")).TimelineService(W);
+    new (await import("../../tools/browserOperator.js")).BrowserToolSurface(ctx(W, "parity"));
     const doc = fs.readFileSync(new URL("../../../docs/MEMORY_BUDGET.md", import.meta.url), "utf8");
-    const rows = [...doc.matchAll(/^\|\s*`([a-z0-9-]+)`\s*\|\s*(\d+)\s*\|/gm)];
+    // Match every cap-table row: a plain numeric cap, or "<n> entries / <n> MiB"
+    // for the byte-capped rows. The unbackticked "Renderer sample bound" row and
+    // the unbounded-by-design table have no backticked counter name and are
+    // skipped, as are the baseline metrics (their names contain uppercase).
+    const rows = [...doc.matchAll(/^\|\s*`([a-z0-9-]+)`\s*\|\s*(\d+)(?:\s*entries\s*\/\s*\d+\s*MiB)?\s*\|/gm)];
     assert.ok(rows.length >= 30, `expected the budget table to list many caps, found ${rows.length}`);
-    for (const [, name, capText] of rows) {
-      const registered = collectCacheStats().find((c) => c.name === name);
-      if (!registered) continue; // a cap whose module was not imported in this process
+    const registered = collectCacheStats();
+    const registeredNames = new Set(registered.map((c) => c.name));
+    const documentedNames = new Set<string>();
+    for (const match of rows) {
+      const name = match[1];
+      const capText = match[2];
+      if (!name || !capText) continue;
+      documentedNames.add(name);
+      const row = registered.find((c) => c.name === name);
+      if (!row) {
+        // A cap documented here but absent from the registry means its module
+        // registers lazily (per-instance) or its import failed. Fail loudly so
+        // the doc cannot claim coverage it does not have.
+        assert.ok(
+          registeredNames.has(name),
+          `docs/MEMORY_BUDGET.md lists "${name}" but no cache registered that counter in this process`,
+        );
+        continue;
+      }
       assert.equal(
-        registered.capacity,
+        row.capacity,
         Number(capText),
-        `docs/MEMORY_BUDGET.md lists ${name} at ${capText} but the code enforces ${registered.capacity}`,
+        `docs/MEMORY_BUDGET.md lists ${name} at ${capText} but the code enforces ${row.capacity}`,
       );
     }
+    // Reverse direction: every cap registered in code must have a doc row. Without
+    // this a cache added to the code passes while the doc silently goes stale.
+    const undocumented = [...registeredNames].filter((n) => !documentedNames.has(n)).sort();
+    assert.deepEqual(
+      undocumented,
+      [],
+      `registered but missing from docs/MEMORY_BUDGET.md: ${undocumented.join(", ") || "(none)"}`,
+    );
+    // The prose must match what this file actually exercises. A stale count is how
+    // the doc previously claimed an eviction test for caps that had none.
+    const source = fs.readFileSync(new URL(import.meta.url), "utf8");
+    const evictionCases = new Set([
+      // Caps driven generically through expectCap.
+      ...[...source.matchAll(/expectCap\(\s*"([^"]+)"/g)].map((m) => m[1]),
+      // Caps with a bespoke eviction case whose `it()` title is the cap name.
+      ...[...source.matchAll(/\bit\(\s*"([a-z0-9-]+)"/g)].map((m) => m[1]).filter((n): n is string => !!n && documentedNames.has(n)),
+    ]);
+    const claim = /drives\s+(\d+)\s+of\s+the\s+(\d+)\s+caps/.exec(doc);
+    assert.ok(claim, "docs/MEMORY_BUDGET.md must state how many caps have an eviction case");
+    assert.equal(Number(claim[2]), documentedNames.size, "the doc's cap total must match its own tables");
+    assert.equal(Number(claim[1]), evictionCases.size, "the doc's eviction-case count must match this file");
+    const remainingClaim = /The remaining\s+(\d+)\s+caps\s+\(([^)]+)\)/.exec(doc);
+    assert.ok(remainingClaim, "docs/MEMORY_BUDGET.md must list the caps without an eviction case");
+    const listed = new Set([...(remainingClaim[2] ?? "").matchAll(/`([a-z0-9-]+)`/g)].map((m) => m[1]));
+    const actuallyRemaining = [...documentedNames].filter((n) => !evictionCases.has(n)).sort();
+    assert.equal(
+      Number(remainingClaim[1]),
+      actuallyRemaining.length,
+      "the doc's count of caps without an eviction case is wrong",
+    );
+    assert.deepEqual(
+      [...listed].sort(),
+      actuallyRemaining,
+      "docs/MEMORY_BUDGET.md names the wrong caps as lacking an eviction case",
+    );
   });
 });

@@ -52,13 +52,32 @@ registered through `registerCacheStats()` and therefore shows up as a counter
 row on the `debug:memory` surface, so a violated cap is observable rather than
 theoretical.
 
-The tables list 43 caps. A process does not register all 43 at once: three are
-lazy, bound to the first object that owns them (`browser-operator-snapshots` is
-created per `browser_operator` call, and `policy-glob` / `workspace-directory-requests`
-register when their module is first imported). The server registers 38 at boot and
-the bench's chat scenario brings it to 40, which is the `cacheCount` in
-`bench/results/J6-after.json`. Every cap, lazy or eager, is enforced in code and
-has an eviction test in `src/memory/__tests__/caps.test.ts`.
+The tables list 43 caps. A process does not register all 43 at once: five are
+lazy, bound to the first object that owns them. `browser-operator-snapshots` is
+created per `browser_operator` call; `policy-glob` and
+`workspace-directory-requests` register when their module is first imported; and
+`stall-guard-failures` / `stall-guard-warned` are created per agent run
+(`createStallGuard()` in `src/agent/loop.ts`). The server registers the other 38
+at boot, and the bench's chat scenario adds those two stall-guard caps, which is
+the `cacheCount` of 40 in `bench/results/J6-after.json`. Every cap, lazy or
+eager, is enforced in code.
+
+Enforcement is exercised two ways. `src/memory/__tests__/caps.test.ts` drives 32
+of the 43 caps past their bound through their own public API and asserts
+occupancy never exceeds the configured bound (the ones a test can reach without a
+live browser, PTY, ffmpeg child or video sidecar). The doc↔code parity test then
+asserts every cap's documented bound matches the code. The remaining 11 caps
+(`browser-sessions`, `ollama-tags`, `timeline-jobs`, `timeline-proxy-jobs`,
+`video-render-jobs`, `video-render-children`, `slide-preview`,
+`slide-preview-pending`, `word-preview`, `word-preview-pending`, `skills-desc`)
+are enforced in code and appear on the debug surface, but driving them past the
+bound needs a live browser, an ffmpeg child, the video sidecar or a render
+round-trip, so their bounds are covered by the parity check rather than by an
+eviction case. The byte-ceiling mechanism itself is unit-tested on
+`LruCache`/`BoundedMap` in `src/memory/__tests__/cache.test.ts`, which is what
+the three byte-capped rows (`slide-preview`, `word-preview`, `skills-desc`) rely
+on. Adding a cap therefore requires its row in this table, and the parity test
+fails if the number drifts.
 
 ### Agent and session caches
 

@@ -452,9 +452,14 @@ is empty for each):
    nearest enclosing repository, so a temp folder on this host reports `isGit: true`.
 
 ## J6 acceptance recap (already on this branch, re-verified after the merge)
-- **Eviction tests for each cap**: `src/memory/__tests__/cache.test.ts` (LruCache, BoundedMap,
-  stats registry) + `src/memory/__tests__/caps.test.ts` (one eviction case per cap through the
-  real public APIs, including the 40th cap `run-active-flags`).
+- **Eviction tests**: `src/memory/__tests__/cache.test.ts` (LruCache, BoundedMap,
+  stats registry, byte ceiling) + `src/memory/__tests__/caps.test.ts` drives 32 of the 43
+  documented caps past their bound through the real public APIs, including `run-active-flags`
+  and `browser-operator-snapshots`. The other 11 caps (`browser-sessions`, `ollama-tags`,
+  `timeline-jobs`, `timeline-proxy-jobs`, `video-render-jobs`, `video-render-children`,
+  `slide-preview`, `slide-preview-pending`, `word-preview`, `word-preview-pending`,
+  `skills-desc`) need a live browser, an ffmpeg child, the video sidecar or a render
+  round-trip to reach, so they are covered by the doc↔code parity check instead.
 - **docs**: `docs/MEMORY_BUDGET.md` lists every cap, and
   `src/memory/__tests__/caps.test.ts`'s "docs/MEMORY_BUDGET.md stays in sync with the code"
   asserts a documented cap for every registered cache.
@@ -463,7 +468,8 @@ is empty for each):
   by `src/server/__tests__/debugMemory.test.ts` (10 tests). The desktop surfaces the same
   numbers in Settings > Memory.
 - **before/after RSS**: `bench/results/J6-before.json` and `bench/results/J6-after.json`
-  (committed pair, `growthMB` 0 in both, AFTER `cacheCount` 39 / `debugRoutePresent` true);
+  (committed pair, `growthMB` 0 in both, AFTER `cacheCount` 40 / `cacheEntries` 2 /
+  `debugRoutePresent` true);
   `bench/__tests__/appRamBench.test.ts` asserts the pair is self-consistent.
 - `npm run bench:ram:app` exists and is the J6 app-RAM harness.
 
