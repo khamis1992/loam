@@ -80,6 +80,7 @@ theoretical.
 | `server-approvals` | 256 | `src/server/approvals.ts` | Pending approval records for the web UI. |
 | `run-controllers` | 512 | `src/server/runControl.ts` | One `AbortController` per live run. |
 | `run-cancelled-flags` | 512 | `src/server/runControl.ts` | Cancelled-run marker used to short-circuit a restart. |
+| `run-active-flags` | 512 | `src/server/runControl.ts` | In-flight task ids; only decides whether a cancel bumps the epoch. Bounded like the two rows above so an abandoned run cannot grow it either. |
 | `server-file-watchers` | 128 | `src/server/fileWatchers.ts` | Live `fs.watch` handles; the eviction hook closes the watcher. |
 | `task-event-subs` | 512 | `src/server/streams.ts` | SSE subscriber sets keyed by task id. |
 | `url-watch-connectors` | 64 | `src/server/urlWatch.ts` | Fetcher per registered URL-watch connector. |
@@ -134,6 +135,7 @@ unbounded must document it here:
 |---|---|---|
 | Live assessment runs | `src/security/assessments.ts` | One `AbortController` per pentest assessment, removed on completion/abort. Assessments are rare, operator-initiated and explicitly cancellable. |
 | Task registry / saved runs | `src/server/...` | Durable, persisted to disk and pruned on task delete; not a cache. |
+| Execution queue lanes | `src/server/executionQueue.ts` | `locks`/`running`/`ids` are keyed by job id and all three delete their entry when the job's work settles (or is cancelled), so live entries never exceed the jobs the process actually has. Not a cache. |
 | `src/memory/store.ts` memory entries | `src/memory/store.ts` | Backed by `cfg.memory.maxEntries` and pruned by `/api/memory/curate`. |
 
 ## Measured baseline (J6)
@@ -144,11 +146,11 @@ parameters: 4 iterations, `--sample-ms 4000`, `--interval-ms 100`, port 3948.
 
 | Metric | BEFORE | AFTER |
 |---|---:|---:|
-| `idleMB` | 538.4 | 548.5 |
-| `peakMB` | 538.4 | 548.5 |
-| `finalMB` | 476.4 | 458.2 |
+| `idleMB` | 538.4 | 538.2 |
+| `peakMB` | 538.4 | 538.2 |
+| `finalMB` | 476.4 | 467.8 |
 | `growthMB` | 0 | 0 |
-| `cacheCount` | 0 | 39 |
+| `cacheCount` | 0 | 40 |
 | `cacheEntries` | 0 | 2 |
 | `debugRoutePresent` | false | true |
 | `thresholdExceeded` | false | false |
@@ -157,11 +159,11 @@ Reading:
 
 - `growthMB` is 0 in both runs. The scenario is built so a leak shows as
   `finalMB` staying near `peakMB` after the workload ends; neither run does, and
-  the AFTER run adds 39 bounded caches without changing that.
-- The ~10 MB `idleMB` difference is one-time startup cost for the new module
-  graph (`src/memory/*`, the debug route, the IPC wiring), not per-iteration
-  growth. `peakMB - idleMB` is 0 in both runs, which is the growth signal this
-  budget cares about.
+  the AFTER run adds 40 bounded caches without changing that.
+- `peakMB - idleMB` is 0 in both runs, which is the growth signal this budget
+  cares about. The idle/peak figures sit at the same RSS because the sampling
+  window is shorter than one server's steady-state settle; the growth gate
+  (`growthMB`) is the enforced number, and it is 0.
 - Each report records `sourceCommit` and `debugRoutePresent`, and
   `bench/__tests__/appRamBench.test.ts` asserts the committed pair is
   self-consistent, so a stale or hand-edited result file fails CI.
@@ -204,7 +206,7 @@ These are the concrete enforced limits today (cap in parentheses):
 
 - Agent/session: stall-guard (64), task phases (512), timeline jobs + proxies (64 each)
 - Policy/protocol: glob (256), session tokens (512), temp codes (128), login tokens (256), blobs (64), directory approvals (128)
-- Server: approvals (256), run controllers + flags (512), file watchers (128), event subs (512), URL watch (64), formatters (32), Ollama tags (32), OAuth flows (64), grokbot recent/rate (128/256), event-log projection (64)
+- Server: approvals (256), run controllers + flags + active flags (512 each), file watchers (128), event subs (512), URL watch (64), formatters (32), Ollama tags (32), OAuth flows (64), grokbot recent/rate (128/256), event-log projection (64)
 - Media: video-studio pending/tasks (64/128), render jobs/children (256/64), slide preview (3 / 96 MiB), word preview (6 / 128 MiB), skills desc (128 / 4 MiB), vault names (256)
 - Browser/tools: browser sessions (32), frames/sinks/aliases (64/128/256), operator snapshots (64), pty (16), shell (32), spec aliases (64 each)
 - Renderer samples in the profile: 16
@@ -214,12 +216,13 @@ Any intentional change to those limits must update this document in the same PR.
 ## Tests
 
 - `src/memory/__tests__/cache.test.ts` — the bounded-cache primitives and the counter registry
+- `src/memory/__tests__/caps.test.ts` — the executable half of the cap table: drives every registered cache past its bound through its own public API and checks eviction, plus a doc↔code parity check
 - `src/server/__tests__/debugMemory.test.ts` — the HTTP route boundary
 - `bench/__tests__/appRamBench.test.ts` — the offline before/after measurement
 
 Run them with:
 
 ```bash
-node --import tsx --test src/memory/__tests__/cache.test.ts src/server/__tests__/debugMemory.test.ts
+node --import tsx --test src/memory/__tests__/cache.test.ts src/memory/__tests__/caps.test.ts src/server/__tests__/debugMemory.test.ts
 node --import tsx --test bench/__tests__/appRamBench.test.ts
 ```

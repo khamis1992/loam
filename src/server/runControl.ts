@@ -6,16 +6,19 @@ import { registerCacheStats } from "../memory/stats.js";
  * Per-run cancellation registry (J6). `clearRunSignal` removes entries when a
  * run ends, but a run that is abandoned (the process dies mid-run, a caller
  * that never awaited its `finally`) left its controller and cancelled flag
- * behind forever. Bounded: `active` (in-flight runs) is the meaningful size;
- * `cancelled` and `controllers` share one budget so an abandoned task can never
- * grow either of them without bound.
+ * behind forever. All three collections share one budget so an abandoned task
+ * can never grow any of them without bound: `controllers` holds the live
+ * `AbortController` per task, `cancelled` is the short-circuit marker, and
+ * `active` is the in-flight set that only decides whether a cancel should bump
+ * the epoch.
  */
 const RUN_REGISTRY_CAPACITY = 512;
 const controllers = new BoundedMap<string, AbortController>(RUN_REGISTRY_CAPACITY, "run-controllers");
 const cancelled = new BoundedMap<string, true>(RUN_REGISTRY_CAPACITY, "run-cancelled-flags");
-const active = new Set<string>();
+const active = new BoundedMap<string, true>(RUN_REGISTRY_CAPACITY, "run-active-flags");
 registerCacheStats("run-controllers", () => ({ ...controllers.stats(), capacity: RUN_REGISTRY_CAPACITY }));
 registerCacheStats("run-cancelled-flags", () => ({ ...cancelled.stats(), capacity: RUN_REGISTRY_CAPACITY }));
+registerCacheStats("run-active-flags", () => ({ ...active.stats(), capacity: RUN_REGISTRY_CAPACITY }));
 /** Monotonic counter bumped on every cancel — lets any in-flight tool notice it. */
 let cancelEpoch = 0;
 
@@ -51,11 +54,11 @@ export function createRunSignal(taskId: string, isActive = true): AbortSignal {
   const ac = new AbortController();
   controllers.set(taskId, ac);
   cancelled.delete(taskId);
-  if (isActive) active.add(taskId);
+  if (isActive) active.set(taskId, true);
   return ac.signal;
 }
 
-export function activateRunSignal(taskId: string): void { active.add(taskId); }
+export function activateRunSignal(taskId: string): void { active.set(taskId, true); }
 
 export function cancelRunSignal(taskId: string): boolean {
   if (active.has(taskId)) cancelEpoch += 1;
