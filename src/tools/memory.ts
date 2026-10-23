@@ -3,6 +3,137 @@ import type { WriteGate } from "../server/pending.js";
 import { gateActive } from "../server/settings.js";
 import type { Tool, ToolResult } from "./registry.js";
 import { num, str } from "./registry.js";
+import {
+  recallIndex,
+  type RecallAttacher,
+  type RecallHit,
+  type RecallMedium,
+  type RecallNode,
+  type RecallQuery,
+} from "../graph/recall.js";
+
+/** Deps the recall tools need; all optional so the tools always register. */
+export interface RecallToolOptions {
+  /** The shelf. Omitted => the process-wide one, created on first use. */
+  index?: import("../graph/recall.js").RecallIndex;
+  /** Files a hit back into the current run as a linked node. */
+  attach?: RecallAttacher;
+  /** The run the calling agent belongs to (used by `recall` to attach). */
+  runId?: string;
+}
+
+/** Render one hit the way the agent reads it. */
+export function formatRecallHit(hit: RecallHit, index: number): string {
+  const { node } = hit;
+  const bits: string[] = [];
+  bits.push(`${index}. [${node.medium}] ${node.type}`);
+  bits.push(`from run ${node.runId} node ${node.nodeId}`);
+  if (hit.channel === "vector") bits.push(`score ${hit.score.toFixed(3)}`);
+  if (node.path) bits.push(`file ${node.path}`);
+  const url = dataUrl(node);
+  if (url) bits.push(`url ${url}`);
+  const text = node.text.trim();
+  bits.push(text.length > 600 ? `${text.slice(0, 600)}…` : text);
+  return bits.join(" | ");
+}
+
+/** Read a string field off a hit's payload without assuming its shape. */
+function dataUrl(node: RecallNode): string | undefined {
+  if (typeof node.data !== "object" || node.data === null) return undefined;
+  const value = (node.data as Record<string, unknown>)["url"];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+/**
+ * Neo N16: the cross-run recall tools.
+ *
+ * `recall` is the bookshelf read: it searches finished nodes (text, image,
+ * webpage, video) from earlier runs by description and, when the caller gives
+ * it an attaching function, files the chosen hit into the current run as a node
+ * that links back to its origin. `recall_status` reports what the shelf holds.
+ *
+ * Both are throwaway-safe: an unavailable shelf answers "(nothing recalled yet)"
+ * rather than an error, because a recall miss must never break the task.
+ */
+export function createRecallTools(opts: RecallToolOptions = {}): Tool[] {
+  const { attach, runId } = opts;
+  const index = opts.index ?? recallIndex();
+
+  const runRecall: Tool = {
+    name: "recall",
+    description:
+      "Search your past runs' finished nodes (documents, webpages, images, videos) by description and pull one back into the current run. Use it to reuse an asset you made earlier instead of regenerating it. With node_id it attaches that node to the current run and returns the linked node id; without it, it lists candidates.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "What you are looking for, in plain words (e.g. \"the dashboard image from the Nutrio report\")." },
+        limit: { type: "number", description: "Max candidates (default 5, max 20)." },
+        medium: { type: "string", description: "Restrict to one medium: text | image | webpage | video." },
+        node_id: { type: "string", description: "Attach this recalled node id to the current run." },
+      },
+      required: ["query"],
+    },
+    async run(args: Record<string, unknown>): Promise<ToolResult> {
+      const query = str(args, "query").trim();
+      if (!query) return { ok: false, content: "recall requires a query" };
+      const limit = Math.min(Math.max(num(args, "limit", 5), 1), 20);
+      const mediumRaw = str(args, "medium", "").trim();
+      const medium = mediumRaw ? (mediumRaw as RecallMedium) : undefined;
+      if (medium && !["text", "image", "webpage", "video"].includes(medium)) {
+        return { ok: false, content: `recall: unknown medium "${mediumRaw}" (use text|image|webpage|video)` };
+      }
+      const node_id = str(args, "node_id", "").trim();
+      const filter: RecallQuery = { query, limit, ...(medium ? { mediums: [medium] } : {}) };
+      try {
+        if (node_id) {
+          // Look the node up first: "not on the shelf" is the real answer even
+          // when this run cannot attach, so the model is not misled.
+          const hit = index.get(node_id);
+          if (!hit) return { ok: false, content: `recall: node ${node_id} is not on the shelf` };
+          if (!attach) return { ok: false, content: "recall: attaching is not wired into this run; use it read-only" };
+          if (!runId) return { ok: false, content: "recall: no run context, so the hit cannot be attached" };
+          const attached = attach(
+            { nodeId: hit.nodeId, runId: hit.runId, type: hit.type },
+            runId,
+            query,
+          );
+          if (!attached) return { ok: false, content: `recall: could not attach ${node_id} to run ${runId}` };
+          return {
+            ok: true,
+            content: `attached node ${attached.id} to run ${runId}\nrecalled from ${hit.runId} (${hit.type}, ${hit.nodeId})\n${hit.text.slice(0, 400)}`,
+          };
+        }
+        const hits = await index.search(filter);
+        if (hits.length === 0) return { ok: true, content: "(nothing recalled yet for that description)" };
+        return {
+          ok: true,
+          content: `${hits.length} recalled node(s):\n${hits.map((hit, i) => formatRecallHit(hit, i + 1)).join("\n")}\n\nTo reuse one, call recall again with node_id set to its node id.`,
+        };
+      } catch (err) {
+        return { ok: false, content: `recall failed: ${err instanceof Error ? err.message : String(err)}` };
+      }
+    },
+  };
+
+  const runRecallStatus: Tool = {
+    name: "recall_status",
+    description: "Report how many finished nodes from past runs are on the recall shelf, and whether vector search is available.",
+    parameters: { type: "object", properties: {} },
+    async run(): Promise<ToolResult> {
+      try {
+        const stats = index.stats();
+        return {
+          ok: true,
+          content: `recall shelf: ${stats.nodes} node(s), ${stats.vectorized} vectorized, ${stats.lexicalOnly ? "lexical-only (no embedder)" : `model ${stats.model || "unknown"}`}`,
+        };
+      } catch (err) {
+        return { ok: false, content: `recall_status failed: ${err instanceof Error ? err.message : String(err)}` };
+      }
+    },
+  };
+
+  return [runRecall, runRecallStatus];
+}
 
 export interface MemoryToolOptions {
   onApply?: (label: string) => void;

@@ -1,4 +1,5 @@
 import { createLoamTools } from "../tools/loam.js";
+import { createEnvSnapshotTools } from "../tools/envSnapshot.js";
 import { createLoamServiceTools } from "../tools/loamServices.js";
 import { createCreativeTools } from "../tools/creative.js";
 import { createCreativeStudioTools } from "../tools/creativeStudio.js";
@@ -20,6 +21,7 @@ import { createWikiTools } from "../tools/wiki.js";
 import { pentestTools } from "../tools/pentest.js";
 import { mirofishTools } from "../tools/mirofish.js";
 import { createSubagentTools } from "../tools/subagents.js";
+import { createFanoutTool } from "../tools/fanout.js";
 import { createManagedSessionTools } from "../tools/managedSessionTools.js";
 import { webTools } from "../tools/web.js";
 import { browserTools, closeBrowser } from "../tools/browser.js";
@@ -28,7 +30,8 @@ import { initPty, disposePty, ptyStatus, ptyTools } from "../tools/pty.js";
 import { registerMcpTools, type McpToolset } from "../tools/mcp.js";
 import { OllamaEmbedder } from "../memory/embeddings.js";
 import { MemoryStore, startMemoryDreamJob } from "../memory/store.js";
-import { createMemoryTools } from "../tools/memory.js";
+import { createMemoryTools, createRecallTools } from "../tools/memory.js";
+import { recallIndex } from "../graph/recall.js";
 import { createSkillTools } from "../tools/skills.js";
 import { sessionTools } from "../tools/sessions.js";
 import { createScreenTools } from "../tools/screen.js";
@@ -51,6 +54,7 @@ import { createVaultTools } from "../tools/vaultTools.js";
 import { createCodeSessionTools } from "../tools/codeSession.js";
 import { createDocsLookupTools } from "../tools/docsLookup.js";
 import { createSemanticSearchTools } from "../tools/semanticSearch.js";
+import { createKnowledgeTools } from "../tools/knowledge.js";
 import { createGenExtraTools } from "../tools/genExtra.js";
 import { defaultGenProviders } from "../creative/genProviders.js";
 import { createArtifactTools } from "../tools/artifactTools.js";
@@ -62,11 +66,22 @@ export interface Runtime {
   ollama: OllamaClient | FailoverClient;
   registry: ToolRegistry;
   memory: MemoryStore | null;
+  /**
+   * N3 Knowledge Garden: the Ollama embedder, or null when memory embeddings
+   * are off. The garden shares it with the memory store and the semantic code
+   * index, so all three vector channels live in the same space.
+   */
+  embedder: OllamaEmbedder | null;
   screenLive: ScreenLive;
   preview: PreviewService;
   mcpServers: string[];
   /** Direct handle on the running MCP servers (null when they are disabled). */
   mcp: McpToolset | null;
+  /**
+   * N16 cross-run recall: the shelf of finished nodes from past runs, or null
+   * when memory embeddings are off and no embedder is available.
+   */
+  recall: import("../graph/recall.js").RecallIndex | null;
   dispose: () => Promise<void>;
 }
 
@@ -106,9 +121,17 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   // Always hand tools a WriteGate object; per-write gateActive() decides staging vs. direct apply.
   const gate = writeGate;
   if (memory) registry.registerAll(createMemoryTools(memory, { gate }));
+  // N16 cross-run recall: the shelf shares the memory embedder, and without it
+  // the shelf still answers lexically, so the tools are always registered and a
+  // node is vectorized exactly when memory embeddings are on. Reachability is
+  // decided by the run's tool allowlist (modes/catalog.ts), not by registration:
+  // an unregistered tool can never reach a run at all.
+  const recall = recallIndex({ embedder: cfg.memory.enabled && cfg.memory.model ? embedder : null });
+  registry.registerAll(createRecallTools({ index: recall }));
   registry.registerAll(createSkillTools({ gate, ollama, projectRoot: cfg.workspace }));
   registry.registerAll(sessionTools);
   registry.registerAll(createLoamTools());
+  registry.registerAll(createEnvSnapshotTools());
   registry.registerAll(createLoamServiceTools());
   registry.registerAll(createCreativeTools());
   registry.registerAll(createCreativeStudioTools());
@@ -120,6 +143,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createRorkTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createFrontierBridgeTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createSubagentTools(ollama, registry));
+  registry.register(createFanoutTool({ ollama, parentRegistry: registry }));
   registry.registerAll(createManagedSessionTools({ ollama, parentRegistry: registry }));
   registry.registerAll(createGitWorkflowTools());
   // D2: CI watch polls the same D1 PR provider's check-runs; the local provider
@@ -140,6 +164,13 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
     embedder: cfg.memory.enabled && cfg.memory.model ? embedder : undefined,
     model: cfg.memory.model,
   }));
+  // N3 Knowledge Garden: user-built RAG store. The vector channel shares the
+  // memory embedder; without it the garden still answers lexically, so the tools
+  // are always registered and reachability is decided by the per-run toggle.
+  registry.registerAll(createKnowledgeTools({
+    embedder: cfg.memory.enabled && cfg.memory.model ? embedder : undefined,
+    model: cfg.memory.model || cfg.model,
+  }));
   // N12 generator tools: media/search providers from the environment plus the
   // runtime model as the reasoning backend for solve_logic / generate_storyboard.
   registry.registerAll(createGenExtraTools({ providers: defaultGenProviders(cfg), reasoner: ollama }));
@@ -152,8 +183,10 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
     ollama,
     registry,
     memory,
+    embedder: cfg.memory.enabled && cfg.memory.model ? embedder : null,
     screenLive,
     preview,
+    recall,
     mcpServers: mcp?.servers ?? [],
     mcp,
     dispose: async (): Promise<void> => {

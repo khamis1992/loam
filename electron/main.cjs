@@ -9,6 +9,66 @@ const mcpBridge = require("./mcp-bridge.cjs");
 const vendorProtocol = require("./vendorProtocol.cjs");
 const { IPC_INVOKE, IPC_EVENT_PREFIX, IPC_META, IPC_SYNC, NAMESPACES } = require("./ipc-constants.cjs");
 
+// ---------------------------------------------------------------------------
+// Local-only memory sampling (J6). The desktop main process is the only place
+// that can see both the Node server child and every renderer, so it samples
+// them on a slow timer and answers the renderer's debugMemory IPC from that
+// snapshot. Nothing here is ever sent anywhere: the numbers stay in the
+// renderer process that asked for them.
+// ---------------------------------------------------------------------------
+let lastMemorySample = { at: null, main: null, renderers: [], server: null };
+
+function mb(bytes) {
+  return Math.round((Number(bytes) / (1024 * 1024)) * 100) / 100;
+}
+
+function sampleMainProcess() {
+  const m = process.memoryUsage();
+  return { pid: process.pid, rssBytes: m.rss, heapUsedBytes: m.heapUsed, heapTotalBytes: m.heapTotal, externalBytes: m.external };
+}
+
+function sampleRenderers() {
+  const out = [];
+  for (const contents of require("electron").webContents.getAllWebContents()) {
+    let metrics = null;
+    try { metrics = contents.getProcessMemoryInfo(); } catch { continue; }
+    if (!metrics) continue;
+    out.push({
+      pid: metrics.pid ?? 0,
+      rssBytes: metrics.residentSetSize ?? 0,
+      workingSetBytes: metrics.workingSetSize ?? 0,
+      type: String(contents.getType ? contents.getType() : "window"),
+    });
+  }
+  return out;
+}
+
+function sampleServerProcess() {
+  if (!serverChild || !serverChild.pid) return null;
+  // /proc is Linux-only; elsewhere the server reports its own numbers over the
+  // loopback debug:memory route, so this stays a best-effort pid + rss hint.
+  let rss = 0;
+  try {
+    const stat = fs.readFileSync(`/proc/${serverChild.pid}/status`, "utf8");
+    const m = /^VmRSS:\s*(\d+)\s*kB/m.exec(stat);
+    if (m) rss = Number(m[1]) * 1024;
+  } catch { /* not available on this platform */ }
+  return { pid: serverChild.pid, rssBytes: rss };
+}
+
+function startMemorySampler() {
+  const timer = setInterval(() => {
+    lastMemorySample = {
+      at: new Date().toISOString(),
+      main: sampleMainProcess(),
+      renderers: sampleRenderers(),
+      server: sampleServerProcess(),
+    };
+  }, 15_000);
+  if (timer.unref) timer.unref();
+  lastMemorySample = { at: new Date().toISOString(), main: sampleMainProcess(), renderers: sampleRenderers(), server: sampleServerProcess() };
+}
+
 // App root: the repo folder in dev, resources/app.asar when packaged. Electron's
 // fs patch reads files inside the asar transparently, so ROOT stays the asar path.
 // Files that must exist on real disk (native modules, ffmpeg, three jsm addons)
@@ -377,6 +437,11 @@ let currentTheme = "system";
 const ipcHandlers = {
   auth: {
     getToken: () => sessionToken,
+    localSignIn: async () => {
+      const ok = await ensureLocalSession();
+      if (ok && win) win.webContents.send("desktop-ipc-event:auth:onLoginSuccess", {});
+      return ok;
+    },
     setToken: (_sender, token) => {
       pendingLoginNonce = String(token ?? "");
       if (pendingLoginNonce) {
@@ -494,6 +559,22 @@ const ipcHandlers = {
   diagnosticLogs: {
     collect: () => ({ path: "" }),
   },
+  // J6 local debug surface: per-process RSS. The renderer never receives
+  // anything but these counters — no prompt text, no file paths, no tokens.
+  debugMemory: {
+    snapshot: () => {
+      const sample = lastMemorySample;
+      const rendererRss = (sample.renderers || []).reduce((a, r) => a + (r.rssBytes || 0), 0);
+      return {
+        at: sample.at,
+        mainRssMb: sample.main ? mb(sample.main.rssBytes) : 0,
+        rendererRssMb: mb(rendererRss),
+        rendererCount: (sample.renderers || []).length,
+        serverRssMb: sample.server ? mb(sample.server.rssBytes) : 0,
+        serverPid: sample.server?.pid ?? null,
+      };
+    },
+  },
   storage: {
     getItem: (_sender, key) => {
       if (typeof key !== "string") throw new Error("key must be a string");
@@ -610,6 +691,43 @@ async function exchangeAgentStudioSession(loginToken) {
   const exchData = await exch.json();
   if (!exchData.token) throw new Error("no session token returned");
   return exchData.token;
+}
+
+// Loam is local and single-user: unless LOAM_REQUIRE_LOGIN=1, mint a session
+// from the local protocol adapter so the app opens straight into /app.
+function localLoginEnabled() {
+  return process.env.LOAM_REQUIRE_LOGIN !== "1";
+}
+
+async function ensureLocalSession() {
+  if (!localLoginEnabled()) return false;
+  try {
+    if (sessionToken) {
+      const check = await fetch(AGENT_STUDIO_BACKEND + "/user.v1.UserService/UserInfo", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${sessionToken}`, "Content-Type": "application/json", "Connect-Protocol-Version": "1" },
+        body: "{}",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (check.ok) return true;
+      if (check.status !== 401 && check.status !== 403) return false;
+    }
+    const nonce = "local-" + Date.now();
+    const res = await fetch(AGENT_STUDIO_BACKEND + "/login?from=desktop&type=signIn&nonce=" + nonce, { redirect: "manual", signal: AbortSignal.timeout(5000) });
+    const location = res.headers.get("location") || "";
+    const loginToken = location ? new URL(location).searchParams.get("token") : "";
+    if (!loginToken) throw new Error("no local login token (status " + res.status + ")");
+    sessionToken = await exchangeAgentStudioSession(loginToken);
+    const data = readLocalStorage();
+    data["session_token"] = sessionToken;
+    delete data["login_nonce"];
+    writeLocalStorage(data);
+    console.log("[electron] local session ready");
+    return true;
+  } catch (err) {
+    console.warn("[electron] local sign-in failed: " + err.message);
+    return false;
+  }
 }
 
 async function handleDeepLinkCallback(url) {
@@ -900,6 +1018,7 @@ app.whenReady().then(async () => {
       return;
     }
   }
+  if (loamServerReady) await ensureLocalSession();
   createWindow();
   if (loamServerReady && win) {
     // Inject the install token into all renderer requests to the local API.
@@ -910,6 +1029,9 @@ app.whenReady().then(async () => {
     });
   }
   if (loamServerReady) startServerWatchdog();
+  // J6: sample this process, every renderer and the server child so the
+  // Settings > Memory debug surface always has fresh local numbers.
+  startMemorySampler();
   if (loamServerReady) {
     const localUpdates = await require("./local-updates.cjs").startLocalUpdates(path.join(app.getPath("userData"), "updates"));
     updater.init({

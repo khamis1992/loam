@@ -63,6 +63,8 @@ function normalizeEffortName(value: string): EffortLevel | "" {
 export const DATA_DIR = dataDir();
 export const SKILLS_DIR = fromEnv("MANUS_LOCAL_SKILLS_DIR", path.join(ROOT, "skills"));
 export const EVALS_DIR = fromEnv("MANUS_LOCAL_EVALS_DIR", path.join(ROOT, "evals"));
+/** Vetted Loam UI Kit blocks (design-registry/blocks/<id>/manifest.json) used by ui_examples_search. */
+export const DESIGN_REGISTRY_DIR = fromEnv("MANUS_LOCAL_DESIGN_REGISTRY_DIR", path.join(ROOT, "design-registry"));
 export const UI_DIR = path.join(ROOT, "ui");
 export const SCRIPTS_DIR = path.join(ROOT, "scripts");
 
@@ -220,6 +222,19 @@ export interface Config {
     reattachFiles: number;
     /** Characters of each re-attached file snapshot to keep (default: 4000). */
     reattachFileChars: number;
+    /**
+     * Trigger a synchronous emergency hard-compact when the estimate exceeds this
+     * fraction of the context window (default: 0.95, jcode parity). Above this point
+     * the transcript is dropped/truncated immediately instead of waiting for the
+     * summarizer, so the next API call is guaranteed to fit.
+     */
+    criticalThresholdPercent: number;
+    /** Recent turns kept verbatim during emergency compaction (default: 10, jcode parity). */
+    recentTurnsToKeep: number;
+    /** Absolute minimum turns kept during emergency compaction (default: 2, jcode parity). */
+    minTurnsToKeep: number;
+    /** Max characters kept for a single tool result during emergency truncation (default: 4000, jcode parity). */
+    emergencyToolResultMaxChars: number;
     /** Model to use for summarization ("" = main model). */
     model: string;
     /** Context window size per model prefix (longest-prefix match). Defaults cover common models. */
@@ -228,6 +243,13 @@ export interface Config {
   sessionLog: { enabled: boolean };
   /** Neo run graph: record every agent event as a node of the task's run graph. */
   runGraph?: { enabled: boolean };
+  /**
+   * Neo N5: the per-step context selector ("memory manager"). Selects the
+   * artefacts a step needs from the run's artefact store before the model is
+   * called, so the transcript stays bounded without waiting for the
+   * compressor's threshold. Partial configs are clamped onto the defaults.
+   */
+  contextSelector?: Partial<import("./agent/contextSelector.js").ContextSelectorConfig>;
   /** Coding-model routing (C17): prefer the strongest available coder for
    *  coding turns. The chain is a list of model ids (strongest first) matched
    *  against the failover providers. It never contains API keys — keys stay in
@@ -344,6 +366,10 @@ export const DEFAULTS: Config = {
     bufferTokens: 20000,
     reattachFiles: 5,
     reattachFileChars: 4000,
+    criticalThresholdPercent: 0.95,
+    recentTurnsToKeep: 10,
+    minTurnsToKeep: 2,
+    emergencyToolResultMaxChars: 4000,
     model: "",
     contextWindow: {
       "gpt-4": 8192,
@@ -367,6 +393,9 @@ export const DEFAULTS: Config = {
   },
   sessionLog: { enabled: true },
   runGraph: { enabled: true },
+  // Neo N5: on by default. `false` (or LOAM_CONTEXT_SELECTOR=0) keeps the
+  // pre-N5 behaviour: the compressor alone decides what leaves the transcript.
+  contextSelector: { enabled: true },
   coding: { enabled: true, chain: [], logEdits: true },
   // Neo N10: no map by default, so an unconfigured run keeps its current
   // behaviour (the coding chain for coding turns, the configured model else).
