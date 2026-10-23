@@ -33,19 +33,20 @@ Acceptance criteria (BUILD_SPEC row H4)
     messages, system content == `DISTILL_SYSTEM`, user content carries the task and
     the correction, temperature 0.1, timeout 180000, model `critic-model`).
 
-The `???` mojibake gate failure was stale and false
----------------------------------------------------
-`.jgatefail.txt` claimed the added lines had been corrupted with Arabic `???`
-mojibake. Re-verified mechanically on the merged tree and on the committed blobs:
+The reported mojibake gate failure was stale and false
+------------------------------------------------------
+`.jgatefail.txt` claimed the added lines had been corrupted with Arabic
+question-mark mojibake (three ASCII question marks standing in for Arabic
+letters). Re-verified mechanically on the merged tree and on the committed blobs:
 
-  - of the 13652 added lines in the merge diff, 0 contain `???`, 0 contain U+FFFD
-    and 0 contain any Arabic code point (the H4 diff is ASCII plus the test file's
-    Arabic fixtures).
+  - of the 13652 added lines in the merge diff, 0 contain that three-question-mark
+    sequence, 0 contain U+FFFD and 0 contain any Arabic code point (the H4 diff is
+    ASCII plus the test file's Arabic fixtures).
   - `src/learning/harness/__tests__/distill.test.ts` contains «نتريو» byte-intact.
     Verified by reading the file as UTF-8 in Node, not through the console (the
     Windows console renders UTF-8 as cp1252, which is what produced the false read).
   - `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid).
-  - `.jdone` itself: no U+FFFD and no `???`.
+  - `.jdone` itself: no U+FFFD and no question-mark mojibake.
 
 The gate premise was stale, so `.jgatefail.txt` was removed.
 
