@@ -1,3 +1,77 @@
+M3 second validation round: found and fixed a real follow-up routing regression on the async surface (commit 0138720 + the fix commit below).
+
+## The regression that was found and fixed
+The M3 async conversational surface did not route follow-ups. `asyncRunner.ts` classified with
+`classifyWithSession(text, false)` and unconditionally ran a full simulation, so on the async path
+(which is the live path whenever a provider client is present) every what-if / interview / roundtable /
+A-B / auto-fix request started a **brand-new** simulation and overwrote the active session, instead of
+answering against it. The synchronous surface routed all of these correctly, so the two surfaces had
+silently diverged.
+
+Proved before fixing, with a throwaway probe driving both surfaces against a deterministic fake
+`ModelCaller`:
+
+- sync  follow-up "what if we raise the price to 1300?" -> `what_if_injection` (correct)
+- async follow-up "what if we raise the price to 1300?" -> `full_application_analysis` (wrong: ran a fresh sim)
+
+## The fix
+- `src/tools/mirofish.ts`: extracted `runMirofishFollowUp`, the single router for every
+  session-bound branch (what-if, interview, roundtable, A/B, auto-fix, export, chaos, competitor,
+  tests, time-travel, pricing, cross-project memory, compliance, viral GTM, red/blue, app synthesis,
+  multi-region, podcast, MCTS, digital twin, NAS, formal verification, SLA, 3D). It returns `null`
+  when the message is a full-analysis request. Both surfaces now call it first, so follow-up routing
+  exists in exactly one place. `runConversationalMirofish` keeps its synchronous template full
+  analysis (`runMirofishFullAnalysisSync`); `runConversationalMirofishAsync` falls through to the real
+  swarm simulation. The async path passes only the caller's explicit `target` to the router, matching
+  the synchronous behaviour (which guesses a target only inside the full-analysis branch).
+- `src/tools/mirofish/asyncRunner.ts`: now reports `intent: "full_application_analysis"` instead of the
+  raw classification, because follow-ups are routed before it is reached and it always runs a
+  simulation. Previously unrelated text was labelled `unrelated` while a simulation really ran, which
+  contradicted the synchronous surface.
+
+## Behaviour preserved, proven not assumed
+A 29-case routing battery (every follow-up family + full analysis + unrelated) was captured from the
+synchronous surface **before** the refactor and re-captured after. The two maps are byte-identical
+(`fc` clean), so the refactor changed no synchronous routing decision.
+
+## Regression tests added (and proven to catch the bug)
+`src/tools/mirofish/__tests__/asyncRunner.test.ts`:
+- follow-ups reuse the active simulation and do not clobber the session (what-if, interview,
+  roundtable, auto-fix)
+- a full-analysis request still starts a fresh simulation
+- a run the async surface actually executed is labelled `full_application_analysis`, matching sync
+
+Negative control: with the router call temporarily disabled the new follow-up test fails
+(`"what if we raise the price to 1300?" must route as a follow-up`), so the test genuinely guards the
+regression rather than passing vacuously. The temporary hook was then reverted.
+
+## Gates (run from the worktree root after the fix)
+- `npx tsc --noEmit`                              -> exit 0
+- `npm run check:encoding`                         -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run build:server`                           -> exit 0
+- mirofish + protocol suites (asyncRunner, seed, simulate, intent, runner, http, loop, progress) -> tests 147, pass 147, fail 0
+- `src/server/__tests__/*` + `src/agent/__tests__/*` -> tests 713, pass 711, fail 2
+
+The two failures are outside this diff and pre-existing: `toolDescriptions.test.ts` (`suggest_plan`
+pending-list defect, documented below) and `worktrees.test.ts` ("reports non-git folders without
+throwing") which fails because `%TEMP%` resolves to `C:/Users/khamis`, itself inside a git repo, so
+`readGitBranch` correctly reports `isGit: true`. Neither file references mirofish.
+
+## Correction: the parity-ancestor claims in the preserved reports below are now stale
+The preserved D2 / D10 / D19 reports below state that `git merge-base --is-ancestor manus-parity HEAD`
+exits 0 with `rev-list --left-right --count manus-parity...HEAD = 0 N`. Those statements were true for
+the merges they describe, but they are **no longer true of the current branch**: manus-parity has
+advanced 78 commits since, so at HEAD `0138720`:
+
+- `git merge-base --is-ancestor manus-parity HEAD` -> **exits 1** (not an ancestor)
+- `git rev-list --left-right --count manus-parity...HEAD` -> **78  7**
+- `git merge-base manus-parity HEAD` -> `b073763`
+
+The historical reports are left as written (they record what was verified at the time); this note is
+the authoritative current state.
+
+---
+
 M3 conversational wiring validation complete (commit 33922e6, on top of the M3 wiring commit 9010d7e).
 
 ## What was validated

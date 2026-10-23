@@ -247,6 +247,85 @@ describe("runConversationalMirofishAsync (M3 wiring)", () => {
     assert.match(res.reply, /MiroFish/i);
     assert.ok(String(res.data.report_md_path).length > 0);
   });
+
+  it("routes follow-ups onto the active session instead of starting a new simulation", async () => {
+    // Regression guard: the async path used to classify with `false` and always
+    // run a fresh simulation, so every follow-up clobbered the active session
+    // and answered a what-if with a brand-new full analysis.
+    const followUps: Array<[string, string]> = [
+      ["what if we raise the price to 1300?", "what_if_injection"],
+      ["interview the agents", "agent_interview"],
+      ["run a roundtable debate", "roundtable_debate"],
+      ["apply swarm recommendations", "swarm_autofix"],
+    ];
+
+    for (const [message, expected] of followUps) {
+      const ws = fs.mkdtempSync(path.join(os.tmpdir(), "loam-mf2-m3-followup-"));
+      const seeded = await runConversationalMirofishAsync(ws, {
+        message: "Simulate Nutrio in Doha",
+        maxRounds: 1,
+        runtime: { cfg: testConfig(ws), caller: makeFakeCaller() },
+      });
+
+      const res = await runConversationalMirofishAsync(ws, {
+        message,
+        maxRounds: 1,
+        runtime: { cfg: testConfig(ws), caller: makeFakeCaller() },
+      });
+
+      assert.equal(res.intent, expected, `"${message}" must route as a follow-up`);
+      assert.equal(
+        res.data.simulation_id,
+        seeded.data.simulation_id,
+        `"${message}" must reuse the active simulation`,
+      );
+      assert.equal(
+        loadActiveMirofishSession(ws)?.simulation_id,
+        seeded.data.simulation_id,
+        `"${message}" must not clobber the active session`,
+      );
+
+      fs.rmSync(ws, { recursive: true, force: true });
+    }
+  });
+
+  it("still runs a fresh simulation for a full-analysis request", async () => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "loam-mf2-m3-full-"));
+    const seeded = await runConversationalMirofishAsync(ws, {
+      message: "Simulate Nutrio in Doha",
+      maxRounds: 1,
+      runtime: { cfg: testConfig(ws), caller: makeFakeCaller() },
+    });
+
+    const res = await runConversationalMirofishAsync(ws, {
+      message: "simulate the market for a new meal-planning app",
+      maxRounds: 1,
+      runtime: { cfg: testConfig(ws), caller: makeFakeCaller() },
+    });
+
+    assert.equal(res.intent, "full_application_analysis");
+    assert.notEqual(res.data.simulation_id, seeded.data.simulation_id);
+    assert.equal(loadActiveMirofishSession(ws)?.simulation_id, res.data.simulation_id);
+
+    fs.rmSync(ws, { recursive: true, force: true });
+  });
+
+  it("labels a run it actually executed as a full analysis", async () => {
+    // Unrelated text is not a follow-up, so the async surface runs a simulation
+    // and must report it as one, matching the synchronous surface. Reporting the
+    // raw classification would say "unrelated" for a run that really happened.
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "loam-mf2-m3-unrelated-"));
+    const res = await runConversationalMirofishAsync(ws, {
+      message: "this is a unit test",
+      maxRounds: 1,
+      runtime: { cfg: testConfig(ws), caller: makeFakeCaller() },
+    });
+
+    assert.equal(res.intent, "full_application_analysis");
+    assert.equal(res.intent, runConversationalMirofish(ws, { message: "this is a unit test", maxRounds: 1 }).intent);
+
+    fs.rmSync(ws, { recursive: true, force: true });
+  });
 });
 
 describe("mirofish_chat tool (M3 wiring)", () => {

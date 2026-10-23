@@ -16,7 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { createLoamModelCaller, type ModelCaller } from "./model.js";
-import { classifyWithSession, extractMirofishSettings, type MirofishIntentKind } from "./intent.js";
+import { extractMirofishSettings, type MirofishIntentKind } from "./intent.js";
 import {
   fallbackSeed,
   parseInjectedVariable,
@@ -197,7 +197,11 @@ export async function runConversationalMirofishAsync(
 
   return {
     ok: true,
-    intent: classifyWithSession(text, false),
+    // Follow-up intents are routed before this runner is reached (see
+    // `runMirofishFollowUp`), so anything that arrives here and actually runs a
+    // simulation is a full analysis. Reporting the raw classification would
+    // label unrelated text "unrelated" even though a simulation just ran.
+    intent: "full_application_analysis",
     reply,
     data: {
       project_id: ids.projectId,

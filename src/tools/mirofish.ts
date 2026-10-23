@@ -331,16 +331,20 @@ export function runConversationalMirofish(
     injectedVariable?: string;
   },
 ): { ok: boolean; intent: string; reply: string; data: Record<string, unknown> } {
-  return runConversationalMirofishLegacy(workspace, opts);
+  // Follow-ups (what-if, interview, roundtable, ...) route onto the active
+  // session; anything else is a full analysis, rendered from the fixed template
+  // because this entry point has no provider client.
+  return runMirofishFollowUp(workspace, opts) ?? runMirofishFullAnalysisSync(workspace, opts);
 }
 
 /**
  * Real M3 path: the same conversational surface, but the full analysis is the
  * model-aware swarm simulation (`asyncRunner`) instead of a fixed template.
  *
- * Only the full-analysis branch changes. Everything else (intent routing,
- * what-if, interview, roundtable, A/B, auto-fix) stays on the synchronous
- * implementation, which is why those branches live in the legacy function.
+ * Only the full-analysis branch differs. Follow-ups (what-if, interview,
+ * roundtable, A/B, auto-fix, ...) are handled by `runMirofishFollowUp`, the same
+ * router the synchronous entry point uses, so a follow-up never starts a new
+ * simulation and never clobbers the active session.
  */
 export async function runConversationalMirofishAsync(
   workspace: string,
@@ -357,6 +361,17 @@ export async function runConversationalMirofishAsync(
     throw new Error("runConversationalMirofishAsync requires runtime.cfg (a Config)");
   }
   const text = (opts.message || "").trim();
+
+  // Follow-ups route onto the active session before any model work. The router
+  // only sees the caller's explicit `target`, matching the synchronous surface
+  // (which guesses a target only inside the full-analysis branch).
+  const followUp = runMirofishFollowUp(workspace, {
+    message: text,
+    ...(opts.target ? { target: opts.target } : {}),
+    ...(opts.maxRounds ? { maxRounds: opts.maxRounds } : {}),
+    ...(opts.injectedVariable ? { injectedVariable: opts.injectedVariable } : {}),
+  });
+  if (followUp) return followUp;
 
   const { runConversationalMirofishAsync: runAsync } = await import("./mirofish/asyncRunner.js");
   return runAsync(
@@ -388,13 +403,16 @@ function guessTarget(text: string, workspace: string): string {
 }
 
 /**
- * The pre-M3 implementation, kept as the synchronous fallback.
+ * Follow-up routing shared by both conversational surfaces.
  *
- * `runConversationalMirofish` delegates here so existing call sites (scripts,
- * older HTTP paths, tests) keep the exact same behaviour. The async entry point
- * above is the one that runs the real swarm simulation.
+ * Every branch here works on the active session (what-if, interview, roundtable,
+ * A/B, auto-fix, export, ...) and is deterministic: no model calls. Returning
+ * `null` means the message is a full-analysis request, which is the one branch
+ * the two surfaces implement differently (fixed template vs. real swarm
+ * simulation). Routing the follow-ups in one place is what keeps the async and
+ * synchronous entry points behaviourally identical.
  */
-function runConversationalMirofishLegacy(
+function runMirofishFollowUp(
   workspace: string,
   opts: {
     message: string;
@@ -402,7 +420,7 @@ function runConversationalMirofishLegacy(
     maxRounds?: number;
     injectedVariable?: string;
   },
-): { ok: boolean; intent: string; reply: string; data: Record<string, unknown> } {
+): { ok: boolean; intent: string; reply: string; data: Record<string, unknown> } | null {
   const root = getMirofishRoot(workspace);
   const text = (opts.message || "").trim();
   const isAr = /[\u0600-\u06FF]/.test(text);
@@ -1226,6 +1244,32 @@ function runConversationalMirofishLegacy(
       data: { ...active, interviews },
     };
   }
+
+  // Nothing above matched: this is a full-analysis request, which each surface
+  // implements for itself (see `runMirofishFullAnalysisSync` and the async
+  // runner). No follow-up branch fires, so no session is mutated here.
+  return null;
+}
+
+/**
+ * The synchronous full analysis: the pre-M3 fixed-template implementation.
+ *
+ * `runConversationalMirofish` uses it as the fallback for callers that have no
+ * provider client; the async entry point runs the real swarm simulation instead.
+ */
+function runMirofishFullAnalysisSync(
+  workspace: string,
+  opts: {
+    message: string;
+    target?: string;
+    maxRounds?: number;
+    injectedVariable?: string;
+  },
+): { ok: boolean; intent: string; reply: string; data: Record<string, unknown> } {
+  const root = getMirofishRoot(workspace);
+  const text = (opts.message || "").trim();
+  const isAr = /[\u0600-\u06FF]/.test(text);
+  const settings = extractMirofishSettings(text);
 
   // Full 5-stage analysis (with Proposal 4 Pentest Grounding & Proposal 5 REA Binary Bridge)
   let targetCandidate = opts.target || "";
