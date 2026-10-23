@@ -1,3 +1,7 @@
+// Must come before any import that evaluates `config.js`: `runOrchestratedAgent`
+// reads `DATA_DIR` at module scope, and `loadConfig()` mkdirs `data/`, `evals/`
+// and `workspace/` under whatever root it resolves to.
+import "../../test/isolation.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -10,6 +14,7 @@ import { ToolRegistry } from "../../tools/registry.js";
 import { runOrchestratedAgent } from "../orchestrator.js";
 import type { AgentEvent, VerdictInfo } from "../events.js";
 import type { ChatOptions, ChatResult, OllamaClient, OllamaToolCall } from "../../ollama.js";
+import type { CooldownStore, FailoverProvider } from "../../llm/failover.js";
 
 /**
  * D19: the session compute budget must be enforced on the orchestrated path.
@@ -134,7 +139,25 @@ function fixtureCfg(): ReturnType<typeof loadConfig> {
   cfg.orchestrator.maxStepsPerWorker = 1;
   cfg.orchestrator.maxReplans = 5;
   cfg.orchestrator.maxRevisionsPerStep = 1;
+  // Keep the suite hermetic: with an empty failover chain the coding router has
+  // no coder to pick, so a coding turn (a revision prompt names the fix and the
+  // files involved) is answered by the injected fake client instead of escaping
+  // to a real provider over the network.
+  cfg.coding = { enabled: true, chain: [], logEdits: false };
+  cfg.failover = { providers: [] };
   return cfg;
+}
+
+/** In-memory cooldown store: a failing provider must not leave a process-wide
+ *  mark behind, and routing must not touch the real data folder. */
+function memoryStore(): CooldownStore {
+  const map = new Map<string, { expiresAt: number; backoffCount: number }>();
+  return {
+    get: (key) => map.get(key),
+    set: (key, entry) => void map.set(key, entry),
+    entries: () => [...map.entries()],
+    save: () => {},
+  };
 }
 
 async function run(options: {
@@ -153,6 +176,13 @@ async function run(options: {
       tools: fixtureTools(),
       prompt: "Scripted task",
       emit: (e: AgentEvent) => events.push(e),
+      // Routing seams: no real provider, no real cooldown store, no real
+      // environment. The revision prompt trips the coding heuristic, so the
+      // worker would otherwise be routed to the network.
+      createProviderClient: (_provider: FailoverProvider) => script.client as never,
+      cooldownStore: memoryStore(),
+      env: {} as Record<string, string | undefined>,
+      onCodingRoute: () => {},
       budget,
     });
   } catch (e) {

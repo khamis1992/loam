@@ -58,9 +58,10 @@ describe("master prompt asset", () => {
 
   it("splits the numbered sections and keeps the appendices separate", () => {
     const ids = MASTER_PROMPT_SECTIONS.map((s) => s.id);
-    assert.deepEqual(ids.slice(0, 24), Array.from({ length: 24 }, (_, i) => String(i + 1)));
-    assert.equal(ids[24], "appendix-a");
-    assert.equal(ids[25], "appendix-b");
+    assert.deepEqual(ids.slice(0, 25), Array.from({ length: 25 }, (_, i) => String(i + 1)));
+    assert.equal(ids[25], "appendix-a");
+    assert.equal(ids[26], "appendix-b");
+    assert.equal(ids[27], "appendix-c");
     for (const section of MASTER_PROMPT_SECTIONS) {
       assert.ok(section.title.length > 0, `section ${section.id} has a title`);
       assert.ok(section.body.length > 0, `section ${section.id} has a body`);
