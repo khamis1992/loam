@@ -23,6 +23,7 @@ import { resolveSandboxPolicy } from "./policy/riskTier.js";
 import { DEFAULT_PERMISSION_MODE, isPlanMode } from "./policy/permissionModes.js";
 import type { Tool } from "./tools/registry.js";
 import { createScratchpadTools } from "./tools/scratchpadTools.js";
+import { createEnvironmentIssueTools } from "./tools/environmentIssueTools.js";
 import { createDeepResearchTools } from "./tools/deepResearch.js";
 import { createBoardTools } from "./tools/boardTools.js";
 import { createInstructionHistoryTools } from "./tools/instructionTools.js";
@@ -37,14 +38,16 @@ import { createDesignStudioTools } from "./tools/designStudio.js";
 import { createPlaybookTools } from "./tools/playbookTools.js";
 import { createOfficeEditTools } from "./tools/officeEditAgent.js";
 import { createVideoEditTools } from "./tools/videoEditAgent.js";
+import { createVideoStudioTools } from "./tools/videoStudio.js";
 import { createDeployTools } from "./tools/deploy.js";
 import { createDesignExploreTools } from "./tools/designExplore.js";
+import { createDesignLintTools } from "./tools/designLint.js";
 import { createDesignAssetsTools } from "./tools/designAssets.js";
 import { createDesignBriefTools } from "./tools/designBrief.js";
 import { createDesignAutofixTools } from "./tools/designAutofix.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
 import { createWorkflowTools } from "./tools/workflow.js";
-import { applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
+import { applyPlanApprovalGate, applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
 import { planQuickEditRoute } from "./agent/quickEdit.js";
@@ -56,6 +59,7 @@ import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { runAgent } from "./agent/loop.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
 import type { Emit } from "./agent/events.js";
+import { applyRunEvent, beginRun } from "./agent/runGraphAdapter.js";
 import { OllamaClient } from "./ollama.js";
 import { flexCredentials } from "./server/modelTiers.js";
 import { startServer, type RunTaskOptions } from "./server/http.js";
@@ -128,6 +132,7 @@ async function main(): Promise<void> {
 
   const rt = await buildRuntime(cfg);
   rt.registry.registerAll(createScratchpadTools());
+  rt.registry.registerAll(createEnvironmentIssueTools());
   rt.registry.registerAll(createBoardTools());
   rt.registry.registerAll(createInstructionHistoryTools());
   rt.registry.registerAll(createAgentSpawnTools());
@@ -142,8 +147,10 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createPlaybookTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createOfficeEditTools());
   rt.registry.registerAll(createVideoEditTools());
+  rt.registry.registerAll(createVideoStudioTools({ relay: videoStudioRelay }));
   rt.registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview: rt.preview }));
   rt.registry.registerAll(createDesignExploreTools());
+  rt.registry.registerAll(createDesignLintTools());
   rt.registry.registerAll(createDesignAssetsTools());
   rt.registry.registerAll(createDesignBriefTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createDesignAutofixTools());
@@ -224,7 +231,13 @@ async function main(): Promise<void> {
     const trace: ToolTraceItem[] = [];
     const lastArgs = new Map<string, unknown>();
     let doneEvent: Parameters<Emit>[0] | undefined;
+    // Neo run graph (N1): record the agent's events as nodes of the task's graph.
+    // Off by config, and recording must never break the task, so the adapter
+    // swallows and logs any failure instead of throwing into the run.
+    const recordGraph = cfg.runGraph?.enabled !== false;
+    if (recordGraph) beginRun(task, effectivePrompt || "");
     const wrappedEmit: Emit = (event) => {
+      if (recordGraph) applyRunEvent(task, event);
       if (sessionLog) {
         try {
           void sessionLog.append(event.type, event).catch((err) => {
@@ -449,6 +462,12 @@ async function main(): Promise<void> {
       if (isPlanMode(taskPermissionMode(task) ?? DEFAULT_PERMISSION_MODE)) {
         applyPlanModeGate(agentTools, { taskId: task, workspaceRoot: effectiveCfg.workspace });
       }
+      // Pending plan approval (D4): while `suggest_plan` has a plan awaiting the
+      // user's decision, every mutating tool call is refused. `suggest_plan`
+      // itself stays available so the model can re-present a plan after an edit.
+      // The wrapper re-checks the pending store on each call, so once the plan
+      // is approved later edits in the same run proceed.
+      applyPlanApprovalGate(agentTools, { taskId: task, workspaceRoot: effectiveCfg.workspace });
       // Sandbox gate (risk-tier approval): config default < per-task persisted
       // override < explicit approved override. The resolved mode is rendered into
       // the system prompt so the model knows what it may do without asking.
@@ -479,7 +498,7 @@ async function main(): Promise<void> {
         budget: sessionRuntime.getBudget(task),
       };
       const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
-        ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint,
+        ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint, lifecycleHooks: true,
         saveCheckpoint: (checkpoint) => { opts.savedRun.checkpoint = checkpoint; saveRun(task, opts.savedRun, opts.lease); },
       }) : await runAgent(agentOpts);
       // The orchestrator can swallow an abort (it reports a failed step instead),
