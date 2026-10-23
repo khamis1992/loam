@@ -1,3 +1,217 @@
+fc-09 complete: effects round-trip planner shared by the tool and the panel, plus the "Open in effects" surface. All gates green.
+
+## What shipped
+
+**1. One canonical round-trip sequence (`packages/shared/src/effectsRoundTrip.ts`)**
+Pure data + pure functions (no bridge, no React, no Node built-ins), re-exported from
+`packages/shared/src/index.ts` and exposed as a subpath export in
+`packages/shared/package.json`. Both the Node `video_studio` tool and the browser panel
+now drive the SAME sequence, so the two halves of the product can never drift.
+
+- `planRoundTrip(input)` -> `RoundTripPlan | RoundTripPlanError`. Resolves every engine
+  command id against the live `commands()` catalog and never guesses; refuses with an
+  actionable message when the clip is missing or either engine lacks a needed command.
+- The planner now derives and saves the project path itself: `workspace?: string` on the
+  input, `projectPath: string | null` on the plan, computed as
+  `effectsProjectPathFor(clip, workspace) ?? input.projectPath ?? null`, and the
+  `project.save` step is emitted only when a path exists. This is what makes the returned
+  `.ecproj` reopenable by "Open in effects".
+- `planReopenEffects(projectPath)` and `planReturnToFilm(projectPath, state, filmCatalog, clipId?)`.
+  `planReturnToFilm` takes a `FilmState` (not a bare clip), resolves the clip itself via
+  `selectClip`/`selectPanelClip`, and carries `fromSec`/`toSec` in the replace params so
+  the original range is replaced on the same track and neighbouring clips keep position.
+- `isRoundTripPlanError` accepts `RoundTripPlan | RoundTripStep[] | RoundTripPlanError`.
+- `effectsProjectPathFor(clip, workspace?)` returns `string | null` (null when no clip).
+
+**2. Tool wiring (`src/tools/videoStudio.ts`)**
+Passes `workspace` and reads `plan.projectPath`; the duplicated path computation and the
+now-unused `effectsProjectPathFor` import were removed. `open_effects` requires a project
+path, reopens it, then reports the path the engine actually holds.
+
+**3. Effects engine registry (`packages/web/src/lib/effectcraftClient.ts`)**
+`LoamEffectsClientTarget` + `setLoamEffectsTarget` / `getLoamEffectsTarget` /
+`subscribeLoamEffectsTarget`, mirroring `filmcraftClient.ts`. Per-engine rather than a
+single global, because both engines may be mounted at once while the panel swaps.
+
+**4. Executors (`packages/web/src/lib/videoStudioClient.ts`)**
+- `createEffectcraftExecutor(bridge)` rejects non-`effects` targets, so a film command can
+  never be answered by the wrong engine's state.
+- `createRoundTripExecutor(film, effects)` fans out by `target` and throws on an unknown
+  target.
+
+**5. Panel surface (`packages/web/src/components/workspace/loamVideo/LoamVideoPanel.tsx`)**
+Mounts BOTH engines for its lifetime (two iframes, only the visible one shown), so switching
+engines is instant and neither engine loses its project state.
+- Toolbar labels both engines with Loam names and offers **Open in effects** (video engine)
+  / **Done** (effects engine).
+- `Open in effects` re-reads the timeline state and catalog (so a manual edit is never
+  lost), resolves the selected clip, hands its source + in/out to the effects engine, then
+  swaps the visible engine.
+- `Done` runs `planReturnToFilm` and replaces the original range on the same track.
+- New props: `onEngineChange`, `onEffectsAvailabilityChange`, `reopenProjectPath`,
+  `onProjectPathChange`. The reopen request is retried until the engine bridge is ready,
+  so a path that arrives before boot still opens.
+
+**Branding**: users see "Loam Video" / "Loam Effects" only. Upstream names (FilmCraft /
+EffectCraft) appear only in code identifiers, comments and test assertions, never in
+rendered UI strings. The panel test asserts both that the Loam labels render and that
+neither upstream name appears.
+
+## A module-resolution problem solved on the way
+The root `tsconfig.json` uses `module: NodeNext`, which ignores `paths` aliases. Rejected
+after trying: a `@shared/*` paths mapping, `node_modules/@shared` junctions/symlinks (not
+committable), and `.js`-suffixed relative imports at the wrong depth. The working form is a
+relative import WITH a `.js` extension at the correct depth:
+`src/tools/videoStudio.ts` imports `../../packages/shared/src/effectsRoundTrip.js`, and the
+test at `src/tools/__tests__/` uses `../../../packages/shared/src/effectsRoundTrip.js`.
+Root `tsconfig.json` is unchanged.
+
+## Gates (all run from the worktree root)
+- `npx tsc --noEmit`                          -> exit 0
+- `(cd packages/web && npx tsc --noEmit)`     -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test src/tools/__tests__/effectsRoundTrip.test.ts src/tools/__tests__/videoStudio.test.ts`
+                                              -> tests 88, pass 88, fail 0
+- `(cd packages/web && npx vitest run src/lib/videoStudioClient.test.ts src/lib/effectcraftClient.test.ts src/components/workspace/loamVideo)`
+                                              -> tests 12, pass 12, fail 0
+
+## Known pre-existing failure (NOT caused by this task)
+`node src/scripts/check-loam-ui.mjs` fails with `8 !== 7` on the
+`assert.equal(await page.locator('#homeModes button').count(), 7)` line. Verified
+pre-existing: `git stash push -u` of the entire fc-09 change set and re-running the gate on
+the clean tree produces the identical `8 !== 7` assertion, and the gate only counts
+home-page mode buttons, a file this task does not touch. It is a stale count in the gate
+itself, not a regression from fc-09.
+
+Also noted: `@testing-library/user-event` is not installed in `packages/web`, so the panel
+test uses `fireEvent` from `@testing-library/react` instead.
+
+## Self-review after the fact (interpretations and gaps)
+
+Re-auditing the delivered work surfaced two things worth stating plainly.
+
+**1. The `createEffectcraftExecutor` / `createRoundTripExecutor` are not yet consumed.**
+A reference search confirms `createRoundTripExecutor` and `createEffectcraftExecutor`
+appear only in `packages/web/src/lib/videoStudioClient.ts` (the definitions) and in
+`packages/web/src/lib/videoStudioClient.test.ts` (the tests). Nothing constructs a
+`VideoStudioClient` anywhere in `packages/web/src` yet, so no production code path reaches
+the effects executor today. The interpretation I had to guess at: the task asked for these
+executors, and the panel drives its round trip directly through the two bridge refs, so I
+delivered the executors as the documented seam and tested them, rather than inventing a
+wiring that no caller needs yet. If the intent was that agent `target: "effects"` commands
+must be executable end to end, that wiring is still missing and is the next piece.
+
+**2. `Done` is disabled rather than explained when there is no project.** I initially
+"fixed" this by making `Done` show a notice when `projectPath` was null. A test I wrote for
+that branch failed and disproved the premise: `openInEffects` always sets a derived path via
+`effectsProjectPathFor(clip, taskId)`, so while the effects engine is showing, `projectPath`
+is never null. The branch was unreachable dead code, so I reverted both the change and the
+test. Current behaviour stands as delivered: `Done` is disabled (via `!projectPath`) and the
+round trip reports failures through the notice banner.
+
+**3. `openInEffects` trusts the panel's own project path.** It derives the path from the
+clip and the task id rather than requiring the effects engine to confirm it saved. This is
+consistent with `planRoundTrip`, which does the same, but it means a user-edited composition
+is named by Loam rather than by the engine. Left as is deliberately: the engine's own
+`inspect()` result takes precedence when it reports one.
+
+Gates re-run after the reverts: web `tsc --noEmit` exit 0, touched web suites 12/12 pass,
+working tree clean.
+
+## Independent re-validation of fc-09 (post-completion)
+
+Re-checked from scratch against the fc-09 acceptance criteria and the `.jtask.md` gates.
+Everything below was run fresh in this worktree; nothing was taken on trust.
+
+**1. Acceptance criteria (`.jtask.md`): "Unit with mocked film+effects bridges: full
+round-trip command sequence; replace-in-place keeps neighbouring clips; reopen uses stored
+.ecproj." All three are exercised and green.**
+
+- Full round-trip sequence: `src/tools/__tests__/effectsRoundTrip.test.ts` "builds the full
+  sequence: effects in, film replace out" asserts the exact 8-step target/method list
+  (`effects:addFile -> execute(composition.new) -> execute(ask) -> execute(project.save)
+  -> execute(renderQueue.render) -> readFile -> film:importFiles -> execute(timeline.replaceRange)`).
+- Replace-in-place: "replaces the original range on the clip's own track" pins
+  `{ clipId: "clip_b", trackId: "v1", fromSec: 10, toSec: 50 }`. Neighbouring-clip safety is
+  the same mechanism plus the data-loss guard: `selectClip` refuses a clip id not on the
+  timeline ("a wrong target is data loss"), and the timecode/selection parsers are tested.
+- Reopen with the stored `.ecproj`: "plans openProject then inspect for a stored project"
+  plus `effectsProjectPathFor` pinning the derived path. The panel covers the same path via
+  `planReopenEffects` / `readEffectsProjectPath`.
+- Executor safety: `packages/web/src/lib/videoStudioClient.test.ts` proves an `effects`
+  command can never be answered by the film bridge (and vice versa), and that the round-trip
+  executor refuses an unknown target instead of dropping it.
+
+**2. Gates (all six re-run fresh, all exit 0)**
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| root types | `npx tsc --noEmit` | exit 0 |
+| web types | `cd packages/web && npx tsc --noEmit` | exit 0 |
+| server build | `npm run build:server` | exit 0 (`pdf worker copied to dist/`) |
+| web build | `cd packages/web && npx next build` | exit 0, 25/25 static pages |
+| server tests | `node --import tsx --test <touched suites>` | 92 tests, 92 pass, 0 fail |
+| web tests | `cd packages/web && npx vitest run` | 74 files, 479 tests, all pass |
+
+Broader runs: the whole `src/tools/__tests__/*` + `videoStudioE2E` + `runTools` +
+`riskTier` set gives 816 tests / 815 pass / 1 fail. The single failure is
+`src/tools/__tests__/search.test.ts` "greps and globs the repository in under 1 second"
+(`grep took 1149ms`) — a wall-clock perf budget in a suite fc-09 never touches, which failed
+only because five builds/tests ran concurrently against it. Re-run in isolation: 19/19 pass,
+exit 0. Not an fc-09 regression.
+
+**3. Merge safety (both directions checked)**
+
+- `git merge-tree --write-tree --messages HEAD manus-parity` -> **exit 0**. fc-09 merges
+  cleanly into `manus-parity`; the branch is still 3 commits ahead of the base
+  (`a8130cc`), and `manus-parity` has no `effectsRoundTrip.ts`, so the work is intact and
+  unmerged.
+- `git merge-tree --write-tree --messages HEAD khamis1992/cr-04` -> **exit 1**, conflicts in
+  exactly `.jdone` and `packages/web/src/lib/videoStudioClient.ts`. Confirmed by inspecting
+  cr-04 (`4202a73`): it rewrites that client as
+  `class VideoStudioClient extends RelayClientBase<VideoStudioTarget>` and keeps only
+  `createFilmcraftExecutor` — `createEffectcraftExecutor` and `createRoundTripExecutor` are
+  gone. A merge therefore needs a deliberate reconcile (keep the two fc-09 executors and
+  adopt the shared relay base), not a blind resolution.
+
+**4. Branding rule: verified, not assumed**
+
+Every `FilmCraft` / `EffectCraft` / `ArtCraft` occurrence in `packages/web/src` is in code
+identifiers or comments (4 hits across 3 files, none in a rendered string). The panel's
+user-visible strings are exactly `Loam Video`, `Loam Effects`, `Open in effects`, `Done`,
+`Loading` and one contextual notice. The panel test asserts both that the Loam labels render
+and that `/EffectCraft/i` and `/FilmCraft/i` do not. `t()` falls back to the key when a
+locale has no entry, so the Arabic catalog lacking the new keys renders the English source
+string rather than an empty value or corrupted text.
+
+**5. The wiring gap, adjudicated**
+
+The gap reported in the earlier self-review is real but its severity was overstated in one
+respect and understated in another, and the ownership is now clear.
+
+- The fc-02 relay client (`packages/web/src/lib/videoStudioClient.ts`) was authored by the
+  fc-02 task (commit `480bcc7`, merged into `manus-parity` on 2026-10-22 21:02) and never
+  mounted there either. fc-09 extended it with the two effects executors. **The browser mount
+  of the relay is an unfilled seam owned by fc-02, not introduced or required by fc-09.**
+- Corrected claim: "nothing constructs a `VideoStudioClient`" is not evidence fc-09 shipped
+  dead code. The panel's round trip runs directly through its two bridge refs
+  (`bridgeRef`/`effectsBridgeRef`) and the shared planner, which is a complete and tested
+  path. The executors are the *agent-relay* path's seam, and the existing E2E test
+  (`src/server/__tests__/videoStudioE2E.test.ts`) proves that path with its own Node-side
+  fake panel rather than the browser client, deliberately.
+- Real residual risk, stated precisely: an agent `video_studio transition` command is
+  unreachable in a real browser session today because no web code subscribes to the task
+  stream. It stays latent only because both vendored dists are absent
+  (`electron/filmcraft/dist/index.html` and `electron/effectcraft/dist/index.html` both
+  missing), so no editor can mount. The moment fc-01 installs either dist, agent effects
+  commands will return `panel_not_open` / `bridge_unavailable` until someone mounts the
+  client. That mount is the fc-02 follow-up, not an fc-09 defect.
+
+**Conclusion:** fc-09's acceptance criteria are met and independently re-verified, all six
+gates are green, the branding rule holds, and the one cross-branch hazard (cr-04) is
+identified and scoped. No code changes were made during this validation; the working tree is
+unchanged apart from this record.
 H3 complete: deterministic correction detector («لا، قلت لك…» style cues) for the
 Harness2 correction-learning workstream. Committed as `f40f2d9`.
 
