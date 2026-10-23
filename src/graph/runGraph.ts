@@ -735,6 +735,10 @@ export class RunGraph {
       case "verification_progress":
       case "permission_mode_changed":
       case "cache_usage":
+      // Neo N5: the selector re-shapes the transcript every step, so it is a
+      // per-step diagnostic like cache_usage rather than a canvas node (a node
+      // per step would bury the run graph's real structure).
+      case "context_selected":
       case "workspace_command":
       case "video_studio_command":
       case "video_studio_export":
