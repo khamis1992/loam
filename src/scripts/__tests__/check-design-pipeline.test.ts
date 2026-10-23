@@ -15,6 +15,7 @@ import { after, describe, it } from "node:test";
 
 import {
   createMockDesignModel,
+  decidePass,
   describeUsage,
   loadCheckFixtures,
   runBaseline,
@@ -99,9 +100,14 @@ describe("gate: whole check", () => {
     assert.equal(result.fixtures, loadCheckFixtures().length);
     assert.equal(result.reports.length, result.fixtures);
     assert.equal(result.rtlFixtures, result.reports.filter((report) => report.direction === "rtl").length);
-    assert.equal(result.passed, result.notWorse, "passed must be exactly 'nothing regressed'");
-    assert.ok(result.regressedFixtures === 0, "the pipeline must not regress the eval set");
-    assert.ok(result.deltaMean >= 0, `expected a non-negative delta, got ${result.deltaMean}`);
+    // The acceptance criterion is "scores *above* the baseline", so a run that is
+    // merely level with it must not pass. `passed` is therefore strictly stronger
+    // than `notWorse`, and this run must clear that stronger bar.
+    assert.equal(result.passed, true, "the pipeline must beat the baseline on the eval set");
+    assert.equal(result.notWorse, true);
+    assert.equal(result.regressedFixtures, 0, "the pipeline must not regress the eval set");
+    assert.ok(result.improvedFixtures > 0, `expected at least one improved fixture, got ${result.improvedFixtures}`);
+    assert.ok(result.deltaMean > 0, `expected a strictly positive delta, got ${result.deltaMean}`);
 
     for (const report of result.reports) {
       // Both sides go through the same scorer, so the delta is structurally real.
@@ -131,6 +137,27 @@ describe("gate: whole check", () => {
     assert.equal(result.fixtures, 0);
     // An empty run has nothing to regress, so it must not be reported as a pass.
     assert.equal(result.passed, false);
+  });
+});
+
+describe("gate: pass rule", () => {
+  it("fails a run that only matches the baseline", () => {
+    // The defect this guards: requiring only "nothing regressed" would report a run
+    // that improved nothing as a success, which is the outcome the gate exists to
+    // catch.
+    assert.equal(decidePass({ fixtures: 12, regressedFixtures: 0, improvedFixtures: 0 }), false);
+  });
+
+  it("fails an empty run, which has nothing to compare", () => {
+    assert.equal(decidePass({ fixtures: 0, regressedFixtures: 0, improvedFixtures: 0 }), false);
+  });
+
+  it("fails when anything regressed, even with improvements elsewhere", () => {
+    assert.equal(decidePass({ fixtures: 12, regressedFixtures: 1, improvedFixtures: 6 }), false);
+  });
+
+  it("passes when at least one fixture improved and none regressed", () => {
+    assert.equal(decidePass({ fixtures: 12, regressedFixtures: 0, improvedFixtures: 1 }), true);
   });
 });
 

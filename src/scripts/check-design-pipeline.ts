@@ -16,7 +16,10 @@
  *
  * The two sides start from the same empty workspace and the same generated
  * markup, so the only difference is the pipeline. The gate fails when the
- * pipeline is worse than the baseline, and reports the per-fixture delta.
+ * pipeline is worse than the baseline *or* merely level with it: the acceptance
+ * criterion is that joining the stages scores above the baseline, so a run that
+ * changes nothing is a failure, not a pass. The per-fixture delta is reported so
+ * it is visible where the work actually happens.
  *
  * Usage:
  *   tsx src/scripts/check-design-pipeline.ts
@@ -77,6 +80,7 @@ export interface PipelineCheckResult {
   regressedFixtures: number;
   /** True when the pipeline never scores below the baseline it replaces. */
   notWorse: boolean;
+  /** True when the run scores strictly above the baseline, as the criterion requires. */
   passed: boolean;
   reports: PipelineFixtureReport[];
 }
@@ -291,7 +295,34 @@ export async function runPipelineFixture(
 
 function mean(values: number[]): number {
   if (values.length === 0) return 0;
-  return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10;
+  return Math.round(rawMean(values) * 10) / 10;
+}
+
+/** The unrounded mean, for decisions that must not depend on display rounding. */
+function rawMean(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+/**
+ * The pass rule.
+ *
+ * The acceptance criterion is that the e2e run scores *above* the baseline, not
+ * merely level with it. Requiring only "nothing regressed" would let a run that
+ * changed nothing at all report success, which is exactly the outcome the gate
+ * exists to catch. So a pass needs a non-empty set, no regression, and at least
+ * one fixture genuinely improved.
+ *
+ * With no regressions, one improved fixture is enough to raise the mean, so this
+ * is equivalent to a strictly positive mean delta while staying immune to the
+ * display rounding applied to `deltaMean`.
+ */
+export function decidePass(summary: {
+  fixtures: number;
+  regressedFixtures: number;
+  improvedFixtures: number;
+}): boolean {
+  return summary.fixtures > 0 && summary.regressedFixtures === 0 && summary.improvedFixtures > 0;
 }
 
 /** Run the whole check across the eval set. */
@@ -336,20 +367,23 @@ export async function runDesignPipelineCheck(options: { keep?: boolean; outDir?:
   const pipelineMean = mean(reports.map((report) => report.pipeline.total));
   const regressed = reports.filter((report) => report.pipeline.total < report.baseline.total).length;
   const improvedFixtures = reports.filter((report) => report.improved).length;
+  // Computed from the raw totals rather than from the two rounded means, so the
+  // printed delta cannot disagree with the pass decision by a rounding step.
+  const deltaMean = Math.round((rawMean(reports.map((r) => r.pipeline.total)) - rawMean(reports.map((r) => r.baseline.total))) * 10) / 10;
 
   return {
     fixtures: reports.length,
     rtlFixtures: reports.filter((report) => report.direction === "rtl").length,
     baselineMean,
     pipelineMean,
-    deltaMean: Math.round((pipelineMean - baselineMean) * 10) / 10,
+    deltaMean,
     improvedFixtures,
     regressedFixtures: regressed,
     notWorse: regressed === 0,
-    // The pipeline must never be worse than the baseline it replaces. That is the
-    // property that keeps joining the stages from regressing the eval set; the
+    // The pipeline must beat the baseline it replaces, not merely match it. That is
+    // the property that keeps joining the stages from regressing the eval set; the
     // per-fixture delta reports where the work actually happens.
-    passed: reports.length > 0 && regressed === 0,
+    passed: decidePass({ fixtures: reports.length, regressedFixtures: regressed, improvedFixtures }),
     reports,
   };
 }
