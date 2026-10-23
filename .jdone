@@ -244,3 +244,59 @@ src/tools/__tests__/promptwire.test.ts imports src/scripts/gen-master-prompt.ts,
 calls main() at import time and rewrites the file with LF endings. The content is
 byte-identical to the committed version (git diff is empty); it is only line-ending
 noise under core.autocrlf=true. Restored with git checkout.
+
+Merge conflict resolution done (commit 3a7dc30).
+
+The .jgatefail.txt failure was MERGE CONFLICT with latest manus-parity (tip a5d0cf3,
+merge base b59b813, HEAD 4d84116). Ran `git merge manus-parity`; five files conflicted,
+all resolved keeping BOTH sides (union of functionality, nothing dropped):
+- src/policy/hooks.ts: HEAD's expanded HookEvent surface + ParsedHookDecision /
+  wrapHookContext / HOOK_CONTEXT_TAG, AND parity's stdin-based runPreCompactHooks with
+  PreCompactHookInput / PreCompactHookResult. Tool events keep the exit-code contract;
+  decision events use JSON stdout (block / additionalContext) plus exit-code-2 blocking.
+- src/agent/loop.ts: parity's compression / coding router / stall guard / todos, plus
+  HEAD's openSession, endedReason tracking, Stop hook with bounded continuation, and
+  closeSession in finally (cancellation-aware SessionEnd reason).
+- src/agent/orchestrator.ts: parity's plan / act / observe / critique loop, plus HEAD's
+  lifecycleHooks gate, STOP_CONTINUATION_ROUNDS bound, Stop-continuation
+  re-verification, and the runOrchestratedAgent session wrapper.
+- src/tools/subagents.ts: parity's profile / ACP paths, plus HEAD's SubagentStart /
+  SubagentStop hooks on both the profile path (stopFired guard + finally) and the ACP
+  delegate_task path (success, failure and finally).
+- src/policy/__tests__/hooks.test.ts: union of both suites (29 cases).
+
+Fixed the interaction the resolution exposed: parity's coding router now intercepts
+orchestrator worker calls, so a worker prompt that trips isCodingTurn escaped the
+injected fake client and hit the real provider chain (this is what made
+loopHooks.test.ts and orchestratorHooks.test.ts fail with provider HTTP 404s).
+src/agent/orchestrator.ts now forwards createProviderClient / cooldownStore / env /
+onCodingRoute into the child runAgent call, and orchestratorHooks.test.ts injects a
+coder fake plus an in-memory cooldown store and empty failover so routing stays
+hermetic. No test was weakened or deleted; the hooks.test.ts union is additive.
+
+Gates (all pass, from the worktree root):
+  npx tsc --noEmit                              -> exit 0
+  npm run build:server                          -> exit 0 (dist/server.cjs 19.1mb)
+  (cd packages/web && npx next build)           -> exit 0 (Next.js 16.4.2, 25 static)
+  node --import tsx --test src/{agent,llm,policy,tools}/__tests__/*.test.ts
+    - tests 971, pass 971, fail 0
+  node --import tsx --test src/{server,design,protocol,memory,session,scripts,preview,eval,modes}/__tests__/*.test.ts
+    - tests 647, pass 647, fail 0
+  node --import tsx --test src/{bench,electron,vendor}/__tests__/*.test.ts
+    - tests 23, pass 23, fail 0
+  (cd packages/web && npx vitest run)           -> 66 files, 437 tests passed
+  Conflict-file re-run: hooks.test.ts + orchestratorHooks.test.ts + loopHooks.test.ts
+    - tests 47, pass 47, fail 0
+
+Pre-existing, not a regression: `npm run check:orchestrator` exits 1 with no verdict on
+BOTH this tip and the manus-parity baseline (a5d0cf3), with the identical crash
+(runFinalRepair -> all providers failed/cooled -> longcat:cloud HTTP 404). Cause is the
+smoke harness's testCfg() calling loadConfig() without overriding coding/failover, so
+real defaults apply and a worker coding turn escapes to the network. It is an upstream
+harness defect, not introduced by this merge; it was not masked or altered here.
+
+Note: src/agent/masterPromptText.ts shows as "modified" after a test run because
+src/tools/__tests__/promptwire.test.ts imports src/scripts/gen-master-prompt.ts, which
+calls main() at import time and rewrites the file with LF endings. Content is
+byte-identical to the committed version (git diff empty); only line-ending noise under
+core.autocrlf=true. Restored with git checkout, working tree clean.
