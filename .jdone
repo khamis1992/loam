@@ -1,3 +1,79 @@
+## O1 gate-fix session: merge with manus-parity, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+### Root cause
+The only conflicted file was the tracked rollup marker `.jdone`. Both sides prepended a
+new report at the same top-of-file anchor (O1 on this branch; V11, then D15, then H1 on
+manus-parity), so git could not auto-merge the two additions. No source file conflicted
+and no source file needed editing: the O1 deliverables (`src/protocol/eventLog.ts` +
+`src/protocol/__tests__/eventLog.test.ts`, commit `83b6b8a`) were already committed and
+present.
+
+### What was done
+Three sequential merges, each resolving `.jdone` by keeping BOTH reports in full:
+
+1. `git merge manus-parity` (parity tip `35c8470`, V11) -> conflict in `.jdone`.
+   Resolved as a superset: the O1 report and the V11 report are both present, and the
+   `## Preserved: manus-parity rollup (...)` header is kept once. Committed as `2f42aa9`.
+2. manus-parity advanced again while the session ran (tip `a8723e8`, D15). Second merge
+   conflicted `.jdone` again with the same shape. Resolved the same way: O1 + D15 + V11 +
+   the rollup. Committed as `c60a574`.
+3. manus-parity advanced once more (H1, `learning/harness/types.ts`). That merge applied
+   cleanly with no conflicts. Committed as `579ff21`.
+
+Verified mechanically that the resolved `.jdone` is a **superset of both conflict sides**:
+`git diff --no-index` between each stage-2/stage-3 blob and the working file produced zero
+`<` lines (nothing dropped from either side). No test was weakened, deleted or skipped and
+no source file was changed.
+
+### Gate condition verified
+`git merge manus-parity` reports "Already up to date.", `git merge-base --is-ancestor
+manus-parity HEAD` exits 0, and `git rev-list --left-right --count manus-parity...HEAD` is
+`0  7` (parity fully merged, zero parity commits missing). No conflict markers remain in
+the tree and `git status --porcelain` is empty.
+
+### Gates (all run from the worktree root on the committed tree)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled, 25/25 static pages)
+- `node --import tsx --test src/protocol/__tests__/eventLog.test.ts`
+                                              -> tests 11, pass 11, fail 0
+- `node --import tsx --test src/protocol/__tests__/*.test.ts` -> tests 18, pass 18, fail 0
+- `(cd packages/web && npx vitest run)`       -> 72 files / 472 tests, all pass
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `git diff manus-parity...HEAD` contains 0 added lines with the mojibake marker
+
+Full-suite run `node --import tsx --test "src/**/*.test.ts"` -> tests 2273, pass 2270,
+fail 3. All three are the pre-existing, environment/inherited failures documented in the
+preserved reports below and are byte-identical to manus-parity (`git diff manus-parity...
+HEAD` is empty for each):
+
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered
+   nor listed in PENDING_CODING_TOOLS". Inherited D4 defect.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing".
+   Environmental: `%TEMP%` sits inside a git repo on this host. Re-verified: 3 pass /
+   1 fail on its own, identically on parity.
+3. `src/tools/__tests__/search.test.ts` -> "greps and globs the repository in under 1
+   second" (1161ms vs a 1000ms budget). Load-sensitive: 19/19 pass when run on its own.
+
+### Files
+- `.jdone` only (merge resolution + this report). No source file was modified by this
+  session; the O1 deliverables are unchanged from commit `83b6b8a`.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  node --import tsx --test src/protocol/__tests__/eventLog.test.ts
+  npm run check:encoding
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was added or corrupted. Working tree clean.
+
+---
+
 O1 complete: durable append-only event log (`src/protocol/eventLog.ts` +
 `src/protocol/__tests__/eventLog.test.ts`), implemented from BUILD_SPEC §6.1 and
 committed as `83b6b8a`. This session fixed the false-positive `arabic` gate and
