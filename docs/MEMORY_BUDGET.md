@@ -144,11 +144,11 @@ parameters: 4 iterations, `--sample-ms 4000`, `--interval-ms 100`, port 3948.
 
 | Metric | BEFORE | AFTER |
 |---|---:|---:|
-| `idleMB` | 538.4 | 565.6 |
-| `peakMB` | 538.4 | 565.6 |
-| `finalMB` | 476.4 | 493.6 |
+| `idleMB` | 538.4 | 548.5 |
+| `peakMB` | 538.4 | 548.5 |
+| `finalMB` | 476.4 | 458.2 |
 | `growthMB` | 0 | 0 |
-| `cacheCount` | 0 | 37 |
+| `cacheCount` | 0 | 39 |
 | `cacheEntries` | 0 | 2 |
 | `debugRoutePresent` | false | true |
 | `thresholdExceeded` | false | false |
@@ -157,8 +157,8 @@ Reading:
 
 - `growthMB` is 0 in both runs. The scenario is built so a leak shows as
   `finalMB` staying near `peakMB` after the workload ends; neither run does, and
-  the AFTER run adds 37 bounded caches without changing that.
-- The ~27 MB `idleMB` difference is one-time startup cost for the new module
+  the AFTER run adds 39 bounded caches without changing that.
+- The ~10 MB `idleMB` difference is one-time startup cost for the new module
   graph (`src/memory/*`, the debug route, the IPC wiring), not per-iteration
   growth. `peakMB - idleMB` is 0 in both runs, which is the growth signal this
   budget cares about.

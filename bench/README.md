@@ -167,11 +167,11 @@ parameters (4 iterations, `--sample-ms 4000`, `--interval-ms 100`, port 3948):
 
 | Metric | BEFORE (base commit) | AFTER (J6) |
 |---|---:|---:|
-| `idleMB` | 538.4 | 565.6 |
-| `peakMB` | 538.4 | 565.6 |
-| `finalMB` | 476.4 | 493.6 |
+| `idleMB` | 538.4 | 548.5 |
+| `peakMB` | 538.4 | 548.5 |
+| `finalMB` | 476.4 | 458.2 |
 | `growthMB` | 0 | 0 |
-| `cacheCount` | 0 | 37 |
+| `cacheCount` | 0 | 39 |
 | `cacheEntries` | 0 | 2 |
 | `debugRoutePresent` | false | true |
 | `thresholdExceeded` | false | false |
@@ -179,9 +179,10 @@ parameters (4 iterations, `--sample-ms 4000`, `--interval-ms 100`, port 3948):
 The `growthMB` of 0 in both runs is the point: the scenario is designed so a
 leak shows as `finalMB` staying near `peakMB` after the workload ends, and
 neither run does. The AFTER row additionally proves the J6 surface is live: the
-debug route answers 200 and 37 bounded caches are registered. The ~27 MB
-`idleMB` difference is the cost of the new module graph being loaded; it is
-one-time startup, not per-iteration growth.
+debug route answers 200 and 39 bounded caches are registered (one counter row
+per cache, plus the per-run stall-guard rows). The ~10 MB `idleMB` difference
+is the cost of the new module graph being loaded; it is one-time startup, not
+per-iteration growth.
 
 ## Notes
 
