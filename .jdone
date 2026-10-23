@@ -1,7 +1,8 @@
 # N14 gate fix: landed parity's `.gitattributes` union driver, `.jdone` conflict is gone for good
 
 The recurring failure `MERGE CONFLICT with latest manus-parity in: .jdone` is fixed at the root
-cause, and the fix is durable: it comes from parity itself, not from this branch.
+cause, and the fix is durable: it comes from parity itself, not from this branch. Four parity
+advances were merged during this pass; all four auto-unioned `.jdone` with no conflict.
 
 ## Root cause
 
@@ -55,13 +56,21 @@ parity's tip (`519f889`) carried it. The union driver was never in play here.
    `envBuildRoutes.test.ts` (139), `src/scripts/check-env-builds.ts` (170), `taskWorkspace.ts` +
    test, and wiring in `src/index.ts`, `src/server/http.ts`, `runTools.ts`, `worktrees.ts`,
    `planTools.ts`, `riskTier.ts`, `runtime.ts`, `src/types/js-yaml.d.ts`.
+7. Parity advanced a fourth time (`17024c5` -> `7b75243`, "merge khamis1992/neo-n16 (N16 via
+   loam-jcode-run) into manus-parity"). Re-merged it: `.jdone` auto-unioned a fourth time with **no
+   conflict**. Four parity advances, four clean auto-merges. That advance brought the cross-run
+   recall surface: `src/graph/recall.ts` (645) + `src/graph/__tests__/recall.test.ts` (414),
+   `src/graph/runGraph.ts` (127), `src/tools/memory.ts` (131) + registry wiring,
+   `src/agent/runGraphAdapter.ts` + `src/agent/insights.ts` + `src/agent/sideChat.ts`,
+   `src/server/runTools.ts` + test, `src/setup/runtime.ts`, and `src/index.ts`. It did **not**
+   touch this branch's N14 deliverables, which remain byte-identical to `08cfe26`.
 
-## Verification on the final tip (`52b0cf9`)
+## Verification on the final tip (`e65cc28`)
 
 1. `npm run verify` -> exit 0 (typecheck, check:encoding, check:eval, check:orchestrator,
    check:recovery, check:modes)
 2. `npm run build:server` -> exit 0
-3. `node --import tsx --test "src/**/*.test.ts"` -> tests 2998, pass 2998, fail 0, skipped 0
+3. `node --import tsx --test "src/**/*.test.ts"` -> tests 3019, pass 3019, fail 0, skipped 0
 4. `(cd packages/web && npx tsc --noEmit)` -> exit 0
 5. `(cd packages/web && npx vitest run)` -> 93 files / 634 tests, all pass
 6. `(cd packages/web && npx next build)` -> exit 0
@@ -79,9 +88,14 @@ Merge fidelity, verified mechanically against the real merge parents:
   **0 lines from either side**; the 3 lines that differ from `6965197` are this report's own
   corrections made after that merge (tip `4d538a1` -> `52b0cf9`, node count 2974 -> 2998,
   left-right 12 -> 14). 0 conflict markers, no BOM, no U+FFFD.
+- Fourth merge (`e65cc28`, parents `08cfe26` ours / `7b75243` theirs): the union driver again
+  dropped **0 lines from either side**; the 3 lines that differ from `08cfe26` are this report's own
+  corrections made after that merge (tip `52b0cf9` -> `e65cc28`, node count 2998 -> 3019,
+  left-right 14 -> 16). 0 conflict markers, no BOM, no U+FFFD, and `git ls-files -u` is empty
+  (no unresolved paths).
 - `.gitattributes` is byte-identical to parity's; `.jcode-done` is byte-identical to parity's.
 - `git merge-base --is-ancestor manus-parity HEAD` -> exit 0;
-  `git rev-list --left-right --count manus-parity...HEAD` -> `0  14`; working tree clean.
+  `git rev-list --left-right --count manus-parity...HEAD` -> `0  16`; working tree clean.
 - All N14 deliverables are tracked and intact: `packages/web/src/components/replay/ReplayViewer.tsx`
   + `__tests__/ReplayViewer.test.tsx`, `packages/web/src/components/share/ShareReplay.tsx` +
   `__tests__/ShareReplay.test.tsx`, `src/graph/export.ts`, `src/graph/__tests__/export.test.ts`.
