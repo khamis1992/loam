@@ -52,6 +52,7 @@ import { createVaultTools } from "../tools/vaultTools.js";
 import { createCodeSessionTools } from "../tools/codeSession.js";
 import { createDocsLookupTools } from "../tools/docsLookup.js";
 import { createSemanticSearchTools } from "../tools/semanticSearch.js";
+import { createKnowledgeTools } from "../tools/knowledge.js";
 import { createGenExtraTools } from "../tools/genExtra.js";
 import { defaultGenProviders } from "../creative/genProviders.js";
 import { createArtifactTools } from "../tools/artifactTools.js";
@@ -63,6 +64,12 @@ export interface Runtime {
   ollama: OllamaClient | FailoverClient;
   registry: ToolRegistry;
   memory: MemoryStore | null;
+  /**
+   * N3 Knowledge Garden: the Ollama embedder, or null when memory embeddings
+   * are off. The garden shares it with the memory store and the semantic code
+   * index, so all three vector channels live in the same space.
+   */
+  embedder: OllamaEmbedder | null;
   screenLive: ScreenLive;
   preview: PreviewService;
   mcpServers: string[];
@@ -142,6 +149,13 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
     embedder: cfg.memory.enabled && cfg.memory.model ? embedder : undefined,
     model: cfg.memory.model,
   }));
+  // N3 Knowledge Garden: user-built RAG store. The vector channel shares the
+  // memory embedder; without it the garden still answers lexically, so the tools
+  // are always registered and reachability is decided by the per-run toggle.
+  registry.registerAll(createKnowledgeTools({
+    embedder: cfg.memory.enabled && cfg.memory.model ? embedder : undefined,
+    model: cfg.memory.model || cfg.model,
+  }));
   // N12 generator tools: media/search providers from the environment plus the
   // runtime model as the reasoning backend for solve_logic / generate_storyboard.
   registry.registerAll(createGenExtraTools({ providers: defaultGenProviders(cfg), reasoner: ollama }));
@@ -154,6 +168,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
     ollama,
     registry,
     memory,
+    embedder: cfg.memory.enabled && cfg.memory.model ? embedder : null,
     screenLive,
     preview,
     mcpServers: mcp?.servers ?? [],

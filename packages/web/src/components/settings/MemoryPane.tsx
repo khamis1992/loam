@@ -6,6 +6,7 @@ import clsx from 'clsx';
 import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { Section, Row } from './SettingsDialog';
+import { MemoryDebugPane } from './MemoryDebugPane';
 
 interface MemoryEntry {
   id: string;
@@ -118,6 +119,8 @@ export function MemoryPane() {
           </ul>
         )}
       </Section>
+
+      <MemoryDebugPane />
     </div>
   );
 }
