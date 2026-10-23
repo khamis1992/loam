@@ -268,12 +268,11 @@ const STATIC_PATTERNS: Array<{ id: string; re: RegExp }> = [
 /**
  * True when a file is part of the MiroFish surface the gate owns.
  *
- * `src/server/http.ts` hosts the shared HTTP router, so only the region that
- * actually serves `/api/mirofish/*` is scanned. Lines outside that region belong
+ * `src/server/http.ts` hosts the shared HTTP router, so only the routes that
+ * actually serve `/api/mirofish/*` are scanned. Lines outside those routes belong
  * to unrelated features and are not this gate's concern.
  */
 const MIROFISH_ROUTE_RE = /\/api\/mirofish\/\w+/;
-const ROUTE_REGION_LINES = 90;
 
 /**
  * True when a line is a comment (the intent module documents its own syntax,
@@ -285,34 +284,26 @@ function isCommentLine(line: string): boolean {
 }
 
 /**
- * Split a source file into `{ text, isMirofish }` lines. `isMirofish` marks the
- * region the gate owns, so a shared router file is scanned only where MiroFish
- * actually lives.
+ * True when the shared router's MiroFish routes are inside the scanned scope.
+ *
+ * The router is a single 2800-line file that also serves unrelated features, so
+ * the gate must not treat a hit anywhere in it as a MiroFish finding. This is the
+ * invariant the `/api/mirofish/*` scope marker exists to protect, and it is worth
+ * asserting directly: without it a future refactor that moves the routes (or
+ * renames the path) would silently shrink the scanned region to nothing while the
+ * gate still reported green.
  */
-function scanLines(file: string, text: string): Array<{ text: string; isMirofish: boolean }> {
-  if (!file.endsWith(path.join("server", "http.ts"))) {
-    return text.split("\n").map((line) => ({ text: line, isMirofish: true }));
-  }
-  const lines = text.split("\n");
-  const out: Array<{ text: string; isMirofish: boolean }> = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (!MIROFISH_ROUTE_RE.test(lines[i]!)) {
-      out.push({ text: lines[i]!, isMirofish: false });
-      continue;
-    }
-    for (let j = i; j < Math.min(lines.length, i + ROUTE_REGION_LINES); j++) {
-      out.push({ text: lines[j]!, isMirofish: true });
-    }
-    i += ROUTE_REGION_LINES - 1;
-  }
-  return out;
+function sharedRouterMirofishLinesInScope(file: string): number {
+  if (!isSharedRouter(file)) return 0;
+  const lines = inScopeLines(file, fs.readFileSync(file, "utf8"));
+  return lines.filter((entry) => entry.inScope && /mirofish/i.test(entry.text)).length;
 }
 
 /**
  * The files the static gate audits.
  *
- * `src/tools/mirofish.ts` (the `mirofish_chat` tool) and the `/api/mirofish/*`
- * region of `src/server/http.ts` are included deliberately: until a later stage
+ * `src/tools/mirofish.ts` (the `mirofish_chat` tool) and `src/server/http.ts`
+ * (the `/api/mirofish/*` routes) are included deliberately: until a later stage
  * task rewires them onto the pipeline, any fake output lives there, so a scan of
  * the new modules alone would never see it. The M5 merge already removed the
  * fake persona list and the literal `Approval Rate: 75% -> 100%` template, so
@@ -345,6 +336,42 @@ function staticGateTargets(): string[] {
 }
 
 /**
+ * True when a path is the shared HTTP router, whose non-MiroFish lines belong to
+ * unrelated features and must not be scanned.
+ */
+function isSharedRouter(file: string): boolean {
+  const normalized = file.split(path.sep).join("/");
+  return normalized === "src/server/http.ts" || normalized.endsWith("/src/server/http.ts");
+}
+
+/**
+ * Lines the scanner is allowed to judge for a given file. For a plain module every
+ * line is in scope. For the shared router only the `/api/mirofish/*` routes are in
+ * scope, so unrelated features are never flagged.
+ *
+ * The router separates every route handler with a blank line, so the handler's
+ * region ends at the next blank line. That is more robust than brace counting:
+ * the route's own `if (...)` line already contains the route string inside quotes,
+ * and template literals inside a handler make a depth scan unreliable.
+ */
+function inScopeLines(file: string, text: string): Array<{ text: string; inScope: boolean }> {
+  const lines = text.split("\n").map((line) => ({ text: line, inScope: true }));
+  if (!isSharedRouter(file)) return lines;
+
+  for (const entry of lines) entry.inScope = false;
+  const RE = /\/api\/mirofish\/\w+/;
+  for (let i = 0; i < lines.length; i++) {
+    if (!RE.test(lines[i]!.text)) continue;
+    lines[i]!.inScope = true;
+    for (let j = i + 1; j < lines.length; j++) {
+      if (lines[j]!.text.trim() === "") break;
+      lines[j]!.inScope = true;
+    }
+  }
+  return lines;
+}
+
+/**
  * Scan every owned source for hard-coded simulation results. Returns one finding
  * per offending line, with the file and line number so the hit is actionable.
  */
@@ -352,12 +379,15 @@ function scanMirofishSources(): string[] {
   const findings: string[] = [];
   for (const file of staticGateTargets()) {
     const rel = path.relative(process.cwd(), file).split(path.sep).join("/");
-    for (const { text, isMirofish } of scanLines(file, fs.readFileSync(file, "utf8"))) {
-      if (!isMirofish || isCommentLine(text)) continue;
+    const lines = inScopeLines(file, fs.readFileSync(file, "utf8"));
+    lines.forEach((entry, index) => {
+      if (!entry.inScope || isCommentLine(entry.text)) return;
       for (const { id, re } of STATIC_PATTERNS) {
-        if (re.test(text)) findings.push(`${rel}: ${id} (${text.trim().slice(0, 120)})`);
+        if (re.test(entry.text)) {
+          findings.push(`${rel}:${index + 1}: ${id} (${entry.text.trim().slice(0, 120)})`);
+        }
       }
-    }
+    });
   }
   return findings;
 }
@@ -497,5 +527,45 @@ describe("nutrio e2e gate", () => {
       hits.has("hard-coded percentage in bold result text"),
       "must catch a literal bolded percentage in report text",
     );
+
+    // The `/api/mirofish/*` scope marker must actually cover the router's
+    // MiroFish routes. A refactor that moved or renamed the routes would shrink
+    // the scanned region to nothing while the gate still reported green, so the
+    // invariant is asserted rather than assumed.
+    const router = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "..",
+      "..",
+      "server",
+      "http.ts",
+    );
+    if (fs.existsSync(router)) {
+      const inScope = sharedRouterMirofishLinesInScope(router);
+      const total = fs
+        .readFileSync(router, "utf8")
+        .split("\n")
+        .filter((line) => /\/api\/mirofish\//.test(line)).length;
+      assert.ok(
+        inScope > 0,
+        `the shared router's MiroFish routes must be inside the scanned scope (saw ${inScope})`,
+      );
+      assert.ok(
+        inScope >= total,
+        `scanned scope must cover every MiroFish route line in the router: ${inScope} of ${total} in scope`,
+      );
+
+      // And the scope must not swallow the router's unrelated features: the file
+      // serves hundreds of routes, so a scope that marks most of it as MiroFish
+      // would make the scan meaningless.
+      const all = fs.readFileSync(router, "utf8").split("\n").length;
+      const scoped = inScopeLines(router, fs.readFileSync(router, "utf8")).filter(
+        (entry) => entry.inScope,
+      ).length;
+      assert.ok(
+        scoped < all / 2,
+        `the scanned router scope must stay small (${scoped} of ${all} lines)`,
+      );
+    }
   });
 });
