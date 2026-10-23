@@ -82,7 +82,7 @@ Files
 Merge with manus-parity: resolved keeping both sides
 ----------------------------------------------------
 `.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. The merge was
-run seven times, because `refs/heads/manus-parity` kept advancing while each merge was
+eight times, because `refs/heads/manus-parity` kept advancing while each merge was
 being resolved (parity merges land continuously on this branch):
 
   1. merge of parity tip `a8130cc` (c20) -> committed as `4c54d5c`. Conflict:
@@ -109,19 +109,27 @@ being resolved (parity merges land continuously on this branch):
      headers (a task token followed by " — ", " complete" or " gate-fix session"):
      J5, O1 gate-fix, O1 complete, D5 gate-fix, D5 complete, O6 gate-fix, O6 complete,
      O2 gate-fix, O2 complete, then the common parity rollup.
+  7. merge of parity tip `8e197c6` (O3 ProtocolStore on event log) -> committed as `3d55c6d`.
+     Conflict: `.jdone`. Same shape as merges 5-6 (both sides prepended at the same anchor;
+     the prefixes were permutations of one shared report set). Resolved as the union with
+     each report kept once, split only at top-level report headers: J5, O1 gate-fix, O1
+     complete, D5 gate-fix, D5 complete, O6 gate-fix, O6 complete, O2 gate-fix, O2 complete,
+     O3 gate-fix, then the common parity rollup. The O3 source files (`src/protocol/store.ts`,
+     `src/protocol/types.ts`, `src/protocol/__tests__/storeCompat.test.ts`) auto-merged.
 
 Every resolution was verified mechanically as a strict superset of both conflict sides
-(stage-2 and stage-3 blobs): 0 lines missing from either side, 0 conflict markers,
-strict UTF-8 and 0 mojibake. No parity commit at any tip touches a J5 source file
+(stage-2 and stage-3 blobs): 0 lines missing from either side, 0 conflict markers, no
+duplicated top-level report, strict UTF-8 and 0 mojibake. No parity commit at any tip
+touches a J5 source file
 (`src/policy/commandRisk`, `src/policy/riskTier.ts`, `src/tools/shell.ts`); the only
 ever-conflicting files were `THIRD_PARTY_NOTICES` (merges 1-2) and `.jdone` (merges 3, 5,
-6).
+6, 7).
 
 Merge gate condition verified on the final tree:
   `git merge-base --is-ancestor manus-parity HEAD`  -> exit 0
-  `git rev-list --left-right --count manus-parity...HEAD` -> `0 13` on the final merge
-  commit `aac426d` (zero parity commits missing); the two report commits after it bring
-  HEAD to `0 15`. The left count is the gate: 0 parity commits are missing.
+  `git rev-list --left-right --count manus-parity...HEAD` -> `0 16` on the final merge
+  commit `3d55c6d` (zero parity commits missing); the report commits after it bring HEAD to
+  `0 17`. The left count is the gate: 0 parity commits are missing.
   `git diff --name-only manus-parity HEAD` -> the J5 files above (the 15 J5 files plus
   `THIRD_PARTY_NOTICES`), and nothing else (so the tree is parity + J5, with no parity
   change lost)
@@ -156,7 +164,7 @@ Gates (all run from the worktree root on the merged tree)
 Full-suite validation (committed tree, `src/**/*.test.ts`)
 ---------------------------------------------------------
   node --import tsx --test "src/**/*.test.ts"
-  -> tests 2466, suites 447, pass 2464, fail 2
+  -> tests 2476, suites 448, pass 2474, fail 2
 
 Both failures are pre-existing on the manus-parity lineage and untouched by J5 — the
 files are byte-identical to manus-parity (`git diff manus-parity HEAD -- <file>` is
