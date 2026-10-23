@@ -841,31 +841,48 @@ this browser-verified behaviour.
 manus-parity, resolve all conflicts keeping both sides, commit.`
 
 ## Root cause
-No source file conflicted. `git merge manus-parity` (tip `ed26550`, the N2 merge,
-bringing in N10/N2/N4/C19/O3/O6/O2/D5/O1/V11/H0/O0/fc-05/J5/F5) auto-merged
-everything except the tracked rollup `.jdone`, where both sides prepend a report at
-the same top-of-file anchor. Nothing in the C20 change set was at risk:
-`git diff manus-parity -- ui/` still shows exactly the C20 files
+No source file conflicted on the first merge. `git merge manus-parity` (tip
+`ed26550`, the N2 merge, bringing in N10/N2/N4/C19/O3/O6/O2/D5/O1/V11/H0/O0/fc-05/
+J5/F5) auto-merged everything except the tracked rollup `.jdone`, where both sides
+prepend a report at the same top-of-file anchor. Nothing in the C20 change set was
+at risk: `git diff manus-parity -- ui/` still shows exactly the C20 files
 (`ui/chat-color.js`, `ui/chat-color.d.ts`, `ui/app.js`, `ui/companions.js`,
 `ui/companions.html`, `ui/loam.css`, `ui/styles.css`, 712 insertions / 9 deletions).
 
 ## What was done
-`.jdone` was resolved as a superset of both conflict sides. The base blob
-(`1d220ff4`) is a strict prefix of the ours blob (`f09b6564`), so the resolution
-keeps the base verbatim, then the C20 report (the part ours added), then a `---`
-separator, then the whole manus-parity rollup (`d58e75a3`) verbatim. Verified
-mechanically against both stage blobs: **0 non-empty lines missing from the ours
-side, 0 non-empty lines missing from the theirs side**, and no conflict marker
-remains anywhere in the tree. No test was weakened, deleted or skipped and no
-source file was edited by this session.
+Two merges were needed because `refs/heads/manus-parity` advanced twice while this
+session ran.
+
+1. **First merge** (parity tip `ed26550`, committed as `cd9ee76`). `.jdone` was
+   resolved as a superset of both conflict sides. The base blob (`1d220ff4`) is a
+   strict prefix of the ours blob (`f09b6564`), so the resolution keeps the base
+   verbatim, then the C20 report (the part ours added), then a `---` separator, then
+   the whole manus-parity rollup (`d58e75a3`) verbatim. Verified mechanically
+   against both stage blobs: **0 non-empty lines missing from the ours side, 0
+   non-empty lines missing from the theirs side**, and no conflict marker remains
+   anywhere in the tree.
+
+2. **Second merge** (parity tip `26befe6`, the N10 merge, committed as `c85f020`).
+   The new conflict was a **modify/delete** on `.jdone`: N10's own commit `e3d05f6`
+   had deleted the tracked rollup (698 lines removed) and the parity tip
+   re-confirmed that deletion (`.jdone` is absent from `git ls-tree 26befe6`), while
+   this branch still carried the full rollup. Resolved by **keeping our side** (the
+   C20 branch's `.jdone`), because the deletion is a worktree-hygiene choice made on
+   the N10 branch, not a content claim about the reports: every report the deletion
+   would have dropped is still present verbatim in the resolved rollup, so nothing
+   that either side wrote is lost. No other file conflicted.
+
+No test was weakened, deleted or skipped and no source file was edited by this
+session.
 
 ## Gate condition verified
+`git merge manus-parity` reports `Already up to date.`,
 `git merge-base --is-ancestor manus-parity HEAD` exits 0 and
-`git rev-list --left-right --count manus-parity...HEAD` is `6  5` (parity fully
+`git rev-list --left-right --count manus-parity...HEAD` is `0  7` (parity fully
 merged, zero parity commits missing). `git status --porcelain` is empty and
 `git grep -E "^(<{7}|={7}|>{7})( |$)"` finds no conflict marker in any tracked file.
 
-## Gates (all run from the worktree root on the committed merge tree `cd9ee76`)
+## Gates (all run from the worktree root on the final merged tree `c85f020`)
 - `npx tsc --noEmit`                          -> exit 0
 - `npm run build:server`                      -> exit 0 (dist/server.cjs 19.5mb, pdf worker copied)
 - `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
