@@ -1,3 +1,105 @@
+## O4 complete: socket replay by durable-log sequence
+
+Branch: `khamis1992/om-o4` (worktree `C:\Users\khamis\orca\workspaces\manus-local\om-o4`)
+Commit: `5114c89` "O4: seq-based replay"
+Base branch: `manus-parity`
+
+Implements BUILD_SPEC §6.4: a reconnecting client sends the highest durable-log
+`seq` it already rendered and receives only frames with `seq > lastSeq`, instead of
+relying on a single `lastMessageId` cursor.
+
+### What changed
+
+**`src/protocol/types.ts`, `packages/shared/src/socket.ts`**
+- Added the optional `seq?: number` field to `ServerEnvelope` and the optional
+  `lastSeq?: number` field to `JoinSession`, so both the frame and the join request
+  can carry a durable-log sequence.
+
+**`src/protocol/store.ts`**
+- `eventsAfter(sessionId, lastMessageId?)` now delegates to `eventsAfterSeq`, keeping
+  the pre-O4 cursor fallback (`seqOfId`) byte-for-byte.
+- `eventsAfterSeq(sessionId, afterSeqValue)` maps every payload to
+  `{ ...envelope, seq: envelope.seq ?? e.seq }`. This closes the real spec gap: a
+  replayed envelope is a fresh JSON object after a restart and would otherwise arrive
+  with no `seq`, so a client could never advance its cursor.
+
+**`src/protocol/socket.ts` (join handler, ~line 343)**
+- When the client sends `lastSeq` (number) the replay uses
+  `store.eventsAfterSeq(sessionId, m.lastSeq)`; otherwise it keeps
+  `store.eventsAfter(sessionId, m.lastMessageId)`.
+- The `eventsNotifyEventsAfter` replay frame now carries `seq: <highest seq delivered>`,
+  so a client that records `seq` advances past everything just delivered.
+
+**`packages/web/src/services/chatSocket.ts`**
+- `ChatSocket` keeps a per-session `lastSeqBySession` map and exposes
+  `onMessage(listener)` (an extra frame observer with an unsubscribe function) plus
+  `noteSeq(sessionId, seq)`. `join()` gained a `getLastSeq` getter argument and sends
+  `lastSeq` on the initial join and on every reconnect; `leave()` clears the cursor.
+
+**`packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx`**
+- The socket effect registers a seq observer through `socket.onMessage` and records
+  `m.seq` via `socket.noteSeq(sessionUid, ...)`. The observer and its unsubscribe are
+  declared outside the async closure so the effect cleanup can call them before
+  `socket.disconnect()`.
+
+**`packages/web/src/services/chatSocket.test.ts`** (existing, extended)
+- The mock server now replays by `lastSeq` (slicing `seq > lastSeq`) and reports the
+  highest delivered seq on the replay frame, falling back to the `lastMessageId`
+  cursor when `lastSeq` is absent.
+- Three new tests: replay only frames after the last seq (lastSeq=2 of seqs 2,3
+  yields only the seq-3 frame, and the replay frame carries `seq: 3`); `noteSeq`
+  drives the cursor so a reconnect resumes at that seq; and a listener stops receiving
+  frames after unsubscribe and after `disconnect()`.
+
+**`src/protocol/__tests__/seqReplay.test.ts`** (new, 334 lines)
+- A real socket.io + HTTP-login-chain integration test against a throwaway
+  `LOAM_DATA_DIR`, with a fake `runTask`/`getTask` and `adapter.store` seeding. It
+  covers the plan row (a client with `lastSeq=4` of 6 frames receives exactly frames
+  4,5,6 and the replay frame carries `seq=7`), replay-by-sequence rather than index,
+  the `lastMessageId` fallback, an unknown session (empty, `seq` undefined),
+  `lastSeq=0` (everything), cursor advance after appending one more frame, a purged
+  session (empty), and replay by sequence after an adapter restart with no frame id.
+
+### Acceptance (plan row O4: "socket test: client with lastSeq=3 of 6 receives exactly seq 4,5,6")
+Covered by `src/protocol/__tests__/seqReplay.test.ts` (the lastSeq=4 of 6 case) and by
+the three new web tests in `packages/web/src/services/chatSocket.test.ts`.
+
+### Gates (all run from the worktree root)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.4mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully)
+- `npx tsc --noEmit` in `packages/web`        -> exit 0
+- `node --import tsx --test src/protocol/__tests__/*.test.ts`
+                                              -> tests 43, pass 43, fail 0
+- `(cd packages/web && npx vitest run)`       -> 72 files / 472 tests, all pass
+- `node --import tsx src/protocol/__tests__/run.ts` (A1 adapter integration)
+                                              -> PASS
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                       -> PASS
+- `npm run check:orchestrator`                -> PASS
+- `npm run check:recovery`                    -> PASS (3 succeeded)
+- `npm run check:promptwire`                  -> PASS (every promptwire tool ok:true)
+
+### Notes
+- `manus-parity` has advanced 49 commits since this branch's base `8e197c6` (which is
+  now an ancestor of `manus-parity`). The work was left uncommitted until the gates
+  were green, so the merge is clean: no parity source file was touched by this change
+  set, and `.jdone` is the only tracked file that both sides prepend to.
+- The runner had deleted the tracked rollup `.jdone` in the working tree; it was
+  restored from `HEAD` and this report prepended, so the rollup is a superset.
+- No test was weakened, deleted or skipped. No secret was committed. No forbidden
+  path was touched. No Arabic text was written; no mojibake placeholder was added.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  node --import tsx --test src/protocol/__tests__/*.test.ts
+  (cd packages/web && npx vitest run src/services/chatSocket.test.ts)
+  npm run check:encoding
+
+---
+
 ## O3 gate-fix session: merge with manus-parity, all gates green
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
