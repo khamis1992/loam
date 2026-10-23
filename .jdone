@@ -1,3 +1,51 @@
+# N10 merge gate: manus-parity (bec4181) merged, .jdone modify/delete resolved keeping both sides
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity in: .jdone. Run git merge
+manus-parity, resolve those files keeping both sides, commit.` (CONFLICT modify/delete:
+`.jdone` deleted in manus-parity and modified in HEAD).
+
+### Root cause
+Every source file auto-merged with `ort`. The only conflict was the tracked rollup `.jdone`,
+because parity's `d3d7b88` ("chore: untrack runner markers .jdone/.jcode-done (made new
+branches look done; caused .jdone merge conflicts)") deleted `.jdone` outright while this branch
+still carries the N10 report at the top of it. `.jdone` is this task's required deliverable, so
+the deletion side had to be reconciled with the modified side rather than accepted.
+
+### What was done
+`.jdone` resolved by keeping the modified (HEAD) version: the N10 report block stays at the top
+and the whole accumulated rollup follows verbatim, with the conflict markers removed. Nothing
+was dropped from either side, because parity's side contributed no content (a deletion) and the
+`src/agent/loop.ts` auto-merge kept both the N10 arm code and parity's N3 `kb_search` /
+`kb_seedIds` additions.
+
+### Merge safety verified (N10 work is intact, not assumed)
+- `src/agent/loop.ts` still contains `runAbArm`, `armPromises`, `siblingArms`, `oneLine`, and the
+  `await Promise.all(armPromises)` at the success return, the step-budget throw and `finally`.
+- `src/agent/__tests__/abRouting.test.ts` still contains `armCalls`, `failingClient`,
+  `done by ${model}` and the two arm assertions.
+- `src/llm/router.ts` and `src/tools/routingModel.ts` (N10 output-type/effort routing) are byte
+  identical between HEAD and manus-parity.
+- `git grep -n "^<<<<<<<\|^=======$\|^>>>>>>>\|^|||||||" -- src packages` -> empty; `git diff
+  --check` -> clean.
+
+### Gates re-run on the resolved tree (measured)
+- `npx tsc --noEmit`                       -> exit 0
+- `npm run build:server`                   -> exit 0 (`server bundle + pdf worker written to dist/`)
+- `(cd packages/web && npx next build)`    -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test src/agent/__tests__/abRouting.test.ts` -> tests 4, pass 4, fail 0
+- `node --import tsx --test src/agent/__tests__/{loopBudget,loopHooks,runGraphAdapter,fanout,parallelTools,mirofishLoop,reminders,todoReminder,cacheUsageAccounting,codingRouting}.test.ts` -> tests 68, pass 68, fail 0
+- `node --import tsx --test src/llm/__tests__/router.test.ts src/graph/__tests__/runGraph.test.ts src/tools/__tests__/knowledge.test.ts` -> tests 42, pass 42, fail 0
+- `(cd packages/web && npx vitest run)`    -> 85 files / 573 tests, all passed
+
+No test was weakened, deleted or skipped. No source file was edited by this merge resolution
+(the only working-tree change is this report); `.jdone` is the sole conflicted path.
+
+Test command:
+
+  node --import tsx --test src/agent/__tests__/abRouting.test.ts
+
+---
+
 # N10 complete: output modes, effort and model map (A/B arms actually execute)
 
 Committed as `0ea4423`. The N10 task's A/B criterion is "A/B creates 3 sibling nodes with
