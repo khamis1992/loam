@@ -385,11 +385,6 @@ export class VideoStudioRouter {
     this.effectsAvailableOverride = options.effectsAvailable;
   }
 
-  /** Repo root the dist probes run against. */
-  getRoot(): string {
-    return this.root;
-  }
-
   /** True when the timeline-engine dist is installed. */
   isFilmBackendAvailable(): boolean {
     return fs.existsSync(path.join(this.root, "electron", "filmcraft", "dist", "index.html"));
