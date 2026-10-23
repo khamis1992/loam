@@ -93,7 +93,24 @@ export interface ResolveLocalExecutionApproval extends Base {
   targetActionEventId?: string;
 }
 
-export type ClientMessage = JoinSession | LeaveSession | UserMessage | StopSession | SubmitWorkspaceDirectoryAccess | ResolveLocalExecutionApproval;
+/** D4: user decision for a pending `suggest_plan` plan-approval card. */
+export interface ResolvePlanApproval extends Base {
+  type: "resolve_plan_approval";
+  sessionId: string;
+  requestId: string;
+  decision: "approve" | "reject" | "edit";
+  /** Revised plan when `decision` is "edit". */
+  plan?: { summary?: string; steps?: string[]; files_to_edit?: string[]; trivial?: boolean };
+}
+
+export type ClientMessage =
+  | JoinSession
+  | LeaveSession
+  | UserMessage
+  | StopSession
+  | SubmitWorkspaceDirectoryAccess
+  | ResolveLocalExecutionApproval
+  | ResolvePlanApproval;
 
 export interface ServerEnvelope<E extends ChatEvent = ChatEvent> {
   id: string;
@@ -331,6 +348,27 @@ export interface LocalExecutionApprovalResolved extends ChatEventBase {
   result: "approve" | "deny";
 }
 
+/** D4: a `suggest_plan` plan awaiting the user's decision (plan-approval card). */
+export interface PlanApprovalRequestedEvent extends ChatEventBase {
+  type: "planApprovalRequested";
+  requestId: string;
+  taskId: string;
+  summary: string;
+  steps: string[];
+  filesToEdit: string[];
+  trivial: boolean;
+}
+
+/** D4: the user decided a pending plan-approval card. */
+export interface PlanApprovalResolvedEvent extends ChatEventBase {
+  type: "planApprovalResolved";
+  requestId: string;
+  taskId: string;
+  reviewer: "user" | "auto";
+  result: "approve" | "reject" | "edit";
+  plan?: { summary?: string; steps?: string[]; files_to_edit?: string[]; trivial?: boolean };
+}
+
 export interface DeviceAttachmentUploadNotify extends ChatEventBase {
   type: "deviceAttachmentUploadNotify";
   targetEventId: string;
@@ -365,6 +403,8 @@ export type ChatEvent =
   | WorkspaceDirectoryAccessRequest
   | WorkspaceDirectoryAccessResult
   | LocalExecutionApprovalRequested
+  | PlanApprovalRequestedEvent
+  | PlanApprovalResolvedEvent
   | LocalExecutionApprovalResolved
   | DeviceAttachmentUploadNotify;
 

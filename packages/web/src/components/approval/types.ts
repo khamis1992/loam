@@ -7,6 +7,19 @@ import type { LocalExecutionApprovalRequestedEvent } from "@shared/socket";
 
 export type LocalExecutionApprovalRequested = LocalExecutionApprovalRequestedEvent;
 
+/** D4: a `suggest_plan` plan awaiting the user's decision. */
+export interface PlanApprovalRequested {
+  type: "planApprovalRequested";
+  id: string;
+  timestamp: number;
+  requestId: string;
+  taskId: string;
+  summary: string;
+  steps: string[];
+  filesToEdit: string[];
+  trivial: boolean;
+}
+
 export interface FolderAccessRequestEvent {
   type: "folderAccessRequest";
   id: string;

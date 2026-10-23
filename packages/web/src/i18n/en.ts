@@ -206,5 +206,15 @@ export const en = {
   "Plan switcher": "Plan switcher",
   "Credits ›": "Credits ›",
   "Homepage ↗": "Homepage ↗",
-  "Docs ↗": "Docs ↗"
+  "Docs ↗": "Docs ↗",
+  "Plan approval": "Plan approval",
+  "Plan approved": "Plan approved",
+  "Plan rejected": "Plan rejected",
+  "Plan updated": "Plan updated",
+  "Steps": "Steps",
+  "Trivial": "Trivial",
+  "Approve": "Approve",
+  "Reject": "Reject",
+  "Edit": "Edit",
+  "Save and approve": "Save and approve"
 } as const;

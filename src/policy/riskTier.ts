@@ -128,6 +128,7 @@ const READ_TOOL_NAMES = new Set<string>([
   "think",
   "plan",
   "plan_exit",
+  "suggest_plan",
   "finish",
   "message",
   "phase_set",

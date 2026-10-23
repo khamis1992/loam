@@ -1,3 +1,53 @@
+D4 plan approval gate (Devin suggest_plan) complete, merged with the latest
+manus-parity, and committed on khamis1992/devin-d4.
+
+D4 work: 25da47e (feature) + abda171 (adversarial round 2).
+Merge: 31dc1b9, plus 8c6854d (run-graph event mapping).
+
+Gates (all from the worktree root, on the merged tree):
+- npx tsc --noEmit -> PASS (no output)
+- npm run build:server -> PASS (dist/server.cjs 19.2mb, pdf worker copied)
+- (cd packages/web && npx next build) -> PASS (25 static pages)
+- node --import tsx --test src/tools/__tests__/planApproval.test.ts -> 18/18 PASS
+- node --import tsx --test src/graph/__tests__/runGraph.test.ts -> 11/11 PASS
+- node --import tsx --test src/agent/__tests__/toolProfile.test.ts
+  src/policy/__tests__/permissionModes.test.ts src/modes/__tests__/catalog.test.ts -> 23/23 PASS
+- (cd packages/web && npx vitest run) -> 67 files / 443 tests PASS
+
+Merge conflicts (4, all resolved by keeping both sides):
+1. src/index.ts: `createWorkflowTools` (manus-parity) + the D4 plan-approval
+   import (`applyPlanApprovalGate`).
+2. src/protocol/events.ts: `PlanApprovalRequestedEvent` + `CacheUsageEvent`.
+3. src/server/settings.ts: `planApprovalSkipTrivial` + `location`.
+4. .jdone: add/add D4 vs N20 marker. Both sides preserved.
+
+One real defect the merge exposed (fixed, not worked around):
+- src/graph/runGraph.ts: the exhaustive AgentEvent switch shipped by N1 did not
+  know the D4 `plan_approval_required` event, so tsc failed with
+  "not assignable to type never". It is now handled as an `ask_user` node,
+  mirroring `approval_required`, and covered by the runGraph suite.
+
+Round 2 (adversarial) found and fixed two real defects, both now covered by tests:
+1. src/server/routes/planApproval.ts answered true for unsupported verbs
+   (PUT/DELETE/PATCH/OPTIONS) and for paths it does not own (sibling prefix,
+   trailing slash, nested), so the server never responded and the request hung
+   until the client timed out. It now returns false and falls through to the
+   server's normal 404; the id match is tightened to one path segment.
+2. src/tools/planApprovalStore.ts returned "rejected" on cancellation but left
+   the record pending, so the task's mutating tools stayed blocked for the rest
+   of the 30 min TTL with no run left to resume. waitForPlanDecision now clears
+   the record on abort.
+
+Honest correction: an earlier hypothesis of a same-tick waiter race for two
+plans on one task was DISPROVED by a direct probe (both before and after the
+change the second plan correctly stays pending). The unnecessary waiter-keying
+change was reverted, so the store diff is only the cancel fix.
+
+Repo checks: check:modes / check:promptwire / check:orchestrator PASS.
+check:encoding still flags the pre-existing scripts/repair-mojibake.cjs.
+
+---
+
 # N20 - Offline long-horizon eval gate for Neo: done
 
 The gate is implemented, tested and recorded. All gates are green from the
@@ -66,18 +116,10 @@ green.
 - `npm run eval:neo`                          -> 10/10 cases pass, total 100
 - `node --import tsx --test src/neoEval/__tests__/{scoring,mockModel,harness,baseline}.test.ts`
   -> tests 88, pass 88, fail 0
-  (scoring dimensions and suite totals; mock replay/`when` guards/`MockClock`/
-  `KnowledgeStore`/citation extractor; end-to-end acceptance through the
-  production loop: fixture catalogue, default verifier script, `runFixture`,
-  restart-from-step, recurring rounds, fault injection, and the "full suite
-  clears the bar" gate; baseline regression guard)
 - `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
 - `npm run check:eval`    -> eval harness smoke: PASS
-- `npm run check:modes`   -> PASS (seven fail-closed modes, denied execution,
-  native document/data/canvas outputs, realpath/junction isolation)
-- `npm run check:recovery`-> PASS (SQLite migration/backup/retention/rollback/
-  restart/crash recovery; FIFO ownership, duplicate rejection, queued
-  cancellation, failure release, shutdown)
+- `npm run check:modes`   -> PASS
+- `npm run check:recovery`-> PASS
 - `npm run check:orchestrator` -> PASS
 - `npm run build:server`  -> exit 0 (dist/server.cjs 19.2mb, pdf worker copied)
 
