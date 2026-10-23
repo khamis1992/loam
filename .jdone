@@ -751,3 +751,91 @@ live functional run of the D3 feature, and the full suite at the final HEAD.
   = 0 hits); `git status --porcelain` empty.
 - **Final state.** `.jdone` 753 lines, committed and clean (`git status --porcelain
   -- .jdone` = 0 entries); HEAD `a56f5f0`.
+
+## Independent re-validation (2026-10-23, seventh pass)
+
+This pass corrected two claims from the sixth pass that were based on a naive
+`git diff --numstat` against a side where the file did not exist, then re-ran every
+required gate fresh at the final HEAD.
+
+### Correction: `.jdone` exists only on the parity side
+
+`.jdone` is **absent** at the merge base `088b4f2` and at the D3 parent `053cd0e`
+(`git cat-file -s 053cd0e:.jdone` and `088b4f2:.jdone` both say "exists on disk, but
+not in <rev>"). It exists only at parity tip `03f8aef` (29,035 bytes / 458 lines).
+The sixth-pass figures "`260 0`" and "`753 0`" were numstats computed against a
+*missing* blob, so they were not meaningful as "pure insertion" evidence. The
+correct, set-based result is below and it is stronger:
+
+- **Set-based union, parity -> HEAD:** every one of parity's **458 `.jdone` lines is
+  present in HEAD's 753** (`PARITY-LINES-MISSING=0`). Nothing parity recorded was
+  dropped; D3 added the rest.
+
+### Merge-commit structure (re-confirmed)
+
+- `ac0cf67` tree `026cdac2`; parents exactly `053cd0e` (D3) and `03f8aef` (parity).
+  The in-commit conflict record lists exactly 3 files: `package.json`,
+  `src/server/http.ts`, `src/server/runTools.ts`.
+- `git merge-base 053cd0e 03f8aef` = `088b4f2`. `git merge-tree --write-tree HEAD
+  manus-parity` exits 0 with no `CONFLICT`/`<<<<<<<`/`>>>>>>>` lines (a merge is
+  already recorded, so it is trivially clean). `git rev-list --count HEAD..manus-parity`
+  = 0 (not behind); `manus-parity` is an ancestor of HEAD.
+
+### Definitive conflict list vs "differs from both parents"
+
+`git diff --name-only <parent> <merge>` is not a conflict test on a merge commit.
+Computing the intersection of both parent diffs yields **7** files that differ from
+both parents: `package.json`, `src/index.ts`, `src/policy/riskTier.ts`,
+`src/server/__tests__/runTools.test.ts`, `src/server/http.ts`,
+`src/server/runTools.ts`, `src/setup/runtime.ts`. The first three of the four
+non-conflicted ones are **pure insertions** relative to parity
+(`src/policy/riskTier.ts` +2/-0, `runTools.test.ts` +2/-0, `setup/runtime.ts` +2/-0)
+and `src/index.ts` is +23/-1, where the single removed line is an import expansion
+(`ensureTaskWorkspace` -> `ensureTaskWorkspace, isManagedTaskWorkspace`). So the
+in-commit conflict list (3 files) is the authoritative conflict set, and none of the
+7 "both-sides" files lost anything from either side.
+
+### Required gates, re-run fresh at final HEAD (exit codes captured)
+
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0 (`esbuild ... Done in 454ms`, pdf worker copied)
+- `(cd packages/web && npx next build)` -> exit 0 (`Compiled successfully in 513ms`,
+  `Generating static pages ... 25/25`, `Finalizing page optimization`)
+- `npm run check:env-builds` -> exit 0 (`PASS live env-build routes: list, per-project
+  status, redacted log, staleness, 404/400/method handling, project binding`)
+- `npx tsx src/scripts/check-encoding.ts --run` -> `encoding check: OK (no BOM, no
+  mojibake, all JSON valid)`
+
+### Full test suite at final HEAD
+
+- All **166** `src/**/*.test.ts` files (the count is files, not tests) run together:
+  `# tests 1945, # suites 368, # pass 1945, # fail 0, # cancelled 0, # skipped 0,
+  # todo 0`, exit 0. This matches the sixth-pass figure; the 166 vs 1945 confusion
+  was file-count vs test-case-count.
+- `npm run verify` (typecheck + encoding + eval + orchestrator + recovery + modes)
+  -> exit 0; orchestrator smoke `PASS (114/114)`; recovery and modes checks PASS.
+- `packages/web` vitest -> exit 0, `Test Files 66 passed (66)`, `Tests 437 passed
+  (437)`.
+
+### Repository integrity
+
+- Worktree index: 593,276 bytes, signature `44 49 52 43` (`DIRC`), valid.
+  `index.corrupt.bak` (589,020 bytes) is the moved-aside zeroed index, kept as
+  evidence. `git diff --cached --name-only` = 0 staged entries.
+- `git fsck --no-dangling` -> exit **0** with exactly 2 error lines, both
+  `error: bad signature 0x00000000` / `fatal: index file corrupt`. Scanning all
+  worktree indexes, the only zeroed ones are `devin-d19` and `devin-d4`
+  (sig `00 00 00 00`); this worktree and `manus-parity` have valid `DIRC` indexes.
+- No conflict markers anywhere: `git grep -E '^(<<<<<<<|>>>>>>>|=======)$' -- .`
+  returns 0 lines. No files deleted across the merge range:
+  `git diff --diff-filter=D --name-only 088b4f2 HEAD` = 0, and
+  `03f8aef HEAD` = 0.
+- `.jdone` is UTF-8, no BOM (`23 20 44`), `hasFFFD=False`, no `????` mojibake runs;
+  it contains 0 Arabic characters, which is expected (its content is the D3 report).
+- Working tree clean: `git status --porcelain --untracked-files=all` = 0 entries;
+  branch `khamis1992/devin-d3`.
+
+### Final state
+
+- HEAD `d9f9d5b` (sixth-pass record) at the time these checks ran; `.jdone` is
+  appended below and committed. `git diff --quiet HEAD -- .jdone` clean.
