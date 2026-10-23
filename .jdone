@@ -1,3 +1,68 @@
+# N9 round 12: parity auto-unioned .jdone, full suite green on the final tip
+
+Parity advanced once more, to `ca08d4c` (14 commits ahead of the previous merge). This time the
+`.gitattributes` rule parity added (`.jdone merge=union`, `.jcode-done merge=union`) did its job:
+`git merge manus-parity` auto-resolved `.jdone` with no hand-resolve, no conflict, and no dropped
+report.
+
+## What came in
+
+`src/server/videoStudioExport.ts` (587 lines) + `src/server/__tests__/videoStudioExport.test.ts`
+(380), `src/server/http.ts` (+44), `src/tools/videoStudio.ts` (+211/-),
+`src/agent/masterPrompt.ts` + `masterPromptText.ts`, `src/agent/orchestrator.ts`,
+`src/graph/runGraph.ts`, `src/agent/events.ts`, `prompts/loam-master.md`, and web export work
+(`packages/web/src/lib/videoStudioExport.ts` + test, `LoamVideoPanel.tsx` + test, i18n). New
+`src/tools/__tests__/promptwire.test.ts` expectations track parity's new section 25.
+
+## Verification on the final tip (`dce08b5`)
+
+1. `npx tsc --noEmit` -> exit 0
+2. `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+3. `node --import tsx --test "src/**/*.test.ts"` -> tests 2940, pass 2940, fail 0, skipped 0
+4. N9 node suite -> tests 25, pass 25, fail 0
+5. `(cd packages/web && npx vitest run)` -> 91 files / 624 tests, all pass
+6. AskUserCard vitest -> 1 file / 7 tests, all pass
+7. `npm run build:server` -> exit 0
+8. `(cd packages/web && npx next build)` -> exit 0
+
+Merge fidelity, verified mechanically against the real merge parents:
+- `.jdone` auto-merged by the union driver: **0 lines under-present from either side**
+  (ours 5212 distinct, theirs 5241 distinct), no conflict markers, no BOM, no U+FFFD, and the
+  encoding gate passes on the merged file.
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0; `git rev-list --left-right --count
+  manus-parity...HEAD` -> `0  14`; working tree clean.
+- All five N9 files byte-identical to the N9 commit `3136f14` (`askUserStore.ts` 668daff2,
+  `askUserGate.ts` 339ccd31, `askUserTools.ts` c935f8b2, `src/server/routes/askUser.ts` 7f743ed1,
+  `AskUserCard.tsx` 6430e51e).
+
+## Observed flake, not a regression
+
+The first full node run on this tip reported 1 failure:
+`src/tools/__tests__/search.test.ts` "greps and globs the repository in under 1 second"
+(`grep took 1278ms`, threshold 1000ms). This is a wall-clock timing assertion, not a logic
+failure: the machine had 709 processes running under the live parity runner. Evidence it is not a
+regression: the file and its implementation are byte-identical to `3136f14` (empty
+`git diff 3136f14 HEAD` for `search.test.ts`, `search.ts`, `glob.ts`, `grep.ts`), it passes 5/5
+in isolation, and the immediately following full run passed 2940/2940. No test was edited.
+
+Note: `npm run build:server` / `next build` rewrite `src/agent/masterPromptText.ts` as a build
+side-effect; it was restored with `git checkout --` before the final state check.
+
+## Seams left
+
+- The ask-user auto-trigger classifier is heuristic (keyword/pronoun based). A model-judged
+  confidence signal can replace it behind the `src/tools/askUserGate.ts` seam.
+- `resolve_ask_user` plus the `askUserRequested`/`askUserResolved` pair is the extension point for
+  attaching answers to the run graph as a first-class node rather than a prompt prefix.
+- **Operational seam:** `.jdone` is tracked on parity and now union-merged via `.gitattributes`.
+  After any parity merge, still check `git ls-files -u` and confirm this report's heading is
+  present in `.jdone`.
+- The `search.test.ts` 1-second assertion is load-sensitive; a heavy runner load can flake it.
+- Parity is still advancing under a live runner; if `manus-parity` moves again, merge it and
+  re-run the gates rather than editing source to satisfy a conflict.
+
+---
+
 # N9 round 11: parity re-tracked .jdone, so the earlier merge silently dropped this report
 
 ## What happened, and why the previous tip was not actually done
