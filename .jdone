@@ -6139,3 +6139,54 @@ Test commands:
   node --import tsx --test src/tools/__tests__/videoStudioState.test.ts src/tools/__tests__/videoStudio.test.ts src/server/__tests__/videoStudioRelay.test.ts src/server/__tests__/videoStudioE2E.test.ts
   (cd packages/web && npx vitest run)
   npm run check:encoding
+
+---
+
+## 2026-10-23T21:23:30Z — Parity re-merge resolved: `.jdone` + `src/agent/loop.ts` + `src/server/recovery.ts`
+
+### Trigger
+`.jgatefail.txt` instructed: "MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit." Parity advanced past the
+first merge (`aaf9a06`, resolved against `045f3e2`) to `61aca0c` (N9 merge), so the merge
+was re-run against the current tip rather than leaving parity commits missing.
+
+### Merge result
+- `.jdone` auto-merged cleanly (no conflict markers); both sides retained.
+- Two source files conflicted, both purely additive:
+  - `src/server/recovery.ts` — kept both imports:
+    `hasUnfinishedToolCall` from `../agent/checkpointLog.js` (HEAD/O5) and
+    `type { EffortLevel, OutputType }` from `../llm/router.js` (parity/N10).
+  - `src/agent/loop.ts` — kept both sides' imports and code: HEAD's checkpoint/run-control
+    additions (`recordToolCall`, `recordToolResult`, `toolCallIdOf`, `eventLogSession`,
+    `logSession`) and parity's run-graph additions (`addRunSiblings`, `getRunNodes` from
+    `./runGraphAdapter.js`, `eventNodeId` from `../graph/store.js`, `siblingParentFor`).
+- Line endings preserved: `loop.ts`/`recovery.ts` are CRLF in the working tree (765/734 CR),
+  matching each file's existing endings; `.jdone` is LF-only. No EOL normalization applied.
+- Superset verification (line-set, EOL-normalized): resolution contains every non-blank line
+  of HEAD and parity sides. The only lines absent from HEAD's stage are 6 non-conflicting
+  hunks where parity's version is the newer union already merged into HEAD by the earlier
+  `f66b200` merge (`ChatResult` in the ollama import, `routingSystem` in place of `system`,
+  `chatWithRouting` in place of `chatWithFallback`). Nothing from either side was dropped.
+- Committed as `0b7050e` ("Merge branch 'manus-parity' into khamis1992/om-o5 (keep O5 +
+  parity run-graph sides)"). Scratch files (`.loop.theirs.tmp`, `.tmp_*.txt`, `.verify_merge.ps1`)
+  removed; working tree clean.
+
+### Gate condition (relative to parity tip `61aca0c`)
+- `git merge-base --is-ancestor 61aca0c HEAD` -> exit 0 (parity tip is an ancestor).
+- `git rev-list --left-right --count manus-parity...HEAD` -> `0  6` (0 parity commits
+  missing, 6 commits ahead). Merge gate satisfied.
+
+### Gates (all run from the worktree root, on committed HEAD `0b7050e`)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.5mb, pdf worker copied)
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run verify`                            -> exit 0 (typecheck, encoding, eval harness,
+  orchestrator smoke 114/114, recovery, modes all PASS)
+- `node --import tsx --test` (loop.ts-related: checkpointLog, runGraphAdapter, loopBudget,
+  loopHooks, parallelTools)                   -> tests 37, pass 37, fail 0
+- `node --import tsx --test` (routing: abRouting, orchestratorBudget, codingRouting)
+                                             -> tests 17, pass 17, fail 0
+- `node --import tsx --test` (recovery/inputQueue: runLease, runTools, inputQueue,
+  inputQueueAdmit)                            -> tests 38, pass 38, fail 0
+
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path touched.
