@@ -2,6 +2,50 @@ M3 second validation round: found and fixed a real follow-up routing regression 
 
 ---
 
+# M3 merge gate: FINAL - manus-parity merged three times, all gates green
+
+The gate (`MERGE CONFLICT with latest manus-parity: run git merge manus-parity,
+resolve all conflicts keeping both sides, commit`) requires `manus-parity` to be a
+live ancestor of this branch. The branch advanced three times while this was being
+worked, so the merge was performed three times; each one is committed and the
+ancestor condition holds against the final tip `585fd55`.
+
+## The three merges
+
+1. `330e135` - parity tip `26befe6`. Conflicts: `src/protocol/events.ts`,
+   `src/protocol/types.ts` (union of both sides) and `.jdone` (modify/delete; kept
+   the branch version, the convention on every sibling branch).
+2. `7d8da0e` - parity tip `61aca0c` (+22 commits: N9 ask-user node, J9 codemode).
+   Conflicts: `src/protocol/types.ts` (kept `SimulationProgressEvent` plus parity's
+   `AskUserRequestedEvent`/`AskUserResolvedEvent`) and `.jdone` (add/add; kept both
+   report sets).
+3. `9a70093` - parity tip `585fd55` (+13 commits: C20 chat accent, docs). Only
+   `.jdone` conflicted. It is a prepend/append rollup and both stages share the
+   previous base as a suffix, so the resolution is a pure union of the two report
+   blocks; only the nine conflict-marker lines were removed.
+
+After every merge, no parity file was dropped: all 4726 files at the final parity
+tip are present in the merged index. `git rev-list --left-right --count
+manus-parity...HEAD` is `0 13`.
+
+## Final gate results (on the merged tree at 9a70093)
+
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.6mb, pdf worker copied)
+- `(cd packages/web && npx next build)`        -> exit 0 (Compiled successfully)
+- `node --import tsx --test "src/**/*.test.ts" "src/**/*.test.mjs"`
+  -> tests 2661, suites 489, pass 2661, fail 0
+- `(cd packages/web && npx vitest run)`        -> 79 files, 535 tests, all pass
+- `npm run check:encoding`                     -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                        -> PASS
+- `npm run check:eval`                         -> eval harness smoke: PASS
+- `npm run check:recovery`                     -> PASS
+- `npm run check:orchestrator`                 -> PASS (114/114)
+
+Working tree clean. No test weakened, deleted or skipped; no assertion relaxed.
+
+---
+
 # M3 merge gate resolved: manus-parity fully merged, gates green
 D2 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
 
