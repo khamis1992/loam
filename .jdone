@@ -7789,3 +7789,60 @@ Gates (all run from the worktree root on the merged tree):
 
 No test was weakened, deleted or skipped. No secrets committed. No forbidden path
 touched. No Arabic text was written; no mojibake placeholder text was added.
+
+---
+
+## N18 session note (2026-10-23): canvas niceties - comments, colour tags, free notes, search, minimap, shortcuts
+
+Branch `khamis1992/neo-n18`, off `manus-parity`. Commit `eb0fbdf` (19 files, +3703/-12).
+
+Deliverables, built on N2's canvas graph:
+- Colour tags per node (six-colour palette plus an explicit `none`), painted on the card and
+  editable from a per-node swatch row.
+- Free notes on the canvas surface: draggable, colour-tagged, edited in place, saved on blur,
+  and listed in the side rail so a note is never invisible once it leaves the surface.
+- A comment thread per node, with an unread count on the card and an empty state.
+- Search across every node field, case- and accent-insensitive, reporting the exact span in the
+  *original* text so the canvas highlights the real characters.
+- A minimap that pans the view and draws the search hits, so thumbnail and cards agree.
+- Keyboard shortcuts (E open, S search, N note, ? sheet, +/- zoom, Escape close) with a sheet
+  that lists them.
+
+The annotation layer is a separate client from the graph client, so a server that does not serve
+annotations still serves the graph; an unreachable annotation server surfaces as the panel's
+notice rather than a crash. Search lives on the server because a run can hold tens of thousands of
+nodes and the canvas is the surface scanned for something that went wrong hours ago.
+
+Tests (all new, none weakened, deleted or skipped):
+- `src/graph/__tests__/search.test.ts`            - normalisation, multi-field matching, exact span
+                                                    offsets into the original text, accent folding,
+                                                    type filter, limit, `highlightSegments`.
+- `src/server/__tests__/canvasNotes.test.ts`      - coercion of tags, comment threads and notes,
+                                                    safe defaults, malformed-payload handling.
+- `src/server/__tests__/graphRoutes.test.ts`      - annotation and note routes, `?q=` search.
+- `packages/web/.../__tests__/search.test.ts`     - the client mirror of the above.
+- `packages/web/.../__tests__/minimap.test.ts`    - pure geometry: bounds, scale, point, viewport
+                                                    rect, click offset, clamping.
+- `packages/web/.../__tests__/annotations.test.ts` - palette, coercion, empties.
+- `packages/web/.../__tests__/annotationsClient.test.ts` - URL shape, bodies, DELETE-has-no-body,
+                                                          non-2xx and malformed-payload modes.
+- `packages/web/.../__tests__/panel.test.tsx`      - DOM-driven: tag, note add/delete, comment,
+                                                    search, minimap pan, shortcuts, failure notice.
+
+Two real bugs in `minimapGeometry.ts` were found while pinning the tests and fixed:
+- `graphBounds` seeded its minimum at the origin, so a graph entirely left of zero was
+  mis-measured; it now starts from the first node.
+- `clampView` clamped the viewport centre instead of its edges, contradicting its own doc; it now
+  pins the edges to the graph, centres when the viewport is larger than the graph, and leaves a
+  fitting viewport untouched.
+
+Gates (run from the worktree root):
+- `(cd packages/web && npx vitest run)`           -> Test Files 84 passed (84), Tests 587 passed (587).
+- `(cd packages/web && npx tsc --noEmit)`          -> exit 0.
+- `npx tsc --noEmit`                               -> exit 0 (root/server).
+- `node --import tsx --test src/server/__tests__/graphRoutes.test.ts src/server/__tests__/canvasNotes.test.ts src/graph/__tests__/search.test.ts`
+                                                   -> tests 38, pass 38, fail 0.
+- `npm run check:encoding`                         -> OK (no BOM, no mojibake, all JSON valid).
+
+No secrets committed. No forbidden path touched. No Arabic text was written; no mojibake
+placeholder text was added. All text files were normalised to CRLF to match `core.autocrlf`.
