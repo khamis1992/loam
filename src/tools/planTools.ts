@@ -1,5 +1,5 @@
 /**
- * Plan mode control tool (C13).
+ * Plan mode control tool (C13) + pending plan approval (D4).
  *
  * `plan_exit` is the escape hatch from the read-only `plan` permission mode. The
  * agent assembles its plan (summary, ordered steps and the files it would edit),
@@ -10,6 +10,13 @@
  *
  * The tool never mutates anything itself; it only decides whether the task leaves
  * plan mode. Denial leaves the task exactly where it was.
+ *
+ * `suggest_plan` is the Devin-parity variant: it presents the plan and blocks
+ * every mutating tool call while the plan is pending approval
+ * (`applyPlanApprovalGate`), but it does not change the task's permission mode —
+ * the task stays exactly where it was. The user approves/edits/rejects through
+ * the plan-approval route (`src/server/routes/planApproval.ts`) and the web
+ * plan-approval card.
  */
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { str, strs } from "./registry.js";
@@ -23,8 +30,42 @@ import {
   type LocalPermissionMode,
   type PermissionGateDecision,
 } from "../policy/permissionModes.js";
+import {
+  SUGGEST_PLAN_TOOL,
+  formatSuggestPlanPreview,
+  gateToolCallForPendingPlan,
+  parseSuggestPlanArgs,
+  pendingPlanBlockedMessage,
+  type SuggestPlanArgs,
+} from "./planApprovalGate.js";
+import { createPlanApproval, waitForPlanDecision } from "./planApprovalStore.js";
 
 export const PLAN_EXIT_TOOL = "plan_exit";
+
+/** Gate every tool call so a pending plan blocks mutating actions (D4). */
+export function applyPlanApprovalGate(registry: PlanGateRegistry, opts: PlanGateOptions): void {
+  const { taskId, workspaceRoot } = opts;
+  for (const name of registry.names()) {
+    // `suggest_plan` itself must stay available: the model needs it to
+    // re-present a plan after an edit, and it never mutates anything.
+    if (name === SUGGEST_PLAN_TOOL) continue;
+    const original = registry.get(name);
+    if (!original) continue;
+    registry.replaceTool({
+      ...original,
+      async run(args, ctx) {
+        const decision = gateToolCallForPendingPlan(ctx.taskId ?? taskId, name, args, workspaceRoot);
+        if (!decision.allowed) {
+          return { ok: false, content: pendingPlanBlockedMessage(decision.pendingPlan!, decision.reason) };
+        }
+        return original.run(args, ctx);
+      },
+    });
+  }
+}
+
+export { SUGGEST_PLAN_TOOL, formatSuggestPlanPreview, parseSuggestPlanArgs };
+export type { SuggestPlanArgs };
 
 /** The registry surface the plan gate needs (a `ToolRegistry` or a filtered sub). */
 export interface PlanGateRegistry {
@@ -105,6 +146,90 @@ export function formatPlanPreview(plan: PlanExitArgs): string {
 
 export function createPlanTools(): Tool[] {
   return [
+    {
+      name: SUGGEST_PLAN_TOOL,
+      description:
+        "Present your implementation plan to the user for approval before making any change. " +
+        "Call this once you have finished exploring and know what you will do. " +
+        "Provide a concise summary of the outcome, the ordered steps, every file you will create or modify (files_to_edit must list all edit locations), and set trivial=true only for a single obvious action. " +
+        "While the plan is pending, mutating tools (file write/edit, shell commands with side effects, destructive and secret actions) are refused, so call this BEFORE you start editing. " +
+        "The plan is shown in a plan-approval card; when the user approves, you may proceed. When the user edits it, re-present the revised plan with suggest_plan. When the user rejects it, return to planning and do not edit anything. " +
+        "Do not call this tool to ask a question or to report progress — use the message tool for that.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["summary"],
+        properties: {
+          summary: {
+            type: "string",
+            maxLength: 4000,
+            description: "One-paragraph statement of the outcome the plan will deliver.",
+          },
+          steps: {
+            type: "array",
+            items: { type: "string" },
+            description: "Ordered implementation steps, each a short imperative sentence.",
+          },
+          files_to_edit: {
+            type: "array",
+            items: { type: "string" },
+            description: "Workspace-relative paths the plan will create or modify. List every edit location.",
+          },
+          trivial: {
+            type: "boolean",
+            description:
+              "True only for a single obvious action (one file, a few lines, one command). " +
+              "When the user enabled the skip-trivial-plan-approval setting, a trivial plan is approved automatically.",
+          },
+        },
+      },
+      async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+        const parsed = parseSuggestPlanArgs(args);
+        if ("error" in parsed) return { ok: false, content: parsed.error };
+        const plan: SuggestPlanArgs = parsed;
+        const taskId = ctx.taskId ?? "";
+        if (!taskId) {
+          return { ok: false, content: "suggest_plan requires an active task; no task is attached to this run." };
+        }
+
+        const record = createPlanApproval({ taskId, plan });
+        ctx.emit({
+          type: "plan_approval_required",
+          planApprovalId: record.id,
+          taskId,
+          tool: SUGGEST_PLAN_TOOL,
+          summary: record.summary,
+          steps: record.steps,
+          filesToEdit: record.filesToEdit,
+          trivial: record.trivial,
+        });
+
+        const status = await waitForPlanDecision(record.id, ctx.signal);
+        if (status !== "approved") {
+          const edited = status === "edited";
+          const detail =
+            status === "rejected"
+              ? "the user rejected the plan"
+              : edited
+                ? "the user edited the plan"
+                : `the plan ${status}`;
+          const revised = edited ? formatSuggestPlanPreview(record.editedPlan ?? plan) : "";
+          return {
+            ok: false,
+            content:
+              `suggest_plan was not approved (${detail}); no files were changed. ` +
+              (edited
+                ? `Re-present the revised plan below with suggest_plan before editing anything:\n\n${revised}`
+                : "Return to planning, revise the plan and present it again."),
+          };
+        }
+
+        return {
+          ok: true,
+          content: `Plan approved — you may now edit files and run commands.\n\n${formatSuggestPlanPreview(plan)}`,
+        };
+      },
+    },
     {
       name: PLAN_EXIT_TOOL,
       description:

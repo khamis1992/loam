@@ -40,6 +40,11 @@ export async function handleSchedulesRoutes(
       attempts: s.attempts ?? 0,
       lastError: s.lastError ?? null,
       enabled: s.enabled,
+      // D14: trigger metadata (never the webhook secret).
+      trigger: s.trigger ?? "cron",
+      githubEvents: s.githubEvents ?? null,
+      projectId: s.projectId ?? null,
+      playbook: s.playbook ?? null,
     }));
     sendJson(res, 200, { schedules });
     return true;

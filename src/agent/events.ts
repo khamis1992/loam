@@ -46,6 +46,13 @@ export interface Usage {
   promptTokens: number;
   completionTokens: number;
   durationMs: number;
+  /**
+   * Tokens the provider reported as served from its prompt cache. Undefined when
+   * the provider reports no cache telemetry, which is never treated as a miss.
+   */
+  cachedTokens?: number;
+  /** Tokens written into the cache on this request, when reported. */
+  cacheWriteTokens?: number;
 }
 
 export type AgentEvent =
@@ -80,12 +87,37 @@ export type AgentEvent =
   | { type: "replan"; round: number; reason: string }
   /** Sensitive-action gate: a host input action awaits an explicit user decision. */
   | { type: "approval_required"; approvalId: string; tool: string; summary: string }
+  /** Environment-issue report: a step cannot run because of the local environment. */
+  | { type: "environment_issue"; message: string; details?: string }
+  /** Pending plan approval (D4): a `suggest_plan` plan awaits the user's decision. */
+  | { type: "plan_approval_required"; planApprovalId: string; taskId: string; tool: string; summary: string; steps: string[]; filesToEdit: string[]; trivial: boolean }
   /** Plan mode: the task's local permission mode changed (plan_exit approval, user switch). */
   | { type: "permission_mode_changed"; mode: import("../policy/permissionModes.js").LocalPermissionMode; previousMode: import("../policy/permissionModes.js").LocalPermissionMode; reason: string }
   /** End-to-end verification of the completed task. */
   | { type: "verify"; verdict: Verdict; reason: string; parsed?: boolean }
   /** Context compression happened. */
-  | { type: "compaction"; step: 1 | 2; originalTokens: number; afterPruneTokens: number; finalTokens: number; summaryChars?: number; fallback?: boolean }
+  | { type: "compaction"; step: 1 | 2; originalTokens: number; afterPruneTokens: number; finalTokens: number; summaryChars?: number; fallback?: boolean; blocked?: boolean }
+  /**
+   * Prompt-cache (KV cache) accounting. Emitted on every completed provider
+   * request that reported cache telemetry, so clients can show reusable-token
+   * counters and a cold-cache notice.
+   */
+  | {
+      type: "cache_usage";
+      provider: string;
+      model: string;
+      promptTokens: number;
+      cachedTokens: number;
+      /** Present only when the provider reported a real miss/refresh. */
+      miss?: {
+        reason: string;
+        expectedTokens: number;
+        readTokens: number;
+        missedTokens: number;
+        documentedCause?: string;
+        message: string;
+      };
+    }
   /** A workspace file was published as a task artifact via artifact_publish. */
   | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string }
   /**

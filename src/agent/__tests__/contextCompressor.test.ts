@@ -2,21 +2,33 @@
  * Unit tests: the context compressor.
  *
  * The compressor triggers when the estimated token count exceeds a fraction of
- * the model's context window. It protects a head and tail, prunes old tool
- * outputs to an elision marker, then summarizes the middle with an auxiliary
- * model call. A tool_call is never separated from its tool_result, and a
- * summarizer failure degrades to pruning only.
+ * the model's context window or the window minus the safety buffer. It protects
+ * a head and tail, prunes old tool outputs to an elision marker, then summarizes
+ * the middle with an auxiliary model call using eight numbered sections. A
+ * tool_call is never separated from its tool_result, a PreCompact hook can veto
+ * the compaction, and a summarizer failure degrades to pruning only.
  */
 import assert from "node:assert";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, it, mock } from "node:test";
 
 import {
   compressContext,
   estimateTokens,
   getContextWindow,
+  getCompressionThreshold,
   ELISION_MARKER,
   SUMMARY_LABEL,
+  SUMMARY_SECTIONS,
+  isSummaryMessage,
+  extractSummary,
+  hasAllSummarySections,
+  buildReattachReminder,
 } from "../contextCompressor.js";
+import { ReadState } from "../../tools/readState.js";
+import { reminderMessage } from "../reminders.js";
 import type { Config } from "../../config.js";
 import type { ChatMessage, ChatResult, OllamaClient } from "../../ollama.js";
 import type { AgentEvent, Emit } from "../events.js";
@@ -62,6 +74,9 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
       protectLead: 3,
       protectTail: 20,
       targetRatio: 0.2,
+      bufferTokens: 20000,
+      reattachFiles: 5,
+      reattachFileChars: 4000,
       model: "",
       contextWindow: { "qwen2.5": 32768 },
     },
@@ -105,6 +120,20 @@ function sentPrompt(chat: { mock: { calls: Array<{ arguments: any[] }> } }): str
   return (opts?.messages ?? []).map((m) => m.content).join("\n");
 }
 
+/** A transcript big enough to cross the trigger threshold. */
+function bigTranscript(): ChatMessage[] {
+  const long = "z".repeat(40000);
+  return [
+    sysMsg("System"),
+    userMsg(long),
+    asstMsg(long),
+    userMsg(long),
+    asstMsg(long),
+    userMsg("latest user"),
+    asstMsg("final answer"),
+  ];
+}
+
 describe("context compressor", () => {
   it("estimates tokens from text length", () => {
     assert.equal(estimateTokens(""), 0);
@@ -135,6 +164,15 @@ describe("context compressor", () => {
     });
     assert.equal(getContextWindow(cfg, "qwen2.5:14b"), 32768);
     assert.equal(getContextWindow(cfg, "qwen2:7b"), 16384);
+  });
+
+  it("triggers on the window minus the buffer when that is earlier than the ratio", () => {
+    const cfg = makeConfig();
+    const window = getContextWindow(cfg, "qwen2.5:14b");
+    // ratio 0.5 -> 16384; window - buffer = 32768 - 20000 = 12768 -> earlier.
+    assert.equal(getCompressionThreshold(cfg, "qwen2.5:14b"), 12768);
+    assert.equal(getCompressionThreshold(makeConfig({ compression: { ...cfg.compression, bufferTokens: 1000 } }), "qwen2.5:14b"), 16384);
+    void window;
   });
 
   it("prunes old tool outputs to an elision marker (step 1)", async () => {
@@ -228,18 +266,7 @@ describe("context compressor", () => {
     const { ollama, chat } = makeOllama(() => okResult("Compact summary of the segment."));
     const { emit, events } = makeEmit();
 
-    const long = "z".repeat(40000);
-    const messages: ChatMessage[] = [
-      sysMsg("System"),
-      userMsg(long),
-      asstMsg(long),
-      userMsg(long),
-      asstMsg(long),
-      userMsg("latest user"),
-      asstMsg("final answer"),
-    ];
-
-    const result = await compressContext(cfg, ollama, messages, emit);
+    const result = await compressContext(cfg, ollama, bigTranscript(), emit);
 
     assert.equal(result.compressed, true);
     assert.equal(result.step, 2);
@@ -254,6 +281,19 @@ describe("context compressor", () => {
 
     const event = events.find((e) => e.type === "compaction");
     assert.equal(event?.type === "compaction" && event.step, 2);
+  });
+
+  it("asks the summarizer for the eight required sections", async () => {
+    const cfg = makeConfig({
+      compression: { ...makeConfig().compression, thresholdPercent: 0.01, protectLead: 1, protectTail: 1 },
+    });
+    const { ollama, chat } = makeOllama(() => okResult("summary"));
+    const { emit } = makeEmit();
+
+    await compressContext(cfg, ollama, bigTranscript(), emit);
+
+    const prompt = sentPrompt(chat);
+    for (const header of SUMMARY_SECTIONS) assert.match(prompt, new RegExp(header.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   });
 
   it("updates an existing summary instead of re-summarizing", async () => {
@@ -285,6 +325,22 @@ describe("context compressor", () => {
     assert.match(prompt, /Old summary with old facts\./);
   });
 
+  it("recognises and extracts its own summary label", () => {
+    assert.equal(isSummaryMessage(asstMsg(`[${SUMMARY_LABEL}]\nbody`)), true);
+    assert.equal(isSummaryMessage(userMsg(`[${SUMMARY_LABEL}]\nbody`)), false);
+    assert.equal(isSummaryMessage(asstMsg("plain answer")), false);
+
+    assert.equal(extractSummary(`[${SUMMARY_LABEL}]\nhello`), "hello");
+    assert.equal(extractSummary(`[${SUMMARY_LABEL}]:`), null);
+    assert.equal(extractSummary("no label here"), null);
+  });
+
+  it("checks the eight-section schema", () => {
+    const complete = SUMMARY_SECTIONS.join("\n");
+    assert.equal(hasAllSummarySections(complete), true);
+    assert.equal(hasAllSummarySections("1. Primary Request and Intent\nonly"), false);
+  });
+
   it("falls back to pruning only when the summarizer fails", async () => {
     const cfg = makeConfig({
       compression: { ...makeConfig().compression, thresholdPercent: 0.01, protectLead: 1, protectTail: 1 },
@@ -294,18 +350,7 @@ describe("context compressor", () => {
     });
     const { emit, events } = makeEmit();
 
-    const long = "z".repeat(40000);
-    const messages: ChatMessage[] = [
-      sysMsg("System"),
-      userMsg(long),
-      asstMsg(long),
-      userMsg(long),
-      asstMsg(long),
-      userMsg("latest user"),
-      asstMsg("final answer"),
-    ];
-
-    const result = await compressContext(cfg, ollama, messages, emit);
+    const result = await compressContext(cfg, ollama, bigTranscript(), emit);
 
     assert.equal(result.compressed, true);
     assert.equal(result.step, 1);
@@ -321,16 +366,7 @@ describe("context compressor", () => {
     const { ollama } = makeOllama(() => okResult("   "));
     const { emit, events } = makeEmit();
 
-    const long = "z".repeat(40000);
-    const messages: ChatMessage[] = [
-      sysMsg("System"),
-      userMsg(long),
-      asstMsg(long),
-      userMsg("latest user"),
-      asstMsg("final answer"),
-    ];
-
-    const result = await compressContext(cfg, ollama, messages, emit);
+    const result = await compressContext(cfg, ollama, bigTranscript(), emit);
 
     assert.equal(result.step, 1);
     const event = events.find((e) => e.type === "compaction");
@@ -385,5 +421,105 @@ describe("context compressor", () => {
     assert.equal(result.messages[1]!.content, "First user message");
     assert.equal(result.messages[result.messages.length - 1]!.content, "Last assistant response");
     assert.equal(result.messages[result.messages.length - 2]!.content, "Last user message");
+  });
+
+  it("re-attaches the live todo list as a hidden reminder after compaction", async () => {
+    const cfg = makeConfig({
+      compression: { ...makeConfig().compression, thresholdPercent: 0.01, protectLead: 1, protectTail: 1 },
+    });
+    const { ollama } = makeOllama(() => okResult("Summary."));
+    const { emit } = makeEmit();
+
+    const todos = [
+      { id: "todo-0", content: "Write the parser", status: "completed" as const },
+      { id: "todo-1", content: "Add tests", status: "in_progress" as const },
+    ];
+    const result = await compressContext(cfg, ollama, bigTranscript(), emit, undefined, { todos });
+
+    assert.equal(result.reminders.length, 1);
+    const reminder = result.reminders[0]!;
+    assert.equal(reminder.role, "user");
+    assert.match(reminder.content, /<system-reminder>/);
+    assert.match(reminder.content, /Live task list/);
+    assert.match(reminder.content, /Add tests/);
+    assert.equal(reminderMessage("probe").content.includes("<system-reminder>"), true);
+  });
+
+  it("re-attaches the todo list even when compaction finishes with pruning only", async () => {
+    // Pruning alone can drop the working context, so a step-1 compaction needs the
+    // re-attach reminder as much as a step-2 one does.
+    const cfg = makeConfig({
+      compression: { ...makeConfig().compression, thresholdPercent: 0.01, protectLead: 1, protectTail: 1 },
+    });
+    const { ollama } = makeOllama(() => okResult("Summary."));
+    const { emit } = makeEmit();
+
+    const messages: ChatMessage[] = [
+      sysMsg("System"),
+      userMsg("Go"),
+      asstMsg("", [{ function: { name: "tool_a", arguments: {} } }]),
+      toolMsg("tool_a", "z".repeat(20000)),
+      userMsg("Next"),
+      asstMsg("End"),
+    ];
+
+    const todos = [{ id: "todo-0", content: "Ship it", status: "in_progress" as const }];
+    const result = await compressContext(cfg, ollama, messages, emit, undefined, { todos });
+
+    assert.equal(result.step, 1, "pruning brought the transcript under the threshold");
+    assert.equal(result.reminders.length, 1);
+    assert.match(result.reminders[0]!.content, /Live task list/);
+    assert.match(result.reminders[0]!.content, /Ship it/);
+  });
+
+  it("re-attaches the most recently read files (newest first, truncated)", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-c8-"));
+    try {
+      const file = path.join(dir, "config.ts");
+      fs.writeFileSync(file, "const a = 1;\n".repeat(2000), "utf8");
+      const readState = new ReadState();
+      readState.record(file);
+
+      const body = buildReattachReminder({
+        readState,
+        workspace: dir,
+        todos: [],
+        reattachFiles: 5,
+        reattachFileChars: 4000,
+      });
+      assert.match(body, /Recently read files/);
+      assert.match(body, /config\.ts/);
+      assert.match(body, /snapshot truncated/);
+      assert.equal(body.length < fs.statSync(file).size, true, "the snapshot must be truncated");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("orders re-attached files newest first", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-c8-"));
+    try {
+      const older = path.join(dir, "older.ts");
+      const newer = path.join(dir, "newer.ts");
+      fs.writeFileSync(older, "older", "utf8");
+      fs.writeFileSync(newer, "newer", "utf8");
+      const readState = new ReadState();
+      readState.record(older, undefined, 1_000);
+      readState.record(newer, undefined, 2_000);
+
+      const body = buildReattachReminder({
+        readState,
+        workspace: dir,
+        todos: [],
+        reattachFiles: 5,
+        reattachFileChars: 4000,
+      });
+      const olderIdx = body.indexOf("older.ts");
+      const newerIdx = body.indexOf("newer.ts");
+      assert.ok(olderIdx >= 0 && newerIdx >= 0);
+      assert.ok(newerIdx < olderIdx, "the newest read must be re-attached first");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

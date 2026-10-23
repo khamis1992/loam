@@ -1,7 +1,7 @@
 import type { ChatMessage } from "../ollama.js";
 import type { ToolRegistry } from "../tools/registry.js";
 
-const FILE_TOOLS = ["file_read", "file_write", "file_edit", "file_stat", "file_list", "file_search", "file_mkdir", "file_view_image"];
+const FILE_TOOLS = ["file_read", "file_write", "file_edit", "file_stat", "file_list", "file_search", "grep", "glob", "file_mkdir", "file_view_image"];
 
 // ---------------------------------------------------------------------------
 // Named tool profiles
@@ -51,6 +51,7 @@ export const CODING_PROFILE: ToolProfile = {
     "web_search",
     "delegate_task",
     "plan_exit",
+    "suggest_plan",
     "finish",
   ],
 };

@@ -1,0 +1,12 @@
+{
+  "id": "task-004",
+  "title": "Rename variables for clarity",
+  "category": "refactor",
+  "language": "typescript",
+  "prompt": "`applyTax` in `src/cart.ts` uses single-letter names. Rename the parameters and local variable to `subtotal`, `taxRate` and `total` (in that reading order), keeping the exported name, the parameter order and the rounding behaviour identical. No single-letter identifiers should remain in the file.",
+  "testCommand": "node .eval/check.mjs",
+  "timeoutSec": 60,
+  "maxSteps": 12,
+  "forbidPatterns": [{ "path": "src/cart.ts", "pattern": "\\b(?:a|b|x)\\b" }],
+  "tags": ["naming", "readability"]
+}
