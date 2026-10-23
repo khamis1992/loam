@@ -239,9 +239,9 @@ describe("runConversationalMirofishAsync (M3 wiring)", () => {
     assert.ok(seed.model_calls > 0, "the seed records how many model calls it made");
   });
 
-  it("keeps the synchronous entry point backward compatible", () => {
+  it("keeps the synchronous entry point backward compatible", async () => {
     workspace = fs.mkdtempSync(path.join(os.tmpdir(), "loam-mf2-m3-async-"));
-    const res = runConversationalMirofish(workspace, { message: "Analyze the app", maxRounds: 1 });
+    const res = await runConversationalMirofish(workspace, { message: "Analyze the app", maxRounds: 1 });
     assert.equal(res.ok, true);
     assert.equal(res.intent, "full_application_analysis");
     assert.match(res.reply, /MiroFish/i);
@@ -322,7 +322,8 @@ describe("runConversationalMirofishAsync (M3 wiring)", () => {
     });
 
     assert.equal(res.intent, "full_application_analysis");
-    assert.equal(res.intent, runConversationalMirofish(ws, { message: "this is a unit test", maxRounds: 1 }).intent);
+    const syncIntent = (await runConversationalMirofish(ws, { message: "this is a unit test", maxRounds: 1 })).intent;
+    assert.equal(res.intent, syncIntent);
 
     fs.rmSync(ws, { recursive: true, force: true });
   });

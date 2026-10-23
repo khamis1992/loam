@@ -486,7 +486,8 @@ export interface PipelineResult {
 /** Input to the core pipeline. */
 export interface PipelineInput {
   settings: SimulationSettings;
-  caller: ModelCaller;
+  /** Omitted on the deterministic no-model path. */
+  caller?: ModelCaller;
   workspace: string;
   /** RAM-light default: 2 concurrent model calls. */
   concurrency?: number;
@@ -503,7 +504,8 @@ export interface MirofishChatRequest {
   message: string;
   target?: string;
   settings?: SimulationSettings;
-  caller: ModelCaller;
+  /** Omitted on the deterministic no-model path. */
+  caller?: ModelCaller;
   concurrency?: number;
   onProgress?: (event: { stage: string; message: string }) => void;
 }

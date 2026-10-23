@@ -73,7 +73,11 @@ export function validateLocaleProfile(value: unknown): LocaleProfile {
 
 /** Neutral, locale-agnostic fallback used only when the model cannot answer. */
 export function ruleBasedLocale(location?: LocationSetting | null): LocaleProfile {
-  const country = location?.country?.trim() || "Global";
+  // A city-only selection is still a real market: the country falls back to the
+  // city (then the region) rather than to "Global", so the personas the run
+  // derives keep the place the user actually named.
+  const country =
+    location?.country?.trim() || location?.city?.trim() || location?.region?.trim() || "Global";
   return {
     country,
     ...(location?.city?.trim() ? { city: location.city.trim() } : {}),
@@ -107,7 +111,7 @@ function localePrompt(opts: { location?: LocationSetting | null; context: string
     '  "country": "ISO country name",',
     '  "city": "primary city or empty string",',
     '  "region": "state/province/region or empty string",',
-    '  "currency": "ISO 4217 currency code (e.g. QAR, GBP, USD, EUR)",',
+    '  "currency": "ISO 4217 currency code for the market you resolved",',
     '  "languages": ["primary language tags in order of prominence"],',
     '  "dialect": "dialect/register note or empty string",',
     '  "incomeBands": [{"label":"low|middle|affluent","min":0,"max":1500,"currency":"ISO"}, ...],',
