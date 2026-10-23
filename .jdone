@@ -7806,7 +7806,7 @@ Depends on N4 + N9, both already merged into `manus-parity`.
     `remaining_estimate` honest, no meta-work steps);
   - 25.3 when to ask vs keep working (local/reversible R0-R1 defaults vs blocking
     `ask_user`; ask once in batch; never ask for progress);
-  - 25.4 when to fan out (right grain: `spawn_agent` / `delegate_to_child` / `code_session`
+  - 25.4 when to fan out (right grain: `spawn_agent` / `delegate_to_child` / `delegate_subagent` / `code_session`
     / `wide_research` / `deep_research`; self-contained branch briefs; respect
     `{{max_parallel_agents}}`, depth and budget; integrate like a reviewer);
   - 25.5 citing seeds, steps and evidence (recipe `id`s survive replans, run-graph node ids,
@@ -7816,7 +7816,7 @@ Depends on N4 + N9, both already merged into `manus-parity`.
   - 25.7 the completion node (created by the terminal `done` event; finish only through
     `finish`, which runs `.loam/verify.json`; on `blocked` leave a resumable state);
   - 25.8 mission hygiene (`progress.md`, live step status, restart-from-step is a user
-    action not a retry, clean up, report at phase boundaries).
+    action not a retry, clean up, report at each phase or ~10-15 min, not per step).
 - `src/agent/masterPrompt.ts`: `MISSION_SECTION_ID = "25"` and `missionSection()`.
   **§25 is deliberately outside `MASTER_ORDER`** - the same precedent as Appendix C
   (`CODING_MODE_SECTION_ID`), which `codingPrompt.test.ts` already documents as
@@ -7828,25 +7828,26 @@ Depends on N4 + N9, both already merged into `manus-parity`.
 - `src/agent/masterPromptText.ts`: regenerated via `npm run gen:master-prompt` (28 sections).
 
 ## A correctness fix made while authoring
-The first draft of 25.4 named `map_reduce` and `delegate_subagent` for fan-out. `git grep`
-against the registry showed neither exists; the reachable fan-out tools in
-`src/tools/runTools.ts` (`ALWAYS_ON_TOOLS`) are `spawn_agent`, `delegate_to_child`,
-`code_session`, `wide_research` and `deep_research`. The prompt now names only real tools,
-and a test asserts the two ghosts never appear.
+The first draft of 25.4 named `map_reduce` and `delegate_subagent` for fan-out. Measuring the repo's own resolution path (`resolveCompanionCapabilities` + `mergeAlwaysOnTools` + `registry.forAllowlist`, across every Loam mode x work mode) showed the two are not alike:
+`map_reduce` is **unreachable**: it exists as a tool object (`src/tools/mapReduce.ts:76`) and is returned by `createSpecAliasTools`, but that function is never called by the runtime, `map_reduce` is in no mode-catalog or work-mode allowlist and it is not in `ALWAYS_ON_TOOLS` (`src/server/runTools.ts`), so no run can call it.
+`delegate_subagent` is the opposite case and is **reachable**: it is registered at startup (`src/setup/runtime.ts:122`) and granted by the `team` work mode (`src/server/companionGateway.ts:34`), so §25.4 names it.
+`code_session`, `wide_research` and `deep_research` are the other reachable fan-out tools. The test asserts `map_reduce` never appears.
+§25.4 names only reachable tools.
 
 ## Facts checked against the code before they were written into the prompt
-- completion node `done:${seq}` -> `type: "complete"` (`src/agent/runGraph.ts:411`);
-- `message` semantics (`src/agent/specAliases.ts:409`);
-- the `finish` gate reads `.loam/verify.json` (`src/agent/finishTools.ts:15`);
-- `ask_user` (`src/agent/askUserGate.ts:25`);
-- budget badge `budget.percent` (`src/server/__tests__/sessionRuntime.test.ts`);
-- the R0-R1 tiers of §16 and the phase-boundary reporting rule of §19.
+- completion node `done:${seq}` -> `type: "complete"` (`src/graph/runGraph.ts:508-509`);
+- `message` semantics (`src/tools/specAliases.ts:409`);
+- the `finish` gate reads `.loam/verify.json` (`src/tools/finishTools.ts:19`);
+- `ask_user` (`src/tools/askUserGate.ts:25`);
+- budget badge `budget.percent` (`src/server/sessionRuntime.ts:189`; asserted at
+  `src/server/__tests__/sessionRuntime.test.ts:180`);
+- the R0-R1 tiers of §16 and the §19 milestone rule ("each phase, or every ~10-15 minutes of autonomous work").
 
 ## Acceptance tests (automated, all passing)
 - `src/agent/__tests__/codingPrompt.test.ts`: new suite "long-horizon mission prompt
   section (N19)" asserts §25 is authored in the asset but **not** in `MASTER_ORDER`,
   that `buildMasterPrompt` does not emit it, that it renders with its heading, that all
-  nine required rules are present, that it names only real tools, and that
+  nine required rules are present, that it names only reachable tools, and that
   `fillMasterSlots` leaves no placeholder behind.
 - `src/agent/__tests__/orchestratorRecipe.test.ts`: new e2e with the mock model. The
   harness now records the system prompt of every model turn. The test runs the same

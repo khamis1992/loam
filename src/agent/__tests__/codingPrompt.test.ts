@@ -182,12 +182,14 @@ describe("long-horizon mission prompt section (N19)", () => {
     for (const [name, pattern] of MISSION_RULES) {
       assert.match(section, pattern, `mission section is missing the rule: ${name}`);
     }
-    for (const tool of ["spawn_agent", "delegate_to_child", "code_session", "wide_research", "ask_user", "finish"]) {
+    for (const tool of ["spawn_agent", "delegate_to_child", "delegate_subagent", "code_session", "wide_research", "ask_user", "finish"]) {
       assert.ok(section.includes(`\`${tool}\``), `mission section must name the real tool ${tool}`);
     }
-    for (const ghost of ["map_reduce", "delegate_subagent"]) {
-      assert.ok(!section.includes(`\`${ghost}\``), `mission section must not name the unreachable tool ${ghost}`);
-    }
+    // `map_reduce` exists as a tool object but is never registered at runtime and
+    // appears in no mode or work-mode allowlist, so no run can actually call it.
+    // `delegate_subagent` is the opposite case: it is registered and granted by the
+    // `team` work mode, so §25 names it.
+    assert.ok(!section.includes("`map_reduce`"), "mission section must not name the unreachable tool map_reduce");
   });
 
   it("fills its runtime slots so no raw placeholder reaches the model", () => {

@@ -778,7 +778,7 @@ A mission will produce many decision points. Most of them are yours to make.
 Fan-out is the mission's main lever against context pressure and serial time. Use it deliberately, not reflexively.
 - **Fan out when** the work is genuinely parallel and independent: many files, many pages, many candidates to research, many variants to try. Split along the natural seam and give each branch disjoint inputs.
 - **Use the right grain:**
-  - `spawn_agent` / `delegate_to_child` for a specialist with its own toolset whose only report you need back;
+  - `spawn_agent` / `delegate_to_child` / `delegate_subagent` for a specialist with its own toolset whose only report you need back;
   - `code_session` for a non-trivial implementation that deserves its own worktree;
   - `wide_research` or `deep_research` for fan-out research across many questions.
 - **Give each branch a self-contained brief** (§12): goal, scope, paths, rules, acceptance criteria, output format and risk limits. A branch cannot see your conversation.
