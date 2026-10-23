@@ -11,6 +11,8 @@
  *  - a successful edit refreshes the snapshot so consecutive edits are allowed
  *  - a run context without a ReadState (isolated verifier / unit test) skips
  *    the guard entirely
+ *  - reads, writes, and deletes are published to the cross-session touch hooks
+ *    (jcode J8), so another live session can be told the file changed
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -147,5 +149,45 @@ describe("read-tracking guard", () => {
     const res = await run("file_edit", { path: "sample.txt", find: "beta", replace: "BETA" });
     assert.equal(res.ok, true);
     assert.equal(fs.readFileSync(target(), "utf8"), "alpha\nBETA\n");
+  });
+});
+
+describe("cross-session touch hooks (jcode J8)", () => {
+  it("publishes read, write, and remove with the content each one saw", async () => {
+    fs.writeFileSync(target(), "alpha\n", "utf8");
+    const events: string[] = [];
+    readState.hooks = {
+      read: (abs, content) => events.push(`read:${path.basename(abs)}:${content}`),
+      write: (abs, content) => events.push(`write:${path.basename(abs)}:${content}`),
+      remove: (abs) => events.push(`remove:${path.basename(abs)}`),
+    };
+
+    await run("file_read", { path: "sample.txt" });
+    await run("file_edit", { path: "sample.txt", find: "alpha", replace: "ALPHA" });
+    await run("file_write", { path: "sample.txt", content: "ALPHA\nBETA\n" });
+    await run("file_delete", { path: "sample.txt" });
+
+    // A read reports the exact content seen; a write reports the new content;
+    // a delete reports the path that is gone. The loop uses these to tell other
+    // live sessions that this file changed.
+    assert.deepEqual(events, [
+      "read:sample.txt:alpha\n",
+      "write:sample.txt:ALPHA\n",
+      "write:sample.txt:ALPHA\nBETA\n",
+      "remove:sample.txt",
+    ]);
+  });
+
+  it("forgets a moved file and publishes the new path as a write", async () => {
+    fs.writeFileSync(target(), "alpha\n", "utf8");
+    const events: string[] = [];
+    readState.hooks = {
+      write: (abs) => events.push(`write:${path.basename(abs)}`),
+      remove: (abs) => events.push(`remove:${path.basename(abs)}`),
+    };
+
+    await run("file_move", { from: "sample.txt", to: "moved.txt" });
+
+    assert.deepEqual(events, ["remove:sample.txt", "write:moved.txt"]);
   });
 });
