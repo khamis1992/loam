@@ -30,7 +30,11 @@ function fromEnv(name: string, fallback: string): string {
   return value && value.trim() ? path.resolve(value) : fallback;
 }
 
-export const DATA_DIR = fromEnv("MANUS_LOCAL_DATA_DIR", path.join(ROOT, "data"));
+export function dataDir(): string {
+  return fromEnv("MANUS_LOCAL_DATA_DIR", path.join(ROOT, "data"));
+}
+
+export const DATA_DIR = dataDir();
 export const SKILLS_DIR = fromEnv("MANUS_LOCAL_SKILLS_DIR", path.join(ROOT, "skills"));
 export const EVALS_DIR = fromEnv("MANUS_LOCAL_EVALS_DIR", path.join(ROOT, "evals"));
 export const UI_DIR = path.join(ROOT, "ui");
@@ -67,6 +71,10 @@ export interface Config {
   cloudModel?: { baseUrl: string; apiKey?: string };
   server: { host: string; port: number };
   agent: { maxSteps: number; temperature: number; requestTimeoutMs: number };
+  /** D19 session runtime: idle-to-sleep threshold and the per-session compute
+   *  budget. Optional so test configs and older config.json files keep working;
+   *  `loadConfig` fills it from DEFAULTS. */
+  session?: { idleMinutes: number; stepLimit: number; tokenLimit: number };
   workspace: string;
   policy: PolicyConfig;
   browser: { channel: string; headless: boolean; viewport: { width: number; height: number } };
@@ -101,6 +109,13 @@ export interface Config {
     maxSteps: number;
     /** Stage skill/memory writes for human approval instead of applying them. */
     writeApproval: boolean;
+  };
+  /** Repo-local skills (`.loam/skills`, `.agents/skills`) + post-session auto-suggest. */
+  skills: {
+    /** After a successful session, propose a new repo-local SKILL.md for approval. */
+    autoSuggest: boolean;
+    /** Model for suggestions ("" = the main model). */
+    suggestModel: string;
   };
   evaluation: {
     /** Run the configured suite on a fixed interval (continuous harness). */
@@ -185,6 +200,20 @@ export interface Config {
     contextWindow: Record<string, number>;
   };
   sessionLog: { enabled: boolean };
+  /** Neo run graph: record every agent event as a node of the task's run graph. */
+  runGraph?: { enabled: boolean };
+  /** Coding-model routing (C17): prefer the strongest available coder for
+   *  coding turns. The chain is a list of model ids (strongest first) matched
+   *  against the failover providers. It never contains API keys — keys stay in
+   *  the environment and are referenced by name through `apiKeyEnv`. */
+  coding?: {
+    /** Route coding turns through the coding chain (default: true). */
+    enabled: boolean;
+    /** Ordered coder preference list (strongest first). Empty = the failover order. */
+    chain: string[];
+    /** Append every edit tool call to the model-edit audit log (default: true). */
+    logEdits: boolean;
+  };
   /** Optional per-edit diagnostics overrides (LOAM.md may override these). */
   diagnostics?: import("./agent/diagnostics.js").DiagnosticSettings;
 }
@@ -195,6 +224,9 @@ const DEFAULTS: Config = {
   ollamaUrl: "http://127.0.0.1:11434",
   server: { host: "127.0.0.1", port: 3939 },
   agent: { maxSteps: 40, temperature: 0.2, requestTimeoutMs: 600000 },
+  // D19: sessions idle 30 minutes before their resources are reclaimed; the
+  // per-session compute budget warns at 80% and stops at 100% (both raisable).
+  session: { idleMinutes: 30, stepLimit: 40, tokenLimit: 500000 },
   workspace: path.join(ROOT, "workspace"),
   policy: {
     networkEnabled: true,
@@ -232,6 +264,7 @@ const DEFAULTS: Config = {
   screen: { enabled: true, fps: 1, quality: 60, maxWidth: 1280 },
   vision: { enabled: true, maxImagesPerStep: 2 },
   selfImprove: { enabled: true, reviewEvery: 1, model: "", maxSteps: 10, writeApproval: false },
+  skills: { autoSuggest: true, suggestModel: "" },
   evaluation: { enabled: false, intervalMinutes: 360, suite: "core", critique: true, keepRuns: 30, transcripts: true },
   selfPlay: { maxCases: 5 },
   orchestrator: {
@@ -287,6 +320,8 @@ const DEFAULTS: Config = {
     },
   },
   sessionLog: { enabled: true },
+  runGraph: { enabled: true },
+  coding: { enabled: true, chain: [], logEdits: true },
 };
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -313,6 +348,15 @@ export function loadConfig(): Config {
     console.warn(`[config] failed to parse ${p}: ${String(err)}`);
   }
   const cfg = merge(DEFAULTS, raw);
+  cfg.coding = { enabled: cfg.coding?.enabled ?? true, chain: cfg.coding?.chain ?? [], logEdits: cfg.coding?.logEdits ?? true };
+  const coderChainEnv = process.env.LOAM_CODER_CHAIN ?? process.env.MANUS_LOCAL_CODER_CHAIN;
+  if (coderChainEnv && coderChainEnv.trim()) {
+    cfg.coding.chain = coderChainEnv
+      .split(/[,\s]+/)
+      .map((m) => m.trim())
+      .filter((m) => m.length > 0);
+  }
+  if (process.env.LOAM_CODER_ROUTING === "0" || process.env.LOAM_CODER_ROUTING === "false") cfg.coding.enabled = false;
   if (process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT) cfg.server.port = Number(process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT);
   if (process.env.LOAM_HOST || process.env.MANUS_LOCAL_HOST) cfg.server.host = (process.env.LOAM_HOST || process.env.MANUS_LOCAL_HOST)!;
   const envRoot = process.env.LOAM_ROOT || process.env.MANUS_LOCAL_ROOT;

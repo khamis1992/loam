@@ -4,7 +4,7 @@
 /*
  * One-off repair for mojibake introduced by decoding UTF-8 bytes as
  * Windows-1252 and re-saving the result. Arabic and typographic characters
- * became sequences such as "ÃƒÆ’Ã‹Å“Ãƒâ€šÃ‚Â§" (Arabic) or "Ã¢â‚¬Â¦" ("…"). encoding-check: allow
+ * became sequences such as "ÃƒÆ’Ã‹Å“Ãƒâ€šÃ‚Â§" (Arabic) or "Ã¢â‚¬Â¦" ("…").  // encoding-check: allow
  *
  * Repair reverses that by re-encoding a string as Windows-1252 and decoding
  * the bytes as UTF-8, repeating until the text is stable. Because the
@@ -75,7 +75,7 @@ const MOJIBAKE_CHARS = (() => {
   return set;
 })();
 
-// Residue that proves a value is still mis-decoded (Ã, Â, Ø, Ù, â€). encoding-check: allow
+// Residue that proves a value is still mis-decoded (Ã, Â, Ø, Ù, â€).  // encoding-check: allow
 const RESIDUE = /[\u00c3\u00c2\u00d8\u00d9\u00e2\u20ac]/;
 
 const looksMojibake = (str) => {

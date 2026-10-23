@@ -15,9 +15,10 @@ const MANAGED_SESSIONS = ["managed_child_start", "managed_child_message", "manag
 const PREVIEW = ["preview_serve", "preview_status", "preview_stop", "preview_screenshot"];
 const GIT = ["git_branch", "git_commit", "git_status_diff", "pr_create", "pr_view", "pr_comments", "pr_comment_checklist"];
 /** Control/communication tools shared by every mode (§6.1). `plan_exit` is the
- *  escape hatch from the read-only plan permission mode (C13), so it is exposed
- *  in every mode the way `finish` is. */
-const CONTROL = ["think", "finish", "plan", "phase_set", "message", "plan_exit"];
+ *  escape hatch from the read-only plan permission mode (C13) and `suggest_plan`
+ *  (D4) presents a plan for approval without changing the permission mode, so
+ *  both are exposed in every mode the way `finish` is. */
+const CONTROL = ["think", "finish", "plan", "phase_set", "message", "plan_exit", "suggest_plan"];
 /** Tools added to modes that can edit files. */
 const EDIT_EXTRA = ["file_multi_edit"];
 /** Build-only tools: secrets vault and the OpenCode coding sessions. */
@@ -46,13 +47,13 @@ export const LOAM_MODES: LoamMode[] = [
     fields: [{ id: "brief", label: "ماذا سنبني؟", placeholder: "المستخدمون والوظائف المطلوبة", multiline: true }, { id: "acceptance", label: "معايير الإنجاز", placeholder: "ما السلوك الذي يجب اختباره قبل التسليم؟", multiline: true }],
     starters: [{ label: "صفحة تعريفية", prompt: "ابنِ صفحة تعريفية عربية متجاوبة مع معاينة محلية واختبر عرض الهاتف." }, { label: "أصلح مشروعًا", prompt: "افحص ملفات المشروع المرفقة، حدد العطل وأصلحه ثم شغّل الاختبارات المناسبة." }] },
   { id: "write", label: "Loam Write", labelAr: "اكتب", icon: "✎", hue: 55, hue2: 75,
-    tagline: "أفكار تجد صياغتها", description: "اكتب المستندات وأنشئ العروض شريحة بشريحة في محرر حي قابل للتعديل مباشرة.", outputHint: "مستند منسق قابل للتنزيل. Use loam_studio (or loam_document) for the content, then office_export for the .docx/.pptx file, and office_import first for an uploaded file; do not generate office files via shell/python unless a tool is missing.", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_document", "loam_studio", "office_import", "office_export", "office_status", "office_edit", ...CONTROL], panels: ["studio", "files"],
+    tagline: "أفكار تجد صياغتها", description: "اكتب المستندات وأنشئ العروض شريحة بشريحة في محرر حي قابل للتعديل مباشرة.", outputHint: "مستند منسق قابل للتنزيل. An attached .docx/.xlsx/.pptx opens in the live Craft editors (office_craft); otherwise use loam_studio (or loam_document) for the content, then office_export for the file, and office_import first for an uploaded file; do not generate office files via shell/python unless a tool is missing.", readOnly: false,
+    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_document", "loam_studio", "office_import", "office_export", "office_status", "office_craft", "office_edit", ...CONTROL], panels: ["studio", "files"],
     fields: [{ id: "brief", label: "نوع المستند ومحتواه", placeholder: "تقرير، رسالة، مقترح أو قصة", multiline: true }, { id: "tone", label: "الجمهور والنبرة", placeholder: "لمن نكتب؟ وما الطول والأسلوب المطلوبان؟" }],
     starters: [{ label: "مقترح عمل", prompt: "صغ مقترح عمل منظمًا بالأهداف والنطاق والجدول والمخرجات، واحفظه مستندًا." }, { label: "حرر مسودة", prompt: "راجع المسودة المرفقة وحسّن وضوحها مع المحافظة على المعنى." }] },
   { id: "data", label: "Loam Data", labelAr: "حلّل", icon: "▥", hue: 175, hue2: 150,
-    tagline: "أرقام تشرح ما يحدث", description: "أنشئ الجداول وحرّر الخلايا مباشرة، وافحص بياناتك في مساحة عمل خاصة بالمهمة.", outputHint: "ملخص بيانات ونتائج قابلة للتدقيق. Use loam_dataset/loam_studio for spreadsheets and charts, then office_export for the file; do not generate office files via shell/python unless a tool is missing.", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_dataset", "loam_studio", "office_import", "office_export", "office_status", "office_edit", ...CONTROL], panels: ["studio", "files"],
+    tagline: "أرقام تشرح ما يحدث", description: "أنشئ الجداول وحرّر الخلايا مباشرة، وافحص بياناتك في مساحة عمل خاصة بالمهمة.", outputHint: "ملخص بيانات ونتائج قابلة للتدقيق. An attached .xlsx opens in the live Craft spreadsheet editor (office_craft); otherwise use loam_dataset/loam_studio for spreadsheets and charts, then office_export for the file; do not generate office files via shell/python unless a tool is missing.", readOnly: false,
+    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_dataset", "loam_studio", "office_import", "office_export", "office_status", "office_craft", "office_edit", ...CONTROL], panels: ["studio", "files"],
     fields: [{ id: "question", label: "سؤال التحليل", placeholder: "ما القرار الذي تريد أن تدعمه البيانات؟", multiline: true }, { id: "columns", label: "المقاييس والأعمدة", placeholder: "حدّد الأعمدة أو الفترة أو قواعد جودة البيانات" }],
     starters: [{ label: "افحص جودة البيانات", prompt: "افحص ملف CSV المرفق ولخص عدد الصفوف والقيم المفقودة والأعمدة الرقمية دون اختلاق بيانات." }, { label: "استخرج مؤشرات", prompt: "استخرج المؤشرات الرئيسية من البيانات المرفقة واحفظ تقريرًا يشرح الحسابات وحدودها." }] },
   { id: "media", label: "Loam Studio", labelAr: "صمّم", icon: "◇", hue: 25, hue2: 45,

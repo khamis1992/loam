@@ -103,7 +103,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   // Always hand tools a WriteGate object; per-write gateActive() decides staging vs. direct apply.
   const gate = writeGate;
   if (memory) registry.registerAll(createMemoryTools(memory, { gate }));
-  registry.registerAll(createSkillTools({ gate }));
+  registry.registerAll(createSkillTools({ gate, ollama, projectRoot: cfg.workspace }));
   registry.registerAll(sessionTools);
   registry.registerAll(createLoamTools());
   registry.registerAll(createLoamServiceTools());
