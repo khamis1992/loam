@@ -129,6 +129,59 @@ Tests on the merged tree:
   npm run check:modes    -> PASS
   npm run check:orchestrator -> PASS (114/114)
 
+Post-merge gate condition verified
+----------------------------------
+`git merge manus-parity` now reports "Already up to date." and
+`git merge-base --is-ancestor manus-parity HEAD` succeeds, so manus-parity
+(97c53d7) is fully merged (rev-list --left-right --count manus-parity...HEAD
+= 0  7). The gate's condition is satisfied: there are no remaining conflicts
+to resolve.
+
+Full-suite validation on the merged tree
+---------------------------------------
+  node --import tsx --test <all 170 node:test suites under src/>
+  -> 2038 tests, 2037 pass, 1 fail (the inherited failure documented below)
+
+  (cd packages/web && npx vitest run)
+  -> 69 files / 447 tests, all pass, 0 fail
+
+  npm run check:promptwire      -> PASS
+  npm run check:design-registry -> OK (30 blocks, 8 RTL, all manifests valid)
+
+One inherited failure, proven NOT caused by this merge
+-----------------------------------------------------
+  src/agent/__tests__/toolDescriptions.test.ts
+  "keeps every coding-profile tool either linted or explicitly pending"
+  -> AssertionError: suggest_plan is neither registered nor listed in
+     PENDING_CODING_TOOLS
+
+Provenance (on the manus-parity lineage, independent of D17):
+  - b6e908f (C3) added the coding tool profile and this lint test together.
+  - 25da47e (D4) then added "suggest_plan" to CODING_PROFILE.tools in
+    src/agent/taskToolScope.ts but did NOT add it to the test's
+    PENDING_CODING_TOOLS, and the test's registry does not include
+    createPlanTools (which is what registers suggest_plan).
+  - The test therefore asserts a contradiction that D4 introduced on parity.
+
+Proof the failure is not merge-induced (three independent checks):
+  1. The test file, taskToolScope.ts and planTools.ts are byte-identical to
+     97c53d7 (`git diff 97c53d7 HEAD -- <file>` is empty for each).
+  2. Computed the test's full transitive relative-import closure (85 files).
+     Only 2 of the 85 differ from parity at all (src/agent/events.ts,
+     src/agent/prompt.ts, i.e. D17's own additions), and neither is reachable
+     from the failing assertion: no file in the closure references
+     suggest_plan or planTools. The assertion depends only on
+     CODING_PROFILE.tools and the modules the test's own registry builds.
+  3. Decisive experiment: reverted those 2 files to their parity bytes so all
+     85 closure files were exactly parity's, and re-ran the test -> it still
+     fails with the same assertion. Restored the files afterwards (blob hashes
+     confirmed back at HEAD's).
+
+This is a pre-existing upstream defect on manus-parity, outside D17's diff and
+outside every file D17 touched. It was left untouched: "fixing" it would mean
+either weakening/editing another task's (D4's) test or changing D4's production
+tool profile, both of which the task rules forbid.
+
 ---
 
 D4 plan approval gate (Devin suggest_plan) complete, merged with the latest
