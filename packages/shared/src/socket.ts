@@ -33,6 +33,9 @@ export interface JoinSession extends Base {
   type: 'join_session';
   sessionId: string;
   lastMessageId?: string;
+  /** BUILD_SPEC §6.4: highest durable log sequence already rendered. The server
+   *  replays by sequence when this is present, otherwise by `lastMessageId`. */
+  lastSeq?: number;
   version: 2;
 }
 
@@ -69,6 +72,8 @@ export interface UserMessage extends Base {
     worktreeEnabled?: boolean;
     /** Option 18: composer model tier ("max" | "standard" | "lite" | "flex"). */
     modelTier?: string;
+    /** Neo N3: opt this run into the user's Knowledge Garden (kb_* tools). */
+    knowledge?: boolean;
     /** Neo N10: composer output type (auto|text|image|video|slides|website). */
     outputType?: string;
     /** Neo N10: composer effort level (fast|max). */
@@ -92,6 +97,8 @@ export interface ServerEnvelope<E extends ChatEvent = ChatEvent> {
   timestamp: number;
   event: E;
   webdevAddonEnabled?: boolean;
+  /** BUILD_SPEC §6.4: the durable log sequence of this frame. */
+  seq?: number;
 }
 
 export interface ChatEventBase extends Base {

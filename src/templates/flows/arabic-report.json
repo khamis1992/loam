@@ -1,0 +1,11 @@
+{
+  "id": "arabic-report",
+  "title": "Arabic Report",
+  "description": "Write a formal Arabic report with proper RTL formatting, headings, and structured sections.",
+  "prompt": "اكتب تقريرًا رسميًا باللغة العربية حول أداء المشروع في الربع الأخير. يجب أن يتضمن التقرير مقدمة ونظرة عامة على النتائج الرئيسية وجدولًا للبيانات وقسمًا للتوصيات وخاتمة. استخدم تنسيقًا صحيحًا من اليمين إلى اليسار مع عناوين واضحة وتنسيق احترافي.",
+  "mode": "write",
+  "effort": "max",
+  "outputType": "text",
+  "icon": "📝",
+  "category": "Writing"
+}
