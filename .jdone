@@ -1,3 +1,64 @@
+CR-03 follow-up: the craft edit-intent detector is verb-gated, so ordinary questions no
+longer auto-open the Craft editor; all gates green (commit 4cb92f2).
+
+## The defect this fixes
+The post-commit audit found a real bug in my own `CRAFT_EDIT_INTENT_RE`: the alternation
+listed bare nouns alongside edit verbs (`document`, `layout`, `paragraph`, `size`,
+`color`, `background`, `page`, ...). Because those nouns are exactly the words an
+innocent question uses, **13 of 20 innocent questions matched** and auto-opened the
+editor: "what is this document about?", "is this document editable?", "how many pages are
+in this document?", "what color is the background?". Confirmed with a throwaway vitest
+probe before changing anything, so the defect was measured rather than assumed.
+
+## Root cause, and the second bug it hid
+The regex was noun-based instead of verb-based, so a mention of a file was treated as a
+request to edit it. Fixing that exposed a second, independent bug: **JS `\b` only treats
+`[A-Za-z0-9_]` as word characters**, so `\b` never matches around an Arabic letter and the
+Arabic verb list matched nothing at all. Both had to be fixed together.
+
+## What changed in `autoOpen.ts`
+- Arabic elements now use Unicode property lookarounds (`(?<![\p{L}\p{N}])` /
+  `(?!\p{L}\p{N})`) instead of `\b`, and the RegExp is compiled with the `u` flag, which
+  `\p{...}` requires. The English elements keep `\b`, since their operands are ASCII.
+- Every entry is now a verb or verb phrase: `edit|modify|reformat|restyle|retouch|
+  redesign|reframe|fix|update|change|revise|polish|tweak|add|insert|append|remove|delete|
+  replace|rearrange|reorder|resort|crop|cut|trim|resize|rescale|rotate|flip|scale|zoom|
+  enhance|brighten|darken|sharpen|blur|recolor|recolour|realign|align|indent|merge|split|
+  export|print|save as|download as` (Arabic equivalents in the same shape).
+- Bare nouns are gone. `color`/`colour` alone is not intent (only `recolor`); `download`
+  alone is not intent (only `download as`), so "can you download this for me?" no longer
+  matches.
+- Soft-request openers (`please`, `can you`, `could you`, `would you`, `i want`,
+  `i need`, `lets` / Arabic `أريد`, `أحتاج`, `لو سمحت`, `من فضلك`) only count when an
+  edit verb follows in the same span, so "I want to download a file" stays inert.
+- "make the background darker" is handled explicitly (`make` + a comparative within two
+  words), because the comparative is the request and `darker` alone is ambiguous.
+- The malformed array left by the earlier patch (an element closed early, orphaning the
+  following `+ '...'` continuations) is repaired; the module now parses.
+
+## Tests
+`workspace/__tests__/craftAutoOpen.test.ts` gained two cases that pin the new behaviour:
+- "does not match innocent questions that only mention a file" — 21 questions that must
+  NOT match, including the 13 that previously matched.
+- "still matches real edit requests" — 10 requests that MUST match.
+The existing Arabic cases (`صمّم الغلاف وأضف بطاقة`, `أضف تأثير الأزرق عليها`,
+`عدّل الفقرة الأولى`) and the pre-existing `autoOpen.test.ts` case ("Please cut the
+document", which needs `cut`) all still pass. No test was weakened or skipped; the only
+edit to an existing file added coverage.
+
+## Gates (run from the worktree root on the committed tree, 4cb92f2)
+- `npx tsc --noEmit` (root)                        -> exit 0
+- `(cd packages/web && npx tsc --noEmit)`          -> exit 0
+- `npm run build:server`                           -> exit 0 (dist/server.cjs 19.3mb)
+- `(cd packages/web && npx next build)`           -> exit 0 (compiled successfully)
+- `(cd packages/web && npx vitest run)`           -> 75 files / 504 tests, all pass
+- `npm run check:encoding`                         -> OK (no BOM, no mojibake, all JSON valid)
+
+The throwaway probe and the one-shot repair scripts were deleted before committing; the
+working tree is clean and both commits are on `khamis1992/cr-03`.
+
+---
+
 CR-03 complete: attached files open in the matching Loam Craft app; all gates green.
 
 ## What was built
