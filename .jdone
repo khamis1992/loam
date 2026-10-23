@@ -78,10 +78,56 @@ resolved by keeping BOTH sides; no test was weakened and no code was dropped:
   4. src/agent/events.ts: `environment_issue` (D17) + `plan_approval_required` (D4)
      variants both kept.
   5. src/protocol/events.ts: both event imports and both switch cases kept.
-  6. src/protocol/socket.ts: both `environment_issue` and `plan_approval_required`
+     6. src/protocol/socket.ts: both `environment_issue` and `plan_approval_required`
      decode branches kept.
-  7. src/protocol/types.ts: `EnvironmentIssueEvent` + the D4 plan-approval events
+     7. src/protocol/types.ts: `EnvironmentIssueEvent` + the D4 plan-approval events
      both kept.
+
+The merge also exposed one real defect, fixed (not worked around):
+- `src/graph/runGraph.ts`: manus-parity made the `AgentEvent` switch exhaustive, so
+  D17's `environment_issue` event hit the `default` arm and tsc failed with
+  "Type '...environment_issue...' is not assignable to type 'never'". It is now
+  mapped to a finished `note` node (the report is terminal: the agent records it and
+  continues rather than asking the user), and a new case in
+  `src/graph/__tests__/runGraph.test.ts` covers it. D17 shipped before the exhaustive
+  switch existed on parity, so this was a merge-time interaction, not a pre-existing
+  failure.
+
+Post-merge gates (all run from the worktree root on the merged tree, commit c3d1fe1)
+-------------------------------------------------------------------------------------
+  1. npx tsc --noEmit                              PASS
+  2. npm run build:server                          PASS (dist/server.cjs 19.2mb, pdf worker copied)
+  3. (cd packages/web && npx next build)           PASS (25 static pages)
+  4. (cd packages/web && npx tsc --noEmit)          PASS
+
+Tests on the merged tree:
+  node --import tsx --test \
+    src/tools/__tests__/environmentIssueTools.test.ts \
+    src/protocol/__tests__/environmentIssue.test.ts \
+    src/agent/__tests__/prompt.test.ts \
+    src/server/__tests__/runTools.test.ts
+  -> 25 tests, 25 pass, 0 fail
+
+  node --import tsx --test src/graph/__tests__/runGraph.test.ts \
+    src/tools/__tests__/planApproval.test.ts
+  -> 30 tests, 30 pass, 0 fail
+
+  node --import tsx --test src/agent/__tests__/toolProfile.test.ts \
+    src/policy/__tests__/permissionModes.test.ts src/modes/__tests__/catalog.test.ts
+  -> 23 tests, 23 pass, 0 fail
+
+  node --import tsx --test src/agent/__tests__/codingPrompt.test.ts
+  -> 8 tests, 8 pass, 0 fail  (the previously-failing snapshot now passes on the
+     merged tree: parity refreshed the committed snapshot)
+
+  cd packages/web && npx vitest run \
+    src/components/chat/__tests__/EnvironmentIssueCard.test.tsx \
+    src/components/chat/__tests__/environmentIssueEventList.test.tsx
+  -> 4 tests, 4 pass, 0 fail
+
+  npm run check:encoding -> OK (no BOM, no mojibake, all JSON valid)
+  npm run check:modes    -> PASS
+  npm run check:orchestrator -> PASS (114/114)
 
 ---
 
