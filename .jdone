@@ -66,6 +66,176 @@ Test command:
 
 ---
 
+## H3 gate-fix session note (2026-10-23)
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+The only conflicted file was the tracked rollup marker `.jdone`: this branch (HEAD) had the
+H3 correction-detector report at the top, manus-parity had the O1 gate-fix report at the
+top, and the two top-of-file additions could not be auto-merged. Resolved as a superset:
+the H3 report is kept in full above, and the entire parity rollup (O1 + D15 + V11 + J3 +
+H0 + O0 + D2 + D10 + D19 + D17 + D4 + N20) is kept in full below. Verified mechanically
+with `git diff --no-index` that the resolved file contains every line of both conflict
+sides (zero `<` lines against either side), so nothing was dropped. No source file
+conflicted and no source file was edited: the H3 deliverables are unchanged from commit
+`f40f2d9` and the parity deliverables are unchanged from commit `83b6b8a`.
+
+## O1 gate-fix session: merge with manus-parity, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+### Root cause
+The only conflicted file was the tracked rollup marker `.jdone`. Both sides prepended a
+new report at the same top-of-file anchor (O1 on this branch; V11, then D15, then H1 on
+manus-parity), so git could not auto-merge the two additions. No source file conflicted
+and no source file needed editing: the O1 deliverables (`src/protocol/eventLog.ts` +
+`src/protocol/__tests__/eventLog.test.ts`, commit `83b6b8a`) were already committed and
+present.
+
+### What was done
+Three sequential merges, each resolving `.jdone` by keeping BOTH reports in full:
+
+1. `git merge manus-parity` (parity tip `35c8470`, V11) -> conflict in `.jdone`.
+   Resolved as a superset: the O1 report and the V11 report are both present, and the
+   `## Preserved: manus-parity rollup (...)` header is kept once. Committed as `2f42aa9`.
+2. manus-parity advanced again while the session ran (tip `a8723e8`, D15). Second merge
+   conflicted `.jdone` again with the same shape. Resolved the same way: O1 + D15 + V11 +
+   the rollup. Committed as `c60a574`.
+3. manus-parity advanced once more (H1, `learning/harness/types.ts`). That merge applied
+   cleanly with no conflicts. Committed as `579ff21`.
+
+Verified mechanically that the resolved `.jdone` is a **superset of both conflict sides**:
+`git diff --no-index` between each stage-2/stage-3 blob and the working file produced zero
+`<` lines (nothing dropped from either side). No test was weakened, deleted or skipped and
+no source file was changed.
+
+### Gate condition verified
+`git merge manus-parity` reports "Already up to date.", `git merge-base --is-ancestor
+manus-parity HEAD` exits 0, and `git rev-list --left-right --count manus-parity...HEAD` is
+`0  7` (parity fully merged, zero parity commits missing). No conflict markers remain in
+the tree and `git status --porcelain` is empty.
+
+### Gates (all run from the worktree root on the committed tree)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled, 25/25 static pages)
+- `node --import tsx --test src/protocol/__tests__/eventLog.test.ts`
+                                              -> tests 11, pass 11, fail 0
+- `node --import tsx --test src/protocol/__tests__/*.test.ts` -> tests 18, pass 18, fail 0
+- `(cd packages/web && npx vitest run)`       -> 72 files / 472 tests, all pass
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `git diff manus-parity...HEAD` contains 0 added lines with the mojibake marker
+
+Full-suite run `node --import tsx --test "src/**/*.test.ts"` -> tests 2273, pass 2270,
+fail 3. All three are the pre-existing, environment/inherited failures documented in the
+preserved reports below and are byte-identical to manus-parity (`git diff manus-parity...
+HEAD` is empty for each):
+
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered
+   nor listed in PENDING_CODING_TOOLS". Inherited D4 defect.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing".
+   Environmental: `%TEMP%` sits inside a git repo on this host. Re-verified: 3 pass /
+   1 fail on its own, identically on parity.
+3. `src/tools/__tests__/search.test.ts` -> "greps and globs the repository in under 1
+   second" (1161ms vs a 1000ms budget). Load-sensitive: 19/19 pass when run on its own.
+
+### Files
+- `.jdone` only (merge resolution + this report). No source file was modified by this
+  session; the O1 deliverables are unchanged from commit `83b6b8a`.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  node --import tsx --test src/protocol/__tests__/eventLog.test.ts
+  npm run check:encoding
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was added or corrupted. Working tree clean.
+
+---
+
+O1 complete: durable append-only event log (`src/protocol/eventLog.ts` +
+`src/protocol/__tests__/eventLog.test.ts`), implemented from BUILD_SPEC §6.1 and
+committed as `83b6b8a`. This session fixed the false-positive `arabic` gate and
+merged the latest manus-parity.
+
+## The failure that was fixed
+
+`.jgatefail.txt` reported that added lines contained the mojibake marker (three ASCII
+question marks in a row), i.e. Arabic text corrupted by shell writes, and asked for the
+correct Arabic to be restored using file tools only. The line it quoted is the
+acceptance criterion itself (`.jtask.md:27`), not code.
+
+The previous session ran a shell `findstr` sweep over the worktree and then committed
+only the two source files, leaving the tree dirty. The gate round-2 scan therefore
+picked up that shell artifact as an "added line". No Arabic was ever corrupted: the
+Arabic fixture in the test file round-trips byte-exactly (see below).
+
+## Root cause and what was done
+
+1. **False positive on the `arabic` gate.** The gate scans added diff lines for the
+   three-question-mark mojibake marker. The O1 diff contains none:
+   `src/protocol/__tests__/eventLog.test.ts` stores its Arabic fixture as valid UTF-8
+   (codepoints 645 631 62d 628 627; no BOM, no U+FFFD, no cp1252 mojibake sequence),
+   and `npm run check:encoding` exits 0 ("no BOM, no mojibake, all JSON valid").
+   Verified mechanically:
+   - `git diff manus-parity...HEAD` piped through `findstr /r "^\+.*<marker>"` -> no matches (0 of 341 added lines).
+   - runner-equivalent PowerShell guard (`git diff manus-parity...HEAD` + `git diff`,
+     filtered to `^\+[^+]` containing the marker) -> COUNT=0.
+   No file content was changed to satisfy the gate and no test was weakened; the
+   false positive is gone because the shell-echo artifact is no longer in the tree.
+2. **Dirty tree.** The worktree had `.jdone` deleted and untracked scratch files under
+   `tmp/` (some of which echoed the gate failure text, and one of which literally
+   contained the marker as part of that echoed text). Those scratch files are removed.
+3. **Out-of-date with manus-parity.** The branch was 1 commit ahead of parity's tip
+   `1cbf726` (H0). `git merge manus-parity` applied cleanly with the `ort` strategy
+   (no conflicts) and brought in `docs/re/harness2-H0.md` plus the tracked `.jdone`
+   rollup. Committed as merge `63dfff1`. `git rev-list --left-right --count
+   manus-parity...HEAD` = `0  2`, and `git merge manus-parity` now reports
+   "Already up to date."
+
+## Acceptance criteria (all covered by passing automated tests)
+
+| Plan row acceptance | Covered by |
+|---|---|
+| gap-free seq 1..N | `allocates gap-free sequence numbers 1..N per session`, `keeps sequences independent per session` |
+| idempotent append returns same seq | `is idempotent: the same idempotency key returns the same event`, `scopes idempotency keys to their session` |
+| UPDATE throws 'immutable' | `rejects UPDATE on session_events` |
+| DELETE throws 'immutable' | `rejects DELETE on session_events` |
+| purge works only through `purgeSession` | `purgeSession deletes rows, and only that session's rows` (also asserts the escape hatch is cleared afterwards) |
+
+Additional coverage: persistence across a restart, unknown `kind` and circular-payload
+rejection, the read helpers (`after`, `lastOfKind`, `headSeq`, `seqOfId`,
+`sessionIds`), and explicit `id`/`turnId` fields. The test points `LOAM_DATA_DIR` at
+a throwaway temp dir before importing the store, so no real data is touched.
+
+## Gates (all run from the worktree root on the merged tree)
+
+- `npx tsc --noEmit`                              -> exit 0
+- `npm run build:server`                          -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`           -> exit 0 (compiled, 25/25 static pages)
+- `node --import tsx --test src/protocol/__tests__/eventLog.test.ts`
+                                                  -> tests 11, pass 11, fail 0
+- `npm run check:encoding`                        -> OK (no BOM, no mojibake, all JSON valid)
+- `git diff manus-parity...HEAD` contains 0 lines with the mojibake marker
+
+Test commands:
+
+    npx tsc --noEmit
+    npm run build:server
+    (cd packages/web && npx next build)
+    node --import tsx --test src/protocol/__tests__/eventLog.test.ts
+    npm run check:encoding
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or
+skipped. No Arabic text was added or corrupted; the only Arabic in the change set
+is the pre-existing fixture in the test, still valid UTF-8.
+
+
+
 D15 — PR reviewer + bug catcher: DONE
 
 Summary
@@ -142,6 +312,8 @@ Both failures are pre-existing and NOT caused by D15:
 No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
 
 ---
+
+V11 complete: design_critique — vision rubric critique loop for generated UIs.
 
 ## Preserved: manus-parity .jdone (V11 design_critique report)
 
@@ -253,7 +425,8 @@ Test commands
   (cd packages/web && npx vitest run)
   node --import tsx --test src/design/__tests__/critique.test.ts src/tools/__tests__/designCritique.test.ts
 
----
+
+## Preserved: manus-parity rollup (H0 + O0 + D2 + D10 + D19 + D17 + D4 + N20)
 
 J3 complete: edit-tool miss hints + post-edit context.
 
