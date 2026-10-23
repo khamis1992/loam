@@ -24,9 +24,8 @@ import { Dialog } from '@/components/ui/Dialog';
 type Notice = { kind: 'ok' | 'error'; text: string } | null;
 
 export function DataControlsPane() {
-  const [settings, setSettings] = useState<{ trainingOptOut?: boolean; codemode?: boolean } | null>(null);
+  const [settings, setSettings] = useState<{ trainingOptOut?: boolean } | null>(null);
   const [savingTraining, setSavingTraining] = useState(false);
-  const [savingCodemode, setSavingCodemode] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const [exporting, setExporting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -37,8 +36,8 @@ export function DataControlsPane() {
     try {
       const res = await fetch(`${getApiBase()}/api/settings`, { headers: await getApiHeaders() });
       if (!res.ok) return;
-      const data = (await res.json()) as { trainingOptOut?: boolean; codemode?: boolean };
-      setSettings({ trainingOptOut: data.trainingOptOut === true, codemode: data.codemode === true });
+      const data = (await res.json()) as { trainingOptOut?: boolean };
+      setSettings({ trainingOptOut: data.trainingOptOut === true });
     } catch {
       /* leave the stored preference unknown on failure */
     }
@@ -90,26 +89,6 @@ export function DataControlsPane() {
     }
   };
 
-  const toggleCodemode = async () => {
-    const next = !(settings?.codemode === true);
-    setSavingCodemode(true);
-    setNotice(null);
-    try {
-      const res = await fetch(`${getApiBase()}/api/settings`, {
-        method: 'POST',
-        headers: { ...(await getApiHeaders()), 'content-type': 'application/json' },
-        body: JSON.stringify({ codemode: next }),
-      });
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      setSettings((prev) => ({ trainingOptOut: prev?.trainingOptOut === true, codemode: next }));
-      setNotice({ kind: 'ok', text: next ? t('Codemode enabled') : t('Codemode disabled') });
-    } catch {
-      setNotice({ kind: 'error', text: t('Could not save your preference') });
-    } finally {
-      setSavingCodemode(false);
-    }
-  };
-
   const deleteAll = async () => {
     setDeleting(true);
     setNotice(null);
@@ -136,7 +115,6 @@ export function DataControlsPane() {
   };
 
   const trainingOptOut = settings?.trainingOptOut === true;
-  const codemodeOn = settings?.codemode === true;
 
   return (
     <div className="space-y-2">
@@ -170,30 +148,6 @@ export function DataControlsPane() {
             <span
               className="absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform"
               style={{ transform: trainingOptOut ? 'translateX(18px)' : 'translateX(2px)' }}
-            />
-          </button>
-        </Row>
-      </Section>
-
-      <Section title={t('Tools')}>
-        <Row
-          label={t('Codemode sandbox')}
-          description={t(
-            'Allow the agent to run a short JavaScript program in an isolated sandbox that calls this session\u2019s tools and returns a summary. Off by default.',
-          )}
-        >
-          <button
-            type="button"
-            role="switch"
-            aria-checked={codemodeOn}
-            disabled={savingCodemode || settings === null}
-            onClick={() => void toggleCodemode()}
-            className="relative h-5 w-9 rounded-full transition-colors disabled:opacity-50"
-            style={{ backgroundColor: codemodeOn ? 'var(--icon-blue)' : 'var(--fill-tsp-white-dark)' }}
-          >
-            <span
-              className="absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform"
-              style={{ transform: codemodeOn ? 'translateX(18px)' : 'translateX(2px)' }}
             />
           </button>
         </Row>

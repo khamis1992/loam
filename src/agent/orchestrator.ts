@@ -13,6 +13,8 @@ import { checkBudget, consumeTokens, type ComputeBudget } from "./computeBudget.
 import { addUsage, sumUsage } from "./usageAccounting.js";
 import { openSession, closeSession, cancelled, type SessionEndReason } from "./sessionHooks.js";
 import { runLifecycleHooks } from "../policy/hooks.js";
+import { needsAskUser } from "../tools/askUserGate.js";
+import { createAskUser, getAskUser, waitForAskUser } from "../tools/askUserStore.js";
 import {
   applyProposal,
   beginStep,
@@ -245,10 +247,54 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
   /** Stops the orchestrated run the moment the user presses cancel. */
   const guard = (): void => throwIfCancelled(o.signal, o.taskId);
 
+  // Neo N9 auto-trigger: a vague request or missing context raises an ask-user
+  // node BEFORE the planner runs, so the run never guesses around an answer the
+  // user has to give. The user's answer is appended to the prompt the planner
+  // and workers see. Manual `ask_user` calls inside the loop still work through
+  // the same pending store.
+  let clarifiedPrompt = o.prompt;
+  if (!restored && o.taskId) {
+    const trigger = needsAskUser(o.prompt, o.history);
+    if (trigger) {
+      guard();
+      // The stored title/reason are the English fallback; the client localizes
+      // the auto-trigger chrome from `reasonCode` so an Arabic user never sees
+      // English and an English user never sees Arabic.
+      const request = createAskUser({
+        taskId: o.taskId,
+        title: "Before I start, I need one clarification",
+        reason: trigger.explanation,
+        questions: trigger.questions,
+        source: "auto",
+        reasonCode: trigger.reason,
+      });
+      o.emit({ type: "ask_user_required", askUserId: request.id, taskId: o.taskId, tool: "ask_user", title: request.title, reason: request.reason, questions: request.questions, source: "auto", reasonCode: trigger.reason });
+      const status = await waitForAskUser(request.id, o.signal);
+      guard();
+      const answered = getAskUser(request.id)?.answer;
+      if (status === "answered" && answered) {
+        const parts = [`The clarification was answered: ${request.title}`];
+        if (answered.text.trim()) parts.push(answered.text.trim());
+        for (const q of request.questions) {
+          const a = answered.answers[q.id]?.trim();
+          if (a) parts.push(`- ${q.prompt} → ${a}`);
+        }
+        for (const f of answered.files) parts.push(`- Attached file: ${f.name} (${f.path})`);
+        clarifiedPrompt = `${o.prompt}\n\n[USER ANSWER TO THE CLARIFICATION]\n${parts.join("\n")}`;
+        log.info(`ask_user auto-trigger answered (${request.id}); continuing with the clarified prompt`);
+      } else {
+        // Dismissed or expired: keep going, but tell the agent the user did not
+        // answer so it states its assumptions instead of inventing them.
+        clarifiedPrompt = `${o.prompt}\n\n[THE CLARIFICATION WAS NOT ANSWERED — proceed with what you have and state your assumptions explicitly]`;
+        log.info(`ask_user auto-trigger ${status} (${request.id}); continuing without an answer`);
+      }
+    }
+  }
+
   const planned: PlanResult = restored ? { plan: restored.plan, model: restored.model, usage: { promptTokens: 0, completionTokens: 0, durationMs: 0 } } : await planTask({
     cfg: o.cfg,
     ollama: o.ollama,
-    prompt: o.prompt,
+    prompt: clarifiedPrompt,
     history: o.history,
     maxPlanSteps: oc.maxPlanSteps,
     availableTools: o.tools.names(),

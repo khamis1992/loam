@@ -438,6 +438,23 @@ export class RunGraph {
           },
           parent: state.lastId,
         }).id];
+      case "ask_user_required":
+        // N9 ask_user: the run pauses for the user's clarification, so it is an
+        // ask_user node just like the plan-mode approval card. It is a question
+        // node (not a note): the run genuinely waits on the answer.
+        return [this.addNode(runId, state, {
+          type: "ask_user",
+          seed: `ask-user:${event.askUserId}`,
+          status: "running",
+          data: {
+            askUserId: event.askUserId,
+            tool: event.tool,
+            title: oneLine(event.title, 300),
+            reason: oneLine(event.reason, 400),
+            questions: event.questions,
+          },
+          parent: state.lastId,
+        }).id];
       case "environment_issue":
         // D17 report_environment_issue: a step cannot run because of the local
         // environment. It is a terminal note, not a question: the agent records

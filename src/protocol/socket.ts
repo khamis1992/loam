@@ -17,6 +17,7 @@ import { log } from "../log.js";
 import { mapAgentEvent, shortUid, baseId, createEventMapperState, makeBrief, mapToolName } from "./events.js";
 import { getApproval, decideApproval } from "../server/approvals.js";
 import { decidePlanApproval } from "../tools/planApprovalStore.js";
+import { answerAskUser, dismissAskUser, getAskUser } from "../tools/askUserStore.js";
 import { setTaskApprovalAuto, setTaskPermissionMode, createApprovalRule } from "../server/approvalRules.js";
 import { isLocalPermissionMode } from "../policy/permissionModes.js";
 import { resolveLoamMode, modeEventInfo } from "../modes/detect.js";
@@ -32,6 +33,7 @@ import type {
   SubmitWorkspaceDirectoryAccess,
   ResolveLocalExecutionApproval,
   ResolvePlanApproval,
+  ResolveAskUser,
   TaskMode,
   ChatEvent,
   ServerAttachment,
@@ -289,6 +291,24 @@ function stepToAgentEvent(step: StepRecord): AgentEvent | undefined {
       trivial: Boolean(data.trivial),
     };
   }
+  if (type === "ask_user_required") {
+    return {
+      type: "ask_user_required",
+      askUserId: String(data.askUserId ?? ""),
+      taskId: String(data.taskId ?? ""),
+      tool: String(data.tool ?? ""),
+      title: String(data.title ?? ""),
+      reason: String(data.reason ?? ""),
+      questions: Array.isArray(data.questions)
+        ? data.questions.map((q: Record<string, unknown>) => ({
+            id: String(q.id ?? ""),
+            prompt: String(q.prompt ?? ""),
+            ...(Array.isArray(q.options) ? { options: q.options.map(String) } : {}),
+            ...(q.allowFile === true ? { allowFile: true } : {}),
+          }))
+        : [],
+    };
+  }
   return undefined;
 }
 
@@ -531,6 +551,62 @@ export function createChatSocket(deps: SocketDeps): Server {
               reviewer: "user",
               result: resolve.decision,
               ...(resolve.decision === "edit" && resolve.plan ? { plan: resolve.plan } : {}),
+            },
+          };
+          store.appendEvent(resolve.sessionId, resolved);
+          io.to(resolve.sessionId).emit("message", resolved);
+          return;
+        }
+
+        if (m.type === "resolve_ask_user") {
+          const resolve = m as ResolveAskUser;
+          const ts = Date.now();
+          // N9: wire the ask-user card decision to the pending-request store.
+          // A dismiss closes the card without an answer; anything else carries
+          // the user's answer (free text, per-question answers, files).
+          const existing = getAskUser(resolve.requestId);
+          const record = resolve.decision === "dismiss"
+            ? dismissAskUser(resolve.requestId)
+            : answerAskUser(resolve.requestId, {
+                text: typeof resolve.answer?.text === "string" ? resolve.answer.text : "",
+                answers: resolve.answer?.answers && typeof resolve.answer.answers === "object"
+                  ? Object.fromEntries(
+                      Object.entries(resolve.answer.answers).map(([k, v]) => [k, String(v)]),
+                    )
+                  : {},
+                files: Array.isArray(resolve.answer?.files)
+                  ? resolve.answer!.files
+                      .filter((f) => f && typeof f.path === "string" && !f.path.includes(".."))
+                      .map((f) => ({
+                        path: f.path,
+                        name: f.name || f.path.split("/").pop() || "attachment",
+                        bytes: typeof f.bytes === "number" ? f.bytes : 0,
+                        contentType: f.contentType || "application/octet-stream",
+                      }))
+                  : [],
+              });
+          const resolved: ServerEnvelope = {
+            id: baseId(),
+            type: "event",
+            sessionId: resolve.sessionId,
+            timestamp: ts,
+            event: {
+              id: baseId(),
+              type: "askUserResolved",
+              timestamp: ts,
+              requestId: resolve.requestId,
+              taskId: record?.taskId ?? existing?.taskId ?? "",
+              reviewer: "user",
+              result: record && record.status !== "pending" ? record.status : resolve.decision === "dismiss" ? "dismissed" : "answered",
+              ...(record?.answer
+                ? {
+                    answer: {
+                      text: record.answer.text,
+                      answers: record.answer.answers,
+                      files: record.answer.files,
+                    },
+                  }
+                : {}),
             },
           };
           store.appendEvent(resolve.sessionId, resolved);

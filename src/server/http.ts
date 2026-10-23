@@ -98,6 +98,7 @@ import { handleDataControlsRoutes } from "./routes/dataControls.js";
 import { handleMemorySkillsRoutes } from "./routes/memorySkills.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
 import { handlePlanApprovalRoutes } from "./routes/planApproval.js";
+import { handleAskUserRoutes } from "./routes/askUser.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
 import { handleRetryLastRoutes } from "./routes/retryLast.js";
 import { handleSessionControlRoutes } from "./routes/sessionControl.js";
@@ -1263,15 +1264,13 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (req.method === "POST" && p === "/api/settings") {
-          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; codemode?: unknown; planApprovalSkipTrivial?: unknown };
-          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; codemode?: boolean; planApprovalSkipTrivial?: boolean } = {};
+          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; planApprovalSkipTrivial?: unknown };
+          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; planApprovalSkipTrivial?: boolean } = {};
           if (body.theme === "dark" || body.theme === "light" || body.theme === "system") patch.theme = body.theme;
           if (typeof body.model === "string") patch.model = body.model;
           if (body.projectId === null || typeof body.projectId === "string") patch.projectId = body.projectId;
           if (typeof body.autoApprove === "boolean") patch.autoApprove = body.autoApprove;
           if (typeof body.trainingOptOut === "boolean") patch.trainingOptOut = body.trainingOptOut;
-          // Codemode master switch (opt-in): only an explicit boolean is stored.
-          if (typeof body.codemode === "boolean") patch.codemode = body.codemode;
           if (typeof body.planApprovalSkipTrivial === "boolean") patch.planApprovalSkipTrivial = body.planApprovalSkipTrivial;
           sendJson(res, 200, updateSettings(patch));
           return;
@@ -1811,6 +1810,8 @@ loadAgents();
         if (await handleApprovalRuleRoutes(req, res, p, url)) return;
         // Pending plan approvals (D4): the suggest_plan gate's approve/edit/reject.
         if (await handlePlanApprovalRoutes(req, res, p)) return;
+        // Pending ask-user requests (N9): list, read, answer or dismiss.
+        if (await handleAskUserRoutes(req, res, p)) return;
         if (await handleGrokbotBridgeRoutes(req, res, p, url)) return;
         // Public read-only task shares (option #11): create/revoke are authed,
         // GET /api/share/:token is the anonymous replay feed exempted above.
@@ -2769,11 +2770,15 @@ loadAgents();
           const rawName = url.searchParams.get("name") ?? "upload.bin";
           const safe = path.basename(rawName).replace(/[^\w.\u0600-\u06ff -]+/g, "_").slice(0, 120) || "upload.bin";
           const root = requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace);
-          const dir = taskPath(root, "uploads");
+          // N9: an ask-user card uploads into `<workspace>/uploads/<requestId>/` so
+          // the request's attachments stay together and the recorded path is stable.
+          const askUser = url.searchParams.get("askUser");
+          const sub = askUser ? path.join("uploads", path.basename(askUser).replace(/[^\w-]+/g, "_")) : "uploads";
+          const dir = taskPath(root, sub);
           fs.mkdirSync(dir, { recursive: true });
           const buf = await readRawBody(req);
           if (buf.length === 0) return sendJson(res, 400, { error: "empty upload" });
-          const abs = taskPath(root, path.join("uploads", `${Date.now()}-${safe}`));
+          const abs = taskPath(root, path.join(sub, `${Date.now()}-${safe}`));
           fs.writeFileSync(abs, buf);
           sendJson(res, 200, {
             name: safe,

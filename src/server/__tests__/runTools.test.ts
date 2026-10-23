@@ -43,7 +43,6 @@ let createDesignStudioTools: () => Tool[];
 let createDesignAssetsTools: () => Tool[];
 let createLoamServiceTools: () => Tool[];
 let createTodoTools: () => Tool[];
-let createUnboundCodemodeTool: () => Tool;
 
 function dummy(name: string): Tool {
   return {
@@ -119,6 +118,9 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     for (const name of ["file_read", "file_write", "shell_run", "web_fetch", "loam_mobile", "browser_operator", "wide_research"]) registry.register(dummy(name));
     registry.registerAll(createScratchpadTools());
     registry.registerAll((await import("../../tools/environmentIssueTools.js")).createEnvironmentIssueTools());
+    // N9: `ask_user` is a mode-catalog tool (CONTROL), so register the real set
+    // rather than a dummy.
+    registry.registerAll((await import("../../tools/askUserTools.js")).createAskUserTools());
     registry.registerAll(createInstructionHistoryTools());
     registry.registerAll(createAgentSpawnTools());
     registry.registerAll(createDeepResearchTools());
@@ -142,10 +144,6 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     const deployToolsMod = await import("../../tools/deploy.js");
     registry.registerAll(deployToolsMod.createDeployTools({ workspace: tmpDir }));
     registry.register(dummy("loam_design")); // W3 build-phase design tool (always-on grant)
-    const codemodeToolMod = await import("../../codemode/tool.js");
-    createUnboundCodemodeTool = codemodeToolMod.createUnboundCodemodeTool;
-    // J9: codemode ships as an always-on core tool, so the fixture registers it too.
-    registry.register(createUnboundCodemodeTool());
     registry.registerAll((await import("../../tools/designLint.js")).createDesignLintTools()); // V4 token linter
     registry.register(dummy("design_brief")); // V7 LLM-authored design brief (always-on grant)
     registry.register(dummy("design_autofix")); // V5 deterministic design repair pass (always-on grant)
