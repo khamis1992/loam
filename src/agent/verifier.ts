@@ -503,7 +503,7 @@ async function inspectVerdict(
         const raw = call.function.arguments;
         const args = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
         o.emit?.({ type: "tool_call", name, args });
-        const result = await tools.exec(name, args, { cfg: o.cfg, workspace: o.cfg.workspace, emit: o.emit ?? (() => {}), ...(o.signal ? { signal: o.signal } : {}), ...(o.taskId ? { taskId: o.taskId } : {}) });
+        const result = await tools.exec(name, args, { cfg: o.cfg, workspace: o.cfg.workspace, emit: o.emit ?? (() => {}), ollama: o.ollama, ...(o.signal ? { signal: o.signal } : {}), ...(o.taskId ? { taskId: o.taskId } : {}) });
         inspected ||= result.ok;
         o.emit?.({ type: "tool_result", name, ok: result.ok, summary: result.content.slice(0, 2000), ms: 0 });
         messages.push({ role: "tool", tool_name: name, content: result.content });
