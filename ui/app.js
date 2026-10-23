@@ -223,20 +223,32 @@ function taskQuery(id=state.task?.id){if(!id)throw new Error('اختر مهمة 
 // A task with no companion gets no custom properties at all, so the CSS falls
 // back to the app accent via var(--chat-accent, var(--accent)).
 let chatAgents=[];
+let applyChatAccentToken=0;
 function findChatAgent(id){return chatAgents.find(a=>a.id===id)||null;}
 async function loadChatAgents(){try{const d=await api('/api/agents');chatAgents=d.agents||[];}catch{/* offline: the id hash still colors the chat */}}
 function applyChatAccent(agentId){
   const view=$('view-chat');if(!view)return;
   const agent=agentId?findChatAgent(agentId):null;
-  const color=chatAccentFor(agent??(agentId?{id:agentId}:null));
-  // `accentVars("")` returns null, which is exactly the "no accent" signal: the
-  // vars are dropped and every CSS rule falls back to the app accent.
-  const vars=color?accentVars(color,'auto'):null;
-  view.dataset.chatAccent=vars?'bot':'';
-  for(const name of ['--chat-accent','--chat-accent-2','--chat-accent-ink']){
-    if(vars)view.style.setProperty(name,vars[name]);
-    else view.style.removeProperty(name);
-  }
+  const setVars=(vars)=>{
+    // `accentVars("")` returns null, which is exactly the "no accent" signal:
+    // the vars are dropped and every CSS rule falls back to the app accent.
+    view.dataset.chatAccent=vars?'bot':'';
+    for(const name of ['--chat-accent','--chat-accent-2','--chat-accent-ink']){
+      if(vars)view.style.setProperty(name,vars[name]);
+      else view.style.removeProperty(name);
+    }
+  };
+  applyChatAccentToken=(applyChatAccentToken??0)+1;
+  const token=applyChatAccentToken;
+  // `chatAccentFor` samples an `avatarImage` asynchronously and returns the
+  // id-hash fallback for the first paint; the callback paints the extracted
+  // color as soon as it lands, so a cold cache does not wait for a re-open.
+  // The token drops a late sample that belongs to a task already left.
+  const color=chatAccentFor(agent??(agentId?{id:agentId}:null),{onAccent:(c)=>{
+    if(token!==applyChatAccentToken||!c)return;
+    setVars(accentVars(c,'auto'));
+  }});
+  setVars(color?accentVars(color,'auto'):null);
 }
 async function loadFiles(){const id=state.task?.id;if(!id)return;const data=await api(`/api/files?${taskQuery(id)}&max=400`);if(state.task?.id!==id)return;const entries=data.entries||[];$('filesList').innerHTML=entries.filter(f=>!f.dir).map(f=>`<button class="file-row" data-file="${esc(f.path)}" dir="auto">${esc(f.path)}</button>`).join('')||'<div class="empty">لا ملفات في هذه المهمة بعد.</div>';}
 async function openFile(path){
