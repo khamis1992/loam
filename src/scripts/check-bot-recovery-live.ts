@@ -27,10 +27,13 @@ const autoResumeCase = async (): Promise<{ workspace: string; dataDir: string; t
   const autoResumeLedger = path.join(autoResumeWorkspace, "ledger.jsonl");
   fs.writeFileSync(autoResumeLedger, '{"id":"existing","amount":125}\n');
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-autoresume-data-"));
-  // `config.ts` reads the data dir from `MANUS_LOCAL_DATA_DIR` and captures it
-  // as a module-level `DATA_DIR` at import time, which is what `sqliteStore`
-  // opens. Both the value and the open connection have to be replaced for this
-  // case to use its own store instead of the real `data/` folder.
+  // `config.ts` resolves the data dir through the *live* `dataDir()` function, so
+  // setting `MANUS_LOCAL_DATA_DIR` here takes effect without re-importing config.
+  // What has to be replaced is the open connection: `sqliteStore` captured the
+  // previous path when it first opened, so `closeDb()`/`resetDb()` make the next
+  // `database()` call open this case's own store instead of the real `data/`.
+  // (Only the exported `DATA_DIR` constant is frozen at import time, and this case
+  // never reads it.)
   const previousDataDir = process.env.MANUS_LOCAL_DATA_DIR;
   process.env.MANUS_LOCAL_DATA_DIR = dataDir;
   const previousAutoResume = process.env.LOAM_AUTO_RESUME;
