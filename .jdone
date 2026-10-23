@@ -77,12 +77,12 @@ Files
   src/policy/riskTier.ts                                                   (+32)
   src/tools/shell.ts                                                       (+29)
   THIRD_PARTY_NOTICES                                                      (+5)
-  14 files changed, 3344 insertions(+), 2 deletions(-)  (`git diff --stat manus-parity HEAD`)
+  15 files changed, 3344 insertions(+), 2 deletions(-)  (`git diff --stat manus-parity HEAD`)
 
 Merge with manus-parity: resolved keeping both sides
 ----------------------------------------------------
 `.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. The merge was
-run twice, because `refs/heads/manus-parity` advanced while the first merge was being
+run three times, because `refs/heads/manus-parity` kept advancing while each merge was being
 resolved (parity merges land continuously on this branch):
 
   1. merge of parity tip `a8130cc` (c20) -> committed as `4c54d5c`. Conflict:
@@ -90,20 +90,34 @@ resolved (parity merges land continuously on this branch):
      `src/tools/fileLock.ts` entry AND J5's `src/policy/commandRisk` entry.
   2. merge of parity tip `35c8470` (V11 design_critique) -> committed as `b5c7da1`.
      Conflict: `THIRD_PARTY_NOTICES` again. Resolved keeping both sides: J5's
-     `commandRisk` entry AND parity's new `src/tools/files.ts` entry.
+     `commandRisk` entry AND parity's new `src/tools/files.ts` entry. (A parity tip
+    `6699257`, H1, landed during this merge and is already merged.)
+  3. merge of parity tip `b073763` (O1 append-only event log) -> committed as `88e51c1`.
+     Conflict: `.jdone` (add/add): both sides prepended a report at the same top-of-file
+     anchor. Resolved keeping both sides: J5's report, then parity's O1 report, then the
+     shared preserved rollup, each kept in full.
 
 A third parity tip (`6699257`, H1) landed during the second merge and is now already
-merged (the second merge's `MERGE_HEAD` was `6699257`). No parity commit at either tip
-touches any J5 source file (`src/policy/commandRisk`, `src/policy/riskTier.ts`,
-`src/tools/shell.ts`); the only ever-conflicting file was `THIRD_PARTY_NOTICES`.
+merged (the second merge's `MERGE_HEAD` was `6699257`). No parity commit at any tip
+touches a J5 source file (`src/policy/commandRisk`, `src/policy/riskTier.ts`,
+`src/tools/shell.ts`); the only ever-conflicting files were `THIRD_PARTY_NOTICES`
+(merges 1-2) and `.jdone` (merge 3).
 
 Merge gate condition verified on the final tree:
   `git merge-base --is-ancestor manus-parity HEAD`  -> exit 0
-  `git rev-list --left-right --count manus-parity...HEAD` -> `0 6`
-  `git diff --name-only manus-parity HEAD` -> the 14 J5 files above, and nothing else
+  `git rev-list --left-right --count manus-parity...HEAD` -> `0 8`
+  `git diff --name-only manus-parity HEAD` -> the 15 J5 files above, and nothing else
   (so the tree is parity + J5, with no parity change lost)
 
 No test was weakened, deleted or skipped. No code was dropped.
+
+Encoding note: the J5 report in `.jdone` had been passed through a PowerShell
+`Get-Content` pipeline, which decoded UTF-8 bytes as cp1252, producing 3 mojibake
+sequences (`U+00E2 U+20AC U+201D` for em dash). These were repaired byte-exactly to
+`U+2014`; `.jdone` is now strict-UTF-8 clean (11 em dashes, 1 ellipsis, 0 mojibake) and
+all 15 J5 artifacts scan clean. Note `check:encoding` does not scan `.jdone`
+(`SCAN_DIRS` covers `ui electron skills src scripts`), so this was caught by a separate
+strict-UTF-8 check, not the gate.
 
 Gates (all run from the worktree root on the merged tree)
 ---------------------------------------------------------
