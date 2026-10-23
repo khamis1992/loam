@@ -7321,3 +7321,48 @@ was re-run against the current tip rather than leaving parity commits missing.
   inputQueueAdmit)                            -> tests 38, pass 38, fail 0
 
 No test was weakened, deleted or skipped. No secrets committed. No forbidden path touched.
+
+---
+
+## 2026-10-23T21:28:34Z — Parity re-merge #2: clean auto-merge onto `585fd55` (C20)
+
+### Trigger
+Parity advanced again while the first re-merge was being resolved and verified: from
+`61aca0c` (N9) to `585fd55` (C20, landed 21:24:56, after the first merge commit at
+21:21:29). Per the standing precedent (parity is a continuously-moving branch; re-merge
+against the latest tip rather than leaving parity commits missing), the merge was re-run.
+
+### Merge result
+- `git merge manus-parity` auto-merged cleanly — **no conflicts**, including `.jdone`
+  (git's auto-merge of the append-only journal produced a valid union).
+- New parity content: `ui/chat-color.{js,d.ts}`, `ui/companions.{html,js}`, `ui/app.js`,
+  `ui/loam.css`, `ui/styles.css`, and `src/__tests__/chatColor.test.ts` (C20 chat color).
+- Committed as `9a86ec0` ("Merge branch 'manus-parity' into khamis1992/om-o5"). The
+  earlier resolution of `src/agent/loop.ts` / `src/server/recovery.ts` is unchanged.
+- `.jdone` integrity after the auto-merge: LF-only, 0 conflict markers at line start,
+  ends with newline. (Its content is the union of both sides' appended entries.)
+
+### Gate condition (relative to parity tip `585fd55`)
+- `git merge-base --is-ancestor 585fd55 HEAD` -> exit 0 (parity tip is an ancestor).
+- `git rev-list --left-right --count manus-parity...HEAD` -> `0  8` (0 parity commits
+  missing, 8 commits ahead). Merge gate satisfied.
+
+### Gates (all run from the worktree root, on committed HEAD `9a86ec0`)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.5mb, pdf worker copied)
+- `npm run verify`                            -> exit 0 (typecheck, encoding, eval harness,
+  orchestrator smoke 114/114, recovery, modes all PASS)
+- `node --import tsx --test` (loop.ts-related: checkpointLog, runGraphAdapter, loopBudget,
+  loopHooks, parallelTools, abRouting; recovery/inputQueue: runLease, runTools, inputQueue,
+  inputQueueAdmit)                            -> tests 78, pass 78, fail 0
+
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path touched.
+
+### Note on `.jdone` append mechanics (this session)
+PowerShell's `Get-Content -Raw` decodes a BOM-less UTF-8 file using the system ANSI
+codepage, which silently mangles non-ASCII bytes (em-dashes, Arabic, `§`, `->`) on
+rewrite. `.jdone` must be read and written as raw `[byte[]]` decoded/encoded with an
+explicit `UTF8Encoding($false)`, then normalized to LF. The first append attempt mangled
+71 non-ASCII lines; it was restored with `git checkout -- .jdone` and redone byte-safely.
+Verified: worktree `.jdone` is a strict superset of its HEAD blob (0 lines missing),
+purely additive (51 insertions, 0 deletions), LF-only, no markers.
