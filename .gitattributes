@@ -1,0 +1,10 @@
+# Append-only runner rollup files are edited independently by every worktree
+# (this task's .jdone plus any sibling branch's report) and are merged back into
+# manus-parity, which keeps an equivalent file of its own. A normal 3-way merge
+# therefore conflicts on nearly every region, which forces a hand-resolve every
+# time and repeatedly produced "MERGE CONFLICT with latest manus-parity in:
+# .jdone" gate failures. The union driver instead concatenates both sides, which
+# is exactly the intended outcome for these files: each report stays intact and
+# the result is a superset of both parents.
+.jdone merge=union
+.jcode-done merge=union
