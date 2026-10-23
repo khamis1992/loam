@@ -45,6 +45,87 @@ the `.jcode-done` numbers.
 
 ---
 
+# N5 round 6: parity N16 merged, and a mis-reported figure caught
+
+## A figure I reported was wrong, and why
+
+In round 5 this file recorded "focused N5 ... 77 tests, 77 pass". That number is **not
+reproducible from the command as I ran it**: `node --import tsx --test <five files>` prints
+`tests 77` on a clean re-run, but the *first* time I ran the same command it printed
+`tests 50`. The cause is not flakiness in the tests and not duplicate-name skipping:
+
+- per file the counts are exact and stable: `contextSelector.test.ts` 26, `contextSelectorLongHorizon.test.ts` 5, `runGraph.test.ts` 27, `loopBudget.test.ts` 6, `loopHooks.test.ts` 13, summing to **77**;
+- the two N5 files alone report `tests 31` (= 26 + 5);
+- the combined run reports `tests 77`, `skipped 0`, `cancelled 0`, so nothing was skipped.
+
+So the suite is deterministic at 77 and the `50` reading was a measurement artifact of that
+one invocation (the output was truncated by the pipe), not a property of the code. The
+lesson recorded here: **a single truncated run is not evidence, and the per-file sum is the
+check that catches it.** The figure in round 5 was asserted from a run whose output I did
+not read to the end; it happens to match the real value, but it was not verified when
+written. This round re-verified it three ways.
+
+## Parity advanced twice; merged the real one
+
+`git fetch origin manus-parity` moved the remote-tracking ref to `0a946d3` ("Merge main
+(packaging asar+fuses fix, 0.5.28) into manus-parity"), but the **local** `manus-parity` ref
+had already moved to `7b75243` ("merge `khamis1992/neo-n16` (N16) into manus-parity"). The
+two are not the same line: the local ref has 438 commits the remote lacks, and the remote
+ref is an ancestor of the local ref, i.e. **the local ref is ahead and the remote is behind.**
+
+Concretely: `git merge origin/manus-parity` said "Already up to date" because `origin/manus-parity`
+(=`0a946d3`) was already an ancestor of HEAD. The work that actually needs merging is the
+local `manus-parity` = N16, merged here as `061c5a3`.
+
+**N16 does not touch N5.** The N16 diff is 13 files, +1580/-5: `src/graph/recall.ts` (+645),
+`src/graph/__tests__/recall.test.ts` (+414), `src/graph/runGraph.ts` (+127), `src/tools/memory.ts`
+(+131), `src/server/runTools.ts`, `src/tools/registry.ts`, `src/index.ts`, `src/setup/runtime.ts`,
+`src/agent/insights.ts`, `src/agent/runGraphAdapter.ts`, `src/agent/sideChat.ts`,
+`src/server/__tests__/runTools.test.ts`, `.jdone`. N16's own files (`recall.ts`, `memory.ts`)
+do not overlap N5's, and its `runGraph.ts` change is additive dispatch wiring that auto-merged
+in a disjoint region from N5's `case "context_selected":` handler.
+
+The merge was conflict-free (`Auto-merging .jdone`, `Auto-merging src/graph/runGraph.ts`, then
+"Merge made by the 'ort' strategy"), so the union driver was not even needed this time.
+
+## N5 wiring re-verified after the merge (all five points present)
+
+| Point | Location |
+| --- | --- |
+| selector imported and constructed | `src/agent/loop.ts:29` (`import { ContextSelector }`), `:517` (`opts.contextSelector ?? new ContextSelector(...)`) |
+| option plumbed | `src/agent/loop.ts:212` (`contextSelector?: ContextSelector`) |
+| event emitted | `src/agent/loop.ts:595` (`opts.emit({ type: "context_selected", step, tokens, artefacts, reason })`) |
+| event union member | `src/agent/events.ts:201` |
+| graph handles it | `src/graph/runGraph.ts:716` (`case "context_selected":`) |
+| config default | `src/config.ts:398` (`contextSelector: { enabled: true }`), declared at `:252` |
+
+## The new test is deterministic and order-independent
+
+`contextSelectorLongHorizon.test.ts` was run alone three consecutive times (plus once with
+the unit file): **5 pass, 0 fail every time**, ~4.4s. Combined with the unit file it is
+`tests 31`, so it contributes its 5 to the 77 and does not depend on another file's state.
+
+## Gates on the N16-merged tree
+
+| Gate | Result |
+| --- | --- |
+| `npx tsc --noEmit` | exit 0 |
+| `npm run build:server` | exit 0 (`server bundle + pdf worker written to dist/`) |
+| `(cd packages/web && npx next build)` | `✓ Compiled successfully in 617ms` |
+| full node suite | **3038 tests, 3038 pass, 0 fail, 0 skipped** |
+| web suite | **91 files, 624 tests, 624 pass** |
+| focused N5 | **77 tests, 77 pass, 0 fail, 0 skipped** |
+| `eval-neo` | `neo-eval-2: total=100 passed=10/10 bar=60 verdict=PASS (baseline 100)`, `baseline: no regression` |
+
+Node count moved 3017 -> 3038 (+21), which is exactly N16's `recall.test.ts` joining the suite.
+The web suite is unchanged at 624. `git diff --check` clean, no conflict markers anywhere.
+
+Both markers verified after the merge: `.jdone` (30,076 lines) and `.jcode-done` (262 lines,
+J11 present) each report missing 0 non-blank lines against `manus-parity`,
+`origin/manus-parity`, `65f2c47` and `839cdff`.
+
+---
+
 # N5 round 5: mutation-tested the acceptance, closed a coverage gap, merged parity D3
 
 ## Mutation testing (the acceptance suite can actually fail)
