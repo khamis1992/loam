@@ -634,6 +634,7 @@
   "Loam Video": "فيديو Loam",
   "Import from URL": "استيراد من رابط",
   "Export": "تصدير",
+  "Exporting": "جارٍ التصدير",
   "Ready": "جاهز",
   "Unavailable": "غير متوفر",
   "Loam Video is unavailable, so the built-in video editor is shown instead.": "فيديو Loam غير متوفر، لذا يظهر محرر الفيديو المدمج بدلاً منه.",
