@@ -1105,3 +1105,35 @@ required gates, which all pass.
 
 - HEAD `089e56c` (twelfth-pass record) at the time these checks ran; `.jdone` is
   appended below and committed. Working tree clean.
+
+## Independent re-validation (2026-10-23, fourteenth pass)
+
+This pass checked the base -> merge direction (that the merge did not drop any D3
+work) and confirmed the boot hook is wired exactly once.
+
+- **D3's own history is 5 commits, all reachable.** `git log --oneline
+  088b4f2..053cd0e` lists 5 commits: `c617535` (blueprint + cached snapshot
+  builder), `6039762` (boot tasks from the cached snapshot + read-only status
+  route), `8592711` (one build id per project folder), `d2fe0f0` (never seed a
+  snapshot into a user-bound task folder), `053cd0e` (live HTTP check for env-build
+  routes). `git merge-base --is-ancestor 053cd0e HEAD` exits 0 and
+  `git rev-list --count 053cd0e --not HEAD` = **0**, so all 5 D3 commits and all
+  951 parity commits are reachable from HEAD (`03f8aef --not HEAD` = 0).
+- **D3's feature files survive base -> merge.** `git diff --numstat 088b4f2
+  ac0cf67` for the five core D3 files: `src/tools/envSnapshot.ts` +1051/-0,
+  `src/scripts/check-env-builds.ts` +170/-0, `src/server/routes/envBuilds.ts`
+  +167/-0, `src/server/taskWorkspace.ts` +16/-0, `src/index.ts` +78/-8. The first
+  four are pure insertions; `index.ts`'s 8 removed lines are parity's import
+  expansion plus parity's own edits, not D3 work.
+- **D3's `index.ts` hook is present and not duplicated.** `src/index.ts` contains
+  `bootTaskFromSnapshot` exactly twice (the import at `:4` and the call at `:565`)
+  and `isManagedTaskWorkspace` twice (import `:3`, call `:561`). The guard
+  `if (opts.resume !== true && isManagedTaskWorkspace(saved.workspace))` appears
+  once at `:561`. The base -> HEAD diff shows D3's hook alongside parity's
+  additions (findAndEdit/playbook/videoStudio/design imports, run-graph recording,
+  side-chat read-only suffix, quick-edit route) with no duplication or shadowing.
+
+### Final state
+
+- HEAD `08ec13b` (thirteenth-pass record) at the time these checks ran; `.jdone` is
+  appended below and committed. Working tree clean; `.jdone` 1107 lines.
