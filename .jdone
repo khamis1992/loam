@@ -1,3 +1,74 @@
+## D5 gate-fix session: merge with manus-parity (D15 pr_review + O1 event log), all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+### The failure that was fixed
+`git merge manus-parity` (tip `6699257`, then `b073763`) conflicted in six files. Every
+conflict was resolved by keeping BOTH sides; no test was weakened, deleted or skipped
+and no code was dropped:
+
+1. `src/modes/catalog.ts`: HEAD (D5) had added `verify_and_record` to the `GIT` tool list
+   and manus-parity (D15) had added `pr_review`. The union keeps both entries.
+2. `src/setup/runtime.ts`: HEAD imported and registered `createVerifyAndRecordTool`;
+   parity imported and registered `createPrReviewTool`. Both imports and both
+   registrations are present.
+3. `src/tools/gitPrProvider.ts`: HEAD added `setPrBody` to `PrProvider` and both
+   implementations; parity added `prDiff`/`PrDiff`/`PrFileDiff`. The resolution keeps
+   D15's `prDiff` on `GitHubPrProvider` and D5's `setPrBody` right after it, and the
+   interface carries both methods. The local provider already had both.
+4. `prompts/loam-master.md`: both the §6.3 catalog rows (`pr_review` and
+   `verify_and_record`) and the §8.5 rules are present.
+5. `src/agent/masterPromptText.ts` is generated, so it was regenerated with
+   `npm run gen:master-prompt` from the merged markdown (27 sections) rather than edited
+   by hand.
+6. `src/agent/__tests__/__snapshots__/coding-prompt.snap.json`: only `masterPromptSha256`
+   conflicted. The correct value is the hash of the prompt assembled from the merged
+   source, recomputed with the test's own `buildMasterPrompt(ALL_SLOTS, { model })` and
+   the test's `codingModeSection()`; `codingSectionSha256` is unchanged
+   (`ef715eb5...`). The snapshot now matches and `codingPrompt.test.ts` passes 8/8.
+
+The O1 merge (parity tip `b073763`) then conflicted only in the tracked rollup `.jdone`,
+where both sides prepend a report at the same top-of-file anchor. Resolved as a superset:
+the D5 report, the O1 gate-fix report, the D15 report and the preserved V11/parity
+reports are all present, in that order, with no report altered and no separator lost.
+
+### Gate condition verified
+`git merge manus-parity` reports "Already up to date.", `git merge-base --is-ancestor
+manus-parity HEAD` exits 0 and `git rev-list --left-right --count manus-parity...HEAD` is
+`0  7` (parity fully merged, zero parity commits missing). No conflict marker remains in
+the tree (`^(<{7}|={7}|>{7})$` matches zero lines in every tracked file) and
+`git status --porcelain` is empty.
+
+### Gates (all run from the worktree root on the committed tree)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled, 25/25 static pages)
+- `npm run check:modes`                       -> PASS
+- `npm run check:promptwire`                  -> PASS (every promptwire tool ok:true)
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+
+Tests on the merged tree:
+- touched suites (videoStudio, videoStudioState, prReview, ciWatch, prVerification,
+  verifyAndRecord, codingPrompt, catalog, eventLog)
+  -> tests 165, pass 165, fail 0
+- `node --import tsx --test "src/**/__tests__/*.test.ts"`
+  -> tests 2312, pass 2310, fail 2
+- `(cd packages/web && npx vitest run)`       -> 72 files / 472 tests, all pass
+
+Both node failures are pre-existing and NOT caused by this merge (both files are
+byte-identical to manus-parity, `git diff manus-parity HEAD -- <file>` is empty):
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered
+   nor listed in PENDING_CODING_TOOLS". The inherited D4 defect.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing"
+   (`info.isGit` is true for a plain temp dir because `%TEMP%` sits inside a git repo on
+   this host). Environmental.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added.
+
+---
+
 D5 complete: verify_and_record proof-of-work verification for a pull request.
 
 Added a `verify_and_record` agent tool that attaches real evidence to a PR before
