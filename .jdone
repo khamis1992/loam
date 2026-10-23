@@ -41647,7 +41647,7 @@ driver's output.
 - `git merge --no-edit manus-parity` -> `Already up to date` (exit 0); `manus-parity`
   (`6e17246`) is an ancestor of HEAD; `git rev-list --left-right --count
   manus-parity...HEAD` -> `0  22`.
-- `.jdone` committed blob is LF (41576 lines); worktree is CRLF under `core.autocrlf=true`;
+- `.jdone` committed blob is LF (41652 lines); worktree is CRLF under `core.autocrlf=true`;
   0 conflict markers; no BOM.
 
 No test was weakened, deleted or skipped by this session.
