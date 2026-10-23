@@ -1,13 +1,15 @@
 ## O8 complete: HTTP + SSE routes over the durable event log
 
 Branch: `khamis1992/om-o8` (worktree `C:\Users\khamis\orca\workspaces\manus-local\om-o8`)
-Commit: `e335eb7` "O8: events HTTP + SSE"
-Base branch: `manus-parity` (tip `0a946d3`; the O3 merge `8e197c6` already carries O1/O2/O3)
+Commit: `e335eb7` "O8: events HTTP + SSE" (report commit `8eb17d1`)
+Merged HEAD: `8abef71` (two merges with `manus-parity`; only `.jdone` conflicted)
+Base branch: `manus-parity` (tip `0a946d3` at the first merge, `ed26550` at the second; the
+O3 merge `8e197c6` already carries O1/O2/O3)
 Spec: `.om-ref/BUILD_SPEC.md` section 8
 
 ## What changed
 
-### `src/server/routes/events.ts` (new, ~225 lines)
+### `src/server/routes/events.ts` (new, 233 lines)
 
 Read-only module over the durable event log built by O1/O3. Exports
 `EVENT_STREAM_HEARTBEAT_MS = 10_000`, `EventStreamDeps` (`heartbeatMs`, `pollMs`, `now`),
@@ -26,30 +28,37 @@ Read-only module over the durable event log built by O1/O3. Exports
   - Heartbeat: a `: hb` comment is written at least every `EVENT_STREAM_HEARTBEAT_MS`
     (10 s) while the stream is idle or waiting, so a proxy cannot drop an idle
     connection before new events arrive.
-- `streamFrame(ev)` forwards a `chat_event` row's payload verbatim with the durable
-  `seq` stamped on (the section 8 socket envelope); every other `kind` is rendered as
-  `{ id, type: "event", sessionId, timestamp, seq, kind, event }`. Rows written by
-  other producers (status / tool / step kinds) are therefore still delivered, and the
-  client can tell a replayed chat frame from a status frame by `kind`.
+- `streamFrame(ev)` special-cases `kind === "chat_event"`: the stored payload already is
+  the section 8 socket envelope, so it is returned as `{ ...envelope, seq: ev.seq }`
+  (spread plus the durable `seq` added, not a byte-for-byte passthrough). Every other
+  `kind` is rendered as `{ id, type: "event", sessionId, timestamp, seq, kind, event }`.
+  So rows of every kind are still delivered, and the client can tell a replayed chat
+  frame from another kind by `kind`. `LogKind` is
+  `"input" | "chat_event" | "tool_result" | "checkpoint" | "status"`; this module names
+  only `chat_event` explicitly and routes any other kind through the generic arm.
 
-No writer was added to this module. All reads go through the O1 log
-(`src/protocol/eventLog.ts`) and the O3 adapter (`src/protocol/store.ts`), so nothing
-here bypasses the durable store.
+No writer was added to this module. Reads go only through the O1 log
+(`src/protocol/eventLog.ts`), importing `after as afterSeq` and `headSeq`; the module
+imports nothing from the O3 adapter (`src/protocol/store.ts`). Nothing here writes to or
+bypasses the durable store.
 
 ### `src/server/http.ts` (3 lines)
 
 - Imports `handleEventsRoutes` from `./routes/events.js`.
 - Dispatches the two routes after `handleSessionRuntimeRoutes` and before
-  `handleDesignStudioRoutes`, so they inherit the existing session/runtime auth gate and
-  the existing JSON/SSE plumbing rather than adding a second mount point.
+  `handleDesignStudioRoutes`, so they sit inside the same `/api` dispatch chain and reuse
+  the existing JSON/SSE plumbing rather than adding a second mount point. They are behind
+  the general install-token check in the dispatcher's async IIFE (`http.ts` ~L446-468:
+  `validateLocalToken` unless `LOAM_AUTH_DISABLED === "true"`), the same gate every other
+  `/api` route gets. There is no per-route auth in this module and no new gate was added.
 
 ## Acceptance criteria (plan row O8)
 
 | Acceptance | Covered by |
 |---|---|
-| Last-Event-ID resume returns only the missing events | `eventsRoutes.test.ts`: the page test `resume via Last-Event-ID returns only events after the cursor` and the SSE test `resume via the Last-Event-ID header returns only missing events` assert the returned frame set is exactly the tail and that `next_after_seq` is the last delivered seq |
-| SSE heartbeat at least every 10 s | `sends a heartbeat comment at least every 10s` asserts at least one `: hb` line arrives within the heartbeat window on an idle log |
-| every SSE frame carries `id: <seq>` | `emits one SSE frame per row with id <seq>` and the resume test assert the `id:` line equals the durable `seq` of each row |
+| Last-Event-ID resume returns only the missing events | `HTTP resume returns only the missing events` (cursor `after_seq=3` yields exactly seq 4-6) and `resumes an SSE stream from Last-Event-ID and sends only the missing events` (header `last-event-id: 2` replays exactly seq 3-5 and the `resume` frame echoes `after_seq: 2`); `resumes the SSE stream over the wire and carries the seq as the frame id` repeats it against the real server. `prefers ?after_seq over Last-Event-ID` and `streams only newly appended events after the resume cursor` pin cursor precedence and the live tail |
+| SSE heartbeat at least every 10 s | `sends a heartbeat comment at most 10 s apart` drives the stream with a 300 ms stand-in cadence (`heartbeatMs: 300`) and asserts `>= 3` `: hb` comments flow, then asserts the shipped `EVENT_STREAM_HEARTBEAT_MS === 10_000` and `<= 10_000`. It does not wait a real 10 s. `caps a requested heartbeat at the 10 s ceiling` asserts a `heartbeatMs: 60_000` request is clamped so `retry:` equals `EVENT_STREAM_HEARTBEAT_MS` |
+| every SSE frame carries `id: <seq>` | `encodes the frame id as the event seq and forwards a chat envelope verbatim` asserts `frame.id === ev.seq` for both the generic and `chat_event` arms; `resumes an SSE stream from Last-Event-ID ...` asserts the parsed `id:` lines (`sseIds`) are exactly the replayed seqs, and the real-server test repeats it over the wire |
 
 ## Tests
 
@@ -63,8 +72,13 @@ here bypasses the durable store.
   the section 8 mock rows and `append(..., { id: `evt_${sessionId}_${i}` })`, because the
   log's `id` column is globally unique.
 - The last block boots the **real** `http.ts` dispatcher via `startServer()` on a
-  loopback port (`LOAM_CONFIG` temp, `LOAM_AUTH_DISABLED=true`) and exercises the route
-  over the wire, proving the mount line and the auth gate.
+  loopback port (`LOAM_CONFIG` temp, `LOAM_AUTH_DISABLED=true`) and exercises both routes
+  over the wire, proving the mount line resolves. It runs with `LOAM_AUTH_DISABLED=true`,
+  so it does **not** exercise the install-token gate: `keeps the routes behind the install
+  token like the rest of /api` sends a wrong `x-loam-local-token` and expects 200 (gate
+  disabled for the suite), then asserts an unknown `/api` path is 404, i.e. that the route
+  is dispatched through the same chain. Gate behaviour itself is inherited from `http.ts`,
+  not asserted here.
 - Imports `../../test/isolation.js` **first** so `config.ts` evaluates after `DATA_DIR`
   is redirected (ESM hoists static imports; the trap is documented in
   `src/test/isolation.ts`). `after()` calls `closeDb()` + `cleanupIsolatedDataDir()`.
@@ -82,6 +96,31 @@ Test command:
 - `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
 - neighbouring route suites (liveView, workspaceVideo, transcript, designStudio,
   marketplace)                                -> tests 29, pass 29, fail 0
+
+### Corrective pass over this report (post-merge)
+
+An automated self-check found factual defects in the first version of this report. All are
+now corrected above; the code and tests were already correct and were not changed:
+
+- Four cited test names did not exist (they were paraphrases). They are replaced by the
+  real names, verified against the `it(...)` list in `eventsRoutes.test.ts` (13 tests /
+  2 suites: 10 in the unit suite, 3 in the real-server suite).
+- `~225 lines` -> the file is 233 lines (as committed in `e335eb7`).
+- `streamFrame` does not forward a `chat_event` payload verbatim; it returns
+  `{ ...envelope, seq: ev.seq }`.
+- The read path is `eventLog.ts` only; `store.ts` is not imported.
+- `LogKind` is `input | chat_event | tool_result | checkpoint | status`; the module names
+  only `chat_event` and passes other kinds through the generic arm.
+- The auth claim was overstated: the routes sit behind the dispatcher's general
+  install-token check, and the real-server test runs with `LOAM_AUTH_DISABLED=true`, so it
+  proves the mount, not the gate.
+
+Gates re-run on the corrected tree (report-only change, no source touched):
+`npx tsc --noEmit` -> exit 0; `npm run build:server` -> exit 0;
+`(cd packages/web && npx next build)` -> compiled successfully;
+`node --import tsx --test src/server/__tests__/eventsRoutes.test.ts` -> tests 13, pass 13,
+fail 0, suites 2; `npm run check:encoding` -> OK. No `???` and no conflict markers in this
+file.
 
 ## Pre-existing failures (not caused by O8)
 
