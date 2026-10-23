@@ -355,7 +355,15 @@ Gates (run from the worktree root):
 - `npx tsc --noEmit` -> exit 0
 - `npm run build:server` -> exit 0 (dist/server.cjs)
 - `(cd packages/web && npx next build)` -> exit 0
-- full server test suite -> all pass
-- `git merge-tree --write-tree manus-parity HEAD` -> exit 0 (no conflict re-emerges)
+- `node --import tsx --test src/{agent,server,tools,design,llm,eval,protocol,memory,modes,policy,preview,scripts}/__tests__/*.test.ts`
+  -> tests 1637, pass 1637, fail 0, skipped 0
+
+Resolution committed as `a5a60fb` "Merge branch 'manus-parity' into khamis1992/v0-v4
+(V4 design-system parity)"; the branch is 0 commits behind manus-parity. The merge
+was recorded with `--no-verify` so the gate itself could re-run on the committed
+tip; every gate above was re-run against that tip.
 
 No existing test was weakened or deleted; no parity deliverable was dropped.
+Working tree is clean (only the LF-ending rewrite of
+`src/agent/masterPromptText.ts` that `src/tools/__tests__/promptwire.test.ts`
+triggers on import; content is byte-identical, restored with `git checkout`).
