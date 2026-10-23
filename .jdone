@@ -1,6 +1,6 @@
 fc-07 complete: the Loam Video / Loam Effects router and a full "Video editing" prompt section. One product, one workflow, Arabic + English routing, FilmCraft-native fallback.
 
-## Fourth validation pass (one real defect fixed: commit `b36a8af`)
+## Fourth validation pass (one real defect fixed: commits `b36a8af`, `5b6dbc4`)
 Drove the router and the tool envelope through an ad-hoc probe (bilingual inputs,
 normalisation, classification, `plan()` degradation, and the real `run()` against a stub
 relay with temp dist roots), then swept every string the tool can hand back to the model.
@@ -23,6 +23,12 @@ rejected command, cancelled, missing command, unknown action, success) and asser
 upstream name appears in any of them, stripping real filesystem paths first so the
 legitimate vendored dist location is not miscounted as a leak; it also asserts the reason
 codes are brand-neutral. `videoStudio.test.ts` is now 42 tests, 42 pass.
+
+A branch review of the new module also removed one piece of dead public surface:
+`VideoStudioRouter.getRoot()` had no callers anywhere in `src` (a `git grep` found only its
+own definition), so it is gone rather than left behind as untested API. Every other router
+member is exercised: `plan()`, `classify()`, `isFilmBackendAvailable()` and
+`isEffectsBackendAvailable()` all have direct tests.
 
 Also verified in this pass:
 - Regenerating the master prompt is idempotent: `npm run gen:master-prompt` leaves the
