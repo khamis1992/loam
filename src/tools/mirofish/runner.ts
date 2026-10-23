@@ -121,7 +121,7 @@ export function resolveCaller(deps: RunnerModelDeps): ModelCaller | undefined {
 }
 
 /** Write the M2 seed artifact next to the M3 simulation outputs. */
-function writeSeedArtifact(rootDir: string, seedResult: SeedResult): void {
+export function writeSeedArtifact(rootDir: string, seedResult: SeedResult): void {
   try {
     fs.mkdirSync(rootDir, { recursive: true });
     fs.writeFileSync(

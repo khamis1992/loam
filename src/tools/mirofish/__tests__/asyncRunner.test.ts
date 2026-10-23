@@ -118,6 +118,9 @@ function testConfig(workspace: string): Config {
   } as unknown as Config;
 }
 
+/** Anything the run emitted on its event bus, for progress assertions. */
+type BusEvent = { type: string; sessionId?: string; payload?: unknown };
+
 describe("runConversationalMirofishAsync (M3 wiring)", () => {
   let workspace = "";
 
@@ -187,6 +190,53 @@ describe("runConversationalMirofishAsync (M3 wiring)", () => {
     const simDir = path.join(workspace, ".manus", "mirofish", "simulations", String(res.data.simulation_id));
     const profiles = JSON.parse(fs.readFileSync(path.join(simDir, "reddit_profiles.json"), "utf8"));
     assert.ok(Array.isArray(profiles) && profiles.length > 0);
+  });
+
+  it("reports progress on the run's event bus and writes the seed artifact", async () => {
+    workspace = fs.mkdtempSync(path.join(os.tmpdir(), "loam-mf2-m3-async-"));
+    const state: FakeState = { calls: [], fail: false };
+    const events: BusEvent[] = [];
+
+    const res = await runConversationalMirofishAsync(workspace, {
+      message: "Simulate Nutrio in Doha",
+      maxRounds: 2,
+      runtime: { cfg: testConfig(workspace), caller: makeFakeCaller(state), emit: (e: BusEvent) => events.push(e) },
+    });
+
+    // M3 progress reaches the surrounding run, tagged with this run's id.
+    const progress = events.filter((e) => e.type === "simulation_progress");
+    assert.ok(progress.length > 0, "simulation_progress events must reach the run event bus");
+    assert.ok(
+      progress.every((e) => e.sessionId === String(res.data.simulation_id)),
+      "progress events are tagged with the simulation id",
+    );
+    assert.ok(
+      progress.some((e) => (e.payload as { type?: string } | undefined)?.type === "simulation_round"),
+      "round progress is reported",
+    );
+    const done = progress.filter((e) => (e.payload as { type?: string } | undefined)?.type === "simulation_done");
+    assert.ok(done.length > 0, "the run reports completion");
+    assert.equal(
+      (done[0]!.payload as { rounds: number }).rounds,
+      Number(res.data.rounds_completed),
+      "the completion event agrees with the reported rounds",
+    );
+
+    // The seed artifact the synchronous runner leaves, on this surface too.
+    const seedPath = path.join(workspace, ".manus", "mirofish", "seeds", "seed.json");
+    assert.ok(fs.existsSync(seedPath), "seed.json must be written");
+    const seed = JSON.parse(fs.readFileSync(seedPath, "utf8")) as {
+      locale: { country: string; city: string; currency: string };
+      locale_source: string;
+      model_calls: number;
+    };
+    assert.equal(seed.locale.country, "Qatar", "the resolved locale is recorded");
+    assert.equal(seed.locale.currency, "QAR");
+    // The locale prompt asks labels to match the market's primary language, so
+    // the city may be returned in the brief's script; the country is stable.
+    assert.ok(["Doha", "الدوحة"].includes(seed.locale.city), `the city follows the brief (got ${seed.locale.city})`);
+    assert.equal(seed.locale_source, "user", "a place named in the brief stays authoritative");
+    assert.ok(seed.model_calls > 0, "the seed records how many model calls it made");
   });
 
   it("keeps the synchronous entry point backward compatible", () => {

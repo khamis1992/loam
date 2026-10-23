@@ -31,6 +31,7 @@ import {
   renderSwarmReport,
   renderSwarmReply,
   runSeedValue,
+  writeSeedArtifact,
   type SwarmRun,
 } from "./runner.js";
 import { runSeed } from "./seed.js";
@@ -163,6 +164,9 @@ export async function runConversationalMirofishAsync(
   );
 
   const targetName = seedResult.entities.products[0]?.name ?? "the product";
+  // Same seed artifact the synchronous runner leaves, so both surfaces expose
+  // the resolved locale, entities and personas.
+  writeSeedArtifact(path.join(root, "seeds"), seedResult);
   writeLegacyProfiles(
     root,
     ids.simulationId,
