@@ -121,3 +121,63 @@ describe('canvas screen-to-graph mapping', () => {
     expect(screenToGraph(screen, view)).toEqual({ x: 120, y: 40 });
   });
 });
+
+describe('canvas layout direction (N21)', () => {
+  it('lays an Arabic layer out from the right, keeping the same span as LTR', () => {
+    const placed = applyLayout(tree(), { direction: 'rtl' });
+    const byId = new Map(placed.map((node) => [node.id, node]));
+    // The first sibling reads at the start edge, which is the right in RTL.
+    expect(byId.get('step1')!.x).toBe(DEFAULT_LAYOUT.originX + DEFAULT_LAYOUT.columnWidth);
+    expect(byId.get('step2')!.x).toBe(DEFAULT_LAYOUT.originX);
+    // Layers still stack downward, so only the row is mirrored.
+    expect(byId.get('search')!.y).toBe(byId.get('step1')!.y + DEFAULT_LAYOUT.rowHeight);
+    expect(byId.get('root')!.y).toBe(DEFAULT_LAYOUT.originY);
+  });
+
+  it('produces the same coordinates as LTR, only reassigned to different siblings', () => {
+    const ltr = applyLayout(tree(), { direction: 'ltr' });
+    const rtl = applyLayout(tree(), { direction: 'rtl' });
+    // Mirroring the index cannot invent or drop a column, so the surface the
+    // panel sizes itself to is identical in both directions.
+    expect(rtl.map((node) => node.x).sort()).toEqual(ltr.map((node) => node.x).sort());
+    expect(layoutBounds(rtl)).toEqual(layoutBounds(ltr));
+    expect(hasOverlaps(rtl)).toBe(false);
+  });
+
+  it('leaves a single-sibling layer untouched in both directions', () => {
+    // A root is alone on its layer, so its x cannot depend on the direction.
+    expect(applyLayout(tree(), { direction: 'rtl' })[0]!.x).toBe(DEFAULT_LAYOUT.originX);
+    expect(applyLayout(tree(), { direction: 'ltr' })[0]!.x).toBe(DEFAULT_LAYOUT.originX);
+  });
+
+  it('keeps the direction default when the caller does not ask for one', () => {
+    expect(DEFAULT_LAYOUT.direction).toBe('ltr');
+    expect(applyLayout(tree())).toEqual(applyLayout(tree(), { direction: 'ltr' }));
+  });
+
+  it('mirrors a custom column width and origin consistently', () => {
+    const options = { columnWidth: 100, originX: 10, direction: 'rtl' as const };
+    const placed = applyLayout(tree(), options);
+    const byId = new Map(placed.map((node) => [node.id, node]));
+    expect(byId.get('step1')!.x).toBe(110);
+    expect(byId.get('step2')!.x).toBe(10);
+  });
+
+  it('places a sibling from the right edge of its own layer only', () => {
+    // Layers of different widths must not leak into each other: the deep layer
+    // holds one node, so it sits at the origin even in RTL.
+    const placed = applyLayout(
+      [
+        { id: 'a', parent_ids: [], position: 1 },
+        { id: 'b', parent_ids: [], position: 2 },
+        { id: 'c', parent_ids: [], position: 3 },
+        { id: 'deep', parent_ids: ['a'], position: 4 },
+      ],
+      { direction: 'rtl' },
+    );
+    const byId = new Map(placed.map((node) => [node.id, node]));
+    expect(byId.get('a')!.x).toBe(DEFAULT_LAYOUT.originX + DEFAULT_LAYOUT.columnWidth * 2);
+    expect(byId.get('c')!.x).toBe(DEFAULT_LAYOUT.originX);
+    expect(byId.get('deep')!.x).toBe(DEFAULT_LAYOUT.originX);
+  });
+});

@@ -189,6 +189,15 @@ export function CanvasPanel({
   /** Translate with this panel's locale, so a locale change needs no global state. */
   const tr = useCallback((key: string) => t(key, {}, locale), [locale]);
 
+  // A layer is read start-to-end, so Arabic lays a row out from the right. An
+  // explicit `layoutOptions.direction` wins, so a test can pin either direction
+  // without having to fake a locale.
+  const layoutDirection = layoutOptions?.direction ?? (isRtl ? 'rtl' : 'ltr');
+  const effectiveLayout = useMemo<LayoutOptions>(
+    () => ({ ...layoutOptions, direction: layoutDirection }),
+    [layoutOptions, layoutDirection],
+  );
+
   // The panel lays itself out with logical CSS (`border-s`, `ms-`/`me-`), so the
   // document direction has to follow the locale the panel renders in. An
   // injected provider is a test seam: it must not rewrite the real document.
@@ -210,7 +219,7 @@ export function CanvasPanel({
   /** Re-run the layered layout over the current nodes (the "Organize" action). */
   const organize = useCallback(
     (list: CanvasLayoutNode[]) => {
-      const placed = applyLayout(list, layoutOptions);
+      const placed = applyLayout(list, effectiveLayout);
       setNodes((prev) =>
         prev.map((node) => {
           const match = placed.find((entry) => entry.id === node.id);
@@ -218,7 +227,7 @@ export function CanvasPanel({
         }),
       );
     },
-    [layoutOptions],
+    [effectiveLayout],
   );
 
   const loadInitial = useCallback(async () => {
@@ -247,7 +256,7 @@ export function CanvasPanel({
       if (!api) return;
       try {
         const graph = await api.getGraph(taskId, change.seq);
-        const layout = applyLayout(graph.nodes, layoutOptions);
+        const layout = applyLayout(graph.nodes, effectiveLayout);
         setNodes((prev) => mergeNodes(prev, graph.fresh, layout));
         setEdges(graph.edges);
         setStats(graph.stats);
@@ -256,7 +265,7 @@ export function CanvasPanel({
         setError(err instanceof Error ? err.message : String(err));
       }
     },
-    [layoutOptions, taskId],
+    [effectiveLayout, taskId],
   );
 
   // Live subscription: the stream pushes a snapshot then a change per graph
@@ -579,7 +588,7 @@ export function CanvasPanel({
                 transform: `translate(${view.panX + node.x * view.scale}px, ${view.panY + node.y * view.scale}px)`,
               }}
             >
-              <span className="truncate text-[11px] text-text-secondary">{nodeTitle(node, tr)}</span>
+              <span className="truncate text-[11px] text-text-secondary" dir="auto">{nodeTitle(node, tr)}</span>
               <span dir="auto" className="truncate text-[10px] text-text-tertiary">
                 {nodeSubtitle(node, tr)}
               </span>
