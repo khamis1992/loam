@@ -1,5 +1,35 @@
 fc-07 complete: the Loam Video / Loam Effects router and a full "Video editing" prompt section. One product, one workflow, Arabic + English routing, FilmCraft-native fallback.
 
+## Merge gate fix, round 7 (merge commit `b607a39`)
+
+Parity advanced a seventh time while the round-6 record was being written (`bdae2ca`,
+jcode-j11 context compaction, 11 files). Merged as `b607a39`, keeping BOTH sides of every
+conflict. Only `.jdone` conflicted (one hunk, both sides appending their report at the same
+end-of-file anchor); resolved as the lossless union of both sides, removing only the three
+conflict-marker lines. Verified with a fresh multiset-inclusion checker against both merge
+parents (`6382dea` and `bdae2ca`) and their union: 0 non-empty lines missing from either
+parent or the union, 0 conflict markers, CRLF endings preserved (9708 CRLF / 0 bare-LF).
+`manus-parity` (`bdae2ca`) is an ancestor of HEAD and `git log HEAD..manus-parity` is empty.
+
+Gates on the merged tree (`b607a39`), each with its real exit code:
+
+- `npx tsc --noEmit` -> 0
+- `npm run build:server` -> 0 (server bundle + pdf worker written)
+- `cd packages/web && npx next build` -> 0 (25/25 static pages)
+- `check:encoding`, `check:promptwire`, `check:modes`, `check:eval` -> 0
+- `check:orchestrator`, `check:loam-agents`, `check:recovery` -> 0
+- touched-file tests (`videoStudio.test.ts`, `videoStudioRouter.test.ts`,
+  `videoPrompt.test.ts`) -> 118 tests / 118 pass / 0 fail
+- full server suite -> 2840 tests / 2840 pass / 0 fail (J11's compaction tests included)
+- web vitest -> 83 files / 556 tests, all pass
+- `check:isolation` / `check:loam-e2e` still fail with the inherited `duplicate tool:
+  fanout`, unchanged from rounds 4, 5 and 6.
+
+Note: this merge also brings in parity's `.jcode-done` marker and `THIRD_PARTY_NOTICES`
+file, which are parity's own deliverables and are kept as-is.
+
+---
+
 ## Merge gate fix, round 6 (merge commit `ec7a089`)
 
 Parity advanced a sixth time while the round-5 validation was being recorded (`1ccc8bd`,
