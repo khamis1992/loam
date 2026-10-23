@@ -1,10 +1,12 @@
 /**
  * Neo N18: the canvas panel, driven the way a user drives it.
  *
- * Playwright is unavailable here, so the acceptance flow is asserted through the
- * DOM: tag a node, drop a note, search a title, read the side rail, pan from the
- * minimap. Both the graph and the annotation layer are injected, which is exactly
- * what the panel is built for, so the same code path runs with no network.
+ * The end-to-end flow runs in Chromium (`e2e/specs/canvas-n18.spec.ts`); this file
+ * asserts the same controls through the DOM, which is faster and keeps the panel's
+ * behaviour pinned even when no browser is installed. Tag a node, drop a note,
+ * search a title, read the side rail, pan from the minimap. Both the graph and the
+ * annotation layer are injected, which is exactly what the panel is built for, so
+ * the same code path runs with no network.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';

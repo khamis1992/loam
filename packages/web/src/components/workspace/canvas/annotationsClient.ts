@@ -35,7 +35,10 @@ export class CanvasAnnotationsClient {
     // Kept as a field so tests can inject a base without touching the window.
     this.apiBase = options.apiBase ?? defaultApiBase();
     this.headers = options.headers;
-    this.fetchFn = options.fetchFn ?? fetch;
+    // Bound, not bare: this is called as a method, so a bare `fetch` would run with
+    // `this` set to the client and throw "Illegal invocation" in a browser. Node's
+    // fetch ignores its receiver, so only a real browser catches this.
+    this.fetchFn = options.fetchFn ?? ((input, init) => fetch(input, init));
   }
 
   /** The whole annotation layer of a run. */
