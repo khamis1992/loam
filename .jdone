@@ -872,15 +872,19 @@ session ran.
    would have dropped is still present verbatim in the resolved rollup, so nothing
    that either side wrote is lost. No other file conflicted.
 
-3. **Third merge** (parity tip `61aca0c`, the N9 merge). The J9 merge and its revert
-   landed on parity in between, and N9 re-added `.jdone`, so the file conflicted
-   again as an **add/add**: this branch's rollup (base + C20 reports) against
-   parity's rollup (base + N9's Ask-User-More report). Both sides share a 5239-line
-   suffix (the common rollup), so the resolution keeps ours verbatim, then a `---`
-   separator, then N9's new report block, then the shared suffix. Verified
-   mechanically as a multiset union of both stage blobs: **0 non-empty lines missing
-   from the ours side, 0 non-empty lines missing from the theirs side**, and no
-   conflict marker remains anywhere in the tree. No other file conflicted.
+3. **Third merge** (parity tip `3139f07`, the J9 revert, committed as `f017f96`).
+   Parity advanced again in between (the J9 merge, then its revert). This merge
+   applied cleanly with no conflict at all.
+
+4. **Fourth merge** (parity tip `61aca0c`, the N9 merge, committed as `ecb7586`).
+   N9 re-added `.jdone`, so the file conflicted again as an **add/add**: this
+   branch's rollup (base + C20 reports) against parity's rollup (base + N9's
+   Ask-User-More report). Both sides share a 5239-line suffix (the common
+   rollup), so the resolution keeps ours verbatim, then a `---` separator, then
+   N9's new report block, then the shared suffix. Verified mechanically as a
+   multiset union of both stage blobs: **0 non-empty lines missing from the ours
+   side, 0 non-empty lines missing from the theirs side**, and no conflict marker
+   remains anywhere in the tree. No other file conflicted.
 
 No test was weakened, deleted or skipped and no source file was edited by this
 session.
@@ -892,7 +896,7 @@ session.
 merged, zero parity commits missing). `git status --porcelain` is empty and
 `git grep -E "^(<{7}|={7}|>{7})( |$)"` finds no conflict marker in any tracked file.
 
-## Gates (all run from the worktree root on the final merged tree `f017f96`)
+## Gates (all run from the worktree root on the final merged tree `ecb7586`)
 - `npx tsc --noEmit`                          -> exit 0
 - `npm run build:server`                      -> exit 0 (dist/server.cjs 19.5mb, pdf worker copied)
 - `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
