@@ -1,0 +1,11 @@
+{
+  "id": "code-review",
+  "title": "Code Review",
+  "description": "Review a codebase for bugs, security issues, and style violations, then propose fixes.",
+  "prompt": "Review the attached codebase for bugs, security vulnerabilities, and code style issues. Check for common problems like SQL injection, XSS, insecure dependencies, and missing error handling. Also review the code structure, naming conventions, and test coverage. Provide a detailed report with severity levels (critical, high, medium, low) and suggested fixes for each issue found.",
+  "mode": "build",
+  "effort": "max",
+  "outputType": "text",
+  "icon": "🔧",
+  "category": "Engineering"
+}

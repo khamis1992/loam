@@ -1,3 +1,133 @@
+## M3 gate-fix session: merge with latest manus-parity, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity in: .jdone. Run
+git merge manus-parity, resolve those files keeping both sides, commit.`
+
+### Root cause
+No source file conflicted in any merge round. `git merge manus-parity` brought in
+another workstream's code (N15 Case Playbook: 12 seeded flow templates, the
+`/api/flow-templates` route, the `FlowPlaybook` gallery, the i18n keys and the
+`build-server.cjs` bundling wrapper) and every one of those files auto-merged
+cleanly with `ort`. The only file that ever conflicted was the tracked rollup
+`.jdone`, because both sides appended their own report at the same
+end-of-file anchor:
+
+- **ours** (HEAD, `6bcbe4c`): the M3 gap-closure pass report
+  (`sharedWith[]` share provenance).
+- **theirs** (manus-parity tip `d57df77`, the N15 merge): the N15 gate-fix
+  report plus the N15 Case Playbook report.
+
+### What was done
+Resolved as a **union** of both report blocks, HEAD's M3 gap-closure report
+first and parity's N15 reports second, with only the conflict-marker lines
+removed. No line from either side was dropped.
+
+The working copy had picked up CRLF from the merge driver while both blobs are
+LF-only, so it was normalized back to LF (no BOM, no lone CR), matching the
+blobs exactly.
+
+### Integrity of the resolved rollup
+Verified mechanically: the merged `.jdone` contains every non-empty line of both
+the ours blob and the theirs blob, has 0 conflict markers, 0 U+FFFD replacement
+characters, no mojibake, LF-only, no BOM and no lone CR.
+
+### Nothing was dropped from the merge
+Every file at the parity tip `d57df77` is present in the merged tree (0
+missing). `git merge-base --is-ancestor manus-parity HEAD` exits 0 after the
+commit.
+
+### Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (`dist/server.cjs` + pdf worker written)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- M3 backend: `node --import tsx --test src/tools/mirofish/__tests__/*.test.ts`
+                                              -> all mirofish suites green
+- `npm run verify`                            -> exit 0
+
+No test was weakened, deleted or skipped. No secrets committed. No forbidden
+path (`docs/handoff/watchdog.ps1`, `qa/*.png`, `packages/tests/visual/baselines`,
+ZCode/Codex files) touched. No Arabic text was written by this session, so no
+mojibake risk; the Arabic strings already present in the rollup are preserved
+verbatim.
+
+### Files
+Only `.jdone` was changed by this resolution. No `.cc-*`, `.jcode-*` or
+`.neo-*` marker file was touched.
+
+---
+
+## N15 gate-fix session: merge with latest manus-parity, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+### Root cause
+No source file conflicted. `git merge manus-parity` brought in another workstream's
+code (N7 branch fan-out, fc-09 effects round trip, video-studio client changes) and
+every one of those files auto-merged cleanly with `ort`. The only file that conflicted
+was the tracked rollup `.jdone`, because both sides appended their own report at the
+same end-of-file anchor:
+
+- **ours** (HEAD, `87dbdeb`): the N15 Case Playbook report.
+- **theirs** (manus-parity tip `851b3fe`): the N7 branch fan-out report.
+
+Resolved as a **union** of both report blocks, parity's N7 report first and this
+branch's N15 report second, with only the three conflict-marker lines removed. No line
+from either side was dropped.
+
+### Integrity of the resolved rollup
+Verified mechanically against the blobs in play: the merged `.jdone` is a
+multiset-superset of the ours blob, the theirs blob and the merge-base blob (0
+non-empty lines missing from any of them), with 0 conflict markers, 0 U+FFFD
+replacement characters and no mojibake. The file is LF-only (matching all three blobs;
+the working copy had briefly picked up CRLF from the merge driver and was normalized
+back to LF), with no BOM and no lone CR.
+
+### Nothing was dropped from the merge
+All 4746 files at the parity tip `851b3fe` are present in the merged tree (0 missing),
+so the merge dropped nothing. `git merge-base --is-ancestor manus-parity HEAD` exits 0
+and `git rev-list --left-right --count manus-parity...HEAD` is `0 3` (zero parity
+commits missing).
+
+### Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (`dist/server.cjs` + pdf worker written)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- N15 backend: `node --import tsx --test src/templates/__tests__/flowTemplates.test.ts`
+                                              -> tests 13, pass 13, fail 0
+- N15 web: `(cd packages/web && npx vitest run src/components/home/__tests__/FlowPlaybook.test.tsx src/i18n)`
+                                              -> 25 tests, 25 pass
+- merged-source suites (`fanout`, `runGraph`, `effectsRoundTrip`, `videoStudio`)
+                                              -> tests 118, pass 118, fail 0
+- full backend suite `node --import tsx --test "src/**/*.test.ts"`
+                                              -> tests 2762, suites 510, pass 2762, fail 0
+- full web suite `(cd packages/web && npx vitest run)`
+                                              -> 82 files, 554 tests, all pass
+
+No test was weakened, deleted or skipped. No assertion was relaxed. No secrets
+committed. No forbidden path (`docs/handoff/watchdog.ps1`, `qa/*.png`,
+`packages/tests/visual/baselines`, ZCode/Codex files) touched. No Arabic text was
+written by this session; no mojibake placeholder text was added. Working tree clean.
+
+### Files
+`.jdone` only (this report prepended to the preserved rollup). No source file was
+modified by this session; the N15 deliverables are unchanged from commit `70f3b73`.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run check:encoding
+  node --import tsx --test src/templates/__tests__/flowTemplates.test.ts
+  (cd packages/web && npx vitest run src/components/home/__tests__/FlowPlaybook.test.tsx src/i18n)
+  node --import tsx --test src/agent/__tests__/fanout.test.ts src/graph/__tests__/runGraph.test.ts src/tools/__tests__/effectsRoundTrip.test.ts src/tools/__tests__/videoStudio.test.ts
+  node --import tsx --test "src/**/*.test.ts"
+  (cd packages/web && npx vitest run)
+
+---
+
 # N7 complete: branch fan-out (`fanout` / `merge` step types, gap G14)
 
 Committed as `3188703`. Implements Neo N7: N independent branches run as child
@@ -8229,3 +8359,167 @@ called by tests (all use an injected fake `ModelCaller`). No secrets. No push, n
 mojibake risk. The tracked `.jdone` rollup was restored rather than deleted:
 it is preserved by convention on every sibling branch and already contains the
 M3 merge reports. Only this branch's own files were staged.
+
+---
+
+## N15 complete: Case Playbook (12 seeded Loam flows + gallery)
+
+Committed as `70f3b73` on `khamis1992/neo-n15` (base `manus-parity`). Implements
+Neo N15: a template gallery seeded with 12 Loam flows (Nutrio / «نتريو» dashboards,
+Arabic report, site, slides and more), where clicking a card ("Try this flow")
+pre-fills the composer prompt, mode and effort.
+
+## What shipped
+
+**1. The seeds (`src/templates/flows/*.json`, 12 new files)**
+
+`nutrio-dashboard`, `nutrio-dashboard-arabic`, `arabic-report`, `landing-site`,
+`product-slides`, `data-analysis`, `market-research`, `code-review`,
+`security-audit`, `video-storyboard`, `image-generation`, `automation-workflow`.
+Each carries `id`, `title`, `description`, `prompt`, `mode`, `effort`,
+`outputType`, plus optional `icon` / `category`. The Arabic Nutrio flow keeps its
+Arabic name «لوحة نتريو» and an Arabic prompt (RTL source, not mojibake).
+
+**2. The schema (`src/templates/flows/schema.ts`, new)**
+
+`FlowTemplateId` (12 slugs), `FlowTemplate`, `FLOW_TEMPLATE_FILE_NAMES`,
+`isValidFlowTemplate` and `validateFlowTemplates`. `mode` is one of the eight real
+Loam modes (`ask`, `research`, `build`, `write`, `data`, `media`, `security`,
+`automate`), `effort` is `fast` | `max`, `outputType` is one of
+`auto` | `text` | `image` | `video` | `slides` | `website`. Invalid entries are
+dropped, never thrown, so one malformed file cannot take the gallery down.
+
+**3. The catalog (`src/templates/flows/catalog.ts`, new)**
+
+`FLOW_TEMPLATES` and `getFlowTemplate(id)` are the single source of truth for both
+the gallery and the HTTP route. It has two loaders because the server runs in two
+shapes:
+
+- `tsx src/index.ts` (dev): the JSON files are read from `src/templates/flows`.
+- `dist/server.cjs` (packaged app): the JSON is bundled in and `src/` is not shipped.
+
+The packaged copy is read lazily from `globalThis.__LOAM_FLOW_TEMPLATES__`, falling
+back to disk when `import.meta` works. Reading lazily rather than at module scope is
+what keeps it correct: esbuild hoists `var` declarations above an injected
+`registerBundledFlows(...)` call, which silently wiped an earlier eager-injection
+attempt.
+
+**4. The build wrapper (`scripts/build-server.cjs`, new; `package.json`)**
+
+`build:server` is now `node -e "require('./scripts/build-server.cjs')"`. The script
+wraps the original esbuild invocation and adds an `onLoad` plugin (`inlineFlows`)
+that prepends one statement stashing the parsed flow JSON on `globalThis`, then
+copies the pdf worker as before. `inlineFlows` is exported for reuse.
+
+Why this was needed: the packaged app runs `dist/server.cjs` out of
+`resources/app.asar`, where `src/templates/flows/*.json` is not shipped and
+`import.meta` is unavailable in a CJS bundle. The original disk-reading catalog
+returned 0 flows at runtime. The real `dist/server.cjs` now contains
+`__LOAM_FLOW_TEMPLATES__`, and a standalone bundle check loads all 12 flows.
+
+Three bugs found and fixed along the way:
+
+- esbuild hoists `var` above the injected call, wiping it -> switched to a
+  `globalThis` prepend read lazily.
+- a `require.main === module` guard broke the `npm -e` invocation, so `main()` never
+  ran -> added argv-shape detection.
+- the Windows path separator made `CATALOG_REL` never match -> compared the literal
+  forward-slash string `"src/templates/flows/catalog.ts"`.
+
+**5. The HTTP surface (`src/server/routes/flowTemplates.ts`, new; `src/server/http.ts`)**
+
+`GET /api/flow-templates` lists the 12; `GET /api/flow-templates/:id` reads one
+(404 otherwise). Read-only: the templates are the JSON files, so there is nothing to
+create, update or delete. Non-GET returns 405; unrelated paths stay unhandled.
+
+**6. The web surface**
+
+- `packages/web/src/services/flowTemplatesApi.ts` (new): `listFlowTemplates`,
+  `getFlowTemplate` and `flowTemplateHref`. The deep link reuses the task page's
+  existing `draft` / `extData` search params, so the composer pre-fills from them
+  (prompt + Loam mode + output type + effort) with no new composer code.
+- `packages/web/src/components/home/FlowPlaybook.tsx` (new): the portal gallery with
+  a search box, category chips, a loading state, an empty state and an error state.
+  Cards show icon, category, title, description and a "Try this flow" button.
+- `packages/web/src/app/app/page.tsx`: a Case Playbook entry card next to the
+  existing template gallery, plus the dialog wiring.
+
+**7. i18n (`packages/web/src/i18n/en.json`, `ar.json`)**
+
+11 new keys per file: `Case Playbook`, `Try this flow`, `Search flows...`,
+`Twelve ready Loam flows. Pick one to start from a proven prompt.`, `Flow`, `Ask`,
+`Dashboard`, `Writing`, `Presentation`, `Analysis`, `Engineering`. Mode labels reuse
+the existing `Build` / `Write` / `Data` / `Media` / `Research` / `Security` /
+`Automate` keys via a `MODE_LABEL_KEYS` helper, with `ask` special-cased to `Ask`,
+rather than inventing a second set of mode strings.
+
+**8. Tests**
+
+- `src/templates/__tests__/flowTemplates.test.ts` (new): 13 tests - the schema
+  accepts a well-formed template and rejects a malformed one, `validateFlowTemplates`
+  keeps only valid entries, every seeded id has a JSON file and every JSON on disk is
+  a seed, all 12 pass the schema check, the catalog loads 12 unique ids in order, the
+  required Nutrio (en + ar) / Arabic report / site / slides seeds are present, every
+  flow targets a real Loam mode and effort, `getFlowTemplate` looks up a slug, and the
+  route lists 12 / reads one / 404s an unknown slug / rejects non-GET / leaves
+  unrelated paths unhandled.
+- `packages/web/src/components/home/__tests__/FlowPlaybook.test.tsx` (new): 9 tests.
+
+## A real regression found and fixed
+
+The i18n catalogs are flat key->value maps, so appending a duplicate key silently
+overwrites an existing UI string. An earlier merge had done exactly that:
+
+- AR: `"Automation"` «الأتمتة» -> «أتمتة» and `"Media"` «وسائط» -> «إعلام» (two real
+  regressions to existing UI strings).
+- EN: 5 duplicate keys (`Automation`, `Website`, `Edit`, `Media`, `Research`,
+  `Security`).
+
+Both catalogs were rebuilt from their HEAD originals plus only genuinely new keys.
+Result: 909 keys each, 0 removed, 0 changed, no duplicates. The test expectations were
+updated from `'Loam Build · Max'` / `'Loam Write · Max'` to `'Build · Max'` /
+`'Write · Max'`.
+
+## Acceptance criteria
+
+| Requirement | Where asserted |
+| --- | --- |
+| 12 seeded flow templates | `flowTemplates.test.ts` "exposes exactly the 12 seeded flow ids" + "the catalog loads all 12 in order with unique ids" |
+| all 12 pass the flow-template schema check | "all 12 flow JSON files pass the schema check" |
+| required seed content (Nutrio en + ar, Arabic report, site, slides) | "seeds the required flows: Nutrio (en + ar), Arabic report, site, slides" |
+| every template's mode/effort match a known Loam mode and effort | "every flow targets a real Loam mode and a valid effort level" |
+| `GET /api/flow-templates` lists them, `/:id` reads one, 404 otherwise | "lists the 12 flows", "reads one flow by slug", "404s an unknown slug" |
+| the flows load in the packaged bundle too | `dist/server.cjs` contains `__LOAM_FLOW_TEMPLATES__`; a standalone bundle check loads all 12 |
+
+## Gates (all run from the worktree root)
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| root types | `npx tsc --noEmit` | exit 0 |
+| web types | `(cd packages/web && npx tsc --noEmit)` | exit 0 |
+| server build | `npm run build:server` | exit 0 (`dist/server.cjs` + pdf worker written) |
+| web build | `(cd packages/web && npx next build)` | exit 0 (compiled successfully) |
+| encoding | `npm run check:encoding` | OK (no BOM, no mojibake, all JSON valid) |
+| modes | `npm run check:modes` | PASS |
+| backend suite | `node --import tsx --test "src/**/*.test.ts"` | 2702 tests, 2702 pass, 0 fail |
+| web suite | `(cd packages/web && npx vitest run)` | 80 files, 547 tests pass |
+| N15 backend tests | `node --import tsx --test src/templates/__tests__/flowTemplates.test.ts` | 13 tests, 13 pass |
+| N15 web tests | `(cd packages/web && npx vitest run src/components/home/__tests__/FlowPlaybook.test.tsx src/i18n)` | 25 tests, 25 pass |
+
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path
+(`docs/handoff/watchdog.ps1`, `qa/*.png`, `packages/tests/visual/baselines`,
+ZCode/Codex files) touched. `git merge-base --is-ancestor manus-parity HEAD` exits 0.
+
+## Seams left for other workstreams
+
+- **i18n parity:** the 11 new keys exist in `en` and `ar` only. Any further locale
+  needs the same keys.
+- **Flow editing:** the gallery is read-only. Authoring, editing or starring a flow
+  is not wired; the JSON files and the `validateFlowTemplates` seam are the place to
+  add it.
+- **Search quality:** the gallery filter is a folded substring match over
+  title + description + prompt. No ranking, no fuzzy match.
+- **N21 (Arabic/RTL):** the Arabic Nutrio flow carries real Arabic content, but the
+  gallery chrome labels remain English-only beyond the 11 new keys.
+
+
