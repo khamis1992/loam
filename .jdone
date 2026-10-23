@@ -70,6 +70,81 @@ sound: `git verify-pack -v .../pack-4f9df149...idx` reports `ok`, a fresh
 exits 0. This worktree's index is valid (593,276 bytes, signature `DIRC`,
 version 2) and every index-reading command (`ls-files`, `status`, `diff`) works.
 
+## Independent re-validation (2026-10-23, third pass)
+
+The second-pass audit covered only the 3 *conflicted* files. This pass widened the
+scope to the entire 17-file D3 delta and stress-tested the resolution and the
+repository rather than trusting the earlier report.
+
+- **Extended union audit (all 17 delta files, both directions).** For each of the 17
+  files in `git diff --name-only 03f8aef HEAD`, extracted base `088b4f2`, D3 parent
+  `053cd0e`, parity tip `03f8aef` and merge `HEAD`, then computed the line multiset
+  each side contributed and the lines each side added that the merge no longer
+  contains. Result: `FILES-WITH-LOSS=0` for every file. No line D3 added and no line
+  parity added is missing from the merged file (beyond base lines, which both sides
+  legitimately rewrote). The three conflicted files plus the fourteen
+  non-conflicted-but-merged files (`.jdone`, `src/index.ts`, `src/policy/riskTier.ts`,
+  `src/server/runTools.ts`, `src/server/http.ts`, `src/setup/runtime.ts`,
+  `src/server/taskWorkspace.ts`, `src/server/__tests__/runTools.test.ts`) all keep
+  both sides.
+- **Repo-wide deletion check.** `git diff --diff-filter=D --name-only 03f8aef HEAD`
+  is empty: no parity file was deleted by the merge. 9 parity files are modified
+  (`.jdone`, `package.json`, `src/index.ts`, `src/policy/riskTier.ts`,
+  `src/server/http.ts`, `src/server/runTools.ts`, `src/server/taskWorkspace.ts`,
+  `src/setup/runtime.ts`, `src/server/__tests__/runTools.test.ts`).
+- **Structural audit of the conflicted files.** `src/server/http.ts`: HEAD has
+  113 import lines vs parity's 112; the single head-only line is D3's
+  `import { handleEnvBuildRoutes } from "./routes/envBuilds.js";` (no duplicate
+  imports). Route dispatch order is
+  `handleProjectContextRoutes -> handleEnvBuildRoutes -> handlePlaybookRoutes ->
+  handleWikiRoutes`, so D3's env routes and parity's playbooks/wiki routes all
+  dispatch. `src/server/runTools.ts`: `ALWAYS_ON_TOOLS` is the union; D3's
+  `env_blueprint_generate` / `env_build_status` sit alongside parity's
+  `playbook_create_from_session` / `web_scaffold`. `package.json` parses as valid
+  JSON and both scripts are present: `check:env-builds` (D3) and
+  `check:test-isolation` (parity).
+- **Feature wiring.** `createEnvSnapshotTools()` actually returns both tools:
+  `TOOL-NAMES=["env_blueprint_generate","env_build_status"]`, each with a
+  `description` and a JSON `inputSchema`. Both are in `ALWAYS_ON_TOOLS` and both are
+  classified in `src/policy/riskTier.ts` (`EXEC_TOOL_NAMES`, lines 196-197).
+  `src/index.ts` exports `BLUEPRINT_FILE` / `bootTaskFromSnapshot` and
+  `src/setup/runtime.ts` imports `createEnvSnapshotTools`.
+- **Gates re-run end-to-end (exit codes captured).** `npx tsc --noEmit` exit 0;
+  `npm run build:server` exit 0 (dist/server.cjs 19.3mb); `npx next build` exit 0
+  (compiled successfully); `check:env-builds` PASS; `check:encoding --run` OK; full
+  `src` suite 1945 pass / 0 fail (166 files); `packages/web` vitest 437 pass / 0 fail
+  (66 files).
+- **Commit graph.** `ac0cf67` parents are exactly `053cd0e` (D3) and `03f8aef`
+  (parity tip); `git rev-list --count HEAD..manus-parity` = 0 (not behind);
+  `git status --porcelain` empty (0 entries). Branch `khamis1992/devin-d3`, not
+  detached. `.jdone` matches HEAD (`git diff --quiet HEAD -- .jdone` clean).
+  `.devin-done` is not required here: it is listed in `.git/info/exclude` (locally
+  ignored), so `.jdone` is the operative done marker.
+- **Hygiene.** No secret pattern (`sk-*`, `AKIA*`, `ghp_*`, private keys, `xoxb-*`,
+  `AIza*`) appears in any D3-added source line. No D3 test file issues a real
+  network call (`fetch(` / `http.request` / `https.request` / `ollama` / WebSocket):
+  0 hits. D3 tests redirect the data dir (`MANUS_LOCAL_DATA_DIR`) before importing
+  the module that reads `DATA_DIR` at import time.
+- **`git fsck` cause, pinned exactly.** The two zeroed sibling indexes are
+  `devin-d19` (590,095 bytes, sig `0x00000000`) and `devin-d4` (549,308 bytes,
+  sig `0x00000000`); all 36 other worktrees have a valid `DIRC` index, including
+  this one (593,276 bytes). `git ls-files --error-unmatch` and `git status` work
+  here. A fresh non-bare clone and a bare clone of the same object store both run
+  `git fsck` at exit 0 with zero error/fatal/warning lines. The error reproduces
+  identically from an unrelated valid worktree (`devin-d12`). Not caused by this
+  worktree.
+- **Pre-existing `check:test-isolation` failure (not caused by this merge).**
+  `npm run check:test-isolation` exits 1 on the *pristine parity* worktree
+  (`03f8aef`) and exit 1 here, with a byte-identical residue:
+  `data/manus.db` + `data/model-edits.jsonl`. It is not one of the four gates the
+  task requires (tsc, build:server, next build, tests) and the leak is documented in
+  parity's own test comments (`src/llm/modelAudit.ts`, `src/agent/__tests__/codingRouting.test.ts`,
+  `src/agent/__tests__/codingPrompt.test.ts`) as a known isolation gap. This merge
+  neither introduced nor widened it. The sandboxed suite itself is 1945/1945 pass
+  here vs parity's 1921/1921 (parity's earlier `# fail 1` was a flake and did not
+  reproduce on a clean parity run).
+
+
 ## Gates (all pass, run from the worktree root)
 1. `npx tsc --noEmit` — PASS
 2. `npm run build:server` — PASS (dist/server.cjs 19.3mb)
