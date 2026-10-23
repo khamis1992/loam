@@ -1,5 +1,5 @@
 import { memo, useMemo, Fragment, type ReactNode } from 'react';
-import type { ChatEvent, ToolUsedEvent, CascadeTaskClockEvent, AttachmentEvent, ModeEvent, CacheUsageEvent } from '@shared/socket';
+import type { ChatEvent, ToolUsedEvent, CascadeTaskClockEvent, AttachmentEvent, ModeEvent, EnvironmentIssueEvent, CacheUsageEvent } from '@shared/socket';
 import { t, PRODUCT } from '@/i18n/t';
 import { Markdown } from './Markdown';
 import { UserBubble } from './ChatBubble';
@@ -11,6 +11,7 @@ import { CacheUsageRow } from './CacheUsageRow';
 import { PlanStepRow, PlanUpdateRow, TodoListRow } from './PlanStep';
 import { ApprovalCard, FolderAccessApprovalCard, PlanApprovalCard, type LocalExecutionApprovalRequested, type PlanApprovalRequested } from '@/components/approval';
 import { AttachmentCard } from './AttachmentCard';
+import { EnvironmentIssueCard } from './EnvironmentIssueCard';
 import { summarizeTools } from './toolLabels';
 import type { ChatSocket } from '@/services/chatSocket';
 
@@ -74,6 +75,9 @@ export function ChatEventRow({ e, sessionId, socket, renderChat }: ChatEventRowP
     case 'attachment': {
       const a = e as AttachmentEvent;
       return <AttachmentCard name={a.name} mime={a.mime} size={a.sizeBytes} taskId={a.taskId} path={a.path} />;
+    }
+    case 'environmentIssue': {
+      return <EnvironmentIssueCard issue={e as EnvironmentIssueEvent} />;
     }
     case 'liveStatus':
       return <div className="text-sm text-text-tertiary">{t('{name} is thinking', { name: PRODUCT })}…</div>;

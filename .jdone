@@ -1,3 +1,245 @@
+D17 — Environment-issue reporting: DONE
+
+Summary
+-------
+Adds the `report_environment_issue({message, details})` tool so an agent records a
+local-environment failure instead of trying to fix the environment, and returns
+guidance to continue (rely on CI / skip the local step). Implemented end to end:
+
+  - Tool + registry:      src/tools/environmentIssueTools.ts, src/index.ts, src/server/runTools.ts
+  - Agent event:          src/agent/events.ts
+  - Prompt rule (gated):  src/agent/prompt.ts (rule added only when the tool is enabled)
+  - Protocol mapping:     src/protocol/{events,types,socket}.ts, packages/shared/src/socket.ts
+  - Web UI card:          packages/web/src/components/chat/EnvironmentIssueCard.tsx + EventList.tsx
+  - i18n (en + ar):       packages/web/src/i18n/{en,ar}.{json,ts}
+
+Acceptance criteria (AC) met
+----------------------------
+  - tool records the issue + emits an event .......... src/tools/__tests__/environmentIssueTools.test.ts,
+                                                       src/protocol/__tests__/environmentIssue.test.ts
+  - prompt contains the rule (gated by tool availability) ... src/agent/__tests__/prompt.test.ts
+  - UI card renders (web vitest) ..................... src/components/chat/__tests__/EnvironmentIssueCard.test.tsx
+                                                       + new EventList integration test
+
+Changes made in this session (continuing from commit 9c88a2c)
+------------------------------------------------------------
+  - Fixed an over-specified assertion in src/agent/__tests__/prompt.test.ts. The test
+    conflated the always-on master-prompt tool *catalog* (§6.1, which names
+    report_environment_issue unconditionally by design) with the conditional guidance
+    *rule*. The assertion now gates the actual rule text (/rely on CI/i,
+    /Do not report the step as passed/i, /When a step cannot run because of the local
+    environment/i). Production code was NOT weakened.
+  - Added packages/web/src/components/chat/__tests__/environmentIssueEventList.test.tsx
+    proving the card renders through the live chat timeline (EventList -> ChatEventRow
+    -> EnvironmentIssueCard), not just the component in isolation.
+
+Gates (all pass, run from worktree root)
+---------------------------------------
+  1. npx tsc --noEmit                              PASS
+  2. npm run build:server                          PASS
+  3. (cd packages/web && npx next build)           PASS
+  4. npx tsc --noEmit --project packages/web/tsconfig.json   PASS
+
+Tests (files touched by D17)
+----------------------------
+  node --import tsx --test \
+    src/tools/__tests__/environmentIssueTools.test.ts \
+    src/protocol/__tests__/environmentIssue.test.ts \
+    src/agent/__tests__/prompt.test.ts \
+    src/server/__tests__/runTools.test.ts
+  -> 25 tests, 25 pass, 0 fail
+
+  cd packages/web && npx vitest run \
+    src/components/chat/__tests__/EnvironmentIssueCard.test.tsx \
+    src/components/chat/__tests__/environmentIssueEventList.test.tsx
+  -> 4 tests, 4 pass, 0 fail
+
+Known pre-existing failure (NOT caused by D17)
+----------------------------------------------
+  src/agent/__tests__/codingPrompt.test.ts ("matches the committed snapshot") fails on
+  the master-prompt hash. It is pre-existing on the manus-parity lineage: the master
+  prompt asset was regenerated after the snapshot was committed, so the hash changed.
+  The failure is outside D17's diff (D17 only touched the files listed above) and was
+  left untouched to avoid weakening another task's test.
+
+---
+
+Merge with manus-parity (97c53d7): resolved, all conflicts keep both sides
+-------------------------------------------------------------------------
+The merge gate (`git merge manus-parity`) conflicted in 7 files. Every conflict was
+resolved by keeping BOTH sides; no test was weakened and no code was dropped:
+
+  1. .jdone: add/add D17 marker vs the parity D4/N20 marker. Both preserved below.
+  2. packages/shared/src/socket.ts: D17 `EnvironmentIssueEvent` + D4
+     `PlanApprovalRequestedEvent`/`PlanApprovalResolvedEvent`, and the `ChatEvent`
+     union extended with all three.
+  3. packages/web/src/components/chat/EventList.tsx: import list now carries both
+     `EnvironmentIssueEvent` (D17) and `CacheUsageEvent` (parity).
+  4. src/agent/events.ts: `environment_issue` (D17) + `plan_approval_required` (D4)
+     variants both kept.
+  5. src/protocol/events.ts: both event imports and both switch cases kept.
+     6. src/protocol/socket.ts: both `environment_issue` and `plan_approval_required`
+     decode branches kept.
+     7. src/protocol/types.ts: `EnvironmentIssueEvent` + the D4 plan-approval events
+     both kept.
+
+The merge also exposed one real defect, fixed (not worked around):
+- `src/graph/runGraph.ts`: manus-parity made the `AgentEvent` switch exhaustive, so
+  D17's `environment_issue` event hit the `default` arm and tsc failed with
+  "Type '...environment_issue...' is not assignable to type 'never'". It is now
+  mapped to a finished `note` node (the report is terminal: the agent records it and
+  continues rather than asking the user), and a new case in
+  `src/graph/__tests__/runGraph.test.ts` covers it. D17 shipped before the exhaustive
+  switch existed on parity, so this was a merge-time interaction, not a pre-existing
+  failure.
+
+Post-merge gates (all run from the worktree root on the merged tree, commit c3d1fe1)
+-------------------------------------------------------------------------------------
+  1. npx tsc --noEmit                              PASS
+  2. npm run build:server                          PASS (dist/server.cjs 19.2mb, pdf worker copied)
+  3. (cd packages/web && npx next build)           PASS (25 static pages)
+  4. (cd packages/web && npx tsc --noEmit)          PASS
+
+Tests on the merged tree:
+  node --import tsx --test \
+    src/tools/__tests__/environmentIssueTools.test.ts \
+    src/protocol/__tests__/environmentIssue.test.ts \
+    src/agent/__tests__/prompt.test.ts \
+    src/server/__tests__/runTools.test.ts
+  -> 25 tests, 25 pass, 0 fail
+
+  node --import tsx --test src/graph/__tests__/runGraph.test.ts \
+    src/tools/__tests__/planApproval.test.ts
+  -> 30 tests, 30 pass, 0 fail
+
+  node --import tsx --test src/agent/__tests__/toolProfile.test.ts \
+    src/policy/__tests__/permissionModes.test.ts src/modes/__tests__/catalog.test.ts
+  -> 23 tests, 23 pass, 0 fail
+
+  node --import tsx --test src/agent/__tests__/codingPrompt.test.ts
+  -> 8 tests, 8 pass, 0 fail  (the previously-failing snapshot now passes on the
+     merged tree: parity refreshed the committed snapshot)
+
+  cd packages/web && npx vitest run \
+    src/components/chat/__tests__/EnvironmentIssueCard.test.tsx \
+    src/components/chat/__tests__/environmentIssueEventList.test.tsx
+  -> 4 tests, 4 pass, 0 fail
+
+  npm run check:encoding -> OK (no BOM, no mojibake, all JSON valid)
+  npm run check:modes    -> PASS
+  npm run check:orchestrator -> PASS (114/114)
+
+Post-merge gate condition verified
+----------------------------------
+`git merge manus-parity` now reports "Already up to date." and
+`git merge-base --is-ancestor manus-parity HEAD` succeeds, so manus-parity
+(97c53d7) is fully merged (rev-list --left-right --count manus-parity...HEAD
+= 0  8, i.e. parity is 8 commits ahead of D17's first parent). The gate's
+condition is satisfied: there are no remaining conflicts to resolve.
+
+Re-verified on the final committed HEAD (1ef99fe) after the .jdone commits:
+`git merge manus-parity` -> "Already up to date."; `--is-ancestor` -> exit 0;
+`rev-list --left-right --count manus-parity...HEAD` -> `0 8`; working tree
+clean (`git status --porcelain` empty). manus-parity is a local-only branch
+(no remote tracking ref), and its tip 97c53d7 is the latest merge recorded in
+its reflog, so there is no newer parity state the gate could be testing.
+
+Independent end-to-end probe (no stubs, real production objects)
+---------------------------------------------------------------
+A standalone probe composed the real registry, tool, event and protocol mapper:
+  registry -> tool.run -> emitted AgentEvent -> mapAgentEvent -> ChatEvent[]
+written outside the worktree (%TEMP%\d17-e2e-probe.mts, run with
+`node --import tsx`), 15/15 checks passed:
+  - always-on: present in ALWAYS_ON_TOOLS; granted when registered+not denied;
+    withheld when denied; never granted when unregistered; reachable through
+    `registry.forAllowlist(merged)`.
+  - happy path: tool.run returns ok + guidance, emits exactly one
+    `environment_issue` AgentEvent carrying both `message` and `details`.
+  - mapping: that event maps to exactly one `environmentIssue` ChatEvent with
+    the same message/details plus a non-empty id and numeric timestamp.
+  - optional field: omitting `details` leaves the key absent on BOTH the agent
+    event and the mapped chat event (not synthesized).
+  - validation: blank, over-long (2001 chars) and missing `message` are all
+    rejected with ok:false and emit nothing.
+  - merge-time defect still fixed: src/protocol/types.ts declares the
+    `environmentIssue` chat event, src/agent/events.ts declares the
+    `environment_issue` agent event, and src/graph/runGraph.ts contains a
+    `case "environment_issue"` with no `Unknown agent event` throw guard.
+
+Acceptance-criteria suites re-run on committed HEAD 1ef99fe
+---------------------------------------------------------
+  node --import tsx --test src/tools/__tests__/environmentIssueTools.test.ts \
+    src/server/__tests__/runTools.test.ts
+    -> tests 20, pass 20, fail 0
+  node --import tsx --test src/protocol/__tests__/environmentIssue.test.ts \
+    src/graph/__tests__/runGraph.test.ts src/agent/__tests__/prompt.test.ts
+    -> tests 17, pass 17, fail 0
+  (cd packages/web && npx vitest run \
+     src/components/chat/__tests__/EnvironmentIssueCard.test.tsx \
+     src/components/chat/__tests__/environmentIssueEventList.test.tsx)
+    -> 2 files / 4 tests, all pass
+
+Mandatory gates re-run on committed HEAD 1ef99fe (not the intermediate merge
+commit) from the worktree root:
+  1. npx tsc --noEmit                                  PASS (exit 0)
+  2. npm run build:server                              PASS (dist/server.cjs 19.2mb, pdf worker copied)
+  3. (cd packages/web && npx next build)               PASS (25 static pages)
+  4. (cd packages/web && npx tsc --noEmit)              PASS (exit 0)
+
+Single remaining failure re-confirmed on HEAD 1ef99fe
+----------------------------------------------------
+src/agent/__tests__/toolDescriptions.test.ts -> 3 pass / 1 fail, with exactly
+the documented assertion ("suggest_plan is neither registered nor listed in
+PENDING_CODING_TOOLS"). Same failure, same file, same line as before the merge;
+it is the inherited upstream defect described below.
+
+Full-suite validation on the merged tree
+---------------------------------------
+  node --import tsx --test <all 170 node:test suites under src/>
+  -> 2038 tests, 2037 pass, 1 fail (the inherited failure documented below)
+
+  (cd packages/web && npx vitest run)
+  -> 69 files / 447 tests, all pass, 0 fail
+
+  npm run check:promptwire      -> PASS
+  npm run check:design-registry -> OK (30 blocks, 8 RTL, all manifests valid)
+
+One inherited failure, proven NOT caused by this merge
+-----------------------------------------------------
+  src/agent/__tests__/toolDescriptions.test.ts
+  "keeps every coding-profile tool either linted or explicitly pending"
+  -> AssertionError: suggest_plan is neither registered nor listed in
+     PENDING_CODING_TOOLS
+
+Provenance (on the manus-parity lineage, independent of D17):
+  - b6e908f (C3) added the coding tool profile and this lint test together.
+  - 25da47e (D4) then added "suggest_plan" to CODING_PROFILE.tools in
+    src/agent/taskToolScope.ts but did NOT add it to the test's
+    PENDING_CODING_TOOLS, and the test's registry does not include
+    createPlanTools (which is what registers suggest_plan).
+  - The test therefore asserts a contradiction that D4 introduced on parity.
+
+Proof the failure is not merge-induced (three independent checks):
+  1. The test file, taskToolScope.ts and planTools.ts are byte-identical to
+     97c53d7 (`git diff 97c53d7 HEAD -- <file>` is empty for each).
+  2. Computed the test's full transitive relative-import closure (85 files).
+     Only 2 of the 85 differ from parity at all (src/agent/events.ts,
+     src/agent/prompt.ts, i.e. D17's own additions), and neither is reachable
+     from the failing assertion: no file in the closure references
+     suggest_plan or planTools. The assertion depends only on
+     CODING_PROFILE.tools and the modules the test's own registry builds.
+  3. Decisive experiment: reverted those 2 files to their parity bytes so all
+     85 closure files were exactly parity's, and re-ran the test -> it still
+     fails with the same assertion. Restored the files afterwards (blob hashes
+     confirmed back at HEAD's).
+
+This is a pre-existing upstream defect on manus-parity, outside D17's diff and
+outside every file D17 touched. It was left untouched: "fixing" it would mean
+either weakening/editing another task's (D4's) test or changing D4's production
+tool profile, both of which the task rules forbid.
+
+---
+
 D4 plan approval gate (Devin suggest_plan) complete, merged with the latest
 manus-parity, and committed on khamis1992/devin-d4.
 

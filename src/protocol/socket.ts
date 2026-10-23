@@ -236,6 +236,11 @@ function stepToAgentEvent(step: StepRecord): AgentEvent | undefined {
   if (type === "mode") {
     return { type: "mode", mode: String(data.mode ?? ""), label: String(data.label ?? ""), labelAr: String(data.labelAr ?? ""), reason: typeof data.reason === "string" ? data.reason : undefined };
   }
+  if (type === "environment_issue") {
+    // Rebuild the agent's environment-issue report so a persisted task replays
+    // the same card instead of dropping it.
+    return { type: "environment_issue", message: String(data.message ?? ""), ...(typeof data.details === "string" ? { details: data.details } : {}) };
+  }
   if (type === "plan_approval_required") {
     return {
       type: "plan_approval_required",

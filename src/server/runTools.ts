@@ -20,6 +20,7 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "scratchpad_add",
   "scratchpad_list",
   "scratchpad_complete",
+  "report_environment_issue",
   "todo_write",
   "browser_operator",
   "propose_instructions_update",

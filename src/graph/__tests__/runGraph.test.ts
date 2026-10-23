@@ -387,4 +387,32 @@ describe("run graph: performance", () => {
     assert.throws(() => parseExport({ run_id: RUN, nodes: [{ id: "x" }] }), /invalid node/);
     assert.equal(store.count(RUN), 0, "a rejected export writes nothing");
   });
+
+  it("places an environment-issue report as a finished note on the canvas", () => {
+    // D17: `report_environment_issue` must be a first-class graph event. The
+    // merge with manus-parity made the AgentEvent switch exhaustive, so an
+    // unhandled variant is a compile error rather than a silently dropped node.
+    const graph = new RunGraph();
+    graph.replay(RUN, recordedRun());
+    const before = graph.getRunNodes(RUN).length;
+
+    const ids = graph.applyEvent(RUN, {
+      type: "environment_issue",
+      message: "npm ci failed: no network",
+      details: "ENOTFOUND registry.npmjs.org",
+    });
+
+    assert.equal(ids.length, 1, "the report appends exactly one node");
+    assert.equal(graph.getRunNodes(RUN).length, before + 1);
+    const issue = graph.getNode(ids[0]!, RUN)!;
+    assert.equal(issue.type, "note", "an environment issue is a note, not a question");
+    assert.equal(issue.status, "finished", "the report is terminal: the agent continues");
+    const data = issue.data as { message?: string; details?: string };
+    assert.equal(data.message, "npm ci failed: no network");
+    assert.equal(data.details, "ENOTFOUND registry.npmjs.org");
+    // It attaches to the run instead of orphaning, and replaying the same event
+    // is idempotent because the seed is sequence-derived.
+    graph.applyEvent(RUN, { type: "environment_issue", message: "npm ci failed: no network" });
+    assert.equal(graph.getRunNodes(RUN).length, before + 2, "a second report is a distinct node");
+  });
 });

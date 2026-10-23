@@ -399,6 +399,17 @@ export class RunGraph {
           },
           parent: state.lastId,
         }).id];
+      case "environment_issue":
+        // D17 report_environment_issue: a step cannot run because of the local
+        // environment. It is a terminal note, not a question: the agent records
+        // it and continues (rely on CI / skip the step).
+        return [this.addNode(runId, state, {
+          type: "note",
+          seed: `environment-issue:${state.seq}`,
+          status: "finished",
+          data: { message: oneLine(event.message, 400), ...(event.details ? { details: oneLine(event.details, 800) } : {}) },
+          parent: state.lastId,
+        }).id];
       case "compaction":
         return [this.addNode(runId, state, {
           type: "note",
