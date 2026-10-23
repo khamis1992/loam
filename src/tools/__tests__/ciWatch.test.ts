@@ -37,7 +37,10 @@ import {
 } from "../../agent/ciWatch.js";
 import { ciWatchEscalationNotice, watchCiOnce } from "../../agent/ciWatchLoop.js";
 import { GitHubPrProvider, LocalPrProvider } from "../gitPrProvider.js";
-import type { CheckRunInfo, PrComment, PrInfo, PrProvider } from "../gitPrProvider.js";
+import type { CheckRunInfo, PrComment, PrDiff, PrInfo, PrProvider } from "../gitPrProvider.js";
+
+/** The empty diff the ci_watch tests never need (pr_review is D15's tool). */
+const EMPTY_DIFF: PrDiff = { repo: "o/r", number: 0, head: "", base: "", files: [] };
 
 /** An in-memory provider whose check-runs and job logs come from a mutable list. */
 class FakeProvider implements PrProvider {
@@ -69,6 +72,9 @@ class FakeProvider implements PrProvider {
   }
   async getCheckRunLog(_repo: string, id: string) {
     return this.logs(id);
+  }
+  async prDiff() {
+    return EMPTY_DIFF;
   }
 }
 
@@ -124,6 +130,9 @@ function hangingProvider(): PrProvider {
     },
     async getCheckRunLog() {
       return "";
+    },
+    async prDiff() {
+      return EMPTY_DIFF;
     },
   };
 }

@@ -43,11 +43,40 @@ export interface CreatePrInput {
   head: string;
   base: string;
   body?: string;
+  /**
+   * Optional explicit PR number. The local provider otherwise numbers PRs
+   * itself; tests pin it so a scripted diff can be seeded under the number the
+   * review will fetch.
+   */
+  number?: number;
 }
 
 export interface AddCommentOptions {
   path?: string;
   line?: number;
+}
+
+/**
+ * One file of a pull request diff, with the file's full unified-diff hunks.
+ *
+ * The diff is intentionally plain text: the reviewer parses the hunk headers
+ * itself (D15) so it can compute the new-file line numbers findings are reported
+ * against without asking the model to do arithmetic on the patch.
+ */
+export interface PrFileDiff {
+  path: string;
+  status: string;
+  /** Unified diff for this file, including the `@@` hunk headers. */
+  diff: string;
+}
+
+/** The diff of a whole pull request, one entry per changed file. */
+export interface PrDiff {
+  repo: string;
+  number: number;
+  head: string;
+  base: string;
+  files: PrFileDiff[];
 }
 
 /** One CI check-run as the agent needs it (D2 ci_watch). */
@@ -86,6 +115,8 @@ export interface PrProvider {
   listCheckRuns(repo: string, ref: string): Promise<CheckRunInfo[]>;
   /** D2: job log for a failing check-run (scripted for the local provider). */
   getCheckRunLog(repo: string, checkRunId: string): Promise<string>;
+  /** D15: unified diff per changed file, used by pr_review. */
+  prDiff(repo: string, number: number): Promise<PrDiff>;
 }
 
 function sanitizeRepo(repo: string): string {
@@ -207,6 +238,25 @@ export class GitHubPrProvider implements PrProvider {
     return `check-run ${checkRunId} has no downloadable log`;
   }
 
+  async prDiff(repo: string, number: number): Promise<PrDiff> {
+    const pr = await this.viewPr(repo, number);
+    const data = await this.request("GET", `/repos/${repo}/pulls/${number}/files?per_page=100`);
+    const files = Array.isArray(data) ? data : ((data.files ?? []) as unknown[]);
+    return {
+      repo,
+      number,
+      head: pr.head,
+      base: pr.base,
+      files: (files as Record<string, unknown>[]).map((file) => ({
+        path: String(file.filename ?? ""),
+        status: String(file.status ?? ""),
+        // GitHub omits `patch` for binary files and for very large diffs; the
+        // reviewer skips files whose patch is missing rather than guessing.
+        diff: typeof file.patch === "string" ? file.patch : "",
+      })),
+    };
+  }
+
   /** D5: replace the pull request body (PATCH /repos/{repo}/pulls/{number}). */
   async setPrBody(repo: string, number: number, body: string): Promise<PrInfo> {
     const data = await this.request("PATCH", `/repos/${repo}/pulls/${number}`, { body });
@@ -224,6 +274,15 @@ interface LocalCheckRecord {
   ref: string;
   runs: CheckRunInfo[];
   logs: Record<string, string>;
+}
+
+/** Scripted diff for the local provider: one pull request's changed files. */
+interface LocalDiffRecord {
+  repo: string;
+  number: number;
+  head: string;
+  base: string;
+  files: PrFileDiff[];
 }
 
 /** Scripted check-runs for the local provider: `fail -> fail -> pass` by default. */
@@ -272,7 +331,7 @@ export class LocalPrProvider implements PrProvider {
   }
 
   async createPr(input: CreatePrInput): Promise<PrInfo> {
-    const number = this.nextNumber(input.repo);
+    const number = input.number ?? this.nextNumber(input.repo);
     const pr: PrInfo = {
       number,
       title: input.title,
@@ -366,6 +425,61 @@ export class LocalPrProvider implements PrProvider {
     }
     return `no local log for check-run ${checkRunId}`;
   }
+
+  private diffFileFor(repo: string): string {
+    return path.join(this.dir, `${sanitizeRepo(repo)}-diffs.json`);
+  }
+
+  private readDiffs(repo: string): LocalDiffRecord[] {
+    try {
+      return JSON.parse(fs.readFileSync(this.diffFileFor(repo), "utf8")) as LocalDiffRecord[];
+    } catch {
+      return [];
+    }
+  }
+
+  private writeDiffs(repo: string, records: LocalDiffRecord[]): void {
+    fs.mkdirSync(this.dir, { recursive: true });
+    const tmp = `${this.diffFileFor(repo)}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(records, null, 2), "utf8");
+    fs.renameSync(tmp, this.diffFileFor(repo));
+  }
+
+  /** Scripted diff for a pull request (tests drive the reviewed patch). */
+  setPrDiff(repo: string, number: number, diff: Omit<PrDiff, "repo" | "number">): void {
+    const records = this.readDiffs(repo).filter((r) => r.number !== number);
+    records.push({ repo, number, ...diff });
+    this.writeDiffs(repo, records);
+  }
+
+  async prDiff(repo: string, number: number): Promise<PrDiff> {
+    const record = this.readDiffs(repo).find((r) => r.number === number);
+    if (!record) throw new Error(`no local diff for pull request #${number} in ${repo}`);
+    return { repo, number, head: record.head, base: record.base, files: record.files };
+  }
+}
+
+/**
+ * Seed the diff `pr_diff` returns for a pull request on a LocalPrProvider.
+ *
+ * The local provider cannot compute a diff from a real git remote (and D15's
+ * tests must not touch the network), so the diff is scripted exactly like
+ * {@link LocalPrProvider.setCheckScript}.
+ */
+export function setPrDiff(
+  provider: PrProvider,
+  repo: string,
+  number: number,
+  diff: Omit<PrDiff, "repo" | "number">,
+): void {
+  if (typeof (provider as { setPrDiff?: unknown }).setPrDiff !== "function") {
+    throw new Error("setPrDiff requires a LocalPrProvider");
+  }
+  (provider as unknown as { setPrDiff: (r: string, n: number, d: Omit<PrDiff, "repo" | "number">) => void }).setPrDiff(
+    repo,
+    number,
+    diff,
+  );
 }
 
 /** The default local script: two failing jobs and one passing job. */

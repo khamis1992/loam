@@ -140,7 +140,86 @@ Test command:
 
 ---
 
+D15 — PR reviewer + bug catcher: DONE
+
+Summary
+-------
+Adds the `pr_review({repo, number, postComments?, maxFiles?, conventions?})` tool. It
+fetches the PR's diff through the D1 `PrProvider` (`pr_diff`, added to the interface and
+implemented by `GitHubPrProvider` via `GET /repos/{repo}/pulls/{n}/files?per_page=100` and
+by `LocalPrProvider` from a scripted `setPrDiff` seed), reviews each changed file on its
+own against the repo conventions (`AGENTS.md` / `CONTRIBUTING.md` when present), and
+returns deduplicated findings `{severity: bug|flag|nit, file, line, explanation,
+suggested_fix}`. With `postComments` the findings are filed as line review comments through
+the same provider.
+
+Implemented end to end:
+  - Reviewer:        src/agent/prReview.ts
+  - Tool + registry: src/tools/prReviewTools.ts, src/setup/runtime.ts
+  - Provider diff:   src/tools/gitPrProvider.ts (PrDiff/PrFileDiff, prDiff on both providers,
+                     LocalPrProvider.setPrDiff / setPrDiff helper)
+  - Mode allowlist:  src/modes/catalog.ts (`pr_review` in the GIT set)
+  - Prompt catalog:  prompts/loam-master.md §6.3 + §8.5, regenerated into
+                     src/agent/masterPromptText.ts (snapshot hash refreshed)
+
+Acceptance criteria (AC) met
+----------------------------
+  - seeded off-by-one bug reported as `bug` at the right file/line
+      fixture `src/counter.ts` with `for (let i = 0; i <= n; i++)` on new-file line 7;
+      the reviewer parses the hunk headers itself and clamps the model's line into the
+      touched range, so the finding lands on `src/counter.ts:7` ->
+      src/tools/__tests__/prReview.test.ts ("reports a bug finding at the seeded off-by-one line")
+  - duplicates merged (most severe wins, fuller explanation kept, loser's fix merged)
+      -> src/tools/__tests__/prReview.test.ts ("merges duplicate findings the model repeats")
+  - post-comments goes to LocalProvider only (GitHub posting is exercised through a
+    mocked fetch; the tool only ever calls the provider's `addComment`)
+      -> src/tools/__tests__/prReview.test.ts ("posts the findings as review comments only when asked")
+
+No network in tests: the diff comes from `LocalPrProvider` seeded with `setPrDiff`, the
+model is a fake client returning canned JSON, and the GitHub path is exercised with a
+mocked `fetch`.
+
+Merge with manus-parity: fast-forward (no conflicts)
+----------------------------------------------------
+`git merge manus-parity` updated a8130cc..35c8470 as a fast-forward, so the D15 working
+tree carried the parity tip (design_critique, editHints, files.ts triage, docs/re/*).
+Nothing conflicted. All gates were re-run on the merged tree.
+
+Gates (all run from the worktree root on the merged tree)
+------------------------------------------------------
+  1. npx tsc --noEmit                                 -> exit 0
+  2. npm run build:server                             -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+  3. (cd packages/web && npx next build)              -> exit 0 (compiled successfully, 25/25 static pages)
+  4. node --import tsx --test (D15 + touched suites)   -> 77 tests, 77 pass, 0 fail
+     (prReview.test.ts, ciWatch.test.ts, codingPrompt.test.ts, catalog.test.ts)
+  5. (cd packages/web && npx vitest run)              -> 72 files / 472 tests, all pass
+  6. npm run check:encoding / check:modes / check:orchestrator / check:promptwire -> PASS
+
+Full-suite validation (committed tree, `src/**/*.test.ts`)
+-------------------------------------------------------
+  node --import tsx --test "src/**/*.test.ts" -> tests 2245, pass 2243, fail 2
+
+Both failures are pre-existing and NOT caused by D15:
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered
+   nor listed in PENDING_CODING_TOOLS". The inherited D4 defect: D4 added `suggest_plan`
+   to `CODING_PROFILE.tools` and the mode catalog but never added it to the test's
+   `PENDING_CODING_TOOLS`, and the test's registry does not include `createPlanTools`.
+   `toolDescriptions.test.ts`, `taskToolScope.ts` and `planTools.ts` are byte-identical
+   to manus-parity (`git diff manus-parity HEAD` is empty for each).
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing"
+   (`info.isGit` is true for a plain temp dir). Environment-dependent: the test assumes
+   `%TEMP%` is not itself inside a git worktree, which is false here (the worktree root is
+   under a git repo). `src/server/worktrees.ts` and the test are byte-identical to
+   manus-parity, and both failures reproduce identically when run inside the manus-parity
+   worktree itself (8 tests, 6 pass, 2 fail).
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+
+---
+
 V11 complete: design_critique — vision rubric critique loop for generated UIs.
+
+## Preserved: manus-parity .jdone (V11 design_critique report)
 
 What shipped
 ------------
@@ -501,7 +580,6 @@ Working tree clean.
 ## Preserved: D2 gate-fix report (previous .jdone content)
 
 D2 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
-
 ## The failure that was fixed
 `.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity: run git merge
 manus-parity, resolve all conflicts keeping both sides, commit.
