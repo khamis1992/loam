@@ -1,3 +1,50 @@
+# N5 round 2: found and fixed a real defect in the `.jcode-done` marker
+
+## The defect
+
+The previous N5 commit (`64a3ea8`) recreated `.jcode-done` with a full-file write while the
+file already existed with **parity's J11 completion report** (222 lines). The write replaced
+that report with the 33-line N5 report. Because parity did not touch `.jcode-done` again in
+the later merges, git saw a clean one-sided change and took our lossy version with **no
+conflict**, so the `.jcode-done merge=union` driver never fired. Result: 193 non-blank lines
+of J11 content were silently dropped.
+
+This is exactly the class of failure the union driver exists to prevent, and it is the same
+mistake the earlier session made with `.jdone` (an overwrite that had to be restored from
+`HEAD~1`). Root cause: a marker must be **appended to**, never rewritten from scratch.
+
+## The fix
+
+`.jcode-done` now contains both reports: the N5 report first, then parity's complete J11
+report, separated by `---`. Two stale figures in the N5 section were also corrected (`53
+tests` -> the real 57/76/2971/624/10-of-10 figures) and its "they will land with the next
+commit" note now says they landed in `64a3ea8`.
+
+## Verification
+
+A line-ending-normalized multiset comparison of the working-tree markers against the parity
+revisions:
+
+| File | Reference | Missing non-blank lines |
+| --- | --- | --- |
+| `.jcode-done` | `manus-parity` | 0 |
+| `.jcode-done` | `599b3a0` (pre-commit) | 0 |
+| `.jcode-done` | `64a3ea8~1` | 0 |
+| `.jdone` | `manus-parity` | 0 |
+| `.jdone` | `599b3a0` | 1 (the single gate-citation row this task intentionally corrected) |
+
+`.jcode-done` is 262 lines with both `J11` and `N5` present. The `.jdone` rollup itself was
+never damaged (missing 0 against parity).
+
+## Note on the false alarm
+
+The first run of this check reported 20,269 "missing" lines for `.jdone`. That was a harness
+artifact: the worktree file is CRLF while `git show` emits LF, so every line mismatched. The
+normalized rerun above is the trustworthy result, and the same normalization was applied to
+the `.jcode-done` numbers.
+
+---
+
 # N9 round 12: parity auto-unioned .jdone, full suite green on the final tip
 
 Parity advanced once more, to `ca08d4c` (14 commits ahead of the previous merge). This time the
