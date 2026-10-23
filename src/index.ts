@@ -392,7 +392,7 @@ async function main(): Promise<void> {
         sandboxMode: sandboxPolicy.mode,
       };
       const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
-        ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint,
+        ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint, lifecycleHooks: true,
         saveCheckpoint: (checkpoint) => { opts.savedRun.checkpoint = checkpoint; saveRun(task, opts.savedRun, opts.lease); },
       }) : await runAgent(agentOpts);
       // The orchestrator can swallow an abort (it reports a failed step instead),

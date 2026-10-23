@@ -9,6 +9,8 @@ import type { ExecutionCheckpoint, WorkerCheckpoint } from "./checkpoint.js";
 import { AcceptanceGuard } from "./acceptanceGuard.js";
 import { IndependentAcceptanceGuard, independentRequirements } from "./independentAcceptance.js";
 import { taskScopedTools, fileOnlyRequested } from "./taskToolScope.js";
+import { openSession, closeSession, cancelled, type SessionEndReason } from "./sessionHooks.js";
+import { runLifecycleHooks } from "../policy/hooks.js";
 
 export interface VerdictRecord extends VerdictInfo {
   scope: string;
@@ -19,7 +21,14 @@ export interface OrchestratorOptions extends RunOptions {
   verdicts?: VerdictRecord[];
   resume?: ExecutionCheckpoint;
   saveCheckpoint?: (checkpoint: ExecutionCheckpoint) => void;
+  /** Session lifecycle hooks run only for a top-level orchestrated task;
+   *  nested runs (workers, subagent children) omit this so they stay silent. */
+  lifecycleHooks?: boolean;
 }
+
+/** How many times a blocked Stop hook may force the orchestrated run to
+ *  continue before the run ends instead of looping forever. */
+const STOP_CONTINUATION_ROUNDS = 2;
 
 const WORKER_SUFFIX = [
   "You are the executor (worker) sub-agent of an orchestrated task.",
@@ -158,10 +167,23 @@ function finalFixPrompt(o: OrchestratorOptions, goal: string, finalText: string,
   ].join("\n");
 }
 
+function stopContinuePrompt(o: OrchestratorOptions, reason: string, context: string): string {
+  return [
+    "The run was about to finish, but a Stop hook blocked completion.",
+    ...(context.trim().length > 0 ? [context.trim()] : []),
+    `REASON: ${reason}`,
+    "",
+    "ORIGINAL USER REQUEST:",
+    o.prompt,
+    "",
+    "Continue working toward the original request. Do not claim completion yet.",
+  ].join("\n");
+}
+
 /** Planner -> executor workers -> verifier with the reflection loop
  *  (plan -> act -> observe -> critique -> revise), replacing the linear agent loop.
  *  Same signature as runAgent so it can be injected anywhere RunOptions is accepted. */
-export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunResult> {
+async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResult> {
   const fileOnlyTools = o.resume?.fileOnlyTools === true || fileOnlyRequested(o.prompt, o.history);
   o = { ...o, tools: taskScopedTools(o.tools, o.prompt, o.history, fileOnlyTools) };
   const oc = o.cfg.orchestrator;
@@ -419,5 +441,41 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
   if (failure) {
     throw new Error(`orchestrator: task incomplete: ${failure}`);
   }
+  // Stop: a hook may force the orchestrated run to keep working instead of
+  // finishing. One bounded continuation round satisfies the hook; a second
+  // block ends the run rather than looping forever.
+  if (o.lifecycleHooks === true) {
+    // One continuation round per iteration, bounded by STOP_CONTINUATION_ROUNDS
+    // so a hook that always blocks ends the run instead of looping forever.
+    for (let round = 0; round < STOP_CONTINUATION_ROUNDS; round++) {
+      const stop = await runLifecycleHooks("Stop", "", { stopReason: "completed" }, o.cfg.workspace);
+      if (!stop.blocked) break;
+      o.emit({ type: "error", message: `Stop hook blocked completion: ${stop.message}` });
+      if (lastText.trim().length === 0) break;
+      await runFinalRepair(stopContinuePrompt(o, stop.message, stop.additionalContext));
+    }
+  }
+
   return finish(lastText);
+}
+
+/** Session lifecycle boundary for the orchestrated run. SessionStart and
+ *  UserPromptSubmit run before planning; SessionEnd reports the real terminal
+ *  reason. Nested runs (workers, subagent children) omit `lifecycleHooks`. */
+export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunResult> {
+  const enabled = o.lifecycleHooks === true;
+  const workspace = o.cfg.workspace;
+  let reason: SessionEndReason = "failed";
+  try {
+    const session = await openSession({ workspace, prompt: o.prompt, signal: o.signal, taskId: o.taskId, enabled });
+    if (session.injected) o = { ...o, prompt: o.prompt + "\n\n" + session.injected };
+    const result = await runOrchestratedAgentImpl(o);
+    reason = "completed";
+    return result;
+  } catch (err) {
+    reason = cancelled(o.signal, o.taskId) ? "cancelled" : "failed";
+    throw err;
+  } finally {
+    if (enabled) await closeSession(workspace, reason);
+  }
 }
