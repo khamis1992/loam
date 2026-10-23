@@ -2,6 +2,12 @@
  * D17: the environment-issue rule must be part of the agent system prompt when
  * the `report_environment_issue` tool is available, and must stay out when it is
  * not (ask mode, for example).
+ *
+ * Note: the always-on master-prompt tool catalog (§6.1) names the tool
+ * unconditionally by design — it lists every real registered tool and tells the
+ * model a tool not in its available list is simply not enabled. So the tool
+ * *name* may appear even when the tool is not callable; what must be gated by
+ * tool availability is the guidance *rule* itself.
  */
 import assert from "node:assert";
 import { describe, it } from "node:test";
@@ -23,9 +29,10 @@ describe("environment-issue prompt rule", () => {
     assert.match(prompt, /Do not report the step as passed/i);
   });
 
-  it("omits the rule when the tool is not available", () => {
+  it("omits the guidance rule when the tool is not available", () => {
     const prompt = buildSystemPrompt(cfg, [], ["file_read"]);
-    assert.ok(!prompt.includes("report_environment_issue"));
     assert.ok(!/rely on CI/i.test(prompt));
+    assert.ok(!/Do not report the step as passed/i.test(prompt));
+    assert.ok(!/When a step cannot run because of the local environment/i.test(prompt));
   });
 });
