@@ -1,3 +1,63 @@
+O0 complete: read-only recon for the Omnara durable event log. No source file touched.
+
+## What was produced
+`docs/re/omnara-O0.md` (359 lines, committed as `4c6be22`). Every claim carries a
+`file:line` taken from this worktree at HEAD `a8130cc`. `node_modules` excluded from
+all searches.
+
+## Answers (U1-U6)
+- **U1** `transaction` exists at `src/server/sqliteStore.ts:48-53`, signature
+  `transaction<T>(fn: () => T): T`, uses `BEGIN IMMEDIATE`, and is **NOT re-entrant**
+  (a nested call throws `cannot start a transaction within a transaction`). BUILD_SPEC
+  U2 is answered "no nesting" (decision B). The `metadata` table exists at
+  `src/server/sqliteStore.ts:18` but **`getMeta`/`setMeta` are NOT exported**; only
+  private copies exist (`src/server/credits.ts:98-105`, `src/server/assets.ts:52-58`),
+  so O2 must add them.
+- **U2** replay is driven by `join_session`, not a `resume` event:
+  `src/protocol/socket.ts:343-389`, replay call at `:345`
+  (`store.eventsAfter(m.sessionId, m.lastMessageId)`). **No `lastSeq` anywhere.**
+  `JoinSession` is `src/protocol/types.ts:29-34` (`lastMessageId` at `:32`);
+  `ServerEnvelope` is `:115-122` and has **no `seq`** field.
+- **U3** web reconnect file is `packages/web/src/services/chatSocket.ts` (rejoin hook at
+  `:62`, `join`/`emitJoin` at `:99-122`). All six call sites pass no cursor; the main
+  one is `packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx:205`. Wire type must
+  be extended in both `packages/shared/src/socket.ts:22-27` and
+  `src/protocol/types.ts:29-34`.
+- **U4** **no boolean sensitive-tool flag exists.** Reuse risk tiers:
+  `classifyToolCall` at `src/policy/riskTier.ts:385-418`, `SECRET_TOOL_NAMES` at
+  `:248-258`, gate callers at `src/policy/permissionModes.ts:471`,
+  `src/policy/permissionRules.ts:281`, `src/tools/planApprovalGate.ts:120`.
+  BUILD_SPEC §10 U6 decision A is correct.
+- **U5** tool start/finish emit sites in `src/agent/loop.ts`: `tool_call` at `:488`/`:534`,
+  `tool_result` at `:519-525`/`:548`. **The loop never captures `call.id`**, so O5 must
+  synthesize a stable `toolCallId`. `ExecutionCheckpoint` is built and saved in the
+  orchestrator (`src/agent/orchestrator.ts:246-249`, `:250`, `:261`, `:281`, `:296`) and
+  persisted through `src/index.ts:502-505` -> `saveRun` (`src/server/db.ts:305-308`).
+  Resume gate `requiresReplayConfirmation` is `src/server/recovery.ts:21-23`.
+- **U6** web build script is `packages/web/package.json:8` = `"build": "next build"`.
+
+## Spec assumptions corrected (12 listed in the report)
+Replay line (~325 -> `:345`), `requiresReplayConfirmation` (:19 -> `:21-23`),
+`recoverInterruptedTasks` (:104 -> `:123-137`), `newId` (:101 -> `:120`), missing
+`getMeta`/`setMeta`, missing `toolCallId` in the loop, `BEGIN IMMEDIATE` + non-reentrant
+`transaction`, no `seq`/`lastSeq` on the wire, no sensitive flag, `metadata` table is
+compatible with the purge trigger, `requiresReplayConfirmation` must be extended, and
+the O0 Verify column.
+
+## Gates (all run from the worktree root)
+- `npx tsc --noEmit`                                  -> exit 0
+- `npm run build:server`                              -> exit 0 (dist/server.cjs 19.3mb)
+- `(cd packages/web && npx next build)`               -> exit 0 (25/25 static pages)
+- `npm run check:encoding`                            -> OK (no BOM, no mojibake)
+- O0 Verify column `file exists`                      -> satisfied by `docs/re/omnara-O0.md`
+
+Read-only: no source file modified; the commit contains only the report. No `???`
+added. No instruction-related change (nothing to propose). Working tree clean.
+
+---
+
+## Preserved: D2 gate-fix report (previous .jdone content)
+
 D2 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
 
 ## The failure that was fixed
