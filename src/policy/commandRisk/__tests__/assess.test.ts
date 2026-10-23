@@ -467,8 +467,8 @@ test("read only find actions do not delete search roots", () => {
       "sed 'p' {}",
     ]) {
       for (const root of ["/", "~", "~/.ssh", "/etc"]) {
-        for (const terminator of [";", "+"]) {
-          const command = `find ${root} -type f ${action} ${payload} \\${terminator}`;
+        for (const terminator of ["\\;", "+"]) {
+          const command = `find ${root} -type f ${action} ${payload} ${terminator}`;
           assert.equal(level(command), "Safe", command);
         }
       }
