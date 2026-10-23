@@ -137,6 +137,77 @@ still aborts in section 2 (`uncoveredModeTools`) — both pre-existing and untou
 work. All throwaway probe files were deleted before committing. No test was weakened,
 deleted, or skipped. No secrets committed. No forbidden path touched.
 
+## Deep validation of the fix (proving it is real, not just green)
+
+The fix commit `ad16ec3` was followed by a dedicated validation pass, because a green
+suite is not by itself proof that a fix is load-bearing. Each claim below was tested
+against the **pre-fix tree** (detached worktree at `23d67dc`, `node_modules` junctioned
+to the main install) so the failure modes are observed, not assumed.
+
+### 1. The two new regression tests fail on the pre-fix tree
+Run the new tests against `23d67dc` (the commit before the fix) and they fail with
+exactly the defect they were written for:
+- workspace escape -> **actual 500 vs expected 400** (pre-fix `isUserError()` did not
+  classify the escape message as a user error, so the route leaked a 500);
+- non-vacuity -> **actual `[]` vs expected the three `kb_*` tools** (pre-fix no work
+  mode granted `knowledge`, so `kb_*` never reached `capabilities.allow`).
+On the fixed tree both pass. A test that passes on both trees would guard nothing; these
+do not.
+
+### 2. Default-off is genuinely off
+`SavedRun.knowledge` is optional; `src/server/http.ts:2650` stores it as
+`body.knowledge === true`, so an absent field is `undefined` (off). The resume path
+re-reads the run's own saved flag, so `undefined === true` is false and a resumed run
+does not silently acquire the garden. Off is the default in every path.
+
+### 3. The gate is non-vacuous through the real registry path
+A standalone probe (`n3-registry-probe.mjs`, deleted before committing) resolved the
+`kb_*` tools through the **real** `registry.forAllowlist(...)` rather than a hand-built
+list: **12/12 PASS**. For all six work modes the gate delta is exactly the three
+`kb_*` tools, no more and no less. On the pre-fix worktree the same probe cannot even
+load (`applyKnowledgeGate` does not exist there), which is the intended coupling.
+
+### 4. No over-grant: side-chat still cannot mutate
+Side-chat runs narrow the allowlist to `SIDE_CHAT_READ_ONLY_TOOLS` (inspection only)
+*before* the knowledge gate is applied (`src/index.ts:415-420`). `kb_ingest` and
+`kb_manage` are not in that read-only list, so a side-chat question can never ingest or
+mutate the garden even when the parent run has the garden on. The grant added by the
+fix cannot widen a side-chat run.
+
+### 5. Test-coverage gap found and closed
+The audit found two untested surfaces:
+- the **chip itself** had no test, so a regression that dropped the button or its
+  `aria-pressed` state would have been invisible. Added
+  `packages/web/src/components/chat/__tests__/knowledgeChip.test.tsx` (4 tests:
+  off/on `aria-pressed`, toggle fires, sibling chip independence). All four **fail on
+  the pre-fix tree** with "Unable to find an accessible element ... Knowledge Garden"
+  and pass on the fixed tree.
+- the **wire payload** had no test. Added two cases to
+  `packages/web/src/services/chatSocket.test.ts` (6/6) asserting `sendText` forwards
+  `knowledge` in `extData`. This is a transport test, so it passes on both trees by
+  design; it guards the send path, not the feature.
+A `tsc --noEmit` error in the new test (`sendText` requires the `taskMode` argument) was
+caught and fixed before the final commit.
+
+### 6. `check:loam-ui` failure is pre-existing
+`npm run check:loam-ui` fails `8 !== 7`. Confirmed **pre-existing**: it fails
+identically on the pre-fix baseline worktree, and `ui/` is untouched by N3.
+
+### Gates re-run with the new tests (committed HEAD 4b8c0d6)
+- `(cd packages/web && npx tsc --noEmit)`             -> exit 0
+- `(cd packages/web && npx vitest run)`               -> 74 files / 488 tests passed, 0 fail
+- `node --import tsx --test "src/**/*.test.ts" "src/**/__tests__/*.test.ts"`
+  -> tests 2154, pass 2152, fail 2 (the same two pre-existing failures listed above,
+  re-confirmed by name: `suggest_plan` lint gap; Windows `%TEMP%` worktree)
+- `npm run check:encoding`                            -> OK
+- `npm run check:modes`                               -> PASS
+- `node --import tsx --test src/server/__tests__/knowledgeRoutes.test.ts` -> 15/15 pass
+  (including "is non-vacuous: the gateway actually hands kb_* to the run allowlist")
+
+No test was weakened, deleted, or skipped to reach these numbers. The throwaway
+worktree, junction, and probes were removed before committing; the working tree is clean
+apart from `.jdone` itself.
+
 ---
 
 D2 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
