@@ -55,7 +55,26 @@ too broad - they matched legitimate filesystem reads (`src/server/http.ts` 1279/
 2214) and legitimate prose percentages (SLA uptime, "10x", coverage notes). Replaced
 with patterns anchored on shapes a real simulation cannot produce: a persona named
 after a job title, a literal `75%` inside a result template, and `approval_rate_*`
-keys. `http.ts` is scanned only within the `/api/mirofish/*` region.
+keys. `http.ts` is scanned only within the `/api/mirofish/*` routes.
+
+### Router scope (second pass, commit 8701d2f)
+The shared router is a single ~2800-line file that also serves hundreds of unrelated
+routes, so scanning it wholesale would make the gate report noise (or hide real hits
+behind it). The first version used a fixed 90-line window, which was arbitrary and
+could drift away from the routes. Replaced with `inScopeLines()`, which marks a
+route's own line plus its handler body and ends at the next blank line (the router
+separates every handler with one). Brace counting was tried first and rejected: the
+route's own `if (...)` line contains the route string inside quotes, and template
+literals inside a handler distort the depth, so the region closed early and
+excluded the very handler it was meant to cover.
+
+The always-on self-check now asserts the scope invariant directly: every
+`/api/mirofish/*` route line is in scope, and the scoped region stays small relative
+to the whole router. A refactor that moved or renamed the routes would otherwise
+shrink the scanned region to nothing while the gate still reported green. This
+assertion caught two real bugs in the first attempt (an indentation-only terminator
+that closed on the handler's object argument, and a `path.join` comparison that
+never matched an absolute path on Windows).
 
 ## What M7 ships (commit ca4411f)
 - `src/tools/mirofish/types.ts` - public pipeline contract: `ModelCaller` (injectable,
