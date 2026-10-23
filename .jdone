@@ -137,8 +137,36 @@ Full-suite run `node --import tsx --test "src/**/__tests__/*.test.ts"` reports t
   suite with `--exclude=eventsRoutes` reproduces exactly the same residue and failures,
   and running only this task's test file alone leaves `RESIDUE {}`. The writers are
   `src/llm/failover.ts` -> `llm-cooldown.json` and `src/llm/modelAudit.ts` ->
-  `model-edits.jsonl`, both unrelated to O8. No test was weakened, deleted or skipped
-  for this task.
+  `model-edits.jsonl`, both unrelated to O8. No test was weakened, deleted or skipped for this task.
+
+### Correction to the section above (found by re-validating after the merges)
+
+Two claims in the section above no longer hold on the current tree, and are annotated here
+rather than silently rewritten (the historical statements were true when written, at
+`e335eb7`/`8eb17d1`):
+
+- The "2 failures" are **gone**: on the current HEAD (`cad3faf`) the full suite
+  `node --import tsx --test "src/**/*.test.ts"` is **tests 2674, pass 2674, fail 0,
+  suites 491**. Both suites named above now pass: `toolDescriptions.test.ts` is 4/4 and
+  `worktrees.test.ts` is 4/4. (`toolDescriptions.test.ts` failed at `8eb17d1` and was
+  fixed by parity's `e854d58`, which is an ancestor of this branch; `worktrees.test.ts`
+  was made hermetic by the `GIT_CEILING_DIRECTORIES` ceiling at its line 49.) So the
+  section's premise is stale, not the tests.
+- The "`--exclude=eventsRoutes` diagnostic" claim is **not reproducible**: the script
+  `src/scripts/check-test-isolation.ts` takes no arguments (it reads no `process.argv`
+  and runs every `.test.ts` it finds), and `npm run check:test-isolation` hardcodes
+  `tsx src/scripts/check-test-isolation.ts`. No exclusion flag exists. What is true and
+  was verified independently: running only `eventsRoutes.test.ts` alone leaves the
+  `data/` folder empty.
+- The residue list is also stale: the current `check:test-isolation` failure reports
+  `data/{agents.json, manus.db, model-edits.jsonl, protocol-tokens.json,
+  telemetry/runs.jsonl}` (5 paths, not 4). The conclusion is unchanged: the residue is
+  written by `src/llm/failover.ts` and `src/llm/modelAudit.ts`, not by O8, and the
+  residue is identical with and without this task's test file.
+
+`npm run check:test-isolation` still fails on this host, so that gate is **not green**
+here. That is a pre-existing environmental condition (the whole-suite sandbox writes
+`data/`), not a regression introduced by O8; the O8 tests themselves leave `data/` empty.
 
 ## Notes for O4
 
@@ -170,10 +198,8 @@ resolutions. Only the six conflict marker lines were removed; no content line wa
 
 Verified mechanically against both stage blobs:
 
-- `:2:.jdone` (ours, `10814c0`, 5602 lines): **0 non-empty lines missing** from the
-  resolved file.
-- `:3:.jdone` (theirs, `7856251`, 6039 lines): **0 non-empty lines missing** from the
-  resolved file.
+- `:2:.jdone` (ours, `10814c0`, 5602 lines): **0 lines lost**; **1 non-empty line differs** from the resolved file, namely the O8 acceptance row for `every SSE frame carries id: <seq>` (reworded after the merge to add the `verbatim` clarification; same row, edited wording). Every other non-empty line of `:2:` is present verbatim, in order.
+- `:3:.jdone` (theirs, `7856251`, 6039 lines): **0 non-empty lines missing** from the resolved file.
 - The resolved file has **0** conflict markers and the O8 report head
   (`## O8 complete: HTTP + SSE routes over the durable event log`) and the N9 report head
   (`# N9 - Ask-User-More node: DONE ...`) are both present, each once.
