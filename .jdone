@@ -207,6 +207,37 @@ on both sides (5238 lines, ours[194..] == theirs[594..]), 0 non-empty lines miss
 from either side, and no conflict marker remains anywhere in the tree. No test was
 weakened, deleted or skipped; no source file was edited by the resolution.
 
+## Merge 7: parity tip `411df5e` (M3 via mf2-m3) - three conflicts, all resolved keeping both sides
+
+Parity then advanced again to `411df5e` ("merge khamis1992/mf2-m3 (M3 via
+loam-jcode-run)"), which brings the M3 MiroFish swarm work AND a copy of the
+fc-06 Loam Video export work into parity. This merge conflicted in THREE files:
+
+- `.jdone` (add/add, as always). Resolved as the union of both reports: this
+  branch's fc-06 report, then parity's M3 report, then the shared base rollup
+  they both carry. Verified mechanically against the stage blobs
+  (`:1:.jdone` 6038, `:2:.jdone` 6247, `:3:.jdone` 7422 lines): the shared tail
+  is byte-identical on both sides (ours[209..] == theirs[1384..] == base), 0
+  non-empty lines missing from either side, 0 conflict markers.
+- `src/agent/events.ts` (1 hunk): both sides add a new `AgentEvent` union member
+  in the same spot - fc-06's `video_studio_export` and M3's
+  `simulation_progress`. Kept BOTH members, each with its own doc comment.
+- `src/graph/runGraph.ts` (1 hunk): both sides add a fall-through `case` label to
+  the live-only-signal group that returns `[]`. Kept BOTH labels
+  (`video_studio_export` and `simulation_progress`); the group is unchanged.
+
+Both source resolutions are additive: no existing branch of either side was
+removed, and the exhaustive `never` check in the `default` arm stays intact.
+No test was weakened, deleted or skipped.
+
+Final gates on this merge commit: `npx tsc --noEmit` exit 0; `npm run
+build:server` exit 0 (`dist/server.cjs`, 20.5 MB); `(cd packages/web && npx next
+build)` compiled successfully; `node --import tsx --test "src/**/*.test.ts"
+"src/**/*.test.mjs"` -> 2684 tests, 2684 pass, 0 fail; `(cd packages/web && npx
+vitest run)` -> 81/81 test files pass; the conflict-relevant node suites
+(videoStudio, videoStudioExport, runGraph, simulationProgressEvents, graphRoutes,
+toolDescriptions) -> 95 tests, 95 pass, 0 fail.
+
 M3 second validation round: found and fixed a real follow-up routing regression on the async surface (commit 0138720 + the fix commit below).
 
 ---
