@@ -86,6 +86,22 @@ Test command:
   node --import tsx --test src/agent/__tests__/contextSelector.test.ts src/graph/__tests__/runGraph.test.ts
 
 ---
+## fc-06: Merge Loam Video export feature branch with manus-parity
+
+**Summary.** Merged `manus-parity` into `khamis1992/fc-06`. All merge conflicts resolved using the union approach (preserving additions from both sides). All build and test gates passing.
+
+**Merge resolution:**
+- Resolved conflicts across `src/tools/videoStudio.ts`, `src/tools/__tests__/videoStudio.test.ts`, `packages/web/src/components/workspace/loamVideo/LoamVideoPanel.tsx`, `src/graph/runGraph.ts`, and `src/server/http.ts`.
+- Kept both sides' additions: Video Studio export functionality from fc-06 and new event handlers / relay generalisations from manus-parity.
+- Verified zero conflict markers remain in the codebase.
+
+**Gates verified (all green):**
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0
+- `npm --prefix packages/web run build` (`next build`) -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test src/server/__tests__/videoStudioRelay.test.ts src/server/__tests__/videoStudioExport.test.ts src/tools/__tests__/videoStudio.test.ts` -> 82 tests, 82 pass, 0 fail
+- `vitest run` (web suite) -> 91 files, 624 tests, 624 pass, 0 fail
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0 (manus-parity is a direct ancestor of HEAD)
 
 ## V8 gate-fix session (round 12): root-cause fix for the recurring `.jdone` parity conflict
 
