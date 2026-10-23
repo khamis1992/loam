@@ -101,10 +101,17 @@ The `.jdone` tracking state had churned across earlier rounds (parity untracked 
 re-tracked it), so it is a **tracked** file at the parity tip again. This round's parity tip
 `495ac5f` is the V8 merge (`merge khamis1992/v0-v8 (V8 via loam-jcode-run) into manus-parity`),
 which is the round where V8 landed the committed `.gitattributes` union-merge rule for these
-markers. So this merge brought in the root-cause fix **and** a `.jdone` add/add conflict at the
-same time: `.gitattributes` declares `.jdone merge=union`, but an add/add conflict on a file
-that did not exist in the merge base still stops for a manual resolution, so it had to be
-resolved by hand this once.
+markers.
+
+**Correction (verified later in round 7).** The round-6 draft of this report claimed the round-6
+conflict was an *add/add* conflict that the union driver could not auto-resolve. That was a
+guess and it is **wrong**. An add/add conflict on `.jdone` while `merge=union` is declared is
+empirically **not** a conflict: a throwaway reproduction (base without `.jdone`, both sides
+adding it, `.jdone merge=union` present) merges with `Auto-merging .jdone` and no markers. The
+union driver handles add/add correctly. What the union driver does *not* cover is a genuine
+same-region content conflict on a file that exists in the merge base; that is what the round-6
+hand resolution addressed. The earlier V8 round-12 report's claim that add/add is auto-resolved
+is correct and is confirmed by the round-7 merge below.
 
 ### What was done
 `git merge manus-parity` (tip `495ac5f`) auto-merged every source file and conflicted only on
