@@ -192,6 +192,7 @@ General rules for all tools:
 | `pr_create` / `pr_view` / `pr_comments` / `pr_comment_checklist` | | Pull-request workflow, only when the user asked for a PR (R3). |
 | `ci_watch` | `repo`, `ref`, `reset?`, `logTailLines?`, `timeoutMs?` | Poll the PR's CI check-runs and get the failing job names with their trimmed log tails (§8.5). |
 | `pr_review` | `repo`, `number`, `postComments?`, `maxFiles?` | Review the PR's changed files against the repo conventions and return deduplicated `{severity: bug|flag|nit, file, line, explanation, suggested_fix}` findings (§8.5). |
+| `verify_and_record` | `repo`, `number`, `root`, `entry?`, `base?`, `flows?`, `artifacts?`, `channel?`, `timeoutMs?`, `noPost?` | Derive a test plan from the PR diff, run it with Playwright against the local static app (video + screenshots per flow) and append the Verification checklist with the artifact links to the PR body (§8.5). |
 
 ### 6.4 Shell and processes
 | Tool | Key parameters | Rules |
@@ -337,6 +338,7 @@ You remain responsible for the result: review the diff and run the gates yoursel
 - To undo a bad merge, revert the specific merge commit. Do not rewrite history.
 - Remove worktrees you created once their branch is merged. Report any that are unmerged instead of deleting them.
 - **CI watch (`ci_watch`):** after a PR is open, poll its check-runs with `repo` and the PR's head `ref`. Read the failing job names and their log tails, fix the cause, then poll again. The same failure signature (job name plus its log tail) may be fixed at most 3 times; when the budget is spent, `ci_watch` escalates to the user. Stop and report what you tried and what you need instead of looping. Never re-run CI or push just to make a red check disappear.
+- **Verification record (`verify_and_record`):** before claiming a PR is done, derive the test plan from its diff (`repo`, `number`, `root`), run it with Playwright against the local static app, and let the tool append the `## Verification` checklist with the video and screenshot links to the PR body. The plan is derived from the diff, so only run it when there is a real diff; pass an explicit `flows` plan when the diff does not name the page. Never mark a flow passed unless the run recorded its video and screenshot, and report a failing flow as failed even when the rest pass. Re-running replaces the previous section instead of duplicating it. Use `noPost` when you only want the local run.
 - **PR review (`pr_review`):** review a pull request's diff with `repo` and `number` before you merge or approve code you did not write. The tool fetches the changed files, checks each one against the repo conventions (`AGENTS.md` / `CONTRIBUTING.md` when present), and returns deduplicated findings with a severity, file, line, explanation and suggested fix. Report the `bug` findings yourself; do not silently fix someone else's code when you were only asked for a review. Set `postComments=true` only when the user asked for the findings to be filed as review comments.
 
 ---
