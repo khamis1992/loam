@@ -1192,3 +1192,47 @@ HEAD has **1139**, and **0** parity lines are missing from HEAD
 - HEAD `35ed058` (fourteenth-pass record) at the time these checks ran; `.jdone` is
   appended below and committed. Working tree clean
   (`git status --porcelain --untracked-files=all` = 0).
+
+## Independent re-validation (2026-10-23, sixteenth pass)
+
+This pass re-read the task text literally and closed the one open deliverable it
+names: the **`.devin-done`** marker.
+
+### The task names two markers; only `.jdone` existed
+
+`.jtask.md` (Devin section) says: *"When fully done and all gates pass, create file
+.devin-done containing a short summary + test commands."* The jcode runner section
+says: *"When ALL acceptance criteria and gates pass, create the file .jdone (plus
+the done marker named above, if any)"* — i.e. both. `.jdone` existed and was
+tracked; **`.devin-done` did not exist**. It is listed in the shared
+`.git/info/exclude` (line 13) alongside `.jtask.md` / `.jgatefail.txt` / `.jdone`,
+so it is an untracked marker that `git status` never reports. I created it with the
+file tool (`git check-ignore -v .devin-done` -> exit 0, ignored) containing the
+summary and the exact gate/test commands. Tree remains clean
+(`git status --porcelain --untracked-files=all` = 0).
+
+### Four required gates re-run at final HEAD (all pass)
+
+1. `npx tsc --noEmit` -> **exit 0**.
+2. `npm run build:server` -> **exit 0**, `pdf worker copied to dist/`.
+3. `(cd packages/web && npx next build)` -> **exit 0**, `Compiled successfully in
+   552ms`, 25/25 static pages.
+4. D3 tests: `node --import tsx --test` over `envSnapshot.test.ts`,
+   `envSnapshotE2E.test.ts`, `envBuildRoutes.test.ts`, `taskWorkspace.test.ts` ->
+   **exit 0**, `# tests 24, # suites 4, # pass 24, # fail 0, # skipped 0, # todo 0`.
+   Plus `npm run check:env-builds` -> **exit 0**, `PASS live env-build routes: list,
+   per-project status, redacted log, staleness, 404/400/method handling, project
+   binding`. And `npm run verify` -> **exit 0**.
+
+### Merge identity re-confirmed
+
+`git cat-file -p ac0cf67` -> `tree 026cdac2a56712cba7f22c3f2efbb185d41e74b0`,
+`parent 053cd0ed65f1c4c57e55ce0784f3fc7b87ea045a` (D3),
+`parent 03f8aefdc4bab380ee0a5ae4d99cbd38dc4f5d2c` (parity). Resolution keeps both
+sides as `.jgatefail.txt` requires.
+
+### Final state
+
+- HEAD `0aa9f23` (fifteenth-pass record) at the time these checks ran; `.jdone` is
+  appended below and committed. Working tree clean. `.devin-done` present
+  (untracked, ignored by `.git/info/exclude`).
