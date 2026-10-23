@@ -39727,3 +39727,87 @@ is a true multiset superset of both sides.
 - `npm run check:recovery`                     -> PASS
 - `npm run check:orchestrator`                 -> PASS (114/114)
 - `npm run check:encoding`                         -> OK (no BOM, no mojibake, all JSON valid)
+
+## N21 merge-conflict gate fix: re-merged manus-parity (tip `6e17246`), `.jdone` resolved keeping both sides
+
+The task's own work (`af1b981`) and its report (`a41cfdf`) were already committed;
+the only failure was the recurring `MERGE CONFLICT with latest manus-parity in:
+.jdone` gate. Commit `0d23354` on `khamis1992/neo-n21`.
+
+### Root cause
+
+`.jdone` and `.jcode-done` are append-only runner rollups that every worktree
+edits independently and merges back into `manus-parity`, which keeps an
+equivalent file of its own. `.gitattributes` declares `merge=union` for them,
+but `manus-parity` (tip `6e17246`) carries no `.gitattributes` at all, so its side
+was not union-driven and the 3-way merge produced a content conflict on
+`.jdone` alone. The other 199 files auto-merged cleanly.
+
+The two sides were in fact disjoint. `manus-parity`'s side is the J1/J11/O1/H3/
+N19/N3/F6/M3 rollup (~39.6k lines) whose own
+`## Preserved: manus-parity rollup (O1 gate-fix report)` header is the base's
+first heading; this branch's side is the same base plus this branch's
+`N3 gate-fix session` reports and the N21 Arabic/RTL report.
+
+Mechanically verified before resolving: the base (18,949 lines) is contained in
+**both** sides (0 lines of base missing from ours, 0 from theirs), and the
+conflict hunk is exactly three marker lines (`<<<<<<< HEAD`, `=======`,
+`>>>>>>> manus-parity`) wrapped around the two report blocks.
+
+### Resolution
+
+Removed only the three conflict-marker lines, keeping **both** blocks. No report,
+line or separator was dropped and no test was weakened, deleted or skipped. The
+result is a superset of both parents and stays an append-only rollup.
+
+### Verification (all run from the worktree root on the merged tree)
+
+- `git merge manus-parity` -> "Already up to date." (no conflict on a fresh merge)
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
+- `git grep -n "^<<<<<<<\|^=======$\|^>>>>>>>\|^|||||||" -- src packages` -> empty
+- `npx tsc --noEmit`                                   -> exit 0
+- `(cd packages/web && npx tsc --noEmit)`              -> exit 0
+- `npm run build:server`                               -> exit 0 (bundle + pdf worker)
+- `(cd packages/web && npx next build)`                -> exit 0 (25/25 static pages)
+- `node --import tsx --test "src/**/*.test.ts"`       -> 3077 pass / 0 fail / 1 skip
+      (the one skip is the pre-existing win32 guard in
+       `src/server/__tests__/sharedCodeSession.test.ts:240`)
+- `(cd packages/web && npx vitest run)`                -> 92 files / 639 tests, all pass
+- `npm run check:encoding`                             -> OK (no BOM, no mojibake)
+- `git status --porcelain`                             -> clean
+
+### N21 acceptance tests (re-confirmed on the merged tree)
+
+| Suite | Result |
+| --- | --- |
+| `src/knowledge/__tests__/arabic.test.ts` | 14 pass |
+| `src/knowledge/__tests__/arabicPdf.test.ts` | 9 pass (real pdfjs worker, real Identity-H PDF) |
+| `src/server/__tests__/knowledgeRoutes.test.ts` | 15 pass |
+| `packages/web/.../canvas/__tests__/layout.test.ts` | 16 pass |
+| `packages/web/.../canvas/__tests__/CanvasPanel.test.tsx` | 15 pass |
+| `packages/web/.../settings/__tests__/knowledgeGardenPane.test.tsx` | 7 pass |
+
+The Arabic PDF acceptance path still builds a real one-page Identity-H PDF and
+drives the real importer, splitter and pdfjs worker: the text extracts in
+logical order, imports as seeds that split on their own sentence marks, and is
+stored folded so `الفوترة` and `الفاتورة` are one retrievable term.
+
+Playwright is not available in this harness, so the RTL screenshot review is
+covered by the vitest component tests (`CanvasPanel.test.tsx` asserts the row
+mirrors from the right under `rtl`, that an Arabic locale mirrors by default, that
+an explicit `ltr` override still wins, and that a single-node layer is not
+mirrored). `packages/web/e2e/specs/rtl.spec.ts` remains committed for a harness
+that has Playwright.
+
+### Seams left for other workstreams
+
+- The canvas layout is direction-pinnable per panel via `layoutOptions.direction`;
+  a workspace-wide RTL toggle that feeds it is still open.
+- `kb_search`/`kb_ingest`/`kb_manage` already run the bilingual scorer, so no
+  tool-side change was needed.
+- The PDF path folds text on extraction; a future RTL HTML/office importer should
+  route through the same `normalizeText` to stay consistent.
+- The `.gitattributes` `merge=union` driver is not present on `manus-parity`, so
+  this `.jdone` conflict recurs on every parity advance until parity carries the
+  driver. Adding `.gitattributes` (`.jdone`/`.jcode-done merge=union`) to
+  `manus-parity` is the durable fix and is outside this worktree's scope.
