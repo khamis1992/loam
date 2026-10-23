@@ -41646,8 +41646,29 @@ driver's output.
 - HEAD `cadc3c4`, working tree clean, `git ls-files -u` empty, no untracked files.
 - `git merge --no-edit manus-parity` -> `Already up to date` (exit 0); `manus-parity`
   (`6e17246`) is an ancestor of HEAD; `git rev-list --left-right --count
-  manus-parity...HEAD` -> `0  22`.
+  manus-parity...HEAD` -> `0  24` (see the record-keeping note below; this section was
+  written at `cadc3c4`, where the count was `0  22`).
 - `.jdone` committed blob is LF (41652 lines); worktree is CRLF under `core.autocrlf=true`;
   0 conflict markers; no BOM.
 
 No test was weakened, deleted or skipped by this session.
+
+## Record-keeping (post-validation commits)
+
+Two follow-on commits land the re-validation record above into the rollup:
+
+- `d04d251` - `docs(jdone): record independent re-validation pass (chain, b7cd3c7, oracle, gates)`
+- `4e2705d` - `docs(jdone): correct the committed-blob line count in the re-validation record`
+
+After these, HEAD is `4e2705d`, working tree clean, `git ls-files -u` empty,
+`git merge --no-edit manus-parity` -> `Already up to date`,
+`git rev-list --left-right --count manus-parity...HEAD` -> `0  24`, and `.jdone` is
+41653 lines with 41652 CRLF terminators, 0 bare LF and 0 conflict markers.
+
+Note on the transient `index.lock`: while restoring `.jdone` after the second commit, a
+`git checkout` hit `Unable to create '.../index.lock': File exists` because the live
+parity runner was holding a git process in this worktree (8 `git.exe` processes were
+running). The lock was **not** deleted; the checkout was retried once the runner released
+it and succeeded. Working tree is clean.
+
+No source file was modified by these commits; only `.jdone` changed.
