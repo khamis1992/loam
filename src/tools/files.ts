@@ -437,8 +437,21 @@ export const fileTools: Tool[] = [
           };
         }
 
-        const outcome = applyEditOperations(original, operations.operations, p);
-        if (!outcome.ok) return { ok: false, content: formatEditFailures(p, outcome.failures, operations.operations.length) };
+        // Legacy `count` (single-edit path, replace_all unset): the caller asserts
+        // how many occurrences exist. That assertion takes the place of the
+        // uniqueness rule, and the legacy write behaviour is to replace every
+        // occurrence, so the count is checked against what was actually replaced
+        // before anything is written. Without an explicit count the spec rule
+        // applies (the match must be unique unless replace_all is set).
+        const legacyCount =
+          !operations.usedBatch && !first.replaceAll && args.count !== undefined ? num(args, "count", 1) : undefined;
+        const requested =
+          legacyCount === undefined
+            ? operations.operations
+            : operations.operations.map((operation) => ({ ...operation, replaceAll: true }));
+
+        const outcome = applyEditOperations(original, requested, p);
+        if (!outcome.ok) return { ok: false, content: formatEditFailures(p, outcome.failures, requested.length) };
 
         const applied = outcome.applied;
         const occurrences = applied.reduce((sum, edit) => sum + edit.occurrences, 0);
@@ -446,11 +459,10 @@ export const fileTools: Tool[] = [
         if (!operations.usedBatch) {
           // Single-edit shorthand: honour the legacy `count` expectation.
           const replaceAll = first.replaceAll;
-          const want = num(args, "count", 1);
-          if (!replaceAll && occurrences !== want) {
+          if (legacyCount !== undefined && occurrences !== legacyCount) {
             return {
               ok: false,
-              content: `Found ${occurrences} matches of old_string in ${p}, but replace_all is false and the match is not unique. Add more surrounding context to old_string (include more lines or words around the change) so it matches exactly once, or set replace_all to true to replace every match.`,
+              content: `Found ${occurrences} matches of old_string in ${p}, but replace_all is false and count is ${legacyCount}. Add more surrounding context to old_string (include more lines or words around the change) so it matches exactly ${legacyCount} time(s), or set replace_all to true to replace every match.`,
             };
           }
           fs.writeFileSync(p, outcome.content, "utf8");

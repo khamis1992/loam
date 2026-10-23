@@ -96,6 +96,34 @@ describe("file_edit validation", () => {
     assert.equal(fs.readFileSync(file, "utf8"), "y\ny\ny\n");
     assert.match(res.content, /replaced 3 occurrence/);
   });
+
+  // Legacy contract preserved from the pre-J3 tool: an explicit `count` asserts
+  // how many occurrences exist, and (as before) every occurrence is replaced.
+  // Without `count` the spec uniqueness rule applies instead.
+  it("honours an explicit legacy count and replaces that many occurrences", async () => {
+    fs.writeFileSync(file, "x x x\n", "utf8");
+    const res = await run({ path: "sample.txt", old_string: "x", new_string: "y", count: 3 });
+    assert.equal(res.ok, true);
+    assert.equal(fs.readFileSync(file, "utf8"), "y y y\n");
+    assert.match(res.content, /replaced 3 occurrence/);
+  });
+
+  it("rejects a count that does not match the occurrences, writing nothing", async () => {
+    fs.writeFileSync(file, "x x x\n", "utf8");
+    const res = await run({ path: "sample.txt", old_string: "x", new_string: "y", count: 2 });
+    assert.equal(res.ok, false);
+    assert.match(res.content, /Found 3 matches/);
+    assert.match(res.content, /count is 2/);
+    assert.equal(fs.readFileSync(file, "utf8"), "x x x\n");
+  });
+
+  it("still rejects a non-unique match when count is omitted", async () => {
+    fs.writeFileSync(file, "x x x\n", "utf8");
+    const res = await run({ path: "sample.txt", old_string: "x", new_string: "y" });
+    assert.equal(res.ok, false);
+    assert.match(res.content, /found 3 times/i);
+    assert.equal(fs.readFileSync(file, "utf8"), "x x x\n");
+  });
 });
 
 describe("file_edit miss hints", () => {
