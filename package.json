@@ -33,6 +33,7 @@
     "eval:design": "tsx src/scripts/eval-design.ts",
     "eval:selfplay": "tsx src/scripts/eval-selfplay.ts",
     "eval:coding": "tsx src/scripts/eval-coding.ts",
+    "eval:neo": "tsx src/scripts/eval-neo.ts",
     "eval:coding-prompt": "tsx src/scripts/eval-coding-prompt.ts",
     "ft:export": "tsx src/scripts/ft-export.ts",
     "check:task-ui": "npm run check:loam-ui",

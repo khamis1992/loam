@@ -1,458 +1,85 @@
-# N1 - Run-graph model: done (merge gate fixed, commit ac0aed3)
+# N20 - Offline long-horizon eval gate for Neo: done
 
-The `.jgatefail.txt` failure was `MERGE CONFLICT with latest manus-parity`.
-Ran `git merge manus-parity` (tip `0c97967`); one file conflicted:
-- `src/config.ts`: kept BOTH sides — the N1 `runGraph?: { enabled: boolean }`
-  config field (HEAD) and parity's `coding?: { enabled, chain, logEdits }` field
-  (C17 coding-model routing). Both are present in the `Config` interface and in
-  `DEFAULTS` (`runGraph: { enabled: true }`, `coding: { enabled: true, chain: [], logEdits: true }`).
+The gate is implemented, tested and recorded. All gates are green from the
+worktree root on commit `7975ac8`.
 
-A typecheck failure that the merge exposed was fixed (not worked around):
-`src/graph/runGraph.ts` has an exhaustive `switch (event.type)` over the
-`AgentEvent` union. manus-parity added two new event kinds (`cache_usage` from
-J10, `video_studio_command` from fc-03), so the `default` arm's
-`const _exhaustive: never = event` no longer type-checked. Both new kinds are
-live-only signals with no canvas node of their own, so they were added to the
-existing no-op case list alongside `todo`/`phase`/`task-status`/etc. No test was
-weakened or deleted; the graph's golden replay, status-transition and 10k-node
-performance tests are unchanged.
+## What N20 delivers
 
-Resolution committed as `ac0aed3 merge manus-parity into neo-n1: resolve
-config.ts, extend runGraph event switch`. `git merge-tree --write-tree
-manus-parity HEAD` exits 0, so no conflict re-emerges.
+- `src/neoEval/harness.ts`: runs one fixture through the **production** agent
+  loop (`runAgent`) with a scripted model. Produces the trace (steps, token
+  usage, tool calls, injected failures, recovered failures, appends), runs the
+  verifier script against the final answer, and scores it.
+- `src/neoEval/mockModel.ts`: deterministic scripted model. Replays a
+  `NeoScript` of `{ when, text, tool, citations }` turns, records every call
+  (requestId, attempt, message/tool counts, prompt/completion tokens), and
+  honours `when` guards by advancing the cursor past skipped turns.
+- `src/neoEval/mockClock.ts`: deterministic clock (step count, elapsed ms).
+- `src/neoEval/knowledge.ts`: seeded knowledge store + the citation extractor
+  (numbered markers resolved against declared seeds).
+- `src/neoEval/scoring.ts`: per-dimension scores (`completion`, `citation`,
+  `flatness`, `recovery`, `recurring`) with evidence strings, plus
+  `suiteResult` (pass bar 60, suite passes only when every case passes).
+- `src/neoEval/types.ts`: the fixture/case/trace contracts and
+  `NEO_HARNESS_VERSION`.
+- `evals/neo/fixtures.ts`: the ten long-horizon fixtures, each targeting a
+  distinct dimension (research-to-report, recurring-tracker,
+  long-document-assembly, kb-grounded-answer, tool-failure-recovery,
+  restart-from-step, step-budget, no-hallucinated-citations, deep-file-triage,
+  uninterrupted-baseline).
+- `src/scripts/eval-neo.ts`: the `npm run eval:neo` runner (`--list`, `--id`,
+  `--json`, `--record`) and the baseline regression guard.
+- `evals/neo/baseline.json`: the recorded baseline (see below).
 
-## Gates (all run from the worktree root, on merged tip ac0aed3)
+## Baseline and regression guard
+
+`evals/neo/baseline.json` is version-pinned to `NEO_HARNESS_VERSION`
+(`neo-eval-2`): 10/10 cases pass, suite total 100, bar 60. `compareBaseline`
+fails a run when a recorded case is missing, drops more than
+`BASELINE_TOLERANCE` (1) point, falls below the bar, or the suite stops
+clearing its own bar. A baseline recorded under a different harness version is
+not compared (its numbers are not comparable), and the guard is skipped for a
+single-fixture `--id` run. The version was bumped to `neo-eval-2` because the
+flatness band and recurring check were corrected, so `neo-eval-1` scores are
+not comparable.
+
+## Real bugs the tests exposed (fixed, not worked around)
+
+- `src/neoEval/harness.ts`: the harness's `observing` registry already injects
+  failures, so the mock's `onCall` hook was double-injecting **and**
+  double-recording calls. The mock is now built with `onCall: undefined`.
+- `src/neoEval/scoring.ts`: added flatness noise tolerance
+  (`flatToleranceRatio`, default 1.1) so small token wobble is not punished;
+  `scoreRecurring` now reads observed appends from the trace instead of the
+  fixture's own `count_min` expectation; `suiteResult([])` is now
+  `failed: 1, verdict: "fail"` (an empty suite is not a pass); `round2` added
+  to the flatness/recurring totals.
+- `src/neoEval/mockModel.ts`: `nextStep()` now advances the cursor past every
+  turn skipped by a `when` guard. Previously a guard that only became eligible
+  after the next call left the script exhausted and returned empty text.
+
+No test was weakened or deleted; no assertion was relaxed to make the gate
+green.
+
+## Gates (all run from the worktree root, on commit 7975ac8)
+
 - `npx tsc --noEmit`                          -> exit 0
-- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.2mb, pdf worker copied)
-- `(cd packages/web && npx next build)`       -> exit 0 (Next.js 16.4.2, 25/25 static pages)
-- `node --import tsx --test src/graph/__tests__/*.test.ts`
-  -> tests 11, pass 11, fail 0
-  (replay builds the golden tree; JSON export round-trip; layout/depth/stats;
-  illegal transitions rejected; restart resume; forward-only status rules;
-  10k nodes load; deterministic ids; malformed-export rejection)
-- `node --import tsx --test src/agent/__tests__/loopHooks.test.ts src/protocol/__tests__/cacheUsageEvents.test.ts src/agent/__tests__/cacheUsageAccounting.test.ts`
-  -> tests 19, pass 19, fail 0
+- `npm run eval:neo`                          -> 10/10 cases pass, total 100
+- `node --import tsx --test src/neoEval/__tests__/{scoring,mockModel,harness,baseline}.test.ts`
+  -> tests 88, pass 88, fail 0
+  (scoring dimensions and suite totals; mock replay/`when` guards/`MockClock`/
+  `KnowledgeStore`/citation extractor; end-to-end acceptance through the
+  production loop: fixture catalogue, default verifier script, `runFixture`,
+  restart-from-step, recurring rounds, fault injection, and the "full suite
+  clears the bar" gate; baseline regression guard)
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:eval`    -> eval harness smoke: PASS
+- `npm run check:modes`   -> PASS (seven fail-closed modes, denied execution,
+  native document/data/canvas outputs, realpath/junction isolation)
+- `npm run check:recovery`-> PASS (SQLite migration/backup/retention/rollback/
+  restart/crash recovery; FIFO ownership, duplicate rejection, queued
+  cancellation, failure release, shutdown)
+- `npm run check:orchestrator` -> PASS
+- `npm run build:server`  -> exit 0 (dist/server.cjs 19.2mb, pdf worker copied)
 
-Working tree clean; no existing test weakened; no forbidden path touched.
-
-## What N1 delivers
-- `src/graph/store.ts`: the `run_node` JSON store (id, run_id, parent_ids[],
-  type, status, data, position, version, created, updated) with
-  `RUN_NODE_TYPES`, `RUN_NODE_STATUSES`, deterministic `eventNodeId` hashing,
-  and `RunGraphExport`/`importRun`/`exportRun` (share/replay import).
-- `src/graph/status.ts`: the status transition table (`assertTransition`,
-  `canTransition`) and the exported status vocabulary.
-- `src/graph/runGraph.ts`: `RunGraph` — replays a recorded event log into the
-  tree, adapts existing agent events (plan, plan_step, critique, verify,
-  tool_call, tool_result, artifact_published, ...) into nodes, keeps a live
-  cursor, resumes after restart, and produces a layered layout plus aggregate
-  stats. One journal transaction per event (one per replay), which is what keeps
-  a 10k-node replay under the 300 ms budget.
-
----
-
-C17 done. Merge gate failure fixed (final resolution commit 343385d).
-
-The .jgatefail.txt failure was MERGE CONFLICT with latest manus-parity (15a0ade,
-which had advanced past the earlier 79ec34c tip with the J10 prompt-cache work).
-Ran `git merge manus-parity`; two files conflicted, both resolved keeping BOTH sides:
-- src/agent/loop.ts: kept the C17 coding-model router (chatWithCodingRouter +
-  createProviderClient/cooldownStore/env/onCodingRoute seams, edit attribution via
-  auditEdit/recordEditModel) AND parity's J10 prompt-cache accounting (KvCacheMonitor,
-  requestSignature/hashText, providerRouteFor, addUsage, the cache_usage event, and the
-  provider/cacheTtlSecs/cacheTtlIsEstimate/account run options). The request block now
-  builds requestTools + route + cacheMonitor.beginRequest, then the chatRequest object
-  that feeds either chatWithCodingRouter (coding turns) or chatWithFallback.
-- .jdone: merged the C17 report with the incoming J10/V13/D16 parity reports.
-`git merge-tree --write-tree manus-parity HEAD` exits 0; branch is 0 commits behind.
-
-.gitignore must ignore the C17 report so it is not committed:
-  /.cc-report-c17.md
-The .jgatefail.txt failure was MERGE CONFLICT with latest manus-parity.
-Fix (commit fa87dc8 "Merge branch 'manus-parity' into khamis1992/cc-c17 (C17)"):
-- package.json: kept BOTH eval:coding-bench (C17) and eval:design / eval:coding-prompt (parity).
-- src/agent/loop.ts: kept BOTH the C17 coding router (chatWithCodingRouter +
-  createProviderClient/cooldownStore/env/onCodingRoute seams) AND parity's per-run
-  opts.model override for the quick-edit route. An explicit per-run model wins over
-  cfg.model; a coding turn still replaces it with the strongest coder in the chain.
-- src/scripts/check-test-isolation.ts: fixed TS18046 "error is of type unknown" that
-  the merge introduced (cast the execFileSync rejection before reading status/stdout/stderr).
-git merge-tree --write-tree manus-parity HEAD exits 0, so no conflict re-emerges.
-C17 deliverables:
-- src/llm/codingRouter.ts: coding turns prefer the strongest coder in a configurable
-  chain (LOAM_CODER_CHAIN / MANUS_LOCAL_CODER_CHAIN -> config.json coding.chain ->
-  failover order). Model ids only, never API keys. Rides the existing chatWithFailover
-  walk (cooldowns, key handling, failover).
-- src/llm/modelAudit.ts: logs which model handled each edit (data/model-edits.jsonl +
-  in-process ring); no contents, arguments or credentials; toggle via coding.logEdits.
-- src/eval/codingBenchmark.ts + src/scripts/eval-coding-bench.ts: benchmark harness that
-  runs the C11 eval set per candidate coder and reports the pass rate per model.
-- Tests: llm/__tests__/codingRouter.test.ts, llm/__tests__/modelAudit.test.ts,
-  agent/__tests__/codingRouting.test.ts (end-to-end routing + edit attribution),
-  eval/__tests__/codingBenchmarkE2E.test.ts (pass rate per model over the real C11 fixtures).
-Gates (from the worktree root):
-- npx tsc --noEmit                         -> exit 0
-- npm run build:server                     -> exit 0
-- (cd packages/web && npx next build)      -> exit 0 (25/25 static pages)
-- node --import tsx --test src/llm/__tests__/codingRouter.test.ts src/llm/__tests__/modelAudit.test.ts src/agent/__tests__/codingRouting.test.ts src/eval/__tests__/codingBenchmarkE2E.test.ts src/agent/__tests__/quickEdit.test.ts -> 50 pass, 0 fail
-- node --import tsx --test src/agent/__tests__/*.test.ts src/llm/__tests__/*.test.ts src/eval/__tests__/*.test.ts -> 203 pass, 0 fail
-- npm run check:eval                       -> PASS
-No existing test was weakened or deleted. Working tree clean.
-
-## Incoming manus-parity report (J10 prompt-cache + KV miss detection)
-
-J10 complete: prompt-cache (KV) miss detection + reusable-token accounting, and the
-merge gate now passes.
-
-Task (from `.jgatefail.txt`): the branch had a MERGE CONFLICT with manus-parity. Ran
-`git merge manus-parity`, resolved every conflict keeping BOTH sides (never dropping
-either), got all gates green, and recorded the result here.
-
-### Merge gate (the failure that was fixed)
-Two files conflicted on the first merge:
-- `src/agent/events.ts`: kept the incoming `compaction` event with `blocked?: boolean`
-  (parity) AND this branch's `cache_usage` event (J10). Both event kinds are in the
-  union now.
-- `packages/web/public/marketplace/THIRD_PARTY_NOTICES`: kept BOTH jcode MIT notices.
-  The J10 KV-miss-detection notice (HEAD) and the `bench/` adaptation notice (parity)
-  each keep their own section, sharing one MIT License block. Neither notice was dropped.
-Resolution committed as `6a6c3f5 Merge manus-parity (keep both sides) into jcode-j10`.
-
-A typecheck failure surfaced by that merge was fixed (not worked around): the
-`compression` literal in `src/agent/__tests__/cacheUsageAccounting.test.ts` was missing
-the new `bufferTokens` / `reattachFiles` / `reattachFileChars` fields. Added them to
-match the config type (same values as `contextCompressor.test.ts`). The test assertions
-are unchanged.
-
-manus-parity advanced three times while this gate ran (14 commits, then 7 more, then
-again). Each new tip was merged and re-verified:
-- `5fc32c4 Merge branch 'manus-parity' into khamis1992/jcode-j10`
-- `4e8ff1e Merge branch 'manus-parity' into khamis1992/jcode-j10` (current tip)
-All three merges were conflict-free after the first resolution, and the branch is now
-0 commits behind manus-parity.
-
-### What J10 delivers
-- `src/agent/kvCacheMonitor.ts`: normalizes provider usage into
-  `{ promptTokens, cachedTokens, cacheWriteTokens? }`.
-  - `parseOpenAiUsage`: `prompt_tokens` + `prompt_tokens_details.cached_tokens`
-    (plus the legacy top-level `cached_tokens`), clamped so cached never exceeds prompt.
-  - `parseAnthropicUsage`: `input_tokens` + `cache_read_input_tokens` +
-    `cache_creation_input_tokens`.
-  - `parseOllamaUsage`: Ollama prompt-eval counters (also accepts the nested
-    `cached_tokens.tokens` shape).
-  - Miss-reason detection: cached ratio collapses after compaction, idle gap past the
-    cache TTL, and model switch each produce a distinct reason.
-- `src/ollama.ts`: provider usage types carry the cache fields.
-- `src/agent/events.ts` + `src/protocol/{events,types}.ts` + `packages/shared/src/socket.ts`:
-  the `cache_usage` event/counter wire format.
-- `packages/web/src/components/chat/CacheUsageRow.tsx`: the small chat notice, wired into
-  `EventList.tsx`, with `en`/`ar` strings.
-- `src/agent/loop.ts`: reusable-token accounting on the per-step usage re-sum, so a
-  prompt-cache read is no longer dropped when usage is recomputed (fix `a12d0e0`).
-
-### Gates (all run from the worktree root, on merged tip `4e8ff1e`)
-- `npx tsc --noEmit` -> clean
-- `npm run build:server` -> dist/server.cjs 19.1mb, pdf worker copied
-- `(cd packages/web && npx next build)` -> compiled successfully
-- `npm run verify` -> exit 0 (encoding OK, eval PASS, orchestrator smoke PASS 114/114,
-  recovery PASS, modes PASS)
-- `node --import tsx --test src/{agent,server,tools,design,scripts,protocol,memory}/__tests__/*.test.ts`
-  -> tests 1340, pass 1340, fail 0
-- `(cd packages/web && npx vitest run)` -> 63 files, 372 tests passed
-- J10-specific: `kvCacheMonitor` + `cacheUsageEvents` + `cacheUsageAccounting`
-  -> 46 pass, 0 fail
-
-Working tree is clean; no existing test was weakened and no forbidden path was touched.
-
----
-
-## Incoming manus-parity report (V13 quick-edit route)
-
-V13 (quick-edit route) is complete, and the merge gate passes.
-
-### What V13 delivers (commit 639a92c)
-- `src/agent/quickEdit.ts`: conservative classifier. Measured scope wins (text-only or
-  pure reorder, within limits) -> fast model; behavioural / structural / file-boundary /
-  oversized / multi-file / ambiguous -> base model. Short instructions classified by
-  narrow-vs-big patterns in English and Arabic; ambiguous or long instructions stay on
-  the base model.
-- `resolveQuickEditModel` uses the configured fast tier (`fallbackModel`), falling back
-  to the base model when it is unset; `planQuickEditRoute` adds a minimal targeted-edit
-  instruction (English + Arabic) only for the quick route.
-- `planTargetedDiff(before, after)` turns a before/after pair into line-anchored patches
-  via the now-exported `diffLines`/`DiffSummary`/`DiffHunk`.
-- Arabic/RTL: narrow-edit instructions are recognised in Arabic, `hasRtlScript` detects
-  RTL script, and a targeted patch preserves Arabic text exactly (covered by tests).
-- `src/agent/loop.ts` and `src/agent/orchestrator.ts`: optional per-run `model` override
-  so the quick-edit route can actually run on the fast model; `src/index.ts` passes it
-  through.
-
-### Gates
-- `npx tsc --noEmit` -> clean
-- `npm run build:server` -> dist/server.cjs built, pdf worker copied
-- `(cd packages/web && npx next build)` -> compiled successfully, 25/25 static pages
-- `node --import tsx --test src/agent/__tests__/*.test.ts src/server/__tests__/*.test.ts` -> 527 pass, 0 fail
-- `node --import tsx --test src/tools/__tests__/*.test.ts` -> 543 pass, 0 fail
-
-Working tree is clean; no existing test was weakened.
-
-### Incoming manus-parity report (V13 gate fix)
-
-V13 (quick-edit route) is complete, and the merge gate now passes.
-
-#### Merge gate (the failure that was fixed)
-`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity.
-Ran `git merge manus-parity`; conflicts were resolved keeping BOTH sides (never dropping either):
-- `src/index.ts`: kept the V13 quick-edit route (`planQuickEditRoute(effectiveCfg, effectivePrompt)` and
-  `quickEditRoute.suffix` / `quickEditRoute.model` wiring) AND the incoming manus-parity side-chat
-  additions (`SIDE_CHAT_READ_ONLY_TOOLS` import, `sideChatSuffix` in the prompt suffix array, the
-  read-only `baseRunAllow`/`runAllow` filtering, and `sideChat: opts.sideChat === true` on the saved run).
-- `.jdone`: this file merges the V13 report and the incoming D16 report instead of choosing one.
-Resolution committed as `872addf Merge branch 'manus-parity' into khamis1992/v0-v13`.
-`git merge-tree --write-tree manus-parity HEAD` exits 0, so no conflict re-emerges.
-
-Earlier in the task, a merge of manus-parity also resolved these files keeping both sides:
-- `src/index.ts`: quick-edit route + memory index summary (`memoryIndexSummary` from `memory.indexSummary(8)`).
-- `src/tools/multiEdit.ts`: V13 exports/doc comments on `DiffHunk` and `diffLines`.
-That resolution was committed as `7d52e7c merge manus-parity: keep quick-edit route with memory index summary (V13)`.
-
-#### What V13 delivers (commit 639a92c)
-- `src/agent/quickEdit.ts`: conservative classifier. Measured scope wins (text-only or pure reorder,
-  within limits) -> fast model; behavioural / structural / file-boundary / oversized / multi-file /
-  ambiguous -> base model. Short instructions classified by narrow-vs-big patterns in English and
-  Arabic; ambiguous or long instructions stay on the base model.
-- `resolveQuickEditModel` uses the configured fast tier (`fallbackModel`), falling back to the base
-  model when it is unset; `planQuickEditRoute` adds a minimal targeted-edit instruction (English +
-  Arabic) only for the quick route.
-- `planTargetedDiff(before, after)` turns a before/after pair into line-anchored patches (replacement,
-  deletion, insertion, insert-before-first-line) via the now-exported `diffLines`/`DiffSummary`/`DiffHunk`.
-- Arabic/RTL: narrow-edit instructions are recognised in Arabic, `hasRtlScript` detects RTL script,
-  and a targeted patch preserves Arabic text exactly (covered by tests).
-- `src/agent/loop.ts` and `src/agent/orchestrator.ts`: optional per-run `model` override so the
-  quick-edit route can actually run on the fast model; `src/index.ts` passes it through.
-
-#### Gates (all run from the worktree root)
-- `(cd packages/web && npx next build)` -> compiled successfully, 25/25 static pages generated
-  (full tools suite green on the final merged tip, including the search perf test)
-
-manus-parity advanced twice while this gate ran (to 8dddc3e, then to 29b9a62). Both were merged
-and re-resolved keeping both sides; the second resolution is `e872e8c Merge branch 'manus-parity'
-into khamis1992/v0-v13`. The branch is 0 commits behind manus-parity and
-`git merge-tree --write-tree manus-parity HEAD` exits 0.
-
-The earlier `src/tools/__tests__/search.test.ts` wall-clock flake (`elapsed < 1000` for a real
-repository grep) was load-induced while four heavy gates ran concurrently; it is machine-speed
-dependent and pre-existing on manus-parity (a clean parity worktree fails it at 1526ms). It passes
-on the final tip, and no test was weakened.
-
----
-
-## Incoming manus-parity report (D16 gate fix)
-
-### Incoming manus-parity report (V10 gate fix)
-
-V10 complete.
-
-Task: resolve the merge conflict with manus-parity (keeping both sides) and get the
-gates green (typecheck, builds, tests) on khamis1992/devin-d9.
-
-What was done:
-- Merged manus-parity into khamis1992/devin-d9 and resolved every conflict by keeping
-  BOTH sides (never dropping either). Three conflicted files, one hunk each:
-  - src/server/runTools.ts: ALWAYS_ON_TOOLS is now the union. Kept D9's
-    "playbook_create_from_session" and parity's "web_scaffold", plus parity's
-    todo_write, design_image_generate, design_page_images, design_brief,
-    design_autofix and workflow_run/resume/status.
-  - src/server/http.ts: kept both route dispatch blocks. D9's handlePlaybookRoutes and
-    parity's handleWikiRoutes (D8) both dispatch now. All other parity routes
-    (craft, insights, automations, session control, video-studio relay) and the
-    sessionId/publicSchedule/event-trigger changes were preserved by the auto-merge.
-  - src/server/__tests__/runTools.test.ts: union of both registration sets. D9
-    registers createPlaybookTools (playbook_create_from_session always-on); parity
-    registers createDesignAssetsTools and createTodoTools. Both registered; the
-    todo_write exposure test is kept. No test was weakened or deleted.
-- Verified the resolution is a true union: zero lines from either side of HEAD or
-  manus-parity are absent from the merged files (modulo lines one side intentionally
-  rewrote, e.g. parity's publicSchedule/sessionId replacing HEAD's older forms).
-- manus-parity advanced while working (V12, D16, V10 merged upstream). Merged the
-  newer tip (29b9a62) as a second, conflict-free merge so the branch is now
-  0 commits behind manus-parity.
-
-Gates (all pass, from the worktree root):
-  npx tsc --noEmit                              -> exit 0
-  npm run build:server                          -> exit 0 (dist/server.cjs 19.1mb)
-  (cd packages/web && npx next build)           -> exit 0
-  npm run verify                                -> exit 0
-    - check:encoding OK (no BOM, no mojibake, all JSON valid)
-    - check:eval PASS, check:orchestrator PASS (114/114), check:recovery PASS,
-      check:modes PASS
-  node --import tsx --test src/{agent,server,tools,design,scripts,preview}/__tests__/*.test.ts
-    - tests 1266, pass 1266, fail 0
-  (cd packages/web && npx vitest run)           -> 62 files, 368 tests passed
-
-No test was weakened. Forbidden paths untouched.
-
-Note: src/agent/masterPromptText.ts shows as "modified" after a test run because
-src/tools/__tests__/promptwire.test.ts imports src/scripts/gen-master-prompt.ts, which
-calls main() at import time and rewrites the file with LF endings. The content is
-byte-identical to the committed version (git diff is empty); it is only line-ending
-noise under core.autocrlf=true. Restored with git checkout.
-
-Merge conflict resolution done (commit 3a7dc30).
-
-The .jgatefail.txt failure was MERGE CONFLICT with latest manus-parity (tip a5d0cf3,
-merge base b59b813, HEAD 4d84116). Ran `git merge manus-parity`; five files conflicted,
-all resolved keeping BOTH sides (union of functionality, nothing dropped):
-- src/policy/hooks.ts: HEAD's expanded HookEvent surface + ParsedHookDecision /
-  wrapHookContext / HOOK_CONTEXT_TAG, AND parity's stdin-based runPreCompactHooks with
-  PreCompactHookInput / PreCompactHookResult. Tool events keep the exit-code contract;
-  decision events use JSON stdout (block / additionalContext) plus exit-code-2 blocking.
-- src/agent/loop.ts: parity's compression / coding router / stall guard / todos, plus
-  HEAD's openSession, endedReason tracking, Stop hook with bounded continuation, and
-  closeSession in finally (cancellation-aware SessionEnd reason).
-- src/agent/orchestrator.ts: parity's plan / act / observe / critique loop, plus HEAD's
-  lifecycleHooks gate, STOP_CONTINUATION_ROUNDS bound, Stop-continuation
-  re-verification, and the runOrchestratedAgent session wrapper.
-- src/tools/subagents.ts: parity's profile / ACP paths, plus HEAD's SubagentStart /
-  SubagentStop hooks on both the profile path (stopFired guard + finally) and the ACP
-  delegate_task path (success, failure and finally).
-- src/policy/__tests__/hooks.test.ts: union of both suites (29 cases).
-
-Fixed the interaction the resolution exposed: parity's coding router now intercepts
-orchestrator worker calls, so a worker prompt that trips isCodingTurn escaped the
-injected fake client and hit the real provider chain (this is what made
-loopHooks.test.ts and orchestratorHooks.test.ts fail with provider HTTP 404s).
-src/agent/orchestrator.ts now forwards createProviderClient / cooldownStore / env /
-onCodingRoute into the child runAgent call, and orchestratorHooks.test.ts injects a
-coder fake plus an in-memory cooldown store and empty failover so routing stays
-hermetic. No test was weakened or deleted; the hooks.test.ts union is additive.
-
-Gates (all pass, from the worktree root):
-  npx tsc --noEmit                              -> exit 0
-  npm run build:server                          -> exit 0 (dist/server.cjs 19.1mb)
-  (cd packages/web && npx next build)           -> exit 0 (Next.js 16.4.2, 25 static)
-  node --import tsx --test src/{agent,llm,policy,tools}/__tests__/*.test.ts
-    - tests 971, pass 971, fail 0
-  node --import tsx --test src/{server,design,protocol,memory,session,scripts,preview,eval,modes}/__tests__/*.test.ts
-    - tests 647, pass 647, fail 0
-  node --import tsx --test src/{bench,electron,vendor}/__tests__/*.test.ts
-    - tests 23, pass 23, fail 0
-  (cd packages/web && npx vitest run)           -> 66 files, 437 tests passed
-  Conflict-file re-run: hooks.test.ts + orchestratorHooks.test.ts + loopHooks.test.ts
-    - tests 47, pass 47, fail 0
-
-Fixed a gate parity broke: `npm run check:orchestrator` exited 1 with no verdict on
-both this tip and the manus-parity baseline (a5d0cf3), with the identical crash
-(runFinalRepair -> all providers failed/cooled -> longcat:cloud HTTP 404). Cause: the
-smoke harness's testCfg() called loadConfig() without overriding coding/failover, so the
-real defaults applied (coding enabled; six failover providers) and a worker coding turn
-escaped the injected fake client to the real provider chain. Since this gate passed
-before parity landed the coding router (C17 recorded 114/114), it was a real regression
-in the harness, not merely upstream noise. src/scripts/check-orchestrator.ts now sets
-cfg.coding = { enabled: true, chain: [], logEdits: false } and cfg.failover = { providers: [] }
-in testCfg(): with no coder in the chain the router falls back to the harness's fake
-client for every turn. No assertion was weakened or removed; the smoke is unchanged in
-what it verifies, only hermetic in where a coding turn resolves. Now exits 0 at
-"orchestrator smoke: PASS (114/114)", and the full `npm run verify` exits 0.
-
-Note: src/agent/masterPromptText.ts shows as "modified" after a test run because
-src/tools/__tests__/promptwire.test.ts imports src/scripts/gen-master-prompt.ts, which
-calls main() at import time and rewrites the file with LF endings. Content is
-byte-identical to the committed version (git diff empty); only line-ending noise under
-core.autocrlf=true. Restored with git checkout, working tree clean.
-
-Correction: the first merge used a stale local manus-parity ref. The merge's second
-parent was 9e01568, but manus-parity had advanced to a5d0cf3 (19 commits: V4 Loam UI
-Kit token linter + design_lint tool, fc-01 reproducible FilmCraft/EffectCraft dist
-fetching, J10), none of which was in HEAD. A second merge brought in the real tip.
-
-Merge done (second merge, real tip a5d0cf3).
-
-`git merge manus-parity` at tip a5d0cf3 produced a single conflict, `.jdone`
-(modify/delete: parity deleted its copy, HEAD keeps the record). Resolved by keeping
-HEAD's `.jdone`; every other file auto-merged cleanly. What this merge adds on top of
-3a7dc30:
-- V4 design system: src/modes/designRules.ts (DESIGN_LINT_PROMPT), src/tools/designLint.ts
-  (design_lint tool), src/design/tokenLint.ts (Loam UI Kit token linter, expanded), plus
-  src/tools/__tests__/designLint.test.ts, src/design/__tests__/tokenLint.test.ts and the
-  src/index.ts + src/agent/prompt.ts wiring.
-- fc-01 vendor: scripts/vendor/fetch-filmcraft.mjs, scripts/vendor/fetch-effectcraft.mjs,
-  scripts/vendor/__tests__/fetch-vendor.test.mjs, docs/vendor-dists.md, plus the electron
-  rebrand/main.cjs, craft route and repair-mojibake updates.
-- electron/__tests__/filmcraftRebrand.test.mjs, src/modes/buildPhases.ts,
-  src/server/runTools.ts and src/server/routes/craft.ts updates.
-
-The five conflicts resolved in 3a7dc30 are unaffected: parity's advance past 9e01568 did
-not touch src/agent/loop.ts, src/agent/orchestrator.ts, src/policy/hooks.ts,
-src/tools/subagents.ts or src/policy/__tests__/hooks.test.ts, so the union resolution and
-the check:orchestrator hermetic fix carry forward unchanged.
-
-Gates re-run after the full merge (all pass, worktree root):
-  npx tsc --noEmit                              -> exit 0
-  npm run build:server                          -> exit 0
-  (cd packages/web && npx next build)           -> exit 0 (compiled successfully)
-  npm run verify                                -> exit 0
-    (orchestrator smoke: PASS (114/114), recovery PASS, modes PASS, eval PASS, encoding OK)
-  node --import tsx --test src/{agent,llm,policy,tools}/__tests__/*.test.ts
-    - tests 987, pass 987, fail 0
-  node --import tsx --test src/{server,design,protocol,memory,session,scripts,preview,eval,modes}/__tests__/*.test.ts
-    - tests 698, pass 698, fail 0
-  node --import tsx --test electron/__tests__/*.test.mjs
-    - tests 8, pass 8, fail 0
-  npm run test:vendor                           -> tests 7, pass 7, fail 0
-  npm run test:vendor:protocol                  -> tests 13, pass 13, fail 0
-  npm run test:vendor:editors                   -> tests 15, pass 15, fail 0
-  (cd packages/web && npx vitest run)           -> 66 files, 437 tests passed
-
-Branch is now 0 commits behind manus-parity (a5d0cf3 is an ancestor of HEAD).
-
----
-
-## fc-03: `video_studio` agent tool (FilmCraft actions)
-
-fc-03 complete. The merge gate failure was a single conflict in
-`docs/filmcraft-integration.md` (manus-parity tip `dc1c68d`, merge base
-`6ad123d`). Resolved keeping BOTH sides: the incoming fc-01 vendor-fetch refresh
-section (`npm run vendor:filmcraft` / `scripts/vendor/fetch-filmcraft.mjs` /
-`docs/vendor-dists.md`) and this branch's `video_studio` action/command-mapping
-documentation are both present. Resolution committed as `5b3766d Merge
-manus-parity into fc-03: keep both the vendor fetch docs and the video_studio
-mapping`. `git merge-tree --write-tree manus-parity HEAD` exits 0.
-
-### What fc-03 delivers
-- `src/tools/videoStudio.ts`: the single `video_studio` agent tool driving the
-  FilmCraft editor through the fc-02 relay (`src/server/videoStudioRelay.ts`).
-  Actions: `open`, `state`, `import`, `cut`, `trim`, `delete` (ripple), `move`,
-  `reorder`, `split`, `speed`, `add_text`, `add_audio` / `music`,
-  `transition_basic`, `effect_basic`, `undo`, `raw`.
-  - Command ids are never hardcoded: `VIDEO_STUDIO_COMMAND_CANDIDATES` is
-    resolved against the live `commands()` catalog at runtime via
-    `resolveCommandId`; an unexposed id returns the looked-for ids, Levenshtein
-    close matches and the full catalog so the agent can retry with `raw`.
-  - Time args accept seconds and timecode (`toSeconds` / `toSecondsArray`).
-  - Fallback contract returns `ok:false` with `fallback: "video_edit"` for
-    `filmcraft_dist_missing` / `bridge_unavailable` / `command_rejected` /
-    `cancelled`, and `retry: true` for `panel_not_open`.
-- `src/server/videoStudioRelay.ts`: enqueues commands per task, streams them over
-  SSE, settles one at a time, times out, rejects with `COMMAND_REJECTED`,
-  ignores unknown ids, and cancels queued/in-flight commands on task stop.
-- Registration: `video_studio` in `src/server/runTools.ts` (`ALWAYS_ON_TOOLS`)
-  and in `src/policy/riskTier.ts`.
-- Docs: `docs/filmcraft-integration.md` gains the actions table, the
-  command-candidate mapping, the time-argument grammar and the fallback table.
-- Tests: `src/tools/__tests__/videoStudio.test.ts` (mocked relay: every action's
-  command sequence, unknown-id rejection with close matches, fallback paths,
-  reorder permutation contract, effect_basic name precedence),
-  `src/server/__tests__/videoStudioRelay.test.ts`,
-  `src/server/__tests__/videoStudioE2E.test.ts` (real server + relay + SSE route).
-
-### Gates (all run from the worktree root, on merged tip `5b3766d`)
-- `npx tsc --noEmit`                          -> exit 0
-- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.2mb, pdf worker copied)
-- `(cd packages/web && npx next build)`       -> exit 0 (Next.js 16.4.2, 25/25 static pages)
-- `node --import tsx --test src/tools/__tests__/videoStudio.test.ts src/server/__tests__/videoStudioRelay.test.ts src/server/__tests__/videoStudioE2E.test.ts src/server/__tests__/runTools.test.ts`
-  -> tests 66, pass 66, fail 0
-
-No test was weakened or deleted; no forbidden path was touched; working tree is
-clean (only the pre-existing untracked `src/server/__tests__/.setuptiming.test.ts`
-and `.timingprobe.test.ts` remain, left alone).
+Working tree clean; no forbidden path touched; no real external model API was
+called by the tests (the scripted `neo-mock` model is used throughout).
