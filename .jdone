@@ -188,6 +188,49 @@ gap and runs the repository's own canonical gate.
   (`.gitignore:7` `/data/`, `.gitignore:8` `/workspace/`) and 0 files under either are
   tracked, so the working tree stays clean.
 
+## Independent re-validation (2026-10-23, fifth pass)
+
+Every earlier pass checked the parity direction. This pass checks the reverse
+(D3's own additions), the semantic union in the real test, the built artifact, and
+the merge range as a whole.
+
+- **Reverse-direction survival.** For each of the 16 non-`.jdone` delta files,
+  extracted D3's own additions from `git diff 088b4f2 053cd0e` and verified each is
+  present in the merge. Result: **`FILES-WITH-MISSING-D3-LINES=0`**
+  (`src/tools/envSnapshot.ts` 1051, `src/scripts/check-env-builds.ts` 170,
+  `src/server/routes/envBuilds.ts` 167, `src/tools/__tests__/envSnapshot.test.ts` 389,
+  `src/server/__tests__/envBuildRoutes.test.ts` 135, `src/index.ts` 23, and the rest,
+  all present).
+- **Semantic union at runtime, not just in source.** Imported the merged module and
+  read `ALWAYS_ON_TOOLS` directly: `env_blueprint_generate`, `env_build_status`
+  (D3), `playbook_create_from_session`, `web_scaffold` (parity), plus `todo_write` and
+  `video_studio` are all **PRESENT**. `src/server/__tests__/runTools.test.ts` registers
+  both `createEnvSnapshotTools()` (line 128) and `createPlaybookTools()` (line 133),
+  and its root-cause test asserts every `ALWAYS_ON_TOOLS` name is registered and none
+  leaks into the raw gateway allowlist.
+- **Built artifact contains both sides.** `dist/server.cjs` (from `npm run
+  build:server`) contains 15 matches for the D3 markers (`env_blueprint_generate`,
+  `env_build_status`, `/api/env-builds`) and 15 for the parity markers
+  (`handleWikiRoutes`, `handlePlaybookRoutes`, `web_scaffold`,
+  `playbook_create_from_session`).
+- **No leftover merge state.** No `MERGE_HEAD`, `MERGE_MSG`, `MERGE_MODE`,
+  `MERGE_HEAD.lock`, or `rebase-merge` under `.git/worktrees/devin-d3`.
+- **Forbidden paths untouched across the whole merge range.** `git diff --name-only
+  088b4f2 HEAD -- docs/handoff/watchdog.ps1 qa packages/tests/visual/baselines` = 0
+  entries, and the same for the D3 range `088b4f2 053cd0e` = 0 entries.
+- **D3 tests actually execute.** Running the four D3 test files reports `# tests 24,
+  # pass 24, # fail 0, # skipped 0, # todo 0` - none skipped or todo.
+- **Arabic/encoding integrity, re-measured.** `src/agent/masterPromptText.ts` and
+  `packages/web/src/i18n/ar.json` are both **byte-identical to parity** (0 diff lines
+  in `git diff 03f8aef HEAD`), so the merge did not touch them. `check:encoding --run`
+  reports OK (no BOM, no mojibake, all JSON valid). Raw-byte inspection of `ar.json`:
+  first bytes `7B 0D 0A` (no BOM), 2,397 Arabic chars in U+0600-U+06FF, `hasFFFD=False`,
+  `hasQuestionRun=False`. (An earlier note in this file cited 11,266 for `ar.json`;
+  that was a miscount - the correct figure is 2,397. The file is unchanged from parity
+  either way, which is what matters.)
+- **Final state.** `git status --porcelain` empty (0 entries); `git diff --quiet HEAD
+  -- .jdone` clean; HEAD `a346fb1`.
+
 
 ## Gates (all pass, run from the worktree root)
 1. `npx tsc --noEmit` — PASS
