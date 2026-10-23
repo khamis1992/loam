@@ -1,3 +1,71 @@
+D10 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
+
+## The failure that was fixed
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.
+
+## What the merge produced
+`git merge manus-parity` (tip 726c61b) conflicted in exactly four files. Every
+conflict was resolved by keeping BOTH sides; no test was weakened, deleted or
+skipped, and no code was dropped:
+
+1. `src/agent/masterPromptText.ts` was stored as a BINARY file whose working-tree
+   bytes were 52569 bytes of all-NUL (corrupted) on BOTH our side and the
+   merge-base; manus-parity carried the real 58896-byte asset. It was regenerated
+   with `npm run gen:master-prompt`, which produced a file byte-identical to
+   manus-parity's (blob 145cc3a0), so the parity asset was kept.
+2. `src/agent/loop.ts`: resolution keeps the repo-local skill precedence
+   (`loadProjectSkills(opts.cfg.workspace).skills`) AND parity's `opts.prompt`
+   argument, plus `opts.sandboxMode`.
+3. `src/server/routes/craft.ts`: the duplicated `CraftRouteOptions` block was
+   removed; both the `CraftRouteOptions` interface and the `root` resolution from
+   manus-parity are kept.
+4. `src/agent/__tests__/__snapshots__/coding-prompt.snap.json`: the master-prompt
+   hash was recomputed from the merged state (via a throwaway generator that was
+   deleted afterwards) and matches manus-parity's committed hash.
+
+The merge also exposed one real type error: parity's
+`src/agent/__tests__/cacheUsageAccounting.test.ts` test factory omitted the
+`skills` config field that D10 added to `Config`. It was fixed by adding
+`skills: { autoSuggest: false, suggestModel: "" }` to the factory (commit 54cfc81).
+
+## Gate condition verified
+`git merge manus-parity` now reports "Already up to date." and
+`git merge-base --is-ancestor manus-parity HEAD` exits 0, so parity is fully
+merged (rev-list --left-right --count manus-parity...HEAD = 0  6). The gate's
+condition is satisfied.
+
+## D10 acceptance criteria (repo-local skills + auto-suggest)
+- discovery: repo-local precedence over global, invalid frontmatter ignored with
+  a warning, triggers parsed (comma / JSON / YAML-block)
+- suggestion with a mocked model staged as a pending item (nothing written yet)
+- accepting the suggestion writes `.loam/skills/<slug>/SKILL.md`
+All covered by `src/tools/__tests__/skillsRepoSuggest.test.ts`.
+
+## Gates (run from the worktree root on the committed tree)
+- `npx tsc --noEmit`                                 -> exit 0
+- `npm run build:server`                             -> exit 0 (dist/server.cjs 19.2mb, pdf worker copied)
+- `(cd packages/web && npx next build)`              -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test src/tools/__tests__/skillsRepoSuggest.test.ts` -> tests 10, pass 10, fail 0
+- `node --import tsx --test "src/**/*.test.ts"`      -> tests 2103, pass 2102, fail 1
+- `(cd packages/web && npx vitest run)`              -> 72 files / 472 tests, all pass
+- `npm run check:encoding` / `check:modes` / `check:orchestrator` / `check:promptwire` -> PASS
+
+The single node failure is pre-existing and NOT caused by this merge:
+`src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither
+registered nor listed in PENDING_CODING_TOOLS". That file, `taskToolScope.ts` and
+`planTools.ts` are byte-identical to manus-parity (`git diff manus-parity HEAD`
+is empty for each), and the same test fails identically when run inside the
+manus-parity worktree itself (3 pass / 1 fail). It is the inherited D4 defect
+documented in the preserved parity report below, so it is left untouched.
+
+No secrets committed. No forbidden path touched. Working tree clean after the
+merge commit.
+
+---
+
+## Preserved: manus-parity .jdone (D19 + D17 + D4 + N20 reports)
+
 D19 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
 
 ## The failure that was fixed
