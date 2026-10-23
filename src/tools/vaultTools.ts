@@ -10,6 +10,8 @@
  */
 import { listSecrets, resolveSecret } from "../server/secretsVault.js";
 import { registerSecretValue } from "../log.js";
+import { LruCache } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { str } from "./registry.js";
 
@@ -19,8 +21,11 @@ const VAULT_REF_RE = /\{\{vault:([A-Za-z0-9_.-]+)\}\}/g;
 /** Scope used when the run context carries no agent id. */
 export const VAULT_GLOBAL_SCOPE = "global";
 
-/** Resolved value -> secret name, so redaction can name the ref, not the value. */
-const vaultValueNames = new Map<string, string>();
+/** Resolved value -> secret name, so redaction can name the ref, not the value.
+ *  Bounded (J6): every resolved secret is retained for redaction, so an agent
+ *  that resolves many distinct secrets in one session must not grow this map. */
+const vaultValueNames = new LruCache<string>({ capacity: 256, name: "vault-value-names" });
+registerCacheStats("vault-value-names", () => vaultValueNames.stats());
 
 /** Vault scope for a run: the agent id when known, else "global". */
 export function vaultScope(ctx: ToolContext): string {

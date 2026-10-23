@@ -28,6 +28,8 @@ import {
   type WorkspaceFile,
   type WorkspaceOpenTarget,
 } from '@/components/workspace';
+import { craftAppForExtension, craftExtOf, editorKindForExtension } from '@/components/workspace/craft';
+import { CRAFT_APPS } from '@/lib/craftBridge';
 import { ShareDialog } from '@/components/dialogs/ShareDialog';
 import { ChatSocket } from '@/services/chatSocket';
 import { RpcClient, getApiBase, getApiHeaders, getSessionToken, handleAuthFailure } from '@/services/rpc';
@@ -127,6 +129,14 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const draftAttachments = useMemo(() => parseAttachments(attachmentsParam), [attachmentsParam]);
   const draftExtData = useMemo(() => parseExtData(extDataParam), [extDataParam]);
   const draftLoamMode = typeof draftExtData?.loamMode === 'string' ? draftExtData.loamMode : undefined;
+  // Neo N10: the draft extData can pre-select an output type / effort (a deep
+  // link, or a starter card) and name the A/B arm models.
+  const draftOutputType = typeof draftExtData?.outputType === 'string' ? draftExtData.outputType : undefined;
+  const draftEffort = typeof draftExtData?.effort === 'string' ? draftExtData.effort : undefined;
+  const draftAbModels = Array.isArray(draftExtData?.abModels)
+    ? draftExtData.abModels.filter((m): m is string => typeof m === 'string')
+    : undefined;
+  const draftCompare = draftAbModels !== undefined && draftAbModels.length > 1;
   const socketRef = useRef<ChatSocket | null>(null);
   const sentDraft = useRef<{ uid: string; sent: boolean }>({ uid: '', sent: false });
   if (sentDraft.current.uid !== sessionUid) {
@@ -136,6 +146,9 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const [shareOpen, setShareOpen] = useState(false);
   const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
   const [approveForMe, setApproveForMe] = useState(false);
+  // Neo N3: per-run Knowledge Garden toggle. Off by default so a run never reads
+  // the user's imported sources unless they asked for it on this run.
+  const [knowledgeOn, setKnowledgeOn] = useState(false);
   // D19 session runtime: sleep state + compute budget, shown by the badge.
   const runtime = useSessionRuntime(sessionUid);
   const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
@@ -146,6 +159,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   useEffect(() => {
     try {
       setApproveForMe(localStorage.getItem(`loam.approveForMe.${sessionUid}`) === '1');
+      setKnowledgeOn(localStorage.getItem(`loam.knowledge.${sessionUid}`) === '1');
     } catch {
       // Non-browser environment: keep default.
     }
@@ -175,6 +189,16 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     });
     socketRef.current = socket;
     let mounted = true;
+
+    // BUILD_SPEC §6.4: remember the highest durable log `seq` the server has
+    // sent for this session, so a reconnect resumes by sequence and never
+    // re-renders a frame it already has. Declared outside the async closure so
+    // the effect's cleanup can unsubscribe it.
+    const onSeqFrame = (m: ServerMessage) => {
+      if (m.type !== 'event') return;
+      socket.noteSeq(sessionUid, m.seq);
+    };
+    const offSeqFrame = socket.onMessage(onSeqFrame);
 
     (async () => {
       // Read the pending prompt once from the URL when this session first mounts.
@@ -241,6 +265,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
 
     return () => {
       mounted = false;
+      offSeqFrame();
       socket.disconnect();
       socketRef.current = null;
     };
@@ -341,7 +366,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
       const uploaded = await Promise.all(files.map((f) => uploadFile(apiBase, f)));
       attachments = [...attachments, ...uploaded];
     }
-    socket.sendText(sessionUid, text, mode, attachments, makeExtData(cwd, { approveForMe, ...extData }));
+    socket.sendText(sessionUid, text, mode, attachments, makeExtData(cwd, { approveForMe, knowledge: knowledgeOn, ...extData }));
     // The badge should react immediately rather than waiting for the poll.
     void runtime.refresh();
   };
@@ -419,11 +444,48 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     })();
   };
 
+  // Neo N3: the Knowledge Garden chip opts THIS run into the user's imported
+  // sources. It is remembered per session so the next message keeps the choice.
+  const handleToggleKnowledge = () => {
+    const next = !knowledgeOn;
+    setKnowledgeOn(next);
+    try {
+      localStorage.setItem(`loam.knowledge.${sessionUid}`, next ? '1' : '0');
+    } catch {
+      // Non-browser environment: skip persistence.
+    }
+  };
+
   const handleWorkspaceChatEdit = (instruction: string, file: WorkspaceFile) => {
     const socket = socketRef.current;
     if (!socket) return;
     const mode = (resolvedLoamMode?.mode as TaskMode) || 'standard';
     socket.sendText(sessionUid, `Edit ${file.path}: ${instruction}`, mode, [], makeExtData(cwd));
+  };
+
+  /**
+   * Manual open (cr-03): the user clicked "Open in Loam Docs" on an attachment, so
+   * the matching Craft app (or the built-in editor) mounts on the Workspace tab
+   * with that file selected. The tool stub is only a carrier: the panel itself
+   * renders the file list and the editor, exactly like the auto-open path.
+   */
+  const handleOpenFileInEditor = (file: { taskId: string; path: string; name: string; mime?: string }) => {
+    const kind = editorKindForExtension(craftExtOf(file.path));
+    if (!kind) return;
+    const target: WorkspaceOpenTarget = { path: file.path, kind };
+    if (kind === 'craft') target.craftApp = craftAppForExtension(craftExtOf(file.path));
+    workspaceOpenActionRef.current = file.path;
+    setSelectedTool({
+      id: `open-${file.path}`,
+      type: 'toolUsed',
+      tool: kind === 'craft' ? 'office_craft' : 'office_open',
+      actionId: `open-${file.path}`,
+      status: 'success',
+      timestamp: Date.now(),
+      brief: t('Open in editor'),
+    });
+    setWorkspaceTarget(target);
+    autoOpenedRef.current.add(sessionUid);
   };
 
   return (
@@ -510,6 +572,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                 events={events}
                 sessionId={sessionUid}
                 socket={socketRef.current}
+                onOpenFile={handleOpenFileInEditor}
                 onOpenComputer={(e) => {
                   setSelectedTool(e);
                   setSelectedActionId(e.actionId);
@@ -532,6 +595,12 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                           size={a.sizeBytes}
                           taskId={a.taskId}
                           path={a.path}
+                          openLabel={openLabelForAttachment(a.path)}
+                          onOpen={
+                            a.taskId && a.path
+                              ? () => handleOpenFileInEditor({ taskId: a.taskId, path: a.path, name: a.name, mime: a.mime })
+                              : undefined
+                          }
                         />
                       ))}
                     </div>
@@ -595,7 +664,13 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               assistantReply={assistantText}
               approveForMe={approveForMe}
               onToggleApproveForMe={handleToggleApproveForMe}
-            />
+              knowledgeOn={knowledgeOn}
+              onToggleKnowledge={handleToggleKnowledge}
+              outputType={draftOutputType}
+              effort={draftEffort}
+              compareModels={draftCompare}
+              abModels={draftAbModels}
+              />
             <SideChatPanel taskId={taskId ?? null} />
           </div>
         </div>
@@ -656,6 +731,12 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                         size={f.size}
                         taskId={taskId}
                         path={f.path}
+                        openLabel={openLabelForAttachment(f.path)}
+                        onOpen={
+                          taskId
+                            ? () => handleOpenFileInEditor({ taskId, path: f.path, name: f.name })
+                            : undefined
+                        }
                       />
                     </li>
                   ))}
@@ -680,6 +761,19 @@ function videoStudioStub(event: ChatEvent): ToolUsedEvent {
     timestamp: event.timestamp,
     brief: t('Loam Video'),
   };
+}
+
+/**
+ * The button label for a task file, when a workspace editor can open it. Craft files
+ * name the app that owns them (`Open in Loam Docs`); everything else the editors accept
+ * gets a neutral label and non-editor files get `undefined` (plain download).
+ */
+function openLabelForAttachment(path: string): string | undefined {
+  const kind = editorKindForExtension(craftExtOf(path));
+  if (!kind) return undefined;
+  if (kind !== 'craft') return t('Open in editor');
+  const app = craftAppForExtension(craftExtOf(path));
+  return app ? t(`Open in ${CRAFT_APPS[app].displayName}`) : t('Open in editor');
 }
 
 function handleServerMessage(m: ServerMessage, sessionId: string, dispatch: AppDispatch) {

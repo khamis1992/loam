@@ -1,11 +1,14 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import crypto from "node:crypto";
 import { checkCommand, headOutput, tailOutput } from "../policy/commands.js";
+import { checkCommandRisk } from "../policy/commandRisk/index.js";
 import { resolveWrite } from "../policy/paths.js";
 import { currentCancelEpoch, isCancelled } from "../server/runControl.js";
 import { planVaultEnv, redactVaultValues, vaultScope } from "./vaultTools.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { num, str } from "./registry.js";
+import { BoundedMap } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 interface ExecOutcome {
   code: number | null;
@@ -127,7 +130,20 @@ interface Session {
   exitCode: number | null;
 }
 
-const sessions = new Map<string, Session>();
+/**
+ * Persistent shell sessions (J6). Each entry owns a live child process, so the
+ * map is capped and the evicted session's process tree is killed — otherwise a
+ * long run that starts many shells leaks a process (and its buffer) each time.
+ * Sessions still close explicitly through shell_kill / process exit.
+ */
+const sessions = new BoundedMap<string, Session>(32, "shell-sessions", (_id, session) => {
+  try {
+    killTree(session.child);
+  } catch {
+    /* already gone */
+  }
+});
+registerCacheStats("shell-sessions", () => sessions.stats());
 
 function spawnShell(shell: string, cwd: string): ChildProcessWithoutNullStreams {
   if (shell === "cmd") {
@@ -162,6 +178,23 @@ export const shellTools: Tool[] = [
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
       const command = str(args, "command").trim();
       if (!command) return { ok: false, content: "command is required" };
+      // Stage 1 of the blast-radius gate: the jcode command-risk classifier
+      // first, for what a denylist cannot see, then the substring pattern list
+      // (cheap, catches things the structural classifier treats as opaque).
+      // Both are gates, so the order only changes the message; what must hold is
+      // the union: dropping either half opens a bypass.
+      const risk = checkCommandRisk(command, { workingDir: ctx.workspace });
+      if (risk.level === "Catastrophic") {
+        return { ok: false, content: `blocked by policy: ${risk.reason ?? "command risk is catastrophic"}` };
+      }
+      if (risk.level === "Confirm") {
+        return {
+          ok: false,
+          content: `requires approval: ${risk.reason ?? "command blast radius is outside the workspace"}\n`
+            + `To allow it once for this task, the user must approve it at the gate with a justification; `
+            + `a task-scoped rule cannot auto-approve this. Otherwise re-run the command inside the workspace.`,
+        };
+      }
       const check = checkCommand(ctx.cfg, command);
       if (!check.ok) return { ok: false, content: `blocked by policy: ${check.reason ?? "denied"}` };
       const rawEnv = strObj(args, "env");
@@ -258,6 +291,17 @@ export const shellTools: Tool[] = [
       const input = str(args, "input");
       const check = checkCommand(ctx.cfg, input);
       if (!check.ok) return { ok: false, content: `blocked by policy: ${check.reason ?? "denied"}` };
+      const risk = checkCommandRisk(input, { workingDir: session.cwd });
+      if (risk.level === "Catastrophic") {
+        return { ok: false, content: `blocked by policy: ${risk.reason ?? "command risk is catastrophic"}` };
+      }
+      if (risk.level === "Confirm") {
+        return {
+          ok: false,
+          content: `requires approval: ${risk.reason ?? "command blast radius is outside the workspace"}\n`
+            + `Run this in a one-shot shell_run call the user can approve instead.`,
+        };
+      }
       session.child.stdin.write(`${input}\n`);
       return { ok: true, content: `sent to ${id}` };
     },

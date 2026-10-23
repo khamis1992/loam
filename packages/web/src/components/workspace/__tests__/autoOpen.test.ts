@@ -5,6 +5,7 @@ import {
   decideUserMessageOpen,
   decideWorkspaceOpen,
   hasVideoEditIntent,
+  isCanvasSignalTool,
   isWorkspaceToolName,
   latestWorkspaceDecision,
 } from '../autoOpen';
@@ -74,6 +75,53 @@ describe('workspace auto-open decision', () => {
   });
 });
 
+describe('Neo N2 canvas auto-open decision', () => {
+  it('names the long-horizon tools the agent really registers', () => {
+    // Real tool names (src/tools/browser.ts, web.ts, deepResearch.ts, wideResearch.ts,
+    // codeSession.ts): the canvas opens for work with no single file to point at.
+    expect(isCanvasSignalTool('browser_open')).toBe(true);
+    expect(isCanvasSignalTool('browser_goto')).toBe(true);
+    expect(isCanvasSignalTool('browser_operator')).toBe(true);
+    expect(isCanvasSignalTool('web_search')).toBe(true);
+    expect(isCanvasSignalTool('web_fetch')).toBe(true);
+    expect(isCanvasSignalTool('deep_research')).toBe(true);
+    expect(isCanvasSignalTool('wide_research')).toBe(true);
+    expect(isCanvasSignalTool('code_session')).toBe(true);
+    expect(isCanvasSignalTool('code_session_collect')).toBe(true);
+  });
+
+  it('does not treat a display label or a file-producing tool as a canvas signal', () => {
+    // `browser_navigate` is only a display label in toolLabels.ts, not a tool.
+    expect(isCanvasSignalTool('browser_navigate')).toBe(false);
+    expect(isCanvasSignalTool('terminal')).toBe(false);
+    expect(isCanvasSignalTool('office_export')).toBe(false);
+    expect(isCanvasSignalTool('file_write')).toBe(false);
+    expect(isCanvasSignalTool('video_studio')).toBe(false);
+    expect(isCanvasSignalTool('')).toBe(false);
+  });
+
+  it('opens the canvas for a long-horizon tool with no file output', () => {
+    expect(decideWorkspaceOpen(toolEvent({ tool: 'web_search', argumentsDetail: { query: 'loam canvas' } }))).toEqual({
+      path: null,
+      kind: 'canvas',
+    });
+  });
+
+  it('keeps a workspace artifact ahead of the canvas', () => {
+    // A file the agent wrote resolves to its editor, so the canvas does not steal it.
+    const ev = toolEvent({ tool: 'browser_goto', argumentsDetail: { url: 'https://x.test', outputPath: 'out/report.docx' } });
+    expect(decideWorkspaceOpen(ev)).toEqual({ path: 'out/report.docx', kind: 'doc' });
+  });
+
+  it('latestWorkspaceDecision opens the canvas for the newest long-horizon tool', () => {
+    const older = toolEvent({ tool: 'office_export', argumentsDetail: { path: 'a.docx' }, timestamp: 1 });
+    const newer = toolEvent({ tool: 'web_search', argumentsDetail: { query: 'x' }, timestamp: 2 });
+    const decision = latestWorkspaceDecision([older, newer] as ChatEvent[]);
+    expect(decision?.event).toBe(newer);
+    expect(decision?.target).toEqual({ path: null, kind: 'canvas' });
+  });
+});
+
 function userMessageEvent(partial: Partial<ChatMessageEvent> & { content: string }): ChatMessageEvent {
   return {
     id: `msg-${Math.random()}`,
@@ -115,12 +163,14 @@ describe('Loam Video auto-open intent', () => {
     expect(decideUserMessageOpen(ev)).toBeNull();
   });
 
-  it('does not open without a video attachment', () => {
+  it('opens the Craft editor for a document edit intent instead of the video studio', () => {
     const ev = userMessageEvent({
       content: 'Please cut the document',
       attachments: [videoAttachment({ filename: 'notes.pdf', path: 'notes.pdf', contentType: 'application/pdf' })],
     });
-    expect(decideUserMessageOpen(ev)).toBeNull();
+    // A PDF is a Loam Design file, so the edit intent routes to Craft rather than
+    // the video studio, which never claims a non-video attachment.
+    expect(decideUserMessageOpen(ev)).toEqual({ path: 'notes.pdf', kind: 'craft', craftApp: 'design' });
   });
 
   it('detects edit intent keywords in either language', () => {
