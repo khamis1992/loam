@@ -17,6 +17,9 @@ export const CANVAS_NODE_TYPES = [
   'media',
   'ask_user',
   'complete',
+  'sibling',
+  'branch',
+  'merge',
   'note',
   'failed',
 ] as const;

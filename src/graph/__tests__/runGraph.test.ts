@@ -400,6 +400,8 @@ describe("run graph: status transitions", () => {
       "ask_user",
       "complete",
       "sibling",
+      "branch",
+      "merge",
       "note",
       "failed",
       "kb_seed",

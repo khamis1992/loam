@@ -40,9 +40,21 @@ describe("project worktrees (option 17)", { skip: !gitAvailable }, () => {
 
   it("reports non-git folders without throwing", async () => {
     const plain = fs.mkdtempSync(path.join(os.tmpdir(), "loam-wt-plain-"));
-    const info = await readGitBranch(plain);
-    assert.equal(info.isGit, false);
-    assert.equal(info.branch, null);
+    // `git -C <dir> rev-parse` walks up to the nearest enclosing repository, so a
+    // temp dir that happens to live under one (on this machine the OS temp root is
+    // inside a repository) would be reported as git and make this assertion
+    // machine-dependent. Ceiling the upward search at the temp root keeps the test
+    // hermetic and about the folder itself, matching the codeSession test convention.
+    const previousCeiling = process.env.GIT_CEILING_DIRECTORIES;
+    process.env.GIT_CEILING_DIRECTORIES = path.dirname(plain);
+    try {
+      const info = await readGitBranch(plain);
+      assert.equal(info.isGit, false);
+      assert.equal(info.branch, null);
+    } finally {
+      if (previousCeiling === undefined) delete process.env.GIT_CEILING_DIRECTORIES;
+      else process.env.GIT_CEILING_DIRECTORIES = previousCeiling;
+    }
   });
 
   it("creates a worktree under the project dir and binds a new branch", async () => {
