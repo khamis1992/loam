@@ -8486,3 +8486,47 @@ Gates (all run from the worktree root on the merged tree):
 
 No test was weakened, deleted or skipped. No secrets committed. No forbidden path
 touched. No Arabic text was written; no mojibake placeholder text was added.
+
+---
+
+## N6 merge gate session note (2026-10-23, parity tip `590d358`)
+
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. Parity had advanced
+again (tip `590d358`, merge base `eb17ea0`, ours `4cf7b8c`). Five files conflicted:
+`.jdone`, `src/agent/loop.ts`, `src/index.ts`, `src/server/http.ts` and
+`src/server/recovery.ts`. Every other file auto-merged and was staged.
+
+Resolution method (unchanged, strict superset): for each conflict hunk, keep both sides,
+preserving order A -> B -> tail, with no line dropped from either side. Source conflicts
+were resolved with the regex `replace` tool using `\r?\n`, because the `edit` tool's
+multi-line matcher does not match CRLF files; `.jdone` is CRLF and was resolved the same
+way.
+
+Per file:
+- `.jdone`: the N6 rollup (HEAD) plus parity's N10/N7 rollup plus the common tail, one
+  record, no marker lines left.
+- `src/agent/loop.ts`: kept the merged arm-settlement comment, `await
+  Promise.all(armPromises);` and the step-cap message `stopped after ${maxSteps} steps
+  without finishing`.
+- `src/index.ts`: kept `writeCheckpoint` and the `AgentEvent`/`Emit` imports, the D19
+  budget field, the N6 mission fields, the O5 `eventLogSession`, and both
+  `mission: opts.mission === true` and `knowledge: opts.knowledge === true`.
+- `src/server/http.ts`: kept `mission?: unknown` and `knowledge?: unknown`, both body
+  parses, and both `...(mission ? { mission: true } : {})` and `knowledge`.
+- `src/server/recovery.ts`: kept `mission?: boolean` (N6) and `knowledge?: boolean` (N3).
+
+Merge commit `471d31d` (parents `4cf7b8c` and `590d358`).
+
+Gates (all run from the worktree root on the merged tree):
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (server bundle + pdf worker written)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test src/agent/__tests__/mission.test.ts src/agent/__tests__/computeBudget.test.ts`
+                                              -> tests 42, pass 42, fail 0
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run eval:neo`                          -> exit 0 (10/10, verdict PASS, baseline 100, no regression)
+
+Integrity of the resolved tree: `git grep -n "^<<<<<<<\|^=======$\|^>>>>>>>\|^|||||||"`
+over `src`, `packages` and `.jdone` returns empty; no conflict markers remain. No test was
+weakened, deleted or skipped. No secrets committed. No forbidden path touched. No Arabic
+text was written; no mojibake placeholder text was added.
