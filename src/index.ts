@@ -58,6 +58,7 @@ import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { runAgent } from "./agent/loop.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
 import type { Emit } from "./agent/events.js";
+import { applyRunEvent, beginRun } from "./agent/runGraphAdapter.js";
 import { OllamaClient } from "./ollama.js";
 import { flexCredentials } from "./server/modelTiers.js";
 import { startServer, type RunTaskOptions } from "./server/http.js";
@@ -195,7 +196,13 @@ async function main(): Promise<void> {
     const trace: ToolTraceItem[] = [];
     const lastArgs = new Map<string, unknown>();
     let doneEvent: Parameters<Emit>[0] | undefined;
+    // Neo run graph (N1): record the agent's events as nodes of the task's graph.
+    // Off by config, and recording must never break the task, so the adapter
+    // swallows and logs any failure instead of throwing into the run.
+    const recordGraph = cfg.runGraph?.enabled !== false;
+    if (recordGraph) beginRun(task, effectivePrompt || "");
     const wrappedEmit: Emit = (event) => {
+      if (recordGraph) applyRunEvent(task, event);
       if (sessionLog) {
         try {
           void sessionLog.append(event.type, event).catch((err) => {

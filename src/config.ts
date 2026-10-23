@@ -30,7 +30,11 @@ function fromEnv(name: string, fallback: string): string {
   return value && value.trim() ? path.resolve(value) : fallback;
 }
 
-export const DATA_DIR = fromEnv("MANUS_LOCAL_DATA_DIR", path.join(ROOT, "data"));
+export function dataDir(): string {
+  return fromEnv("MANUS_LOCAL_DATA_DIR", path.join(ROOT, "data"));
+}
+
+export const DATA_DIR = dataDir();
 export const SKILLS_DIR = fromEnv("MANUS_LOCAL_SKILLS_DIR", path.join(ROOT, "skills"));
 export const EVALS_DIR = fromEnv("MANUS_LOCAL_EVALS_DIR", path.join(ROOT, "evals"));
 export const UI_DIR = path.join(ROOT, "ui");
@@ -185,6 +189,8 @@ export interface Config {
     contextWindow: Record<string, number>;
   };
   sessionLog: { enabled: boolean };
+  /** Neo run graph: record every agent event as a node of the task's run graph. */
+  runGraph?: { enabled: boolean };
   /** Coding-model routing (C17): prefer the strongest available coder for
    *  coding turns. The chain is a list of model ids (strongest first) matched
    *  against the failover providers. It never contains API keys — keys stay in
@@ -299,6 +305,7 @@ const DEFAULTS: Config = {
     },
   },
   sessionLog: { enabled: true },
+  runGraph: { enabled: true },
   coding: { enabled: true, chain: [], logEdits: true },
 };
 
