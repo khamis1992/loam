@@ -71,6 +71,10 @@ export interface Config {
   cloudModel?: { baseUrl: string; apiKey?: string };
   server: { host: string; port: number };
   agent: { maxSteps: number; temperature: number; requestTimeoutMs: number };
+  /** D19 session runtime: idle-to-sleep threshold and the per-session compute
+   *  budget. Optional so test configs and older config.json files keep working;
+   *  `loadConfig` fills it from DEFAULTS. */
+  session?: { idleMinutes: number; stepLimit: number; tokenLimit: number };
   workspace: string;
   policy: PolicyConfig;
   browser: { channel: string; headless: boolean; viewport: { width: number; height: number } };
@@ -213,6 +217,9 @@ const DEFAULTS: Config = {
   ollamaUrl: "http://127.0.0.1:11434",
   server: { host: "127.0.0.1", port: 3939 },
   agent: { maxSteps: 40, temperature: 0.2, requestTimeoutMs: 600000 },
+  // D19: sessions idle 30 minutes before their resources are reclaimed; the
+  // per-session compute budget warns at 80% and stops at 100% (both raisable).
+  session: { idleMinutes: 30, stepLimit: 40, tokenLimit: 500000 },
   workspace: path.join(ROOT, "workspace"),
   policy: {
     networkEnabled: true,

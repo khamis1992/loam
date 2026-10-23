@@ -1,3 +1,183 @@
+D19 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
+
+## The failure that was fixed
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity.
+
+## Root cause found during the repair
+The conflict was NOT a plain textual conflict. The worktree's git **index was corrupt**
+(`error: bad signature 0x00000000` / `fatal: index file corrupt`), and a prior failed merge
+had **zeroed out ~21 tracked files on disk** plus deleted `.jdone`.
+
+Repair sequence (all inside the worktree; no forbidden path touched):
+1. Renamed the corrupt `index` to `index.corrupt.bak` under
+   `C:\Users\khamis\Desktop\manus-local\.git\worktrees\devin-d19\` and rebuilt it with
+   `git read-tree HEAD`; `git merge --abort` then succeeded.
+2. `git restore` every zeroed tracked file from HEAD (loop.ts, orchestrator.ts, ollama.ts,
+   appVerification.ts, contextCompressor.ts, events.ts, independentAcceptance.ts,
+   verifier.ts, protocol/events.ts, protocol/types.ts, packages/shared/src/socket.ts,
+   packages/web/public/marketplace/THIRD_PARTY_NOTICES, EventList.tsx, i18n/ar.json,
+   i18n/en.json, .jdone). All verified non-zero afterward.
+3. Recovered the 7 untracked (parity-only) zeroed files from the `manus-parity` tree via
+   `git cat-file blob manus-parity:<path>` (forward slashes required): kvCacheMonitor.ts,
+   usageAccounting.ts, cacheUsageAccounting.test.ts, kvCacheMonitor.test.ts,
+   cacheUsageEvents.test.ts, CacheUsageRow.tsx, cacheUsageRow.test.tsx.
+
+## What the merge produced
+`git merge manus-parity` (manus-parity tip `9c223d59000a098d4ac30c7a1847fc1e57ca0fdd`,
+containing `69920d2 feat(agent): prompt-cache (KV) miss detection + reusable-token
+accounting`) brought in the accumulated parallel workstreams. Exactly three files
+conflicted:
+
+- `src/agent/loop.ts` — import block (HEAD: `checkBudget`/`consumeSteps`/`consumeTokens`/
+  `ComputeBudget`; parity: `KvCacheMonitor`/`missMessage`/`RequestRoute`/`RequestSignature`
+  + `addUsage`), `RunOptions` (HEAD: `budget`; parity: `createProviderClient`/
+  `cooldownStore`/`env`/`onCodingRoute`) and the per-step usage block (HEAD: direct
+  `usage.*` accumulation + budget charge; parity: `cacheMonitor` boundary +
+  `addUsage(usage, result.usage)`). **Resolution keeps BOTH sides**: union imports, union
+  options, and both accounting paths (parity's `addUsage` tallies the same tokens that
+  HEAD then charges against the session budget).
+- `src/agent/orchestrator.ts` — import block (HEAD: `checkBudget`/`consumeTokens`/
+  `ComputeBudget`; parity: `addUsage`/`sumUsage` + session hooks). **Resolution keeps
+  BOTH sides** as a union import list.
+- `.jdone` — add/add: HEAD's D19 report vs parity's D17/D4/N20 reports. **Both preserved
+  below**, in full.
+
+Everything else auto-merged cleanly, so the merged tree carries the D19 compute-budget /
+session-sleep wiring together with parity's KV-cache-miss detection and reusable-token
+accounting. No test was weakened, deleted, or skipped.
+
+## Gates (all run from the worktree root on the committed merge ccd180b)
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> dist/server.cjs 19.2mb, pdf worker copied
+- `(cd packages/web && npx next build)` -> compiled successfully, 25/25 static pages
+- `node --import tsx --test` D19 budget/sleep suites (computeBudget, loopBudget,
+  orchestratorBudget, sessionRuntime, sessionSleep, ptySessions, sessionControl,
+  runTools) -> tests 78, pass 78, fail 0
+- `node --import tsx --test` parity KV-cache suites (cacheUsageAccounting, kvCacheMonitor,
+  cacheUsageEvents) -> tests 46, pass 46, fail 0
+- `(cd packages/web && npx vitest run)` affected web suites (SessionStatusBadge,
+  EnvironmentIssueCard, environmentIssueEventList, cacheUsageRow, useSessionRuntime)
+  -> 5 files / 26 tests passed
+- `npm run check:modes` -> PASS
+- `npm run check:orchestrator` -> PASS (114/114)
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+
+No test was weakened, deleted, or skipped: every test file changed by this merge is
+byte-identical to manus-parity (`git diff manus-parity HEAD -- <test>` is empty for each),
+and no assertion was relaxed. No secrets committed. Working tree clean after the merge
+commit. `git merge manus-parity` now reports "Already up to date." and
+`git merge-base --is-ancestor manus-parity HEAD` succeeds (rev-list --left-right --count
+manus-parity...HEAD = 0  6), so the merge gate condition is satisfied.
+
+## Full-suite validation (run on committed HEAD 2ee5ca6, after the targeted gates)
+- `node --import tsx --test "src/**/*.test.ts" "src/**/*.test.mjs"` (all 176 suites under src)
+  -> tests 2093, pass 2091, fail 2
+- `(cd packages/web && npx vitest run)` (whole web suite)
+  -> 72 files / 472 tests passed, 0 fail
+- `npm run check:promptwire` -> PASS
+- `npm run check:recovery` -> PASS (SQLite migration/backup/rollback + FIFO ownership/cancellation)
+- `npm run check:design-registry` -> OK (30 blocks, 8 RTL, all manifests valid)
+
+Both node failures are pre-existing and NOT caused by this merge:
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered nor
+   listed in PENDING_CODING_TOOLS". This is the exact inherited D4 defect documented in the
+   preserved D17 report above; the failing file, taskToolScope.ts and planTools.ts are all
+   byte-identical to manus-parity (`git diff manus-parity HEAD -- <file>` is empty).
+2. `src/preview/__tests__/shot.test.ts` -> `EADDRINUSE: address already in use 127.0.0.1:4317`.
+   An environmental port collision from concurrent runs, not a code failure; nothing is bound
+   to port 4317 when the suite is run on its own.
+
+Resolution judgment call (documented so it can be reviewed): the `src/agent/loop.ts`
+per-step usage block conflicted because HEAD accumulated `usage.promptTokens`/
+`usage.completionTokens`/`usage.durationMs` inline while parity called
+`addUsage(usage, result.usage)`. Keeping both literally would DOUBLE-COUNT tokens, so the
+resolution keeps parity's `addUsage` (which accumulates prompt/completion/duration plus the
+cache counters) and retains HEAD's `consumeTokens` budget charge. This is "both features",
+not a double tally; `addUsage`'s implementation was read and verified to cover every field
+HEAD set inline. All unioned import symbols were confirmed used (occurrence count >= 1 each).
+
+## D19 feature recap
+- Sleep/wake: `src/server/sessionSleep.ts` idle N minutes (default 30, configurable via
+  `agent.idleSleepMinutes`) -> `sleeping`, persisting state BEFORE releasing browser/pty
+  resources; a user message wakes and restores exactly the persisted snapshot. State changes
+  are emitted with the transition reason; timers are cancelled by agent activity; sleeping is
+  idempotent.
+- Compute budget: `src/agent/computeBudget.ts` per-session step/token budget, warn at 80%,
+  hard stop at 100%, `raise` resumes. Enforced on the linear `runAgent` loop and the
+  orchestrator (planner/worker/verifier/replan all charged). Surface: `/api/sessions/:id/runtime`
+  routes (`src/server/routes/sessionRuntime.ts`) + `SessionStatusBadge` in the web task page.
+
+---
+
+## Preserved: D19 prior merge report (HEAD side)
+
+D19 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
+
+## The failure that was fixed
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity.
+
+## What the merge produced
+`git merge manus-parity` (manus-parity tip 7509105) brought in the accumulated parallel
+workstreams (D8 wiki, D9 playbooks, D14 automations, D16 side chat + step timeline,
+D18 insights, design registry, quick-edit route, context-compressor hardening, ...).
+Exactly one file conflicted:
+
+`packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx`
+- HEAD (D19) side: `import { SessionStatusBadge }` + `import { useSessionRuntime }` and the
+  `const runtime = useSessionRuntime(sessionUid);` hook call (sleep/budget badge).
+- manus-parity side: `import { StepTimeline, type TimelineStep }` +
+  `import { SideChatPanel` and the D16 state block (`selectedActionId`, `paused`,
+  `takeoverNote`, `controlBusy`).
+
+Resolution keeps BOTH sides (union, nothing dropped): all four imports, the D19 runtime hook,
+and the D16 state block. All four imports are consumed later in the same file
+(`runtime.snapshot` / `runtime.raiseBudget()` / `runtime.wake()` at the badge,
+`StepTimeline` at line ~514, `SideChatPanel` at ~605, and the D16 state in the pause/take-over
+controls). No conflict markers remain.
+
+Everything else auto-merged cleanly, including `src/agent/loop.ts` (D19 budget checks +
+parity's `parseTaskList`/compaction reminders), `src/agent/orchestrator.ts` (D19 budget +
+parity's per-run `model` override), `src/config.ts` (D19 budget/sleep knobs + parity's
+compression `bufferTokens`/`reattachFiles`), `src/index.ts` (D19 runtime wiring + parity's
+side-chat/quick-edit/playbook wiring) and `src/server/http.ts` (D19 runtime routes + parity's
+route table).
+
+Resolution committed as `bedb406 merge manus-parity: resolve TaskPageClient conflicts keeping both sides`.
+The branch is now at the manus-parity tip with no conflict re-emerging.
+
+## Gates (all run from the worktree root, after the resolution)
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> dist/server.cjs 19.1mb, pdf worker copied
+- `(cd packages/web && npx next build)` -> compiled successfully, 25/25 static pages
+- `node --import tsx --test src/agent/__tests__/computeBudget.test.ts src/agent/__tests__/loopBudget.test.ts src/agent/__tests__/orchestratorBudget.test.ts src/server/__tests__/sessionRuntime.test.ts src/server/__tests__/sessionSleep.test.ts src/tools/__tests__/ptySessions.test.ts src/server/__tests__/sessionControl.test.ts src/server/__tests__/runTools.test.ts`
+  -> 77 pass, 0 fail
+- `cd packages/web && npx vitest run src/components/chat/__tests__/SessionStatusBadge.test.tsx src/components/chat/__tests__/useSessionRuntime.test.tsx src/services/__tests__/sessionRuntimeApi.test.ts`
+  -> 3 files, 25 tests passed
+
+No test was weakened, deleted, or skipped. No secrets committed. Working tree is clean.
+
+## D19 feature recap (already on this branch, re-verified after the merge)
+- Sleep/wake: `src/server/sessionSleep.ts` idle N minutes (default 30, configurable via
+  `agent.idleSleepMinutes`) -> `sleeping`, persisting state BEFORE releasing browser/pty
+  resources; a user message wakes and restores exactly the persisted snapshot. State changes
+  are emitted with the transition reason; timers are cancelled by agent activity; sleeping is
+  idempotent.
+- Compute budget: `src/agent/computeBudget.ts` per-session step/token budget, warn at 80%,
+  hard stop at 100%, `raise` resumes. Enforced on the linear `runAgent` loop and the
+  orchestrator (planner/worker/verifier/replan all charged). Surface: `/api/sessions/:id/runtime`
+  routes (`src/server/routes/sessionRuntime.ts`) + `SessionStatusBadge` in the web task page.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  node --import tsx --test src/agent/__tests__/computeBudget.test.ts src/agent/__tests__/loopBudget.test.ts src/agent/__tests__/orchestratorBudget.test.ts src/server/__tests__/sessionRuntime.test.ts src/server/__tests__/sessionSleep.test.ts src/tools/__tests__/ptySessions.test.ts
+  (cd packages/web && npx vitest run src/components/chat/__tests__/SessionStatusBadge.test.tsx src/components/chat/__tests__/useSessionRuntime.test.tsx src/services/__tests__/sessionRuntimeApi.test.ts)
+
+---
+
+## Preserved: manus-parity reports (D17 / D4 / N20, parity side)
+
 D17 — Environment-issue reporting: DONE
 
 Summary

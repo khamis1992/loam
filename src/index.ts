@@ -84,6 +84,10 @@ import { requiresReplayConfirmation, type SavedRun } from "./server/recovery.js"
 import { acquireRuntimeLease, releaseRuntimeLease, backupDatabase } from "./server/sqliteStore.js";
 import { claimRunLease, releaseRunLease, startLeaseHeartbeat, type LeaseHeartbeat, type RunLease } from "./server/runLease.js";
 import { recordTaskUsage } from "./server/credits.js";
+// D19 session runtime: sleep/wake lifecycle + per-session compute budget.
+import { SessionRuntime, DEFAULT_IDLE_MINUTES, DEFAULT_STEP_LIMIT, DEFAULT_TOKEN_LIMIT } from "./server/sessionRuntime.js";
+import { browserSessionFor } from "./tools/browser.js";
+import { killAllSessions } from "./tools/pty.js";
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
@@ -155,6 +159,17 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createPlanTools());
   const { ollama, registry, memory, mcp } = rt;
 
+  // D19 session runtime: one manager owns both the sleep lifecycle and the
+  // per-session compute budget. Hooks release real resources (the browser
+  // context for this task and its pty terminals) only AFTER the session state
+  // has been persisted, and wake restores the browser on the next message.
+  const sessionRuntime = new SessionRuntime({
+    idleMinutes: cfg.session?.idleMinutes || DEFAULT_IDLE_MINUTES,
+    stepLimit: cfg.session?.stepLimit || DEFAULT_STEP_LIMIT,
+    tokenLimit: cfg.session?.tokenLimit || DEFAULT_TOKEN_LIMIT,
+  });
+  sessionRuntime.start();
+
   const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal; lease?: RunLease }): Promise<{ taskId: string; text: string }> => {
     const { prompt, emit } = opts;
     const settings = getSettings();
@@ -178,6 +193,24 @@ async function main(): Promise<void> {
     publishTaskEvent(task, { type: "task-status", status: "running" });
     // Announce the id immediately so the UI can cancel while the run is alive.
     emit({ type: "task", taskId: task });
+
+    // D19 session runtime: the run starts, so the session is active and its
+    // budget is live. Hooks release this task's browser context and pty
+    // terminals when it later sleeps, after the state has been persisted.
+    void sessionRuntime.markActive(task);
+    sessionRuntime.setHooks(task, {
+      persist: () => { saveRun(task, opts.savedRun, opts.lease); },
+      release: () => {
+        void closeBrowserSession(browserSessionFor({ cfg, workspace: opts.savedRun.workspace, emit: () => {}, taskId: task }));
+        // D19: reclaim this session's terminals. An exited session is already
+        // gone from the registry, so only live ones need killing.
+        killAllSessions();
+      },
+      restore: () => {
+        // The browser is recreated lazily by the next browser_* tool call and
+        // pty sessions are created on demand by pty_start; nothing to do here.
+      },
+    });
 
     const startedAt = Date.now();
     const promptHash = hashPrompt(effectivePrompt);
@@ -460,6 +493,9 @@ async function main(): Promise<void> {
         signal: runSignal,
         taskId: task,
         sandboxMode: sandboxPolicy.mode,
+        // D19 compute budget: shared with the UI badge so the counters and the
+        // badge always agree, and the run stops when the ceiling is hit.
+        budget: sessionRuntime.getBudget(task),
       };
       const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
         ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint, lifecycleHooks: true,
@@ -469,6 +505,9 @@ async function main(): Promise<void> {
       // so treat a cancelled run explicitly — never as success.
       if (runSignal.aborted) throw new Error("cancelled by user");
       if (result.verified !== true) throw new Error("task incomplete: mandatory final verification missing");
+      // D19: the run stopped working and is now waiting on the user. The
+      // session may sleep after the idle threshold and be woken by a message.
+      sessionRuntime.markIdle(task);
       completeTaskRun(task, result.text, result.model, opts.lease);
       recordTaskUsage(task, result.usage); // OPD #9: one mock usage entry per completed task
       if (doneEvent) {
@@ -526,6 +565,9 @@ async function main(): Promise<void> {
     const previous = opts.taskId ? getTask(opts.taskId) : undefined;
     if (opts.taskId && !previous) throw new Error("task not found");
     if (opts.taskId && executionQueue.has(opts.taskId)) throw new Error("task already queued or running");
+    // D19: a new user message wakes a sleeping session and restores its
+    // released resources before the run starts.
+    if (opts.taskId) await sessionRuntime.onUserMessage(opts.taskId);
     let saved: SavedRun;
     if (opts.resume) {
       const pending = previous ? getSavedRun(previous.id) : undefined;
@@ -721,6 +763,9 @@ async function main(): Promise<void> {
     stopServiceWatch();
     stopUrlWatchers();
     if (evalTimer) clearInterval(evalTimer);
+    // D19: stop the sleep sweep (records survive in the store; the sweep is
+    // only a timer, and it must not fire during shutdown).
+    sessionRuntime.close();
     executionQueue.stop();
     for (const id of listRunningSignals()) cancelRunSignal(id);
     await rt.dispose();
