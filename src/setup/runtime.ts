@@ -41,6 +41,7 @@ import { writeGate } from "../server/pending.js";
 import { createIntegrationTools } from "../tools/integrations.js";
 import { createGitWorkflowTools } from "../tools/gitWorkflowTools.js";
 import { createCiWatchTool } from "../tools/ciWatchTools.js";
+import { createPrReviewTool } from "../tools/prReviewTools.js";
 
 import { createPhaseTools } from "../tools/phaseTools.js";
 import { createFinishTools } from "../tools/finishTools.js";
@@ -123,6 +124,9 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   // D2: CI watch polls the same D1 PR provider's check-runs; the local provider
   // serves scripted results, so no network is required in tests.
   registry.register(createCiWatchTool());
+  // D15: pr_review runs the same provider's diff through the model, one changed
+  // file at a time, and returns deduplicated findings.
+  registry.register(createPrReviewTool({ modelClient: ollama }));
 
   registry.registerAll(createCodeSessionTools());
   registry.registerAll(createDocsLookupTools());
