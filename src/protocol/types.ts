@@ -109,6 +109,20 @@ export interface ResolvePlanApproval extends Base {
   plan?: { summary?: string; steps?: string[]; files_to_edit?: string[]; trivial?: boolean };
 }
 
+/** N9: user answer for a pending `ask_user` clarification card. */
+export interface ResolveAskUser extends Base {
+  type: "resolve_ask_user";
+  sessionId: string;
+  requestId: string;
+  /** "dismiss" closes the card without answering; anything else is an answer. */
+  decision: "answer" | "dismiss" | string;
+  answer?: {
+    text?: string;
+    answers?: Record<string, string>;
+    files?: Array<{ path: string; name: string; bytes: number; contentType: string }>;
+  };
+}
+
 export type ClientMessage =
   | JoinSession
   | LeaveSession
@@ -116,7 +130,8 @@ export type ClientMessage =
   | StopSession
   | SubmitWorkspaceDirectoryAccess
   | ResolveLocalExecutionApproval
-  | ResolvePlanApproval;
+  | ResolvePlanApproval
+  | ResolveAskUser;
 
 export interface ServerEnvelope<E extends ChatEvent = ChatEvent> {
   id: string;
@@ -457,6 +472,34 @@ export interface PlanApprovalResolvedEvent extends ChatEventBase {
   plan?: { summary?: string; steps?: string[]; files_to_edit?: string[]; trivial?: boolean };
 }
 
+/** N9: a `ask_user` clarification request awaiting the user's answer. */
+export interface AskUserRequestedEvent extends ChatEventBase {
+  type: "askUserRequested";
+  requestId: string;
+  taskId: string;
+  title: string;
+  reason: string;
+  questions: Array<{ id: string; prompt: string; options?: string[]; allowFile?: boolean }>;
+  /** "auto" is the orchestrator's vague/missing-context trigger; "model" a tool call. */
+  source?: "auto" | "model";
+  /** Set when `source` is "auto"; the client localizes the reason from it. */
+  reasonCode?: "vague" | "missing_context" | "ambiguous_target";
+}
+
+/** N9: the user answered or dismissed a pending ask-user card. */
+export interface AskUserResolvedEvent extends ChatEventBase {
+  type: "askUserResolved";
+  requestId: string;
+  taskId: string;
+  reviewer: "user" | "auto";
+  result: "answered" | "dismissed" | "expired";
+  answer?: {
+    text: string;
+    answers: Record<string, string>;
+    files: Array<{ path: string; name: string; bytes: number; contentType: string }>;
+  };
+}
+
 export interface DeviceAttachmentUploadNotify extends ChatEventBase {
   type: "deviceAttachmentUploadNotify";
   targetEventId: string;
@@ -496,6 +539,8 @@ export type ChatEvent =
   | LocalExecutionApprovalResolved
   | EnvironmentIssueEvent
   | SimulationProgressEvent
+  | AskUserRequestedEvent
+  | AskUserResolvedEvent
   | DeviceAttachmentUploadNotify
   | RecipeUpdateEvent
   | RecipeRestartEvent;
