@@ -1,5 +1,21 @@
 fc-07 complete: the Loam Video / Loam Effects router and a full "Video editing" prompt section. One product, one workflow, Arabic + English routing, FilmCraft-native fallback.
 
+## Second validation pass (commit `5579808`)
+A third look at the `video_studio` run body found a contract gap the first two passes
+missed: the tool description promises "Every result carries a `routing` object", but the
+three early returns (missing dist, `panel_not_open`, relay failure) dropped it, so a failed
+call told the user nothing about the engine that was chosen. `VideoStudioRouting` is now a
+named type, `fallbackResult` and `relayErrorResult` take it, and a regression test pins all
+three failure envelopes (including a degraded `effects` request that fails before any
+command runs: `route: effects`, `target: film`, `degraded: true`, reason
+`effects_backend_unavailable`).
+Also verified: `plan.action` never differs from the requested action (0 differences across
+every action x hint combination), so the dead field is not a behaviour bug; `raw` validates
+its command id against the *target* engine's catalog, so degradation cannot dispatch a
+foreign id; and no upstream engine name appears in any user-facing string (all occurrences
+are internal identifiers, doc comments, or the pre-existing machine-readable reason code
+`filmcraft_dist_missing`).
+
 ## Extra validation pass (commit `c4aa207`)
 Beyond the first gates, the router tables were probed directly with ad-hoc bilingual
 inputs. That surfaced one real defect: `FALLBACK_TRANSITION_PHRASES` carried a bare
@@ -55,7 +71,7 @@ order (§6.11 < §6.12 < §7), carries no upstream engine name, and `videoPrompt
 - `npm run check:loam-agents`               -> PASS (seven modes accepted, unknown rejected)
 - node --import tsx --test (videoStudio, videoStudioRouter, videoPrompt, craftPrompt,
   codingPrompt, videoStudioE2E, videoStudioRelay, autoVideo, runTools, riskTier)
-  -> tests 236, pass 236, fail 0
+  -> tests 237, pass 237, fail 0
 
 Branding: one product ("Loam Video" / "Loam Effects"); upstream names (FilmCraft /
 EffectCraft / ArtCraft) never appear in the UI or in user-facing prompt text. No secrets
