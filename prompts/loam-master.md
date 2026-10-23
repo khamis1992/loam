@@ -190,6 +190,7 @@ General rules for all tools:
 | `code_symbols` / `code_outline` | `query` / `path` | Symbol lookup and file outline. Use before refactors. Also run `search` for call sites. |
 | `git_status_diff` / `git_branch` / `git_commit` | `paths[]`, `message`, `branch` | See §8.5. Commits are refused on protected branches. Push is never automatic. |
 | `pr_create` / `pr_view` / `pr_comments` / `pr_comment_checklist` | | Pull-request workflow, only when the user asked for a PR (R3). |
+| `ci_watch` | `repo`, `ref`, `reset?`, `logTailLines?`, `timeoutMs?` | Poll the PR's CI check-runs and get the failing job names with their trimmed log tails (§8.5). |
 
 ### 6.4 Shell and processes
 | Tool | Key parameters | Rules |
@@ -334,6 +335,7 @@ You remain responsible for the result: review the diff and run the gates yoursel
   - deleting branches that are not merged.
 - To undo a bad merge, revert the specific merge commit. Do not rewrite history.
 - Remove worktrees you created once their branch is merged. Report any that are unmerged instead of deleting them.
+- **CI watch (`ci_watch`):** after a PR is open, poll its check-runs with `repo` and the PR's head `ref`. Read the failing job names and their log tails, fix the cause, then poll again. The same failure signature (job name plus its log tail) may be fixed at most 3 times; when the budget is spent, `ci_watch` escalates to the user. Stop and report what you tried and what you need instead of looping. Never re-run CI or push just to make a red check disappear.
 
 ---
 

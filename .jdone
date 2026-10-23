@@ -1367,7 +1367,87 @@ worsens it.
 
 ---
 
-## Preserved: manus-parity reports (D10 / D19 / D17 / D4 / N20, parity side)
+## Preserved: manus-parity reports (D2, D10 / D19 / D17 / D4 / N20, parity side)
+D2 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
+
+## The failure that was fixed
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.
+
+## What the merge produced
+`git merge manus-parity` (MERGE_HEAD tip e31314b, D12) conflicted in exactly five files.
+Every conflict was resolved by keeping BOTH sides; no test was weakened, deleted or
+skipped, and no code was dropped:
+
+1. `src/agent/loop.ts`: HEAD (D2) added the `ci_watch` escalation notice
+   (`ciWatchEscalationNotice`) and a one-line `noteTodoUpdate` reminder; manus-parity
+   added `TodoItem`/`TodoStatus` tracking (`parseTaskList` -> `currentTodos`) behind a
+   proper block. The resolution keeps the D2 notice AND parity's todo block in BOTH the
+   batched-parallel and the per-call branches. The first mechanical merge left the
+   per-call branch calling `noteTodoUpdate` twice and dropping parity's
+   `currentTodos = parseTaskList(name, args)`; both branches now match parity's block
+   exactly, so the run-local task list is mirrored for both paths. Verified
+   mechanically: the merged file's brace balance is 0 and no statement is present on a
+   side but absent from the merged file.
+2. `src/modes/catalog.ts`: HEAD (D2) added `"ci_watch"` to the `GIT` tool list;
+   manus-parity rewrote the mode catalog (`WRITE`/`PREVIEW`/`MANAGED_SESSIONS`/
+   `CONTROL`, Craft `office_craft`, `wiki_generate`, `semantic_search`, `ask_codebase`).
+   Resolution = parity's catalog + the `ci_watch` entry, so the duplicated `GIT`
+   declaration collapsed to the superset. The earlier `apply_patch` attempt had
+   mangled the indentation of the `loop.ts` conflict region; it was repaired so the
+   merged file is a byte-exact union of both sides. Verified mechanically: every
+   `const NAME = [...]` array on either side appears in the merged file as the superset
+   of both tool lists, and no tool string from either side is missing from the merged
+   file (`check:modes` PASS).
+3. `src/setup/runtime.ts`: HEAD (D2) registers `createCiWatchTool()`; parity registers
+   `createWikiTools`, `createManagedSessionTools`, `createIntegrationTools`,
+   `createSemanticSearchTools`, `createSkillTools`, `createPreviewTools` and starts the
+   memory dream job. Resolution keeps every registration from both sides. Verified
+   mechanically: the merged file contains every `create*Tools()` call found on either
+   side, with `createCiWatchTool` and the dream job both present.
+4. `src/agent/masterPromptText.ts`: auto-generated from `prompts/loam-master.md`, which
+   merged cleanly (both `ci_watch` and `### 6.11 Craft editors` present). Regenerated
+   with `npm run gen:master-prompt`; the output contains both sides' sections.
+5. `src/agent/__tests__/__snapshots__/coding-prompt.snap.json`: only `masterPromptSha256`
+   conflicts, and the prompt source merged cleanly, so the correct value is the hash of
+   the assembled prompt from the merged source. A throwaway generator computed it via
+   the test's own `buildMasterPrompt(ALL_SLOTS, { model })` (matching the test's slots,
+   including `model_chain`'s `→` arrow) and the test now passes.
+
+## Gate condition verified
+After the resolution is committed as the merge commit, `git merge manus-parity` reports
+"Already up to date." and `git merge-base --is-ancestor manus-parity HEAD` exits 0, so
+parity is fully merged (rev-list --left-right --count manus-parity...HEAD = 0  3). No
+conflict markers remain anywhere in the tree.
+
+## D2 acceptance criteria (ci_watch)
+- fail -> fail -> pass drives exactly 2 fix iterations
+- 4 consecutive identical failures stop at 3 and escalate
+- timeouts handled, no network (local provider + mocked fetch)
+Covered by `src/tools/__tests__/ciWatch.test.ts` (21 tests, 21 pass).
+
+## Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                                 -> exit 0
+- `npm run build:server`                             -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`              -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test "src/**/*.test.ts"`      -> tests 2137, pass 2136, fail 1
+- `npm run check:encoding` / `check:modes` / `check:orchestrator` / `check:promptwire` -> PASS
+
+The single node failure is pre-existing and NOT caused by this merge:
+`src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither
+registered nor listed in PENDING_CODING_TOOLS". That test file, `taskToolScope.ts` and
+`planTools.ts` are byte-identical to manus-parity (`git diff manus-parity` is empty for
+each), and the same test fails identically on the manus-parity lineage: D4 added
+`suggest_plan` to `CODING_PROFILE.tools` and to the mode catalog but never added it to
+the test's `PENDING_CODING_TOOLS`, and the test's registry does not include
+`createPlanTools` (which is what registers `suggest_plan`). It is the inherited D4
+defect documented in the preserved reports below, so it is left untouched.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+
+---
+
+## Preserved: D10 gate-fix report (previous merge)
 
 D10 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
 
@@ -1991,3 +2071,54 @@ green.
 
 Working tree clean; no forbidden path touched; no real external model API was
 called by the tests (the scripted `neo-mock` model is used throughout).
+
+---
+
+# D3 merge gate fix (nineteenth pass): resolve merge with manus-parity a8130cc
+
+The `.jgatefail.txt` failure was `MERGE CONFLICT with latest manus-parity`. Ran
+`git merge manus-parity` (tip `a8130cc`, the D2 ci_watch work). The only conflict was
+`.jdone` (add/add of reports): resolved keeping BOTH sides - D3's full report first,
+then parity's D2 report, then the shared preserved reports. No test was weakened or
+deleted.
+
+## Union audit (line-level, both directions, all 16 merge-touched files)
+
+For each file the merge touched, compared the merge base `e31314b`, our side `HEAD`
+(b08e268, D3) and their side `manus-parity` (a8130cc, D2), then checked every line
+each side added relative to the base survives in the merged worktree:
+
+- `.jdone`                ours-added=1377 dropped=0 | theirs-added=81  dropped=0
+- `src/setup/runtime.ts`  ours-added=2    dropped=0 | theirs-added=5   dropped=0
+- `src/agent/loop.ts`     ours-added=0    dropped=0 | theirs-added=5   dropped=0
+- `src/modes/catalog.ts`  ours-added=0    dropped=0 | theirs-added=1   dropped=0
+- `src/tools/gitPrProvider.ts` ours-added=0 dropped=0 | theirs-added=126 dropped=0
+- `src/agent/masterPromptText.ts` ours-added=0 dropped=0 | theirs-added=2 dropped=0
+- `src/agent/__tests__/__snapshots__/coding-prompt.snap.json` theirs-added=1 dropped=0
+- `prompts/loam-master.md` theirs-added=2 dropped=0
+- `src/server/runTools.ts`  ours-added=2 dropped=0 | theirs-added=0 dropped=0
+- `src/policy/riskTier.ts`  ours-added=2 dropped=0 | theirs-added=0 dropped=0
+- `src/server/http.ts`      ours-added=3 dropped=0 | theirs-added=0 dropped=0
+- `src/index.ts`            ours-added=23 dropped=0 | theirs-added=0 dropped=0
+- `src/agent/ciWatch.ts` / `ciWatchLoop.ts` / `ciWatchTools.ts` / `ciWatch.test.ts`
+  theirs-added=251/123/106/524, dropped=0
+
+**TOTAL DROPPED LINES: 0.** Both sides are present in every file. The only line the
+audit flagged was the `.jdone` separator heading, which was intentionally renamed from
+`## Preserved: manus-parity reports (D10 / ...)` to
+`## Preserved: manus-parity reports (D2, D10 / ...)` so the D2 report is labelled.
+
+## Feature wiring, both sides
+
+- D3: `env_blueprint_generate` / `env_build_status` in `ALWAYS_ON_TOOLS`
+  (`src/server/runTools.ts:38-39`) and in `EXEC_TOOL_NAMES`
+  (`src/policy/riskTier.ts:197-198`); `handleEnvBuildRoutes` import + dispatch
+  (`src/server/http.ts:109,1806`); `createEnvSnapshotTools` import + registration
+  (`src/setup/runtime.ts:2,111`); `bootTaskFromSnapshot` + `isManagedTaskWorkspace`
+  (`src/index.ts:3-4,626,630`).
+- D2: `ci_watch` in the GIT mode list (`src/modes/catalog.ts:15`), the master prompt
+  tool table and §8.5 rule, the refreshed `masterPromptSha256` snapshot,
+  `createCiWatchTool` registration (`src/setup/runtime.ts:44,127`),
+  `ciWatchEscalationNotice` in both loop branches (`src/agent/loop.ts:17,512,555`),
+  and the new `listCheckRuns`/`getCheckRunLog` provider seam
+  (`src/tools/gitPrProvider.ts`).
