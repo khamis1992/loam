@@ -61,30 +61,44 @@ export const CRAFT_COMMAND_CHEAT_SHEET: Readonly<Record<string, { read: readonly
   "Loam Photo": {
     read: ["document.inspect", "layer.list", "document.pixel {x, y}", "ui.inspect", "ui.screenshot"],
     edits: ["layer.new.layer {name}", "layer.setProps", "paint.stroke {points, size, color}", "select.rect", "type.editText"],
-    save: "engine.commands {search:'export'} then the UI-level export command (app.save)",
+    save: "read the full engine.commands list (this control channel takes no filter), pick the UI-level export command, then app.save",
   },
   "Loam Design": {
     read: ["document.inspect", "ui.inspect", "ui.render {page?, scale?, bleed?}"],
     edits: ["frame.create {rect, content}"],
-    save: "engine.commands {search:'export'} then the UI-level export command",
+    save: "read the full engine.commands list (this control channel takes no filter), pick the UI-level export command, then app.save / app.export",
   },
 };
 
-/** The generic control methods every Craft app answers. */
+/**
+ * Pointer-input methods, per app (`.cr-ref/craft/protocols/<internalId>.md`).
+ * Every app can drive the mouse, but the surface differs, so call `engine.commands`
+ * (or the table here) before choosing one.
+ */
+export const CRAFT_POINTER_METHODS: Readonly<Record<string, readonly string[]>> = {
+  "Loam Docs": ["ui.click", "ui.move", "ui.drag", "ui.wheel"],
+  "Loam Sheets": ["ui.click", "ui.drag", "ui.move"],
+  "Loam Slides": ["ui.pointer", "ui.move", "ui.click", "ui.drag"],
+  "Loam Photo": ["ui.pointer", "ui.click", "ui.move"],
+  "Loam Design": ["ui.pointer", "ui.move", "ui.click", "ui.drag"],
+};
+
+/**
+ * The core control methods that appear in all five control tables
+ * (`.cr-ref/craft/protocols/<internalId>.md`). Everything outside this list is
+ * app-specific: `ui.render` and `ui.set` are NOT universal (Loam Sheets lists
+ * neither), the pointer-input methods differ per app (see
+ * CRAFT_POINTER_METHODS), and the file-level methods differ too (`file.save` on
+ * Docs and Sheets, `app.save` / `app.export` on Photo and Design).
+ */
 export const CRAFT_BRIDGE_METHODS: readonly string[] = [
   "engine.execute",
   "engine.commands",
   "document.inspect",
   "ui.inspect",
   "ui.screenshot",
-  "ui.render",
   "ui.key",
-  "ui.text",
-  "ui.pointer",
   "ui.click",
-  "ui.set",
-  "app.open",
-  "app.save",
 ];
 
 /**
@@ -93,7 +107,7 @@ export const CRAFT_BRIDGE_METHODS: readonly string[] = [
  */
 export const CRAFT_EDITORS_PROMPT: string = [
   "Craft editors: the attached file opens live in the Workspace panel (Loam Docs for documents, Loam Sheets for spreadsheets, Loam Slides for decks, Loam Photo for images and Loam Design for layouts). The user edits the same file by hand, so the file on disk is not the current state.",
-  "Loop: (1) open with the attached file, then read the live state (document.inspect / sheet.read / cell.get / ui.inspect); (2) discover the command ids with engine.commands and read the params docs and enabled/disabledReason/needsDocument flags (Sheets narrows it with {search: \"<term>\"}; the other control channels always return the full list); (3) batch the independent edits into one round trip; (4) re-read the state and confirm the change is present; (5) export through the app so the bytes come back into the task's files.",
+  "Loop: (1) open with the attached file, then read the live state (document.inspect / sheet.read / cell.get / ui.inspect); (2) discover the command ids with engine.commands and read the params docs and enabled/disabledReason/needsDocument flags (only Loam Sheets narrows that call, with {search: \"<term>\"}; the Docs, Slides, Photo and Design control channels take no argument and always return the full list, so read it and pick the id yourself); (3) batch the independent edits into one round trip; (4) re-read the state and confirm the change is present; (5) export through the app so the bytes come back into the task's files.",
   "Never invent a command id, never replay a failed command unchanged, and never write the office file yourself through shell or Python. A command that returned ok is not proof of the edit.",
   "Fail closed: if no app is installed, the panel never reports ready, a command is refused, or the app reports no document open, say so plainly in the user's language and fall back to loam_studio (with office_import / office_export / office_edit) or loam_document. Do not retry the same unavailable command.",
   "Reply in the user's language (Arabic for an Arabic request). Never mention the upstream project names in the UI, prompts or tool descriptions; the user sees only the Loam names.",

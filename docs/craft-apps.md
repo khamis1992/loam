@@ -177,10 +177,15 @@ re-checked at runtime with `engine.commands`:
 | Loam Docs | `document.inspect`, `ui.inspect`, `ui.render {page?}` | `text.insert {text}`, `format.set`, `para.set`, `styles.modify`, `table.modifyStyle` | `engine.execute {command:'file.save'}` |
 | Loam Sheets | `sheet.read {range?, sheet?, formulas?, formatted?}`, `cell.get {cell?}`, `document.inspect` | `cell.set {cell, input}`, `range.setValues {range, values}` | `engine.execute {command:'file.save'}` |
 | Loam Slides | `document.inspect`, `ui.inspect`, `ui.render {slide?, scale?}` | `shape.insert {preset, rect, text}` | `file.save` (native) or `{command:'app.saveAsDialog', params:{format:'pptx'}}` |
-| Loam Photo | `document.inspect`, `layer.list`, `document.pixel {x, y}`, `ui.inspect` | `layer.new.layer {name}`, `layer.setProps`, `paint.stroke {points, size, color}`, `select.rect`, `type.editText` | UI-level export command (`engine.commands {search:'export'}`, then `app.save`) |
-| Loam Design | `document.inspect`, `ui.inspect`, `ui.render {page?, scale?, bleed?}` | `frame.create {rect, content}` | UI-level export command (`engine.commands {search:'export'}`) |
+| Loam Photo | `document.inspect`, `layer.list`, `document.pixel {x, y}`, `ui.inspect` | `layer.new.layer {name}`, `layer.setProps`, `paint.stroke {points, size, color}`, `select.rect`, `type.editText` | read the full `engine.commands` list (this control channel takes no filter), pick the UI-level export command, then `app.save` |
+| Loam Design | `document.inspect`, `ui.inspect`, `ui.render {page?, scale?, bleed?}` | `frame.create {rect, content}` | read the full `engine.commands` list (this control channel takes no filter), pick the UI-level export command, then `app.save` / `app.export` |
 
-Every app also answers the generic control methods `engine.execute`,
-`engine.commands`, `document.inspect`, `ui.inspect`, `ui.screenshot`, `ui.render`,
-`ui.key`, `ui.text`, `ui.pointer` / `ui.click`, `ui.set`, `app.open` / `app.save`,
-and reports errors as `ok:false` with the app's own message.
+Every app answers the same core control methods `engine.execute`, `engine.commands`,
+`document.inspect`, `ui.inspect`, `ui.screenshot`, `ui.key` and `ui.click`, and reports
+errors as `ok:false` with the app's own message. Everything beyond that core is
+app-specific: `ui.render` and `ui.set` are not universal (Loam Sheets lists neither; its
+UI state goes through `ui.ribbon` / `ui.backstage` / `ui.dialog`), the pointer surface
+differs (Docs, Sheets, Slides and Design take `ui.move` / `ui.drag`; Slides, Photo and
+Design also take the richer `ui.pointer`; Photo takes `ui.click` / `ui.move` but no
+`ui.drag`), and the file-level methods differ (`file.save` on Docs and Sheets,
+`app.save` / `app.export` on Photo and Design).

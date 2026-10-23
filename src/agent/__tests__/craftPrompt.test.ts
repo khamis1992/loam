@@ -31,6 +31,7 @@ import {
   CRAFT_BRIDGE_METHODS,
   CRAFT_COMMAND_CHEAT_SHEET,
   CRAFT_EDITORS_PROMPT,
+  CRAFT_POINTER_METHODS,
   CRAFT_TOOL_NAMES,
   craftAppForExtension,
 } from "../craftPrompt.js";
@@ -218,9 +219,36 @@ describe("branding contract", () => {
     }
   });
 
-  it("keeps the generic control methods the bridge actually exposes", () => {
-    for (const method of ["engine.execute", "engine.commands", "document.inspect", "ui.inspect"]) {
-      assert.ok(CRAFT_BRIDGE_METHODS.includes(method), `missing generic method ${method}`);
+  it("keeps the core methods the protocols actually list in all five apps", () => {
+    for (const method of ["engine.execute", "engine.commands", "document.inspect", "ui.inspect", "ui.screenshot", "ui.key", "ui.click"]) {
+      assert.ok(CRAFT_BRIDGE_METHODS.includes(method), `missing core method ${method}`);
+    }
+    // Loam Sheets' control table lists neither, so they must not be claimed as core.
+    for (const method of ["ui.render", "ui.set", "ui.pointer", "ui.drag"]) {
+      assert.ok(!CRAFT_BRIDGE_METHODS.includes(method), `${method} is not universal and must not be in the core list`);
+    }
+  });
+
+  it("gives every editor the pointer methods its own protocol lists", () => {
+    for (const name of CRAFT_APP_NAMES) {
+      const methods = CRAFT_POINTER_METHODS[name];
+      assert.ok(methods && methods.length > 0, `${name} has no pointer methods`);
+      for (const m of methods) assert.match(m, /^ui\.(pointer|click|move|drag|wheel)$/, `${name}: bad pointer method ${m}`);
+    }
+    // Verified against the protocol tables: Photo drives drags through ui.pointer,
+    // not ui.drag.
+    assert.ok(CRAFT_POINTER_METHODS["Loam Photo"]!.includes("ui.pointer"));
+    assert.ok(!CRAFT_POINTER_METHODS["Loam Photo"]!.includes("ui.drag"));
+    assert.ok(!CRAFT_POINTER_METHODS["Loam Sheets"]!.includes("ui.pointer"));
+  });
+
+  it("does not tell the agent to filter engine.commands on an app that takes no filter", () => {
+    // Only Loam Sheets' control channel accepts {search}. Docs, Slides, Photo and
+    // Design take no argument, so a {search:'...'} call there is a wrong instruction.
+    assert.match(CRAFT_EDITORS_PROMPT, /only Loam Sheets narrows that call/);
+    for (const name of ["Loam Photo", "Loam Design"]) {
+      const entry = CRAFT_COMMAND_CHEAT_SHEET[name]!;
+      assert.ok(!entry.save.includes("search"), `${name} save advice must not pass a search to engine.commands`);
     }
   });
 });
