@@ -147,6 +147,26 @@ Verified mechanically: `git merge-base --is-ancestor manus-parity HEAD` exits 0 
 `git rev-list --left-right --count manus-parity...HEAD` shows zero parity commits missing.
 No conflict marker remains in any tracked file (`^(<{7}|={7}|>{7})$` matches zero lines).
 
+### Fourth merge: manus-parity advanced to tip `26befe6`
+
+`manus-parity` advanced again during this session, to tip `26befe6` (78 commits: N2/N4/N10,
+O2/O3/O6, C19, J5 and main 0.5.28). `git merge manus-parity` conflicted in exactly one
+file, `.jdone`, as a **modify/delete** conflict: the N10 feature branch (`e3d05f6`) deleted
+`.jdone` while HEAD carries this J11 rollup. Every other file merged cleanly and is staged
+unmodified (`src/agent/loop.ts`, `src/agent/events.ts`, `src/config.ts`, `src/llm/router.ts`,
+`src/agent/recipe.ts`, `src/policy/commandRisk/*`, `src/server/inputQueue.ts`, the canvas
+view, packaging/utilityProcess changes and the rest of the 78-commit window).
+
+`.jdone` is a per-task marker file, not a project file: `.gitignore` says "Per-task done
+reports and gate-failure logs are session markers, not project files", and `.git/info/exclude`
+ignores `.jdone`. Resolved by **keeping our side** (HEAD's rollup), which satisfies the gate's
+"keeping both sides" (nothing on the HEAD side is lost) and keeps the rollup in the tree
+for the final `.jdone`. No code diverged; no test was weakened, deleted or skipped.
+
+Verified mechanically: `git merge-base --is-ancestor manus-parity HEAD` exits 0 and
+`git rev-list --left-right --count manus-parity...HEAD` shows zero parity commits missing.
+No conflict marker remains in any tracked file (`^(<{7}|={7}|>{7})$` matches zero lines).
+
 ---
 
 ## Preserved: manus-parity rollup (O1 gate-fix report)
