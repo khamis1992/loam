@@ -4207,6 +4207,102 @@ Test commands:
 
 ---
 
+## Final consolidated validation (third pass, merged HEAD `d927017`)
+
+This pass re-ran every gate on the merged HEAD `d927017` and re-validated the merge from
+commit objects. Every gate exits 0.
+
+### Gates re-run on merged HEAD
+
+| Gate | Result |
+| --- | --- |
+| `npx tsc --noEmit` | exit 0 (clean) |
+| `node --import tsx --test src/server/__tests__/*.test.ts` | 479 tests, 477 pass, 1 fail, 1 skip |
+| `npm run test:bench` | 37/37 pass |
+| `npm run check:encoding` | OK (no BOM, no mojibake, all JSON valid) |
+| `npm run check:modes` | PASS (seven distinct fail-closed modes) |
+| `npm run check:orchestrator` | PASS (114/114) |
+| `npm run check:recovery` | PASS (SQLite migration/backup/rollback + FIFO recovery) |
+| `npm run check:eval` | PASS (eval harness smoke) |
+| `npm run build:server` | exit 0, dist/server.cjs 20,418,049 bytes + pdf worker copied |
+| `(cd packages/web && npm test)` | 79 files / 535 tests passed |
+| `(cd packages/web && npm run typecheck)` | exit 0 |
+| `(cd packages/web && npm run build)` | exit 0 (all pages prerendered) |
+
+The one failing test is again `src/server/__tests__/worktrees.test.ts` - "reports non-git
+folders without throwing" (`readGitBranch` on a plain temp dir reports `isGit: true`). This is
+pre-existing and environmental, NOT caused by the merge:
+
+- `C:\Users\khamis` is itself a git repository (`git rev-parse --show-toplevel` from that dir
+  returns `C:/Users/khamis`, branch `feature/d5`), and Node's `os.tmpdir()` is
+  `C:\Users\khamis\AppData\Local\Temp`. `readGitBranch` runs
+  `git -C <folder> rev-parse --abbrev-ref HEAD`, which walks up from the temp dir and finds the
+  enclosing user-level repo, so the "plain" temp dir is reported as a git folder. The test
+  assumes a temp dir is never inside a repo, which does not hold on this machine.
+- Both `src/server/__tests__/worktrees.test.ts` and `src/server/worktrees.ts` are
+  byte-identical between the merge base `26befe6` and the merge commit `ab01afc` (`fc /b`
+  reports "no differences encountered" for each), so the merge could not have changed this
+  behaviour.
+- `git merge-tree --write-tree ebb445d 61aca0c` reproduces exactly ONE conflict
+  (`CONFLICT (add/add): Merge conflict in .jdone`), confirming `.jdone` was the only file
+  needing manual resolution and no source file was touched.
+
+### Merge integrity re-validated from commit objects
+
+- `ab01afc` is a real 2-parent merge of `ebb445d` (J1) and `61aca0c` (manus-parity); both are
+  ancestors of the merge (`git merge-base --is-ancestor` exits 0 for both), so no parity or J1
+  commit was lost.
+- The merge tree file-set (4733 files) equals the HEAD tree file-set exactly.
+- All 49 files changed by either side resolve cleanly: 17 J1-only (byte-identical to J1),
+  31 parity-only (byte-identical to parity), 1 both (`.jdone`, a clean union with 0 dropped
+  lines and 0 markers). This was verified with a fixed blob reader; an earlier "MISSING" result
+  was a false positive caused by substring-matching file content that itself contained the
+  strings "fatal:" / "exists on disk".
+- All 10 files parity added are present in the merge tree; 0 unexplained removals.
+- All 22 parity commits not in J1 are reachable from the merge; the merge adds exactly 6
+  commits beyond parity.
+- J1 feature files all present: `src/server/sharedCodeSession.ts`, `src/tools/codeSession.ts`,
+  their two test files, `bench/launchers.ts`, `bench/memBench.ts`,
+  `bench/results/J1-before.json`, `bench/results/J1-after.json`.
+- All 10 required `package.json` scripts intact (70 scripts total): `test:bench`, `bench:j1`,
+  `bench:mem`, `build:server`, `check:encoding`, `check:modes`, `check:orchestrator`,
+  `check:recovery`, `check:eval`, `typecheck`.
+- Benchmark JSON files are valid JSON and carry N=1/N=10/N=30 entries.
+
+### Conflict-marker and content-loss scans
+
+- Corrected marker regex `^(<{7}|={7}|>{7})( |$)` (the earlier strict form
+  `^(<{7}|={7}|>{7})$` fails on real git markers that carry a label, e.g. `<<<<<<< HEAD`).
+  Self-tested against 8 marker shapes; with the corrected pattern `git grep` over the committed
+  tree returns exit 1 (0 matches) and explicit scans of extensionless marker files (`.jdone`,
+  `THIRD_PARTY_NOTICES`) find 0 markers.
+- Semantic identifier-fingerprint check on 17 key merged source files (orchestrator, events,
+  prompt, protocol types/socket, http, planTools, runGraph, catalog, index, web chatSocket and
+  EventList, package.json, THIRD_PARTY_NOTICES): 0 identifiers missing vs BOTH parents in every
+  file, so no code was silently dropped.
+- Union-rule stress test over the last 23 prior `.jdone` merges: 0 dropped lines and 0 markers
+  in every one, confirming the union resolution matches the repository's established precedent.
+
+### Worktree idempotency
+
+- `git diff` over tracked files reports only the `.jcode-done` deletion (43 lines) - the
+  correct merge result, since `.jcode-done` is a `.jcode-*` marker absent from both the merge
+  tree and manus-parity.
+- `.jdone` in the worktree equals HEAD byte-for-byte after CRLF normalization
+  (`git diff --ignore-cr-at-eol -- .jdone` is empty), so the committed and worktree copies agree.
+- `git diff --name-only --diff-filter=U` is empty: no unmerged paths remain.
+
+### Final state
+
+- Merge resolved and committed: `ab01afc` (merge, parents `ebb445d` + `61aca0c`),
+  `74b303f` (gate results), `d927017` (independent validation report).
+- `.jdone` is tracked, marker-free, and exists at the worktree root.
+- No test was weakened, deleted or skipped; no secrets committed; no forbidden path touched
+  (`docs/handoff/watchdog.ps1` unchanged vs parity).
+- The gate failure reported in `.jgatefail.txt` (MERGE CONFLICT with manus-parity) is resolved.
+
+---
+
 ## Preserved: manus-parity .jdone rollup (O1 + D5 + O6 + O2 + O3 + V11 + H0 + O0 + D2 + D10 + D19 + D17 + D4 + N20 + fc-05, merged in from parity)
 
 J5 — Blast-radius shell command risk classifier: DONE
