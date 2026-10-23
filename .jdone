@@ -7749,3 +7749,43 @@ Gates (all run from the worktree root on the merged tree):
 No test was weakened, deleted or skipped. No secrets committed. No forbidden path
 touched. `git merge-base --is-ancestor manus-parity HEAD` exits 0. No Arabic text was
 written; no mojibake placeholder text was added.
+
+---
+
+## H3 gate-fix session note (2026-10-23, fourth merge of manus-parity)
+
+`.jgatefail.txt` again reported: MERGE CONFLICT with latest manus-parity. Parity had
+advanced again (~13 commits, new tip `6fa63b8`, merge base `585fd55`). The only
+conflicted file was the tracked rollup marker `.jdone`. No source file conflicted and no
+source file was edited: the H3 deliverables are unchanged from commit `f40f2d9` and the
+parity O1 deliverables are unchanged from commit `83b6b8a`.
+
+Resolution method (unchanged, cap-dedup multiset union): for each conflict hunk, emit
+the true superset of both sides, capping each distinct line at
+`max(count in HEAD, count in manus-parity)`, preserving the order A -> B -> tail. This
+keeps every line of both sides with zero genuine duplication.
+
+Two successive parity tips were merged and resolved (parity advanced mid-fix):
+1. `5198681` Merge manus-parity (tip `6fa63b8`, round 1 of this session) - containment
+   missing 0 vs HEAD and 0 vs parity, lines exceeding cap 0, conflict markers 0.
+2. `4dde9a0` Merge manus-parity (tip `6fa63b8`, round 2) - same, all integrity checks 0.
+A third `git merge manus-parity` now reports "Already up to date."
+
+Integrity of the resolved rollup: containment missing 0 vs HEAD, 0 vs manus-parity, 0 vs
+BASE; lines exceeding the union cap 0; conflict markers 0; no CRLF, no BOM, no mojibake;
+no lone CR. `.jdone` is an append-only rollup and was not overwritten wholesale - only
+the conflicted hunk was replaced by its superset.
+
+Gates (all run from the worktree root on the merged tree):
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.6mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- H3: `node --import tsx --test src/learning/harness/__tests__/correctionDetector.test.ts`
+                                              -> tests 21, pass 21, fail 0
+- O1: `node --import tsx --test src/protocol/__tests__/eventLog.test.ts`
+                                              -> tests 11, pass 11, fail 0
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run verify`                            -> exit 0 (typecheck, encoding, eval, orchestrator, recovery, modes)
+
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path
+touched. No Arabic text was written; no mojibake placeholder text was added.
