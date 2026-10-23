@@ -18,6 +18,26 @@ file changed, no test was weakened, deleted or skipped. The merged tree carries 
 (`git merge-base --is-ancestor manus-parity HEAD` exit 0; `rev-list --left-right --count
 manus-parity...HEAD` = `0 9`).
 
+Parity advanced a third time (tip `35c8470`, the V11 `design_critique` merge), so
+`git merge manus-parity` was run again. This time five files conflicted, and every one was
+resolved by keeping BOTH sides:
+
+1. `.jdone` (add/add): the V8 report above plus parity's V11, J3, H0 and O0 reports, all
+   untrimmed.
+2. `src/agent/prompt.ts`: HEAD's `ui_examples_search` directive AND parity's
+   `DESIGN_CRITIQUE_PROMPT` line are both present.
+3. `src/index.ts`: both `import { createUiExamplesTools }` and
+   `import { createDesignCritiqueTools }`, plus both `registerAll(...)` calls.
+4. `src/server/runTools.ts`: `ALWAYS_ON_TOOLS` contains both `ui_examples_search` and
+   `design_critique`.
+5. `src/server/__tests__/runTools.test.ts`: the fixture registers both the V8 tool and the
+   V11 tool, so the always-on assertion keeps passing for both.
+
+No test was weakened, deleted or skipped; no code was dropped. The merged tree carries parity's
+V11 `design_critique` tool and the V8 `ui_examples_search` delta together, and parity is again an
+ancestor (`git merge-base --is-ancestor manus-parity HEAD` exit 0; `rev-list --left-right --count
+manus-parity...HEAD` = `0 12`).
+
 ## Gates (all run from the worktree root on the merged tree, HEAD `55042d3`)
 - `npx tsc --noEmit` -> exit 0
 - `npm run build:server` -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
@@ -46,6 +66,25 @@ The two node failures are pre-existing and NOT caused by this merge:
 No test was weakened, deleted or skipped. No secrets committed. No forbidden path touched.
 Working tree clean; `git merge manus-parity` reports "Already up to date." and
 `git merge-base --is-ancestor manus-parity HEAD` exits 0.
+
+## Gates after the V11 merge (run from the worktree root, committed HEAD `4ec0a4f`)
+- `npx tsc --noEmit` -> exit 0 (both `createUiExamplesTools` and
+  `createDesignCritiqueTools` wired, both prompt directives present)
+- `npm run build:server` -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)` -> compiled successfully
+- `npm run check:design-registry` -> OK (30 blocks, 8 RTL, all manifests valid, all built)
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes` -> PASS
+- `npm run check:orchestrator` -> PASS (114/114)
+- `npm run check:promptwire` -> PASS
+- Focused suites (registry, uiExamples, runTools, critique, designCritique, editHints)
+  -> tests 116, pass 116, fail 0
+- `node --import tsx --test "src/**/*.test.ts"` -> tests 2220, pass 2218, fail 2
+- `(cd packages/web && npx vitest run)` -> 72 files / 472 tests, all pass
+
+The two node failures are the same pre-existing ones as above (both files byte-identical to
+`manus-parity`: the inherited D4 `suggest_plan` defect and the `%TEMP%`-in-a-git-repo
+environment issue). Neither is caused by V8 or by the merge.
 
 ## V8: Loam UI Kit / v0 design-system parity
 
