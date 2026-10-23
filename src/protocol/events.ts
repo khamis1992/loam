@@ -21,6 +21,7 @@ import type {
   AskUserRequestedEvent,
   AskUserResolvedEvent,
   CacheUsageEvent,
+  SimulationProgressEvent,
   RecipeUpdateEvent,
   RecipeRestartEvent,
 } from "./types.js";
@@ -542,6 +543,22 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
         ...(event.miss ? { miss: { ...event.miss } } : {}),
       };
       out.push(cacheUsage);
+      break;
+    }
+
+    case "simulation_progress": {
+      // MiroFish M3 progress: transient by nature (round/agent milestones), so
+      // it never lands in session history. The payload is forwarded as-is.
+      const payload = event.payload as SimulationProgressEvent["payload"];
+      const progress: SimulationProgressEvent = {
+        id: baseId(),
+        type: "simulation_progress",
+        timestamp: ts,
+        sessionId: event.sessionId,
+        payload,
+        noPersistent: true,
+      };
+      out.push(progress);
       break;
     }
 
