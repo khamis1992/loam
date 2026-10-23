@@ -1,3 +1,213 @@
+
+---
+
+# N2 gate-fix session: merge with latest manus-parity
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+## The failure that was fixed
+`git merge manus-parity` conflicted in exactly ONE file: `.jdone` (add/add: this
+branch's N2 report vs parity's accumulated N4/C19/N20/O3/O6/O2/D5/O1/V11/H0/O0/
+fc-05 rollup). Every source file auto-merged cleanly, so no code, test or prompt
+was touched by the resolution.
+
+## What the resolution produced
+`.jdone` was resolved by keeping BOTH sides: the N2 report stays at the top
+(including its D2 and D10 preserved blocks), and the full parity rollup follows
+verbatim, with the shared `## Preserved: D2 gate-fix report` heading kept once.
+Verified mechanically against both stage blobs (`:2:.jdone` 823 lines,
+`:3:.jdone` 5238 lines): **0 non-empty lines missing from the ours side, 0
+non-empty lines missing from the theirs side**, and no conflict marker remains
+anywhere in the tree. Re-verified after the second merge below against the
+parity tip `0a946d3` itself: **0 parity-side lines missing** from the merged file.
+No test was weakened, deleted or skipped; no assertion was relaxed; no source
+file was edited.
+
+## The ref moved mid-session
+`refs/heads/manus-parity` advanced while this session was running (a concurrent
+workstream landed `0a946d3`, "Merge main (packaging asar+fuses fix, 0.5.28)").
+The verification step's own `git merge manus-parity` therefore produced a second
+merge commit (`6d12055`) with **no conflicts at all** (packaging/electron files,
+`src/config.ts`, `src/server/http.ts`, the creative/preview modules). `.jdone`
+came through byte-identical: a `git diff` of the file between the two merge
+commits is empty. The end state is what the gate asks for.
+
+## Gate condition verified
+- `git merge manus-parity` -> `Already up to date.`
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
+- `git rev-list --left-right --count manus-parity...HEAD` -> `0  5`
+  (the left count, parity commits still missing, is 0)
+- `git grep -E "^(<{7}|={7}|>{7})( |$)"` -> no conflict markers
+- `git status --porcelain` -> empty
+
+## Side effect worth noting
+The parity lineage fixed the inherited D4 defect that the preserved reports below
+describe as pre-existing: parity commit `e854d58` registers `createPlanTools()`
+in `src/agent/__tests__/toolDescriptions.test.ts`, drops `plan_exit` from
+`PENDING_CODING_TOOLS` and adds "When NOT to use" to the `suggest_plan` /
+`plan_exit` descriptions. `src/agent/__tests__/toolDescriptions.test.ts` therefore
+now passes **4/4**, and it is no longer the one failure this branch was
+inheriting. No file under it was edited by this session.
+
+## Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                                  -> exit 0
+- `(cd packages/web && npx tsc --noEmit --project tsconfig.json)` -> exit 0
+- `npm run build:server`                              -> exit 0 (dist/server.cjs 19.5mb, pdf worker copied)
+- `(cd packages/web && npx next build)`               -> exit 0 (compiled successfully, 25/25 static pages)
+- `(cd packages/web && npx vitest run)`               -> **77 files / 521 tests, all pass**
+- `node --import tsx --test "src/**/*.test.ts"`      -> **tests 2529, pass 2528, fail 1**
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`    -> PASS
+- `npm run check:orchestrator` -> PASS (114/114)
+- `npm run check:promptwire`  -> PASS (every promptwire tool returned ok:true)
+- `npm run check:recovery`    -> PASS
+
+Targeted suites re-run on the merged tree:
+- `src/server/__tests__/graphRoutes.test.ts` (N2) + `orchestratorBudget.test.ts`
+  + `src/__tests__/configFailover.test.ts` -> tests 15, pass 15, fail 0
+- `src/agent/__tests__/toolDescriptions.test.ts` -> tests 4, pass 4, fail 0
+- `src/agent/__tests__/{recipeEngine,orchestratorRecipe,recipeIds}.test.ts` +
+  `src/protocol/__tests__/{recipeEvents,recipeReplay}.test.ts` +
+  `src/graph/__tests__/runGraph.test.ts` -> all pass
+
+## The one remaining node failure (pre-existing, environmental, not caused by this merge)
+`src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+throwing" (`true == false` at `src/server/__tests__/worktrees.test.ts:44`).
+Neither `src/server/__tests__/worktrees.test.ts` nor `src/server/worktrees.ts`
+is touched by this merge (`git diff` of both between the pre-merge HEAD and the
+merged HEAD is empty), and the cause is environmental: `%TEMP%` on this machine is
+`C:\Users\khamis\AppData\Local\Temp`, and `git -C %TEMP% rev-parse` walks up and
+resolves to `C:/Users/khamis`, which is itself a git repository, so a fresh temp
+folder is reported as a git folder. Confirmed by a direct probe in this session.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or
+skipped. No `.neo-*` or `.jcode-*` marker file was staged. Working tree clean.
+
+---
+
+# N2 - Canvas view: DONE
+
+Workspace "Canvas" tab rendering the N1 run graph: pan/zoom, auto-layout, an E
+shortcut that opens a node, live SSE updates, a Recipe side panel, and Arabic/RTL.
+
+## The failure that was fixed
+The canvas work committed as `33a8911` left one pre-existing web test red:
+
+```
+packages/web/src/components/workspace/__tests__/autoOpen.test.ts
+  > workspace auto-open decision > latestWorkspaceDecision returns the newest qualifying event
+  AssertionError: expected { id: 'id-0.21480746367457115', …(6) } to be { id: 'id-0.6785752071943618', …(6) }
+```
+
+`isCanvasSignalTool` had been written with a broad `name.startsWith('browser_')`
+(plus `gen_*`, `loam_*`, `office_*`, `docx|xlsx|pptx`, `file_write`, `file_edit`,
+`code_session`, `web_scaffold`). The test pins `browser_navigate` as a
+**non-qualifying** tool (it is a display label in `packages/web/src/components/chat/toolLabels.ts`,
+not a tool the agent registers), so the newest qualifying event became the
+`browser_navigate` event instead of the `office_export` one. That is a real
+product bug, not a stale test: the canvas was hijacking tool events that should
+resolve to a workspace artifact.
+
+## What the fix produces
+`isCanvasSignalTool` now matches only the tools the agent really registers, so
+the canvas stays the surface for long-horizon work with no single file to point
+at:
+
+- `BROWSER_TOOL_STEMS` is an explicit list taken from `src/tools/browser.ts`
+  (`browser_open`, `browser_goto`, `browser_snapshot`, `browser_click`,
+  `browser_type`, `browser_press`, `browser_eval`, `browser_screenshot`,
+  `browser_table`, `browser_act`, `browser_pages`, `browser_close`, `browser_som`,
+  `browser_trace`) plus `browser_operator` from `browserOperator.ts`. Matching is
+  `name === stem || name.startsWith(stem + '_')`, so `browser_navigate` and the
+  rest of the label-only names cannot match. `browser_operator` keeps its
+  timestamped tool-use name (`browser_operator_<timestamp>`) working.
+- `web_*` (`src/tools/web.ts`: `web_search`, `web_fetch`), `deep_research`
+  (`deepResearch.ts`), `wide_research` (`wideResearch.ts`) and `code_session*`
+  (`codeSession.ts`).
+- Everything else is dropped, because a file path or an `office_*`/`video` tool
+  already resolves above it: `decideWorkspaceOpen` returns the editor first, so
+  the canvas never steals an artifact. This is what restores the test.
+
+Coverage added to the pre-existing suite (no assertion relaxed, none removed):
+`__tests__/autoOpen.test.ts` gained a `Neo N2 canvas auto-open decision` block
+(5 tests) pinning the real names as qualifying, the label/file-producing names as
+non-qualifying, the canvas target for a long-horizon tool, the
+artifact-wins-over-canvas precedence, and `latestWorkspaceDecision` returning the
+canvas for the newest long-horizon tool. 18/18 pass.
+
+## Second defect found and fixed during the same pass
+`CanvasPanel` resolved its locale and translated with it, but never synced the
+document direction. The panel lays itself out with logical CSS (`border-s`,
+`ms-`/`me-`, `ps-`/`pe-`), which resolves against `document.documentElement.dir`,
+so under Arabic the canvas chrome was laid out left-to-right while its text was
+Arabic. The panel now calls `setLocale(locale)` from `@/i18n/t` whenever it owns
+the locale, so `dir`/`lang` follow the locale the panel renders in. The
+`getLocale` prop is a test seam and is deliberately skipped, so a test provider
+never rewrites the real document. The canvas **surface** stays `dir="ltr"`:
+its geometry is graph space, not text flow. A new test
+(`points the document direction at the rendered locale`) pins both.
+
+## Acceptance criteria (N2)
+The task asks for Playwright; the harness has no browser, so the same behaviour
+is pinned with vitest + @testing-library against the real panel with an injected
+client/stream (documented here as the task allows):
+
+- **6+ nodes live for a run with 6 steps** - `CanvasPanel.test.tsx` renders the
+  real panel over a seven-node graph (root question + six recipe steps), asserts
+  7 `canvas-node` cards, the Recipe list `1. Step 1` .. `6. Step 6`, the stats
+  line `7 nodes`, and that a live stream drives the `Live` indicator.
+- **Organize lays out without overlap** - clicking `Organize` re-runs the layered
+  layout and every node card's transform is distinct (no two cards share a cell).
+- **E opens the detail** - `keydown e` opens the newest node's sheet
+  (`canvas-node-detail`, `data-node-id="step-six"`); `Escape` closes it. Clicking
+  a card opens the same sheet.
+- **RTL labels render** - with `getLocale: () => 'ar'` the Recipe header reads
+  `الوصفة`, the stats line `7 عقد`, node titles use Arabic labels, and the node
+  sheet marks the node `من اليمين إلى اليسار`. A separate test pins that the
+  document direction follows the rendered locale while the surface stays `ltr`.
+
+## Files
+- `packages/web/src/components/workspace/canvas/{CanvasPanel,layout,stream,types,client}.ts(x)`
+- `packages/web/src/components/workspace/canvas/register.ts`, `Editor.tsx`
+- `packages/web/src/components/workspace/{WorkspacePanel,types,autoOpen,index}.ts(x)`
+- `packages/web/src/components/workspace/canvas/__tests__/*` (new), `__tests__/autoOpen.test.ts`
+- `packages/web/src/i18n/{t.ts,en.json,ar.json}`
+- `src/server/routes/graph.ts`, `src/server/http.ts`, `src/agent/runGraphAdapter.ts`
+- `src/server/__tests__/graphRoutes.test.ts`
+
+## Gates (all run from the worktree root)
+- `npx tsc --noEmit` -> exit 0
+- `(cd packages/web && npx tsc --noEmit --project tsconfig.json)` -> exit 0
+- `npm run build:server` -> exit 0 (dist/server.cjs, pdf worker copied)
+- `(cd packages/web && npx next build)` -> exit 0 (compiled successfully)
+- `(cd packages/web && npx vitest run)` -> **77 files / 521 tests, all pass**
+- `node --import tsx --test src/server/__tests__/graphRoutes.test.ts` -> 6 tests, 6 pass, 0 fail
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes` -> PASS
+
+## Pre-existing node failures (NOT caused by this work)
+`node --import tsx --test "src/**/*.test.ts"` -> tests 2147, pass 2141, fail 6.
+All six are outside this diff (`git diff manus-parity -- <file>` is empty for each)
+and reproduce identically on the untouched `manus-parity` worktree:
+
+1. `src/agent/__tests__/toolDescriptions.test.ts` - "suggest_plan is neither
+   registered nor listed in PENDING_CODING_TOOLS". The inherited D4 defect
+   documented in the preserved reports below.
+2. `src/server/__tests__/worktrees.test.ts` - "reports non-git folders without
+   throwing". Environmental: `C:\Users\khamis` is itself a git repository, so
+   `git rev-parse` run inside `%TEMP%` walks up and finds it, and the temp folder
+   is reported as a git folder. Confirmed by a direct probe and by the same
+   failure on the parity worktree.
+3-6. `craftStatus`, `retryLast`, `sessionControl`, `shares` - these four suites
+   abort with `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)` when the
+   whole tree is run with `--test-force-exit` on Windows. Run on their own
+   **without** `--test-force-exit` they pass (21/22 pass, only the worktrees
+   environmental failure above).
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or
+skipped. No `.neo-*` or `.jcode-*` marker file was staged.
+
 N4 — Incremental Recipe engine: DONE
 
 Summary
