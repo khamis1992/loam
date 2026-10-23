@@ -1232,13 +1232,15 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (req.method === "POST" && p === "/api/settings") {
-          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown };
-          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean } = {};
+          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; codemode?: unknown };
+          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; codemode?: boolean } = {}
           if (body.theme === "dark" || body.theme === "light" || body.theme === "system") patch.theme = body.theme;
           if (typeof body.model === "string") patch.model = body.model;
           if (body.projectId === null || typeof body.projectId === "string") patch.projectId = body.projectId;
           if (typeof body.autoApprove === "boolean") patch.autoApprove = body.autoApprove;
           if (typeof body.trainingOptOut === "boolean") patch.trainingOptOut = body.trainingOptOut;
+          // Codemode master switch (opt-in): only an explicit boolean is stored.
+          if (typeof body.codemode === "boolean") patch.codemode = body.codemode;
           sendJson(res, 200, updateSettings(patch));
           return;
         }

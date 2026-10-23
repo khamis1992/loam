@@ -42,6 +42,7 @@ let createGroupTools: () => Tool[];
 let createDesignStudioTools: () => Tool[];
 let createLoamServiceTools: () => Tool[];
 let createTodoTools: () => Tool[];
+let createUnboundCodemodeTool: () => Tool;
 
 function dummy(name: string): Tool {
   return {
@@ -130,6 +131,10 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     const deployToolsMod = await import("../../tools/deploy.js");
     registry.registerAll(deployToolsMod.createDeployTools({ workspace: tmpDir }));
     registry.register(dummy("loam_design")); // W3 build-phase design tool (always-on grant)
+    const codemodeToolMod = await import("../../codemode/tool.js");
+    createUnboundCodemodeTool = codemodeToolMod.createUnboundCodemodeTool;
+    // J9: codemode ships as an always-on core tool, so the fixture registers it too.
+    registry.register(createUnboundCodemodeTool());
   });
 
   after(() => {

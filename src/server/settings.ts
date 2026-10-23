@@ -22,6 +22,8 @@ export interface Settings {
   flexBaseUrl?: string;
   /** Option 18 Flex tier: model id to call through the Flex provider. */
   flexModel?: string;
+  /** Settings › Data controls: master switch for the Codemode sandbox. Off by default. */
+  codemode?: boolean;
   /** Settings › Data controls: when true, user data is excluded from model training. */
   trainingOptOut?: boolean;
 }
@@ -45,6 +47,7 @@ export function loadSettings(): Settings {
         ...(typeof parsed.browserHomepage === "string" ? { browserHomepage: parsed.browserHomepage } : {}),
         ...(typeof parsed.flexBaseUrl === "string" ? { flexBaseUrl: parsed.flexBaseUrl } : {}),
         ...(typeof parsed.flexModel === "string" ? { flexModel: parsed.flexModel } : {}),
+        ...(typeof parsed.codemode === "boolean" ? { codemode: parsed.codemode } : {}),
         ...(typeof parsed.trainingOptOut === "boolean" ? { trainingOptOut: parsed.trainingOptOut } : {}),
         ...(typeof parsed.autoApprove === "boolean" ? { autoApprove: parsed.autoApprove } : {}),
       };
@@ -79,6 +82,7 @@ export function updateSettings(patch: Partial<Settings>): Settings {
   if (patch.browserHomepage !== undefined) settings.browserHomepage = typeof patch.browserHomepage === "string" ? patch.browserHomepage.trim() : "";
   if (typeof patch.flexBaseUrl === "string") settings.flexBaseUrl = patch.flexBaseUrl.trim();
   if (typeof patch.flexModel === "string") settings.flexModel = patch.flexModel.trim();
+  if (typeof patch.codemode === "boolean") settings.codemode = patch.codemode;
   if (typeof patch.trainingOptOut === "boolean") settings.trainingOptOut = patch.trainingOptOut;
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
