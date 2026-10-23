@@ -33,6 +33,9 @@ export interface JoinSession extends Base {
   type: 'join_session';
   sessionId: string;
   lastMessageId?: string;
+  /** BUILD_SPEC §6.4: highest durable log sequence already rendered. The server
+   *  replays by sequence when this is present, otherwise by `lastMessageId`. */
+  lastSeq?: number;
   version: 2;
 }
 
@@ -92,6 +95,8 @@ export interface ServerEnvelope<E extends ChatEvent = ChatEvent> {
   timestamp: number;
   event: E;
   webdevAddonEnabled?: boolean;
+  /** BUILD_SPEC §6.4: the durable log sequence of this frame. */
+  seq?: number;
 }
 
 export interface ChatEventBase extends Base {

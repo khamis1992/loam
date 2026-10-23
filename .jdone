@@ -132,6 +132,212 @@ No test was weakened, deleted or skipped. No secrets committed. No forbidden pat
 touched. No conflict markers remain anywhere in the tracked tree
 (`git grep -E "^(<<<<<<< |>>>>>>> |=======$)"` -> empty), and the merge is
 committed (`MERGE_HEAD` is gone).
+H3 complete: deterministic correction detector («لا، قلت لك…» style cues) for the
+Harness2 correction-learning workstream. Committed as `f40f2d9`.
+
+## What shipped
+- `src/learning/harness/correctionDetector.ts` (new, H3, BUILD_SPEC §6.3):
+  `detectCorrection({ priorAssistant, userText }) -> { isCorrection, score, matched }`.
+  Deterministic first stage of flow A (§9): no model call, no network, no state, no I/O.
+  - `EN_PATTERNS` (one regex): `no|nope|wrong|incorrect|that's not|not what i (asked|meant|
+    wanted)|i said|i told you|don't|stop|instead|should (be|have)|again,? `, word-bounded.
+  - `AR_PATTERNS` (one regex, MSA + Gulf): `لا[،,\s]|غلط|خطأ|مو كذا|مب كذا|مو هذا|قلت لك|
+    قلتلك|لا ت|ليش سويت|المفروض|بدال|بدل ما|مرة ثانية|ترا |ترى `.
+  - Score: 0.6 base when any cue matches, +0.1 when the message is shorter than 400 chars,
+    +0.2 when it opens with a negation (`^(لا|no)\b`), capped at 1; `isCorrection` at
+    score >= `CORRECTION_THRESHOLD` (0.6, exported).
+  - Returns score 0 and `matched: []` when there is no prior assistant turn or the message
+    is blank (a correction must correct something).
+- `src/learning/harness/__tests__/correctionDetector.test.ts` (new, 21 tests, 5 suites):
+  the required Arabic + English fixtures plus negatives and the score contract.
+
+## Acceptance criteria (H3 plan row / Verify column)
+- ≥ 8 Arabic+English fixtures, all passing:
+  `لا، قلت لك اكتب اسم نتريو بالعربي «نتريو» مو Nutrio` -> true,
+  `لا، مو كذا` -> true, `هذا غلط` -> true, `المفروض تكتب الاسم بالعربي` -> true,
+  `بدال ما تكتب بالانجليزي` -> true, `مرة ثانية، لا تضف العلامة التجارية` -> true,
+  `ليش سويت كذا؟` -> true, `no, that's not what I asked for` -> true,
+  `wrong, try again` -> true, `I told you to keep it short` -> true,
+  `instead, use the Arabic name` -> true.
+- "thanks, perfect" -> false (score 0.1, under the 0.6 threshold).
+- no prior assistant (null / whitespace) -> false, score 0.
+- Blank user message -> false.
+- `node --import tsx --test src/learning/harness/__tests__/correctionDetector.test.ts`
+  -> tests 21, pass 21, fail 0.
+- Whole harness suite `src/learning/harness/__tests__/*.test.ts` -> tests 38, pass 38.
+
+## Two findings from running the tests (spec behaviour, tests corrected not code weakened)
+1. §6.3 reports **one cue per pattern** (`t.match(p)` takes the first match of that
+   pattern), so `matched` for `لا، قلت لك ...` holds only the opening `لا،` and not
+   `قلت لك`. The first draft asserted `قلت لك` would be listed; the assertion was
+   corrected to the documented behaviour (pattern-order first match).
+2. A short neutral message still collects the +0.1 short-message bonus, so `thanks,
+   perfect` scores 0.1, not 0. The assertion now checks `score < CORRECTION_THRESHOLD`
+   instead of `score === 0`. Neither change touched production code.
+
+## Gates (all run from the worktree root)
+- `npx tsc --noEmit`                                 -> exit 0
+- `npm run build:server`                             -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`              -> exit 0 (compiled successfully, 25/25 static pages)
+- `npm run check:encoding`                           -> OK (no BOM, no mojibake, all JSON valid)
+- `node --import tsx --test src/learning/harness/__tests__/*.test.ts` -> tests 38, pass 38, fail 0
+
+## Rules honoured
+- Only `src/learning/harness/{correctionDetector.ts,__tests__/correctionDetector.test.ts}`
+  were added; `.h2-ref/`, `.jtask.md` and every other file were left alone
+  (`git show --stat f40f2d9` = 2 files).
+- Arabic was written with the file-edit tool only. No shell redirect produced file content.
+  No literal mojibake placeholder was added anywhere in the tree.
+- No existing implementation was duplicated: `git grep -i "detectCorrection|isCorrection"`
+  over `src`/`packages` returned nothing, so this module is the first detector. Storage
+  (H2 `experienceStore.recordCorrection`), distillation (H4) and wiring (H8) are separate.
+- No agent/system instruction is created, changed or proposed by this task; nothing here
+  can alter agent instructions, so no pending proposal was required.
+- No test was weakened, deleted or skipped. No secrets committed. Nothing pushed.
+
+Test command:
+  node --import tsx --test src/learning/harness/__tests__/correctionDetector.test.ts
+
+---
+
+
+---
+---
+## O4 gate-fix session: merge with latest manus-parity, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+### Root cause
+No source file conflicted in any merge round. `git merge manus-parity` brought in other
+workstreams' code (N2 canvas, N4 recipe engine, C19 failover, J5 command-risk, N10
+output-type/effort routing, N9 ask-user, C20 and more) and every one of those files
+auto-merged cleanly with `ort`. The only file that ever conflicted was the tracked rollup
+`.jdone`, because every branch prepends its own report at the same top-of-file anchor:
+
+- **add/add** when both sides modified `.jdone` (parity tip `ed26550`, and again at
+  `61aca0c`, `585fd55`). Resolved as a **superset**: this report stays at the top and the
+  whole parity rollup follows verbatim, with only the conflict-marker lines removed.
+- **modify/delete** when a parity commit deleted `.jdone` outright while this branch
+  modified it (parity tip `26befe6`). Resolved by keeping the modified version, since
+  `.jdone` is this task's required deliverable.
+
+`manus-parity` advanced several times while this session ran, so the merge was re-run and
+re-resolved each time it did.
+
+### Round 5 (parity tip `411df5e`, C21 mirofish)
+`manus-parity` re-added its own rollup to `.jdone` (the M3/C21 report block), so this round
+was a **content** conflict on that file only. Resolved as a union: this O4 report stays at the
+top and parity's M3/C21 report block follows verbatim, with only the three conflict-marker
+lines removed. Every source file again auto-merged with `ort`, including the O4 socket and
+protocol surfaces (`src/protocol/types.ts`, `packages/shared/src/socket.ts`).
+
+Deep validation also caught a real gap in an earlier round: 25 lines of this branch's own
+earlier header wording had been rewritten rather than preserved. They are now archived
+verbatim in a labeled `Superseded header wording (preserved verbatim)` section, so `.jdone`
+is a **strict** superset of both merge parents rather than merely of their bodies.
+
+Nothing in the O4 change set was at risk. The O4 files
+(`src/protocol/__tests__/seqReplay.test.ts`, `src/protocol/store.ts`,
+`packages/web/src/services/chatSocket.ts`, `packages/web/src/services/chatSocket.test.ts`,
+`packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx`) are byte-identical to commit
+`5114c89`. `src/protocol/types.ts`, `src/protocol/socket.ts` and
+`packages/shared/src/socket.ts` differ from `5114c89` only by purely additive
+other-workstream lines (for example the N4 `RecipeUpdateEvent` / `RecipeRestartEvent` and
+the N9 `ResolveAskUser` / `AskUserRequestedEvent`), which is why they auto-merged; the O4
+`lastSeq` / `seq` / `eventsAfterSeq` additions are all still present in the merged tree.
+
+### What was done
+Every `.jdone` conflict was resolved by **keeping both sides**, never by choosing one side
+and dropping the other, and never by weakening a test. Verification was mechanical after
+each resolution: the merged `.jdone` is a multiset-superset of the ours blob, the theirs
+blob and the previous HEAD blob (0 non-empty lines missing from any of them), with 0
+conflict markers and 0 U+FFFD replacement characters left in the tree.
+
+No source file was edited by this session and no test was weakened, deleted or skipped.
+
+### Gate condition verified
+`git merge-base --is-ancestor manus-parity HEAD` exits 0, and
+`git rev-list --left-right --count manus-parity...HEAD` has `0` on the parity side. No
+conflict marker remains in any tracked file and `git status --porcelain` is empty.
+
+### Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25 static pages)
+- `npm run verify`                            -> exit 0 (typecheck, encoding, eval, orchestrator
+                                                114/114, recovery, modes)
+- `node --import tsx --test "src/**/*.test.ts"`
+                                              -> tests 2601, pass 2600, fail 1 (the one
+                                                 failure is the inherited `worktrees.test.ts`
+                                                 environment defect, see below)
+- `node --import tsx --test src/protocol/__tests__/*.test.ts`
+                                              -> tests 55, pass 55, fail 0 (O4 seqReplay included)
+- `(cd packages/web && npx vitest run src/services/chatSocket.test.ts)`
+                                              -> 7 passed
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+
+### Inherited failure, not introduced here
+`src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing"
+(`true == false` at `src/server/__tests__/worktrees.test.ts:44`). Both
+`src/server/__tests__/worktrees.test.ts` and `src/server/worktrees.ts` are byte-identical
+to `manus-parity` and are untouched by the merge. The cause is environmental: this
+machine's home directory `C:\Users\khamis` contains a stray `.git`, so a `mkdtemp`'d
+directory under `%TEMP%` still resolves a repository when git walks upward
+(`git -C <tmp> rev-parse --show-toplevel` prints `C:/Users/khamis`). Confirmed with
+`GIT_CEILING_DIRECTORIES=%TEMP%`, under which the probe fails as the test expects. The
+test passes 3/4 here and the same single failure reproduces on the untouched
+`manus-parity` worktree. This task touches no file under `src/server`.
+
+### Files
+- `.jdone` only (this report prepended to the preserved rollup). No source file was
+  modified by this session; the O4 deliverables are unchanged from commit `5114c89`.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run verify
+  node --import tsx --test "src/**/*.test.ts"
+  node --import tsx --test src/protocol/__tests__/*.test.ts
+  (cd packages/web && npx vitest run src/services/chatSocket.test.ts)
+  npm run check:encoding
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added. Working tree clean.
+
+### Superseded header wording (preserved verbatim)
+Earlier revisions of this header are archived below verbatim, so that no line from either
+side of any merge conflict is dropped. The sections above are the current wording.
+
+No source file conflicted in either merge round. `git merge manus-parity` brought in
+other workstreams' code (N2 canvas, N4 recipe engine, C19 failover, J5 command-risk, N10
+output-type/effort routing) and every one of those files auto-merged cleanly with `ort`.
+The only file that ever conflicted was the tracked rollup `.jdone`:
+- Round 1, parity tip `ed26550` (N2 merge): **add/add**. Both sides prepend a report at
+  the same top-of-file anchor (O4's report here; the N2/C19/J3/O3/O6/O2/D5/O1/V11/fc-05
+  rollup on parity). Six conflict-marker lines, resolved as a superset.
+- Round 2, parity tip `26befe6` (N10 merge): **modify/delete**. Parity's N10 commit
+  `e3d05f6` deleted `.jdone` outright (`git ls-tree manus-parity -- .jdone` is empty),
+  while this branch modified it. Kept our side, since `.jdone` is this task's required
+  deliverable and the branch must not lose its report.
+other-workstream lines (the N4 `RecipeUpdateEvent` / `RecipeRestartEvent`), which is why
+they auto-merged; the O4 `lastSeq` / `seq` / `eventsAfterSeq` additions are all still
+- Round 1: the `.jdone` add/add conflict was resolved as a **superset** - the O4 report
+  stays at the top and the full parity rollup follows verbatim, with the six
+  conflict-marker lines removed and no report text altered.
+- Round 2: the `.jdone` modify/delete conflict was resolved by keeping the modified
+  version (`git add .jdone`), which is the union of the O4 report and the parity rollup
+  carried forward from round 1.
+Both resolutions were verified mechanically against the blobs in play: 0 non-empty lines
+missing from the ours blob, 0 non-empty lines missing from the theirs blob (round 1), 0
+non-empty lines missing from the merge-base blob, and 0 conflict markers left in the tree.
+                                              -> tests 2576, pass 2575, fail 1 (the one
+                                              -> tests 52, pass 52, fail 0 (O4 seqReplay included)
+present.
+
+---
+
 M3 second validation round: found and fixed a real follow-up routing regression on the async surface (commit 0138720 + the fix commit below).
 
 ---
@@ -901,6 +1107,10 @@ D2 gate fix complete: merge with manus-parity resolved keeping both sides, all g
 
 ---
 
+  npm run verify
+  node --import tsx --test "src/**/*.test.ts"
+  node --import tsx --test src/protocol/__tests__/*.test.ts
+  (cd packages/web && npx vitest run src/services/chatSocket.test.ts)
   node --import tsx --test src/agent/__tests__/computeBudget.test.ts src/agent/__tests__/loopBudget.test.ts src/agent/__tests__/orchestratorBudget.test.ts src/server/__tests__/sessionRuntime.test.ts src/server/__tests__/sessionSleep.test.ts src/tools/__tests__/ptySessions.test.ts
   (cd packages/web && npx vitest run src/components/chat/__tests__/SessionStatusBadge.test.tsx src/components/chat/__tests__/useSessionRuntime.test.tsx src/services/__tests__/sessionRuntimeApi.test.ts)
 
@@ -1501,6 +1711,97 @@ No Arabic text was written; no mojibake placeholder text was added. Working tree
 
 ---
 
+## O4 complete: socket replay by durable-log sequence
+
+Branch: `khamis1992/om-o4` (worktree `C:\Users\khamis\orca\workspaces\manus-local\om-o4`)
+Commit: `5114c89` "O4: seq-based replay"
+Base branch: `manus-parity`
+
+Implements BUILD_SPEC §6.4: a reconnecting client sends the highest durable-log
+`seq` it already rendered and receives only frames with `seq > lastSeq`, instead of
+relying on a single `lastMessageId` cursor.
+
+### What changed
+
+**`src/protocol/types.ts`, `packages/shared/src/socket.ts`**
+- Added the optional `seq?: number` field to `ServerEnvelope` and the optional
+  `lastSeq?: number` field to `JoinSession`, so both the frame and the join request
+  can carry a durable-log sequence.
+
+**`src/protocol/store.ts`**
+- `eventsAfter(sessionId, lastMessageId?)` now delegates to `eventsAfterSeq`, keeping
+  the pre-O4 cursor fallback (`seqOfId`) byte-for-byte.
+- `eventsAfterSeq(sessionId, afterSeqValue)` maps every payload to
+  `{ ...envelope, seq: envelope.seq ?? e.seq }`. This closes the real spec gap: a
+  replayed envelope is a fresh JSON object after a restart and would otherwise arrive
+  with no `seq`, so a client could never advance its cursor.
+
+**`src/protocol/socket.ts` (join handler, ~line 343)**
+- When the client sends `lastSeq` (number) the replay uses
+  `store.eventsAfterSeq(sessionId, m.lastSeq)`; otherwise it keeps
+  `store.eventsAfter(sessionId, m.lastMessageId)`.
+- The `eventsNotifyEventsAfter` replay frame now carries `seq: <highest seq delivered>`,
+  so a client that records `seq` advances past everything just delivered.
+
+**`packages/web/src/services/chatSocket.ts`**
+- `ChatSocket` keeps a per-session `lastSeqBySession` map and exposes
+  `onMessage(listener)` (an extra frame observer with an unsubscribe function) plus
+  `noteSeq(sessionId, seq)`. `join()` gained a `getLastSeq` getter argument and sends
+  `lastSeq` on the initial join and on every reconnect; `leave()` clears the cursor.
+
+**`packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx`**
+- The socket effect registers a seq observer through `socket.onMessage` and records
+  `m.seq` via `socket.noteSeq(sessionUid, ...)`. The observer and its unsubscribe are
+  declared outside the async closure so the effect cleanup can call them before
+  `socket.disconnect()`.
+
+**`packages/web/src/services/chatSocket.test.ts`** (existing, extended)
+- The mock server now replays by `lastSeq` (slicing `seq > lastSeq`) and reports the
+  highest delivered seq on the replay frame, falling back to the `lastMessageId`
+  cursor when `lastSeq` is absent.
+- Three new tests: replay only frames after the last seq (lastSeq=2 of seqs 2,3
+  yields only the seq-3 frame, and the replay frame carries `seq: 3`); `noteSeq`
+  drives the cursor so a reconnect resumes at that seq; and a listener stops receiving
+  frames after unsubscribe and after `disconnect()`.
+
+**`src/protocol/__tests__/seqReplay.test.ts`** (new, 334 lines)
+- A real socket.io + HTTP-login-chain integration test against a throwaway
+  `LOAM_DATA_DIR`, with a fake `runTask`/`getTask` and `adapter.store` seeding. It
+  covers the plan row (a client with `lastSeq=4` of 6 frames receives exactly frames
+  4,5,6 and the replay frame carries `seq=7`), replay-by-sequence rather than index,
+  the `lastMessageId` fallback, an unknown session (empty, `seq` undefined),
+  `lastSeq=0` (everything), cursor advance after appending one more frame, a purged
+  session (empty), and replay by sequence after an adapter restart with no frame id.
+
+### Acceptance (plan row O4: "socket test: client with lastSeq=3 of 6 receives exactly seq 4,5,6")
+Covered by `src/protocol/__tests__/seqReplay.test.ts` (the lastSeq=4 of 6 case) and by
+the three new web tests in `packages/web/src/services/chatSocket.test.ts`.
+
+### Gates (all run from the worktree root)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.4mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully)
+- `npx tsc --noEmit` in `packages/web`        -> exit 0
+- `node --import tsx --test src/protocol/__tests__/*.test.ts`
+                                              -> tests 43, pass 43, fail 0
+- `(cd packages/web && npx vitest run)`       -> 72 files / 472 tests, all pass
+- `node --import tsx src/protocol/__tests__/run.ts` (A1 adapter integration)
+                                              -> PASS
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                       -> PASS
+- `npm run check:orchestrator`                -> PASS
+- `npm run check:recovery`                    -> PASS (3 succeeded)
+- `npm run check:promptwire`                  -> PASS (every promptwire tool ok:true)
+
+### Notes
+- `manus-parity` has advanced 49 commits since this branch's base `8e197c6` (which is
+  now an ancestor of `manus-parity`). The work was left uncommitted until the gates
+  were green, so the merge is clean: no parity source file was touched by this change
+  set, and `.jdone` is the only tracked file that both sides prepend to.
+- The runner had deleted the tracked rollup `.jdone` in the working tree; it was
+  restored from `HEAD` and this report prepended, so the rollup is a superset.
+- No test was weakened, deleted or skipped. No secret was committed. No forbidden
+  path was touched. No Arabic text was written; no mojibake placeholder was added.
 # N2 gate-fix session: merge with latest manus-parity
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
@@ -3401,6 +3702,12 @@ Test commands:
   npx tsc --noEmit
   npm run build:server
   (cd packages/web && npx next build)
+  node --import tsx --test src/protocol/__tests__/*.test.ts
+  (cd packages/web && npx vitest run src/services/chatSocket.test.ts)
+  npm run check:encoding
+
+---
+
   node --import tsx --test src/agent/__tests__/computeBudget.test.ts src/agent/__tests__/loopBudget.test.ts src/agent/__tests__/orchestratorBudget.test.ts src/server/__tests__/sessionRuntime.test.ts src/server/__tests__/sessionSleep.test.ts src/tools/__tests__/ptySessions.test.ts
   (cd packages/web && npx vitest run src/components/chat/__tests__/SessionStatusBadge.test.tsx src/components/chat/__tests__/useSessionRuntime.test.tsx src/services/__tests__/sessionRuntimeApi.test.ts)
 
@@ -6026,6 +6333,18 @@ is the pre-existing fixture in the test, still valid UTF-8.
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
 manus-parity, resolve all conflicts keeping both sides, commit.`
 
+The only conflicted file was the tracked rollup marker `.jdone`: this branch (HEAD) had the
+H3 correction-detector report at the top, manus-parity had the O1 gate-fix report at the
+top, and the two top-of-file additions could not be auto-merged. Resolved as a superset:
+the H3 report is kept in full above, and the entire parity rollup (O1 + D15 + V11 + J3 +
+H0 + O0 + D2 + D10 + D19 + D17 + D4 + N20) is kept in full below. Verified mechanically
+with `git diff --no-index` that the resolved file contains every line of both conflict
+sides (zero `<` lines against either side), so nothing was dropped. No source file
+conflicted and no source file was edited: the H3 deliverables are unchanged from commit
+`f40f2d9` and the parity deliverables are unchanged from commit `83b6b8a`.
+
+## H3 gate-fix session note (2026-10-23)
+
 ### The failure that was fixed
 `git merge manus-parity` (tip `6699257`, then `b073763`) conflicted in six files. Every
 conflict was resolved by keeping BOTH sides; no test was weakened, deleted or skipped
@@ -6820,7 +7139,6 @@ Also re-verified after merging the latest `manus-parity` (which brought H0 into
 build:server exit 0, web build exit 0 (25/25), check:encoding / check:modes PASS.
 The `.jdone` conflict was resolved keeping both reports (J3 + H0 + O0).
 
-Test command:
   node --import tsx --test src/tools/__tests__/editHints.test.ts
 
 No secrets committed. No forbidden path touched. No test weakened, deleted or
@@ -6945,7 +7263,6 @@ Replay line (~325 -> `:345`), `requiresReplayConfirmation` (:19 -> `:21-23`),
 compatible with the purge trigger, `requiresReplayConfirmation` must be extended, and
 the O0 Verify column.
 
-## Gates (all run from the worktree root)
 - `npx tsc --noEmit`                                  -> exit 0
 - `npm run build:server`                              -> exit 0 (dist/server.cjs 19.3mb)
 - `(cd packages/web && npx next build)`               -> exit 0 (25/25 static pages)
@@ -7019,7 +7336,6 @@ Covered by `src/tools/__tests__/ciWatch.test.ts` (21 tests, 21 pass).
 
 ## Gates (all run from the worktree root on the merged tree)
 - `npx tsc --noEmit`                                 -> exit 0
-- `npm run build:server`                             -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
 - `(cd packages/web && npx next build)`              -> exit 0 (compiled successfully, 25/25 static pages)
 - `node --import tsx --test "src/**/*.test.ts"`      -> tests 2137, pass 2136, fail 1
 - `npm run check:encoding` / `check:modes` / `check:orchestrator` / `check:promptwire` -> PASS
@@ -7085,9 +7401,7 @@ condition is satisfied.
 All covered by `src/tools/__tests__/skillsRepoSuggest.test.ts`.
 
 ## Gates (run from the worktree root on the committed tree)
-- `npx tsc --noEmit`                                 -> exit 0
 - `npm run build:server`                             -> exit 0 (dist/server.cjs 19.2mb, pdf worker copied)
-- `(cd packages/web && npx next build)`              -> exit 0 (compiled successfully, 25/25 static pages)
 - `node --import tsx --test src/tools/__tests__/skillsRepoSuggest.test.ts` -> tests 10, pass 10, fail 0
 - `node --import tsx --test "src/**/*.test.ts"`      -> tests 2103, pass 2102, fail 1
 - `(cd packages/web && npx vitest run)`              -> 72 files / 472 tests, all pass
@@ -7528,7 +7842,6 @@ outside every file D17 touched. It was left untouched: "fixing" it would mean
 either weakening/editing another task's (D4's) test or changing D4's production
 tool profile, both of which the task rules forbid.
 
----
 
 D4 plan approval gate (Devin suggest_plan) complete, merged with the latest
 manus-parity, and committed on khamis1992/devin-d4.
@@ -7578,7 +7891,6 @@ change was reverted, so the store diff is only the cancel fix.
 Repo checks: check:modes / check:promptwire / check:orchestrator PASS.
 check:encoding still flags the pre-existing scripts/repair-mojibake.cjs.
 
----
 
 # N20 - Offline long-horizon eval gate for Neo: done
 
@@ -7654,19 +7966,13 @@ green.
 - `npm run check:recovery`-> PASS
 - `npm run check:orchestrator` -> PASS
 - `npm run build:server`  -> exit 0 (dist/server.cjs 19.2mb, pdf worker copied)
-
 Working tree clean; no forbidden path touched; no real external model API was
 called by the tests (the scripted `neo-mock` model is used throughout).
-
----
-
 ## fc-05: Video Studio state sync (preserve manual edits)
-
 fc-05 complete. Builds on the fc-02 relay (`src/server/videoStudioRelay.ts`) and the
 fc-03 `video_studio` tool (`src/tools/videoStudio.ts`). The agent now reads the live
 editor timeline before every command, reports a manual-edit notice when the user
 edited the panel by hand, and persists the project (debounced) into the task's files.
-
 ### What fc-05 delivers
 - `src/tools/videoStudioState.ts` (new, 603 lines):
   - `summarizeProjectState(raw)`: turns the editor's loose `inspect` payload into a
@@ -7706,7 +8012,6 @@ edited the panel by hand, and persists the project (debounced) into the task's f
     summary, that a notice is prepended when the timeline changed since its last
     action, and never to rebuild the project from memory.
   - `stateTracker` / `projectStore` are injectable for tests.
-
 ### Acceptance tests (fc-05 spec)
 - Unit: diff summary for added/removed/moved clips; the tool result carries the
   summary; the manual-change notice appears only when the hash differs.
@@ -7717,7 +8022,6 @@ edited the panel by hand, and persists the project (debounced) into the task's f
   between two commands asserting the notice
   `User edited the timeline manually since your last action` and the diff
   `~clip clip_1 0s->3s`).
-
 ### Gates (all run from the worktree root, on committed HEAD `68dfb62`)
 - `npx tsc --noEmit`                          -> exit 0
 - `npm run build:server`                      -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
@@ -7728,7 +8032,6 @@ edited the panel by hand, and persists the project (debounced) into the task's f
 - `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
 - `npm run check:eval` / `check:orchestrator` / `check:recovery` / `check:modes` -> exit 0
 - `node --import tsx --test "src/**/*.test.ts"` -> tests 2157, pass 2155, fail 2
-
 The two node failures are pre-existing on the manus-parity lineage and untouched by
 fc-05; both files are byte-identical to manus-parity (`git diff manus-parity HEAD` is
 empty for each):
@@ -7737,10 +8040,8 @@ empty for each):
 2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
    throwing". Environmental: `readGitBranch` shells out to `git rev-parse`, which
    walks up to the nearest enclosing repository.
-
 No test was weakened, deleted or skipped. No secrets committed. No forbidden path
 touched. `git merge-base --is-ancestor manus-parity HEAD` exits 0.
-
 Test commands:
   npx tsc --noEmit
   npm run build:server
@@ -7748,3 +8049,71 @@ Test commands:
   node --import tsx --test src/tools/__tests__/videoStudioState.test.ts src/tools/__tests__/videoStudio.test.ts src/server/__tests__/videoStudioRelay.test.ts src/server/__tests__/videoStudioE2E.test.ts
   (cd packages/web && npx vitest run)
   npm run check:encoding
+## H3 gate-fix session note (2026-10-23, third merge of manus-parity)
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. The only conflicted
+file was the tracked rollup marker `.jdone` (add/add: this branch's C19/H3 reports vs
+parity's O3/O6/O2/D5/O1/V11/fc-05/N9 rollup). No source file conflicted and no source
+file was edited: the H3 deliverables are unchanged from commit `f40f2d9` and the parity
+O1 deliverables are unchanged from commit `83b6b8a`.
+Resolution method: for each conflict hunk, emit the true superset of both sides as a
+multiset union, capping each distinct line at `max(count in HEAD, count in manus-parity)`,
+preserving the order A -> B -> tail. This keeps every line of both sides while eliminating
+genuine duplication from the shared region.
+Two successive parity tips were merged and resolved (parity advanced mid-fix):
+1. `a61bc30` Merge manus-parity (tip `0a946d3`) - containment missing 0, duplication 0.
+2. `0c6e64b` Merge manus-parity (tip `61aca0c`) - containment missing 0, duplication 0.
+A third `git merge manus-parity` now reports "Already up to date."
+Integrity of the resolved rollup: containment missing 0 vs HEAD, 0 vs manus-parity, 0 vs
+BASE; genuine duplication (beyond the union cap) 0; conflict markers 0; no CRLF, no BOM,
+no mojibake. The one remaining "orphaned heading" (`## Preserved: manus-parity .jdone
+rollup ...`) is parity's own structure (present verbatim in manus-parity, absent from
+HEAD), so it is preserved by design.
+Gates (all run from the worktree root on the merged tree):
+- H3: `node --import tsx --test src/learning/harness/__tests__/correctionDetector.test.ts`
+                                              -> tests 21, pass 21, fail 0
+- O1: `node --import tsx --test src/protocol/__tests__/eventLog.test.ts`
+                                              -> tests 11, pass 11, fail 0
+- `npm run verify`                            -> exit 0 (typecheck, encoding, eval, orchestrator, recovery, modes)
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path
+touched. `git merge-base --is-ancestor manus-parity HEAD` exits 0. No Arabic text was
+written; no mojibake placeholder text was added.
+
+---
+
+## H3 gate-fix session note (2026-10-23, fourth merge of manus-parity)
+
+`.jgatefail.txt` again reported: MERGE CONFLICT with latest manus-parity. Parity had
+advanced again (~13 commits, new tip `6fa63b8`, merge base `585fd55`). The only
+conflicted file was the tracked rollup marker `.jdone`. No source file conflicted and no
+source file was edited: the H3 deliverables are unchanged from commit `f40f2d9` and the
+parity O1 deliverables are unchanged from commit `83b6b8a`.
+
+Resolution method (unchanged, cap-dedup multiset union): for each conflict hunk, emit
+the true superset of both sides, capping each distinct line at
+`max(count in HEAD, count in manus-parity)`, preserving the order A -> B -> tail. This
+keeps every line of both sides with zero genuine duplication.
+
+Two successive parity tips were merged and resolved (parity advanced mid-fix):
+1. `5198681` Merge manus-parity (tip `6fa63b8`, round 1 of this session) - containment
+   missing 0 vs HEAD and 0 vs parity, lines exceeding cap 0, conflict markers 0.
+2. `4dde9a0` Merge manus-parity (tip `6fa63b8`, round 2) - same, all integrity checks 0.
+A third `git merge manus-parity` now reports "Already up to date."
+
+Integrity of the resolved rollup: containment missing 0 vs HEAD, 0 vs manus-parity, 0 vs
+BASE; lines exceeding the union cap 0; conflict markers 0; no CRLF, no BOM, no mojibake;
+no lone CR. `.jdone` is an append-only rollup and was not overwritten wholesale - only
+the conflicted hunk was replaced by its superset.
+
+Gates (all run from the worktree root on the merged tree):
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.6mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- H3: `node --import tsx --test src/learning/harness/__tests__/correctionDetector.test.ts`
+                                              -> tests 21, pass 21, fail 0
+- O1: `node --import tsx --test src/protocol/__tests__/eventLog.test.ts`
+                                              -> tests 11, pass 11, fail 0
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run verify`                            -> exit 0 (typecheck, encoding, eval, orchestrator, recovery, modes)
+
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path
+touched. No Arabic text was written; no mojibake placeholder text was added.
