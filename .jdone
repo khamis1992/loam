@@ -1,6 +1,31 @@
 # C19 - failover provider base URLs
 
-Status: complete (commit aca04ea on khamis1992/cc-c19)
+Status: complete (commit aca04ea on khamis1992/cc-c19; merge gate fixed in f94d683)
+
+## Merge with manus-parity (this gate fix)
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. `git merge manus-parity`
+(tip `4fa0376`, the J3 merge) conflicted in exactly one file: `.jdone` (add/add - HEAD's
+C19 report vs parity's accumulated J3/H0/O0/D2/D10/D19/D17/D4/N20 rollup). It was
+resolved by keeping BOTH sides: the C19 report stays at the top and the full parity
+rollup is preserved verbatim below it under a "Preserved: manus-parity .jdone rollup"
+heading. No report text was dropped or shortened, no test was weakened, deleted or
+skipped, and no source file changed. Everything else merged cleanly (parity brought in
+`docs/re/harness2-H0.md`, `docs/re/omnara-O0.md`, `src/tools/__tests__/editHints.test.ts`
+and the J3 `src/tools/files.ts` work). Committed as merge commit `f94d683`.
+
+## Gate condition verified
+`git merge manus-parity` reports "Already up to date." and
+`git merge-base --is-ancestor manus-parity HEAD` exits 0, so parity is fully merged and
+the tree is clean. No conflict markers remain anywhere in the tree
+(`git grep -n "^<<<<<<<\|^>>>>>>>\|^=======$"` is empty).
+
+## Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                                       -> exit 0
+- `npm run build:server`                                   -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `node --import tsx --test src/__tests__/configFailover.test.ts` -> tests 3, pass 3, fail 0
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No real external model API was called by the tests.
 
 ## What changed
 `src/config.ts` - the hard-coded `failover.providers` defaults were guessed and
