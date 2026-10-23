@@ -1,3 +1,82 @@
+H2 gate-fix session: encoding-marker false positive in the tracked rollup, fixed
+
+`.jgatefail.txt` reported that an added line contained the three-question-mark mojibake
+marker (likely Arabic corrupted by shell writes) and asked for the correct Arabic to be
+restored using file tools only. The quoted added line was a continuation of the sentence
+below, starting with the backticked marker followed by "or U+FFFD). The pre-existing
+uncommitted `deleted: .jdone` from the worktree".
+
+## Root cause
+The flagged "added line" was **prose in the tracked rollup marker `.jdone`**, not Arabic
+and not a shell write. Commit `53577c8` (the H2 completion report) added this sentence:
+
+```
+`"لا، قلت لك اكتب الاسم بالعربي"` is stored as valid UTF-8 (verified byte-level, no
+<marker> or U+FFFD). The pre-existing uncommitted `deleted: .jdone` from the worktree
+```
+
+The backticked three-question-mark sequence was **quoting the mojibake marker itself** in
+order to say the fixture does not contain it. The gate scans added diff lines for that
+exact sequence, so the sentence that *denies* the corruption was read as the corruption.
+The Arabic fixture on the line above is valid UTF-8 and was never touched (byte-verified:
+0 U+FFFD, codepoints 645 631 62d 628 627).
+
+This is the same false-positive class O0 already fixed in commit `2df79ca` ("fix gate
+failure - no mojibake placeholder text in .jdone"), which reworded a sentence that spelled
+the marker out into "No mojibake placeholder text was added". H2 reintroduced the literal
+marker in its own report prose.
+
+## What was done
+One line reworded with the file tool, no other content changed:
+
+- before: the marker and U+FFFD named literally, then "The pre-existing uncommitted"
+- after:  "mojibake marker and no U+FFFD replacement character). The pre-existing uncommitted"
+
+The sentence still states the same fact (no mojibake marker, no U+FFFD) and no longer
+spells the marker out. No Arabic text was altered: the fixture line above is byte-identical.
+No source file, no test and no assertion was changed; nothing was weakened.
+
+Verified mechanically after the edit:
+- `node` read of `.jdone`: three-question-mark count = 0, U+FFFD count = 0.
+- `git diff` (working tree) contains no added line with the marker.
+- `git diff manus-parity` contains no added line with the marker.
+
+## The `deleted: .jdone` artifact
+The worktree still shows `deleted: .jdone` as an uncommitted deletion left by the worktree
+setup. It is **not** this task's file to resolve and is left untouched, exactly as the
+preserved reports below record. It is not part of this commit and does not affect the
+encoding gate (the gate reads added diff lines, and a deletion adds none).
+
+## Gate condition verified
+`git merge manus-parity` reports "Already up to date." (parity tip `3fc4529`), and
+`git merge-base --is-ancestor manus-parity HEAD` exits 0, so parity is fully merged and the
+merge gate condition is satisfied.
+
+## Gates (all run from the worktree root)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled, static pages)
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `node --import tsx --test src/learning/harness/__tests__/experienceStore.test.ts`
+                                             -> tests 15, pass 15, fail 0
+
+## Files
+- `.jdone` only (one reworded line + this report). No source file was modified by this
+  session; the H2 deliverables are unchanged from commit `446de33`.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run check:encoding
+  node --import tsx --test src/learning/harness/__tests__/experienceStore.test.ts
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was added or corrupted; the only Arabic in the change set is the pre-existing
+fixture in the test, still valid UTF-8.
+
+---
+
 H2 gate-fix session: merge with manus-parity, all gates green
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
@@ -390,7 +469,7 @@ No test was weakened, deleted or skipped. No secrets committed. No forbidden pat
 touched (`docs/handoff/watchdog.ps1`, `qa/*.png`, `packages/tests/visual/baselines`,
 ZCode/Codex files). Arabic was written only through the file tool; the fixture
 `"لا، قلت لك اكتب الاسم بالعربي"` is stored as valid UTF-8 (verified byte-level, no
-`???` or U+FFFD). The pre-existing uncommitted `deleted: .jdone` from the worktree
+mojibake marker and no U+FFFD replacement character). The pre-existing uncommitted `deleted: .jdone` from the worktree
 setup was left untouched and is not part of this commit.
 
 Files
