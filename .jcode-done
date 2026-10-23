@@ -1,4 +1,269 @@
 # J9 done - Codemode: sandboxed JS that chains tools in one turn (gate-fix round 2)
+J1 - Shared agent server spike: DONE
+
+Measured RAM (win32, scripted fake model, offline, all 30/30 sessions fixed):
+
+  BEFORE per-process (one heavyweight process per session)
+    N=1  peak 409.5 MB   N=10 peak 1523.0 MB (marginal 123.7 MB/session)
+                             N=30 peak 2476.7 MB (marginal  71.3 MB/session)
+
+  AFTER  shared (one long-lived server hosting every session)
+    N=1  peak 421.7 MB   N=10 peak  471.8 MB (marginal   5.6 MB/session)
+                             N=30 peak  512.3 MB (marginal   3.1 MB/session)
+
+Acceptance: bench/results/J1-before.json + J1-after.json committed (N=1/10/30);
+shared marginal 3.1 MB/session at N=30 (< 10 MB target); all sessions fix the task;
+launcher tests pass. The AFTER shape is landed as a selectable `code_session`
+launcher (`launcher: "shared"`, default unchanged, opt-in via
+LOAM_CODE_SESSION_LAUNCHER=shared).
+
+Two measurement bugs were found and fixed, which is why these numbers supersede
+the first committed run:
+  1. Both shapes were measured in one process, so V8 grew the shared server's heap
+     in response to the per-process run's ~2.5 GB pressure (shared N=30 read
+     ~1500 MB instead of ~515 MB). Every measurement now runs in its own child
+     process (runIsolatedMeasurement / --isolate <kind>, default on).
+  2. --sample-ms (default 4000) capped the sampler, truncating the N=30 peak at
+     1493 MB instead of the real 2477 MB. The window is now a backstop and sampling
+     stops when the run's work is done.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run test:bench
+  node --import tsx --test src/server/__tests__/sharedCodeSession.test.ts src/tools/__tests__/codeSession.test.ts
+  (cd packages/web && npx vitest run)
+  npm run check:encoding && npm run check:modes && npm run check:orchestrator && npm run check:promptwire
+
+Gates: tsc clean; build:server (dist/server.cjs 19.3mb); next build (25/25 pages);
+test:bench 37/37; code-session suites 24 (23 pass, 1 skip); vitest 72 files / 472 tests;
+src suite 2154 tests / 2151 pass / 2 fail (both pre-existing, files byte-identical to
+the base commit: src/agent/__tests__/toolDescriptions.test.ts and
+src/server/__tests__/worktrees.test.ts); check:encoding OK; check:modes PASS;
+check:orchestrator PASS (114/114); check:promptwire PASS.
+# J11 done - Compaction constants spec note
+
+## Summary
+
+Loam's context compaction was compared value-by-value against jcode's
+`ref/compaction-core.rs`, and the two missing jcode emergency mechanisms were
+added to the existing compressor (no second compressor was introduced).
+
+### Commits on this branch (khamis1992/jcode-j11)
+
+- `35017ab` feat(agent): add critical threshold + emergency hard-compact to context compressor (J11)
+- `aa0306c` fix(agent): complete emergency compaction result fields (J11)
+- `3c0aa6d` test(agent): keep summarizer-path tests below the J11 emergency ratio
+
+### What was added
+
+- `docs/COMPACTION_SPEC.md` - value-by-value comparison table plus a
+  justification for every divergence from jcode.
+- `Config.compression` gains `criticalThresholdPercent` (0.95),
+  `recentTurnsToKeep` (10), `minTurnsToKeep` (2) and
+  `emergencyToolResultMaxChars` (4000), all at jcode parity defaults
+  (`src/config.ts`).
+- Synchronous emergency path in `src/agent/contextCompressor.ts`:
+  `criticalThreshold`, `emergencyKeepTurns`, `emergencyMinTurns`,
+  `emergencyToolResultMaxChars`, `emergencyTruncateToolResults`,
+  `EMERGENCY_TRUNCATION_MARKER`, `emergencyCompact`, and `step: 3` on
+  `CompressionResult`. Above the critical ratio the transcript is dropped to a
+  verbatim tail with oversized tool results bounded, with no auxiliary model
+  call (so it cannot fail, hang, or add latency), and `usage` is zeroed.
+- `AgentEvent` `compaction` extended with `step: 3`, `emergency`, `droppedTurns`
+  and `blocked` (`src/agent/events.ts`).
+- Tests in `src/agent/__tests__/contextCompressor.test.ts`: defaults, malformed
+  value clamping, critical-ratio clamping, tool-result truncation, the emergency
+  path, and the tool_call/tool_result pairing invariant under emergency
+  compaction.
+- jcode MIT notice entry in `THIRD_PARTY_NOTICES` plus the
+  "Adapted from jcode (MIT)" header comment in `contextCompressor.ts`.
+
+### Deliberate divergences recorded in the doc
+
+- Loam uses a per-model context window (default 32,768) instead of jcode's fixed
+  200,000 budget, because Loam is a multi-provider client.
+- Loam triggers at 50% of the window rather than jcode's 80%, because Loam's
+  summarizer prompt is built from the middle of the transcript; the doc records
+  this as an intentional, out-of-scope difference.
+- jcode's flat 18,000-token system overhead is not ported (Loam already protects
+  the system prompt and the newest message and triggers early).
+
+## Test commands (all run from the worktree root)
+
+```
+npx tsc --noEmit                                                    # pass
+npm run build:server                                                # pass (dist/server.cjs 18.9mb)
+cd packages/web && npx next build                                   # pass
+node --import tsx --test src/agent/__tests__/contextCompressor.test.ts   # 27/27 pass
+node --import tsx --test src/agent/__tests__/todoReminder.test.ts        # 7/7 pass
+node --import tsx --test src/agent/__tests__/*.test.ts                  # 112 pass, 1 pre-existing fail
+```
+
+### Pre-existing failure (not caused by J11, verified by stash)
+
+`src/agent/__tests__/codingPrompt.test.ts > matches the committed snapshot`
+fails because `masterPromptSha256` differs
+(`c63a440f...` actual vs `89067068...` expected). This is a promptwire
+master-prompt asset drift unrelated to compaction: no file under `prompts/` or
+`src/agent/codingPrompt.ts` differs from HEAD, and the failure reproduces with
+the J11 test change stashed.
+
+`npm run check:encoding` also reports one pre-existing mojibake issue in
+`scripts/repair-mojibake.cjs`, unrelated to J11.
+
+## Deeper validation performed
+
+- **Commit integrity.** All three J11 commits are present on the branch
+  (`35017ab`, `aa0306c`, `3c0aa6d`); the working tree is clean apart from the
+  untracked done markers, and neither `.jcode-done` nor `.jdone` is tracked.
+- **Doc-vs-code consistency.** Every constant and helper named in
+  `COMPACTION_SPEC.md` was resolved at runtime and matches the documented
+  default: `criticalThresholdPercent` 0.95, `recentTurnsToKeep` 10,
+  `minTurnsToKeep` 2, `emergencyToolResultMaxChars` 4000, `thresholdPercent` 0.5,
+  `targetRatio` 0.2, `bufferTokens` 20000; and all 17 exported symbols
+  (`criticalThreshold`, `emergencyKeepTurns`, `emergencyMinTurns`,
+  `emergencyToolResultMaxChars`, `emergencyTruncateToolResults`,
+  `EMERGENCY_TRUNCATION_MARKER`, `SUMMARY_LABEL`, ...) exist.
+- **Port fidelity.** jcode's `emergency_truncated_tool_result`
+  (`ref/compaction-core.rs:887`) is ported byte-for-byte: head = `max/2`,
+  tail = `max/4`, marker `... [N chars truncated for context recovery] ...`,
+  N = original - head - tail. Verified at runtime for a 10,000-char input with
+  `maxChars` 4000: head 2000, tail 1000, N 7000, total 3055.
+- **Event wiring.** `compressContext` is called from `src/agent/loop.ts:179` and
+  its result is applied there (messages replaced, usage accumulated, reminders
+  appended). The `compaction` event carries `step: 3`, `emergency` and
+  `droppedTurns`; the `blocked` variant is emitted on a PreCompact veto.
+- **Emergency reachability.** Exercised `compressContext` across all 17
+  configured windows x 9 trigger ratios x 9 critical ratios x 5 buffer values
+  (7,650 combinations) and confirmed the emergency guard behaves exactly as
+  specified (`emergency === true` iff `tokensBefore > critical`): 0 mismatches.
+  A candidate "critical can equal the trigger" fix was evaluated and discarded
+  after this empirical check showed the strict `>` guard keeps the path
+  reachable; the file is unchanged from HEAD.
+- **No regressions.** `src/policy/__tests__/*` 137/137 pass (including the
+  PreCompact hook tests that feed the compressor), `src/tools/__tests__/readState.test.ts`
+  9/9, `src/server/__tests__/runTools.test.ts` + `agentThreads.test.ts` 20/20.
+
+## Round 2 validation (found and fixed two real defects)
+
+- **`events.ts` comment was wrong** (fixed in `6c28a5b`). It claimed step 3 is
+  "also the step reported when a PreCompact hook vetoes the compaction", but the
+  veto path emits `step: 1` with `blocked: true`. The comment now describes both
+  correctly. No behaviour changed.
+- **Emergency truncation split surrogate pairs** (fixed in `b2c2cc8`). jcode
+  truncates on a char boundary (`truncate_str_boundary` / `tail_str_boundary`,
+  asserted by `emergency_truncation_is_utf8_safe`), but the port used a raw
+  `slice`, so a cut landing inside a 4-byte character left a lone surrogate.
+  That decodes as U+FFFD when the tool result is written back to disk: measured
+  2 replacement characters and 1498 of 1499 emoji surviving on a 3000-emoji
+  input with `maxChars` 3999. `sliceCodeUnits` / `tailCodeUnits` now back the cut
+  off by one code unit; re-measured 0 lone surrogates and 0 replacement
+  characters across `maxChars` 3999/3997/13/9/7. Regression test added
+  (`truncates on a character boundary so no surrogate pair is split`), so the
+  compressor suite is 28/28 and the agent suite is 114 tests with only the
+  pre-existing promptwire snapshot failure.
+- **Doc updated** (`dca2fda`) to record the character-boundary requirement in
+  the emergency tool-result cap section.
+
+## Round 3 validation (the round-2 fix was incomplete; corrected)
+
+Re-derived every claim from source rather than trusting the previous round.
+
+- **jcode's budget is in bytes, not code units** (fixed in `abb4898`). The
+  round-2 fix backed the cut off a surrogate pair, but still sliced by UTF-16
+  code unit. jcode's `truncate_str_boundary` / `tail_str_boundary` take
+  `max_bytes` (`value.len()` is the UTF-8 length and the boundary walk is a byte
+  walk), and its estimator agrees: `content_char_count` sums `String::len()`
+  (bytes) and `estimate_compaction_tokens_from_chars` divides those bytes by
+  `CHARS_PER_TOKEN`. Measured divergence at `maxChars` 4000: 5,000 CJK chars
+  (15,000 bytes) kept 9,000 bytes of the port vs 2,997 for jcode (3x over
+  budget); 1,000 CJK kept 3,000 vs 2,001. That over-keep defeats the cap on
+  exactly the oversized result it exists to bound. `sliceUtf8Bytes` /
+  `tailUtf8Bytes` now walk the boundary in bytes and are byte-identical to
+  jcode's helpers across ASCII, CJK and 4-byte characters (verified over 25
+  case/budget pairs). Surrogate safety is preserved, so the round-2 defect and
+  this one are both closed.
+- **Regression test added** (`budgets the truncation in UTF-8 bytes, not code
+  units`) asserting a 5,000-char CJK result stays under the 4000-byte budget
+  while ASCII keeps the same 2000-char head as before.
+- **Runtime proof through the real path.** Drove `compressContext` with a 2k
+  window and a 15,000-byte CJK tool result: `compressed=true step=3
+  emergency=true`, event `{step:3, emergency:true, originalTokens:1273,
+  finalTokens:344}`, `usage` zeroed, newest message preserved, tool result cut
+  to 3,053 bytes, and **0 replacement characters** after a JSON write/read
+  round-trip. This is the acceptance workflow, not just the unit test.
+- **Doc corrected**: the cap section now says 4000 **bytes** and explains the
+  byte-vs-code-unit distinction and why it matters.
+- **No other drift.** `loadConfig` merges `config.json` over `DEFAULTS`, so the
+  new keys are overridable; `compressContext` has one production call site
+  (`loop.ts:179`); no web consumer and no message-persistence path read the new
+  event fields; `THIRD_PARTY_NOTICES` names `compaction-core` and MIT.
+
+- **Gates after the fix:** `tsc --noEmit` clean, `build:server` clean (18.9mb
+  bundle), `packages/web next build` compiled successfully, compressor 29/29,
+  agent suite 115 tests with only the pre-existing promptwire snapshot failure.
+
+## Measured RAM
+
+Loading `src/config.ts` + `src/agent/contextCompressor.ts` and resolving the
+effective thresholds for the configured model (`glm-5.3-flash:cloud`):
+
+- window 32768 tokens, trigger threshold 12768 tokens, critical 31129 tokens
+- RSS 70 MB, heapUsed 8 MB
+
+No memory growth was introduced: the emergency path allocates no new long-lived
+state and makes no model call.
+
+## Round 4 validation (the estimator drifted in the same unit the cap did)
+
+The round-3 fix corrected the *truncation* budget to bytes. This round found the
+same unit bug one layer up, in the estimate the threshold comparison consumes.
+
+- **The token estimate was counting UTF-16 code units** (fixed in this commit).
+  jcode's `content_char_count` sums `String::len()` (bytes) and
+  `estimate_compaction_tokens_from_chars` divides those bytes by
+  `CHARS_PER_TOKEN`; the port's `estimateTokens` used `text.length` (code units)
+  and `Math.ceil(text.length / 4)`. Measured against jcode's arithmetic: 1000 CJK
+  chars -> 250 tokens for the port vs 750 for jcode (**3x under-count**),
+  Latin-1 accents 2x, astral-plane 2x. The threshold comparison compares the
+  estimate against a byte-derived window fraction, so a CJK transcript could run
+  to roughly three times the configured window before compaction triggered. The
+  fix adds a per-code-point `utf8Bytes` walker and divides that by 4; it matches
+  `Buffer.byteLength` on 20,000 random cases and treats malformed lone surrogates
+  identically (7 = 7), so a corrupted input cannot make the estimate disagree with
+  the truncation budget. ASCII is byte-identical either way, which is why the
+  existing assertions are unchanged. `estimateTokens` is private to the compressor
+  (verified by `git grep`: no other consumer), so the change is contained.
+- **Regression tests added**: `budgets the token estimate in UTF-8 bytes, not code
+  units` (CJK 400 chars -> 300 tokens, not 100; emoji pair -> 100, not 50; ASCII
+  unchanged) and `counts a surrogate pair as one UTF-8 character and a lone
+  surrogate as one`.
+- **Round-4 "lone surrogate" sweep failures were harness artifacts, not product
+  bugs.** Two bugs in the harness: the `write` tool mangled the astral emoji
+  literal into two `a` code units, so the alphabet contained malformed surrogates,
+  and the counter counted a low surrogate as lone even when preceded by a high
+  one. The corrected isolation harness with a proper counter and code-point-built
+  strings showed **0 lone surrogates** across 4000 random cases and a 3000-emoji
+  input over 12 budgets. This is why the isolation harness exists: the raw sweep
+  result is not trustworthy on its own.
+- **Final corrected differential sweep** (`.q4-final.ts`, since removed): the only
+  remaining failure is the **documented `budget=0` divergence**, now asserted as a
+  no-op in its own block and excluded from the oracle loop. Everything else
+  passes: **0 oracle mismatches** over 3632 comparable cases, **0 short-input
+  mutations**, **0 lone surrogates**, head+tail never over budget (worst overage 0
+  bytes), non-tool roles untouched, and jcode's literal vectors hold
+  (`truncate_str_boundary("éabc",1)=""`, `("éabc",2)="é"`).
+- **Doc updated**: a new "The budget is counted in UTF-8 bytes, not UTF-16 code
+  units" subsection under *Token budget* explains the estimator parity, and the
+  emergency-cap section now records the deliberate `budget=0` divergence.
+
+- **Gates after the fix:** `tsc --noEmit` clean, `build:server` clean (18.9mb
+  bundle), `packages/web next build` compiled successfully, compressor 31/31,
+  agent suite 117 tests with only the pre-existing promptwire snapshot failure
+  (`codingPrompt.test.ts`). `check:encoding` reports one pre-existing mojibake in
+  `scripts/repair-mojibake.cjs` (untouched, from `092d1b3`).
 # N5 (per-step context selector) is complete and its parity merge is resolved.
 
 ## Status
