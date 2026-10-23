@@ -68,3 +68,8 @@ Adapted files
   bench/__tests__/appRamBench.test.ts       — adapted from
                                               ref/bench_memory_cli.py's
                                               app-level tests.
+
+  src/tools/files.ts     — the file_edit miss hints (findLineNumber,
+                          flexibleMatchHint, extractContext) and the all-or-
+                          nothing batch semantics are adapted from
+                          crates/jcode-app-core/src/tool/edit.rs.

@@ -1,11 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { SKILLS_DIR } from "../config.js";
+import { loadSkills, type Skill } from "../agent/prompt.js";
 import type { WriteGate } from "../server/pending.js";
 import { gateActive } from "../server/settings.js";
-import type { Tool, ToolResult } from "./registry.js";
+import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { bool, num, str } from "./registry.js";
 import { installFromCatalog, searchCatalog } from "./skillsRegistry.js";
+import { proposeSkillSuggestion, type ProposeResult } from "./skillSuggest.js";
+import type { OllamaClient } from "../ollama.js";
 
 export interface SkillRecord {
   name: string;
@@ -16,7 +19,18 @@ export interface SkillRecord {
 
 export type SkillMutation = "skill_create" | "skill_patch" | "skill_delete" | "skill_install";
 
-function slugify(input: string): string {
+/** Repo-local skill roots, in precedence order (first wins on a name clash). */
+export const REPO_SKILL_ROOTS = [".loam/skills", ".agents/skills"] as const;
+
+/** A skill discovered inside the project folder (`.loam/skills` or `.agents/skills`). */
+export interface RepoSkillRecord extends SkillRecord {
+  /** Frontmatter `triggers:` values (comma/newline/JSON list). */
+  triggers: string[];
+  /** Which repo-local root the skill came from. */
+  source: string;
+}
+
+export function slugify(input: string): string {
   const s = input
     .trim()
     .toLowerCase()
@@ -25,17 +39,70 @@ function slugify(input: string): string {
   return s.slice(0, 60) || "skill";
 }
 
-export function parseFrontmatter(raw: string): { name?: string; description?: string } {
-  const m = raw.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?/);
-  const out: { name?: string; description?: string } = {};
-  if (!m) return out;
-  for (const line of (m[1] ?? "").split(/\r?\n/)) {
-    const mm = /^(name|description)\s*:\s*(.+)$/.exec(line);
-    if (!mm) continue;
-    const val = mm[2]!.trim();
-    if (mm[1] === "name") out.name = val;
-    else out.description = val;
+export interface SkillFrontmatter {
+  name?: string;
+  description?: string;
+  triggers?: string[];
+}
+
+/** Parse a `triggers:` value: JSON array, bracketed list, comma list, or a
+ *  following YAML block (`- item`). Empty/blank entries are dropped. */
+export function parseTriggers(raw: string): string[] {
+  let value = raw.trim();
+  if (!value) return [];
+  const list: string[] = [];
+  if (value.startsWith("[") && value.endsWith("]")) {
+    const inner = value.slice(1, -1).trim();
+    if (inner) {
+      try {
+        const parsed = JSON.parse(value) as unknown;
+        if (Array.isArray(parsed)) return parsed.map((t) => String(t).trim()).filter((t) => t.length > 0);
+      } catch {
+        /* fall through to delimiter splitting on the inner text */
+      }
+      value = inner;
+    } else {
+      return [];
+    }
   }
+  for (const part of value.split(/[,\n]/)) {
+    const clean = part.trim().replace(/^[-*]\s*/, "").replace(/^["']|["']$/g, "");
+    if (clean.length > 0) list.push(clean);
+  }
+  return list;
+}
+
+export function parseFrontmatter(raw: string): SkillFrontmatter {
+  const m = raw.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?/);
+  const out: SkillFrontmatter = {};
+  if (!m) return out;
+  const lines = (m[1] ?? "").split(/\r?\n/);
+  let collectingTriggers = false;
+  const triggerItems: string[] = [];
+  for (const line of lines) {
+    const listItem = /^\s*[-*]\s+(.+)$/.exec(line);
+    if (collectingTriggers && listItem) {
+      triggerItems.push(listItem[1]!.trim());
+      continue;
+    }
+    collectingTriggers = false;
+    const mm = /^(name|description|triggers)\s*:\s*(.*)$/.exec(line);
+    if (!mm) continue;
+    const key = mm[1]!;
+    const val = (mm[2] ?? "").trim();
+    if (key === "name") out.name = val;
+    else if (key === "description") out.description = val;
+    else {
+      const inline = parseTriggers(val);
+      if (inline.length > 0) {
+        out.triggers = inline;
+      } else {
+        collectingTriggers = true;
+        triggerItems.length = 0;
+      }
+    }
+  }
+  if (out.triggers === undefined && triggerItems.length > 0) out.triggers = triggerItems;
   return out;
 }
 
@@ -53,6 +120,111 @@ export function listSkillRecords(): SkillRecord[] {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+export interface DiscoveryResult {
+  skills: RepoSkillRecord[];
+  /** Human-readable reasons a candidate SKILL.md was skipped. */
+  warnings: string[];
+}
+
+/** Discover repo-local skills under `<projectRoot>/.loam/skills` and
+ *  `<projectRoot>/.agents/skills`. A SKILL.md without a valid frontmatter
+ *  `name` is ignored and reported in `warnings` (never silently loaded). */
+export function discoverRepoSkills(projectRoot: string): DiscoveryResult {
+  const skills: RepoSkillRecord[] = [];
+  const warnings: string[] = [];
+  if (!projectRoot || !fs.existsSync(projectRoot) || !fs.statSync(projectRoot).isDirectory()) {
+    return { skills, warnings };
+  }
+  for (const root of REPO_SKILL_ROOTS) {
+    const base = path.join(projectRoot, root);
+    if (!fs.existsSync(base)) continue;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(base, { withFileTypes: true });
+    } catch {
+      warnings.push(`cannot read ${root}`);
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const dir = path.join(base, entry.name);
+      const file = path.join(dir, "SKILL.md");
+      if (!fs.existsSync(file)) continue;
+      let raw: string;
+      try {
+        raw = fs.readFileSync(file, "utf8");
+      } catch {
+        warnings.push(`cannot read ${root}/${entry.name}/SKILL.md`);
+        continue;
+      }
+      const fm = parseFrontmatter(raw);
+      const name = (fm.name ?? "").trim();
+      if (!name) {
+        warnings.push(`${root}/${entry.name}/SKILL.md has no valid frontmatter name; ignored`);
+        continue;
+      }
+      skills.push({
+        name,
+        description: (fm.description ?? "").trim(),
+        triggers: fm.triggers ?? [],
+        dir,
+        file,
+        source: root,
+      });
+    }
+  }
+  return { skills, warnings };
+}
+
+export interface ProjectSkillRecords {
+  records: SkillRecord[];
+  warnings: string[];
+}
+
+/** Repo-local skills merged over the global `skills/` dir. Repo-local wins on
+ *  a name clash (`.loam/skills` before `.agents/skills`). */
+export function listProjectSkillRecords(projectRoot: string): ProjectSkillRecords {
+  const { skills, warnings } = discoverRepoSkills(projectRoot);
+  const records: SkillRecord[] = skills.map((s) => ({
+    name: s.name,
+    description: s.description,
+    dir: s.dir,
+    file: s.file,
+  }));
+  const seen = new Set(records.map((r) => r.name.toLowerCase()));
+  for (const global of listSkillRecords()) {
+    if (seen.has(global.name.toLowerCase())) continue;
+    seen.add(global.name.toLowerCase());
+    records.push(global);
+  }
+  return { records: records.sort((a, b) => a.name.localeCompare(b.name)), warnings };
+}
+
+export interface ProjectSkills {
+  skills: Skill[];
+  warnings: string[];
+}
+
+/** Skills for the system prompt: repo-local bodies first, then global ones not
+ *  shadowed by a repo-local skill of the same name. */
+export function loadProjectSkills(projectRoot: string): ProjectSkills {
+  const { skills, warnings } = discoverRepoSkills(projectRoot);
+  const out: Skill[] = [];
+  for (const s of skills) {
+    const content = fs.readFileSync(s.file, "utf8");
+    const body = content.replace(/^---\s*\r?\n[\s\S]*?\r?\n---\s*\r?\n?/, "");
+    out.push({ name: s.name, description: s.description, body: body.trim() });
+  }
+  const seen = new Set(out.map((s) => s.name.toLowerCase()));
+  for (const global of loadSkills(SKILLS_DIR)) {
+    if (seen.has(global.name.toLowerCase())) continue;
+    seen.add(global.name.toLowerCase());
+    out.push(global);
+  }
+  return { skills: out, warnings };
+}
+
+
 function findRecord(name: string): SkillRecord | undefined {
   const target = name.trim().toLowerCase();
   return listSkillRecords().find(
@@ -60,14 +232,17 @@ function findRecord(name: string): SkillRecord | undefined {
   );
 }
 
-export function buildSkillFile(name: string, description: string, body: string): string {
+export function buildSkillFile(name: string, description: string, body: string, triggers: string[] = []): string {
   const desc = description.trim() || "Procedure the agent loads when relevant.";
-  return `---\nname: ${name}\ndescription: ${desc}\n---\n\n${body.trim()}\n`;
+  const clean = [...new Set(triggers.map((t) => t.trim()).filter((t) => t.length > 0))];
+  const triggersLine = clean.length > 0 ? `triggers: ${clean.join(", ")}\n` : "";
+  return `---\nname: ${name}\ndescription: ${desc}\n${triggersLine}---\n\n${body.trim()}\n`;
 }
 
 export interface SkillView {
   name: string;
   description: string;
+  triggers: string[];
   body: string;
   file: string;
   content: string;
@@ -80,7 +255,7 @@ export function readSkillFile(name: string): SkillView | null {
   const content = fs.readFileSync(rec.file, "utf8");
   const fm = parseFrontmatter(content);
   const body = content.replace(/^---\s*\r?\n[\s\S]*?\r?\n---\s*\r?\n?/, "");
-  return { name: rec.name, description: fm.description ?? "", body, file: rec.file, content };
+  return { name: rec.name, description: fm.description ?? "", triggers: fm.triggers ?? [], body, file: rec.file, content };
 }
 
 /** Validate a mutation without applying it. Returns an error string, or null when valid. */
@@ -151,6 +326,10 @@ export function applySkill(kind: SkillMutation, payload: Record<string, unknown>
 export interface SkillToolOptions {
   onApply?: (label: string) => void;
   gate?: WriteGate;
+  /** Active project folder; repo-local skills (`.loam/skills`, `.agents/skills`) are listed/loaded from here. */
+  projectRoot?: string;
+  /** Model client used by the `skill_suggest` tool. */
+  ollama?: Pick<OllamaClient, "chat">;
 }
 
 function summarize(kind: SkillMutation, payload: Record<string, unknown>): string {
@@ -163,7 +342,17 @@ function summarize(kind: SkillMutation, payload: Record<string, unknown>): strin
 /** Agent-managed skills = procedural memory, persisted under skills/<name>/SKILL.md.
  *  When a WriteGate is supplied, mutations are staged for human approval. */
 export function createSkillTools(opts: SkillToolOptions = {}): Tool[] {
-  const { onApply, gate } = opts;
+  const { onApply, gate, projectRoot, ollama } = opts;
+
+  const findVisibleRecord = (name: string): SkillRecord | undefined => {
+    if (projectRoot) {
+      const rec = listProjectSkillRecords(projectRoot).records.find(
+        (r) => r.name.toLowerCase() === name.trim().toLowerCase() || path.basename(r.dir).toLowerCase() === name.trim().toLowerCase(),
+      );
+      if (rec) return rec;
+    }
+    return findRecord(name);
+  };
 
   const mutate = (kind: SkillMutation, args: Record<string, unknown>): ToolResult => {
     const invalid = validateSkill(kind, args);
@@ -185,10 +374,10 @@ export function createSkillTools(opts: SkillToolOptions = {}): Tool[] {
     {
       name: "skill_list",
       description:
-        "List installed skills (name + description). Call this before creating a skill so you improve an existing one instead of duplicating it.",
+        "List installed skills (name + description), including repo-local skills from .loam/skills and .agents/skills. Call this before creating a skill so you improve an existing one instead of duplicating it.",
       parameters: { type: "object", properties: {} },
       async run(): Promise<ToolResult> {
-        const recs = listSkillRecords();
+        const recs = projectRoot ? listProjectSkillRecords(projectRoot).records : listSkillRecords();
         if (recs.length === 0) return { ok: true, content: "(no skills installed)" };
         return {
           ok: true,
@@ -201,7 +390,7 @@ export function createSkillTools(opts: SkillToolOptions = {}): Tool[] {
       description: "Read the full content of one skill so you can follow it or patch it.",
       parameters: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
       async run(args: Record<string, unknown>): Promise<ToolResult> {
-        const rec = findRecord(str(args, "name"));
+        const rec = findVisibleRecord(str(args, "name"));
         if (!rec) return { ok: false, content: `skill not found: ${str(args, "name")}` };
         return { ok: true, content: fs.readFileSync(rec.file, "utf8") };
       },
@@ -314,6 +503,33 @@ export function createSkillTools(opts: SkillToolOptions = {}): Tool[] {
         } catch (err) {
           return { ok: false, content: err instanceof Error ? err.message : String(err) };
         }
+      },
+    },
+    {
+      name: "skill_suggest",
+      description:
+        "Propose a new repo-local skill from a task transcript digest (setup/verify/before-PR steps that were worked out). The proposal is staged as a pending suggestion the user can accept; it is never written silently.",
+      parameters: {
+        type: "object",
+        properties: {
+          digest: { type: "string", description: "Transcript digest: the task, the commands that worked, and how it was verified." },
+          project_root: { type: "string", description: "Project folder to write into. Defaults to the active workspace." },
+        },
+        required: ["digest"],
+      },
+      async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+        if (!ollama) return { ok: false, content: "skill_suggest is unavailable: no model client" };
+        const root = str(args, "project_root").trim() || projectRoot || "";
+        if (!root) return { ok: false, content: "skill_suggest requires a project_root" };
+        const res: ProposeResult = await proposeSkillSuggestion({
+          projectRoot: root,
+          digest: str(args, "digest"),
+          model: ctx.cfg.model,
+          ollama,
+          gate,
+        });
+        onApply?.(res.ok ? `skill_suggest ${res.suggestion?.name ?? ""}` : "skill_suggest failed");
+        return { ok: res.ok, content: res.content };
       },
     },
   ];

@@ -34,63 +34,8 @@ npm run bench:mem -- --help
 npm run test:bench
 ```
 
-## J6 app-RAM benchmark
-
-```bash
-# Drive the fixed scenario against the real local server, write the JSON report
-npm run bench:ram:app -- --iterations 25 --json-out bench/results/J6-after.json
-
-# Or drive an already-running server instead of spawning one
-npm run bench:ram:app -- --base-url http://127.0.0.1:3947 --iterations 4
-```
-
-`bench/appRamBench.ts` starts `src/index.ts` as a child (auth disabled, port
-3947 by default, override with `--port`), waits for `/api/health`, then runs the
-scenario: each iteration opens a chat run (a fresh task, SSE stream and
-transcript) and posts a large memory-store entry. It then samples the process
-tree and reads the server's bounded-cache counters back from
-`GET /api/debug/memory`. The report records `idleMB`, `peakMB`, `finalMB`,
-`growthMB` and the cache totals, so a bounded cache shows a plateau while an
-unbounded one shows monotonic growth. It exits non-zero when `growthMB` exceeds
-`--threshold` (default 64 MB).
-
-### Isolated server data dir
-
-The server takes an exclusive lease on `<data dir>/manus.db` and refuses to
-start while another process holds it, so the harness never points the child at
-the app's live `data/`. By default each run gets a fresh temp dir
-(`loam-bench-data-<pid>-<rand>` under `%TEMP%`) that is removed after the run;
-pass `--data-dir <path>` to use your own.
-
-### Provenance
-
-Each report records `sourceCommit` (`git rev-parse HEAD`, suffixed `-dirty` when
-the tree has uncommitted changes) and `debugRoutePresent` (whether
-`/api/debug/memory` answered 200). The BEFORE measurement is taken on a clean
-detached worktree at the base commit with the harness committed on top, so its
-provenance is distinct from the AFTER run. `bench/__tests__/appRamBench.test.ts`
-asserts the committed pair is self-consistent, so a hand-edited or stale result
-file fails the test suite.
-
-### Options (this harness)
-
-| Flag | Default | Notes |
-|---|---|---|
-| `--spawn` | off | Start the real server (`src/index.ts`) first, then stop it. |
-| `--port <n>` | 3947 | Port for the spawned server. |
-| `--base-url <url>` | from `--port` | Drive an already-running server instead. |
-| `--iterations <n>` | 25 | Scenario iterations (one chat run + memory POST each). |
-| `--fixture-chars <n>` | 200000 | Characters per memory-store POST. |
-| `--threshold <mb>` | 64 | Fail (exit 1) when `growthMB > threshold`. |
-| `--sample-ms <ms>` | 4000 | Sampling window. |
-| `--interval-ms <ms>` | 100 | Interval between samples. |
-| `--data-dir <path>` | fresh temp | Data dir the spawned server owns (must be isolated). |
-| `--ready-timeout-ms <ms>` | 120000 | How long to wait for `/api/health` (cold Node + tsx can be slow). |
-| `--json-out <path>` | - | Also write the JSON report here. |
-| `-h, --help` | - | Print the help text. |
-
-The flags in the next table (`-n`, `--launcher`, `--cwd`, `--keep-cwd`) belong
-to `bench/memBench.ts`, not this harness.
+The command exits non-zero when `perSessionMB` exceeds the threshold (default
+250 MB), so it can gate a CI job.
 
 ## Options (bench/memBench.ts)
 
@@ -183,6 +128,64 @@ debug route answers 200 and 39 bounded caches are registered (one counter row
 per cache, plus the per-run stall-guard rows). The ~10 MB `idleMB` difference
 is the cost of the new module graph being loaded; it is one-time startup, not
 per-iteration growth.
+
+## J6 app-RAM benchmark
+
+```bash
+# Drive the fixed scenario against the real local server, write the JSON report
+npm run bench:ram:app -- --iterations 25 --json-out bench/results/J6-after.json
+
+# Or drive an already-running server instead of spawning one
+npm run bench:ram:app -- --base-url http://127.0.0.1:3947 --iterations 4
+```
+
+`bench/appRamBench.ts` starts `src/index.ts` as a child (auth disabled, port
+3947 by default, override with `--port`), waits for `/api/health`, then runs the
+scenario: each iteration opens a chat run (a fresh task, SSE stream and
+transcript) and posts a large memory-store entry. It then samples the process
+tree and reads the server's bounded-cache counters back from
+`GET /api/debug/memory`. The report records `idleMB`, `peakMB`, `finalMB`,
+`growthMB` and the cache totals, so a bounded cache shows a plateau while an
+unbounded one shows monotonic growth. It exits non-zero when `growthMB` exceeds
+`--threshold` (default 64 MB).
+
+### Isolated server data dir
+
+The server takes an exclusive lease on `<data dir>/manus.db` and refuses to
+start while another process holds it, so the harness never points the child at
+the app's live `data/`. By default each run gets a fresh temp dir
+(`loam-bench-data-<pid>-<rand>` under `%TEMP%`) that is removed after the run;
+pass `--data-dir <path>` to use your own.
+
+### Provenance
+
+Each report records `sourceCommit` (`git rev-parse HEAD`, suffixed `-dirty` when
+the tree has uncommitted changes) and `debugRoutePresent` (whether
+`/api/debug/memory` answered 200). The BEFORE measurement is taken on a clean
+detached worktree at the base commit with the harness committed on top, so its
+provenance is distinct from the AFTER run. `bench/__tests__/appRamBench.test.ts`
+asserts the committed pair is self-consistent, so a hand-edited or stale result
+file fails the test suite.
+
+### Options (appRamBench)
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--spawn` | off | Start the real server (`src/index.ts`) first, then stop it. |
+| `--port <n>` | 3947 | Port for the spawned server. |
+| `--base-url <url>` | from `--port` | Drive an already-running server instead. |
+| `--iterations <n>` | 25 | Scenario iterations (one chat run + memory POST each). |
+| `--fixture-chars <n>` | 200000 | Characters per memory-store POST. |
+| `--threshold <mb>` | 64 | Fail (exit 1) when `growthMB > threshold`. |
+| `--sample-ms <ms>` | 4000 | Sampling window. |
+| `--interval-ms <ms>` | 100 | Interval between samples. |
+| `--data-dir <path>` | fresh temp | Data dir the spawned server owns (must be isolated). |
+| `--ready-timeout-ms <ms>` | 120000 | How long to wait for `/api/health` (cold Node + tsx can be slow). |
+| `--json-out <path>` | - | Also write the JSON report here. |
+| `-h, --help` | - | Print the help text. |
+
+The flags in the previous table (`-n`, `--launcher`, `--cwd`, `--keep-cwd`)
+belong to `bench/memBench.ts`, not this harness.
 
 ## Notes
 

@@ -94,6 +94,13 @@ function testCfg(): Config {
     maxReplans: 1,
     verifyFinal: true,
   };
+  // Keep the smoke hermetic: no provider may serve a coding turn from the
+  // network. The harness injects a fake `ollama` client for every turn; with an
+  // empty failover chain the coding router has no coder to pick, so a coding
+  // turn (a repair instruction names files and tools) falls back to that fake
+  // instead of escaping to the real provider chain.
+  cfg.coding = { enabled: true, chain: [], logEdits: false };
+  cfg.failover = { providers: [] };
   return cfg;
 }
 
