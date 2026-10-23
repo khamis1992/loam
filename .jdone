@@ -36,11 +36,18 @@ Everything else auto-merged cleanly. No conflict markers remain anywhere in the 
 `mergeConflictMarkerLength` literal inside `dist/` and `output/` build artifacts, which are
 generated outputs, not sources).
 
+## A second parity merge landed while this was in flight
+The gate was re-checked after the first resolution was committed and manus-parity had moved
+again (tip `6699257`, the H1 merge, carrying D15 `pr_review`). That merge conflicted in
+exactly one file, `.jdone` (add/add: this J6 report vs parity's D15 report). Resolution keeps
+BOTH reports verbatim, separated by a `---` rule; the D15 report follows this one. Committed as
+merge commit `e8f4a07`.
+
 ## Gate condition verified
-After the resolution is committed as merge commit `526fcd7`:
+After both resolutions are committed (merge commits `526fcd7` and `e8f4a07`):
 - `git merge manus-parity` reports "Already up to date."
 - `git merge-base --is-ancestor manus-parity HEAD` exits 0
-- `git rev-list --left-right --count manus-parity...HEAD` = `0  14`
+- `git rev-list --left-right --count manus-parity...HEAD` = `0  16`
 - `git status --porcelain` is empty (working tree clean; one CRLF-only stat refresh on
   `src/agent/masterPromptText.ts` was normalized with `git add --renormalize`).
 
