@@ -41528,3 +41528,50 @@ No secrets committed. No forbidden path touched. No test weakened, deleted or sk
   keep auto-resolving these rollups. Still check `git ls-files -u` after each merge.
 - Parity is advancing under a live runner; if `manus-parity` moves again, merge it and
   re-run the gates rather than editing source to satisfy a conflict.
+
+## Validation addendum (same tip, deeper evidence)
+
+Two open questions from the previous section are now closed with mechanical evidence.
+
+### 1. The `.jdone` union is exactly the merge-tree oracle output
+
+An independent reproduction using `git merge-file --union -p <ours> <base> <theirs>` did
+NOT match the committed file (2502708 vs 2507926 bytes, 41385 vs 41461 lines). That
+reproduction is the wrong oracle and its argument order was wrong twice over: it first
+passed `<ours>` as the base, then (corrected) still passed the merge base `519f889:.jdone`
+rather than the union driver's actual inputs. The authoritative oracle is git itself:
+
+- `git merge-tree --write-tree 23d9286 6e17246` (the real merge parents) yields tree
+  `a0cbd78ad60513c685c497d65b8b8e723314dc43`.
+- That tree is **byte-identical to the merge commit's tree**: `git rev-parse 392c2a2^{tree}`
+  -> `a0cbd78...`; `git diff --stat a0cbd78 392c2a2` -> empty.
+- Its `.jdone` blob is **byte-identical to the committed one**: both are
+  `5ae56edc4ceb694add1c2832615ea258b11bfe54`.
+- Containment re-verified as a multiset: 41461 merged lines, 0 dropped from ours (25621),
+  0 dropped from theirs (39645), and 0 merged lines absent from the union of both parents
+  (39822 lines common to both, 417 ours-only, 1222 theirs-only, 0 fabricated).
+- The committed merge is therefore *exactly* what the union driver produces, not merely a
+  superset. No line of either side was lost and none was invented.
+
+### 2. Full test suites on the merged tree (not just the focused suites)
+
+- `node --import tsx --test "src/**/*.test.ts"` -> exit 0;
+  **3068 tests / 560 suites / 3067 pass / 0 fail / 1 skipped / 0 cancelled**.
+- `(cd packages/web && npx vitest run)` -> exit 0; **91 files / 624 tests, all passed**.
+
+The single skip is NOT a weakened test. It is a platform-conditional skip in parity's own
+`src/server/__tests__/sharedCodeSession.test.ts:240`
+(`it("removes a stale Unix socket file before binding", { skip: process.platform === "win32" }, ...)`),
+pre-existing in `manus-parity` and untouched by any of our merges
+(`git diff e335eb7 HEAD -- src/server/__tests__/sharedCodeSession.test.ts` -> empty content
+change). No test was weakened, deleted or skipped by this session.
+
+### Working-tree cleanliness
+
+A transient ` M src/agent/masterPromptText.ts` appeared during validation. It was a
+stat-cache/`core.autocrlf` false positive, not a content change: its normalized blob hash
+(`f4fbac4bfd521bc3075655ced411ce47ee533595`) equals the index entry, `HEAD:`, and
+`manus-parity:` versions exactly, `git diff --exit-code` returns 0, and the committed blob is
+LF while the worktree is CRLF under `core.autocrlf=true`. Cleared with
+`git checkout -- <path>`; working tree is now clean. No file was written by this addendum
+other than `.jdone` itself.
