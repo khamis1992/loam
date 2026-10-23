@@ -115,12 +115,14 @@ describe('Loam Video auto-open intent', () => {
     expect(decideUserMessageOpen(ev)).toBeNull();
   });
 
-  it('does not open without a video attachment', () => {
+  it('opens the Craft editor for a document edit intent instead of the video studio', () => {
     const ev = userMessageEvent({
       content: 'Please cut the document',
       attachments: [videoAttachment({ filename: 'notes.pdf', path: 'notes.pdf', contentType: 'application/pdf' })],
     });
-    expect(decideUserMessageOpen(ev)).toBeNull();
+    // A PDF is a Loam Design file, so the edit intent routes to Craft rather than
+    // the video studio, which never claims a non-video attachment.
+    expect(decideUserMessageOpen(ev)).toEqual({ path: 'notes.pdf', kind: 'craft', craftApp: 'design' });
   });
 
   it('detects edit intent keywords in either language', () => {

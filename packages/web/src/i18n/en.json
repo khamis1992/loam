@@ -853,5 +853,11 @@
   "Changes are saved into the task files.": "Changes are saved into the task files.",
   "Saved {name}": "Saved {name}",
   "Loading {name}": "Loading {name}",
-  "The editor could not be loaded.": "The editor could not be loaded."
+  "The editor could not be loaded.": "The editor could not be loaded.",
+  "This file type is not supported for editing; only a preview is shown.": "This file type is not supported for editing; only a preview is shown.",
+  "Open in Loam Docs": "Open in Loam Docs",
+  "Open in Loam Sheets": "Open in Loam Sheets",
+  "Open in Loam Slides": "Open in Loam Slides",
+  "Open in Loam Photo": "Open in Loam Photo",
+  "Open in Loam Design": "Open in Loam Design"
 }

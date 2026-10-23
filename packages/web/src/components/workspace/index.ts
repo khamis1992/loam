@@ -9,6 +9,7 @@ void import('./loamVideo/register').catch(() => undefined);
 void import('./doc/register').catch(() => undefined);
 void import('./sheet/register').catch(() => undefined);
 void import('./slides/register').catch(() => undefined);
+void import('./craft/register').catch(() => undefined);
 
 export * from './types';
 export {
