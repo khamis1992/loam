@@ -5,12 +5,14 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { ROOT } from "../../config.js";
+import { ROOT, rootAsset } from "../../config.js";
 import { taskPath } from "../taskWorkspace.js";
 import { getEntity, putEntity } from "../sqliteStore.js";
+import { BoundedMap } from "../../memory/cache.js";
+import { registerCacheStats } from "../../memory/stats.js";
 
 export const ffmpegPath = (): string =>
-  path.join(ROOT, "node_modules", "ffmpeg-static", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
+  rootAsset("node_modules", "ffmpeg-static", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
 
 export function ffmpegAvailable(): boolean {
   try { return fs.statSync(ffmpegPath()).isFile(); } catch { return false; }
@@ -248,8 +250,17 @@ export interface VideoRenderJob {
   updatedAt: number;
 }
 
-const jobs = new Map<string, VideoRenderJob>();
-const children = new Map<string, ChildProcess>();
+/**
+ * Live render jobs (J6). `getRenderJob` rehydrates from the persisted entity
+ * store, so the in-memory view only needs to keep recent jobs: dropping an old
+ * finished job costs one sqlite read, while an unbounded map would retain every
+ * job of every editor session forever.
+ */
+const jobs = new BoundedMap<string, VideoRenderJob>(256, "video-render-jobs");
+/** Running ffmpeg children, keyed by job id (at most one is live at a time). */
+const children = new BoundedMap<string, ChildProcess>(64, "video-render-children");
+registerCacheStats("video-render-jobs", () => jobs.stats());
+registerCacheStats("video-render-children", () => children.stats());
 
 const JOB_ENTITY = "workspace-video-job";
 

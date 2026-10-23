@@ -9,6 +9,20 @@ Portions of this codebase are adapted from jcode, a Rust coding agent.
 
 Copyright (c) 2025 Jeremy Huang
 
+Portions of Loam's context compaction are adapted from jcode's
+`src/compaction/compaction-core.rs`:
+
+* `src/agent/contextCompressor.ts` — emergency compaction constants
+  (`criticalThresholdPercent` 0.95, `recentTurnsToKeep` 10,
+  `minTurnsToKeep` 2, `emergencyToolResultMaxChars` 4000), the
+  `EMERGENCY_TRUNCATION_MARKER` text ("... [N chars truncated for context
+  recovery] ...") and the head/tail truncation shape used by
+  `emergencyTruncateToolResults`.
+* `docs/COMPACTION_SPEC.md` — the value-by-value comparison against jcode's
+  compaction constants.
+
+Distributed under the MIT License.
+
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
@@ -29,9 +43,70 @@ SOFTWARE.
 
 Adapted files
 -------------
+  src/tools/fileLock.ts        adapted from crates/jcode-app-core/src/tool/file_lock.rs
+                               (per-path async mutex for file-editing tools).
+  src/agent/kvCacheMonitor.ts  adapted from src/kv_cache_monitor.rs
+                               (prompt-cache hit/miss accounting per provider).
+  src/server/sharedCodeSession.ts
+                               adapted from ref/jcode_daemon_bench.py and
+                               ref/SESSION_HIBERNATION.md (one long-lived agent server
+                               hosting N concurrent sessions over a control socket).
+  bench/fakeModel.ts           adapted from ref/fake_model.py (scripted offline model
+                               used by the memory benchmarks).
+  bench/memBench.ts            adapted from ref/jcode_daemon_bench.py and
+                               ref/bench_memory_cli.py (process-tree memory harness).
+  bench/rssSampler.ts          adapted from ref/bench_memory_cli.py (process-tree PSS
+                               summing).
+  bench/perProcess.ts          adapted from ref/bench_memory_cli.py (per-session tool
+                               spawn).
+  bench/launchers.ts           adapted from ref/jcode_daemon_bench.py (shared daemon
+                               control socket).
   src/tools/fileLock.ts  — adapted from crates/jcode-app-core/src/tool/file_lock.rs
                           (per-path async mutex for file-editing tools).
-  src/tools/files.ts     — the file_edit miss hints (findLineNumber,
-                          flexibleMatchHint, extractContext) and the all-or-
-                          nothing batch semantics are adapted from
-                          crates/jcode-app-core/src/tool/edit.rs.
+
+  src/memory/cache.ts   — adapted from src/memory/lru.rs (bounded LRU with an
+                          optional byte ceiling and an eviction hook).
+  src/memory/stats.ts   — adapted from src/tui/memory_profile.rs (per-cache
+                          counter registry behind the debug surface).
+  src/memory/profile.ts — adapted from src/tui/memory_profile.rs (per-process
+                          RSS profile; Loam reports it over loopback HTTP + IPC
+                          instead of a TUI).
+  src/server/routes/debugMemory.ts — adapted from src/tui/app/debug_cmds.rs
+                          (the `:debug memory` surface, re-exposed as a local
+                          loopback route).
+  docs/MEMORY_BUDGET.md — adapted from ref/MEMORY_BUDGET.md (hard caps and
+                          ratchet expectations; Loam's caps are listed there).
+
+  bench/fakeModel.ts    — adapted from ref/fake_model.py (scripted
+                          OpenAI-compatible server, no real API calls).
+  bench/rssSampler.ts   — adapted from ref/bench_memory_cli.py (process-tree
+                          working-set / PSS summing).
+  bench/memBench.ts     — adapted from ref/jcode_daemon_bench.py (offline
+                          multi-session benchmark and JSON report).
+  bench/appRamBench.ts  — adapted from ref/bench_memory_cli.py (app-level RSS
+                          benchmark: a fixed chat + memory-store scenario
+                          against the local server).
+
+  src/memory/__tests__/cache.test.ts        — adapted from jcode's LRU unit tests.
+  src/server/__tests__/debugMemory.test.ts  — adapted from the jcode debug
+                                              surface's boundary tests.
+  bench/__tests__/fakeModel.test.ts         — adapted from ref/fake_model.py's
+                                              self-checks.
+  bench/__tests__/rssSampler.test.ts        — adapted from
+                                              ref/bench_memory_cli.py's sampler
+                                              tests.
+  bench/__tests__/memBench.test.ts          — adapted from
+                                              ref/jcode_daemon_bench.py's tests.
+  bench/__tests__/appRamBench.test.ts       — adapted from
+                                              ref/bench_memory_cli.py's
+                                              app-level tests.
+
+  src/policy/commandRisk/{index,lib,paths,tokenize,gate}.ts
+                               adapted from crates/command-risk/src/{lib,paths,tokenize,gate}.rs
+                               (blast-radius shell command risk classifier; stage 1 of the
+                               shell approval gate, wired into src/policy/riskTier.ts and
+                               src/tools/shell.ts).
+  src/tools/files.ts           the file_edit miss hints (findLineNumber,
+                               flexibleMatchHint, extractContext) and the all-or-
+                               nothing batch semantics are adapted from
+                               crates/jcode-app-core/src/tool/edit.rs.

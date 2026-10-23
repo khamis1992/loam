@@ -4,7 +4,12 @@ import assert from "node:assert";
 import { detectModeFromText, resolveLoamMode } from "../../modes/detect.js";
 import type { UserMessage } from "../types.js";
 
-function um(opts: { taskMode?: UserMessage["taskMode"]; loamMode?: string; mode?: UserMessage["taskMode"] } = {}): UserMessage {
+function um(opts: {
+  taskMode?: UserMessage["taskMode"];
+  loamMode?: string;
+  mode?: UserMessage["taskMode"];
+  outputType?: string;
+} = {}): UserMessage {
   return {
     id: "msg-1",
     timestamp: Date.now(),
@@ -20,6 +25,7 @@ function um(opts: { taskMode?: UserMessage["taskMode"]; loamMode?: string; mode?
       capabilities: { enabledAddons: [], connectorAccounts: [], enabledConnectors: [] },
       ...(opts.loamMode !== undefined ? { loamMode: opts.loamMode } : {}),
       ...(opts.mode !== undefined ? { mode: opts.mode } : {}),
+      ...(opts.outputType !== undefined ? { outputType: opts.outputType } : {}),
     },
   };
 }
@@ -75,5 +81,18 @@ resolve("standard taskMode defaults build", um({ taskMode: "standard" }), "hello
 resolve("detection overrides lite taskMode", um({ taskMode: "lite" }), "create a presentation", "write");
 resolve("extData.mode used when no loamMode", um({ mode: "discuss" }), "hello", "ask");
 resolve("security mode valid", um({ loamMode: "security" }), "hello", "security");
+
+// Neo N10: an explicit output type (`agent_type`) pins the deliverable's
+// pipeline. Without this, "slides" only reached the write mode when the prompt
+// happened to contain a keyword the detector recognized.
+resolve("output type slides beats an unrelated prompt", um({ outputType: "slides" }), "Explain our architecture", "write");
+resolve("output type text beats an unrelated prompt", um({ outputType: "text" }), "Summarise this PDF", "write");
+resolve("output type image beats an unrelated prompt", um({ outputType: "image" }), "Generate a logo", "media");
+resolve("output type video beats an unrelated prompt", um({ outputType: "video" }), "Cut a trailer", "media");
+resolve("output type website beats an unrelated prompt", um({ outputType: "website" }), "Make a website for my bakery", "build");
+resolve("explicit loamMode outranks the output type", um({ loamMode: "research", outputType: "slides" }), "build me an app", "research");
+resolve("auto output type defers to detection", um({ outputType: "auto" }), "create a presentation", "write");
+resolve("auto output type defaults to build", um({ outputType: "auto" }), "hello", "build");
+resolve("unknown output type defers to detection", um({ outputType: "pdf" }), "create a logo", "media");
 
 console.log("PASS resolve-mode unit tests");

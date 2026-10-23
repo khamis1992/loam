@@ -11,13 +11,20 @@
  *  - log output that looks like API keys is redacted
  */
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 
-import { createCodeSessionTools, redactSecrets, type CodeSessionSpawnOptions } from "../codeSession.js";
+import {
+  SharedCodeSessionServer as CodeSessionSharedServer,
+  createCodeSessionTools,
+  isSharedSocketPath,
+  redactSecrets,
+  type CodeSessionSpawnOptions,
+  type SharedServerSpawnImpl,
+} from "../codeSession.js";
 import type { Tool, ToolContext } from "../registry.js";
 
 let gitAvailable = false;
@@ -234,5 +241,157 @@ describe("code_session", { skip: !gitAvailable }, () => {
     assert.doesNotMatch(redacted, /eyJhbGciOiJIUzI1NiJ9/);
     assert.doesNotMatch(redacted, new RegExp("A".repeat(40)));
     assert.match(redacted, /plain line stays/);
+  });
+});
+
+describe("code_session shared launcher", { skip: !gitAvailable }, () => {
+  it("isSharedSocketPath only accepts named pipes on Windows", () => {
+    const pipe = "\\\\.\\pipe\\loam-cs-1";
+    const file = "/tmp/loam-cs-1.sock";
+    assert.equal(isSharedSocketPath(pipe), process.platform === "win32");
+    // A filesystem socket is the correct form everywhere except Windows.
+    assert.equal(isSharedSocketPath(file), process.platform !== "win32");
+  });
+
+  it("spawns one long-lived server that hosts every session", async () => {
+    const repo = makeRepo();
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-cs-shared-"));
+    const entry = path.join(dataDir, "fake-shared-server.cjs");
+    // A minimal stand-in for the real shared server: it answers the control
+    // protocol so the tool's reuse/tracking path is exercised without a model.
+    fs.writeFileSync(
+      entry,
+      `const net = require("node:net");
+const fs = require("node:fs");
+const [socketPath] = process.argv.slice(2);
+try { fs.rmSync(socketPath, { force: true }); } catch {}
+const server = net.createServer((sock) => {
+  let buf = "";
+  sock.on("data", (chunk) => {
+    buf += chunk.toString();
+    let i;
+    while ((i = buf.indexOf("\\n")) >= 0) {
+      const line = buf.slice(0, i).trim();
+      buf = buf.slice(i + 1);
+      if (!line) continue;
+      const cmd = line.split(" ")[0];
+      const reply = cmd === "create_session" ? { ok: true, session: "s" + Math.random().toString(36).slice(2, 10) }
+        : cmd === "message" ? { ok: true, status: "done", session: "s", steps: 3 }
+        : cmd === "sessions" ? { ok: true, sessions: [] }
+        : { ok: false, error: "unknown command: " + cmd };
+      sock.write(JSON.stringify(reply) + "\\n");
+    }
+  });
+});
+server.listen(socketPath, () => process.stdout.write("listening\\n"));
+`,
+    );
+    const spawned: Array<{ file: string; args: string[] }> = [];
+    // The tool owns the server it spawns and never stops it (in production it
+    // lives for the app's lifetime), so this test must kill the child itself or
+    // the test runner hangs on an open handle after every assertion has passed.
+    const children: ChildProcess[] = [];
+    const sharedSpawnImpl: SharedServerSpawnImpl = (file, args, options) => {
+      spawned.push({ file, args });
+      const child = spawn(process.execPath, [entry, ...args], options);
+      children.push(child);
+      return child;
+    };
+    const tools = createCodeSessionTools({
+      opencodeBin: "opencode",
+      dataDir,
+      maxConcurrent: 4,
+      launcher: "shared",
+      sharedServerEntry: entry,
+      sharedServerSpawnImpl: sharedSpawnImpl,
+      sharedModelUrl: "http://127.0.0.1:11434",
+    });
+    const start = tools.find((t) => t.name === "code_session")!;
+    const status = tools.find((t) => t.name === "code_session_status")!;
+    try {
+      const first = await start.run(
+        { task: "shared one", acceptance: "done", launcher: "shared" },
+        ctxFor(repo),
+      );
+      assert.equal(first.ok, true, first.content);
+      const firstParsed = JSON.parse(first.content);
+      assert.equal(firstParsed.launcher, "shared");
+      assert.equal(spawned.length, 1, "the shared server is spawned once");
+      assert.equal(spawned[0]!.file, entry);
+      assert.equal(spawned[0]!.args[spawned[0]!.args.length - 1], "0", "pin flag defaults off");
+
+      const second = await start.run(
+        { task: "shared two", acceptance: "done", launcher: "shared" },
+        ctxFor(repo),
+      );
+      assert.equal(second.ok, true, second.content);
+      assert.equal(spawned.length, 1, "the second session reuses the same server");
+
+      for (const id of [firstParsed.id, JSON.parse(second.content).id]) {
+        let last: any = null;
+        const deadline = Date.now() + 10_000;
+        while (Date.now() < deadline) {
+          const res = await status.run({ id }, ctxFor(repo));
+          last = JSON.parse(res.content);
+          if (last.status !== "running") break;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        assert.equal(last.status, "done", JSON.stringify(last));
+        assert.equal(last.launcher, "shared");
+        assert.ok(last.sharedId, "shared session id is reported");
+      }
+    } finally {
+      for (const child of children) {
+        try {
+          child.kill();
+        } catch {
+          /* already gone */
+        }
+      }
+      for (const dir of [dataDir, repo]) {
+        try {
+          fs.rmSync(dir, { recursive: true, force: true });
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  });
+
+  it("defaults to per-process when no launcher is requested", async () => {
+    const repo = makeRepo();
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-cs-default-"));
+    const fakeBin = path.join(dataDir, "fake-opencode.cjs");
+    fs.writeFileSync(fakeBin, FAKE_OPENCODE);
+    const tools = createCodeSessionTools({
+      opencodeBin: "opencode",
+      dataDir,
+      spawnImpl: (_file, args, opts) => spawn(process.execPath, [fakeBin, ...args], opts),
+    });
+    const start = tools.find((t) => t.name === "code_session")!;
+    const status = tools.find((t) => t.name === "code_session_status")!;
+    try {
+      const res = await start.run({ task: "default shape", acceptance: "done" }, ctxFor(repo));
+      assert.equal(res.ok, true, res.content);
+      assert.equal(JSON.parse(res.content).launcher, "per-process");
+      // Wait for the child to exit before the cleanup below removes `dataDir`.
+      // The tool keeps writing the session log until then, so deleting it first
+      // makes the child's write fail after this test has already ended.
+      const id = JSON.parse(res.content).id as string;
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline) {
+        const last = JSON.parse((await status.run({ id }, ctxFor(repo))).content) as { status: string };
+        if (last.status !== "running") break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    } finally {
+      for (const dir of [dataDir, repo]) {
+        try {
+          fs.rmSync(dir, { recursive: true, force: true });
+        } catch {
+          /* ignore */
+        }
+      }
+    }
   });
 });

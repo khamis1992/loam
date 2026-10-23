@@ -109,6 +109,8 @@ export interface PrProvider {
   viewPr(repo: string, number: number): Promise<PrInfo>;
   listReviewComments(repo: string, number: number): Promise<PrComment[]>;
   addComment(repo: string, number: number, body: string, opts?: AddCommentOptions): Promise<PrComment>;
+  /** D5: replace a pull request's body (used to append the Verification section). */
+  setPrBody(repo: string, number: number, body: string): Promise<PrInfo>;
   /** D2: CI check-runs for a pull request's head ref (scripted for the local provider). */
   listCheckRuns(repo: string, ref: string): Promise<CheckRunInfo[]>;
   /** D2: job log for a failing check-run (scripted for the local provider). */
@@ -254,6 +256,12 @@ export class GitHubPrProvider implements PrProvider {
       })),
     };
   }
+
+  /** D5: replace the pull request body (PATCH /repos/{repo}/pulls/{number}). */
+  async setPrBody(repo: string, number: number, body: string): Promise<PrInfo> {
+    const data = await this.request("PATCH", `/repos/${repo}/pulls/${number}`, { body });
+    return normalizePr(data);
+  }
 }
 
 interface LocalPrRecord {
@@ -363,6 +371,15 @@ export class LocalPrProvider implements PrProvider {
     record.comments.push(comment);
     this.write(repo, record);
     return comment;
+  }
+
+  /** D5: replace the stored pull request body so the Verification section sticks. */
+  async setPrBody(repo: string, number: number, body: string): Promise<PrInfo> {
+    const record = this.read(repo, number);
+    if (!record) throw new Error(`no local pull request #${number} for ${repo}`);
+    record.pr.body = body;
+    this.write(repo, record);
+    return record.pr;
   }
 
   private checkFileFor(repo: string): string {

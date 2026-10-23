@@ -44,3 +44,16 @@ nul
 # Vendored wasm app bundles (fetched by scripts/vendor/fetch-craft.mjs; never committed)
 electron/craft/*/dist/
 electron/filmcraft/dist/
+
+# jcode task markers (per .jtask.md: never commit these). A branch created from a
+# parity tip where .jdone was untracked still carries it in the index, so merging
+# manus-parity sees a modify/delete conflict on it; these patterns keep the marker
+# from being committed again.
+.jcode-done
+.jdone
+.jblocked
+
+# throwaway local probe scripts (never commit)
+tmp-*.mjs
+tmp-*.mts
+

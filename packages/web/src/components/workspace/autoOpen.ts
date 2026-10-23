@@ -1,6 +1,7 @@
 import type { ChatEvent, ChatMessageEvent, ServerAttachment, ToolUsedEvent } from '@shared/socket';
 import { getEditorForPath } from './registry';
 import type { WorkspaceKind } from './types';
+import { craftAppForExtension, craftExtOf, craftAppForTool, isCraftToolName } from './craft';
 
 export interface WorkspaceOpenTarget {
   /** Path of the file to select in the workspace panel, when the event named one. */
@@ -9,6 +10,11 @@ export interface WorkspaceOpenTarget {
   kind: WorkspaceKind | null;
   /** For `loam-video`: the attached video to import into the studio automatically. */
   importPath?: string | null;
+  /**
+   * For `craft`: which Loam Craft app owns the file (docs/sheets/slides/photo/design).
+   * Null for generic craft/office tools without a file to resolve.
+   */
+  craftApp?: string | null;
 }
 
 const VIDEO_EXT_RE = /\.(mp4|m4v|webm|mov|mkv|avi)(?:[?#]|$)/i;
@@ -27,7 +33,10 @@ export function isWorkspaceToolName(tool: string): boolean {
     name.includes('_video') ||
     name.includes('docx') ||
     name.includes('xlsx') ||
-    name.includes('pptx')
+    name.includes('pptx') ||
+    name.includes('craft') ||
+    name.includes('photo') ||
+    name.includes('design')
   );
 }
 
@@ -35,6 +44,118 @@ export function isWorkspaceToolName(tool: string): boolean {
 export function isVideoStudioTool(tool: string): boolean {
   const name = (tool ?? '').toLowerCase();
   return name === 'video_studio' || name.startsWith('video_studio_') || name === 'loam_video_studio';
+}
+
+/**
+ * Edit intent in the user's own words (Arabic + English) for a document, sheet,
+ * slide deck, image or layout.
+ *
+ * Detection is verb-first on purpose: the *only* reliable signal that the user wants
+ * a change is an imperative or request form of an edit verb ("edit the first
+ * paragraph", "crop this photo", "صيغ الجدول"). Bare nouns are NOT intent, so
+ * "what is this document about?", "how many pages are in this document?" and
+ * "is this document editable?" must not match — they ask about the file rather than
+ * asking for a change. Keeping the lists to verbs and verb phrases is what makes a
+ * mention of `document`/`layout`/`paragraph` harmless.
+ *
+ * Verbs that are also nouns ("export", "blur", "zoom", "تصميم", "دمج") are the one
+ * remaining trap: "what is the export format?" and its Arabic equivalent ask *about*
+ * the term, so QUESTION_FRAME_GUARDS rejects a verb that is the object of a question
+ * frame. The guards sit in front of the whole alternation, so they are evaluated at
+ * whichever position the match starts.
+ */
+const QUESTION_FRAME_GUARDS = [
+  '(?<!what is the )',
+  '(?<!what\'s the )',
+  '(?<!what does )',
+  '(?<!what are the )',
+  '(?<!what\'s )',
+  '(?<!\\u0645\\u0627 \\u0647\\u0648 )',
+  '(?<!\\u0645\\u0627 \\u0647\\u064a )',
+  '(?<!\\u0635\\u064a\\u063a\\u0629 )',
+  '(?<!\\u0634\\u0643\\u0644 )',
+  '(?<!\\u0646\\u0648\\u0639 )',
+  '(?<!\\u0637\\u0631\\u064a\\u0642\\u0629 )',
+].join('');
+
+const CRAFT_EDIT_INTENT_RE = new RegExp(
+  QUESTION_FRAME_GUARDS + '(?:' + [
+    // Arabic edit verbs. Arabic letters are not \\b word characters in JS
+    // regexes, so use Unicode property lookarounds instead of \\b.
+'(?<![\\p{L}\\p{N}])(?:\\u0639\\u062f\\u0644|\\u0639\\u062f\\u0651\\u0644|\\u062a\\u0639\\u062f\\u064a\\u0644|\\u062a\\u062d\\u0631\\u064a\\u0631|\\u062d\\u0631\\u0651\\u0631|\\u062d\\u0631\\u0631|\\u0646\\u0633\\u0651\\u0642|\\u0646\\u0633\\u0642|\\u062a\\u0646\\u0633\\u064a\\u0642|\\u0635\\u0645\\u0651\\u0645|\\u0635\\u0645\\u0645|\\u062a\\u0635\\u0645\\u064a\\u0645|\\u0623\\u0636\\u0641|\\u0627\\u0636\\u0641|\\u0625\\u0636\\u0627\\u0641\\u0629|\\u0627\\u0636\\u0627\\u0641\\u0629|\\u0623\\u062f\\u0631\\u062c|\\u0627\\u062f\\u0631\\u062c|\\u0625\\u062f\\u0631\\u0627\\u062c|\\u0627\\u062f\\u0631\\u0627\\u062c|\\u062d\\u0630\\u0641|\\u0627\\u062d\\u0630\\u0641|\\u063a\\u064a\\u0651\\u0631|\\u0623\\u0639\\u062f|\\u0627\\u0639\\u062f|\\u0625\\u0639\\u0627\\u062f\\u0629|\\u0627\\u0639\\u0627\\u062f\\u0629|\\u0635\\u062d\\u0651\\u062d|\\u0635\\u062d\\u062d|\\u0623\\u0635\\u062d\\u062d|\\u0627\\u0635\\u062d\\u062d|\\u0627\\u0642\\u062a\\u0635|\\u0642\\u0635\\u0651|\\u0642\\u0635|\\u062f\\u0645\\u062c|\\u062a\\u0642\\u0633\\u064a\\u0645|\\u0644\\u0648\\u0651\\u0646|\\u062a\\u0644\\u0648\\u064a\\u0646|\\u0627\\u0633\\u062a\\u0628\\u062f\\u0644|\\u0628\\u062f\\u0651\\u0644|\\u0628\\u062f\\u0644|\\u062a\\u0631\\u0645\\u064a\\u0645|\\u0625\\u0632\\u0627\\u0644\\u0629|\\u0627\\u0632\\u0627\\u0644\\u0629|\\u0623\\u0639\\u062f\\u0020\\u062a\\u0631\\u062a\\u064a\\u0628|\\u0631\\u062a\\u0651\\u0628|\\u0631\\u062a\\u0628|\\u0627\\u062d\\u0641\\u0638|\\u0627\\u062d\\u0641\\u0638\\u0020\\u0643|\\u062a\\u0635\\u062f\\u064a\\u0631|\\u062a\\u0635\\u062f\\u064a\\u0631\\u0020\\u0625\\u0644\\u0649|\\u0643\\u064a\\u0641\\u0020\\u0623\\u0639\\u062f\\u0644|\\u0643\\u064a\\u0641\\u0020\\u0627\\u0639\\u062f\\u0644|\\u0643\\u064a\\u0641\\u0020\\u0623\\u0636\\u064a\\u0641|\\u0643\\u064a\\u0641\\u0020\\u0627\\u0636\\u064a\\u0641|\\u0645\\u0645\\u0643\\u0646\\u0020\\u0627\\u0646\\u0020\\u062a\\u0639\\u062f\\u0644|\\u0645\\u0645\\u0643\\u0646\\u0020\\u0627\\u0646\\u0020\\u0627\\u0639\\u062f\\u0644)(?!\\p{L}\\p{N})',
+    // Arabic soft requests ("I want", "please"). A bare opener matches almost any
+    // message, so it only counts with an edit verb right after it.
+'(?<![\\p{L}\\p{N}])(?:\\u0623\\u0631\\u064a\\u062f|\\u0627\\u0631\\u064a\\u062f|\\u0623\\u062d\\u062a\\u0627\\u062c|\\u0627\\u062d\\u062a\\u0627\\u062c|\\u0644\\u0648\\u0020\\u0633\\u0645\\u062d\\u062a|\\u0645\\u0646\\u0020\\u0641\\u0636\\u0644\\u0643)\\s*(?:\\u0639\\u062f\\u0644|\\u0639\\u062f\\u0651\\u0644|\\u062a\\u0639\\u062f\\u064a\\u0644|\\u062a\\u062d\\u0631\\u064a\\u0631|\\u062d\\u0631\\u0651\\u0631|\\u062d\\u0631\\u0631|\\u0646\\u0633\\u0651\\u0642|\\u0646\\u0633\\u0642|\\u062a\\u0646\\u0633\\u064a\\u0642|\\u0635\\u0645\\u0651\\u0645|\\u0635\\u0645\\u0645|\\u062a\\u0635\\u0645\\u064a\\u0645|\\u0623\\u0636\\u0641|\\u0627\\u0636\\u0641|\\u0625\\u0636\\u0627\\u0641\\u0629|\\u0627\\u0636\\u0627\\u0641\\u0629|\\u0623\\u062f\\u0631\\u062c|\\u0627\\u062f\\u0631\\u062c|\\u0625\\u062f\\u0631\\u0627\\u062c|\\u0627\\u062f\\u0631\\u0627\\u062c|\\u062d\\u0630\\u0641|\\u0627\\u062d\\u0630\\u0641|\\u063a\\u064a\\u0651\\u0631|\\u0623\\u0639\\u062f|\\u0627\\u0639\\u062f|\\u0625\\u0639\\u0627\\u062f\\u0629|\\u0627\\u0639\\u0627\\u062f\\u0629|\\u0635\\u062d\\u0651\\u062d|\\u0635\\u062d\\u062d|\\u0623\\u0635\\u062d\\u062d|\\u0627\\u0635\\u062d\\u062d|\\u0627\\u0642\\u062a\\u0635|\\u0642\\u0635\\u0651|\\u0642\\u0635|\\u062f\\u0645\\u062c|\\u062a\\u0642\\u0633\\u064a\\u0645|\\u0644\\u0648\\u0651\\u0646|\\u062a\\u0644\\u0648\\u064a\\u0646|\\u0627\\u0633\\u062a\\u0628\\u062f\\u0644|\\u0628\\u062f\\u0651\\u0644|\\u0628\\u062f\\u0644|\\u062a\\u0631\\u0645\\u064a\\u0645|\\u0625\\u0632\\u0627\\u0644\\u0629|\\u0627\\u0632\\u0627\\u0644\\u0629|\\u0623\\u0639\\u062f\\u0020\\u062a\\u0631\\u062a\\u064a\\u0628|\\u0631\\u062a\\u0651\\u0628|\\u0631\\u062a\\u0628|\\u0627\\u062d\\u0641\\u0638|\\u0627\\u062d\\u0641\\u0638\\u0020\\u0643|\\u062a\\u0635\\u062f\\u064a\\u0631|\\u062a\\u0635\\u062f\\u064a\\u0631\\u0020\\u0625\\u0644\\u0649|\\u0643\\u064a\\u0641\\u0020\\u0623\\u0639\\u062f\\u0644|\\u0643\\u064a\\u0641\\u0020\\u0627\\u0639\\u062f\\u0644|\\u0643\\u064a\\u0641\\u0020\\u0623\\u0636\\u064a\\u0641|\\u0643\\u064a\\u0641\\u0020\\u0627\\u0636\\u064a\\u0641|\\u0645\\u0645\\u0643\\u0646\\u0020\\u0627\\u0646\\u0020\\u062a\\u0639\\u062f\\u0644|\\u0645\\u0645\\u0643\\u0646\\u0020\\u0627\\u0646\\u0020\\u0627\\u0639\\u062f\\u0644)(?!\\p{L}\\p{N})',
+    // English edit verbs. Bare nouns are not intent, so a mention of
+    // `document`/`layout`/`paragraph` alone never matches.
+    '\\b(?:edit|modify|reformat|restyle|retouch|redesign|reframe|'
+      + 'fix|update|change|revise|polish|tweak|'
+      + 'add|insert|append|remove|delete|replace|rearrange|reorder|resort|'
+      + 'crop|cut|trim|resize|rescale|rotate|flip|scale|zoom|'
+      + 'enhance|brighten|darken|sharpen|blur|'
+      + 'recolor|recolour|'
+      + 'realign|align|indent|'
+      + 'merge|split|'
+      + 'export|print|save as|download as)\\b',
+    // "make the background darker": the comparative is the request, so require `make`.
+    '\\bmake\\s+(?:\\w+\\s+){0,4}(?:darker|brighter|bolder|bigger|smaller|larger|lighter|sharper)\\b',
+    // Arabic imperative of "export" ("صدّر الملف إلى pdf"), which the noun/verb list
+    // above carries only as the verbal noun تصدير.
+    '(?<![\\p{L}\\p{N}])(?:\\u0635\\u062f\\u0651\\u0631|\\u0635\\u062f\\u0631)(?!\\p{L}\\p{N})',
+    // English soft requests: an opener only counts when an edit verb follows.
+    '\\b(?:please|can you|could you|would you|i want|i need|lets)\\s+'
+      + '(?:edit|add|fix|change|remove|delete|crop|cut|resize|retouch|update|insert|'
+      + 'replace|rearrange|reorder|merge|split)\\b',
+  ].join('|') + ')',
+  'iu',
+);
+
+export function hasCraftEditIntent(text: string): boolean {
+  return CRAFT_EDIT_INTENT_RE.test(text ?? '');
+}
+
+/**
+ * The browser tools the agent really registers (`src/tools/browser.ts`,
+ * `browserOperator.ts`). `browser_navigate` is a legacy display label only
+ * (`toolLabels.ts`), so it is deliberately absent: it is not a tool the agent
+ * can call, and the workspace tests pin it as non-qualifying.
+ */
+const BROWSER_TOOL_STEMS = [
+  'browser_open',
+  'browser_goto',
+  'browser_snapshot',
+  'browser_click',
+  'browser_type',
+  'browser_press',
+  'browser_eval',
+  'browser_screenshot',
+  'browser_table',
+  'browser_act',
+  'browser_pages',
+  'browser_close',
+  'browser_som',
+  'browser_trace',
+  // One tool whose tool-use event carries a timestamped name
+  // (`browser_operator_<timestamp>`), so the stem is matched with its suffix.
+  'browser_operator',
+] as const;
+
+/**
+ * Neo N2: the canvas shows the whole run graph, so it is a task-wide surface.
+ * It opens for the long-horizon work that has no single file to point at: the
+ * web/research/code tools below. Everything else (file output, office/video
+ * artifacts) still routes to its own editor first, so the canvas never steals
+ * an event that resolved to a workspace artifact.
+ */
+export function isCanvasSignalTool(tool: string): boolean {
+  const name = (tool ?? '').toLowerCase();
+  return (
+    BROWSER_TOOL_STEMS.some((stem) => name === stem || name.startsWith(`${stem}_`)) ||
+    name.startsWith('web_') ||
+    name === 'deep_research' ||
+    name === 'wide_research' ||
+    name.startsWith('code_session')
+  );
 }
 
 /**
@@ -87,6 +208,14 @@ function isVideoAttachment(attachment: ServerAttachment): boolean {
   return VIDEO_EXT_RE.test(name);
 }
 
+/** True when the attachment is one of the Craft apps' document/photo/layout types. */
+function isCraftAttachment(attachment: ServerAttachment): boolean {
+  const app = craftAppForExtension(craftExtOf(attachment.path ?? attachment.filename ?? ''));
+  if (app) return true;
+  const mime = (attachment.contentType ?? '').toLowerCase();
+  return /(wordprocessingml|spreadsheetml|presentationml|msword|ms-excel|ms-powerpoint|opendocument|image\/|application\/pdf)/.test(mime);
+}
+
 function messageText(event: ChatMessageEvent): string {
   if ((event.content ?? '').trim()) return event.content;
   return (event.contents ?? [])
@@ -95,12 +224,34 @@ function messageText(event: ChatMessageEvent): string {
     .join(' ');
 }
 
-function videoAttachmentPath(event: ChatMessageEvent): string | null {
+function messageAttachments(event: ChatMessageEvent): ServerAttachment[] {
   const fromContents = (event.contents ?? [])
     .filter((c): c is { type: 'attachment'; attachment: ServerAttachment } => c.type === 'attachment')
     .map((c) => c.attachment);
-  for (const attachment of [...(event.attachments ?? []), ...fromContents]) {
-    if (isVideoAttachment(attachment)) return attachment.path ?? attachment.filename ?? null;
+  return [...(event.attachments ?? []), ...fromContents];
+}
+
+function attachmentPath(attachment: ServerAttachment): string | null {
+  return attachment.path ?? attachment.filename ?? null;
+}
+
+function videoAttachmentPath(event: ChatMessageEvent): string | null {
+  for (const attachment of messageAttachments(event)) {
+    if (isVideoAttachment(attachment)) return attachmentPath(attachment);
+  }
+  return null;
+}
+
+/**
+ * The craft attachment a user edit intent refers to, or null. A video is never a
+ * craft attachment (it belongs to the Loam Video studio), and a document-like
+ * file without an edit intent must keep its current behaviour.
+ */
+function craftAttachmentPath(event: ChatMessageEvent): string | null {
+  const attachments = messageAttachments(event);
+  for (const attachment of attachments) {
+    if (isVideoAttachment(attachment)) continue;
+    if (isCraftAttachment(attachment)) return attachmentPath(attachment);
   }
   return null;
 }
@@ -112,10 +263,19 @@ function videoAttachmentPath(event: ChatMessageEvent): string | null {
 export function decideUserMessageOpen(event: ChatMessageEvent): WorkspaceOpenTarget | null {
   if (event.sender !== 'user') return null;
   const path = videoAttachmentPath(event);
-  if (!path) return null;
-  if (!hasVideoEditIntent(messageText(event))) return null;
-  return { path, kind: 'loam-video', importPath: path };
+  if (path) {
+    if (!hasVideoEditIntent(messageText(event))) return null;
+    return { path, kind: 'loam-video', importPath: path };
+  }
+  // Craft apps: the user attached a document/photo/layout and asked for a change.
+  const craftPath = craftAttachmentPath(event);
+  if (craftPath && hasCraftEditIntent(messageText(event))) {
+    return { path: craftPath, kind: 'craft', craftApp: craftAppForExtension(craftExtOf(craftPath)) };
+  }
+  return null;
 }
+
+const OFFICE_PATH_RE = /[\w./\\-]+\.(docx|docm|dotx|doc|odt|rtf|xlsx|xlsm|xls|csv|ods|pptx|ppt|odp|psd|png|jpg|jpeg|webp|tif|tiff|heic|avif|bmp|gif|idml|indd|pdf|mp4|mov|webm|mkv)(?=[\s,.;)]|$)/i;
 
 function candidatePath(event: ToolUsedEvent): string | null {
   const sources: unknown[] = [event.argumentsDetail, event.detail];
@@ -136,8 +296,14 @@ function candidatePath(event: ToolUsedEvent): string | null {
     }
   }
   const text = [event.brief ?? '', event.description ?? ''].join(' ');
-  const match = text.match(/[\w./\\-]+\.(mp4|mov|webm|mkv|docx|xlsx|pptx)(?=[\s,.;)]|$)/i);
+  const match = text.match(OFFICE_PATH_RE);
   return match ? match[0] : null;
+}
+
+/** Resolve the craft app for a path, or the one an explicit tool named. */
+function craftAppForTarget(tool: string, path: string | null): string | null {
+  if (path) return craftAppForExtension(craftExtOf(path));
+  return craftAppForTool(tool);
 }
 
 /** Decide whether a tool event should open the right panel on the Workspace tab. */
@@ -149,11 +315,25 @@ export function decideWorkspaceOpen(event: ToolUsedEvent): WorkspaceOpenTarget |
   const path = candidatePath(event);
   if (path) {
     const editor = getEditorForPath(path);
-    if (editor) return { path, kind: editor.kind };
+    if (editor) {
+      const target: WorkspaceOpenTarget = { path, kind: editor.kind };
+      if (editor.kind === 'craft') target.craftApp = craftAppForTarget(event.tool, path);
+      return target;
+    }
     if (isWorkspaceToolName(event.tool)) return { path, kind: null };
     return null;
   }
-  if (isWorkspaceToolName(event.tool)) return { path: null, kind: null };
+  if (isWorkspaceToolName(event.tool)) {
+    const target: WorkspaceOpenTarget = { path: null, kind: null };
+    // A craft/office tool without a path still belongs on the Workspace tab; the
+    // panel lists the task's files and the user opens one manually.
+    if (isCraftToolName(event.tool)) target.kind = 'craft';
+    return target;
+  }
+  // A long-horizon tool with no file output still moves the run graph, so it
+  // opens the canvas. This is the last resort: a file path or an office/video
+  // tool always wins above.
+  if (isCanvasSignalTool(event.tool)) return { path: null, kind: 'canvas' };
   return null;
 }
 

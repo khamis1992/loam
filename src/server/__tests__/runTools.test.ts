@@ -110,6 +110,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     createGroupTools = (await import("../../tools/groupTools.js")).createGroupTools;
     const { createBackendScaffoldTools } = await import("../../tools/backendScaffold.js");
     const { createWebScaffoldTools } = await import("../../tools/webScaffold.js");
+    const { createEnvSnapshotTools } = await import("../../tools/envSnapshot.js");
     createDesignStudioTools = designStudioToolsMod.createDesignStudioTools;
     const { ToolRegistry: Registry } = registryMod;
     registry = new Registry();
@@ -118,6 +119,9 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     for (const name of ["file_read", "file_write", "shell_run", "web_fetch", "loam_mobile", "browser_operator", "wide_research"]) registry.register(dummy(name));
     registry.registerAll(createScratchpadTools());
     registry.registerAll((await import("../../tools/environmentIssueTools.js")).createEnvironmentIssueTools());
+    // N9: `ask_user` is a mode-catalog tool (CONTROL), so register the real set
+    // rather than a dummy.
+    registry.registerAll((await import("../../tools/askUserTools.js")).createAskUserTools());
     registry.registerAll(createInstructionHistoryTools());
     registry.registerAll(createAgentSpawnTools());
     registry.registerAll(createDeepResearchTools());
@@ -125,6 +129,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll(createGroupTools());
     registry.registerAll(createBackendScaffoldTools());
     registry.registerAll(createWebScaffoldTools());
+    registry.registerAll(createEnvSnapshotTools());
     registry.registerAll(createDesignStudioTools());
     // D9: playbook_create_from_session ships as an always-on tool.
     const { createPlaybookTools } = await import("../../tools/playbookTools.js");
@@ -144,12 +149,16 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll((await import("../../tools/designLint.js")).createDesignLintTools()); // V4 token linter
     registry.register(dummy("design_brief")); // V7 LLM-authored design brief (always-on grant)
     registry.register(dummy("design_autofix")); // V5 deterministic design repair pass (always-on grant)
+    // V8: the Loam UI Kit block search ships as always-on, so register the real tool.
+    registry.registerAll((await import("../../tools/uiExamples.js")).createUiExamplesTools());
     // V11: the vision rubric ships as an always-on tool, so register the real one.
     const { createDesignCritiqueTools } = await import("../../tools/designCritique.js");
     registry.registerAll(createDesignCritiqueTools({ status: { running: false, url: null, root: null, requests: 0, startedAt: null } } as never, { ollama: ollamaStub }));
     // D13: resumable workflow tools ship as always-on, so register the real set.
     const workflowToolsMod = await import("../../tools/workflow.js");
     registry.registerAll(workflowToolsMod.createWorkflowTools({ ollama: {} as never, registry }));
+    // N16: cross-run recall ships as always-on, so register the real set.
+    registry.registerAll((await import("../../tools/memory.js")).createRecallTools());
   });
 
   after(() => {

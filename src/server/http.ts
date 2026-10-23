@@ -23,7 +23,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import nodeChildProcess from "node:child_process";
-import { ROOT, UI_DIR, DATA_DIR, type Config } from "../config.js";
+import { ROOT, rootAsset, UI_DIR, DATA_DIR, type Config } from "../config.js";
 import type { OllamaClient } from "../ollama.js";
 import type { AgentEvent, Emit } from "../agent/events.js";
 import { log, redact } from "../log.js";
@@ -42,7 +42,7 @@ import { SECURITY_CAPABILITIES } from '../security/diagnostics.js';
 import { sarif } from "../security/findings.js";
 import {prepareRepair,changeRepair,listRepairs} from '../security/repairs.js';
 import { readBrowserArtifact } from "../security/browser.js";
-import { loadActiveMirofishSession, runConversationalMirofish } from "../tools/mirofish.js";
+import { loadActiveMirofishSession, runConversationalMirofish, runConversationalMirofishAsync } from "../tools/mirofish.js";
 import { detectFrontierMode, getFrontierBridgeStatus, getFrontierModesUi, switchFrontierMode } from "../tools/frontierBridge.js";
 import { installFromCatalog, searchCatalog } from "../tools/skillsRegistry.js";
 import type { ScreenLive } from "../screen/live.js";
@@ -84,6 +84,7 @@ import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAutomationsRoutes } from "./routes/automations.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
+import { handleGraphRoutes } from "./routes/graph.js";
 import { handleCraftRoutes } from "./routes/craft.js";
 import { handleInstructionsRoutes } from "./routes/instructions.js";
 import { handleAgentSpawnRoutes } from "./routes/agentSpawn.js";
@@ -94,9 +95,13 @@ import { handleMarketplaceRoutes } from "./routes/marketplace.js";
 import { handlePersonalizationRoutes } from "./routes/personalization.js";
 import { handleApiKeysRoutes } from "./routes/apiKeys.js";
 import { handleDataControlsRoutes } from "./routes/dataControls.js";
+import { handleDebugMemoryRoutes } from "./routes/debugMemory.js";
+import { LruCache } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 import { handleMemorySkillsRoutes } from "./routes/memorySkills.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
 import { handlePlanApprovalRoutes } from "./routes/planApproval.js";
+import { handleAskUserRoutes } from "./routes/askUser.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
 import { handleRetryLastRoutes } from "./routes/retryLast.js";
 import { handleSessionControlRoutes } from "./routes/sessionControl.js";
@@ -104,8 +109,11 @@ import { handleInsightsRoutes } from "./routes/insights.js";
 import { handleShareRoutes } from "./routes/shares.js";
 import { handleProjectContextRoutes } from "./routes/projectContext.js";
 import { handlePlaybookRoutes } from "./routes/playbooks.js";
+import { handleFlowTemplateRoutes } from "./routes/flowTemplates.js";
 import { handleVoiceRoutes } from "./routes/voice.js";
 import { handleConnectorsRoutes } from "./routes/connectors.js";
+import { handleEnvBuildRoutes } from "./routes/envBuilds.js";
+import { handleKnowledgeRoutes } from "./routes/knowledge.js";
 import { handleWikiRoutes } from "./routes/wiki.js";
 import { importGrokbotBundle, sanitizeGrokbotBundle } from "./grokbotImport.js";
 import { isValidTimezone } from "./scheduleTime.js";
@@ -121,7 +129,8 @@ import { setSecret, listSecrets, deleteSecret } from "./secretsVault.js";
 import { createApproval, decideApproval, getApproval, listApprovals } from "./approvals.js";
 import { setTaskAgent } from "./db.js";
 import { subscribeTask } from "./streams.js";
-import { videoStudioRelay, type VideoStudioResult } from "./videoStudioRelay.js";
+import { workspaceRelay, workspaceRelay as videoStudioRelay, type WorkspaceRelayResult } from "./workspaceRelay.js";
+import { runVideoStudioExport, type VideoStudioExportOptions } from "./videoStudioExport.js";
 import { appendLearning, readLearning } from "./learning.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { installDraft, listSuites, loadSuite } from "../eval/suites.js";
@@ -134,11 +143,13 @@ import { exportDatasets } from "../eval/export.js";
 import type { PreviewService } from "../preview/serve.js";
 import { getBrowserState } from "../tools/browser.js";
 import { getSavedRun } from "./db.js";
+import { isOutputType } from "../llm/router.js";
 import { requiresReplayConfirmation } from "./recovery.js";
 import { executionQueue } from "./executionQueue.js";
 import { SwarmService, SwarmError } from "../swarm/service.js";
 import type { McpToolset } from "../tools/mcp.js";
 import { integrationCatalog, integrationGrants, saveIntegrationGrants } from '../tools/integrations.js';
+import { admitPending as admitPendingInputs, pending as pendingInputs } from './inputQueue.js';
 
 export interface RunTaskOptions {
   prompt: string;
@@ -149,6 +160,10 @@ export interface RunTaskOptions {
   projectId?: string | null;
   mode?: string;
   effort?: string;
+  /** Neo N10: output type selector (Auto/Text/Image/Video/Slides/Website). */
+  outputType?: string;
+  /** Neo N10: also run the same prompt on other models as sibling canvas nodes. */
+  abModels?: string[];
   agentId?: string;
   workMode?: string;
   resume?: boolean;
@@ -156,6 +171,9 @@ export interface RunTaskOptions {
   scheduleId?: string;
   /** Side-chat ("/btw") run: restricted to read-only inspection tools. */
   sideChat?: boolean;
+  knowledge?: boolean;
+  /** O6: protocol session whose durable inbound queue this run should drain. */
+  inputSessionId?: string;
 }
 
 export interface ServerDeps {
@@ -167,6 +185,8 @@ export interface ServerDeps {
   registry?: ToolRegistry;
   mcp?: McpToolset | null;
   runTask: (opts: RunTaskOptions) => Promise<{ taskId: string; text: string }>;
+  /** N3 Knowledge Garden vector channel; absent => lexical-only search. */
+  embedder?: { embed(texts: string[]): Promise<number[][]> };
 }
 
 const MIME: Record<string, string> = {
@@ -218,7 +238,9 @@ function parseWorktrees(porcelainOut: string): Array<{ path: string; head: strin
 /** A ":cloud"-suffixed model may be served verbatim by the local Ollama (router
  *  setups register the full name); only demand a cloudModel.apiKey when Ollama
  *  does not actually have it — otherwise the request dies before it starts. */
-const ollamaTagCache = new Map<string, { names: string[]; at: number }>();
+/** Bounded (J6): keyed by base URL, but a user can point Loam at many hosts. */
+const ollamaTagCache = new LruCache<{ names: string[]; at: number }>({ capacity: 32, name: "ollama-tags" });
+registerCacheStats("ollama-tags", () => ollamaTagCache.stats());
 async function cloudSuffixedModelServedByOllama(model: string): Promise<boolean> {
   const baseUrl = process.env.OLLAMA_HOST && /^http/.test(process.env.OLLAMA_HOST) ? process.env.OLLAMA_HOST : "http://127.0.0.1:11434";
   const cached = ollamaTagCache.get(baseUrl);
@@ -851,7 +873,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
 
         if (req.method === "GET" && p.startsWith("/vendor/three/")) {
           const addon = p.startsWith("/vendor/three/addons/");
-          const base = path.join(ROOT, "node_modules", "three", addon ? "examples/jsm" : "build");
+          const base = rootAsset("node_modules", "three", addon ? "examples/jsm" : "build");
           const relative = p.slice(addon ? "/vendor/three/addons/".length : "/vendor/three/".length);
           const file = path.resolve(base, relative);
           if (!file.startsWith(base + path.sep) || !relative.endsWith(".js") || (!addon && !["three.module.js", "three.core.js"].includes(relative)) || !fs.existsSync(file)) return sendJson(res, 404, { error: "Not found" });
@@ -1763,6 +1785,8 @@ loadAgents();
         // Design Studio (/api/design/*): brand kits, templates, generate, outputs.
         if (await handleDesignStudioRoutes(req, res, p)) return;
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        // Neo N2 canvas: the run graph built live by the agent (N1).
+        if (await handleGraphRoutes(req, res, p, { enabled: cfg.runGraph?.enabled !== false })) return;
         // Craft apps (/api/craft/status): which vendored dists are installed.
         if (await handleCraftRoutes(req, res, p)) return;
         if (await handleInstructionsRoutes(req, res, p)) return;
@@ -1787,6 +1811,8 @@ loadAgents();
         if (await handlePersonalizationRoutes(req, res, p)) return;
         if (await handleApiKeysRoutes(req, res, p)) return;
         if (await handleDataControlsRoutes(req, res, p)) return;
+        // Local-only memory profile (J6): loopback + install token, GET only.
+        if (await handleDebugMemoryRoutes(req, res, p)) return;
         // Settings › Connectors (UNIMPLEMENTED_OPTIONS #3): list/connect/callback/disconnect.
         if (await handleConnectorsRoutes(req, res, p)) return;
         // Settings › Skills (UNIMPLEMENTED_OPTIONS #4): proxy the memory-skills MCP.
@@ -1794,6 +1820,8 @@ loadAgents();
         if (await handleApprovalRuleRoutes(req, res, p, url)) return;
         // Pending plan approvals (D4): the suggest_plan gate's approve/edit/reject.
         if (await handlePlanApprovalRoutes(req, res, p)) return;
+        // Pending ask-user requests (N9): list, read, answer or dismiss.
+        if (await handleAskUserRoutes(req, res, p)) return;
         if (await handleGrokbotBridgeRoutes(req, res, p, url)) return;
         // Public read-only task shares (option #11): create/revoke are authed,
         // GET /api/share/:token is the anonymous replay feed exempted above.
@@ -1803,8 +1831,19 @@ loadAgents();
         if (await handleProjectContextRoutes(req, res, p)) return;
         // Playbooks (D9): versioned reusable prompt library + macro expansion.
         if (await handlePlaybookRoutes(req, res, p)) return;
+
+        if (await handleFlowTemplateRoutes(req, res, p)) return;
+        // Environment snapshots (D3): read-only build status + redacted log.
+        if (await handleEnvBuildRoutes(req, res, p)) return;
         // Repo wiki (D8): list/generate/read DeepWiki-style pages.
         if (await handleWikiRoutes(req, res, p, { workspace: cfg.workspace, ollama, model: cfg.model })) return;
+
+        // Knowledge Garden (N3): bases, seeds, import and hybrid search.
+        if (await handleKnowledgeRoutes(req, res, p, {
+          workspace: cfg.workspace,
+          ...(deps.embedder ? { embedder: deps.embedder } : {}),
+          model: cfg.memory.model || cfg.model,
+        })) return;
 
         // ---- avatar (Grok Bot-style): set shape/color/image on an existing agent ----
         // Must run before the generic /api/agents/:id prefix block.
@@ -2443,24 +2482,69 @@ loadAgents();
           return;
         }
 
-        // Loam Video Studio relay: the panel attached to this task posts the
+        // Workspace relay: the editor panel attached to this task posts the
         // result of a command that was dispatched over the task's event stream.
-        if (req.method === "POST" && /^\/api\/tasks\/[^/]+\/video-studio\/result$/.test(p)) {
+        // The /video-studio/result path stays as the fc-02 (Video Studio) alias.
+        if (req.method === "POST" && /^\/api\/tasks\/[^/]+\/(?:workspace|video-studio)\/result$/.test(p)) {
           const origin = req.headers.origin;
           if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") {
             return sendJson(res, 403, { error: "same-origin requests required" });
           }
-          const taskId = decodeURIComponent(p.slice("/api/tasks/".length, -"/video-studio/result".length));
+          const route = p.includes("/video-studio/result") ? "/video-studio/result" : "/workspace/result";
+          const taskId = decodeURIComponent(p.slice("/api/tasks/".length, -route.length));
           if (!getTask(taskId)) return sendJson(res, 404, { error: "task not found" });
           let raw: unknown;
           try { raw = await readBody(req, 64_000); } catch { return sendJson(res, 400, { error: "invalid JSON body" }); }
-          const result = raw as VideoStudioResult;
+          const result = raw as WorkspaceRelayResult;
           if (!result || typeof result !== "object" || typeof result.id !== "string" || typeof result.taskId !== "string") {
             return sendJson(res, 400, { error: "id and taskId are required" });
           }
           if (result.taskId !== taskId) return sendJson(res, 400, { error: "taskId mismatch" });
-          const handled = videoStudioRelay.resolve(result);
+          const handled = workspaceRelay.resolve(result);
           return sendJson(res, 200, { ok: handled, ...(handled ? {} : { ignored: true }) });
+        }
+
+        // fc-06: the Loam Video panel's Export button. Same flow as the
+        // `video_studio` export action (one implementation, two entry points): the
+        // editor renders, the bytes come back through the relay and the file is
+        // written into this task's workspace under exports/.
+        if (req.method === "POST" && /^\/api\/tasks\/[^/]+\/video-studio\/export$/.test(p)) {
+          const origin = req.headers.origin;
+          if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") {
+            return sendJson(res, 403, { error: "same-origin requests required" });
+          }
+          const taskId = decodeURIComponent(p.slice("/api/tasks/".length, -"/video-studio/export".length));
+          if (!getTask(taskId)) return sendJson(res, 404, { error: "task not found" });
+          let raw: unknown;
+          try { raw = await readBody(req, 16_000); } catch { return sendJson(res, 400, { error: "invalid JSON body" }); }
+          const body = (raw ?? {}) as { options?: Record<string, unknown> };
+          const options = (body.options ?? {}) as VideoStudioExportOptions;
+          if (options.quality && !["low", "medium", "high", "best"].includes(options.quality)) {
+            return sendJson(res, 400, { error: "options.quality must be one of low, medium, high, best" });
+          }
+          if (options.range && !["entire", "inOut", "workArea", "custom"].includes(options.range)) {
+            return sendJson(res, 400, { error: "options.range must be one of entire, inOut, workArea, custom" });
+          }
+          let taskRoot: string;
+          try {
+            taskRoot = requireTaskWorkspace(taskId, cfg.workspace);
+          } catch (error) {
+            return sendJson(res, 400, { error: (error as Error).message });
+          }
+          try {
+            const result = await runVideoStudioExport({ taskId, relay: videoStudioRelay, taskRoot, options });
+            return sendJson(res, 200, result);
+          } catch (error) {
+            const err = error as { code?: string; message?: string };
+            if (err.code === "PANEL_NOT_OPEN") {
+              return sendJson(res, 409, { ok: false, reason: "panel_not_open", retry: true, message: err.message });
+            }
+            if (err.code === "CANCELLED") {
+              return sendJson(res, 499, { ok: false, reason: "cancelled", message: err.message });
+            }
+            const timedOut = /did not finish within/.test(err.message ?? "");
+            return sendJson(res, timedOut ? 504 : 502, { ok: false, reason: "export_failed", message: err.message });
+          }
         }
 
         if (req.method === "GET" && p.startsWith("/api/tasks/") && p.endsWith("/stream")) {
@@ -2610,8 +2694,11 @@ loadAgents();
             attachments?: unknown;
             mode?: unknown;
             effort?: unknown;
+            outputType?: unknown;
+            abModels?: unknown;
             agentId?: unknown;
             workMode?: unknown;
+            knowledge?: unknown;
           };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
           if (!prompt) return sendJson(res, 400, { error: "prompt required" });
@@ -2625,6 +2712,12 @@ loadAgents();
           try { mode = getLoamMode(typeof body.mode === "string" ? body.mode : (taskId ? getTask(taskId)?.mode : undefined)).id; }
           catch (error) { return sendJson(res, 400, { error: String(error) }); }
           const effort = typeof body.effort === "string" && body.effort ? body.effort : undefined;
+          // Neo N10: output type and A/B arm list come from the composer. Anything
+          // malformed is ignored rather than failing the whole run.
+          const outputType = isOutputType(body.outputType) ? body.outputType : undefined;
+          const abModels = Array.isArray(body.abModels)
+            ? [...new Set(body.abModels.filter((m): m is string => typeof m === "string" && m.trim().length > 0).map((m) => m.trim()))].slice(0, 4)
+            : undefined;
           const agentId = typeof body.agentId === "string" && body.agentId ? body.agentId : undefined;
           let workMode: string | undefined;
           try {
@@ -2632,6 +2725,9 @@ loadAgents();
           } catch (error) {
             return sendJson(res, 400, { error: String(error) });
           }
+          // N3 Knowledge Garden: the run only reaches the kb_* tools when the
+          // caller switched the garden on for THIS run (default off).
+          const knowledge = body.knowledge === true;
 
           res.writeHead(200, {
             "content-type": "text/event-stream; charset=utf-8",
@@ -2666,8 +2762,11 @@ loadAgents();
               projectId,
               mode,
               effort,
+              ...(outputType ? { outputType } : {}),
+              ...(abModels && abModels.length > 0 ? { abModels } : {}),
               agentId,
               workMode,
+              knowledge,
             });
             if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify({ type: "task", taskId: result.taskId })}\n\n`);
           } catch (err) {
@@ -2681,6 +2780,20 @@ loadAgents();
 
         if (req.method === "GET" && p === "/api/queue") {
           return sendJson(res, 200, executionQueue.snapshot());
+        }
+        // O6 durable input queue: the UI (or a boot hook) can read what is waiting
+        // and force admission of a message that arrived while no run was active.
+        if (req.method === "GET" && p === "/api/inputs") {
+          const sessionId = url.searchParams.get("sessionId") ?? "";
+          const items = sessionId ? pendingInputs(sessionId) : [];
+          return sendJson(res, 200, { inputs: items });
+        }
+        if (req.method === "POST" && p === "/api/inputs/admit") {
+          const body = (await readBody(req)) as { sessionId?: unknown };
+          const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
+          if (!sessionId) return sendJson(res, 400, { error: "sessionId required" });
+          const admitted = admitPendingInputs(sessionId);
+          return sendJson(res, 200, { admitted });
         }
         if (req.method === "POST" && p.startsWith("/api/tasks/") && p.endsWith("/resume")) {
           const id = decodeURIComponent(p.slice("/api/tasks/".length, -"/resume".length));
@@ -2715,11 +2828,15 @@ loadAgents();
           const rawName = url.searchParams.get("name") ?? "upload.bin";
           const safe = path.basename(rawName).replace(/[^\w.\u0600-\u06ff -]+/g, "_").slice(0, 120) || "upload.bin";
           const root = requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace);
-          const dir = taskPath(root, "uploads");
+          // N9: an ask-user card uploads into `<workspace>/uploads/<requestId>/` so
+          // the request's attachments stay together and the recorded path is stable.
+          const askUser = url.searchParams.get("askUser");
+          const sub = askUser ? path.join("uploads", path.basename(askUser).replace(/[^\w-]+/g, "_")) : "uploads";
+          const dir = taskPath(root, sub);
           fs.mkdirSync(dir, { recursive: true });
           const buf = await readRawBody(req);
           if (buf.length === 0) return sendJson(res, 400, { error: "empty upload" });
-          const abs = taskPath(root, path.join("uploads", `${Date.now()}-${safe}`));
+          const abs = taskPath(root, path.join(sub, `${Date.now()}-${safe}`));
           fs.writeFileSync(abs, buf);
           sendJson(res, 200, {
             name: safe,
@@ -2873,12 +2990,30 @@ loadAgents();
 
         if (req.method === "POST" && p === "/api/mirofish/chat") {
           const body = (await readBody(req)) as { message?: unknown; target?: unknown; maxRounds?: unknown; injectedVariable?: unknown };
-          const out = runConversationalMirofish(requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace), {
-            message: String(body.message ?? ""),
-            ...(typeof body.target === "string" && body.target ? { target: body.target } : {}),
-            ...(typeof body.maxRounds === "number" ? { maxRounds: body.maxRounds } : {}),
-            ...(typeof body.injectedVariable === "string" && body.injectedVariable ? { injectedVariable: body.injectedVariable } : {}),
-          });
+          const message = String(body.message ?? "");
+          const target = typeof body.target === "string" && body.target ? body.target : undefined;
+          const maxRounds = typeof body.maxRounds === "number" ? body.maxRounds : undefined;
+          const injectedVariable =
+            typeof body.injectedVariable === "string" && body.injectedVariable
+              ? body.injectedVariable
+              : undefined;
+          // M3: the full analysis runs through the model-aware swarm simulation.
+          // The synchronous `runConversationalMirofish` is kept as the fallback
+          // for callers that have no provider client.
+          const out = deps.ollama
+            ? await runConversationalMirofishAsync(requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace), {
+                message,
+                ...(target ? { target } : {}),
+                ...(maxRounds !== undefined ? { maxRounds } : {}),
+                ...(injectedVariable ? { injectedVariable } : {}),
+                runtime: { cfg, ollama: deps.ollama },
+              })
+            : runConversationalMirofish(requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace), {
+                message,
+                ...(target ? { target } : {}),
+                ...(maxRounds !== undefined ? { maxRounds } : {}),
+                ...(injectedVariable ? { injectedVariable } : {}),
+              });
           return sendJson(res, 200, out);
         }
 

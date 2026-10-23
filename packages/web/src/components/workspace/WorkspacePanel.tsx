@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Clapperboard, Loader2, MonitorPlay, X } from 'lucide-react';
+import { Clapperboard, Loader2, MonitorPlay, Waypoints, X } from 'lucide-react';
 import type { ChatEvent, ToolUsedEvent } from '@shared/socket';
 import { t } from '@/i18n/t';
 import { useAppSelector } from '@/store';
@@ -17,11 +17,32 @@ import {
 } from './registry';
 import {
   LOAM_VIDEO_STUDIO_PATH,
+  CANVAS_RUN_PATH,
   type WorkspaceEditorDef,
   type WorkspaceEditorProps,
   type WorkspaceFile,
   type WorkspaceKind,
 } from './types';
+import { CRAFT_APPS, type CraftApp } from '@/lib/craftBridge';
+import { craftAppForExtension, craftAppForMime, craftExtOf } from './craft';
+
+/** The Loam display name for a file the Craft apps own, else the editor's own label. */
+function editorLabel(def: WorkspaceEditorDef | null, file: WorkspaceFile | null): string {
+  if (!def) return '';
+  if (def.kind === 'craft') {
+    const app = file ? craftAppForFile(file) : null;
+    if (app) return CRAFT_APPS[app].displayName;
+    return t('Loam Craft');
+  }
+  return def.label;
+}
+
+/** The Craft app (docs/sheets/slides/photo/design) that owns this file, if any. */
+function craftAppForFile(file: WorkspaceFile): CraftApp | null {
+  const fromExt = craftAppForExtension(craftExtOf(file.path));
+  if (fromExt) return fromExt;
+  return craftAppForMime(file.mime ?? '');
+}
 
 function getSocketBase(): string {
   if (typeof window === 'undefined') return '/';
@@ -124,7 +145,7 @@ export function WorkspaceFilePanel({ file, onClose }: { file: WorkspaceFile; onC
       <div className="flex h-row items-center justify-between border-b border-border-main px-4">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-text-primary">{file.name}</p>
-          <p className="text-[11px] text-text-tertiary">{def.label}</p>
+          <p className="text-[11px] text-text-tertiary">{editorLabel(def, file)}</p>
         </div>
         <button
           type="button"
@@ -168,6 +189,28 @@ const MIME_BY_EXT: Record<string, string> = {
   csv: 'text/csv',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   ppt: 'application/vnd.ms-powerpoint',
+  // Loam Craft apps (cr-03): the extra formats the vendored editors open.
+  docm: 'application/vnd.ms-word.document.macroEnabled.12',
+  dotx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.template',
+  odt: 'application/vnd.oasis.opendocument.text',
+  rtf: 'application/rtf',
+  xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12',
+  ods: 'application/vnd.oasis.opendocument.spreadsheet',
+  odp: 'application/vnd.oasis.opendocument.presentation',
+  psd: 'image/vnd.adobe.photoshop',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
+  heic: 'image/heic',
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  gif: 'image/gif',
+  idml: 'application/vnd.adobe.indesign-idml-package',
+  indd: 'application/x-indesign',
+  pdf: 'application/pdf',
 };
 
 interface FileEntry {
@@ -252,6 +295,24 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
       }
       return;
     }
+    // Craft apps: the decision names a file and/or the app. Open the named file,
+    // otherwise the newest file the craft editor owns.
+    if (requestedKind === 'craft') {
+      const match = requestedPath ? files.find((f) => f.path === requestedPath) : undefined;
+      if (match) {
+        setSelectedPath(match.path);
+        return;
+      }
+      const firstCraft = files.find((f) => getEditorForPath(f.path)?.kind === 'craft');
+      if (firstCraft) setSelectedPath(firstCraft.path);
+      return;
+    }
+    // The Canvas tab is task-wide (the run graph), so there is no file to
+    // match: any request for it selects the canvas sentinel.
+    if (requestedKind === 'canvas') {
+      setSelectedPath(CANVAS_RUN_PATH);
+      return;
+    }
     if (requestedPath && files.some((f) => f.path === requestedPath)) setSelectedPath(requestedPath);
     else if (requestedPath && files.length > 0) setSelectedPath(files[0].path);
   }, [files, requestedPath, requestedKind]);
@@ -267,6 +328,7 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
       files.length > 0 &&
       !files.some((f) => f.path === selectedPath) &&
       selectedPath !== LOAM_VIDEO_STUDIO_PATH &&
+      selectedPath !== CANVAS_RUN_PATH &&
       selectedPath !== requestedPath
     ) {
       setSelectedPath(files[0].path);
@@ -277,11 +339,15 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
     if (selectedPath === LOAM_VIDEO_STUDIO_PATH) {
       return { taskId, path: LOAM_VIDEO_STUDIO_PATH, name: t('Loam Video'), kind: 'loam-video' as const };
     }
+    if (selectedPath === CANVAS_RUN_PATH) {
+      return { taskId, path: CANVAS_RUN_PATH, name: t('Canvas'), kind: 'canvas' as const };
+    }
     return files.find((f) => f.path === selectedPath) ?? null;
   }, [files, selectedPath, taskId]);
 
   const def = useMemo(() => (selected ? getEditorForFile(selected) : null), [selected]);
   const loamVideoDef = getEditorForKind('loam-video');
+  const canvasDef = getEditorForKind('canvas');
 
   const onSave = useMemo(() => {
     if (!selected) return async () => undefined;
@@ -327,8 +393,23 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
         {loading && <Loader2 className="size-3.5 animate-spin text-text-tertiary" />}
       </div>
 
-      {(files.length > 1 || loamVideoDef) && (
+      {(files.length > 1 || loamVideoDef || canvasDef) && (
         <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border-main px-2 py-1.5">
+          {canvasDef && (
+            <button
+              type="button"
+              onClick={() => setSelectedPath(CANVAS_RUN_PATH)}
+              title={t('Canvas')}
+              className={
+                selectedPath === CANVAS_RUN_PATH
+                  ? 'flex items-center gap-1 whitespace-nowrap rounded-control bg-fill-tsp px-2 py-1 text-xs font-medium text-text-primary'
+                  : 'flex items-center gap-1 whitespace-nowrap rounded-control px-2 py-1 text-xs text-text-tertiary hover:bg-fill-hover hover:text-text-secondary'
+              }
+            >
+              <Waypoints className="size-3" />
+              {t('Canvas')}
+            </button>
+          )}
           {loamVideoDef && (
             <button
               type="button"
@@ -377,6 +458,7 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
               live={live}
               onSave={onSave}
               onChatEdit={(instruction: string) => onChatEdit(instruction, selected)}
+              events={events}
             />
           </Suspense>
         ) : (
