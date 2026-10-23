@@ -299,8 +299,6 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
   let recipe: RecipeState = o.recipeState ?? initRecipe(plan.goal, plan.steps);
   let restartRequest = o.recipeRestart;
   let restartApplied = false;
-  /** Set once the recipe says the work is finished and no open step remains. */
-  let recipeComplete = false;
 
   const emitRecipe = (change: RecipeChange, source: "planner" | "restart" | "auto"): void => {
     o.emit({
@@ -372,7 +370,10 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
     log.info(
       `orchestrator: recipe round (change=${applied.change}, +${applied.replaced.length} rewritten, ${applied.dropped.length} dropped) steps=${recipe.steps.length} remaining=${applied.remainingEstimate}`,
     );
-    recipeComplete = recipe.steps.every((item) => item.status === "done" || item.status === "skipped" || item.status === "blocked");
+    // The planner's `complete` verdict is deliberately not a control signal: a
+    // recipe is finished when it has no open step left, which the loop derives
+    // from the recipe itself. Honouring `complete: true` while steps are still
+    // pending would let a planner skip work it had just proposed.
   };
 
   /**
@@ -382,7 +383,7 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
    * already ran are never re-run: the run simply continues at the step the user
    * picked. Applied at most once per run.
    */
-  const maybeRestart = (): void => {
+  const maybeRestart = async (): Promise<void> => {
     if (!recipeMode || restartApplied || !restartRequest) return;
     restartApplied = true;
     const request = restartRequest;
@@ -397,7 +398,9 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
     recipe = result.state;
     plan = { ...plan, steps: planStepsOf(recipe), goal: recipe.goal };
     nextStep = recipe.steps.findIndex((step) => step.id === stepId);
-    recipeComplete = false;
+    // A restart discards the tail, so a step the user asked to keep can end up
+    // with nothing after it. Report the restart before fixing that up, so the
+    // client sees the discard it asked for and then the regeneration.
     o.emit({
       type: "recipe_restart",
       stepId,
@@ -406,6 +409,16 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
       regeneratedSteps: result.regenerated,
       reason: restartEventReason(request.reason),
     });
+    // A restart is a request for a fresh result, and a restart that discarded
+    // downstream steps leaves nothing after the restart point for the planner to
+    // propose from. Ask it directly what the recipe needs next instead, so the
+    // discarded steps are regenerated rather than silently lost. A restart that
+    // discarded nothing (the restart point was already the last step) is left
+    // alone: the recipe already says what comes next.
+    if (recipeMode && result.regenerated.length > 1) {
+      await proposeNext(recipe.steps.findIndex((step) => step.id === stepId), `${target.title}: ${restartEventReason(request.reason)}`, []);
+      plan = { ...plan, steps: planStepsOf(recipe), goal: recipe.goal };
+    }
     emitRecipe("restart", "restart");
     o.saveRecipe?.(structuredClone(recipe));
     checkpoint(false);
@@ -463,7 +476,7 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
   for (;;) {
     let failedStep: string | null = null;
 
-    maybeRestart();
+    await maybeRestart();
 
     for (let i = nextStep; i < plan.steps.length; i++) {
       guard();

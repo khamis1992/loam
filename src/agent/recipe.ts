@@ -154,6 +154,38 @@ function clampId(value: unknown, fallback: string): string {
 }
 
 /**
+ * Make a step list's ids unique.
+ *
+ * A recipe step id is the recipe's identity: it keys the run-graph canvas node,
+ * the frozen `plan` projection and the restart target, and the orchestrator
+ * resolves a step by `id`. Two steps sharing one id therefore collapse into a
+ * single canvas node, and the second step's work is silently dropped while the
+ * run still reports success.
+ *
+ * A planner can repeat an id, and an omitted id falls back to a positional one
+ * that an earlier step already took, so uniqueness is enforced here rather than
+ * trusted from the model. The first occurrence keeps the id; a later collision
+ * gets a numeric suffix, which the client sees in the next `recipe_update`.
+ */
+function withUniqueIds(steps: readonly RecipeStepInfo[]): RecipeStepInfo[] {
+  const taken = new Set<string>();
+  return steps.map((step, index) => {
+    const wanted = step.id.length > 0 ? step.id : `s${index + 1}`;
+    let id = wanted;
+    if (taken.has(id)) {
+      let suffix = 2;
+      while (taken.has(`${wanted}-${suffix}`)) suffix += 1;
+      id = `${wanted}-${suffix}`;
+    }
+    taken.add(id);
+    return id === step.id ? step : { ...step, id };
+  });
+}
+
+/** Test seam for {@link withUniqueIds}; not used by the engine itself. */
+export const withUniqueIdsForTest = withUniqueIds;
+
+/**
  * Normalize a planner reply into a decision.
  *
  * The reply is JSON shaped like
@@ -212,14 +244,16 @@ function parseProposalStep(value: unknown): RecipeProposal | undefined {
 
 /** Create the recipe a fresh recipe-mode run starts from. */
 export function initRecipe(goal: string, steps: readonly PlanStepInfo[]): RecipeState {
-  const recipe: RecipeStepInfo[] = steps.map((step, index) => ({
-    id: step.id || `s${index + 1}`,
-    title: step.title,
-    instruction: step.instruction,
-    successCriteria: step.successCriteria,
-    status: index === 0 ? "ready" : "proposed",
-    completedCount: 0,
-  }));
+  const recipe: RecipeStepInfo[] = withUniqueIds(
+    steps.map((step, index) => ({
+      id: step.id || `s${index + 1}`,
+      title: step.title,
+      instruction: step.instruction,
+      successCriteria: step.successCriteria,
+      status: index === 0 ? "ready" : "proposed",
+      completedCount: 0,
+    })),
+  );
   return { goal, steps: recipe, current: recipe.length > 0 ? 0 : -1, completedCount: 0, rounds: 0 };
 }
 
@@ -318,7 +352,9 @@ export function applyProposal(
     });
   }
 
-  const steps = next.map((step) => ({ ...step, completedCount: step.status === "done" ? count : step.completedCount }));
+  const steps = withUniqueIds(
+    next.map((step) => ({ ...step, completedCount: step.status === "done" ? count : step.completedCount })),
+  );
   const nextState: RecipeState = { ...state, steps, completedCount: count, rounds: state.rounds + 1 };
   const change: RecipeChange =
     replaced.length > 0 ? "rewrite" : dropped.length > 0 ? "drop" : proposal.add.length > 0 ? "propose" : "advance";
@@ -451,7 +487,8 @@ export function reseedRecipe(state: RecipeState, goal: string, steps: readonly P
       completedCount: state.completedCount,
     };
   });
-  return { ...state, goal, steps: next, current: -1, completedCount: completedCount(next) };
+  const unique = withUniqueIds(next);
+  return { ...state, goal, steps: unique, current: -1, completedCount: completedCount(unique) };
 }
 
 /** Order helper used by the UI to render a stable recipe list. */

@@ -390,6 +390,59 @@ describe("orchestrator recipe mode", () => {
     assert.equal(afterRestart!.remainingEstimate, 1);
   });
 
+  it("regenerates the downstream steps a restart discarded instead of dropping them", async () => {
+    // A restart reopens the restart point and discards everything after it. If
+    // nothing is regenerated in its place, the run finishes the reopened step
+    // and stops, silently losing the rest of the recipe. The planner is therefore
+    // asked what comes next and its proposal is appended before the loop runs.
+    const h = harness(
+      [
+        { id: "s1", title: "one", instruction: "do the first thing", criteria: "one is done", tool: "file_write" },
+        { id: "s2", title: "two", instruction: "do the second thing", criteria: "two is done", tool: "file_write" },
+        { id: "s3", title: "three", instruction: "do the third thing", criteria: "three is done", tool: "file_write" },
+      ],
+      [{ name: "file_write", output: "written" }],
+      {
+        rounds: [
+          // The restart's regeneration round: s2 was reopened, so s3 has to come
+          // back before the run can finish the recipe.
+          recipeJson(
+            [{ id: "s3", title: "three", instruction: "do the third thing", success_criteria: "three is done" }],
+            {},
+            [],
+            1,
+            false,
+          ),
+          recipeJson([], {}, [], 1, true),
+        ],
+      },
+    );
+
+    const { events, error } = await h.run({
+      recipeMode: true,
+      recipeRestart: { stepId: "s2", reason: "user edited the input of step 2" },
+      recipeState: (() => {
+        let state = initRecipe("finish the request", [
+          { id: "s1", title: "one", instruction: "do the first thing", successCriteria: "one is done" },
+          { id: "s2", title: "two", instruction: "do the second thing", successCriteria: "two is done" },
+          { id: "s3", title: "three", instruction: "do the third thing", successCriteria: "three is done" },
+        ]);
+        state = finishStep(state, 0, true);
+        state = finishStep(state, 1, true);
+        return state;
+      })(),
+    });
+    assert.equal(error, undefined, `the run completed: ${error ?? ""}`);
+
+    const starts = events.filter((event): event is Extract<AgentEvent, { type: "plan_step" }> => event.type === "plan_step" && event.phase === "start");
+    assert.deepEqual(starts.map((event) => event.id), ["s2", "s3"], "the discarded downstream step is regenerated and run");
+    assert.equal(h.toolRuns.get("file_write"), 2, "only the restart step and the regenerated step run");
+
+    const last = recipeUpdates(events)[recipeUpdates(events).length - 1]!;
+    assert.deepEqual(last.steps.map((step) => step.id), ["s1", "s2", "s3"]);
+    assert.equal(last.steps.filter((step) => step.status === "done").length, 3);
+  });
+
   it("does not consult the recipe planner when recipe mode is off", async () => {
     const h = harness(
       [{ id: "s1", title: "one", instruction: "do the first thing", criteria: "one is done", tool: "file_write" }],
