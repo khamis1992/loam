@@ -41575,3 +41575,79 @@ stat-cache/`core.autocrlf` false positive, not a content change: its normalized 
 LF while the worktree is CRLF under `core.autocrlf=true`. Cleared with
 `git checkout -- <path>`; working tree is now clean. No file was written by this addendum
 other than `.jdone` itself.
+
+## Independent re-validation (second deeper pass, all automated)
+
+An independent pass re-ran every historical and structural claim from the sections above
+against the actual git objects, with no reliance on the previous pass's output.
+
+### Commit chain (all ancestors of HEAD, verified with `git merge-base --is-ancestor`)
+
+| commit | parents | tree | role |
+|--------|---------|------|------|
+| `c1d392c` | `d72fb78` + `bec4181` | - | round-1 merge (modify/delete `.jdone` resolved by keeping ours) |
+| `954d21a` | `c1d392c` | - | round-1 `.jdone` record |
+| `b7cd3c7` | `954d21a` + `519f889` | `4464629` | round-2 merge (add/add `.jdone` resolved to the union tree) |
+| `23d9286` | `b7cd3c7` | `68d9aaf` | round-2 `.jdone` record |
+| `392c2a2` | `23d9286` + `6e17246` | `a0cbd78` | round-3 merge (union driver, no conflict) |
+| `c8c872d` | `392c2a2` | `f85a92c` | round-3 `.jdone` record |
+| `cadc3c4` | `c8c872d` | `ff1baa1` | validation addendum record |
+
+Every commit above is an ancestor of HEAD (exit 0). History is linear from
+`d72fb78` through `cadc3c4`.
+
+### Round-2 merge `b7cd3c7` re-verified from scratch
+
+- Merge base = `bec4181` (matches the recorded round-1 parity tip).
+- `.jdone` multiset containment recomputed: ours 7930 lines, theirs 24031, merged 25565;
+  **0 lines dropped from ours, 0 dropped from theirs**.
+- Committed `.jdone` blob = `ec2e2267dd4007db6ee183509be54853049574257`, LF-only,
+  25565 lines - exactly the blob recorded in the round-2 section.
+- Tree superset: 4785 files in ours, **0 dropped** in the merge (94 files modified as
+  expected for a merge, all with both sides' content).
+- `git diff --stat b7cd3c7^2 b7cd3c7` lists only O8's own files plus `.jdone` (4 files),
+  proving every parity change from `519f889` is present.
+- `git show c1d392c` (combined diff) is empty: `c1d392c` was a clean merge with no manual
+  conflict resolution.
+
+### Round-3 merge `392c2a2` oracle reproduced a third time
+
+`git merge-tree --write-tree 23d9286 6e17246` -> `a0cbd78ad60513c685c497d65b8b8e723314dc43`,
+identical to `git rev-parse 392c2a2^{tree}`. The committed merge is exactly the union
+driver's output.
+
+### Gates re-run on the current tree (`cadc3c4`), all measured this pass
+
+- `npx tsc --noEmit`                            -> exit 0
+- `npm run build:server`                        -> exit 0
+- `(cd packages/web && npx next build)`        -> exit 0 (25/25 static pages)
+- `npm run check:encoding`                      -> OK
+- `node --import tsx --test src/server/__tests__/eventsRoutes.test.ts`
+  -> tests 13, suites 2, pass 13, fail 0
+- eventlog suites (`eventLog`, `eventLogMigrate`, `seqReplay`, `storeCompat`,
+  `session/eventLog`) -> tests 47, suites 4, pass 47, fail 0
+- full node suite -> 3068 tests / 3067 pass / 0 fail / 1 skipped
+- full web suite -> 91 files / 624 tests, all passed
+
+### Non-degradation
+
+- Our own commits touched only `.jdone` (plus the 3-line `src/server/http.ts` wiring that
+  is O8's own deliverable). No test file, no source file outside the O8 deliverable, and
+  no config file was modified by this session.
+- `git diff -U0 d72fb78 cadc3c4` introduces no `it.skip` / `describe.skip` / `xit` /
+  `@ts-ignore` / `todo` marker. The only `.skip` occurrences are inside the report prose
+  quoting the marker names, and pre-existing parity code.
+- No forbidden path touched (`docs/handoff/watchdog.ps1`, `qa/*.png`,
+  `packages/tests/visual/baselines`, ZCode/Codex files).
+- No secret committed. No Arabic text written; 0 U+FFFD replacement characters in `.jdone`.
+
+### Final state
+
+- HEAD `cadc3c4`, working tree clean, `git ls-files -u` empty, no untracked files.
+- `git merge --no-edit manus-parity` -> `Already up to date` (exit 0); `manus-parity`
+  (`6e17246`) is an ancestor of HEAD; `git rev-list --left-right --count
+  manus-parity...HEAD` -> `0  22`.
+- `.jdone` committed blob is LF (41576 lines); worktree is CRLF under `core.autocrlf=true`;
+  0 conflict markers; no BOM.
+
+No test was weakened, deleted or skipped by this session.
