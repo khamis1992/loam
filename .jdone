@@ -1,3 +1,41 @@
+## J11 gate-fix session (round 6): re-merged the real manus-parity tips, all gates green
+
+`.jgatefail.txt` reported `MERGE CONFLICT with latest manus-parity`. The in-progress merge was
+stale: it targeted parity tip `411df5e` while `manus-parity` had advanced, so it was aborted and
+re-run against the real tip. `manus-parity` then advanced again during this session, so the
+merge was performed twice, each time resolved by keeping BOTH sides and never dropping a line:
+
+1. parity tip `411df5e` (M3/C21 mirofish) -> merge commit `3ae046b`
+2. parity tip `6fa63b8` (O4 seqReplay + socket) -> merge commit `becf760`
+
+Each round conflicted in exactly one file, the tracked rollup `.jdone`. Every source file
+auto-merged cleanly and was staged unmodified. Both resolutions were verified mechanically to be
+a strict superset of both merge parents: `ours` and `theirs` are each a subsequence of the merged
+file, 0 non-empty lines missing from either, 0 conflict markers, 0 U+FFFD replacement characters.
+
+Gate condition verified on the committed tree (HEAD `becf760`):
+`git merge-base --is-ancestor manus-parity HEAD` exits 0,
+`git merge --no-edit manus-parity` reports "Already up to date.", and
+`git rev-list --count manus-parity..HEAD` = 17.
+
+### Gates (all run from the worktree root on the committed merge tree)
+
+  1. `npx tsc --noEmit`                          -> exit 0
+  2. `npm run build:server`                      -> exit 0 (dist/server.cjs 19.6mb, pdf worker copied)
+  3. `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+  4. `node --import tsx --test "src/**/*.test.ts"`
+                                                  -> tests 2679, pass 2679, fail 0
+  5. `(cd packages/web && npx vitest run)`        -> 79 files / 538 tests, all pass, 0 fail
+  6. `npm run check:encoding`                     -> OK (no BOM, no mojibake, all JSON valid)
+
+No source file was edited by this session and no test was weakened, deleted or skipped.
+`src/agent/masterPromptText.ts` appeared modified only from a stale stat cache: its blob hash is
+identical to HEAD's, and `git add` clears the flag.
+
+No secrets committed. No forbidden path touched. No Arabic text was written.
+
+---
+
 ## J11 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge manus-parity, resolve all conflicts keeping both sides, commit.`
