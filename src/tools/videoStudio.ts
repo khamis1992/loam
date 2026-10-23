@@ -21,8 +21,13 @@
  *    the id is unknown.
  *  - Time arguments accept seconds (`90`) or timecode (`1:30`,
  *    `00:01:30.500`) via the shared `parseTimeToken` grammar.
- *  - When the FilmCraft dist is missing or the bridge fails, the tool returns
- *    a structured fallback pointing the agent at `video_edit` (the EDL +
+ *  - `export` (fc-06) is the one action that is not a plain step list: it needs
+ *    several round trips (catalog, execute, job poll, read, save), so it is
+ *    delegated to the shared service in `src/server/videoStudioExport.ts`. The
+ *    command ids live here (see {@link VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES})
+ *    so the tool and the HTTP route can never resolve different ids.
+ *  - When the FilmCraft dist is missing or the bridge fails, the tool returns a
+ *    structured fallback pointing the agent at `video_edit` (the EDL +
  *    ffmpeg path that needs no editor). A command the editor itself refuses is
  *    reported with `reason: "command_rejected"` and the editor's own error, so
  *    a bad command is never confused with an unreachable editor.
@@ -35,6 +40,11 @@ import path from "node:path";
 import { ROOT } from "../config.js";
 import { taskPath } from "../server/taskWorkspace.js";
 import { videoStudioRelay } from "../server/videoStudioRelay.js";
+import {
+  runVideoStudioExport,
+  type VideoStudioExportOptions,
+  type VideoStudioExportQuality,
+} from "../server/videoStudioExport.js";
 import { parseTimeToken } from "./videoEditAgent.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { num, str } from "./registry.js";
@@ -86,7 +96,8 @@ export type VideoStudioFallbackReason =
   | "panel_not_open"
   | "bridge_unavailable"
   | "command_rejected"
-  | "cancelled";
+  | "cancelled"
+  | "export_failed";
 
 /** Absolute path of the vendored editor entry point. */
 export function filmcraftDistDir(root: string = ROOT): string {
@@ -95,7 +106,7 @@ export function filmcraftDistDir(root: string = ROOT): string {
 
 /** True when the vendored Loam Video dist is installed (index.html present). */
 export function isFilmcraftDistInstalled(root: string = ROOT): boolean {
-  return fs.existsSync(path.join(filmcraftDistDir(root), "index.html"));
+  return Boolean(fs.existsSync(path.join(filmcraftDistDir(root), "index.html")));
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +129,7 @@ export const VIDEO_STUDIO_ACTIONS = [
   "music",
   "transition_basic",
   "effect_basic",
+  "export",
   "undo",
   "raw",
 ] as const;
@@ -150,8 +162,22 @@ export const VIDEO_STUDIO_COMMAND_CANDIDATES = {
   effectApply: ["effects.apply", "effect.apply"],
   effectSetParam: ["effects.setParam", "effect.setParam"],
   undo: ["edit.undo", "history.undo", "undo"],
-  export: ["export"],
 } as const;
+
+/**
+ * Export command ids, most-likely-first. The single definition lives here (the
+ * action table above and the fc-06 export service both use it), so the tool and
+ * the HTTP route can never resolve different ids.
+ */
+export const VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES = [
+  "file.exportMedia",
+  "file.export",
+  "export.quick",
+  "export",
+] as const;
+
+export const VIDEO_STUDIO_EXPORT_QUALITIES = ["low", "medium", "high", "best"] as const;
+export const VIDEO_STUDIO_EXPORT_RANGES = ["entire", "inOut", "workArea", "custom"] as const;
 
 // ---------------------------------------------------------------------------
 // Time parsing (seconds or timecode)
@@ -202,6 +228,7 @@ function levenshtein(a: string, b: string): number {
     const curr = [i];
     for (let j = 1; j <= n; j += 1) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      // `prev` has n+1 entries and j is 1..n, so all three reads are in range.
       curr[j] = Math.min(prev[j]! + 1, curr[j - 1]! + 1, prev[j - 1]! + cost);
     }
     prev = curr;
@@ -247,6 +274,8 @@ export function toCommandIdList(raw: unknown): string[] {
 
 interface BuiltAction {
   steps: VideoStudioStep[];
+  /** Present only for the export action: the request handed to the service. */
+  export?: VideoStudioExportOptions;
 }
 interface BuildError {
   error: string;
@@ -480,6 +509,35 @@ function buildAction(
       return { steps: [execStep(id, params)] };
     }
 
+    case "export": {
+      // The export is a multi-round-trip flow (catalog -> execute -> poll ->
+      // read -> save), so it is handled by the shared export service rather
+      // than as a plain step list. Validate the request here so a bad format
+      // or quality is reported before any editor call.
+      const quality = str(args, "quality").trim().toLowerCase();
+      if (quality && !VIDEO_STUDIO_EXPORT_QUALITIES.includes(quality as VideoStudioExportQuality)) {
+        return { error: `export quality must be one of: ${VIDEO_STUDIO_EXPORT_QUALITIES.join(", ")} (got "${quality}").` };
+      }
+      const range = str(args, "range").trim();
+      if (range && !VIDEO_STUDIO_EXPORT_RANGES.includes(range as VideoStudioExportOptions["range"] & string)) {
+        return { error: `export range must be one of: ${VIDEO_STUDIO_EXPORT_RANGES.join(", ")}.` };
+      }
+      return {
+        steps: [{ method: "commands", params: {} }],
+        export: {
+          format: str(args, "format").trim(),
+          name: str(args, "name").trim(),
+          width: num(args, "width", Number.NaN),
+          height: num(args, "height", Number.NaN),
+          quality: quality as VideoStudioExportQuality | undefined,
+          bitrateKbps: num(args, "bitrateKbps", Number.NaN),
+          range: range as VideoStudioExportOptions["range"] | undefined,
+          startSeconds: toSeconds(args["startSec"] ?? args["fromSec"] ?? args["start"]) ?? undefined,
+          endSeconds: toSeconds(args["endSec"] ?? args["toSec"] ?? args["end"]) ?? undefined,
+        },
+      };
+    }
+
     case "undo": {
       const id = resolveCommandId(catalog, VIDEO_STUDIO_COMMAND_CANDIDATES.undo);
       if (!id) return { error: unknownCommandMessage("undo", catalog, VIDEO_STUDIO_COMMAND_CANDIDATES.undo) };
@@ -567,6 +625,26 @@ function relayErrorResult(err: unknown): ToolResult {
   );
 }
 
+/**
+ * Map an export-service failure onto the tool's result envelope. Relay failures
+ * reuse the same classification as every other action, so a missing panel stays
+ * a retry and an editor refusal stays a clear error; anything else (a render
+ * failure, an unsupported format, an unreadable file) is an export failure that
+ * still points at the video_edit fallback.
+ */
+function exportErrorResult(err: unknown): ToolResult {
+  const code = (err as { code?: unknown } | null)?.code;
+  const detail = err instanceof Error ? err.message : String(err);
+  if (code === "PANEL_NOT_OPEN" || code === "TIMEOUT" || code === "CANCELLED" || code === "COMMAND_REJECTED") {
+    return relayErrorResult(err);
+  }
+  return fallbackResult(
+    "export_failed",
+    `The Loam Video export did not produce a file (${detail}).`,
+    `The editor could not render this timeline (${detail}). Use the ${VIDEO_STUDIO_FALLBACK_TOOL} tool instead: it compiles an edit-decision-list and renders via ffmpeg, so it needs no editor.`,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Agent tool
 // ---------------------------------------------------------------------------
@@ -597,7 +675,8 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
       description:
         "Drive the Loam Video editor (the wasm timeline editor embedded in the Workspace panel) for the current task. " +
         "Every action is sent through the Video Studio relay to the attached editor panel, which applies it to the live timeline and returns the result. " +
-        "Use this for direct, precise timeline work: open, state, import, cut, trim, delete, move, reorder, split, speed, add_text, add_audio (or music), transition_basic, effect_basic, undo and raw. " +
+        "Use this for direct, precise timeline work: open, state, import, cut, trim, delete, move, reorder, split, speed, add_text, add_audio (or music), transition_basic, effect_basic, export, undo and raw. " +
+        "Use export to render the timeline to a file in the task's files: it resolves the editor's real export command from the live command list, waits for the render with progress, reads the bytes back and saves them into the task workspace under exports/, returning the saved path, name, mime and size so the result can be linked in chat. " +
         "Always call state first to read the current project (sequences, tracks, clips, playhead) so manual edits made in the panel are never lost, then apply the edit. " +
         "Timestamps accept seconds (90) or timecode (1:30, 00:01:30.500). " +
         "Mutating actions resolve their real engine command ids from the editor's own command list at runtime; raw executes any command id you name, but only after validating it against that list. " +
@@ -615,7 +694,9 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
               "open (confirm the editor is reachable and list its commands), state (read project/sequence/tracks/clips/playhead), " +
               "import (bring a task file or URL onto the timeline), cut (razor at one or more times), trim, delete (ripple optional), " +
               "move / reorder, split, speed, add_text (title/graphics layer), add_audio / music (audio file onto an audio track with gain/fade), " +
-              "transition_basic (FilmCraft-native video/audio transition), effect_basic (effects.apply), undo, raw (any validated command id).",
+              "transition_basic (FilmCraft-native video/audio transition), effect_basic (effects.apply), " +
+              "export (render the timeline to a task file: format, name, width, height, quality, bitrateKbps, range, startSec/endSec; the rendered file is saved into the task's files under exports/ and its path is returned), " +
+              "undo, raw (any validated command id).",
           },
           taskId: { type: "string", description: "Task id (defaults to the current run task)." },
           url: { type: "string", description: "Media URL for import / add_audio." },
@@ -641,9 +722,30 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
           fadeInSec: { ...TIME_SCHEMA, description: "add_audio: fade-in length." },
           fadeOutSec: { ...TIME_SCHEMA, description: "add_audio: fade-out length." },
           type: { type: "string", description: "transition_basic: transition type id." },
-          name: { type: "string", description: "effect_basic: effect id." },
+          name: { type: "string", description: "effect_basic: effect id; export: output file name (sanitised, extension forced to format)." },
           params: { type: "object", description: "effect_basic / raw: extra engine parameters." },
           command: { type: "string", description: "raw: the engine command id to execute." },
+          format: {
+            type: "string",
+            enum: ["mp4", "mov", "m4v", "webm", "mkv", "avi", "mxf", "wav", "mp3", "aac", "flac", "png", "jpeg", "tiff", "exr"],
+            description:
+              "export: container, default mp4. Common aliases (quicktime, mpeg, wave) are normalised. Unknown formats are refused with the supported list.",
+          },
+          width: { type: "number", description: "export: output width in pixels." },
+          height: { type: "number", description: "export: output height in pixels." },
+          quality: {
+            type: "string",
+            enum: ["low", "medium", "high", "best"],
+            description: "export: quality preset (mapped to the editor's own bitrate hint).",
+          },
+          bitrateKbps: { type: "number", description: "export: target video bitrate in kbit/s; overrides quality." },
+          range: {
+            type: "string",
+            enum: ["entire", "inOut", "workArea", "custom"],
+            description: "export: which part of the timeline to render (default entire).",
+          },
+          startSec: { ...TIME_SCHEMA, description: "export: custom range start (requires range custom)." },
+          endSec: { ...TIME_SCHEMA, description: "export: custom range end (requires range custom)." },
         },
       },
       async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
@@ -661,8 +763,9 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
           );
         }
 
-        // Only actions that issue engine commands need the live catalog.
-        const needsCatalog = action !== "open" && action !== "state" && action !== "import";
+        // Only actions that issue engine commands need the live catalog. The
+        // export service reads its own catalog, so it does not need one here.
+        const needsCatalog = action !== "open" && action !== "state" && action !== "import" && action !== "export";
         let catalog: string[] = [];
         if (needsCatalog) {
           try {
@@ -674,6 +777,23 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
 
         const built = buildAction(action, args, catalog, ctx.workspace);
         if ("error" in built) return { ok: false, content: built.error };
+
+        // The export is not a plain step list: it resolves the command id, waits
+        // for the render, reads the bytes back and writes them into the task's
+        // files (fc-06). It goes through the same relay as every other action.
+        if (built.export) {
+          try {
+            const result = await runVideoStudioExport({
+              taskId,
+              relay,
+              taskRoot: ctx.workspace,
+              options: built.export,
+            });
+            return { ok: true, content: JSON.stringify({ action, ...result }) };
+          } catch (err) {
+            return exportErrorResult(err);
+          }
+        }
 
         const results: Array<{ method: string; ok: boolean; result?: unknown }> = [];
         for (const step of built.steps) {
@@ -688,6 +808,8 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
         if (action === "open") {
           return { ok: true, content: JSON.stringify({ action, available: true, commands: results[0]?.result ?? [] }) };
         }
+        // `export` never reaches this branch (handled above), so a step-list action
+        // reports its steps.
         return { ok: true, content: JSON.stringify({ action, steps: results }) };
       },
     },

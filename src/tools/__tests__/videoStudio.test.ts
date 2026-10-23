@@ -86,6 +86,32 @@ function lastExecuteCommand(): { command: string; params: Record<string, unknown
   return step.params as { command: string; params: Record<string, unknown> };
 }
 
+/**
+ * Relay that answers the whole export flow: a catalog with the real export id,
+ * an execute result carrying the produced path, a finished job and the bytes.
+ */
+class ExportMockRelay extends MockRelay {
+  readFileValue: unknown = Buffer.from("fake-mp4-bytes");
+
+  override async enqueue(
+    taskId: string,
+    target: "film" | "effects",
+    method: string,
+    params: Record<string, unknown> = {},
+  ): Promise<unknown> {
+    this.dispatched.push({ taskId, target, method, params });
+    if (this.failWith) throw Object.assign(new Error(this.failWith.message), { code: this.failWith.code });
+    if (method === "commands") return this.commands;
+    if (method === "readFile") return this.readFileValue;
+    if (method === "execute") {
+      const command = (params as { command?: string }).command;
+      if (command === "jobs.poll") return { job: { status: "done", progress: 1, path: "/exports/loam-cut.mp4" } };
+      return { path: "/exports/loam-cut.mp4", job: { status: "done", progress: 1 } };
+    }
+    return { ok: true };
+  }
+}
+
 after(() => {
   try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* ignore */ }
   try { fs.rmSync(ws, { recursive: true, force: true }); } catch { /* ignore */ }
@@ -491,5 +517,110 @@ describe("video_studio helpers", () => {
       .then(() => {
         assert.deepEqual(lastExecuteCommand(), { command: "timeline.split", params: { atSec: 8 } });
       });
+  });
+});
+
+/**
+ * fc-06: the `export` action. It is the one action that is not a plain step
+ * list: it is delegated to the shared export service, which resolves the real
+ * export command id, waits for the render, reads the bytes back and writes the
+ * file into the task workspace. These tests cover the tool's own part of that
+ * contract: validation before any editor call, the resolved command id, the
+ * saved file, and the fallback when the render fails.
+ */
+describe("video_studio export action", () => {
+  it("renders the timeline and saves the file into the task workspace", async () => {
+    fs.rmSync(path.join(ws, "exports"), { recursive: true, force: true });
+    const exportRelay = new ExportMockRelay();
+    exportRelay.commands = ["file.exportMedia", ...CATALOG];
+    relay = exportRelay;
+
+    const res = await tool().run({ action: "export", format: "mp4", name: "loam-cut", quality: "high" }, ctx());
+    assert.equal(res.ok, true, res.content);
+
+    const parsed = JSON.parse(res.content) as {
+      action: string;
+      ok: boolean;
+      path: string;
+      name: string;
+      mime: string;
+      bytes: number;
+      command: string;
+    };
+    assert.equal(parsed.action, "export");
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.command, "file.exportMedia");
+    assert.equal(parsed.path, "exports/loam-cut.mp4");
+    assert.equal(parsed.name, "loam-cut.mp4");
+    assert.equal(parsed.mime, "video/mp4");
+    assert.equal(parsed.bytes, Buffer.from("fake-mp4-bytes").length);
+
+    // The file really landed in the task workspace, written atomically.
+    const saved = path.join(ws, "exports", "loam-cut.mp4");
+    assert.equal(fs.existsSync(saved), true);
+    assert.equal(fs.readFileSync(saved, "utf8"), "fake-mp4-bytes");
+    assert.deepEqual(fs.readdirSync(path.dirname(saved)).filter((entry) => entry.endsWith(".tmp")), []);
+
+    // The export id is resolved from the live catalog, never guessed: the
+    // execute step that drives the render carries the resolved id.
+    const executed = allDispatched().filter((step) => step.method === "execute");
+    assert.equal(executed.length > 0, true);
+    assert.deepEqual(executed[0]!.params, {
+      command: "file.exportMedia",
+      params: { path: "/exports/loam-cut.mp4", range: "", wait: true, targetKbps: 12_000 },
+    });
+  });
+
+  it("refuses an unknown quality before touching the editor", async () => {
+    relay = new ExportMockRelay();
+    relay.commands = ["file.exportMedia", ...CATALOG];
+    const res = await tool().run({ action: "export", quality: "ultra" }, ctx());
+    assert.equal(res.ok, false);
+    assert.match(res.content, /quality must be one of/);
+    assert.deepEqual(relay.dispatched, []);
+  });
+
+  it("refuses an unknown range before touching the editor", async () => {
+    relay = new ExportMockRelay();
+    relay.commands = ["file.exportMedia", ...CATALOG];
+    const res = await tool().run({ action: "export", range: "half" }, ctx());
+    assert.equal(res.ok, false);
+    assert.match(res.content, /range must be one of/);
+    assert.deepEqual(relay.dispatched, []);
+  });
+
+  it("falls back to video_edit when the editor exposes no export command", async () => {
+    fs.rmSync(path.join(ws, "exports"), { recursive: true, force: true });
+    relay = new ExportMockRelay();
+    relay.commands = CATALOG.filter((id) => id !== "export");
+    const res = await tool().run({ action: "export" }, ctx());
+    assert.equal(res.ok, false);
+    const parsed = JSON.parse(res.content) as { fallback: string; reason: string };
+    assert.equal(parsed.fallback, "video_edit");
+    assert.equal(parsed.reason, "export_failed");
+    // Nothing was written when the render could not even start.
+    assert.equal(fs.existsSync(path.join(ws, "exports")), false);
+  });
+
+  it("falls back to video_edit when the editor produces no bytes", async () => {
+    fs.rmSync(path.join(ws, "exports"), { recursive: true, force: true });
+    const empty = new ExportMockRelay();
+    empty.commands = ["file.exportMedia", ...CATALOG];
+    empty.readFileValue = "";
+    relay = empty;
+    const res = await tool().run({ action: "export" }, ctx());
+    assert.equal(res.ok, false);
+    const parsed = JSON.parse(res.content) as { fallback: string; reason: string };
+    assert.equal(parsed.fallback, "video_edit");
+    assert.equal(parsed.reason, "export_failed");
+    assert.equal(fs.existsSync(path.join(ws, "exports")), false);
+  });
+
+  it("keeps one shared definition of the export command ids", async () => {
+    const { VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES } = await import("../../tools/videoStudio.js");
+    assert.deepEqual([...VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES], ["file.exportMedia", "file.export", "export.quick", "export"]);
+    // The service must resolve exactly the same ids as the tool.
+    const service = await import("../../server/videoStudioExport.js");
+    assert.deepEqual([...service.VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES], [...VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES]);
   });
 });

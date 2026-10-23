@@ -121,6 +121,11 @@ export type AgentEvent =
   /** A workspace file was published as a task artifact via artifact_publish. */
   | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string }
   /**
+   * fc-06: a Loam Video export is in flight. Live-only (no canvas node): the
+   * rendered file lands in the task workspace when the stage reaches "saving".
+   */
+  | { type: "video_studio_export"; taskId: string; stage: "starting" | "rendering" | "saving"; progress?: number }
+  /**
    * Loam Video Studio relay: one command for the panel attached to this task's
    * event stream. The panel executes it with its editor bridge and posts the
    * result back to /api/tasks/:id/video-studio/result.

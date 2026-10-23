@@ -74,7 +74,7 @@ function attachPanel(base: string, taskId: string, log: StreamEvent[]): { stop: 
         const event = JSON.parse(line.slice("data: ".length)) as StreamEvent;
         if (event.type !== "video_studio_command" || typeof event.id !== "string") continue;
         log.push(event);
-        const result = runCommand(event);
+        const result = await runCommand(event);
         await fetch(`${base}/api/tasks/${encodeURIComponent(taskId)}/video-studio/result`, {
           method: "POST",
           headers: { "content-type": "application/json" },
