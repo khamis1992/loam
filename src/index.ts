@@ -61,6 +61,7 @@ import { videoStudioRelay } from "./server/videoStudioRelay.js";
 import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { runAgent } from "./agent/loop.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
+import { writeCheckpoint } from "./agent/checkpointLog.js";
 import type { Emit } from "./agent/events.js";
 import { applyRunEvent, beginRun } from "./agent/runGraphAdapter.js";
 import { OllamaClient } from "./ollama.js";
@@ -500,10 +501,24 @@ async function main(): Promise<void> {
         // D19 compute budget: shared with the UI badge so the counters and the
         // badge always agree, and the run stops when the ceiling is hit.
         budget: sessionRuntime.getBudget(task),
+        // O5: the durable event log is keyed by the task id (the protocol store
+        // binds a session to its task, and `session_events` outlives the JSON
+        // session cache). Setting this makes every tool call in this run append a
+        // `started` row before it runs and a terminal row after.
+        eventLogSession: task,
       };
       const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
         ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint, lifecycleHooks: true,
-        saveCheckpoint: (checkpoint) => { opts.savedRun.checkpoint = checkpoint; saveRun(task, opts.savedRun, opts.lease); },
+        saveCheckpoint: (checkpoint) => {
+          // O5: mirror the checkpoint into the durable append-only log and stamp it
+          // with the sequence it received. The stamp is what ties a resumed run to
+          // its log position, and `logSessionId` is what lets recovery ask the log
+          // whether a tool call started without ever reaching a terminal row.
+          checkpoint.logSeq = writeCheckpoint(task, checkpoint, task);
+          checkpoint.logSessionId = task;
+          opts.savedRun.checkpoint = checkpoint;
+          saveRun(task, opts.savedRun, opts.lease);
+        },
       }) : await runAgent(agentOpts);
       // The orchestrator can swallow an abort (it reports a failed step instead),
       // so treat a cancelled run explicitly — never as success.

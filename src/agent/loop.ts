@@ -26,6 +26,14 @@ import { ReadState } from "../tools/readState.js";
 import { checkBudget, consumeSteps, consumeTokens, type ComputeBudget } from "./computeBudget.js";
 import { KvCacheMonitor, missMessage, type RequestRoute, type RequestSignature } from "./kvCacheMonitor.js";
 import { addUsage } from "./usageAccounting.js";
+import { recordToolCall, recordToolResult } from "./checkpointLog.js";
+
+/** Stable per-tool-call id: the model's own id when it supplies one, otherwise
+ *  a synthetic id derived from the turn and call index. */
+function toolCallIdOf(call: { function?: { name?: string; arguments?: unknown }; id?: string }, turn: number, index: number): string {
+  const id = typeof call.id === "string" && call.id.trim() ? call.id.trim() : "";
+  return id || `call_${turn}_${index}`;
+}
 
 export interface RunOptions {
   cfg: Config;
@@ -89,6 +97,10 @@ export interface RunOptions {
   cacheTtlIsEstimate?: boolean;
   /** OAuth account label bound to every request of this run; caches are per account. */
   account?: string;
+  /** Event-log session for this run. When set, every tool call is recorded in the
+   *  durable log with a `started` row before it runs and a terminal row after, so
+   *  a call that began without finishing is visible after a crash. */
+  eventLogSession?: string;
 }
 
 export interface RunResult {
@@ -282,6 +294,10 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // so the model cannot blind-edit content it never saw or clobber a file that
   // changed since it was read. A fresh instance per run matches Claude Code.
   const readState = new ReadState();
+  // O5 durable event log: when the caller supplies a session, every tool call is
+  // bracketed by a `started` and a terminal event so a crash mid-call is visible.
+  const logSession = opts.eventLogSession;
+  let index = 0;
   // The model's live task list, mirrored here so a compaction can re-attach it
   // as a hidden reminder after the conversation is folded away.
   let currentTodos: TodoItem[] = [];
@@ -486,8 +502,11 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         const name = call.function?.name ?? "";
         const args = normalizeArgs(call.function?.arguments);
         opts.emit({ type: "tool_call", name, args });
-        return { name, args, t0: Date.now() };
+        return { name, args, t0: Date.now(), callId: toolCallIdOf(call, step, index++) };
       });
+      if (logSession) {
+        for (const item of prepared) recordToolCall(logSession, item.callId, item.name, opts.taskId);
+      }
       const batchResults = await mapWithConcurrency(prepared, PARALLEL_READ_LIMIT, (item) =>
         opts.tools.exec(item.name, item.args, {
           cfg: opts.cfg,
@@ -503,6 +522,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
       for (let i = 0; i < prepared.length; i++) {
         const item = prepared[i]!;
         const toolResult = batchResults[i]!;
+        if (logSession) {
+          recordToolResult(logSession, item.callId, item.name, toolResult.ok ? "succeeded" : "failed", toolResult.content, opts.taskId, opts.cfg.workspace);
+        }
         const evidence = { name: item.name, args: item.args, ok: toolResult.ok, summary: toolResult.content };
         trace.push(evidence);
         opts.onToolEvidence?.(evidence);
@@ -533,6 +555,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         const args = normalizeArgs(call.function?.arguments);
         opts.emit({ type: "tool_call", name, args });
 
+        const callId = toolCallIdOf(call, step, index++);
+        if (logSession) recordToolCall(logSession, callId, name, opts.taskId);
         const t0 = Date.now();
         const toolResult = await opts.tools.exec(name, args, {
           cfg: opts.cfg,
@@ -545,6 +569,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           ...(opts.taskId ? { taskId: opts.taskId } : {}),
         });
 
+        if (logSession) {
+          recordToolResult(logSession, callId, name, toolResult.ok ? "succeeded" : "failed", toolResult.content, opts.taskId, opts.cfg.workspace);
+        }
         opts.emit({ type: "tool_result", name, ok: toolResult.ok, summary: summarize(toolResult.content), ms: Date.now() - t0 });
         const evidence = { name, args, ok: toolResult.ok, summary: toolResult.content };
         trace.push(evidence);
