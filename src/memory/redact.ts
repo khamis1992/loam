@@ -39,3 +39,28 @@ export function assertNoSecret(text: string): void {
   const hit = findSecret(text);
   if (hit) throw new Error(`memory text rejected: possible secret (${hit.slice(0, 40)})`);
 }
+
+/**
+ * The same patterns as global regexes, so a caller can remove *every*
+ * occurrence of a credential rather than only testing for the first one.
+ */
+export const SECRET_PATTERNS_GLOBAL: readonly RegExp[] = SECRET_PATTERNS.map(
+  (re) => new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`),
+);
+
+/** Replacement marker left behind where a credential was removed. */
+export const REDACTED = "[redacted]";
+
+/**
+ * Remove every credential-shaped substring from `text`, replacing each match
+ * with {@link REDACTED}. `findSecret` only answers "is there one?"; a run export
+ * has to be safe to publish, so it needs the removal itself. Matching is done on
+ * a copy of the pattern list, so a caller's `lastIndex` can never leak state.
+ */
+export function stripSecrets(text: string): string {
+  let out = text;
+  for (const re of SECRET_PATTERNS_GLOBAL) {
+    out = out.replace(re, REDACTED);
+  }
+  return out;
+}

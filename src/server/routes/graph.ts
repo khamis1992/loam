@@ -12,6 +12,7 @@
  *   GET   /api/graph/:runId/stream                -> SSE of graph changes (live canvas)
  *   PATCH /api/graph/:runId/nodes/:nodeId        -> { status?, data?, parentIds? }
  *   POST  /api/graph/:runId/nodes/:nodeId        -> heartbeat (bump `updated`)
+ *   GET   /api/graph/:runId/replay[/json|/html]   -> Neo N14 static replay export
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
@@ -23,6 +24,14 @@ import {
   setRunNodeStatus,
   subscribeRunGraph,
 } from "../../agent/runGraphAdapter.js";
+import {
+  buildRunReplay,
+  renderReplayHtml,
+  replayFileName,
+  replayHtmlFileName,
+  scanReplayForSecrets,
+} from "../../graph/export.js";
+import { getTask } from "../db.js";
 import { isRunNodeStatus } from "../../graph/store.js";
 
 /** A node payload edit is user-authored, so it is capped well below a file upload. */
@@ -85,6 +94,56 @@ export async function handleGraphRoutes(
   rawPath: string,
   ctx: RouteContext | undefined = undefined,
 ): Promise<boolean> {
+  // Neo N14: a self-contained static replay of one run. Matched before the
+  // generic `/nodes` route because `/replay` is not a node id.
+  const replayMatch = rawPath.match(/^\/api\/graph\/([^/]+)\/replay(?:\/(json|html))?$/);
+  if (replayMatch) {
+    if (req.method !== "GET") return sendJson(res, 405, { error: "method not allowed" });
+    const runId = decodeURIComponent(replayMatch[1]!);
+    const variant = replayMatch[2] ?? "json";
+    const task = getTask(runId);
+    if (!task) return sendJson(res, 404, { error: "run not found" });
+    const replay = buildRunReplay({
+      runId,
+      title: task.title,
+      // A run that has not reached a terminal state is exported as-is and marked
+      // partial, so the viewer says so instead of implying a finished mission.
+      // `done` / `error` / `cancelled` are terminal; anything else is partial.
+      partial: task.status !== "done" && task.status !== "error" && task.status !== "cancelled",
+      nodes: getRunNodes(runId),
+    });
+    // Re-verify after the run title is folded in: the title is user-authored and
+    // is the one field that arrives from outside the node payload.
+    const findings = scanReplayForSecrets(replay);
+    if (findings.length > 0) return sendJson(res, 500, { error: `run replay rejected: secret at ${findings[0]!.path}` });
+
+    if (variant === "html") {
+      const html = renderReplayHtml({ replay });
+      res.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "content-length": Buffer.byteLength(html),
+        // The page is a standalone file, so a browser must never sniff it into
+        // something executable or cache it as an API response.
+        "content-disposition": `inline; filename="${replayHtmlFileName(runId)}"`,
+        "x-content-type-options": "nosniff",
+        "cache-control": "no-store",
+      });
+      res.end(html);
+      return true;
+    }
+
+    const text = JSON.stringify(replay);
+    res.writeHead(200, {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": Buffer.byteLength(text),
+      "content-disposition": `attachment; filename="${replayFileName(runId)}"`,
+      "x-content-type-options": "nosniff",
+      "cache-control": "no-store",
+    });
+    res.end(text);
+    return true;
+  }
+
   // The live canvas subscribes to this stream; it is not a graph resource, so it
   // is matched before the `/nodes` route below.
   const streamMatch = rawPath.match(/^\/api\/graph\/([^/]+)\/stream$/);
