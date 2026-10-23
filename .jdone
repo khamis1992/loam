@@ -2698,6 +2698,77 @@ Test commands:
   (cd packages/web && npx vitest run)
   npm run check:encoding
 
+## Gate fix (validation pass 2): D5 merge re-run, both sides kept
+
+Parity advanced again to `d05e4b1` (D5 `verify_and_record`). `git merge manus-parity`
+conflicted in exactly one file, `.jdone` (add/add at the same top-of-file anchor). Resolved
+as a verified multiset union: 0 non-blank lines missing from either parent, 0 conflict
+markers. No test was weakened, deleted or skipped and no code was dropped.
+
+Code conflicts were resolved by the merge itself and checked by hand as true unions, both
+sides present:
+
+- `src/modes/catalog.ts`: the `GIT` tool list carries both `pr_review` (D15) and
+  `verify_and_record` (D5).
+- `src/setup/runtime.ts`: both `createPrReviewTool` and `createVerifyAndRecordTool` are
+  imported and registered.
+- `src/tools/gitPrProvider.ts`: the `PrProvider` interface carries both `setPrBody` (D5) and
+  `prDiff` (D15); both providers implement both.
+- `prompts/loam-master.md`: both the D15 and D5 catalog rows and rules are present.
+- `src/tools/__tests__/ciWatch.test.ts`: D5's `setPrBody` stubs added to both fake providers
+  so the widened `PrProvider` interface still satisfies the test (the test was extended, not
+  relaxed).
+
+### Generated artifacts are regenerated, never hand-merged
+
+`src/agent/masterPromptText.ts` and the `masterPromptSha256` in
+`src/agent/__tests__/__snapshots__/coding-prompt.snap.json` are generated from the merged
+markdown. A line-wise auto-merge of a generated file is stale by construction, so
+`npm run gen:master-prompt` was re-run (27 sections) and the snapshot hash came out
+consistent: `codingPrompt.test.ts` passes 8/8 and `codingSectionSha256` is unchanged.
+
+### The parity-file-drop hazard, re-checked
+
+Parity added four files after the previous merge base (`src/agent/prVerification.ts`,
+`src/agent/__tests__/prVerification.test.ts`, `src/tools/verifyAndRecordTools.ts`,
+`src/tools/__tests__/verifyAndRecord.test.ts`). These were confirmed present in the merge
+index, and `git diff manus-parity HEAD` shows only the V8 delta (9 files, no `D` on any
+parity file). `git merge-base --is-ancestor manus-parity HEAD` exits 0 and
+`git rev-list --left-right --count manus-parity...HEAD` is `0  17` (zero parity commits
+missing).
+
+## Gates (validation pass 2, on the committed merge `314feb9`)
+
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0 (dist/server.cjs, pdf worker copied)
+- `next build` (packages/web) -> compiled successfully, 25/25 static pages
+- `npm run check:design-registry` -> OK (30 blocks, 8 RTL, all manifests valid, all built)
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes` -> PASS
+- `npm run check:promptwire` -> PASS
+- `npm run check:orchestrator` -> PASS (114/114)
+- `npx tsx --test "src/**/__tests__/*.test.ts"` -> 2327 tests, 2325 pass, 2 fail
+- `vitest run` (packages/web) -> 72 files / 472 tests, all pass
+- `codingPrompt.test.ts` -> 8 tests, 8 pass (snapshot regenerated and matching)
+
+The 2 node failures are the same pre-existing, parity-identical ones as before:
+
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> inherited D4 `suggest_plan` defect.
+   The test file plus `src/agent/taskToolScope.ts` and `src/tools/planTools.ts` are
+   byte-identical to `manus-parity`.
+2. `src/server/__tests__/worktrees.test.ts` -> the test asserts a plain temp dir is not a
+   git repo, but `%TEMP%` on this machine sits inside one. The test file plus
+   `src/server/worktrees.ts` are byte-identical to `manus-parity`.
+
+(`src/tools/__tests__/search.test.ts` is byte-identical to parity and passed this run.)
+
+Acceptance re-probed through the real registered tool, not internals: query "pricing" ->
+`pricing-toggle`, `pricing-3-tier`, `rtl-pricing-3-tier`; query "تسعير" -> the same three.
+`ui_examples_search` returns `ok:true` with a 5541-char payload naming the pricing blocks.
+Registry is 30 blocks, 8 RTL, every RTL block `lang=ar` with `rtl:true` and Arabic tags.
+`mergeAlwaysOnTools` keeps both `ui_examples_search` and `design_critique` in the allowlist.
+No secrets committed.
+
 ## Preserved: manus-parity D5 report (merged in from parity, union)
 
 The parity tip at merge time carried the D5 gate-fix report below; it is preserved here in
