@@ -307,3 +307,48 @@ src/tools/__tests__/promptwire.test.ts imports src/scripts/gen-master-prompt.ts,
 calls main() at import time and rewrites the file with LF endings. Content is
 byte-identical to the committed version (git diff empty); only line-ending noise under
 core.autocrlf=true. Restored with git checkout, working tree clean.
+
+Correction: the first merge used a stale local manus-parity ref. The merge's second
+parent was 9e01568, but manus-parity had advanced to a5d0cf3 (19 commits: V4 Loam UI
+Kit token linter + design_lint tool, fc-01 reproducible FilmCraft/EffectCraft dist
+fetching, J10), none of which was in HEAD. A second merge brought in the real tip.
+
+Merge done (second merge, real tip a5d0cf3).
+
+`git merge manus-parity` at tip a5d0cf3 produced a single conflict, `.jdone`
+(modify/delete: parity deleted its copy, HEAD keeps the record). Resolved by keeping
+HEAD's `.jdone`; every other file auto-merged cleanly. What this merge adds on top of
+3a7dc30:
+- V4 design system: src/modes/designRules.ts (DESIGN_LINT_PROMPT), src/tools/designLint.ts
+  (design_lint tool), src/design/tokenLint.ts (Loam UI Kit token linter, expanded), plus
+  src/tools/__tests__/designLint.test.ts, src/design/__tests__/tokenLint.test.ts and the
+  src/index.ts + src/agent/prompt.ts wiring.
+- fc-01 vendor: scripts/vendor/fetch-filmcraft.mjs, scripts/vendor/fetch-effectcraft.mjs,
+  scripts/vendor/__tests__/fetch-vendor.test.mjs, docs/vendor-dists.md, plus the electron
+  rebrand/main.cjs, craft route and repair-mojibake updates.
+- electron/__tests__/filmcraftRebrand.test.mjs, src/modes/buildPhases.ts,
+  src/server/runTools.ts and src/server/routes/craft.ts updates.
+
+The five conflicts resolved in 3a7dc30 are unaffected: parity's advance past 9e01568 did
+not touch src/agent/loop.ts, src/agent/orchestrator.ts, src/policy/hooks.ts,
+src/tools/subagents.ts or src/policy/__tests__/hooks.test.ts, so the union resolution and
+the check:orchestrator hermetic fix carry forward unchanged.
+
+Gates re-run after the full merge (all pass, worktree root):
+  npx tsc --noEmit                              -> exit 0
+  npm run build:server                          -> exit 0
+  (cd packages/web && npx next build)           -> exit 0 (compiled successfully)
+  npm run verify                                -> exit 0
+    (orchestrator smoke: PASS (114/114), recovery PASS, modes PASS, eval PASS, encoding OK)
+  node --import tsx --test src/{agent,llm,policy,tools}/__tests__/*.test.ts
+    - tests 987, pass 987, fail 0
+  node --import tsx --test src/{server,design,protocol,memory,session,scripts,preview,eval,modes}/__tests__/*.test.ts
+    - tests 698, pass 698, fail 0
+  node --import tsx --test electron/__tests__/*.test.mjs
+    - tests 8, pass 8, fail 0
+  npm run test:vendor                           -> tests 7, pass 7, fail 0
+  npm run test:vendor:protocol                  -> tests 13, pass 13, fail 0
+  npm run test:vendor:editors                   -> tests 15, pass 15, fail 0
+  (cd packages/web && npx vitest run)           -> 66 files, 437 tests passed
+
+Branch is now 0 commits behind manus-parity (a5d0cf3 is an ancestor of HEAD).

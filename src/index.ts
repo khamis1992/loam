@@ -39,6 +39,7 @@ import { createOfficeEditTools } from "./tools/officeEditAgent.js";
 import { createVideoEditTools } from "./tools/videoEditAgent.js";
 import { createDeployTools } from "./tools/deploy.js";
 import { createDesignExploreTools } from "./tools/designExplore.js";
+import { createDesignLintTools } from "./tools/designLint.js";
 import { createDesignAssetsTools } from "./tools/designAssets.js";
 import { createDesignBriefTools } from "./tools/designBrief.js";
 import { createDesignAutofixTools } from "./tools/designAutofix.js";
@@ -140,6 +141,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createVideoEditTools());
   rt.registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview: rt.preview }));
   rt.registry.registerAll(createDesignExploreTools());
+  rt.registry.registerAll(createDesignLintTools());
   rt.registry.registerAll(createDesignAssetsTools());
   rt.registry.registerAll(createDesignBriefTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createDesignAutofixTools());
