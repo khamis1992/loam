@@ -1,93 +1,60 @@
-# N2 - Canvas view: DONE (merge gate resolved on the current parity tip)
+N2 - Canvas view: DONE.
 
-Workspace "Canvas" tab rendering the N1 run graph: pan/zoom, auto-layout, an E
-shortcut that opens a node, live SSE updates, a Recipe side panel, and Arabic/RTL.
+## What shipped (already committed, verified this session)
+Workspace "Canvas" tab rendering the N1 run graph, built in `33a8911` with the
+auto-open fix in `61a5da5`, and already merged into `manus-parity` by `ed26550`.
+This session found the branch fully merged with parity advanced 89 commits, so
+it verified the tree and resolved the merge gate; no source file was edited.
 
-## What this session did
+## Files
+- `packages/web/src/components/workspace/canvas/{CanvasPanel,layout,stream,types,client}.ts(x)`
+- `packages/web/src/components/workspace/canvas/register.ts`, `Editor.tsx`
+- `packages/web/src/components/workspace/{WorkspacePanel,types,autoOpen,index}.ts(x)`
+- `packages/web/src/components/workspace/canvas/__tests__/*`, `__tests__/autoOpen.test.ts`
+- `packages/web/src/i18n/{t.ts,en.json,ar.json}`
+- `src/server/routes/graph.ts`, `src/server/http.ts`, `src/agent/runGraphAdapter.ts`
+- `src/server/__tests__/graphRoutes.test.ts`
 
-The N2 canvas work was already complete and committed (`33a8911` feature +
-`61a5da5` auto-open fix) and had already been merged into `manus-parity`
-(`ed26550`, "merge khamis1992/neo-n2 (N2 via loam-jcode-run)"). Nothing was left
-to implement; this session verified the tree and resolved the merge gate.
+## Acceptance tests (all passing)
+- `(cd packages/web && npx vitest run src/components/workspace/canvas src/components/workspace/__tests__)`
+  -> 7 files / 67 tests, all pass (types 9, registry 5, stream 7, client 6,
+  layout 10, autoOpen 18, CanvasPanel 12). Playwright was unavailable, so the
+  acceptance behaviour is pinned with vitest + @testing-library against the real
+  panel with an injected client/stream, as the task allows.
+- `node --import tsx --test src/server/__tests__/graphRoutes.test.ts` -> 6 tests, 6 pass, 0 fail
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes` -> PASS
+- `npm run check:orchestrator` -> PASS (114/114)
+- `npm run check:promptwire` -> PASS
+- `npm run check:recovery` -> PASS
 
-`refs/heads/manus-parity` had advanced 89 commits past this branch's last merge,
-so `git merge manus-parity` fast-forwarded the branch. The only tracked file that
-differed in content was `.jdone`:
-
-- parity **deleted** `.jdone` on its own lineage (it stopped tracking the rollup),
-  while this branch still tracked it as a 5447-line rollup;
-- a dry-run merge reported "Automatic merge went well" with no conflict, and a
-  clean fast-forward confirmed it.
-
-`.jdone` was restored from this branch's rollup (`634a23a`) and the parity
-rollup was then made the body of the file, so the final file is a **strict
-superset of both sides**:
-
-- every non-empty line of this branch's previous `.jdone` (`a86f31d`, 4646
-  non-empty lines) is present in parity's `.jdone` (6914 non-empty lines):
-  **0 lines missing** (verified by set comparison);
-- the parity rollup (8168 lines, N7 / fc-09 / H3 / M3 / O4 / C20 / N20 / N9 /
-  N2 / C19 / J3 / H0 / O0 / D2 / D10 / D19 / D17 / D4 / fc-05 ...) is preserved
-  verbatim below this report, under the `## Preserved:` blocks it already
-  carries.
-
-No source file, test or prompt was edited by this session. No test was weakened,
-deleted or skipped. No `.neo-*` or `.jcode-*` marker file was staged.
-
-## Acceptance criteria (N2), re-verified on the current tree
-
-The task asks for Playwright; the harness has no browser, so the same behaviour
-is pinned with vitest + @testing-library against the real panel with an injected
-client/stream (documented here as the task allows):
-
-- **6+ nodes live for a run with 6 steps** - `CanvasPanel.test.tsx` renders the
-  real panel over a seven-node graph (root question + six recipe steps), asserts
-  7 `canvas-node` cards, the Recipe list `1. Step 1` .. `6. Step 6`, the stats
-  line `7 nodes`, and that a live stream drives the `Live` indicator.
-- **Organize lays out without overlap** - clicking `Organize` re-runs the layered
-  layout and every node card's transform is distinct (no two cards share a cell).
-- **E opens the detail** - `keydown e` opens the newest node's sheet
-  (`canvas-node-detail`, `data-node-id="step-six"`); `Escape` closes it. Clicking
-  a card opens the same sheet.
-- **RTL labels render** - with `getLocale: () => 'ar'` the Recipe header reads
-  `الوصفة`, the stats line `7 عقد`, node titles use Arabic labels, and the node
-  sheet marks the node `من اليمين إلى اليسار`. A separate test pins that the
-  document direction follows the rendered locale while the surface stays `ltr`.
-
-## Gates (all run from the worktree root on the current tree)
-
-- `npx tsc --noEmit`                                   -> exit 0
-- `(cd packages/web && npx tsc --noEmit --project tsconfig.json)` -> exit 0
-- `npm run build:server`                               -> exit 0
-  (dist/server.cjs 19.6mb, pdf worker copied)
-- `(cd packages/web && npx next build)`                -> exit 0
-  (compiled successfully, 25/25 static pages)
-- `(cd packages/web && npx vitest run
-  src/components/workspace/canvas src/components/workspace/__tests__)`
-  -> **7 files / 67 tests, all pass** (types 9, registry 5, stream 7, client 6,
-  layout 10, autoOpen 18, CanvasPanel 12)
-- `node --import tsx --test src/server/__tests__/graphRoutes.test.ts`
-  -> tests 6, pass 6, fail 0
+## Gates (all pass from the worktree root)
+1. `npx tsc --noEmit`                                  -> exit 0
+2. `(cd packages/web && npx tsc --noEmit --project tsconfig.json)` -> exit 0
+3. `npm run build:server`                              -> exit 0 (dist/server.cjs 19.6mb, pdf worker copied)
+4. `(cd packages/web && npx next build)`               -> exit 0 (compiled successfully, 25/25 static pages)
 
 ## Merge state
-
-- `git merge manus-parity` -> fast-forward, "Updating a86f31d..851b3fe"
+- `git merge manus-parity` -> "Already up to date."
 - `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
-- `git rev-list --left-right --count manus-parity...HEAD` -> `0  0`
-- `git grep -E "^(<{7}|={7}|>{7})( |$)"` -> no conflict markers
-- `git status --porcelain` -> clean
+- `git rev-list --left-right --count manus-parity...HEAD` -> `0 1`
+- no conflict markers anywhere; working tree clean
+
+## .jdone resolution (the only tracked change this session)
+parity stopped tracking the `.jdone` rollup while this branch kept it. Resolved
+by keeping BOTH sides: this session's N2 report at the top, then the full parity
+rollup verbatim. Verified a strict superset of both sides (0 non-empty lines
+missing vs parity's 6914 lines, 0 missing vs this branch's previous 4646 lines),
+Arabic text intact, no BOM, no mojibake. No test was weakened, deleted or
+skipped; no `.neo-*` or `.jcode-*` marker was staged.
 
 ## Seams left for other workstreams
-
 - `src/server/routes/graph.ts` is the canvas data surface (snapshot + `afterSeq`
-  delta + node patch). A replay layer (D13) can reuse the same cursor instead of
-  re-reading the log.
-- `applyLayout` in `packages/web/src/components/workspace/canvas/layout.ts` is a
-  pure layered layout; a dagre/elk-backed layout can replace it without touching
-  the panel (it is injected through `layoutOptions`).
-- `CANVAS_NODE_TYPES` is the canvas-side node vocabulary; N7's `sibling` /
-  `branch` / `merge` were added to it by the merge, and any new run-graph node
-  type must be added there and to `NODE_TYPE_KEYS` together.
+  delta + node patch); a replay layer can reuse the same cursor.
+- `applyLayout` in `canvas/layout.ts` is a pure layered layout injectable through
+  `layoutOptions`, so a dagre/elk layout can replace it without touching the panel.
+- `CANVAS_NODE_TYPES` + `NODE_TYPE_KEYS` are the canvas node vocabulary; a new
+  run-graph node type must be added to both (N7's `sibling`/`branch`/`merge` were).
 
 No secrets committed. No forbidden path touched. No real external model API was
 called by the tests. Working tree clean.
