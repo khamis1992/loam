@@ -67,7 +67,17 @@ export interface CanvasStats {
 export interface CanvasLayout {
   nodes: CanvasLayoutNode[];
   edges: CanvasEdge[];
-  stats: CanvasStats;
+  /** Absent when the run has no graph yet; the panel falls back to counting nodes. */
+  stats?: CanvasStats;
+}
+
+/** Tally a collection by a key, for the counts the stats block reports. */
+function countBy<T>(items: T[], key: (item: T) => string): Record<string, number> {
+  return items.reduce<Record<string, number>>((acc, item) => {
+    const name = key(item);
+    acc[name] = (acc[name] ?? 0) + 1;
+    return acc;
+  }, {});
 }
 
 /** The server's GET /api/graph/:runId reply. */
@@ -154,6 +164,15 @@ export function coerceCanvasGraphResponse(value: unknown): CanvasGraphResponse |
   if (typeof raw.runId !== 'string') return undefined;
   const layout = coerceCanvasLayout(raw);
   if (!layout) return undefined;
+  // A run with no graph carries no stats; count what is there so the reply is
+  // always a usable layout rather than a missing field.
+  const stats = layout.stats ?? {
+    totalNodes: layout.nodes.length,
+    nodesByType: countBy(layout.nodes, (node) => node.type),
+    nodesByStatus: countBy(layout.nodes, (node) => node.status),
+    depth: layout.nodes.reduce((max, node) => Math.max(max, node.depth), 0),
+    edges: layout.edges.length,
+  };
   const fresh = Array.isArray(raw.fresh)
     ? raw.fresh.map(coerceCanvasNode).filter((n): n is CanvasNode => n !== undefined)
     : [];
@@ -162,7 +181,7 @@ export function coerceCanvasGraphResponse(value: unknown): CanvasGraphResponse |
     enabled: raw.enabled !== false,
     nodes: layout.nodes,
     edges: layout.edges,
-    stats: layout.stats,
+    stats,
     fresh,
   };
 }

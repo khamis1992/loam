@@ -16,7 +16,7 @@
  */
 import { Keyboard, Loader2, Maximize2, Minus, Plus, Waypoints, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { t, getLocale } from '@/i18n/t';
+import { getLocale, setLocale as syncDocumentLocale, t } from '@/i18n/t';
 import type { ChatEvent } from '@shared/socket';
 import {
   type CanvasEdge,
@@ -27,7 +27,7 @@ import {
 } from './types';
 import { applyLayout, layoutBounds, screenToGraph, type LayoutOptions } from './layout';
 import { CanvasClient, type CanvasClientOptions } from './client';
-import { CanvasStream, type CanvasStreamChange } from './stream';
+import { CanvasStream, type CanvasStreamChange, type CanvasStreamHandlers } from './stream';
 
 /** Panel geometry. Graph space, not direction-aware: the canvas is transform-based. */
 const NODE_WIDTH = 220;
@@ -37,6 +37,8 @@ const MAX_SCALE = 2.5;
 const SCALE_STEP = 1.2;
 /** Poll cadence used when the live stream is not connected. */
 const POLL_INTERVAL_MS = 5_000;
+/** How often the panel mirrors an injected stream's running state. */
+const LIVE_POLL_MS = 200;
 
 export interface CanvasPanelProps {
   taskId: string;
@@ -92,13 +94,13 @@ function readString(data: unknown, keys: readonly string[]): string {
 }
 
 /** Human title for a node, falling back to its type when the payload has none. */
-function nodeTitle(node: CanvasLayoutNode): string {
-  return readString(node.data, TITLE_KEYS) || t(NODE_TYPE_KEYS[node.type] ?? node.type);
+function nodeTitle(node: CanvasLayoutNode, tr: (key: string) => string): string {
+  return readString(node.data, TITLE_KEYS) || tr(NODE_TYPE_KEYS[node.type] ?? node.type);
 }
 
 /** Second line of a node card: the file or page it points at, else its status. */
-function nodeSubtitle(node: CanvasLayoutNode): string {
-  return readString(node.data, SUBTITLE_KEYS) || t(NODE_STATUS_KEYS[node.status] ?? node.status);
+function nodeSubtitle(node: CanvasLayoutNode, tr: (key: string) => string): string {
+  return readString(node.data, SUBTITLE_KEYS) || tr(NODE_STATUS_KEYS[node.status] ?? node.status);
 }
 
 /** Node type labels are translated, so the canvas never hard-codes one. */
@@ -181,6 +183,17 @@ export function CanvasPanel({
   const locale = localeProvider ? localeProvider() : getLocale();
   const isRtl = locale === 'ar';
 
+  /** Translate with this panel's locale, so a locale change needs no global state. */
+  const tr = useCallback((key: string) => t(key, {}, locale), [locale]);
+
+  // The panel lays itself out with logical CSS (`border-s`, `ms-`/`me-`), so the
+  // document direction has to follow the locale the panel renders in. An
+  // injected provider is a test seam: it must not rewrite the real document.
+  useEffect(() => {
+    if (localeProvider) return;
+    syncDocumentLocale(locale);
+  }, [locale, localeProvider]);
+
   // The client is built once; tests inject their own.
   useEffect(() => {
     if (client) {
@@ -246,41 +259,53 @@ export function CanvasPanel({
   // Live subscription: the stream pushes a snapshot then a change per graph
   // update. Polling is the fallback for a server that does not stream.
   useEffect(() => {
-    if (stream) streamRef.current = stream;
-    else if (!streamRef.current) {
-      streamRef.current = new CanvasStream({
-        runId: taskId,
-        handlers: {
-          onSnapshot: (snapshot) => {
-            const layoutNodes = (snapshot.nodes as CanvasLayoutNode[]) ?? [];
-            setNodes(layoutNodes);
-            setEdges((snapshot.edges as CanvasEdge[]) ?? []);
-            setStats((snapshot.stats as CanvasStats) ?? null);
-            cursorRef.current = maxPosition(layoutNodes);
-            setLiveConnected(true);
-          },
-          onChange: (change) => {
-            setLiveConnected(true);
-            void applyChange(change);
-          },
-          onError: () => setLiveConnected(false),
-        },
-      });
+    const handlers: CanvasStreamHandlers = {
+      onSnapshot: (snapshot) => {
+        const layoutNodes = (snapshot.nodes as CanvasLayoutNode[]) ?? [];
+        setNodes(layoutNodes);
+        setEdges((snapshot.edges as CanvasEdge[]) ?? []);
+        setStats((snapshot.stats as CanvasStats) ?? null);
+        cursorRef.current = maxPosition(layoutNodes);
+        setLiveConnected(true);
+      },
+      onChange: (change) => {
+        setLiveConnected(true);
+        void applyChange(change);
+      },
+      onError: () => setLiveConnected(false),
+    };
+    // An injected stream has no way to tell the panel when it connects, so the
+    // panel follows `isRunning()` itself. A stream the panel built reports
+    // through the handlers instead, which is why those are only read then.
+    const injected = stream != null;
+    const active =
+      stream ??
+      (streamRef.current ??
+        (streamRef.current = new CanvasStream({ runId: taskId, handlers })));
+    if (!injected) {
+      // The panel owns the handlers, so a stream it built still receives updates.
+      active.setHandlers(handlers);
     }
+
     void loadInitial();
-    const active = streamRef.current;
-    if (active) void active.start();
+    void active.start();
+    if (injected) setLiveConnected(active.isRunning());
 
     const poll = live
       ? setInterval(() => {
-          if (!active || active.isRunning()) return;
-          void applyChange({ type: 'change', runId: taskId, nodeIds: [], seq: cursorRef.current });
+          if (!active.isRunning()) {
+            void applyChange({ type: 'change', runId: taskId, nodeIds: [], seq: cursorRef.current });
+          }
         }, POLL_INTERVAL_MS)
+      : null;
+    const follow = injected
+      ? setInterval(() => setLiveConnected(active.isRunning()), LIVE_POLL_MS)
       : null;
 
     return () => {
       if (poll) clearInterval(poll);
-      if (active && !stream) {
+      if (follow) clearInterval(follow);
+      if (!stream) {
         active.stop();
         streamRef.current = null;
       }
@@ -302,10 +327,10 @@ export function CanvasPanel({
         return;
       }
       if (event.key === '+' || event.key === '=') {
-        zoomBy(1 / SCALE_STEP);
+        zoomBy(SCALE_STEP);
         return;
       }
-      if (event.key === '-' || event.key === '_') zoomBy(SCALE_STEP);
+      if (event.key === '-' || event.key === '_') zoomBy(1 / SCALE_STEP);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -324,7 +349,8 @@ export function CanvasPanel({
   }, []);
 
   const onWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
-    const factor = event.deltaY > 0 ? SCALE_STEP : 1 / SCALE_STEP;
+    // Scrolling down (positive delta) means "zoom out", like every map canvas.
+    const factor = event.deltaY > 0 ? 1 / SCALE_STEP : SCALE_STEP;
     setView((prev) => {
       const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, prev.scale * factor));
       // Keep the point under the cursor stationary while zooming.
@@ -359,7 +385,7 @@ export function CanvasPanel({
   }, []);
 
   const beginNodeDrag = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>, node: CanvasLayoutNode) => {
+    (event: React.PointerEvent<HTMLElement>, node: CanvasLayoutNode) => {
       if (event.button !== 0) return;
       event.stopPropagation();
       const rect = surfaceRef.current?.getBoundingClientRect();
@@ -371,7 +397,7 @@ export function CanvasPanel({
   );
 
   const moveNodeDrag = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
+    (event: React.PointerEvent<HTMLElement>) => {
       const drag = dragRef.current;
       if (!drag) return;
       const rect = surfaceRef.current?.getBoundingClientRect();
@@ -416,7 +442,7 @@ export function CanvasPanel({
     return (
       <div className="flex h-full items-center justify-center gap-2 text-sm text-text-secondary" data-testid="canvas-loading">
         <Loader2 className="size-4 animate-spin" />
-        {t('Loading')}
+        {tr('Loading')}
       </div>
     );
   }
@@ -428,17 +454,17 @@ export function CanvasPanel({
           type="button"
           onClick={() => organize(nodes)}
           disabled={nodes.length === 0}
-          title={t('Organize the canvas')}
+          title={tr('Organize the canvas')}
           className="flex items-center gap-1 rounded-control px-2 py-1 text-xs text-text-secondary hover:bg-fill-hover hover:text-text-primary disabled:opacity-40"
         >
           <Waypoints className="size-3.5" />
-          {t('Organize')}
+          {tr('Organize')}
         </button>
         <button
           type="button"
-          onClick={() => zoomBy(1 / SCALE_STEP)}
-          title={t('Zoom in')}
-          aria-label={t('Zoom in')}
+          onClick={() => zoomBy(SCALE_STEP)}
+          title={tr('Zoom in')}
+          aria-label={tr('Zoom in')}
           className="rounded-control p-1 text-text-secondary hover:bg-fill-hover hover:text-text-primary"
         >
           <Plus className="size-3.5" />
@@ -448,9 +474,9 @@ export function CanvasPanel({
         </span>
         <button
           type="button"
-          onClick={() => zoomBy(SCALE_STEP)}
-          title={t('Zoom out')}
-          aria-label={t('Zoom out')}
+          onClick={() => zoomBy(1 / SCALE_STEP)}
+          title={tr('Zoom out')}
+          aria-label={tr('Zoom out')}
           className="rounded-control p-1 text-text-secondary hover:bg-fill-hover hover:text-text-primary"
         >
           <Minus className="size-3.5" />
@@ -458,8 +484,8 @@ export function CanvasPanel({
         <button
           type="button"
           onClick={resetView}
-          title={t('Reset the view')}
-          aria-label={t('Reset the view')}
+          title={tr('Reset the view')}
+          aria-label={tr('Reset the view')}
           className="rounded-control p-1 text-text-secondary hover:bg-fill-hover hover:text-text-primary"
         >
           <Maximize2 className="size-3.5" />
@@ -468,7 +494,7 @@ export function CanvasPanel({
           <span
             className={liveConnected ? 'size-1.5 rounded-full bg-icon-blue' : 'size-1.5 rounded-full bg-text-quaternary'}
           />
-          {liveConnected ? t('Live') : t('Paused')}
+          {liveConnected ? tr('Live') : tr('Paused')}
         </span>
       </div>
 
@@ -536,7 +562,7 @@ export function CanvasPanel({
               data-node-id={node.id}
               data-node-type={node.type}
               data-node-status={node.status}
-              aria-label={nodeTitle(node)}
+              aria-label={nodeTitle(node, tr)}
               className={[
                 'absolute flex flex-col gap-1 rounded-card border p-2 text-start',
                 'border-border-main bg-bg-menu text-text-primary shadow-sm',
@@ -550,12 +576,12 @@ export function CanvasPanel({
                 transform: `translate(${view.panX + node.x * view.scale}px, ${view.panY + node.y * view.scale}px)`,
               }}
             >
-              <span className="truncate text-[11px] text-text-secondary">{nodeTitle(node)}</span>
+              <span className="truncate text-[11px] text-text-secondary">{nodeTitle(node, tr)}</span>
               <span dir="auto" className="truncate text-[10px] text-text-tertiary">
-                {nodeSubtitle(node)}
+                {nodeSubtitle(node, tr)}
               </span>
               <span className="mt-auto text-[10px] text-text-quaternary">
-                {t(NODE_TYPE_KEYS[node.type] ?? node.type)} · {t(NODE_STATUS_KEYS[node.status] ?? node.status)}
+                {tr(NODE_TYPE_KEYS[node.type] ?? node.type)} · {tr(NODE_STATUS_KEYS[node.status] ?? node.status)}
               </span>
             </button>
           ))}
@@ -564,7 +590,7 @@ export function CanvasPanel({
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center">
               <Waypoints className="size-8 text-text-quaternary" />
               <p className="text-sm text-text-tertiary" data-testid="canvas-empty">
-                {t('The canvas is empty. Nodes appear here as the task runs.')}
+                {tr('The canvas is empty. Nodes appear here as the task runs.')}
               </p>
             </div>
           )}
@@ -576,16 +602,16 @@ export function CanvasPanel({
         >
           <div className="flex h-row-sm shrink-0 items-center gap-1 border-b border-border-main px-2 text-xs text-text-secondary">
             <Keyboard className="size-3.5" />
-            <span className="truncate">{t('Recipe')}</span>
+            <span className="truncate">{tr('Recipe')}</span>
             {stats ? (
               <span className="ms-auto text-[11px] text-text-tertiary" data-testid="canvas-stats">
-                {stats.totalNodes} {t('nodes')}
+                {stats.totalNodes} {tr('nodes')}
               </span>
             ) : null}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {recipe.length === 0 ? (
-              <p className="text-xs text-text-tertiary">{t('No recipe steps yet.')}</p>
+              <p className="text-xs text-text-tertiary">{tr('No recipe steps yet.')}</p>
             ) : (
               <ol className="flex flex-col gap-1">
                 {recipe.map((step, index) => (
@@ -610,7 +636,7 @@ export function CanvasPanel({
                         dir="auto"
                         className={step.status === 'finished' ? 'text-text-tertiary line-through' : 'text-text-secondary'}
                       >
-                        {index + 1}. {nodeTitle(step)}
+                        {index + 1}. {nodeTitle(step, tr)}
                       </span>
                     </button>
                   </li>
@@ -626,7 +652,7 @@ export function CanvasPanel({
           className="shrink-0 border-t border-border-main bg-function-warning-tsp px-2 py-1 text-[11px] text-function-warning"
           data-testid="canvas-error"
         >
-          {t('The canvas could not reach the task.')} {error}
+          {tr('The canvas could not reach the task.')} {error}
         </div>
       ) : null}
 
@@ -635,6 +661,7 @@ export function CanvasPanel({
           node={expanded}
           events={events}
           isRtl={isRtl}
+          tr={tr}
           onClose={() => setExpandedId(null)}
           onPatch={(patch) => void savePatch(expanded.id, patch)}
         />
@@ -648,12 +675,14 @@ function NodeDetail({
   node,
   events,
   isRtl,
+  tr,
   onClose,
   onPatch,
 }: {
   node: CanvasLayoutNode;
   events: ChatEvent[];
   isRtl: boolean;
+  tr: (key: string) => string;
   onClose: () => void;
   onPatch: (patch: CanvasNodePatch) => void;
 }) {
@@ -689,16 +718,16 @@ function NodeDetail({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-text-primary" dir="auto">
-            {nodeTitle(node)}
+            {nodeTitle(node, tr)}
           </p>
           <p className="text-[11px] text-text-tertiary">
-            {t(NODE_TYPE_KEYS[node.type] ?? node.type)} · {t(NODE_STATUS_KEYS[node.status] ?? node.status)}
+            {tr(NODE_TYPE_KEYS[node.type] ?? node.type)} · {tr(NODE_STATUS_KEYS[node.status] ?? node.status)}
           </p>
         </div>
         <button
           type="button"
           onClick={onClose}
-          aria-label={t('Close')}
+          aria-label={tr('Close')}
           className="rounded-control p-1 text-text-secondary hover:bg-fill-hover"
         >
           <X className="size-4" />
@@ -711,7 +740,7 @@ function NodeDetail({
         rows={3}
         dir="auto"
         className="w-full resize-y rounded-control border border-border-main bg-bg-main p-2 text-xs text-text-primary outline-none focus:border-icon-blue"
-        aria-label={t('Edit this node')}
+        aria-label={tr('Edit this node')}
       />
 
       <div className="flex items-center gap-2">
@@ -721,15 +750,15 @@ function NodeDetail({
           disabled={saving}
           className="rounded-control bg-fill-tsp px-2 py-1 text-xs font-medium text-text-primary hover:bg-fill-hover disabled:opacity-50"
         >
-          {saving ? t('Saving') : t('Save')}
+          {saving ? tr('Saving') : tr('Save')}
         </button>
-        {isRtl ? <span className="text-[11px] text-text-tertiary">{t('RTL')}</span> : null}
+        {isRtl ? <span className="text-[11px] text-text-tertiary">{tr('RTL')}</span> : null}
         {saveError ? <span className="text-[11px] text-func-error">{saveError}</span> : null}
       </div>
 
       {related.length > 0 ? (
         <div className="min-h-0 overflow-y-auto">
-          <p className="mb-1 text-[11px] text-text-tertiary">{t('Recent tools')}</p>
+          <p className="mb-1 text-[11px] text-text-tertiary">{tr('Recent tools')}</p>
           <ul className="flex flex-col gap-1">
             {related.map((event) => (
               <li key={event.id} className="truncate text-[11px] text-text-secondary" dir="auto">

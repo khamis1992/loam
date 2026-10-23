@@ -85,7 +85,7 @@ function fakeRequest(method: string, url: string, body?: unknown, headers: Recor
 
 type Handler = (
   req: IncomingMessage,
-  res: ServerResponse,
+  res: FakeResponse,
   rawPath: string,
   ctx?: { enabled?: boolean },
 ) => Promise<boolean>;

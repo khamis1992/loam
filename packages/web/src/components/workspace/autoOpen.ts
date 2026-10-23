@@ -38,25 +38,46 @@ export function isVideoStudioTool(tool: string): boolean {
 }
 
 /**
+ * The browser tools the agent really registers (`src/tools/browser.ts`,
+ * `browserOperator.ts`). `browser_navigate` is a legacy display label only
+ * (`toolLabels.ts`), so it is deliberately absent: it is not a tool the agent
+ * can call, and the workspace tests pin it as non-qualifying.
+ */
+const BROWSER_TOOL_STEMS = [
+  'browser_open',
+  'browser_goto',
+  'browser_snapshot',
+  'browser_click',
+  'browser_type',
+  'browser_press',
+  'browser_eval',
+  'browser_screenshot',
+  'browser_table',
+  'browser_act',
+  'browser_pages',
+  'browser_close',
+  'browser_som',
+  'browser_trace',
+  // One tool whose tool-use event carries a timestamped name
+  // (`browser_operator_<timestamp>`), so the stem is matched with its suffix.
+  'browser_operator',
+] as const;
+
+/**
  * Neo N2: the canvas shows the whole run graph, so it is a task-wide surface.
- * Any plan/step/tool event is enough to bring it up; the exact node set is the
- * server's to decide.
+ * It opens for the long-horizon work that has no single file to point at: the
+ * web/research/code tools below. Everything else (file output, office/video
+ * artifacts) still routes to its own editor first, so the canvas never steals
+ * an event that resolved to a workspace artifact.
  */
 export function isCanvasSignalTool(tool: string): boolean {
   const name = (tool ?? '').toLowerCase();
   return (
+    BROWSER_TOOL_STEMS.some((stem) => name === stem || name.startsWith(`${stem}_`)) ||
     name.startsWith('web_') ||
-    name.startsWith('browser_') ||
-    name.startsWith('gen_') ||
-    name.startsWith('loam_') ||
-    name.startsWith('office_') ||
-    name.includes('docx') ||
-    name.includes('xlsx') ||
-    name.includes('pptx') ||
-    name === 'file_write' ||
-    name === 'file_edit' ||
-    name === 'code_session' ||
-    name === 'web_scaffold'
+    name === 'deep_research' ||
+    name === 'wide_research' ||
+    name.startsWith('code_session')
   );
 }
 
@@ -177,7 +198,9 @@ export function decideWorkspaceOpen(event: ToolUsedEvent): WorkspaceOpenTarget |
     return null;
   }
   if (isWorkspaceToolName(event.tool)) return { path: null, kind: null };
-  // A tool with no file output still moves the run graph, so it opens the canvas.
+  // A long-horizon tool with no file output still moves the run graph, so it
+  // opens the canvas. This is the last resort: a file path or an office/video
+  // tool always wins above.
   if (isCanvasSignalTool(event.tool)) return { path: null, kind: 'canvas' };
   return null;
 }

@@ -54,7 +54,7 @@ const SNAPSHOT_EVENT = 'snapshot';
 
 export class CanvasStream {
   private readonly runId: string;
-  private readonly handlers: CanvasStreamHandlers;
+  private handlers: CanvasStreamHandlers;
   private readonly apiBase: string;
   private readonly headers: (() => Record<string, string> | Promise<Record<string, string>>) | undefined;
   private readonly fetchFn: typeof fetch;
@@ -83,6 +83,14 @@ export class CanvasStream {
   /** True while the stream is connected (or waiting to reconnect). */
   isRunning(): boolean {
     return this.running;
+  }
+
+  /**
+   * Replace the frame handlers. The panel owns them, so an injected stream
+   * (tests, or a caller that builds its own) still receives updates.
+   */
+  setHandlers(handlers: CanvasStreamHandlers): void {
+    this.handlers = handlers;
   }
 
   async start(): Promise<void> {
@@ -136,6 +144,9 @@ export class CanvasStream {
     if (!this.autoReconnect || this.stopped || this.reconnectHandle !== null) return;
     this.reconnectHandle = this.scheduler(() => {
       this.reconnectHandle = null;
+      // `start()` clears the stopped flag, so a reconnect that fires after
+      // `stop()` must not reopen the stream.
+      if (this.stopped) return;
       void this.start();
     }, this.reconnectDelayMs);
   }

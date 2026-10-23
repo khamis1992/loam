@@ -39,7 +39,7 @@ export const DEFAULT_LAYOUT: Required<LayoutOptions> = {
 
 /** Depth of each node: roots at 0, a child one deeper than its deepest parent. */
 export function depthMap(
-  nodes: Array<{ id: string; parent_ids: string[] }>,
+  nodes: Array<{ id: string; parent_ids: string[]; position?: number }>,
 ): Map<string, number> {
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const depth = new Map<string, number>();
@@ -105,6 +105,8 @@ export function layoutBounds(nodes: Array<{ x: number; y: number }>): { width: n
     if (node.x > maxX) maxX = node.x;
     if (node.y > maxY) maxY = node.y;
   }
+  // The far edge of the rightmost/lowest node's origin; the panel adds the node
+  // footprint on top, so the surface always holds whole nodes.
   return { width: maxX, height: maxY };
 }
 
