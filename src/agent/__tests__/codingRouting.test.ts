@@ -315,3 +315,112 @@ describe("runAgent coding-model routing", () => {
     assert.deepEqual(editModelCounts(), {}, "a chat turn must not touch the edit audit log");
   });
 });
+
+/**
+ * Neo N10: an output type narrows the run's tool set at the agent boundary.
+ *
+ * The router decides *which* tools belong to an output type
+ * (`llm/__tests__/router.test.ts`); these tests assert what `runAgent` actually
+ * hands to the model. Regression guard: narrowing to the pipeline alone left the
+ * model without `finish` (the only tool that emits `done` and runs the workspace
+ * gates) and, in a mode that grants no pipeline tool, with an empty tool set.
+ */
+describe("runAgent output-type tool narrowing", () => {
+  /** Registry holding a pipeline tool plus every tool the run must keep. */
+  function pipelineRegistry(): ToolRegistry {
+    const base = new RegistryCtor();
+    for (const name of ["loam_studio", "loam_document", "office_export", "finish", "think", "artifact_publish", "file_read", "file_stat", "file_list"]) {
+      base.register({
+        name,
+        description: `${name} tool`,
+        parameters: { type: "object", properties: {} },
+        async run() {
+          return { ok: true, content: "ok" };
+        },
+      });
+    }
+    return base.forAllowlist(["loam_studio", "loam_document", "office_export", "finish", "think", "artifact_publish", "file_read", "file_stat", "file_list"]);
+  }
+
+  /** Capture the tool names the model is offered on its first turn. */
+  function recordingClient(model = "weak-default"): { ollama: OllamaClient; seen: string[] } {
+    const seen: string[] = [];
+    let count = 0;
+    const ollama = {
+      async chat(options: { tools?: Array<{ function?: { name?: string } }> }): Promise<ChatResult> {
+        if (count === 0) seen.push(...(options.tools ?? []).map((tool) => tool.function?.name ?? ""));
+        count++;
+        return { content: "done", toolCalls: [] as OllamaToolCall[], model, usage: { promptTokens: 1, completionTokens: 1, durationMs: 1 } };
+      },
+    } as unknown as OllamaClient;
+    return { ollama, seen };
+  }
+
+  it("keeps the control surface when an output type narrows the tools", async () => {
+    const { ollama, seen } = recordingClient();
+    await runAgent({
+      cfg: cfg(),
+      ollama,
+      tools: pipelineRegistry(),
+      emit: (() => {}) as Emit,
+      prompt: "Build a deck",
+      suppressFinal: true,
+      maxSteps: 3,
+      outputType: "slides",
+    });
+
+    assert.ok(seen.length > 0, "the model must receive tools");
+    for (const essential of ["finish", "artifact_publish", "file_read"]) {
+      assert.ok(seen.includes(essential), `a Slides run must keep ${essential}; got ${JSON.stringify(seen)}`);
+    }
+    assert.ok(seen.includes("loam_studio"), "the Slides pipeline tool stays in the set");
+  });
+
+  it("never leaves the model with an empty tool set", async () => {
+    // A read-only mode grants no pipeline tool, so the old narrowing produced []
+    // and the run could neither work nor finish.
+    const base = new RegistryCtor();
+    for (const name of ["finish", "think", "file_read", "file_stat", "file_list"]) {
+      base.register({
+        name,
+        description: `${name} tool`,
+        parameters: { type: "object", properties: {} },
+        async run() {
+          return { ok: true, content: "ok" };
+        },
+      });
+    }
+    const { ollama, seen } = recordingClient();
+    await runAgent({
+      cfg: cfg(),
+      ollama,
+      tools: base.forAllowlist(["finish", "think", "file_read", "file_stat", "file_list"]),
+      emit: (() => {}) as Emit,
+      prompt: "Answer a question",
+      suppressFinal: true,
+      maxSteps: 3,
+      outputType: "website",
+    });
+
+    assert.ok(seen.length > 0, "an output-type run must never receive an empty tool set");
+    assert.ok(seen.includes("finish"), `a run must always be able to finish; got ${JSON.stringify(seen)}`);
+  });
+
+  it("leaves an `auto` run's scope untouched", async () => {
+    const { ollama, seen } = recordingClient();
+    const tools = pipelineRegistry();
+    const before = tools.names().length;
+    await runAgent({
+      cfg: cfg(),
+      ollama,
+      tools,
+      emit: (() => {}) as Emit,
+      prompt: "Do something general",
+      suppressFinal: true,
+      maxSteps: 3,
+      outputType: "auto",
+    });
+
+    assert.equal(seen.length, before, `auto must not narrow the run; got ${JSON.stringify(seen)}`);
+  });
+});

@@ -8,12 +8,18 @@ import {spawn, type ChildProcess} from 'node:child_process';
 import type {IncomingMessage,ServerResponse} from 'node:http';
 import JSZip from 'jszip';
 import {chromium,type Browser} from 'playwright';
-import {ROOT} from '../config.js';
+import {ROOT, rootAsset} from '../config.js';
 import {getTask,listTasks} from '../server/db.js';
 import {requireTaskWorkspace,taskPath} from '../server/taskWorkspace.js';
 // The same structural validator is used by the editor and persistent worker.
 // @ts-expect-error plain browser module
 import {validateTimeline,timelineDuration} from '../../ui/creative-timeline-model.js';
+import {BoundedMap} from '../memory/cache.js';
+import {registerCacheStats} from '../memory/stats.js';
+
+/** J6 hard caps: recent export jobs and recent proxy-preview jobs in RAM. */
+const TIMELINE_JOB_CAPACITY=64;
+const TIMELINE_PROXY_CAPACITY=64;
 
 type Project=RenderProject;
 type Job={rendererVersion?:number;id:string;taskId:string;title:string;format:'mp4'|'webm'|'wav'|'stems';loudnessTarget?:number;state:'queued'|'running'|'done'|'failed'|'canceled';completed:number;total:number;duration:number;project:Project;message:string;path?:string;createdAt:number};
@@ -24,8 +30,14 @@ const json=(res:ServerResponse,status:number,value:unknown)=>{res.writeHead(stat
 async function body(req:IncomingMessage){let size=0;const chunks:Buffer[]=[];for await(const chunk of req){size+=chunk.length;if(size>2_000_000)throw Error('بيانات المشروع كبيرة جدًا؛ يجب رفع الوسائط كأصول مستقلة.');chunks.push(chunk);}return JSON.parse(Buffer.concat(chunks).toString());}
 
 export class TimelineService{
-  private jobs=new Map<string,Job>();private working=false;private stopped=false;private browser?:Browser;private process?:ChildProcess;private base='';private currentJob?:string;
-  constructor(private workspace:string){}
+  /** Live/recent export jobs (J6: bounded). `start()` rehydrates finished jobs
+   *  from disk and `getRenderJob`-style reads fall back to `job.json`, so a
+   *  long-lived editor process only needs the most recent jobs in RAM. */
+  private jobs=new BoundedMap<string,Job>(TIMELINE_JOB_CAPACITY,'timeline-jobs');private working=false;private stopped=false;private browser?:Browser;private process?:ChildProcess;private base='';private currentJob?:string;
+  constructor(private workspace:string){
+    registerCacheStats('timeline-jobs',()=>this.jobs.stats());
+    registerCacheStats('timeline-proxy-jobs',()=>this.proxyJobs.stats());
+  }
   private root(taskId:string){if(getTask(taskId)?.mode!=='media')throw Error('يلزم مشروع في استديو صمّم.');return requireTaskWorkspace(taskId,this.workspace);}
   private dir(job:Job){const dir=taskPath(this.root(job.taskId),`.timeline-jobs/${job.id}`);fs.mkdirSync(dir,{recursive:true});return dir;}
   private persist(job:Job){atomic(path.join(this.dir(job),'job.json'),job);}
@@ -39,7 +51,7 @@ export class TimelineService{
     if(!url.pathname.startsWith('/api/timeline/'))return false;
     try{
       if(req.headers.origin&&req.headers.origin!==`http://${req.headers.host}`||req.headers['sec-fetch-site']==='cross-site'){json(res,403,{error:'Same-origin required'});return true;}
-      if(req.method==='GET'&&url.pathname==='/api/timeline/environment'){json(res,200,{background:true,checkpointSeconds:segment,ffmpegAvailable:fs.existsSync(path.join(ROOT,'node_modules','ffmpeg-static',process.platform==='win32'?'ffmpeg.exe':'ffmpeg'))});return true;}
+      if(req.method==='GET'&&url.pathname==='/api/timeline/environment'){json(res,200,{background:true,checkpointSeconds:segment,ffmpegAvailable:fs.existsSync(rootAsset('node_modules', 'ffmpeg-static',process.platform==='win32'?'ffmpeg.exe':'ffmpeg'))});return true;}
       const taskId=url.searchParams.get('taskId')||'',root=this.root(taskId),p=url.pathname;
       if(req.method==='POST'&&p==='/api/timeline/asset-copy'){const input=await body(req);if(typeof input.path!=='string'||!/^assets\/timeline\/[a-f\d-]+\.(png|jpg|webp|mp4|webm|mp3|wav|ogg|m4a)$/.test(input.path))throw Error('مسار أصل غير صالح');const source=taskPath(this.root(input.taskId),input.path),relative=`assets/timeline/${randomUUID()}${path.extname(source)}`,file=taskPath(root,relative);fs.mkdirSync(path.dirname(file),{recursive:true});await fs.promises.copyFile(source,file);json(res,201,{path:relative,bytes:fs.statSync(file).size});return true;}
       if(req.method==='POST'&&p==='/api/timeline/asset'){
@@ -171,16 +183,19 @@ export class TimelineService{
     }catch(e){if(!res.headersSent)json(res,400,{error:e instanceof Error?e.message:String(e)});}
     return true;
   }
-  private ffmpeg(args:string[],control?:{process:(child:ChildProcess|undefined)=>void},stdin=false,stdinData?:Buffer){return new Promise<void>((resolve,reject)=>{const executable=path.join(ROOT,'node_modules','ffmpeg-static',process.platform==='win32'?'ffmpeg.exe':'ffmpeg');const child=spawn(executable,['-hide_banner','-loglevel','error','-y',...args],{windowsHide:true,stdio:[stdin?'pipe':'ignore','ignore','pipe']});if(control)control.process(child);else this.process=child;let error='';child.stderr?.on('data',data=>{error=(error+data).slice(-2000);});child.once('error',reject);child.once('exit',code=>{if(this.process===child)this.process=undefined;code===0?resolve():reject(Error('تعذّر ترميز التصدير: '+error));});child.stdin?.on('error',()=>{});if(stdinData&&child.stdin)child.stdin.end(stdinData);});}
+  private ffmpeg(args:string[],control?:{process:(child:ChildProcess|undefined)=>void},stdin=false,stdinData?:Buffer){return new Promise<void>((resolve,reject)=>{const executable=rootAsset('node_modules', 'ffmpeg-static',process.platform==='win32'?'ffmpeg.exe':'ffmpeg');const child=spawn(executable,['-hide_banner','-loglevel','error','-y',...args],{windowsHide:true,stdio:[stdin?'pipe':'ignore','ignore','pipe']});if(control)control.process(child);else this.process=child;let error='';child.stderr?.on('data',data=>{error=(error+data).slice(-2000);});child.once('error',reject);child.once('exit',code=>{if(this.process===child)this.process=undefined;code===0?resolve():reject(Error('تعذّر ترميز التصدير: '+error));});child.stdin?.on('error',()=>{});if(stdinData&&child.stdin)child.stdin.end(stdinData);});}
   /** Raw ffmpeg run whose nonzero exit is expected (stream inspection via -i); stderr is returned for parsing. */
-  private runFfmpegRaw(args:string[],timeoutMs=30000){return new Promise<string>((resolve,reject)=>{const executable=path.join(ROOT,'node_modules','ffmpeg-static',process.platform==='win32'?'ffmpeg.exe':'ffmpeg');const child=spawn(executable,['-hide_banner',...args],{windowsHide:true,stdio:['ignore','ignore','pipe']});let stderr='',settled=false;const timer=setTimeout(()=>{if(!settled){settled=true;child.kill();reject(Error('انتهت مهلة فحص الملف.'));}},timeoutMs);child.stderr?.on('data',data=>{stderr=(stderr+data).slice(-12000);});child.once('error',e=>{if(!settled){settled=true;clearTimeout(timer);reject(e);}});child.once('exit',()=>{if(!settled){settled=true;clearTimeout(timer);resolve(stderr);}});});}
+  private runFfmpegRaw(args:string[],timeoutMs=30000){return new Promise<string>((resolve,reject)=>{const executable=rootAsset('node_modules', 'ffmpeg-static',process.platform==='win32'?'ffmpeg.exe':'ffmpeg');const child=spawn(executable,['-hide_banner',...args],{windowsHide:true,stdio:['ignore','ignore','pipe']});let stderr='',settled=false;const timer=setTimeout(()=>{if(!settled){settled=true;child.kill();reject(Error('انتهت مهلة فحص الملف.'));}},timeoutMs);child.stderr?.on('data',data=>{stderr=(stderr+data).slice(-12000);});child.once('error',e=>{if(!settled){settled=true;clearTimeout(timer);reject(e);}});child.once('exit',()=>{if(!settled){settled=true;clearTimeout(timer);resolve(stderr);}});});}
   /** Parse `ffmpeg -i` stderr into honest container/stream facts; unknown facts stay undefined instead of guessed. */
   private parseProbe(stderr:string,container:string){const line=(marker:string)=>stderr.split('\n').find(l=>l.includes(marker))??'';const video=line(' Video: '),audio=line(' Audio: ');
     const dims=/\b(\d{2,5})x(\d{2,5})\b/.exec(video),vcodec=/Video:\s*([^,]+)/.exec(video),acodec=/Audio:\s*([^,]+)/.exec(audio),rate=/(\d{3,6}) Hz/.exec(audio),duration=/Duration: (\d+):(\d+):(\d+(?:\.\d+)?)/.exec(stderr);
     const pix=video.split(',').map(s=>s.trim()).find(s=>/^(yuv|rgb|rgba|yuva|gray|pal8)[a-z0-9()]*$/.test(s));
     return {container,duration:duration?(Number(duration[1])*3600+Number(duration[2])*60+Number(duration[3])):undefined,videoCodec:vcodec?.[1]?.trim().split(' ')[0],pixFmt:pix,transparent:/\b(rgba|yuva|pal8)\b/.test(video),width:dims?Number(dims[1]):undefined,height:dims?Number(dims[2]):undefined,hasAudio:!!audio,audioCodec:acodec?.[1]?.trim().split(' ')[0],sampleRate:rate?Number(rate[1]):undefined};}
   private proxyQueue:Promise<unknown>=Promise.resolve();
-  private proxyJobs=new Map<string,ProxyJob>();
+  /** Proxy transcode jobs (J6: bounded). Each keeps a job record plus its
+   *  rendered output path; a burst of preview requests must not retain every
+   *  job forever. A dropped job falls back to the on-disk project file. */
+  private proxyJobs=new BoundedMap<string,ProxyJob>(TIMELINE_PROXY_CAPACITY,'timeline-proxy-jobs');
   private publicProxy(job:ProxyJob){return {id:job.id,state:job.state,message:job.message,width:job.width,...(job.result?{result:job.result}:{})};}
   /** Serialized proxy transcodes; cancel/retry flip state and the runner discards its partial output. */
   private chainProxy(job:ProxyJob){
@@ -190,7 +205,7 @@ export class TimelineService{
       job.state='running';job.message='ترميز نسخة المعاينة';
       const relative=`assets/timeline/${randomUUID()}.mp4`,target=taskPath(root,relative);
       await new Promise<void>(resolve=>{
-        const executable=path.join(ROOT,'node_modules','ffmpeg-static',process.platform==='win32'?'ffmpeg.exe':'ffmpeg');
+        const executable=rootAsset('node_modules', 'ffmpeg-static',process.platform==='win32'?'ffmpeg.exe':'ffmpeg');
         const child=spawn(executable,['-hide_banner','-loglevel','error','-y','-i',taskPath(root,job.source),'-vf','scale='+job.width+':-2','-c:v','libx264','-preset','veryfast','-crf','28','-c:a','aac','-b:a','96k','-movflags','+faststart','-f','mp4',target+'.partial'],{windowsHide:true,stdio:['ignore','ignore','pipe']});
         job.child=child;let error='';
         child.stderr?.on('data',data=>{error=(error+data).slice(-2000);});

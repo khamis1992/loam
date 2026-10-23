@@ -33,3 +33,19 @@ export function requireTaskWorkspace(taskId: unknown, baseWorkspace: string): st
   if (typeof taskId !== "string" || !taskId) throw new Error("taskId required");
   return ensureTaskWorkspace(taskId, baseWorkspace);
 }
+
+/** Directory name Loam owns for per-task workspaces. */
+export const TASKS_DIR = ".loam-tasks";
+
+/**
+ * True only for a workspace Loam created itself (`.loam-tasks/<taskId>`).
+ *
+ * A task workspace can also be bound to a real folder the user chose (the
+ * composer folder or a git worktree). Code that writes into a workspace on the
+ * task's behalf must check this first: an empty user folder is still the user's
+ * folder, and filling it with a snapshot would be a destructive surprise.
+ */
+export function isManagedTaskWorkspace(workspace: string): boolean {
+  const resolved = path.resolve(workspace);
+  return path.basename(path.dirname(resolved)) === TASKS_DIR;
+}

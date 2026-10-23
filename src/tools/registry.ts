@@ -1,6 +1,6 @@
 import type { Config } from "../config.js";
 import type { Emit } from "../agent/events.js";
-import type { OllamaFunctionTool } from "../ollama.js";
+import type { OllamaClient, OllamaFunctionTool } from "../ollama.js";
 import { runLifecycleHooks } from "../policy/hooks.js";
 import { getLoamMode } from "../modes/catalog.js";
 import { getToolProfile } from "../agent/taskToolScope.js";
@@ -11,6 +11,10 @@ export interface ToolContext {
   workspace: string;
   emit: Emit;
   signal?: AbortSignal;
+  /** Provider client for tools that talk to the model layer themselves (M3
+   *  MiroFish swarm runs). Optional so unit tests and read-only/script
+   *  contexts can construct a context without one. */
+  ollama?: OllamaClient;
   /** Active task id, so long-running tools can poll for cancellation. */
   taskId?: string;
   /** Owning companion agent id (vault/memory scope). Optional: tools fall back
@@ -32,6 +36,16 @@ export interface ToolResult {
   content: string;
   /** Optional base64 images (no data: prefix) to attach to the next model call (vision). */
   images?: string[];
+  /**
+   * N3 Knowledge Garden: seed ids this tool call produced or retrieved. The run
+   * graph reads it to hang `kb_seed` nodes off the step that used them, so the
+   * citation trail on the canvas is derived from real tool output rather than
+   * parsed back out of prose. Ignored by every tool that does not set it.
+   */
+  kbSeedIds?: string[];
+  /** Human-readable shape of those seeds, so the canvas can render the nodes
+   *  without the graph layer reaching into the knowledge store. */
+  kbSeeds?: Array<{ id: string; title: string; tags: string[]; preview: string }>;
 }
 
 export interface Tool {
@@ -94,6 +108,25 @@ export class ToolRegistry {
     return sub;
   }
 
+  /**
+   * Bind extra run-scoped instances, *replacing* an already-present tool of the
+   * same name.
+   *
+   * Some tools are registered process-wide for discovery (e.g. `recall`) but
+   * need a per-run binding (the run id and the callback that files a hit into
+   * that run). Adding such an instance with `withTools` would collide, because
+   * `register` rejects a duplicate name, so this replaces it instead. The name
+   * is already in the caller's allowlist, so reachability is unchanged.
+   */
+  withBound(extra: Tool[]): ToolRegistry {
+    const sub = this.cloneFiltered({});
+    for (const t of extra) {
+      if (sub.get(t.name)) sub.replaceTool(t);
+      else sub.register(t);
+    }
+    return sub;
+  }
+
   /** Replace an existing tool in place (approval wrapping at run start). */
   replaceTool(tool: Tool): void {
     if (!this.tools.has(tool.name)) throw new Error(`unknown tool: ${tool.name}`);
@@ -111,6 +144,14 @@ export class ToolRegistry {
 
   get(name: string): Tool | undefined {
     return this.tools.get(name);
+  }
+
+  all(): Tool[] {
+    return [...this.tools.values()];
+  }
+
+  isRegistered(name: string): boolean {
+    return this.tools.has(name);
   }
 
   names(): string[] {
@@ -155,6 +196,8 @@ export class ToolRegistry {
         ok: result.ok,
         content: truncate(combined),
         ...(result.images && result.images.length > 0 ? { images: result.images } : {}),
+        ...(result.kbSeedIds && result.kbSeedIds.length > 0 ? { kbSeedIds: result.kbSeedIds } : {}),
+        ...(result.kbSeeds && result.kbSeeds.length > 0 ? { kbSeeds: result.kbSeeds } : {}),
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

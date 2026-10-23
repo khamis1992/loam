@@ -3,7 +3,7 @@ import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {spawn,type ChildProcess} from 'node:child_process';
 import type {Page} from 'playwright';
-import {ROOT} from '../config.js';
+import {ROOT, rootAsset} from '../config.js';
 import {taskPath} from '../server/taskWorkspace.js';
 // @ts-expect-error shared browser math
 import {animatedValue} from '../../ui/creative-keyframes.js';
@@ -12,7 +12,7 @@ import {transitionAt} from '../../ui/creative-timeline-model.js';
 type Clip={id:string;assetId:string;trackId:string;kind:string;start:number;duration:number;in:number;speed:number;volume:number;transition:string};
 export type RenderProject={taskId:string;title:string;fps:number;assets:Array<{id:string;path:string;data?:string;name:string;kind:string;duration:number;bytes?:number;folder?:string;tags?:string[];meta?:Record<string,number|string|boolean>;proxy?:{path:string;bytes:number;width:number}}>;clips:Clip[];tracks:Array<{id:string;name:string;muted:boolean;hidden:boolean;volume?:number;pan?:number;solo?:boolean;role?:'subtitles'|'voice';eq?:{low?:number;mid?:number;high?:number};compressor?:{enabled?:boolean;threshold?:number;ratio?:number}}>;duck?:{enabled?:boolean;amount?:number}};
 type Control={process:(child:ChildProcess|undefined)=>void;check:()=>void};
-const executable=()=>path.join(ROOT,'node_modules','ffmpeg-static',process.platform==='win32'?'ffmpeg.exe':'ffmpeg');
+const executable=()=>rootAsset('node_modules', 'ffmpeg-static',process.platform==='win32'?'ffmpeg.exe':'ffmpeg');
 function command(args:string[],control:Control,stdin=false){const child=spawn(executable(),['-hide_banner','-loglevel','error','-y',...args],{windowsHide:true,stdio:[stdin?'pipe':'ignore','pipe','pipe']});control.process(child);let error='';child.stderr?.on('data',data=>{error=(error+data).slice(-4000);});const done=new Promise<void>((resolve,reject)=>{child.once('error',reject);child.once('exit',code=>{control.process(undefined);if(code===0)resolve();else reject(Error(error||'توقف محرك الترميز'));});});void done.catch(()=>{});child.stdin?.on('error',()=>{});return {child,done};}
 export async function renderFrames(page:Page,project:RenderProject,startFrame:number,count:number,file:string,control:Control){
  const {child,done}=command(['-f','image2pipe','-framerate',String(project.fps),'-i','pipe:0','-an','-c:v','libx264','-preset','veryfast','-crf','18','-vf','scale=out_color_matrix=bt709:out_range=tv','-pix_fmt','yuv420p','-colorspace','bt709','-color_primaries','bt709','-color_trc','bt709','-color_range','tv','-frames:v',String(count),'-video_track_timescale',String(project.fps*1024),'-f','mp4',file],control,true);
