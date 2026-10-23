@@ -82,6 +82,7 @@ function startInProcess(deps: { cfg: Config; ollama: OllamaClient; tools: ToolRe
     signal: controller.signal,
     maxSteps: opts.maxSteps ?? DEFAULT_MAX_STEPS,
     suppressFinal: true,
+    ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
     ...(runDepth > 0 ? { depth: runDepth } : {}),
   })
     .then((res) => {

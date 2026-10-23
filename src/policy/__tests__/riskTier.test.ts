@@ -67,6 +67,21 @@ const CLASSIFICATION_CASES: Array<{ tool: string; args?: Record<string, unknown>
   { tool: "bash", args: { command: "format C:" }, expected: "destructive", note: "format" },
   { tool: "bash", args: { command: "reg add HKLM\\Software\\X /v Y /t REG_SZ /d 1" }, expected: "destructive", note: "registry edit" },
   { tool: "bash", args: { command: "echo hi && rm -rf /" }, expected: "destructive", note: "compound destructive" },
+  // Blast-radius classifier (stage 1) catches what the name-based denylist
+  // cannot see: a name it does not know, or a target it cannot name.
+  { tool: "bash", args: { command: "shred -u /etc/hosts" }, expected: "destructive", note: "shred (not in the denylist)" },
+  { tool: "bash", args: { command: "find / -name '*.tmp' -delete" }, expected: "destructive", note: "find -delete" },
+  { tool: "bash", args: { command: "dd if=/dev/zero of=/dev/sda" }, expected: "destructive", note: "dd of= a device" },
+  { tool: "bash", args: { command: "echo x > /etc/passwd" }, expected: "destructive", note: "truncating redirect outside the workspace" },
+  { tool: "bash", args: { command: "sudo rm -rf /var/data" }, expected: "destructive", note: "wrapper hides the destructive verb" },
+  { tool: "bash", args: { command: "Remove-Item -Recurse -Force $HOME\\Documents" }, expected: "destructive", note: "PowerShell home destruction" },
+  { tool: "bash", args: { command: "find ~ -type f | xargs rm" }, expected: "destructive", note: "piped delete hides its targets" },
+  // Routine commands the classifier leaves alone: the blast-radius stage must
+  // not make the common case ask. (`rm -rf dist` is already `destructive` from
+  // the name-based denylist above, which is pre-existing behavior.)
+  { tool: "bash", args: { command: "git status" }, expected: "exec", note: "read-only git stays exec" },
+  { tool: "bash", args: { command: "npm test" }, expected: "exec", note: "routine build stays exec" },
+  { tool: "bash", args: { command: "echo x > out.log" }, expected: "exec", note: "in-workspace redirect stays exec" },
   // network-external
   { tool: "web_fetch", args: { url: "https://example.com" }, expected: "network-external", note: "web_fetch" },
   { tool: "browser_open", args: { url: "https://example.com" }, expected: "network-external", note: "browser open" },

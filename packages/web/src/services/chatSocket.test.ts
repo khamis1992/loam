@@ -16,6 +16,11 @@ function makeEnvelope(sessionId: string, event: Record<string, unknown>): Server
   };
 }
 
+/** A persisted frame with its durable log sequence, so a replay can be sliced by seq. */
+function makeSeqEnvelope(sessionId: string, event: Record<string, unknown>, seq: number): ServerEnvelope {
+  return { ...makeEnvelope(sessionId, event), seq };
+}
+
 async function startMockServer() {
   const http = createServer();
   const io = new Server(http, { cors: { origin: '*' } });
@@ -35,21 +40,32 @@ async function startMockServer() {
         const sessionId = String(m.sessionId);
         socket.join(sessionId);
         const replay = [
-          makeEnvelope(sessionId, { type: 'chat', sender: 'user', content: 'older' }),
-          makeEnvelope(sessionId, { type: 'chat', sender: 'assistant', content: 'hi' }),
+          makeSeqEnvelope(sessionId, { type: 'chat', sender: 'user', content: 'older' }, 2),
+          makeSeqEnvelope(sessionId, { type: 'chat', sender: 'assistant', content: 'hi' }, 3),
         ];
-        const lastId = m.lastMessageId as string | undefined;
-        const from = lastId ? replay.findIndex((f) => f.id === lastId) + 1 : 0;
+        // BUILD_SPEC §6.4: a client that sends `lastSeq` resumes by sequence,
+        // otherwise it keeps the `lastMessageId` cursor behaviour.
+        let from = 0;
+        if (typeof m.lastSeq === 'number') {
+          from = replay.findIndex((f) => (f.seq ?? 0) > (m.lastSeq as number));
+          if (from < 0) from = replay.length;
+        } else {
+          const lastId = m.lastMessageId as string | undefined;
+          from = lastId ? replay.findIndex((f) => f.id === lastId) + 1 : 0;
+        }
+        const delivered = replay.slice(from);
+        const lastSeq = delivered.length ? delivered[delivered.length - 1]!.seq : undefined;
         socket.emit('message', {
           id: shortUid(),
           type: 'event',
           sessionId,
           timestamp: Date.now(),
+          ...(typeof lastSeq === 'number' ? { seq: lastSeq } : {}),
           event: {
             id: shortUid(),
             type: 'eventsNotifyEventsAfter',
             timestamp: Date.now(),
-            events: replay.slice(from).map((f) => f.event),
+            events: delivered.map((f) => f.event),
             noPersistent: true,
           },
         });
@@ -181,5 +197,138 @@ describe('ChatSocket', () => {
     expect(stop).toMatchObject({ sessionId });
 
     client.disconnect();
+  });
+
+  it('forwards the Knowledge Garden choice on the wire extData', async () => {
+    const client = new ChatSocket({
+      getToken: async () => 'valid-token',
+      onMessage: () => undefined,
+      socketBase: server.url,
+    });
+
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const sessionId = shortUid();
+    client.sendText(sessionId, 'search my garden', 'standard', [], { knowledge: true });
+    await new Promise((r) => setTimeout(r, 50));
+
+    const sent = server.received.find((m) => m.type === 'user_message');
+    expect(sent).toBeDefined();
+    expect((sent!.extData as Record<string, unknown>).knowledge).toBe(true);
+    // The capability block must survive the extra extData merge.
+    expect((sent!.extData as Record<string, unknown>).capabilities).toBeDefined();
+
+    client.disconnect();
+  });
+
+  it('replays only frames after the last durable log seq', async () => {
+    const messages: ServerMessage[] = [];
+    const client = new ChatSocket({
+      getToken: async () => 'valid-token',
+      onMessage: (m: ServerMessage) => messages.push(m),
+      socketBase: server.url,
+    });
+
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const sessionId = shortUid();
+    client.join(sessionId, undefined, undefined, () => 2);
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(server.received[0]).toMatchObject({ lastSeq: 2 });
+
+    const replayFrame = messages.find(
+      (m) => (m as ServerEnvelope).event?.type === 'eventsNotifyEventsAfter',
+    ) as ServerEnvelope | undefined;
+    expect(replayFrame).toBeDefined();
+    // seq 2 is already rendered, so only seq 3 comes back.
+    expect((replayFrame!.event as any).events).toHaveLength(1);
+    expect(((replayFrame!.event as any).events as any[])[0]).toMatchObject({ content: 'hi' });
+    expect(replayFrame!.seq).toBe(3);
+
+    client.disconnect();
+  });
+
+  it('records observed frame seqs and resumes from them on reconnect', async () => {
+    const messages: ServerMessage[] = [];
+    const client = new ChatSocket({
+      getToken: async () => 'valid-token',
+      onMessage: (m: ServerMessage) => messages.push(m),
+      socketBase: server.url,
+    });
+
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const sessionId = shortUid();
+    client.join(sessionId, undefined);
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Every observed frame updates the per-session cursor.
+    client.noteSeq(sessionId, 5);
+
+    (client as unknown as { rejoin?: () => void }).rejoin?.();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const rejoins = server.received.filter((m) => m.type === 'join_session');
+    expect(rejoins[rejoins.length - 1]).toMatchObject({ lastSeq: 5 });
+
+    client.disconnect();
+  });
+
+  it('omits the Knowledge Garden choice by default', async () => {
+    const client = new ChatSocket({
+      getToken: async () => 'valid-token',
+      onMessage: () => undefined,
+      socketBase: server.url,
+    });
+
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const sessionId = shortUid();
+    client.sendText(sessionId, 'plain run', 'standard');
+    await new Promise((r) => setTimeout(r, 50));
+
+    const sent = server.received.find((m) => m.type === 'user_message');
+    expect(sent).toBeDefined();
+    expect((sent!.extData as Record<string, unknown>).knowledge).toBeUndefined();
+
+    client.disconnect();
+  });
+
+  it('stops observing after disconnect and after unsubscribe', async () => {
+    const messages: ServerMessage[] = [];
+    const client = new ChatSocket({
+      getToken: async () => 'valid-token',
+      onMessage: () => undefined,
+      socketBase: server.url,
+    });
+
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const seen: ServerMessage[] = [];
+    const off = client.onMessage((m: ServerMessage) => seen.push(m));
+
+    const sessionId = shortUid();
+    client.join(sessionId, undefined);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(seen.some((m) => (m as ServerEnvelope).event?.type === 'eventsNotifyEventsAfter')).toBe(true);
+
+    off();
+    const afterUnsubscribe = seen.length;
+
+    server.io.to(sessionId).emit('message', makeEnvelope(sessionId, { type: 'liveStatus', text: 'Thinking' }));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(seen).toHaveLength(afterUnsubscribe);
+
+    client.disconnect();
+    server.io.to(sessionId).emit('message', makeEnvelope(sessionId, { type: 'liveStatus', text: 'Done' }));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(messages).toHaveLength(0);
+    expect(seen).toHaveLength(afterUnsubscribe);
   });
 });

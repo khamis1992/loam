@@ -13,6 +13,9 @@ import {
   RUN_NODE_TYPES,
   RunGraphStore,
   eventNodeId,
+  branchNodeId,
+  mergeNodeId,
+  siblingNodeId,
   type RunGraphExport,
   type RunNode,
   type RunNodeStatus,
@@ -20,9 +23,17 @@ import {
 } from "./store.js";
 import { assertTransition, canTransition } from "./status.js";
 import { transaction } from "../server/sqliteStore.js";
+import { RecallIndex, type RecallResolver, type RecallSource } from "./recall.js";
+import type { OllamaEmbedder } from "../memory/embeddings.js";
+
+/** The embedder's model name, for the shelf's `model` column. */
+function embedderModel(embedder?: OllamaEmbedder | null): string {
+  if (!embedder) return "";
+  return (embedder as unknown as { model?: string }).model ?? "";
+}
 
 /** Tools that produce a search node on the canvas. */
-const SEARCH_TOOLS = new Set(["web_search"]);
+const SEARCH_TOOLS = new Set(["web_search", "kb_search"]);
 /** Tools that produce a webpage node on the canvas. */
 const WEBPAGE_TOOLS = new Set(["web_fetch", "browser_open", "browser_goto", "browser_snapshot", "browser_act", "browser_pages"]);
 /** Tools that produce a document node on the canvas. */
@@ -73,6 +84,8 @@ interface RunState {
   pending: Array<{ name: string; nodeId: string }>;
   /** Plan step id -> the node created for it, so a later event updates it. */
   steps: Map<string, string>;
+  /** Fan-out id -> the branch count it was opened with (labels the branches). */
+  fanouts: Map<string, { total: number }>;
 }
 
 /** Graph projection returned to the canvas and the stats panel. */
@@ -97,6 +110,8 @@ export interface RunGraphOptions {
 export class RunGraph {
   private readonly store: RunGraphStore;
   private readonly runs = new Map<string, RunState>();
+  /** Neo N16: the derived cross-run shelf for this graph (optional by design). */
+  private recall?: RecallIndex;
 
   constructor(options: RunGraphOptions = {}) {
     this.store = options.store ?? new RunGraphStore();
@@ -104,6 +119,67 @@ export class RunGraph {
 
   getStore(): RunGraphStore {
     return this.store;
+  }
+
+  /** Neo N16: the cross-run shelf this graph indexes into (if attached). */
+  getRecall(): RecallIndex | undefined {
+    return this.recall;
+  }
+
+  /**
+   * Neo N16: give this graph a cross-run recall shelf.
+   *
+   * Attaching is optional so the graph stays usable on its own (and in tests);
+   * without it the graph simply does not maintain a shelf.
+   */
+  attachRecall(index?: RecallIndex, embedder?: OllamaEmbedder | null): void {
+    this.recall = index ?? new RecallIndex({ embedder, model: embedderModel(embedder) });
+  }
+
+  /** True when a cross-run shelf is attached to this graph. */
+  get recallAttached(): boolean {
+    return this.recall !== undefined;
+  }
+
+  /**
+   * Neo N16: file a recalled node into the current run as a linked node.
+   *
+   * The recalled node is *not* copied: a `note` node is created whose payload names
+   * the original node id, run id, type and the query that surfaced it, so the
+   * canvas shows a real edge back to the run the asset came from. When the origin
+   * still exists, its text/path/url are carried over too, so the current run can
+   * reopen the artifact instead of only hearing about it.
+   */
+  attachRecallNode(runId: string, source: RecallSource, query: string, resolve?: RecallResolver): RunNode | undefined {
+    const state = this.stateFor(runId);
+    const parent = state.lastId || state.rootId;
+    if (!parent) return undefined;
+    const origin = resolve?.(source);
+    const node = this.addNode(runId, state, {
+      type: "note",
+      // Deterministic: attaching the same hit twice must not create two nodes.
+      seed: `recall:${source.nodeId}:${source.runId}`,
+      status: "finished",
+      data: {
+        recalled: true,
+        query: oneLine(query, 200),
+        sourceNodeId: source.nodeId,
+        sourceRunId: source.runId,
+        sourceType: source.type,
+        // Provenance: the origin's own text and location when it still exists.
+        ...(origin
+          ? {
+              text: recallTextOf(origin),
+              title: dataTitleOf(origin),
+              path: dataPathOf(origin),
+              url: dataUrlOf(origin),
+              mime: dataMimeOf(origin),
+            }
+          : {}),
+      },
+      parent,
+    });
+    return node;
   }
 
   /** Prepare a run so events can be applied without a `task` event first.
@@ -118,7 +194,7 @@ export class RunGraph {
   private stateFor(runId: string): RunState {
     let state = this.runs.get(runId);
     if (!state) {
-      state = { runId, rootId: "", lastId: "", seq: 0, pending: [], steps: new Map() };
+      state = { runId, rootId: "", lastId: "", seq: 0, pending: [], steps: new Map(), fanouts: new Map() };
       this.runs.set(runId, state);
     }
     return state;
@@ -233,6 +309,7 @@ export class RunGraph {
     }
     const updated = this.store.update(nodeId, { status });
     if (!updated) throw new Error(`run node disappeared: ${nodeId}`);
+    this.scheduleRecallSync(updated.run_id);
     return updated;
   }
 
@@ -242,6 +319,7 @@ export class RunGraph {
     if (!node) throw new Error(`run node not found: ${nodeId}`);
     const updated = this.store.update(nodeId, { data });
     if (!updated) throw new Error(`run node disappeared: ${nodeId}`);
+    this.scheduleRecallSync(updated.run_id);
     return updated;
   }
 
@@ -252,7 +330,125 @@ export class RunGraph {
     const unique = [...new Set(parentIds)].filter((id) => id !== nodeId);
     const updated = this.store.update(nodeId, { parent_ids: unique });
     if (!updated) throw new Error(`run node disappeared: ${nodeId}`);
+    this.scheduleRecallSync(updated.run_id);
     return updated;
+  }
+
+  /**
+   * Neo N10 multi-model A/B: the same prompt handed to several models.
+   *
+   * Every arm becomes a `sibling` node hanging off the same parent and carries
+   * the model it was dispatched to, so the canvas renders one branch per model
+   * with its model label. Arm ids are deterministic, so re-rendering the same
+   * A/B run never duplicates nodes.
+   */
+  addSiblings(runId: string, parentNodeId: string, models: string[]): RunNode[] {
+    const parent = this.store.getNode(parentNodeId, runId);
+    if (!parent) throw new Error(`run node not found: ${parentNodeId}`);
+    const state = this.stateFor(runId);
+    const created: RunNode[] = [];
+    transaction(() => {
+      models.forEach((model, arm) => {
+        const id = siblingNodeId(runId, arm, model);
+        const now = Date.now();
+        const node: RunNode = {
+          id,
+          run_id: runId,
+          parent_ids: [parent.id],
+          type: "sibling",
+          status: "init",
+          data: { model, arm, label: model },
+          position: state.seq,
+          version: 1,
+          created: now,
+          updated: now,
+        };
+        const stored = this.store.upsert(node, state.seq);
+        state.seq = this.nextSeq(state);
+        created.push(stored);
+      });
+    });
+    this.invalidate(runId);
+    return created;
+  }
+
+  /**
+   * N7 branch fan-out: open one branch of a fan-out as its own canvas subtree.
+   *
+   * The branch root hangs off the step that fanned out (or the last node when
+   * no step is running) and carries the branch index and label, so the canvas
+   * renders N parallel branch roots instead of flattening every child tool call
+   * into one column. Node ids are deterministic, so re-rendering the same
+   * fan-out never duplicates branch roots.
+   */
+  createBranch(
+    runId: string,
+    fanoutId: string,
+    index: number,
+    label = "",
+    parentNodeId?: string,
+  ): RunNode {
+    const state = this.stateFor(runId);
+    if (!state.rootId) this.ensureRoot(runId, "");
+    // Branches are opened lazily, one per concurrent worker, so `state.lastId`
+    // is whatever the previously-scheduled branch happened to set: without an
+    // explicit anchor they chain onto each other instead of fanning out. The
+    // fan-out's own parent is captured once, when the first branch is opened,
+    // and every later branch reuses it.
+    const parent = parentNodeId ?? this.fanoutAnchors.get(`${runId}:${fanoutId}`) ?? state.stepId ?? state.lastId;
+    this.fanoutAnchors.set(`${runId}:${fanoutId}`, parent);
+    if (!parent) throw new Error(`run node not found: ${parentNodeId ?? ""}`);
+    const node = this.addNode(runId, state, {
+      type: "branch",
+      seed: `fanout:${fanoutId}:${index}`,
+      id: branchNodeId(runId, fanoutId, index),
+      status: "running",
+      data: {
+        fanoutId,
+        index,
+        ...(label ? { label: oneLine(label, 200) } : {}),
+        total: state.fanouts.get(fanoutId)?.total,
+      },
+      parent,
+    });
+    return node;
+  }
+
+  /**
+   * N7 branch fan-out: the merge step that consumes every branch of a fan-out.
+   *
+   * One node with one parent per branch, so the canvas shows the fan-in edge and
+   * the node data names every branch node id it merged.
+   */
+  createMerge(
+    runId: string,
+    fanoutId: string,
+    branchNodeIds: string[],
+    summary: string,
+    parentNodeId?: string,
+  ): RunNode {
+    const state = this.stateFor(runId);
+    if (!state.rootId) this.ensureRoot(runId, "");
+    const parents = [...new Set(branchNodeIds)].filter((id) => this.store.getNode(id, runId));
+    const parent = parentNodeId ?? state.lastId;
+    const node = this.addNode(runId, state, {
+      type: "merge",
+      seed: `fanout-merge:${fanoutId}`,
+      id: mergeNodeId(runId, fanoutId),
+      status: "finished",
+      data: {
+        fanoutId,
+        branchNodeIds: parents,
+        summary: oneLine(summary, 1000),
+      },
+      parent: parents[0] ?? parent,
+    });
+    // A merge is a fan-in: every branch is a parent, not just the first.
+    if (parents.length > 1) {
+      this.store.update(node.id, { parent_ids: parents });
+      this.invalidate(runId);
+    }
+    return this.store.getNode(node.id, runId) ?? node;
   }
 
   /** Layered layout plus aggregate stats. Deterministic, no dependencies. */
@@ -310,6 +506,14 @@ export class RunGraph {
 
   private depthCache = new Map<string, Map<string, number>>();
   private statsCache = new Map<string, RunGraphStats>();
+  /**
+   * N7 branch fan-out: the parent each fan-out's branch roots hang off.
+   *
+   * Captured on the first branch a fan-out opens and reused by the rest, so the
+   * branches of one fan-out all share a parent even though `runFanout` opens
+   * them lazily from concurrent workers.
+   */
+  private fanoutAnchors = new Map<string, string>();
 
   private depthMap(runId: string): Map<string, number> {
     const cached = this.depthCache.get(runId);
@@ -334,6 +538,19 @@ export class RunGraph {
   invalidate(runId: string): void {
     this.depthCache.delete(runId);
     this.statsCache.delete(runId);
+    this.scheduleRecallSync(runId);
+  }
+
+  /**
+   * Neo N16: queue a shelf refresh after a write.
+   *
+   * The refresh is coalesced and never throws, because a recall miss must not
+   * break the task that produced the node.
+   */
+  private scheduleRecallSync(runId: string): void {
+    const recall = this.recall;
+    if (!recall) return;
+    recall.scheduleSync(runId, (id) => this.store.list({ runId: id }));
   }
 
   private apply(runId: string, state: RunState, event: AgentEvent): string[] {
@@ -399,6 +616,23 @@ export class RunGraph {
           },
           parent: state.lastId,
         }).id];
+      case "ask_user_required":
+        // N9 ask_user: the run pauses for the user's clarification, so it is an
+        // ask_user node just like the plan-mode approval card. It is a question
+        // node (not a note): the run genuinely waits on the answer.
+        return [this.addNode(runId, state, {
+          type: "ask_user",
+          seed: `ask-user:${event.askUserId}`,
+          status: "running",
+          data: {
+            askUserId: event.askUserId,
+            tool: event.tool,
+            title: oneLine(event.title, 300),
+            reason: oneLine(event.reason, 400),
+            questions: event.questions,
+          },
+          parent: state.lastId,
+        }).id];
       case "environment_issue":
         // D17 report_environment_issue: a step cannot run because of the local
         // environment. It is a terminal note, not a question: the agent records
@@ -430,7 +664,7 @@ export class RunGraph {
       case "tool_call":
         return this.onToolCall(runId, state, event.name, event.args);
       case "tool_result":
-        return this.onToolResult(runId, state, event.name, event.ok, event.summary);
+        return this.onToolResult(runId, state, event.name, event.ok, event.summary, event.kbSeedIds, event.kbSeeds);
       case "error":
         return [this.addNode(runId, state, {
           type: "failed",
@@ -464,6 +698,8 @@ export class RunGraph {
           parent: state.lastId,
         }).id];
       case "todo":
+      case "recipe_update":
+      case "recipe_restart":
       case "phase":
       case "task":
       case "task-status":
@@ -474,14 +710,136 @@ export class RunGraph {
       case "verification_progress":
       case "permission_mode_changed":
       case "cache_usage":
+      // Neo N5: the selector re-shapes the transcript every step, so it is a
+      // per-step diagnostic like cache_usage rather than a canvas node (a node
+      // per step would bury the run graph's real structure).
+      case "context_selected":
+      case "workspace_command":
       case "video_studio_command":
+      case "video_studio_export":
+      case "workspace_open_request":
+      case "simulation_progress":
         // Live-only signals with no canvas node of their own.
         return [];
+      case "fanout_branch":
+        return this.onFanoutBranch(
+          runId,
+          state,
+          event.fanoutId,
+          event.index,
+          event.phase,
+          event.label,
+          event.summary,
+          event.nodeId,
+          event.ok,
+        );
+      case "fanout_merge":
+        return this.onFanoutMerge(runId, state, event.fanoutId, event.branchNodeIds, event.summary);
       default: {
         const _exhaustive: never = event;
         return _exhaustive;
       }
     }
+  }
+
+  /**
+   * N7 branch fan-out: one branch started (a new `branch` node) or finished
+   * (the same node moves to its terminal status). The fan-out total is recorded
+   * on the first branch so the canvas can label "branch 2 of 4".
+   */
+  private onFanoutBranch(
+    runId: string,
+    state: RunState,
+    fanoutId: string,
+    index: number,
+    phase: "start" | "done",
+    label?: string,
+    summary?: string,
+    nodeId?: string,
+    ok?: boolean,
+  ): string[] {
+    if (phase === "start") {
+      // A recorded log may begin with a branch when no earlier event created the
+      // root (a live run always has one, because `beginRun` runs first). Creating
+      // it here is what gives a replayed branch the same parent as a live one.
+      if (!state.rootId) this.ensureRoot(runId, "");
+      // Record the fan-out's anchor the first time a replay sees a branch, so the
+      // rest of the replayed branches share it instead of chaining off each other.
+      const anchorKey = `${runId}:${fanoutId}`;
+      if (!this.fanoutAnchors.has(anchorKey)) this.fanoutAnchors.set(anchorKey, state.stepId ?? state.lastId);
+      if (!state.fanouts.has(fanoutId)) state.fanouts.set(fanoutId, { total: index + 1 });
+      // Branches arrive in flight order, so the label's "of N" grows to the
+      // highest index seen rather than freezing at the first branch.
+      const known = state.fanouts.get(fanoutId)!;
+      if (index + 1 > known.total) known.total = index + 1;
+      // Branches already on the canvas were opened before this one was counted,
+      // so they still show the old "of N". Bumping them here is what keeps every
+      // branch of a fan-out agreeing on the size, live or replayed.
+      for (let earlier = 0; earlier < index; earlier += 1) {
+        const sibling = this.store.getNode(branchNodeId(runId, fanoutId, earlier), runId);
+        if (!sibling || (sibling.data as { total?: number }).total === known.total) continue;
+        this.store.update(sibling.id, {
+          status: sibling.status,
+          data: { ...(sibling.data as Record<string, unknown>), total: known.total },
+        });
+      }
+      const existing = nodeId ? this.store.getNode(nodeId, runId) : undefined;
+      if (existing) {
+        // A live run already opened this branch through `createBranch`, which could
+        // not know the fan-out total yet. Writing it here is what makes the live
+        // node identical to the one a replay builds from the same event.
+        const data = { ...(existing.data as Record<string, unknown>), fanoutId, index, total: known.total, ...(label ? { label: oneLine(label, 200) } : {}) };
+        this.store.update(existing.id, { status: "running", data });
+        return [existing.id];
+      }
+      const created = this.addNode(runId, state, {
+        type: "branch",
+        seed: `fanout:${fanoutId}:${index}`,
+        // Live runs open the branch through `createBranch` and the event carries
+        // that id; a replay sees only the event, so it must derive the same id or
+        // the branch would not be the node the `done` event and the merge refer to.
+        id: nodeId ?? branchNodeId(runId, fanoutId, index),
+        status: "running",
+        data: {
+          fanoutId,
+          index,
+          ...(label ? { label: oneLine(label, 200) } : {}),
+          total: known.total,
+        },
+        // Same anchor the live path uses, so a replayed fan-out has the same
+        // branch roots as the run that produced the log.
+        parent: this.fanoutAnchors.get(`${runId}:${fanoutId}`) ?? state.stepId ?? state.lastId,
+      });
+      return [created.id];
+    }
+
+    // `done`: the branch root is terminal. The caller supplies the node id it
+    // opened, which keeps the branch subtree on the canvas intact.
+    const target = nodeId ? this.store.getNode(nodeId, runId) : undefined;
+    if (!target) return [];
+    // The caller's explicit flag is authoritative; the prose regex is only a
+    // fallback for event logs recorded before the flag existed.
+    const branchOk = ok ?? (!summary || !/^failed\b/i.test(summary));
+    const nextStatus: RunNodeStatus = branchOk ? "finished" : "failed";
+    if (canTransition(target.status, nextStatus)) {
+      this.store.update(target.id, {
+        status: nextStatus,
+        data: { ...(target.data as Record<string, unknown>), ...(summary ? { summary: oneLine(summary, 600) } : {}), ...(!branchOk ? { failReason: oneLine(summary || "branch failed", 600) } : {}) },
+      });
+    }
+    return [target.id];
+  }
+
+  /** N7 branch fan-out: the merge node that consumes every branch of a fan-out. */
+  private onFanoutMerge(
+    runId: string,
+    state: RunState,
+    fanoutId: string,
+    branchNodeIds: string[],
+    summary: string,
+  ): string[] {
+    const node = this.createMerge(runId, fanoutId, branchNodeIds, summary, state.stepId);
+    return [node.id];
   }
 
   private onPlan(runId: string, state: RunState, goal: string, stepIds: string[], total: number): string[] {
@@ -545,7 +903,15 @@ export class RunGraph {
     return [node.id];
   }
 
-  private onToolResult(runId: string, state: RunState, name: string, ok: boolean, summary: string): string[] {
+  private onToolResult(
+    runId: string,
+    state: RunState,
+    name: string,
+    ok: boolean,
+    summary: string,
+    kbSeedIds?: string[],
+    kbSeeds?: Array<{ id: string; title: string; tags: string[]; preview: string }>,
+  ): string[] {
     const index = state.pending.findIndex((entry) => entry.name === name);
     if (index === -1) return [];
     const [entry] = state.pending.splice(index, 1);
@@ -557,7 +923,28 @@ export class RunGraph {
       this.store.update(node.id, { status, data: { ...(node.data as Record<string, unknown>), summary: oneLine(summary, 600), ok } });
     }
     state.lastId = node.id;
-    return [node.id];
+    // N3 Knowledge Garden: a `kb_search` result carries the seeds it actually read
+    // (`kbSeedIds` + `kbSeeds`). Each becomes a child node hanging off the tool
+    // node, so "where did this answer come from?" is a real edge on the run graph
+    // rather than prose. Nothing is invented: the ids come from the tool.
+    if (!kbSeedIds || kbSeedIds.length === 0) return [node.id];
+    const created: string[] = [];
+    for (const seedId of kbSeedIds) {
+      const meta = kbSeeds?.find((seed) => seed.id === seedId);
+      const seedNode = this.addNode(runId, state, {
+        type: "kb_seed",
+        seed: `kb_seed:${name}:${seedId}:${state.seq}`,
+        status: "finished",
+        data: {
+          seedId,
+          tool: name,
+          ...(meta ? { title: meta.title, tags: meta.tags, preview: meta.preview } : {}),
+        },
+        parent: node.id,
+      });
+      created.push(seedNode.id);
+    }
+    return [node.id, ...created];
   }
 
   private onArtifact(
@@ -581,11 +968,13 @@ export class RunGraph {
   private addNode(
     runId: string,
     state: RunState,
-    spec: { type: RunNodeType; seed: string; status: RunNodeStatus; data?: unknown; parent: string },
+    spec: { type: RunNodeType; seed: string; status: RunNodeStatus; data?: unknown; parent: string; id?: string },
   ): RunNode {
     // The event seed makes the id deterministic across replays; the occurrence
     // counter keeps two calls to the same tool inside one step from colliding.
-    const id = eventNodeId(spec.type, spec.seed + "#" + String(state.seq));
+    // Nodes with a stable identity of their own (a fan-out branch, a merge) pass
+    // the id explicitly so live and replayed runs agree on it.
+    const id = spec.id ?? eventNodeId(spec.type, spec.seed + "#" + String(state.seq));
     const position = state.seq;
     const existing = this.store.getRow(id);
     state.seq = this.nextSeq(state);
@@ -633,6 +1022,46 @@ function toolCallData(name: string, args: Record<string, unknown>): Record<strin
   if (typeof args.title === "string") data.title = args.title;
   if (typeof args.kind === "string") data.kind = args.kind;
   return data;
+}
+
+/* --------------------------- Neo N16 recall metadata --------------------------- */
+
+/** Read one string field off a node payload without assuming its shape. */
+function dataField(node: RunNode, key: string): string | undefined {
+  if (typeof node.data !== "object" || node.data === null) return undefined;
+  const value = (node.data as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function dataTitleOf(node: RunNode): string | undefined {
+  return dataField(node, "title") ?? dataField(node, "label");
+}
+
+function dataPathOf(node: RunNode): string | undefined {
+  return dataField(node, "path");
+}
+
+function dataUrlOf(node: RunNode): string | undefined {
+  return dataField(node, "url");
+}
+
+function dataMimeOf(node: RunNode): string | undefined {
+  return dataField(node, "mime");
+}
+
+/**
+ * The text a recalled node carries into its new run.
+ *
+ * Reuses the same field order as the recall index, so what the shelf matched on
+ * is exactly what the attached node shows.
+ */
+function recallTextOf(node: RunNode): string {
+  const parts: string[] = [];
+  for (const key of ["title", "label", "query", "url", "path", "summary", "text", "reason", "message", "verdict", "tool"]) {
+    const value = dataField(node, key);
+    if (value && !parts.includes(value)) parts.push(value);
+  }
+  return parts.length === 0 ? `${node.type} ${node.run_id}` : oneLine(parts.join(" — "), 8000);
 }
 
 export { assertTransition, canTransition, RUN_NODE_ENTITY };

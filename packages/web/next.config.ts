@@ -22,7 +22,10 @@ function computeRoot(): string {
     if (/^[a-zA-Z]:$/.test(result)) {
       result += path.sep;
     }
-    return result || here;
+    // The root must contain ../shared (aliased as @shared/*), so never go deeper than the monorepo root.
+    const repoRoot = path.resolve(here, '..', '..');
+    if (!result || repoRoot.toLowerCase().startsWith(result.toLowerCase())) return result || repoRoot;
+    return repoRoot;
   } catch {
     return here;
   }

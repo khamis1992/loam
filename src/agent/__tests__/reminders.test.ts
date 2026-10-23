@@ -82,6 +82,10 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
       bufferTokens: 20000,
       reattachFiles: 5,
       reattachFileChars: 4000,
+      criticalThresholdPercent: 0.95,
+      recentTurnsToKeep: 10,
+      minTurnsToKeep: 2,
+      emergencyToolResultMaxChars: 4000,
       model: "",
       contextWindow: { "qwen2.5": 32768 },
     },
@@ -134,6 +138,13 @@ describe("reminder channel", () => {
     assert.match(buildReminder("file_changed", "src/a.ts"), /`src\/a\.ts` changed on disk/);
     assert.match(buildReminder("plan_mode"), /PLAN mode/);
     assert.match(buildReminder("memory_updated"), /memory was updated/);
+    // file_touched carries the notice as JSON, and falls back to the raw text
+    // when the detail is not a valid notice.
+    assert.match(
+      buildReminder("file_touched", JSON.stringify({ path: "src/a.ts", writer: "worker-1", summary: "+2/-1" })),
+      /worker-1.*`src\/a\.ts`.*\+2\/-1/,
+    );
+    assert.match(buildReminder("file_touched", "src/b.ts"), /`src\/b\.ts`/);
   });
 });
 
@@ -180,6 +191,23 @@ describe("ReminderChannel", () => {
     assert.ok(messages.every((m) => m.role === "user" && isReminderContent(m.content)));
     assert.match(messages[0]!.content, /`src\/b\.ts` changed on disk/);
     assert.match(messages[1]!.content, /memory was updated/);
+    assert.equal(channel.pendingCount, 0);
+  });
+
+  it("drains a cross-session file-touch notice as a hidden user message", () => {
+    const channel = new ReminderChannel({ todoStaleAfter: 99 });
+    channel.fileTouched({ path: "src/c.ts", writer: "worker-1", summary: "+2/-1", preview: ["- beta", "+ BETA", "+ gamma"] });
+    const messages = channel.drainMessages(1);
+    assert.equal(messages.length, 1);
+    const message = messages[0]!;
+    assert.equal(message.role, "user");
+    assert.ok(isReminderContent(message.content));
+    // Path, writer, diff summary, preview lines, and the re-read instruction.
+    assert.match(message.content, /worker-1/);
+    assert.match(message.content, /`src\/c\.ts`/);
+    assert.match(message.content, /\+2\/-1/);
+    assert.match(message.content, /- beta/);
+    assert.match(message.content, /Re-read it with file_read/);
     assert.equal(channel.pendingCount, 0);
   });
 });
