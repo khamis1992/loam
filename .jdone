@@ -18,6 +18,35 @@ file changed, no test was weakened, deleted or skipped. The merged tree carries 
 (`git merge-base --is-ancestor manus-parity HEAD` exit 0; `rev-list --left-right --count
 manus-parity...HEAD` = `0 9`).
 
+## Gates (all run from the worktree root on the merged tree, HEAD `55042d3`)
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)` -> compiled successfully, 25/25 static pages
+- `npm run check:design-registry` -> OK (30 blocks, 8 RTL, all manifests valid, all built)
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes` -> PASS
+- `npm run check:orchestrator` -> PASS (114/114)
+- `npm run check:promptwire` -> PASS
+- Focused suites (registry, uiExamples, runTools, editHints, editSchemaAlias)
+  -> tests 87, pass 87, fail 0
+- `node --import tsx --test "src/**/*.test.ts"` -> tests 2178, pass 2176, fail 2
+- `(cd packages/web && npx vitest run)` -> 72 files / 472 tests, all pass
+
+The two node failures are pre-existing and NOT caused by this merge:
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered nor
+   listed in PENDING_CODING_TOOLS". That test file, `src/agent/taskToolScope.ts` and
+   `src/tools/planTools.ts` are byte-identical to `manus-parity`; it is the inherited D4
+   defect documented in the preserved reports below.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing".
+   Environmental: the test asserts a fresh `os.tmpdir()` folder is not a git repo, but `%TEMP%`
+   on this machine sits inside a git repository, so `git -C <tmp> rev-parse` succeeds and
+   `isGit` is true. The file is byte-identical to `manus-parity` and reproduces on the
+   untouched base.
+
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path touched.
+Working tree clean; `git merge manus-parity` reports "Already up to date." and
+`git merge-base --is-ancestor manus-parity HEAD` exits 0.
+
 ## V8: Loam UI Kit / v0 design-system parity
 
 V8 complete: Loam UI Kit / v0 design-system parity - a vetted design-block registry plus the
