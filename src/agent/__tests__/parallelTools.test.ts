@@ -45,7 +45,7 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     selfPlay: { maxCases: 0 },
     orchestrator: { enabled: false, plannerModel: "", verifierModel: "", maxPlanSteps: 1, maxStepsPerWorker: 1, maxRevisionsPerStep: 1, maxReplans: 1, verifyFinal: false },
     mcpServers: {},
-    compression: { enabled: false, thresholdPercent: 0.5, protectLead: 3, protectTail: 20, targetRatio: 0.2, model: "", contextWindow: {} },
+    compression: { enabled: false, thresholdPercent: 0.5, protectLead: 3, protectTail: 20, targetRatio: 0.2, bufferTokens: 20000, reattachFiles: 5, reattachFileChars: 4000, model: "", contextWindow: {} },
     sessionLog: { enabled: false },
     subagent: { maxDepth: 2, maxConcurrentChildren: 4 },
     ...overrides,

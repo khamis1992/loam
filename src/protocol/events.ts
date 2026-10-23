@@ -17,6 +17,8 @@ import type {
   LocalExecutionApprovalRequested,
   FolderAccessRequestEvent,
   EnvironmentIssueEvent,
+  PlanApprovalRequestedEvent,
+  CacheUsageEvent,
 } from "./types.js";
 
 const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -434,6 +436,22 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
       break;
     }
 
+    case "plan_approval_required": {
+      const plan: PlanApprovalRequestedEvent = {
+        id: baseId(),
+        type: "planApprovalRequested",
+        timestamp: ts,
+        requestId: event.planApprovalId,
+        taskId: event.taskId,
+        summary: event.summary,
+        steps: event.steps,
+        filesToEdit: event.filesToEdit,
+        trivial: event.trivial,
+      };
+      out.push(plan);
+      break;
+    }
+
     case "mode": {
       const modeEv: ModeEvent = {
         id: baseId(),
@@ -445,6 +463,23 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
         reason: event.reason,
       };
       out.push(modeEv);
+      break;
+    }
+
+    case "cache_usage": {
+      // Prompt-cache accounting is a persistent chat row (never replayed as a
+      // miss when telemetry is absent), so it stays in the session history.
+      const cacheUsage: CacheUsageEvent = {
+        id: baseId(),
+        type: "cache_usage",
+        timestamp: ts,
+        provider: event.provider,
+        model: event.model,
+        promptTokens: event.promptTokens,
+        cachedTokens: event.cachedTokens,
+        ...(event.miss ? { miss: { ...event.miss } } : {}),
+      };
+      out.push(cacheUsage);
       break;
     }
 

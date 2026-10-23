@@ -229,6 +229,24 @@ export interface ExplanationEvent extends ChatEventBase {
   content: string;
 }
 
+/** Prompt-cache (KV cache) accounting for one completed provider request. */
+export interface CacheUsageEvent extends ChatEventBase {
+  type: 'cache_usage';
+  provider: string;
+  model: string;
+  promptTokens: number;
+  cachedTokens: number;
+  /** Present only when the provider reported a real miss/refresh. */
+  miss?: {
+    reason: string;
+    expectedTokens: number;
+    readTokens: number;
+    missedTokens: number;
+    documentedCause?: string;
+    message: string;
+  };
+}
+
 export interface FolderAccessRequestEvent extends ChatEventBase {
   type: 'folderAccessRequest';
   requestId: string;
@@ -276,6 +294,27 @@ export interface EnvironmentIssueEvent extends ChatEventBase {
   details?: string;
 }
 
+/** D4: a `suggest_plan` plan awaiting the user's decision (plan-approval card). */
+export interface PlanApprovalRequestedEvent extends ChatEventBase {
+  type: 'planApprovalRequested';
+  requestId: string;
+  taskId: string;
+  summary: string;
+  steps: string[];
+  filesToEdit: string[];
+  trivial: boolean;
+}
+
+/** D4: the user decided a pending plan-approval card. */
+export interface PlanApprovalResolvedEvent extends ChatEventBase {
+  type: 'planApprovalResolved';
+  requestId: string;
+  taskId: string;
+  reviewer: 'user' | 'auto';
+  result: 'approve' | 'reject' | 'edit';
+  plan?: { summary?: string; steps?: string[]; files_to_edit?: string[]; trivial?: boolean };
+}
+
 export type ChatEvent =
   | ChatMessageEvent
   | ChatDeltaEvent
@@ -295,10 +334,13 @@ export type ChatEvent =
   | LocalPermissionModeChangeResultEvent
   | EventsNotifyEventsAfterEvent
   | ExplanationEvent
+  | CacheUsageEvent
   | FolderAccessRequestEvent
   | BrowserFrameEvent
   | LocalExecutionApprovalRequestedEvent
   | LocalExecutionApprovalResolvedEvent
-  | EnvironmentIssueEvent;
+  | EnvironmentIssueEvent
+  | PlanApprovalRequestedEvent
+  | PlanApprovalResolvedEvent;
 
 export type ServerMessage = ServerEnvelope | { type: 'session_write_access'; sessionId: string; writable: boolean };
