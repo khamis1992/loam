@@ -82,30 +82,44 @@ N20 long-horizon eval (`npm run eval:neo`, mock model, no network)
 
 Merge with manus-parity: resolved keeping both sides
 ----------------------------------------------------
-`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity`. The
-merge of parity tip `045f3e2` (J5 command-risk port) was run once and auto-merged
-with the `ort` strategy: no conflict markers remained in any tracked file and no
-manual resolution was needed. `src/protocol/socket.ts` and `src/protocol/types.ts`
-both changed on each side, and git combined them without loss: parity's
-`session_write_access` / `ServerMessage` union change and N4's
-`recipe_update` / `recipe_restart` handling are both present.
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity`. Two
+sequential merges were needed, because `refs/heads/manus-parity` advanced between
+them (parity merges land continuously on this branch):
 
-The tracked rollup marker `.jdone` is byte-identical to manus-parity's version
-after the merge. This is correct rather than a loss: git's ort resolver kept the
-side whose content already contained every line of the other, verified
-mechanically by comparing the merged file line-by-line against both sides
-(`0` lines missing from the branch side, `0` lines missing from the parity side).
-The parity `.jdone` is the shared rollup that already carries the N20 baseline and
-every report that landed on parity; this report is prepended here.
+  1. merge of parity tip `045f3e2` (J5 command-risk port) -> committed as `10c9024`.
+     Auto-merged with the `ort` strategy: no conflict markers remained in any
+     tracked file and no manual resolution was needed. `src/protocol/socket.ts` and
+     `src/protocol/types.ts` both changed on each side, and git combined them
+     without loss: parity's `session_write_access` / `ServerMessage` union change
+     and N4's `recipe_update` / `recipe_restart` handling are both present. In that
+     merge the tracked rollup marker `.jdone` resolved to parity's version, which
+     already contained every line of the branch side (verified line-by-line: 0
+     lines missing from either side).
+  2. merge of parity tip `cf45585` (C19 failover endpoints + hermetic budget
+     suite) -> committed as `017faf8`. The only conflicted file was `.jdone`
+     again (add/add: N4's report vs parity's new C19 report + rollup). Resolved by
+     keeping BOTH sides: the N4 report first, then the C19 report, then the shared
+     preserved rollup, with the `## Preserved:` header kept once. Verified
+     mechanically against both stage blobs (`:2:.jdone` 2222 lines, `:3:.jdone`
+     5070 lines): 0 lines missing from the ours side, 0 lines missing from the
+     theirs side, 0 conflict markers, strict UTF-8.
 
-No source file was edited by this session. The N4 deliverables were already
-committed (`7c6fc61`, `a928de8`, `28b3cc8`, `0064bb0`) and are unchanged.
+The C19 source files came in with the second merge and were verified on the merged
+tree, not just accepted: `src/config.ts` (exported `DEFAULTS`, corrected failover
+provider base URLs), `src/agent/__tests__/orchestratorBudget.test.ts` (isolation
+import + injected routing seams) and `src/__tests__/configFailover.test.ts`.
+`node --import tsx --test src/__tests__/configFailover.test.ts
+src/agent/__tests__/orchestratorBudget.test.ts` -> tests 9, pass 9, fail 0.
+
+No N4 source file was edited by this session. The N4 deliverables were already
+committed (`7c6fc61`, `a928de8`, `28b3cc8`, `0064bb0`) and are unchanged; the
+recipe suites were re-run on the final merged tree and still pass 56/56.
 
 Gate condition verified on the final tree
 -----------------------------------------
   `git merge manus-parity`      -> "Already up to date."
   `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
-  `git rev-list --left-right --count manus-parity...HEAD` -> `0  5`
+  `git rev-list --left-right --count manus-parity...HEAD` -> `0  7`
     (zero parity commits missing; the left count is the gate)
   `git grep -E "^(<{7}|={7}|>{7})( |$)"` -> no matches (no conflict markers)
   `git status --porcelain`      -> empty
@@ -116,6 +130,8 @@ Gates (all run from the worktree root on the merged tree)
   2. npm run build:server                              -> exit 0 (pdf worker copied)
   3. (cd packages/web && npx next build)               -> exit 0 (Compiled successfully)
   4. node --import tsx --test <the 6 recipe suites>     -> tests 56, pass 56, fail 0
+     node --import tsx --test src/__tests__/configFailover.test.ts \
+       src/agent/__tests__/orchestratorBudget.test.ts  -> tests 9, pass 9, fail 0
   5. (cd packages/web && npx vitest run)               -> 72 files / 472 tests, all pass
   6. npm run check:encoding   -> OK (no BOM, no mojibake, all JSON valid)
   7. npm run check:modes      -> PASS
