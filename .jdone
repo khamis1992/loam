@@ -55,26 +55,70 @@ timeline engine.
 
 ### Gates (all run from the worktree root on the merged tree)
 
+Exit codes below were captured with a `spawnSync` harness, not with
+`cmd & echo %ERRORLEVEL%`: cmd expands `%ERRORLEVEL%` when the line is parsed,
+before the command runs, so that idiom silently reports the *previous* command's
+status. Every figure here is a real exit status.
+
+Task-required gates (`.jtask.md` rule 18):
+
 - `npx tsc --noEmit` -> exit 0
 - `npm run build:server` -> exit 0 (pdf worker copied)
 - `(cd packages/web && npx next build)` -> exit 0 (compiled successfully, 25/25 static pages)
+
+Repo-wide check gates, all exit 0 on the merged tree:
+
 - `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
 - `npm run check:promptwire` -> PASS
 - `npm run check:modes` -> PASS
 - `npm run check:eval` -> PASS
-- `npm run check:orchestrator` -> PASS
+- `npm run check:orchestrator` -> PASS (114/114)
 - `npm run check:loam-agents` -> PASS ("seven modes accepted; unknown create/update rejected without partial mutation")
 - `npm run check:recovery` -> PASS ("invalid migration preserves source; all recovery checks passed")
+
+Test suites:
+
 - `node --import tsx --test src/tools/__tests__/videoStudioRouter.test.ts` -> tests 48, pass 48, fail 0
 - `node --import tsx --test src/tools/__tests__/videoStudioRouter.test.ts src/tools/__tests__/videoStudio.test.ts` -> tests 90, pass 90, fail 0
 - `node --import tsx --test src/agent/__tests__/codingPrompt.test.ts` -> tests 8, pass 8, fail 0
 - `node --import tsx --test "src/**/*.test.ts"` -> tests 2543, pass 2541, fail 2
 
-The two full-suite failures are inherited from the parity lineage, not
-regressions from this merge. Neither file is touched by fc-07 (`git diff --stat
-MERGE_HEAD HEAD` is empty for both), the failing test files auto-merged
-byte-identically across base `a8130cc`, HEAD and MERGE_HEAD, and every dependency
-they import is byte-identical to MERGE_HEAD:
+#### `npm run verify:loam` does not pass on this machine (environmental, not a regression)
+
+`verify:loam` chains `verify && check:isolation && check:loam-agents &&
+check:loam-ui && check:loam-ancillary && check:loam-e2e` with `&&`. It exits 1,
+and the `&&` chain means the last three gates never ran in that invocation. Each
+failing member was run individually and each reproduces **identically on a clean
+`045f3e2` worktree** (`git worktree add` at the parity tip), so none is caused by
+this merge:
+
+1. `check:isolation` -> `EADDRINUSE 127.0.0.1:8787`. The protocol adapter
+   (`src/protocol/adapter.ts:227`) defaults to `AS_PROTOCOL_PORT || 8787`, and
+   the isolation script sets only `MANUS_LOCAL_PORT`. On this machine the owner's
+   running **Loam.exe** desktop app already listens on 8787 (12 instances
+   observed). Same exit 1 and same `EADDRINUSE` line on `045f3e2`.
+2. `check:loam-e2e` -> same `EADDRINUSE 127.0.0.1:8787` for the same reason.
+   Same exit 1 on `045f3e2`.
+3. `check:loam-ui` -> `AssertionError: 8 !== 7` at `check-loam-ui.mjs:43`, which
+   asserts `#homeModes button` count is 7 while `LOAM_MODES` has held **8** modes
+   (ask, research, build, write, data, media, security, automate) since the
+   initial import `a2123a8`. The script and `src/modes/catalog.ts` are
+   byte-identical to `045f3e2`, and the assertion fails at the same line with the
+   same `8 !== 7` there.
+4. `check:loam-ancillary` -> `TimeoutError` clicking `#rkSend`, because the
+   workspace nav link intercepts pointer events. Same exit 1 on `045f3e2`.
+
+All four are pre-existing repository/environment defects on the parity lineage.
+The task's own gate list (`.jtask.md` rule 18) is the three build gates plus the
+tests for touched files, and all of those pass; the merge's own gate failure was
+the MERGE CONFLICT recorded in `.jgatefail.txt`, which is resolved.
+
+#### The two full-suite failures are inherited
+
+Neither file is touched by fc-07 (`git diff --stat MERGE_HEAD HEAD` is empty for
+both), the failing test files auto-merged byte-identically across base `a8130cc`,
+HEAD and MERGE_HEAD, and running just these two files on a clean `045f3e2`
+worktree reproduces exactly the same two failures:
 
 1. `src/agent/__tests__/toolDescriptions.test.ts` -> "keeps every coding-profile
    tool either linted or explicitly pending" (`suggest_plan is neither registered
