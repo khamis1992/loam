@@ -184,6 +184,41 @@ export interface NewPlanStepEvent extends ChatEventBase {
   title: string;
 }
 
+/**
+ * Neo N4 incremental Recipe engine: the live step list of a recipe-mode run.
+ *
+ * Unlike `PlanUpdateEvent` (the plan as it was at the start), this carries the
+ * *current* recipe with per-step status and the remaining-work estimate, so the
+ * client can render a recipe that changes as each step produces a result.
+ */
+export interface RecipeUpdateEvent extends ChatEventBase {
+  type: "recipeUpdate";
+  goal: string;
+  steps: {
+    id: string;
+    title: string;
+    instruction: string;
+    successCriteria: string;
+    status: "proposed" | "ready" | "doing" | "done" | "blocked" | "skipped";
+    nodeId?: string;
+    replaces?: string[];
+    completedCount: number;
+  }[];
+  remainingEstimate: number;
+  change: "init" | "propose" | "advance" | "rewrite" | "drop" | "restart";
+  source: "planner" | "restart" | "auto";
+}
+
+/** Neo N4: the recipe restarted from one step; downstream is regenerated. */
+export interface RecipeRestartEvent extends ChatEventBase {
+  type: "recipeRestart";
+  stepId: string;
+  nodeId: string;
+  keptSteps: string[];
+  regeneratedSteps: string[];
+  reason: string;
+}
+
 export interface TodoUpdateEvent extends ChatEventBase {
   type: "todoUpdate";
   todos: { id: string; content: string; status: "pending" | "in_progress" | "completed" | (string & {}) }[];
@@ -422,6 +457,8 @@ export type ChatEvent =
   | PlanApprovalResolvedEvent
   | LocalExecutionApprovalResolved
   | EnvironmentIssueEvent
-  | DeviceAttachmentUploadNotify;
+  | DeviceAttachmentUploadNotify
+  | RecipeUpdateEvent
+  | RecipeRestartEvent;
 
 export type ServerMessage = ServerEnvelope | { type: "session_write_access"; sessionId: string; writable: boolean };

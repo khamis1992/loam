@@ -199,6 +199,40 @@ function stepToAgentEvent(step: StepRecord): AgentEvent | undefined {
       : [];
     return { type: "plan", goal, trivial: Boolean(data.trivial), steps, source: String(data.source ?? "fallback") as "model" | "fallback" };
   }
+  if (type === "recipe_update") {
+    // Neo N4: the live recipe is the recipe row the UI renders. It has to be
+    // rebuildable from the persisted step, or reopening the session loses the
+    // recipe the run actually executed (including the estimate and the restart).
+    return {
+      type: "recipe_update",
+      goal: String(data.goal ?? ""),
+      steps: Array.isArray(data.steps)
+        ? data.steps.map((s: Record<string, unknown>) => ({
+            id: String(s.id ?? ""),
+            title: String(s.title ?? ""),
+            instruction: String(s.instruction ?? ""),
+            successCriteria: String(s.successCriteria ?? ""),
+            status: String(s.status ?? "proposed") as "proposed" | "ready" | "doing" | "done" | "blocked" | "skipped",
+            ...(typeof s.nodeId === "string" ? { nodeId: s.nodeId } : {}),
+            ...(Array.isArray(s.replaces) ? { replaces: s.replaces.map(String) } : {}),
+            completedCount: Number(s.completedCount ?? 0),
+          }))
+        : [],
+      remainingEstimate: Number(data.remainingEstimate ?? 0),
+      change: String(data.change ?? "advance") as "init" | "propose" | "advance" | "rewrite" | "drop" | "restart",
+      source: (data.source === "planner" || data.source === "restart" ? data.source : "auto") as "planner" | "restart" | "auto",
+    };
+  }
+  if (type === "recipe_restart") {
+    return {
+      type: "recipe_restart",
+      stepId: String(data.stepId ?? ""),
+      nodeId: String(data.nodeId ?? ""),
+      keptSteps: Array.isArray(data.keptSteps) ? data.keptSteps.map(String) : [],
+      regeneratedSteps: Array.isArray(data.regeneratedSteps) ? data.regeneratedSteps.map(String) : [],
+      reason: String(data.reason ?? ""),
+    };
+  }
   if (type === "plan_step") {
     return {
       type: "plan_step",

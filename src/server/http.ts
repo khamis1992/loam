@@ -23,7 +23,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import nodeChildProcess from "node:child_process";
-import { ROOT, UI_DIR, DATA_DIR, type Config } from "../config.js";
+import { ROOT, rootAsset, UI_DIR, DATA_DIR, type Config } from "../config.js";
 import type { OllamaClient } from "../ollama.js";
 import type { AgentEvent, Emit } from "../agent/events.js";
 import { log, redact } from "../log.js";
@@ -84,6 +84,7 @@ import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAutomationsRoutes } from "./routes/automations.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
+import { handleGraphRoutes } from "./routes/graph.js";
 import { handleCraftRoutes } from "./routes/craft.js";
 import { handleInstructionsRoutes } from "./routes/instructions.js";
 import { handleAgentSpawnRoutes } from "./routes/agentSpawn.js";
@@ -854,7 +855,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
 
         if (req.method === "GET" && p.startsWith("/vendor/three/")) {
           const addon = p.startsWith("/vendor/three/addons/");
-          const base = path.join(ROOT, "node_modules", "three", addon ? "examples/jsm" : "build");
+          const base = rootAsset("node_modules", "three", addon ? "examples/jsm" : "build");
           const relative = p.slice(addon ? "/vendor/three/addons/".length : "/vendor/three/".length);
           const file = path.resolve(base, relative);
           if (!file.startsWith(base + path.sep) || !relative.endsWith(".js") || (!addon && !["three.module.js", "three.core.js"].includes(relative)) || !fs.existsSync(file)) return sendJson(res, 404, { error: "Not found" });
@@ -1766,6 +1767,8 @@ loadAgents();
         // Design Studio (/api/design/*): brand kits, templates, generate, outputs.
         if (await handleDesignStudioRoutes(req, res, p)) return;
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        // Neo N2 canvas: the run graph built live by the agent (N1).
+        if (await handleGraphRoutes(req, res, p, { enabled: cfg.runGraph?.enabled !== false })) return;
         // Craft apps (/api/craft/status): which vendored dists are installed.
         if (await handleCraftRoutes(req, res, p)) return;
         if (await handleInstructionsRoutes(req, res, p)) return;

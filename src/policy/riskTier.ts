@@ -14,6 +14,7 @@
 import path from "node:path";
 import { isDestructiveCommand } from "./commands.js";
 import { isInside } from "./paths.js";
+import { assessCommand } from "./commandRisk/index.js";
 import type { ApprovalRule } from "../server/approvalRules.js";
 
 // ----------------------------------------------------------------------------
@@ -257,6 +258,33 @@ const SECRET_TOOL_NAMES = new Set<string>([
   "credentials_read",
 ]);
 
+/**
+ * Blast-radius stage of shell classification: the jcode command-risk classifier
+ * (`src/policy/commandRisk`) used as stage 1 of the approval gate.
+ *
+ * Deliberately a *union* with `isDestructiveCommand`, never a replacement. The
+ * pattern list catches what the structural classifier treats as opaque
+ * (`curl … | sh`, `reg add`, `git push`), while the classifier catches what a
+ * name-based denylist cannot see (`find -delete`, `shred`, `dd of=`, `>file`,
+ * `sudo rm -rf ~`). Dropping either half would open a bypass.
+ *
+ * `Confirm` and `Catastrophic` both map to the `destructive` tier because the
+ * gate only has allow/ask/deny: a command whose blast radius cannot be checked
+ * in advance must never be auto-approved.
+ */
+export function isBlastRadiusDestructive(command: string, workspaceRoot?: string): boolean {
+  const level = assessCommand(command, {
+    workingDir: workspaceRoot ?? process.cwd(),
+    homeDir: process.env.HOME || process.env.USERPROFILE || undefined,
+  }).level;
+  return level === "Confirm" || level === "Catastrophic";
+}
+
+/** True when a shell command must be treated as the `destructive` tier. */
+function isDestructiveShell(command: string, workspaceRoot?: string): boolean {
+  return isDestructiveCommand(command) || isBlastRadiusDestructive(command, workspaceRoot);
+}
+
 /** Tool results that come from outside the task workspace are untrusted data. */
 const UNTRUSTED_TOOL_NAMES = new Set<string>([
   "web_fetch",
@@ -398,7 +426,7 @@ export function classifyToolCall(
   }
   if (EXEC_TOOL_NAMES.has(name)) {
     const command = firstString(args ?? undefined, SHELL_COMMAND_KEYS);
-    return command && isDestructiveCommand(command) ? "destructive" : "exec";
+    return command && isDestructiveShell(command, root) ? "destructive" : "exec";
   }
   if (NETWORK_TOOL_NAMES.has(name)) return "network-external";
   if (READ_TOOL_NAMES.has(name)) return "read";
@@ -411,7 +439,7 @@ export function classifyToolCall(
   }
   if (isExecLikeName(name)) {
     const command = firstString(args ?? undefined, SHELL_COMMAND_KEYS);
-    return command && isDestructiveCommand(command) ? "destructive" : "exec";
+    return command && isDestructiveShell(command, root) ? "destructive" : "exec";
   }
   if (isNetworkLikeName(name)) return "network-external";
   return "exec";
