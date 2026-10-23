@@ -240,6 +240,28 @@ export class ChatSocket {
     } as unknown as ClientMessage);
   }
 
+  /**
+   * N9: answer or dismiss a pending ask-user clarification. `answer` carries the
+   * free-text note, the per-question answers and any files already uploaded for
+   * the request; `dismiss` closes the card without an answer.
+   */
+  resolveAskUser(
+    sessionId: string,
+    requestId: string,
+    decision: 'answer' | 'dismiss',
+    answer?: { text: string; answers: Record<string, string>; files: Array<{ path: string; name: string; bytes: number; contentType: string }> },
+  ) {
+    this.emit({
+      type: 'resolve_ask_user',
+      id: shortUid(),
+      timestamp: Date.now(),
+      sessionId,
+      requestId,
+      decision,
+      ...(decision === 'answer' && answer ? { answer } : {}),
+    } as unknown as ClientMessage);
+  }
+
   submitWorkspaceDirectoryAccess(
     sessionId: string,
     requestActionId: string,

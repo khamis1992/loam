@@ -18,6 +18,8 @@ import type {
   FolderAccessRequestEvent,
   EnvironmentIssueEvent,
   PlanApprovalRequestedEvent,
+  AskUserRequestedEvent,
+  AskUserResolvedEvent,
   CacheUsageEvent,
   RecipeUpdateEvent,
   RecipeRestartEvent,
@@ -492,6 +494,23 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
         trivial: event.trivial,
       };
       out.push(plan);
+      break;
+    }
+
+    case "ask_user_required": {
+      const ask: AskUserRequestedEvent = {
+        id: baseId(),
+        type: "askUserRequested",
+        timestamp: ts,
+        requestId: event.askUserId,
+        taskId: event.taskId,
+        title: event.title,
+        reason: event.reason,
+        questions: event.questions,
+        ...(event.source ? { source: event.source } : {}),
+        ...(event.reasonCode ? { reasonCode: event.reasonCode } : {}),
+      };
+      out.push(ask);
       break;
     }
 

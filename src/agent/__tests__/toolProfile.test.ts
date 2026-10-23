@@ -3,8 +3,10 @@
  *
  * A profile is a lean capability subset. The coding profile is the harness
  * equivalent of a small, sharp tool set: it must expose only the core coding
- * tools and stay at or under 18 names, so a small model is never handed the
- * 80+ tools the full registry can register.
+ * tools and stay at or under 19 names, so a small model is never handed the
+ * 80+ tools the full registry can register. The budget grew by one for
+ * `ask_user` (N9), which the coding loop needs to ask for clarification before
+ * editing.
  */
 import assert from "node:assert";
 import { describe, it } from "node:test";
@@ -23,6 +25,7 @@ import { ToolRegistry, type Tool } from "../../tools/registry.js";
 
 /** The coding profile's tools, sorted the way ToolRegistry.names() returns them. */
 const CODING_TOOLS_SORTED = [
+  "ask_user",
   "delegate_task",
   "file_edit",
   "file_list",
@@ -74,11 +77,11 @@ describe("coding tool profile", () => {
     assert.deepEqual(listToolProfiles().map((profile) => profile.id), ["coding"]);
   });
 
-  it("keeps a coding task's tool list at or under 18 names", () => {
+  it("keeps a coding task's tool list at or under 19 names", () => {
     const names = codingTaskTools(codingRegistry()).names();
     assert.ok(
-      names.length <= 18,
-      `coding tool list must be <= 18 names, got ${names.length}: ${names.join(", ")}`,
+      names.length <= 19,
+      `coding tool list must be <= 19 names, got ${names.length}: ${names.join(", ")}`,
     );
   });
 
