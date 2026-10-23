@@ -29,6 +29,10 @@ export interface Settings {
   trainingOptOut?: boolean;
   /** MiroFish swarm simulation: user-selected location (any country/city/region). */
   location?: { country?: string; city?: string; region?: string };
+  /** Harness2 learning (H9): apply learned lessons to a new task without asking.
+   *  Missing/undefined is ON (the spec default), so an older settings file keeps
+   *  the learning loop active. */
+  lessonsAutoApply?: boolean;
 }
 
 const FILE = path.join(DATA_DIR, "settings.json");
@@ -58,6 +62,7 @@ export function loadSettings(): Settings {
         ...(typeof parsed.flexBaseUrl === "string" ? { flexBaseUrl: parsed.flexBaseUrl } : {}),
         ...(typeof parsed.flexModel === "string" ? { flexModel: parsed.flexModel } : {}),
         ...(typeof parsed.trainingOptOut === "boolean" ? { trainingOptOut: parsed.trainingOptOut } : {}),
+        ...(typeof parsed.lessonsAutoApply === "boolean" ? { lessonsAutoApply: parsed.lessonsAutoApply } : {}),
         ...(typeof parsed.autoApprove === "boolean" ? { autoApprove: parsed.autoApprove } : {}),
         ...(typeof parsed.planApprovalSkipTrivial === "boolean" ? { planApprovalSkipTrivial: parsed.planApprovalSkipTrivial } : {}),
         ...(isLocationSetting(parsed.location) ? { location: parsed.location } : {}),
@@ -95,6 +100,7 @@ export function updateSettings(patch: Partial<Settings>): Settings {
   if (typeof patch.flexBaseUrl === "string") settings.flexBaseUrl = patch.flexBaseUrl.trim();
   if (typeof patch.flexModel === "string") settings.flexModel = patch.flexModel.trim();
   if (typeof patch.trainingOptOut === "boolean") settings.trainingOptOut = patch.trainingOptOut;
+  if (typeof patch.lessonsAutoApply === "boolean") settings.lessonsAutoApply = patch.lessonsAutoApply;
   if (patch.location !== undefined) {
     settings.location = isLocationSetting(patch.location)
       ? {
