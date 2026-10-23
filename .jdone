@@ -1,3 +1,129 @@
+# cr-05 complete: `office_craft` is now the agent driver of the five Craft apps
+
+Committed as `4a154b4` on `khamis1992/cr-05` (base `590d358`, the cr-04 merge). The tool
+name `office_craft` is unchanged; its body is replaced.
+
+## What shipped
+
+**1. `src/tools/craftOffice.ts` (new, 985 lines) — the tool**
+
+`office_craft(app, action, …)` drives the live Craft editor over the cr-04 workspace relay
+(`relay.enqueue(taskId, app, method, params)`), the same seam `video_studio` uses.
+
+- **Apps**: `docs` / `sheets` / `slides` / `photo` / `design`, resolved from the canonical
+  names, the legacy `engine` spellings (`word` → docs, `excel` → sheets, `deck` → slides),
+  the internal vendored ids (`wordcraft` / `gridcraft` / `deckcraft` / `photocraft` /
+  `designcraft`) and the lower-case brand names. No upstream project name is ever emitted.
+- **Actions**: `open` | `state` | `commands` | `execute` | `batch` | `export` | `undo` | `redo`.
+  `open` sends `craft.open` with the file path (or resolves `file.new` when no file is given)
+  and then reads the live state; every **mutating** action (`execute`, `batch`, `export`,
+  `undo`, `redo`) reads the state first inside the tool, so an edit the user made by hand in
+  the panel is never overwritten from memory.
+- **`state`** returns a compact per-app summary instead of the raw document: `document.inspect`
+  for docs/slides/design, `sheet.read {range:"used"}` **plus** `document.inspect` for sheets,
+  and `document.inspect` plus `ui.inspect` for photo. `compactState` truncates at 4 KB.
+- **`commands`** returns the app's real catalog, passing `{search}` only when the caller gave
+  one (Loam Sheets narrows with it; the other control channels take no filter).
+- **Command ids are never guessed.** `execute` and `batch` validate every id against the live
+  `engine.commands` catalog and refuse an unknown id with close matches (`closeMatches`,
+  shared with `video_studio` rather than duplicated) plus the available ids. `open` (new
+  document), `undo`, `redo` and `export` resolve their id from a documented candidate list at
+  runtime, so a build that renamed a command degrades to a clear "use one of these ids".
+- **`batch`** runs an ordered `[{command, params}]` list, stops at the first failure and reports
+  `failedStep` / `command` / `completed` / `steps`. A relay-level failure (`PANEL_NOT_OPEN`,
+  `CANCELLED`) keeps its retry/fallback contract and carries the failed step with it; an
+  app refusal is reported as `command_rejected`.
+- **`export`** picks the app's save/export command per `format` (`native` / `pdf` / `png`),
+  sends it through `craft.waitSave`, and returns the stored task-file path (`path`).
+- **Fail closed.** A missing dist (`electron/craft/<id>/dist/index.html`, checked via
+  `readCraftStatus`) or `fallback:true` runs the existing built-in Loam implementation and
+  says so in the result (`fallback` / `fallbackReason` / `fallbackNote`). `PANEL_NOT_OPEN`
+  is reported as `retry: true` with a hint; `COMMAND_REJECTED` and `CANCELLED` map to their
+  own reasons. The tool's description names the fallback tool (`office_studio`) explicitly.
+
+**2. `src/tools/frontierBridge.ts` — wiring (144 lines changed)**
+
+`office_craft` is now `createCraftOfficeTool({ warRoom, fallback })`. The `war_room` engine is
+**untouched**: it still runs `runCSuiteWarRoom` and `buildOfficeStudioHtml` exactly as before,
+and `check-tools` still asserts `frontier_war_room`. The fallback is the existing
+`createOfficeCraftService` path. Legacy routing is preserved: `engine: "studio"` always runs the
+built-in generator (through `office_studio`), and `word` / `excel` / `deck` **without** an
+`action` still run it (mapped to `word_craft` / `grid_craft` / `deck_craft`), while an explicit
+action drives the Craft editor.
+
+**3. Plumbing**
+
+- `src/policy/riskTier.ts`: `office_craft` is one tool with two faces. `state` and `commands`
+  are classified `read`; `execute` / `batch` / `export` / `undo` / `redo`, a missing action,
+  `war_room` and the legacy `studio` generator stay `write-workspace`. An under-specified call
+  is never under-restricted.
+- `packages/web/src/components/chat/toolLabels.ts`: `office_craft` → "Edited file" (it edits
+  all five app types, not just documents). The test expectation was updated for this
+  intentional label change.
+- `src/agent/planner.ts`: `office_craft` removed from the "trivial single-step
+  studio/builder" list and from the "no preliminary search steps" rule; both now say it is
+  the live Craft editor. The existing Craft-editor plan rule (open → read state → commands →
+  batch → re-read → export, 2-3 steps) is kept.
+- `src/scripts/check-tools.ts`: new `frontier_office_apps` and `frontier_office_actions`
+  expectations (the schema's `app` enum must carry all five apps and `action` must carry all
+  eight actions), both in the PASS gate.
+- `src/server/companionGateway.ts`: the office companion entry names the five apps.
+- `src/agent/craftPrompt.ts` was already aligned (it names `office_craft` + `office_edit` and
+  falls back to `loam_studio` / `loam_document`), so it was not changed.
+
+## Acceptance criteria (from `.jtask.md`)
+
+| Requirement | Where asserted |
+| --- | --- |
+| each action produces the expected relay calls | `craftOffice.test.ts` asserts the exact `dispatched` sequence per action (`methods()`, `dispatched`) |
+| unknown command id → error with close matches | "refuses an unknown command id with close matches", "stops at the first unknown id and reports the failed step" |
+| batch stops at first failure | "stops at the first unknown id and reports the failed step", "reports a rejected step as a command_rejected failure", "surfaces a panel failure during a batch with the failed step attached" |
+| state is read before execute | "reads the live state before a mutating action" (asserts `document.inspect` precedes `engine.execute`) |
+| export returns the stored path | "exports through craft.waitSave and returns the stored path" (asserts `path === "out/final.docx"`) |
+| legacy engine aliases work | "routes a legacy word/excel/deck engine to the built-in generator", "routes the legacy studio engine", "war_room is untouched" |
+| fallback path when dist missing | "falls back when the app dist is missing", "falls back when fallback:true is requested", "fails clearly when fallback:true is requested with no built-in wired" |
+| war_room untouched | "war_room is untouched", and `check-tools` → `frontier_war_room: true` |
+
+## Gates (all run from the worktree root)
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| root types | `npx tsc --noEmit` | exit 0 |
+| server build | `npm run build:server` | exit 0 (`server bundle + pdf worker written to dist/`) |
+| web types | `cd packages/web && npx tsc --noEmit` | exit 0 |
+| web build | `cd packages/web && npx next build` | exit 0 (`Compiled successfully`, 25/25 static pages) |
+| encoding | `npm run check:encoding` | OK (no BOM, no mojibake, all JSON valid) |
+| modes | `npm run check:modes` | PASS |
+| tools | `npx tsx src/scripts/check-tools.ts` | PASS (`frontier_office_apps` / `frontier_office_actions` / `frontier_war_room` true) |
+| new suite | `node --import tsx --test src/tools/__tests__/craftOffice.test.ts` | 58 tests, 58 pass, 0 fail |
+| touched suites | `node --import tsx --test src/agent/__tests__/*.test.ts src/policy/__tests__/*.test.ts src/tools/__tests__/*.test.ts src/server/__tests__/*.test.ts` | 1954 tests, 1954 pass, 0 fail |
+| broader node | `node --import tsx --test src/{agent,policy,tools,server,graph,llm,memory,modes,security,subagent,tui,protocol,scripts}/__tests__/*.test.ts` | 2280 tests, 2280 pass, 0 fail |
+| web tests | `cd packages/web && npx vitest run` | 89 files / 614 tests, all passed |
+
+No existing test was weakened, deleted or skipped. No test calls a real external model API: the
+relay is mocked in-memory and the Craft dists are created in a temp dir.
+
+## Rules honoured
+
+- Only the ten files listed in the commit were added or changed. `.jdone` was restored from
+  the tracked rollup and this report prepended (the worktree inherited a `.jdone` deletion);
+  `src/agent/masterPromptText.ts` is byte-identical to HEAD (a stat-only index entry) and was
+  deliberately left unstaged.
+- No `.cr-*` / `.jcode-*` marker file was committed. No forbidden path was touched.
+- No upstream project name (WordCraft / GridCraft / DeckCraft / PhotoCraft / DesignCraft /
+  ArtCraft) appears in any tool description, prompt or test — `git grep` for them returns
+  nothing. Internal ids appear only in `CRAFT_OFFICE_INTERNAL_IDS` and the alias table.
+- Nothing was pushed, no `git reset --hard`, no discarded work. Every edit was made with the
+  `edit` / `write` / `replace` file tools; the shell was used only to run commands.
+- Every file's working-tree line endings were preserved as-is (mixed CRLF/LF is the repo's
+  existing state; git normalizes on commit and `git diff --check` is clean).
+
+Test command:
+
+  node --import tsx --test src/tools/__tests__/craftOffice.test.ts
+
+---
+
 # N10 final merge gate: parity advanced 3x again, all re-merged, .jdone kept, full suites green
 
 This pass started from the previous `.jdone` merge report. Parity's local ref had advanced again
