@@ -1,3 +1,119 @@
+O5 gate fix complete: the only added line that tripped the mojibake guard was a
+report line that *quoted* that marker, so the guard now finds none and every gate
+passes.
+
+## The failure that was fixed
+`.jgatefail.txt` reported (the marker written as `[?]` below to avoid tripping the
+guard again):
+
+    Added lines contain [?] (likely Arabic corrupted by shell writes). Restore the
+    correct Arabic using file tools only:
+    +empty, `git diff manus-parity HEAD` has 0 added lines with the `[?]` mojibake marker, and
+
+## Root cause
+Not corruption. The guard is
+`git diff manus-parity...HEAD + git diff | ? { $_ -match '^\+[^+]' -and $_ -match '\?\?\?' }`,
+a blind literal scan for three ASCII question marks. The only added line that matched
+was one added by an earlier O5 session in this same tracked rollup `.jdone`, which
+*documented* the guard by quoting its own marker text (shown with `[?]` here):
+
+    empty, `git diff manus-parity HEAD` has 0 added lines with the `[?]` mojibake marker, and
+
+So the report asserted a true fact ("0 added lines contain the marker") while literally
+containing the marker, and the guard failed on its own report. No Arabic text was
+corrupted anywhere: this branch writes no Arabic, `npm run check:encoding` reports
+"no BOM, no mojibake, all JSON valid", and the i18n catalogs are untouched.
+
+The second half of the same failure (`D .jdone` in `git status`) was a separate
+artifact: the tracked rollup marker had been deleted from the working tree by a
+previous gate round. It was restored from `HEAD` with `git checkout -- .jdone` (no
+`reset --hard`, no content written through the shell).
+
+## What was changed
+`.jdone` only, edited with the file tool (never the shell). The single offending line
+now describes the check without spelling the marker:
+
+    empty, `git diff manus-parity HEAD` has 0 added lines containing the mojibake marker, and
+
+No test was weakened, deleted or skipped; no source file, prompt, agent instruction or
+spec file was touched; nothing was auto-approved. Committed as `1b6ff85`, then merged
+with the advancing `manus-parity` (`57e14e2`, clean auto-merge, no conflict).
+
+## Gate condition verified (run verbatim, from the worktree root)
+- The guard's own expression returns nothing:
+  `(git diff manus-parity...HEAD) + (git diff) | ? {$_ -match '^\+[^+]' -and $_ -match '\?\?\?'}`
+  -> `PASS: no added line contains the marker`
+- `git merge manus-parity` -> clean; `git merge-base --is-ancestor manus-parity HEAD`
+  -> exit 0; `git rev-list --left-right --count manus-parity...HEAD` -> `0  11`
+  (parity fully merged, zero parity commits missing)
+- `git status --porcelain` -> empty; no conflict marker in any tracked file
+- `git diff manus-parity HEAD` -> 8 files, 1175 insertions, 390 deletions, and 0 added
+  lines containing the marker
+
+## Gates (all run from the worktree root on the committed tree)
+- `npx tsc --noEmit`                              -> exit 0
+- `npm run build:server`                          -> exit 0 (dist/server.cjs, pdf worker copied)
+- `(cd packages/web && npx next build)`           -> exit 0 (compiled, 25/25 static pages)
+- `npm run check:encoding`                        -> OK (no BOM, no mojibake, all JSON valid)
+- `node --import tsx --test src/agent/__tests__/checkpointLog.test.ts`
+                                                 -> tests 14, pass 14, fail 0
+- `node --import tsx --test src/agent/__tests__/loopBudget.test.ts
+   src/agent/__tests__/loopHooks.test.ts src/agent/__tests__/orchestratorBudget.test.ts
+   src/agent/__tests__/orchestratorHooks.test.ts src/agent/__tests__/orchestratorRecipe.test.ts`
+                                                 -> tests 52, pass 52, fail 0
+  (the gate's own rule is "changed `.test.ts` files", and the only changed test file is
+  `checkpointLog.test.ts`; the other five are the suites for the touched modules)
+
+### `check-bot-final-repair-resume` (the plan-row Verify column)
+`npx tsx src/scripts/check-bot-final-repair-resume.ts` **passes**: all three scenarios
+print `PASS final repair resume ...` (before-tool, after-tool, reject).
+
+It fails when run bare in this environment, and that failure is *not* caused by O5:
+the script builds its client from `loadConfig()` and the real provider chain, and the
+coding router then drives the live providers (`coding router: glm-5.3:cloud via
+[ollama > longcat > ornith]`, `failover: ollama -> longcat (rate limit (429))`), so the
+run never reaches the persisted-checkpoint abort the script asserts on
+(`AssertionError: 2 !== 0` at `src/scripts/check-bot-final-repair-resume.ts:50`, i.e.
+`writes` is 2 instead of 0 because a live model answered instead of the fixture).
+Re-running with `LOAM_CODER_ROUTING=0` (fixture client only, no network) passes all
+three scenarios, which isolates the cause to provider availability. The O5 change under
+test is covered by the deterministic, network-free
+`src/agent/__tests__/checkpointLog.test.ts` (14 tests, all pass).
+
+## O5 acceptance (unchanged from the earlier O5 session, re-verified)
+- `logSeq?` added to `ExecutionCheckpoint` (`src/agent/checkpoint.ts`)
+- `src/agent/checkpointLog.ts` built from BUILD_SPEC §6.5: `writeCheckpoint`,
+  `readLatestCheckpoint`, `recordToolCall`, `recordToolResult`, `inFlightToolCalls`,
+  `hasUnfinishedToolCall`
+- tool-call start/terminal events appended in the agent loop (`src/agent/loop.ts`) and
+  forwarded to workers (`src/agent/orchestrator.ts`, `src/index.ts`)
+- `requiresReplayConfirmation` is true when a tool started without a terminal event
+  (`src/server/recovery.ts`), and the latest checkpoint reads back equal
+- plan-row acceptance: "started-without-end ⇒ `requiresReplayConfirmation` true" and
+  "latest checkpoint is read back equal" are both covered by passing tests
+  (`checkpointLog.test.ts`: `makes requiresReplayConfirmation refuse a resume after a
+  started-without-end tool call`, `writes a checkpoint and reads the same state back`,
+  `survives a restart`)
+
+## Files
+- `.jdone` only (this report prepended to the preserved rollup). No source file was
+  modified by this session.
+
+No secrets committed. No forbidden path touched
+(`docs/handoff/watchdog.ps1`, `qa/*.png`, `packages/tests/visual/baselines`, any
+ZCode/Codex file). No test weakened, deleted or skipped. No Arabic text written; no
+mojibake placeholder text added. Working tree clean.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run check:encoding
+  node --import tsx --test src/agent/__tests__/checkpointLog.test.ts
+  npx tsx src/scripts/check-bot-final-repair-resume.ts
+
+---
+
 M3 second validation round: found and fixed a real follow-up routing regression on the async surface (commit 0138720 + the fix commit below).
 
 ---
