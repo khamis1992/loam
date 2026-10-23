@@ -1,3 +1,56 @@
+# N1 - Run-graph model: done (merge gate fixed, commit ac0aed3)
+
+The `.jgatefail.txt` failure was `MERGE CONFLICT with latest manus-parity`.
+Ran `git merge manus-parity` (tip `0c97967`); one file conflicted:
+- `src/config.ts`: kept BOTH sides — the N1 `runGraph?: { enabled: boolean }`
+  config field (HEAD) and parity's `coding?: { enabled, chain, logEdits }` field
+  (C17 coding-model routing). Both are present in the `Config` interface and in
+  `DEFAULTS` (`runGraph: { enabled: true }`, `coding: { enabled: true, chain: [], logEdits: true }`).
+
+A typecheck failure that the merge exposed was fixed (not worked around):
+`src/graph/runGraph.ts` has an exhaustive `switch (event.type)` over the
+`AgentEvent` union. manus-parity added two new event kinds (`cache_usage` from
+J10, `video_studio_command` from fc-03), so the `default` arm's
+`const _exhaustive: never = event` no longer type-checked. Both new kinds are
+live-only signals with no canvas node of their own, so they were added to the
+existing no-op case list alongside `todo`/`phase`/`task-status`/etc. No test was
+weakened or deleted; the graph's golden replay, status-transition and 10k-node
+performance tests are unchanged.
+
+Resolution committed as `ac0aed3 merge manus-parity into neo-n1: resolve
+config.ts, extend runGraph event switch`. `git merge-tree --write-tree
+manus-parity HEAD` exits 0, so no conflict re-emerges.
+
+## Gates (all run from the worktree root, on merged tip ac0aed3)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.2mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (Next.js 16.4.2, 25/25 static pages)
+- `node --import tsx --test src/graph/__tests__/*.test.ts`
+  -> tests 11, pass 11, fail 0
+  (replay builds the golden tree; JSON export round-trip; layout/depth/stats;
+  illegal transitions rejected; restart resume; forward-only status rules;
+  10k nodes load; deterministic ids; malformed-export rejection)
+- `node --import tsx --test src/agent/__tests__/loopHooks.test.ts src/protocol/__tests__/cacheUsageEvents.test.ts src/agent/__tests__/cacheUsageAccounting.test.ts`
+  -> tests 19, pass 19, fail 0
+
+Working tree clean; no existing test weakened; no forbidden path touched.
+
+## What N1 delivers
+- `src/graph/store.ts`: the `run_node` JSON store (id, run_id, parent_ids[],
+  type, status, data, position, version, created, updated) with
+  `RUN_NODE_TYPES`, `RUN_NODE_STATUSES`, deterministic `eventNodeId` hashing,
+  and `RunGraphExport`/`importRun`/`exportRun` (share/replay import).
+- `src/graph/status.ts`: the status transition table (`assertTransition`,
+  `canTransition`) and the exported status vocabulary.
+- `src/graph/runGraph.ts`: `RunGraph` — replays a recorded event log into the
+  tree, adapts existing agent events (plan, plan_step, critique, verify,
+  tool_call, tool_result, artifact_published, ...) into nodes, keeps a live
+  cursor, resumes after restart, and produces a layered layout plus aggregate
+  stats. One journal transaction per event (one per replay), which is what keeps
+  a 10k-node replay under the 300 ms budget.
+
+---
+
 C17 done. Merge gate failure fixed (final resolution commit 343385d).
 
 The .jgatefail.txt failure was MERGE CONFLICT with latest manus-parity (15a0ade,
