@@ -826,5 +826,17 @@
   "Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder.": "وكيل مثبّت {name}. اضغط Alt+السهم لأعلى أو Alt+السهم لأسفل لإعادة الترتيب، أو اسحب لإعادة الترتيب.",
   "Waiting for you": "بانتظارك",
   "Waiting for you: {message}": "بانتظارك: {message}",
-  "Role": "الدور"
+  "Role": "الدور",
+  "Loam Docs": "لوم دوكس",
+  "Loam Sheets": "لوم شيتس",
+  "Loam Slides": "لوم سلايدز",
+  "Loam Photo": "لوم فوتو",
+  "Loam Design": "لوم ديزاين",
+  "Built-in editor": "المحرّر المدمج",
+  "The Craft editor did not start, so the built-in editor is open instead.": "لم يبدأ محرّر Craft، لذا فُتح المحرّر المدمج بدلاً منه.",
+  "Save to task files": "حفظ في ملفات المهمة",
+  "Changes are saved into the task files.": "تُحفظ التغييرات في ملفات المهمة.",
+  "Saved {name}": "تم حفظ {name}",
+  "Loading {name}": "جارٍ تحميل {name}",
+  "The editor could not be loaded.": "تعذّر تحميل المحرّر."
 }
