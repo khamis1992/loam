@@ -156,6 +156,18 @@ Merge fidelity, verified mechanically against the real merge parents:
   unresolved file the union driver now prevents. All six of this branch's merge blobs scan at 0
   markers. The earlier "13 hits" were substring matches against backtick-quoted prose in older
   reports, which is why an anchored scan and a substring scan disagree.
+- `.jcode-done` has the same driver, proven the same way. A second isolated A/B repository, this
+  time on `.jcode-done`: **without** the attribute the merge exits 1 with markers and three-stage
+  entries; **with** `.jcode-done merge=union` the same merge exits 0, keeps both sides, and leaves
+  no markers. So both files named in `.gitattributes` are covered, not just the one in the failure
+  string.
+- No conflict can re-emerge. `git merge-tree --write-tree manus-parity HEAD` exits **0** and its
+  output contains no `<<<<<<<` or `>>>>>>>` token, which is a from-scratch merge computation
+  rather than a replay of the already-merged history. That is the strongest available check that
+  the next parity merge will also auto-resolve.
+- This branch's own N14 deliverables pass in isolation: `packages/web/src/components/replay/
+  __tests__/ReplayViewer.test.tsx` + `packages/web/src/components/share/__tests__/ShareReplay.test.tsx`
+  -> 2 files / 8 tests pass; `src/graph/__tests__/export.test.ts` -> 12 tests pass.
 
 ## Seams left
 
@@ -166,6 +178,20 @@ Merge fidelity, verified mechanically against the real merge parents:
 - The two wall-clock suites (`search.test.ts`, `parallelTools.test.ts`, and the four web component
   suites) are load-sensitive. If a gate run reports failures there, re-run the suite alone before
   treating it as a real regression.
+- `.jdone` grows without bound, and the union driver is why. It is now **39,815 lines / 2.3 MB**,
+  up from 16 lines at the first commit that touched it; the trend over that history is
+  roughly 16 -> 1,254 -> 2,075 -> 7,170 -> 18,130 -> 29,367 -> 39,815. Every parity advance adds
+  that branch's whole report, and union keeps both sides, so the file accumulates monotonically.
+  Measured cost: the last six merges added 0, 81, 0, 105, 124 and 153 lines each, i.e. the
+  per-merge delta is small, but the file itself is already 2.3 MB and a full `git show`/`grep`
+  over it costs seconds. This is a real, slow-burn risk, not a present failure: the gates are
+  green and every merge is clean. It is worth deciding deliberately whether `.jdone` should stay
+  a tracked rollup or be rotated/truncated, because the union driver removes the conflict that
+  would otherwise have forced that decision.
+- `.jdone` is not self-cleaning across branches: `manus-parity`'s copy does **not** contain this
+  branch's N14 report (verified: the `# N14 gate fix` heading is absent from
+  `git show manus-parity:.jdone`), so this branch's history only reaches parity when the branch is
+  merged into it. The rollup is per-lineage until that happens.
 
 # J1 gate fix: restore the two corrupted slide scripts and the deleted done-markers.
 
