@@ -152,6 +152,44 @@ describe('craft edit intent', () => {
     }
   });
 
+  it('does not match a question about a verb that is also a noun', () => {
+    // `export`, `blur`, `zoom`, `scale`, `polish`, `align`, `merge` and `split` are
+    // verbs AND nouns, so "what is the export format?" asks about the term rather
+    // than requesting a change. The Arabic equivalents (تصدير/دمج/تقسيم as nouns) are
+    // the same trap in the other language.
+    const aboutTheTerm = [
+      'what is the export format?',
+      "what's the export format?",
+      'what is the blur radius?',
+      'what is the zoom level?',
+      'what is the print size?',
+      'what is the scale of the map?',
+      'what does polish mean?',
+      '\u0645\u0627 \u0647\u064a \u0635\u064a\u063a\u0629 \u062a\u0635\u062f\u064a\u0631 \u0627\u0644\u0645\u0644\u0641\u061f',
+      '\u0645\u0627 \u0647\u0648 \u062f\u0645\u062c \u0627\u0644\u0645\u0644\u0641\u064a\u0646\u061f',
+      '\u0645\u0627 \u0647\u0648 \u062a\u0642\u0633\u064a\u0645 \u0627\u0644\u0635\u0641\u062d\u0627\u062a\u061f',
+    ];
+    for (const text of aboutTheTerm) {
+      expect(hasCraftEditIntent(text), text).toBe(false);
+    }
+  });
+
+  it('still matches those words as real verbs', () => {
+    const real = [
+      'export to pdf',
+      'export the file',
+      'zoom in on the logo',
+      'blur the background',
+      'polish this text',
+      'scale the image',
+      'can you align the table?',
+      '\u0635\u062f\u0651\u0631 \u0627\u0644\u0645\u0644\u0641 \u0625\u0644\u0649 pdf',
+    ];
+    for (const text of real) {
+      expect(hasCraftEditIntent(text), text).toBe(true);
+    }
+  });
+
   it('opens craft for an English edit request with an attached document', () => {
     const ev = userMessageEvent({ content: 'please edit the first slide and fix the typo', attachments: [attachment()] });
     expect(decideUserMessageOpen(ev)).toEqual({ path: 'plan.docx', kind: 'craft', craftApp: 'docs' });
