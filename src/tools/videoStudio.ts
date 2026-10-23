@@ -26,6 +26,12 @@
  *    ffmpeg path that needs no editor). A command the editor itself refuses is
  *    reported with `reason: "command_rejected"` and the editor's own error, so
  *    a bad command is never confused with an unreachable editor.
+ *  - Every call is routed by `VideoStudioRouter` (fc-07): a timeline operation
+ *    stays on the timeline engine, an effects operation goes to the effects
+ *    engine when it is installed, and when it cannot the call is degraded to the
+ *    timeline engine's own `transition_basic` / `effect_basic` with a note in the
+ *    result saying so. The route is reported in every result under `routing`, so
+ *    the model never has to guess which engine ran the edit.
  *
  * The mapping table and the fallback contract are documented in
  * docs/filmcraft-integration.md.
@@ -36,6 +42,7 @@ import { ROOT } from "../config.js";
 import { taskPath } from "../server/taskWorkspace.js";
 import { videoStudioRelay } from "../server/videoStudioRelay.js";
 import { parseTimeToken } from "./videoEditAgent.js";
+import { VideoStudioRouter, videoStudioRouter } from "./videoStudioRouter.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { num, str } from "./registry.js";
 
@@ -576,6 +583,8 @@ export interface VideoStudioToolOptions {
   relay?: VideoStudioRelayLike;
   /** Repo root used for the dist check; defaults to ROOT. */
   root?: string;
+  /** Engine router (fc-07); defaults to the shared server router. */
+  router?: VideoStudioRouter;
 }
 
 const TIME_SCHEMA = {
@@ -584,12 +593,32 @@ const TIME_SCHEMA = {
 } as const;
 
 /**
+ * The operation text the router classifies (fc-07).
+ *
+ * The router only needs a bag of words to match its bilingual tables, so this
+ * joins the action's own discriminating arguments — `type` on a transition,
+ * `name` on an effect, `command` on raw — with any free-form instruction the
+ * caller supplied. `buildAction` still owns argument *validation*; this is
+ * routing input only, and the router ignores it for actions whose engine is
+ * already determined by the action name.
+ */
+function routingHint(args: Record<string, unknown>): string {
+  const parts: string[] = [];
+  for (const key of ["type", "name", "command", "instruction", "prompt"]) {
+    const value = args[key];
+    if (typeof value === "string" && value.trim()) parts.push(value.trim());
+  }
+  return parts.join(" ");
+}
+
+/**
  * Create the `video_studio` tool. The description is intentionally complete: it
  * is the model's only guide for driving the editor.
  */
 export function createVideoStudioTools(options: VideoStudioToolOptions = {}): Tool[] {
   const relay = options.relay ?? videoStudioRelay;
   const root = options.root ?? ROOT;
+  const router = options.router ?? videoStudioRouter;
 
   return [
     {
@@ -600,7 +629,10 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
         "Use this for direct, precise timeline work: open, state, import, cut, trim, delete, move, reorder, split, speed, add_text, add_audio (or music), transition_basic, effect_basic, undo and raw. " +
         "Always call state first to read the current project (sequences, tracks, clips, playhead) so manual edits made in the panel are never lost, then apply the edit. " +
         "Timestamps accept seconds (90) or timecode (1:30, 00:01:30.500). " +
-        "Mutating actions resolve their real engine command ids from the editor's own command list at runtime; raw executes any command id you name, but only after validating it against that list. " +
+        "One tool, two engines: the router (src/tools/videoStudioRouter.ts) sends timeline work (cut, trim, arrange, speed, audio, music, volume, static text, a plain dissolve/fade, export) to the Loam Video timeline engine and richer work (wipes/zooms/glitches and other transitions beyond a basic dissolve, visual effects, colour looks, text/motion animation, keyframed motion, animated titles) to the Loam Effects engine. " +
+        "Every result carries a `routing` object: `route` is the engine the operation belongs to, `target` is the engine that actually ran it, `degraded` says whether the operation was downgraded, and `note` explains the decision in one line. Read it before telling the user what was applied. " +
+        "When the Loam Effects engine is unavailable (or this build cannot apply the operation), an effects request does NOT fail: it is degraded to the timeline engine's own transition_basic / effect_basic with `routing.degraded: true` and `routing.reason`, and the note says so. Never present a degraded edit as the full effect the user asked for; say plainly which engine applied it. " +
+        "Mutating actions resolve their real engine command ids from the owning engine's own command list at runtime; raw executes any command id you name, but only after validating it against that list. " +
         "When the Loam Video dist is missing or the editor bridge fails, the tool returns a structured fallback telling you to use video_edit instead (an edit-decision-list rendered by ffmpeg, which needs no editor). " +
         "A command the editor refuses is reported with `reason: command_rejected` and the editor's own error, so a bad command is never confused with an unreachable editor.",
       parameters: {
@@ -615,7 +647,8 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
               "open (confirm the editor is reachable and list its commands), state (read project/sequence/tracks/clips/playhead), " +
               "import (bring a task file or URL onto the timeline), cut (razor at one or more times), trim, delete (ripple optional), " +
               "move / reorder, split, speed, add_text (title/graphics layer), add_audio / music (audio file onto an audio track with gain/fade), " +
-              "transition_basic (FilmCraft-native video/audio transition), effect_basic (effects.apply), undo, raw (any validated command id).",
+              "transition_basic (a basic dissolve/fade on the timeline engine; a `type` naming a wipe/zoom/glitch and similar asks for the Loam Effects engine), " +
+              "effect_basic (an effect, applied by the Loam Effects engine; `name` plus optional `params`), undo, raw (any validated command id).",
           },
           taskId: { type: "string", description: "Task id (defaults to the current run task)." },
           url: { type: "string", description: "Media URL for import / add_audio." },
@@ -640,7 +673,7 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
           gain: { type: "number", description: "add_audio: clip gain (1 = unchanged)." },
           fadeInSec: { ...TIME_SCHEMA, description: "add_audio: fade-in length." },
           fadeOutSec: { ...TIME_SCHEMA, description: "add_audio: fade-out length." },
-          type: { type: "string", description: "transition_basic: transition type id." },
+          type: { type: "string", description: "transition_basic: transition type id (a plain dissolve stays on the timeline engine; a wipe/zoom/glitch and similar route to the Loam Effects engine)." },
           name: { type: "string", description: "effect_basic: effect id." },
           params: { type: "object", description: "effect_basic / raw: extra engine parameters." },
           command: { type: "string", description: "raw: the engine command id to execute." },
@@ -654,6 +687,21 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
         const taskId = str(args, "taskId", ctx.taskId ?? "").trim();
         if (!taskId) return { ok: false, content: "video_studio requires a taskId (or a running task context)" };
 
+        // The router owns the engine decision (fc-07). A timeline operation stays
+        // on the timeline engine; an effects operation goes to the effects engine
+        // when it is installed, and is otherwise degraded to the timeline engine's
+        // own basic command with a note saying so. `routing` is echoed in every
+        // result so the model never has to guess which engine ran the edit.
+        const plan = router.plan(action, routingHint(args));
+        const target = plan.target;
+        const routing = {
+          route: plan.route,
+          target: plan.target,
+          degraded: plan.degraded,
+          ...(plan.reason ? { reason: plan.reason } : {}),
+          note: plan.note,
+        };
+
         if (!isFilmcraftDistInstalled(root)) {
           return fallbackResult(
             "filmcraft_dist_missing",
@@ -661,12 +709,13 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
           );
         }
 
-        // Only actions that issue engine commands need the live catalog.
+        // Only actions that issue engine commands need the live catalog, and it
+        // must come from the engine the steps will actually run on.
         const needsCatalog = action !== "open" && action !== "state" && action !== "import";
         let catalog: string[] = [];
         if (needsCatalog) {
           try {
-            catalog = toCommandIdList(await relay.enqueue(taskId, "film", "commands", {}));
+            catalog = toCommandIdList(await relay.enqueue(taskId, target, "commands", {}));
           } catch (err) {
             return relayErrorResult(err);
           }
@@ -678,7 +727,7 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
         const results: Array<{ method: string; ok: boolean; result?: unknown }> = [];
         for (const step of built.steps) {
           try {
-            const value = await relay.enqueue(taskId, "film", step.method, step.params);
+            const value = await relay.enqueue(taskId, target, step.method, step.params);
             results.push({ method: step.method, ok: true, result: value });
           } catch (err) {
             return relayErrorResult(err);
@@ -686,9 +735,9 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
         }
 
         if (action === "open") {
-          return { ok: true, content: JSON.stringify({ action, available: true, commands: results[0]?.result ?? [] }) };
+          return { ok: true, content: JSON.stringify({ action, available: true, routing, commands: results[0]?.result ?? [] }) };
         }
-        return { ok: true, content: JSON.stringify({ action, steps: results }) };
+        return { ok: true, content: JSON.stringify({ action, routing, steps: results }) };
       },
     },
   ];
