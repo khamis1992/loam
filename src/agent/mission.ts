@@ -50,6 +50,29 @@ export function createMissionBudget(limits: MissionLimits = {}): ComputeBudget {
   });
 }
 
+/**
+ * The budget a mission run starts with: the configured ceilings, plus the
+ * counters a resumed checkpoint already charged.
+ *
+ * A resume must not restart the clock or the spend. The ceiling is rebuilt from
+ * config (so a raise the user made while the mission was stopped takes effect),
+ * while the counters come from the checkpoint, so a mission that already burned
+ * 40 minutes of a 60-minute ceiling has 20 left rather than a fresh hour.
+ *
+ * `carried` is optional: a first run has no checkpoint and starts at zero.
+ */
+export function missionBudgetFrom(limits: MissionLimits | undefined, carried?: ComputeBudget): ComputeBudget {
+  const budget = createMissionBudget(limits);
+  if (!carried) return budget;
+  budget.steps = carried.steps;
+  budget.promptTokens = carried.promptTokens;
+  budget.completionTokens = carried.completionTokens;
+  budget.wallClockMs = carried.wallClockMs;
+  budget.costUsd = carried.costUsd;
+  budget.raised = carried.raised;
+  return budget;
+}
+
 /** The limits of a budget, in the units a user configures them with. */
 export function missionLimitsOf(budget: ComputeBudget): MissionLimits {
   return {

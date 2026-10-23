@@ -27,6 +27,7 @@ import {
   createMissionBudget,
   isUnbounded,
   minutesToMs,
+  missionBudgetFrom,
   missionLimitsOf,
   missionResumableFrom,
   missionCheckpoints,
@@ -37,6 +38,11 @@ import {
 import { checkBudget, consumeCost, consumeTokens, consumeWallClock } from "../computeBudget.js";
 import { beginRun, applyRunEvent, getRunNodes, resetRunGraph } from "../runGraphAdapter.js";
 import { closeDb } from "../../server/sqliteStore.js";
+import { isMissionBudgetError, runAgent } from "../loop.js";
+import { loadConfig } from "../../config.js";
+import { ToolRegistry } from "../../tools/registry.js";
+import type { AgentEvent } from "../events.js";
+import type { ChatResult, OllamaClient, OllamaToolCall } from "../../ollama.js";
 
 let tmpDir = "";
 let prevDataDir: string | undefined;
@@ -369,5 +375,207 @@ describe("mission checkpoint durability", () => {
     const loaded = store.load("task-db-3");
     assert.deepEqual(loaded, persisted(record));
     assert.equal("id" in (loaded as object), false, "the row key stays out of the payload");
+  });
+});
+
+/**
+ * End-to-end mission behaviour through `runAgent`.
+ *
+ * These drive the real loop with a scripted fake client (no model, no network),
+ * because the acceptance criteria are about what the loop does over a long run:
+ * it must keep going past the fixed step cap, it must write a checkpoint at
+ * every boundary, and it must stop at the ceiling with a checkpoint rather than
+ * an exception the caller cannot act on.
+ */
+
+/** A mission config with generous ceilings, so each test sets its own. */
+function missionCfg(): ReturnType<typeof loadConfig> {
+  const cfg = loadConfig();
+  cfg.compression = { ...cfg.compression, enabled: false };
+  cfg.fallbackModel = cfg.model;
+  return cfg;
+}
+
+function missionTools(): ToolRegistry {
+  const registry = new ToolRegistry();
+  registry.register({
+    name: "file_read",
+    description: "mission test observation",
+    parameters: {},
+    run: async () => ({ ok: true, content: "Observed result" }),
+  });
+  return registry;
+}
+
+/**
+ * A worker that calls the tool `toolSteps` times and then answers without one.
+ * Each call carries a distinct argument so the stall guard sees progress; the
+ * loop therefore advances one step per round-trip until the script runs out.
+ */
+function stepScript(toolSteps: number, usage = { promptTokens: 100, completionTokens: 50 }): OllamaClient {
+  let calls = 0;
+  return {
+    chat: async (): Promise<ChatResult> => {
+      calls += 1;
+      const toolCall: OllamaToolCall[] = calls <= toolSteps
+        ? [{ function: { name: "file_read", arguments: { path: `note-${calls}.md` } } }]
+        : [];
+      return {
+        content: toolCall.length > 0 ? "" : "final answer",
+        model: "fixture-model",
+        toolCalls: toolCall,
+        usage: { ...usage, durationMs: 1 },
+      };
+    },
+    listModels: async () => [],
+  } as unknown as OllamaClient;
+}
+
+interface MissionRunResult {
+  events: AgentEvent[];
+  checkpoints: MissionCheckpoint[];
+  budget: ReturnType<typeof createMissionBudget>;
+  error?: Error;
+}
+
+/**
+ * Run one mission through the loop, collecting the checkpoints it wrote. The
+ * caller owns the budget so it can inspect the counters the run left behind.
+ */
+async function runMission(options: {
+  budget: ReturnType<typeof createMissionBudget>;
+  client: OllamaClient;
+  resumeMission?: MissionCheckpoint;
+  maxSteps?: number;
+}): Promise<MissionRunResult> {
+  const events: AgentEvent[] = [];
+  const checkpoints: MissionCheckpoint[] = [];
+  try {
+    await runAgent({
+      cfg: missionCfg(),
+      ollama: options.client,
+      tools: missionTools(),
+      prompt: "Ship the long-horizon migration",
+      emit: (e: AgentEvent) => events.push(e),
+      taskId: "task-mission-run",
+      budget: options.budget,
+      mission: true,
+      ...(options.resumeMission ? { resumeMission: options.resumeMission } : {}),
+      ...(options.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
+      saveMissionCheckpoint: (checkpoint) => checkpoints.push(checkpoint),
+      suppressFinal: true,
+    });
+  } catch (e) {
+    return { events, checkpoints, budget: options.budget, error: e instanceof Error ? e : new Error(String(e)) };
+  }
+  return { events, checkpoints, budget: options.budget };
+}
+
+describe("mission run end to end", () => {
+  it("runs past the fixed step cap that bounds an ordinary run", async () => {
+    // 45 tool steps is beyond the 40-step cap an ordinary run gets. A mission has
+    // no cap, so the only thing that can end it is the script or the budget.
+    const result = await runMission({
+      budget: createMissionBudget({ steps: 500, tokens: 5_000_000 }),
+      client: stepScript(45),
+      maxSteps: 40,
+    });
+    assert.equal(result.error, undefined, "the mission completes instead of hitting the cap");
+    assert.equal(result.budget.steps, 46, "45 tool steps plus the answering step");
+    // The loop emits one `step` event per iteration, so the highest index is how
+    // far the mission actually ran: 46, well past the 40-step cap it was given.
+    const highestStep = Math.max(...result.events.filter((e) => e.type === "step").map((e) => e.index));
+    assert.equal(highestStep, 46, "the mission ran past the cap instead of stopping at it");
+  });
+
+  it("completes a 500-step mock mission", async () => {
+    // The acceptance criterion: a mission whose work is genuinely long. The step
+    // ceiling is the only bound and it is never reached, so every one of the 500
+    // steps runs and every completed step leaves a checkpoint behind.
+    const result = await runMission({
+      budget: createMissionBudget({ steps: 1000, tokens: 500_000_000 }),
+      client: stepScript(499),
+      maxSteps: 40,
+    });
+    assert.equal(result.error, undefined, "500 steps complete without a stop");
+    assert.equal(result.budget.steps, 500, "499 tool steps plus the answering step");
+    // Every completed step is a resume boundary. Step 500 is the answering step,
+    // which returns before the post-step save, so steps 1..499 each wrote a
+    // between-steps checkpoint (`inFlight` absent) and an in-flight marker.
+    const boundaries = result.checkpoints.filter((c) => c.inFlight !== true);
+    const inFlight = result.checkpoints.filter((c) => c.inFlight === true);
+    assert.equal(boundaries.length, 499, "one safe checkpoint per completed tool step");
+    assert.equal(inFlight.length, 499, "one in-flight marker per step that then ran");
+    const highestCompleted = Math.max(...boundaries.map((c) => c.lastStep));
+    assert.equal(highestCompleted, 499, "the whole run is recoverable up to its last tool step");
+  });
+
+  it("stops cleanly at the step ceiling with a checkpoint, not a bare failure", async () => {
+    const result = await runMission({
+      budget: createMissionBudget({ steps: 5, tokens: 5_000_000 }),
+      client: stepScript(100),
+    });
+    assert.ok(result.error, "the mission stops");
+    assert.equal(isMissionBudgetError(result.error), true, "the stop is a mission budget stop");
+    const stop = (result.error as unknown as { checkpoint: MissionCheckpoint }).checkpoint;
+    assert.equal(stop.endedReason, "budget");
+    assert.equal(stop.lastStep, 5, "the last completed step is the resume point");
+    assert.equal(stop.inFlight, undefined, "a stop between steps is a safe boundary");
+    // The summary event the canvas renders is emitted with the same checkpoint.
+    const exhausted = result.events.find((e) => e.type === "budget_exhausted");
+    assert.ok(exhausted, "a budget_exhausted event is emitted");
+    assert.equal(exhausted!.type === "budget_exhausted" && exhausted!.checkpoint.lastStep, 5);
+    assert.equal(result.budget.steps, 5, "no step ran past the ceiling");
+  });
+
+  it("resumes at the checkpoint with the counters it already charged", async () => {
+    // A server restart: the process is gone, the budget object is gone, and all
+    // that survives is the checkpoint in the database. The mission must continue
+    // from the last completed step with the clock and spend already charged.
+    const first = await runMission({
+      budget: createMissionBudget({ steps: 10, tokens: 5_000_000, minutes: 60 }),
+      client: stepScript(100),
+    });
+    const checkpoint = first.checkpoints.at(-1)!;
+    assert.equal(checkpoint.lastStep, 10);
+
+    // Rebuild the budget the way a fresh process does: ceilings from config,
+    // counters from the checkpoint.
+    const resumed = missionBudgetFrom({ steps: 20, tokens: 5_000_000, minutes: 60 }, checkpoint.budget);
+    assert.equal(resumed.steps, 10, "the counters come from the checkpoint");
+    assert.equal(resumed.wallClockMs, checkpoint.budget.wallClockMs, "the clock does not restart");
+    assert.equal(resumed.promptTokens, 1000, "the spend does not restart");
+    assert.equal(resumed.stepLimit, 20, "the ceiling is rebuilt from config");
+
+    // Resuming continues at the first step not yet done, and the counters carry.
+    const second = await runMission({
+      budget: resumed,
+      client: stepScript(4),
+      resumeMission: checkpoint,
+    });
+    assert.equal(second.error, undefined, "the resumed mission completes");
+    assert.equal(second.budget.steps, 15, "10 carried + 5 more (4 tool steps + answer)");
+    // The first thing a resumed mission writes is the in-flight marker for the
+    // carried boundary (step 10); the first *completed* step is 11, not step 1.
+    assert.equal(second.checkpoints[0]!.lastStep, 10, "the resume resumes at the carried boundary");
+    assert.equal(second.checkpoints[0]!.inFlight, true);
+    const firstCompleted = second.checkpoints.find((c) => c.inFlight !== true);
+    assert.equal(firstCompleted!.lastStep, 11, "the resume starts at step 11, not step 1");
+    assert.ok((second.checkpoints[0]!.budget.wallClockMs ?? 0) >= (checkpoint.budget.wallClockMs ?? 0),
+      "the resumed mission keeps charging the same clock");
+  });
+
+  it("does not resume a checkpoint taken while a step was executing", async () => {
+    // The pre-step checkpoint marks the step in flight, so a restart in the
+    // middle of that step is not a safe automatic resume point.
+    const result = await runMission({
+      budget: createMissionBudget({ steps: 3, tokens: 5_000_000 }),
+      client: stepScript(100),
+    });
+    const inFlight = result.checkpoints.find((c) => c.inFlight === true);
+    assert.ok(inFlight, "a step boundary marks the step in flight");
+    assert.equal(missionResumableFrom(inFlight), false, "an in-flight boundary needs confirmation");
+    // The stop's own checkpoint is the safe one.
+    assert.equal(missionResumableFrom(result.checkpoints.at(-1)!), true);
   });
 });

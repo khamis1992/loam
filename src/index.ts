@@ -99,7 +99,7 @@ import { SessionRuntime, DEFAULT_IDLE_MINUTES, DEFAULT_STEP_LIMIT, DEFAULT_TOKEN
 // Neo N6: mission runs — an unbounded run type bounded by a durable budget.
 import {
   canResumeMission,
-  createMissionBudget,
+  missionBudgetFrom,
   missionCheckpoints,
   missionResumableFrom,
   type MissionCheckpoint,
@@ -109,30 +109,16 @@ import { browserSessionFor } from "./tools/browser.js";
 import { killAllSessions } from "./tools/pty.js";
 
 /**
- * Neo N6: the budget a mission runs under. Built from `cfg.mission` and, when
- * resuming, carrying the checkpoint's counters so a resumed mission keeps its
- * clock and spend instead of restarting both. Shared by the run and the
- * budget-stop path so a stop reports exactly the budget the mission used.
+ * Neo N6: the budget a mission runs under, from this config. `missionBudgetFrom`
+ * in `mission.ts` owns the rule (configured ceilings + the counters a resume
+ * already charged); this is only the config-to-limits adapter, kept so the run
+ * path and the budget-stop path build the budget exactly one way.
  */
-function missionBudgetFrom(
-  cfg: ReturnType<typeof loadConfig>,
-  carried?: MissionCheckpoint["budget"],
-): ReturnType<typeof createMissionBudget> {
-  const budget = createMissionBudget({
-    steps: cfg.mission?.steps,
-    tokens: cfg.mission?.tokens,
-    minutes: cfg.mission?.minutes,
-    costUsd: cfg.mission?.costUsd,
-  });
-  if (carried) {
-    budget.steps = carried.steps;
-    budget.promptTokens = carried.promptTokens;
-    budget.completionTokens = carried.completionTokens;
-    budget.wallClockMs = carried.wallClockMs;
-    budget.costUsd = carried.costUsd;
-    budget.raised = carried.raised;
-  }
-  return budget;
+function missionBudgetFor(cfg: ReturnType<typeof loadConfig>, carried?: MissionCheckpoint["budget"]) {
+  return missionBudgetFrom(
+    { steps: cfg.mission?.steps, tokens: cfg.mission?.tokens, minutes: cfg.mission?.minutes, costUsd: cfg.mission?.costUsd },
+    carried,
+  );
 }
 
 async function main(): Promise<void> {
@@ -566,7 +552,7 @@ async function main(): Promise<void> {
       // The mission budget carries the checkpoint's counters so a resumed
       // mission keeps its clock and spend instead of restarting both.
       const missionBudget = missionRun
-        ? missionBudgetFrom(cfg, missionResume?.budget)
+        ? missionBudgetFor(cfg, missionResume?.budget)
         : undefined;
       // D19 sleep + budget: the mission's own ceilings are the session's ceilings
       // for the duration of the run, so the badge, the raise endpoint and the
@@ -682,7 +668,7 @@ async function main(): Promise<void> {
         const checkpoint = err.checkpoint;
         // The stop happened inside the run, so the budget it used was the one
         // adopted for this mission; the checkpoint carries that same object.
-        const stoppedBudget = opts.savedRun.mission === true ? missionBudgetFrom(cfg, checkpoint.budget) : undefined;
+        const stoppedBudget = opts.savedRun.mission === true ? missionBudgetFor(cfg, checkpoint.budget) : undefined;
         missionCheckpoints.save(checkpoint);
         opts.savedRun.missionCheckpoint = checkpoint;
         saveRun(task, opts.savedRun, opts.lease);
