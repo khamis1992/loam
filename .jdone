@@ -1,0 +1,63 @@
+D17 — Environment-issue reporting: DONE
+
+Summary
+-------
+Adds the `report_environment_issue({message, details})` tool so an agent records a
+local-environment failure instead of trying to fix the environment, and returns
+guidance to continue (rely on CI / skip the local step). Implemented end to end:
+
+  - Tool + registry:      src/tools/environmentIssueTools.ts, src/index.ts, src/server/runTools.ts
+  - Agent event:          src/agent/events.ts
+  - Prompt rule (gated):  src/agent/prompt.ts (rule added only when the tool is enabled)
+  - Protocol mapping:     src/protocol/{events,types,socket}.ts, packages/shared/src/socket.ts
+  - Web UI card:          packages/web/src/components/chat/EnvironmentIssueCard.tsx + EventList.tsx
+  - i18n (en + ar):       packages/web/src/i18n/{en,ar}.{json,ts}
+
+Acceptance criteria (AC) met
+----------------------------
+  - tool records the issue + emits an event .......... src/tools/__tests__/environmentIssueTools.test.ts,
+                                                       src/protocol/__tests__/environmentIssue.test.ts
+  - prompt contains the rule (gated by tool availability) ... src/agent/__tests__/prompt.test.ts
+  - UI card renders (web vitest) ..................... src/components/chat/__tests__/EnvironmentIssueCard.test.tsx
+                                                       + new EventList integration test
+
+Changes made in this session (continuing from commit 9c88a2c)
+------------------------------------------------------------
+  - Fixed an over-specified assertion in src/agent/__tests__/prompt.test.ts. The test
+    conflated the always-on master-prompt tool *catalog* (§6.1, which names
+    report_environment_issue unconditionally by design) with the conditional guidance
+    *rule*. The assertion now gates the actual rule text (/rely on CI/i,
+    /Do not report the step as passed/i, /When a step cannot run because of the local
+    environment/i). Production code was NOT weakened.
+  - Added packages/web/src/components/chat/__tests__/environmentIssueEventList.test.tsx
+    proving the card renders through the live chat timeline (EventList -> ChatEventRow
+    -> EnvironmentIssueCard), not just the component in isolation.
+
+Gates (all pass, run from worktree root)
+---------------------------------------
+  1. npx tsc --noEmit                              PASS
+  2. npm run build:server                          PASS
+  3. (cd packages/web && npx next build)           PASS
+  4. npx tsc --noEmit --project packages/web/tsconfig.json   PASS
+
+Tests (files touched by D17)
+----------------------------
+  node --import tsx --test \
+    src/tools/__tests__/environmentIssueTools.test.ts \
+    src/protocol/__tests__/environmentIssue.test.ts \
+    src/agent/__tests__/prompt.test.ts \
+    src/server/__tests__/runTools.test.ts
+  -> 25 tests, 25 pass, 0 fail
+
+  cd packages/web && npx vitest run \
+    src/components/chat/__tests__/EnvironmentIssueCard.test.tsx \
+    src/components/chat/__tests__/environmentIssueEventList.test.tsx
+  -> 4 tests, 4 pass, 0 fail
+
+Known pre-existing failure (NOT caused by D17)
+----------------------------------------------
+  src/agent/__tests__/codingPrompt.test.ts ("matches the committed snapshot") fails on
+  the master-prompt hash. It is pre-existing on the manus-parity lineage: the master
+  prompt asset was regenerated after the snapshot was committed, so the hash changed.
+  The failure is outside D17's diff (D17 only touched the files listed above) and was
+  left untouched to avoid weakening another task's test.
