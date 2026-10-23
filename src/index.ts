@@ -87,6 +87,9 @@ import { requiresReplayConfirmation, type SavedRun } from "./server/recovery.js"
 import { acquireRuntimeLease, releaseRuntimeLease, backupDatabase } from "./server/sqliteStore.js";
 import { claimRunLease, releaseRunLease, startLeaseHeartbeat, type LeaseHeartbeat, type RunLease } from "./server/runLease.js";
 import { recordTaskUsage } from "./server/credits.js";
+// H5: inject relevant learned lessons into the task's system prompt (BUILD_SPEC §6.5).
+import { lessonsForTask } from "./learning/harness/inject.js";
+import { domainOf } from "./learning/harness/types.js";
 // D19 session runtime: sleep/wake lifecycle + per-session compute budget.
 import { SessionRuntime, DEFAULT_IDLE_MINUTES, DEFAULT_STEP_LIMIT, DEFAULT_TOKEN_LIMIT } from "./server/sessionRuntime.js";
 import { browserSessionFor } from "./tools/browser.js";
@@ -393,12 +396,34 @@ async function main(): Promise<void> {
       // Provenance-aware index summary: a bounded digest of long-term memory so
       // the agent knows what it already knows without a tool call.
       const memoryIndexSummary = memory && memory.count > 0 ? memory.indexSummary(8) : undefined;
+      // H5 lesson injection (BUILD_SPEC .h2-ref/BUILD_SPEC.md §6.5): relevant lessons from
+      // past corrections join the system suffix. Wrapped in try/catch so a store or ranking
+      // failure can never block the task; the block is capped (cfg.lessons.maxChars) and
+      // every injected lesson's `uses` counter grows (LOAM_LESSONS_ENABLED can disable it).
+      // The fallbacks mirror loadConfig for test configs built without the lessons key.
+      let lessonBlock = "";
+      const lessonsCfg = effectiveCfg.lessons ?? { enabled: true, maxChars: 1200, minScore: 0.35 };
+      if (lessonsCfg.enabled) {
+        try {
+          lessonBlock = lessonsForTask({
+            agentId: agentId ?? null,
+            domain: domainOf(effectivePrompt.slice(0, 400)),
+            prompt: effectivePrompt,
+            enabled: true,
+            maxChars: lessonsCfg.maxChars,
+            minScore: lessonsCfg.minScore,
+          }).block;
+        } catch (err) {
+          log.warn(`lesson injection skipped: ${String(err)}`);
+        }
+      }
       const suffix = [
         `You are Loam. Active mode: ${modeDefinition.labelAr}. ${modeDefinition.description} Only use the provided tool capabilities.`,
         modeDefinition.outputHint,
         workModeDefinition.policy,
         memoryContextSuffix,
         memoryIndexSummary,
+        ...(lessonBlock ? [lessonBlock] : []),
         agentSuffix, askModeSuffix, sideChatSuffix,
         quickEditRoute.suffix,
       ].filter(Boolean).join("\n\n");
