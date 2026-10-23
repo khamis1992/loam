@@ -1137,3 +1137,58 @@ work) and confirmed the boot hook is wired exactly once.
 
 - HEAD `08ec13b` (thirteenth-pass record) at the time these checks ran; `.jdone` is
   appended below and committed. Working tree clean; `.jdone` 1107 lines.
+
+## Independent re-validation (2026-10-23, fifteenth pass)
+
+This pass swept the *remaining* repo checks I had not yet exercised, and it
+surfaced two real (pre-existing) failures that earlier passes had missed because
+`%ERRORLEVEL%` inside a parenthesized `for`/`if` block expands at parse time
+(always 0). Measuring through a `.bat` file with `call` + `%ERRORLEVEL%` gives the
+true codes.
+
+### Checks that pass
+
+True exit codes: `check:loam-ui` **1** (below), `check:selfimprove` 0,
+`check:memory-skills` 0, `check:promo-carousel` 0, `check:web-scaffold` 0,
+`check:promptwire` 0, `check:recovery:http` **1** (below). Also green in this pass:
+`check:loam-ancillary` 0, `check:loam-agents` 0, and `next build` 0
+(`Compiled successfully in 578ms`, 25/25 static pages).
+
+### Two pre-existing failures, both proven on pristine parity
+
+1. **`check:task-ui`** (alias for `check:loam-ui`) exits **1**:
+   `AssertionError [ERR_ASSERTION]: Expected values to be strictly equal: 8 !== 7`
+   at `src/scripts/check-loam-ui.mjs:43:125`, i.e.
+   `assert.equal(await page.locator('#homeModes button').count(), 7)`. The fixture
+   renders 8 home-mode chips (`ui/app.js:96` maps `state.modes` one button per
+   mode), so the assertion's expected count has drifted from the fixture. Root
+   cause is fixture/expectation drift, not this merge.
+2. **`check:recovery:http`** exits **1** with `Error: Timed out` at
+   `src/scripts/check-recovery-http.ts:65` (thrown from `waitFor`, called at `:75`
+   and `:88`). The child server does start (`INFO Loam ready -> http://127.0.0.1:<port>`),
+   but the probe's poll never completes. Same environmental class as the
+   `check:isolation` (HTTP) timeout proven pre-existing in the thirteenth pass.
+
+Proof both are pre-existing: `git diff --name-only 03f8aef HEAD` over
+`src/scripts/check-loam-ui.mjs`, `src/scripts/check-recovery-http.ts` and the whole
+`ui/` directory is **empty** (all byte-identical to parity; D3 never touched them:
+`git diff --name-only 088b4f2 053cd0e -- src/scripts/check-loam-ui.mjs` is also
+empty). I then created a worktree at parity tip `03f8aef`
+(`%TEMP%\d3-parity-wt2`, `node_modules` junctioned) and ran both:
+`check:loam-ui` exit **1** with the identical `8 !== 7` at `check-loam-ui.mjs:43:125`,
+and `check:recovery:http` exit **1** with the identical `Error: Timed out` at
+`check-recovery-http.ts:65`. Signatures match byte-for-byte apart from the
+worktree path. Neither is in the four required gates; both are environmental or
+fixture drift that parity already ships. Worktree removed and pruned afterward.
+
+### `.jdone` cross-direction re-confirmed
+
+Set-based survival of parity's `.jdone`: parity (`03f8aef`) has **458** lines,
+HEAD has **1139**, and **0** parity lines are missing from HEAD
+(`MISSING=0`). No parity history was dropped.
+
+### Final state
+
+- HEAD `35ed058` (fourteenth-pass record) at the time these checks ran; `.jdone` is
+  appended below and committed. Working tree clean
+  (`git status --porcelain --untracked-files=all` = 0).
