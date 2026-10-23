@@ -1,3 +1,92 @@
+# N9 merge gate, fourth pass: parity advanced twice more (N2, then N10)
+
+## Why this section exists
+
+The reports below record the merge gate as fixed on trees `6a16b27` and `ca2141e`.
+Neither is the tip: `manus-parity` kept advancing while this branch was idle, first
+with N2's canvas view for the run graph, then with N10's output-type routing. The
+gate failed again each time with the same instruction:
+
+    MERGE CONFLICT with latest manus-parity: run git merge manus-parity, resolve all
+    conflicts keeping both sides, commit.
+
+This section records the fourth merge, every conflict and its resolution, and the
+gates re-run on the resulting tree. It supersedes the "Gates" blocks below, which
+were measured on older trees.
+
+## The ref moved twice during this session
+
+1. `git merge manus-parity` (parity tip `ed26550`, N2) -> merge commit `ca2141e`.
+   ONE conflict, `.jdone` (add/add), resolved keeping BOTH sides. The full detail
+   is in the "third pass" section below.
+
+2. The verification step's own `git merge manus-parity` therefore produced a
+   second merge: parity tip `26befe6`, "merge khamis1992/neo-n10 (N10 via
+   loam-jcode-run) into manus-parity" -> merge commit `75b0989`. ONE conflict,
+   `.jdone` (modify/delete): parity no longer tracks `.jdone` at all (N10's merge
+   dropped it), while this branch's rollup is the only copy. Resolution: kept
+   THIS branch's `.jdone` (`git add .jdone` after the UD state), because deleting
+   it would discard this branch's report and the parity rollup's history. Every
+   other file auto-merged cleanly.
+
+## What the fourth merge brought in
+
+N10's output-type routing (`src/llm/router.ts`, `src/tools/routingModel.ts`,
+`src/modes/outputTypeMap.ts`, `src/modes/detect.ts`, `src/agent/loop.ts`,
+`src/config.ts`, `src/index.ts`, `packages/web/src/components/chat/*`) plus its
+tests. N9's ask-user wiring is intact on the merged tree and verified:
+
+- `src/index.ts`: `applyAskUserGate` / `createAskUserTools` still imported and
+  registered (`registry.registerAll(createAskUserTools())`, and
+  `applyAskUserGate(agentTools, ...)` in the run path).
+- `src/server/http.ts`: N2's `handleGraphRoutes` (line 1777) and N9's
+  `handleAskUserRoutes` (line 1810) are both still registered.
+- No conflict marker remains in any source file.
+
+## Gates re-run from the worktree root on the final merged tree `75b0989`
+
+- `npx tsc --noEmit`                                       -> exit 0
+- `npm run build:server`                                   -> exit 0
+- `(cd packages/web && npx next build)`                    -> exit 0 (compiled successfully)
+- `npm run check:encoding`                                  -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                                     -> PASS (seven fail-closed modes)
+- `npm run check:orchestrator`                              -> PASS (114/114)
+- `npm run check:eval`                                      -> exit 0
+- `npm run check:recovery`                                  -> exit 0
+
+N9's acceptance suites on the final merged tree:
+
+- `node --import tsx --test src/tools/__tests__/askUser.test.ts
+  src/agent/__tests__/askUserAutoTrigger.test.ts
+  src/protocol/__tests__/askUserSocket.test.ts` -> tests 25, pass 25, fail 0
+  (vague prompt raises the card before any planning; an answer with an uploaded
+  file resumes the run with that file path attached).
+- `(cd packages/web && npx vitest run
+  src/components/approval/__tests__/askUserCard.test.tsx ...)` -> 7 tests, all pass.
+
+Parity-side files from both merges, re-run on the final tree:
+
+- `node --import tsx --test src/server/__tests__/graphRoutes.test.ts
+  src/agent/__tests__/toolDescriptions.test.ts src/agent/__tests__/toolProfile.test.ts
+  src/server/__tests__/runTools.test.ts` -> tests 34, pass 34, fail 0.
+- `(cd packages/web && npx vitest run src/components/workspace/canvas
+  src/components/workspace/__tests__/autoOpen.test.ts
+  src/components/chat/__tests__/routingControls.test.ts)` -> 8 files, 76 tests, all pass.
+
+## Merge safety checks on the final tree
+
+- `git merge manus-parity` -> `Already up to date.`
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
+- `git rev-list --left-right --count manus-parity...HEAD` -> `0  12`
+  (parity commits still missing: 0)
+- `git grep -n "^<<<<<<<\|^=======$\|^>>>>>>>\|^|||||||" -- src packages` -> empty
+
+No test was weakened, deleted or skipped; no assertion was relaxed; no source file
+was edited. No secrets committed. No forbidden path touched. No `.neo-*` or
+`.jcode-*` marker file was staged.
+
+---
+
 # N9 merge gate, third pass: parity advanced again (N2 canvas view)
 
 ## Why this section exists
