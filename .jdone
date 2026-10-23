@@ -6113,4 +6113,43 @@ Test commands:
   npm run check:encoding
 
 
+---
 
+## H3 gate-fix session note (2026-10-23, third merge of manus-parity)
+
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. The only conflicted
+file was the tracked rollup marker `.jdone` (add/add: this branch's C19/H3 reports vs
+parity's O3/O6/O2/D5/O1/V11/fc-05/N9 rollup). No source file conflicted and no source
+file was edited: the H3 deliverables are unchanged from commit `f40f2d9` and the parity
+O1 deliverables are unchanged from commit `83b6b8a`.
+
+Resolution method: for each conflict hunk, emit the true superset of both sides as a
+multiset union, capping each distinct line at `max(count in HEAD, count in manus-parity)`,
+preserving the order A -> B -> tail. This keeps every line of both sides while eliminating
+genuine duplication from the shared region.
+
+Two successive parity tips were merged and resolved (parity advanced mid-fix):
+1. `a61bc30` Merge manus-parity (tip `0a946d3`) - containment missing 0, duplication 0.
+2. `0c6e64b` Merge manus-parity (tip `61aca0c`) - containment missing 0, duplication 0.
+A third `git merge manus-parity` now reports "Already up to date."
+
+Integrity of the resolved rollup: containment missing 0 vs HEAD, 0 vs manus-parity, 0 vs
+BASE; genuine duplication (beyond the union cap) 0; conflict markers 0; no CRLF, no BOM,
+no mojibake. The one remaining "orphaned heading" (`## Preserved: manus-parity .jdone
+rollup ...`) is parity's own structure (present verbatim in manus-parity, absent from
+HEAD), so it is preserved by design.
+
+Gates (all run from the worktree root on the merged tree):
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.5mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- H3: `node --import tsx --test src/learning/harness/__tests__/correctionDetector.test.ts`
+                                              -> tests 21, pass 21, fail 0
+- O1: `node --import tsx --test src/protocol/__tests__/eventLog.test.ts`
+                                              -> tests 11, pass 11, fail 0
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run verify`                            -> exit 0 (typecheck, encoding, eval, orchestrator, recovery, modes)
+
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path
+touched. `git merge-base --is-ancestor manus-parity HEAD` exits 0. No Arabic text was
+written; no mojibake placeholder text was added.
