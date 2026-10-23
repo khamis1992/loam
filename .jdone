@@ -1,4 +1,65 @@
 
+## V14 addendum: two acceptance defects found by re-reading the criterion, not by a failing test
+
+Follow-up commits `0851f55` and `69dbb2d`. Both defects were in code that was already
+committed and green, which is why they are worth recording.
+
+### 1. The gate passed a run that beat nothing (`0851f55`)
+
+The criterion is that the e2e run scores *above* the baseline. The gate asserted only
+`regressed === 0`, and `regressed === 0` implies `delta >= 0`, so a run that improved
+nothing at all would have reported success - the exact outcome the gate exists to
+catch. The old test even pinned it (`assert.equal(result.passed, result.notWorse)`).
+
+`passed` now also requires at least one fixture to improve, factored into an exported
+`decidePass` so the rule is unit-testable rather than buried in the aggregation. The
+mean delta is computed from the raw totals rather than from the two rounded means, so
+the printed figure cannot disagree with the decision by a rounding step. Four new
+tests cover the pass rule directly. The gate still passes on the real eval set
+(delta +0.4, improved 2/12, regressed 0), now for the right reason.
+
+### 2. The router invented a provider shape and duplicated the coding router (`69dbb2d`)
+
+`src/models/route.ts` defined its own `UiModelProvider` with `hasKey`, `cooldownUntil`
+and `strength`, plus its own availability rule. The real `FailoverProvider` carries
+`kind` and `apiKeyEnv` instead, and `src/llm/codingRouter.ts` already owned chain
+resolution and usability. So the two rules could disagree, and the specific
+disagreement was harmful: a keyless cloud provider reported no `hasKey === false`, so
+it looked available and would have been routed to, producing the failed request the
+module's own doc comment claimed to prevent.
+
+`routeUiModel` now reads the real `FailoverProvider` and reuses `coderChainIds`,
+`usableProviders` and `codingProviders`. Cooldowns go through the real
+`CooldownStore`/`providerKey` instead of a timestamp field nothing populated. The
+reported chain is the full set of providers that can serve the chosen model, so
+failover keeps its remaining candidates. `PipelineConfig` carries the real provider
+type, the environment for the key lookup, and the cooldown store.
+
+A parity suite now runs the same config through `routeUiModel` and `selectCoder` and
+asserts they agree, so the two cannot drift again. Two new tests exercise the keyless
+cloud case directly, one at the router and one through the whole pipeline.
+
+### Gate results after both fixes
+
+| Gate | Result |
+| --- | --- |
+| `npx tsc --noEmit` | exit 0 |
+| `npm run build:server` | exit 0 |
+| `cd packages/web && npx next build` | exit 0 (25/25 pages) |
+| `npm run check:encoding` | OK |
+| design + routing + gate + llm suites | 325 tests, 325 pass, 0 fail |
+| `npm run check:design-pipeline` | delta +0.4, improved 2/12, regressed 0, exit 0 |
+
+### Honest note on what the acceptance margin is
+
+The mean delta is +0.4 across 12 fixtures, driven by 2 fixtures (the RTL dashboard at
++4 and the landing page at +1); the other 10 are level. That clears the criterion, and
+the gate now fails if it ever does not, but the margin is thin and the task's own V1
+eval set is what bounds it. Recorded here so the number is not mistaken for a wide
+win.
+
+---
+
 ## V14 complete: UI-task model routing to the strongest servable model, plus the joined design pipeline
 
 Committed as `6f53661` (feature) and `4d359f4` (regression fixes) on `khamis1992/v0-v14`.
