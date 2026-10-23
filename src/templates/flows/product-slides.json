@@ -1,0 +1,11 @@
+{
+  "id": "product-slides",
+  "title": "Product Slides",
+  "description": "Create a presentation deck with title, agenda, feature slides, and a closing summary.",
+  "prompt": "Create a presentation deck for a product launch of 'Nova AI', an AI writing assistant. Include a title slide, an agenda slide, three feature slides (one per feature), a pricing slide, and a closing slide with a call to action. Use a clean, professional design with consistent typography and spacing.",
+  "mode": "write",
+  "effort": "max",
+  "outputType": "slides",
+  "icon": "🎞",
+  "category": "Presentation"
+}
