@@ -1,6 +1,91 @@
 
 ---
 
+# N2 gate-fix session: merge with latest manus-parity
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+## The failure that was fixed
+`git merge manus-parity` conflicted in exactly ONE file: `.jdone` (add/add: this
+branch's N2 report vs parity's accumulated N4/C19/N20/O3/O6/O2/D5/O1/V11/H0/O0/
+fc-05 rollup). Every source file auto-merged cleanly, so no code, test or prompt
+was touched by the resolution.
+
+## What the resolution produced
+`.jdone` was resolved by keeping BOTH sides: the N2 report stays at the top
+(including its D2 and D10 preserved blocks), and the full parity rollup follows
+verbatim, with the shared `## Preserved: D2 gate-fix report` heading kept once.
+Verified mechanically against both stage blobs (`:2:.jdone` 823 lines,
+`:3:.jdone` 5238 lines): **0 non-empty lines missing from the ours side, 0
+non-empty lines missing from the theirs side**, and no conflict marker remains
+anywhere in the tree. Re-verified after the second merge below against the
+parity tip `0a946d3` itself: **0 parity-side lines missing** from the merged file.
+No test was weakened, deleted or skipped; no assertion was relaxed; no source
+file was edited.
+
+## The ref moved mid-session
+`refs/heads/manus-parity` advanced while this session was running (a concurrent
+workstream landed `0a946d3`, "Merge main (packaging asar+fuses fix, 0.5.28)").
+The verification step's own `git merge manus-parity` therefore produced a second
+merge commit (`6d12055`) with **no conflicts at all** (packaging/electron files,
+`src/config.ts`, `src/server/http.ts`, the creative/preview modules). `.jdone`
+came through byte-identical: a `git diff` of the file between the two merge
+commits is empty. The end state is what the gate asks for.
+
+## Gate condition verified
+- `git merge manus-parity` -> `Already up to date.`
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
+- `git rev-list --left-right --count manus-parity...HEAD` -> `0  5`
+  (the left count, parity commits still missing, is 0)
+- `git grep -E "^(<{7}|={7}|>{7})( |$)"` -> no conflict markers
+- `git status --porcelain` -> empty
+
+## Side effect worth noting
+The parity lineage fixed the inherited D4 defect that the preserved reports below
+describe as pre-existing: parity commit `e854d58` registers `createPlanTools()`
+in `src/agent/__tests__/toolDescriptions.test.ts`, drops `plan_exit` from
+`PENDING_CODING_TOOLS` and adds "When NOT to use" to the `suggest_plan` /
+`plan_exit` descriptions. `src/agent/__tests__/toolDescriptions.test.ts` therefore
+now passes **4/4**, and it is no longer the one failure this branch was
+inheriting. No file under it was edited by this session.
+
+## Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                                  -> exit 0
+- `(cd packages/web && npx tsc --noEmit --project tsconfig.json)` -> exit 0
+- `npm run build:server`                              -> exit 0 (dist/server.cjs 19.5mb, pdf worker copied)
+- `(cd packages/web && npx next build)`               -> exit 0 (compiled successfully, 25/25 static pages)
+- `(cd packages/web && npx vitest run)`               -> **77 files / 521 tests, all pass**
+- `node --import tsx --test "src/**/*.test.ts"`      -> **tests 2529, pass 2528, fail 1**
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`    -> PASS
+- `npm run check:orchestrator` -> PASS (114/114)
+- `npm run check:promptwire`  -> PASS (every promptwire tool returned ok:true)
+- `npm run check:recovery`    -> PASS
+
+Targeted suites re-run on the merged tree:
+- `src/server/__tests__/graphRoutes.test.ts` (N2) + `orchestratorBudget.test.ts`
+  + `src/__tests__/configFailover.test.ts` -> tests 15, pass 15, fail 0
+- `src/agent/__tests__/toolDescriptions.test.ts` -> tests 4, pass 4, fail 0
+- `src/agent/__tests__/{recipeEngine,orchestratorRecipe,recipeIds}.test.ts` +
+  `src/protocol/__tests__/{recipeEvents,recipeReplay}.test.ts` +
+  `src/graph/__tests__/runGraph.test.ts` -> all pass
+
+## The one remaining node failure (pre-existing, environmental, not caused by this merge)
+`src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+throwing" (`true == false` at `src/server/__tests__/worktrees.test.ts:44`).
+Neither `src/server/__tests__/worktrees.test.ts` nor `src/server/worktrees.ts`
+is touched by this merge (`git diff` of both between the pre-merge HEAD and the
+merged HEAD is empty), and the cause is environmental: `%TEMP%` on this machine is
+`C:\Users\khamis\AppData\Local\Temp`, and `git -C %TEMP% rev-parse` walks up and
+resolves to `C:/Users/khamis`, which is itself a git repository, so a fresh temp
+folder is reported as a git folder. Confirmed by a direct probe in this session.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or
+skipped. No `.neo-*` or `.jcode-*` marker file was staged. Working tree clean.
+
+---
+
 # N2 - Canvas view: DONE
 
 Workspace "Canvas" tab rendering the N1 run graph: pan/zoom, auto-layout, an E
