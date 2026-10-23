@@ -152,8 +152,11 @@ is clean.
 | N5 selector suites | `node --import tsx --test src/agent/__tests__/contextSelector.test.ts src/agent/__tests__/contextSelectorLongHorizon.test.ts` | 30 tests, 30 pass, 0 fail |
 | runGraph suite (conflicted file) | `node --import tsx --test src/graph/__tests__/runGraph.test.ts` | 27 tests, 27 pass, 0 fail |
 | loop suites (auto-merged) | `node --import tsx --test src/agent/__tests__/loop*.test.ts` | 19 tests, 19 pass, 0 fail |
-| selector + graph + loop combined | `node --import tsx --test src/agent/__tests__/contextSelector.test.ts src/agent/__tests__/contextSelectorLongHorizon.test.ts src/graph/__tests__/runGraph.test.ts src/agent/__tests__/loop.test.ts` | 57 tests, 57 pass, 0 fail |
+| selector + runGraph + loop combined | `node --import tsx --test src/agent/__tests__/contextSelector.test.ts src/agent/__tests__/contextSelectorLongHorizon.test.ts src/graph/__tests__/runGraph.test.ts src/agent/__tests__/loopBudget.test.ts src/agent/__tests__/loopHooks.test.ts` | 76 tests, 76 pass, 0 fail |
 | N19 suites (brought in by the final merge) | `node --import tsx --test src/agent/__tests__/codingPrompt.test.ts src/agent/__tests__/orchestratorRecipe.test.ts src/tools/__tests__/promptwire.test.ts` | 37 tests, 37 pass, 0 fail |
+| full node suite | `node --import tsx --test "src/**/__tests__/*.test.ts" "src/**/__tests__/*.test.mjs"` | 2970 tests, 2970 pass, 0 fail |
+| web suite | `(cd packages/web && npx vitest run)` | 91 files, 624 tests, 624 pass |
+| N20 eval | `node --import tsx src/scripts/eval-neo.ts` | total=100, 10/10 PASS, verdict PASS, "baseline: no regression" |
 
 ### Final state
 
@@ -177,6 +180,96 @@ Test command:
   node --import tsx --test src/agent/__tests__/contextSelector.test.ts src/graph/__tests__/runGraph.test.ts
 
 ---
+
+## Re-validation of the N5 merge fix and its acceptance
+
+This section was produced by a separate validation pass that re-ran the gates, re-checked
+each claim in the report above against the real commits, and probed the N5 acceptance
+contract rather than trusting the earlier summary.
+
+### The selector is genuinely wired into the run, not just present
+
+`git diff ca08d4c..HEAD` shows the full N5 integration:
+
+- `src/agent/loop.ts` imports `ContextSelector`, constructs one per run from
+  `opts.contextSelector ?? opts.cfg.contextSelector`, and captures **every** tool result
+  through `selector.capture(...)` on both the batch path and the single-tool path, keyed by
+  the transcript `ChatMessage` so the artefact pairing survives a re-shape.
+- It calls `selector.apply(...)` before the model call from `activationStep` onward, and only
+  replaces `messages` when the selector reports `applied`. A selector failure leaves the raw
+  transcript (the fail-closed path covered by the suite).
+- It emits `context_selected`, which `src/agent/events.ts` declares and
+  `src/graph/runGraph.ts` handles as a live-only signal (no canvas node, per the comment).
+- `src/config.ts` defaults `contextSelector: { enabled: true }`, so the behaviour is on by
+  default and `LOAM_CONTEXT_SELECTOR=0` (or `enabled: false`) restores the pre-N5 path.
+
+### Both resolutions keep every line of both parents
+
+A multiset line check (tmp-verify-keep.cjs) against the merge parents:
+
+| File | Parent | Missing non-blank lines |
+| --- | --- | --- |
+| `src/graph/runGraph.ts` | `495ac5f` (parity) | 0 |
+| `src/graph/runGraph.ts` | `ca08d4c` (parity) | 0 |
+| `src/graph/runGraph.ts` | `8d55bdc` (ours) | 8 |
+| `src/agent/events.ts` | `8d55bdc` (ours) | 0 |
+| `src/agent/events.ts` | `839e7cc` (parity) | 0 |
+| `src/agent/events.ts` | `ca08d4c` (parity) | 0 |
+
+The 8 lines missing against our own parent are not a lost merge side: they are the lines
+**we** replaced (the N7 fan-out anchor rewrite, the `ok` flag, and the superseded
+`state.fanouts.get(...)` call). Against parity, nothing is missing, which is the property
+that matters for a "keep both sides" resolution.
+
+### The long-horizon acceptance test really covers the three named properties
+
+`src/agent/__tests__/contextSelectorLongHorizon.test.ts` drives the **production**
+`runAgent` with a scripted fake client (no model, no network) over 200 steps, appending a
+large observation each step:
+
+1. **Bounded context**: the last ten executor prompts are each asserted `<= WINDOW`.
+2. **Flat per-step token use**: the mean of the last 20 prompts must be within 20% of the
+   mean of prompts 10-30.
+3. **Needle recall**: the needle string recorded at step 5 must appear in the prompt the
+   model actually received at step 180 (checked on the client's own input, not on the
+   transcript the loop returns).
+
+It also carries a **control arm** with the selector disabled but the compressor on, which
+asserts the compressor fires and the needle is **not** in the prompt at step 180. That arm
+is what makes the test meaningful: it shows the fixture fails without the selector rather
+than passing trivially.
+
+### No test was weakened
+
+No test file changed by this task's resolution; every test-file modification on the branch
+comes from another workstream's merge (N7, N10, N19, V8, fc-06, J6, cr-03, memory). The
+only content changes in the two resolutions are the removed conflict markers. `git diff --check`
+is clean, no conflict marker remains under `src/` or `packages/`, and no forbidden path was
+touched. The only secret-looking strings in the tree are pre-existing fixtures in
+`src/memory/__tests__/storeDream.test.ts` and `src/scripts/check-swarm*.ts`, which assert
+that the secret scanner *detects* such values.
+
+### Wider gates (run during this re-validation)
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| root types | `npx tsc --noEmit` | exit 0 |
+| server build | `npm run build:server` | exit 0 |
+| web build | `(cd packages/web && npx next build)` | exit 0 |
+| full node suite | `node --import tsx --test "src/**/__tests__/*.test.ts" "src/**/__tests__/*.test.mjs"` | 2970 tests, 2970 pass, 0 fail |
+| web suite | `(cd packages/web && npx vitest run)` | 91 files, 624 tests, 624 pass |
+| N20 eval | `node --import tsx src/scripts/eval-neo.ts` | total=100, 10/10 PASS, verdict PASS, "baseline: no regression" |
+| selector + runGraph + loop combined | `node --import tsx --test src/agent/__tests__/contextSelector.test.ts src/agent/__tests__/contextSelectorLongHorizon.test.ts src/graph/__tests__/runGraph.test.ts src/agent/__tests__/loopBudget.test.ts src/agent/__tests__/loopHooks.test.ts` | 76 tests, 76 pass, 0 fail |
+
+### Correction to the report above
+
+An earlier revision cited a combined run that included `src/agent/__tests__/loop.test.ts`.
+That file does not exist (the loop suites are `loopBudget.test.ts` and `loopHooks.test.ts`), so
+that row now cites the real 76-test run. All other figures in the table above were re-measured
+in this pass.
+
+---
+
 ## fc-06: Merge Loam Video export feature branch with manus-parity
 
 **Summary.** Merged `manus-parity` into `khamis1992/fc-06`. All merge conflicts resolved using the union approach (preserving additions from both sides). All build and test gates passing.
