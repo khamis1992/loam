@@ -7,7 +7,7 @@ export const REMINDER_OPEN = `<${REMINDER_TAG}>`;
 export const REMINDER_CLOSE = `</${REMINDER_TAG}>`;
 
 /** The reminder kinds the loop knows how to produce. */
-export type ReminderKind = "todo_stale" | "file_changed" | "plan_mode" | "memory_updated";
+export type ReminderKind = "todo_stale" | "file_changed" | "plan_mode" | "memory_updated" | "file_touched";
 
 /** Steps without a todo/plan update before a stale-todo reminder is injected. */
 export const DEFAULT_TODO_STALE_STEPS = 8;
@@ -66,8 +66,20 @@ export function memoryUpdatedReminder(): string {
   return "Project memory was updated during this run. Re-check the facts you rely on before continuing; a new or changed memory may supersede an earlier assumption.";
 }
 
+/** Cross-session file-touch notice (jcode J8): another session wrote a file this
+ *  session had already read, so its view of that file is stale. */
+export function fileTouchedReminder(notice: { path: string; writer: string; summary: string; preview?: string[]; edits?: number }): string {
+  const head = notice.writer
+    ? `Another agent (${notice.writer}) changed the file \`${notice.path}\` that you already read`
+    : `Another agent changed the file \`${notice.path}\` that you already read`;
+  const count = notice.edits && notice.edits > 1 ? ` (${notice.edits} edits since)` : "";
+  const lines = notice.preview && notice.preview.length > 0 ? `\n${notice.preview.join("\n")}` : "";
+  return `${head}${count}: ${notice.summary}.${lines}\nRe-read it with file_read before editing or quoting it; your earlier view of this file is stale.`;
+}
+
 /** Build a reminder for a known kind. `detail` is the step count for a stale
- *  todo list and the file path for an external change. */
+ *  todo list, the file path for an external change, and a JSON-encoded notice
+ *  for a cross-session file touch. */
 export function buildReminder(kind: ReminderKind, detail?: string): string {
   switch (kind) {
     case "todo_stale":
@@ -78,6 +90,14 @@ export function buildReminder(kind: ReminderKind, detail?: string): string {
       return planModeReminder();
     case "memory_updated":
       return memoryUpdatedReminder();
+    case "file_touched":
+      try {
+        const notice = JSON.parse(detail ?? "") as Parameters<typeof fileTouchedReminder>[0];
+        if (notice && typeof notice.path === "string") return fileTouchedReminder(notice);
+      } catch {
+        /* fall through to the generic wording */
+      }
+      return fileTouchedReminder({ path: detail ?? "a file", writer: "", summary: "changed" });
   }
 }
 
@@ -113,6 +133,12 @@ export class ReminderChannel {
   /** Queue a reminder for a file that changed outside the run. */
   fileChanged(path: string): void {
     this.pending.push(fileChangedReminder(path));
+  }
+
+  /** Queue a cross-session file-touch notice: another session wrote a file this
+   *  session had already read (jcode J8). */
+  fileTouched(notice: { path: string; writer: string; summary: string; preview?: string[]; edits?: number }): void {
+    this.pending.push(fileTouchedReminder(notice));
   }
 
   /** Queue a reminder for a durable memory update. */

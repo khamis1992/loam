@@ -1,0 +1,431 @@
+[
+  {
+    "launcher": "shared",
+    "kind": "shared",
+    "N": 1,
+    "idleMB": 248.5,
+    "peakMB": 421.7,
+    "finalMB": 421.7,
+    "perSessionMB": 173.2,
+    "baselineMB": null,
+    "marginalSessionMB": null,
+    "fixed": 1,
+    "sessions": [
+      {
+        "index": 0,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-8sOPmU\\s0",
+        "pid": 55668,
+        "fixed": true,
+        "sessionId": "s2d770c0f",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s2d770c0f\",\"steps\":4}",
+        "steps": 4
+      }
+    ],
+    "durationMs": 3596,
+    "platform": "win32",
+    "notes": [
+      "fake model http://127.0.0.1:51893",
+      "shared server pid=55668 socket=\\\\.\\pipe\\loam-cs-5956"
+    ]
+  },
+  {
+    "launcher": "shared",
+    "kind": "shared",
+    "N": 10,
+    "idleMB": 248.8,
+    "peakMB": 471.8,
+    "finalMB": 471.8,
+    "perSessionMB": 22.3,
+    "baselineMB": 421.7,
+    "marginalSessionMB": 5.6,
+    "fixed": 10,
+    "sessions": [
+      {
+        "index": 0,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-ivDRt2\\s0",
+        "pid": 50960,
+        "fixed": true,
+        "sessionId": "s48df5b90",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s48df5b90\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 1,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-ivDRt2\\s1",
+        "pid": 50960,
+        "fixed": true,
+        "sessionId": "s030e2b41",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s030e2b41\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 2,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-ivDRt2\\s2",
+        "pid": 50960,
+        "fixed": true,
+        "sessionId": "scf3a2eeb",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"scf3a2eeb\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 3,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-ivDRt2\\s3",
+        "pid": 50960,
+        "fixed": true,
+        "sessionId": "s1e360752",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s1e360752\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 4,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-ivDRt2\\s4",
+        "pid": 50960,
+        "fixed": true,
+        "sessionId": "s46894243",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s46894243\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 5,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-ivDRt2\\s5",
+        "pid": 50960,
+        "fixed": true,
+        "sessionId": "sdaf0f54c",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"sdaf0f54c\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 6,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-ivDRt2\\s6",
+        "pid": 50960,
+        "fixed": true,
+        "sessionId": "s99dab406",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s99dab406\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 7,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-ivDRt2\\s7",
+        "pid": 50960,
+        "fixed": true,
+        "sessionId": "sfac05244",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"sfac05244\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 8,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-ivDRt2\\s8",
+        "pid": 50960,
+        "fixed": true,
+        "sessionId": "s0b86bf6f",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s0b86bf6f\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 9,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-ivDRt2\\s9",
+        "pid": 50960,
+        "fixed": true,
+        "sessionId": "s9eee9616",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s9eee9616\",\"steps\":4}",
+        "steps": 4
+      }
+    ],
+    "durationMs": 4054,
+    "platform": "win32",
+    "notes": [
+      "fake model http://127.0.0.1:62484",
+      "shared server pid=50960 socket=\\\\.\\pipe\\loam-cs-41208"
+    ]
+  },
+  {
+    "launcher": "shared",
+    "kind": "shared",
+    "N": 30,
+    "idleMB": 248.6,
+    "peakMB": 512.3,
+    "finalMB": 512.3,
+    "perSessionMB": 8.8,
+    "baselineMB": 421.7,
+    "marginalSessionMB": 3.1,
+    "fixed": 30,
+    "sessions": [
+      {
+        "index": 0,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s0",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "sb194874f",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"sb194874f\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 1,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s1",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s229839f7",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s229839f7\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 2,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s2",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s261b8dd8",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s261b8dd8\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 3,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s3",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s05e946bd",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s05e946bd\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 4,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s4",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "sef260a60",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"sef260a60\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 5,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s5",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s3b6a3e5d",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s3b6a3e5d\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 6,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s6",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s89890954",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s89890954\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 7,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s7",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s4907d7f8",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s4907d7f8\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 8,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s8",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s0336fee2",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s0336fee2\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 9,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s9",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "sfee99389",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"sfee99389\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 10,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s10",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s2ad34d0c",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s2ad34d0c\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 11,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s11",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s73f9e79f",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s73f9e79f\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 12,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s12",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "se34bd412",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"se34bd412\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 13,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s13",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s1e73aca3",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s1e73aca3\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 14,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s14",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s954d1e50",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s954d1e50\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 15,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s15",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s5d596096",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s5d596096\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 16,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s16",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s8981bbd2",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s8981bbd2\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 17,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s17",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s7f32e737",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s7f32e737\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 18,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s18",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s9ce38d62",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s9ce38d62\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 19,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s19",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "sf476f820",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"sf476f820\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 20,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s20",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "sa0714c96",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"sa0714c96\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 21,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s21",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s187e18cb",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s187e18cb\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 22,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s22",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "se2015a50",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"se2015a50\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 23,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s23",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s157ed4de",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s157ed4de\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 24,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s24",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s550428da",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s550428da\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 25,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s25",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s43247e39",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s43247e39\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 26,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s26",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "s818ccfe5",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"s818ccfe5\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 27,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s27",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "sc5ec0ac1",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"sc5ec0ac1\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 28,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s28",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "sbdadebc3",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"sbdadebc3\",\"steps\":4}",
+        "steps": 4
+      },
+      {
+        "index": 29,
+        "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-j1-de1q9U\\s29",
+        "pid": 57788,
+        "fixed": true,
+        "sessionId": "sf608b980",
+        "output": "{\"ok\":true,\"status\":\"done\",\"session\":\"sf608b980\",\"steps\":4}",
+        "steps": 4
+      }
+    ],
+    "durationMs": 5007,
+    "platform": "win32",
+    "notes": [
+      "fake model http://127.0.0.1:61393",
+      "shared server pid=57788 socket=\\\\.\\pipe\\loam-cs-43348"
+    ]
+  }
+]

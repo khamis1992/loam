@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { EventLog } from "./session/eventLog.js";
-import { ensureTaskWorkspace } from "./server/taskWorkspace.js";
+import { ensureTaskWorkspace, isManagedTaskWorkspace } from "./server/taskWorkspace.js";
+import { BLUEPRINT_FILE, bootTaskFromSnapshot } from "./tools/envSnapshot.js";
 import path from "node:path";
 import { loadConfig, ROOT, DATA_DIR } from "./config.js";
 import { setLocalAuthUserDataDir } from "./security/localAuth.js";
@@ -67,7 +68,8 @@ import { isOutputType, modelAbChain, normalizeEffort, type EffortLevel } from ".
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
 import { writeCheckpoint } from "./agent/checkpointLog.js";
 import type { Emit } from "./agent/events.js";
-import { applyRunEvent, beginRun } from "./agent/runGraphAdapter.js";
+import { applyRunEvent, beginRun, recallGraphHandle } from "./agent/runGraphAdapter.js";
+import { createRecallTools } from "./tools/memory.js";
 import { OllamaClient } from "./ollama.js";
 import { flexCredentials } from "./server/modelTiers.js";
 import { startServer, type RunTaskOptions } from "./server/http.js";
@@ -351,6 +353,20 @@ async function main(): Promise<void> {
     // a bounded context of its saved preferences/instructions.
     const memoryToolInstances = agentId ? createCompanionMemoryTools(agentId) : [];
     const teamToolInstances = agentId ? createCompanionTeamTools(agentId) : [];
+    // N16 cross-run recall: the shelf is process-wide, but *attaching* a recalled
+    // node is run-scoped, so these instances are rebuilt per run with the run id
+    // and a callback that files the hit into this run's graph.
+    const recallToolInstances = createRecallTools({
+      index: rt.recall ?? undefined,
+      runId: task,
+      attach: (source, runId, query) =>
+        recallGraphHandle().attachRecallNode(
+          runId,
+          source,
+          query,
+          (s) => recallGraphHandle().getNode(s.nodeId, s.runId),
+        ) ?? undefined,
+    });
     const memoryContextEntries = agentId ? memoryContext(agentId) : [];
     const memoryContextSuffix =
       memoryContextEntries.length > 0
@@ -447,7 +463,10 @@ async function main(): Promise<void> {
       // advertises them) but only reach the model when the run's garden is on.
       const knowledgeRunAllow = applyKnowledgeGate(runAllow, opts.savedRun.knowledge === true);
       const runAllowSet = new Set(knowledgeRunAllow);
-      const agentTools = registry.forAllowlist(knowledgeRunAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
+      // N16: recall/recall_status are always-on names (runTools.ts) but the
+      // run-scoped instances above are the ones that can attach a hit to THIS
+      // run, so they replace the process-wide copies instead of colliding.
+      const agentTools = registry.forAllowlist(knowledgeRunAllow).withBound([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances, ...recallToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
 
       // Sensitive host-input actions need an explicit user decision first (section 18).
       // MF4 (option 14): the gate resolves each request idempotently — replay of a
@@ -680,6 +699,27 @@ async function main(): Promise<void> {
     saved.mode = getLoamMode(saved.mode).id;
     setTaskMode(task.id, saved.mode);
     saved.workspace = ensureTaskWorkspace(task.id, cfg.workspace);
+    // D3: when the project carries a `loam.env.yaml` and its environment snapshot
+    // was already built, boot the task worktree from that cached snapshot so the
+    // setup steps (npm ci, …) never run again. Purely an optimization: a missing
+    // or stale snapshot, an occupied workspace or a bound composer folder all
+    // leave the task exactly as it was, and a resume must not re-clone.
+    // Only Loam's own `.loam-tasks/<taskId>` workspace may be seeded: a task
+    // bound to the user's real folder (composer folder / git worktree) is never
+    // filled with a snapshot, even when it happens to be empty.
+    if (opts.resume !== true && isManagedTaskWorkspace(saved.workspace)) {
+      const envProject = saved.projectId ? getProject(saved.projectId) : undefined;
+      const envFolder = envProject?.folder;
+      if (envFolder && fs.existsSync(path.join(envFolder, BLUEPRINT_FILE))) {
+        const boot = bootTaskFromSnapshot({
+          taskWorkspace: saved.workspace,
+          projectId: saved.projectId ?? path.basename(envFolder),
+          projectFolder: envFolder,
+        });
+        if (boot.ok) log.info(`env snapshot reused for ${task.id}: ${boot.hash} → ${boot.projectDir}`);
+        else log.debug(`env snapshot not reused for ${task.id}: ${boot.reason}`);
+      }
+    }
     queueTaskRun(task.id, saved, opts.resume === true, opts.scheduleId, opts.title);
     // Resource locks (parallel lanes): browser/preview are the only shared
     // runtime states a run may reset — everything else (own devices, files,
