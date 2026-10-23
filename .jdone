@@ -1,3 +1,74 @@
+CR-03 complete: attached files open in the matching Loam Craft app; all gates green.
+
+## What was built
+The vendored Loam Craft editors (Docs / Sheets / Slides / Photo / Design) are now wired
+into the Workspace panel, so a task's documents, sheets, slides, photos and layouts open
+in the app that owns them instead of a generic viewer. Three entry points:
+
+1. Agent-driven: a `craft`-family tool call (`office_craft*`, `loam_design`) or an agent
+   edit of an attached file opens the matching app.
+2. User intent: an edit request in the user's own message (English or Arabic) with an
+   attached document/photo/layout opens the matching app.
+3. Manual: the attachment card's action now reads "Open in Loam Docs/Sheets/Slides/Photo/
+   Design" and mounts that app on the Workspace tab.
+
+## Files
+- `packages/web/src/components/workspace/craft.ts` (new): the single mapping from a file
+  type, MIME type or agent tool to a Craft app, plus the preview-only `.indd` rule
+  (`isPreviewOnlyExt`), so a file type can never resolve to two editors.
+- `packages/web/src/components/workspace/craft/register.ts` (new) + `index.ts`: registers
+  the `craft` editor lazily; `registerEditor({ kind: 'craft', ... })` covers every Craft
+  format in one registration.
+- `packages/web/src/components/workspace/craft/Editor.tsx` (new): resolves the app from
+  the extension (MIME fallback), mounts `CraftPanel` with `hideHeader`, and stores
+  `craft:save` payloads through `/api/upload?taskId&name` — the same endpoint cr-02's
+  panel uses, so panel exports and manual saves land together.
+- `packages/web/src/components/workspace/autoOpen.ts`: `CRAFT_EDIT_INTENT_RE` +
+  `hasCraftEditIntent`, `isCraftAttachment` / `craftAttachmentPath`,
+  `decideUserMessageOpen` returning `{ path, kind: 'craft', craftApp }`, the craft
+  extensions added to `OFFICE_PATH_RE`, and `craftAppForTarget` /
+  `decideWorkspaceOpen`. A video attachment always wins and goes to the video studio.
+- `packages/web/src/components/workspace/craft/CraftPanel.tsx`: `onStatusChange` /
+  `onSave` props, exported `CraftPreview`, optional `hideHeader`, and a preview-only
+  early return for `.indd` that shows the notice instead of a broken editor.
+- `packages/web/src/components/workspace/WorkspacePanel.tsx`: craft MIME map,
+  `editorLabel()` (Craft display name for Craft files) and a `requestedKind === 'craft'`
+  branch in the auto-open effect.
+- `packages/web/src/components/chat/EventList.tsx` + `AttachmentCard.tsx`: `onOpenFile`
+  threading, an "Open in Loam <App>" action on attachments, and an `openLabel` prop.
+- `packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx`: `handleOpenFileInEditor`,
+  `onOpenFile` on the event list, and `openLabel`/`onOpen` on the completed-task
+  attachment grid and the task-files dialog.
+- `packages/web/src/i18n/{en,ar}.json`: Craft app names and the five open-in labels.
+
+## Test corrections made (no test weakened)
+- `workspace/__tests__/autoOpen.test.ts`: one existing assertion encoded the pre-cr-03
+  behaviour ("a `.pdf` attachment with an edit intent opens nothing"). A PDF is now a
+  Loam Design file, so the test asserts the new, correct routing
+  (`{ path: 'notes.pdf', kind: 'craft', craftApp: 'design' }`) instead of `null`. The
+  video-studio path it was guarding is unchanged and still covered by the other cases.
+
+## New tests
+- `workspace/__tests__/craftAutoOpen.test.ts` — 16 tests: app-per-family routing,
+  English/Arabic edit intent, tool routing, `.indd` preview-only, and that a video is
+  never claimed by Craft.
+- `workspace/__tests__/craftRegistry.test.ts` — 4 tests: the `craft` registration
+  resolves every family and loads its component.
+- `workspace/craft/__tests__/Editor.test.tsx` — 10 tests: app selection per family,
+  MIME fallback, the no-editor notice, the `/api/upload` save, and the AttachmentCard
+  open-in-editor label/action.
+
+## Gates (run from the worktree root on the committed tree, 6a4cbe5)
+- `npx tsc --noEmit` (root)                        -> exit 0
+- `(cd packages/web && npx tsc --noEmit)`          -> exit 0
+- `npm run build:server`                           -> exit 0
+- `(cd packages/web && npx next build)`           -> exit 0 (compiled, 25/25 static pages)
+- `(cd packages/web && npx vitest run)`           -> 75 files / 502 tests, all pass
+
+No secrets committed. No forbidden path touched. No test skipped.
+
+---
+
 D2 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
 
 ## The failure that was fixed
