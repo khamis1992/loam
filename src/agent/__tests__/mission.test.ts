@@ -304,11 +304,22 @@ describe("mission budget stop on the run graph", () => {
     beginRun(RUN, "Ship the migration");
     // Only the step ceiling is set: the wall-clock and cost keys must be absent
     // rather than reported as zero, which would read as "spent nothing".
+    const budget = createMissionBudget({ steps: 2 });
+    // A real run charges wall-clock and cost unconditionally (the loop calls
+    // consumeWallClock/consumeCost on every step), so a steps-only mission still
+    // ends with non-zero counters. The summary must key off the *limit*, not the
+    // counter: otherwise a steps-only mission reports a 90-second clock and a
+    // spend the user never bounded. Leaving these at 0 would let a counter-based
+    // guard pass by accident.
+    consumeWallClock(budget, 90_000);
+    consumeCost(budget, 0.0042);
+    assert.equal(budget.wallClockLimitMs, undefined, "no clock ceiling was set");
+    assert.equal(budget.costLimitUsd, undefined, "no cost ceiling was set");
     const stopped = budgetStoppedCheckpoint({
       taskId: RUN,
       prompt: "Ship the migration",
       lastStep: 2,
-      budget: createMissionBudget({ steps: 2 }),
+      budget,
     });
     const ids = applyRunEvent(RUN, { type: "budget_exhausted", taskId: RUN, reason: "step ceiling", checkpoint: stopped });
     const data = getRunNodes(RUN).find((n) => n.id === ids[0])!.data as Record<string, unknown>;
