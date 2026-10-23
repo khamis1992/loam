@@ -839,3 +839,73 @@ in-commit conflict list (3 files) is the authoritative conflict set, and none of
 
 - HEAD `d9f9d5b` (sixth-pass record) at the time these checks ran; `.jdone` is
   appended below and committed. `git diff --quiet HEAD -- .jdone` clean.
+
+## Independent re-validation (2026-10-23, eighth pass)
+
+This pass read the task spec (`.jtask.md`) and the gate-failure text
+(`.jgatefail.txt`) and verified the work against them literally, plus ran the live
+server boot smoke.
+
+### Task spec, confirmed
+
+- `.jtask.md` states the D3 feature (environment blueprint + snapshot), the four
+  acceptance criteria, and the four required gates (tsc, build:server, next build,
+  new + existing tests for touched files). `.jgatefail.txt` states the gate failure:
+  `MERGE CONFLICT with latest manus-parity: run git merge manus-parity, resolve all
+  conflicts keeping both sides, commit.` That is exactly what `ac0cf67` records.
+- Forbidden paths untouched across the merge range: `git diff --name-only 088b4f2
+  HEAD -- docs/handoff/watchdog.ps1 qa packages/tests/visual/baselines` = 0, and the
+  same for `03f8aef HEAD` = 0. Both npm scripts survive in `package.json`:
+  `check:env-builds=tsx src/scripts/check-env-builds.ts` and
+  `check:test-isolation=tsx src/scripts/check-test-isolation.ts`.
+
+### Every acceptance criterion is asserted, not just claimed
+
+The four ACs in `.jtask.md` map to concrete assertions:
+
+- **AC1 (blueprint for a fixture repo):** `envSnapshotE2E.test.ts:62-67` generates
+  from `package.json` + `package-lock.json` and asserts the inferred blueprint
+  carries `npm ci` and caches `node_modules`.
+- **AC2 (first build runs steps; second boot reuses, asserted via counter):** the
+  E2E test writes a setup step that appends to a counter file *outside* the checkout
+  and asserts `countSteps()` is exactly `1` after the first build (`:77`), stays `1`
+  after a task boot (`:86`), stays `1` after a second independent boot (`:93`), and
+  only becomes `2` when the hash changes (`:102`). No fake spawn hook is used; the
+  step runs in a real shell.
+- **AC3 (hash change triggers rebuild):** `:96-101` rewrites the lockfile, asserts
+  `blueprintHash` changed (`:98`), then asserts the rebuild ran the step again
+  (`stepsRun === 1`, counter `2`). `envSnapshot.test.ts:177` and `:207` cover the
+  same at unit level.
+- **AC4 (secret values never appear in logs):** `envSnapshot.test.ts:172-174` (not
+  in the tool reply, not written to `loam.env.yaml`), `:233-234` (not in the build
+  log or `status.json`), `:250` (an *echoed* secret is redacted), `:261` (a missing
+  secret fails the build and runs nothing); `envSnapshotE2E.test.ts:106-111` asserts
+  `status.json`, the build log and the tool reply all exclude the value.
+
+### Live server boot smoke (real HTTP, not a stub)
+
+- `npm run check:env-builds` -> exit 0, `PASS live env-build routes: list, per-project
+  status, redacted log, staleness, 404/400/method handling, project binding`. It
+  boots the real server, exercises the route handlers, and asserts the redacted log
+  and payloads never carry `sk-live-env-builds-check-secret-123`.
+
+### Feature wiring, confirmed end to end
+
+- Both tools are declared with a JSON `parameters` schema and a description:
+  `env_blueprint_generate` (`envSnapshot.ts:883`) and `env_build_status`
+  (`envSnapshot.ts:921`). Both are registered via `registry.registerAll(
+  createEnvSnapshotTools())` (`src/setup/runtime.ts:109`), both are in
+  `ALWAYS_ON_TOOLS` (`src/server/runTools.ts:37-38`), and both are classified in
+  `src/policy/riskTier.ts` (`:196-197`).
+- The boot path is real: `src/index.ts:552-573` calls `ensureTaskWorkspace` and then
+  `bootTaskFromSnapshot` at task creation, guarded by `opts.resume !== true` and
+  `isManagedTaskWorkspace`, so a resume never re-clones and a task bound to the
+  user's real folder is never seeded. This is the code that makes AC2's reuse
+  happen in production, not just in the test.
+
+### Final state
+
+- Tree clean: `git status --porcelain --untracked-files=all` = 0, `git ls-files
+  --others --exclude-standard` empty, after running the live server smoke (which
+  wrote only to `%TEMP%`). HEAD `3dc12b2` at the time these checks ran; `.jdone` is
+  appended below and committed. `git diff --quiet HEAD -- .jdone` clean.
