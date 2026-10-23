@@ -1,3 +1,118 @@
+# N10 complete: output modes, effort and model map (A/B arms actually execute)
+
+Committed as `0ea4423`. The N10 task's A/B criterion is "A/B creates 3 sibling nodes with
+model labels". The nodes were being created, and the canvas showed them, but the models
+behind them were never asked anything: every arm stayed `init` forever and no answer was
+ever produced. This session fixed that defect, which is the part of N10 that was missing.
+
+## The defect, located before coding
+
+`src/agent/loop.ts` (~lines 376-395 at HEAD `851b3fe`) called `addRunSiblings(...)` and
+emitted `"A/B arm started on {model}"`, then never dispatched a model call and never
+transitioned the node. `git grep` confirmed no other call site ran an arm. So the recorded
+graph events and the node rows were real, but the underlying models never ran: node status
+stayed `init` because nothing ever set it to `running` or `finished`.
+
+## What shipped
+
+**1. Arms now run their own model (`src/agent/loop.ts`)**
+New `runAbArm(opts, system, arm, model)`:
+- sets the node `running`, then calls `chatWithFallback` with the run's own system prompt
+  and the run's own `opts.prompt` under the arm's model, so failover/routing still applies;
+- on success stores `{ ...existing, model: result.model, answer: oneLine(answer) }` via
+  `setRunNodeData` and sets `finished`, emitting `"A/B arm finished on {result.model}."`;
+- on failure stores `{ ...existing, model, error: oneLine(reason) }` and sets `failed`,
+  emitting an error event. A cancelled arm is `skipped`, not `failed`, because the user
+  stopped the run and the arm never had a chance to answer. `runAbArm` never rethrows.
+- an arm with no model label is skipped (`if (!model) continue`) rather than silently sent
+  to the config default model.
+
+Arms are awaited in three places so no sibling is ever left pending: before the successful
+`return`, before the step-budget `throw`, and at the top of `finally` (so a throwing run
+still settles its arms).
+
+**2. Tests (`src/agent/__tests__/abRouting.test.ts`, rewritten, 275 lines)**
+The fake `chatClient` now takes `(model, calls[])` and records every requested model, and
+arm answers read `done by ${requested}`. Four tests: (1) records one arm per model AND
+runs each arm's own model, asserting both arm models were dispatched and each arm is
+`finished` with its own answer; (2) a failed arm lands `failed` with an error while the run
+rejects (contained); (3) `suppressFinal: true` creates no arms; (4) no arms without
+`abModels`.
+
+**3. Canvas renders the arm (`packages/web/src/components/workspace/canvas/CanvasPanel.tsx`)**
+`SUBTITLE_KEYS` gained `answer` and `TITLE_KEYS` gained `model`, so an arm card shows the
+model that answered and the answer it produced instead of only its status. Covered by a new
+`CanvasPanel.test.tsx` case that renders two finished arms and asserts each card carries
+its own model and its own answer, plus the `Model arm · Finished` kind/status line.
+
+## Gates (all run from the worktree root)
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| root types | `npx tsc --noEmit` | exit 0 |
+| web types | `cd packages/web && npx tsc --noEmit` | exit 0 |
+| server build | `npm run build:server` | exit 0 (`dist/server.cjs 19.6mb`, pdf worker copied) |
+| web build | `cd packages/web && npx next build` | exit 0 (compiled successfully, 25/25 static pages) |
+| encoding | `npm run check:encoding` | OK (no BOM, no mojibake, all JSON valid) |
+| A/B tests | `node --import tsx --test src/agent/__tests__/abRouting.test.ts` | 4/4 pass |
+| loop suites | `node --import tsx --test src/agent/__tests__/{loopBudget,loopHooks,runGraphAdapter,fanout,parallelTools}.test.ts` | 34/34 pass |
+| other arm-touching suites | `node --import tsx --test src/agent/__tests__/{mirofishLoop,reminders,todoReminder,cacheUsageAccounting,codingRouting}.test.ts` | 34/34 pass |
+| web tests | `cd packages/web && npx vitest run` | 546/546 pass across 203 files |
+
+No existing test was weakened, deleted or skipped.
+
+## Acceptance criteria (from `.jtask.md`)
+
+| Requirement | Where asserted |
+| --- | --- |
+| A/B creates sibling nodes with model labels | `abRouting.test.ts` "records one sibling arm per model and runs each arm's own model" (nodes carry `model` in `data` and are asserted `finished`) |
+| the sibling arms actually answer (the defect) | same test asserts each arm's own model was dispatched and each arm stores `done by <its model>` |
+| the canvas shows what each arm produced | `CanvasPanel.test.tsx` "renders a model arm with its own label and the answer its model produced" |
+| an arm cannot fail the run that owns it | "marks a failed arm failed without failing the run that owns it" |
+
+The task's note about Playwright applies where a test calls for it; the canvas behaviour is
+pinned with vitest + `@testing-library/react` against the real `CanvasPanel` and an injected
+client, as the existing suite already does.
+
+## Files
+
+- `src/agent/loop.ts`
+- `src/agent/__tests__/abRouting.test.ts`
+- `packages/web/src/components/workspace/canvas/CanvasPanel.tsx`
+- `packages/web/src/components/workspace/canvas/__tests__/CanvasPanel.test.tsx`
+- `.jdone` (this report prepended; the pre-existing working-tree deletion of this rollup
+  was restored rather than carried through)
+
+## Seams left for other workstreams
+
+- **N10 output modes / effort:** the A/B arm run shares the run's own system prompt and
+  `opts.prompt`; output-type (Image/Video/Slides/Website) and effort (Fast/Max) selection
+  are not wired into the arm dispatch, which still runs a plain text chat.
+- **N14 (share/replay):** arm nodes flow through the export path by type; no replay
+  handling specific to arms.
+- **N21 (Arabic/RTL):** no new user-visible string was added (the arm reuses
+  `assistant_message` text and the existing `NODE_TYPE_KEYS.sibling` label), so no locale
+  catalog change was required.
+- **N19 (master prompt):** the "when to run A/B" guidance is not in the master prompt yet.
+
+## Rules honoured
+
+- Only the files above were changed. No `.neo-*` or `.jcode-*` marker file was committed.
+  No forbidden path (`docs/handoff/watchdog.ps1`, `qa/*.png`, `packages/tests/visual/baselines`,
+  ZCode/Codex files) was touched.
+- No real external model API was called in tests: the fake `chatClient` records the model and
+  returns a canned answer.
+- No secrets committed, nothing pushed, no `git reset --hard`, no discarded work.
+- The `edit`/`replace` tools were used for every file edit; no shell redirection wrote file
+  content. `loop.ts` needed single-line replacements because multi-line matching failed on
+  its hidden bytes.
+
+Test command:
+
+  node --import tsx --test src/agent/__tests__/abRouting.test.ts
+
+---
+
 # N7 complete: branch fan-out (`fanout` / `merge` step types, gap G14)
 
 Committed as `3188703`. Implements Neo N7: N independent branches run as child
