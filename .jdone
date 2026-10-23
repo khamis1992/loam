@@ -1,8 +1,8 @@
 # N14 gate fix: landed parity's `.gitattributes` union driver, `.jdone` conflict is gone for good
 
 The recurring failure `MERGE CONFLICT with latest manus-parity in: .jdone` is fixed at the root
-cause, and the fix is durable: it comes from parity itself, not from this branch. Four parity
-advances were merged during this pass; all four auto-unioned `.jdone` with no conflict.
+cause, and the fix is durable: it comes from parity itself, not from this branch. Five parity
+advances were merged during this pass; all five auto-unioned `.jdone` with no conflict.
 
 ## Root cause
 
@@ -11,8 +11,8 @@ advances were merged during this pass; all four auto-unioned `.jdone` with no co
 nearly every region, which forced a hand-resolve on every parity merge and produced the
 `MERGE CONFLICT ... in: .jdone` gate failure again and again.
 
-Parity already fixed this. Commit `87abbc7` ("docs(jdone): record round 12 - root-cause
-union-merge fix for the recurring .jdone parity conflict") added a tracked `.gitattributes`:
+Parity already fixed this. Commit `aab6be5` ("chore(gitattributes): union-merge runner markers
+.jdone/.jcode-done to stop recurring parity conflicts") added a tracked `.gitattributes`:
 
 ```
 .jdone merge=union
@@ -25,7 +25,7 @@ untrack a file that is present in the merge source, so the attribute is the corr
 
 ## What was wrong on this branch
 
-`khamis1992/neo-n14` had merged an older parity tip (`590d358`) that predates `87abbc7`, so this
+`khamis1992/neo-n14` had merged an older parity tip (`590d358`) that predates `aab6be5`, so this
 branch had **no `.gitattributes` at all** (`git show HEAD:.gitattributes` -> does not exist) while
 parity's tip (`519f889`) carried it. The union driver was never in play here.
 
@@ -64,15 +64,23 @@ parity's tip (`519f889`) carried it. The union driver was never in play here.
    `src/agent/runGraphAdapter.ts` + `src/agent/insights.ts` + `src/agent/sideChat.ts`,
    `src/server/runTools.ts` + test, `src/setup/runtime.ts`, and `src/index.ts`. It did **not**
    touch this branch's N14 deliverables, which remain byte-identical to `08cfe26`.
+8. Parity advanced a fifth time (`7b75243` -> `4bb2b44`, "merge khamis1992/neo-n5 (N5 via
+   loam-jcode-run) into manus-parity"). Re-merged it: `.jdone` auto-unioned a fifth time with **no
+   conflict**. Five parity advances, five clean auto-merges. That advance brought the context
+   selector surface: `src/agent/contextSelector.ts` (683) +
+   `src/agent/__tests__/contextSelector.test.ts` (325) + `contextSelectorLongHorizon.test.ts` (311),
+   plus wiring in `src/agent/loop.ts`, `src/agent/events.ts`, `src/config.ts`, `src/graph/runGraph.ts`.
+   It did **not** touch this branch's N14 deliverables, which remain byte-identical to `d48a694`.
 
-## Verification on the final tip (`e65cc28`)
+## Verification on the final tip (`7d29467`)
 
 1. `npm run verify` -> exit 0 (typecheck, check:encoding, check:eval, check:orchestrator,
    check:recovery, check:modes)
 2. `npm run build:server` -> exit 0
-3. `node --import tsx --test "src/**/*.test.ts"` -> tests 3019, pass 3019, fail 0, skipped 0
+3. `node --import tsx --test "src/**/*.test.ts"` -> tests 3050, pass 3050, fail 0, skipped 0
+   (run alone; see the load-flake note below)
 4. `(cd packages/web && npx tsc --noEmit)` -> exit 0
-5. `(cd packages/web && npx vitest run)` -> 93 files / 634 tests, all pass
+5. `(cd packages/web && npx vitest run)` -> 93 files / 634 tests, all pass (run alone; see below)
 6. `(cd packages/web && npx next build)` -> exit 0
 
 Merge fidelity, verified mechanically against the real merge parents:
@@ -93,6 +101,8 @@ Merge fidelity, verified mechanically against the real merge parents:
   corrections made after that merge (tip `52b0cf9` -> `e65cc28`, node count 2998 -> 3019,
   left-right 14 -> 16). 0 conflict markers, no BOM, no U+FFFD, and `git ls-files -u` is empty
   (no unresolved paths).
+- Fifth merge (`7d29467`, parents `d48a694` ours / `4bb2b44` theirs): the union driver again dropped
+  **0 lines from either side**, 0 conflict markers, no BOM, no U+FFFD.
 - `.gitattributes` is byte-identical to parity's; `.jcode-done` is byte-identical to parity's.
 - No real conflict markers: `git grep -n -E "^(<<<<<<< |>>>>>>> )" -- .` -> **empty**, including
   `.jdone` and `.jcode-done`. The only occurrences of those tokens anywhere in `.jdone` are
@@ -115,6 +125,21 @@ Merge fidelity, verified mechanically against the real merge parents:
   in the repository (0 matches); it is emitted by an external harness, so the fix had to make the
   real `git merge manus-parity` conflict-free rather than silence a local check.
 - `.jgatefail.txt` is untracked and ignored (`.gitignore:29`).
+- Load flakes, not real failures. On the final tip the node suite and the web suite were first run
+  concurrently with each other, which is enough load to trip wall-clock assertions: 2 node failures
+  (`src/tools/__tests__/search.test.ts` "greps and globs under 1s", grep took 3509ms;
+  `src/agent/__tests__/parallelTools.test.ts` "parallel 747ms should be well under serial baseline
+  923ms") and 4 web failures (`knowledgeChip`, `settings`, `shortcutsPane`, `skillsPane`, 7.7-10.7s
+  each). All are timing-ratio assertions with no assertion on behaviour. Re-run alone: node
+  `3050/3050` pass, `search.test.ts` 19/19, `parallelTools.test.ts` 2/2, web `634/634` and the four
+  files 18/18 in 0.3-0.6s. No test was weakened; the assertions are unchanged.
+- The union driver was proven causally, not just observed. An isolated A/B repository with two
+  branches appending different lines to the same `.jdone`: **without** `.gitattributes` the merge
+  exits 1 with `<<<<<<<`/`=======`/`>>>>>>>` markers and three-stage index entries; **with**
+  `.jdone merge=union` the same merge exits 0, keeps both sides, and leaves no markers. So the
+  attribute, not luck, is what removes the conflict.
+- `.gitattributes` is a single blob (`57beaae`) shared by this branch, `manus-parity`, and `aab6be5`,
+  so the driver cannot drift between them.
 
 ## Seams left
 
@@ -122,6 +147,10 @@ Merge fidelity, verified mechanically against the real merge parents:
   ever drops `.gitattributes`, this branch should re-add it.
 - After any parity merge, still confirm this report's heading is present in `.jdone` and that
   `git ls-files -u` is empty.
+- The two wall-clock suites (`search.test.ts`, `parallelTools.test.ts`, and the four web component
+  suites) are load-sensitive. If a gate run reports failures there, re-run the suite alone before
+  treating it as a real regression.
+
 # N5 round 2: found and fixed a real defect in the `.jcode-done` marker
 
 ## The defect
