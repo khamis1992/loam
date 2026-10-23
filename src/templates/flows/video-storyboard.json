@@ -1,0 +1,11 @@
+{
+  "id": "video-storyboard",
+  "title": "Video Storyboard",
+  "description": "Create a storyboard for a short video with scene descriptions, camera angles, and timing.",
+  "prompt": "Create a storyboard for a 60-second promotional video for a fitness app called 'PulseFit'. Include 8 scenes with descriptions, camera angles (wide, medium, close-up), duration for each scene, and suggested background music or sound effects. The video should follow a narrative arc: problem introduction, app demonstration, user testimonial, and call to action.",
+  "mode": "media",
+  "effort": "max",
+  "outputType": "text",
+  "icon": "🎬",
+  "category": "Media"
+}
