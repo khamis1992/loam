@@ -9,6 +9,7 @@ import type { ExecutionCheckpoint, WorkerCheckpoint } from "./checkpoint.js";
 import { AcceptanceGuard } from "./acceptanceGuard.js";
 import { IndependentAcceptanceGuard, independentRequirements } from "./independentAcceptance.js";
 import { taskScopedTools, fileOnlyRequested } from "./taskToolScope.js";
+import { checkBudget, consumeTokens, type ComputeBudget } from "./computeBudget.js";
 import { addUsage, sumUsage } from "./usageAccounting.js";
 import { openSession, closeSession, cancelled, type SessionEndReason } from "./sessionHooks.js";
 import { runLifecycleHooks } from "../policy/hooks.js";
@@ -51,6 +52,8 @@ interface WorkerOutcome {
   usage: Usage;
   trace: ToolTraceItem[];
   error?: string;
+  /** Set when the worker stopped on the session compute budget ceiling. */
+  budgetStopped?: boolean;
 }
 
 async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: string, maxSteps: number): Promise<WorkerOutcome> {
@@ -89,6 +92,9 @@ async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: s
       ...(o.onCodingRoute ? { onCodingRoute: o.onCodingRoute } : {}),
       ...(o.resumeWorker ? { resumeWorker: o.resumeWorker } : {}),
       ...(o.saveWorker ? { saveWorker: o.saveWorker } : {}),
+      // D19 compute budget: workers inherit the session budget so the ceiling
+      // is enforced on the default (orchestrated) path, not only the linear one.
+      ...(o.budget ? { budget: o.budget } : {}),
     });
     return { text: res.text, messages: res.messages, model: res.model, steps: res.steps, usage: res.usage, trace };
   } catch (err) {
@@ -96,7 +102,12 @@ async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: s
     if (o.signal?.aborted || isCancelled(o.taskId) || isCancelledError(err)) {
       throw err instanceof Error ? err : new CancelledError();
     }
+    // D19: a budget stop is a distinct outcome: the session must stay idle and
+    // raisable, so the orchestrator reports it instead of retrying the step.
     const message = err instanceof Error ? err.message : String(err);
+    if (o.budget && checkBudget(o.budget).action === "stop") {
+      return { text: "", messages: [], model: progress.model, steps: progress.steps, usage: progress.usage, trace, error: message, budgetStopped: true };
+    }
     return {
       text: "",
       messages: [],
@@ -218,6 +229,9 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
   let plan = planned.plan;
   usedModel = planned.model || usedModel;
   addUsage(usage, planned.usage);
+  // D19 compute budget: the planner call is real work, so it counts against the
+  // session ceiling just like a worker step.
+  if (o.budget) consumeTokens(o.budget, planned.usage.promptTokens, planned.usage.completionTokens);
   if (!restored) totalSteps += 1;
   const completed = [...(restored?.completed ?? [])];
   const allTrace = [...(restored?.trace ?? [])];
@@ -286,12 +300,26 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
   // effects. Neither trivial plans nor planner failures bypass verification.
 
   let failure: string | null = null;
+  /** D19: set when a worker stopped on the compute-budget ceiling. */
+  let budgetExhausted = false;
 
   for (;;) {
     let failedStep: string | null = null;
 
     for (let i = nextStep; i < plan.steps.length; i++) {
       guard();
+      // D19 compute budget: orchestration-level work (planner, verifier, final
+      // verification) is charged to the same session budget, so consult the
+      // ceiling BEFORE dispatching another worker. Otherwise a long plan or a
+      // token-heavy verifier could burn past 100% unchecked.
+      if (o.budget) {
+        const budgetDecision = checkBudget(o.budget);
+        if (budgetDecision.action === "stop") {
+          failedStep = budgetDecision.reason;
+          budgetExhausted = true;
+          break;
+        }
+      }
       nextStep = i;
       checkpoint(true);
       const step = plan.steps[i]!;
@@ -319,6 +347,14 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
         outcome = await runStepWorker(stepPrompt(o, plan, step, i, completed, verdict), WORKER_SUFFIX);
         allTrace.push(...outcome.trace);
         stepEvidence.push(...outcome.trace);
+        if (outcome.budgetStopped) {
+          // D19: the session ceiling is hit. Do NOT retry or replan — that would
+          // only burn more of a budget that is already exhausted. The session
+          // stays idle and the user can raise the ceiling to continue.
+          failedStep = outcome.error ?? "compute budget exhausted";
+          budgetExhausted = true;
+          break;
+        }
         if (outcome.error) {
           failedStep = `${step.title}: ${outcome.error}`;
           break;
@@ -345,6 +381,8 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
           ...(o.taskId ? { taskId: o.taskId } : {}),
         });
         addUsage(usage, verdict.usage);
+        // D19 compute budget: the verifier critique is real work and counts too.
+        if (o.budget) consumeTokens(o.budget, verdict.usage.promptTokens, verdict.usage.completionTokens);
         totalSteps += 1;
         o.verdicts?.push({ scope: `step ${step.id}`, verdict: verdict.verdict, reason: verdict.reason, fixes: verdict.fixes });
         o.emit({ type: "critique", id: step.id, verdict: verdict.verdict, reason: verdict.reason });
@@ -368,6 +406,11 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
     }
 
     if (!failedStep) break;
+    if (budgetExhausted) {
+      // No replan on an exhausted budget: report the ceiling and stop.
+      failure = failedStep;
+      break;
+    }
     if (round > oc.maxReplans) {
       failure = failedStep;
       break;
@@ -390,6 +433,8 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
     plan = replanned.plan;
     usedModel = replanned.model || usedModel;
     addUsage(usage, replanned.usage);
+    // D19 compute budget: a replan is real work and counts against the ceiling.
+    if (o.budget) consumeTokens(o.budget, replanned.usage.promptTokens, replanned.usage.completionTokens);
     totalSteps += 1;
     emitPlan();
     round += 1;

@@ -32,6 +32,7 @@ import { isInside, resolveRead, resolveWrite } from "../policy/paths.js";
 import type { MemoryStore } from "../memory/store.js";
 import { getPending, listPending, removePending, type PendingItem } from "./pending.js";
 import { applySkill, buildSkillFile, listSkillRecords, readSkillFile } from "../tools/skills.js";
+import { acceptSkillSuggestion } from "../tools/skillSuggest.js";
 import { extractOfficeText, OFFICE_EXT, prepareParser as buildPdfParser } from "../tools/attachments.js";
 import { loadHooksConfig, saveWorkspaceHooks, type HooksConfig } from "../policy/hooks.js";
 import { outlineWorkspacePath, queryWorkspaceSymbols } from "../tools/symbols.js";
@@ -76,6 +77,8 @@ import { getSettings, updateSettings } from "./settings.js";
 import { cancelRunSignal } from "./runControl.js";
 import { createAgent, deleteAgent, getAgent, listAgents, listAgentsWithChatMeta, reorderAgents, sanitizeAvatarFields, setAgentArchived, setAgentHidden, setAgentPinned, updateAgent } from "./agents.js";
 import { handleScratchpadRoutes } from "./routes/scratchpad.js";
+// Session sleep/wake + compute budget (D19): dispatched before generic handlers.
+import { handleSessionRuntimeRoutes } from "./routes/sessionRuntime.js";
 import { handleDesignStudioRoutes } from "./routes/designStudio.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAutomationsRoutes } from "./routes/automations.js";
@@ -93,6 +96,7 @@ import { handleApiKeysRoutes } from "./routes/apiKeys.js";
 import { handleDataControlsRoutes } from "./routes/dataControls.js";
 import { handleMemorySkillsRoutes } from "./routes/memorySkills.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
+import { handlePlanApprovalRoutes } from "./routes/planApproval.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
 import { handleRetryLastRoutes } from "./routes/retryLast.js";
 import { handleSessionControlRoutes } from "./routes/sessionControl.js";
@@ -395,6 +399,9 @@ async function applyPendingItem(item: PendingItem, memory?: MemoryStore): Promis
       force: item.payload["force"] === true,
     });
     return `skill_install ${res.id}`;
+  }
+  if (item.kind === "skill_suggest") {
+    return acceptSkillSuggestion(item);
   }
   const res = applySkill(item.kind, item.payload);
   if (!res.ok) throw new Error(res.content);
@@ -1244,13 +1251,14 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (req.method === "POST" && p === "/api/settings") {
-          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown };
-          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean } = {};
+          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; planApprovalSkipTrivial?: unknown };
+          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; planApprovalSkipTrivial?: boolean } = {};
           if (body.theme === "dark" || body.theme === "light" || body.theme === "system") patch.theme = body.theme;
           if (typeof body.model === "string") patch.model = body.model;
           if (body.projectId === null || typeof body.projectId === "string") patch.projectId = body.projectId;
           if (typeof body.autoApprove === "boolean") patch.autoApprove = body.autoApprove;
           if (typeof body.trainingOptOut === "boolean") patch.trainingOptOut = body.trainingOptOut;
+          if (typeof body.planApprovalSkipTrivial === "boolean") patch.planApprovalSkipTrivial = body.planApprovalSkipTrivial;
           sendJson(res, 200, updateSettings(patch));
           return;
         }
@@ -1751,6 +1759,8 @@ loadAgents();
         }
 
         if (await handleScratchpadRoutes(req, res, p)) return;
+        // Session sleep/wake + compute budget (D19).
+        if (await handleSessionRuntimeRoutes(req, res, p)) return;
         // Design Studio (/api/design/*): brand kits, templates, generate, outputs.
         if (await handleDesignStudioRoutes(req, res, p)) return;
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;
@@ -1783,6 +1793,8 @@ loadAgents();
         // Settings › Skills (UNIMPLEMENTED_OPTIONS #4): proxy the memory-skills MCP.
         if (await handleMemorySkillsRoutes(req, res, p, { call: memorySkillsCall })) return;
         if (await handleApprovalRuleRoutes(req, res, p, url)) return;
+        // Pending plan approvals (D4): the suggest_plan gate's approve/edit/reject.
+        if (await handlePlanApprovalRoutes(req, res, p)) return;
         if (await handleGrokbotBridgeRoutes(req, res, p, url)) return;
         // Public read-only task shares (option #11): create/revoke are authed,
         // GET /api/share/:token is the anonymous replay feed exempted above.

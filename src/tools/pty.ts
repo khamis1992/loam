@@ -50,6 +50,11 @@ export function ptyStatus(): string {
   return ptyModule ? "node-pty loaded (real PTY sessions available)" : `node-pty unavailable: ${ptyLoadError ?? "not installed"}`;
 }
 
+/** Replace the pty backend (tests inject a fake so no real terminal is spawned). */
+export function setPtyModule(mod: PtyModule | null): void {
+  ptyModule = mod;
+}
+
 function shellCommand(shell: string): { file: string; args: string[] } {
   if (shell === "cmd") return { file: "cmd.exe", args: [] };
   return { file: "powershell.exe", args: ["-NoLogo", "-NoProfile"] };
@@ -122,6 +127,17 @@ export function killSession(id: string): boolean {
 
 export function listSessions(): Array<{ id: string; shell: string; cwd: string; exited: boolean; pid: number }> {
   return [...sessions.values()].map((s) => ({ id: s.id, shell: s.shell, cwd: s.cwd, exited: s.exited, pid: s.proc.pid }));
+}
+
+/** Kill every live pty session and return the ids that were reclaimed.
+ *  Used when a session sleeps so its terminals release their resources. */
+export function killAllSessions(): string[] {
+  const killed: string[] = [];
+  for (const session of [...sessions.values()]) {
+    if (session.exited) continue;
+    if (killSession(session.id)) killed.push(session.id);
+  }
+  return killed;
 }
 
 export function subscribe(id: string, listener: (chunk: string) => void): (() => void) | null {

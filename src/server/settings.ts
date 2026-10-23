@@ -11,6 +11,9 @@ export interface Settings {
   recentWorkspaces?: string[];
   /** When false, mutating agent operations (skills/memory installs) stage for manual approval instead of applying. */
   autoApprove?: boolean;
+  /** D4: when true, a plan the agent marks `trivial` (single obvious action) is
+   *  approved automatically, so single-step requests never stop for a card. */
+  planApprovalSkipTrivial?: boolean;
   /** Custom electron-updater generic feed URL or GitHub repo ("owner/repo"). */
   updateFeedUrl?: string;
   githubRepo?: string;
@@ -56,6 +59,7 @@ export function loadSettings(): Settings {
         ...(typeof parsed.flexModel === "string" ? { flexModel: parsed.flexModel } : {}),
         ...(typeof parsed.trainingOptOut === "boolean" ? { trainingOptOut: parsed.trainingOptOut } : {}),
         ...(typeof parsed.autoApprove === "boolean" ? { autoApprove: parsed.autoApprove } : {}),
+        ...(typeof parsed.planApprovalSkipTrivial === "boolean" ? { planApprovalSkipTrivial: parsed.planApprovalSkipTrivial } : {}),
         ...(isLocationSetting(parsed.location) ? { location: parsed.location } : {}),
       };
     }
@@ -85,6 +89,7 @@ export function updateSettings(patch: Partial<Settings>): Settings {
   if (typeof patch.updateFeedUrl === "string") settings.updateFeedUrl = patch.updateFeedUrl.trim();
   if (typeof patch.githubRepo === "string") settings.githubRepo = patch.githubRepo.trim();
   if (typeof patch.autoApprove === "boolean") settings.autoApprove = patch.autoApprove;
+  if (typeof patch.planApprovalSkipTrivial === "boolean") settings.planApprovalSkipTrivial = patch.planApprovalSkipTrivial;
   if (typeof patch.browserHeadless === "boolean") settings.browserHeadless = patch.browserHeadless;
   if (patch.browserHomepage !== undefined) settings.browserHomepage = typeof patch.browserHomepage === "string" ? patch.browserHomepage.trim() : "";
   if (typeof patch.flexBaseUrl === "string") settings.flexBaseUrl = patch.flexBaseUrl.trim();

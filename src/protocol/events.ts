@@ -16,6 +16,8 @@ import type {
   ToolStatus,
   LocalExecutionApprovalRequested,
   FolderAccessRequestEvent,
+  EnvironmentIssueEvent,
+  PlanApprovalRequestedEvent,
   CacheUsageEvent,
 } from "./types.js";
 
@@ -419,6 +421,34 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
         },
       };
       out.push(approval);
+      break;
+    }
+
+    case "environment_issue": {
+      const issue: EnvironmentIssueEvent = {
+        id: baseId(),
+        type: "environmentIssue",
+        timestamp: ts,
+        message: event.message,
+        ...(event.details ? { details: event.details } : {}),
+      };
+      out.push(issue);
+      break;
+    }
+
+    case "plan_approval_required": {
+      const plan: PlanApprovalRequestedEvent = {
+        id: baseId(),
+        type: "planApprovalRequested",
+        timestamp: ts,
+        requestId: event.planApprovalId,
+        taskId: event.taskId,
+        summary: event.summary,
+        steps: event.steps,
+        filesToEdit: event.filesToEdit,
+        trivial: event.trivial,
+      };
+      out.push(plan);
       break;
     }
 

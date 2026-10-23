@@ -7,7 +7,7 @@ import { loadConfig, ROOT, DATA_DIR } from "./config.js";
 import { setLocalAuthUserDataDir } from "./security/localAuth.js";
 import { buildRuntime } from "./setup/runtime.js";
 import { type ToolTraceItem } from "./agent/reflect.js";
-import { loadPending } from "./server/pending.js";
+import { loadPending, writeGate } from "./server/pending.js";
 import { getSettings, loadSettings } from "./server/settings.js";
 import { createRunSignal, clearRunSignal, isCancelledError, cancelRunSignal, listRunningSignals, activateRunSignal } from "./server/runControl.js";
 import { agentSystemSuffix, getAgent, loadAgents } from "./server/agents.js";
@@ -18,17 +18,20 @@ import { createCompanionMemoryTools } from "./tools/companionMemoryTools.js";
 import { memoryContext, setMemoryEmbedder } from "./server/companionMemory.js";
 import { createCompanionTeamTools } from "./tools/companionTeamTools.js";
 import { setDelegationRunner } from "./server/companionTeam.js";
+import { managedSessions } from "./server/managedSessions.js";
 import { createApproval, waitForDecision } from "./server/approvals.js";
 import { approvalStableKey, getReplayDecision, matchApprovalRule, saveApprovalDecision, taskApprovalAuto, taskSandboxMode, taskPermissionMode } from "./server/approvalRules.js";
 import { resolveSandboxPolicy } from "./policy/riskTier.js";
 import { DEFAULT_PERMISSION_MODE, isPlanMode } from "./policy/permissionModes.js";
 import type { Tool } from "./tools/registry.js";
 import { createScratchpadTools } from "./tools/scratchpadTools.js";
+import { createEnvironmentIssueTools } from "./tools/environmentIssueTools.js";
 import { createDeepResearchTools } from "./tools/deepResearch.js";
 import { createBoardTools } from "./tools/boardTools.js";
 import { createInstructionHistoryTools } from "./tools/instructionTools.js";
 import { createAgentSpawnTools } from "./tools/agentSpawnTools.js";
 import { createBrowserOperatorTools } from "./tools/browserOperator.js";
+import { suggestSkillsAfterSession } from "./tools/skillSuggest.js";
 import { createWideResearchTool } from "./tools/wideResearch.js";
 import { createFindAndEditTools } from "./tools/findAndEdit.js";
 import { createGroupTools } from "./tools/groupTools.js";
@@ -47,7 +50,7 @@ import { createDesignBriefTools } from "./tools/designBrief.js";
 import { createDesignAutofixTools } from "./tools/designAutofix.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
 import { createWorkflowTools } from "./tools/workflow.js";
-import { applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
+import { applyPlanApprovalGate, applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
 import { planQuickEditRoute } from "./agent/quickEdit.js";
@@ -84,6 +87,10 @@ import { requiresReplayConfirmation, type SavedRun } from "./server/recovery.js"
 import { acquireRuntimeLease, releaseRuntimeLease, backupDatabase } from "./server/sqliteStore.js";
 import { claimRunLease, releaseRunLease, startLeaseHeartbeat, type LeaseHeartbeat, type RunLease } from "./server/runLease.js";
 import { recordTaskUsage } from "./server/credits.js";
+// D19 session runtime: sleep/wake lifecycle + per-session compute budget.
+import { SessionRuntime, DEFAULT_IDLE_MINUTES, DEFAULT_STEP_LIMIT, DEFAULT_TOKEN_LIMIT } from "./server/sessionRuntime.js";
+import { browserSessionFor } from "./tools/browser.js";
+import { killAllSessions } from "./tools/pty.js";
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
@@ -128,6 +135,7 @@ async function main(): Promise<void> {
 
   const rt = await buildRuntime(cfg);
   rt.registry.registerAll(createScratchpadTools());
+  rt.registry.registerAll(createEnvironmentIssueTools());
   rt.registry.registerAll(createBoardTools());
   rt.registry.registerAll(createInstructionHistoryTools());
   rt.registry.registerAll(createAgentSpawnTools());
@@ -154,6 +162,17 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createPlanTools());
   const { ollama, registry, memory, mcp } = rt;
 
+  // D19 session runtime: one manager owns both the sleep lifecycle and the
+  // per-session compute budget. Hooks release real resources (the browser
+  // context for this task and its pty terminals) only AFTER the session state
+  // has been persisted, and wake restores the browser on the next message.
+  const sessionRuntime = new SessionRuntime({
+    idleMinutes: cfg.session?.idleMinutes || DEFAULT_IDLE_MINUTES,
+    stepLimit: cfg.session?.stepLimit || DEFAULT_STEP_LIMIT,
+    tokenLimit: cfg.session?.tokenLimit || DEFAULT_TOKEN_LIMIT,
+  });
+  sessionRuntime.start();
+
   const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal; lease?: RunLease }): Promise<{ taskId: string; text: string }> => {
     const { prompt, emit } = opts;
     const settings = getSettings();
@@ -177,6 +196,24 @@ async function main(): Promise<void> {
     publishTaskEvent(task, { type: "task-status", status: "running" });
     // Announce the id immediately so the UI can cancel while the run is alive.
     emit({ type: "task", taskId: task });
+
+    // D19 session runtime: the run starts, so the session is active and its
+    // budget is live. Hooks release this task's browser context and pty
+    // terminals when it later sleeps, after the state has been persisted.
+    void sessionRuntime.markActive(task);
+    sessionRuntime.setHooks(task, {
+      persist: () => { saveRun(task, opts.savedRun, opts.lease); },
+      release: () => {
+        void closeBrowserSession(browserSessionFor({ cfg, workspace: opts.savedRun.workspace, emit: () => {}, taskId: task }));
+        // D19: reclaim this session's terminals. An exited session is already
+        // gone from the registry, so only live ones need killing.
+        killAllSessions();
+      },
+      restore: () => {
+        // The browser is recreated lazily by the next browser_* tool call and
+        // pty sessions are created on demand by pty_start; nothing to do here.
+      },
+    });
 
     const startedAt = Date.now();
     const promptHash = hashPrompt(effectivePrompt);
@@ -428,6 +465,12 @@ async function main(): Promise<void> {
       if (isPlanMode(taskPermissionMode(task) ?? DEFAULT_PERMISSION_MODE)) {
         applyPlanModeGate(agentTools, { taskId: task, workspaceRoot: effectiveCfg.workspace });
       }
+      // Pending plan approval (D4): while `suggest_plan` has a plan awaiting the
+      // user's decision, every mutating tool call is refused. `suggest_plan`
+      // itself stays available so the model can re-present a plan after an edit.
+      // The wrapper re-checks the pending store on each call, so once the plan
+      // is approved later edits in the same run proceed.
+      applyPlanApprovalGate(agentTools, { taskId: task, workspaceRoot: effectiveCfg.workspace });
       // Sandbox gate (risk-tier approval): config default < per-task persisted
       // override < explicit approved override. The resolved mode is rendered into
       // the system prompt so the model knows what it may do without asking.
@@ -453,6 +496,9 @@ async function main(): Promise<void> {
         signal: runSignal,
         taskId: task,
         sandboxMode: sandboxPolicy.mode,
+        // D19 compute budget: shared with the UI badge so the counters and the
+        // badge always agree, and the run stops when the ceiling is hit.
+        budget: sessionRuntime.getBudget(task),
       };
       const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
         ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint, lifecycleHooks: true,
@@ -462,6 +508,9 @@ async function main(): Promise<void> {
       // so treat a cancelled run explicitly — never as success.
       if (runSignal.aborted) throw new Error("cancelled by user");
       if (result.verified !== true) throw new Error("task incomplete: mandatory final verification missing");
+      // D19: the run stopped working and is now waiting on the user. The
+      // session may sleep after the idle threshold and be woken by a message.
+      sessionRuntime.markIdle(task);
       completeTaskRun(task, result.text, result.model, opts.lease);
       recordTaskUsage(task, result.usage); // OPD #9: one mock usage entry per completed task
       if (doneEvent) {
@@ -472,6 +521,19 @@ async function main(): Promise<void> {
       // Turn boundary: drain pending appends and fsync the session log.
       await sessionLog?.flush();
       recordTelemetry("done", { model: result.model, steps: result.steps, usage: { promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens } });
+      // Repo-local skill auto-suggest: after a successful session, propose a new
+      // SKILL.md from the observed setup/verify steps. Staged for approval only.
+      if (effectiveCfg.skills.autoSuggest) {
+        void suggestSkillsAfterSession({
+          cfg: effectiveCfg,
+          ollama: runOllama,
+          projectRoot: effectiveCfg.workspace,
+          prompt: effectivePrompt,
+          finalText: result.text,
+          trace,
+          gate: writeGate,
+        }).catch((err) => log.warn(`skill suggest failed: ${String(err)}`));
+      }
       // Actor-critic reflection memory: non-pass verdicts feed the learning review and the audit log.
       const notable = verdicts.filter((v) => v.verdict !== "pass");
       if (notable.length > 0) {
@@ -519,6 +581,9 @@ async function main(): Promise<void> {
     const previous = opts.taskId ? getTask(opts.taskId) : undefined;
     if (opts.taskId && !previous) throw new Error("task not found");
     if (opts.taskId && executionQueue.has(opts.taskId)) throw new Error("task already queued or running");
+    // D19: a new user message wakes a sleeping session and restores its
+    // released resources before the run starts.
+    if (opts.taskId) await sessionRuntime.onUserMessage(opts.taskId);
     let saved: SavedRun;
     if (opts.resume) {
       const pending = previous ? getSavedRun(previous.id) : undefined;
@@ -639,6 +704,32 @@ async function main(): Promise<void> {
     return Promise.resolve({ taskId: task.id, queued: true });
   });
 
+  // D12: managed child sessions wake the coordinator by event, not polling.
+  // A child finishing (or asking for input) enqueues a fresh run for the parent
+  // agent with a synthesized prompt, so the coordinator resumes exactly once.
+  managedSessions.onAnyCoordinatorWake((event) => {
+    if (event.type === "needs_input") {
+      void runTask({
+        prompt: `[managed child ${event.childId} needs input]\n${event.question ?? "(no question provided)"}\nAnswer it with managed_child_answer.`,
+        agentId: event.parentAgentId,
+        emit: () => {
+          /* triggered runs are persisted in db, no SSE consumer */
+        },
+      }).catch((error) => log.warn(`managed child input wake run: ${String(error)}`));
+      return;
+    }
+    const summary = event.status === "done"
+      ? (event.output || "(no output)")
+      : `status=${event.status}${event.error ? `: ${event.error}` : ""}`;
+    void runTask({
+      prompt: `[managed child ${event.childId} finished: ${event.status}]\n${summary}`,
+      agentId: event.parentAgentId,
+      emit: () => {
+        /* triggered runs are persisted in db, no SSE consumer */
+      },
+    }).catch((error) => log.warn(`managed child wake run: ${String(error)}`));
+  });
+
   const server = await startServer({
     cfg,
     ollama,
@@ -735,6 +826,9 @@ async function main(): Promise<void> {
     stopServiceWatch();
     stopUrlWatchers();
     if (evalTimer) clearInterval(evalTimer);
+    // D19: stop the sleep sweep (records survive in the store; the sweep is
+    // only a timer, and it must not fire during shutdown).
+    sessionRuntime.close();
     executionQueue.stop();
     for (const id of listRunningSignals()) cancelRunSignal(id);
     await rt.dispose();

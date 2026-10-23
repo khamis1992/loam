@@ -287,6 +287,34 @@ export interface LocalExecutionApprovalResolvedEvent extends ChatEventBase {
   result: 'approve' | 'deny';
 }
 
+/** D17: environment-issue report surfaced as an informational card. */
+export interface EnvironmentIssueEvent extends ChatEventBase {
+  type: 'environmentIssue';
+  message: string;
+  details?: string;
+}
+
+/** D4: a `suggest_plan` plan awaiting the user's decision (plan-approval card). */
+export interface PlanApprovalRequestedEvent extends ChatEventBase {
+  type: 'planApprovalRequested';
+  requestId: string;
+  taskId: string;
+  summary: string;
+  steps: string[];
+  filesToEdit: string[];
+  trivial: boolean;
+}
+
+/** D4: the user decided a pending plan-approval card. */
+export interface PlanApprovalResolvedEvent extends ChatEventBase {
+  type: 'planApprovalResolved';
+  requestId: string;
+  taskId: string;
+  reviewer: 'user' | 'auto';
+  result: 'approve' | 'reject' | 'edit';
+  plan?: { summary?: string; steps?: string[]; files_to_edit?: string[]; trivial?: boolean };
+}
+
 export type ChatEvent =
   | ChatMessageEvent
   | ChatDeltaEvent
@@ -310,6 +338,9 @@ export type ChatEvent =
   | FolderAccessRequestEvent
   | BrowserFrameEvent
   | LocalExecutionApprovalRequestedEvent
-  | LocalExecutionApprovalResolvedEvent;
+  | LocalExecutionApprovalResolvedEvent
+  | EnvironmentIssueEvent
+  | PlanApprovalRequestedEvent
+  | PlanApprovalResolvedEvent;
 
 export type ServerMessage = ServerEnvelope | { type: 'session_write_access'; sessionId: string; writable: boolean };

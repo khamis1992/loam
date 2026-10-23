@@ -382,6 +382,34 @@ export class RunGraph {
           data: { approvalId: event.approvalId, tool: event.tool, summary: oneLine(event.summary, 300) },
           parent: state.lastId,
         }).id];
+      case "plan_approval_required":
+        // D4 suggest_plan: the plan waits for the user's decision, so it is an
+        // ask_user node just like the plan-mode approval card.
+        return [this.addNode(runId, state, {
+          type: "ask_user",
+          seed: `plan-approval:${event.planApprovalId}`,
+          status: "running",
+          data: {
+            approvalId: event.planApprovalId,
+            tool: event.tool,
+            summary: oneLine(event.summary, 300),
+            steps: event.steps,
+            filesToEdit: event.filesToEdit,
+            trivial: event.trivial,
+          },
+          parent: state.lastId,
+        }).id];
+      case "environment_issue":
+        // D17 report_environment_issue: a step cannot run because of the local
+        // environment. It is a terminal note, not a question: the agent records
+        // it and continues (rely on CI / skip the step).
+        return [this.addNode(runId, state, {
+          type: "note",
+          seed: `environment-issue:${state.seq}`,
+          status: "finished",
+          data: { message: oneLine(event.message, 400), ...(event.details ? { details: oneLine(event.details, 800) } : {}) },
+          parent: state.lastId,
+        }).id];
       case "compaction":
         return [this.addNode(runId, state, {
           type: "note",
