@@ -186,6 +186,23 @@ export class ChatSocket {
     } as unknown as ClientMessage);
   }
 
+  resolvePlanApproval(
+    sessionId: string,
+    requestId: string,
+    decision: 'approve' | 'reject' | 'edit',
+    plan?: { summary?: string; steps?: string[]; files_to_edit?: string[]; trivial?: boolean },
+  ) {
+    this.emit({
+      type: 'resolve_plan_approval',
+      id: shortUid(),
+      timestamp: Date.now(),
+      sessionId,
+      requestId,
+      decision,
+      ...(plan ? { plan } : {}),
+    } as unknown as ClientMessage);
+  }
+
   submitWorkspaceDirectoryAccess(
     sessionId: string,
     requestActionId: string,

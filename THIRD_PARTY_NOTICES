@@ -1,10 +1,13 @@
-THIRD_PARTY_NOTICES
+Third-party notices
 ===================
 
 jcode (MIT)
 -----------
+Portions of this codebase are adapted from jcode, a Rust coding agent.
+
+  https://github.com/1jehuang/jcode
+
 Copyright (c) 2025 Jeremy Huang
-Source: https://github.com/1jehuang/jcode
 
 Portions of Loam's context compaction are adapted from jcode's
 `src/compaction/compaction-core.rs`:
@@ -19,8 +22,6 @@ Portions of Loam's context compaction are adapted from jcode's
   compaction constants.
 
 Distributed under the MIT License.
-
-MIT License
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -39,3 +40,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Adapted files
+-------------
+  src/tools/fileLock.ts  — adapted from crates/jcode-app-core/src/tool/file_lock.rs
+                          (per-path async mutex for file-editing tools).
+  src/tools/files.ts     — the file_edit miss hints (findLineNumber,
+                          flexibleMatchHint, extractContext) and the all-or-
+                          nothing batch semantics are adapted from
+                          crates/jcode-app-core/src/tool/edit.rs.

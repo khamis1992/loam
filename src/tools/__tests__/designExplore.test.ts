@@ -7,7 +7,19 @@
  * (mocked here) without touching the real canvas tool.
  */
 import assert from "node:assert";
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
+
+// Must come before any import that evaluates `config.js`: `mergeAlwaysOnTools`
+// loads the tool registry and builds prompts, which read personalization from
+// the SQLite store under DATA_DIR, so without this redirect the test creates the
+// repository's real `data/manus.db`.
+import { cleanupIsolatedDataDir } from "../../test/isolation.js";
+import { closeDb } from "../../server/sqliteStore.js";
+
+after(() => {
+  closeDb();
+  cleanupIsolatedDataDir();
+});
 
 import {
   createDesignExploreTools,

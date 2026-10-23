@@ -628,11 +628,8 @@ export async function compressContext(
       signal,
     });
     summaryText = result.content.trim();
-    summaryUsage = {
-      promptTokens: result.usage.promptTokens,
-      completionTokens: result.usage.completionTokens,
-      durationMs: result.usage.durationMs,
-    };
+    // Spread so cache telemetry (cached/cache-write tokens) survives compaction.
+    summaryUsage = { ...result.usage };
   } catch (err) {
     if (isCancelledError(err) || signal?.aborted) throw err;
     // Step 2 failed: keep the cheap prune and never lose the protected head/tail.

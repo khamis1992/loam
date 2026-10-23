@@ -16,9 +16,11 @@ import { projectMemoryTools } from "../tools/projectMemoryTools.js";
 import { attachmentTools } from "../tools/attachments.js";
 import { symbolTools } from "../tools/symbols.js";
 import { searchTools } from "../tools/search.js";
+import { createWikiTools } from "../tools/wiki.js";
 import { pentestTools } from "../tools/pentest.js";
 import { mirofishTools } from "../tools/mirofish.js";
 import { createSubagentTools } from "../tools/subagents.js";
+import { createManagedSessionTools } from "../tools/managedSessionTools.js";
 import { webTools } from "../tools/web.js";
 import { browserTools, closeBrowser } from "../tools/browser.js";
 import { computerUseTools } from "../tools/computerUse.js";
@@ -38,6 +40,8 @@ import { createFrontierBridgeTools } from "../tools/frontierBridge.js";
 import { writeGate } from "../server/pending.js";
 import { createIntegrationTools } from "../tools/integrations.js";
 import { createGitWorkflowTools } from "../tools/gitWorkflowTools.js";
+import { createCiWatchTool } from "../tools/ciWatchTools.js";
+import { createPrReviewTool } from "../tools/prReviewTools.js";
 
 import { createPhaseTools } from "../tools/phaseTools.js";
 import { createFinishTools } from "../tools/finishTools.js";
@@ -79,6 +83,8 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createArtifactTools());
   registry.registerAll([planTool(), messageTool()]);
   registry.registerAll(createTodoTools());
+  // Repo wiki (D8): wiki_generate + ask_codebase. file_search is already registered above.
+  registry.registerAll(createWikiTools(ollama, cfg.model, registry));
   registry.registerAll(mirofishTools().map(tool => ({ ...tool, integration: true })));
 
   const embedder = new OllamaEmbedder(cfg.ollamaUrl, cfg.memory.model);
@@ -99,7 +105,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   // Always hand tools a WriteGate object; per-write gateActive() decides staging vs. direct apply.
   const gate = writeGate;
   if (memory) registry.registerAll(createMemoryTools(memory, { gate }));
-  registry.registerAll(createSkillTools({ gate }));
+  registry.registerAll(createSkillTools({ gate, ollama, projectRoot: cfg.workspace }));
   registry.registerAll(sessionTools);
   registry.registerAll(createLoamTools());
   registry.registerAll(createLoamServiceTools());
@@ -109,11 +115,18 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createMobileTools());
   if (cfg.screen.enabled) registry.registerAll(createScreenTools(screenLive, cfg));
   const preview = new PreviewService();
-  registry.registerAll(createPreviewTools(preview));
+  registry.registerAll(createPreviewTools(preview, cfg));
   registry.registerAll(createRorkTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createFrontierBridgeTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createSubagentTools(ollama, registry));
+  registry.registerAll(createManagedSessionTools({ ollama, parentRegistry: registry }));
   registry.registerAll(createGitWorkflowTools());
+  // D2: CI watch polls the same D1 PR provider's check-runs; the local provider
+  // serves scripted results, so no network is required in tests.
+  registry.register(createCiWatchTool());
+  // D15: pr_review runs the same provider's diff through the model, one changed
+  // file at a time, and returns deduplicated findings.
+  registry.register(createPrReviewTool({ modelClient: ollama }));
 
   registry.registerAll(createCodeSessionTools());
   registry.registerAll(createDocsLookupTools());

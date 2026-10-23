@@ -92,6 +92,7 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     },
     sessionLog: { enabled: false },
     subagent: { maxDepth: 2, maxConcurrentChildren: 4 },
+    skills: { autoSuggest: false, suggestModel: "" },
     ...overrides,
   };
 }

@@ -6,7 +6,7 @@ import { loadConfig, ROOT, DATA_DIR } from "./config.js";
 import { setLocalAuthUserDataDir } from "./security/localAuth.js";
 import { buildRuntime } from "./setup/runtime.js";
 import { type ToolTraceItem } from "./agent/reflect.js";
-import { loadPending } from "./server/pending.js";
+import { loadPending, writeGate } from "./server/pending.js";
 import { getSettings, loadSettings } from "./server/settings.js";
 import { createRunSignal, clearRunSignal, isCancelledError, cancelRunSignal, listRunningSignals, activateRunSignal } from "./server/runControl.js";
 import { agentSystemSuffix, getAgent, loadAgents } from "./server/agents.js";
@@ -17,32 +17,44 @@ import { createCompanionMemoryTools } from "./tools/companionMemoryTools.js";
 import { memoryContext, setMemoryEmbedder } from "./server/companionMemory.js";
 import { createCompanionTeamTools } from "./tools/companionTeamTools.js";
 import { setDelegationRunner } from "./server/companionTeam.js";
+import { managedSessions } from "./server/managedSessions.js";
 import { createApproval, waitForDecision } from "./server/approvals.js";
 import { approvalStableKey, getReplayDecision, matchApprovalRule, saveApprovalDecision, taskApprovalAuto, taskSandboxMode, taskPermissionMode } from "./server/approvalRules.js";
 import { resolveSandboxPolicy } from "./policy/riskTier.js";
 import { DEFAULT_PERMISSION_MODE, isPlanMode } from "./policy/permissionModes.js";
 import type { Tool } from "./tools/registry.js";
 import { createScratchpadTools } from "./tools/scratchpadTools.js";
+import { createEnvironmentIssueTools } from "./tools/environmentIssueTools.js";
 import { createDeepResearchTools } from "./tools/deepResearch.js";
 import { createBoardTools } from "./tools/boardTools.js";
 import { createInstructionHistoryTools } from "./tools/instructionTools.js";
 import { createAgentSpawnTools } from "./tools/agentSpawnTools.js";
 import { createBrowserOperatorTools } from "./tools/browserOperator.js";
+import { suggestSkillsAfterSession } from "./tools/skillSuggest.js";
 import { createWideResearchTool } from "./tools/wideResearch.js";
 import { createFindAndEditTools } from "./tools/findAndEdit.js";
 import { createGroupTools } from "./tools/groupTools.js";
 import { createBackendScaffoldTools } from "./tools/backendScaffold.js";
 import { createWebScaffoldTools } from "./tools/webScaffold.js";
 import { createDesignStudioTools } from "./tools/designStudio.js";
+import { createPlaybookTools } from "./tools/playbookTools.js";
 import { createOfficeEditTools } from "./tools/officeEditAgent.js";
 import { createVideoEditTools } from "./tools/videoEditAgent.js";
+import { createVideoStudioTools } from "./tools/videoStudio.js";
 import { createDeployTools } from "./tools/deploy.js";
 import { createDesignExploreTools } from "./tools/designExplore.js";
+import { createDesignLintTools } from "./tools/designLint.js";
+import { createDesignAssetsTools } from "./tools/designAssets.js";
+import { createDesignBriefTools } from "./tools/designBrief.js";
+import { createDesignAutofixTools } from "./tools/designAutofix.js";
+import { createDesignCritiqueTools } from "./tools/designCritique.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
 import { createWorkflowTools } from "./tools/workflow.js";
-import { applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
+import { applyPlanApprovalGate, applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
+import { planQuickEditRoute } from "./agent/quickEdit.js";
+import { SIDE_CHAT_READ_ONLY_TOOLS } from "./agent/sideChat.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
 import { publishTaskEvent } from "./server/streams.js";
 import { videoStudioRelay } from "./server/videoStudioRelay.js";
@@ -50,6 +62,7 @@ import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { runAgent } from "./agent/loop.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
 import type { Emit } from "./agent/events.js";
+import { applyRunEvent, beginRun } from "./agent/runGraphAdapter.js";
 import { OllamaClient } from "./ollama.js";
 import { flexCredentials } from "./server/modelTiers.js";
 import { startServer, type RunTaskOptions } from "./server/http.js";
@@ -74,6 +87,10 @@ import { requiresReplayConfirmation, type SavedRun } from "./server/recovery.js"
 import { acquireRuntimeLease, releaseRuntimeLease, backupDatabase } from "./server/sqliteStore.js";
 import { claimRunLease, releaseRunLease, startLeaseHeartbeat, type LeaseHeartbeat, type RunLease } from "./server/runLease.js";
 import { recordTaskUsage } from "./server/credits.js";
+// D19 session runtime: sleep/wake lifecycle + per-session compute budget.
+import { SessionRuntime, DEFAULT_IDLE_MINUTES, DEFAULT_STEP_LIMIT, DEFAULT_TOKEN_LIMIT } from "./server/sessionRuntime.js";
+import { browserSessionFor } from "./tools/browser.js";
+import { killAllSessions } from "./tools/pty.js";
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
@@ -118,6 +135,7 @@ async function main(): Promise<void> {
 
   const rt = await buildRuntime(cfg);
   rt.registry.registerAll(createScratchpadTools());
+  rt.registry.registerAll(createEnvironmentIssueTools());
   rt.registry.registerAll(createBoardTools());
   rt.registry.registerAll(createInstructionHistoryTools());
   rt.registry.registerAll(createAgentSpawnTools());
@@ -129,14 +147,32 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createBackendScaffoldTools());
   rt.registry.registerAll(createWebScaffoldTools());
   rt.registry.registerAll(createDesignStudioTools());
+  rt.registry.registerAll(createPlaybookTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createOfficeEditTools());
   rt.registry.registerAll(createVideoEditTools());
+  rt.registry.registerAll(createVideoStudioTools({ relay: videoStudioRelay }));
   rt.registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview: rt.preview }));
   rt.registry.registerAll(createDesignExploreTools());
+  rt.registry.registerAll(createDesignLintTools());
+  rt.registry.registerAll(createDesignAssetsTools());
+  rt.registry.registerAll(createDesignBriefTools({ ollama: rt.ollama }));
+  rt.registry.registerAll(createDesignAutofixTools());
+  rt.registry.registerAll(createDesignCritiqueTools(rt.preview, { ollama: rt.ollama }));
   rt.registry.registerAll(createConnectorTools());
   rt.registry.registerAll(createWorkflowTools({ ollama: rt.ollama, registry: rt.registry }));
   rt.registry.registerAll(createPlanTools());
   const { ollama, registry, memory, mcp } = rt;
+
+  // D19 session runtime: one manager owns both the sleep lifecycle and the
+  // per-session compute budget. Hooks release real resources (the browser
+  // context for this task and its pty terminals) only AFTER the session state
+  // has been persisted, and wake restores the browser on the next message.
+  const sessionRuntime = new SessionRuntime({
+    idleMinutes: cfg.session?.idleMinutes || DEFAULT_IDLE_MINUTES,
+    stepLimit: cfg.session?.stepLimit || DEFAULT_STEP_LIMIT,
+    tokenLimit: cfg.session?.tokenLimit || DEFAULT_TOKEN_LIMIT,
+  });
+  sessionRuntime.start();
 
   const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal; lease?: RunLease }): Promise<{ taskId: string; text: string }> => {
     const { prompt, emit } = opts;
@@ -162,6 +198,24 @@ async function main(): Promise<void> {
     // Announce the id immediately so the UI can cancel while the run is alive.
     emit({ type: "task", taskId: task });
 
+    // D19 session runtime: the run starts, so the session is active and its
+    // budget is live. Hooks release this task's browser context and pty
+    // terminals when it later sleeps, after the state has been persisted.
+    void sessionRuntime.markActive(task);
+    sessionRuntime.setHooks(task, {
+      persist: () => { saveRun(task, opts.savedRun, opts.lease); },
+      release: () => {
+        void closeBrowserSession(browserSessionFor({ cfg, workspace: opts.savedRun.workspace, emit: () => {}, taskId: task }));
+        // D19: reclaim this session's terminals. An exited session is already
+        // gone from the registry, so only live ones need killing.
+        killAllSessions();
+      },
+      restore: () => {
+        // The browser is recreated lazily by the next browser_* tool call and
+        // pty sessions are created on demand by pty_start; nothing to do here.
+      },
+    });
+
     const startedAt = Date.now();
     const promptHash = hashPrompt(effectivePrompt);
 
@@ -181,7 +235,13 @@ async function main(): Promise<void> {
     const trace: ToolTraceItem[] = [];
     const lastArgs = new Map<string, unknown>();
     let doneEvent: Parameters<Emit>[0] | undefined;
+    // Neo run graph (N1): record the agent's events as nodes of the task's graph.
+    // Off by config, and recording must never break the task, so the adapter
+    // swallows and logs any failure instead of throwing into the run.
+    const recordGraph = cfg.runGraph?.enabled !== false;
+    if (recordGraph) beginRun(task, effectivePrompt || "");
     const wrappedEmit: Emit = (event) => {
+      if (recordGraph) applyRunEvent(task, event);
       if (sessionLog) {
         try {
           void sessionLog.append(event.type, event).catch((err) => {
@@ -280,6 +340,9 @@ async function main(): Promise<void> {
       effectiveMode === "ask"
         ? "وضع السؤال (Ask): أجب بالقراءة والتحليل فقط — لا تعدّل الملفات، لا تنفّذ أوامر نظام، ولا تبدأ مهام تنفيذية؛ إن أحبّت اقترح الخطوات دون تنفيذها."
         : undefined;
+    const sideChatSuffix = opts.savedRun.sideChat
+      ? "سؤال جانبي (Side chat): أجب عن سؤال المستخدم بالقراءة والتحليل فقط. المهمة الرئيسية ما زالت تعمل؛ لا تعدّل أي ملف، لا تنفّذ أوامر، ولا تتدخّل في سير المهمة."
+      : undefined;
 
     const recordTelemetry = (status: "done" | "error", extra: { model: string; steps: number; usage: { promptTokens: number; completionTokens: number }; error?: string }): void => {
       appendTelemetry({
@@ -304,7 +367,7 @@ async function main(): Promise<void> {
     // execution queue serializes browser-lane runs among themselves, so a
     // parallel own-device/office run never kills another run's browser/preview.
     const usesBrowser = capabilities.allow.some((t) => t.startsWith("browser_"));
-    const usesPreview = capabilities.allow.some((t) => t === "preview_serve" || t === "preview_stop" || t === "preview_status");
+    const usesPreview = capabilities.allow.some((t) => t === "preview_serve" || t === "preview_stop" || t === "preview_status" || t === "preview_screenshot");
     try {
       if (usesBrowser) {
         // Companion browser sessions PERSIST between runs (durable logins);
@@ -324,6 +387,9 @@ async function main(): Promise<void> {
         reason: "selected work mode",
       });
       const agentSuffix = agent ? agentSystemSuffix(agent) : undefined;
+      // Quick-edit route: a narrow follow-up edit runs on the fast model with a
+      // targeted-edit instruction; larger work keeps the base model.
+      const quickEditRoute = planQuickEditRoute(effectiveCfg, effectivePrompt);
       // Provenance-aware index summary: a bounded digest of long-term memory so
       // the agent knows what it already knows without a tool call.
       const memoryIndexSummary = memory && memory.count > 0 ? memory.indexSummary(8) : undefined;
@@ -333,7 +399,8 @@ async function main(): Promise<void> {
         workModeDefinition.policy,
         memoryContextSuffix,
         memoryIndexSummary,
-        agentSuffix, askModeSuffix,
+        agentSuffix, askModeSuffix, sideChatSuffix,
+        quickEditRoute.suffix,
       ].filter(Boolean).join("\n\n");
       // The gateway's resolved allowlist is the base tool set for this run: mode ∪
       // work-mode grants − revoked services − agent service/tool denials. Always-on
@@ -342,8 +409,15 @@ async function main(): Promise<void> {
       // device_* tools are bound to the companion's device; companion-memory tools
       // are bound to this agent in every mode.
       const dynamicAllow = new Set(capabilities.allow);
-      const runAllow = mergeAlwaysOnTools({ resolvedAllow: [...capabilities.allow, ...connectedConnectorToolNames(agent?.disabledTools)], registeredTools: registry.names(), disabledTools: agent?.disabledTools });
-      const agentTools = registry.forAllowlist(runAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name)));
+      const baseRunAllow = mergeAlwaysOnTools({ resolvedAllow: [...capabilities.allow, ...connectedConnectorToolNames(agent?.disabledTools)], registeredTools: registry.names(), disabledTools: agent?.disabledTools });
+      // Side-chat ("/btw question") runs are read-only: even when a mutating
+      // tool is granted by the mode/work mode, the side-chat question may never
+      // modify files, run commands or drive the browser while the main run lives.
+      const runAllow = opts.savedRun.sideChat
+        ? baseRunAllow.filter((name) => SIDE_CHAT_READ_ONLY_TOOLS.includes(name))
+        : baseRunAllow;
+      const runAllowSet = new Set(runAllow);
+      const agentTools = registry.forAllowlist(runAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
 
       // Sensitive host-input actions need an explicit user decision first (section 18).
       // MF4 (option 14): the gate resolves each request idempotently — replay of a
@@ -392,6 +466,12 @@ async function main(): Promise<void> {
       if (isPlanMode(taskPermissionMode(task) ?? DEFAULT_PERMISSION_MODE)) {
         applyPlanModeGate(agentTools, { taskId: task, workspaceRoot: effectiveCfg.workspace });
       }
+      // Pending plan approval (D4): while `suggest_plan` has a plan awaiting the
+      // user's decision, every mutating tool call is refused. `suggest_plan`
+      // itself stays available so the model can re-present a plan after an edit.
+      // The wrapper re-checks the pending store on each call, so once the plan
+      // is approved later edits in the same run proceed.
+      applyPlanApprovalGate(agentTools, { taskId: task, workspaceRoot: effectiveCfg.workspace });
       // Sandbox gate (risk-tier approval): config default < per-task persisted
       // override < explicit approved override. The resolved mode is rendered into
       // the system prompt so the model knows what it may do without asking.
@@ -413,18 +493,25 @@ async function main(): Promise<void> {
         memories,
         ...(suffix ? { systemSuffix: suffix } : {}),
         ...(effortMaxSteps ? { maxSteps: effortMaxSteps } : {}),
+        model: quickEditRoute.model,
         signal: runSignal,
         taskId: task,
         sandboxMode: sandboxPolicy.mode,
+        // D19 compute budget: shared with the UI badge so the counters and the
+        // badge always agree, and the run stops when the ceiling is hit.
+        budget: sessionRuntime.getBudget(task),
       };
       const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
-        ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint,
+        ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint, lifecycleHooks: true,
         saveCheckpoint: (checkpoint) => { opts.savedRun.checkpoint = checkpoint; saveRun(task, opts.savedRun, opts.lease); },
       }) : await runAgent(agentOpts);
       // The orchestrator can swallow an abort (it reports a failed step instead),
       // so treat a cancelled run explicitly — never as success.
       if (runSignal.aborted) throw new Error("cancelled by user");
       if (result.verified !== true) throw new Error("task incomplete: mandatory final verification missing");
+      // D19: the run stopped working and is now waiting on the user. The
+      // session may sleep after the idle threshold and be woken by a message.
+      sessionRuntime.markIdle(task);
       completeTaskRun(task, result.text, result.model, opts.lease);
       recordTaskUsage(task, result.usage); // OPD #9: one mock usage entry per completed task
       if (doneEvent) {
@@ -435,6 +522,19 @@ async function main(): Promise<void> {
       // Turn boundary: drain pending appends and fsync the session log.
       await sessionLog?.flush();
       recordTelemetry("done", { model: result.model, steps: result.steps, usage: { promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens } });
+      // Repo-local skill auto-suggest: after a successful session, propose a new
+      // SKILL.md from the observed setup/verify steps. Staged for approval only.
+      if (effectiveCfg.skills.autoSuggest) {
+        void suggestSkillsAfterSession({
+          cfg: effectiveCfg,
+          ollama: runOllama,
+          projectRoot: effectiveCfg.workspace,
+          prompt: effectivePrompt,
+          finalText: result.text,
+          trace,
+          gate: writeGate,
+        }).catch((err) => log.warn(`skill suggest failed: ${String(err)}`));
+      }
       // Actor-critic reflection memory: non-pass verdicts feed the learning review and the audit log.
       const notable = verdicts.filter((v) => v.verdict !== "pass");
       if (notable.length > 0) {
@@ -482,6 +582,9 @@ async function main(): Promise<void> {
     const previous = opts.taskId ? getTask(opts.taskId) : undefined;
     if (opts.taskId && !previous) throw new Error("task not found");
     if (opts.taskId && executionQueue.has(opts.taskId)) throw new Error("task already queued or running");
+    // D19: a new user message wakes a sleeping session and restores its
+    // released resources before the run starts.
+    if (opts.taskId) await sessionRuntime.onUserMessage(opts.taskId);
     let saved: SavedRun;
     if (opts.resume) {
       const pending = previous ? getSavedRun(previous.id) : undefined;
@@ -506,6 +609,7 @@ async function main(): Promise<void> {
         projectId, agentId, mode: getLoamMode(opts.mode ?? previous?.mode ?? agent?.mode).id, effort: opts.effort ?? agent?.effort ?? "",
         workMode: normalizeWorkMode(opts.workMode ?? agent?.workMode),
         orchestrated: cfg.orchestrator.enabled, started: false,
+        sideChat: opts.sideChat === true,
       };
     }
     const task = previous ?? createTask(saved.prompt, opts.title, saved.projectId, saved.agentId);
@@ -526,7 +630,7 @@ async function main(): Promise<void> {
     });
     // Browser runs no longer lock: each run browses in its own isolated session.
     const locks: string[] = [];
-    if (laneCaps.allow.some((t) => t === "preview_serve" || t === "preview_stop" || t === "preview_status")) locks.push("preview");
+    if (laneCaps.allow.some((t) => t === "preview_serve" || t === "preview_stop" || t === "preview_status" || t === "preview_screenshot")) locks.push("preview");
     // user_device runs share the single user-desktop resource; parallel runs must not fight over mouse/keyboard.
     // EVERY computer_* tool touches the same desktop, so the lock covers them all.
     if (laneCaps.allow.some((t) => t.startsWith("computer_"))) locks.push("user-desktop");
@@ -564,6 +668,8 @@ async function main(): Promise<void> {
   // Bridge for src/server/routes/retryLast.ts: the route module cannot receive
   // runTask through startServer deps, so it reads this global per request.
   (globalThis as { __loamRunTask?: typeof runTask }).__loamRunTask = runTask;
+  // Tool registry bridge for route modules that narrow tool sets (D16 side chat).
+  (globalThis as { __loamRegistry?: unknown }).__loamRegistry = registry;
 
   // Companion-to-companion delegation: the delegate task is created and queued
   // under the TARGET companion; we return its id immediately — the execution
@@ -576,6 +682,32 @@ async function main(): Promise<void> {
     void runTask({ taskId: task.id, prompt: req.brief, agentId: req.toAgentId, ...(req.mode ? { mode: req.mode } : {}), emit: () => {} })
       .catch((error) => log.warn(`delegation run ${task.id}: ${String(error)}`));
     return Promise.resolve({ taskId: task.id, queued: true });
+  });
+
+  // D12: managed child sessions wake the coordinator by event, not polling.
+  // A child finishing (or asking for input) enqueues a fresh run for the parent
+  // agent with a synthesized prompt, so the coordinator resumes exactly once.
+  managedSessions.onAnyCoordinatorWake((event) => {
+    if (event.type === "needs_input") {
+      void runTask({
+        prompt: `[managed child ${event.childId} needs input]\n${event.question ?? "(no question provided)"}\nAnswer it with managed_child_answer.`,
+        agentId: event.parentAgentId,
+        emit: () => {
+          /* triggered runs are persisted in db, no SSE consumer */
+        },
+      }).catch((error) => log.warn(`managed child input wake run: ${String(error)}`));
+      return;
+    }
+    const summary = event.status === "done"
+      ? (event.output || "(no output)")
+      : `status=${event.status}${event.error ? `: ${event.error}` : ""}`;
+    void runTask({
+      prompt: `[managed child ${event.childId} finished: ${event.status}]\n${summary}`,
+      agentId: event.parentAgentId,
+      emit: () => {
+        /* triggered runs are persisted in db, no SSE consumer */
+      },
+    }).catch((error) => log.warn(`managed child wake run: ${String(error)}`));
   });
 
   const server = await startServer({
@@ -674,6 +806,9 @@ async function main(): Promise<void> {
     stopServiceWatch();
     stopUrlWatchers();
     if (evalTimer) clearInterval(evalTimer);
+    // D19: stop the sleep sweep (records survive in the store; the sweep is
+    // only a timer, and it must not fire during shutdown).
+    sessionRuntime.close();
     executionQueue.stop();
     for (const id of listRunningSignals()) cancelRunSignal(id);
     await rt.dispose();

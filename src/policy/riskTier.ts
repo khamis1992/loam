@@ -128,6 +128,7 @@ const READ_TOOL_NAMES = new Set<string>([
   "think",
   "plan",
   "plan_exit",
+  "suggest_plan",
   "finish",
   "message",
   "phase_set",
@@ -176,6 +177,7 @@ const WRITE_TOOL_NAMES = new Set<string>([
   "office_export",
   "office_import",
   "propose_instructions_update",
+  "video_studio",
 ]);
 
 const EXEC_TOOL_NAMES = new Set<string>([
@@ -195,6 +197,7 @@ const EXEC_TOOL_NAMES = new Set<string>([
   "web_scaffold",
   "preview_serve",
   "preview_stop",
+  "preview_screenshot",
   "screen_stream_start",
   "screen_stream_stop",
   "swarm_run",

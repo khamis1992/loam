@@ -48,6 +48,7 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     compression: { enabled: false, thresholdPercent: 0.5, protectLead: 3, protectTail: 20, targetRatio: 0.2, bufferTokens: 20000, reattachFiles: 5, reattachFileChars: 4000, criticalThresholdPercent: 0.95, recentTurnsToKeep: 10, minTurnsToKeep: 2, emergencyToolResultMaxChars: 4000, model: "", contextWindow: {} },
     sessionLog: { enabled: false },
     subagent: { maxDepth: 2, maxConcurrentChildren: 4 },
+    skills: { autoSuggest: false, suggestModel: "" },
     ...overrides,
   };
 }
