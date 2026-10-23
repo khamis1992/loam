@@ -400,60 +400,68 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
     await runFinalRepair(pendingFinalRepair);
   }
 
-  while (!failure && lastText.trim().length > 0) {
-    guard();
-    const v = await verifyFinal({
-      acceptanceGuard,
-      independentGuard, independentRequest, saveIndependentAcceptance: pendingUsage => checkpoint(false, false, pendingUsage),
-      history: o.history,
-      cfg: o.cfg,
-      ollama: o.ollama,
-      request: o.prompt,
-      goal: plan.goal,
-      finalText: lastText,
-      completedSteps: completed,
-      trace: allTrace,
-      tools: o.tools,
-      emit: o.emit,
-      ...(oc.verifierModel ? { model: oc.verifierModel } : {}),
-      ...(o.signal ? { signal: o.signal } : {}),
-    ...(o.taskId ? { taskId: o.taskId } : {}),
-    });
-    addUsage(usage, v.usage);
-    totalSteps += 1;
-    o.verdicts?.push({ scope: "final", verdict: v.verdict, reason: v.reason, fixes: v.fixes });
-    o.emit({ type: "verify", verdict: v.verdict, reason: v.reason });
-    if (v.verdict === "pass" && v.finalAnswer) lastText = v.finalAnswer;
-
-    if (v.verdict !== "pass") {
-      if (v.unavailable) throw new Error(`Independent verification unavailable; preserve output and resume verification when the environment is ready: ${v.reason}`);
-      if (finalRepairAttempts >= 2) throw new Error(`orchestrator: task incomplete: final verification still failed: ${v.reason}`);
-      finalRepairAttempts++;
-      o.emit({ type: "revise", id: "final", attempt: finalRepairAttempts, fixes: v.fixes });
+  // A Stop hook may force the run to keep working after the first verified
+  // answer. That replacement answer has to be verified again before the run may
+  // finish, so a block loops back into verification instead of returning at once.
+  let stopContinuation = false;
+  for (;;) {
+    while (!failure && lastText.trim().length > 0) {
       guard();
-      finalRepairUsed = true;
-      pendingFinalRepair = finalFixPrompt(o, plan.goal, lastText, v);
-      checkpoint(true);
-      await runFinalRepair(pendingFinalRepair);
-    } else break;
-  }
+      const v = await verifyFinal({
+        acceptanceGuard,
+        independentGuard, independentRequest, saveIndependentAcceptance: pendingUsage => checkpoint(false, false, pendingUsage),
+        history: o.history,
+        cfg: o.cfg,
+        ollama: o.ollama,
+        request: o.prompt,
+        goal: plan.goal,
+        finalText: lastText,
+        completedSteps: completed,
+        trace: allTrace,
+        tools: o.tools,
+        emit: o.emit,
+        ...(oc.verifierModel ? { model: oc.verifierModel } : {}),
+        ...(o.signal ? { signal: o.signal } : {}),
+      ...(o.taskId ? { taskId: o.taskId } : {}),
+      });
+      addUsage(usage, v.usage);
+      totalSteps += 1;
+      o.verdicts?.push({ scope: "final", verdict: v.verdict, reason: v.reason, fixes: v.fixes });
+      o.emit({ type: "verify", verdict: v.verdict, reason: v.reason });
+      if (v.verdict === "pass" && v.finalAnswer) lastText = v.finalAnswer;
 
-  if (failure) {
-    throw new Error(`orchestrator: task incomplete: ${failure}`);
-  }
-  // Stop: a hook may force the orchestrated run to keep working instead of
-  // finishing. One bounded continuation round satisfies the hook; a second
-  // block ends the run rather than looping forever.
-  if (o.lifecycleHooks === true) {
-    // One continuation round per iteration, bounded by STOP_CONTINUATION_ROUNDS
-    // so a hook that always blocks ends the run instead of looping forever.
+      if (v.verdict !== "pass") {
+        if (v.unavailable) throw new Error(`Independent verification unavailable; preserve output and resume verification when the environment is ready: ${v.reason}`);
+        if (finalRepairAttempts >= 2) throw new Error(`orchestrator: task incomplete: final verification still failed: ${v.reason}`);
+        finalRepairAttempts++;
+        o.emit({ type: "revise", id: "final", attempt: finalRepairAttempts, fixes: v.fixes });
+        guard();
+        finalRepairUsed = true;
+        pendingFinalRepair = finalFixPrompt(o, plan.goal, lastText, v);
+        checkpoint(true);
+        await runFinalRepair(pendingFinalRepair);
+      } else break;
+    }
+
+    if (failure) {
+      throw new Error(`orchestrator: task incomplete: ${failure}`);
+    }
+
+    // Stop: a hook may force the orchestrated run to keep working instead of
+    // finishing. The continuation is bounded so a hook that always blocks still
+    // ends the run, and its revised answer is re-verified by looping back.
+    if (o.lifecycleHooks !== true || stopContinuation) break;
+    let continued = false;
     for (let round = 0; round < STOP_CONTINUATION_ROUNDS; round++) {
       const stop = await runLifecycleHooks("Stop", "", { stopReason: "completed" }, o.cfg.workspace);
       if (!stop.blocked) break;
       o.emit({ type: "error", message: `Stop hook blocked completion: ${stop.message}` });
       if (lastText.trim().length === 0) break;
       await runFinalRepair(stopContinuePrompt(o, stop.message, stop.additionalContext));
+      continued = true;
     }
+    if (!continued) break;
+    stopContinuation = true;
   }
 
   return finish(lastText);

@@ -235,3 +235,34 @@ test("SessionEnd reports cancelled for an aborted orchestrated run", async () =>
   const reason = fs.readFileSync(path.join(workspace, ".orch-session-end-reason"), "utf8").trim();
   assert.equal(reason, "cancelled", "SessionEnd must not claim a completed session");
 });
+
+test("a Stop continuation answer is verified again before the run finishes", async () => {
+  const workspace = makeWorkspace();
+  // Blocks on the first Stop and approves afterwards, so the run reaches the
+  // continuation exactly once.
+  const fixture = writeFile(
+    workspace,
+    "orch_stop_once.js",
+    `const fs = require('fs');\nconst path = require('path');\nconst ws = process.env.MANUS_WORKSPACE || process.cwd();\nconst flag = path.join(ws, '.orch-stop-blocked');\nif (fs.existsSync(flag)) { console.log('{}'); }\nelse { fs.writeFileSync(flag, '1'); console.log(JSON.stringify({ decision: 'block', reason: 'verify the revised answer' })); }\n`,
+  );
+  writeHooks(workspace, { Stop: [{ matcher: "", command: command(fixture), timeoutMs: 10000 }] });
+
+  const { client, counts } = fakeOllama((role) => {
+    if (role === "planner") return { content: planJson() };
+    if (role === "worker") return { content: "revised answer" };
+    if (role === "critic") return { content: verdictJson("pass", "step criteria met") };
+    return { content: verdictJson("pass", "criteria met") };
+  });
+
+  const result = await runOrchestratedAgent({
+    cfg: testConfig(workspace),
+    ollama: client,
+    tools: new ToolRegistry(),
+    prompt: "echo hi",
+    lifecycleHooks: true,
+    emit: () => {},
+  });
+
+  assert.equal(counts.final, 2, "the revised answer must be verified a second time");
+  assert.equal(result.text, "revised answer", "the re-verified answer is returned");
+});
