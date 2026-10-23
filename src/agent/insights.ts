@@ -93,7 +93,7 @@ export interface InsightsInput {
 /** Default idle gap that counts as a stall (90s). */
 export const DEFAULT_STALL_THRESHOLD_MS = 90_000;
 
-const MEMORY_TOOLS = new Set(["memory_store", "memory_search", "memory_list", "memory_forget", "memory_update"]);
+const MEMORY_TOOLS = new Set(["memory_store", "memory_search", "memory_list", "memory_forget", "memory_update", "recall"]);
 const SKILL_TOOLS = new Set(["skill_list", "skill_view", "skill_create", "skill_patch", "skill_search", "skill_install"]);
 
 interface ModelPrice {
