@@ -798,6 +798,12 @@ exact final tree, which is why the node-suite figure is 2971 rather than 2970 (M
 test). `git merge-base --is-ancestor manus-parity HEAD` exits 0, so the branch is fully
 current with parity as of `735e06b`.
 
+Parity then advanced once more to `3c86ecf` ("merge `khamis1992/neo-n9` (N9) into
+manus-parity"), merged here as `1424284`. That tip adds **only** 260 lines to `.jdone`; it
+changes no source file, so the gated tree is byte-identical to the one the table above was
+measured on (`git diff 2a9eec4 HEAD -- src packages` is empty). The focused N5 suites were
+re-run anyway on the merged tree: 76 tests, 76 pass, 0 fail.
+
 ### Correction to the report above
 
 An earlier revision cited a combined run that included `src/agent/__tests__/loop.test.ts`.
