@@ -1,3 +1,84 @@
+O1 complete: durable append-only event log (`src/protocol/eventLog.ts` +
+`src/protocol/__tests__/eventLog.test.ts`), implemented from BUILD_SPEC §6.1 and
+committed as `83b6b8a`. This session fixed the false-positive `arabic` gate and
+merged the latest manus-parity.
+
+## The failure that was fixed
+
+`.jgatefail.txt` reported that added lines contained the mojibake marker (three ASCII
+question marks in a row), i.e. Arabic text corrupted by shell writes, and asked for the
+correct Arabic to be restored using file tools only. The line it quoted is the
+acceptance criterion itself (`.jtask.md:27`), not code.
+
+The previous session ran a shell `findstr` sweep over the worktree and then committed
+only the two source files, leaving the tree dirty. The gate round-2 scan therefore
+picked up that shell artifact as an "added line". No Arabic was ever corrupted: the
+Arabic fixture in the test file round-trips byte-exactly (see below).
+
+## Root cause and what was done
+
+1. **False positive on the `arabic` gate.** The gate scans added diff lines for the
+   three-question-mark mojibake marker. The O1 diff contains none:
+   `src/protocol/__tests__/eventLog.test.ts` stores its Arabic fixture as valid UTF-8
+   (codepoints 645 631 62d 628 627; no BOM, no U+FFFD, no cp1252 mojibake sequence),
+   and `npm run check:encoding` exits 0 ("no BOM, no mojibake, all JSON valid").
+   Verified mechanically:
+   - `git diff manus-parity...HEAD` piped through `findstr /r "^\+.*<marker>"` -> no matches (0 of 341 added lines).
+   - runner-equivalent PowerShell guard (`git diff manus-parity...HEAD` + `git diff`,
+     filtered to `^\+[^+]` containing the marker) -> COUNT=0.
+   No file content was changed to satisfy the gate and no test was weakened; the
+   false positive is gone because the shell-echo artifact is no longer in the tree.
+2. **Dirty tree.** The worktree had `.jdone` deleted and untracked scratch files under
+   `tmp/` (some of which echoed the gate failure text, and one of which literally
+   contained the marker as part of that echoed text). Those scratch files are removed.
+3. **Out-of-date with manus-parity.** The branch was 1 commit ahead of parity's tip
+   `1cbf726` (H0). `git merge manus-parity` applied cleanly with the `ort` strategy
+   (no conflicts) and brought in `docs/re/harness2-H0.md` plus the tracked `.jdone`
+   rollup. Committed as merge `63dfff1`. `git rev-list --left-right --count
+   manus-parity...HEAD` = `0  2`, and `git merge manus-parity` now reports
+   "Already up to date."
+
+## Acceptance criteria (all covered by passing automated tests)
+
+| Plan row acceptance | Covered by |
+|---|---|
+| gap-free seq 1..N | `allocates gap-free sequence numbers 1..N per session`, `keeps sequences independent per session` |
+| idempotent append returns same seq | `is idempotent: the same idempotency key returns the same event`, `scopes idempotency keys to their session` |
+| UPDATE throws 'immutable' | `rejects UPDATE on session_events` |
+| DELETE throws 'immutable' | `rejects DELETE on session_events` |
+| purge works only through `purgeSession` | `purgeSession deletes rows, and only that session's rows` (also asserts the escape hatch is cleared afterwards) |
+
+Additional coverage: persistence across a restart, unknown `kind` and circular-payload
+rejection, the read helpers (`after`, `lastOfKind`, `headSeq`, `seqOfId`,
+`sessionIds`), and explicit `id`/`turnId` fields. The test points `LOAM_DATA_DIR` at
+a throwaway temp dir before importing the store, so no real data is touched.
+
+## Gates (all run from the worktree root on the merged tree)
+
+- `npx tsc --noEmit`                              -> exit 0
+- `npm run build:server`                          -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`           -> exit 0 (compiled, 25/25 static pages)
+- `node --import tsx --test src/protocol/__tests__/eventLog.test.ts`
+                                                  -> tests 11, pass 11, fail 0
+- `npm run check:encoding`                        -> OK (no BOM, no mojibake, all JSON valid)
+- `git diff manus-parity...HEAD` contains 0 lines with the mojibake marker
+
+Test commands:
+
+    npx tsc --noEmit
+    npm run build:server
+    (cd packages/web && npx next build)
+    node --import tsx --test src/protocol/__tests__/eventLog.test.ts
+    npm run check:encoding
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or
+skipped. No Arabic text was added or corrupted; the only Arabic in the change set
+is the pre-existing fixture in the test, still valid UTF-8.
+
+---
+
+## Preserved: manus-parity rollup (H0 + O0 + D2 + D10 + D19 + D17 + D4 + N20)
+
 H0 complete: read-only recon for the Harness2 correction-learning workstream. No source file was touched; no agent instruction was changed (nothing to propose).
 
 ## What was produced
