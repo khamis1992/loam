@@ -82,7 +82,7 @@ Files
 Merge with manus-parity: resolved keeping both sides
 ----------------------------------------------------
 `.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. The merge was
-run three times, because `refs/heads/manus-parity` kept advancing while each merge was being
+run four times, because `refs/heads/manus-parity` kept advancing while each merge was being
 resolved (parity merges land continuously on this branch):
 
   1. merge of parity tip `a8130cc` (c20) -> committed as `4c54d5c`. Conflict:
@@ -91,21 +91,21 @@ resolved (parity merges land continuously on this branch):
   2. merge of parity tip `35c8470` (V11 design_critique) -> committed as `b5c7da1`.
      Conflict: `THIRD_PARTY_NOTICES` again. Resolved keeping both sides: J5's
      `commandRisk` entry AND parity's new `src/tools/files.ts` entry. (A parity tip
-    `6699257`, H1, landed during this merge and is already merged.)
+     `6699257`, H1, landed during this merge and is already merged.)
   3. merge of parity tip `b073763` (O1 append-only event log) -> committed as `88e51c1`.
      Conflict: `.jdone` (add/add): both sides prepended a report at the same top-of-file
      anchor. Resolved keeping both sides: J5's report, then parity's O1 report, then the
      shared preserved rollup, each kept in full.
+  4. merge of parity tip `3fc4529` (F5 videoStudioState) -> committed as `27f99c3`.
+     No conflict: parity's new F5 files are disjoint from J5's (auto-merged).
 
-A third parity tip (`6699257`, H1) landed during the second merge and is now already
-merged (the second merge's `MERGE_HEAD` was `6699257`). No parity commit at any tip
-touches a J5 source file (`src/policy/commandRisk`, `src/policy/riskTier.ts`,
-`src/tools/shell.ts`); the only ever-conflicting files were `THIRD_PARTY_NOTICES`
+No parity commit at any tip touches a J5 source file (`src/policy/commandRisk`,
+`src/policy/riskTier.ts`, `src/tools/shell.ts`); the only ever-conflicting files were `THIRD_PARTY_NOTICES`
 (merges 1-2) and `.jdone` (merge 3).
 
 Merge gate condition verified on the final tree:
   `git merge-base --is-ancestor manus-parity HEAD`  -> exit 0
-  `git rev-list --left-right --count manus-parity...HEAD` -> `0 8`
+  `git rev-list --left-right --count manus-parity...HEAD` -> `0 10`
   `git diff --name-only manus-parity HEAD` -> the 15 J5 files above, and nothing else
   (so the tree is parity + J5, with no parity change lost)
 
