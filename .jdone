@@ -909,3 +909,38 @@ The four ACs in `.jtask.md` map to concrete assertions:
   --others --exclude-standard` empty, after running the live server smoke (which
   wrote only to `%TEMP%`). HEAD `3dc12b2` at the time these checks ran; `.jdone` is
   appended below and committed. `git diff --quiet HEAD -- .jdone` clean.
+
+## Independent re-validation (2026-10-23, ninth pass)
+
+This pass checked history completeness, the one added type declaration, a secret
+scan over the D3-added source, and the freshly rebuilt artifact.
+
+- **Complete parity reachability.** `git rev-list --count manus-parity` = 951
+  commits; `git rev-list --count manus-parity --not HEAD` = **0**, so every parity
+  commit is reachable from HEAD and nothing parity shipped is missing. The branch is
+  parity plus 14 commits (`HEAD --not manus-parity` = 14). `git merge-base
+  --is-ancestor 03f8aef HEAD` exits 0 (parity tip is an ancestor).
+- **Added type declaration.** `src/types/js-yaml.d.ts` declares a minimal ambient
+  `module "js-yaml"` with `load`/`dump`/`safeLoad`/`safeDump`, matching how
+  `envSnapshot.ts` uses it. `npx tsc --noEmit` accepts it (gate 1 exit 0).
+- **Secret scan over D3-added source.** Grepping the parity -> HEAD diff of the six
+  D3-added source files for real secret patterns (`AKIA`, `ghp_`, `xoxb-`, `AIza`,
+  `BEGIN PRIVATE KEY`, `BEGIN RSA PRIVATE KEY`) returns **0 hits**. The only `sk-`
+  matches are the *fixture* value `sk-live-env-builds-check-secret-123` (a synthetic
+  test constant used by the redaction assertions) and a comment containing `.git`.
+  No real credential is introduced.
+- **Freshly rebuilt artifact contains both sides.** After `npm run build:server`,
+  `dist/server.cjs` matches 15 lines for the D3 markers (`env_blueprint_generate`,
+  `env_build_status`, `/api/env-builds`) and 15 for the parity markers
+  (`handleWikiRoutes`, `handlePlaybookRoutes`, `web_scaffold`,
+  `playbook_create_from_session`).
+- **Forbidden / third-party files.** `docs/handoff/watchdog.ps1`, the `qa/*.png`
+  set, and `packages/tests/visual/baselines/*` are tracked and present, and the
+  merge touched none of them (verified in the seventh and eighth passes). A
+  `git ls-files` scan for `.zcode`/`.codex`/`AGENTS.md`/`.cursor` names returns
+  **0 hits**, so there are no ZCode/Codex files in this tree to touch.
+
+### Final state
+
+- HEAD `c1732a5` (eighth-pass record) at the time these checks ran; `.jdone` is
+  appended below and committed. Working tree clean; encoding check OK.
