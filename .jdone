@@ -1,3 +1,63 @@
+## O3 gate-fix session: merge with manus-parity, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+### Root cause
+No source file conflicted. `git merge manus-parity` (parity tip `603d71c`, the O6 merge)
+brought in `src/server/inputQueue.ts`, its two test files and the `loop.ts` / `socket.ts` /
+`index.ts` / `http.ts` wiring, and all of those auto-merged cleanly. The only file that
+conflicted was the tracked rollup `.jdone`, where both sides prepend a report at the same
+top-of-file anchor (O3's report here; the O6 gate-fix report on parity). Nothing in the O3
+change set was at risk: `src/protocol/store.ts`, `src/protocol/types.ts` and
+`src/protocol/__tests__/storeCompat.test.ts` are byte-identical to commit `b328694`
+(`git diff b328694 HEAD` is empty for all three).
+
+### What was done
+The `.jdone` conflict was resolved as a superset: the O3 report and the parity O6 report are
+both present in full, with the `## O6 gate-fix session ...` heading and the whole preserved
+parity rollup below it. Verified mechanically that the resolved file is a superset of both
+conflict sides: after stripping the three markers, every non-blank line of the stage-2 and
+stage-3 blobs is present (0 missing lines on each side), the stage-2 side is a prefix of the
+resolved file, and 0 marker lines remain. No test was weakened, deleted or skipped and no
+source file was edited by this session.
+
+### Gate condition verified
+
+`git merge-base --is-ancestor manus-parity HEAD` exits 0 and
+`git rev-list --left-right --count manus-parity...HEAD` is `0  3` (parity fully merged, zero
+parity commits missing). No conflict marker remains in the tree and `git status --porcelain`
+is empty.
+
+### Gates (all run from the worktree root on the committed merge tree `979b3dc`)
+
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.4mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled, 25/25 static pages)
+- `node --import tsx --test src/protocol/__tests__/*.test.ts`
+                                              -> tests 36, pass 36, fail 0
+- `node --import tsx --test src/server/__tests__/inputQueue.test.ts src/server/__tests__/inputQueueAdmit.test.ts`
+                                              -> tests 15, pass 15, fail 0
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `git diff manus-parity...HEAD`              -> 418 added lines, 0 with the mojibake marker, 0 with a conflict marker
+
+### Files
+
+- `.jdone` only (this report prepended to the preserved rollup). No source file was modified
+  by this session; the O3 deliverables are unchanged from commit `b328694`.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  node --import tsx --test src/protocol/__tests__/storeCompat.test.ts
+  npm run check:encoding
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added. Working tree clean.
+
+---
+
 # O3 done: ProtocolStore on the durable event log
 
 Branch: `khamis1992/om-o3` (worktree `C:\Users\khamis\orca\workspaces\manus-local\om-o3`)
