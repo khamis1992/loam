@@ -251,6 +251,117 @@ this module is read-only); `events.ts` and `eventsRoutes.test.ts` are both track
 exit 0; `eventsRoutes.test.ts` 13/13; `check:encoding` OK; `check:modes` and `check:recovery`
 PASS.
 
+## Independent validation, sixth pass
+
+A sixth pass re-ran the O8 acceptance criteria through the **real `http.ts` dispatcher with the
+install-token gate live** (not the route-handler unit seam), and settled the state of a
+`manus-parity` merge that an earlier exploratory step had left half-applied.
+
+### Acceptance probe against the real dispatcher (auth enabled)
+
+`startServer(deps)` is the real entry point (`src/server/http.ts`, listens on `cfg.server.port`
+itself); the earlier probe's `createServer()` was wrong, so this pass booted the true server on
+an ephemeral loopback port with `MANUS_LOCAL_DATA_DIR`/`LOAM_LOCAL_TOKEN_DIR` pointed at a fresh
+temp dir and `LOAM_AUTH_DISABLED` **unset**, then drove it over HTTP.
+
+**30 checks, 30 pass.** The two acceptance criteria specifically:
+
+- **Last-Event-ID resume returns only the missing events.** With rows 1..6 stored, a stream opened
+  with header `Last-Event-ID: 3` and no query cursor emitted the resume-cursor echo `id: 3`
+  followed by exactly `id: 4`, `id: 5`, `id: 6` - no duplicate ids, nothing replayed, nothing
+  skipped. `?after_seq=4` with header `Last-Event-ID: 1` returned exactly `5,6`, i.e. an explicit
+  query cursor wins over the header.
+- **Heartbeat <= 10 s.** `EVENT_STREAM_HEARTBEAT_MS === 10000` exactly, and the handler clamps any
+  larger requested value to it. Measured on the wire, arrivals landed at 10010 ms and 20017 ms
+  (gap 10007 ms); a second run measured 10014/20029 (gap 10015 ms). The ~7-15 ms overrun on a
+  10 000 ms interval is Node `setInterval` scheduling jitter (0.07-0.15%), not a cadence defect.
+  The same bound held while rows were appended every ~2 s (busy tail does not starve the beat).
+
+Also asserted on this pass, all passing: the install-token gate itself (no token -> 401, wrong
+token -> 401, real token -> 200, `/api/health` still public, `POST` -> 405); listing semantics
+(ascending page, `next_after_seq` = last row, `has_more` on a full vs short page, the `after`
+alias, a negative cursor flooring to 0, `limit` clamped to 5000); every SSE frame carries `id:`,
+ids strictly increase, the stream is pure LF (no `\r\n`), and every `data:` payload is valid JSON.
+
+### The in-progress `manus-parity` merge: diagnosed, then aborted
+
+An earlier step had left a `git merge manus-parity` **half-applied**: `MERGE_HEAD` =
+`d57df778` in `no-ff` mode, 60 entries staged, `.jdone` resolved, but no merge commit created.
+(The first diagnosis read `.git/MERGE_HEAD` and wrongly reported "no merge in progress" - in a
+linked worktree `.git` is a *file*, so the real path is
+`.git/worktrees/om-o8/MERGE_HEAD`; `git rev-parse --git-path MERGE_HEAD` gives it.)
+
+Facts established before deciding: the conflict set was **`.jdone` only** (source auto-merged:
+`events.ts`, `eventsRoutes.test.ts` and `eventLog.ts` came out byte-identical to HEAD); the merge
+would have added 31 files and modified 29; and `manus-parity` still does **not** contain O8's
+implementation - `src/server/routes/events.ts` "exists on disk, but not in 'manus-parity'",
+`e335eb7` is not an ancestor of parity, and parity's HEAD had already moved on to `bdae2ca`
+(the merge was based on the now-stale `d57df77`).
+
+Resolved with `git merge-file --union` as a *validation* exercise, and verified: the resolved
+`.jdone` is a **strict superset of both parents** (6 564 our lines and 7 099 their lines, 0
+missing from either side, 448 headers, 0 conflict markers), preserving this branch's O8 report
+and parity's N15 / N7 / O4 sections.
+
+**Aborted, deliberately.** Build-plan §11 says integration happens "one at a time under the
+lock" in the direction parity <- task branch at the **M4 = O6b+O8 merge point, "only after Khamis
+approves phase 3"** (§11 row O6b/O8). A parity-into-om-o8 merge is not that direction, was
+self-initiated for validation rather than requested, and committing it would have moved the
+validated tip off `65f01bf`. `ORIG_HEAD == HEAD == 65f01bf` and `data/` is gitignored, so the
+abort discarded no user work. After `git merge --abort`: HEAD still `65f01bf`, 0 dirty entries,
+`MERGE_HEAD` gone, and `git diff e335eb7 HEAD` over the three O8 source files is **empty**.
+
+### Gates re-run on the restored tree (HEAD `65f01bf`)
+
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0 (`dist/server.cjs` 19.6mb, pdf worker copied)
+- `(cd packages/web && npm run build)` -> exit 0 (next build, all pages prerendered)
+- `node --import tsx --test src/server/__tests__/eventsRoutes.test.ts` -> tests 13, pass 13,
+  fail 0, suites 2 (includes the "events routes over the real server (http.ts mount)" suite)
+- `node --import tsx --test src/protocol/__tests__/eventLog.test.ts src/protocol/__tests__/storeCompat.test.ts`
+  -> tests 21, pass 21, fail 0
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes` -> PASS (seven distinct fail-closed modes, denied execution, native
+  document/data/canvas outputs, realpath/junction isolation)
+- `npm run check:recovery` -> PASS (SQLite migration, backup, retention, rollback, restart and
+  crash recovery; FIFO ownership, duplicate rejection, queued cancellation, failure release and
+  shutdown; invalid migration preserves source)
+- `npm run check:orchestrator` -> exit 0
+- `npm run check:web-scaffold` -> pass true, 42 files, 25 uiComponents, 0 errors
+- no `???` in the O8 module or this file; no conflict markers in the tree
+
+### Two pre-existing gate failures, reproduced not assumed
+
+Both are the ones already recorded above ("Pre-existing gate failures unrelated to this task")
+and both were re-confirmed on this pass, with the mechanism identified:
+
+- `npm run check:loam-ui` -> `AssertionError: 8 !== 7` at `check-loam-ui.mjs:43` (asserts
+  `#homeModes button` == 7, finds 8).
+- `npm run check:isolation` -> times out. Cause: the spawned server runs with
+  `LOAM_AUTH_DISABLED` unset and the script sends **no** `x-loam-local-token`, so `/api/tasks`
+  answers 401 and its readiness probe never sees `r.ok`. Proven pre-existing, not O8: the script
+  is **unchanged** by this task (`git diff --numstat 411df5e HEAD -- src/scripts/check-isolation-http.ts`
+  is empty), it contains no `auth`/`token` reference at **either** revision, and the auth gate it
+  trips (`http.ts:470`) is present verbatim at base `411df5e`. O8's entire change to `http.ts` is
+  **3 lines added, 0 removed** (one import, one comment, one dispatch line) and the dispatch sits
+  *after* the gate. A separate run also hit `EADDRINUSE` on `127.0.0.1:8787` - the protocol
+  adapter's fixed default (`src/protocol/adapter.ts:227`, `AS_PROTOCOL_PORT || 8787`) - which is
+  environmental, not a code fault.
+
+`check:isolation` is not one of the §11 global gates ("tsc, build:server, the web build, the task
+test, check:encoding, and no `???`"), and every one of those passes above.
+
+Test commands:
+  node --import tsx data/om-o8-final-probe.ts
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npm run build)
+  node --import tsx --test src/server/__tests__/eventsRoutes.test.ts
+  node --import tsx --test src/protocol/__tests__/eventLog.test.ts src/protocol/__tests__/storeCompat.test.ts
+  npm run check:encoding
+  npm run check:modes
+  npm run check:recovery
+
 
 # Merge with manus-parity `61aca0c` (N9): `.jdone` add/add resolved
 
