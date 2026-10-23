@@ -531,6 +531,21 @@ describe("context compressor", () => {
     assert.deepEqual(out, messages);
   });
 
+  it("truncates on a character boundary so no surrogate pair is split", () => {
+    // jcode truncates on a Rust char boundary (`truncate_str_boundary`); a cut
+    // through a surrogate pair would decode as U+FFFD when the tool result is
+    // written back to disk. Odd keepHead/keepTail values make the cut land
+    // inside a 4-byte character, which is exactly what must not happen.
+    const loneHigh = (s: string) => (s.match(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g) ?? []).length;
+    const loneLow = (s: string) => (s.match(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g) ?? []).length;
+    for (const maxChars of [3999, 3997, 13, 9, 7]) {
+      const big = "😀".repeat(3000);
+      const { messages } = emergencyTruncateToolResults([toolMsg("read", big)], maxChars);
+      const content = messages[0]!.content;
+      assert.equal(loneHigh(content) + loneLow(content), 0, `maxChars=${maxChars} left a lone surrogate`);
+    }
+  });
+
   it("emergency hard-compacts when the estimate passes the critical threshold", async () => {
     // A small window makes it trivial to exceed 95% of it.
     const cfg = makeConfig({

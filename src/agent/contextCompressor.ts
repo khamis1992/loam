@@ -209,6 +209,32 @@ function pruneMiddle(middle: ChatMessage[]): { messages: ChatMessage[]; elidedCh
 }
 
 /**
+ * Slice `end` code units, backing off when that would leave a high surrogate
+ * stranded at the cut. jcode's `truncate_str_boundary` walks back to a Rust
+ * `char` boundary; the equivalent here keeps a lone surrogate from appearing in
+ * the tool result, which would otherwise decode as U+FFFD when the content is
+ * written back to disk (jcode covers this with `is_char_boundary` assertions).
+ */
+function sliceCodeUnits(value: string, end: number): string {
+  let stop = end;
+  if (stop > 0 && stop < value.length) {
+    const last = value.charCodeAt(stop - 1);
+    if (last >= 0xd800 && last <= 0xdbff) stop -= 1;
+  }
+  return value.slice(0, stop);
+}
+
+/** Slice the last `maxChars` code units, backing off a leading low surrogate. */
+function tailCodeUnits(value: string, maxChars: number): string {
+  let from = value.length - maxChars;
+  if (from > 0) {
+    const first = value.charCodeAt(from);
+    if (first >= 0xdc00 && first <= 0xdfff) from -= 1;
+  }
+  return value.slice(from);
+}
+
+/**
  * Emergency recovery: bound a single oversized tool output to `maxChars` by
  * keeping a head and a tail around a truncation marker. Unlike `pruneMiddle`
  * this runs on the whole transcript and can touch tool results whose owning
@@ -228,8 +254,8 @@ export function emergencyTruncateToolResults(
     if (content.length <= maxChars) continue;
     const keepHead = Math.floor(maxChars / 2);
     const keepTail = Math.floor(maxChars / 4);
-    const head = content.slice(0, keepHead);
-    const tail = content.length - keepTail > head.length ? content.slice(content.length - keepTail) : "";
+    const head = sliceCodeUnits(content, keepHead);
+    const tail = content.length - keepTail > head.length ? tailCodeUnits(content, keepTail) : "";
     const dropped = content.length - head.length - tail.length;
     message.content = [head, EMERGENCY_TRUNCATION_MARKER(dropped), tail].join("\n\n");
     truncated++;
