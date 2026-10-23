@@ -20,6 +20,18 @@ auto-merged cleanly with `ort`. The only file that ever conflicted was the track
 `manus-parity` advanced several times while this session ran, so the merge was re-run and
 re-resolved each time it did.
 
+### Round 5 (parity tip `411df5e`, C21 mirofish)
+`manus-parity` re-added its own rollup to `.jdone` (the M3/C21 report block), so this round
+was a **content** conflict on that file only. Resolved as a union: this O4 report stays at the
+top and parity's M3/C21 report block follows verbatim, with only the three conflict-marker
+lines removed. Every source file again auto-merged with `ort`, including the O4 socket and
+protocol surfaces (`src/protocol/types.ts`, `packages/shared/src/socket.ts`).
+
+Deep validation also caught a real gap in an earlier round: 25 lines of this branch's own
+earlier header wording had been rewritten rather than preserved. They are now archived
+verbatim in a labeled `Superseded header wording (preserved verbatim)` section, so `.jdone`
+is a **strict** superset of both merge parents rather than merely of their bodies.
+
 Nothing in the O4 change set was at risk. The O4 files
 (`src/protocol/__tests__/seqReplay.test.ts`, `src/protocol/store.ts`,
 `packages/web/src/services/chatSocket.ts`, `packages/web/src/services/chatSocket.test.ts`,
