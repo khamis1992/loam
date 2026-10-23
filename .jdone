@@ -1,3 +1,105 @@
+# N6 complete: mission runs and budgets (unbounded steps, four-dimension budget, durable checkpoints)
+
+Branch `khamis1992/neo-n6` (base `manus-parity`), spec row G6, key spec line
+`.neo-ref/AGENT_NEO_RE.md:401`. Three commits: `9f4a133` (feature), `8553ef0`
+(end-to-end acceptance tests) and `38ec06d` (restart proven through the durable store).
+
+## What shipped
+- `src/agent/mission.ts` (new). The mission run type's own module: the four-dimension
+  budget (`createMissionBudget` / `checkBudget` over steps, tokens, wall-clock and cost),
+  the durable checkpoint record (`MissionCheckpoint`, `budgetStoppedCheckpoint`,
+  `missionResumableFrom`, `canResumeMission`, `budgetSummary`), the
+  `DbMissionCheckpointStore` (one row per task in the shared run-graph table), and
+  `missionBudgetFrom`, the single place the resume rule lives (configured ceilings plus
+  the counters a checkpoint already charged, so neither the clock nor the spend restarts).
+- `src/agent/computeBudget.ts`. Wall-clock and cost dimensions, charged per step.
+- `src/agent/loop.ts`. A mission lifts the fixed 40-step cap (`stepCeiling` becomes
+  `Number.MAX_SAFE_INTEGER`) while the budget stays the real ceiling. A checkpoint is
+  written before each step (in-flight marker) and after each step (safe boundary). A
+  budget stop throws `MissionBudgetError` carrying the between-steps checkpoint.
+- `src/agent/orchestrator.ts`. A mission worker is itself a mission, so the per-worker
+  cap is lifted too and the checkpoint offset accounts for the steps already carried.
+- `src/agent/events.ts`, `src/graph/runGraph.ts`. `budget_exhausted` renders as a
+  finished summary node carrying the counters, the stop reason, `budgetStopped` and
+  `resumable`, as a summary rather than an error banner.
+- `src/index.ts`, `src/server/recovery.ts`, `src/config.ts`. The `mission` flag and the
+  checkpoint survive the queue (`SavedRun.mission`, `SavedRun.missionCheckpoint`), so a
+  queued mission runs as a mission and a restarted run keeps its run type and boundary.
+- `src/server/sessionRuntime.ts`, `src/server/routes/sessionRuntime.ts`. D19 sleep and
+  the mission budget share one entry, so the badge, the raise endpoint and the run all
+  consult one object and a raise takes effect on the next resume.
+
+## Acceptance criteria
+- Kill the server mid-mission, resumes at the last checkpoint. Proven through the real
+  store: the mission persists every checkpoint, the test drops the DB connection the way
+  a killed server does, reloads the checkpoint from the store alone, rebuilds the budget
+  as a fresh process does (ceilings from config, counters from the checkpoint) and
+  continues at the carried boundary with clock and spend intact.
+- Budget exhaustion ends cleanly with a summary node. It stops at the ceiling, runs no
+  step past it, emits `budget_exhausted`, and the canvas node is `finished` and resumable.
+- A 500-step mock mission completes (499 tool steps plus the answer, 499 between-steps
+  boundaries and 499 in-flight markers, no stop). The same script also runs past the
+  fixed 40-step cap, reaching step 46.
+- User Stop/Pause. `POST /api/tasks/:id/pause` cancels the in-flight step, the last
+  between-steps checkpoint stays durable, and the pause endpoint resumes with
+  `retryInterruptedStep: true`. A checkpoint written mid-step is deliberately not
+  auto-resumable and needs that explicit confirmation.
+- D19 sleep integration, as described above.
+
+## Bugs the acceptance tests found (all fixed)
+1. `DbMissionCheckpointStore.save` leaked the table's row key into the payload.
+2. A dead guard in `src/graph/runGraph.ts`: `wallClockMs !== undefined` was always true
+   because `createComputeBudget` initializes the counters, so an unset dimension was
+   reported as configured. It now tests the limits.
+3. The same dead guard in `budgetSummary` (`src/agent/mission.ts`).
+
+## Refactor
+`missionBudgetFrom` moved out of `src/index.ts` into `src/agent/mission.ts` so the resume
+rule is testable. `index.ts` keeps a thin `missionBudgetFor` adapter over config.
+
+## Gates (all from the worktree root)
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0
+- `(cd packages/web && npx next build)` -> exit 0 (compiled, 25/25 static pages)
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `node --import tsx --test` over mission, computeBudget, loopBudget, loopHooks,
+  orchestratorBudget, orchestratorHooks, orchestratorRecipe, runGraphAdapter, runGraph,
+  sessionRuntime, sessionSleep, sessionControl, managedSessions and configFailover
+  -> tests 148, pass 148, fail 0
+- `node --import tsx --test src/agent/__tests__/mission.test.ts
+  src/agent/__tests__/computeBudget.test.ts` -> tests 41, pass 41, fail 0
+- N20 long-horizon eval `npm run eval:neo` -> `total=100 passed=10/10 bar=60
+  verdict=PASS`, recorded baseline `evals/neo/baseline.json` is `version neo-eval-2,
+  total 100`. Before 100, after 100, no regression.
+
+## Seams left for other workstreams
+- The mission budget is a plain object (`MissionBudget`), so a scheduler or a UI that
+  raises one dimension does so through the existing `sessionRuntime.raiseBudget`
+  endpoint without touching the run.
+- `DbMissionCheckpointStore` shares the run-graph entity family, so a canvas that already
+  lists run entities sees mission checkpoints with no new table.
+- The `mission` run type is opt-in per run (`opts.mission`). Adding another unbounded run
+  type needs only its own ceiling object.
+
+## Note on this rollup
+The jcode runner deleted `.jdone` at session start so no stale marker would be read.
+Creating the marker as instructed restores the tracked rollup as a strict superset (this
+N6 report prepended to the preserved rollup, with no line from either side dropped), so
+the session-start deletion is superseded rather than discarded work.
+
+No test was weakened, deleted or skipped. No real external model API was called (every
+test drives a scripted fake `OllamaClient`). No secrets committed. Nothing pushed.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run check:encoding
+  node --import tsx --test src/agent/__tests__/mission.test.ts src/agent/__tests__/computeBudget.test.ts
+  npm run eval:neo
+
+---
+
 H3 complete: deterministic correction detector («لا، قلت لك…» style cues) for the
 Harness2 correction-learning workstream. Committed as `f40f2d9`.
 
