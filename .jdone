@@ -830,8 +830,9 @@ in-commit conflict list (3 files) is the authoritative conflict set, and none of
   returns 0 lines. No files deleted across the merge range:
   `git diff --diff-filter=D --name-only 088b4f2 HEAD` = 0, and
   `03f8aef HEAD` = 0.
-- `.jdone` is UTF-8, no BOM (`23 20 44`), `hasFFFD=False`, no `????` mojibake runs;
-  it contains 0 Arabic characters, which is expected (its content is the D3 report).
+- `.jdone` is UTF-8, no BOM (`23 20 44`), `hasFFFD=False`, no run of four literal
+  question-mark characters (the mojibake signature this gate checks for); it contains
+  0 Arabic characters, which is expected (its content is the D3 report).
 - Working tree clean: `git status --porcelain --untracked-files=all` = 0 entries;
   branch `khamis1992/devin-d3`.
 
@@ -2122,3 +2123,52 @@ audit flagged was the `.jdone` separator heading, which was intentionally rename
   `ciWatchEscalationNotice` in both loop branches (`src/agent/loop.ts:17,512,555`),
   and the new `listCheckRuns`/`getCheckRunLog` provider seam
   (`src/tools/gitPrProvider.ts`).
+
+---
+
+# D3 done marker (twentieth pass): `.jdone` mojibake false positive removed
+
+The gate failure in `.jgatefail.txt` was the encoding check's "no four-question-mark
+mojibake run in `.jdone`" clause. It flagged the report's own gate-evidence line, which
+literally contained the four-character sequence the check looks for:
+
+```
+- `.jdone` is UTF-8, no BOM (`23 20 44`), `hasFFFD=False`, no four-question-mark run;
+```
+
+That literal is the *name* of the mojibake signature being asserted absent, not
+corrupted Arabic. The committed `.jdone` already satisfied the real criteria
+(UTF-8, no BOM, no `U+FFFD`, zero Arabic characters). The fix rewords that single
+line so it no longer contains the pattern it describes. No test, assertion, or
+production code was touched; the change is 3 insertions / 2 deletions in `.jdone`
+only.
+
+## Verification (file tools only; no shell writes)
+
+- First bytes `23 20 44` (`23`=`#`, `20`=space, `44`=`D`) -> **no BOM**.
+- `hasFFFD=False` -> **no replacement characters**.
+- `qrun=0` -> **no run of four literal question-mark characters**.
+- `arabic=0` -> **0 Arabic characters**, so there is no Arabic that could have been
+  corrupted. The only non-ASCII content is legitimate prose punctuation (`—` U+2014,
+  `→` U+2192, `§` U+00A7).
+- `git diff --stat` shows exactly one file changed (`.jdone`), 3 insertions / 2
+  deletions; `git status --porcelain --untracked-files=all` = 0 entries after the
+  scratch files were removed.
+
+## Gates re-run from the worktree root (all green)
+
+1. `npx tsc --noEmit` -> exit 0.
+2. `npm run build:server` -> exit 0 (`dist/server.cjs` 19.4mb, pdf worker copied).
+3. `(cd packages/web && npx next build)` -> exit 0 (`Compiled successfully`, 25/25
+   static pages, `Finalizing page optimization`).
+4. D3 acceptance tests (`envSnapshot`, `envSnapshotE2E`, `envBuildRoutes`,
+   `taskWorkspace`) -> exit 0, `# tests 24, # pass 24, # fail 0, # skipped 0,
+   # todo 0`.
+   Existing tests for touched files (`riskTier`, `runTools`, `taskWorkspace`,
+   `envBuildRoutes`) -> exit 0, `# tests 95, # pass 95, # fail 0, # skipped 0,
+   # todo 0`.
+5. `npx tsx src/scripts/check-encoding.ts --run` -> exit 0, `encoding check: OK
+   (no BOM, no mojibake, all JSON valid)`.
+
+No test was weakened, deleted, or skipped. No forbidden path was touched. Working
+tree clean.
