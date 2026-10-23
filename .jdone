@@ -1,3 +1,170 @@
+# fc-06 - Loam Video export into the task's files: done
+
+Task: `export` action of the `video_studio` tool, plus an "Export" button in the
+Loam Video panel, so a rendered video lands in the task's own files instead of
+staying inside the editor session. Depends on fc-03 (the relay) and sits on top of
+fc-05 (manual-edit detection and state persistence).
+
+## What fc-06 delivers
+
+- The `video_studio` tool accepts an `export` action (format, name, width, height,
+  quality, bitrateKbps, range, startSec/endSec). The rendered file is written into
+  the task workspace under `exports/<name>` and the result carries the relative
+  path, the sanitised name, the mime type and the byte size, so the agent can link
+  the file in chat.
+- The Loam Video panel header gains an "Export" button that runs the same flow and
+  shows progress (starting / rendering / saving) and the saved file. It stays
+  hidden on the standalone `/app/video` page, which has no task to save into.
+- Chat words `export` / `صدّر` / `صدر الفيديو` are covered by the tool description
+  and the panel button, so both the agent and the user can trigger the same export.
+- One implementation, two entry points. The agent tool action and the panel's
+  `POST /api/tasks/:id/video-studio/export` route both call the shared service in
+  `src/server/videoStudioExport.ts`, so the two paths cannot drift.
+
+## How it works
+
+The export is the one `video_studio` action that is not a plain step list: it needs
+several round trips (catalog, execute, job poll, read, save), progress reporting
+and a real file write. That is why it lives in a service rather than inline in the
+tool:
+
+- resolve the real export command id from the editor's live `commands()` catalog
+  (`VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES`: `file.exportMedia`, `file.export`,
+  `export.quick`, `export`) rather than guessing an id.
+- `execute` the export and wait for the render job to finish, polling with the job
+  command the editor actually exposes and reporting progress.
+- `readFile` the rendered bytes out of the editor's virtual FS, accepting every
+  byte shape the bridge can produce (base64, ArrayBuffer, Uint8Array, `{data}`,
+  numeric-keyed record).
+- write the bytes into `<taskRoot>/exports/<name>` via an atomic temp-file +
+  rename, and report the relative path, name, mime and size.
+
+Safety properties: the options are validated before any editor call (quality and
+range allow-lists), the file name is sanitised against traversal, separators and
+dot runs (Arabic names are preserved), and the editor still owns every render
+decision. Failures surface a clear message; the tool maps a relay failure onto the
+same classification as every other action and anything else to `export_failed`,
+which still points the agent at the `video_edit` fallback.
+
+## Merge with manus-parity (this gate fix)
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity`. The merge
+was run and resolved by keeping both sides.
+
+- `src/tools/videoStudio.ts` (result-branch conflict): parity's fc-05 change
+  re-reads the timeline and returns a `summary` / `notice`, while fc-06 returns the
+  export result from the shared service. Both were kept: the `export` case is
+  handled before the step-list branch (so it never reaches the summary/notice
+  envelope), and every other action still carries the fc-05 summary and notice.
+  The `export` action also does not need the live catalog (the service reads its
+  own), so `needsCatalog` excludes it.
+- `src/server/__tests__/videoStudioE2E.test.ts`: parity's side is a superset (it
+  adds the `inspectProject` override and the "reports a manual edit" test), so it
+  was kept. No test was weakened, deleted or skipped.
+
+Two merges were required because `manus-parity` advanced during the session
+(`d05e4b1` -> `cf45585`). The second merge (which brought in the C19 command-risk
+gate work) auto-resolved with no source conflict. After both, no conflict markers
+remain and `git merge-base --is-ancestor manus-parity HEAD` exits 0.
+
+## Gate condition verified
+
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0 (the parity tip
+  `cf45585` is an ancestor of the merge commit `f127c5f`).
+- `git grep -e '^<<<<<<<' -e '^>>>>>>>'` over `*.ts`, `*.tsx`, `*.json`, `*.md`
+  -> no matches (no leftover conflict markers).
+- `git diff --name-only --diff-filter=U` -> empty (no unmerged paths).
+- fc-05 features present after the merge: `readStudioState`, `VideoStudioStateTracker`,
+  `videoStudioState.js` import, and the E2E test "reports a manual edit the user
+  made between two commands".
+- fc-06 features present after the merge: `VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES`,
+  `runVideoStudioExport`, the `export` action case, and the HTTP route
+  `POST /api/tasks/:id/video-studio/export`.
+
+## Gates (all run from the worktree root on the committed tree)
+
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0 (dist/server.cjs 19.5mb, pdf worker copied)
+- `(cd packages/web && npx next build)` -> exit 0 (compiled successfully, 25/25
+  static pages)
+- `node --import tsx --test src/tools/__tests__/videoStudio.test.ts
+  src/tools/__tests__/videoStudioState.test.ts
+  src/server/__tests__/videoStudioE2E.test.ts
+  src/server/__tests__/videoStudioExport.test.ts
+  src/server/__tests__/videoStudioRelay.test.ts`
+  -> tests 94, pass 94, fail 0
+- `(cd packages/web && npx vitest run src/lib/videoStudioExport.test.ts
+  src/components/workspace/loamVideo/__tests__/LoamVideoPanel.export.test.tsx)`
+  -> 2 files / 10 tests, all pass
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `node --import tsx --test "src/**/*.test.ts"` -> tests 2502, pass 2500, fail 2
+
+The two node failures are pre-existing on the manus-parity lineage and untouched
+by fc-06; both files are byte-identical to manus-parity (`git diff manus-parity
+HEAD` is empty for each):
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither
+   registered nor listed in PENDING_CODING_TOOLS". The inherited D4 defect.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+   throwing". Environmental: `readGitBranch` shells out to `git rev-parse`, which
+   walks up to the nearest enclosing repository.
+
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path
+touched.
+
+## Acceptance tests
+
+Unit, with a mocked relay (the export flow saves a file with the correct name and
+mime, and a failure surfaces a clear error):
+- `src/server/__tests__/videoStudioExport.test.ts` (17): format normalisation and
+  aliases, name/format to mime, name sanitisation (Arabic preserved, extension
+  forced), editor params, every `readFile` byte shape, nested output path,
+  resolving the real export id and writing into `exports/`, polling with the job
+  command the editor exposes, the editor's own output path, the `readFile` params
+  fallback, and the failure paths (no export command, render job failure,
+  unrecognised byte shape, timeout, empty export, unsupported format).
+- `src/tools/__tests__/videoStudio.test.ts` (6 in the `video_studio export action`
+  suite): renders and saves the file into the task workspace, refuses an unknown
+  quality or range before touching the editor, falls back to `video_edit` when the
+  editor exposes no export command or produces no bytes, and keeps one shared
+  definition of the export command ids.
+
+vitest (the Export button triggers the flow and shows the result):
+- `packages/web/src/lib/videoStudioExport.test.ts` (7): posts the options to the
+  export route and returns the saved file, forwards export progress from the SSE
+  stream (reassembling split frames), ignores unrelated stream events and
+  keepalives, surfaces the server's own error message, falls back to the HTTP
+  status, rejects a transport failure, and still resolves when the stream cannot
+  be read (the POST result is authoritative).
+- `packages/web/src/components/workspace/loamVideo/__tests__/LoamVideoPanel.export.test.tsx`
+  (3): stays hidden on the standalone `/app/video` page, renders/disables/reports
+  the saved file on success, and surfaces the server error instead of claiming
+  success.
+
+## Files
+
+- `src/server/videoStudioExport.ts` (new): the shared export service.
+- `src/tools/videoStudio.ts`: the `export` action, the shared export command-id
+  table, the export schema fields, and the `export_failed` fallback reason.
+- `src/server/http.ts`: `POST /api/tasks/:id/video-studio/export`.
+- `packages/web/src/lib/videoStudioExport.ts` (new): the browser half (POST +
+  SSE progress).
+- `packages/web/src/components/workspace/loamVideo/LoamVideoPanel.tsx`: the Export
+  button and its progress state.
+- `src/agent/events.ts` + `src/graph/runGraph.ts`: the live-only
+  `video_studio_export` event (starting / rendering / saving), which creates no
+  canvas node.
+- `packages/web/src/i18n/en.json` + `ar.json`: the `Exporting` label (Arabic kept
+  exactly as given).
+- Tests: `src/server/__tests__/videoStudioExport.test.ts` (new),
+  `src/tools/__tests__/videoStudio.test.ts` (+6),
+  `packages/web/src/lib/videoStudioExport.test.ts` (new),
+  `packages/web/src/components/workspace/loamVideo/__tests__/LoamVideoPanel.export.test.tsx` (new).
+
+## Preserved: prior `.jdone` content
+
+The C19 gate-fix report and the manus-parity rollup (O3 + O6 + O2 + D5 + O1 + V11 +
+fc-05) are preserved below, unchanged. This fc-06 report is prepended.
+
 # C19 gate-fix session: hermetic budget suite + merge with manus-parity
 
 `.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. The only file
@@ -5067,3 +5234,4 @@ Test commands:
   node --import tsx --test src/tools/__tests__/videoStudioState.test.ts src/tools/__tests__/videoStudio.test.ts src/server/__tests__/videoStudioRelay.test.ts src/server/__tests__/videoStudioE2E.test.ts
   (cd packages/web && npx vitest run)
   npm run check:encoding
+
