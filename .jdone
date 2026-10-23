@@ -178,6 +178,47 @@ here. That is a pre-existing environmental condition (the whole-suite sandbox wr
 No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
 No Arabic text was written; no mojibake placeholder text was added.
 
+## Independent validation, fourth pass (HEAD `b35d086`)
+
+A re-validation pass over the merged tree, distinct from the gates above. It boots the
+**real** `http.ts` dispatcher on a loopback port with the install-token gate **enabled**
+(no `LOAM_AUTH_DISABLED`) and exercises both routes over the wire: **48 checks, 48 pass**.
+
+- **Auth gate, enabled.** No token -> 401; wrong token -> 401 on both `/events` and
+  `/events/stream`; the real token -> 200. `/api/health` stays public (200). This closes the
+  gap the report's own corrective pass flagged: the shipped suite runs with the gate off, so
+  it proved the mount but not the gate. The gate is now observed live.
+- **Listing semantics.** Ascending seq; `next_after_seq` = last row seq; `has_more` true only
+  when a page is full; `limit` clamped to 1..5000; `afterSeq`/`after` aliases work;
+  non-numeric and negative `after_seq` fall back to 0; `after_seq` past the head returns empty
+  `data` with `next_after_seq` = `headSeq`; POST -> 405.
+- **Raw SSE bytes.** Content-type `text/event-stream; charset=utf-8`; cache-control
+  `no-cache, no-transform`; **no CRLF** (strict LF framing); every frame is
+  `id: <n>` + `data: <json>` + a blank-line terminator; every `data:` payload is valid JSON;
+  ids strictly increasing with no duplicates; event frames carry `seq` == their `id` line and
+  `type: "event"` + `sessionId`; the leading `id:` line and `retry: 10000` are the handler's
+  resume-cursor echo (so the first `id` line is the cursor, and the event frames that follow
+  are all `> cursor`).
+- **Resume, exact set.** `Last-Event-ID: 3` -> event ids exactly 4, 5, 6 (no id <= 3 replayed);
+  `Last-Event-ID: 1` -> event ids exactly 2, 3. `?after_seq=4` beats a `Last-Event-ID: 1`
+  header (ids start 4, 5).
+- **Heartbeat cadence, real.** Two `: hb` comments in a 25 s window; measured gap 10007 ms
+  against `EVENT_STREAM_HEARTBEAT_MS = 10000` (the ~7 ms is event-loop latency; `setInterval`
+  fires at >= its period and never early, so the configured cadence is what bounds the gap,
+  which is the property the shipped test asserts on the constant).
+
+Also re-checked on this pass: `git fsck --connectivity-only` clean; the HEAD tree is a
+superset of the last parity tip `411df5e` with **0 deletions**; the committed `.jdone` blob
+matches the worktree; `events.ts` imports only `node:http` and `../../protocol/eventLog.js`
+(no `store.ts`); no `???` in the new files; and `git diff e335eb7 b35d086 -- src/server/routes/events.ts
+src/server/__tests__/eventsRoutes.test.ts src/protocol/eventLog.ts` is **empty**, i.e. O8's own
+source is byte-identical to the original commit; the only `http.ts` delta is parity content
+(N2 graph, N9 askUser, N10 output type, M3 mirofish), with the two O8 lines
+(`import { handleEventsRoutes } from "./routes/events.js"` and its dispatch) unchanged.
+
+One earlier observation is **not** a defect: a full-suite run once reported 1 failure, but 5/5
+consecutive runs on `b35d086` were 2674/2674 pass, 0 fail, so it was not reproducible.
+
 
 # Merge with manus-parity `61aca0c` (N9): `.jdone` add/add resolved
 
