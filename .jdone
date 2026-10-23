@@ -47,13 +47,21 @@ parity's tip (`519f889`) carried it. The union driver was never in play here.
    plus small wiring in `orchestrator.ts`, `files.ts`, `multiEdit.ts`, `subagents.ts`, `mapReduce.ts`,
    `wideResearch.ts`, `swarm/service.ts`, `subagent/*`, and
    `packages/web/public/marketplace/THIRD_PARTY_NOTICES`.
+6. Parity advanced a third time (`cd414a5` -> `17024c5`, "merge khamis1992/devin-d3 (D3 via
+   loam-jcode-run) into manus-parity"). Re-merged it: `.jdone` auto-unioned a third time with **no
+   conflict**. Three parity advances, three clean auto-merges. That advance brought the env-build
+   surface: `src/tools/envSnapshot.ts` (1051) + `src/tools/__tests__/envSnapshot.test.ts` (389) +
+   `envSnapshotE2E.test.ts` (118), `src/server/routes/envBuilds.ts` (167) +
+   `envBuildRoutes.test.ts` (139), `src/scripts/check-env-builds.ts` (170), `taskWorkspace.ts` +
+   test, and wiring in `src/index.ts`, `src/server/http.ts`, `runTools.ts`, `worktrees.ts`,
+   `planTools.ts`, `riskTier.ts`, `runtime.ts`, `src/types/js-yaml.d.ts`.
 
-## Verification on the final tip (`4d538a1`)
+## Verification on the final tip (`52b0cf9`)
 
 1. `npm run verify` -> exit 0 (typecheck, check:encoding, check:eval, check:orchestrator,
    check:recovery, check:modes)
 2. `npm run build:server` -> exit 0
-3. `node --import tsx --test "src/**/*.test.ts"` -> tests 2974, pass 2974, fail 0, skipped 0
+3. `node --import tsx --test "src/**/*.test.ts"` -> tests 2998, pass 2998, fail 0, skipped 0
 4. `(cd packages/web && npx tsc --noEmit)` -> exit 0
 5. `(cd packages/web && npx vitest run)` -> 93 files / 634 tests, all pass
 6. `(cd packages/web && npx next build)` -> exit 0
@@ -67,9 +75,13 @@ Merge fidelity, verified mechanically against the real merge parents:
 - Second merge (`4d538a1`, parents `c31dd51` ours / `cd414a5` theirs): again **0 lines missing from
   either side**, 0 conflict markers, no BOM, no U+FFFD, and the encoding gate passes on the merged
   file.
+- Third merge (`52b0cf9`, parents `6965197` ours / `17024c5` theirs): the union driver again dropped
+  **0 lines from either side**; the 3 lines that differ from `6965197` are this report's own
+  corrections made after that merge (tip `4d538a1` -> `52b0cf9`, node count 2974 -> 2998,
+  left-right 12 -> 14). 0 conflict markers, no BOM, no U+FFFD.
 - `.gitattributes` is byte-identical to parity's; `.jcode-done` is byte-identical to parity's.
 - `git merge-base --is-ancestor manus-parity HEAD` -> exit 0;
-  `git rev-list --left-right --count manus-parity...HEAD` -> `0  12`; working tree clean.
+  `git rev-list --left-right --count manus-parity...HEAD` -> `0  14`; working tree clean.
 - All N14 deliverables are tracked and intact: `packages/web/src/components/replay/ReplayViewer.tsx`
   + `__tests__/ReplayViewer.test.tsx`, `packages/web/src/components/share/ShareReplay.tsx` +
   `__tests__/ShareReplay.test.tsx`, `src/graph/export.ts`, `src/graph/__tests__/export.test.ts`.
