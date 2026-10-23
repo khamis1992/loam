@@ -7789,3 +7789,110 @@ Gates (all run from the worktree root on the merged tree):
 
 No test was weakened, deleted or skipped. No secrets committed. No forbidden path
 touched. No Arabic text was written; no mojibake placeholder text was added.
+---
+
+## N14 complete: export a run as a self-contained static replay (2026-10-23)
+
+The Neo canvas (N2) is a live, server-backed surface. N14 makes a run exportable as
+something that outlives the server: one JSON bundle (run graph + the outputs the run
+produced) and one standalone HTML page that renders it with a timeline scrubber. The
+page makes no network request at all, so it opens from a `file://` URL, from a share
+link, or from an email attachment.
+
+Committed as `e7c4134` on `khamis1992/neo-n14` (branch had 0 commits ahead of
+`manus-parity` at `eb17ea0`; this is its first). 13 files, +1970/-2.
+
+### What shipped
+
+- `src/graph/export.ts` (new): `buildRunReplay`, `renderReplayHtml`,
+  `renderRunReplayHtml`, `scanReplayForSecrets`, `assertReplayClean`, `hasSecret`,
+  `replayFileName`, `replayHtmlFileName`, `REPLAY_FORMAT`, `MAX_REPLAY_NODES`.
+  `RunReplay` = `{ format, runId, title, createdAt, generatedAt, nodes, edges, frames,
+  outputs, stats, redactions, partial }`.
+  - Nodes are ordered by `compareNodes` (event order) and capped at 5,000.
+  - Payload projection is an allow-list (`PUBLIC_DATA_KEYS` / `PUBLIC_DATA_FLAGS`): tool
+    arguments, the usual place a token hides, are never exported. Edges to nodes outside
+    the export are dropped rather than drawn dangling.
+  - `clean()` runs every string through `stripSecrets` then the logger's `redact`, and
+    truncates to 600 chars; `redactions` counts how much was removed.
+  - The standalone page is vanilla JS, bilingual (en/ar), embeds the bundle with
+    `<` escaped to `\<`, and ships a CSP of `default-src 'none'` so nothing can be
+    fetched. Rows and markers are built once and scrubbing only toggles classes.
+- `src/memory/redact.ts`: added `SECRET_PATTERNS_GLOBAL`, `REDACTED` and `stripSecrets`.
+  `findSecret` only answers "is there one?"; an export has to be safe to publish, so it
+  needs the removal itself. Patterns are rebuilt as global copies so a caller's
+  `lastIndex` can never leak state.
+- `src/server/routes/graph.ts`: `GET /api/graph/:runId/replay[/json|/html]`, matched
+  before the generic `/nodes` route. JSON -> `attachment`, HTML -> `inline`, both
+  `nosniff` + `no-store`. Re-scans the bundle after folding in the run title and returns
+  500 if a credential survives; 404 for an unknown run, 405 for a non-GET.
+- `src/server/shares.ts`: `SharedTranscript.replay?`. The replay rides the existing
+  token-gated share feed. It is wrapped in try/catch and checked with `assertReplayClean`,
+  so a broken or leaky export degrades to a transcript-only share rather than a 500 on a
+  public page (fail closed, and it never takes the share feed down with it).
+- `packages/web/src/components/replay/ReplayViewer.tsx` (new): the in-app twin of the
+  page. Fetches the JSON bundle, renders run graph (lane layout via a memo, `dir="ltr"`),
+  timeline, produced files, a range scrubber opened on the last frame, play/pause/reset, a
+  live node/edge counter, the redactions note and the partial banner. Read-only: no
+  textbox. Uses design tokens for status tones.
+- `packages/web/src/components/share/ShareReplay.tsx`: exported `SharedReplay`,
+  `ReplaySection` (`share-replay`, `share-replay-scrubber`, `share-replay-timeline`).
+  Rendered in the `state === 'ready'` branch after the artifacts line, so a public share
+  shows the graph without letting an anonymous reader drive the run.
+- `packages/web/src/components/workspace/canvas/CanvasPanel.tsx`: an `Export replay`
+  toolbar button next to "Reset the view", plus a `canvas-replay-notice` row. Fetch and
+  API base are injectable props so the button is testable without a server. Uses
+  `URL.createObjectURL` and revokes after 10s.
+- `packages/web/src/i18n/{en,ar}.json`: 20 keys each (`Export replay`, `Exporting`,
+  `Replay exported`, `Replay export failed`, `View replay`, `Download replay JSON`,
+  `Open standalone replay`, `Run graph`, `Timeline`, `Step`, `of`, `Play`, `Pause`,
+  `Reset`, `Produced files`, `No produced files`,
+  `This run was still in progress when it was exported.`, `credentials removed`,
+  `Standalone file - no network access required.`, `Replay viewer`), en/ar kept in sync.
+
+### Acceptance criteria (all covered by passing automated tests)
+
+1. Self-contained static replay: the bundle is one JSON object; the page is one HTML file
+   with no remote `src`/`href`, verified by `is a single offline page with a scrubber and
+   no remote reference`.
+2. Run graph + outputs: `carries the graph, the timeline and the files the run produced`
+   asserts `stats.totalNodes`, `stats.edges`, frame order, and that `report.md` is listed.
+3. Secrets stripped: `strips credentials from every node payload, including the run title`
+   hides a GitHub token in a tool arg, an `sk-` key in a payload, and a credential in the
+   title, then asserts zero findings on the finished bundle.
+4. Timeline scrubber: `reveals nodes in event order as the scrubber advances` checks, for
+   every frame, that exactly the first N+1 nodes are revealed.
+5. View-only: the page carries a `View only` badge, the in-app viewer has no textbox
+   (`ReplayViewer.test.tsx`), and the share section is read-only.
+6. Sharing-aware: `publishes the replay through the public, token-gated share feed`
+   asserts the anonymous share carries a clean replay;
+   `omits the replay when the run has no graph nodes` asserts the old shape is preserved.
+7. HTML safety: `escapes run content so a node label cannot break out of the page` proves
+   every `<script>` is closed exactly once.
+
+### Two findings from running the tests (tests corrected, no code weakened)
+
+1. `ShareReplay.test.tsx` first queried `screen.getByRole('list')`, which matched both the
+   timeline `<ol>` and the outputs `<ul>`; and `getByText('report.md')` matched both the
+   timeline row and the outputs row. Fixed by adding a `share-replay-timeline` testid and
+   scoping with `within(...)`, and by asserting `getAllByText('report.md')` has length 2.
+   The rendered DOM was correct; only the queries were ambiguous.
+2. An earlier `edit` call left a stray closing brace in `ShareReplay.tsx`; removed, and the
+   component compiles and renders.
+
+### Gates (all run from the worktree root)
+
+- `npx tsc --noEmit` (root, server + web)  -> exit 0
+- `npm run build:server`                   -> exit 0 (dist/server.cjs 19.6mb, pdf worker copied)
+- `(cd packages/web && npx next build)`    -> exit 0 (compiled successfully)
+- `npm run check:encoding`                 -> OK (no BOM, no mojibake, all JSON valid)
+- `node --import tsx --test src/graph/__tests__/*.test.ts`
+                                          -> tests 31, pass 31, fail 0 (export 12, graph 19)
+- `node --import tsx --test src/server/__tests__/graphRoutes.test.ts src/server/__tests__/shares.test.ts`
+                                          -> tests 10, pass 10, fail 0
+- `(cd packages/web && npx vitest run)`   -> 81 files, 548 tests, all passing
+  (ReplayViewer 4, ShareReplay 4, CanvasPanel 14, rest unchanged)
+
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path touched.
+`.jdone` was deleted in the worktree at the start of this session and restored from HEAD
+before the append, so the rollup is intact. `git rev-list --count manus-parity..HEAD` is 1.
