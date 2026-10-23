@@ -12,7 +12,7 @@ const WRITE = ["file_write", "file_edit", "file_mkdir", "file_move", "file_delet
 const BROWSER = ["browser_open", "browser_goto", "browser_snapshot", "browser_click", "browser_type", "browser_press", "browser_screenshot", "browser_table", "browser_act", "browser_pages", "browser_close", "browser_eval"];
 const PREVIEW = ["preview_serve", "preview_status", "preview_stop"];
 
-const GIT = ["git_branch", "git_commit", "git_status_diff", "pr_create", "pr_view", "pr_comments", "pr_comment_checklist"];
+const GIT = ["git_branch", "git_commit", "git_status_diff", "pr_create", "pr_view", "pr_comments", "pr_comment_checklist", "ci_watch"];
 /** Control/communication tools shared by every mode (§6.1). `plan_exit` is the
  *  escape hatch from the read-only plan permission mode (C13), so it is exposed
  *  in every mode the way `finish` is. */

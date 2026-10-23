@@ -11,6 +11,7 @@ import type { WorkerCheckpoint } from "./checkpoint.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { chatWithFallback } from "./model.js";
 import { createStallGuard } from "./stallGuard.js";
+import { ciWatchEscalationNotice } from "./ciWatchLoop.js";
 import { compressContext } from "./contextCompressor.js";
 import { throwIfCancelled } from "../server/runControl.js";
 import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/riskTier.js";
@@ -286,6 +287,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.onToolEvidence?.(evidence);
         const notice = stallGuard(item.name, item.args, toolResult.ok);
         if (notice) stallNotices.push(notice);
+        const ciNotice = ciWatchEscalationNotice(toolResult.content);
+        if (ciNotice) stallNotices.push(ciNotice);
         if (TODO_UPDATE_TOOLS.has(item.name) && toolResult.ok) reminders.noteTodoUpdate(step);
         if (MEMORY_UPDATE_TOOLS.has(item.name) && toolResult.ok) reminders.memoryUpdated();
         opts.emit({
@@ -323,6 +326,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.onToolEvidence?.(evidence);
         const notice = stallGuard(name, args, toolResult.ok);
         if (notice) stallNotices.push(notice);
+        const ciNotice = ciWatchEscalationNotice(toolResult.content);
+        if (ciNotice) stallNotices.push(ciNotice);
         if (TODO_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.noteTodoUpdate(step);
         if (MEMORY_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.memoryUpdated();
         messages.push({ role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) });
