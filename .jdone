@@ -31655,3 +31655,60 @@ forbidden path touched. No Arabic text was written by this session; no mojibake 
 text was added. `git add -A` briefly swept seven temporary test-log files into the merge
 commit; they were removed and the commit amended (`git commit --amend -C HEAD`), and the
 final tree is clean (`git status --porcelain` empty).
+
+---
+
+# N6 merge gate session note (2026-10-23, parity tip `4bb2b44`, sixth merge)
+
+The session resume found a sixth merge left in flight by the previous session: `git status`
+reported `both modified: src/agent/events.ts` with `MERGE_HEAD 4bb2b44` (parity had advanced
+with the merge of khamis1992/neo-n5, the N5 per-step context selector). The merge was
+completed and resolved as a strict superset: no line from either side was dropped.
+
+## Sixth merge: parity tip `4bb2b44` (N5 context selector via loam-jcode-run)
+
+The in-flight merge had already auto-merged and staged every path except one:
+`src/agent/contextSelector.ts` (new) plus its two test suites (new), `src/agent/loop.ts`,
+`src/config.ts`, `src/graph/runGraph.ts`, and `.jdone` / `.jcode-done` via the union driver.
+The single conflict was `src/agent/events.ts`.
+
+Per file:
+- `src/agent/events.ts`: both sides inserted a new `AgentEvent` variant at the same position
+  (right after `artifact_published`). HEAD (N6) added `budget_exhausted` (a clean mission
+  budget stop that carries the `MissionCheckpoint`); parity (N5) added `context_selected`
+  (per-step context-selector telemetry). Resolved as the strict superset: `context_selected`
+  first (parity's position), then `budget_exhausted` (ours). Both events exist; neither side
+  lost a line.
+- Auto-merged files verified to contain BOTH feature sets: `src/agent/loop.ts` keeps the N6
+  mission machinery (`mission` / `resumeMission` / `saveMissionCheckpoint` run options, the
+  `Number.MAX_SAFE_INTEGER` step ceiling, `MissionBudgetError`, pre-step in-flight and
+  post-step completed checkpointing, wall-clock and cost consumption, both `budget_exhausted`
+  emission points) AND parity's N5 selector (`ContextSelector` wiring, `toolMessageIds`,
+  `selectorWindowTokens`, the `context_selected` emission); `src/config.ts` keeps the N6
+  `mission` budget block (`steps 0 = unbounded`) and parity's `contextSelector` config;
+  `src/graph/runGraph.ts` handles `context_selected`, `budget_exhausted`,
+  `workspace_command` and `workspace_open_request`.
+
+Merge commit `888aaa4` (parents `290354f` and `4bb2b44`).
+
+## Gates (all run from the worktree root on the merged tree)
+
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (server bundle + pdf worker written)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test` over the touched suites (`mission`, `computeBudget`,
+  `contextSelector`, `contextSelectorLongHorizon`, `runGraph`, `recall`, `runTools`,
+  `sessionRuntime`) -> tests 154, pass 154, fail 0 (includes the N6 acceptance tests:
+  500-step mock mission, restart resume through the durable checkpoint store, clean budget
+  stop with the summary checkpoint)
+- `npm run eval:neo`                          -> total=100 passed=10/10 verdict=PASS
+  (baseline 100, no regression)
+
+Integrity of the resolved tree: `git grep -n "^<<<<<<<\|^>>>>>>>\|^|||||||"` over the whole
+repository returns empty; no conflict markers remain. `git merge-base --is-ancestor
+manus-parity HEAD` exits 0, so the branch contains the whole parity tip. The conflicted
+region was edited with the file-edit tool only (the working-tree file is CRLF under
+`core.autocrlf`, so the edit matched the CRLF bytes exactly); no shell redirection produced
+file content. No test was weakened, deleted or skipped. No secret committed. No forbidden
+path touched. No Arabic text was written by this session; no mojibake placeholder text was
+added.
