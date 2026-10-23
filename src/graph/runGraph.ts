@@ -25,7 +25,7 @@ import { assertTransition, canTransition } from "./status.js";
 import { transaction } from "../server/sqliteStore.js";
 
 /** Tools that produce a search node on the canvas. */
-const SEARCH_TOOLS = new Set(["web_search"]);
+const SEARCH_TOOLS = new Set(["web_search", "kb_search"]);
 /** Tools that produce a webpage node on the canvas. */
 const WEBPAGE_TOOLS = new Set(["web_fetch", "browser_open", "browser_goto", "browser_snapshot", "browser_act", "browser_pages"]);
 /** Tools that produce a document node on the canvas. */
@@ -561,7 +561,7 @@ export class RunGraph {
       case "tool_call":
         return this.onToolCall(runId, state, event.name, event.args);
       case "tool_result":
-        return this.onToolResult(runId, state, event.name, event.ok, event.summary);
+        return this.onToolResult(runId, state, event.name, event.ok, event.summary, event.kbSeedIds, event.kbSeeds);
       case "error":
         return [this.addNode(runId, state, {
           type: "failed",
@@ -761,7 +761,15 @@ export class RunGraph {
     return [node.id];
   }
 
-  private onToolResult(runId: string, state: RunState, name: string, ok: boolean, summary: string): string[] {
+  private onToolResult(
+    runId: string,
+    state: RunState,
+    name: string,
+    ok: boolean,
+    summary: string,
+    kbSeedIds?: string[],
+    kbSeeds?: Array<{ id: string; title: string; tags: string[]; preview: string }>,
+  ): string[] {
     const index = state.pending.findIndex((entry) => entry.name === name);
     if (index === -1) return [];
     const [entry] = state.pending.splice(index, 1);
@@ -773,7 +781,28 @@ export class RunGraph {
       this.store.update(node.id, { status, data: { ...(node.data as Record<string, unknown>), summary: oneLine(summary, 600), ok } });
     }
     state.lastId = node.id;
-    return [node.id];
+    // N3 Knowledge Garden: a `kb_search` result carries the seeds it actually read
+    // (`kbSeedIds` + `kbSeeds`). Each becomes a child node hanging off the tool
+    // node, so "where did this answer come from?" is a real edge on the run graph
+    // rather than prose. Nothing is invented: the ids come from the tool.
+    if (!kbSeedIds || kbSeedIds.length === 0) return [node.id];
+    const created: string[] = [];
+    for (const seedId of kbSeedIds) {
+      const meta = kbSeeds?.find((seed) => seed.id === seedId);
+      const seedNode = this.addNode(runId, state, {
+        type: "kb_seed",
+        seed: `kb_seed:${name}:${seedId}:${state.seq}`,
+        status: "finished",
+        data: {
+          seedId,
+          tool: name,
+          ...(meta ? { title: meta.title, tags: meta.tags, preview: meta.preview } : {}),
+        },
+        parent: node.id,
+      });
+      created.push(seedNode.id);
+    }
+    return [node.id, ...created];
   }
 
   private onArtifact(
