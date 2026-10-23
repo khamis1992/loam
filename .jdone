@@ -1,3 +1,150 @@
+N4 — Incremental Recipe engine: DONE
+
+Summary
+-------
+Added orchestrator mode `recipe`: after each step the planner proposes the next
+step(s) from that step's results (add / rewrite / drop), the recipe grows within
+the session budget, `remaining_estimate` is reported and decreases, and
+`restartFrom(nodeId)` regenerates only the downstream while upstream outputs are
+kept verbatim.
+
+  - `src/agent/recipe.ts` (521 lines, new): the recipe state machine, free of
+    model and tool dependencies. `initRecipe`, `beginStep`, `finishStep`,
+    `applyProposal`, `parseProposal`, `proposePrompt`, `observationsFromTrace`,
+    `remainingEstimate`, `pendingCount`, `completedCount`, `restartFrom`,
+    `restoreTail`, `reseedRecipe`, `planStepsOf`, `stepContract`, `statusRank`.
+  - `src/agent/orchestrator.ts`: recipe mode wired end to end. The upfront plan
+    is the SEED; every round emits `recipe_update` and the frozen `plan` is kept
+    as the recipe's projection so the client never sees two different tasks. A
+    failed step is EVIDENCE, not a reason to rebuild the plan: it is marked
+    `blocked`, the planner is asked what to do, and the run re-routes around it.
+    A dropped step is skipped rather than executed. A replan re-seeds the recipe
+    instead of discarding it. `recipeRestart` is applied once, at the first
+    opportunity, and never re-runs the steps before the restart point.
+  - `src/agent/planner.ts`: `proposeNextSteps` (the planner round for one
+    recipe step) alongside the existing `planTask`.
+  - `src/agent/events.ts`, `src/protocol/events.ts`, `src/protocol/types.ts`,
+    `src/protocol/socket.ts`, `packages/shared/src/socket.ts`,
+    `packages/shared/src/eventCategories.ts`: `RecipeStepInfo`, `RecipeChange`,
+    `RecipeState`, the `recipe_update` and `recipe_restart` events, their
+    client types and their category (`planner`).
+  - `src/graph/runGraph.ts`: the run graph accepts a recipe step node id.
+
+Acceptance criteria (automated, all passing)
+--------------------------------------------
+  - a tool fails -> re-route to an alternate tool:
+    `src/agent/__tests__/orchestratorRecipe.test.ts` (recipe re-route after a
+    failed step: the step is `blocked`, the planner is asked, and the run
+    continues instead of rebuilding the plan).
+  - restart from step 3 does not re-call tools of steps 1-2 (mock call counter):
+    the same suite asserts the mock tool call counter and the kept/regenerated
+    step ids for a restart at `s3` (`recipe restarted at s3; kept 2,
+    regenerated 1`), and `restartFrom` keeps the upstream steps' ids, status and
+    node while reopening only the restart point
+    (`src/agent/__tests__/recipeEngine.test.ts`, `recipeIds.test.ts`).
+  - estimate shown and decreases: `recipe_update.remainingEstimate` is emitted
+    on init, on every round and on every advance; `remainingEstimate` keeps the
+    smaller of the planner's number and the steps actually open, so it can move
+    up when a round reveals real new work and never reports more work than the
+    recipe holds (`recipeEngine.test.ts`).
+  - ids stay unique: `withUniqueIds` enforces it, because a recipe step id keys
+    the canvas node, the frozen plan and the restart target
+    (`recipeIds.test.ts`).
+  - a restart that cannot regenerate its tail does not silently shrink the run:
+    `restoreTail` puts the discarded downstream steps back as pending work, and
+    the orchestrator emits `recipe_restart` before doing so
+    (`recipeIds.test.ts`, `orchestratorRecipe.test.ts`).
+
+Tests (node --import tsx --test, all pass on the merged tree)
+------------------------------------------------------------
+  src/agent/__tests__/recipeEngine.test.ts
+  src/agent/__tests__/orchestratorRecipe.test.ts
+  src/agent/__tests__/recipeIds.test.ts
+  src/protocol/__tests__/recipeEvents.test.ts
+  src/protocol/__tests__/recipeReplay.test.ts
+  src/graph/__tests__/runGraph.test.ts
+  -> tests 56, pass 56, fail 0
+
+  `(cd packages/web && npx vitest run)` -> 72 files / 472 tests, all pass.
+
+No test was weakened, deleted or skipped; no assertion was relaxed.
+
+N20 long-horizon eval (`npm run eval:neo`, mock model, no network)
+-----------------------------------------------------------------
+  neo eval neo-eval-2: total=100 passed=10/10 bar=60 verdict=PASS (baseline 100)
+  baseline: no regression
+  Cases: research-to-report 100, recurring-tracker 100, long-document-assembly
+  100, kb-grounded-answer 100, tool-failure-recovery 100, restart-from-step 100,
+  step-budget 100, no-hallucinated-citations 100, deep-file-triage 100,
+  uninterrupted-baseline 100. The `restart-from-step` and `tool-failure-recovery`
+  cases exercise the same restart/re-route behaviour this task adds; the
+  recorded baseline is 100 and the run is 100, so there is no regression.
+
+Merge with manus-parity: resolved keeping both sides
+----------------------------------------------------
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity`. The
+merge of parity tip `045f3e2` (J5 command-risk port) was run once and auto-merged
+with the `ort` strategy: no conflict markers remained in any tracked file and no
+manual resolution was needed. `src/protocol/socket.ts` and `src/protocol/types.ts`
+both changed on each side, and git combined them without loss: parity's
+`session_write_access` / `ServerMessage` union change and N4's
+`recipe_update` / `recipe_restart` handling are both present.
+
+The tracked rollup marker `.jdone` is byte-identical to manus-parity's version
+after the merge. This is correct rather than a loss: git's ort resolver kept the
+side whose content already contained every line of the other, verified
+mechanically by comparing the merged file line-by-line against both sides
+(`0` lines missing from the branch side, `0` lines missing from the parity side).
+The parity `.jdone` is the shared rollup that already carries the N20 baseline and
+every report that landed on parity; this report is prepended here.
+
+No source file was edited by this session. The N4 deliverables were already
+committed (`7c6fc61`, `a928de8`, `28b3cc8`, `0064bb0`) and are unchanged.
+
+Gate condition verified on the final tree
+-----------------------------------------
+  `git merge manus-parity`      -> "Already up to date."
+  `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
+  `git rev-list --left-right --count manus-parity...HEAD` -> `0  5`
+    (zero parity commits missing; the left count is the gate)
+  `git grep -E "^(<{7}|={7}|>{7})( |$)"` -> no matches (no conflict markers)
+  `git status --porcelain`      -> empty
+
+Gates (all run from the worktree root on the merged tree)
+---------------------------------------------------------
+  1. npx tsc --noEmit                                  -> exit 0
+  2. npm run build:server                              -> exit 0 (pdf worker copied)
+  3. (cd packages/web && npx next build)               -> exit 0 (Compiled successfully)
+  4. node --import tsx --test <the 6 recipe suites>     -> tests 56, pass 56, fail 0
+  5. (cd packages/web && npx vitest run)               -> 72 files / 472 tests, all pass
+  6. npm run check:encoding   -> OK (no BOM, no mojibake, all JSON valid)
+  7. npm run check:modes      -> PASS
+  8. npm run check:orchestrator -> PASS (114/114)
+  9. npm run check:promptwire -> PASS (every promptwire tool ok:true)
+ 10. npm run check:recovery   -> PASS
+ 11. npm run eval:neo         -> total=100, 10/10, verdict=PASS, baseline 100,
+                                no regression
+
+Seams left for other workstreams
+--------------------------------
+  - `restartFrom` is the seam D13 replay plugs into. The orchestrator applies
+    `recipeRestart` once per run and keeps the upstream steps' ids/status/node,
+    so a replay layer can re-execute only the regenerated tail from the
+    checkpoint. `recipeState` is persisted with every checkpoint through
+    `saveRecipe`, so a resume continues the same recipe instead of reseeding.
+  - `proposeNextSteps` is the seam for any other planner implementation; it takes
+    `RecipeProposeContext` and returns `PlanResult`-shaped usage, so a
+    structured-output planner can replace the JSON `parseProposal` path without
+    touching the engine.
+  - `RecipeStepStatus` is a closed union; a new status must be added to
+    `STATUS_ORDER` in `recipe.ts` and to the client union in
+    `packages/shared/src/socket.ts` together.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or
+skipped. No Arabic text was written; no mojibake placeholder text was added.
+Working tree clean.
+---
+
 J5 — Blast-radius shell command risk classifier: DONE
 
 Summary
