@@ -1,15 +1,36 @@
-D4 plan approval gate (Devin suggest_plan) complete and committed as 25da47e on
-khamis1992/devin-d4. Gate: tsc PASS, build:server PASS, next build PASS,
-plan-approval node tests 15/15 PASS, web vitest 333/333 PASS.
+D4 plan approval gate (Devin suggest_plan) complete and committed on
+khamis1992/devin-d4. Original work: 25da47e. Adversarial round 2: abda171.
 
-Extra validation pass: AC audit, a full classifier matrix, protocol event mapping,
-an end-to-end tool -> event -> HTTP route -> gate script, a real
-src/server/http.ts boot driven with fetch, trivial-bypass/TTL/abort checks, and
-the 111-file server suite compared against base 088b4f2. Only diff vs base:
-src/tools/__tests__/planApproval.test.ts (fails at base, 15/15 pass here).
-Repo checks check:modes / check:promptwire / check:orchestrator PASS;
+Gates (all from the worktree root):
+- npx tsc --noEmit -> PASS (no output)
+- npm run build:server -> PASS (dist/server.cjs 18.7mb)
+- (cd packages/web && npx next build) -> PASS (24 static pages)
+- node --import tsx --test src/tools/__tests__/planApproval.test.ts -> 18/18 PASS
+- node --import tsx --test src/agent/__tests__/toolProfile.test.ts
+  src/policy/__tests__/permissionModes.test.ts src/modes/__tests__/catalog.test.ts -> 23/23 PASS
+- (cd packages/web && npx vitest run) -> 54 files / 333 tests PASS
+- full server suite: 111 files run one-by-one, only the two pre-existing failures
+  below (identical at base 088b4f2)
+
+Round 2 (adversarial) found and fixed two real defects, both now covered by tests:
+1. src/server/routes/planApproval.ts answered true for unsupported verbs
+   (PUT/DELETE/PATCH/OPTIONS) and for paths it does not own (sibling prefix,
+   trailing slash, nested), so the server never responded and the request hung
+   until the client timed out. It now returns false and falls through to the
+   server's normal 404; the id match is tightened to one path segment.
+2. src/tools/planApprovalStore.ts returned "rejected" on cancellation but left
+   the record pending, so the task's mutating tools stayed blocked for the rest
+   of the 30 min TTL with no run left to resume. waitForPlanDecision now clears
+   the record on abort.
+
+Honest correction: an earlier hypothesis of a same-tick waiter race for two
+plans on one task was DISPROVED by a direct probe (both before and after the
+change the second plan correctly stays pending). The unnecessary waiter-keying
+change was reverted, so the store diff is only the cancel fix.
+
+Repo checks: check:modes / check:promptwire / check:orchestrator PASS.
 check:encoding still flags the pre-existing scripts/repair-mojibake.cjs.
 
 Two pre-existing failures remain (codingPrompt masterPromptSha256 snapshot,
-craftStatus GET /api/craft/status line 86) — both reproduced identically at base
+craftStatus GET /api/craft/status line 86) - both reproduced identically at base
 088b4f2 in a throwaway worktree, so unrelated to D4. See .devin-done.
