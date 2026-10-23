@@ -72,7 +72,7 @@ export function validateLocaleProfile(value: unknown): LocaleProfile {
 }
 
 /** Neutral, locale-agnostic fallback used only when the model cannot answer. */
-export function ruleBasedLocale(location?: LocationSetting): LocaleProfile {
+export function ruleBasedLocale(location?: LocationSetting | null): LocaleProfile {
   const country = location?.country?.trim() || "Global";
   return {
     country,
@@ -90,7 +90,7 @@ export function ruleBasedLocale(location?: LocationSetting): LocaleProfile {
   };
 }
 
-function localePrompt(opts: { location?: LocationSetting; context: string; language?: string }): string {
+function localePrompt(opts: { location?: LocationSetting | null; context: string; language?: string }): string {
   const place = opts.location
     ? [opts.location.country, opts.location.region, opts.location.city].filter((p) => p && p.trim()).join(", ")
     : "";
@@ -135,7 +135,7 @@ function localePrompt(opts: { location?: LocationSetting; context: string; langu
  * model is missing or fails, a neutral global profile is returned.
  */
 export async function resolveLocale(
-  location: LocationSetting | undefined,
+  location: LocationSetting | null | undefined,
   brief: string,
   docs?: string[],
   opts: ResolveLocaleOptions = {},
@@ -154,6 +154,7 @@ export async function resolveLocale(
   if (opts.caller) {
     try {
       const locale = await askJson<LocaleProfile>(opts.caller, {
+        role: "locale",
         system:
           "You are a precise market-research analyst. You return strictly valid JSON that matches the requested shape.",
         prompt: localePrompt({ location, context, language: opts.language }),
