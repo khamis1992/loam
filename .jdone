@@ -1,4 +1,4 @@
-N3 (Knowledge Garden) complete: user-built RAG store with KB CRUD, text/file/URL import, tags, hybrid search, the kb_search tool, a per-run toggle, and cited seeds in the run graph. All gates green.
+N3 (Knowledge Garden) complete: user-built RAG store with KB CRUD, text/file/URL import, tags, hybrid search, the kb_search tool, a per-run toggle, and cited seeds in the run graph. All gates green. A post-completion audit (commit ad16ec3) then found and fixed three real defects in that toggle; see the second section below.
 
 ## What N3 delivered
 A per-workspace knowledge base the agent can build itself and search during a run:
@@ -54,6 +54,88 @@ identically. N3 touched none of the isolation harness.
 ## Housekeeping
 `.jdone` had been left deleted in the working tree and is recreated by this commit; the
 temp `noderun.txt` produced by the last full-suite run was deleted before committing.
+
+---
+
+N3 audit follow-up complete (commit ad16ec3): the per-run Knowledge Garden toggle was
+vacuous and two adjacent defects were fixed. All gates re-run green on the committed fix.
+
+## The defects that were fixed
+A post-completion audit of N3's per-run toggle found three real defects, all now fixed in
+`ad16ec3`:
+
+1. **Workspace escape returned 500 instead of 400.** `isUserError()` in
+   `src/server/routes/knowledge.ts` only matched `required|not found|already exists|no
+   knowledge`, so a caller pointing the importer at `../../../etc/hosts` got a generic
+   server-fault response. It now also matches `outside workspace`, `body too large` and
+   `invalid JSON body`, so the caller's bad path/body is reported as their fault and the
+   400 body never leaks the file's contents. Regression test added (the escape asserts
+   400, matches `/outside workspace/`, and does not contain `root:x:`).
+
+2. **The toggle was never wired end to end.** The web chip existed but nothing carried
+   the choice to the run. `src/server/http.ts` now reads `knowledge` from the request
+   body and forwards it; `src/protocol/socket.ts`, `packages/shared/src/socket.ts` and
+   `src/protocol/types.ts` carry `knowledge?: boolean`; `Composer.tsx` +
+   `TaskPageClient.tsx` (localStorage key `loam.knowledge.<sessionUid>`) implement the
+   chip. `en.json`/`ar.json` gained the two strings (token corrected from a nonexistent
+   `icon-green` to `icon-blue`).
+
+3. **The toggle was vacuous (the substantive one).** The `knowledge` service was granted
+   by **no** work mode, so `kb_*` never entered `capabilities.allow` and
+   `excludeKnowledgeTools` was filtering an empty set: flipping the chip changed nothing.
+   Fixes:
+   - `src/server/companionGateway.ts` — added `"knowledge"` to the `grants` array of all
+     six `WORK_MODES` (`chat`, `loam`, `user_device`, `own_device`, `team`, `continuous`).
+   - `src/server/knowledgeTools.ts` — extracted `applyKnowledgeGate(allow, enabled)` as
+     the single composition point, testable without booting the agent loop.
+   - `src/index.ts` — now calls `applyKnowledgeGate(runAllow, opts.savedRun.knowledge ===
+     true)` instead of the inline ternary.
+   - `src/server/__tests__/knowledgeRoutes.test.ts` — added a **non-vacuity regression
+     test** asserting every work mode grants all three `kb_*` tools and that the gate
+     keeps/strips correctly (this test fails on the pre-fix tree).
+   - `src/scripts/check-companions.ts` — added a **section 2b** invariant (the `ALL_TOOLS`
+     declaration was moved above section 3). Note: `check-companions` still aborts in
+     **section 2** (`uncoveredModeTools()` — many mode tools missing from the service
+     catalog), confirmed **pre-existing** by stashing the fix, so section 2b cannot
+     execute inside that script; the invariant is verified by the node test above plus a
+     standalone probe (6 work modes x 3 `kb_*`, all PASS).
+
+## Gates re-run on the fix (committed HEAD ad16ec3)
+- `npx tsc --noEmit`                                 -> exit 0
+- `npm run check:encoding`                           -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                              -> PASS (seven distinct fail-closed modes)
+- `npm run check:recovery`                           -> PASS (migration/backup/retention/rollback + FIFO)
+- `npm run check:orchestrator`                       -> PASS (114/114)
+- `npm run check:loam-agents`                        -> seven modes accepted; unknown create/update rejected
+- `npm run build:server`                             -> exit 0 (dist\server.cjs 19.3mb)
+- `(cd packages/web && npx vitest run)`              -> 73 files / 482 tests passed, 0 fail
+- `node --import tsx --test "src/**/__tests__/*.test.ts"` -> tests 2154, pass 2152, fail 2
+
+## End-to-end proof that the toggle is real
+`n3-toggle-e2e.mjs` boots the **real built `dist/server.cjs`** against a stub Ollama that
+records the `tools` array the model receives. 11/11 checks PASS:
+- toggle OFF -> the model is offered **117** tools and never sees any `kb_*` (offered
+  `kb_*` = `[]`);
+- toggle ON  -> the model is offered **120** tools, all three `kb_*` present;
+- the delta between the two runs is **exactly** `["kb_search","kb_ingest","kb_manage"]`.
+This is direct evidence the toggle changes the advertised tool set, which is what the
+pre-fix code failed to do. (The two runs end on the compute-budget notice rather than a
+clean verdict because the stub's reply shape is not a valid verifier verdict; that is a
+property of the stub, not the toggle, so those two checks were re-scoped to the tool
+payloads the probe actually proves.)
+
+## Pre-existing failures (unchanged, honestly reported)
+The 2 node failures are byte-identical to the N3 report above and to the clean baseline:
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> `suggest_plan` not linted/pending.
+2. `src/server/__tests__/worktrees.test.ts` -> Windows `%TEMP%`-inside-config-dir artifact.
+Both were confirmed to fail identically on a stashed clean tree (`git stash push -u -- src
+packages`, 6/8 pass with the same 2 failing). N3 touched neither file.
+
+`npm run check:isolation` still times out at `check-isolation-http.ts:58` (the missing
+`LOAM_AUTH_DISABLED` harness defect described above) and `src/scripts/check-companions.ts`
+still aborts in section 2 (`uncoveredModeTools`) — both pre-existing and untouched by this
+work. All throwaway probe files were deleted before committing. No test was weakened,
+deleted, or skipped. No secrets committed. No forbidden path touched.
 
 ---
 
