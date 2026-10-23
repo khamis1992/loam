@@ -1,3 +1,82 @@
+## J6 gate-fix: sixth manus-parity merge (O3) resolved, all gates green
+
+`manus-parity` advanced once more while the fifth resolution was being finalised, from `603d71c`
+(O6) to `8e197c6` ("merge khamis1992/om-o3 (O3 via loam-jcode-run) into manus-parity"), carrying
+the O3 durable `ProtocolStore`. `git merge manus-parity` conflicted in exactly one file, `.jdone`
+(add/add: this J6 rollup vs parity's new O3 report prepended at the same top-of-file anchor).
+The incoming O3 code merged cleanly with no manual edits.
+
+### Conflict resolution
+Resolved as a strict superset: parity's O3 head block (115 lines, from the `## O3 gate-fix
+session` heading through the end of the O3 report) followed by this branch's whole J6 rollup.
+The staged blob diff is additions only (115 `+`, 0 `-`). The inserted block was written with LF
+line endings (78 lines); the rest of the file keeps its pre-existing CRLF endings (2183), exactly
+as it already was before this session, so there is no line-ending churn and no mixed-ending
+regression. Mechanical verification against both parents:
+- ours (`HEAD` side) 1772 non-blank lines -> 0 missing
+- theirs (parity side) 1602 non-blank lines -> 0 missing
+- conflict-marker lines remaining in file = 0 (the two `<<<<<<<` / `>>>>>>>` strings still present
+  are the pre-existing *prose* references inside the preserved D19 and D5 reports, not markers)
+- `SUPERSET_OF_BOTH_SIDES = true`, mojibake placeholder count = 0
+Committed as merge commit `c9d609c` (parents `13c5d43` + `8e197c6`).
+
+### Incoming O3 change (merged cleanly, no manual edits)
+```
+ .jdone                                       | 115 ++++++++++++
+ src/protocol/__tests__/storeCompat.test.ts    | 266 +++++++++++++++++++++++++++
+ src/protocol/store.ts                         | 229 +++++++++++++++--------
+ src/protocol/types.ts                         |   3 +
+ 4 files changed, 522 insertions(+), 91 deletions(-)
+```
+`git diff` of the three source files against `MERGE_HEAD` is empty, so the O3 deliverables are
+byte-identical to parity. Neither `ui/` nor any check script is in that set, so the pre-existing
+host-only failures below cannot have been affected by this merge.
+
+### Gate condition verified (final)
+- `git merge origin/manus-parity` reports "Already up to date."
+- `git merge-base --is-ancestor origin/manus-parity HEAD` exits 0
+- `git rev-list --left-right --count origin/manus-parity...HEAD` = `0  41`
+- `git status --porcelain` is empty (working tree clean)
+Note on the local ref: this worktree's local `manus-parity` ref is stale at `045f3e2` (20 commits
+behind `origin/manus-parity` = `d05e4b1`); the merge was taken from `origin/manus-parity`, whose
+tip `d05e4b1` is fully contained in `HEAD`. `HEAD` is also a descendant of the O3 merge `8e197c6`.
+
+### Gates on committed HEAD c9d609c
+- `npx tsc --noEmit`                          -> exit 0 (no output)
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.4mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 ("Compiled successfully", 25/25 static pages)
+- `(cd packages/web && npx vitest run)`       -> 72 files / 472 tests, all pass
+- `npm run verify`                            -> exit 0 (typecheck, encoding OK, eval harness smoke PASS,
+                                                  orchestrator smoke PASS, recovery PASS, modes PASS)
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                       -> PASS
+- `npm run check:promptwire`                  -> PASS (every promptwire tool ok:true)
+- `npm run check:design-registry`             -> OK (30 blocks, 8 RTL, all manifests valid, all built)
+- `npm run test:memory`                       -> tests 49, pass 49, fail 0
+- `npm run test:bench`                        -> tests 40, pass 40, fail 0
+- incoming O3 suites `src/protocol/__tests__/{storeCompat,eventLog,eventLogMigrate}.test.ts` +
+  `src/protocol/__tests__/run.ts`             -> tests 30, pass 30, fail 0
+- `node --import tsx --test "src/**/__tests__/*.test.ts"` -> 2 failures
+
+The two remaining failures are pre-existing on the `manus-parity` lineage and are byte-identical
+to parity (`git diff manus-parity HEAD -- <file>` is empty for each):
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "keeps every coding-profile tool either
+   linted or explicitly pending": `suggest_plan is neither registered nor listed in
+   PENDING_CODING_TOOLS`. The inherited D4 defect carried in the preserved reports below.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing":
+   `readGitBranch` shells out to `git rev-parse`, which resolves to the nearest enclosing
+   repository, so a temp folder on this host reports `isGit: true`.
+
+A third vitest file, `packages/web/src/app/app/wiki/__tests__/wikiPage.test.tsx` (blob `ccd5a65e`,
+byte-identical to parity), failed once in a full-suite run ("Unable to find an element with the
+text: /Hello wiki/"). It passed in the same full suite on the immediately following run (72/472)
+and 2/2 in isolation, so it is load-sensitive and not a regression from this merge.
+
+No secrets committed. No forbidden path touched. No test was weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added.
+
+---
+
 ## O3 gate-fix session: merge with manus-parity, all gates green
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
