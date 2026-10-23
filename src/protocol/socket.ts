@@ -671,6 +671,7 @@ export function createChatSocket(deps: SocketDeps): Server {
               projectId: um.extData.projectId ?? null,
               agentId: um.extData.agentId ?? undefined,
               workMode: um.extData.workMode ?? undefined,
+              knowledge: um.extData.knowledge === true,
               ...(tierModel ? { model: tierModel } : {}),
             });
 

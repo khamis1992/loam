@@ -52,7 +52,7 @@ import { createWorkflowTools } from "./tools/workflow.js";
 import { applyPlanApprovalGate, applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
-import { excludeKnowledgeTools } from "./server/knowledgeTools.js";
+import { applyKnowledgeGate } from "./server/knowledgeTools.js";
 import { planQuickEditRoute } from "./agent/quickEdit.js";
 import { SIDE_CHAT_READ_ONLY_TOOLS } from "./agent/sideChat.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
@@ -417,7 +417,7 @@ async function main(): Promise<void> {
         : baseRunAllow;
       // N3 Knowledge Garden: kb_* tools stay registered (the companion gateway
       // advertises them) but only reach the model when the run's garden is on.
-      const knowledgeRunAllow = opts.savedRun.knowledge ? runAllow : excludeKnowledgeTools(runAllow);
+      const knowledgeRunAllow = applyKnowledgeGate(runAllow, opts.savedRun.knowledge === true);
       const runAllowSet = new Set(knowledgeRunAllow);
       const agentTools = registry.forAllowlist(knowledgeRunAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
 

@@ -266,6 +266,31 @@ describe("knowledge routes", () => {
     const again = await call("GET", `/api/knowledge/${baseId}`);
     assert.equal(again.status, 404);
   });
+
+  it("classifies a caller's bad path as 400, never as a server fault", async () => {
+    const created = await call("POST", "/api/knowledge", { name: "Path checks" });
+    const baseId = (bodyOf(created).base as { id: string }).id;
+
+    // Escaping the workspace is the caller's mistake: 400, not 500.
+    const escape = await call("POST", `/api/knowledge/${baseId}/ingest`, { path: "../../../etc/hosts" });
+    assert.equal(escape.status, 400, "workspace escape must be a 400");
+    assert.match(String(bodyOf(escape).error), /outside workspace/);
+    // The refusal must not leak the file's contents.
+    assert.doesNotMatch(JSON.stringify(bodyOf(escape)), /root:x:/);
+
+    // A missing file is reported as an unprocessable import (422), not a crash.
+    const missing = await call("POST", `/api/knowledge/${baseId}/ingest`, { path: "nope.md" });
+    assert.equal(missing.status, 422);
+    assert.equal(bodyOf(missing).ok, false);
+
+    // A malformed body is the caller's fault too.
+    const req = Readable.from([Buffer.from("{not json")]) as unknown as http.IncomingMessage;
+    req.method = "POST";
+    req.url = `http://127.0.0.1/api/knowledge/${baseId}/ingest`;
+    const { res, captured } = fakeRes();
+    assert.equal(await handleKnowledgeRoutes(req, res, `/api/knowledge/${baseId}/ingest`, { workspace, embedder } as KnowledgeRouteContext), true);
+    assert.equal(captured.status, 400, "malformed JSON must be a 400");
+  });
 });
 
 describe("knowledge tool policy", () => {
@@ -278,5 +303,34 @@ describe("knowledge tool policy", () => {
       mod.excludeKnowledgeTools(["kb_search", "read_file", "kb_manage"]),
       ["read_file"],
     );
+  });
+
+  it("is non-vacuous: the gateway actually hands kb_* to the run allowlist", async () => {
+    // Regression guard for the N3 defect where the per-run toggle did nothing:
+    // the `knowledge` service was granted by no work mode, so kb_* never entered
+    // `capabilities.allow` and `excludeKnowledgeTools` filtered an empty set.
+    const gateway = await import("../companionGateway.js");
+    const policy = await import("../knowledgeTools.js");
+    const registered = [...new Set(gateway.COMPANION_SERVICES.flatMap((service) => service.tools))];
+
+    for (const workMode of gateway.WORK_MODES) {
+      const resolved = gateway.resolveCompanionCapabilities({
+        mode: "build",
+        workMode: workMode.id,
+        registeredTools: registered,
+      });
+      const kb = resolved.allow.filter(policy.isKnowledgeTool);
+      assert.deepEqual(
+        kb.slice().sort(),
+        [...policy.KNOWLEDGE_TOOL_NAMES].sort(),
+        `${workMode.id} must grant every kb_* tool, otherwise the per-run garden toggle is dead`,
+      );
+    }
+
+    // The gate itself: same input, on keeps the garden tools, off strips them.
+    const on = policy.applyKnowledgeGate(["file_read", "kb_search", "kb_ingest", "kb_manage"], true);
+    const off = policy.applyKnowledgeGate(["file_read", "kb_search", "kb_ingest", "kb_manage"], false);
+    assert.deepEqual(on, ["file_read", "kb_search", "kb_ingest", "kb_manage"]);
+    assert.deepEqual(off, ["file_read"]);
   });
 });

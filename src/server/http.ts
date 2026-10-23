@@ -2645,6 +2645,9 @@ loadAgents();
           } catch (error) {
             return sendJson(res, 400, { error: String(error) });
           }
+          // N3 Knowledge Garden: the run only reaches the kb_* tools when the
+          // caller switched the garden on for THIS run (default off).
+          const knowledge = body.knowledge === true;
 
           res.writeHead(200, {
             "content-type": "text/event-stream; charset=utf-8",
@@ -2681,6 +2684,7 @@ loadAgents();
               effort,
               agentId,
               workMode,
+              knowledge,
             });
             if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify({ type: "task", taskId: result.taskId })}\n\n`);
           } catch (err) {

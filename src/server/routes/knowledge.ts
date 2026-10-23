@@ -67,9 +67,13 @@ function baseJson(base: KnowledgeBase): Record<string, unknown> {
   };
 }
 
-/** True when a store error is the caller's fault (bad name / missing row). */
+/**
+ * True when a store/importer error is the caller's fault (bad name, missing row,
+ * a path that escapes the workspace, a malformed request body). Anything else is
+ * a genuine server fault and stays a 500.
+ */
 function isUserError(message: string): boolean {
-  return /required|not found|already exists|no knowledge/.test(message);
+  return /required|not found|already exists|no knowledge|outside workspace|body too large|invalid JSON body/.test(message);
 }
 
 export interface KnowledgeRouteContext {

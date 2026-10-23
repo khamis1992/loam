@@ -23,6 +23,20 @@ export function isKnowledgeTool(name: string): boolean {
 }
 
 /**
+ * Apply the per-run Knowledge Garden gate to a resolved run allowlist.
+ *
+ * This is the single composition point for the toggle (used by executeTask in
+ * src/index.ts): a run that opted into the garden keeps the kb_* tools, any
+ * other run has them stripped. Keeping it here means the gate can be tested
+ * without booting the whole agent loop, and the toggle can never silently stop
+ * meaning anything — the regression test asserts the kb_* names actually reach
+ * the input allowlist first.
+ */
+export function applyKnowledgeGate(allow: readonly string[], enabled: boolean): string[] {
+  return enabled ? [...allow] : excludeKnowledgeTools(allow);
+}
+
+/**
  * Strip the Knowledge Garden tools from a resolved run allowlist.
  *
  * Used when a run did not opt into the garden. The tools stay registered (so
