@@ -35,6 +35,8 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "ticket_update",
   "handoff_to_agent",
   "scaffold_backend",
+  "env_blueprint_generate",
+  "env_build_status",
   "playbook_create_from_session",
   "web_scaffold",
   "design_create",
