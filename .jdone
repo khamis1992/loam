@@ -1,3 +1,58 @@
+# D3 done — Environment blueprint + snapshot (merge gate fixed, commit ac0cf67)
+
+## What happened
+The gate failure was a **corrupt git index** in this worktree: the index file at
+`.git/worktrees/devin-d3/index` was completely zeroed (589,020 bytes of 0x00),
+so every git command failed with `error: bad signature 0x00000000 / fatal:
+index file corrupt`. A partially-applied merge had also left 48 working-tree
+files fully zeroed on disk.
+
+## Root-cause fix (no tests weakened)
+1. Moved the zeroed index aside (`index.corrupt.bak`) and ran `git reset` to
+   rebuild the index from HEAD. All D3 work was already committed, so nothing
+   was lost.
+2. Verified every untracked file was manus-parity content (no D3-unique work on
+   disk) and removed the corrupted leftovers with `git clean -fd`.
+3. Ran a clean `git merge manus-parity`. Conflicts in `package.json`,
+   `src/server/http.ts`, `src/server/runTools.ts` were resolved **keeping both
+   sides** (D3 env routes/tools + manus-parity wiki/playbooks/test-isolation).
+4. Committed the merge as `ac0cf67`.
+
+## D3 feature (unchanged, verified still present)
+- `src/tools/envSnapshot.ts` — `loam.env.yaml` blueprint + cached snapshot
+  builder under `data/env-snapshots/<project>/<hash>`, `bootTaskFromSnapshot`,
+  secret redaction, hash-based reuse.
+- Tools `env_blueprint_generate`, `env_build_status` (registered in the tool
+  registry and in `ALWAYS_ON_TOOLS`).
+- `src/server/routes/envBuilds.ts` + route wiring in `src/server/http.ts`.
+- `src/scripts/check-env-builds.ts`.
+
+## Gates (all pass, run from the worktree root)
+1. `npx tsc --noEmit` — PASS
+2. `npm run build:server` — PASS (dist/server.cjs 19.3mb)
+3. `(cd packages/web && npx next build)` — PASS (Next.js 16.4.2, 25 static pages)
+4. Tests:
+   - `node --import tsx --test src/tools/__tests__/envSnapshot.test.ts src/tools/__tests__/envSnapshotE2E.test.ts src/server/__tests__/envBuildRoutes.test.ts src/server/__tests__/taskWorkspace.test.ts` — 24/24 PASS
+   - `node --import tsx --test src/tools/__tests__/*.test.ts` — 632/632 PASS
+   - `node --import tsx --test src/server/__tests__/*.test.ts` — 414/414 PASS
+   - `node --import tsx --test src/agent/__tests__/*.test.ts src/llm/__tests__/*.test.ts src/memory/__tests__/*.test.ts` — 305/305 PASS
+   - `(cd packages/web && npx vitest run)` — 437/437 PASS (66 files)
+
+## Acceptance criteria coverage
+- blueprint generated from a fixture repo: `envSnapshot.test.ts` ("generates a
+  blueprint from the manifest and writes loam.env.yaml")
+- first build runs setup steps, second boot reuses snapshot (counter assert):
+  "runs the setup steps once, then reuses the cached snapshot" + E2E real-shell
+  test
+- hash change triggers rebuild: "the hash changes when the lockfile changes" /
+  "rebuilds when the hash changes" / "bootTaskFromSnapshot ignores a stale
+  snapshot after the lockfile changes"
+- secret values never appear in logs: "preserves hand-written secrets as NAMES
+  only", "injects a resolved secret into the child env only", "redacts a secret
+  echoed by a setup step", "fails the build when a referenced secret is missing"
+
+---
+
 # N1 - Run-graph model: done (merge gate fixed, commit ac0aed3)
 
 The `.jgatefail.txt` failure was `MERGE CONFLICT with latest manus-parity`.
