@@ -20,6 +20,8 @@ import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/risk
 import { ReminderChannel, TODO_UPDATE_TOOLS, MEMORY_UPDATE_TOOLS, type ReminderChannelOptions } from "./reminders.js";
 import { getTaskPhase } from "../tools/phaseTools.js";
 import { ReadState } from "../tools/readState.js";
+import { KvCacheMonitor, missMessage, type RequestRoute, type RequestSignature } from "./kvCacheMonitor.js";
+import { addUsage } from "./usageAccounting.js";
 
 export interface RunOptions {
   cfg: Config;
@@ -71,6 +73,15 @@ export interface RunOptions {
   reminderChannel?: ReminderChannel;
   /** Overrides the stale-todo threshold and initial plan mode for this run. */
   reminders?: ReminderChannelOptions;
+  /** Provider label used for prompt-cache classification (`openai-api` for
+   *  cloud routes, `ollama` for the local endpoint). Defaults to `ollama`. */
+  provider?: string;
+  /** Expected prompt-cache retention in seconds, when known. */
+  cacheTtlSecs?: number;
+  /** Whether `cacheTtlSecs` is only an estimate (never treated as hard expiry). */
+  cacheTtlIsEstimate?: boolean;
+  /** OAuth account label bound to every request of this run; caches are per account. */
+  account?: string;
 }
 
 export interface RunResult {
@@ -81,6 +92,36 @@ export interface RunResult {
   steps: number;
   model: string;
   usage: Usage;
+}
+
+/** Deterministic 32-bit FNV-1a hash; stable across processes for the same input. */
+function hashText(text: string): number {
+  let hash = 2_166_136_261;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16_777_619) >>> 0;
+  }
+  return hash >>> 0;
+}
+
+/** Prompt-shape signature for one provider request: anything that invalidates
+ *  the cached prefix changes one of these hashes. */
+function requestSignature(
+  system: string,
+  tools: Array<{ function: { name: string; description: string; parameters: unknown } }>,
+  messages: ChatMessage[],
+): RequestSignature {
+  const messageHashes = messages.map((m) =>
+    hashText(`${m.role}\u0000${m.content}\u0000${JSON.stringify(m.tool_calls ?? null)}\u0000${m.tool_name ?? ""}`),
+  );
+  return {
+    systemStaticHash: hashText(system),
+    toolsHash: hashText(JSON.stringify(tools)),
+    toolCount: tools.length,
+    messagesHash: messages.reduce((sum, _, i) => sum + messageHashes[i]!, 0) >>> 0,
+    messageHashes,
+    messageCount: messages.length,
+  };
 }
 
 function normalizeArgs(v: unknown): Record<string, unknown> {
@@ -102,6 +143,25 @@ function editTargetPath(args: Record<string, unknown>): string | undefined {
 function auditEdit(name: string, args: Record<string, unknown>, model: string, ok: boolean, step: number, enabled: boolean, taskId?: string): void {
   if (!enabled || !isEditTool(name)) return;
   recordEditModel({ taskId, step, model, tool: name, path: editTargetPath(args), ok });
+}
+
+/**
+ * Route metadata for the prompt-cache classifier: a `:cloud` model hits a remote
+ * OpenAI-compatible upstream (whose cache is what a miss measures), and a
+ * non-cloud model hits the local endpoint, which never reports cache telemetry.
+ * The remote provider's TTL is an estimate, so it is never treated as hard expiry.
+ */
+export function providerRouteFor(model: string, provider: string | undefined): RequestRoute {
+  // The client asks for `glm-5.3:cloud` but the provider echoes the real model
+  // (`glm-5.3:flash:cloud`). Drop the routing suffix so an echoed name and a
+  // genuine model change are told apart. Either side ending in `:cloud` marks the
+  // remote upstream, so a model echo can never flip a route to the local one.
+  const cloudId = model.endsWith(":cloud") ? model.slice(0, -":cloud".length) : model;
+  const isCloud = model.endsWith(":cloud") || cloudId !== model;
+  // The remote upstream serves the cache either way, so classify an echoed
+  // `:cloud` model as cloud too (the local route has no cache telemetry).
+  if (!isCloud) return { provider: "ollama", model: cloudId };
+  return { provider: provider ?? "openai-api", model: cloudId, cacheTtlSecs: 1_800, ttlIsEstimate: true };
 }
 
 function summarize(text: string, lines = 10): string {
@@ -170,7 +230,10 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   let finalText = "";
   let usedModel = opts.model && opts.model.trim() ? opts.model.trim() : opts.cfg.model;
   let step = 0;
-  const usage = { promptTokens: 0, completionTokens: 0, durationMs: 0 };
+  const usage: Usage = { promptTokens: 0, completionTokens: 0, durationMs: 0 };
+  // Prompt-cache (KV) accounting: classify a miss whenever a meaningful part of
+  // the previously reusable prefix was not read back.
+  const cacheMonitor = new KvCacheMonitor();
   const trace: ToolTraceItem[] = [];
   let verificationAttempts = 0;
   let emptyAnswerRecoveries = 0;
@@ -214,10 +277,12 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     if (opts.taskId) reminders.setPlanMode(getTaskPhase(opts.taskId) === "plan");
     for (const message of reminders.drainMessages(step)) messages.push(message);
 
+    let providerCompaction = false;
     if (opts.cfg.compression.enabled) {
       const compressed = await compressContext(opts.cfg, opts.ollama, messages, opts.emit, opts.signal, { readState, todos: currentTodos, model: usedModel });
       if (compressed.compressed) {
         messages = compressed.messages;
+        providerCompaction = true;
         usage.promptTokens += compressed.usage.promptTokens;
         usage.completionTokens += compressed.usage.completionTokens;
         usage.durationMs += compressed.usage.durationMs;
@@ -226,10 +291,19 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
       for (const reminder of compressed.reminders) messages.push(reminder);
     }
 
+    const requestTools = opts.tools.toOllama();
+    const route: RequestRoute = {
+      ...providerRouteFor(usedModel, opts.provider),
+      ...(opts.account ? { account: opts.account } : {}),
+      ...(opts.cacheTtlSecs !== undefined ? { cacheTtlSecs: opts.cacheTtlSecs } : {}),
+      ...(opts.cacheTtlIsEstimate !== undefined ? { ttlIsEstimate: opts.cacheTtlIsEstimate } : {}),
+    };
+    cacheMonitor.beginRequest(route, requestSignature(system, requestTools, messages));
+
     const chatRequest = {
       model: opts.cfg.model,
       messages,
-      tools: opts.tools.toOllama(),
+      tools: requestTools,
       temperature: opts.cfg.agent.temperature,
       // An explicit per-run model (the quick-edit route) wins over the config
       // default; the router still replaces it with the strongest coder on a
@@ -257,10 +331,39 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         });
     throwIfCancelled(opts.signal, opts.taskId);
     usedModel = result.model;
-    usage.promptTokens += result.usage.promptTokens;
-    usage.completionTokens += result.usage.completionTokens;
-    usage.durationMs += result.usage.durationMs;
+    if (providerCompaction) cacheMonitor.noteProviderCompaction();
+    // Reusable boundary = cached reads plus cache writes (uncached input is not
+    // reusable). Providers with no cache telemetry report neither field.
+    const readTokens = result.usage.cachedTokens;
+    const reusableCacheTokens = (readTokens ?? 0) + (result.usage.cacheWriteTokens ?? 0);
+    addUsage(usage, result.usage);
     opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
+    const miss = cacheMonitor.finishRequest(reusableCacheTokens, readTokens);
+    // Emit the accounting row for every request that reported cache telemetry so
+    // the reusable-token counters stay visible; `miss` is attached only when the
+    // classifier found a real cold-cache event. Providers that omit the fields
+    // (e.g. local Ollama) emit nothing, and absent telemetry is never a miss.
+    if (readTokens !== undefined) {
+      opts.emit({
+        type: "cache_usage",
+        provider: route.provider,
+        model: usedModel,
+        promptTokens: result.usage.promptTokens,
+        cachedTokens: readTokens ?? 0,
+        ...(miss
+          ? {
+              miss: {
+                reason: miss.reason,
+                expectedTokens: miss.expectedTokens,
+                readTokens: miss.readTokens,
+                missedTokens: miss.missedTokens,
+                ...(miss.documentedCause ? { documentedCause: miss.documentedCause } : {}),
+                message: missMessage(miss),
+              },
+            }
+          : {}),
+      });
+    }
 
     if (result.toolCalls.length === 0) {
       finalText = result.content.trim();
@@ -277,9 +380,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
       if (opts.suppressFinal !== true) {
         const checked = await verifyFinal({ acceptanceGuard, independentGuard, independentRequest, cfg: opts.cfg, ollama: opts.ollama, request: opts.prompt, goal: opts.prompt, finalText, completedSteps: [], trace,
           history: opts.history, tools: opts.tools, emit: opts.emit, signal: opts.signal, taskId: opts.taskId });
-        usage.promptTokens += checked.usage.promptTokens;
-        usage.completionTokens += checked.usage.completionTokens;
-        usage.durationMs += checked.usage.durationMs;
+        addUsage(usage, checked.usage);
         throwIfCancelled(opts.signal, opts.taskId);
         opts.emit({ type: "verify", verdict: checked.verdict, reason: checked.reason });
         verificationAttempts++;

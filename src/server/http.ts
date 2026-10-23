@@ -12,6 +12,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readScene, saveScene, CreativeError, validateGlb, MAX_GLB_BYTES } from "../creative/store.js";
 import { requireTaskWorkspace, taskPath } from "./taskWorkspace.js";
 import { getLoamMode } from "../modes/catalog.js";
+import { expandPlaybookMacros } from "./playbooks.js";
 import { readStudio, saveStudio, validateStudio, StudioError, type StudioArtifact } from "../studio/store.js";
 import { exportStudio } from "../studio/export.js";
 import { renderWordPreview } from "../studio/word-preview.js";
@@ -98,6 +99,7 @@ import { handleSessionControlRoutes } from "./routes/sessionControl.js";
 import { handleInsightsRoutes } from "./routes/insights.js";
 import { handleShareRoutes } from "./routes/shares.js";
 import { handleProjectContextRoutes } from "./routes/projectContext.js";
+import { handlePlaybookRoutes } from "./routes/playbooks.js";
 import { handleVoiceRoutes } from "./routes/voice.js";
 import { handleConnectorsRoutes } from "./routes/connectors.js";
 import { handleWikiRoutes } from "./routes/wiki.js";
@@ -1787,6 +1789,8 @@ loadAgents();
         // Project context + model tiers (options 17/18/22): must precede the
         // generic /api/projects/ and /api/schedules/ handlers below.
         if (await handleProjectContextRoutes(req, res, p)) return;
+        // Playbooks (D9): versioned reusable prompt library + macro expansion.
+        if (await handlePlaybookRoutes(req, res, p)) return;
         // Repo wiki (D8): list/generate/read DeepWiki-style pages.
         if (await handleWikiRoutes(req, res, p, { workspace: cfg.workspace, ollama, model: cfg.model })) return;
 
@@ -2599,6 +2603,8 @@ loadAgents();
           };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
           if (!prompt) return sendJson(res, 400, { error: "prompt required" });
+          const expansion = expandPlaybookMacros(prompt);
+          const runPrompt = expansion.text;
           let taskId = typeof body.taskId === "string" && body.taskId ? body.taskId : undefined;
           const title = typeof body.title === "string" ? body.title : undefined;
           const model = typeof body.model === "string" && body.model ? body.model : undefined;
@@ -2640,7 +2646,7 @@ loadAgents();
             setTaskMode(taskId, mode);
             const attachmentsBlock = await buildAttachmentsBlock(body.attachments, root);
             const result = await runTask({
-              prompt: attachmentsBlock ? `${prompt}\n\n${attachmentsBlock}` : prompt,
+              prompt: attachmentsBlock ? `${runPrompt}\n\n${attachmentsBlock}` : runPrompt,
               emit,
               taskId,
               title,
