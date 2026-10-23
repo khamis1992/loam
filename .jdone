@@ -2,6 +2,532 @@
 ---
 
 # N2 gate-fix session: merge with latest manus-parity
+# N9 round 12: parity auto-unioned .jdone, full suite green on the final tip
+
+Parity advanced once more, to `ca08d4c` (14 commits ahead of the previous merge). This time the
+`.gitattributes` rule parity added (`.jdone merge=union`, `.jcode-done merge=union`) did its job:
+`git merge manus-parity` auto-resolved `.jdone` with no hand-resolve, no conflict, and no dropped
+report.
+
+## What came in
+
+`src/server/videoStudioExport.ts` (587 lines) + `src/server/__tests__/videoStudioExport.test.ts`
+(380), `src/server/http.ts` (+44), `src/tools/videoStudio.ts` (+211/-),
+`src/agent/masterPrompt.ts` + `masterPromptText.ts`, `src/agent/orchestrator.ts`,
+`src/graph/runGraph.ts`, `src/agent/events.ts`, `prompts/loam-master.md`, and web export work
+(`packages/web/src/lib/videoStudioExport.ts` + test, `LoamVideoPanel.tsx` + test, i18n). New
+`src/tools/__tests__/promptwire.test.ts` expectations track parity's new section 25.
+
+## Verification on the final tip (`dce08b5`)
+
+1. `npx tsc --noEmit` -> exit 0
+2. `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+3. `node --import tsx --test "src/**/*.test.ts"` -> tests 2940, pass 2940, fail 0, skipped 0
+4. N9 node suite -> tests 25, pass 25, fail 0
+5. `(cd packages/web && npx vitest run)` -> 91 files / 624 tests, all pass
+6. AskUserCard vitest -> 1 file / 7 tests, all pass
+7. `npm run build:server` -> exit 0
+8. `(cd packages/web && npx next build)` -> exit 0
+
+Merge fidelity, verified mechanically against the real merge parents:
+- `.jdone` auto-merged by the union driver: **0 lines under-present from either side**
+  (ours 5212 distinct, theirs 5241 distinct), no conflict markers, no BOM, no U+FFFD, and the
+  encoding gate passes on the merged file.
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0; `git rev-list --left-right --count
+  manus-parity...HEAD` -> `0  14`; working tree clean.
+- All five N9 files byte-identical to the N9 commit `3136f14` (`askUserStore.ts` 668daff2,
+  `askUserGate.ts` 339ccd31, `askUserTools.ts` c935f8b2, `src/server/routes/askUser.ts` 7f743ed1,
+  `AskUserCard.tsx` 6430e51e).
+
+## Observed flake, not a regression
+
+The first full node run on this tip reported 1 failure:
+`src/tools/__tests__/search.test.ts` "greps and globs the repository in under 1 second"
+(`grep took 1278ms`, threshold 1000ms). This is a wall-clock timing assertion, not a logic
+failure: the machine had 709 processes running under the live parity runner. Evidence it is not a
+regression: the file and its implementation are byte-identical to `3136f14` (empty
+`git diff 3136f14 HEAD` for `search.test.ts`, `search.ts`, `glob.ts`, `grep.ts`), it passes 5/5
+in isolation, and the immediately following full run passed 2940/2940. No test was edited.
+
+Note: `npm run build:server` / `next build` rewrite `src/agent/masterPromptText.ts` as a build
+side-effect; it was restored with `git checkout --` before the final state check.
+
+## Seams left
+
+- The ask-user auto-trigger classifier is heuristic (keyword/pronoun based). A model-judged
+  confidence signal can replace it behind the `src/tools/askUserGate.ts` seam.
+- `resolve_ask_user` plus the `askUserRequested`/`askUserResolved` pair is the extension point for
+  attaching answers to the run graph as a first-class node rather than a prompt prefix.
+- **Operational seam:** `.jdone` is tracked on parity and now union-merged via `.gitattributes`.
+  After any parity merge, still check `git ls-files -u` and confirm this report's heading is
+  present in `.jdone`.
+- The `search.test.ts` 1-second assertion is load-sensitive; a heavy runner load can flake it.
+- Parity is still advancing under a live runner; if `manus-parity` moves again, merge it and
+  re-run the gates rather than editing source to satisfy a conflict.
+
+---
+
+# N9 round 11: parity re-tracked .jdone, so the earlier merge silently dropped this report
+
+## What happened, and why the previous tip was not actually done
+
+The previous tip `76906c0` merged `manus-parity` at `9ffdb16`. Parity had re-added `.jdone` to
+its tree, while this branch still matched `.jdone` in `.gitignore:50`. A gitignore entry does
+**not** stop a merge that brings a tracked path in from the other side, and git did not warn:
+the untracked working-tree `.jdone` (which held this report) was replaced by parity's rollup
+with no conflict, no error, and no entry in `git status`. The N9 report was silently dropped.
+Detected by re-checking instead of trusting the green merge: `git ls-tree HEAD -- .jdone` was
+non-empty while the N9 heading was absent from both the working tree and `HEAD:.jdone`.
+
+Fix: the report was restored and committed at `c98f3bf` as a tracked file, so the marker exists
+both on disk and at HEAD.
+
+## Merge round 11 (this session)
+
+Parity advanced again to `495ac5f` (39 commits: cr-04, N10, N7, V8, `.gitattributes` union rule,
+`src/agent/prompt.ts`, `src/config.ts`, `src/design/registry.ts` + `retrieval.ts`, `src/index.ts`,
+`src/server/runTools.ts` + its test, `src/tools/uiExamples.ts` + its test).
+
+`.jdone` conflicted. Resolved with git's own union driver (`git merge-file --union`), which is
+exactly the semantics parity adopted in `.gitattributes` (`.jdone merge=union`, `.jcode-done
+merge=union`). Verified as a strict multiset: **0 lines under-present from either side**
+(ours 3494 distinct, theirs 5075 distinct), no conflict markers, no BOM, no U+FFFD. My N9 report
+and parity's V8 round-12 report are both intact.
+
+Parity's only test change in this merge is `src/server/__tests__/runTools.test.ts`, which is
+**additive only (2 insertions, 0 deletions)**: it registers the real `ui_examples` tool so the
+always-on tool list matches the shipped registry. No assertion removed, relaxed, or skipped. No
+test was weakened by this task.
+
+## Gates on the merged tree (HEAD at the time of writing)
+
+1. `npx tsc --noEmit` -> exit 0
+2. `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+3. `node --import tsx --test "src/**/*.test.ts"` -> tests 2913, pass 2913, fail 0,
+   cancelled 0, skipped 0, todo 0
+4. N9 node suite (`askUser.test.ts`, `askUserAutoTrigger.test.ts`, `askUserSocket.test.ts`)
+   -> tests 25, pass 25, fail 0
+5. `(cd packages/web && npx vitest run)` -> 89 files / 614 tests, all pass
+6. `(cd packages/web && npx vitest run src/components/approval/__tests__/askUserCard.test.tsx)`
+   -> 1 file / 7 tests, all pass
+7. `npm run build:server` -> exit 0 (server bundle + pdf worker written)
+8. `(cd packages/web && npx next build)` -> exit 0
+
+N9 content re-verified intact after the merge: all five N9 files are byte-identical to the N9
+commit `3136f14` (`askUserStore.ts` 668daff2, `askUserGate.ts` 339ccd31, `askUserTools.ts`
+c935f8b2, `src/server/routes/askUser.ts` 7f743ed1, `AskUserCard.tsx` 6430e51e).
+
+Note: `npm run build:server` / `next build` rewrite `src/agent/masterPromptText.ts` as a
+build side-effect; it was restored with `git checkout --` before committing.
+
+## Seams left
+
+- The ask-user auto-trigger classifier is heuristic (keyword/pronoun based). A model-judged
+  confidence signal can replace it behind the `src/tools/askUserGate.ts` seam.
+- `resolve_ask_user` plus the `askUserRequested`/`askUserResolved` pair is the extension point for
+  attaching answers to the run graph as a first-class node rather than a prompt prefix.
+- **Operational seam:** `.jdone` is tracked on parity and the union driver is now configured in
+  `.gitattributes`. After any parity merge, check `git ls-files -u` for unresolved paths and
+  confirm this report's heading is still present in `.jdone`, because a gitignore entry does not
+  protect an untracked working-tree copy from being overwritten by a merge.
+- Parity is still advancing under a live runner; if `manus-parity` moves again, merge it and
+  re-run the gates rather than editing source to satisfy a conflict.
+
+---
+
+# N9 done: ask-user clarification node
+
+## What shipped (already merged upstream before this session)
+
+The N9 implementation is intact in the tree and was not re-implemented:
+
+- `src/tools/askUserStore.ts` - in-memory pending-request records with a TTL.
+- `src/tools/askUserGate.ts` - the `ask_user` payload type/parsing plus the two classifiers
+  (pending-request tool-call blocker, vague-prompt auto-trigger).
+- `src/tools/askUserTools.ts` - the `ask_user` agent tool (questions with options, free-text
+  answers, an uploaded file) and `applyAskUserGate`, which wraps every mutating tool.
+- `src/server/routes/askUser.ts` - the HTTP route the web client answers through.
+- `packages/web/src/components/approval/AskUserCard.tsx` - the chat-event card, localized
+  (Arabic included) with logical CSS properties.
+- Registered in the tool registry (`src/index.ts`) and the mode-catalog CONTROL set
+  (`src/modes/catalog.ts`); wording in `src/agent/prompt.ts` and the web i18n catalogs.
+- `packages/shared/src/socket.ts` carries the `askUserRequested` / `askUserResolved` shapes.
+
+## What this session changed
+
+No source file was edited and no test was weakened. This session fixed the gate failures, which
+were merge conflicts in the tracked rollup `.jdone`, and then kept merging an advancing
+`manus-parity` under a live runner:
+
+1. `f14c3d1` merge manus-parity (bdae2ca, J11 round 9): resolved `.jdone` keeping both sides.
+2. `14e04b3` merge manus-parity (84c9af8, N3): resolved `.jdone` keeping both sides.
+3. `2d99ac8` recorded the session in the rollup.
+4. `085cfb5` merge manus-parity (d3d7b88): parity untracked `.jdone`/`.jcode-done`
+   ("chore: untrack runner markers .jdone/.jcode-done ... caused .jdone merge conflicts"), so the
+   modify/delete conflict was resolved by deleting the local copies to match upstream.
+5. `f923e19` merge manus-parity (bec4181, packaging 0.5.29): clean, no conflict.
+6. `41890e1` merge manus-parity (cde859f, memory subsystem): clean, no conflict.
+7. `5f3072f` merge manus-parity (c77161b, cr-03): clean, no conflict.
+8. `da4ddcf` merge manus-parity (0ea829f, om-o5): clean, no conflict.
+9. `8590e50` merge manus-parity (109617a, desktop/electron bridge): clean, no conflict.
+10. `76906c0` merge manus-parity (9ffdb16, cr-04/N10/N7): clean merge, **but see the defect
+    below** - parity re-tracked `.jdone` and the merge silently replaced the working-tree copy.
+
+## Defect found and fixed by independent validation (not by the gate runner)
+
+`9ffdb16` re-added `.jdone` to the parity tree (`git ls-tree manus-parity -- .jdone` is
+`100644 blob`), while this branch still matched it in `.gitignore:50`. A gitignore entry does
+**not** stop a merge that brings a tracked path in from the other side, and git did not warn:
+the untracked working-tree `.jdone` (which held this report) was overwritten by parity's rollup
+with no conflict, no error and no entry in `git status`. The N9 report was silently dropped.
+
+Detected by re-checking rather than trusting the green merge: `git ls-tree HEAD -- .jdone` was
+non-empty while `git status` stayed clean, and the N9 heading was absent from both the working
+tree and `HEAD:.jdone`. Fix: the report is restored below, prepended to the tracked rollup and
+committed, so the marker is both present on disk and tracked at HEAD.
+
+## Acceptance criteria (automated, passing)
+
+1. Vague prompt fixture -> ask node appears before any tool call:
+   `src/agent/__tests__/askUserAutoTrigger.test.ts` passes. A vague prompt emits
+   `ask_user_required` and the planner is never called while the card waits; the classifier block
+   sits before `planTask`, so no agent loop and no tool call can run first.
+2. Answer + file -> run resumes and uses the file:
+   `src/tools/__tests__/askUser.test.ts` and `src/protocol/__tests__/askUserSocket.test.ts` pass,
+   including the uploaded-file resume case. The card component is covered by vitest +
+   @testing-library (`askUserCard.test.tsx`, 7 tests); Playwright was not used.
+
+## Gates (all from the worktree root on the final tree, HEAD `76906c0`)
+
+1. `npx tsc --noEmit` -> exit 0
+2. `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+3. `node --import tsx --test "src/**/*.test.ts"` -> tests 2898, pass 2898, fail 0,
+   cancelled 0, skipped 0
+4. `node --import tsx --test src/tools/__tests__/askUser.test.ts src/agent/__tests__/askUserAutoTrigger.test.ts src/protocol/__tests__/askUserSocket.test.ts`
+   -> tests 25, pass 25, fail 0
+5. `(cd packages/web && npx vitest run)` -> 89 files / 614 tests, all pass
+6. `(cd packages/web && npx vitest run src/components/approval/__tests__/askUserCard.test.tsx)`
+   -> 1 file / 7 tests, all pass
+
+Note: an earlier full web run on a previous tip reported 1 failure in
+`packages/web/src/app/app/wiki/__tests__/wikiPage.test.tsx` ("Unable to find an element with the
+text: /Hello wiki/"). It is not related to N9 or to any file the merges touched, the file passes
+in isolation (2/2), and the immediately following full run passed. Recorded as an observed flake,
+not a regression.
+
+## Merge integrity (independently re-verified this session)
+
+Replayed every merge commit against its real parents (`^1` / `^2` / merge-base), for every file
+the merge touched, with `verify-merges.cjs` and `check-merge-loss.cjs`:
+
+- `f14c3d1`, `14e04b3`, `085cfb5`, `f923e19`: **0 lines of real content lost** from either side.
+  The only lines absent from a merge result that appear in a parent are lines that were also in
+  the merge base and unchanged on the other side (a normal union-merge artifact), not drops.
+- `.jdone` in rounds 1 and 2: 0 missing from ours, 0 missing from theirs, no conflict markers,
+  Arabic intact, no BOM, no U+FFFD.
+- `085cfb5`: `.jdone` deleted to match upstream, which had no content for it.
+- `41890e1`, `5f3072f`, `da4ddcf`, `8590e50`, `76906c0`: clean `ort` merges, no conflict markers,
+  N9 source files untouched.
+
+N9 blob hashes at `76906c0` are identical to the N9 commit `3136f14` for all five files
+(`askUserStore.ts` 668daff2, `askUserGate.ts` 339ccd31, `askUserTools.ts` c935f8b2,
+`src/server/routes/askUser.ts` 7f743ed1, `AskUserCard.tsx` 6430e51e). `git diff --stat 3136f14
+HEAD` over those five paths is empty. The only N9-path commit since `3136f14` is `c6c5ba6`,
+which is additive only (345 insertions, 0 deletions in
+`src/protocol/__tests__/askUserSocket.test.ts`).
+
+## Merge state
+
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
+- `git rev-list --left-right --count manus-parity...HEAD` -> `0  11`
+- `git status --porcelain=v1` -> empty (working tree clean)
+- `manus-parity` at `9ffdb16` (cr-04 + N10 + N7), already an ancestor of HEAD
+
+## Seams left
+
+- The ask-user auto-trigger classifier is heuristic (keyword/pronoun based). A model-judged
+  confidence signal can replace it behind the `src/tools/askUserGate.ts` seam.
+- `resolve_ask_user` plus the `askUserRequested`/`askUserResolved` pair is the extension point for
+  attaching answers to the run graph as a first-class node rather than a prompt prefix.
+- N3's knowledge garden (`src/knowledge/*`, `src/tools/knowledge.ts`,
+  `src/server/routes/knowledge.ts`, `KnowledgeGardenPane.tsx`) is in the tree and can consume those
+  answers as knowledge material.
+- **Operational seam:** `.jdone` is tracked again on parity, so the marker must be edited with the
+  file tools and committed rather than left untracked. Any future parity merge that re-adds or
+  deletes `.jdone` must be checked with `git ls-tree HEAD -- .jdone` and by searching for this
+  report's heading, because a gitignore entry does not protect an untracked working-tree copy
+  from being silently overwritten by a merge.
+- Parity is still advancing under a live runner; if `manus-parity` moves again, merge it and
+  re-run the gates rather than editing source to satisfy a conflict.
+
+---
+
+## M3 gate-fix session (round 7): re-merged parity N19/F6 (`ca08d4c`); the union driver auto-resolved `.jdone` with no conflict
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity in: .jdone. Run
+git merge manus-parity, resolve those files keeping both sides, commit.`
+
+### Root cause
+No source file conflicted. The only conflict path is the tracked rollup `.jdone`, because both
+sides append their own completion report at the same anchor.
+
+### What happened this round
+Parity advanced again, from the round-6 tip `495ac5f` (V8) to `ca08d4c` (`merge
+khamis1992/neo-n19 (N19 via loam-jcode-run) into manus-parity`, carrying the F6 video-export
+workstream). `git merge manus-parity` **completed with exit 0 and no conflict**: `.jdone` was
+auto-merged by the committed `.gitattributes` union driver (`Auto-merging .jdone`), and no
+source file needed a manual resolve. This is the root-cause fix working as designed: the
+recurring gate failure cannot recur now that the union rule is present.
+
+The union driver concatenated both sides. Verified mechanically against both parents
+(multiset diff of non-blank lines): 0 lines missing from parent 1 (`5d0a29d`) and 0 lines
+missing from parent 2 (`ca08d4c`), so the result is a strict superset and no report content
+was dropped.
+
+### Integrity of the merge
+- `.jdone` blob `a95b3b0` at the parity tip is present verbatim; this branch's round-5/6
+  reports stay at the top and parity's N19/F6 rollup is appended below.
+- 0 conflict markers remain in any tracked file (`^(<{7}|={7}|>{7}|\|{7})$` matches zero lines).
+- LF-only working copy, valid UTF-8, no BOM, no NUL/U+FFFD, Arabic intact.
+- No mirofish file changed in this merge (`git diff --name-only 495ac5f ca08d4c --
+  src/tools/mirofish` is empty), so the M3 deliverable is untouched.
+- No forbidden path staged: `docs/handoff/watchdog.ps1`, `qa/*.png`,
+  `packages/tests/visual/baselines`, and ZCode/Codex files are untouched.
+- No test was weakened, deleted or skipped. No secret committed. No force-push, no `reset --hard`.
+
+### The M3 deliverable (unchanged this round, committed at `6bcbe4c`)
+`fix(mirofish): record sharedWith[] share provenance in the M3 turn schema` adds the
+`sharedWith` field to the agent-turn output schema so share provenance (who the agent
+amplified or answered) is recorded: the `AgentTurnOutput.sharedWith: string[]` type, the
+`MAX_SHARED_WITH = 8` cap, validation that accepts `sharedWith` / `shared_with` /
+`sharedAgents`, the field in the two neutral fallbacks, and the model prompt rule and JSON
+example. Covered by `src/tools/mirofish/__tests__/simulate.test.ts`.
+
+### Gates (all run from the worktree root on the final merged tree `9f67341`)
+- `git merge-base --is-ancestor manus-parity HEAD`               -> exit 0 (0 commits missing)
+- `git rev-list --left-right --count manus-parity...HEAD`       -> 0 (parity fully merged)
+- `npx tsc --noEmit`                                             -> exit 0
+- `npm run build:server`                                         -> exit 0
+- `npm run check:encoding`                                       -> exit 0 (no BOM, no mojibake)
+- `npm run verify`                                               -> exit 0
+    (typecheck + check:encoding + check:eval + orchestrator 114/114 + check:recovery +
+     check:modes; "orchestrator smoke: PASS (114/114)")
+- `(cd packages/web && npx next build)`                          -> exit 0 (25/25 static pages)
+- `node --import tsx --test src/tools/mirofish/__tests__/*.test.ts
+   src/agent/__tests__/mirofishLoop.test.ts src/server/__tests__/mirofishHttp.test.ts
+   src/tools/__tests__/mirofishIntent.test.ts`                     -> exit 0 (144 tests, 144 pass)
+- `(cd packages/web && npx vitest run)`                          -> exit 0 (91 files, 624 tests)
+
+Note on vitest: the first full run failed once in the pre-existing flaky
+`packages/web/src/app/app/wiki/__tests__/wikiPage.test.tsx` ("opens a page through GET
+/api/wiki/:project/:slug"). It passes in isolation (2/2) and passes on a full re-run
+(91 files / 624 tests, 0 failed). The wiki files are byte-identical to parity tip `ca08d4c`
+(`git diff --name-only 495ac5f ca08d4c -- packages/web/src/app/app/wiki` is empty) and were
+not modified by this merge, so the flake is not introduced here. No test was changed.
+
+### Commands used
+  git merge manus-parity
+  git merge-base --is-ancestor manus-parity HEAD
+  git rev-list --left-right --count manus-parity...HEAD
+  git diff --stat 495ac5f ca08d4c
+  git diff --name-only 495ac5f ca08d4c -- src/tools/mirofish
+  npx tsc --noEmit
+  npm run build:server
+  npm run check:encoding
+  npm run verify
+  node --import tsx --test src/tools/mirofish/__tests__/*.test.ts src/agent/__tests__/mirofishLoop.test.ts src/server/__tests__/mirofishHttp.test.ts src/tools/__tests__/mirofishIntent.test.ts
+  (cd packages/web && npx next build)
+  (cd packages/web && npx vitest run)
+
+### Measured RAM
+No RAM measurement taken for this task: the change is a merge-conflict resolution in one tracked
+markdown rollup plus a small, already-committed schema addition, and no long-running or
+memory-intensive process was exercised beyond the standard gates. The heaviest gate was the
+full `npm run verify` and the web vitest run; neither approached any memory limit and no
+peak-RSS figure was captured.
+
+### Files
+Only `.jdone` was changed by this resolution (this report prepended over the parity rollup).
+No source file was edited. No `.cc-*` marker file was touched.
+
+---
+
+## M3 gate-fix session (round 6): merged parity V8 (`495ac5f`), resolved `.jdone` keeping both sides, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity in: .jdone. Run
+git merge manus-parity, resolve those files keeping both sides, commit.`
+
+### Root cause (this round)
+No source file conflicted. The only conflict path was the tracked rollup `.jdone`, because both
+sides append their own completion report at the same anchor.
+
+The `.jdone` tracking state had churned across earlier rounds (parity untracked it, then
+re-tracked it), so it is a **tracked** file at the parity tip again. This round's parity tip
+`495ac5f` is the V8 merge (`merge khamis1992/v0-v8 (V8 via loam-jcode-run) into manus-parity`),
+which is the round where V8 landed the committed `.gitattributes` union-merge rule for these
+markers.
+
+**Correction (verified later in round 7).** The round-6 draft of this report claimed the round-6
+conflict was an *add/add* conflict that the union driver could not auto-resolve. That was a
+guess and it is **wrong**. An add/add conflict on `.jdone` while `merge=union` is declared is
+empirically **not** a conflict: a throwaway reproduction (base without `.jdone`, both sides
+adding it, `.jdone merge=union` present) merges with `Auto-merging .jdone` and no markers. The
+union driver handles add/add correctly. What the union driver does *not* cover is a genuine
+same-region content conflict on a file that exists in the merge base; that is what the round-6
+hand resolution addressed. The earlier V8 round-12 report's claim that add/add is auto-resolved
+is correct and is confirmed by the round-7 merge below.
+
+### What was done
+`git merge manus-parity` (tip `495ac5f`) auto-merged every source file and conflicted only on
+`.jdone` (status `UU`). Resolved with the file editor: removed the three conflict markers
+(`<<<<<<< HEAD`, `=======`, `>>>>>>> manus-parity`) and kept **both** blocks, this branch's M3
+report at the top and parity's V8/N10 rollup below it. The merge also brought in `.gitattributes`
+(declaring `.jdone merge=union` and `.jcode-done merge=union`) and re-added `.jcode-done`, which
+are now present so every future parity merge auto-resolves these markers.
+
+### Integrity of the resolution
+- Multiset line diff against both parents: 0 non-blank lines missing from ours, 0 from theirs,
+  so no report content was dropped and no separator was lost.
+- 0 conflict markers remain in any tracked file (`^(<{7}|={7}|>{7}|\|{7})$` matches zero lines).
+- LF-only working copy (normalized before the report was prepended; `core.autocrlf=true` writes
+  CRLF), valid UTF-8, no BOM, no NUL/U+FFFD, Arabic intact.
+- No forbidden path staged: `docs/handoff/watchdog.ps1`, `qa/*.png`,
+  `packages/tests/visual/baselines`, and ZCode/Codex files are untouched.
+- No test was weakened, deleted or skipped. No secret committed. No force-push, no `reset --hard`.
+
+### The M3 deliverable (unchanged this round, committed at `6bcbe4c`)
+`fix(mirofish): record sharedWith[] share provenance in the M3 turn schema` adds the
+`sharedWith` field to the agent-turn output schema so share provenance (who the agent
+amplified or answered) is recorded: the `AgentTurnOutput.sharedWith: string[]` type, the
+`MAX_SHARED_WITH = 8` cap, validation that accepts `sharedWith` / `shared_with` /
+`sharedAgents`, the field in the two neutral fallbacks, and the model prompt rule and JSON
+example. Covered by `src/tools/mirofish/__tests__/simulate.test.ts`.
+
+### Gates (all run from the worktree root on the final merged tree)
+- `git merge-base --is-ancestor manus-parity HEAD`               -> exit 0 (0 commits missing)
+- `git rev-list --left-right --count manus-parity...HEAD`       -> 0 (parity fully merged)
+- `npx tsc --noEmit`                                             -> exit 0
+- `npm run build:server`                                         -> exit 0
+- `npm run check:encoding`                                       -> exit 0 (no BOM, no mojibake)
+- `npm run verify`                                               -> exit 0
+    (typecheck + check:encoding + check:eval + orchestrator 114/114 + check:recovery +
+     check:modes; "orchestrator smoke: PASS (114/114)")
+- `(cd packages/web && npx next build)`                          -> exit 0 (25/25 static pages)
+- `node --import tsx --test src/tools/mirofish/__tests__/*.test.ts
+   src/agent/__tests__/mirofishLoop.test.ts src/server/__tests__/mirofishHttp.test.ts
+   src/tools/__tests__/mirofishIntent.test.ts`                     -> exit 0 (144 tests, 144 pass)
+- `(cd packages/web && npx vitest run)`                          -> exit 0 (89 files, 614 tests)
+
+### Commands used
+  git merge manus-parity
+  git merge-base --is-ancestor manus-parity HEAD
+  git rev-list --left-right --count manus-parity...HEAD
+  git diff --stat manus-parity...HEAD
+  npx tsc --noEmit
+  npm run build:server
+  npm run check:encoding
+  npm run verify
+  node --import tsx --test src/tools/mirofish/__tests__/*.test.ts src/agent/__tests__/mirofishLoop.test.ts src/server/__tests__/mirofishHttp.test.ts src/tools/__tests__/mirofishIntent.test.ts
+  (cd packages/web && npx next build)
+  (cd packages/web && npx vitest run)
+
+### Measured RAM
+No RAM measurement taken for this task: the change is a merge-conflict resolution in one tracked
+markdown rollup plus a small, already-committed schema addition, and no long-running or
+memory-intensive process was exercised beyond the standard gates. The heaviest gate was the
+full `npm run verify` and the web vitest run; neither approached any memory limit and no
+peak-RSS figure was captured.
+
+### Files
+Only `.jdone` was changed by this resolution (this report prepended over the parity rollup).
+No source file was edited. No `.cc-*` marker file was touched.
+
+---
+
+## M3 gate-fix session (round 5): parity re-tracked `.jdone`; merged every advancing parity tip, resolved keeping both sides, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity in: .jdone. Run
+git merge manus-parity, resolve those files keeping both sides, commit.`
+
+### Root cause (this round)
+No source file conflicts. The only conflict path is the tracked rollup `.jdone`, because both
+sides append their own completion report at the same anchor.
+
+The `.jdone` tracking state churned across this session, which is the whole story:
+
+- Parity commit `d3d7b88` ("chore: untrack runner markers .jdone/.jcode-done") **deleted** the
+  tracked rollup, and `398eb7c` ("chore: untrack .jdone marker file") did the same again.
+- Parity then **re-tracked** it: `bbdca0d` ("docs(jdone): record N10 final merge-gate
+  validation") added `.jdone` back, and it is carried at the parity tip through
+  `a0524f4` (N10 merge) and `590d358` (cr-04 merge) up to `9ffdb16`.
+- So `.jdone` is a **tracked** file again at the parity tip, and every `git merge manus-parity`
+  that brings a parity report alongside our own M3 report conflicts there.
+
+### What was done
+`manus-parity` advanced concurrently all session (other agents push to it). Every new tip was
+re-merged until parity was an ancestor of HEAD. The final merge (`534eda9`, parents `6c1a1c1`
++ `9ffdb16`) was **clean**; the working-tree `.jdone` came from the parity side (the N10
+rollup). This report is then **prepended** to that rollup, so the result is a strict union of
+both sides: the M3 report block at the top, the full N10/parity rollup verbatim below it. Not
+one line from either side was dropped and no separator was lost.
+
+The merge driver writes the working copy as CRLF while the blobs are LF-only
+(`core.autocrlf=true`), so the file was normalized back to LF before this report was prepended.
+
+### The M3 deliverable (unchanged this round, committed at `6bcbe4c`)
+`fix(mirofish): record sharedWith[] share provenance in the M3 turn schema` adds the
+`sharedWith` field to the agent-turn output schema so share provenance (who the agent
+amplified or answered) is recorded: the `AgentTurnOutput.sharedWith: string[]` type, the
+`MAX_SHARED_WITH = 8` cap, validation that accepts `sharedWith` / `shared_with` /
+`sharedAgents`, the field in the two neutral fallbacks, and the model prompt rule and JSON
+example. Covered by `src/tools/mirofish/__tests__/simulate.test.ts`.
+
+### Integrity of the branch tree
+- `.jdone` is tracked at HEAD and carries both this report and the parity rollup.
+- No conflict marker remains in any tracked file (`^(<{7}|={7}|>{7})$` matches zero lines).
+- No forbidden path staged: `docs/handoff/watchdog.ps1`, `qa/*.png`,
+  `packages/tests/visual/baselines`, and ZCode/Codex files are untouched.
+- No test was weakened, deleted or skipped. No secret committed. No force-push, no
+  `reset --hard`.
+
+### Gates (all run from the worktree root on the final merged tree)
+- `git merge-base --is-ancestor manus-parity HEAD`               -> exit 0
+- `npx tsc --noEmit`                                             -> exit 0
+- `npm run build:server`                                         -> exit 0
+- `(cd packages/web && npx next build)`                          -> exit 0 (25/25 static pages)
+- `npm run check:encoding`                                       -> exit 0 (no BOM, no mojibake)
+- `npm run verify`                                               -> exit 0
+    (typecheck + check:encoding + check:eval + orchestrator 114/114 + check:recovery +
+     check:modes; "orchestrator smoke: PASS (114/114)")
+- `node --import tsx --test src/tools/mirofish/__tests__/*.test.ts
+   src/agent/__tests__/mirofishLoop.test.ts src/server/__tests__/mirofishHttp.test.ts
+   src/tools/__tests__/mirofishIntent.test.ts`                     -> exit 0 (144 tests, 144 pass)
+- `(cd packages/web && npx vitest run)`                          -> exit 0 (88 files, 606 tests)
+
+### Commands used
+  git merge manus-parity
+  git merge-base --is-ancestor manus-parity HEAD
+  git rev-list --left-right --count manus-parity...HEAD
+  npx tsc --noEmit
+  npm run build:server
+  npm run check:encoding
+  npm run verify
+  node --import tsx --test src/tools/mirofish/__tests__/*.test.ts src/agent/__tests__/mirofishLoop.test.ts src/server/__tests__/mirofishHttp.test.ts src/tools/__tests__/mirofishIntent.test.ts
+  (cd packages/web && npx next build)
+  (cd packages/web && npx vitest run)
+
+### Measured RAM
+No RAM measurement taken for this task: the change is a merge-conflict resolution in one tracked
+markdown rollup plus a small, already-committed schema addition, and no long-running or
+memory-intensive process was exercised beyond the standard gates. The heaviest gate was the
+full `npm run verify` and the web vitest run; neither approached any memory limit and no
+peak-RSS figure was captured.
+
+### Files
+Only `.jdone` was changed by this resolution (this report prepended over the parity rollup).
+No source file was edited. No `.cc-*` marker file was touched.
+
+---
 # N19 gate fix (third pass): manus-parity re-merged, .jdone conflicts resolved as unions
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
@@ -319,6 +845,9 @@ No secrets committed. No forbidden path touched. Nothing pushed. Working tree cl
 ---
 
 ## V8 gate-fix session (round 10): merge with manus-parity, all gates green
+
+---
+
 # N10 final merge gate: parity advanced 3x again, all re-merged, .jdone kept, full suites green
 
 This pass started from the previous `.jdone` merge report. Parity's local ref had advanced again
