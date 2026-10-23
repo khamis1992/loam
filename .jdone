@@ -39,6 +39,13 @@ identical to HEAD's, and `git add` clears the flag.
 
 No secrets committed. No forbidden path touched. No Arabic text was written.
 
+Final state of this session: the committed tree is `7d3bdb6` (the merge `a24e7d5` plus this
+rollup correction), `manus-parity` tip `851b3fe` is an ancestor of HEAD,
+`git merge --no-edit manus-parity` reports "Already up to date.", `git rev-list --count
+manus-parity..HEAD` = 22, and the working tree is clean. `.jcode-done` is present.
+The six prior-round lines and the four round-5 lines are retained verbatim below for rollup
+fidelity; the header figures above are the current ones.
+
 The four lines below are the prior-round wording retained verbatim for rollup fidelity; the figures
 in the header above are the current ones for this final tree:
 
