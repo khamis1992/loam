@@ -145,6 +145,7 @@ export function createMapReduceTool(options: MapReduceOptions): Tool {
             maxSteps,
             signal: ctx.signal,
             taskId: ctx.taskId,
+            sessionId: subSessionId,
             suppressFinal: true,
           });
           ctx.emit({

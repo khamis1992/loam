@@ -697,6 +697,8 @@ function createDefaultDispatcher(options: WideResearchOptions, ctx: ToolContext)
       ctx.allowedTools,
     );
     const childRegistry = parentRegistry.forAllowlist(allow);
+    // Each research child is its own session, so a file one child writes is
+    // reported to another child that already read it (jcode J8 file-touch).
     const res = await runAgent({
       cfg: ctx.cfg,
       ollama,
@@ -709,6 +711,7 @@ function createDefaultDispatcher(options: WideResearchOptions, ctx: ToolContext)
       maxSteps,
       signal: rctx.signal ?? ctx.signal,
       taskId: ctx.taskId,
+      sessionId: `wide-${ctx.taskId ?? "task"}-d${++dispatchSeq}`,
       suppressFinal: true,
     });
     return parseTaskResult(res.text);
@@ -732,11 +735,16 @@ function createDefaultSynthesizer(options: WideResearchOptions, ctx: ToolContext
       maxSteps,
       signal: rctx.signal ?? ctx.signal,
       taskId: ctx.taskId,
+      sessionId: `wide-${ctx.taskId ?? "task"}-s${++synthesisSeq}`,
       suppressFinal: true,
     });
     return res.text.trim();
   };
 }
+
+/** Distinguishes wide-research child sessions so their file reads/writes are tracked separately. */
+let dispatchSeq = 0;
+let synthesisSeq = 0;
 
 /** Build the `wide_research` tool. */
 export function createWideResearchTool(options: WideResearchOptions): Tool {
