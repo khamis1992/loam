@@ -218,7 +218,7 @@ export interface Config {
   diagnostics?: import("./agent/diagnostics.js").DiagnosticSettings;
 }
 
-const DEFAULTS: Config = {
+export const DEFAULTS: Config = {
   model: "glm-5.3-flash:cloud",
   fallbackModel: "qwen2.5:14b",
   ollamaUrl: "http://127.0.0.1:11434",
@@ -282,11 +282,25 @@ const DEFAULTS: Config = {
   failover: {
     providers: [
       { id: "ollama", kind: "ollama", baseUrl: "http://127.0.0.1:11434", model: "glm-5.3:cloud", apiKeyEnv: "", enabled: true },
-      { id: "opencode-go", kind: "openai-compatible", baseUrl: "https://api.opencode.ai/v1", model: "opencode-go", apiKeyEnv: "OPENCODE_API_KEY", enabled: true },
-      { id: "freellmapi", kind: "openai-compatible", baseUrl: "https://api.freellmapi.com/v1", model: "freellmapi/auto", apiKeyEnv: "FREELLM_API_KEY", enabled: true },
-      { id: "longcat", kind: "openai-compatible", baseUrl: "https://api.longcat.ai/v1", model: "LongCat-2.5-Preview", apiKeyEnv: "LONGCAT_API_KEY", enabled: true },
+      // OpenCode Go: the official OpenAI-compatible endpoint is
+      // https://opencode.ai/inference/go/openai/v1/chat/completions (OpenCode "Go" docs,
+      // Endpoints table). The old `https://api.opencode.ai/v1` host does not serve this API
+      // (GET /v1/models there returns 404).
+      { id: "opencode-go", kind: "openai-compatible", baseUrl: "https://opencode.ai/inference/go/openai/v1", model: "opencode-go", apiKeyEnv: "OPENCODE_API_KEY", enabled: true },
+      // freellmapi is a SELF-HOSTED OpenAI-compatible router, not a public host, and no
+      // public endpoint is documented. The repo's own evidence is a local router:
+      // docs/agents-state.json records `freellmapi/auto unreachable: localhost:31415 down`.
+      // TODO(C19): unverified endpoint - confirm the deployment before relying on failover.
+      { id: "freellmapi", kind: "openai-compatible", baseUrl: "http://127.0.0.1:31415/v1", model: "freellmapi/auto", apiKeyEnv: "FREELLM_API_KEY", enabled: true },
+      // LongCat: official OpenAI-format endpoint
+      // https://api.longcat.chat/openai/v1/chat/completions (LongCat API Platform Quick
+      // Start), model LongCat-2.5-Preview.
+      { id: "longcat", kind: "openai-compatible", baseUrl: "https://api.longcat.chat/openai/v1", model: "LongCat-2.5-Preview", apiKeyEnv: "LONGCAT_API_KEY", enabled: true },
       { id: "openrouter", kind: "openai-compatible", baseUrl: "https://openrouter.ai/api/v1", model: "openrouter/free", apiKeyEnv: "OPENROUTER_API_KEY", enabled: true },
-      { id: "ornith", kind: "openai-compatible", baseUrl: "https://api.ornith.ai/v1", model: "ornith", apiKeyEnv: "ORNITH_API_KEY", enabled: true },
+      // ornith is a LOCAL Ollama model (docs/handoff/oc-local.json and
+      // docs/handoff/watchdog.ps1 both define it under the ollama provider as
+      // ornith-1.5:9b); it is not a remote api.ornith.ai service.
+      { id: "ornith", kind: "ollama", baseUrl: "http://127.0.0.1:11434", model: "ornith-1.5:9b", apiKeyEnv: "", enabled: true },
     ],
   },
   compression: {
