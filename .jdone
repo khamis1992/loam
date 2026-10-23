@@ -1,5 +1,39 @@
 fc-07 complete: the Loam Video / Loam Effects router and a full "Video editing" prompt section. One product, one workflow, Arabic + English routing, FilmCraft-native fallback.
 
+## Merge gate fix, round 6 (merge commit `ec7a089`)
+
+Parity advanced a sixth time while the round-5 validation was being recorded (`1ccc8bd`,
+neo-n2 Canvas view, 5 files). Merged as `ec7a089`, keeping BOTH sides of every conflict.
+Only `.jdone` conflicted (one hunk, both sides appending their report at the same end-of-file
+anchor); resolved as the lossless union of both sides, removing only the three conflict-marker
+lines. Verified with a fresh multiset-inclusion checker against both merge parents (`b36bb1d`
+and `1ccc8bd`) and their union: 0 non-empty lines missing from either parent or the union, 0
+conflict markers, CRLF endings preserved (9302 CRLF / 0 bare-LF). `manus-parity` (`1ccc8bd`)
+is an ancestor of HEAD and `git log HEAD..manus-parity` is empty, so the gate is satisfied.
+
+Gates on the merged tree (`ec7a089`), each with its real exit code:
+
+- `npx tsc --noEmit` -> 0
+- `npm run build:server` -> 0 (server bundle + pdf worker written)
+- `cd packages/web && npx next build` -> 0 (25/25 static pages)
+- `check:encoding`, `check:promptwire`, `check:modes`, `check:eval` -> 0
+- `check:orchestrator`, `check:loam-agents`, `check:recovery` -> 0
+- touched-file tests (`videoStudio.test.ts`, `videoStudioRouter.test.ts`,
+  `videoPrompt.test.ts`) -> 118 tests / 118 pass / 0 fail
+- full server suite -> 2829 tests / 2829 pass / 0 fail
+- web vitest -> 83 files / 556 tests, all pass (includes N2's new canvas Editor test)
+- `check:isolation` / `check:loam-e2e` still fail with the inherited `duplicate tool:
+  fanout`, unchanged from rounds 4 and 5.
+
+### Stray artifact removed
+
+An untracked file named `HEAD)` was found in the worktree root (created by an earlier shell
+redirection accident, content `=== the actual 'missing' lines (parity -`). It was not in any
+commit (`git ls-files --error-unmatch 'HEAD)'` failed) and has been removed; the tracked
+tree is byte-identical to HEAD.
+
+---
+
 ## Independent validation pass (round-5 tree, `7b777a2`, 2026-10-23)
 
 Adversarial re-verification of the round-5 merge, challenging every claim with fresh
