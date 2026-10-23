@@ -15,7 +15,9 @@ import { isEditTool, recordEditModel } from "../llm/modelAudit.js";
 import type { CooldownStore, FailoverProvider, ProviderClient } from "../llm/failover.js";
 import { createStallGuard } from "./stallGuard.js";
 import { compressContext } from "./contextCompressor.js";
-import { throwIfCancelled } from "../server/runControl.js";
+import { runLifecycleHooks, wrapHookContext } from "../policy/hooks.js";
+import { throwIfCancelled, isCancelled } from "../server/runControl.js";
+import { openSession, closeSession } from "./sessionHooks.js";
 import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/riskTier.js";
 import { ReminderChannel, TODO_UPDATE_TOOLS, MEMORY_UPDATE_TOOLS, type ReminderChannelOptions } from "./reminders.js";
 import { getTaskPhase } from "../tools/phaseTools.js";
@@ -230,6 +232,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   let finalText = "";
   let usedModel = opts.model && opts.model.trim() ? opts.model.trim() : opts.cfg.model;
   let step = 0;
+  // How this run actually ended, so SessionEnd can report a truthful reason
+  // instead of a blanket "failed".
+  let endedReason: "completed" | "cancelled" | "failed" = "failed";
   const usage: Usage = { promptTokens: 0, completionTokens: 0, durationMs: 0 };
   // Prompt-cache (KV) accounting: classify a miss whenever a meaningful part of
   // the previously reusable prefix was not read back.
@@ -266,6 +271,17 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // The model's live task list, mirrored here so a compaction can re-attach it
   // as a hidden reminder after the conversation is folded away.
   let currentTodos: TodoItem[] = [];
+  const workspace = opts.cfg.workspace;
+
+  try {
+    // SessionStart and UserPromptSubmit fire once per run, before any model call.
+    // A block prevents the run from starting; additionalContext is injected as a
+    // tagged user message (never rendered by the UI as user input). They run here
+    // so a hook that stops the run still produces a SessionEnd notification.
+    if (!opts.suppressFinal) {
+      const session = await openSession({ workspace, prompt: opts.prompt, signal: opts.signal, taskId: opts.taskId, enabled: true });
+      if (session.injected) messages.push({ role: "user", content: session.injected });
+    }
 
   for (step = (restored?.steps ?? 0) + 1; step <= maxSteps; step++) {
     // Stop immediately when the user pressed the cancel button (checked between every step).
@@ -378,6 +394,19 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         continue;
       }
       if (opts.suppressFinal !== true) {
+        // Stop: a hook may force the agent to continue for another step.
+        const stop = await runLifecycleHooks("Stop", "", { stopReason: "completed" }, workspace);
+        if (stop.blocked) {
+          messages.push({ role: "assistant", content: finalText });
+          messages.push({
+            role: "user",
+            content: `Stop hook blocked completion${stop.message ? `: ${stop.message}` : ""}. Continue working toward the original request; do not claim completion yet.`,
+          });
+          continue;
+        }
+        if (stop.additionalContext) {
+          messages.push({ role: "user", content: wrapHookContext(stop.additionalContext) });
+        }
         const checked = await verifyFinal({ acceptanceGuard, independentGuard, independentRequest, cfg: opts.cfg, ollama: opts.ollama, request: opts.prompt, goal: opts.prompt, finalText, completedSteps: [], trace,
           history: opts.history, tools: opts.tools, emit: opts.emit, signal: opts.signal, taskId: opts.taskId });
         addUsage(usage, checked.usage);
@@ -394,6 +423,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         finalText = checked.finalAnswer ?? finalText;
         opts.emit({ type: "assistant_message", text: finalText });
         opts.emit({ type: "done", text: finalText, steps: step, model: usedModel });
+        endedReason = "completed";
       }
       return { text: finalText, messages, steps: step, model: usedModel, usage, verified: opts.suppressFinal !== true };
     }
@@ -525,6 +555,18 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   const msg = `stopped after ${maxSteps} steps without finishing`;
   opts.emit({ type: "error", message: msg });
   throw new Error(msg);
+  } finally {
+    // SessionEnd fires once the run reaches any terminal state (completed,
+    // cancelled or failed) for a top-level run. The reason is the real
+    // outcome, so a hook can tell a cancelled or failed session apart from a
+    // completed one instead of always seeing "completed".
+    if (!opts.suppressFinal) {
+      // Cancellation is detected here: a run may be aborted before the loop ever
+      // assigns a reason, in which case the real outcome is "cancelled".
+      if (opts.signal?.aborted || isCancelled(opts.taskId)) endedReason = "cancelled";
+      await closeSession(workspace, endedReason);
+    }
+  }
 }
 
 /**

@@ -37,6 +37,7 @@ import { createDesignStudioTools } from "./tools/designStudio.js";
 import { createPlaybookTools } from "./tools/playbookTools.js";
 import { createOfficeEditTools } from "./tools/officeEditAgent.js";
 import { createVideoEditTools } from "./tools/videoEditAgent.js";
+import { createVideoStudioTools } from "./tools/videoStudio.js";
 import { createDeployTools } from "./tools/deploy.js";
 import { createDesignExploreTools } from "./tools/designExplore.js";
 import { createDesignLintTools } from "./tools/designLint.js";
@@ -57,6 +58,7 @@ import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { runAgent } from "./agent/loop.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
 import type { Emit } from "./agent/events.js";
+import { applyRunEvent, beginRun } from "./agent/runGraphAdapter.js";
 import { OllamaClient } from "./ollama.js";
 import { flexCredentials } from "./server/modelTiers.js";
 import { startServer, type RunTaskOptions } from "./server/http.js";
@@ -139,6 +141,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createPlaybookTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createOfficeEditTools());
   rt.registry.registerAll(createVideoEditTools());
+  rt.registry.registerAll(createVideoStudioTools({ relay: videoStudioRelay }));
   rt.registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview: rt.preview }));
   rt.registry.registerAll(createDesignExploreTools());
   rt.registry.registerAll(createDesignLintTools());
@@ -193,7 +196,13 @@ async function main(): Promise<void> {
     const trace: ToolTraceItem[] = [];
     const lastArgs = new Map<string, unknown>();
     let doneEvent: Parameters<Emit>[0] | undefined;
+    // Neo run graph (N1): record the agent's events as nodes of the task's graph.
+    // Off by config, and recording must never break the task, so the adapter
+    // swallows and logs any failure instead of throwing into the run.
+    const recordGraph = cfg.runGraph?.enabled !== false;
+    if (recordGraph) beginRun(task, effectivePrompt || "");
     const wrappedEmit: Emit = (event) => {
+      if (recordGraph) applyRunEvent(task, event);
       if (sessionLog) {
         try {
           void sessionLog.append(event.type, event).catch((err) => {
@@ -445,7 +454,7 @@ async function main(): Promise<void> {
         sandboxMode: sandboxPolicy.mode,
       };
       const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
-        ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint,
+        ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint, lifecycleHooks: true,
         saveCheckpoint: (checkpoint) => { opts.savedRun.checkpoint = checkpoint; saveRun(task, opts.savedRun, opts.lease); },
       }) : await runAgent(agentOpts);
       // The orchestrator can swallow an abort (it reports a failed step instead),

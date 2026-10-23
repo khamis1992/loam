@@ -10,6 +10,8 @@ import { AcceptanceGuard } from "./acceptanceGuard.js";
 import { IndependentAcceptanceGuard, independentRequirements } from "./independentAcceptance.js";
 import { taskScopedTools, fileOnlyRequested } from "./taskToolScope.js";
 import { addUsage, sumUsage } from "./usageAccounting.js";
+import { openSession, closeSession, cancelled, type SessionEndReason } from "./sessionHooks.js";
+import { runLifecycleHooks } from "../policy/hooks.js";
 
 export interface VerdictRecord extends VerdictInfo {
   scope: string;
@@ -20,7 +22,14 @@ export interface OrchestratorOptions extends RunOptions {
   verdicts?: VerdictRecord[];
   resume?: ExecutionCheckpoint;
   saveCheckpoint?: (checkpoint: ExecutionCheckpoint) => void;
+  /** Session lifecycle hooks run only for a top-level orchestrated task;
+   *  nested runs (workers, subagent children) omit this so they stay silent. */
+  lifecycleHooks?: boolean;
 }
+
+/** How many times a blocked Stop hook may force the orchestrated run to
+ *  continue before the run ends instead of looping forever. */
+const STOP_CONTINUATION_ROUNDS = 2;
 
 const WORKER_SUFFIX = [
   "You are the executor (worker) sub-agent of an orchestrated task.",
@@ -71,6 +80,13 @@ async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: s
       suppressFinal: true,
       onToolEvidence: (item) => trace.push(item),
       onProgress: (value) => { progress = value; },
+      // A worker can itself be a coding turn (a repair instruction names files
+      // and tools), so the routing seams must reach the child run or that call
+      // escapes the injected client and the outer cooldown store.
+      ...(o.createProviderClient ? { createProviderClient: o.createProviderClient } : {}),
+      ...(o.cooldownStore ? { cooldownStore: o.cooldownStore } : {}),
+      ...(o.env ? { env: o.env } : {}),
+      ...(o.onCodingRoute ? { onCodingRoute: o.onCodingRoute } : {}),
       ...(o.resumeWorker ? { resumeWorker: o.resumeWorker } : {}),
       ...(o.saveWorker ? { saveWorker: o.saveWorker } : {}),
     });
@@ -155,10 +171,23 @@ function finalFixPrompt(o: OrchestratorOptions, goal: string, finalText: string,
   ].join("\n");
 }
 
+function stopContinuePrompt(o: OrchestratorOptions, reason: string, context: string): string {
+  return [
+    "The run was about to finish, but a Stop hook blocked completion.",
+    ...(context.trim().length > 0 ? [context.trim()] : []),
+    `REASON: ${reason}`,
+    "",
+    "ORIGINAL USER REQUEST:",
+    o.prompt,
+    "",
+    "Continue working toward the original request. Do not claim completion yet.",
+  ].join("\n");
+}
+
 /** Planner -> executor workers -> verifier with the reflection loop
  *  (plan -> act -> observe -> critique -> revise), replacing the linear agent loop.
  *  Same signature as runAgent so it can be injected anywhere RunOptions is accepted. */
-export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunResult> {
+async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResult> {
   const fileOnlyTools = o.resume?.fileOnlyTools === true || fileOnlyRequested(o.prompt, o.history);
   o = { ...o, tools: taskScopedTools(o.tools, o.prompt, o.history, fileOnlyTools) };
   const oc = o.cfg.orchestrator;
@@ -375,46 +404,90 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
     await runFinalRepair(pendingFinalRepair);
   }
 
-  while (!failure && lastText.trim().length > 0) {
-    guard();
-    const v = await verifyFinal({
-      acceptanceGuard,
-      independentGuard, independentRequest, saveIndependentAcceptance: pendingUsage => checkpoint(false, false, pendingUsage),
-      history: o.history,
-      cfg: o.cfg,
-      ollama: o.ollama,
-      request: o.prompt,
-      goal: plan.goal,
-      finalText: lastText,
-      completedSteps: completed,
-      trace: allTrace,
-      tools: o.tools,
-      emit: o.emit,
-      ...(oc.verifierModel ? { model: oc.verifierModel } : {}),
-      ...(o.signal ? { signal: o.signal } : {}),
-    ...(o.taskId ? { taskId: o.taskId } : {}),
-    });
-    addUsage(usage, v.usage);
-    totalSteps += 1;
-    o.verdicts?.push({ scope: "final", verdict: v.verdict, reason: v.reason, fixes: v.fixes });
-    o.emit({ type: "verify", verdict: v.verdict, reason: v.reason });
-    if (v.verdict === "pass" && v.finalAnswer) lastText = v.finalAnswer;
-
-    if (v.verdict !== "pass") {
-      if (v.unavailable) throw new Error(`Independent verification unavailable; preserve output and resume verification when the environment is ready: ${v.reason}`);
-      if (finalRepairAttempts >= 2) throw new Error(`orchestrator: task incomplete: final verification still failed: ${v.reason}`);
-      finalRepairAttempts++;
-      o.emit({ type: "revise", id: "final", attempt: finalRepairAttempts, fixes: v.fixes });
+  // A Stop hook may force the run to keep working after the first verified
+  // answer. That replacement answer has to be verified again before the run may
+  // finish, so a block loops back into verification instead of returning at once.
+  let stopContinuation = false;
+  for (;;) {
+    while (!failure && lastText.trim().length > 0) {
       guard();
-      finalRepairUsed = true;
-      pendingFinalRepair = finalFixPrompt(o, plan.goal, lastText, v);
-      checkpoint(true);
-      await runFinalRepair(pendingFinalRepair);
-    } else break;
+      const v = await verifyFinal({
+        acceptanceGuard,
+        independentGuard, independentRequest, saveIndependentAcceptance: pendingUsage => checkpoint(false, false, pendingUsage),
+        history: o.history,
+        cfg: o.cfg,
+        ollama: o.ollama,
+        request: o.prompt,
+        goal: plan.goal,
+        finalText: lastText,
+        completedSteps: completed,
+        trace: allTrace,
+        tools: o.tools,
+        emit: o.emit,
+        ...(oc.verifierModel ? { model: oc.verifierModel } : {}),
+        ...(o.signal ? { signal: o.signal } : {}),
+      ...(o.taskId ? { taskId: o.taskId } : {}),
+      });
+      addUsage(usage, v.usage);
+      totalSteps += 1;
+      o.verdicts?.push({ scope: "final", verdict: v.verdict, reason: v.reason, fixes: v.fixes });
+      o.emit({ type: "verify", verdict: v.verdict, reason: v.reason });
+      if (v.verdict === "pass" && v.finalAnswer) lastText = v.finalAnswer;
+
+      if (v.verdict !== "pass") {
+        if (v.unavailable) throw new Error(`Independent verification unavailable; preserve output and resume verification when the environment is ready: ${v.reason}`);
+        if (finalRepairAttempts >= 2) throw new Error(`orchestrator: task incomplete: final verification still failed: ${v.reason}`);
+        finalRepairAttempts++;
+        o.emit({ type: "revise", id: "final", attempt: finalRepairAttempts, fixes: v.fixes });
+        guard();
+        finalRepairUsed = true;
+        pendingFinalRepair = finalFixPrompt(o, plan.goal, lastText, v);
+        checkpoint(true);
+        await runFinalRepair(pendingFinalRepair);
+      } else break;
+    }
+
+    if (failure) {
+      throw new Error(`orchestrator: task incomplete: ${failure}`);
+    }
+
+    // Stop: a hook may force the orchestrated run to keep working instead of
+    // finishing. The continuation is bounded so a hook that always blocks still
+    // ends the run, and its revised answer is re-verified by looping back.
+    if (o.lifecycleHooks !== true || stopContinuation) break;
+    let continued = false;
+    for (let round = 0; round < STOP_CONTINUATION_ROUNDS; round++) {
+      const stop = await runLifecycleHooks("Stop", "", { stopReason: "completed" }, o.cfg.workspace);
+      if (!stop.blocked) break;
+      o.emit({ type: "error", message: `Stop hook blocked completion: ${stop.message}` });
+      if (lastText.trim().length === 0) break;
+      await runFinalRepair(stopContinuePrompt(o, stop.message, stop.additionalContext));
+      continued = true;
+    }
+    if (!continued) break;
+    stopContinuation = true;
   }
 
-  if (failure) {
-    throw new Error(`orchestrator: task incomplete: ${failure}`);
-  }
   return finish(lastText);
+}
+
+/** Session lifecycle boundary for the orchestrated run. SessionStart and
+ *  UserPromptSubmit run before planning; SessionEnd reports the real terminal
+ *  reason. Nested runs (workers, subagent children) omit `lifecycleHooks`. */
+export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunResult> {
+  const enabled = o.lifecycleHooks === true;
+  const workspace = o.cfg.workspace;
+  let reason: SessionEndReason = "failed";
+  try {
+    const session = await openSession({ workspace, prompt: o.prompt, signal: o.signal, taskId: o.taskId, enabled });
+    if (session.injected) o = { ...o, prompt: o.prompt + "\n\n" + session.injected };
+    const result = await runOrchestratedAgentImpl(o);
+    reason = "completed";
+    return result;
+  } catch (err) {
+    reason = cancelled(o.signal, o.taskId) ? "cancelled" : "failed";
+    throw err;
+  } finally {
+    if (enabled) await closeSession(workspace, reason);
+  }
 }
