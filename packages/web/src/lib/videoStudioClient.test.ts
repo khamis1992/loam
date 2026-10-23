@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { VideoStudioClient, createFilmcraftExecutor, type VideoStudioCommand } from './videoStudioClient';
+import {
+  VideoStudioClient,
+  createEffectcraftExecutor,
+  createFilmcraftExecutor,
+  createRoundTripExecutor,
+  type VideoStudioCommand,
+} from './videoStudioClient';
 
 function sseResponse(frames: string[]): Response {
   const encoder = new TextEncoder();
@@ -113,5 +119,40 @@ describe('VideoStudioClient', () => {
     await expect(
       executor({ id: 'x', taskId: 't', target: 'effects', method: 'inspect', params: {} }),
     ).rejects.toThrow(/Loam Effects/);
+  });
+
+  it('routes effects commands through the Loam Effects bridge executor', async () => {
+    const call = vi.fn(async (_method: string, ..._args: unknown[]) => ({ projectPath: 'effects/clip.ecproj' }));
+    const bridge = { call } as unknown as Parameters<typeof createEffectcraftExecutor>[0];
+    const executor = createEffectcraftExecutor(bridge);
+    await expect(executor({ id: 'x', taskId: 't', target: 'effects', method: 'inspect', params: {} })).resolves.toEqual({
+      projectPath: 'effects/clip.ecproj',
+    });
+    expect(call).toHaveBeenCalledWith('inspect', {});
+
+    // The two engines are separate iframes; a film command must never be answered
+    // by the effects bridge.
+    await expect(
+      executor({ id: 'x', taskId: 't', target: 'film', method: 'inspect', params: {} }),
+    ).rejects.toThrow(/Loam Video/);
+  });
+
+  it('fans a round trip out to the engine that owns each step', async () => {
+    const filmCall = vi.fn(async (_method: string, ..._args: unknown[]) => 'film-ok');
+    const effectsCall = vi.fn(async (_method: string, ..._args: unknown[]) => 'effects-ok');
+    const film = { call: filmCall } as unknown as Parameters<typeof createRoundTripExecutor>[0];
+    const effects = { call: effectsCall } as unknown as Parameters<typeof createRoundTripExecutor>[1];
+    const executor = createRoundTripExecutor(film, effects);
+
+    await expect(executor({ id: 'a', taskId: 't', target: 'effects', method: 'addFile', params: {} })).resolves.toEqual('effects-ok');
+    await expect(executor({ id: 'b', taskId: 't', target: 'film', method: 'importFiles', params: {} })).resolves.toEqual('film-ok');
+
+    expect(effectsCall).toHaveBeenCalledTimes(1);
+    expect(filmCall).toHaveBeenCalledTimes(1);
+    expect(filmCall).toHaveBeenCalledWith('importFiles', {});
+    // An unknown target is refused rather than silently dropped on the floor.
+    await expect(
+      executor({ id: 'c', taskId: 't', target: 'audio', method: 'inspect', params: {} } as unknown as VideoStudioCommand),
+    ).rejects.toThrow(/unknown video studio target/);
   });
 });

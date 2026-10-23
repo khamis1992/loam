@@ -154,7 +154,8 @@ export function createPlanTools(): Tool[] {
         "Provide a concise summary of the outcome, the ordered steps, every file you will create or modify (files_to_edit must list all edit locations), and set trivial=true only for a single obvious action. " +
         "While the plan is pending, mutating tools (file write/edit, shell commands with side effects, destructive and secret actions) are refused, so call this BEFORE you start editing. " +
         "The plan is shown in a plan-approval card; when the user approves, you may proceed. When the user edits it, re-present the revised plan with suggest_plan. When the user rejects it, return to planning and do not edit anything. " +
-        "Do not call this tool to ask a question or to report progress — use the message tool for that.",
+        "Do not call this tool to ask a question or to report progress — use the message tool for that. " +
+        "When NOT to use: to ask the user a question (use ask_user or the message tool instead), to report progress or status, or to present a plan you have not actually worked out; a vague or invented plan wastes the user's approval and blocks real work.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -239,7 +240,8 @@ export function createPlanTools(): Tool[] {
         "The plan is shown in an approval card; when the user approves, the task switches to acceptEdits and file edits, shell commands and other mutating actions become allowed. " +
         "When the user denies the plan, nothing changes and plan mode stays active, so revise the plan and try again. " +
         "Do not call this tool to ask a question or to report progress — use the message tool for that. " +
-        "Do not attempt edits before the plan is approved; they will be refused while plan mode is active.",
+        "Do not attempt edits before the plan is approved; they will be refused while plan mode is active. " +
+        "When NOT to use: to ask the user a question (use ask_user or the message tool instead), to report progress, or before you have finished exploring and decided exactly what you will change; presenting an unfinished plan leaves the task stuck in read-only mode.",
       parameters: {
         type: "object",
         additionalProperties: false,

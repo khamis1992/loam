@@ -35,4 +35,10 @@ export interface ExecutionCheckpoint {
   independentRequirements?: string;
   fileOnlyTools?: boolean;
   worker?: WorkerCheckpoint;
+  /** Sequence the durable event log assigned to this checkpoint when it was
+   *  written (BUILD_SPEC §6.5). Undefined for a checkpoint that was never logged. */
+  logSeq?: number;
+  /** Event-log session this run was logged under, so a resume can check whether
+   *  a tool call started without a terminal event. */
+  logSessionId?: string;
 }
