@@ -12,13 +12,13 @@ const WRITE = ["file_write", "file_edit", "find_and_edit", "file_mkdir", "file_m
 const BROWSER = ["browser_open", "browser_goto", "browser_snapshot", "browser_click", "browser_type", "browser_press", "browser_screenshot", "browser_table", "browser_act", "browser_pages", "browser_close", "browser_eval"];
 const MANAGED_SESSIONS = ["managed_child_start", "managed_child_message", "managed_child_sleep", "managed_child_wake", "managed_child_terminate", "managed_child_answer", "managed_child_status", "managed_child_events", "schedule_self_reminder"];
 
-const GIT = ["git_branch", "git_commit", "git_status_diff", "pr_create", "pr_view", "pr_comments", "pr_comment_checklist", "ci_watch"];
+const GIT = ["git_branch", "git_commit", "git_status_diff", "pr_create", "pr_view", "pr_comments", "pr_comment_checklist", "ci_watch", "pr_review", "verify_and_record"];
 const PREVIEW = ["preview_serve", "preview_status", "preview_stop", "preview_screenshot"];
 /** Control/communication tools shared by every mode (§6.1). `plan_exit` is the
  *  escape hatch from the read-only plan permission mode (C13) and `suggest_plan`
  *  (D4) presents a plan for approval without changing the permission mode, so
  *  both are exposed in every mode the way `finish` is. */
-const CONTROL = ["think", "finish", "plan", "phase_set", "message", "plan_exit", "suggest_plan"];
+const CONTROL = ["think", "finish", "plan", "phase_set", "message", "plan_exit", "suggest_plan", "ask_user"];
 /** Tools added to modes that can edit files. */
 const EDIT_EXTRA = ["file_multi_edit"];
 /** Build-only tools: secrets vault and the OpenCode coding sessions. */

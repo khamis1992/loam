@@ -3,6 +3,16 @@ export type AgentStatus = 'running' | 'waiting' | 'stopped' | 'error';
 export type ToolStatus = 'success' | 'error' | 'running' | 'pending' | 'failed' | 'cancelled' | 'stopped' | 'rollback' | 'argumentsFinished' | 'streaming';
 export type ToolName = 'browser' | 'terminal' | 'search' | 'text_editor' | 'webdev' | 'map_reduce' | 'suggestion' | 'webpage_extract' | 'mcp' | (string & {});
 
+/** Neo N10: the composer's output-type selector. */
+export const OUTPUT_TYPES = ['auto', 'text', 'image', 'video', 'slides', 'website'] as const;
+export type OutputType = (typeof OUTPUT_TYPES)[number];
+/** Neo N10: the composer's effort selector. */
+export type EffortLevel = 'fast' | 'max';
+
+// The selector values are mirrored from the backend's `src/llm/router.ts` so a
+// composer payload that was built by hand still type checks; the server
+// re-validates every value before it reaches the routing map.
+
 export interface Attachment {
   id: string;
   filename: string;
@@ -23,6 +33,9 @@ export interface JoinSession extends Base {
   type: 'join_session';
   sessionId: string;
   lastMessageId?: string;
+  /** BUILD_SPEC §6.4: highest durable log sequence already rendered. The server
+   *  replays by sequence when this is present, otherwise by `lastMessageId`. */
+  lastSeq?: number;
   version: 2;
 }
 
@@ -59,6 +72,12 @@ export interface UserMessage extends Base {
     worktreeEnabled?: boolean;
     /** Option 18: composer model tier ("max" | "standard" | "lite" | "flex"). */
     modelTier?: string;
+    /** Neo N10: composer output type (auto|text|image|video|slides|website). */
+    outputType?: string;
+    /** Neo N10: composer effort level (fast|max). */
+    effort?: string;
+    /** Neo N10: explicit A/B arm model ids for the fan-out run. */
+    abModels?: string[];
   };
 }
 
@@ -76,6 +95,8 @@ export interface ServerEnvelope<E extends ChatEvent = ChatEvent> {
   timestamp: number;
   event: E;
   webdevAddonEnabled?: boolean;
+  /** BUILD_SPEC §6.4: the durable log sequence of this frame. */
+  seq?: number;
 }
 
 export interface ChatEventBase extends Base {
@@ -131,6 +152,42 @@ export interface NewPlanStepEvent extends ChatEventBase {
   type: 'newPlanStep';
   stepId: string;
   title: string;
+}
+
+/**
+ * Neo N4 incremental Recipe engine: the live step list of a recipe-mode run.
+ *
+ * Sent whenever the recipe changes (after each step's result, after a restart).
+ * Unlike `planUpdate`, which describes the plan as it was at the start, this
+ * event carries the *current* recipe with per-step status and the remaining-work
+ * estimate, so the right panel can show the recipe shrinking as the run proceeds.
+ */
+export interface RecipeUpdateEvent extends ChatEventBase {
+  type: 'recipeUpdate';
+  goal: string;
+  steps: {
+    id: string;
+    title: string;
+    instruction: string;
+    successCriteria: string;
+    status: 'proposed' | 'ready' | 'doing' | 'done' | 'blocked' | 'skipped';
+    nodeId?: string;
+    replaces?: string[];
+    completedCount: number;
+  }[];
+  remainingEstimate: number;
+  change: 'init' | 'propose' | 'advance' | 'rewrite' | 'drop' | 'restart';
+  source: 'planner' | 'restart' | 'auto';
+}
+
+/** Neo N4: the recipe restarted from one step; downstream is regenerated. */
+export interface RecipeRestartEvent extends ChatEventBase {
+  type: 'recipeRestart';
+  stepId: string;
+  nodeId: string;
+  keptSteps: string[];
+  regeneratedSteps: string[];
+  reason: string;
 }
 
 export interface TodoUpdateEvent extends ChatEventBase {
@@ -294,6 +351,43 @@ export interface EnvironmentIssueEvent extends ChatEventBase {
   details?: string;
 }
 
+/**
+ * MiroFish swarm simulation progress (M3). The M3 loop emits round/agent
+ * milestones; the payload shape mirrors `src/protocol/types.ts` so the protocol
+ * layer stays free of tool imports.
+ */
+export interface SimulationProgressEvent extends ChatEventBase {
+  type: 'simulation_progress';
+  sessionId: string;
+  payload: {
+    type:
+      | 'simulation_start'
+      | 'simulation_round_start'
+      | 'simulation_agent'
+      | 'simulation_round'
+      | 'simulation_arm_done'
+      | 'simulation_done';
+    sessionId: string;
+    agents?: number;
+    rounds?: number;
+    arms?: string[];
+    arm?: 'baseline' | 'scenario';
+    round?: number;
+    totalRounds?: number;
+    agentId?: string;
+    agentName?: string;
+    ok?: boolean;
+    action?: 'post' | 'comment' | 'share' | 'ignore' | 'buy' | 'cancel';
+    error?: string;
+    metrics?: unknown;
+    calls?: number;
+    failures?: number;
+    modelCalls?: number;
+    comparison?: unknown;
+    [key: string]: unknown;
+  };
+}
+
 /** D4: a `suggest_plan` plan awaiting the user's decision (plan-approval card). */
 export interface PlanApprovalRequestedEvent extends ChatEventBase {
   type: 'planApprovalRequested';
@@ -313,6 +407,34 @@ export interface PlanApprovalResolvedEvent extends ChatEventBase {
   reviewer: 'user' | 'auto';
   result: 'approve' | 'reject' | 'edit';
   plan?: { summary?: string; steps?: string[]; files_to_edit?: string[]; trivial?: boolean };
+}
+
+/** N9: an `ask_user` clarification request awaiting the user's answer (ask-user card). */
+export interface AskUserRequestedEvent extends ChatEventBase {
+  type: 'askUserRequested';
+  requestId: string;
+  taskId: string;
+  title: string;
+  reason: string;
+  questions: Array<{ id: string; prompt: string; options?: string[]; allowFile?: boolean }>;
+  /** "auto" is the orchestrator's vague/missing-context trigger; "model" a tool call. */
+  source?: 'auto' | 'model';
+  /** Set when `source` is "auto"; the client localizes the reason from it. */
+  reasonCode?: 'vague' | 'missing_context' | 'ambiguous_target';
+}
+
+/** N9: the user answered or dismissed a pending ask-user card. */
+export interface AskUserResolvedEvent extends ChatEventBase {
+  type: 'askUserResolved';
+  requestId: string;
+  taskId: string;
+  reviewer: 'user' | 'auto';
+  result: 'answered' | 'dismissed' | 'expired';
+  answer?: {
+    text: string;
+    answers: Record<string, string>;
+    files: Array<{ path: string; name: string; bytes: number; contentType: string }>;
+  };
 }
 
 export type ChatEvent =
@@ -340,7 +462,12 @@ export type ChatEvent =
   | LocalExecutionApprovalRequestedEvent
   | LocalExecutionApprovalResolvedEvent
   | EnvironmentIssueEvent
+  | SimulationProgressEvent
   | PlanApprovalRequestedEvent
-  | PlanApprovalResolvedEvent;
+  | PlanApprovalResolvedEvent
+  | AskUserRequestedEvent
+  | AskUserResolvedEvent
+  | RecipeUpdateEvent
+  | RecipeRestartEvent;
 
 export type ServerMessage = ServerEnvelope | { type: 'session_write_access'; sessionId: string; writable: boolean };
