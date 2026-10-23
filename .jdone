@@ -1,4 +1,60 @@
-M3 conversational wiring complete: the mirofish_chat tool and POST /api/mirofish/chat now run the real model-aware swarm simulation when a provider client is present, the synchronous entry point is preserved as the legacy fallback, and the legacy full-analysis branch regains its deterministic OASIS personas + report so the no-model path and the follow-up branches keep working. Covered by src/tools/mirofish/__tests__/asyncRunner.test.ts (deterministic fake ModelCaller, no real API calls).
+M3 conversational wiring validation complete (commit 33922e6, on top of the M3 wiring commit 9010d7e).
+
+## What was validated
+Independently validated the M3 wiring claims rather than only re-running the author's tests:
+
+1. **ToolContext threading** (`src/agent/__tests__/mirofishLoop.test.ts`, 3 tests, new): the agent loop hands
+   the provider client to every tool through `ToolContext`, on the sequential path and on the parallel
+   tool-batch path alike. A tool that carries a client drives the real MiroFish swarm (seed + agent-turn
+   calls through the fake `ModelCaller`, `simulation_progress` events on the run bus, artifacts written
+   under `.manus/mirofish/simulations`). Two harness bugs surfaced while getting this green: the tool body
+   dynamically imported a wrong path (`../../mirofish.js` instead of `../../tools/mirofish.js`), and the loop
+   replaces the system prompt on every run so the fake client could not recognise its verifier request
+   (settled with `suppressFinal: true` / `NO_VERIFICATION`).
+
+2. **HTTP route delegation** (`src/server/__tests__/mirofishHttp.test.ts`, 4 tests, new): `POST
+   /api/mirofish/chat` runs the real swarm through the server's injected client with no network, returns
+   honest `model_calls` / `rounds_completed` / `model_unavailable:false`, writes locale-faithful artifacts,
+   and persists the active session so the follow-up branches keep working. A second case shows an ambiguous
+   brief degrading to a neutral `Global` locale (country `Global`, currency `USD`) instead of inventing a
+   market. The server is started once and the neutral case runs under a second task workspace, because
+   `loadConfig` pins `DATA_DIR` at module load.
+
+3. **Artifacts** (`src/tools/mirofish/asyncRunner.ts`): a real gap was found and fixed. The async
+   conversational path wrote the legacy profile/report artifacts but **not** the seed artifact the
+   synchronous runner leaves. `writeSeedArtifact` is now exported from `runner.ts` and called from
+   `runConversationalMirofishAsync`, so both surfaces expose the resolved locale, entities and personas.
+
+4. **Progress bus** (`src/tools/mirofish/__tests__/asyncRunner.test.ts`, extended): `simulation_progress`
+   events reach the run event bus tagged with the run's `simulation_id`, and `simulation_done.rounds`
+   agrees with the reported `rounds_completed`.
+
+5. **Honest degradation**: with no reachable provider the run still completes, reports
+   `model_unavailable:true`, records every agent-turn as skipped, and never fabricates output.
+
+## Locale fidelity, not a hard-coded default
+The locale is derived from the brief (or the user's authoritative location), never a hard-coded market.
+Two locale assertions in the new tests accept either the Latin or the market-language spelling of the city
+(`Riyadh`/`الرياض`, `Doha`/`الدوحة`): the locale prompt asks labels to match the market's primary language,
+so an Arabic-market brief yields an Arabic city label. The country and currency are asserted stable and
+follow the brief (`Saudi Arabia`/`SAR`, `Qatar`/`QAR`), and an ambiguous brief degrades to `Global`/`USD`
+instead of inventing a place.
+
+## Gates (run from the worktree root on the committed tree)
+- `npx tsc --noEmit`                              -> exit 0
+- `npm run check:encoding`                         -> OK (no BOM, no mojibake, all JSON valid)
+- mirofish suites (asyncRunner, seed, simulate, mirofishLoop) -> tests 42, pass 42, fail 0
+- `src/server/__tests__/mirofishHttp.test.ts`     -> tests 4, pass 4, fail 0
+- `src/agent/__tests__/*.test.ts`                  -> tests 266, pass 265, fail 1
+- `npm run check:modes` / `check:orchestrator`     -> PASS
+
+The single agent-suite failure is the inherited, pre-existing `src/agent/__tests__/toolDescriptions.test.ts`
+("suggest_plan is neither registered nor listed in PENDING_CODING_TOOLS"), byte-identical to manus-parity and
+documented in the preserved reports below. It is unrelated to M3 and left untouched.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+
+---
 
 M3 conversational wiring complete: the mirofish_chat tool and POST /api/mirofish/chat now run the real model-aware swarm simulation when a provider client is present, the synchronous entry point is preserved as the legacy fallback, and the legacy full-analysis branch regains its deterministic OASIS personas + report so the no-model path and the follow-up branches keep working. Covered by src/tools/mirofish/__tests__/asyncRunner.test.ts (deterministic fake ModelCaller, no real API calls).
 
