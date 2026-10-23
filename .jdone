@@ -31116,3 +31116,64 @@ is a true multiset superset of both sides.
 - `npm run check:recovery`                     -> PASS
 - `npm run check:orchestrator`                 -> PASS (114/114)
 - `npm run check:encoding`                         -> OK (no BOM, no mojibake, all JSON valid)
+
+
+---
+
+# N6 merge gate session note (2026-10-23, parity tips `17024c5` then `7b75243`, fourth and fifth merges)
+
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. Parity advanced twice more
+during this session, so two merges were done back to back, each resolved as a strict superset:
+no line from either side was dropped.
+
+## Fourth merge: parity tip `17024c5` (D3, J8, env builds)
+
+`git merge --no-commit --no-ff manus-parity` auto-merged with **no conflicts** at all.
+New from parity: `src/tools/envBuilds.ts`, `src/tools/envSnapshot.ts`, plus changes to
+`src/index.ts`, `src/server/http.ts`, `src/setup/runtime.ts` and others. `.jdone` merged
+by the committed union driver.
+
+Merge commit `bb09ff2` (parents `485455a` and `17024c5`).
+
+## Fifth merge: parity tip `7b75243` (D3 via loam-jcode-run)
+
+`git merge --no-commit --no-ff manus-parity` conflicted on exactly one path, `src/index.ts`
+(the import block). Every other file auto-merged and was staged: `src/graph/recall.ts`
+(new) + `src/graph/__tests__/recall.test.ts` (new), `src/graph/runGraph.ts`,
+`src/agent/runGraphAdapter.ts`, `src/agent/sideChat.ts`, `src/agent/insights.ts`,
+`src/server/runTools.ts`, `src/server/__tests__/runTools.test.ts`, `src/setup/runtime.ts`,
+`src/tools/memory.ts`, `src/tools/registry.ts`, and `.jdone` via the union driver.
+
+Per file:
+- `src/index.ts`: HEAD carried `import type { AgentEvent, Emit }` from `./agent/events.js`
+  (the N6 budget-stop path emits a `budget_exhausted` event, so `AgentEvent` is used) while
+  parity carried the narrower `import type { Emit }`. Parity also added `recallGraphHandle`
+  (N16 cross-run recall) to the `./agent/runGraphAdapter.js` import and `createRecallTools`
+  from `./tools/memory.js`. Resolved as the strict superset: kept HEAD's wider
+  `AgentEvent, Emit` type import and took parity's `recallGraphHandle` and
+  `createRecallTools` imports. Neither side lost a line.
+
+Merge commit `18813ee` (parents `bb09ff2` and `7b75243`).
+
+## Gates (all run from the worktree root on the final merged tree)
+
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (server bundle + pdf worker written)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test src/agent/__tests__/mission.test.ts src/agent/__tests__/computeBudget.test.ts`
+                                              -> tests 42, pass 42, fail 0
+- `node --import tsx --test src/graph/__tests__/recall.test.ts src/graph/__tests__/runGraph.test.ts`
+                                              -> tests 48, pass 48, fail 0 (parity's new graph suites)
+- `node --import tsx --test src/server/__tests__/runTools.test.ts`
+                                              -> tests 16, pass 16, fail 0 (parity's new suite)
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run eval:neo`                          -> total=100 passed=10/10 verdict=PASS (baseline 100, no regression)
+
+Integrity of the resolved tree: `git grep -n "^<<<<<<<\|^>>>>>>>\|^|||||||"` over the whole
+repository returns empty; no conflict markers remain. `git merge-base --is-ancestor
+manus-parity HEAD` exits 0, so the branch contains the whole parity tip. `.jdone` auto-merged
+by the union driver. No test was weakened, deleted or skipped. No secret committed. No
+forbidden path touched. No Arabic text was written by this session; no mojibake placeholder
+text was added. `git add -A` briefly swept seven temporary test-log files into the merge
+commit; they were removed and the commit amended (`git commit --amend -C HEAD`), and the
+final tree is clean (`git status --porcelain` empty).
