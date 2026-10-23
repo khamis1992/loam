@@ -494,6 +494,7 @@ manus-parity HEAD` exits 0, and `git rev-list --left-right --count manus-parity.
 `0  3` (parity fully merged, zero parity commits missing). The tree is clean.
 
 ## Gates (all run from the worktree root on the committed tree)
+# N9 round 12: parity auto-unioned .jdone, full suite green on the final tip
 - `npx tsc --noEmit`                          -> exit 0
 - `npm run build:server`                      -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
 - `(cd packages/web && npx next build)`       -> exit 0 (compiled, 25/25 static pages)
@@ -36660,6 +36661,12 @@ and the tree is clean.
 - `npm run build:server`                      -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
 - `(cd packages/web && npx next build)`       -> exit 0 (compiled, 25/25 static pages)
 - `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `node --import tsx --test src/learning/harness/__tests__/experienceStore.test.ts`
+                                             -> tests 15, pass 15, fail 0
+
+## Files
+- `.jdone` only (merge resolution + this report). No source file was modified by this
+  session; the H2 deliverables are unchanged from commit `446de33`.
 - H0 Verify column `file exists`              -> satisfied by `docs/re/harness2-H0.md`
 
 No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
@@ -37515,6 +37522,15 @@ Test commands:
   npx tsc --noEmit
   npm run build:server
   (cd packages/web && npx next build)
+  npm run check:encoding
+  node --import tsx --test src/learning/harness/__tests__/experienceStore.test.ts
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was added or corrupted. Working tree clean.
+
+---
+
+H2 — experience store: DONE
   node --import tsx --test src/tools/__tests__/videoStudioState.test.ts src/tools/__tests__/videoStudio.test.ts src/server/__tests__/videoStudioRelay.test.ts src/server/__tests__/videoStudioE2E.test.ts
   (cd packages/web && npx vitest run)
   npm run check:encoding
@@ -38385,79 +38401,88 @@ D15 — PR reviewer + bug catcher: DONE
 
 Summary
 -------
-Adds the `pr_review({repo, number, postComments?, maxFiles?, conventions?})` tool. It
-fetches the PR's diff through the D1 `PrProvider` (`pr_diff`, added to the interface and
-implemented by `GitHubPrProvider` via `GET /repos/{repo}/pulls/{n}/files?per_page=100` and
-by `LocalPrProvider` from a scripted `setPrDiff` seed), reviews each changed file on its
-own against the repo conventions (`AGENTS.md` / `CONTRIBUTING.md` when present), and
-returns deduplicated findings `{severity: bug|flag|nit, file, line, explanation,
-suggested_fix}`. With `postComments` the findings are filed as line review comments through
-the same provider.
+Implemented `src/learning/harness/experienceStore.ts` from BUILD_SPEC §6.2 and its
+colocated suite `src/learning/harness/__tests__/experienceStore.test.ts` (15 tests).
+No code was copied from google-research/harness2; the design was rebuilt independently
+from the spec. Committed as `446de33` ("H2: experience store"), branch
+`khamis1992/h2-h2`.
 
-Implemented end to end:
-  - Reviewer:        src/agent/prReview.ts
-  - Tool + registry: src/tools/prReviewTools.ts, src/setup/runtime.ts
-  - Provider diff:   src/tools/gitPrProvider.ts (PrDiff/PrFileDiff, prDiff on both providers,
-                     LocalPrProvider.setPrDiff / setPrDiff helper)
-  - Mode allowlist:  src/modes/catalog.ts (`pr_review` in the GIT set)
-  - Prompt catalog:  prompts/loam-master.md §6.3 + §8.5, regenerated into
-                     src/agent/masterPromptText.ts (snapshot hash refreshed)
+Spec adaptations required by the real code (docs/re/harness2-H0.md)
+------------------------------------------------------------------
+- **[U1]** the spec's `embedder.embed(text): Promise<number[]>` does not exist.
+  `OllamaEmbedder.embed(texts: string[])` is the batch method and `embedOne(text)`
+  (`src/memory/embeddings.ts:48`) is the single-text method. `addLesson` calls
+  `embedOne` and swallows failures, so a lesson is still stored when embedding is
+  unavailable and `rankLessons` falls back to token overlap.
+- **[U7]** the spec's optional redaction regex is replaced by the existing
+  `assertNoSecret` (`src/memory/redact.ts:38`), a strict superset. `addLesson`
+  catches it and returns `null` (reject, never store) so a background hook cannot
+  throw.
+- **§8 audit** the `lesson_added` line `{at, kind, lessonId, source, domain}` is
+  appended through the existing `appendLearning` (`src/server/learning.ts:29`).
+- **`deleteLesson`** returns `false` when the row is gone, so the H8 REST layer can
+  map that to 404 without a throw. `setLessonDisabled` returns `null` for a missing
+  row for the same reason.
 
-Acceptance criteria (AC) met
-----------------------------
-  - seeded off-by-one bug reported as `bug` at the right file/line
-      fixture `src/counter.ts` with `for (let i = 0; i <= n; i++)` on new-file line 7;
-      the reviewer parses the hunk headers itself and clamps the model's line into the
-      touched range, so the finding lands on `src/counter.ts:7` ->
-      src/tools/__tests__/prReview.test.ts ("reports a bug finding at the seeded off-by-one line")
-  - duplicates merged (most severe wins, fuller explanation kept, loser's fix merged)
-      -> src/tools/__tests__/prReview.test.ts ("merges duplicate findings the model repeats")
-  - post-comments goes to LocalProvider only (GitHub posting is exercised through a
-    mocked fetch; the tool only ever calls the provider's `addComment`)
-      -> src/tools/__tests__/prReview.test.ts ("posts the findings as review comments only when asked")
-
-No network in tests: the diff comes from `LocalPrProvider` seeded with `setPrDiff`, the
-model is a fake client returning canned JSON, and the GitHub path is exercised with a
-mocked `fetch`.
-
-Merge with manus-parity: fast-forward (no conflicts)
-----------------------------------------------------
-`git merge manus-parity` updated a8130cc..35c8470 as a fast-forward, so the D15 working
-tree carried the parity tip (design_critique, editHints, files.ts triage, docs/re/*).
-Nothing conflicted. All gates were re-run on the merged tree.
-
-Gates (all run from the worktree root on the merged tree)
+API (all in `src/learning/harness/experienceStore.ts`)
 ------------------------------------------------------
-  1. npx tsc --noEmit                                 -> exit 0
-  2. npm run build:server                             -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
-  3. (cd packages/web && npx next build)              -> exit 0 (compiled successfully, 25/25 static pages)
-  4. node --import tsx --test (D15 + touched suites)   -> 77 tests, 77 pass, 0 fail
-     (prReview.test.ts, ciWatch.test.ts, codingPrompt.test.ts, catalog.test.ts)
-  5. (cd packages/web && npx vitest run)              -> 72 files / 472 tests, all pass
-  6. npm run check:encoding / check:modes / check:orchestrator / check:promptwire -> PASS
+- `recordCorrection(e)` / `listCorrections({taskId?, domain?})` — events clipped to
+  4000 chars, stored under the `corrections` entity kind.
+- `addLesson({agentId, domain, source, sourceRef, d, embedder?})` → `Lesson | null`.
+  Rejects incomplete lessons (`isCompleteLesson`), secret-looking text, and
+  duplicates (case-insensitive `lesson` match returns the stored lesson). Stores a
+  normalized base64 vector + `dim` when an embedder is supplied, prunes the domain,
+  and appends the audit line.
+- `listLessons({agentId?, domain?, includeDisabled?})` — agent-scoped but always
+  includes global (`agentId === null`) lessons, newest first.
+- `deleteLesson(id)`, `setLessonDisabled(id, disabled)`, `markUsed(ids)`.
+- `rankLessons(candidates, {text, vector?}, k = 5, minScore = 0.35)` — cosine when
+  both vectors exist, else token-overlap cosine; returns the top-k at or above
+  `minScore`.
+- `MAX_LESSONS_PER_DOMAIN = 50`; pruning drops low-confidence, never-used entries
+  first.
 
-Full-suite validation (committed tree, `src/**/*.test.ts`)
--------------------------------------------------------
-  node --import tsx --test "src/**/*.test.ts" -> tests 2245, pass 2243, fail 2
+Acceptance (BUILD_SPEC §11 H2 row) — every item is covered by a passing test
+--------------------------------------------------------------------------
+| Acceptance item | Test |
+|---|---|
+| `LOAM_DATA_DIR` = tmp, add → list returns 1 | "add -> list returns exactly that lesson" |
+| duplicate lesson not re-added | "does not re-add a duplicate lesson" (second add returns the stored id, list stays 1) |
+| 51st lesson prunes to 50 | "prunes a domain to MAX_LESSONS_PER_DOMAIN, dropping low-confidence first" (51 adds → 50, the 3 high-confidence ones survive) |
+| delete → 404 on next get | "delete -> the lesson is gone and the next get returns 404" (second delete returns false) |
 
-Both failures are pre-existing and NOT caused by D15:
-1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered
-   nor listed in PENDING_CODING_TOOLS". The inherited D4 defect: D4 added `suggest_plan`
-   to `CODING_PROFILE.tools` and the mode catalog but never added it to the test's
-   `PENDING_CODING_TOOLS`, and the test's registry does not include `createPlanTools`.
-   `toolDescriptions.test.ts`, `taskToolScope.ts` and `planTools.ts` are byte-identical
-   to manus-parity (`git diff manus-parity HEAD` is empty for each).
-2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing"
-   (`info.isGit` is true for a plain temp dir). Environment-dependent: the test assumes
-   `%TEMP%` is not itself inside a git worktree, which is false here (the worktree root is
-   under a git repo). `src/server/worktrees.ts` and the test are byte-identical to
-   manus-parity, and both failures reproduce identically when run inside the manus-parity
-   worktree itself (8 tests, 6 pass, 2 fail).
+Additional coverage: vector stored with `dim === 32`; embedding failure still stores
+the lesson; incomplete lesson rejected; secret-like lesson rejected; agent scoping
+with global fallback; disabled flag hides/shows; `markUsed` increments `uses` and
+stamps `lastUsedAt`; correction clipping to 4000 chars; lexical ranking; cosine
+ranking.
 
-No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No agent/system instruction was changed. Nothing instruction-related is created, so
+there is no proposal and no approval to wait for (H6 owns that flow).
 
----
+Gates (all run from the worktree root on the committed tree)
+------------------------------------------------------------
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled, 25/25 static pages)
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `node --import tsx --test src/learning/harness/__tests__/experienceStore.test.ts`
+                                             -> tests 15, pass 15, fail 0
+- `node --import tsx --test src/learning/harness/__tests__/*.test.ts src/memory/__tests__/storeDream.test.ts`
+                                             -> tests 43, pass 43, fail 0
+- `node --import tsx --test src/server/__tests__/retryLast.test.ts` (the other sqliteStore consumer)
+                                             -> tests 3, pass 3, fail 0
+- `npm run check:test-isolation`              -> OK (2277 tests in the sandbox copy, no `data/` or `workspace/` written)
+- `npm run check:selfimprove`                 -> PASS (all 11 steps)
+- `node --import tsx --test "src/**/*.test.ts"` -> tests 2277, pass 2275, fail 2
 
+The two full-suite failures are pre-existing on the manus-parity lineage and are not
+caused by H2 (neither file is in this diff, and both reproduce identically on
+manus-parity):
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "keeps every coding-profile tool
+   either linted or explicitly pending". The inherited D4 defect: `suggest_plan` is in
+   `CODING_PROFILE.tools` but not in the test's `PENDING_CODING_TOOLS`, and the test's
+   registry does not include `createPlanTools`.
 V11 complete: design_critique — vision rubric critique loop for generated UIs.
 
 ## Preserved: manus-parity .jdone (V11 design_critique report)
@@ -38544,26 +38569,33 @@ empty for each):
    `suggest_plan` to `CODING_PROFILE.tools` but never to the test's pending list, and
    the test's registry does not include `createPlanTools`.
 2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
-   throwing". Environmental: `readGitBranch` shells out to `git rev-parse`, which
-   walks up to the nearest enclosing repository. The host machine's `C:\` carries a
-   git repo marker, so a temp folder that is not a repo reports `isGit: true`. It
-   fails identically on manus-parity.
+   throwing". Environmental: `%TEMP%` sits inside a git repository on this machine, so
+   `git rev-parse` in a plain temp folder succeeds and `isGit` reports true.
 
-No test was weakened, deleted or skipped. No secrets committed.
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path
+touched (`docs/handoff/watchdog.ps1`, `qa/*.png`, `packages/tests/visual/baselines`,
+ZCode/Codex files). Arabic was written only through the file tool; the fixture
+`"لا، قلت لك اكتب الاسم بالعربي"` is stored as valid UTF-8 (verified byte-level, no
+mojibake marker and no U+FFFD replacement character). The pre-existing uncommitted `deleted: .jdone` from the worktree
+setup was left untouched and is not part of this commit.
 
-Merge gate
-----------
-`git merge manus-parity` (parity tip 4fa0376, J3) merged cleanly with no conflicts;
-committed as 143f613 and now `git rev-list --left-right --count manus-parity...HEAD`
-is `0 2` and `git merge-base --is-ancestor manus-parity HEAD` exits 0.
+Files
+-----
+- `src/learning/harness/experienceStore.ts` (new, 208 lines)
+- `src/learning/harness/__tests__/experienceStore.test.ts` (new, 308 lines)
+- `docs/re/harness2-H0.md` — read only, unchanged
+- `.jdone` — this report
 
 Test commands
 -------------
   npx tsc --noEmit
   npm run build:server
   (cd packages/web && npx next build)
-  npm run verify
   npm run check:encoding
+  node --import tsx --test src/learning/harness/__tests__/experienceStore.test.ts
+  node --import tsx --test src/learning/harness/__tests__/experienceStore.test.ts src/learning/harness/__tests__/types.test.ts src/memory/__tests__/storeDream.test.ts
+  npm run check:test-isolation
+  npm run check:selfimprove
   npm run check:design-registry
   npm run eval:design -- --self-check
   node --import tsx --test "src/**/*.test.ts"
