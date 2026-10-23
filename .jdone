@@ -41,6 +41,34 @@ the failure reproduces identically on the untouched `manus-parity` worktree, so 
 caused by this merge. It was the only failure in the J1 suite (2609 pass / 1 fail / 1 skip)
 and the previously-failing `toolDescriptions` test now passes.
 
+## Independent validation (second pass)
+
+Beyond the gates above, the merge was re-validated from the commit objects (not the
+worktree) to rule out any dropped or silently-lost change:
+
+- `git merge-tree --write-tree ebb445d 61aca0c` reproduces exactly ONE conflict
+  (`CONFLICT (add/add): Merge conflict in .jdone`), confirming `.jdone` was the only file
+  needing manual resolution.
+- `ab01afc` is a real 2-parent merge (`ebb445d`, `61aca0c`); its tree (4733 files) equals
+  the HEAD tree file-set exactly, and it adds no file beyond the merge.
+- All 49 files changed by either side were checked: 17 J1-only, 31 parity-only, 1 both
+  (`.jdone`). Every J1-only file is byte-identical to its J1 version, every parity-only
+  file byte-identical to its parity version, and `.jdone` is a union of both sides
+  (0 markers, 0 non-empty lines dropped from either side).
+- All 10 files parity added are present in the merge tree; 0 unexplained removals.
+- `THIRD_PARTY_NOTICES` (resolved in the prior commit `9475f43`): 0 exact conflict markers,
+  and all J1 entries plus all parity entries survive (0 referenced source files missing).
+  The only "missing lines" are parity entries reformatted/aligned by the J1 side, not lost.
+- `.jcode-done` is present in J1 (`ebb445d`) but absent in BOTH the merge commit and
+  manus-parity, so its worktree deletion is the correct merge result (a `.jcode-*` marker,
+  not committed).
+- The one failing test, `src/server/__tests__/worktrees.test.ts`, is byte-identical between
+  the merge base `26befe6` and `ab01afc` (0-byte diff), so the merge did not cause it.
+- `src/agent/__tests__/toolDescriptions.test.ts` now passes because manus-parity's version
+  (which adds `ask_user` to the linted coding-profile registry) is the merged one; it is
+  byte-identical to parity's version.
+- No forbidden path touched: `docs/handoff/watchdog.ps1` is unchanged vs parity.
+
 ## The failure that was fixed
 `.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity: run git merge
 manus-parity, resolve all conflicts keeping both sides, commit.
