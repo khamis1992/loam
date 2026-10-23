@@ -178,6 +178,22 @@ was edited by this session beyond the `.jdone` marker.
 - `(cd packages/web && npx vitest run)`                  -> all pass
 - `npm run check:encoding`                               -> OK (no BOM, no mojibake)
 
+Measured on the committed merge `26ff902` (working tree clean):
+- `npx tsc --noEmit`                                     -> exit 0
+- `npm run build:server`                                 -> exit 0 (dist/server.cjs 19.4mb)
+- `(cd packages/web && npx next build)`                  -> exit 0 (compiled, 25/25 static pages)
+- `node --import tsx --test src/server/__tests__/workspaceRelay.test.ts src/server/__tests__/videoStudioRelay.test.ts src/server/__tests__/videoStudioE2E.test.ts src/tools/__tests__/videoStudio.test.ts src/tools/__tests__/videoStudioState.test.ts src/protocol/__tests__/eventLog.test.ts`
+                                                        -> tests 93, pass 93, fail 0
+- `node --import tsx --test src/agent/__tests__/codingPrompt.test.ts src/modes/__tests__/catalog.test.ts`
+                                                        -> tests 16, pass 16, fail 0
+- `(cd packages/web && npx vitest run)`                  -> 73 files / 479 tests, all pass
+- `npm run check:encoding`                               -> OK (no BOM, no mojibake, all JSON valid)
+- `git status --short` empty, `git diff --check` clean, `git merge manus-parity` reports
+  "Already up to date." and `git rev-list --left-right --count manus-parity...HEAD` is `0 7`.
+
+No test was weakened, deleted or skipped. No source file outside the tracked `.jdone`
+rollup was edited by this session. No secrets committed, no forbidden path touched.
+
 ---
 
 ## Preserved: manus-parity .jdone (O1 gate-fix + D15 + H1 + fc-05 reports)
