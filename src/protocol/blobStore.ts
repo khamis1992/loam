@@ -10,7 +10,7 @@
 import { BoundedMap } from "../memory/cache.js";
 import { registerCacheStats } from "../memory/stats.js";
 
-/** Hard ceiling on retained upload bytes (64 MB) — matches the per-upload cap. */
+/** Hard ceiling on retained upload bytes (64 MB). */
 export const BLOB_STORE_MAX_BYTES = 64 * 1024 * 1024;
 /** Hard ceiling on the number of retained blobs (one upload each). */
 export const BLOB_STORE_MAX_ENTRIES = 64;
@@ -38,12 +38,25 @@ function evictUntilBytesFit(protect: string): void {
   }
 }
 
-export function storeBlob(id: string, data: Buffer): void {
+/** Result of storing a blob. `rejected` means the upload alone exceeded the
+ *  byte ceiling and was dropped (the PUT route answers 413). */
+export type StoreBlobResult = "stored" | "rejected";
+
+export function storeBlob(id: string, data: Buffer): StoreBlobResult {
+  // A single blob larger than the ceiling can never fit, so retaining it would
+  // leave `bytes > BLOB_STORE_MAX_BYTES` forever (the eviction loop below
+  // deliberately refuses to drop the last entry). Reject it instead: the PUT
+  // route answers 413 and the caller retries with a smaller file.
+  if (data.byteLength > BLOB_STORE_MAX_BYTES) {
+    deleteBlob(id);
+    return "rejected";
+  }
   const previous = blobs.get(id);
   if (previous) retainedBytes -= previous.byteLength;
   retainedBytes += data.byteLength;
   blobs.set(id, data);
   evictUntilBytesFit(id);
+  return "stored";
 }
 
 export function getBlob(id: string): Buffer | undefined {

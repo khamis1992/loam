@@ -76,10 +76,15 @@ round-trip, so their bounds are covered by the parity check rather than by an
 eviction case. The `LruCache` byte-ceiling mechanism itself is unit-tested in
 `src/memory/__tests__/cache.test.ts`, which is what the three `LruCache`
 byte-capped rows (`slide-preview`, `word-preview`, `skills-desc`) rely on;
-`protocol-blobs` carries its own byte ceiling (`BLOB_STORE_MAX_BYTES`) enforced
-by its eviction hook, and the parity test asserts that value too. Adding a cap
-therefore requires its row in this table, and the parity test fails if the
-number drifts.
+`protocol-blobs` carries its own byte ceiling (`BLOB_STORE_MAX_BYTES`) and the
+parity test asserts that value too. Both mechanisms keep the reported `bytes` at
+or below the ceiling by refusing an entry that is larger than it: the eviction
+loop protects the key that was just written (and `protocol-blobs`' loop refuses
+to drop the last entry), so retaining an over-ceiling value would otherwise
+leave the counter permanently over budget. `LruCache.set` returns `false` and
+`storeBlob` returns `"rejected"` for such a value, and the `/blob/` PUT route
+answers 413 instead of buffering it. Adding a cap therefore requires its row in
+this table, and the parity test fails if the number drifts.
 
 ### Agent and session caches
 
@@ -99,7 +104,7 @@ number drifts.
 | `protocol-session-tokens` | 512 | `src/protocol/rpc.ts` | One row per active Connect-RPC session token. |
 | `protocol-temp-codes` | 128 | `src/protocol/rpc.ts` | OAuth device/temporary codes; single-use, so a short bound is safe. |
 | `protocol-login-tokens` | 256 | `src/protocol/rpc.ts` | Single-use login tokens (`consumeLoginToken` deletes on read). |
-| `protocol-blobs` | 64 entries / 64 MiB | `src/protocol/blobStore.ts` | Outbound binary blobs; the eviction hook releases the buffer. Entry **and** byte ceiling. |
+| `protocol-blobs` | 64 entries / 64 MiB | `src/protocol/blobStore.ts` | Outbound binary blobs. Entry **and** byte ceiling; an upload larger than the ceiling is refused (`storeBlob` → `"rejected"`, `/blob/` PUT → 413) and the eviction hook releases the buffer for the entries that do fit. |
 | `workspace-directory-requests` | 128 | `src/protocol/approvals.ts` | Pending interactive directory approvals, keyed by request id; eviction clears the 15-minute timer. |
 
 ### Server and connector caches
@@ -205,7 +210,7 @@ These are not strict caps yet, but they are the expected relationships.
 |---|---|
 | `totals.entries` vs `totals.caches` | Average occupancy should stay well below 1.0 per cache; a cache pinned at its cap means the cap is too small or the workload is too hot. |
 | `caches[].size` vs `caches[].capacity` | No row may exceed its `capacity`. The `debug:memory` route test asserts this for every registered cache. |
-| `caches[].bytes` vs the byte ceiling | For byte-capped caches (`slide-preview`, `word-preview`, `skills-desc`, `protocol-blobs`) the reported `bytes` must stay at or below the configured ceiling. |
+| `caches[].bytes` vs the byte ceiling | For byte-capped caches (`slide-preview`, `word-preview`, `skills-desc`, `protocol-blobs`) the reported `bytes` must stay at or below the configured ceiling. Both mechanisms refuse an entry larger than the ceiling (`LruCache.set` returns `false`, `storeBlob` returns `"rejected"`), so a single oversized value cannot leave the counter permanently over budget; the `/blob/` PUT route answers 413 instead of buffering it. `src/memory/__tests__/cache.test.ts` and the `protocol-blobs` case in `caps.test.ts` pin this. |
 | `finalMB` vs `peakMB` (bench) | A leak shows up as `finalMB` staying near `peakMB` after the workload ends. A healthy run returns close to `idleMB`. Both the BEFORE and AFTER runs above satisfy this. |
 | `growthMB` (bench) | Expected to stay at 0, well below the harness threshold (64 MB); see `bench/results/J6-before.json` and `J6-after.json`. |
 

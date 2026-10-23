@@ -61,6 +61,24 @@ describe("LruCache", () => {
     assert.equal(cache.retainedBytes, 4096 * cache.size);
   });
 
+  it("rejects a single entry that alone exceeds the byte ceiling", () => {
+    // The eviction loop protects the key that was just written, so a value
+    // larger than the ceiling would otherwise stay and leave `bytes` over
+    // budget forever. `set` must refuse it so the reported invariant holds.
+    const cache = new LruCache<Buffer>({ capacity: 4, name: "t-lru-oversize", maxBytes: 1024, sizeOf: byteSizeOfBytes });
+    cache.set("a", Buffer.alloc(400));
+    cache.set("b", Buffer.alloc(400));
+    assert.equal(cache.set("big", Buffer.alloc(8192)), false, "an over-ceiling value must be refused");
+    assert.equal(cache.has("big"), false, "the refused value must not be retained");
+    assert.ok(cache.retainedBytes <= 1024, `expected <= 1 KB, got ${cache.retainedBytes}`);
+    // ...and the entries that did fit are untouched.
+    assert.equal(cache.size, 2);
+    assert.equal(cache.has("a"), true);
+    // A value that fits is still stored normally.
+    assert.equal(cache.set("c", Buffer.alloc(100)), true);
+    assert.equal(cache.has("c"), true);
+  });
+
   it("counts string bytes through the UTF-16 estimator", () => {
     const cache = new LruCache<string>({ capacity: 8, name: "t-lru-str", maxBytes: 16, sizeOf: byteSizeOfString });
     cache.set("a", "1234"); // 8 bytes

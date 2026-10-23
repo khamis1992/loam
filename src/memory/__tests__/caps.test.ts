@@ -63,11 +63,23 @@ const W = fs.mkdtempSync(path.join(os.tmpdir(), "j6-caps-ws-"));
 
 describe("J6 hard caps (eviction through the real public APIs)", () => {
   it("protocol-blobs", async () => {
-    const { storeBlob, hasBlob, clearBlobs } = await import("../../protocol/blobStore.js");
+    const { storeBlob, hasBlob, clearBlobs, getBlob, BLOB_STORE_MAX_BYTES, BLOB_STORE_MAX_ENTRIES } =
+      await import("../../protocol/blobStore.js");
     try {
       await expectCap("protocol-blobs", 64, (i) => { storeBlob(`blob_${i}`, Buffer.alloc(8, i)); });
       assert.equal(hasBlob("blob_0"), false, "the oldest blob was evicted");
       assert.equal(hasBlob("blob_71"), true, "the newest blob survived");
+      // The byte ceiling must hold even for a single upload larger than it: the
+      // eviction hook refuses to drop the last entry, so `storeBlob` has to
+      // reject it rather than leave `bytes > maxBytes`.
+      const row = cache("protocol-blobs");
+      assert.equal(row.maxBytes, BLOB_STORE_MAX_BYTES, "byte ceiling registered");
+      assert.equal(row.capacity, BLOB_STORE_MAX_ENTRIES, "entry cap registered");
+      assert.equal(storeBlob("oversize", Buffer.alloc(BLOB_STORE_MAX_BYTES + 1)), "rejected", "an over-ceiling blob is rejected");
+      assert.equal(hasBlob("oversize"), false, "the rejected blob was not retained");
+      assert.equal(getBlob("oversize"), undefined);
+      const after = cache("protocol-blobs");
+      assert.ok(after.bytes <= after.maxBytes, `protocol-blobs: ${after.bytes} bytes exceed the ${after.maxBytes} ceiling`);
     } finally {
       clearBlobs();
     }

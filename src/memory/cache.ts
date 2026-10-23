@@ -74,9 +74,22 @@ export class LruCache<V> {
     return value;
   }
 
-  /** Insert or refresh a key. */
-  set(key: string, value: V): void {
+  /** Insert or refresh a key.
+   *
+   *  Returns `false` when `value` alone is larger than `maxBytes`: no set of
+   *  entries can ever satisfy the ceiling while that value is present, so
+   *  retaining it would report a cache that is permanently over budget (the
+   *  old implementation evicted everything else and then stopped, leaving
+   *  `bytes > maxBytes`). Dropping it keeps the reported `bytes <= maxBytes`
+   *  invariant the `debug:memory` surface documents.
+   */
+  set(key: string, value: V): boolean {
     const sizeOf = this.options.sizeOf;
+    if (sizeOf && this.options.maxBytes && sizeOf(value) > this.options.maxBytes) {
+      // Drop any prior copy too, so a shrunken ceiling cannot leave stale bytes.
+      this.delete(key);
+      return false;
+    }
     if (sizeOf) {
       const previous = this.map.get(key);
       if (previous !== undefined) this.bytes -= sizeOf(previous);
@@ -89,6 +102,7 @@ export class LruCache<V> {
     }
     this.map.set(key, value);
     if (this.options.maxBytes && sizeOf) this.evictUntilBytesFit(key);
+    return true;
   }
 
   delete(key: string): boolean {
@@ -121,8 +135,10 @@ export class LruCache<V> {
   }
 
   /** Keep evicting until the retained estimate is within `maxBytes`.
-   *  The just-inserted `protect` key is never evicted (a cache must always keep
-   *  the entry the caller just asked for). */
+   *  `protect` is the just-inserted key: it is never evicted, because a caller
+   *  that asked for an entry expects it to be there. Callers must therefore
+   *  reject an entry that cannot fit (see `set`), otherwise `bytes` would exceed
+   *  the ceiling. */
   private evictUntilBytesFit(protect: string): void {
     const ceiling = this.options.maxBytes ?? 0;
     while (this.bytes > ceiling) {
