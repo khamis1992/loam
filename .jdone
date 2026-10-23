@@ -1,3 +1,59 @@
+fc-07 complete: the Loam Video / Loam Effects router and a full "Video editing" prompt section. One product, one workflow, Arabic + English routing, FilmCraft-native fallback.
+
+## What was produced (commit `2f5c69c`, branch `khamis1992/fc-07` on base `manus-parity`)
+1. **Router module** `src/tools/videoStudioRouter.ts` (new). Classifies each requested
+   operation into `film` (cut, trim, arrange, speed, audio, music, volume, basic text,
+   export) or `effects` (transitions beyond a basic dissolve, visual effects, colour looks,
+   text/motion animation, keyframed motion, animated titles). Phrase matching is Latin
+   word-boundary + Arabic substring, with Arabic normalisation (harakat/tatweel, alef/yaa/
+   taa-marbuta variants, hamza). When the EffectCraft backend is unavailable, an `effects`
+   op degrades to FilmCraft-native `transition_basic` / `effect_basic` and the tool says so
+   (`plan()` returns the degradation contract, not a failure).
+2. **Master prompt section** §6.12 "Video editing (Loam Video + Loam Effects)" added to
+   `prompts/loam-master.md` (the source of truth), immediately before `## 7. Parallel Tool
+   Calls`. It documents the open -> state -> incremental edits -> verify (state/screenshot)
+   -> export loop, the routing split, preserving manual edits, and Arabic examples. Regenerated
+   `src/agent/masterPromptText.ts` with `npm run gen:master-prompt` (27 sections).
+3. **Gated prompt guidance** `src/agent/videoPrompt.ts` (new), mirroring the §6.11 `craftPrompt.ts`
+   pattern: exports the video constants, `VIDEO_EDITING_PROMPT`, and `hasVideoStudioTool()`.
+   Wired into `src/agent/prompt.ts` so the section is injected ONLY when `video_studio` is
+   registered, plus a Loam Video planner rule in `src/agent/planner.ts` (mirroring the Craft rule).
+
+## Tests (node --import tsx --test)
+- `src/tools/__tests__/videoStudioRouter.test.ts` (new, ~500 lines): bilingual classification
+  table, normalisation, phrase matching, action routing, availability probes,
+  transition-vs-effect fallback, `plan()` degradation contract, branding contract.
+- `src/agent/__tests__/videoPrompt.test.ts` (new): guidance injected only for `video_studio`,
+  the open->state->edits->verify->export loop, routing/degrade contract, §6.12 in the master
+  prompt after §6.11, planner rule, branding.
+- Fixed three real table bugs the tests surfaced in `videoStudioRouter.ts`: removed the
+  colliding generic words `"motion"` / `"حركي"` / `"حركيه"` from `EFFECTS_PHRASES` (a lone
+  "motion" is ambiguous; "slow motion" is film); added `"الوان"` and `"صحح الوان"` to the
+  colour table; trimmed `FALLBACK_TRANSITION_PHRASES` to genuine transition markers only
+  (dropped bare `"zoom"`, `"glitch"`, `"morph"`, `"متحول"`). Also added natural Arabic film
+  phrases (`"قطع"`, `"جمد الاطار"`, `"انشي الفيديو"`/`"انشاء الفيديو"`, `"صدر الفيديو"`).
+
+## Gates (all run from the worktree root)
+- `npx tsc --noEmit`                        -> exit 0
+- `npm run build:server`                    -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`     -> exit 0 (compiled, 25/25 static pages)
+- `npm run check:encoding`                  -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:promptwire`                -> PASS (master prompt assembled in Appendix B order)
+- `npm run check:modes`                     -> PASS (seven fail-closed modes)
+- `npm run check:loam-agents`               -> PASS (seven modes accepted, unknown rejected)
+- node --import tsx --test (videoStudio, videoStudioRouter, videoPrompt, craftPrompt,
+  codingPrompt, videoStudioE2E, videoStudioRelay, autoVideo, runTools, riskTier)
+  -> tests 235, pass 235, fail 0
+
+Branding: one product ("Loam Video" / "Loam Effects"); upstream names (FilmCraft /
+EffectCraft / ArtCraft) never appear in the UI or in user-facing prompt text. No secrets
+committed. No forbidden path touched. No test weakened, deleted or skipped. Arabic UTF-8
+written only through file tools.
+
+---
+
+## Preserved: previous .jdone content (manus-parity rollup)
+
 D2 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
 
 ## The failure that was fixed
