@@ -21,7 +21,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { publishTaskEvent } from "./streams.js";
 import { taskPath } from "./taskWorkspace.js";
-import { closeMatches, resolveCommandId, toCommandIdList } from "../tools/videoStudio.js";
+import {
+  closeMatches,
+  resolveCommandId,
+  toCommandIdList,
+  VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES,
+} from "../tools/videoStudio.js";
 
 // ---------------------------------------------------------------------------
 // Relay contract (structural, so tests can inject a mock)
@@ -83,13 +88,13 @@ export interface VideoStudioExportResult {
 // Command-id resolution
 // ---------------------------------------------------------------------------
 
-/** Export command ids, most-likely-first (same convention as the tool's table). */
-export const VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES = [
-  "file.exportMedia",
-  "file.export",
-  "export.quick",
-  "export",
-] as const;
+/**
+ * Export command ids, most-likely-first. The single definition lives in
+ * `src/tools/videoStudio.ts` and is imported (not redeclared) here, so the tool
+ * and the HTTP route can never resolve different ids. Re-exported for callers
+ * that read the service's surface.
+ */
+export { VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES };
 
 /** Job/queue command ids used to wait for a queued render. */
 export const VIDEO_STUDIO_JOB_COMMAND_CANDIDATES = ["jobs.poll", "jobs.list", "status.job.progress", "progress.job"] as const;

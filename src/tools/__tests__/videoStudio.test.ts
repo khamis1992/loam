@@ -622,5 +622,10 @@ describe("video_studio export action", () => {
     // The service must resolve exactly the same ids as the tool.
     const service = await import("../../server/videoStudioExport.js");
     assert.deepEqual([...service.VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES], [...VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES]);
+    // Regression guard for the fc-06 TDZ crash: the service must not declare
+    // its own copy of the table. If it ever does, the two halves can silently
+    // resolve different ids (and importing the tool from the service would throw
+    // a temporal-dead-zone ReferenceError). Identity proves one definition.
+    assert.equal(service.VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES, VIDEO_STUDIO_EXPORT_COMMAND_CANDIDATES);
   });
 });
