@@ -106,6 +106,52 @@ describe("video_studio availability + fallback", () => {
     assert.deepEqual(relay.dispatched, []);
   });
 
+  it("reports the routing decision even when the call fails before any command runs", async () => {
+    // The tool description promises "Every result carries a `routing` object", and
+    // the model reads it to say which engine was chosen. The early returns (missing
+    // dist, panel not open, relay failure) used to drop it, so a failed call told
+    // the user nothing about the engine.
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "loam-vs-root-"));
+    ws = fs.mkdtempSync(path.join(os.tmpdir(), "loam-vs-ws-"));
+    relay = new MockRelay();
+
+    const missing = JSON.parse((await tool().run({ action: "state" }, ctx())).content) as {
+      routing?: { route: string; target: string; degraded: boolean; note: string };
+    };
+    assert.ok(missing.routing, "the dist-missing result must still carry routing");
+    assert.equal(missing.routing!.route, "film");
+    assert.equal(missing.routing!.target, "film");
+    assert.equal(missing.routing!.degraded, false);
+    assert.ok(missing.routing!.note.length > 0);
+
+    // A panel that never attaches must also report the routing it chose.
+    fs.mkdirSync(path.join(root, "electron", "filmcraft", "dist"), { recursive: true });
+    fs.writeFileSync(path.join(root, "electron", "filmcraft", "dist", "index.html"), "<html></html>");
+    relay = new MockRelay();
+    relay.failWith = { code: "PANEL_NOT_OPEN", message: "no panel" };
+    const panel = JSON.parse((await tool().run({ action: "cut", atSec: 5 }, ctx())).content) as {
+      reason: string;
+      routing?: { route: string; target: string; degraded: boolean };
+    };
+    assert.equal(panel.reason, "panel_not_open");
+    assert.ok(panel.routing, "the panel_not_open result must still carry routing");
+    assert.equal(panel.routing!.route, "film");
+    assert.equal(panel.routing!.target, "film");
+    assert.equal(panel.routing!.degraded, false);
+
+    // And a degraded effects request must say so on the failure envelope too.
+    relay = new MockRelay();
+    relay.failWith = { code: "PANEL_NOT_OPEN", message: "no panel" };
+    const degraded = JSON.parse(
+      (await tool().run({ action: "effect_basic", name: "glitch" }, ctx())).content,
+    ) as { routing?: { route: string; target: string; degraded: boolean; reason?: string } };
+    assert.ok(degraded.routing, "a degraded request must report its routing even when it fails");
+    assert.equal(degraded.routing!.route, "effects");
+    assert.equal(degraded.routing!.target, "film");
+    assert.equal(degraded.routing!.degraded, true);
+    assert.equal(degraded.routing!.reason, "effects_backend_unavailable");
+  });
+
   it("reports the dist as installed when index.html exists", () => {
     fs.mkdirSync(path.join(root, "electron", "filmcraft", "dist"), { recursive: true });
     fs.writeFileSync(path.join(root, "electron", "filmcraft", "dist", "index.html"), "<html></html>");

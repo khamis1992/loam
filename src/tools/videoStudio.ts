@@ -522,13 +522,23 @@ function buildAction(
 // Result envelopes
 // ---------------------------------------------------------------------------
 
-function fallbackResult(reason: VideoStudioFallbackReason, message: string, hint?: string): ToolResult {
+/** The routing decision attached to every `video_studio` result (fc-07). */
+export interface VideoStudioRouting {
+  route: "film" | "effects";
+  target: "film" | "effects";
+  degraded: boolean;
+  reason?: "effects_backend_unavailable" | "effects_engine_unsupported";
+  note: string;
+}
+
+function fallbackResult(reason: VideoStudioFallbackReason, message: string, routing: VideoStudioRouting, hint?: string): ToolResult {
   return {
     ok: false,
     content: JSON.stringify({
       ok: false,
       fallback: VIDEO_STUDIO_FALLBACK_TOOL,
       reason,
+      routing,
       message,
       hint: hint ?? `Use the ${VIDEO_STUDIO_FALLBACK_TOOL} tool instead: it compiles an edit-decision-list and renders via ffmpeg, so it needs neither the Loam Video dist nor the editor bridge.`,
     }),
@@ -536,7 +546,7 @@ function fallbackResult(reason: VideoStudioFallbackReason, message: string, hint
 }
 
 /** Map a relay failure to a retry hint (panel not open) or a video_edit fallback. */
-function relayErrorResult(err: unknown): ToolResult {
+function relayErrorResult(err: unknown, routing: VideoStudioRouting): ToolResult {
   const code = (err as { code?: unknown } | null)?.code;
   const detail = err instanceof Error ? err.message : String(err);
   if (code === "PANEL_NOT_OPEN") {
@@ -546,13 +556,14 @@ function relayErrorResult(err: unknown): ToolResult {
         ok: false,
         reason: "panel_not_open",
         retry: true,
+        routing,
         message:
           "No Loam Video panel is attached to this task yet. The Workspace panel opens automatically when video_studio runs; retry this action once it is open.",
       }),
     };
   }
   if (code === "CANCELLED") {
-    return fallbackResult("cancelled", `The task stopped before the Loam Video command finished (${detail}).`);
+    return fallbackResult("cancelled", `The task stopped before the Loam Video command finished (${detail}).`, routing);
   }
   // The panel reported a failed command. It uses the same ok:false channel both
   // when the editor refused a command (bad url, missing clip, unsupported
@@ -565,12 +576,14 @@ function relayErrorResult(err: unknown): ToolResult {
     return fallbackResult(
       "command_rejected",
       `The Loam Video editor refused the command (${detail}).`,
+      routing,
       `The panel executed the command but the editor rejected it, so retrying the same command will fail again: read the state action for the current clips/tracks, fix the command and retry video_studio. If the editor API itself did not load, use the ${VIDEO_STUDIO_FALLBACK_TOOL} tool instead (it compiles an edit-decision-list and renders via ffmpeg, so it needs no editor).`,
     );
   }
   return fallbackResult(
     "bridge_unavailable",
     `The Loam Video editor did not answer (${code ?? "error"}: ${detail}).`,
+    routing,
   );
 }
 
@@ -706,6 +719,7 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
           return fallbackResult(
             "filmcraft_dist_missing",
             `The Loam Video dist is not installed (${filmcraftDistDir(root)}). Install it with the vendor script, then retry.`,
+            routing,
           );
         }
 
@@ -717,7 +731,7 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
           try {
             catalog = toCommandIdList(await relay.enqueue(taskId, target, "commands", {}));
           } catch (err) {
-            return relayErrorResult(err);
+            return relayErrorResult(err, routing);
           }
         }
 
@@ -730,7 +744,7 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
             const value = await relay.enqueue(taskId, target, step.method, step.params);
             results.push({ method: step.method, ok: true, result: value });
           } catch (err) {
-            return relayErrorResult(err);
+            return relayErrorResult(err, routing);
           }
         }
 
