@@ -13,6 +13,7 @@ import { visualReview, VisualReviewUnavailable } from "./visualReview.js";
 import { HttpExpectations, validateExpectedResponses, type ExpectedResponse } from "./httpExpectations.js";
 import { canonicalRows, validateSqliteChecks, type SqliteCheck } from "./sqliteChecks.js";
 import { validateApiChecks, runApiChecks, type ApiCheck, type ApiObservation } from "./apiChecks.js";
+import { addUsage } from "./usageAccounting.js";
 
 class IndependentSelectorAmbiguity extends Error {}
 
@@ -295,9 +296,7 @@ export async function verifyApplication(o: { cfg: Config; ollama: OllamaClient; 
     for (const outcome of outcomes) {
     if (outcome.status === "rejected") { failures.push(outcome.reason); continue; }
     const { screenshots, visual, attempts } = outcome.value;
-    result.usage.promptTokens += visual.usage.promptTokens;
-    result.usage.completionTokens += visual.usage.completionTokens;
-    result.usage.durationMs += visual.usage.durationMs;
+    addUsage(result.usage, visual.usage);
     const verdict = extractJson(visual.content) as { verdict?: string; reason?: string; issues?: unknown[] } | null;
     batches.push({screenshots,model:visual.model,verdict,response:visual.content,attempts});
     result.visual = { complete:false, model:visual.model, verdict, response:visual.content, attempts:batches.reduce((sum,b)=>sum+b.attempts,0), batches, batchRuns, reviewedScreenshots:batches.flatMap(b=>b.screenshots) };

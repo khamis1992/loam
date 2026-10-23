@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { DATA_DIR } from "../config.js";
 import { log } from "../log.js";
 
-export type PendingKind = "skill_create" | "skill_patch" | "skill_delete" | "skill_install" | "memory_store";
+export type PendingKind = "skill_create" | "skill_patch" | "skill_delete" | "skill_install" | "memory_store" | "skill_suggest";
 
 export interface PendingItem {
   id: string;

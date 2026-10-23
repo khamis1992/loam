@@ -6,6 +6,7 @@ import type { OllamaClient, ChatMessage, ChatOptions, ChatResult } from "../olla
 import { IncompleteModelStream } from "../ollama.js";
 import type { Usage } from "./events.js";
 import { APP_CONTRACT_INSTRUCTIONS, parseAppContract } from "./appVerification.js";
+import { addUsage } from "./usageAccounting.js";
 
 // Reuse the executable schema, excluding worker-only delivery/freeze directions.
 // The independent author adds a separate, smaller contract; it never replaces
@@ -113,7 +114,7 @@ Final JSON envelope: {"contract":{"entry":"...","scenarios":[...]},"basis":["exa
         { role: "user", content: JSON.stringify({ originalUserRequest: o.request, application: { entry: base.entry, runtime: base.runtime }, untrustedSources: sources }) },
       ],
     });
-    usage.promptTokens += result.usage.promptTokens; usage.completionTokens += result.usage.completionTokens; usage.durationMs += result.usage.durationMs;
+    addUsage(usage, result.usage);
     o.signal?.throwIfAborted();
     if (result.toolCalls.length) throw new Error("Independent author cannot invoke tools");
     if (result.content.length > 64_000) throw new Error("Independent acceptance exceeds 64000 characters");

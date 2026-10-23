@@ -62,6 +62,8 @@ export const en = {
   "No approval rules yet.": "No approval rules yet.",
   "Decided": "Decided",
   "Tool": "Tool",
+  "Environment issue": "Environment issue",
+  "Continue by relying on CI, skipping this step with an explicit note, or asking the user to fix the environment. Do not report the step as passed.": "Continue by relying on CI, skipping this step with an explicit note, or asking the user to fix the environment. Do not report the step as passed.",
   "This agent": "This agent",
   "Global": "Global",
   "Remove": "Remove",
@@ -206,5 +208,15 @@ export const en = {
   "Plan switcher": "Plan switcher",
   "Credits ›": "Credits ›",
   "Homepage ↗": "Homepage ↗",
-  "Docs ↗": "Docs ↗"
+  "Docs ↗": "Docs ↗",
+  "Plan approval": "Plan approval",
+  "Plan approved": "Plan approved",
+  "Plan rejected": "Plan rejected",
+  "Plan updated": "Plan updated",
+  "Steps": "Steps",
+  "Trivial": "Trivial",
+  "Approve": "Approve",
+  "Reject": "Reject",
+  "Edit": "Edit",
+  "Save and approve": "Save and approve"
 } as const;

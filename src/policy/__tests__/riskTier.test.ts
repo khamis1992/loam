@@ -43,6 +43,12 @@ const CLASSIFICATION_CASES: Array<{ tool: string; args?: Record<string, unknown>
   { tool: "edit", args: { filePath: "d.txt" }, ws: WS, expected: "write-workspace", note: "generic edit" },
   { tool: "FILE_WRITE", args: { path: "e.txt" }, ws: WS, expected: "write-workspace", note: "case-insensitive tool name" },
   { tool: "scratchpad_add", args: { text: "x" }, ws: WS, expected: "write-workspace", note: "scratchpad (no path)" },
+  { tool: "video_studio", args: { action: "cut", atSec: 5 }, ws: WS, expected: "write-workspace", note: "video_studio mutating action (no path)" },
+  { tool: "video_studio", args: { action: "import", path: "clip.mp4" }, ws: WS, expected: "write-workspace", note: "video_studio import inside workspace" },
+  // video_studio reuses from/to as time aliases, but they are also write-path
+  // keys, so a timecode like "1:30" is read as a relative path (write-workspace,
+  // harmless). Documented here so the coupling is visible if WRITE_PATH_KEYS changes.
+  { tool: "video_studio", args: { action: "trim", from: "0:00", to: "1:30" }, ws: WS, expected: "write-workspace", note: "video_studio from/to time aliases resolve as workspace paths" },
   // write-outside
   { tool: "file_write", args: { path: "../outside.txt" }, ws: WS, expected: "write-outside", note: "parent escape" },
   { tool: "file_edit", args: { path: "/etc/passwd" }, ws: WS, expected: "write-outside", note: "absolute outside" },

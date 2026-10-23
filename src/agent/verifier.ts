@@ -15,6 +15,7 @@ import { needsAppVerification, verifyApplication, type AppEvidence } from "./app
 import { AcceptanceGuard } from "./acceptanceGuard.js";
 import { needsCreativeVerification, verifyCreative } from "./creativeVerification.js";
 import { authorIndependentAcceptance, IndependentAcceptanceGuard, independentRequirements, IndependentAcceptanceUnavailable } from "./independentAcceptance.js";
+import { addUsage, sumUsage } from "./usageAccounting.js";
 
 export interface VerdictOutcome extends VerdictInfo {
   model: string;
@@ -206,9 +207,7 @@ async function callVerifier(
         ...(model ? { model } : {}),
         ...(signal ? { signal } : {}),
       });
-      usage.promptTokens += res.usage.promptTokens;
-      usage.completionTokens += res.usage.completionTokens;
-      usage.durationMs += res.usage.durationMs;
+      addUsage(usage, res.usage);
       const parsed = parseVerdict(res.content);
       if (!parsed.parsed) log.warn(`verifier (${what}): unparseable output; defaulting to ${parsed.verdict}`);
       if (!parsed.parsed && attempt === 0) {
@@ -344,7 +343,9 @@ export async function verifyFinal(o: FinalVerifyOptions): Promise<VerdictOutcome
       return { verdict: 'revise', unavailable: true, reason: String(error), fixes: ['Preserve source and contract; resolve the incomplete contract review before completion.'], model: o.cfg.model, usage: auditUsage };
     }
   }
-  const addAuditUsage = (usage: Usage): Usage => ({ promptTokens: usage.promptTokens + auditUsage.promptTokens, completionTokens: usage.completionTokens + auditUsage.completionTokens, durationMs: usage.durationMs + auditUsage.durationMs });
+  // Cache reads are only reported by the cloud upstream, so carry them through
+  // the audit sum instead of dropping the counter on verified runs.
+  const addAuditUsage = (usage: Usage): Usage => sumUsage(usage, auditUsage);
   const checkpoint = o.saveIndependentAcceptance;
   const result = await verifyFinalAfterContractReview({ ...o, ...(checkpoint ? { saveIndependentAcceptance: usage => checkpoint(addAuditUsage(usage)) } : {}) });
   return { ...result, usage: addAuditUsage(result.usage) };
@@ -363,9 +364,7 @@ async function verifyFinalAfterContractReview(o: FinalVerifyOptions): Promise<Ve
   o.emit?.({ type: "tool_result", name: "creative_verification", ok: scene.pass, summary: `${scene.reason}\nReport: ${scene.reportPath}`, ms: scene.elapsedMs });
   if (!scene.pass) return { verdict: "revise", reason: scene.reason, fixes: [scene.unavailable ? `Visual review was unavailable; inspect ${scene.reportPath}. Preserve the scene and retry independent verification. Do not change geometry or materials without evidence of a defect. Do not claim completion until verification succeeds.` : `Inspect ${scene.reportPath}; fix the scene's actual geometry, materials or camera to meet the original request. Labels and descriptions cannot replace a correct rendered result.`], model: o.cfg.vision.model || o.cfg.model, usage: scene.usage };
   const checked = await verifyApplicationAndText({ ...o, trace: [...o.trace, { name: "creative_verification", ok: true, summary: JSON.stringify(scene) }] }, true);
-  checked.usage.promptTokens += scene.usage.promptTokens;
-  checked.usage.completionTokens += scene.usage.completionTokens;
-  checked.usage.durationMs += scene.usage.durationMs;
+  addUsage(checked.usage, scene.usage);
   if (checked.verdict === "pass" && !checked.finalAnswer) return { ...checked, verdict: "revise", reason: "Verified scene is missing its evidence-based delivery answer", fixes: ["Provide a finalAnswer describing the observed scene and actual visual checks, without claiming untested animation/export behavior."] };
   return checked;
 }
@@ -379,7 +378,7 @@ async function verifyApplicationAndText(o: FinalVerifyOptions, hasFreshVisualEvi
   const independentRequest = o.independentRequest ?? independentRequirements(o.request, o.history);
   const independentGuard = o.independentGuard ?? new IndependentAcceptanceGuard(independentRequest);
   const additionalUsage: Usage = { promptTokens: 0, completionTokens: 0, durationMs: 0 };
-  const accumulate = (u: Usage) => { additionalUsage.promptTokens += u.promptTokens; additionalUsage.completionTokens += u.completionTokens; additionalUsage.durationMs += u.durationMs; };
+  const accumulate = (u: Usage) => { addUsage(additionalUsage, u); };
   let independent: AppEvidence;
   try {
     if (!independentGuard.get()) {
@@ -387,7 +386,7 @@ async function verifyApplicationAndText(o: FinalVerifyOptions, hasFreshVisualEvi
       const authored = await authorIndependentAcceptance({ cfg: o.cfg, ollama: o.ollama, request: independentRequest, signal: o.signal });
       accumulate(authored.usage);
       independentGuard.freeze(authored);
-      o.saveIndependentAcceptance?.({ promptTokens: app.usage.promptTokens + additionalUsage.promptTokens, completionTokens: app.usage.completionTokens + additionalUsage.completionTokens, durationMs: app.usage.durationMs + additionalUsage.durationMs });
+      o.saveIndependentAcceptance?.(sumUsage(app.usage, additionalUsage));
     }
     o.emit?.({ type: "verification_progress", stage: "independent_application" });
     independent = await verifyApplication({ cfg: o.cfg, ollama: o.ollama, request: independentRequest, signal: o.signal, independentContract: independentGuard.get()!.contract });
@@ -409,12 +408,8 @@ async function verifyApplicationAndText(o: FinalVerifyOptions, hasFreshVisualEvi
     return { verdict: "revise", reason: independent.reason, unavailable: independent.unavailable, fixes: [applicationFailureFeedback(independent), `Frozen independent contract: ${independentGuard.get()!.contract}`], model: o.cfg.model, usage: additionalUsage };
   }
   const checked = await verifyFinalText({ ...o, trace: [...o.trace, { name: "application_verification", ok: true, summary: JSON.stringify({ report: app.reportPath, checks: app.checks, visual: app.visual }) }, { name: "independent_application_verification", ok: true, summary: JSON.stringify({ report: independent.reportPath, checks: independent.checks, visual: independent.visual }) }] }, true);
-  checked.usage.promptTokens += additionalUsage.promptTokens;
-  checked.usage.completionTokens += additionalUsage.completionTokens;
-  checked.usage.durationMs += additionalUsage.durationMs;
-  checked.usage.promptTokens += app.usage.promptTokens;
-  checked.usage.completionTokens += app.usage.completionTokens;
-  checked.usage.durationMs += app.usage.durationMs;
+  addUsage(checked.usage, additionalUsage);
+  addUsage(checked.usage, app.usage);
   if (checked.verdict === "pass" && !checked.finalAnswer) {
     return { ...checked, verdict: "revise", reason: "Verified application is missing its evidence-based delivery answer", fixes: ["Provide a finalAnswer summarizing the actual completed runtime and visual checks, deliverable paths and usage instructions."] };
   }
@@ -486,9 +481,7 @@ async function inspectVerdict(
       if (judgmentOnly) messages.push({ role: "user", content: "The read-only inspection budget is now exhausted. Return your complete verdict JSON based on the evidence already collected. No further tools are available. If evidence is insufficient, return revise specifying what is missing. Never pass merely because the budget ended." });
       const result = await chatWithFallback({ cfg: o.cfg, ollama: o.ollama, messages, ...(!judgmentOnly ? { tools: tools.toOllama() } : {}), temperature: 0.05, ...(o.model ? { model: o.model } : {}), ...(o.signal ? { signal: o.signal } : {}) });
       model = result.model;
-      usage.promptTokens += result.usage.promptTokens;
-      usage.completionTokens += result.usage.completionTokens;
-      usage.durationMs += result.usage.durationMs;
+      addUsage(usage, result.usage);
       if (!result.toolCalls.length) {
         const verdict = parseVerdict(result.content);
         if (!verdict.parsed && !formatRecoveryUsed && !judgmentOnly) {
