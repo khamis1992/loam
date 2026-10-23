@@ -1,3 +1,42 @@
+## N3 gate-fix session (round 4): merge with parity tip bdae2ca (J11), all gates green
+
+Parity advanced again from `1ccc8bd` (merged as `38b9891`) to `bdae2ca` (J11 merged into
+manus-parity), so a fourth merge was required.
+
+### Conflict set this round
+`git merge-tree --write-tree HEAD bdae2ca` reported exactly one conflict:
+
+1. `.jdone` (add/add) — parity's J11 rollup prepends its report at the same top-of-file anchor as ours.
+   Resolved with the same whole-file **multiset union**: for every line the resolved file holds
+   `max(count in ours, count in theirs)` copies. All four containment checks returned **0 missing**
+   (ours 18625 lines, theirs 9057, base 8685, out 18910). Zero conflict markers, zero BOM, zero
+   mojibake.
+
+No source file conflicted: parity's J11 changes (`src/agent/*`, `src/config.ts`, new agent tests,
+`THIRD_PARTY_NOTICES`, `docs/COMPACTION_SPEC.md`) auto-merged cleanly with `ort`.
+
+### Pre-existing flaky test (not merge-introduced): `wikiPage.test.tsx`
+Carried forward from round 3. `packages/web/src/app/app/wiki/__tests__/wikiPage.test.tsx` once failed
+with `TestingLibraryElementError: Found multiple elements with the text: Overview`, then passed on every
+subsequent run (4/5 isolated runs; full suite green). The wiki files are byte-identical to parity tip
+(`git diff bdae2ca HEAD -- packages/web/src/app/app/wiki/` -> empty) and unchanged by our merges
+(`git diff 4fdfd73 HEAD -- packages/web/src/app/app/wiki/` -> empty). Root cause: the test's own
+`afterEach` only calls `vi.unstubAllGlobals()` / `vi.restoreAllMocks()` and never `cleanup()`, and
+`vitest.config.ts` sets no `globals.cleanup`, so jsdom DOM is not torn down between files under parallel
+workers. **The test is not weakened, deleted or skipped**; the file is left byte-identical to parity.
+
+### Gates re-run on the resolved tree (measured)
+- `npx tsc --noEmit`                            -> exit 0
+- `npm run build:server`                        -> exit 0 (server bundle + pdf worker written to dist/)
+- `(cd packages/web && npx next build)`         -> exit 0 (25/25 static pages generated)
+- `npm run verify`                              -> exit 0 (typecheck, encoding, eval, orchestrator, recovery, modes)
+- `node --import tsx --test "src/**/*.test.ts"` -> exit 0; **2790 tests / 2790 pass / 0 fail**
+- `(cd packages/web && npx vitest run)`         -> exit 0; **85 files / 572 tests, all passed**
+  (including `src/services/chatSocket.test.ts` -> 9 tests passed)
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped. No Arabic text
+was written; no mojibake placeholder text was added.
+
 ## N3 gate-fix session (round 3): merge with parity tip 1ccc8bd (N2 via loam-jcode-run), all gates green
 
 `.jgatefail.txt` again reported `MERGE CONFLICT with latest manus-parity`. Parity advanced from
@@ -18623,3 +18662,288 @@ CRLF stat refresh (`core.autocrlf=true`), not a change. No source file was edite
 by this session; the only committed file is `.jdone`.
 No secrets committed. No forbidden path touched. No real external model API was
 called by the tests. Working tree clean.
+## J11 gate-fix session (round 9): sixth merge round against parity tip `1ccc8bd` (N2), all gates green
+`.jgatefail.txt` reported the same conflict again. Local `manus-parity` had advanced from the
+round-8 tip `d57df77` to `1ccc8bd` (N2, "merge khamis1992/neo-n2 into manus-parity"), and `1ccc8bd`
+was not an ancestor of the round-8 tree, so the harness merge step conflicted once more.
+### The sixth merge (parity tip `1ccc8bd`, N2)
+`git merge --no-edit manus-parity` conflicted in exactly one file, the tracked rollup `.jdone`.
+Every source file auto-merged cleanly and is staged unmodified. The resolution drops ONLY the
+three conflict-marker lines, keeping BOTH sides in full, so no report line from either side is lost.
+Integrity of the resolved rollup, verified mechanically against the two real merge parents
+Integrity of the resolved rollup, verified mechanically against the two real merge parents
+(`6570b21` ours, `1ccc8bd` theirs):
+  - non-blank lines missing from ours   = 0
+  - non-blank lines missing from ours   = 0
+  - non-blank lines missing from theirs = 0
+  - non-blank lines missing from theirs = 0
+  - theirs is a subsequence of the merged file = true
+  - theirs is a subsequence of the merged file = true
+  - ours is NOT a strict subsequence: the merged file carries both the round-8 and round-9
+    reports for the shared `## O4 gate-fix session` header (each side repeated that header in a
+    different position), so ours appears out of order. No line is missing, which is what matters.
+  - conflict markers = 0
+  - conflict markers = 0
+  - U+FFFD replacement characters = 0, NUL bytes = 0, BOM absent, strict UTF-8 valid
+  - U+FFFD replacement characters = 0, NUL bytes = 0, BOM absent, strict UTF-8 valid
+No source file was edited by this session; the only committed file is `.jdone`.
+`git merge manus-parity` on the committed tree reports `Already up to date.` with no conflict.
+### Gates (all run from the worktree root on the merged tree at HEAD `7ab9316`)
+  1. `npx tsc --noEmit` -> exit 0
+  2. `npm run build:server` -> exit 0 (`server bundle + pdf worker written to dist/`)
+  3. `(cd packages/web && npx next build)` -> exit 0 (compiled successfully, 25/25 static pages)
+  4. `node --import tsx --test "src/**/*.test.ts"` -> tests 2773, pass 2773, fail 0,
+     cancelled 0, skipped 0
+  5. `node --import tsx --test src/agent/__tests__/contextCompressor.test.ts` -> tests 31, pass 31
+  6. `node --import tsx --test src/agent/__tests__/cacheUsageAccounting.test.ts` -> tests 4, pass 4
+  7. `node --import tsx --test src/agent/__tests__/parallelTools.test.ts` -> tests 2, pass 2
+  8. `node --import tsx --test src/agent/__tests__/reminders.test.ts` -> tests 12, pass 12
+  9. `npm run check:encoding` -> `encoding check: OK (no BOM, no mojibake, all JSON valid)`
+### Measured RAM
+No RAM measurement taken for this session: the change is a merge-conflict resolution in one
+tracked markdown rollup. The heaviest gate was the full node test suite (tests 2773, ~31 s wall
+clock), which ran without hitting any memory limit; no peak-RSS figure was captured.
+### J11 deliverables (already committed in earlier rounds, unchanged this session)
+- `docs/COMPACTION_SPEC.md` - compares Loam's compaction values with jcode's
+  (`ref/compaction-core.rs`: budget 200k, trigger 80%, critical 95%, keep last 10 turns,
+  min 2, emergency tool-result truncation 4000 chars) and justifies each difference.
+- `src/agent/contextCompressor.ts` - extended with the critical (95%) emergency path and
+  emergency tool-result truncation as config constants. No second compressor was created.
+- `src/config.ts` - the new constants.
+- `src/agent/__tests__/contextCompressor.test.ts` - the added constants are covered by tests.
+- `THIRD_PARTY_NOTICES` - jcode MIT notice entry.
+### Rules honoured
+Only `.jdone` (plus the restored `.jcode-done` marker) was committed. No source file was edited
+through the shell; the conflict markers were removed with file tools. No secrets, no forbidden
+path touched, no real external model API called by tests. Working tree clean.
+## J11 gate-fix session (round 8): fifth merge round against parity tip `d57df77`, all gates green
+`.jgatefail.txt` again reported a conflict with the latest `manus-parity`. The ref had advanced
+past the round-7 tip: local `manus-parity` moved from `851b3fe` to `d57df77` (N15, "merge
+khamis1992/neo-n15 into manus-parity"), and `d57df77` was NOT an ancestor of the round-7 tree, so
+the harness merge step conflicted. A fifth merge round was required.
+### The fifth merge (parity tip `d57df77`, N15)
+`git merge --no-edit manus-parity` conflicted in exactly one file, the tracked rollup `.jdone`
+(ours 8406 lines, theirs 8405 lines, base 8169 lines). Every source file auto-merged cleanly and
+was staged unmodified. The resolution drops ONLY the three conflict-marker lines, keeping BOTH
+sides in full, so no report line from either side is lost.
+(`c027fd1` ours, `d57df77` theirs):
+  - ours is a subsequence of the merged file   = true
+  - line endings CRLF throughout (8640 CRLF, 0 lone LF, 0 lone CR)
+Merge commit: `89ee2af` (parents `c027fd1` ours + `d57df77` theirs).
+### Gate condition verified on the committed tree (HEAD `89ee2af`)
+  - `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
+  - `git merge --no-edit manus-parity`               -> "Already up to date."
+  - `git rev-list --count manus-parity..HEAD`        -> 24
+Both the local tip `d57df77` and `origin/manus-parity` (`0a946d3`) are ancestors of HEAD.
+### Gates (all run from the worktree root on the committed merge tree `89ee2af`)
+  1. `npx tsc --noEmit --incremental`             -> exit 0
+  2. `npm run check:encoding`                     -> OK (no BOM, no mojibake, all JSON valid)
+  3. `npm run build:server`                       -> exit 0 (server bundle + pdf worker written to dist/)
+  4. `(cd packages/web && npx next build)`        -> exit 0 (compiled successfully, 25/25 static pages)
+  5. `node --import tsx --test "src/**/*.test.ts"`
+                                                  -> tests 2773, pass 2773, fail 0, suites 510,
+                                                     cancelled 0, skipped 0
+  6. `(cd packages/web && npx vitest run)`        -> 82 files / 554 tests, all pass, 0 fail
+  7. harness-exact node step on the four changed test files
+                                                  -> tests 49, pass 49, fail 0, skipped 0
+No test was weakened. The four changed test files only ADD J11 compression config constants
+(`criticalThresholdPercent`, `recentTurnsToKeep`, `minTurnsToKeep`, `emergencyToolResultMaxChars`)
+to their `makeConfig` factories; the `contextCompressor.test.ts` delta rewrites single-line
+compression overrides into multi-line objects carrying the SAME `thresholdPercent`/`protectLead`/
+`protectTail` values, and adds cases. A `.skip(` / `.only(` / `todo` sweep over every changed test
+file returns nothing. The suite grew from 2760 to 2773 node tests and 545 to 554 web tests; nothing
+was dropped.
+### Independent validation performed this session (no source file edited)
+  - Runtime differential oracle rebuilt from `compaction-core.rs`: ORACLE_ALL_PASS - 18 truncation
+    cases with 0 divergences, 1260 emergency-grid combinations with 0 mismatches.
+  - Fresh-clone reproducibility: a clone of HEAD in a temp dir passes the merge gate with
+    "Already up to date." exit 0, a clean tree, and a byte-identical `.jdone` blob.
+  - No secrets committed, no forbidden path touched, no Arabic text written.
+Final state of this session: HEAD is the rollup commit on top of the merge `89ee2af`;
+`manus-parity` tip `d57df77` is an ancestor of HEAD; `git merge --no-edit manus-parity` reports
+"Already up to date."; the working tree is clean; `.jcode-done` is present. The round-7 header and
+every earlier report below are retained verbatim for rollup fidelity; the figures above are the
+current ones.
+## J11 gate-fix session (round 7): re-merged the real manus-parity tips, all gates green
+`.jgatefail.txt` reported `MERGE CONFLICT with latest manus-parity`. The in-progress merge was
+stale: it targeted parity tip `411df5e` while `manus-parity` had advanced, so it was aborted and
+re-run against the real tip. `manus-parity` then advanced again during this session, so the
+merge was performed twice, each time resolved by keeping BOTH sides and never dropping a line:
+1. parity tip `411df5e` (M3/C21 mirofish) -> merge commit `3ae046b`
+2. parity tip `6fa63b8` (O4 seqReplay + socket) -> merge commit `becf760`
+3. parity tip `26fcd6b` (fc-09 effects round-trip, fc-09/H3 merges) -> merge commit `c18bb8d`
+4. parity tip `851b3fe` (N7 fanout, fc-09 effects) -> merge commit `a24e7d5`
+Each round conflicted in exactly one file, the tracked rollup `.jdone`. Every source file
+auto-merged cleanly and was staged unmodified. Both resolutions were verified mechanically to be
+a strict superset of both merge parents: `ours` and `theirs` are each a subsequence of the merged
+file, 0 non-empty lines missing from either, 0 conflict markers, 0 U+FFFD replacement characters.
+All three resolutions were also verified as multiset supersets: every non-blank line of each side
+is present with at least equal multiplicity. The merged file is BOM-free, valid UTF-8, CRLF.
+Gate condition verified on the committed tree (HEAD `a24e7d5`, which is `c18bb8d` plus the fourth
+merge with parity tip `851b3fe`):
+`git merge-base --is-ancestor manus-parity HEAD` exits 0,
+`git merge --no-edit manus-parity` reports "Already up to date.", and
+`git rev-list --count manus-parity..HEAD` = 21.
+### Gates (all run from the worktree root on the committed merge tree)
+  1. `npx tsc --noEmit`                          -> exit 0
+  2. `npm run build:server`                      -> exit 0 (dist/server.cjs 19.6mb, pdf worker copied)
+  3. `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+  4. `node --import tsx --test "src/**/*.test.ts"`
+                                                  -> tests 2760, pass 2760, fail 0 (507 suites)
+  5. `(cd packages/web && npx vitest run)`        -> 81 files / 545 tests, all pass, 0 fail
+  6. `npm run check:encoding`                     -> OK (no BOM, no mojibake, all JSON valid)
+No source file was edited by this session and no test was weakened, deleted or skipped.
+`src/agent/masterPromptText.ts` appeared modified only from a stale stat cache: its blob hash is
+identical to HEAD's, and `git add` clears the flag.
+No secrets committed. No forbidden path touched. No Arabic text was written.
+Final state of this session: the committed tree is `7d3bdb6` (the merge `a24e7d5` plus this
+rollup correction), `manus-parity` tip `851b3fe` is an ancestor of HEAD,
+`git merge --no-edit manus-parity` reports "Already up to date.", `git rev-list --count
+manus-parity..HEAD` = 22, and the working tree is clean. `.jcode-done` is present.
+The six prior-round lines and the four round-5 lines are retained verbatim below for rollup
+fidelity; the header figures above are the current ones.
+The four lines below are the prior-round wording retained verbatim for rollup fidelity; the figures
+in the header above are the current ones for this final tree:
+Gate condition verified on the committed tree (HEAD `becf760`):
+`git rev-list --count manus-parity..HEAD` = 17.
+                                                  -> tests 2679, pass 2679, fail 0
+  5. `(cd packages/web && npx vitest run)`        -> 79 files / 538 tests, all pass, 0 fail
+The six lines below are the round-6 wording retained verbatim for rollup fidelity; the figures in
+the header above are the current ones for this final tree:
+## J11 gate-fix session (round 6): re-merged the real manus-parity tips, all gates green
+3. parity tip `26fcd6b` (fc-09 effects round-trip, fc-09/H3 merges) -> this merge
+Gate condition verified on the committed tree (HEAD `c18bb8d`, which is `becf760` plus the third
+merge with parity tip `26fcd6b`):
+`git rev-list --count manus-parity..HEAD` = 19.
+                                                  -> tests 2749, pass 2749, fail 0 (503 suites)
+## J11 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge manus-parity, resolve all conflicts keeping both sides, commit.`
+`git merge manus-parity` produced exactly two conflicts, both resolved by keeping BOTH sides
+(no line dropped from either side):
+1. `THIRD_PARTY_NOTICES` (add/add). J11's compaction provenance paragraph kept, parity's
+   heading ("Third-party notices") and its "Adapted files" block kept.
+2. `src/agent/events.ts` (content). J11's extended `compaction` event
+   (`step: 1 | 2 | 3`, `emergency`, `droppedTurns`) kept together with parity's
+   new `cache_usage` event, so neither feature regressed.
+One silent drop the auto-merge introduced, found by tsc and restored:
+`src/agent/__tests__/cacheUsageAccounting.test.ts` had parity's `skills` line win while
+losing J11's four `compression` constants from its config factory
+(`criticalThresholdPercent`, `recentTurnsToKeep`, `minTurnsToKeep`,
+`emergencyToolResultMaxChars`) -> tsc error TS2739. All four were restored. No test was
+weakened, deleted, relaxed or skipped; the only edit to a test file was adding back
+constants the merge had removed.
+## Post-merge gates (all run from the worktree root on the committed merge tree, commit 4134668)
+  1. `npx tsc --noEmit`                        -> exit 0
+  1. `npx tsc --noEmit`                        -> exit 0
+  2. `npm run build:server`                    -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+  3. `(cd packages/web && npx next build)`     -> exit 0 (compiled, 25/25 static pages)
+  4. `node --import tsx --test src/agent/__tests__/contextCompressor.test.ts`
+                                                -> tests 31, pass 31, fail 0
+J11 touched suites (re-run after the merge):
+  `node --import tsx --test src/agent/__tests__/contextCompressor.test.ts src/agent/__tests__/cacheUsageAccounting.test.ts src/agent/__tests__/codingPrompt.test.ts`
+                                                -> tests 43, pass 43, fail 0
+  `(cd packages/web && npx vitest run)`        -> 72 files / 472 tests, all pass, 0 fail
+Full-suite run `node --import tsx --test "src/**/*.test.ts"` -> tests 2284, pass 2277, fail 7.
+All 7 are pre-existing and environmental/parity issues, documented in manus-parity's own
+`.jdone`; none is caused by this merge and none touches J11:
+`.jdone`; none is caused by this merge and none touches J11:
+  1. `src/agent/__tests__/loopHooks.test.ts` -> "SessionStart block prevents the run from starting"
+     (`Missing expected rejection`, /SessionStart/) and "SessionEnd reports the real terminal
+     reason on a cancelled run" (ENOENT `.session-end-reason`). Environment-dependent: the
+     hook subprocess needs the spawned shell to honour the fixture path.
+  2. `src/agent/__tests__/orchestratorHooks.test.ts` -> "a Stop continuation answer is verified
+     again before the run finishes" (actual 1, expected 2). Same environment class.
+  3. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered nor
+     listed in PENDING_CODING_TOOLS". Inherited from parity: D4 added `suggest_plan` to
+     listed in PENDING_CODING_TOOLS". Inherited from parity: D4 added `suggest_plan` to
+     `CODING_PROFILE.tools` and the mode catalog but not to the test's `PENDING_CODING_TOOLS`,
+     `CODING_PROFILE.tools` and the mode catalog but not to the test's `PENDING_CODING_TOOLS`,
+     and the test's registry does not include `createPlanTools`.
+     and the test's registry does not include `createPlanTools`.
+  4. `src/policy/__tests__/hooks.test.ts` -> "SubagentStart exposes the subagent name and
+     additionalContext" (actual `''`, expected `'injected context'`). Environment-dependent.
+  5. `src/server/__tests__/worktrees.test.ts` -> "reads the real branch of a git folder" and
+     "reports non-git folders without throwing". Environment-dependent: the test asserts a fresh
+     `os.tmpdir()` folder is *not* a git repo, but this worktree's temp dir resolves under a git
+     repository, so `info.isGit` is true.
+**manus-parity advanced again during this session** (tip `3fc4529`, F5 `fc-05` video-studio state
+sync). `git merge manus-parity` was run again and auto-merged cleanly (no conflicts; the only
+divergence was the tracked rollup `.jdone`). Verified mechanically that the resulting `.jdone` is a
+**superset of both sides**: `git diff <parity-side> HEAD -- .jdone` and `git diff <our-side> HEAD
+-- .jdone` both produce zero removed (`<`) lines, and parity's new `## fc-05: Video Studio state
+sync (preserve manual edits)` section is present. Committed as `a39f249`;
+`git rev-list --left-right --count manus-parity...HEAD` = `0  11` and `git merge manus-parity`
+reports "Already up to date."
+### Gates re-run on the final merged tree (HEAD `a39f249`)
+  2. `npm run build:server`                    -> exit 0 (dist/server.cjs 19.4mb, pdf worker copied)
+  3. `(cd packages/web && npx next build)`     -> exit 0 (25/25 static pages)
+  4. `npm run check:encoding`                  -> OK (no BOM, no mojibake, all JSON valid)
+Parity's newly merged video-studio suites also pass:
+  `node --import tsx --test src/tools/__tests__/videoStudio.test.ts src/tools/__tests__/videoStudioState.test.ts src/server/__tests__/videoStudioE2E.test.ts`
+                                                -> tests 63, pass 63, fail 0
+Full-suite run `node --import tsx --test "src/**/*.test.ts"` -> tests 2304, pass 2301, fail 3.
+All 3 are the pre-existing environmental/inherited issues documented in manus-parity's own
+  1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered nor
+  2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing".
+     Environment-dependent: this worktree's `%TEMP%` resolves under a git repository, so a plain
+     temp folder reports `isGit: true`.
+  3. `src/tools/__tests__/search.test.ts` -> "greps and globs the repository in under 1
+     second" (1052ms against a 1000ms budget). Load-sensitive under the parallel full-suite run.
+Proven not merge-induced: every one of the six involved files
+(`src/agent/__tests__/toolDescriptions.test.ts`, `src/agent/taskToolScope.ts`,
+`src/tools/planTools.ts`, `src/server/__tests__/worktrees.test.ts`, `src/server/worktrees.ts`,
+`src/tools/__tests__/search.test.ts`) is byte-identical to manus-parity
+(`git diff manus-parity HEAD -- <file>` is empty for each).
+## Acceptance criteria (all covered)
+- Doc committed: `docs/COMPACTION_SPEC.md` is present at HEAD and compares every jcode
+  `compaction-core.rs` constant to Loam's value with a justification.
+- Added constants covered by tests: `src/agent/__tests__/contextCompressor.test.ts` covers the
+  jcode defaults, malformed-value clamping, the critical-ratio clamp, tool-result truncation,
+  the emergency path, the tool-pair invariant, and the UTF-8 byte basis of both the truncation
+  budget and the token estimate (31 tests, 31 pass).
+- Gates pass: tsc, build:server, web build and the touched suites all exit 0.
+## Commands used
+  git merge manus-parity
+  node --import tsx --test src/agent/__tests__/contextCompressor.test.ts
+  node --import tsx --test src/agent/__tests__/contextCompressor.test.ts src/agent/__tests__/cacheUsageAccounting.test.ts src/agent/__tests__/codingPrompt.test.ts
+  node --import tsx --test src/tools/__tests__/videoStudio.test.ts src/tools/__tests__/videoStudioState.test.ts src/server/__tests__/videoStudioE2E.test.ts
+## Measured RAM
+No RAM measurement taken for this task: the change is documentation plus four config
+constants, and no long-running or memory-intensive process was exercised. The heaviest gate
+was the full node test suite (tests 2304, ~1.7 min wall clock), which ran without a memory
+limit being hit; no peak-RSS figure was captured.
+### Third merge: manus-parity advanced to tip `d05e4b1`
+`manus-parity` advanced again during this session to tip `d05e4b1` (D5: `pr_review` + O1
+event log). `git merge manus-parity` conflicted in exactly one file, the tracked rollup
+`.jdone`. Every D5 source file merged cleanly and was staged unmodified:
+`prompts/loam-master.md`, `src/agent/masterPromptText.ts`, `src/agent/prVerification.ts` +
+`src/agent/__tests__/prVerification.test.ts`, `src/modes/catalog.ts`, `src/setup/runtime.ts`,
+`src/tools/gitPrProvider.ts`, `src/tools/verifyAndRecordTools.ts`,
+`src/tools/__tests__/ciWatch.test.ts`, `src/tools/__tests__/verifyAndRecord.test.ts`,
+`src/agent/__tests__/__snapshots__/coding-prompt.snap.json`.
+The conflict is the same shared-anchor pattern as before: both sides prepend a report at the
+top of `.jdone`. Resolved as a superset, keeping BOTH sides: the J11 report (this section)
++ the D5 report + the full O1/base rollup. Line-multiset containment of the result against
+base, ours and theirs is 0/0/0 (every line of each side is present). No report was dropped or
+altered, no separator was lost, and the file stayed UTF-8 with CRLF endings (blobs are LF,
+`core.autocrlf=true`). No test was weakened, deleted or skipped.
+Verified mechanically: `git merge-base --is-ancestor manus-parity HEAD` exits 0 and
+Verified mechanically: `git merge-base --is-ancestor manus-parity HEAD` exits 0 and
+`git rev-list --left-right --count manus-parity...HEAD` shows zero parity commits missing.
+`git rev-list --left-right --count manus-parity...HEAD` shows zero parity commits missing.
+No conflict marker remains in any tracked file (`^(<{7}|={7}|>{7})$` matches zero lines).
+No conflict marker remains in any tracked file (`^(<{7}|={7}|>{7})$` matches zero lines).
+### Fourth merge: manus-parity advanced to tip `26befe6`
+`manus-parity` advanced again during this session, to tip `26befe6` (78 commits: N2/N4/N10,
+O2/O3/O6, C19, J5 and main 0.5.28). `git merge manus-parity` conflicted in exactly one
+file, `.jdone`, as a **modify/delete** conflict: the N10 feature branch (`e3d05f6`) deleted
+`.jdone` while HEAD carries this J11 rollup. Every other file merged cleanly and is staged
+unmodified (`src/agent/loop.ts`, `src/agent/events.ts`, `src/config.ts`, `src/llm/router.ts`,
+`src/agent/recipe.ts`, `src/policy/commandRisk/*`, `src/server/inputQueue.ts`, the canvas
+view, packaging/utilityProcess changes and the rest of the 78-commit window).
+`.jdone` is a per-task marker file, not a project file: `.gitignore` says "Per-task done
+reports and gate-failure logs are session markers, not project files", and `.git/info/exclude`
+ignores `.jdone`. Resolved by **keeping our side** (HEAD's rollup), which satisfies the gate's
+"keeping both sides" (nothing on the HEAD side is lost) and keeps the rollup in the tree
+for the final `.jdone`. No code diverged; no test was weakened, deleted or skipped.
+## Preserved: manus-parity rollup (O1 gate-fix report)
