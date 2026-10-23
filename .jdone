@@ -107,6 +107,34 @@ and no real external API was called in the tests (the scripted `LocalPrProvider`
 mocked `fetch` are used throughout). Working tree clean;
 `git merge-base --is-ancestor manus-parity HEAD` succeeds.
 
+## Merge with manus-parity
+After the D5 commits, `manus-parity` had advanced by two commits (V11
+`design_critique`, tip `35c8470`). `git merge manus-parity` auto-merged every source
+file and conflicted only on the tracked rollup `.jdone` (V11 had prepended its own
+section, as D5 had). The conflict was resolved keeping both reports (D5 first, then
+V11), with the file normalised to LF and no conflict markers left. Nothing from the
+D5 report or the V11 report was altered, no test was weakened or deleted, and no
+source file changed in the resolution. Committed as the merge commit `704bddf`.
+
+Gates re-run on the merged tree (`704bddf`), all green:
+- `npx tsc --noEmit`                                -> exit 0
+- `npm run build:server`                            -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `npm run verify`                                  -> exit 0 (encoding, eval, orchestrator 114/114, recovery, modes)
+- `npm run check:encoding`                          -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                             -> PASS
+- `npm run check:promptwire`                        -> PASS (every promptwire tool ok:true)
+- `(cd packages/web && npx next build)`             -> exit 0 (compiled, 25/25 static pages)
+- `(cd packages/web && npx vitest run)`             -> 72 files / 472 tests, all pass
+- D5 + V11 + prompt suites (ciWatch, verifyAndRecord, prVerification, codingPrompt,
+  designCritique, critique)                         -> tests 90, pass 90, fail 0
+- full node suite `node --import tsx --test "src/**/__tests__/*.test.ts"`
+  -> tests 2224, pass 2222, fail 2 (the same two pre-existing failures above; the
+  suite grew by 42 tests from the V11 merge, all passing)
+
+`git merge-base --is-ancestor manus-parity HEAD` exits 0 and
+`git rev-list --left-right --count manus-parity...HEAD` is `0 3`, so parity is fully
+merged and the tree is clean.
+
 Test command:
   node --import tsx --test src/tools/__tests__/verifyAndRecord.test.ts
 
