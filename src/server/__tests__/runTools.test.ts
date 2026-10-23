@@ -118,6 +118,8 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     for (const name of ["file_read", "file_write", "shell_run", "web_fetch", "loam_mobile", "browser_operator", "wide_research"]) registry.register(dummy(name));
     registry.registerAll(createScratchpadTools());
     registry.registerAll((await import("../../tools/environmentIssueTools.js")).createEnvironmentIssueTools());
+    // N9: `ask_user` ships as an always-on tool, so register the real set.
+    registry.registerAll((await import("../../tools/askUserTools.js")).createAskUserTools());
     registry.registerAll(createInstructionHistoryTools());
     registry.registerAll(createAgentSpawnTools());
     registry.registerAll(createDeepResearchTools());
