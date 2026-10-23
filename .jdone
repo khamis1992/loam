@@ -2,7 +2,7 @@
 
 Branch: `khamis1992/om-o8` (worktree `C:\Users\khamis\orca\workspaces\manus-local\om-o8`)
 Commit: `e335eb7` "O8: events HTTP + SSE" (report commit `8eb17d1`)
-Merged HEAD: `8abef71` (two merges with `manus-parity`; only `.jdone` conflicted)
+Merged HEAD: `8abef71` (two merges with `manus-parity`; only `.jdone` conflicted) [re-validated 2026-10-23: HEAD has since advanced to `8749ef2`; three more parity merges landed after this header was written, each documented in this file (N10 `87604e1`, N9 `985a7bb`, M3 `cad3faf`). `8abef71` was true when written; current tip is `8749ef2`, and `manus-parity` is no longer an ancestor. O8 code and tests unchanged.]
 Base branch: `manus-parity` (tip `0a946d3` at the first merge, `ed26550` at the second; the
 O3 merge `8e197c6` already carries O1/O2/O3)
 Spec: `.om-ref/BUILD_SPEC.md` section 8
