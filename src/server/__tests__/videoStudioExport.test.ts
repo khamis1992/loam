@@ -44,6 +44,8 @@ class MockRelay implements VideoStudioExportRelay {
   /** Number of polls before the job reports done (Infinity never finishes). */
   pollsUntilDone = 0;
   polls = 0;
+  /** Queue-poll command id the editor exposes; defaults to `jobs.poll`. */
+  jobCommand = "jobs.poll";
   readFileValue: unknown = Buffer.from("fake-mp4-bytes").toString("base64");
   failReadFile = false;
   failExecuteWith: Error | null = null;
@@ -54,7 +56,7 @@ class MockRelay implements VideoStudioExportRelay {
     if (method === "execute") {
       if (this.failExecuteWith) throw this.failExecuteWith;
       const command = params["command"];
-      if (command === "jobs.poll") {
+      if (command === this.jobCommand) {
         this.polls += 1;
         if (this.polls >= this.pollsUntilDone) {
           return { job: { status: "done", path: `${EXPORT_DIR}/loam-cut.mp4`, progress: 1 } };
@@ -220,6 +222,23 @@ describe("runVideoStudioExport saves the rendered file", () => {
 
     // Progress was reported in order.
     assert.deepEqual(stages, ["starting", "rendering", "rendering", "saving"]);
+  });
+
+  it("polls with the job command the editor actually exposes", async () => {
+    taskRoot = fs.mkdtempSync(path.join(os.tmpdir(), "loam-vs-export-"));
+    relay = new MockRelay();
+    // The editor spells the queue poll `status.job.progress`, not `jobs.poll`.
+    relay.catalog = ["file.exportMedia", "status.job.progress"];
+    relay.jobCommand = "status.job.progress";
+    relay.pollsUntilDone = 1;
+    relay.readFileValue = Buffer.from("polled").toString("base64");
+
+    const result = await runVideoStudioExport(context({ options: { format: "mp4", name: "polled" } }));
+    assert.equal(result.ok, true);
+
+    const polls = dispatchedFor("execute").filter((entry) => entry["params"]["command"] !== "file.exportMedia");
+    assert.equal(polls.length, 1);
+    assert.equal(polls[0]!["params"]["command"], "status.job.progress");
   });
 
   it("returns the editor's own output path and reports the saved name", async () => {

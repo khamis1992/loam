@@ -527,6 +527,7 @@ export async function runVideoStudioExport(
   if (job) {
     let status = readStatus(job);
     const deadline = now() + timeoutMs;
+    const jobCommand = resolveCommandId(catalog, VIDEO_STUDIO_JOB_COMMAND_CANDIDATES);
     while (status && !DONE_STATES.has(status) && !FAILED_STATES.has(status)) {
       const progress = readProgress(job);
       if (progress !== null) {
@@ -534,7 +535,14 @@ export async function runVideoStudioExport(
       }
       if (now() >= deadline) raise(`the Loam Video export did not finish within ${Math.round(timeoutMs / 1000)}s`);
       await sleep(pollIntervalMs);
-      const polled = await relay.enqueue(taskId, "film", "execute", { command: "jobs.poll", params: {} });
+      // Resolve the poll command from the same live catalog we already read, so
+      // an editor that spells it differently is followed instead of being polled
+      // through a command id it never exposed. If it exposes none, keep the
+      // leading candidate rather than guessing on every iteration.
+      const polled = await relay.enqueue(taskId, "film", "execute", {
+        command: jobCommand ?? VIDEO_STUDIO_JOB_COMMAND_CANDIDATES[0]!,
+        params: {},
+      });
       job = firstJob(polled);
       if (!job) break;
       status = readStatus(job);
