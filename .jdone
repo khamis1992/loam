@@ -18947,3 +18947,88 @@ ignores `.jdone`. Resolved by **keeping our side** (HEAD's rollup), which satisf
 "keeping both sides" (nothing on the HEAD side is lost) and keeps the rollup in the tree
 for the final `.jdone`. No code diverged; no test was weakened, deleted or skipped.
 ## Preserved: manus-parity rollup (O1 gate-fix report)
+
+## N21: Arabic/RTL pass for the visual canvas and the Knowledge Garden
+
+### What this task delivered
+
+Extended Arabic and RTL support across two surfaces, per `.neo-ref/AGENT_NEO_RE.md`
+and `docs/BUILD_SPEC.md`. Committed as `af1b981` on `khamis1992/neo-n21`.
+
+1. **Visual canvas (run graph).** `packages/web/src/components/workspace/canvas/layout.ts`
+   gained `LayoutOptions.direction` and a `siblingX` helper that mirrors a layer's
+   column index when the direction is `rtl`. A layer is still read start-to-end,
+   so in RTL the first sibling sits at the right-hand edge; mirroring the index
+   (rather than negating x) keeps every coordinate non-negative and the row inside
+   the same span, so the scroll surface, bounds and pan/zoom transform need no RTL
+   branch. Layers still stack top-to-bottom.
+   `CanvasPanel.tsx` derives the direction from the panel locale
+   (`isRtl = locale === 'ar'`) and lets an explicit `layoutOptions.direction`
+   override win, which is also the test seam. Node labels get `dir="auto"` so
+   Arabic text renders in its own direction inside an otherwise-LTR panel.
+
+2. **Knowledge Garden (bilingual retrieval and splitting).**
+   - `src/knowledge/text.ts` is the single shared normalizer. `normalizeText` folds
+     Arabic spelling variants (ta marbuta to ha, alef maksura and Persian yaa to
+     yaa, every hamza carrier to a bare alef or its base letter), drops diacritics
+     and the tatweel, then lowercases. `tokenize`/`queryTerms` are script-aware and
+     strip both languages' stop terms. `sentences`, `SPLIT_RUN` and `isHeadingLine`
+     treat Arabic punctuation (`. ! ? ؟ ۔`) and deliberately never cut on the
+     Arabic comma `،`, which separates a phrase rather than a sentence.
+   - `src/knowledge/splitter.ts` is sentence-bounded by `SPLIT_RUN`: every seed
+     closes on a sentence mark, a short paragraph is kept whole under the
+     `MIN_CHUNK_CHARS` floor instead of being shredded, and a short Arabic sentence
+     is not mistaken for a heading.
+   - `src/neoEval/knowledge.ts` reuses the shared `normalizeText`/`queryTerms`, so a
+     KB-grounded fixture written in Arabic retrieves exactly the way the shipped
+     feature does.
+   - `src/tools/attachments.ts` gained `tidyPdfText`, which strips pdf-parse page
+     footers and separator rules, and folds the extracted Arabic PDF text with the
+     same normalizer before it is stored or split. Reading order is pdfjs's own bidi
+     pass (logical, not reversed), and the test pins the counter-case that states
+     why no reversal is applied.
+
+### Acceptance tests (automated, all passing)
+
+| Test | Result |
+| --- | --- |
+| `src/knowledge/__tests__/arabic.test.ts` | 14 pass |
+| `src/knowledge/__tests__/arabicPdf.test.ts` | 9 pass (real pdfjs worker, real Identity-H PDF) |
+| `src/server/__tests__/knowledgeRoutes.test.ts` | 15 pass |
+| `packages/web/.../canvas/__tests__/layout.test.ts` | pass |
+| `packages/web/.../canvas/__tests__/CanvasPanel.test.ts` | 14 pass |
+| `packages/web/.../settings/__tests__/knowledgeGardenPane.test.tsx` | 7 pass |
+
+The Arabic PDF acceptance test builds a real one-page Identity-H PDF (ToUnicode
+CMap, visual-order glyph runs) and drives the real importer, splitter and pdfjs
+worker: the text extracts in logical order, imports as seeds that split on their
+own sentence marks, and is stored folded so `الفوترة` and `الفاتورة` are one
+retrievable term.
+
+Playwright is not available in this harness, so the RTL screenshot review called
+for by the task is covered by the vitest component tests instead and documented
+here: `CanvasPanel.test.tsx` asserts the row mirrors from the right under `rtl`,
+that an Arabic locale mirrors by default, that an explicit `ltr` override still
+wins, and that a single-node layer is not mirrored.
+
+### Gates (all run from the worktree root)
+
+- `npx tsc --noEmit`                          -> exit 0
+- `(cd packages/web && npx tsc --noEmit)`     -> exit 0
+- `node --import tsx --test "src/**/*.test.ts"` -> exit 0; **2813 pass / 0 fail**
+- `(cd packages/web && npx vitest run)`       -> exit 0; **86 files / 587 tests**
+- `npm run build:server`                      -> exit 0
+- `(cd packages/web && npx next build)`       -> exit 0
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or
+skipped. All Arabic is UTF-8 with no mojibake (verified: no placeholder question
+marks and no replacement characters in every changed file).
+
+### Seams left for other workstreams
+
+- The canvas layout is direction-pinnable per panel via `layoutOptions.direction`;
+  a workspace-wide RTL toggle that feeds it is still open.
+- `kb_search`/`kb_ingest`/`kb_manage` already run the bilingual scorer, so no
+  tool-side change was needed; the vector channel blends as before.
+- The PDF path folds text on extraction; a future importer for RTL HTML/office
+  sources should route through the same `normalizeText` to stay consistent.
