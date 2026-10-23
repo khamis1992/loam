@@ -7846,3 +7846,131 @@ Gates (run from the worktree root):
 
 No secrets committed. No forbidden path touched. No Arabic text was written; no mojibake
 placeholder text was added. All text files were normalised to CRLF to match `core.autocrlf`.
+
+---
+
+## N18 session note (2026-10-23): real Playwright acceptance spec, plus two browser-only bug fixes
+
+Branch `khamis1992/neo-n18`, off `manus-parity`. Commit `9f28ce1` (7 files, +571/-8) on
+top of `eb0fbdf`.
+
+The N18 acceptance row asks for Playwright per control, and Playwright does run in this
+harness, so the flow is now asserted in Chromium against a mock Loam server instead of
+only through the DOM. The stale claim in `__tests__/panel.test.tsx` that Playwright is
+unavailable here is corrected to point at the real spec.
+
+Root-causing why the canvas rendered blank in the browser surfaced two real application
+bugs, both of which vitest could not see because it runs on Node:
+
+1. **Unbound `fetch`.** `client.ts`, `annotationsClient.ts` and `stream.ts` each defaulted
+   to a bare `fetch` stored on the client. It is later called as a method, so `this` becomes
+   the client and a browser throws `pageerror: Illegal invocation`. Node undici ignores its
+   receiver, so every unit test still passed. All three now wrap the global in an arrow.
+2. **Dropped placement.** `coerceCanvasNode` stripped `x`/`y`/`depth`, so every card was
+   rendered at `translate(NaNpx, NaNpx)`, which a browser discards as invalid, leaving an
+   empty canvas. Added `coerceCanvasLayoutNode` (a `finiteOr` helper falls back to `0` for
+   missing or non-finite fields) and switched `coerceCanvasLayout` to it.
+
+Spec details that only a real browser run revealed:
+- The socket namespace ack must match the **prefix**: the client sends
+  `40{"token":"e2e-token"}`, not a bare `40`.
+- The mock `json(route, body, status)` helper returns `Promise<boolean>`, so the
+  `return json(...)` lines in the mock server do not double-fulfill a route.
+- Case-insensitive search for "quarterly" matches **2** nodes, because both titles contain it.
+
+Tests added:
+- `packages/web/e2e/specs/canvas-n18.spec.ts` - 7 Chromium tests: a browser tool event opens
+  the run graph on the Canvas tab; tagging a node paints the card and the edit is served
+  back; a free note can be added, edited and deleted; a comment thread is counted on the
+  card; search highlights the matching nodes and narrows as the term grows; the minimap pans
+  the canvas to where the user aims; the keyboard shortcuts drive the canvas without stealing
+  typed text. The mock server owns a real annotation layer, so a tag the user sets is still
+  set after a reload.
+- `__tests__/types.test.ts` - a placed node keeps `x`/`y`/`depth`; an unplaced node lands at
+  the origin; non-finite fields become `0`; a malformed payload is `undefined`.
+
+Gates (all run from the worktree root):
+- `(cd packages/web && npx vitest run)`  -> Test Files 84 passed (84), Tests 588 passed (588).
+- `(cd packages/web && npx tsc --noEmit)` -> exit 0.
+- `npx tsc --noEmit`                      -> exit 0 (root/server).
+- `npm run build:server`                  -> exit 0.
+- `(cd packages/web && npx next build)`   -> exit 0.
+- `node --import tsx --test src/graph/__tests__/search.test.ts src/server/__tests__/canvasNotes.test.ts src/server/__tests__/graphRoutes.test.ts`
+                                           -> tests 38, pass 38, fail 0.
+- `(cd packages/web && npx playwright test specs/canvas-n18.spec.ts)` -> 7 passed.
+- `(cd packages/web && npx playwright test specs/login.spec.ts specs/task.spec.ts)` -> 3 passed
+  (the pre-existing specs, re-verified after the `fetch` and coercion changes).
+- `npm run check:encoding`                -> OK (no BOM, no mojibake, all JSON valid).
+
+No secrets committed. No forbidden path touched. No Arabic text was written; no mojibake
+placeholder text was added. All text files were normalised to CRLF to match `core.autocrlf`.
+
+---
+
+## N18 validation pass (2026-10-23): mutation testing found a coverage gap, now closed
+
+A follow-up validation pass re-ran every claimed gate and, more importantly, tried to
+*falsify* each claim by reverting the fix and re-running the test. That is what found the
+problem below. Commit `9f76f9a` (1 file, +63/-1) on top of `9f28ce1`.
+
+### The claim that was wrong
+
+The earlier note said the new browser spec caught the dropped-placement bug. It did not.
+With `types.ts` reverted to the pre-fix `coerceCanvasNode`, all 7 tests still passed.
+
+### Root cause
+
+The panel receives nodes from two sources, and only one of them coerces:
+
+- the initial HTTP load, `CanvasClient.getGraph` -> `coerceCanvasGraphResponse`, which runs
+  `coerceCanvasLayout` and therefore `coerceCanvasLayoutNode`;
+- the SSE snapshot, `CanvasStream`, which hands `snapshot.nodes` straight to `setNodes` and
+  never coerces.
+
+The spec served both, so the snapshot always won the race and the coercion path was never
+exercised. The test passed for the wrong reason: the coordinates came from the snapshot, not
+from the code under test.
+
+### The fix
+
+- a `nodePosition` helper reads a card's `transform` back as numbers and fails on a
+  non-finite transform. A dropped `x`/`y` renders `translate(NaNpx, NaNpx)`, which the browser
+  discards as invalid, so the observable failure is an empty string;
+- a `refuseStream` option 404s the SSE endpoint, forcing the panel down its own HTTP graph
+  load, which is the only path that runs the graph coercion;
+- a new test asserts the server's exact coordinates, `(40,40)` and
+  `(40 + GRAPH_SPAN, 40 + GRAPH_SPAN)`, survive that path.
+
+### Mutation table (each fix reverted individually against the 8-test spec)
+
+| reverted | result |
+|---|---|
+| `types.ts` (placement) | 2 failed: `node n1 has a finite transform, got ` |
+| `annotationsClient.ts` | 4 failed |
+| `client.ts` | 1 failed |
+| `stream.ts` | 1 failed |
+| none (committed tree) | 8 passed, stable across 3 consecutive runs |
+
+Every fix is therefore caught by a test that fails without it. The unit test
+(`__tests__/types.test.ts`) also fails on the reverted `types.ts` (1 failed of 10), so the
+placement fix is covered at both levels.
+
+### Gates re-run on the committed tree (worktree root)
+
+- `(cd packages/web && npx vitest run)`  -> Test Files 84 passed (84), Tests 588 passed (588).
+- `(cd packages/web && npx tsc --noEmit)` -> exit 0.
+- `npx tsc --noEmit`                      -> exit 0.
+- `npm run build:server`                  -> exit 0.
+- `(cd packages/web && npx next build)`   -> exit 0.
+- `node --import tsx --test src/graph/__tests__/search.test.ts src/server/__tests__/canvasNotes.test.ts src/server/__tests__/graphRoutes.test.ts`
+                                           -> tests 38, pass 38, fail 0.
+- `(cd packages/web && npx playwright test specs/canvas-n18.spec.ts)` -> 8 passed (3 runs).
+- `(cd packages/web && npx playwright test specs/login.spec.ts specs/task.spec.ts)` -> 3 passed.
+- `npm run check:encoding`                -> OK (no BOM, no mojibake, all JSON valid).
+
+Also verified: the committed file list touches no forbidden path, no secret appears in any new
+file, and the spec was normalised to CRLF to match `core.autocrlf` after the edit tool
+rewrote it as LF.
+
+No secrets committed. No forbidden path touched. No Arabic text was written; no mojibake
+placeholder text was added.
