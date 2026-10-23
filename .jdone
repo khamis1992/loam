@@ -522,10 +522,21 @@ that the secret scanner *detects* such values.
 | root types | `npx tsc --noEmit` | exit 0 |
 | server build | `npm run build:server` | exit 0 |
 | web build | `(cd packages/web && npx next build)` | exit 0 |
-| full node suite | `node --import tsx --test "src/**/__tests__/*.test.ts" "src/**/__tests__/*.test.mjs"` | 2970 tests, 2970 pass, 0 fail |
+| full node suite | `node --import tsx --test "src/**/__tests__/*.test.ts" "src/**/__tests__/*.test.mjs"` | 2971 tests, 2971 pass, 0 fail |
 | web suite | `(cd packages/web && npx vitest run)` | 91 files, 624 tests, 624 pass |
 | N20 eval | `node --import tsx src/scripts/eval-neo.ts` | total=100, 10/10 PASS, verdict PASS, "baseline: no regression" |
 | selector + runGraph + loop combined | `node --import tsx --test src/agent/__tests__/contextSelector.test.ts src/agent/__tests__/contextSelectorLongHorizon.test.ts src/graph/__tests__/runGraph.test.ts src/agent/__tests__/loopBudget.test.ts src/agent/__tests__/loopHooks.test.ts` | 76 tests, 76 pass, 0 fail |
+
+### Final parity merge (`735e06b`, M3)
+
+While this validation was running, parity advanced once more to `735e06b` ("merge
+`khamis1992/mf2-m3` (M3) into manus-parity"). It was merged as `0f649c9` and applied
+**cleanly with no conflicts**: it touches only `.jdone`, `src/tools/mirofish/simulate.ts`,
+`src/tools/mirofish/types.ts` and `src/tools/mirofish/__tests__/simulate.test.ts`, none of
+which N5 or its resolutions touch. Every gate in the table above was then re-run on that
+exact final tree, which is why the node-suite figure is 2971 rather than 2970 (M3 adds one
+test). `git merge-base --is-ancestor manus-parity HEAD` exits 0, so the branch is fully
+current with parity as of `735e06b`.
 
 ### Correction to the report above
 
