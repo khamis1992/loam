@@ -39643,3 +39643,103 @@ is a true multiset superset of both sides.
 - `npm run check:recovery`                     -> PASS
 - `npm run check:orchestrator`                 -> PASS (114/114)
 - `npm run check:encoding`                         -> OK (no BOM, no mojibake, all JSON valid)
+
+# fc-07 round 13: merge with latest manus-parity (`6e17246`), one conflict in `src/tools/videoStudio.ts`, resolved keeping both sides, all gates green
+
+## The failure that was fixed
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge manus-parity,
+resolve all conflicts keeping both sides, commit.`
+
+`git merge manus-parity` produced exactly one conflicted path, `src/tools/videoStudio.ts`
+(`CONFLICT (content)`). The other overlapping paths auto-merged cleanly: `prompts/loam-master.md`,
+`src/agent/masterPromptText.ts`, `src/agent/prompt.ts`, `src/tools/__tests__/videoStudio.test.ts`
+and `src/agent/__tests__/__snapshots__/coding-prompt.snap.json`.
+
+## Root cause (a real semantic collision, not a textual accident)
+This branch (fc-07) and parity (fc-06) both restructured the same function bodies:
+
+- fc-07 carries the **routing** contract: `VideoStudioRouting`, `routingHint()`, and a
+  `routing` object echoed in every result. It therefore widened `fallbackResult(...)`,
+  `relayErrorResult(...)` and `runEffectsAction(...)` to take a `routing` parameter, and
+  read the live command catalog from the engine the steps will actually run on
+  (`relay.enqueue(taskId, target, "commands", {})`).
+- parity carries the **export** flow: the `export` action in `VIDEO_STUDIO_ACTIONS`,
+  `VIDEO_STUDIO_EXPORT_*` constants, the `BuiltAction.export` field, `exportErrorResult()`,
+  the `export` case in `buildAction`, the export branch in `run`, and the `name`/`format`/
+  `width`/`height`/`quality`/`bitrateKbps`/`range`/`startSec`/`endSec` schema fields.
+
+Both sides edited the same import block, the same `fallbackResult`/`readStudioState`
+neighbourhood, the same `createVideoStudioTools` body, the same action/parameter
+descriptions and the same `needsCatalog` line, so Git could not pick a side.
+
+## What the resolution produced (both sides kept, verified hunk by hunk)
+- imports: `VideoStudioRouter, videoStudioRouter` (fc-07) **and**
+  `runVideoStudioExport, VideoStudioExportOptions, VideoStudioExportQuality` (parity); the
+  `Tool/ToolContext/ToolResult` + `num/str` import now appears once, after
+  `videoStudioState.js`, instead of twice.
+- `VideoStudioFallbackReason` union: `"export_failed"` (parity) added to the fc-07 set.
+- `VIDEO_STUDIO_ACTIONS` / `VIDEO_STUDIO_COMMAND_CANDIDATES` / export constants: `"export"`
+  present, `exportErrorResult()` present, `export` case in `buildAction` present,
+  `BuiltAction.export` present, the `if (built.export) { runVideoStudioExport(...) }` branch
+  present, and the full export parameter schema present.
+- `VideoStudioRouting` + `routingHint()` + `readStudioState()` kept, each defined exactly
+  once (the duplicated copy from the parity side was dropped, not the fc-07 one).
+- `needsCatalog` keeps fc-07's comment **and** parity's `&& action !== "export"` term, so the
+  export service still reads its own catalog and the tool does not fetch one it does not use.
+- `type` / `name` / `transition_basic` / `effect_basic` descriptions: the fc-07 routing
+  wording is kept and parity's export wording for `name` is kept too; the accidentally
+  duplicated `name:` schema line was collapsed back to one entry.
+- `fallbackResult` / `relayErrorResult` / `runEffectsAction` keep fc-07's `routing`
+  parameter and still echo `routing` in every result; parity's new `exportErrorResult` now
+  takes `routing` as well (it is called as `exportErrorResult(err, routing)`), so an export
+  failure reports the same routing object as every other failure instead of dropping it.
+- The parity rename `filmcraft_dist_missing` -> `loam_video_dist_missing` (commit `b36a8af`,
+  still in fc-07's history) is preserved.
+
+No test was weakened, deleted or skipped, and no source behaviour was removed to make the
+merge apply. The only judgement calls were which of two identical-looking declarations to
+keep (fc-07's, since parity's copy was the duplicate) and dropping one duplicate schema key.
+
+## Gate condition verified
+- `git diff --name-only --diff-filter=U` -> empty (no unmerged paths).
+- `findstr` over the auto-merged files (`prompts/loam-master.md`, `src/agent/masterPromptText.ts`,
+  `src/agent/prompt.ts`, the coding-prompt snapshot, `src/tools/__tests__/videoStudio.test.ts`)
+  and over `src/tools/videoStudio.ts` -> no `<<<<<<<` / `=======` / `>>>>>>>` markers.
+- `git commit` -> `4fb8a10 Merge branch 'manus-parity' into khamis1992/fc-07: resolve
+  videoStudio.ts keeping fc-07 routing + fc-06 export` (only `src/tools/videoStudio.ts` was
+  staged for the resolution; the rest of the merge came in via the merge commit itself).
+- `.jdone` and `.jcode-done` were both tracked on HEAD and on parity and are byte-identical
+  across the two sides (`fc` -> "no differences encountered"), so the merge left them intact;
+  this round's record is appended below.
+- `electron/filmcraft/dist/` and `electron/effectcraft/dist/` remain gitignored
+  (`.gitignore` lines 46 and 4) and were not committed.
+
+## Gates (all run from the worktree root, on the committed merge tree `4fb8a10`)
+- `npx tsc --noEmit` -> exit 0, 0 errors (it failed with TS2554/TS2345 before the
+  `exportErrorResult` routing parameter was threaded through; that was the only fix needed).
+- `npm run build:server` -> exit 0 (server bundle + pdf worker written to `dist/`).
+- `(cd packages/web && npx next build)` -> exit 0 (Compiled successfully, 25/25 static pages).
+- Focused suites:
+  - `node --import tsx --test src/tools/__tests__/videoStudio.test.ts src/tools/__tests__/videoStudioRouter.test.ts`
+    -> tests 108, pass 108, fail 0 (the fc-07 router table, Arabic normalisation, fallback and
+    branding contracts all still hold on the merged file).
+  - `node --import tsx --test src/server/__tests__/videoStudioExport.test.ts src/agent/__tests__/videoPrompt.test.ts src/agent/__tests__/codingPrompt.test.ts`
+    -> tests 44, pass 44, fail 0 (parity's export service + the fc-07 prompt section).
+  - `node --import tsx --test src/tools/__tests__/promptwire.test.ts src/tools/__tests__/readState.test.ts src/server/__tests__/runTools.test.ts`
+    -> tests 44, pass 44, fail 0.
+  - `(cd packages/web && npx vitest run src/lib/videoStudioExport.test.ts src/components/workspace/loamVideo/__tests__/LoamVideoPanel.export.test.tsx src/lib/craftRelayClient.test.ts)`
+    -> 3 files, 17 tests, all pass.
+- Full server suite `node --import tsx --test "src/**/*.test.ts"` -> tests 3122, pass 3121,
+  fail 0, skipped 1. The one skip is `removes a stale Unix socket file before binding`
+  (`src/protocol/socket` test), an intentional platform skip on Windows, not a regression.
+- Full web suite `(cd packages/web && npx vitest run)` -> 91 files, 624 tests, all pass.
+
+## Files
+- `src/tools/videoStudio.ts` (resolved; the only conflicted path).
+- `.jdone` (this record appended).
+- No other file was modified this round. `src/agent/masterPromptText.ts` shows as
+  line-ending-only modified (LF -> CRLF warning) and is byte-identical in content.
+
+## Seams left for other workstreams
+- None new. `src/tools/videoStudioRouter.ts`, `src/agent/videoPrompt.ts` and the master
+  prompt's "Video editing" section are unchanged by this merge and still pass their suites.
