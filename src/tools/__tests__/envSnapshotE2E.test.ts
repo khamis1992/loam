@@ -34,6 +34,9 @@ describe("env blueprint end to end (real shell)", () => {
   before(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-env-e2e-"));
     process.env.MANUS_LOCAL_DATA_DIR = tmpDir;
+    // `loadConfig()` mkdirs `workspace/` and `workspace/.screenshots/`; LOAM_ROOT
+    // keeps them under the temp root instead of the repository tree.
+    process.env.LOAM_ROOT = tmpDir;
     const { setSecret } = await import("../../server/secretsVault.js");
     assert.equal(setSecret(SCOPE, SECRET_NAME, SECRET_VALUE), true, "vault fixture must be stored");
     env = await import("../envSnapshot.js");
@@ -43,6 +46,7 @@ describe("env blueprint end to end (real shell)", () => {
 
   after(() => {
     delete process.env.MANUS_LOCAL_DATA_DIR;
+    delete process.env.LOAM_ROOT;
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 

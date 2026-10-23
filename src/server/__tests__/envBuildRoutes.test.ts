@@ -50,10 +50,14 @@ describe("env build status routes", () => {
   before(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-envroute-"));
     process.env.MANUS_LOCAL_DATA_DIR = tmpDir;
+    // `loadConfig()` mkdirs `workspace/` and `workspace/.screenshots/`; LOAM_ROOT
+    // keeps them under the temp root instead of the repository tree.
+    process.env.LOAM_ROOT = tmpDir;
   });
 
   after(() => {
     delete process.env.MANUS_LOCAL_DATA_DIR;
+    delete process.env.LOAM_ROOT;
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
