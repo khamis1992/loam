@@ -63,6 +63,15 @@ Font License 1.1 when supplied separately.
 
 jcode (MIT)
 ===========
+The Loam benchmark harness under bench/ and the local memory-budget primitives
+under src/memory/ are adapted from jcode, a Rust coding agent
+(https://github.com/1jehuang/jcode). Copyright (c) 2025 Jeremy Huang. MIT License.
+
+  bench/fakeModel.ts    — ref/fake_model.py
+  bench/rssSampler.ts   — ref/bench_memory_cli.py
+  bench/memBench.ts     — ref/jcode_daemon_bench.py
+  bench/appRamBench.ts  — ref/bench_memory_cli.py
+
 The prompt-cache (KV) miss detection ported in `src/agent/kvCacheMonitor.ts`
 adapts jcode's daemon-side `src/kv_cache_monitor.rs` design (provider usage
 normalization, reusable-token boundary, miss-reason classification and the
@@ -96,3 +105,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+See the repo-root THIRD_PARTY_NOTICES for the full license text and the
+complete list of adapted files.

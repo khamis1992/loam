@@ -6,6 +6,8 @@
  */
 import crypto from "node:crypto";
 import { notifyApprovalPending } from "./notifications.js";
+import { BoundedMap } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 export type ApprovalStatus = "pending" | "approved" | "denied" | "expired";
 
@@ -22,7 +24,14 @@ export interface ApprovalRecord {
 }
 
 const TTL_MS = 15 * 60_000;
-const approvals = new Map<string, ApprovalRecord>();
+/**
+ * Approval records (J6). Previously an unbounded `Map`: a long-lived server
+ * accumulated every decided record forever. Bounded LRU — the oldest record is
+ * dropped first, and decided/expired records past the one-hour window are
+ * pruned on each create so the live window stays well under the cap.
+ */
+const approvals = new BoundedMap<string, ApprovalRecord>(256, "server-approvals");
+registerCacheStats("server-approvals", () => approvals.stats());
 
 export function createApproval(input: { taskId: string; tool: string; summary: string; argsPreview: string }): ApprovalRecord {
   const record: ApprovalRecord = {
@@ -39,11 +48,9 @@ export function createApproval(input: { taskId: string; tool: string; summary: s
   // unread notification; deciding it does not auto-clear the feed entry.
   notifyApprovalPending({ id: record.id, taskId: record.taskId, tool: record.tool, summary: record.summary });
   // Bound memory: drop decided/expired records beyond the recent window.
-  if (approvals.size > 100) {
-    const cutoff = Date.now() - 60 * 60_000;
-    for (const [id, rec] of approvals) {
-      if (rec.status !== "pending" && Date.parse(rec.decidedAt ?? rec.createdAt) < cutoff) approvals.delete(id);
-    }
+  const cutoff = Date.now() - 60 * 60_000;
+  for (const [id, rec] of approvals.entries()) {
+    if (rec.status !== "pending" && Date.parse(rec.decidedAt ?? rec.createdAt) < cutoff) approvals.delete(id);
   }
   return record;
 }
