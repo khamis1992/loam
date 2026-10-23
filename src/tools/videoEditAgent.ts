@@ -28,7 +28,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { ROOT } from "../config.js";
+import { ROOT, rootAsset } from "../config.js";
 import { taskPath } from "../server/taskWorkspace.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { str } from "./registry.js";
@@ -476,7 +476,7 @@ export function compileEdl(input: CompileInput): VideoEdl {
 const EDL_LATEST = "uploads/loam-video-edl-latest.json";
 
 function ffmpegExecutable(): string {
-  return path.join(ROOT, "node_modules", "ffmpeg-static", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
+  return rootAsset("node_modules", "ffmpeg-static", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
 }
 
 /** Best-effort duration probe via `ffmpeg -i` stderr; undefined on any failure. */

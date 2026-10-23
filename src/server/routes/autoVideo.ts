@@ -10,13 +10,13 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import {spawn} from "node:child_process";
-import {ROOT} from "../../config.js";
+import {ROOT, rootAsset} from "../../config.js";
 import {getTask} from "../db.js";
 import {taskPath} from "../taskWorkspace.js";
 import {planAutoEdit, parseSceneLog, parseLoudnessLog, type AutoEditOptions, type MediaProbe, type TranscriptSegment} from "../../creative/auto.js";
 
 const frameFps=4;
-const ffmpegExecutable=path.join(ROOT,"node_modules","ffmpeg-static",process.platform==="win32"?"ffmpeg.exe":"ffmpeg");
+const ffmpegExecutable=rootAsset("node_modules", "ffmpeg-static",process.platform==="win32"?"ffmpeg.exe":"ffmpeg");
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);

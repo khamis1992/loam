@@ -1,5 +1,8 @@
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+// Per-bot chat accent color (C20): the chat column carries the color of the bot
+// you are talking to, while a conversation with no bot keeps the app accent.
+import { accentVars, chatAccentFor } from "./chat-color.js";
 
 const state = {
   taskId: null,
@@ -432,6 +435,7 @@ function renderSidebar() {
 
 function renderHeader() {
   const a = activeAgent();
+  applyChatAccent(a);
   $("rkHeadAv").innerHTML = a?.emoji && a.emoji!=="🤖" ? esc(a.emoji) : '<loam-icon name="companions"></loam-icon>';
   $("rkHeadName").textContent = a ? a.name : "الوكيل العام";
   const toolSummary = (agent) => {
@@ -796,6 +800,41 @@ function setupComposer() {
 }
 
 /* ---------------- agents CRUD ---------------- */
+/* ---------------- per-bot chat accent (C20) ---------------- */
+// Scoped to the chat column so a conversation's color never leaks into the
+// sidebar or into another screen, and cleared when the base agent is selected.
+let applyChatAccentToken = 0;
+function applyChatAccent(agent) {
+  const root = document.querySelector(".rk-main");
+  if (!root) return;
+  const setVars = (vars) => {
+    // No bot -> no custom properties, so the CSS falls back to the app accent.
+    root.dataset.chatAccent = vars ? "bot" : "";
+    for (const name of ["--chat-accent", "--chat-accent-2", "--chat-accent-ink"]) {
+      if (vars) root.style.setProperty(name, vars[name]);
+      else root.style.removeProperty(name);
+    }
+  };
+  applyChatAccentToken++;
+  const token = applyChatAccentToken;
+  // `chatAccentFor` samples an `avatarImage` asynchronously and returns the
+  // id-hash fallback for the first paint; the callback paints the extracted
+  // color as soon as it lands, so a cold cache does not wait for a re-select.
+  // The token drops a late sample for a bot the user has already left.
+  const color = chatAccentFor(agent, {
+    onAccent: (c) => {
+      if (token !== applyChatAccentToken || !c) return;
+      setVars(accentVars(c, "auto"));
+    },
+  });
+  setVars(color ? accentVars(color, "auto") : null);
+}
+// theme.js rewrites data-theme on <html> for every open page; watch it so the
+// accent lightness and ink follow the theme without a reload.
+new MutationObserver(() => applyChatAccent(activeAgent())).observe(document.documentElement, {
+  attributes: true,
+  attributeFilter: ["data-theme"],
+});
 async function loadAgents() {
   try {
     const d = await (await fetch("/api/agents")).json();

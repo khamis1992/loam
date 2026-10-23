@@ -21,17 +21,22 @@ interface Dispatched {
   params: Record<string, unknown>;
 }
 
+/** Raw `inspect` payload the mock editor answers with (fc-05 state read). */
+const EMPTY_PROJECT = { sequences: [{ id: "seq1", tracks: [], clips: [] }], playheadSec: 0 };
+
 /** In-memory relay: records every dispatch and answers from a command catalog. */
 class MockRelay implements VideoStudioRelayLike {
   readonly dispatched: Dispatched[] = [];
   commands: unknown = [];
   failWith: { code: string; message: string } | null = null;
+  /** When set, every `inspect` returns this payload (defaults to an empty timeline). */
+  project: unknown = EMPTY_PROJECT;
 
   async enqueue(taskId: string, target: "film" | "effects", method: string, params: Record<string, unknown> = {}): Promise<unknown> {
     this.dispatched.push({ taskId, target, method, params });
     if (this.failWith) throw Object.assign(new Error(this.failWith.message), { code: this.failWith.code });
     if (method === "commands") return this.commands;
-    if (method === "inspect") return { sequences: [{ id: "seq1", tracks: [], clips: [] }], playheadSec: 0 };
+    if (method === "inspect") return this.project;
     if (method === "importFiles") return { imported: 1 };
     if (method === "importUrl") return { imported: 1 };
     return { ok: true };
@@ -40,7 +45,7 @@ class MockRelay implements VideoStudioRelayLike {
 
 let root = "";
 let ws = "";
-let relay: MockRelay;
+let relay: MockRelay | RoundTripRelay;
 
 const CATALOG = [
   "file.newProject",
@@ -78,7 +83,7 @@ function allDispatched(): VideoStudioStep[] {
 
 /** Work steps only: the catalog read that precedes every execute is filtered out. */
 function commandsDispatched(): VideoStudioStep[] {
-  return allDispatched().filter((s) => s.method !== "commands");
+  return allDispatched().filter((s) => s.method !== "commands" && s.method !== "inspect");
 }
 
 function lastExecuteCommand(): { command: string; params: Record<string, unknown> } {
@@ -119,7 +124,9 @@ describe("video_studio actions produce the expected command sequence", () => {
     relay.commands = CATALOG;
     const res = await tool().run({ action: "open" }, ctx());
     assert.equal(res.ok, true, res.content);
-    assert.deepEqual(allDispatched(), [{ method: "commands", params: {} }]);
+    // The catalog read plus the fc-05 timeline read before and after it.
+    assert.deepEqual(allDispatched().filter((s) => s.method === "commands"), [{ method: "commands", params: {} }]);
+    assert.deepEqual(allDispatched().map((s) => s.method), ["inspect", "commands", "inspect"]);
     const parsed = JSON.parse(res.content) as { available: boolean; commands: unknown[] };
     assert.equal(parsed.available, true);
     assert.equal(parsed.commands.length, CATALOG.length);
@@ -129,7 +136,8 @@ describe("video_studio actions produce the expected command sequence", () => {
     relay = new MockRelay();
     const res = await tool().run({ action: "state" }, ctx());
     assert.equal(res.ok, true, res.content);
-    assert.deepEqual(commandsDispatched(), [{ method: "inspect", params: {} }]);
+    // The tool reads the live timeline before acting, so `state` is one inspect.
+    assert.deepEqual(allDispatched(), [{ method: "inspect", params: {} }]);
   });
 
   it("add_audio imports from a url then places it on the audio track", async () => {
@@ -491,5 +499,275 @@ describe("video_studio helpers", () => {
       .then(() => {
         assert.deepEqual(lastExecuteCommand(), { command: "timeline.split", params: { atSec: 8 } });
       });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fc-09: the effects round trip
+// ---------------------------------------------------------------------------
+
+/** Film side of the round trip: the replace command lives here. */
+const FILM_ROUND_TRIP_CATALOG = ["file.newProject", "importFiles", "timeline.replaceRange", "export"];
+
+/** Effects side: the transition / effect / text asks plus render + readFile. */
+const EFFECTS_CATALOG = [
+  "composition.new",
+  "transition.fade",
+  "effect.blur",
+  "text.animateIn",
+  "renderQueue.render",
+  "readFile",
+];
+
+/** A two-clip timeline; the round trip targets the second clip. */
+const FILM_STATE = {
+  playheadSec: 30,
+  sequences: [
+    {
+      id: "v1",
+      clips: [
+        { id: "clip_a", source: "C:\\task\\intro.mp4", startSec: 0, endSec: 10, inSec: 0, outSec: 10 },
+        { id: "clip_b", source: "C:\\task\\main.mp4", startSec: 10, endSec: 50, inSec: 2, outSec: 42, fps: 25, width: 1920, height: 1080 },
+      ],
+    },
+  ],
+};
+
+/** Target-aware relay: the film and effects engines answer differently. */
+class RoundTripRelay implements VideoStudioRelayLike {
+  readonly dispatched: Dispatched[] = [];
+  effectsCommands: unknown = EFFECTS_CATALOG;
+  filmCommands: unknown = FILM_ROUND_TRIP_CATALOG;
+  filmState: unknown = FILM_STATE;
+  renderOutput = "C:\\task\\effects\\main-render.mp4";
+  /** Fail only when the dispatch matches, so a mid-sequence failure is testable. */
+  failWhen: { target: string; method: string; code: string; message: string } | null = null;
+
+  async enqueue(
+    taskId: string,
+    target: "film" | "effects",
+    method: string,
+    params: Record<string, unknown> = {},
+  ): Promise<unknown> {
+    this.dispatched.push({ taskId, target, method, params });
+    const fail = this.failWhen;
+    if (fail && fail.target === target && fail.method === method) {
+      throw Object.assign(new Error(fail.message), { code: fail.code });
+    }
+    if (method === "commands") return target === "effects" ? this.effectsCommands : this.filmCommands;
+    if (method === "inspect") return this.filmState;
+    if (method === "readFile") return { path: this.renderOutput };
+    return { ok: true };
+  }
+
+  /** Work steps only: the catalog/inspect reads that precede a round trip. */
+  workSteps(): Dispatched[] {
+    return this.dispatched.filter((d) => d.method !== "commands" && d.method !== "inspect");
+  }
+}
+
+/** Install the effects engine so the round trip is considered available. */
+function installEffectcraftDist(): void {
+  fs.mkdirSync(path.join(root, "electron", "effectcraft", "dist"), { recursive: true });
+  fs.writeFileSync(path.join(root, "electron", "effectcraft", "dist", "index.html"), "<html></html>");
+}
+
+describe("video_studio effects round trip (fc-09)", () => {
+  it("reports effects_dist_missing and points at the editor-native actions", async () => {
+    // The dist is gitignored, so its absence is a normal state: the agent must
+    // be told to use transition_basic / effect_basic instead of the round trip.
+    fs.rmSync(path.join(root, "electron", "effectcraft"), { recursive: true, force: true });
+    relay = new RoundTripRelay();
+    const res = await tool().run({ action: "transition", clipId: "clip_b", type: "fade" }, ctx());
+    assert.equal(res.ok, false);
+    const parsed = JSON.parse(res.content) as { reason: string; hint: string; message: string };
+    assert.equal(parsed.reason, "effects_dist_missing");
+    assert.match(parsed.hint, /transition_basic/);
+    assert.match(parsed.hint, /effect_basic/);
+    // Nothing is dispatched to a backend that is not installed.
+    assert.deepEqual(relay.dispatched, []);
+  });
+
+  it("round-trips a clip through both engines and replaces the range in place", async () => {
+    installEffectcraftDist();
+    relay = new RoundTripRelay();
+    const res = await tool().run({ action: "transition", clipId: "clip_b", type: "fade" }, ctx());
+    assert.equal(res.ok, true);
+
+    // The full sequence: hand the media to the effects engine, build a matching
+    // composition, apply the ask, render, read it back, import it and replace
+    // the original range on the same track.
+    assert.deepEqual(relay.workSteps(), [
+      { taskId: "task_1", target: "effects", method: "addFile", params: { path: "C:\\task\\main.mp4", inSec: 2, outSec: 42 } },
+      {
+        taskId: "task_1",
+        target: "effects",
+        method: "execute",
+        params: { command: "composition.new", params: { width: 1920, height: 1080, fps: 25, durationSec: 40 } },
+      },
+      { taskId: "task_1", target: "effects", method: "execute", params: { command: "transition.fade", params: { type: "fade" } } },
+      { taskId: "task_1", target: "effects", method: "execute", params: { command: "renderQueue.render", params: { format: "mp4" } } },
+      { taskId: "task_1", target: "effects", method: "readFile", params: {} },
+      { taskId: "task_1", target: "film", method: "importFiles", params: {} },
+      {
+        taskId: "task_1",
+        target: "film",
+        method: "execute",
+        params: { command: "timeline.replaceRange", params: { clipId: "clip_b", trackId: "v1", fromSec: 10, toSec: 50 } },
+      },
+    ]);
+
+    const parsed = JSON.parse(res.content) as {
+      action: string;
+      clipId: string;
+      outputPath: string;
+      projectPath: string;
+      steps: Array<{ target: string; method: string; ok: boolean }>;
+      hint: string;
+    };
+    assert.equal(parsed.clipId, "clip_b");
+    assert.equal(parsed.outputPath, "C:\\task\\effects\\main-render.mp4");
+    assert.equal(parsed.projectPath, `${ws}/effects/main.ecproj`);
+    assert.equal(parsed.steps.length, 7);
+    assert.match(parsed.hint, /open_effects/);
+    // The neighbours are never named, so their positions cannot shift.
+    assert.ok(!JSON.stringify(relay.workSteps()).includes("clip_a"));
+  });
+
+  it("picks the clip under the playhead when no clipId is given", async () => {
+    installEffectcraftDist();
+    relay = new RoundTripRelay();
+    const res = await tool().run({ action: "effect", atSec: 30, name: "glow" }, ctx());
+    assert.equal(res.ok, true);
+    const parsed = JSON.parse(res.content) as { clipId: string };
+    assert.equal(parsed.clipId, "clip_b");
+    assert.deepEqual(relay.workSteps().at(-1)!.params, {
+      command: "timeline.replaceRange",
+      params: { clipId: "clip_b", trackId: "v1", fromSec: 10, toSec: 50 },
+    });
+  });
+
+  it("resolves each ask against the live effects catalog", async () => {
+    installEffectcraftDist();
+    for (const [action, extra, expected] of [
+      ["transition", { type: "fade" }, { command: "transition.fade", params: { type: "fade" } }],
+      ["effect", { name: "blur" }, { command: "effect.blur", params: { name: "blur" } }],
+      ["animate_text", { text: "Hello" }, { command: "text.animateIn", params: { text: "Hello" } }],
+    ] as const) {
+      relay = new RoundTripRelay();
+      const res = await tool().run({ action, clipId: "clip_b", ...extra }, ctx());
+      assert.equal(res.ok, true, `${action} should succeed`);
+      // The ask is the third work step: after addFile and composition.new.
+      assert.deepEqual(relay.workSteps()[2]!.params, expected, action);
+    }
+  });
+
+  it("refuses when the named clip is not on the timeline", async () => {
+    installEffectcraftDist();
+    relay = new RoundTripRelay();
+    const res = await tool().run({ action: "transition", clipId: "nope", type: "fade" }, ctx());
+    assert.equal(res.ok, false);
+    assert.match(res.content, /no Loam Video clip matches/);
+    // The plan is refused before anything reaches an engine.
+    assert.deepEqual(relay.workSteps(), []);
+  });
+
+  it("refuses when the effects engine lacks the ask", async () => {
+    installEffectcraftDist();
+    relay = new RoundTripRelay();
+    relay.effectsCommands = ["renderQueue.render", "readFile"];
+    const res = await tool().run({ action: "animate_text", clipId: "clip_b", text: "Hi" }, ctx());
+    assert.equal(res.ok, false);
+    assert.match(res.content, /does not expose a command for "animate_text"/);
+    assert.deepEqual(relay.workSteps(), []);
+  });
+
+  it("reports panel_not_open rather than flattening it into a command rejection", async () => {
+    installEffectcraftDist();
+    relay = new RoundTripRelay();
+    relay.failWhen = { target: "effects", method: "addFile", code: "PANEL_NOT_OPEN", message: "no panel" };
+    const res = await tool().run({ action: "transition", clipId: "clip_b", type: "fade" }, ctx());
+    assert.equal(res.ok, false);
+    const parsed = JSON.parse(res.content) as { ok: boolean; reason: string; clipId: string };
+    assert.equal(parsed.reason, "panel_not_open");
+    assert.equal(parsed.clipId, "clip_b");
+  });
+
+  it("reports command_rejected and leaves the timeline untouched when the engine refuses", async () => {
+    installEffectcraftDist();
+    relay = new RoundTripRelay();
+    relay.failWhen = { target: "effects", method: "execute", code: "COMMAND_REJECTED", message: "unsupported transition" };
+    const res = await tool().run({ action: "transition", clipId: "clip_b", type: "fade" }, ctx());
+    assert.equal(res.ok, false);
+    const parsed = JSON.parse(res.content) as { reason: string; message: string };
+    assert.equal(parsed.reason, "command_rejected");
+    assert.match(parsed.message, /unsupported transition/);
+    // The film side is never reached, so the clip keeps its original media.
+    assert.equal(relay.dispatched.filter((d) => d.target === "film" && d.method !== "commands" && d.method !== "inspect").length, 0);
+  });
+
+  it("effects_status reports availability and the resolved asks", async () => {
+    installEffectcraftDist();
+    relay = new RoundTripRelay();
+    const res = await tool().run({ action: "effects_status" }, ctx());
+    assert.equal(res.ok, true);
+    const parsed = JSON.parse(res.content) as {
+      available: boolean;
+      commands: string[];
+      supportedAsks: Array<{ ask: string; command: string | null }>;
+    };
+    assert.equal(parsed.available, true);
+    assert.deepEqual(parsed.commands, EFFECTS_CATALOG);
+    assert.deepEqual(parsed.supportedAsks, [
+      { ask: "transition", command: "transition.fade" },
+      { ask: "effect", command: "effect.blur" },
+      { ask: "animate_text", command: "text.animateIn" },
+    ]);
+    // Reporting status must not touch the timeline.
+    assert.equal(relay.dispatched.filter((d) => d.target === "film").length, 0);
+  });
+
+  it("effects_status reports an engine that exposes no commands", async () => {
+    installEffectcraftDist();
+    relay = new RoundTripRelay();
+    relay.effectsCommands = [];
+    const res = await tool().run({ action: "effects_status" }, ctx());
+    assert.equal(res.ok, true);
+    const parsed = JSON.parse(res.content) as { available: boolean; supportedAsks: Array<{ command: string | null }> };
+    assert.equal(parsed.available, false);
+    assert.deepEqual(parsed.supportedAsks.map((a) => a.command), [null, null, null]);
+  });
+
+  it("open_effects requires a project path and then reopens it", async () => {
+    installEffectcraftDist();
+    relay = new RoundTripRelay();
+    const missing = await tool().run({ action: "open_effects" }, ctx());
+    assert.equal(missing.ok, false);
+    assert.match(missing.content, /open_effects requires projectPath/);
+    assert.deepEqual(relay.dispatched, []);
+
+    relay = new RoundTripRelay();
+    const res = await tool().run({ action: "open_effects", projectPath: "C:\\task\\effects\\main.ecproj" }, ctx());
+    assert.equal(res.ok, true);
+    assert.deepEqual(
+      relay.dispatched.map((d) => ({ target: d.target, method: d.method, params: d.params })),
+      [
+        { target: "effects", method: "openProject", params: { path: "C:\\task\\effects\\main.ecproj" } },
+        { target: "effects", method: "inspect", params: {} },
+      ],
+    );
+    const parsed = JSON.parse(res.content) as { projectPath: string };
+    assert.equal(parsed.projectPath, "C:\\task\\effects\\main.ecproj");
+  });
+
+  it("does not read the film catalog twice for a round trip", async () => {
+    installEffectcraftDist();
+    relay = new RoundTripRelay();
+    await tool().run({ action: "transition", clipId: "clip_b", type: "fade" }, ctx());
+    // Routing happens before the generic catalog read, so each engine is asked
+    // for its command list exactly once.
+    assert.equal(relay.dispatched.filter((d) => d.method === "commands" && d.target === "film").length, 1);
+    assert.equal(relay.dispatched.filter((d) => d.method === "commands" && d.target === "effects").length, 1);
+    assert.equal(relay.dispatched.filter((d) => d.method === "inspect").length, 1);
   });
 });

@@ -35,9 +35,26 @@ import path from "node:path";
 import { ROOT } from "../config.js";
 import { taskPath } from "../server/taskWorkspace.js";
 import { videoStudioRelay } from "../server/videoStudioRelay.js";
+import {
+  isRoundTripPlanError,
+  parseFilmState,
+  planReopenEffects,
+  planRoundTrip,
+  readEffectsProjectPath,
+  resolveAskId,
+  roundTripErrorResult,
+  runRoundTrip,
+  type EffectsAskKind,
+} from "../../packages/shared/src/effectsRoundTrip.js";
 import { parseTimeToken } from "./videoEditAgent.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { num, str } from "./registry.js";
+import {
+  VideoStudioProjectStore,
+  VideoStudioStateTracker,
+  videoStudioProjectStore,
+  type VideoStudioStateSummary,
+} from "./videoStudioState.js";
 
 // ---------------------------------------------------------------------------
 // Relay contract (structural, so tests can inject a mock)
@@ -118,6 +135,12 @@ export const VIDEO_STUDIO_ACTIONS = [
   "music",
   "transition_basic",
   "effect_basic",
+  // fc-09: route a clip through the Loam Effects backend and back.
+  "transition",
+  "effect",
+  "animate_text",
+  "open_effects",
+  "effects_status",
   "undo",
   "raw",
 ] as const;
@@ -126,6 +149,14 @@ export type VideoStudioAction = (typeof VIDEO_STUDIO_ACTIONS)[number];
 
 export function isVideoStudioAction(value: unknown): value is VideoStudioAction {
   return typeof value === "string" && (VIDEO_STUDIO_ACTIONS as readonly string[]).includes(value);
+}
+
+/** Actions that round-trip a clip through the Loam Effects backend. */
+const ROUND_TRIP_ACTIONS: readonly VideoStudioAction[] = ["transition", "effect", "animate_text"];
+
+/** True when the action drives the Loam Effects backend (fc-09). */
+export function isEffectsAction(action: VideoStudioAction): boolean {
+  return ROUND_TRIP_ACTIONS.includes(action) || action === "open_effects" || action === "effects_status";
 }
 
 /**
@@ -504,6 +535,15 @@ function buildAction(
       return { steps: [execStep(command, params)] };
     }
 
+    // fc-09: effects actions are routed through runEffectsAction before this
+    // function is reached, so arriving here means a caller bypassed the router.
+    case "transition":
+    case "effect":
+    case "animate_text":
+    case "open_effects":
+    case "effects_status":
+      return { error: `video_studio action "${action}" must be routed through the Loam Effects round-trip planner` };
+
     default: {
       const exhaustive: never = action;
       return { error: `unknown video_studio action: ${String(exhaustive)}` };
@@ -571,11 +611,216 @@ function relayErrorResult(err: unknown): ToolResult {
 // Agent tool
 // ---------------------------------------------------------------------------
 
+/**
+ * Absolute path of the vendored Loam Effects engine entry point.
+ *
+ * The dist is gitignored (vendor script only), so its absence is a normal,
+ * recoverable state: the caller reports `effects_dist_missing` and tells the
+ * agent to fall back to the FilmCraft-native `transition_basic` /
+ * `effect_basic` actions instead of treating the whole studio as broken.
+ */
+export function effectcraftDistDir(root: string = ROOT): string {
+  return path.join(root, "electron", "effectcraft", "dist");
+}
+
+/** True when the vendored Loam Effects dist is installed (index.html present). */
+export function isEffectcraftDistInstalled(root: string = ROOT): boolean {
+  return fs.existsSync(path.join(effectcraftDistDir(root), "index.html"));
+}
+
+/** The three asks the Loam Effects backend can answer, for schema enums. */
+const EFFECTS_ASKS: readonly EffectsAskKind[] = ["transition", "effect", "animate_text"];
+
+function isEffectsAsk(value: string): value is EffectsAskKind {
+  return (EFFECTS_ASKS as readonly string[]).includes(value);
+}
+
+/** Map an action to the ask it applies in the effects engine. */
+function actionToAsk(action: VideoStudioAction): EffectsAskKind | null {
+  return isEffectsAsk(action) ? action : null;
+}
+
+/**
+ * Execute an fc-09 effects action through the round-trip planner.
+ *
+ * The router is deliberately explicit: a `transition` / `effect` /
+ * `animate_text` action only goes through the effects backend when that
+ * backend is actually installed, and the model is told to use the
+ * FilmCraft-native `transition_basic` / `effect_basic` actions otherwise, so the
+ * product keeps working on a build that ships the timeline editor only.
+ */
+async function runEffectsAction(
+  action: VideoStudioAction,
+  args: Record<string, unknown>,
+  taskId: string,
+  workspace: string,
+  relay: VideoStudioRelayLike,
+  root: string,
+): Promise<ToolResult> {
+  if (!isEffectcraftDistInstalled(root)) {
+    return {
+      ok: false,
+      content: JSON.stringify({
+        ok: false,
+        reason: "effects_dist_missing",
+        message: `The Loam Effects engine is not installed (${effectcraftDistDir(root)}).`,
+        hint:
+          "Use the FilmCraft-native video_studio actions instead: transition_basic (sequence.applyVideoTransition / applyAudioTransition) " +
+          "and effect_basic (effects.apply) run entirely inside the Loam Video editor and need no effects engine.",
+      }),
+    };
+  }
+
+  if (action === "effects_status") {
+    try {
+      const effectsCatalog = toCommandIdList(await relay.enqueue(taskId, "effects", "commands", {}));
+      return {
+        ok: true,
+        content: JSON.stringify({
+          action,
+          available: effectsCatalog.length > 0,
+          commands: effectsCatalog,
+          supportedAsks: EFFECTS_ASKS.map((ask) => ({ ask, command: resolveAskId(effectsCatalog, ask) })),
+        }),
+      };
+    } catch (err) {
+      return relayErrorResult(err);
+    }
+  }
+
+  if (action === "open_effects") {
+    const projectPath = str(args, "projectPath").trim();
+    if (!projectPath) {
+      return { ok: false, content: "open_effects requires projectPath (the .ecproj saved by a previous round trip)" };
+    }
+    try {
+      const results: Array<{ method: string; ok: boolean; result?: unknown }> = [];
+      // Same sequence the panel's "Open in effects" button uses, so the two
+      // entry points cannot drift apart.
+      for (const step of planReopenEffects(projectPath)) {
+        const value = await relay.enqueue(taskId, step.target, step.method, step.params);
+        results.push({ method: step.method, ok: true, result: value });
+      }
+      const project = readEffectsProjectPath(results[0]?.result) ?? projectPath;
+      return { ok: true, content: JSON.stringify({ action, projectPath: project, steps: results }) };
+    } catch (err) {
+      return relayErrorResult(err);
+    }
+  }
+
+  const ask = actionToAsk(action);
+  if (!ask) {
+    return { ok: false, content: `unsupported effects action: ${action}` };
+  }
+
+  // The round trip needs both catalogs and the live timeline state, so read
+  // them up front: a missing clip or command is reported as a precise message
+  // rather than a silent no-op.
+  let filmCatalog: string[];
+  let effectsCatalog: string[];
+  let state: unknown;
+  try {
+    filmCatalog = toCommandIdList(await relay.enqueue(taskId, "film", "commands", {}));
+    effectsCatalog = toCommandIdList(await relay.enqueue(taskId, "effects", "commands", {}));
+    state = await relay.enqueue(taskId, "film", "inspect", {});
+  } catch (err) {
+    return relayErrorResult(err);
+  }
+
+  const parsed = parseFilmState(state);
+  const clipId = str(args, "clipId").trim() || null;
+  const atSec = args["atSec"] ?? args["at"];
+
+  const plan = planRoundTrip({
+    state: parsed,
+    clipId,
+    atSec,
+    kind: ask,
+    params: readParams(args),
+    effectsCatalog,
+    filmCatalog,
+    // The planner derives and saves the project path itself, so the file that is
+    // saved and the path that is returned can never disagree.
+    workspace,
+  });
+  if (isRoundTripPlanError(plan)) {
+    return { ok: false, content: plan.error };
+  }
+
+  const result = await runRoundTrip(relay, taskId, plan);
+  if (!result.ok) {
+    const err = roundTripErrorResult(
+      Object.assign(new Error(result.error ?? "effects round trip failed"), {
+        code: relayErrorCode(result.steps),
+      }),
+      result.clipId,
+    );
+    return { ok: false, content: JSON.stringify(err) };
+  }
+
+  // The project path is the link back: "Open in effects" reopens this file to
+  // keep editing the applied effect. It is null when no clip could be
+  // resolved, in which case the round trip still replaced the range but there
+  // is no project to reopen.
+  const projectPath = plan.projectPath;
+  return {
+    ok: true,
+    content: JSON.stringify({
+      action,
+      clipId: plan.clip.id,
+      outputPath: result.outputPath,
+      projectPath,
+      steps: result.steps.map((step) => ({ target: step.target, method: step.method, ok: step.ok })),
+      hint: projectPath
+        ? `Reopen the project with the "Open in effects" button, or call video_studio action "open_effects" with projectPath "${projectPath}".`
+        : 'This clip has no resolvable source path, so no .ecproj project was saved to reopen.',
+    }),
+  };
+}
+
+/** Free-form engine parameters for a round trip, minus the positional fields. */
+function readParams(args: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const raw = args["params"];
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      // The engine command id is resolved from the catalog, so a stray
+      // `command` override must not swap the ask the action already named.
+      if (key === "command") continue;
+      out[key] = value;
+    }
+  }
+  // The positional fields are read whether or not `params` was supplied: an
+  // action like `transition` with `type` alone must still reach the engine.
+  const name = str(args, "name").trim();
+  if (name) out["name"] = name;
+  const type = str(args, "type").trim();
+  if (type) out["type"] = type;
+  const text = str(args, "text").trim();
+  if (text) out["text"] = text;
+  return out;
+}
+
+/**
+ * The relay error code carried by the first failed step.
+ *
+ * `runRoundTrip` records the code the relay threw with, so a panel that is not
+ * attached still reports `panel_not_open` rather than being flattened into an
+ * engine refusal.
+ */
+function relayErrorCode(steps: ReadonlyArray<{ ok: boolean; code?: string }>): string | undefined {
+  return steps.find((step) => !step.ok)?.code;
+}
+
 export interface VideoStudioToolOptions {
   /** Relay used to reach the editor panel; defaults to the shared server relay. */
   relay?: VideoStudioRelayLike;
   /** Repo root used for the dist check; defaults to ROOT. */
   root?: string;
+  /** fc-05: per-task state tracker (manual-edit detection). Injectable for tests. */
+  stateTracker?: VideoStudioStateTracker;
+  /** fc-05: debounced project persistence into the task files. Injectable for tests. */
+  projectStore?: VideoStudioProjectStore;
 }
 
 const TIME_SCHEMA = {
@@ -584,12 +829,47 @@ const TIME_SCHEMA = {
 } as const;
 
 /**
+ * Read the live timeline state from the editor (fc-05). Best-effort: a state
+ * read must never break the command it precedes, so a relay failure here
+ * returns undefined and the action proceeds without a summary.
+ *
+ * The read also (a) updates the per-task tracker, which reports a manual-edit
+ * notice when the timeline differs from the state the agent last saw, and
+ * (b) schedules a debounced persist of the raw project into the task files.
+ */
+async function readStudioState(
+  taskId: string,
+  relay: VideoStudioRelayLike,
+  tracker: VideoStudioStateTracker,
+  store: VideoStudioProjectStore,
+  workspace: string,
+): Promise<{ raw: unknown; summary: VideoStudioStateSummary; notice: string | null } | undefined> {
+  let raw: unknown;
+  try {
+    raw = await relay.enqueue(taskId, "film", "inspect", {});
+  } catch {
+    return undefined;
+  }
+  const observation = tracker.observe(taskId, raw);
+  try {
+    store.schedule(taskId, workspace, raw, observation.summary);
+  } catch {
+    /* persistence is best-effort */
+  }
+  return { raw, summary: observation.summary, notice: observation.notice };
+}
+
+/**
  * Create the `video_studio` tool. The description is intentionally complete: it
  * is the model's only guide for driving the editor.
  */
 export function createVideoStudioTools(options: VideoStudioToolOptions = {}): Tool[] {
   const relay = options.relay ?? videoStudioRelay;
   const root = options.root ?? ROOT;
+  // fc-05: one tracker/store per tool instance, so change detection survives
+  // across commands within a run. Tests inject their own to control the hash.
+  const stateTracker = options.stateTracker ?? new VideoStudioStateTracker();
+  const projectStore = options.projectStore ?? videoStudioProjectStore;
 
   return [
     {
@@ -598,7 +878,12 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
         "Drive the Loam Video editor (the wasm timeline editor embedded in the Workspace panel) for the current task. " +
         "Every action is sent through the Video Studio relay to the attached editor panel, which applies it to the live timeline and returns the result. " +
         "Use this for direct, precise timeline work: open, state, import, cut, trim, delete, move, reorder, split, speed, add_text, add_audio (or music), transition_basic, effect_basic, undo and raw. " +
+        "For transitions, effects and text animation it can also route the selected clip through the Loam Effects engine and put the rendered result back on the same track: transition (fade / cross dissolve / wipe / slide / zoom), " +
+        "effect (blur / glow / color look / shake) and animate_text (animate in / out / typewriter), plus effects_status (report whether that backend is installed and which commands it exposes) and open_effects (reopen a saved .ecproj). " +
+        "Those routing actions read the current timeline first, so they pick the clip under the playhead or the clipId you name; when the Loam Effects engine is not installed they return reason effects_dist_missing and tell you to use transition_basic / effect_basic instead. " +
         "Always call state first to read the current project (sequences, tracks, clips, playhead) so manual edits made in the panel are never lost, then apply the edit. " +
+        "Every result carries a compact timeline summary (tracks, clips with track/start/end and source in-out, text layers, audio clips, transitions, effects, duration, playhead, selection); when the timeline changed since your last action, a notice describing that change is prepended so you can adapt instead of repeating an edit the user already made. " +
+        "Never rebuild the project from memory: every edit is an incremental command on the live project. " +
         "Timestamps accept seconds (90) or timecode (1:30, 00:01:30.500). " +
         "Mutating actions resolve their real engine command ids from the editor's own command list at runtime; raw executes any command id you name, but only after validating it against that list. " +
         "When the Loam Video dist is missing or the editor bridge fails, the tool returns a structured fallback telling you to use video_edit instead (an edit-decision-list rendered by ffmpeg, which needs no editor). " +
@@ -615,12 +900,14 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
               "open (confirm the editor is reachable and list its commands), state (read project/sequence/tracks/clips/playhead), " +
               "import (bring a task file or URL onto the timeline), cut (razor at one or more times), trim, delete (ripple optional), " +
               "move / reorder, split, speed, add_text (title/graphics layer), add_audio / music (audio file onto an audio track with gain/fade), " +
-              "transition_basic (FilmCraft-native video/audio transition), effect_basic (effects.apply), undo, raw (any validated command id).",
+              "transition_basic (editor-native video/audio transition), effect_basic (editor effects.apply), " +
+              "transition / effect / animate_text (round-trip the selected clip through the Loam Effects engine and replace the range in place), " +
+              "effects_status (Loam Effects availability and commands), open_effects (reopen a saved .ecproj project), undo, raw (any validated command id).",
           },
           taskId: { type: "string", description: "Task id (defaults to the current run task)." },
           url: { type: "string", description: "Media URL for import / add_audio." },
           path: { type: "string", description: "Task-workspace file path for import / add_audio." },
-          atSec: { ...TIME_SCHEMA, description: "Cut/split/transition/effect position. For cut, an array cuts several points." },
+          atSec: { ...TIME_SCHEMA, description: "Cut/split position, or the clip to round-trip when clipId is not given. For cut, an array cuts several points." },
           at: { ...TIME_SCHEMA, description: "Alias of atSec." },
           fromSec: { ...TIME_SCHEMA, description: "Range start for trim/delete." },
           toSec: { ...TIME_SCHEMA, description: "Range end for trim/delete." },
@@ -628,22 +915,23 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
           to: { ...TIME_SCHEMA, description: "Alias of toSec." },
           durationSec: { ...TIME_SCHEMA, description: "Duration for add_text / transition_basic." },
           ripple: { type: "boolean", description: "delete: close the gap left by the removed range." },
-          clipId: { type: "string", description: "Target clip for move / speed." },
+          clipId: { type: "string", description: "Target clip for move / speed, or the clip to round-trip through the effects engine." },
           trackId: { type: "string", description: "Target track for add_audio / transition_basic." },
           toIndex: { type: "number", description: "move: 0-based target position." },
           order: { type: "array", items: { type: "number" }, description: "reorder: 1-based indices, a full permutation." },
           rate: { type: "number", description: "speed: playback rate (1 = normal, 2 = double)." },
-          text: { type: "string", description: "add_text: the text to place on the timeline." },
+          text: { type: "string", description: "add_text / animate_text: the text to place or animate." },
           position: { type: "string", enum: ["top", "center", "bottom"], description: "add_text: vertical placement." },
           size: { type: "number", description: "add_text: font size." },
           color: { type: "string", description: "add_text: text color (CSS value)." },
           gain: { type: "number", description: "add_audio: clip gain (1 = unchanged)." },
           fadeInSec: { ...TIME_SCHEMA, description: "add_audio: fade-in length." },
           fadeOutSec: { ...TIME_SCHEMA, description: "add_audio: fade-out length." },
-          type: { type: "string", description: "transition_basic: transition type id." },
-          name: { type: "string", description: "effect_basic: effect id." },
-          params: { type: "object", description: "effect_basic / raw: extra engine parameters." },
+          type: { type: "string", description: "transition_basic / transition: transition type id." },
+          name: { type: "string", description: "effect_basic / effect: effect id." },
+          params: { type: "object", description: "effect_basic / raw / transition / effect / animate_text: extra engine parameters." },
           command: { type: "string", description: "raw: the engine command id to execute." },
+          projectPath: { type: "string", description: "open_effects: the .ecproj project path returned by a previous round trip." },
         },
       },
       async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
@@ -661,6 +949,16 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
           );
         }
 
+        // fc-09: a round-trip action needs the live timeline state plus BOTH
+        // engine catalogs (the film side replaces the range, the effects side
+        // renders it), so it is planned and executed here rather than through
+        // buildAction, which only maps a single engine's command list. Routing
+        // happens before the film catalog read below, which the round trip does
+        // not use.
+        if (isEffectsAction(action)) {
+          return await runEffectsAction(action, args, taskId, ctx.workspace, relay, root);
+        }
+
         // Only actions that issue engine commands need the live catalog.
         const needsCatalog = action !== "open" && action !== "state" && action !== "import";
         let catalog: string[] = [];
@@ -672,23 +970,44 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
           }
         }
 
+        // fc-05: read the live timeline before acting. Manual edits the user
+        // made in the panel are surfaced here, and the project is persisted so
+        // a reload can restore it.
+        const before = await readStudioState(taskId, relay, stateTracker, projectStore, ctx.workspace);
+
         const built = buildAction(action, args, catalog, ctx.workspace);
         if ("error" in built) return { ok: false, content: built.error };
 
         const results: Array<{ method: string; ok: boolean; result?: unknown }> = [];
-        for (const step of built.steps) {
-          try {
-            const value = await relay.enqueue(taskId, "film", step.method, step.params);
-            results.push({ method: step.method, ok: true, result: value });
-          } catch (err) {
-            return relayErrorResult(err);
+        // `state` is itself a state read: reuse the pre-read so the result is a
+        // single inspect round trip instead of two.
+        const isStateRead = built.steps.length === 1 && built.steps[0]!.method === "inspect";
+        if (isStateRead && before) {
+          results.push({ method: "inspect", ok: true, result: before.raw });
+        } else {
+          for (const step of built.steps) {
+            try {
+              const value = await relay.enqueue(taskId, "film", step.method, step.params);
+              results.push({ method: step.method, ok: true, result: value });
+            } catch (err) {
+              return relayErrorResult(err);
+            }
           }
         }
 
-        if (action === "open") {
-          return { ok: true, content: JSON.stringify({ action, available: true, commands: results[0]?.result ?? [] }) };
-        }
-        return { ok: true, content: JSON.stringify({ action, steps: results }) };
+        // fc-05: re-read after a mutating action so the next command's change
+        // detection starts from the state the agent last saw (its own edit
+        // included) and the result reports the timeline as it now stands.
+        const after = isStateRead && before ? before : await readStudioState(taskId, relay, stateTracker, projectStore, ctx.workspace);
+        const summary = (after ?? before)?.summary ?? null;
+        const notice = before?.notice ?? null;
+
+        const body =
+          action === "open"
+            ? { action, available: true, commands: results[0]?.result ?? [], summary, notice }
+            : { action, steps: results, summary, notice };
+        const json = JSON.stringify(body);
+        return { ok: true, content: notice ? `${notice}\n${json}` : json };
       },
     },
   ];

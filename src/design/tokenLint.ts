@@ -804,7 +804,7 @@ export function resolveDirection(locale: string, explicit?: "ltr" | "rtl"): "ltr
  * critique step understand. They map onto the finer-grained categories that
  * {@link lintDesignSource} reports, so the two views cannot drift apart.
  */
-type SiteRule =
+export type SiteRule =
   | "raw-color"
   | "too-many-colors"
   | "too-many-fonts"
@@ -909,6 +909,35 @@ function computeScore(issues: LintIssue[]): number {
   let score = 100;
   for (const issue of issues) score -= issue.severity === "error" ? ERROR_PENALTY : WARN_PENALTY;
   return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+/**
+ * Lint a single in-memory source with the site rules. It exists so an editor
+ * buffer and a directory on disk are scored by the same code path: a caller that
+ * holds the source (an agent tool, a test) gets the same {@link LintResult} the
+ * filesystem linter would produce for that file alone.
+ */
+export function lintSiteSource(source: string, options: LintOptions = {}): LintResult {
+  const text = source ?? "";
+  const issues: LintIssue[] = [];
+  lintScannedFile({ relative: "inline", text }, options, issues);
+  const rtlRequested = resolveDirection(options.locale ?? "", options.direction) === "rtl";
+  const hasDirRtl = RTL_DIR_RE.test(text);
+  const hasLogical = LOGICAL_PROPERTY_RE.test(text);
+  return {
+    score: computeScore(issues),
+    issues,
+    metrics: {
+      files: 1,
+      rawColors: issues.filter((issue) => issue.rule === "raw-color").length,
+      arbitraryPx: issues.filter((issue) => issue.rule === "arbitrary-px").length,
+      fontFamilies: collectFontFamilies(text).size,
+      emoji: issues.filter((issue) => issue.rule === "emoji-icon").length,
+      gradients: issues.filter((issue) => issue.rule === "gradient").length,
+      missingAlt: issues.filter((issue) => issue.rule === "missing-alt").length,
+      rtlReady: !rtlRequested || (hasDirRtl && hasLogical),
+    },
+  };
 }
 
 /**

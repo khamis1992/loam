@@ -48,11 +48,15 @@ import { createDesignLintTools } from "./tools/designLint.js";
 import { createDesignAssetsTools } from "./tools/designAssets.js";
 import { createDesignBriefTools } from "./tools/designBrief.js";
 import { createDesignAutofixTools } from "./tools/designAutofix.js";
+import { createDesignCritiqueTools } from "./tools/designCritique.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
 import { createWorkflowTools } from "./tools/workflow.js";
+import { createFanoutTool } from "./tools/fanout.js";
 import { applyPlanApprovalGate, applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
+import { applyAskUserGate, createAskUserTools } from "./tools/askUserTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
+import { applyKnowledgeGate } from "./server/knowledgeTools.js";
 import { planQuickEditRoute } from "./agent/quickEdit.js";
 import { SIDE_CHAT_READ_ONLY_TOOLS } from "./agent/sideChat.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
@@ -60,6 +64,7 @@ import { publishTaskEvent } from "./server/streams.js";
 import { videoStudioRelay } from "./server/videoStudioRelay.js";
 import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { runAgent } from "./agent/loop.js";
+import { isOutputType, modelAbChain, normalizeEffort, type EffortLevel } from "./llm/router.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
 import type { Emit } from "./agent/events.js";
 import { applyRunEvent, beginRun } from "./agent/runGraphAdapter.js";
@@ -85,6 +90,11 @@ import { startProtocolAdapter } from "./protocol/adapter.js";
 import { executionQueue } from "./server/executionQueue.js";
 import { requiresReplayConfirmation, type SavedRun } from "./server/recovery.js";
 import { acquireRuntimeLease, releaseRuntimeLease, backupDatabase } from "./server/sqliteStore.js";
+import {
+  admitAllPending,
+  admitPending as admitPendingInputs,
+  hasPending,
+} from "./server/inputQueue.js";
 import { claimRunLease, releaseRunLease, startLeaseHeartbeat, type LeaseHeartbeat, type RunLease } from "./server/runLease.js";
 import { recordTaskUsage } from "./server/credits.js";
 // D19 session runtime: sleep/wake lifecycle + per-session compute budget.
@@ -100,6 +110,11 @@ async function main(): Promise<void> {
   backupDatabase();
   const recovered = recoverInterruptedTasks();
   if (recovered) log.info(`recovery: ${recovered} interrupted task(s) awaiting resume`);
+  // O6: messages that arrived while the process was down become durable `input`
+  // events now, even if their task is never resumed. Admitting twice is safe
+  // because the append is keyed by the input id.
+  const admittedInputs = admitAllPending();
+  if (admittedInputs.length > 0) log.info(`recovery: admitted ${admittedInputs.length} queued message(s)`);
   const bootSettings = loadSettings();
   const envRoot = process.env.LOAM_ROOT || process.env.MANUS_LOCAL_ROOT;
   if (!envRoot && bootSettings.workspace && fs.existsSync(bootSettings.workspace) && fs.statSync(bootSettings.workspace).isDirectory()) {
@@ -142,6 +157,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createBrowserOperatorTools());
   rt.registry.registerAll(createDeepResearchTools());
   rt.registry.register(createWideResearchTool({ ollama: rt.ollama, parentRegistry: rt.registry }));
+  rt.registry.register(createFanoutTool({ ollama: rt.ollama, parentRegistry: rt.registry }));
   rt.registry.registerAll(createFindAndEditTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createGroupTools());
   rt.registry.registerAll(createBackendScaffoldTools());
@@ -157,9 +173,11 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createDesignAssetsTools());
   rt.registry.registerAll(createDesignBriefTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createDesignAutofixTools());
+  rt.registry.registerAll(createDesignCritiqueTools(rt.preview, { ollama: rt.ollama }));
   rt.registry.registerAll(createConnectorTools());
   rt.registry.registerAll(createWorkflowTools({ ollama: rt.ollama, registry: rt.registry }));
   rt.registry.registerAll(createPlanTools());
+  rt.registry.registerAll(createAskUserTools());
   const { ollama, registry, memory, mcp } = rt;
 
   // D19 session runtime: one manager owns both the sleep lifecycle and the
@@ -285,6 +303,16 @@ async function main(): Promise<void> {
     const effectiveEffort = String(opts.effort ?? agent?.effort ?? "").toLowerCase();
     const effortMaxSteps = effortBudgets[effectiveEffort];
     const runSignal = opts.signal;
+    // Neo N10: the composer's output type and effort level are resolved once, here,
+    // so the loop, the prompt and the routing map all agree on the same values.
+    const runOutputType = isOutputType(opts.outputType) ? opts.outputType : "auto";
+    const routingEffort: EffortLevel | "" = normalizeEffort(opts.effort ?? agent?.effort ?? "");
+    // Neo N10 A/B: an explicit arm list wins; otherwise the routing map's own
+    // models (per-tool specialists + effort model) become the sibling arms.
+    const abModels = opts.abModels && opts.abModels.length > 0
+      ? [...new Set(opts.abModels.map((m) => m.trim()).filter(Boolean))].slice(0, 4)
+      : modelAbChain({ cfg, outputType: runOutputType, effort: routingEffort }, 4).filter((m) => m !== chosenModel);
+    const hasAbArms = abModels.length >= 2;
 
     // Companion gateway: the work mode decides where the run executes and which
     // services it may touch; the resolver output is the only tool allowlist.
@@ -415,8 +443,11 @@ async function main(): Promise<void> {
       const runAllow = opts.savedRun.sideChat
         ? baseRunAllow.filter((name) => SIDE_CHAT_READ_ONLY_TOOLS.includes(name))
         : baseRunAllow;
-      const runAllowSet = new Set(runAllow);
-      const agentTools = registry.forAllowlist(runAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
+      // N3 Knowledge Garden: kb_* tools stay registered (the companion gateway
+      // advertises them) but only reach the model when the run's garden is on.
+      const knowledgeRunAllow = applyKnowledgeGate(runAllow, opts.savedRun.knowledge === true);
+      const runAllowSet = new Set(knowledgeRunAllow);
+      const agentTools = registry.forAllowlist(knowledgeRunAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
 
       // Sensitive host-input actions need an explicit user decision first (section 18).
       // MF4 (option 14): the gate resolves each request idempotently — replay of a
@@ -471,6 +502,11 @@ async function main(): Promise<void> {
       // The wrapper re-checks the pending store on each call, so once the plan
       // is approved later edits in the same run proceed.
       applyPlanApprovalGate(agentTools, { taskId: task, workspaceRoot: effectiveCfg.workspace });
+      // Pending ask-user request (N9): while a clarification is unanswered, every
+      // mutating tool call is refused so the run cannot guess past the question.
+      // Read/network tools stay available so the agent can still gather context
+      // while it waits, and `ask_user` stays available for a follow-up question.
+      applyAskUserGate(agentTools, { taskId: task, workspaceRoot: effectiveCfg.workspace });
       // Sandbox gate (risk-tier approval): config default < per-task persisted
       // override < explicit approved override. The resolved mode is rendered into
       // the system prompt so the model knows what it may do without asking.
@@ -493,9 +529,19 @@ async function main(): Promise<void> {
         ...(suffix ? { systemSuffix: suffix } : {}),
         ...(effortMaxSteps ? { maxSteps: effortMaxSteps } : {}),
         model: quickEditRoute.model,
+        // Neo N10: output type narrows the tool set, effort picks the model and
+        // the A/B arms fan the same prompt out on the canvas.
+        outputType: runOutputType,
+        effort: routingEffort,
+        ...(hasAbArms ? { abModels } : {}),
         signal: runSignal,
         taskId: task,
         sandboxMode: sandboxPolicy.mode,
+        // O6: drain the durable inbound queue at each step boundary so a message
+        // sent while this run was busy becomes a durable `input` event exactly once.
+        ...(opts.inputSessionId
+          ? { inputSessionId: opts.inputSessionId, onAdmitPending: (sessionId: string) => admitPendingInputs(sessionId) }
+          : {}),
         // D19 compute budget: shared with the UI badge so the counters and the
         // badge always agree, and the run stops when the ceiling is hit.
         budget: sessionRuntime.getBudget(task),
@@ -606,9 +652,14 @@ async function main(): Promise<void> {
         history: conversationHistory(previous?.messages ?? []), workspace: cfg.workspace,
         model: opts.model || agent?.model || getSettings().model || cfg.model,
         projectId, agentId, mode: getLoamMode(opts.mode ?? previous?.mode ?? agent?.mode).id, effort: opts.effort ?? agent?.effort ?? "",
+        // Neo N10: the composer's output type and the resolved routing effort
+        // survive the queue, so a resumed run keeps the same model map.
+        outputType: isOutputType(opts.outputType) ? opts.outputType : undefined,
+        routingEffort: normalizeEffort(opts.effort ?? agent?.effort ?? ""),
         workMode: normalizeWorkMode(opts.workMode ?? agent?.workMode),
         orchestrated: cfg.orchestrator.enabled, started: false,
         sideChat: opts.sideChat === true,
+        knowledge: opts.knowledge === true,
       };
     }
     const task = previous ?? createTask(saved.prompt, opts.title, saved.projectId, saved.agentId);
@@ -682,7 +733,16 @@ async function main(): Promise<void> {
         opts.emit(event); publishTaskEvent(task.id, event);
       }
       throw error;
-    } finally { clearRunSignal(task.id); heartbeat?.stop(); if (lease) releaseRunLease(lease); videoStudioRelay.cancelTask(task.id); }
+    } finally {
+      clearRunSignal(task.id); heartbeat?.stop(); if (lease) releaseRunLease(lease); videoStudioRelay.cancelTask(task.id);
+      // O6: a message that landed during the last step would otherwise sit
+      // `received` forever, since no further step boundary runs. Admit it on every
+      // exit path (done, error, cancel) so it is never silently lost.
+      if (opts.inputSessionId && hasPending(opts.inputSessionId)) {
+        const carried = admitPendingInputs(opts.inputSessionId);
+        log.info(`input queue: admitted ${carried.length} message(s) at run end for ${opts.inputSessionId}`);
+      }
+    }
   };
 
   // Bridge for src/server/routes/retryLast.ts: the route module cannot receive
@@ -736,6 +796,7 @@ async function main(): Promise<void> {
     registry,
     runTask,
     memory: memory ?? undefined,
+    embedder: rt.embedder ?? undefined,
     screenLive: rt.screenLive,
     preview: rt.preview,
     mcp,

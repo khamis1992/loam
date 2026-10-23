@@ -3,7 +3,7 @@
  * `coding` profile and the other commonly used tools (task C4).
  *
  * The coding profile is the harness equivalent of a small, sharp tool set: a
- * small model is handed only ~16 names, so every one of them has to carry its
+ * small model is handed only ~19 names, so every one of them has to carry its
  * full usage contract in the description — when to use it, when not to, the
  * path rules and the parallel-batching rules — instead of relying on a long
  * system prompt. These assertions keep that contract from silently rotting:
@@ -24,6 +24,7 @@ import { createFinishTools } from "../../tools/finishTools.js";
 import { createMultiEditTools } from "../../tools/multiEdit.js";
 import { createSubagentTools } from "../../tools/subagents.js";
 import { createPlanTools } from "../../tools/planTools.js";
+import { createAskUserTools } from "../../tools/askUserTools.js";
 
 /** Minimum description length for a tool that a small model must rely on. */
 const MIN_DESCRIPTION = 200;
@@ -33,9 +34,9 @@ const NOT_TO_USE = /When NOT to use/i;
 /**
  * Coding-profile tools that are declared in the profile but not yet
  * implemented; they are owned by other tasks (grep/glob by C5, todo_write by
- * C6). They have no registered description to lint until those land, at which
- * point they must be removed from this list so their descriptions are covered
- * too.
+ * C6). They have no registered description to lint until
+ * those land, at which point they must be removed from this list so their
+ * descriptions are covered too.
  */
 const PENDING_CODING_TOOLS = ["grep", "glob", "todo_write"];
 
@@ -61,7 +62,10 @@ function codingRegistry(): ToolRegistry {
   registry.registerAll(createFinishTools());
   registry.registerAll(createMultiEditTools());
   registry.registerAll(createSubagentTools({} as OllamaClient, new ToolRegistry()));
+  // `suggest_plan` (D4) is a coding-profile tool, so its description is linted too.
   registry.registerAll(createPlanTools());
+  // N9: `ask_user` is a coding-profile tool, so its description is linted too.
+  registry.registerAll(createAskUserTools());
   return registry;
 }
 
