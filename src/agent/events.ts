@@ -196,6 +196,12 @@ export type AgentEvent =
    */
   | { type: "video_studio_export"; taskId: string; stage: "starting" | "rendering" | "saving"; progress?: number }
   /**
+   * MiroFish swarm simulation progress. Carries one `SimulationProgressEvent`
+   * from the M3 loop as `payload` (the tool module owns that type; the agent core
+   * deliberately does not import a tool module).
+   */
+  | { type: "simulation_progress"; sessionId: string; payload: unknown }
+  /**
    * Loam Video Studio relay: one command for the panel attached to this task's
    * event stream. The panel executes it with its editor bridge and posts the
    * result back to /api/tasks/:id/video-studio/result.

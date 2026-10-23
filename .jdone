@@ -207,6 +207,1390 @@ on both sides (5238 lines, ours[194..] == theirs[594..]), 0 non-empty lines miss
 from either side, and no conflict marker remains anywhere in the tree. No test was
 weakened, deleted or skipped; no source file was edited by the resolution.
 
+M3 second validation round: found and fixed a real follow-up routing regression on the async surface (commit 0138720 + the fix commit below).
+
+---
+
+# M3 merge gate: FINAL - manus-parity merged three times, all gates green
+
+The gate (`MERGE CONFLICT with latest manus-parity: run git merge manus-parity,
+resolve all conflicts keeping both sides, commit`) requires `manus-parity` to be a
+live ancestor of this branch. The branch advanced three times while this was being
+worked, so the merge was performed three times; each one is committed and the
+ancestor condition holds against the final tip `585fd55`.
+
+## The three merges
+
+1. `330e135` - parity tip `26befe6`. Conflicts: `src/protocol/events.ts`,
+   `src/protocol/types.ts` (union of both sides) and `.jdone` (modify/delete; kept
+   the branch version, the convention on every sibling branch).
+2. `7d8da0e` - parity tip `61aca0c` (+22 commits: N9 ask-user node, J9 codemode).
+   Conflicts: `src/protocol/types.ts` (kept `SimulationProgressEvent` plus parity's
+   `AskUserRequestedEvent`/`AskUserResolvedEvent`) and `.jdone` (add/add; kept both
+   report sets).
+3. `9a70093` - parity tip `585fd55` (+13 commits: C20 chat accent, docs). Only
+   `.jdone` conflicted. It is a prepend/append rollup and both stages share the
+   previous base as a suffix, so the resolution is a pure union of the two report
+   blocks; only the nine conflict-marker lines were removed.
+
+After every merge, no parity file was dropped: all 4726 files at the final parity
+tip are present in the merged index. `git rev-list --left-right --count
+manus-parity...HEAD` is `0 13`.
+
+## Final gate results (on the merged tree at 9a70093)
+
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.6mb, pdf worker copied)
+- `(cd packages/web && npx next build)`        -> exit 0 (Compiled successfully)
+- `node --import tsx --test "src/**/*.test.ts" "src/**/*.test.mjs"`
+  -> tests 2661, suites 489, pass 2661, fail 0
+- `(cd packages/web && npx vitest run)`        -> 79 files, 535 tests, all pass
+- `npm run check:encoding`                     -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                        -> PASS
+- `npm run check:eval`                         -> eval harness smoke: PASS
+- `npm run check:recovery`                     -> PASS
+- `npm run check:orchestrator`                 -> PASS (114/114)
+
+Working tree clean. No test weakened, deleted or skipped; no assertion relaxed.
+
+---
+
+# M3 merge gate resolved: manus-parity fully merged, gates green
+D2 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
+
+## The failure that was fixed
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.
+
+The gate is not about a code defect. It asks for `manus-parity` to be a live
+ancestor of this branch, so the merge had to be redone against whatever tip the
+branch had at gate time. It advanced twice while this was being done, so two
+merges were required rather than one.
+
+## Merge 1 - parity tip 26befe6 (commit 330e135)
+`git merge manus-parity` produced three conflicts:
+
+- `src/protocol/events.ts` (content): HEAD imported `SimulationProgressEvent`;
+  parity imported `RecipeUpdateEvent, RecipeRestartEvent`. Resolved as the union
+  of both import lists.
+- `src/protocol/types.ts` (content): the `ChatEvent` union. HEAD contributed
+  `SimulationProgressEvent`; parity contributed `RecipeUpdateEvent,
+  RecipeRestartEvent` alongside the shared `DeviceAttachmentUploadNotify`.
+  Resolved keeping every member from both sides.
+- `.jdone` (modify/delete): parity had deleted it, HEAD had modified it. Restored
+  the branch version, which is the convention every sibling branch on this
+  conflict uses (`jcode-j8` fdbe7f8, `h2-h4` 83191fb, `neo-n2` 634a23a).
+
+Verified afterwards that all 4706 parity-only files were present, so the merge
+dropped nothing.
+
+## Merge 2 - parity tip 61aca0c (commit 7d8da0e)
+Between the first merge and the gate re-check, `manus-parity` advanced 22 commits
+(N9 ask-user node, J9 codemode, plus their own merge-gate fixes). The ancestor
+check `git merge-base --is-ancestor manus-parity HEAD` correctly went false again,
+so the new tip was merged. This time there were two conflicts, and
+`src/protocol/events.ts` auto-merged:
+
+- `src/protocol/types.ts` (content): HEAD now had `SimulationProgressEvent`; the
+  new parity work added `AskUserRequestedEvent` and `AskUserResolvedEvent`.
+  Resolved keeping all three, next to the shared
+  `DeviceAttachmentUploadNotify`/`RecipeUpdateEvent`/`RecipeRestartEvent`.
+- `.jdone` (add/add): parity now also tracks the file. Kept both sides - HEAD's M3
+  conversational-wiring and regression reports, and parity's N9 done report plus
+  its preserved rollup. Only the conflict markers were removed; no report text
+  from either side was dropped.
+
+After both merges: `git rev-list --left-right --count manus-parity...HEAD` is
+`0 11`, and `git merge-base --is-ancestor manus-parity HEAD` exits 0. Every one
+of the 4723 files at parity tip 61aca0c is present in the merged index.
+
+## A real environmental test bug that the merge exposed
+The full suite reported one failure that had nothing to do with the merge:
+`src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+throwing".
+
+Root cause: `readGitBranch` runs `git -C <dir> rev-parse --abbrev-ref HEAD`, and
+git walks up to the nearest enclosing repository. `os.tmpdir()` on this machine
+is `C:\Users\khamis\AppData\Local\Temp`, and `C:\Users\khamis` is itself a git
+repository, so the "plain" temp folder was reported as git. Proved rather than
+assumed: with `TEMP` pointed at a directory outside any repository the case
+passes 4/4, and `git -C <tmpdir> rev-parse --show-toplevel` prints
+`C:/Users/khamis`.
+
+The test was asserting a property of the machine, not of the code. Fixed by
+ceiling git's upward search at the temp root with `GIT_CEILING_DIRECTORIES`,
+which is the convention already used for the identical assertion in
+`src/tools/__tests__/codeSession.test.ts`. The assertions are unchanged and no
+test was weakened or deleted. Committed as 5549aad.
+
+## Gates (all run from the worktree root on the merged tree)
+
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.6mb, pdf worker copied)
+- `(cd packages/web && npx next build)`        -> exit 0 (Compiled successfully)
+- `node --import tsx --test "src/**/*.test.ts" "src/**/*.test.mjs"`
+  -> tests 2634, suites 484, pass 2634, fail 0
+- `(cd packages/web && npx vitest run)`        -> 79 files, 535 tests, all pass
+- `npm run check:encoding`                     -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                        -> PASS
+- `npm run check:eval`                         -> eval harness smoke: PASS
+- `npm run check:recovery`                     -> PASS
+- `npm run check:orchestrator`                 -> PASS (114/114)
+
+No test was weakened or deleted; no assertion was relaxed to make the gate green.
+No real external model API was called by any test.
+
+## The regression that was found and fixed
+The M3 async conversational surface did not route follow-ups. `asyncRunner.ts` classified with
+`classifyWithSession(text, false)` and unconditionally ran a full simulation, so on the async path
+(which is the live path whenever a provider client is present) every what-if / interview / roundtable /
+A-B / auto-fix request started a **brand-new** simulation and overwrote the active session, instead of
+answering against it. The synchronous surface routed all of these correctly, so the two surfaces had
+silently diverged.
+
+Proved before fixing, with a throwaway probe driving both surfaces against a deterministic fake
+`ModelCaller`:
+
+- sync  follow-up "what if we raise the price to 1300?" -> `what_if_injection` (correct)
+- async follow-up "what if we raise the price to 1300?" -> `full_application_analysis` (wrong: ran a fresh sim)
+
+## The fix
+- `src/tools/mirofish.ts`: extracted `runMirofishFollowUp`, the single router for every
+  session-bound branch (what-if, interview, roundtable, A/B, auto-fix, export, chaos, competitor,
+  tests, time-travel, pricing, cross-project memory, compliance, viral GTM, red/blue, app synthesis,
+  multi-region, podcast, MCTS, digital twin, NAS, formal verification, SLA, 3D). It returns `null`
+  when the message is a full-analysis request. Both surfaces now call it first, so follow-up routing
+  exists in exactly one place. `runConversationalMirofish` keeps its synchronous template full
+  analysis (`runMirofishFullAnalysisSync`); `runConversationalMirofishAsync` falls through to the real
+  swarm simulation. The async path passes only the caller's explicit `target` to the router, matching
+  the synchronous behaviour (which guesses a target only inside the full-analysis branch).
+- `src/tools/mirofish/asyncRunner.ts`: now reports `intent: "full_application_analysis"` instead of the
+  raw classification, because follow-ups are routed before it is reached and it always runs a
+  simulation. Previously unrelated text was labelled `unrelated` while a simulation really ran, which
+  contradicted the synchronous surface.
+
+## Behaviour preserved, proven not assumed
+A 29-case routing battery (every follow-up family + full analysis + unrelated) was captured from the
+synchronous surface **before** the refactor and re-captured after. The two maps are byte-identical
+(`fc` clean), so the refactor changed no synchronous routing decision.
+
+## Regression tests added (and proven to catch the bug)
+`src/tools/mirofish/__tests__/asyncRunner.test.ts`:
+- follow-ups reuse the active simulation and do not clobber the session (what-if, interview,
+  roundtable, auto-fix)
+- a full-analysis request still starts a fresh simulation
+- a run the async surface actually executed is labelled `full_application_analysis`, matching sync
+
+Negative control: with the router call temporarily disabled the new follow-up test fails
+(`"what if we raise the price to 1300?" must route as a follow-up`), so the test genuinely guards the
+regression rather than passing vacuously. The temporary hook was then reverted.
+
+## Gates (run from the worktree root after the fix)
+- `npx tsc --noEmit`                              -> exit 0
+- `npm run check:encoding`                         -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run build:server`                           -> exit 0
+- mirofish + protocol suites (asyncRunner, seed, simulate, intent, runner, http, loop, progress) -> tests 147, pass 147, fail 0
+- `src/server/__tests__/*` + `src/agent/__tests__/*` -> tests 713, pass 711, fail 2
+
+The two failures are outside this diff and pre-existing: `toolDescriptions.test.ts` (`suggest_plan`
+pending-list defect, documented below) and `worktrees.test.ts` ("reports non-git folders without
+throwing") which fails because `%TEMP%` resolves to `C:/Users/khamis`, itself inside a git repo, so
+`readGitBranch` correctly reports `isGit: true`. Neither file references mirofish.
+
+## Correction: the parity-ancestor claims in the preserved reports below are now stale
+The preserved D2 / D10 / D19 reports below state that `git merge-base --is-ancestor manus-parity HEAD`
+exits 0 with `rev-list --left-right --count manus-parity...HEAD = 0 N`. Those statements were true for
+the merges they describe, but they are **no longer true of the current branch**: manus-parity has
+advanced 78 commits since, so at HEAD `0138720`:
+
+- `git merge-base --is-ancestor manus-parity HEAD` -> **exits 1** (not an ancestor)
+- `git rev-list --left-right --count manus-parity...HEAD` -> **78  7**
+- `git merge-base manus-parity HEAD` -> `b073763`
+
+The historical reports are left as written (they record what was verified at the time); this note is
+the authoritative current state.
+
+---
+
+M3 conversational wiring validation complete (commit 33922e6, on top of the M3 wiring commit 9010d7e).
+
+## What was validated
+Independently validated the M3 wiring claims rather than only re-running the author's tests:
+
+1. **ToolContext threading** (`src/agent/__tests__/mirofishLoop.test.ts`, 3 tests, new): the agent loop hands
+   the provider client to every tool through `ToolContext`, on the sequential path and on the parallel
+   tool-batch path alike. A tool that carries a client drives the real MiroFish swarm (seed + agent-turn
+   calls through the fake `ModelCaller`, `simulation_progress` events on the run bus, artifacts written
+   under `.manus/mirofish/simulations`). Two harness bugs surfaced while getting this green: the tool body
+   dynamically imported a wrong path (`../../mirofish.js` instead of `../../tools/mirofish.js`), and the loop
+   replaces the system prompt on every run so the fake client could not recognise its verifier request
+   (settled with `suppressFinal: true` / `NO_VERIFICATION`).
+
+2. **HTTP route delegation** (`src/server/__tests__/mirofishHttp.test.ts`, 4 tests, new): `POST
+   /api/mirofish/chat` runs the real swarm through the server's injected client with no network, returns
+   honest `model_calls` / `rounds_completed` / `model_unavailable:false`, writes locale-faithful artifacts,
+   and persists the active session so the follow-up branches keep working. A second case shows an ambiguous
+   brief degrading to a neutral `Global` locale (country `Global`, currency `USD`) instead of inventing a
+   market. The server is started once and the neutral case runs under a second task workspace, because
+   `loadConfig` pins `DATA_DIR` at module load.
+
+3. **Artifacts** (`src/tools/mirofish/asyncRunner.ts`): a real gap was found and fixed. The async
+   conversational path wrote the legacy profile/report artifacts but **not** the seed artifact the
+   synchronous runner leaves. `writeSeedArtifact` is now exported from `runner.ts` and called from
+   `runConversationalMirofishAsync`, so both surfaces expose the resolved locale, entities and personas.
+
+4. **Progress bus** (`src/tools/mirofish/__tests__/asyncRunner.test.ts`, extended): `simulation_progress`
+   events reach the run event bus tagged with the run's `simulation_id`, and `simulation_done.rounds`
+   agrees with the reported `rounds_completed`.
+
+5. **Honest degradation**: with no reachable provider the run still completes, reports
+   `model_unavailable:true`, records every agent-turn as skipped, and never fabricates output.
+
+## Locale fidelity, not a hard-coded default
+The locale is derived from the brief (or the user's authoritative location), never a hard-coded market.
+Two locale assertions in the new tests accept either the Latin or the market-language spelling of the city
+(`Riyadh`/`الرياض`, `Doha`/`الدوحة`): the locale prompt asks labels to match the market's primary language,
+so an Arabic-market brief yields an Arabic city label. The country and currency are asserted stable and
+follow the brief (`Saudi Arabia`/`SAR`, `Qatar`/`QAR`), and an ambiguous brief degrades to `Global`/`USD`
+instead of inventing a place.
+
+## Gates (run from the worktree root on the committed tree)
+- `npx tsc --noEmit`                              -> exit 0
+- `npm run check:encoding`                         -> OK (no BOM, no mojibake, all JSON valid)
+- mirofish suites (asyncRunner, seed, simulate, mirofishLoop) -> tests 42, pass 42, fail 0
+- `src/server/__tests__/mirofishHttp.test.ts`     -> tests 4, pass 4, fail 0
+- `src/agent/__tests__/*.test.ts`                  -> tests 266, pass 265, fail 1
+- `npm run check:modes` / `check:orchestrator`     -> PASS
+
+The single agent-suite failure is the inherited, pre-existing `src/agent/__tests__/toolDescriptions.test.ts`
+("suggest_plan is neither registered nor listed in PENDING_CODING_TOOLS"), byte-identical to manus-parity and
+documented in the preserved reports below. It is unrelated to M3 and left untouched.
+## What the merge produced
+`git merge manus-parity` (MERGE_HEAD tip e31314b, D12) conflicted in exactly five files.
+Every conflict was resolved by keeping BOTH sides; no test was weakened, deleted or
+skipped, and no code was dropped:
+
+1. `src/agent/loop.ts`: HEAD (D2) added the `ci_watch` escalation notice
+   (`ciWatchEscalationNotice`) and a one-line `noteTodoUpdate` reminder; manus-parity
+   added `TodoItem`/`TodoStatus` tracking (`parseTaskList` -> `currentTodos`) behind a
+   proper block. The resolution keeps the D2 notice AND parity's todo block in BOTH the
+   batched-parallel and the per-call branches. The first mechanical merge left the
+   per-call branch calling `noteTodoUpdate` twice and dropping parity's
+   `currentTodos = parseTaskList(name, args)`; both branches now match parity's block
+   exactly, so the run-local task list is mirrored for both paths. Verified
+   mechanically: the merged file's brace balance is 0 and no statement is present on a
+   side but absent from the merged file.
+2. `src/modes/catalog.ts`: HEAD (D2) added `"ci_watch"` to the `GIT` tool list;
+   manus-parity rewrote the mode catalog (`WRITE`/`PREVIEW`/`MANAGED_SESSIONS`/
+   `CONTROL`, Craft `office_craft`, `wiki_generate`, `semantic_search`, `ask_codebase`).
+   Resolution = parity's catalog + the `ci_watch` entry, so the duplicated `GIT`
+   declaration collapsed to the superset. The earlier `apply_patch` attempt had
+   mangled the indentation of the `loop.ts` conflict region; it was repaired so the
+   merged file is a byte-exact union of both sides. Verified mechanically: every
+   `const NAME = [...]` array on either side appears in the merged file as the superset
+   of both tool lists, and no tool string from either side is missing from the merged
+   file (`check:modes` PASS).
+3. `src/setup/runtime.ts`: HEAD (D2) registers `createCiWatchTool()`; parity registers
+   `createWikiTools`, `createManagedSessionTools`, `createIntegrationTools`,
+   `createSemanticSearchTools`, `createSkillTools`, `createPreviewTools` and starts the
+   memory dream job. Resolution keeps every registration from both sides. Verified
+   mechanically: the merged file contains every `create*Tools()` call found on either
+   side, with `createCiWatchTool` and the dream job both present.
+4. `src/agent/masterPromptText.ts`: auto-generated from `prompts/loam-master.md`, which
+   merged cleanly (both `ci_watch` and `### 6.11 Craft editors` present). Regenerated
+   with `npm run gen:master-prompt`; the output contains both sides' sections.
+5. `src/agent/__tests__/__snapshots__/coding-prompt.snap.json`: only `masterPromptSha256`
+   conflicts, and the prompt source merged cleanly, so the correct value is the hash of
+   the assembled prompt from the merged source. A throwaway generator computed it via
+   the test's own `buildMasterPrompt(ALL_SLOTS, { model })` (matching the test's slots,
+   including `model_chain`'s `→` arrow) and the test now passes.
+
+## Gate condition verified
+After the resolution is committed as the merge commit, `git merge manus-parity` reports
+"Already up to date." and `git merge-base --is-ancestor manus-parity HEAD` exits 0, so
+parity is fully merged (rev-list --left-right --count manus-parity...HEAD = 0  3). No
+conflict markers remain anywhere in the tree.
+
+## D2 acceptance criteria (ci_watch)
+- fail -> fail -> pass drives exactly 2 fix iterations
+- 4 consecutive identical failures stop at 3 and escalate
+- timeouts handled, no network (local provider + mocked fetch)
+Covered by `src/tools/__tests__/ciWatch.test.ts` (21 tests, 21 pass).
+
+## Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                                 -> exit 0
+- `npm run build:server`                             -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`              -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test "src/**/*.test.ts"`      -> tests 2137, pass 2136, fail 1
+- `npm run check:encoding` / `check:modes` / `check:orchestrator` / `check:promptwire` -> PASS
+
+The single node failure is pre-existing and NOT caused by this merge:
+`src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither
+registered nor listed in PENDING_CODING_TOOLS". That test file, `taskToolScope.ts` and
+`planTools.ts` are byte-identical to manus-parity (`git diff manus-parity` is empty for
+each), and the same test fails identically on the manus-parity lineage: D4 added
+`suggest_plan` to `CODING_PROFILE.tools` and to the mode catalog but never added it to
+the test's `PENDING_CODING_TOOLS`, and the test's registry does not include
+`createPlanTools` (which is what registers `suggest_plan`). It is the inherited D4
+defect documented in the preserved reports below, so it is left untouched.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+
+---
+
+M3 conversational wiring complete: the mirofish_chat tool and POST /api/mirofish/chat now run the real model-aware swarm simulation when a provider client is present, the synchronous entry point is preserved as the legacy fallback, and the legacy full-analysis branch regains its deterministic OASIS personas + report so the no-model path and the follow-up branches keep working. Covered by src/tools/mirofish/__tests__/asyncRunner.test.ts (deterministic fake ModelCaller, no real API calls).
+## Preserved: D10 gate-fix report (previous merge)
+
+D10 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
+
+## The failure that was fixed
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.
+
+## What the merge produced
+`git merge manus-parity` (tip 726c61b) conflicted in exactly four files. Every
+conflict was resolved by keeping BOTH sides; no test was weakened, deleted or
+skipped, and no code was dropped:
+
+1. `src/agent/masterPromptText.ts` was stored as a BINARY file whose working-tree
+   bytes were 52569 bytes of all-NUL (corrupted) on BOTH our side and the
+   merge-base; manus-parity carried the real 58896-byte asset. It was regenerated
+   with `npm run gen:master-prompt`, which produced a file byte-identical to
+   manus-parity's (blob 145cc3a0), so the parity asset was kept.
+2. `src/agent/loop.ts`: resolution keeps the repo-local skill precedence
+   (`loadProjectSkills(opts.cfg.workspace).skills`) AND parity's `opts.prompt`
+   argument, plus `opts.sandboxMode`.
+3. `src/server/routes/craft.ts`: the duplicated `CraftRouteOptions` block was
+   removed; both the `CraftRouteOptions` interface and the `root` resolution from
+   manus-parity are kept.
+4. `src/agent/__tests__/__snapshots__/coding-prompt.snap.json`: the master-prompt
+   hash was recomputed from the merged state (via a throwaway generator that was
+   deleted afterwards) and matches manus-parity's committed hash.
+
+The merge also exposed one real type error: parity's
+`src/agent/__tests__/cacheUsageAccounting.test.ts` test factory omitted the
+`skills` config field that D10 added to `Config`. It was fixed by adding
+`skills: { autoSuggest: false, suggestModel: "" }` to the factory (commit 54cfc81).
+
+## Gate condition verified
+`git merge manus-parity` now reports "Already up to date." and
+`git merge-base --is-ancestor manus-parity HEAD` exits 0, so parity is fully
+merged (rev-list --left-right --count manus-parity...HEAD = 0  6). The gate's
+condition is satisfied.
+
+## D10 acceptance criteria (repo-local skills + auto-suggest)
+- discovery: repo-local precedence over global, invalid frontmatter ignored with
+  a warning, triggers parsed (comma / JSON / YAML-block)
+- suggestion with a mocked model staged as a pending item (nothing written yet)
+- accepting the suggestion writes `.loam/skills/<slug>/SKILL.md`
+All covered by `src/tools/__tests__/skillsRepoSuggest.test.ts`.
+
+## Gates (run from the worktree root on the committed tree)
+- `npx tsc --noEmit`                                 -> exit 0
+- `npm run build:server`                             -> exit 0 (dist/server.cjs 19.2mb, pdf worker copied)
+- `(cd packages/web && npx next build)`              -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test src/tools/__tests__/skillsRepoSuggest.test.ts` -> tests 10, pass 10, fail 0
+- `node --import tsx --test "src/**/*.test.ts"`      -> tests 2103, pass 2102, fail 1
+- `(cd packages/web && npx vitest run)`              -> 72 files / 472 tests, all pass
+- `npm run check:encoding` / `check:modes` / `check:orchestrator` / `check:promptwire` -> PASS
+
+The single node failure is pre-existing and NOT caused by this merge:
+`src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither
+registered nor listed in PENDING_CODING_TOOLS". That file, `taskToolScope.ts` and
+`planTools.ts` are byte-identical to manus-parity (`git diff manus-parity HEAD`
+is empty for each), and the same test fails identically when run inside the
+manus-parity worktree itself (3 pass / 1 fail). It is the inherited D4 defect
+documented in the preserved parity report below, so it is left untouched.
+
+No secrets committed. No forbidden path touched. Working tree clean after the
+merge commit.
+
+---
+
+## Preserved: manus-parity .jdone (D19 + D17 + D4 + N20 reports)
+
+D19 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
+
+## The failure that was fixed
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity.
+
+## Root cause found during the repair
+The conflict was NOT a plain textual conflict. The worktree's git **index was corrupt**
+(`error: bad signature 0x00000000` / `fatal: index file corrupt`), and a prior failed merge
+had **zeroed out ~21 tracked files on disk** plus deleted `.jdone`.
+
+Repair sequence (all inside the worktree; no forbidden path touched):
+1. Renamed the corrupt `index` to `index.corrupt.bak` under
+   `C:\Users\khamis\Desktop\manus-local\.git\worktrees\devin-d19\` and rebuilt it with
+   `git read-tree HEAD`; `git merge --abort` then succeeded.
+2. `git restore` every zeroed tracked file from HEAD (loop.ts, orchestrator.ts, ollama.ts,
+   appVerification.ts, contextCompressor.ts, events.ts, independentAcceptance.ts,
+   verifier.ts, protocol/events.ts, protocol/types.ts, packages/shared/src/socket.ts,
+   packages/web/public/marketplace/THIRD_PARTY_NOTICES, EventList.tsx, i18n/ar.json,
+   i18n/en.json, .jdone). All verified non-zero afterward.
+3. Recovered the 7 untracked (parity-only) zeroed files from the `manus-parity` tree via
+   `git cat-file blob manus-parity:<path>` (forward slashes required): kvCacheMonitor.ts,
+   usageAccounting.ts, cacheUsageAccounting.test.ts, kvCacheMonitor.test.ts,
+   cacheUsageEvents.test.ts, CacheUsageRow.tsx, cacheUsageRow.test.tsx.
+
+## What the merge produced
+`git merge manus-parity` (manus-parity tip `9c223d59000a098d4ac30c7a1847fc1e57ca0fdd`,
+containing `69920d2 feat(agent): prompt-cache (KV) miss detection + reusable-token
+accounting`) brought in the accumulated parallel workstreams. Exactly three files
+conflicted:
+
+- `src/agent/loop.ts` — import block (HEAD: `checkBudget`/`consumeSteps`/`consumeTokens`/
+  `ComputeBudget`; parity: `KvCacheMonitor`/`missMessage`/`RequestRoute`/`RequestSignature`
+  + `addUsage`), `RunOptions` (HEAD: `budget`; parity: `createProviderClient`/
+  `cooldownStore`/`env`/`onCodingRoute`) and the per-step usage block (HEAD: direct
+  `usage.*` accumulation + budget charge; parity: `cacheMonitor` boundary +
+  `addUsage(usage, result.usage)`). **Resolution keeps BOTH sides**: union imports, union
+  options, and both accounting paths (parity's `addUsage` tallies the same tokens that
+  HEAD then charges against the session budget).
+- `src/agent/orchestrator.ts` — import block (HEAD: `checkBudget`/`consumeTokens`/
+  `ComputeBudget`; parity: `addUsage`/`sumUsage` + session hooks). **Resolution keeps
+  BOTH sides** as a union import list.
+- `.jdone` — add/add: HEAD's D19 report vs parity's D17/D4/N20 reports. **Both preserved
+  below**, in full.
+
+Everything else auto-merged cleanly, so the merged tree carries the D19 compute-budget /
+session-sleep wiring together with parity's KV-cache-miss detection and reusable-token
+accounting. No test was weakened, deleted, or skipped.
+
+## Gates (all run from the worktree root on the committed merge ccd180b)
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> dist/server.cjs 19.2mb, pdf worker copied
+- `(cd packages/web && npx next build)` -> compiled successfully, 25/25 static pages
+- `node --import tsx --test` D19 budget/sleep suites (computeBudget, loopBudget,
+  orchestratorBudget, sessionRuntime, sessionSleep, ptySessions, sessionControl,
+  runTools) -> tests 78, pass 78, fail 0
+- `node --import tsx --test` parity KV-cache suites (cacheUsageAccounting, kvCacheMonitor,
+  cacheUsageEvents) -> tests 46, pass 46, fail 0
+- `(cd packages/web && npx vitest run)` affected web suites (SessionStatusBadge,
+  EnvironmentIssueCard, environmentIssueEventList, cacheUsageRow, useSessionRuntime)
+  -> 5 files / 26 tests passed
+- `npm run check:modes` -> PASS
+- `npm run check:orchestrator` -> PASS (114/114)
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+
+No test was weakened, deleted, or skipped: every test file changed by this merge is
+byte-identical to manus-parity (`git diff manus-parity HEAD -- <test>` is empty for each),
+and no assertion was relaxed. No secrets committed. Working tree clean after the merge
+commit. `git merge manus-parity` now reports "Already up to date." and
+`git merge-base --is-ancestor manus-parity HEAD` succeeds (rev-list --left-right --count
+manus-parity...HEAD = 0  6), so the merge gate condition is satisfied.
+
+## Full-suite validation (run on committed HEAD 2ee5ca6, after the targeted gates)
+- `node --import tsx --test "src/**/*.test.ts" "src/**/*.test.mjs"` (all 176 suites under src)
+  -> tests 2093, pass 2091, fail 2
+- `(cd packages/web && npx vitest run)` (whole web suite)
+  -> 72 files / 472 tests passed, 0 fail
+- `npm run check:promptwire` -> PASS
+- `npm run check:recovery` -> PASS (SQLite migration/backup/rollback + FIFO ownership/cancellation)
+- `npm run check:design-registry` -> OK (30 blocks, 8 RTL, all manifests valid)
+
+Both node failures are pre-existing and NOT caused by this merge:
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered nor
+   listed in PENDING_CODING_TOOLS". This is the exact inherited D4 defect documented in the
+   preserved D17 report above; the failing file, taskToolScope.ts and planTools.ts are all
+   byte-identical to manus-parity (`git diff manus-parity HEAD -- <file>` is empty).
+2. `src/preview/__tests__/shot.test.ts` -> `EADDRINUSE: address already in use 127.0.0.1:4317`.
+   An environmental port collision from concurrent runs, not a code failure; nothing is bound
+   to port 4317 when the suite is run on its own.
+
+Resolution judgment call (documented so it can be reviewed): the `src/agent/loop.ts`
+per-step usage block conflicted because HEAD accumulated `usage.promptTokens`/
+`usage.completionTokens`/`usage.durationMs` inline while parity called
+`addUsage(usage, result.usage)`. Keeping both literally would DOUBLE-COUNT tokens, so the
+resolution keeps parity's `addUsage` (which accumulates prompt/completion/duration plus the
+cache counters) and retains HEAD's `consumeTokens` budget charge. This is "both features",
+not a double tally; `addUsage`'s implementation was read and verified to cover every field
+HEAD set inline. All unioned import symbols were confirmed used (occurrence count >= 1 each).
+
+## D19 feature recap
+- Sleep/wake: `src/server/sessionSleep.ts` idle N minutes (default 30, configurable via
+  `agent.idleSleepMinutes`) -> `sleeping`, persisting state BEFORE releasing browser/pty
+  resources; a user message wakes and restores exactly the persisted snapshot. State changes
+  are emitted with the transition reason; timers are cancelled by agent activity; sleeping is
+  idempotent.
+- Compute budget: `src/agent/computeBudget.ts` per-session step/token budget, warn at 80%,
+  hard stop at 100%, `raise` resumes. Enforced on the linear `runAgent` loop and the
+  orchestrator (planner/worker/verifier/replan all charged). Surface: `/api/sessions/:id/runtime`
+  routes (`src/server/routes/sessionRuntime.ts`) + `SessionStatusBadge` in the web task page.
+
+---
+
+## Preserved: D19 prior merge report (HEAD side)
+
+D19 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
+
+## The failure that was fixed
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity.
+
+## What the merge produced
+`git merge manus-parity` (manus-parity tip 7509105) brought in the accumulated parallel
+workstreams (D8 wiki, D9 playbooks, D14 automations, D16 side chat + step timeline,
+D18 insights, design registry, quick-edit route, context-compressor hardening, ...).
+Exactly one file conflicted:
+
+`packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx`
+- HEAD (D19) side: `import { SessionStatusBadge }` + `import { useSessionRuntime }` and the
+  `const runtime = useSessionRuntime(sessionUid);` hook call (sleep/budget badge).
+- manus-parity side: `import { StepTimeline, type TimelineStep }` +
+  `import { SideChatPanel` and the D16 state block (`selectedActionId`, `paused`,
+  `takeoverNote`, `controlBusy`).
+
+Resolution keeps BOTH sides (union, nothing dropped): all four imports, the D19 runtime hook,
+and the D16 state block. All four imports are consumed later in the same file
+(`runtime.snapshot` / `runtime.raiseBudget()` / `runtime.wake()` at the badge,
+`StepTimeline` at line ~514, `SideChatPanel` at ~605, and the D16 state in the pause/take-over
+controls). No conflict markers remain.
+
+Everything else auto-merged cleanly, including `src/agent/loop.ts` (D19 budget checks +
+parity's `parseTaskList`/compaction reminders), `src/agent/orchestrator.ts` (D19 budget +
+parity's per-run `model` override), `src/config.ts` (D19 budget/sleep knobs + parity's
+compression `bufferTokens`/`reattachFiles`), `src/index.ts` (D19 runtime wiring + parity's
+side-chat/quick-edit/playbook wiring) and `src/server/http.ts` (D19 runtime routes + parity's
+route table).
+
+Resolution committed as `bedb406 merge manus-parity: resolve TaskPageClient conflicts keeping both sides`.
+The branch is now at the manus-parity tip with no conflict re-emerging.
+
+## Gates (all run from the worktree root, after the resolution)
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> dist/server.cjs 19.1mb, pdf worker copied
+- `(cd packages/web && npx next build)` -> compiled successfully, 25/25 static pages
+- `node --import tsx --test src/agent/__tests__/computeBudget.test.ts src/agent/__tests__/loopBudget.test.ts src/agent/__tests__/orchestratorBudget.test.ts src/server/__tests__/sessionRuntime.test.ts src/server/__tests__/sessionSleep.test.ts src/tools/__tests__/ptySessions.test.ts src/server/__tests__/sessionControl.test.ts src/server/__tests__/runTools.test.ts`
+  -> 77 pass, 0 fail
+- `cd packages/web && npx vitest run src/components/chat/__tests__/SessionStatusBadge.test.tsx src/components/chat/__tests__/useSessionRuntime.test.tsx src/services/__tests__/sessionRuntimeApi.test.ts`
+  -> 3 files, 25 tests passed
+
+No test was weakened, deleted, or skipped. No secrets committed. Working tree is clean.
+
+## D19 feature recap (already on this branch, re-verified after the merge)
+- Sleep/wake: `src/server/sessionSleep.ts` idle N minutes (default 30, configurable via
+  `agent.idleSleepMinutes`) -> `sleeping`, persisting state BEFORE releasing browser/pty
+  resources; a user message wakes and restores exactly the persisted snapshot. State changes
+  are emitted with the transition reason; timers are cancelled by agent activity; sleeping is
+  idempotent.
+- Compute budget: `src/agent/computeBudget.ts` per-session step/token budget, warn at 80%,
+  hard stop at 100%, `raise` resumes. Enforced on the linear `runAgent` loop and the
+  orchestrator (planner/worker/verifier/replan all charged). Surface: `/api/sessions/:id/runtime`
+  routes (`src/server/routes/sessionRuntime.ts`) + `SessionStatusBadge` in the web task page.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  node --import tsx --test src/agent/__tests__/computeBudget.test.ts src/agent/__tests__/loopBudget.test.ts src/agent/__tests__/orchestratorBudget.test.ts src/server/__tests__/sessionRuntime.test.ts src/server/__tests__/sessionSleep.test.ts src/tools/__tests__/ptySessions.test.ts
+  (cd packages/web && npx vitest run src/components/chat/__tests__/SessionStatusBadge.test.tsx src/components/chat/__tests__/useSessionRuntime.test.tsx src/services/__tests__/sessionRuntimeApi.test.ts)
+
+---
+
+## Preserved: manus-parity reports (D17 / D4 / N20, parity side)
+
+D17 — Environment-issue reporting: DONE
+
+Summary
+-------
+Adds the `report_environment_issue({message, details})` tool so an agent records a
+local-environment failure instead of trying to fix the environment, and returns
+guidance to continue (rely on CI / skip the local step). Implemented end to end:
+
+  - Tool + registry:      src/tools/environmentIssueTools.ts, src/index.ts, src/server/runTools.ts
+  - Agent event:          src/agent/events.ts
+  - Prompt rule (gated):  src/agent/prompt.ts (rule added only when the tool is enabled)
+  - Protocol mapping:     src/protocol/{events,types,socket}.ts, packages/shared/src/socket.ts
+  - Web UI card:          packages/web/src/components/chat/EnvironmentIssueCard.tsx + EventList.tsx
+  - i18n (en + ar):       packages/web/src/i18n/{en,ar}.{json,ts}
+
+Acceptance criteria (AC) met
+----------------------------
+  - tool records the issue + emits an event .......... src/tools/__tests__/environmentIssueTools.test.ts,
+                                                       src/protocol/__tests__/environmentIssue.test.ts
+  - prompt contains the rule (gated by tool availability) ... src/agent/__tests__/prompt.test.ts
+  - UI card renders (web vitest) ..................... src/components/chat/__tests__/EnvironmentIssueCard.test.tsx
+                                                       + new EventList integration test
+
+Changes made in this session (continuing from commit 9c88a2c)
+------------------------------------------------------------
+  - Fixed an over-specified assertion in src/agent/__tests__/prompt.test.ts. The test
+    conflated the always-on master-prompt tool *catalog* (§6.1, which names
+    report_environment_issue unconditionally by design) with the conditional guidance
+    *rule*. The assertion now gates the actual rule text (/rely on CI/i,
+    /Do not report the step as passed/i, /When a step cannot run because of the local
+    environment/i). Production code was NOT weakened.
+  - Added packages/web/src/components/chat/__tests__/environmentIssueEventList.test.tsx
+    proving the card renders through the live chat timeline (EventList -> ChatEventRow
+    -> EnvironmentIssueCard), not just the component in isolation.
+
+Gates (all pass, run from worktree root)
+---------------------------------------
+  1. npx tsc --noEmit                              PASS
+  2. npm run build:server                          PASS
+  3. (cd packages/web && npx next build)           PASS
+  4. npx tsc --noEmit --project packages/web/tsconfig.json   PASS
+
+Tests (files touched by D17)
+----------------------------
+  node --import tsx --test \
+    src/tools/__tests__/environmentIssueTools.test.ts \
+    src/protocol/__tests__/environmentIssue.test.ts \
+    src/agent/__tests__/prompt.test.ts \
+    src/server/__tests__/runTools.test.ts
+  -> 25 tests, 25 pass, 0 fail
+
+  cd packages/web && npx vitest run \
+    src/components/chat/__tests__/EnvironmentIssueCard.test.tsx \
+    src/components/chat/__tests__/environmentIssueEventList.test.tsx
+  -> 4 tests, 4 pass, 0 fail
+
+Known pre-existing failure (NOT caused by D17)
+----------------------------------------------
+  src/agent/__tests__/codingPrompt.test.ts ("matches the committed snapshot") fails on
+  the master-prompt hash. It is pre-existing on the manus-parity lineage: the master
+  prompt asset was regenerated after the snapshot was committed, so the hash changed.
+  The failure is outside D17's diff (D17 only touched the files listed above) and was
+  left untouched to avoid weakening another task's test.
+
+---
+
+Merge with manus-parity (97c53d7): resolved, all conflicts keep both sides
+-------------------------------------------------------------------------
+The merge gate (`git merge manus-parity`) conflicted in 7 files. Every conflict was
+resolved by keeping BOTH sides; no test was weakened and no code was dropped:
+
+  1. .jdone: add/add D17 marker vs the parity D4/N20 marker. Both preserved below.
+  2. packages/shared/src/socket.ts: D17 `EnvironmentIssueEvent` + D4
+     `PlanApprovalRequestedEvent`/`PlanApprovalResolvedEvent`, and the `ChatEvent`
+     union extended with all three.
+  3. packages/web/src/components/chat/EventList.tsx: import list now carries both
+     `EnvironmentIssueEvent` (D17) and `CacheUsageEvent` (parity).
+  4. src/agent/events.ts: `environment_issue` (D17) + `plan_approval_required` (D4)
+     variants both kept.
+  5. src/protocol/events.ts: both event imports and both switch cases kept.
+     6. src/protocol/socket.ts: both `environment_issue` and `plan_approval_required`
+     decode branches kept.
+     7. src/protocol/types.ts: `EnvironmentIssueEvent` + the D4 plan-approval events
+     both kept.
+
+The merge also exposed one real defect, fixed (not worked around):
+- `src/graph/runGraph.ts`: manus-parity made the `AgentEvent` switch exhaustive, so
+  D17's `environment_issue` event hit the `default` arm and tsc failed with
+  "Type '...environment_issue...' is not assignable to type 'never'". It is now
+  mapped to a finished `note` node (the report is terminal: the agent records it and
+  continues rather than asking the user), and a new case in
+  `src/graph/__tests__/runGraph.test.ts` covers it. D17 shipped before the exhaustive
+  switch existed on parity, so this was a merge-time interaction, not a pre-existing
+  failure.
+
+Post-merge gates (all run from the worktree root on the merged tree, commit c3d1fe1)
+-------------------------------------------------------------------------------------
+  1. npx tsc --noEmit                              PASS
+  2. npm run build:server                          PASS (dist/server.cjs 19.2mb, pdf worker copied)
+  3. (cd packages/web && npx next build)           PASS (25 static pages)
+  4. (cd packages/web && npx tsc --noEmit)          PASS
+
+Tests on the merged tree:
+  node --import tsx --test \
+    src/tools/__tests__/environmentIssueTools.test.ts \
+    src/protocol/__tests__/environmentIssue.test.ts \
+    src/agent/__tests__/prompt.test.ts \
+    src/server/__tests__/runTools.test.ts
+  -> 25 tests, 25 pass, 0 fail
+
+  node --import tsx --test src/graph/__tests__/runGraph.test.ts \
+    src/tools/__tests__/planApproval.test.ts
+  -> 30 tests, 30 pass, 0 fail
+
+  node --import tsx --test src/agent/__tests__/toolProfile.test.ts \
+    src/policy/__tests__/permissionModes.test.ts src/modes/__tests__/catalog.test.ts
+  -> 23 tests, 23 pass, 0 fail
+
+  node --import tsx --test src/agent/__tests__/codingPrompt.test.ts
+  -> 8 tests, 8 pass, 0 fail  (the previously-failing snapshot now passes on the
+     merged tree: parity refreshed the committed snapshot)
+
+  cd packages/web && npx vitest run \
+    src/components/chat/__tests__/EnvironmentIssueCard.test.tsx \
+    src/components/chat/__tests__/environmentIssueEventList.test.tsx
+  -> 4 tests, 4 pass, 0 fail
+
+  npm run check:encoding -> OK (no BOM, no mojibake, all JSON valid)
+  npm run check:modes    -> PASS
+  npm run check:orchestrator -> PASS (114/114)
+
+Post-merge gate condition verified
+----------------------------------
+`git merge manus-parity` now reports "Already up to date." and
+`git merge-base --is-ancestor manus-parity HEAD` succeeds, so manus-parity
+(97c53d7) is fully merged (rev-list --left-right --count manus-parity...HEAD
+= 0  8, i.e. parity is 8 commits ahead of D17's first parent). The gate's
+condition is satisfied: there are no remaining conflicts to resolve.
+
+Re-verified on the final committed HEAD (1ef99fe) after the .jdone commits:
+`git merge manus-parity` -> "Already up to date."; `--is-ancestor` -> exit 0;
+`rev-list --left-right --count manus-parity...HEAD` -> `0 8`; working tree
+clean (`git status --porcelain` empty). manus-parity is a local-only branch
+(no remote tracking ref), and its tip 97c53d7 is the latest merge recorded in
+its reflog, so there is no newer parity state the gate could be testing.
+
+Independent end-to-end probe (no stubs, real production objects)
+---------------------------------------------------------------
+A standalone probe composed the real registry, tool, event and protocol mapper:
+  registry -> tool.run -> emitted AgentEvent -> mapAgentEvent -> ChatEvent[]
+written outside the worktree (%TEMP%\d17-e2e-probe.mts, run with
+`node --import tsx`), 15/15 checks passed:
+  - always-on: present in ALWAYS_ON_TOOLS; granted when registered+not denied;
+    withheld when denied; never granted when unregistered; reachable through
+    `registry.forAllowlist(merged)`.
+  - happy path: tool.run returns ok + guidance, emits exactly one
+    `environment_issue` AgentEvent carrying both `message` and `details`.
+  - mapping: that event maps to exactly one `environmentIssue` ChatEvent with
+    the same message/details plus a non-empty id and numeric timestamp.
+  - optional field: omitting `details` leaves the key absent on BOTH the agent
+    event and the mapped chat event (not synthesized).
+  - validation: blank, over-long (2001 chars) and missing `message` are all
+    rejected with ok:false and emit nothing.
+  - merge-time defect still fixed: src/protocol/types.ts declares the
+    `environmentIssue` chat event, src/agent/events.ts declares the
+    `environment_issue` agent event, and src/graph/runGraph.ts contains a
+    `case "environment_issue"` with no `Unknown agent event` throw guard.
+
+Acceptance-criteria suites re-run on committed HEAD 1ef99fe
+---------------------------------------------------------
+  node --import tsx --test src/tools/__tests__/environmentIssueTools.test.ts \
+    src/server/__tests__/runTools.test.ts
+    -> tests 20, pass 20, fail 0
+  node --import tsx --test src/protocol/__tests__/environmentIssue.test.ts \
+    src/graph/__tests__/runGraph.test.ts src/agent/__tests__/prompt.test.ts
+    -> tests 17, pass 17, fail 0
+  (cd packages/web && npx vitest run \
+     src/components/chat/__tests__/EnvironmentIssueCard.test.tsx \
+     src/components/chat/__tests__/environmentIssueEventList.test.tsx)
+    -> 2 files / 4 tests, all pass
+
+Mandatory gates re-run on committed HEAD 1ef99fe (not the intermediate merge
+commit) from the worktree root:
+  1. npx tsc --noEmit                                  PASS (exit 0)
+  2. npm run build:server                              PASS (dist/server.cjs 19.2mb, pdf worker copied)
+  3. (cd packages/web && npx next build)               PASS (25 static pages)
+  4. (cd packages/web && npx tsc --noEmit)              PASS (exit 0)
+
+Single remaining failure re-confirmed on HEAD 1ef99fe
+----------------------------------------------------
+src/agent/__tests__/toolDescriptions.test.ts -> 3 pass / 1 fail, with exactly
+the documented assertion ("suggest_plan is neither registered nor listed in
+PENDING_CODING_TOOLS"). Same failure, same file, same line as before the merge;
+it is the inherited upstream defect described below.
+
+Full-suite validation on the merged tree
+---------------------------------------
+  node --import tsx --test <all 170 node:test suites under src/>
+  -> 2038 tests, 2037 pass, 1 fail (the inherited failure documented below)
+
+  (cd packages/web && npx vitest run)
+  -> 69 files / 447 tests, all pass, 0 fail
+
+  npm run check:promptwire      -> PASS
+  npm run check:design-registry -> OK (30 blocks, 8 RTL, all manifests valid)
+
+One inherited failure, proven NOT caused by this merge
+-----------------------------------------------------
+  src/agent/__tests__/toolDescriptions.test.ts
+  "keeps every coding-profile tool either linted or explicitly pending"
+  -> AssertionError: suggest_plan is neither registered nor listed in
+     PENDING_CODING_TOOLS
+
+Provenance (on the manus-parity lineage, independent of D17):
+  - b6e908f (C3) added the coding tool profile and this lint test together.
+  - 25da47e (D4) then added "suggest_plan" to CODING_PROFILE.tools in
+    src/agent/taskToolScope.ts but did NOT add it to the test's
+    PENDING_CODING_TOOLS, and the test's registry does not include
+    createPlanTools (which is what registers suggest_plan).
+  - The test therefore asserts a contradiction that D4 introduced on parity.
+
+Proof the failure is not merge-induced (three independent checks):
+  1. The test file, taskToolScope.ts and planTools.ts are byte-identical to
+     97c53d7 (`git diff 97c53d7 HEAD -- <file>` is empty for each).
+  2. Computed the test's full transitive relative-import closure (85 files).
+     Only 2 of the 85 differ from parity at all (src/agent/events.ts,
+     src/agent/prompt.ts, i.e. D17's own additions), and neither is reachable
+     from the failing assertion: no file in the closure references
+     suggest_plan or planTools. The assertion depends only on
+     CODING_PROFILE.tools and the modules the test's own registry builds.
+  3. Decisive experiment: reverted those 2 files to their parity bytes so all
+     85 closure files were exactly parity's, and re-ran the test -> it still
+     fails with the same assertion. Restored the files afterwards (blob hashes
+     confirmed back at HEAD's).
+
+This is a pre-existing upstream defect on manus-parity, outside D17's diff and
+outside every file D17 touched. It was left untouched: "fixing" it would mean
+either weakening/editing another task's (D4's) test or changing D4's production
+tool profile, both of which the task rules forbid.
+
+---
+
+D4 plan approval gate (Devin suggest_plan) complete, merged with the latest
+manus-parity, and committed on khamis1992/devin-d4.
+
+D4 work: 25da47e (feature) + abda171 (adversarial round 2).
+Merge: 31dc1b9, plus 8c6854d (run-graph event mapping).
+
+Gates (all from the worktree root, on the merged tree):
+- npx tsc --noEmit -> PASS (no output)
+- npm run build:server -> PASS (dist/server.cjs 19.2mb, pdf worker copied)
+- (cd packages/web && npx next build) -> PASS (25 static pages)
+- node --import tsx --test src/tools/__tests__/planApproval.test.ts -> 18/18 PASS
+- node --import tsx --test src/graph/__tests__/runGraph.test.ts -> 11/11 PASS
+- node --import tsx --test src/agent/__tests__/toolProfile.test.ts
+  src/policy/__tests__/permissionModes.test.ts src/modes/__tests__/catalog.test.ts -> 23/23 PASS
+- (cd packages/web && npx vitest run) -> 67 files / 443 tests PASS
+
+Merge conflicts (4, all resolved by keeping both sides):
+1. src/index.ts: `createWorkflowTools` (manus-parity) + the D4 plan-approval
+   import (`applyPlanApprovalGate`).
+2. src/protocol/events.ts: `PlanApprovalRequestedEvent` + `CacheUsageEvent`.
+3. src/server/settings.ts: `planApprovalSkipTrivial` + `location`.
+4. .jdone: add/add D4 vs N20 marker. Both sides preserved.
+
+One real defect the merge exposed (fixed, not worked around):
+- src/graph/runGraph.ts: the exhaustive AgentEvent switch shipped by N1 did not
+  know the D4 `plan_approval_required` event, so tsc failed with
+  "not assignable to type never". It is now handled as an `ask_user` node,
+  mirroring `approval_required`, and covered by the runGraph suite.
+
+Round 2 (adversarial) found and fixed two real defects, both now covered by tests:
+1. src/server/routes/planApproval.ts answered true for unsupported verbs
+   (PUT/DELETE/PATCH/OPTIONS) and for paths it does not own (sibling prefix,
+   trailing slash, nested), so the server never responded and the request hung
+   until the client timed out. It now returns false and falls through to the
+   server's normal 404; the id match is tightened to one path segment.
+2. src/tools/planApprovalStore.ts returned "rejected" on cancellation but left
+   the record pending, so the task's mutating tools stayed blocked for the rest
+   of the 30 min TTL with no run left to resume. waitForPlanDecision now clears
+   the record on abort.
+
+Honest correction: an earlier hypothesis of a same-tick waiter race for two
+plans on one task was DISPROVED by a direct probe (both before and after the
+change the second plan correctly stays pending). The unnecessary waiter-keying
+change was reverted, so the store diff is only the cancel fix.
+
+Repo checks: check:modes / check:promptwire / check:orchestrator PASS.
+check:encoding still flags the pre-existing scripts/repair-mojibake.cjs.
+
+---
+
+# N20 - Offline long-horizon eval gate for Neo: done
+
+The gate is implemented, tested and recorded. All gates are green from the
+worktree root on commit `7975ac8`.
+
+## What N20 delivers
+
+- `src/neoEval/harness.ts`: runs one fixture through the **production** agent
+  loop (`runAgent`) with a scripted model. Produces the trace (steps, token
+  usage, tool calls, injected failures, recovered failures, appends), runs the
+  verifier script against the final answer, and scores it.
+- `src/neoEval/mockModel.ts`: deterministic scripted model. Replays a
+  `NeoScript` of `{ when, text, tool, citations }` turns, records every call
+  (requestId, attempt, message/tool counts, prompt/completion tokens), and
+  honours `when` guards by advancing the cursor past skipped turns.
+- `src/neoEval/mockClock.ts`: deterministic clock (step count, elapsed ms).
+- `src/neoEval/knowledge.ts`: seeded knowledge store + the citation extractor
+  (numbered markers resolved against declared seeds).
+- `src/neoEval/scoring.ts`: per-dimension scores (`completion`, `citation`,
+  `flatness`, `recovery`, `recurring`) with evidence strings, plus
+  `suiteResult` (pass bar 60, suite passes only when every case passes).
+- `src/neoEval/types.ts`: the fixture/case/trace contracts and
+  `NEO_HARNESS_VERSION`.
+- `evals/neo/fixtures.ts`: the ten long-horizon fixtures, each targeting a
+  distinct dimension (research-to-report, recurring-tracker,
+  long-document-assembly, kb-grounded-answer, tool-failure-recovery,
+  restart-from-step, step-budget, no-hallucinated-citations, deep-file-triage,
+  uninterrupted-baseline).
+- `src/scripts/eval-neo.ts`: the `npm run eval:neo` runner (`--list`, `--id`,
+  `--json`, `--record`) and the baseline regression guard.
+- `evals/neo/baseline.json`: the recorded baseline (see below).
+
+## Baseline and regression guard
+
+`evals/neo/baseline.json` is version-pinned to `NEO_HARNESS_VERSION`
+(`neo-eval-2`): 10/10 cases pass, suite total 100, bar 60. `compareBaseline`
+fails a run when a recorded case is missing, drops more than
+`BASELINE_TOLERANCE` (1) point, falls below the bar, or the suite stops
+clearing its own bar. A baseline recorded under a different harness version is
+not compared (its numbers are not comparable), and the guard is skipped for a
+single-fixture `--id` run. The version was bumped to `neo-eval-2` because the
+flatness band and recurring check were corrected, so `neo-eval-1` scores are
+not comparable.
+
+## Real bugs the tests exposed (fixed, not worked around)
+
+- `src/neoEval/harness.ts`: the harness's `observing` registry already injects
+  failures, so the mock's `onCall` hook was double-injecting **and**
+  double-recording calls. The mock is now built with `onCall: undefined`.
+- `src/neoEval/scoring.ts`: added flatness noise tolerance
+  (`flatToleranceRatio`, default 1.1) so small token wobble is not punished;
+  `scoreRecurring` now reads observed appends from the trace instead of the
+  fixture's own `count_min` expectation; `suiteResult([])` is now
+  `failed: 1, verdict: "fail"` (an empty suite is not a pass); `round2` added
+  to the flatness/recurring totals.
+- `src/neoEval/mockModel.ts`: `nextStep()` now advances the cursor past every
+  turn skipped by a `when` guard. Previously a guard that only became eligible
+  after the next call left the script exhausted and returned empty text.
+
+No test was weakened or deleted; no assertion was relaxed to make the gate
+green.
+
+## Gates (all run from the worktree root, on commit 7975ac8)
+
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run eval:neo`                          -> 10/10 cases pass, total 100
+- `node --import tsx --test src/neoEval/__tests__/{scoring,mockModel,harness,baseline}.test.ts`
+  -> tests 88, pass 88, fail 0
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:eval`    -> eval harness smoke: PASS
+- `npm run check:modes`   -> PASS
+- `npm run check:recovery`-> PASS
+- `npm run check:orchestrator` -> PASS
+- `npm run build:server`  -> exit 0 (dist/server.cjs 19.2mb, pdf worker copied)
+
+Working tree clean; no forbidden path touched; no real external model API was
+called by the tests (the scripted `neo-mock` model is used throughout).
+
+# C20 - Per-bot chat color (UI1): DONE
+
+Each conversation now takes the color of the bot it belongs to. The user
+bubble, send button and composer focus ring follow the companion's avatar
+instead of the single global accent; a conversation with no bot keeps the
+app accent exactly as before.
+
+## What changed
+
+New pure module `ui/chat-color.js` + `ui/chat-color.d.ts`
+- `AVATAR_HEX` / `AVATAR_COLORS`: a hex for every server `AVATAR_COLORS`
+  token (a test enforces the two stay in sync).
+- `chatAccentFor(agent, {cache})`: (a) `avatarColor` token -> hex,
+  (b) dominant color extracted client-side from `avatarImage` via a small
+  canvas downsample (near-white / near-black / transparent pixels ignored),
+  cached in `localStorage` under `loam.chatColor.<agentId>` keyed by a hash
+  of the image URL, (c) deterministic hash of the agent id into the palette,
+  (d) no agent -> `null`.
+- `accentVars(hex, theme)`: `--chat-accent`, `--chat-accent-2`,
+  `--chat-accent-ink`; a lightness ladder tuned per theme so the chosen ink
+  clears WCAG AA 4.5:1 against the fill in both themes.
+- Reuses the existing `readableInk` contrast helper rather than duplicating it.
+
+Wiring
+- `ui/app.js`: `applyChatAccent` resolves the task's agent and writes the vars
+  on `#view-chat` only while a companion owns the task; it removes them
+  otherwise and recomputes on the theme toggle.
+- `ui/companions.js`: same shape on `.rk-main`, plus a `MutationObserver` on
+  `data-theme` so the lightness/ink follow a theme change without a reload.
+
+CSS (fallback pattern)
+- `ui/loam.css`: `.primary` uses `var(--chat-accent-2,var(--accent-2))` /
+  `var(--chat-accent,var(--accent))` and `color:var(--chat-accent-ink,white)`,
+  plus chat-scoped `#view-chat[data-chat-accent="bot"] #sendChat`, composer
+  focus and `.log-entry.user` overrides (needed because `ui/icons.css`
+  `.loam-shell .primary` outranks a bare `.primary`).
+- `ui/styles.css`: `.msg.user .user-bubble` falls back to the app accent.
+- `ui/companions.html`: `.rk-msg.user .rk-bubble` falls back to the app accent;
+  the companion send button and focus-within ring overrides sit at the end of
+  the sheet so they out-rank `.rk-send:disabled` and the global focus rule.
+
+## Verification
+
+Gates, all run from the worktree root:
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0
+- `(cd packages/web && npx next build)` -> exit 0
+- `node --import tsx --test src/__tests__/chatColor.test.ts src/design/__tests__/contrast.test.ts`
+  -> tests 60, pass 60, fail 0
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+
+Browser check (Playwright, both chat surfaces, view made visible first):
+- task chat with a violet agent: send button gradient
+  `rgb(139,123,216) -> rgb(166,152,226)`, ink `rgb(11,18,32)`, composer
+  focus border `rgb(166,152,226)`, user entry border tinted. Without a bot
+  every one of those falls back to the app accent.
+- companion chat with the same agent: send button background
+  `rgb(166,152,226)`, ink `rgb(11,18,32)`, accent border, and
+  `.rk-bar:focus-within` ring all switch; without a bot they revert to the
+  defaults.
+
+Note: `.rk-send` carries `transition: background .12s`, so a measurement taken
+in the same tick as the button becoming enabled reads the in-flight value.
+The accent is present once the transition settles (~150 ms).
+
+## Notes
+- Pre-existing gate failures unrelated to this task (proved by stashing the C20
+  work and re-running on the clean base, which fails identically):
+  `check:loam-ui` asserts `#homeModes button` == 7 but finds 8, and the
+  Playwright-based `check:loam-ancillary` / `check:isolation` time out. Neither
+  touches a file this task changed.
+- `ui/loam.css` was normalized to uniform CRLF to match every other file under
+  `ui/` (it was the only mixed-EOL file in the tree).
+- No forbidden path touched, no test weakened or deleted, no secrets committed.
+
+## Round 2 - deeper validation (after the first pass was accepted)
+
+A second pass drove the previously-untested runtime paths in a real browser
+(Playwright) instead of only re-reading the code, and found one real defect.
+
+### Defect found and fixed: the extracted avatar color was never painted
+
+`chatAccentFor` samples an `avatarImage` asynchronously and returns the id-hash
+fallback for the first paint, reporting the extracted color through the
+`onAccent` callback. Both chat call sites called it **without** that callback:
+
+- `ui/app.js` `applyChatAccent` (`#view-chat`)
+- `ui/companions.js` `applyChatAccent` (`.rk-main`)
+
+So on a cold cache (first time a bot with only an `avatarImage` was opened) the
+conversation painted the id-hash fallback and the extracted avatar color was
+never applied. It was only written to `localStorage`, so the correct color
+appeared only after leaving and re-opening the conversation. A bot-less
+conversation was unaffected, which is why the first pass (which used named-color
+bots) did not catch it.
+
+Fix (commit `f767cfa`): both call sites now pass `onAccent` and repaint as soon
+as the sample lands. A monotonically increasing `applyChatAccentToken` per call
+site drops a late sample that belongs to a conversation the user has already
+left, so switching bots cannot be crossed by an out-of-order callback.
+
+### What the deep probe confirmed (0 page errors, 0 console errors, 0 stub 404s)
+
+- Real canvas extraction end to end: a hand-built 1x1 PNG served at
+  `/avatar.png` (magenta `#c94fb0`) is sampled through the app's own
+  `extractWithCanvas` path and painted as `#e09ad1` in dark, `#d16bbc` in light.
+- Cold cache: selecting the image bot for the first time now paints the
+  extracted color, not the id-hash fallback (`#f387bc`).
+- Cache reuse: leaving for a hash bot (`#87f2e6`) and returning to the image bot
+  restores the cached extracted color immediately, with no re-sample.
+- Offline / ghost id: a task whose `agentId` is not in `/api/agents` still gets
+  a deterministic id-hash color (`#98e1be`), matching the "offline: the id hash
+  still colors the chat" fallback.
+- Isolation: the accent lives only on `.rk-main` / `#view-chat`; `:root`,
+  `body` and the sidebar carry no inline accent.
+- Theme flip: the `MutationObserver` on `data-theme` recomputes lightness and
+  ink in both themes (`#a698e2`/`#0b1220` dark, `#7760d2`/`#ffffff` light) and
+  returns correctly to dark.
+- Task chat: violet gradient `rgb(187,176,232) -> rgb(166,152,226)`, ink
+  `rgb(11,18,32)`; a bot-less task leaves every accent property unset and falls
+  back to the app accent.
+
+### Gates re-run after the fix
+
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0
+- `node --import tsx --test src/__tests__/chatColor.test.ts src/design/__tests__/contrast.test.ts`
+  -> tests 60, pass 60, fail 0
+- `node --import tsx --test src/design/__tests__/*.test.ts`
+  -> tests 171, pass 171, fail 0
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`, `check:orchestrator` (114/114), `check:recovery`,
+  `check:design-registry`, `check:promo-carousel`, `check:loam-agents` -> all pass
+
+The deep probe was a scratch artifact and was removed before committing; the fix
+itself is covered by the existing `chatColor.test.ts` async-callback tests plus
+this browser-verified behaviour.
+
+# C20 merge gate-fix session: merge with latest manus-parity, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+## Root cause
+No source file conflicted on the first merge. `git merge manus-parity` (tip
+`ed26550`, the N2 merge, bringing in N10/N2/N4/C19/O3/O6/O2/D5/O1/V11/H0/O0/fc-05/
+J5/F5) auto-merged everything except the tracked rollup `.jdone`, where both sides
+prepend a report at the same top-of-file anchor. Nothing in the C20 change set was
+at risk: `git diff manus-parity -- ui/` still shows exactly the C20 files
+(`ui/chat-color.js`, `ui/chat-color.d.ts`, `ui/app.js`, `ui/companions.js`,
+`ui/companions.html`, `ui/loam.css`, `ui/styles.css`, 712 insertions / 9 deletions).
+
+## What was done
+Two merges were needed because `refs/heads/manus-parity` advanced twice while this
+session ran.
+
+1. **First merge** (parity tip `ed26550`, committed as `cd9ee76`). `.jdone` was
+   resolved as a superset of both conflict sides. The base blob (`1d220ff4`) is a
+   strict prefix of the ours blob (`f09b6564`), so the resolution keeps the base
+   verbatim, then the C20 report (the part ours added), then a `---` separator, then
+   the whole manus-parity rollup (`d58e75a3`) verbatim. Verified mechanically
+   against both stage blobs: **0 non-empty lines missing from the ours side, 0
+   non-empty lines missing from the theirs side**, and no conflict marker remains
+   anywhere in the tree.
+
+2. **Second merge** (parity tip `26befe6`, the N10 merge, committed as `c85f020`).
+   The new conflict was a **modify/delete** on `.jdone`: N10's own commit `e3d05f6`
+   had deleted the tracked rollup (698 lines removed) and the parity tip
+   re-confirmed that deletion (`.jdone` is absent from `git ls-tree 26befe6`), while
+   this branch still carried the full rollup. Resolved by **keeping our side** (the
+   C20 branch's `.jdone`), because the deletion is a worktree-hygiene choice made on
+   the N10 branch, not a content claim about the reports: every report the deletion
+   would have dropped is still present verbatim in the resolved rollup, so nothing
+   that either side wrote is lost. No other file conflicted.
+
+3. **Third merge** (parity tip `3139f07`, the J9 revert, committed as `f017f96`).
+   Parity advanced again in between (the J9 merge, then its revert). This merge
+   applied cleanly with no conflict at all.
+
+4. **Fourth merge** (parity tip `61aca0c`, the N9 merge, committed as `ecb7586`).
+   N9 re-added `.jdone`, so the file conflicted again as an **add/add**: this
+   branch's rollup (base + C20 reports) against parity's rollup (base + N9's
+   Ask-User-More report). Both sides share a 5239-line suffix (the common
+   rollup), so the resolution keeps ours verbatim, then a `---` separator, then
+   N9's new report block, then the shared suffix. Verified mechanically as a
+   multiset union of both stage blobs: **0 non-empty lines missing from the ours
+   side, 0 non-empty lines missing from the theirs side**, and no conflict marker
+   remains anywhere in the tree. No other file conflicted.
+
+No test was weakened, deleted or skipped and no source file was edited by this
+session.
+
+## Gate condition verified
+`git merge manus-parity` reports `Already up to date.`,
+`git merge-base --is-ancestor manus-parity HEAD` exits 0 and
+`git rev-list --left-right --count manus-parity...HEAD` is `0  10` (parity fully
+merged, zero parity commits missing). `git status --porcelain` is empty and
+`git grep -E "^(<{7}|={7}|>{7})( |$)"` finds no conflict marker in any tracked file.
+
+## Gates (all run from the worktree root on the final merged tree `e4a0cce`)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.5mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test src/__tests__/chatColor.test.ts src/design/__tests__/contrast.test.ts`
+                                               -> tests 60, pass 60, fail 0
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+
+## Files
+- `.jdone` only (this report added to the resolved rollup). No source file was
+  modified by this session; the C20 deliverables are unchanged from commit `8c4c180`.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  node --import tsx --test src/__tests__/chatColor.test.ts src/design/__tests__/contrast.test.ts
+  npm run check:encoding
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added. Working tree clean.
+
+---
+
+# N2 gate-fix session: merge with latest manus-parity
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+## The failure that was fixed
+`git merge manus-parity` conflicted in exactly ONE file: `.jdone` (add/add: this
+branch's N2 report vs parity's accumulated N4/C19/N20/O3/O6/O2/D5/O1/V11/H0/O0/
+fc-05 rollup). Every source file auto-merged cleanly, so no code, test or prompt
+was touched by the resolution.
+
+## What the resolution produced
+`.jdone` was resolved by keeping BOTH sides: the N2 report stays at the top
+(including its D2 and D10 preserved blocks), and the full parity rollup follows
+verbatim, with the shared `## Preserved: D2 gate-fix report` heading kept once.
+Verified mechanically against both stage blobs (`:2:.jdone` 823 lines,
+`:3:.jdone` 5238 lines): **0 non-empty lines missing from the ours side, 0
+non-empty lines missing from the theirs side**, and no conflict marker remains
+anywhere in the tree. Re-verified after the second merge below against the
+parity tip `0a946d3` itself: **0 parity-side lines missing** from the merged file.
+No test was weakened, deleted or skipped; no assertion was relaxed; no source
+file was edited.
+
+## The ref moved mid-session
+`refs/heads/manus-parity` advanced while this session was running (a concurrent
+workstream landed `0a946d3`, "Merge main (packaging asar+fuses fix, 0.5.28)").
+The verification step's own `git merge manus-parity` therefore produced a second
+merge commit (`6d12055`) with **no conflicts at all** (packaging/electron files,
+`src/config.ts`, `src/server/http.ts`, the creative/preview modules). `.jdone`
+came through byte-identical: a `git diff` of the file between the two merge
+commits is empty. The end state is what the gate asks for.
+
+## Gate condition verified
+- `git merge manus-parity` -> `Already up to date.`
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
+- `git rev-list --left-right --count manus-parity...HEAD` -> `0  5`
+  (the left count, parity commits still missing, is 0)
+- `git grep -E "^(<{7}|={7}|>{7})( |$)"` -> no conflict markers
+- `git status --porcelain` -> empty
+
+## Side effect worth noting
+The parity lineage fixed the inherited D4 defect that the preserved reports below
+describe as pre-existing: parity commit `e854d58` registers `createPlanTools()`
+in `src/agent/__tests__/toolDescriptions.test.ts`, drops `plan_exit` from
+`PENDING_CODING_TOOLS` and adds "When NOT to use" to the `suggest_plan` /
+`plan_exit` descriptions. `src/agent/__tests__/toolDescriptions.test.ts` therefore
+now passes **4/4**, and it is no longer the one failure this branch was
+inheriting. No file under it was edited by this session.
+
+## Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                                  -> exit 0
+- `(cd packages/web && npx tsc --noEmit --project tsconfig.json)` -> exit 0
+- `npm run build:server`                              -> exit 0 (dist/server.cjs 19.5mb, pdf worker copied)
+- `(cd packages/web && npx next build)`               -> exit 0 (compiled successfully, 25/25 static pages)
+- `(cd packages/web && npx vitest run)`               -> **77 files / 521 tests, all pass**
+- `node --import tsx --test "src/**/*.test.ts"`      -> **tests 2529, pass 2528, fail 1**
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`    -> PASS
+- `npm run check:orchestrator` -> PASS (114/114)
+- `npm run check:promptwire`  -> PASS (every promptwire tool returned ok:true)
+- `npm run check:recovery`    -> PASS
+
+Targeted suites re-run on the merged tree:
+- `src/server/__tests__/graphRoutes.test.ts` (N2) + `orchestratorBudget.test.ts`
+  + `src/__tests__/configFailover.test.ts` -> tests 15, pass 15, fail 0
+- `src/agent/__tests__/toolDescriptions.test.ts` -> tests 4, pass 4, fail 0
+- `src/agent/__tests__/{recipeEngine,orchestratorRecipe,recipeIds}.test.ts` +
+  `src/protocol/__tests__/{recipeEvents,recipeReplay}.test.ts` +
+  `src/graph/__tests__/runGraph.test.ts` -> all pass
+
+## The one remaining node failure (pre-existing, environmental, not caused by this merge)
+`src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+throwing" (`true == false` at `src/server/__tests__/worktrees.test.ts:44`).
+Neither `src/server/__tests__/worktrees.test.ts` nor `src/server/worktrees.ts`
+is touched by this merge (`git diff` of both between the pre-merge HEAD and the
+merged HEAD is empty), and the cause is environmental: `%TEMP%` on this machine is
+`C:\Users\khamis\AppData\Local\Temp`, and `git -C %TEMP% rev-parse` walks up and
+resolves to `C:/Users/khamis`, which is itself a git repository, so a fresh temp
+folder is reported as a git folder. Confirmed by a direct probe in this session.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or
+skipped. No `.neo-*` or `.jcode-*` marker file was staged. Working tree clean.
+
+---
+
+# N2 - Canvas view: DONE
+
+Workspace "Canvas" tab rendering the N1 run graph: pan/zoom, auto-layout, an E
+shortcut that opens a node, live SSE updates, a Recipe side panel, and Arabic/RTL.
+
+## The failure that was fixed
+The canvas work committed as `33a8911` left one pre-existing web test red:
+
+```
+packages/web/src/components/workspace/__tests__/autoOpen.test.ts
+  > workspace auto-open decision > latestWorkspaceDecision returns the newest qualifying event
+  AssertionError: expected { id: 'id-0.21480746367457115', …(6) } to be { id: 'id-0.6785752071943618', …(6) }
+```
+
+`isCanvasSignalTool` had been written with a broad `name.startsWith('browser_')`
+(plus `gen_*`, `loam_*`, `office_*`, `docx|xlsx|pptx`, `file_write`, `file_edit`,
+`code_session`, `web_scaffold`). The test pins `browser_navigate` as a
+**non-qualifying** tool (it is a display label in `packages/web/src/components/chat/toolLabels.ts`,
+not a tool the agent registers), so the newest qualifying event became the
+`browser_navigate` event instead of the `office_export` one. That is a real
+product bug, not a stale test: the canvas was hijacking tool events that should
+resolve to a workspace artifact.
+
+## What the fix produces
+`isCanvasSignalTool` now matches only the tools the agent really registers, so
+the canvas stays the surface for long-horizon work with no single file to point
+at:
+
+- `BROWSER_TOOL_STEMS` is an explicit list taken from `src/tools/browser.ts`
+  (`browser_open`, `browser_goto`, `browser_snapshot`, `browser_click`,
+  `browser_type`, `browser_press`, `browser_eval`, `browser_screenshot`,
+  `browser_table`, `browser_act`, `browser_pages`, `browser_close`, `browser_som`,
+  `browser_trace`) plus `browser_operator` from `browserOperator.ts`. Matching is
+  `name === stem || name.startsWith(stem + '_')`, so `browser_navigate` and the
+  rest of the label-only names cannot match. `browser_operator` keeps its
+  timestamped tool-use name (`browser_operator_<timestamp>`) working.
+- `web_*` (`src/tools/web.ts`: `web_search`, `web_fetch`), `deep_research`
+  (`deepResearch.ts`), `wide_research` (`wideResearch.ts`) and `code_session*`
+  (`codeSession.ts`).
+- Everything else is dropped, because a file path or an `office_*`/`video` tool
+  already resolves above it: `decideWorkspaceOpen` returns the editor first, so
+  the canvas never steals an artifact. This is what restores the test.
+
+Coverage added to the pre-existing suite (no assertion relaxed, none removed):
+`__tests__/autoOpen.test.ts` gained a `Neo N2 canvas auto-open decision` block
+(5 tests) pinning the real names as qualifying, the label/file-producing names as
+non-qualifying, the canvas target for a long-horizon tool, the
+artifact-wins-over-canvas precedence, and `latestWorkspaceDecision` returning the
+canvas for the newest long-horizon tool. 18/18 pass.
+
+## Second defect found and fixed during the same pass
+`CanvasPanel` resolved its locale and translated with it, but never synced the
+document direction. The panel lays itself out with logical CSS (`border-s`,
+`ms-`/`me-`, `ps-`/`pe-`), which resolves against `document.documentElement.dir`,
+so under Arabic the canvas chrome was laid out left-to-right while its text was
+Arabic. The panel now calls `setLocale(locale)` from `@/i18n/t` whenever it owns
+the locale, so `dir`/`lang` follow the locale the panel renders in. The
+`getLocale` prop is a test seam and is deliberately skipped, so a test provider
+never rewrites the real document. The canvas **surface** stays `dir="ltr"`:
+its geometry is graph space, not text flow. A new test
+(`points the document direction at the rendered locale`) pins both.
+
+## Acceptance criteria (N2)
+The task asks for Playwright; the harness has no browser, so the same behaviour
+is pinned with vitest + @testing-library against the real panel with an injected
+client/stream (documented here as the task allows):
+
+- **6+ nodes live for a run with 6 steps** - `CanvasPanel.test.tsx` renders the
+  real panel over a seven-node graph (root question + six recipe steps), asserts
+  7 `canvas-node` cards, the Recipe list `1. Step 1` .. `6. Step 6`, the stats
+  line `7 nodes`, and that a live stream drives the `Live` indicator.
+- **Organize lays out without overlap** - clicking `Organize` re-runs the layered
+  layout and every node card's transform is distinct (no two cards share a cell).
+- **E opens the detail** - `keydown e` opens the newest node's sheet
+  (`canvas-node-detail`, `data-node-id="step-six"`); `Escape` closes it. Clicking
+  a card opens the same sheet.
+- **RTL labels render** - with `getLocale: () => 'ar'` the Recipe header reads
+  `الوصفة`, the stats line `7 عقد`, node titles use Arabic labels, and the node
+  sheet marks the node `من اليمين إلى اليسار`. A separate test pins that the
+  document direction follows the rendered locale while the surface stays `ltr`.
+
+## Files
+- `packages/web/src/components/workspace/canvas/{CanvasPanel,layout,stream,types,client}.ts(x)`
+- `packages/web/src/components/workspace/canvas/register.ts`, `Editor.tsx`
+- `packages/web/src/components/workspace/{WorkspacePanel,types,autoOpen,index}.ts(x)`
+- `packages/web/src/components/workspace/canvas/__tests__/*` (new), `__tests__/autoOpen.test.ts`
+- `packages/web/src/i18n/{t.ts,en.json,ar.json}`
+- `src/server/routes/graph.ts`, `src/server/http.ts`, `src/agent/runGraphAdapter.ts`
+- `src/server/__tests__/graphRoutes.test.ts`
+
+## Gates (all run from the worktree root)
+- `npx tsc --noEmit` -> exit 0
+- `(cd packages/web && npx tsc --noEmit --project tsconfig.json)` -> exit 0
+- `npm run build:server` -> exit 0 (dist/server.cjs, pdf worker copied)
+- `(cd packages/web && npx next build)` -> exit 0 (compiled successfully)
+- `(cd packages/web && npx vitest run)` -> **77 files / 521 tests, all pass**
+- `node --import tsx --test src/server/__tests__/graphRoutes.test.ts` -> 6 tests, 6 pass, 0 fail
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes` -> PASS
+
+## Pre-existing node failures (NOT caused by this work)
+`node --import tsx --test "src/**/*.test.ts"` -> tests 2147, pass 2141, fail 6.
+All six are outside this diff (`git diff manus-parity -- <file>` is empty for each)
+and reproduce identically on the untouched `manus-parity` worktree:
+
+1. `src/agent/__tests__/toolDescriptions.test.ts` - "suggest_plan is neither
+   registered nor listed in PENDING_CODING_TOOLS". The inherited D4 defect
+   documented in the preserved reports below.
+2. `src/server/__tests__/worktrees.test.ts` - "reports non-git folders without
+   throwing". Environmental: `C:\Users\khamis` is itself a git repository, so
+   `git rev-parse` run inside `%TEMP%` walks up and finds it, and the temp folder
+   is reported as a git folder. Confirmed by a direct probe and by the same
+   failure on the parity worktree.
+3-6. `craftStatus`, `retryLast`, `sessionControl`, `shares` - these four suites
+   abort with `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)` when the
+   whole tree is run with `--test-force-exit` on Windows. Run on their own
+   **without** `--test-force-exit` they pass (21/22 pass, only the worktrees
+   environmental failure above).
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or
+skipped. No `.neo-*` or `.jcode-*` marker file was staged.
+
+---
+
 # N9 - Ask-User-More node: DONE (merge gate resolved on the current parity tip)
 
 ## Outcome
