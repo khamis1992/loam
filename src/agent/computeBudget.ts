@@ -53,14 +53,27 @@ export interface ComputeBudgetLimits {
 }
 
 /**
- * A positive, finite limit; anything else is ignored (budget stays unlimited).
+ * A positive, finite, whole-number limit; anything else is ignored (budget
+ * stays unlimited).
  *
- * Values are kept as-is (not floored) because a limit is not always a count of
- * whole units: a mission's cost ceiling is USD, and `$0.01` is a real ceiling
- * that flooring to `0` would discard. Callers that need an integer (steps,
- * tokens) compare against `Math.floor`-ed counters.
+ * Steps, tokens and wall-clock milliseconds are counts, so a fractional limit is
+ * rounded down: `10.9` steps is `10`. This is the D19 contract and it is kept
+ * unchanged — N6 only adds two *new* dimensions, it does not alter how the
+ * existing ones are clamped.
  */
 export function normalizeLimit(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const n = Math.floor(value);
+  return n > 0 ? n : undefined;
+}
+
+/**
+ * A positive, finite limit kept exactly as given.
+ *
+ * A mission's cost ceiling is USD and `$0.01` is a real ceiling that flooring to
+ * `0` would discard, so the cost dimension uses this instead of `normalizeLimit`.
+ */
+export function normalizeExactLimit(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
   return value > 0 ? value : undefined;
 }
@@ -76,7 +89,7 @@ export function createComputeBudget(limits: ComputeBudgetLimits = {}): ComputeBu
     stepLimit: normalizeLimit(limits.stepLimit),
     tokenLimit: normalizeLimit(limits.tokenLimit),
     wallClockLimitMs: normalizeLimit(limits.wallClockMs),
-    costLimitUsd: normalizeLimit(limits.costUsd),
+    costLimitUsd: normalizeExactLimit(limits.costUsd),
   };
 }
 
@@ -133,7 +146,7 @@ export function checkBudget(budget: ComputeBudget, limits: ComputeBudgetLimits =
   const stepLimit = budget.stepLimit ?? normalizeLimit(limits.stepLimit);
   const tokenLimit = budget.tokenLimit ?? normalizeLimit(limits.tokenLimit);
   const wallClockLimit = budget.wallClockLimitMs ?? normalizeLimit(limits.wallClockMs);
-  const costLimit = budget.costLimitUsd ?? normalizeLimit(limits.costUsd);
+  const costLimit = budget.costLimitUsd ?? normalizeExactLimit(limits.costUsd);
 
   if (stepLimit !== undefined && budget.steps >= stepLimit) {
     return {
@@ -207,7 +220,7 @@ export function raiseBudget(
   const stepDelta = normalizeLimit(delta.steps) ?? 0;
   const tokenDelta = normalizeLimit(delta.tokens) ?? 0;
   const clockDelta = normalizeLimit(delta.wallClockMs) ?? 0;
-  const costDelta = normalizeLimit(delta.costUsd) ?? 0;
+  const costDelta = normalizeExactLimit(delta.costUsd) ?? 0;
   if (stepDelta === 0 && tokenDelta === 0 && clockDelta === 0 && costDelta === 0) {
     return { ok: false, reason: "budget increase must be a positive number" };
   }
