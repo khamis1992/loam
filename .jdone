@@ -18,10 +18,56 @@ Gates on the merged tree (`8338619`), each with its real exit code:
 - `check:orchestrator`, `check:loam-agents`, `check:recovery` -> 0
 - full server suite -> 2816 tests / 2816 pass / 0 fail
 - web vitest -> 81 files / 545 tests pass
-- `check:isolation`, `check:loam-ui` still fail with the same pre-existing,
-  environmental causes as in round 2 (EADDRINUSE 8787; stale `8 !== 7`).
+- `check:isolation`, `check:loam-ui` still fail, but inherited from parity rather
+  than caused by this merge (see the validation note below).
 
 ---
+
+## Independent validation pass (round-4 tree, `d286cbf`, 2026-10-23)
+
+Re-verified every round-4 claim with fresh evidence instead of re-reading the
+notes. All checks below were re-run on the final tree; the full-suite invocation
+is `node --import tsx --test "src/**/__tests__/*.test.ts"` (note: `--test src`
+alone runs the directory as ONE test and is wrong).
+
+Confirmed:
+
+- All four parity tips (`411df5e`, `eb17ea0`, `26fcd6b`, `851b3fe`) are
+  ancestors of HEAD; `git log HEAD..manus-parity` is empty.
+- `.jdone` is a lossless union of both merge parents (re-checked with a fresh
+  multiset validator): 0 lines missing vs either parent and vs the union, 0
+  conflict markers, CRLF preserved (8604 CRLF / 0 bare-LF).
+- `src/tools/videoStudio.ts` is a LF blob identical to parity's `851b3fe` blob
+  plus fc-07's own additions (95 insertions / 21 deletions): the fc-07
+  `VideoStudioRouter` import, `effects_dist_missing` reason, and `runEffectsAction`
+  threading are all present; parity's blob has none of them. Both fc-07 and fc-09
+  behaviour is kept. The 3 bare-LF lines in the worktree (959-961) are a
+  `core.autocrlf=true` checkout artifact only; every committed blob is LF-only.
+- Rule-18 gates on the final tree: `npx tsc --noEmit` -> 0, `npm run build:server`
+  -> 0, `npx next build` -> 0 (25/25), touched-file tests
+  (`videoStudio.test.ts`, `videoStudioRouter.test.ts`, `videoPrompt.test.ts`)
+  -> 118/118 pass. Full server suite -> 2816/2816 pass. Web vitest -> 545 pass.
+- No fc-07 file touches auth/401 code, so the 401 auth block is not a merge
+  regression.
+
+Correction to the round-4 note above (the `EADDRINUSE` cause is now masked):
+
+- `check:isolation` and `check:loam-e2e` now fail earlier with
+  `fatal: Error: duplicate tool: fanout` (src/index.ts:158 re-registers a tool that
+  `src/setup/runtime.ts:124` already registers inside `buildRuntime`). This is
+  introduced by parity's own N7 commit `3188703` ("feat(neo): N7 branch fan-out"),
+  which added `createFanoutTool` to BOTH files. Both files are byte-identical to
+  parity at `851b3fe`. A clean parity worktree at `851b3fe` fails with the
+  identical error and exit code 1, so this is inherited, not a merge regression.
+  The old `EADDRINUSE 127.0.0.1:8787` cause is still present underneath: PID
+  68964 is an orphaned `node --import tsx --test ... src` process that still holds
+  the port, and `check-isolation-http.ts` still sets neither `AS_PROTOCOL_PORT` nor
+  `LOAM_AUTH_DISABLED`.
+- `check:loam-ui` still fails on the stale `8 !== 7` at `check-loam-ui.mjs:43`.
+- `check:loam-ancillary` still fails on the `#rkSend` Playwright pointer-events
+  timeout. Both reproduce identically on the clean parity worktree.
+
+No test was weakened, deleted or skipped. No markers remain. Working tree clean.
 
 ## Merge gate fix, round 3 (merge commit `b1892c5`)
 
