@@ -524,7 +524,6 @@
   "Instructions": "Instructions",
   "Save": "Save",
   "Cancel": "Cancel",
-  "Edit": "Edit",
   "Name is required": "Name is required.",
   "Description is required": "Description is required.",
   "Instructions are required": "Instructions are required.",
@@ -899,5 +898,16 @@
   "RTL": "RTL",
   "Recent tools": "Recent tools",
   "Saving": "Saving",
-  "Edit this node": "Edit this node"
+  "Edit this node": "Edit this node",
+  "Case Playbook": "Case Playbook",
+  "Try this flow": "Try this flow",
+  "Search flows...": "Search flows...",
+  "Twelve ready Loam flows. Pick one to start from a proven prompt.": "Twelve ready Loam flows. Pick one to start from a proven prompt.",
+  "Flow": "Flow",
+  "Ask": "Ask",
+  "Dashboard": "Dashboard",
+  "Writing": "Writing",
+  "Presentation": "Presentation",
+  "Analysis": "Analysis",
+  "Engineering": "Engineering"
 }
