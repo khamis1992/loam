@@ -266,10 +266,12 @@ export interface VideoStudioFallback {
  * Only genuine transition markers are listed. A bare "glitch", "zoom" or
  * "morph" is NOT one: "glitch effect" and "zoom in" are effects, whereas
  * "glitch transition" and "zoom transition" already contain "transition" and
- * match here anyway.
+ * match here anyway. A bare "slide" is not one either: "slide in the text" is
+ * text/motion animation, so it must degrade to `effect_basic` (the model names
+ * the command explicitly with "slide transition" when it means a wipe).
  */
 export const FALLBACK_TRANSITION_PHRASES: readonly string[] = [
-  "transition", "wipe", "slide", "spin", "swipe",
+  "transition", "wipe", "spin", "swipe",
   "انتقال", "مسح", "انزلاق", "دوران",
 ];
 

@@ -328,7 +328,7 @@ describe("effects fallback", () => {
   });
 
   it("picks the transition command for a transition request and the effect command otherwise", () => {
-    for (const text of ["a wipe between the shots", "انتقال مسح", "slide the shot", "swipe in"]) {
+    for (const text of ["a wipe between the shots", "انتقال مسح", "a slide transition", "swipe in"]) {
       const fallback = resolveEffectsFallback(undefined, text);
       assert.equal(fallback.action, "transition_basic", `"${text}" must degrade to the basic transition`);
       assert.equal(fallback.transition, true);
@@ -367,14 +367,29 @@ describe("effects fallback", () => {
   });
 
   it("lists the transition markers used by the fallback", () => {
-    for (const phrase of ["transition", "wipe", "slide", "swipe", "انتقال", "مسح"]) {
+    for (const phrase of ["transition", "wipe", "spin", "swipe", "انتقال", "مسح", "انزلاق", "دوران"]) {
       assert.ok(FALLBACK_TRANSITION_PHRASES.includes(phrase), `missing fallback marker "${phrase}"`);
     }
-    // A bare effect word is not a transition marker: only the timeline engine's
-    // transition command is a safe degradation for these.
-    for (const phrase of ["glitch", "zoom", "morph"]) {
+    // A bare effect or motion word is not a transition marker: only the timeline
+    // engine's transition command is a safe degradation for these. "slide" is
+    // excluded because "slide in the text" is text/motion animation, not a wipe.
+    for (const phrase of ["glitch", "zoom", "morph", "slide"]) {
       assert.equal(FALLBACK_TRANSITION_PHRASES.includes(phrase), false, `"${phrase}" must not be a fallback marker`);
     }
+  });
+
+  it("does not degrade a slide-in motion request to the transition command", () => {
+    // "slide in the text" is text/motion animation: it must become effect_basic,
+    // while an explicit "slide transition" stays a wipe and becomes the basic
+    // transition.
+    for (const text of ["slide in the text", "slide the caption up", "slide the title in"]) {
+      const fallback = resolveEffectsFallback(undefined, text);
+      assert.equal(fallback.action, "effect_basic", `"${text}" must degrade to the basic effect`);
+      assert.equal(fallback.transition, false);
+    }
+    const wipe = resolveEffectsFallback(undefined, "slide transition between the shots");
+    assert.equal(wipe.action, "transition_basic");
+    assert.equal(wipe.transition, true);
   });
 });
 
