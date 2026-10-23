@@ -163,10 +163,11 @@ export const shellTools: Tool[] = [
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
       const command = str(args, "command").trim();
       if (!command) return { ok: false, content: "command is required" };
-      // Stage 1 of the blast-radius gate: pattern list first (cheap, catches
-      // things the structural classifier treats as opaque), then the jcode
-      // command-risk classifier for what a denylist cannot see. Must be a union:
-      // dropping either half opens a bypass.
+      // Stage 1 of the blast-radius gate: the jcode command-risk classifier
+      // first, for what a denylist cannot see, then the substring pattern list
+      // (cheap, catches things the structural classifier treats as opaque).
+      // Both are gates, so the order only changes the message; what must hold is
+      // the union: dropping either half opens a bypass.
       const risk = checkCommandRisk(command, { workingDir: ctx.workspace });
       if (risk.level === "Catastrophic") {
         return { ok: false, content: `blocked by policy: ${risk.reason ?? "command risk is catastrophic"}` };
