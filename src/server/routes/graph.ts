@@ -12,18 +12,27 @@
  *   GET   /api/graph/:runId/stream                -> SSE of graph changes (live canvas)
  *   PATCH /api/graph/:runId/nodes/:nodeId        -> { status?, data?, parentIds? }
  *   POST  /api/graph/:runId/nodes/:nodeId        -> heartbeat (bump `updated`)
+ *   POST  /api/graph/:runId/ops                  -> one N11 editing operation
+ *
+ * The `ops` route is the N11 surface: it is the only place the canvas can express
+ * an *intent* ("edit this node", "cut this edge", "group these two") rather than a
+ * raw field write, so the graph update and the directive that tells the agent
+ * about it are always produced together.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
+  applyCanvasRequest,
   getRunGraphLayout,
   getRunNode,
   getRunNodes,
+  pendingCanvasDirectives,
   setRunNodeData,
   setRunNodeParents,
   setRunNodeStatus,
   subscribeRunGraph,
 } from "../../agent/runGraphAdapter.js";
 import { isRunNodeStatus } from "../../graph/store.js";
+import { MAX_OP_TEXT_CHARS } from "../../graph/ops.js";
 
 /** A node payload edit is user-authored, so it is capped well below a file upload. */
 const MAX_NODE_DATA_BYTES = 64_000;
@@ -125,6 +134,37 @@ export async function handleGraphRoutes(
     req.on("close", close);
     res.on("close", close);
     return true;
+  }
+
+  // Neo N11: the editing-operations surface. Matched before `/nodes` so a run id
+  // can never be mistaken for a node id.
+  const opsMatch = rawPath.match(/^\/api\/graph\/([^/]+)\/ops$/);
+  if (opsMatch) {
+    const runId = decodeURIComponent(opsMatch[1]!);
+    if (req.method === "GET") {
+      // The pending edits: what the canvas has told the agent that the agent has
+      // not consumed yet. Read-only, so no same-origin check is needed.
+      return sendJson(res, 200, { runId, directives: pendingCanvasDirectives(runId) });
+    }
+    if (req.method !== "POST") return sendJson(res, 405, { error: "method not allowed" });
+    if (isCrossSite(req)) return sendJson(res, 403, { error: "same-origin requests required" });
+    const body = await readJsonBody(req, MAX_OP_TEXT_CHARS + 8_000);
+    // `undefined` means the payload was not a valid operation: a 400, never a
+    // silent no-op the user would read as "the edit worked".
+    let result;
+    try {
+      result = applyCanvasRequest(runId, body);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // A node that is not in this run, or a group of one, is a client problem.
+      return sendJson(res, message.includes("not found") ? 404 : 409, { error: message });
+    }
+    if (!result) return sendJson(res, 400, { error: "unrecognised canvas operation" });
+    // The whole graph, laid out, because several operations create or re-point
+    // nodes. The panel must not have to guess which ids appeared, and it needs the
+    // edges and stats to redraw the canvas in one write.
+    const layout = getRunGraphLayout(runId);
+    return sendJson(res, 200, { ...result, nodes: layout.nodes, edges: layout.edges, stats: layout.stats });
   }
 
   const match = rawPath.match(/^\/api\/graph\/([^/]+)(?:\/nodes(?:\/([^/]+))?)?$/);

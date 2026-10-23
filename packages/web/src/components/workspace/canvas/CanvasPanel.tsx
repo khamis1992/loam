@@ -18,16 +18,28 @@ import { Keyboard, Loader2, Maximize2, Minus, Plus, Waypoints, X } from 'lucide-
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getLocale, setLocale as syncDocumentLocale, t } from '@/i18n/t';
 import type { ChatEvent } from '@shared/socket';
+import { Check, Copy, Link2, Quote, Scissors, XCircle } from 'lucide-react';
 import {
   type CanvasEdge,
   type CanvasLayoutNode,
   type CanvasNode,
   type CanvasNodePatch,
+  type CanvasOpRequest,
+  type CanvasOpResult,
   type CanvasStats,
 } from './types';
 import { applyLayout, layoutBounds, screenToGraph, type LayoutOptions } from './layout';
 import { CanvasClient, type CanvasClientOptions } from './client';
 import { CanvasStream, type CanvasStreamChange, type CanvasStreamHandlers } from './stream';
+import {
+  editableFields,
+  excerpt,
+  hasNodeText,
+  isStale,
+  nodeText,
+  readEditHistory,
+  withEditedText,
+} from './nodeText';
 
 /** Panel geometry. Graph space, not direction-aware: the canvas is transform-based. */
 const NODE_WIDTH = 220;
@@ -39,6 +51,10 @@ const SCALE_STEP = 1.2;
 const POLL_INTERVAL_MS = 5_000;
 /** How often the panel mirrors an injected stream's running state. */
 const LIVE_POLL_MS = 200;
+/** A node id is a local run-graph id, so this is only a sanity bound on a selection. */
+const MAX_SELECTION = 64;
+/** A node card is too narrow for the whole edit history; the sheet shows the tail. */
+const EDIT_HISTORY_ROWS = 6;
 
 export interface CanvasPanelProps {
   taskId: string;
@@ -172,6 +188,13 @@ export function CanvasPanel({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [view, setView] = useState<ViewTransform>({ panX: 0, panY: 0, scale: 1 });
   const [liveConnected, setLiveConnected] = useState(false);
+  // N11: which nodes the user has ticked for a group/branch/quote, and which were
+  // superseded by an edit. Selection is a set of ids so a click never needs the
+  // card to be in any particular render order.
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [staleIds, setStaleIds] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<'follow-up' | 'quote'>('follow-up');
 
   const apiRef = useRef<CanvasClient | null>(null);
   const streamRef = useRef<CanvasStream | null>(null);
@@ -180,8 +203,10 @@ export function CanvasPanel({
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const nodesRef = useRef<CanvasLayoutNode[]>([]);
   const cursorRef = useRef(0);
+  const selectionRef = useRef<string[]>([]);
 
   nodesRef.current = nodes;
+  selectionRef.current = selectedIds;
 
   const locale = localeProvider ? localeProvider() : getLocale();
   const isRtl = locale === 'ar';
@@ -427,19 +452,122 @@ export function CanvasPanel({
   /** The Recipe panel: the plan's steps, in the order the agent emitted them. */
   const recipe = useMemo(() => nodes.filter((node) => node.type === 'recipe_step'), [nodes]);
 
-  const savePatch = useCallback(
-    async (nodeId: string, patch: CanvasNodePatch) => {
+  /**
+   * N11: apply one editing operation and lay the reply back over the canvas.
+   *
+   * The server returns the whole graph because a duplicate, a group and a
+   * re-connect all change structure, not just one field. Hand-placed positions are
+   * preserved by merging on id, and the stale marks are *kept* even when a reply
+   * carries no node for them: the agent only re-runs a node on the live path, so a
+   * mark that vanished with its node would silently clear the "re-check this" flag
+   * the user was shown.
+   */
+  const applyOp = useCallback(
+    async (op: CanvasOpRequest) => {
       const api = apiRef.current;
-      if (!api) return;
+      if (!api || busy) return;
+      setBusy(true);
       try {
-        const updated = await api.patchNode(taskId, nodeId, patch);
-        setNodes((prev) => prev.map((node) => (node.id === updated.id ? { ...node, ...updated } : node)));
+        const result: CanvasOpResult = await api.applyOp(taskId, op);
+        setNodes((prev) => {
+          const placed = applyLayout(result.nodes, layoutOptions);
+          const byId = new Map(prev.map((node) => [node.id, node]));
+          for (const node of result.nodes) {
+            const previous = byId.get(node.id);
+            const match = placed.find((entry) => entry.id === node.id);
+            byId.set(node.id, {
+              ...node,
+              x: previous ? previous.x : (match?.x ?? 0),
+              y: previous ? previous.y : (match?.y ?? 0),
+              depth: previous ? previous.depth : (match?.depth ?? 0),
+            });
+          }
+          return [...byId.values()];
+        });
+        setEdges(result.edges);
+        setStats(result.stats);
+        if (result.stale.length > 0) setStaleIds((prev) => [...new Set([...prev, ...result.stale])]);
+        cursorRef.current = Math.max(cursorRef.current, maxPosition(result.nodes));
+        if (op.op === 'group') setSelectedIds([]);
+        if (op.op === 'duplicate') setExpandedId(result.nodeId);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBusy(false);
       }
     },
-    [taskId],
+    [busy, layoutOptions, taskId],
   );
+
+  /** Tick a node for a multi-select action. */
+  const toggleSelect = useCallback((nodeId: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(nodeId) ? prev.filter((id) => id !== nodeId) : prev.length >= MAX_SELECTION ? prev : [...prev, nodeId],
+    );
+  }, []);
+
+  /** Replace a stale mark: a re-run superseded it, so it is current again. */
+  const clearStale = useCallback((nodeId: string) => {
+    setStaleIds((prev) => prev.filter((id) => id !== nodeId));
+  }, []);
+
+  // A node that reappears with no `stale` payload is current again, so the flag is
+  // cleared on the live path rather than only by hand. A mark with no node at all is
+  // kept: see `applyOp`.
+  useEffect(() => {
+    setStaleIds((prev) =>
+      prev.filter((id) => {
+        const node = nodes.find((candidate) => candidate.id === id);
+        return node ? isStale(node.data) : true;
+      }),
+    );
+  }, [nodes]);
+
+  // Editing operations act on the selected nodes, so they are disabled until there
+  // is something to act on. This is what makes the empty-canvas state honest.
+  const selection = useMemo(() => nodes.filter((node) => selectedIds.includes(node.id)), [nodes, selectedIds]);
+  const primary = selection[0] ?? null;
+  const canGroup = selection.length >= 2;
+
+  /** Cut every edge into `node` (detach it from its parents). */
+  const cutEdges = useCallback(
+    (node: CanvasLayoutNode) => void applyOp({ op: 'cut', nodeId: node.id, parentIds: [] }),
+    [applyOp],
+  );
+
+  /**
+   * Connect `node` to the nodes the user has selected.
+   *
+   * A re-connect replaces the parent set, which is what "change the next step's
+   * context" means: the node keeps its own content and its own history, and only
+   * which nodes feed it changes.
+   */
+  const reconnectToSelection = useCallback(() => {
+    if (!primary) return;
+    // The node being re-pointed is not its own new parent; the server refuses a
+    // self-parent, and "connect this node to the selected nodes" means the others.
+    const parents = selection.filter((node) => node.id !== primary.id).map((node) => node.id);
+    void applyOp({ op: 'reconnect', nodeId: primary.id, parentIds: parents });
+    setSelectedIds([]);
+  }, [applyOp, primary, selection]);
+
+  /** Duplicate the node as an independent branch. */
+  const branch = useCallback(
+    (node: CanvasLayoutNode) => void applyOp({ op: 'duplicate', nodeId: node.id }),
+    [applyOp],
+  );
+
+  /** Merge the selection into one context block. */
+  const group = useCallback(() => {
+    if (!canGroup) return;
+    void applyOp({ op: 'group', nodeIds: selection.map((node) => node.id) });
+  }, [applyOp, canGroup, selection]);
+
+  /** Hand the node to the model as something to build on, or to reproduce. */
+  const send = useCallback(() => {
+    if (!primary) return;
+    void applyOp({ op: mode === 'quote' ? 'quote' : 'follow-up', nodeId: primary.id });
+  }, [applyOp, mode, primary]);
 
   if (loading) {
     return (
@@ -501,6 +629,94 @@ export function CanvasPanel({
         </span>
       </div>
 
+      {nodes.length > 0 ? (
+        <div
+          className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border-main px-2 py-1"
+          data-testid="canvas-selection"
+        >
+          <span className="text-[11px] text-text-tertiary" data-testid="canvas-selection-count">
+            {t('{count} selected', { count: selectedIds.length }, locale)}
+          </span>
+          <button
+            type="button"
+            onClick={reconnectToSelection}
+            disabled={busy || !primary}
+            title={tr('Reconnect this node to the selected nodes')}
+            className="flex items-center gap-1 rounded-control px-2 py-1 text-[11px] text-text-secondary hover:bg-fill-hover hover:text-text-primary disabled:opacity-40"
+          >
+            <Link2 className="size-3" />
+            {tr('Reconnect')}
+          </button>
+          <button
+            type="button"
+            onClick={group}
+            disabled={busy || !canGroup}
+            title={tr('Group the selected nodes')}
+            className="flex items-center gap-1 rounded-control px-2 py-1 text-[11px] text-text-secondary hover:bg-fill-hover hover:text-text-primary disabled:opacity-40"
+          >
+            <Check className="size-3" />
+            {tr('Group')}
+          </button>
+          <button
+            type="button"
+            onClick={() => primary && branch(primary)}
+            disabled={busy || !primary}
+            title={tr('Branch this node')}
+            className="flex items-center gap-1 rounded-control px-2 py-1 text-[11px] text-text-secondary hover:bg-fill-hover hover:text-text-primary disabled:opacity-40"
+          >
+            <Copy className="size-3" />
+            {tr('Branch')}
+          </button>
+          <div className="flex items-center gap-1 rounded-control border border-border-main px-1">
+            {(['follow-up', 'quote'] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setMode(value)}
+                aria-pressed={mode === value}
+                data-testid={`canvas-mode-${value}`}
+                className={[
+                  'rounded px-1.5 py-0.5 text-[11px]',
+                  mode === value ? 'bg-fill-tsp text-text-primary' : 'text-text-tertiary hover:text-text-secondary',
+                ].join(' ')}
+              >
+                {value === 'quote' ? tr('Quote') : tr('Follow up')}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={send}
+            disabled={busy || !primary}
+            data-testid="canvas-send"
+            title={tr('Ask the agent to continue from this node')}
+            className="flex items-center gap-1 rounded-control px-2 py-1 text-[11px] text-text-secondary hover:bg-fill-hover hover:text-text-primary disabled:opacity-40"
+          >
+            <Quote className="size-3" />
+            {mode === 'quote' ? tr('Quote') : tr('Follow up')}
+          </button>
+          <button
+            type="button"
+            onClick={() => primary && cutEdges(primary)}
+            disabled={busy || !primary}
+            title={tr('Cut edge from this node')}
+            className="flex items-center gap-1 rounded-control px-2 py-1 text-[11px] text-text-secondary hover:bg-fill-hover hover:text-text-primary disabled:opacity-40"
+          >
+            <Scissors className="size-3" />
+            {tr('Cut edge')}
+          </button>
+          {staleIds.length > 0 ? (
+            <span
+              className="ms-auto flex items-center gap-1 text-[11px] text-function-warning"
+              data-testid="canvas-stale-count"
+            >
+              <XCircle className="size-3" />
+              {t('{count} stale', { count: staleIds.length }, locale)}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="flex min-h-0 flex-1">
         <div
           ref={surfaceRef}
@@ -556,21 +772,18 @@ export function CanvasPanel({
           </svg>
 
           {nodes.map((node) => (
-            <button
+            <div
               key={node.id}
-              type="button"
               onPointerDown={(event) => beginNodeDrag(event, node)}
-              onClick={() => setExpandedId(node.id === expandedId ? null : node.id)}
               data-testid="canvas-node"
               data-node-id={node.id}
               data-node-type={node.type}
               data-node-status={node.status}
+              data-selected={selectedIds.includes(node.id) ? 'true' : 'false'}
+              data-stale={isStale(node.data) ? 'true' : 'false'}
+              role="group"
               aria-label={nodeTitle(node, tr)}
-              className={[
-                'absolute flex flex-col gap-1 rounded-card border p-2 text-start',
-                'border-border-main bg-bg-menu text-text-primary shadow-sm',
-                node.id === expandedId ? 'border-icon-blue' : 'hover:border-border-dark',
-              ].join(' ')}
+              className="absolute flex flex-col gap-1"
               style={{
                 width: NODE_WIDTH,
                 minHeight: NODE_HEIGHT,
@@ -579,14 +792,55 @@ export function CanvasPanel({
                 transform: `translate(${view.panX + node.x * view.scale}px, ${view.panY + node.y * view.scale}px)`,
               }}
             >
-              <span className="truncate text-[11px] text-text-secondary">{nodeTitle(node, tr)}</span>
-              <span dir="auto" className="truncate text-[10px] text-text-tertiary">
-                {nodeSubtitle(node, tr)}
-              </span>
-              <span className="mt-auto text-[10px] text-text-quaternary">
-                {tr(NODE_TYPE_KEYS[node.type] ?? node.type)} · {tr(NODE_STATUS_KEYS[node.status] ?? node.status)}
-              </span>
-            </button>
+              {/*
+                A card is a `group` rather than a button because it holds two
+                controls: the tick that selects it for a group or a re-connect, and
+                the card itself that opens the detail sheet. Nesting the tick in the
+                card would make every click select, which is the opposite of what a
+                user means by "open this node".
+              */}
+              <div className="flex items-center gap-1 text-[10px] text-text-tertiary">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(node.id)}
+                  onChange={() => toggleSelect(node.id)}
+                  onClick={(event) => event.stopPropagation()}
+                  data-testid="canvas-node-select"
+                  aria-label={tr('Select')}
+                  className="size-3 shrink-0 accent-icon-blue"
+                />
+                <span>
+                  {tr(NODE_TYPE_KEYS[node.type] ?? node.type)} · {tr(NODE_STATUS_KEYS[node.status] ?? node.status)}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExpandedId(node.id === expandedId ? null : node.id)}
+                aria-label={nodeTitle(node, tr)}
+                aria-pressed={node.id === expandedId}
+                className={[
+                  'flex flex-col gap-1 rounded-card border p-2 text-start',
+                  selectedIds.includes(node.id)
+                    ? 'border-icon-blue bg-fill-tsp text-text-primary shadow-sm'
+                    : 'border-border-main bg-bg-menu text-text-primary shadow-sm',
+                  node.id === expandedId ? 'border-icon-blue' : 'hover:border-border-dark',
+                ].join(' ')}
+              >
+                <span className="truncate text-[11px] text-text-secondary">{nodeTitle(node, tr)}</span>
+                <span dir="auto" className="truncate text-[10px] text-text-tertiary">
+                  {nodeSubtitle(node, tr)}
+                </span>
+                {isStale(node.data) ? (
+                  <span
+                    className="mt-auto text-[10px] text-function-warning"
+                    data-testid="canvas-node-stale"
+                    data-node-id={node.id}
+                  >
+                    {tr('Stale')}
+                  </span>
+                ) : null}
+              </button>
+            </div>
           ))}
 
           {nodes.length === 0 && (
@@ -666,7 +920,11 @@ export function CanvasPanel({
           isRtl={isRtl}
           tr={tr}
           onClose={() => setExpandedId(null)}
-          onPatch={(patch) => void savePatch(expanded.id, patch)}
+          onEdit={(text) => void applyOp({ op: 'edit', nodeId: expanded.id, text, mode })}
+          onCut={() => cutEdges(expanded)}
+          onBranch={() => branch(expanded)}
+          stale={staleIds.includes(expanded.id) || isStale(expanded.data)}
+          canEdit={hasNodeText(expanded)}
         />
       ) : null}
     </div>
@@ -680,43 +938,74 @@ function NodeDetail({
   isRtl,
   tr,
   onClose,
-  onPatch,
+  onEdit,
+  onCut,
+  onBranch,
+  stale,
+  canEdit,
 }: {
   node: CanvasLayoutNode;
   events: ChatEvent[];
   isRtl: boolean;
   tr: (key: string) => string;
   onClose: () => void;
-  onPatch: (patch: CanvasNodePatch) => void;
+  /** The N11 edit: version the node and mark what it supersedes. */
+  onEdit: (text: string) => void;
+  /** Cut every edge into this node. */
+  onCut: () => void;
+  /** Duplicate this node as a branch. */
+  onBranch: () => void;
+  /** True when the node was superseded by an edit to an earlier node. */
+  stale: boolean;
+  /** False when the node carries no prose worth editing. */
+  canEdit: boolean;
 }) {
   const [draft, setDraft] = useState<string>(() => readString(node.data, TITLE_KEYS));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  const editable = editableFields(node.data);
+  const editKey = Object.keys(editable)[0];
+  const history = readEditHistory(node.data);
+  const edits = history.slice(-EDIT_HISTORY_ROWS);
+
+  // The sheet is opened per node, so the draft follows whichever node it shows.
+  useEffect(() => {
+    setDraft(nodeText(node));
+    setSaveError(null);
+  }, [node]);
 
   const related = useMemo(
     () => events.filter((event) => event.type === 'toolUsed').slice(-5),
     [events],
   );
 
-  const save = async (): Promise<void> => {
+  /**
+   * Saving here is an N11 *edit*: the node gets a new version, its old text is
+   * kept in the history, and everything that depended on it is marked stale. It
+   * goes through `applyOp` on purpose: a bare field PATCH would change the node
+   * without versioning it or telling the agent, so the graph and the model would
+   * disagree about the run.
+   */
+  const save = (): void => {
+    const text = draft.trim();
+    if (!text || text === nodeText(node)) return;
     setSaving(true);
-    setSaveError(null);
-    try {
-      const data = typeof node.data === 'object' && node.data !== null ? (node.data as Record<string, unknown>) : {};
-      const key = typeof data.title === 'string' ? 'title' : typeof data.query === 'string' ? 'query' : 'title';
-      onPatch({ data: { ...data, [key]: draft } });
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
+    onEdit(text);
+    setSaving(false);
   };
+
+  /** The previous text of the latest edit, so the diff is visible without a modal. */
+  const lastEdit = history.length > 0 ? history[history.length - 1]! : null;
 
   return (
     <aside
       className="flex max-h-[45%] w-full shrink-0 flex-col gap-2 border-t border-border-main bg-bg-menu p-3"
       data-testid="canvas-node-detail"
       data-node-id={node.id}
+      data-version={node.version}
+      data-stale={stale ? 'true' : 'false'}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -724,8 +1013,14 @@ function NodeDetail({
             {nodeTitle(node, tr)}
           </p>
           <p className="text-[11px] text-text-tertiary">
-            {tr(NODE_TYPE_KEYS[node.type] ?? node.type)} · {tr(NODE_STATUS_KEYS[node.status] ?? node.status)}
+            {tr(NODE_TYPE_KEYS[node.type] ?? node.type)} · {tr(NODE_STATUS_KEYS[node.status] ?? node.status)} · v
+            {node.version}
           </p>
+          {stale ? (
+            <p className="text-[11px] text-function-warning" data-testid="canvas-node-stale">
+              {tr('Stale: superseded by an edit to an earlier node')}
+            </p>
+          ) : null}
         </div>
         <button
           type="button"
@@ -737,27 +1032,85 @@ function NodeDetail({
         </button>
       </div>
 
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={onCut}
+          data-testid="canvas-sheet-cut"
+          title={tr('Cut edge from this node')}
+          className="flex items-center gap-1 rounded-control px-2 py-1 text-[11px] text-text-secondary hover:bg-fill-hover hover:text-text-primary"
+        >
+          <Scissors className="size-3" />
+          {tr('Cut edge')}
+        </button>
+        <button
+          type="button"
+          onClick={onBranch}
+          title={tr('Branch this node')}
+          className="flex items-center gap-1 rounded-control px-2 py-1 text-[11px] text-text-secondary hover:bg-fill-hover hover:text-text-primary"
+        >
+          <Copy className="size-3" />
+          {tr('Branch')}
+        </button>
+        {isRtl ? <span className="ms-auto text-[11px] text-text-tertiary">{tr('RTL')}</span> : null}
+      </div>
+
+      <label className="text-[11px] text-text-tertiary" htmlFor="canvas-node-edit">
+        {tr('Edit this node')}
+        {editKey ? ` (${editKey})` : ''}
+      </label>
       <textarea
+        id="canvas-node-edit"
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         rows={3}
         dir="auto"
-        className="w-full resize-y rounded-control border border-border-main bg-bg-main p-2 text-xs text-text-primary outline-none focus:border-icon-blue"
+        disabled={!canEdit}
+        placeholder={tr('No text to edit on this node.')}
+        className="w-full resize-y rounded-control border border-border-main bg-bg-main p-2 text-xs text-text-primary outline-none focus:border-icon-blue disabled:opacity-50"
         aria-label={tr('Edit this node')}
       />
 
       <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={() => void save()}
-          disabled={saving}
+          onClick={save}
+          disabled={saving || !canEdit || draft.trim() === nodeText(node)}
           className="rounded-control bg-fill-tsp px-2 py-1 text-xs font-medium text-text-primary hover:bg-fill-hover disabled:opacity-50"
         >
           {saving ? tr('Saving') : tr('Save')}
         </button>
-        {isRtl ? <span className="text-[11px] text-text-tertiary">{tr('RTL')}</span> : null}
         {saveError ? <span className="text-[11px] text-func-error">{saveError}</span> : null}
       </div>
+
+      {history.length > 0 ? (
+        <div className="min-h-0 overflow-y-auto">
+          <button
+            type="button"
+            onClick={() => setHistoryOpen((open) => !open)}
+            aria-expanded={historyOpen}
+            className="text-[11px] text-text-tertiary underline decoration-dotted"
+          >
+            {tr('Edit history')} ({history.length})
+          </button>
+          {historyOpen ? (
+            <ol className="mt-1 flex flex-col gap-1" data-testid="canvas-edit-history">
+              {edits.map((entry, index) => (
+                <li key={`${entry.at}-${index}`} className="text-[11px] text-text-secondary">
+                  <span className="text-text-tertiary">{tr('Previous text')}:</span>{' '}
+                  <span dir="auto">{entry.previous || '—'}</span>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </div>
+      ) : null}
+
+      {lastEdit && !historyOpen ? (
+        <p className="truncate text-[11px] text-text-tertiary" dir="auto">
+          <span className="text-text-quaternary">{tr('Previous text')}:</span> {excerpt(lastEdit.previous, 80)}
+        </p>
+      ) : null}
 
       {related.length > 0 ? (
         <div className="min-h-0 overflow-y-auto">

@@ -267,4 +267,85 @@ describe("canvas graph routes", () => {
     unsubscribe();
     assert.equal(res.frames().length, 1, "no change is written after the client is gone");
   });
+
+  it("applies a canvas edit and files a directive the agent will pick up", async () => {
+    const searchId = applyRunEvent(RUN, { type: "tool_call", name: "web_search", args: { query: "revenue" } })[0]!;
+
+    const res = new FakeResponse();
+    assert.equal(
+      await handler(
+        fakeRequest("POST", `/api/graph/${RUN}/ops`, { op: "edit", nodeId: searchId, text: "Revenue is $4.2B." }),
+        res,
+        `/api/graph/${RUN}/ops`,
+        {},
+      ),
+      true,
+    );
+    assert.equal(res.status, 200);
+    const body = res.json();
+    assert.equal(body.op, "edit");
+    assert.equal(body.nodeId, searchId);
+    assert.ok(Array.isArray(body.stale), "an edit reports what it superseded");
+    assert.equal(Array.isArray(body.nodes), true, "the panel gets the graph back");
+
+    // The graph really holds the corrected text, and the edit history is kept.
+    const node = (body.nodes as Array<{ id: string; data?: { query?: string; edits?: unknown[] } }>).find((candidate) => candidate.id === searchId)!;
+    assert.equal(node.data!.query, "Revenue is $4.2B.", "the edit rewrites the field the node's type carries");
+    assert.equal(node.data!.edits!.length, 1, "the previous text is kept as history");
+
+    // The directive is what the next step is told, and reading it does not clear it.
+    const pending = new FakeResponse();
+    assert.equal(await handler(fakeRequest("GET", `/api/graph/${RUN}/ops`), pending, `/api/graph/${RUN}/ops`, {}), true);
+    const directives = pending.json().directives as Array<{ reason: string; nodeId: string; text: string }>;
+    assert.equal(directives.length, 1);
+    assert.equal(directives[0]!.reason, "edited");
+    assert.equal(directives[0]!.nodeId, searchId);
+    assert.match(directives[0]!.text, /4\.2B/);
+  });
+
+  it("refuses an unrecognised, cross-site or foreign-run canvas operation", async () => {
+    const searchId = applyRunEvent(RUN, { type: "tool_call", name: "web_search", args: { query: "x" } })[0]!;
+
+    const bad = new FakeResponse();
+    await handler(fakeRequest("POST", `/api/graph/${RUN}/ops`, { op: "explode" }), bad, `/api/graph/${RUN}/ops`, {});
+    assert.equal(bad.status, 400, "an operation the graph cannot perform is a 400");
+
+    const blank = new FakeResponse();
+    await handler(fakeRequest("POST", `/api/graph/${RUN}/ops`, { op: "edit", nodeId: searchId }), blank, `/api/graph/${RUN}/ops`, {});
+    assert.equal(blank.status, 400, "an edit with no text is rejected, not applied");
+
+    const crossSite = new FakeResponse();
+    await handler(
+      fakeRequest("POST", `/api/graph/${RUN}/ops`, { op: "duplicate", nodeId: searchId }, { origin: "https://evil.example" }),
+      crossSite,
+      `/api/graph/${RUN}/ops`,
+      {},
+    );
+    assert.equal(crossSite.status, 403, "a cross-site canvas edit is refused");
+
+    const foreign = new FakeResponse();
+    await handler(fakeRequest("POST", `/api/graph/${RUN}/ops`, { op: "edit", nodeId: "ghost", text: "x" }), foreign, `/api/graph/${RUN}/ops`, {});
+    assert.equal(foreign.status, 404, "a node of another run is not found here");
+
+    const group = new FakeResponse();
+    await handler(fakeRequest("POST", `/api/graph/${RUN}/ops`, { op: "group", nodeIds: [searchId] }), group, `/api/graph/${RUN}/ops`, {});
+    assert.equal(group.status, 400, "a group of one is a malformed request, not a conflict");
+  });
+
+  it("cuts and re-connects an edge through the route", async () => {
+    const [stepId] = applyRunEvent(RUN, { type: "plan_step", id: "s1", index: 0, total: 6, title: "Step 1", phase: "start" });
+    const nodeId = applyRunEvent(RUN, { type: "tool_call", name: "web_search", args: { query: "x" } })[0]!;
+    assert.ok(stepId && nodeId);
+
+    const cut = new FakeResponse();
+    await handler(fakeRequest("POST", `/api/graph/${RUN}/ops`, { op: "cut", nodeId, parentIds: [] }), cut, `/api/graph/${RUN}/ops`, {});
+    assert.equal(cut.status, 200);
+    assert.equal(cut.json().op, "cut");
+    assert.deepEqual(cut.json().stale, [], "a cut supersedes nothing");
+
+    const moved = new FakeResponse();
+    await handler(fakeRequest("POST", `/api/graph/${RUN}/ops`, { op: "cut", nodeId, parentIds: [stepId] }), moved, `/api/graph/${RUN}/ops`, {});
+    assert.equal(moved.status, 200);
+    assert.equal(moved.json().op, "reconnect", "a move reports the connect it performed");
+  });
 });
