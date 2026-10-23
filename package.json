@@ -43,6 +43,7 @@
     "check:task-ui": "npm run check:loam-ui",
     "check:recovery": "tsx src/scripts/check-recovery.ts",
     "check:recovery:http": "tsx src/scripts/check-recovery-http.ts",
+    "check:eventlog": "tsx src/scripts/check-eventlog.ts",
     "verify": "npm run typecheck && npm run check:encoding && npm run check:eval && npm run check:orchestrator && npm run check:recovery && npm run check:modes",
     "build:server": "node -e \"require('./scripts/build-server.cjs')\"",
     "build:memory-skills": "esbuild addons/memory-skills-mcp/src/server.ts --bundle --platform=node --format=cjs --target=node22 --outfile=addons/memory-skills-mcp/dist/server.cjs --external:@modelcontextprotocol/sdk",
