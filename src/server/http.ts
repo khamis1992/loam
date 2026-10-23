@@ -95,6 +95,9 @@ import { handleMarketplaceRoutes } from "./routes/marketplace.js";
 import { handlePersonalizationRoutes } from "./routes/personalization.js";
 import { handleApiKeysRoutes } from "./routes/apiKeys.js";
 import { handleDataControlsRoutes } from "./routes/dataControls.js";
+import { handleDebugMemoryRoutes } from "./routes/debugMemory.js";
+import { LruCache } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 import { handleMemorySkillsRoutes } from "./routes/memorySkills.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
 import { handlePlanApprovalRoutes } from "./routes/planApproval.js";
@@ -106,8 +109,10 @@ import { handleInsightsRoutes } from "./routes/insights.js";
 import { handleShareRoutes } from "./routes/shares.js";
 import { handleProjectContextRoutes } from "./routes/projectContext.js";
 import { handlePlaybookRoutes } from "./routes/playbooks.js";
+import { handleFlowTemplateRoutes } from "./routes/flowTemplates.js";
 import { handleVoiceRoutes } from "./routes/voice.js";
 import { handleConnectorsRoutes } from "./routes/connectors.js";
+import { handleKnowledgeRoutes } from "./routes/knowledge.js";
 import { handleWikiRoutes } from "./routes/wiki.js";
 import { importGrokbotBundle, sanitizeGrokbotBundle } from "./grokbotImport.js";
 import { isValidTimezone } from "./scheduleTime.js";
@@ -164,6 +169,7 @@ export interface RunTaskOptions {
   scheduleId?: string;
   /** Side-chat ("/btw") run: restricted to read-only inspection tools. */
   sideChat?: boolean;
+  knowledge?: boolean;
   /** O6: protocol session whose durable inbound queue this run should drain. */
   inputSessionId?: string;
 }
@@ -177,6 +183,8 @@ export interface ServerDeps {
   registry?: ToolRegistry;
   mcp?: McpToolset | null;
   runTask: (opts: RunTaskOptions) => Promise<{ taskId: string; text: string }>;
+  /** N3 Knowledge Garden vector channel; absent => lexical-only search. */
+  embedder?: { embed(texts: string[]): Promise<number[][]> };
 }
 
 const MIME: Record<string, string> = {
@@ -228,7 +236,9 @@ function parseWorktrees(porcelainOut: string): Array<{ path: string; head: strin
 /** A ":cloud"-suffixed model may be served verbatim by the local Ollama (router
  *  setups register the full name); only demand a cloudModel.apiKey when Ollama
  *  does not actually have it — otherwise the request dies before it starts. */
-const ollamaTagCache = new Map<string, { names: string[]; at: number }>();
+/** Bounded (J6): keyed by base URL, but a user can point Loam at many hosts. */
+const ollamaTagCache = new LruCache<{ names: string[]; at: number }>({ capacity: 32, name: "ollama-tags" });
+registerCacheStats("ollama-tags", () => ollamaTagCache.stats());
 async function cloudSuffixedModelServedByOllama(model: string): Promise<boolean> {
   const baseUrl = process.env.OLLAMA_HOST && /^http/.test(process.env.OLLAMA_HOST) ? process.env.OLLAMA_HOST : "http://127.0.0.1:11434";
   const cached = ollamaTagCache.get(baseUrl);
@@ -1799,6 +1809,8 @@ loadAgents();
         if (await handlePersonalizationRoutes(req, res, p)) return;
         if (await handleApiKeysRoutes(req, res, p)) return;
         if (await handleDataControlsRoutes(req, res, p)) return;
+        // Local-only memory profile (J6): loopback + install token, GET only.
+        if (await handleDebugMemoryRoutes(req, res, p)) return;
         // Settings › Connectors (UNIMPLEMENTED_OPTIONS #3): list/connect/callback/disconnect.
         if (await handleConnectorsRoutes(req, res, p)) return;
         // Settings › Skills (UNIMPLEMENTED_OPTIONS #4): proxy the memory-skills MCP.
@@ -1817,8 +1829,17 @@ loadAgents();
         if (await handleProjectContextRoutes(req, res, p)) return;
         // Playbooks (D9): versioned reusable prompt library + macro expansion.
         if (await handlePlaybookRoutes(req, res, p)) return;
+
+        if (await handleFlowTemplateRoutes(req, res, p)) return;
         // Repo wiki (D8): list/generate/read DeepWiki-style pages.
         if (await handleWikiRoutes(req, res, p, { workspace: cfg.workspace, ollama, model: cfg.model })) return;
+
+        // Knowledge Garden (N3): bases, seeds, import and hybrid search.
+        if (await handleKnowledgeRoutes(req, res, p, {
+          workspace: cfg.workspace,
+          ...(deps.embedder ? { embedder: deps.embedder } : {}),
+          model: cfg.memory.model || cfg.model,
+        })) return;
 
         // ---- avatar (Grok Bot-style): set shape/color/image on an existing agent ----
         // Must run before the generic /api/agents/:id prefix block.
@@ -2628,6 +2649,7 @@ loadAgents();
             abModels?: unknown;
             agentId?: unknown;
             workMode?: unknown;
+            knowledge?: unknown;
           };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
           if (!prompt) return sendJson(res, 400, { error: "prompt required" });
@@ -2654,6 +2676,9 @@ loadAgents();
           } catch (error) {
             return sendJson(res, 400, { error: String(error) });
           }
+          // N3 Knowledge Garden: the run only reaches the kb_* tools when the
+          // caller switched the garden on for THIS run (default off).
+          const knowledge = body.knowledge === true;
 
           res.writeHead(200, {
             "content-type": "text/event-stream; charset=utf-8",
@@ -2692,6 +2717,7 @@ loadAgents();
               ...(abModels && abModels.length > 0 ? { abModels } : {}),
               agentId,
               workMode,
+              knowledge,
             });
             if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify({ type: "task", taskId: result.taskId })}\n\n`);
           } catch (err) {
