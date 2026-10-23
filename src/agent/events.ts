@@ -193,6 +193,18 @@ export type AgentEvent =
   /** A workspace file was published as a task artifact via artifact_publish. */
   | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string }
   /**
+   * Neo N5: the per-step context selector re-shaped the transcript for this
+   * step. `tokens` is the estimated size of the selected blocks, `artefacts`
+   * the number of artefacts in the run's store, and `reason` why the selector
+   * applied (or why it declined).
+   */
+  | { type: "context_selected"; step: number; tokens: number; artefacts: number; reason: string }
+  /**
+   * fc-06: a Loam Video export is in flight. Live-only (no canvas node): the
+   * rendered file lands in the task workspace when the stage reaches "saving".
+   */
+  | { type: "video_studio_export"; taskId: string; stage: "starting" | "rendering" | "saving"; progress?: number }
+  /**
    * MiroFish swarm simulation progress. Carries one `SimulationProgressEvent`
    * from the M3 loop as `payload` (the tool module owns that type; the agent core
    * deliberately does not import a tool module).
@@ -204,6 +216,31 @@ export type AgentEvent =
    * result back to /api/tasks/:id/video-studio/result.
    */
   | { type: "video_studio_command"; id: string; target: "film" | "effects"; method: string; params: Record<string, unknown> }
+  /**
+   * Workspace relay: one command for the editor panel attached to this task's
+   * event stream. The panel executes it with its editor bridge and posts the
+   * result back to /api/tasks/:id/workspace/result.
+   *
+   * It carries both the Video Studio targets (film/effects) and the Craft app
+   * targets (docs/sheets/slides/photo/design); `craft.open` and `craft.waitSave`
+   * are pseudo-methods the panel handles itself. See src/server/workspaceRelay.ts.
+   */
+  | {
+      type: "workspace_command";
+      id: string;
+      target: "film" | "effects" | "docs" | "sheets" | "slides" | "photo" | "design";
+      method: string;
+      params: Record<string, unknown>;
+    }
+  /**
+   * No editor panel was attached for this task+target, so the relay asked the
+   * shell to open the right panel (cr-03) before the caller retries.
+   */
+  | {
+      type: "workspace_open_request";
+      target: "film" | "effects" | "docs" | "sheets" | "slides" | "photo" | "design";
+      path: string | null;
+    }
   /**
    * N7 branch fan-out: one independent branch of a fan-out started or finished.
    *
@@ -223,6 +260,8 @@ export type AgentEvent =
       label?: string;
       /** Short summary of what the branch produced, on `done`. */
       summary?: string;
+      /** True when the branch produced a usable result; the canvas marks the node failed otherwise. */
+      ok?: boolean;
     }
   /** N7 branch fan-out: the merge step consumed every branch of a fan-out. */
   | {

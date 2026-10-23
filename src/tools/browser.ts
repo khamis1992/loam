@@ -9,6 +9,8 @@ import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { bool, num, str } from "./registry.js";
 import { publishBrowserFrame } from "./browserFrames.js";
 import { getSettings } from "../server/settings.js";
+import { BoundedMap } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 let browser: Browser | null = null;
 /** Per-companion isolated browser sessions (frontier section 7): each session
@@ -18,7 +20,15 @@ interface BrowserSession {
   context: BrowserContext;
   pages: Map<string, Page>;
 }
-const sessions = new Map<string, BrowserSession>();
+/**
+ * Isolated browser sessions (J6). Each entry holds a live Chromium context, so
+ * this map must be bounded: the oldest session is closed (context disposed) when
+ * a new one would exceed the cap, instead of leaking a browser per companion.
+ */
+const sessions = new BoundedMap<string, BrowserSession>(32, "browser-sessions", (_session, entry) => {
+  try { void entry.context.close(); } catch { /* already gone */ }
+});
+registerCacheStats("browser-sessions", () => sessions.stats());
 let counter = 0;
 let sessionResolver: ((ctx: ToolContext) => string) | null = null;
 

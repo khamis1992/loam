@@ -14,6 +14,12 @@ import {requireTaskWorkspace,taskPath} from '../server/taskWorkspace.js';
 // The same structural validator is used by the editor and persistent worker.
 // @ts-expect-error plain browser module
 import {validateTimeline,timelineDuration} from '../../ui/creative-timeline-model.js';
+import {BoundedMap} from '../memory/cache.js';
+import {registerCacheStats} from '../memory/stats.js';
+
+/** J6 hard caps: recent export jobs and recent proxy-preview jobs in RAM. */
+const TIMELINE_JOB_CAPACITY=64;
+const TIMELINE_PROXY_CAPACITY=64;
 
 type Project=RenderProject;
 type Job={rendererVersion?:number;id:string;taskId:string;title:string;format:'mp4'|'webm'|'wav'|'stems';loudnessTarget?:number;state:'queued'|'running'|'done'|'failed'|'canceled';completed:number;total:number;duration:number;project:Project;message:string;path?:string;createdAt:number};
@@ -24,8 +30,14 @@ const json=(res:ServerResponse,status:number,value:unknown)=>{res.writeHead(stat
 async function body(req:IncomingMessage){let size=0;const chunks:Buffer[]=[];for await(const chunk of req){size+=chunk.length;if(size>2_000_000)throw Error('بيانات المشروع كبيرة جدًا؛ يجب رفع الوسائط كأصول مستقلة.');chunks.push(chunk);}return JSON.parse(Buffer.concat(chunks).toString());}
 
 export class TimelineService{
-  private jobs=new Map<string,Job>();private working=false;private stopped=false;private browser?:Browser;private process?:ChildProcess;private base='';private currentJob?:string;
-  constructor(private workspace:string){}
+  /** Live/recent export jobs (J6: bounded). `start()` rehydrates finished jobs
+   *  from disk and `getRenderJob`-style reads fall back to `job.json`, so a
+   *  long-lived editor process only needs the most recent jobs in RAM. */
+  private jobs=new BoundedMap<string,Job>(TIMELINE_JOB_CAPACITY,'timeline-jobs');private working=false;private stopped=false;private browser?:Browser;private process?:ChildProcess;private base='';private currentJob?:string;
+  constructor(private workspace:string){
+    registerCacheStats('timeline-jobs',()=>this.jobs.stats());
+    registerCacheStats('timeline-proxy-jobs',()=>this.proxyJobs.stats());
+  }
   private root(taskId:string){if(getTask(taskId)?.mode!=='media')throw Error('يلزم مشروع في استديو صمّم.');return requireTaskWorkspace(taskId,this.workspace);}
   private dir(job:Job){const dir=taskPath(this.root(job.taskId),`.timeline-jobs/${job.id}`);fs.mkdirSync(dir,{recursive:true});return dir;}
   private persist(job:Job){atomic(path.join(this.dir(job),'job.json'),job);}
@@ -180,7 +192,10 @@ export class TimelineService{
     const pix=video.split(',').map(s=>s.trim()).find(s=>/^(yuv|rgb|rgba|yuva|gray|pal8)[a-z0-9()]*$/.test(s));
     return {container,duration:duration?(Number(duration[1])*3600+Number(duration[2])*60+Number(duration[3])):undefined,videoCodec:vcodec?.[1]?.trim().split(' ')[0],pixFmt:pix,transparent:/\b(rgba|yuva|pal8)\b/.test(video),width:dims?Number(dims[1]):undefined,height:dims?Number(dims[2]):undefined,hasAudio:!!audio,audioCodec:acodec?.[1]?.trim().split(' ')[0],sampleRate:rate?Number(rate[1]):undefined};}
   private proxyQueue:Promise<unknown>=Promise.resolve();
-  private proxyJobs=new Map<string,ProxyJob>();
+  /** Proxy transcode jobs (J6: bounded). Each keeps a job record plus its
+   *  rendered output path; a burst of preview requests must not retain every
+   *  job forever. A dropped job falls back to the on-disk project file. */
+  private proxyJobs=new BoundedMap<string,ProxyJob>(TIMELINE_PROXY_CAPACITY,'timeline-proxy-jobs');
   private publicProxy(job:ProxyJob){return {id:job.id,state:job.state,message:job.message,width:job.width,...(job.result?{result:job.result}:{})};}
   /** Serialized proxy transcodes; cancel/retry flip state and the runner discards its partial output. */
   private chainProxy(job:ProxyJob){
