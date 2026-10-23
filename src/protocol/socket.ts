@@ -39,6 +39,7 @@ import type {
 } from "./types.js";
 import type { ProtocolStore } from "./store.js";
 import { tokenToUserUid } from "./rpc.js";
+import { enqueue, newInputId, type InputDelivery } from "../server/inputQueue.js";
 
 // Re-export for callers.
 export { Server } from "socket.io";
@@ -197,6 +198,40 @@ function stepToAgentEvent(step: StepRecord): AgentEvent | undefined {
         }))
       : [];
     return { type: "plan", goal, trivial: Boolean(data.trivial), steps, source: String(data.source ?? "fallback") as "model" | "fallback" };
+  }
+  if (type === "recipe_update") {
+    // Neo N4: the live recipe is the recipe row the UI renders. It has to be
+    // rebuildable from the persisted step, or reopening the session loses the
+    // recipe the run actually executed (including the estimate and the restart).
+    return {
+      type: "recipe_update",
+      goal: String(data.goal ?? ""),
+      steps: Array.isArray(data.steps)
+        ? data.steps.map((s: Record<string, unknown>) => ({
+            id: String(s.id ?? ""),
+            title: String(s.title ?? ""),
+            instruction: String(s.instruction ?? ""),
+            successCriteria: String(s.successCriteria ?? ""),
+            status: String(s.status ?? "proposed") as "proposed" | "ready" | "doing" | "done" | "blocked" | "skipped",
+            ...(typeof s.nodeId === "string" ? { nodeId: s.nodeId } : {}),
+            ...(Array.isArray(s.replaces) ? { replaces: s.replaces.map(String) } : {}),
+            completedCount: Number(s.completedCount ?? 0),
+          }))
+        : [],
+      remainingEstimate: Number(data.remainingEstimate ?? 0),
+      change: String(data.change ?? "advance") as "init" | "propose" | "advance" | "rewrite" | "drop" | "restart",
+      source: (data.source === "planner" || data.source === "restart" ? data.source : "auto") as "planner" | "restart" | "auto",
+    };
+  }
+  if (type === "recipe_restart") {
+    return {
+      type: "recipe_restart",
+      stepId: String(data.stepId ?? ""),
+      nodeId: String(data.nodeId ?? ""),
+      keptSteps: Array.isArray(data.keptSteps) ? data.keptSteps.map(String) : [],
+      regeneratedSteps: Array.isArray(data.regeneratedSteps) ? data.regeneratedSteps.map(String) : [],
+      reason: String(data.reason ?? ""),
+    };
   }
   if (type === "plan_step") {
     return {
@@ -507,6 +542,21 @@ export function createChatSocket(deps: SocketDeps): Server {
           const text = um.contents.map((c) => c.value).join("").trim();
           const session = store.ensureSession(um.sessionId, "", text.slice(0, 80));
 
+          // O6 durable input queue: the message is stored *before* it is admitted
+          // to the run, so it survives a restart even if the run is busy or the
+          // process dies right here. `interrupt` is treated as a queued message
+          // too: Loam has no mid-run interrupt channel yet, and losing it would
+          // be worse than delivering it at the next step boundary.
+          const delivery: InputDelivery = um.deliveryMode === "interrupt" ? "steering" : "queued";
+          // The run below admits it at its first step boundary, so this message
+          // becomes a durable `input` event without any extra plumbing here.
+          enqueue({
+            id: newInputId(),
+            sessionId: um.sessionId,
+            text,
+            delivery,
+          });
+
           let taskId = session.taskId;
           if (!taskId || !getTask(taskId)) {
             if (getTask(um.sessionId)) {
@@ -672,6 +722,9 @@ export function createChatSocket(deps: SocketDeps): Server {
               agentId: um.extData.agentId ?? undefined,
               workMode: um.extData.workMode ?? undefined,
               knowledge: um.extData.knowledge === true,
+              // O6: this run owns the session's durable inbound queue, so messages
+              // arriving mid-run are admitted at the next step boundary.
+              inputSessionId: um.sessionId,
               ...(tierModel ? { model: tierModel } : {}),
             });
 

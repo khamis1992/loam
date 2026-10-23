@@ -121,6 +121,9 @@ export interface ServerEnvelope<E extends ChatEvent = ChatEvent> {
   timestamp: number;
   event: E;
   webdevAddonEnabled?: boolean;
+  /** BUILD_SPEC §6.4: the durable log sequence of this frame (optional so older
+   *  clients are unaffected). */
+  seq?: number;
 }
 
 export interface ChatEventBase extends Base {
@@ -176,6 +179,41 @@ export interface NewPlanStepEvent extends ChatEventBase {
   type: "newPlanStep";
   stepId: string;
   title: string;
+}
+
+/**
+ * Neo N4 incremental Recipe engine: the live step list of a recipe-mode run.
+ *
+ * Unlike `PlanUpdateEvent` (the plan as it was at the start), this carries the
+ * *current* recipe with per-step status and the remaining-work estimate, so the
+ * client can render a recipe that changes as each step produces a result.
+ */
+export interface RecipeUpdateEvent extends ChatEventBase {
+  type: "recipeUpdate";
+  goal: string;
+  steps: {
+    id: string;
+    title: string;
+    instruction: string;
+    successCriteria: string;
+    status: "proposed" | "ready" | "doing" | "done" | "blocked" | "skipped";
+    nodeId?: string;
+    replaces?: string[];
+    completedCount: number;
+  }[];
+  remainingEstimate: number;
+  change: "init" | "propose" | "advance" | "rewrite" | "drop" | "restart";
+  source: "planner" | "restart" | "auto";
+}
+
+/** Neo N4: the recipe restarted from one step; downstream is regenerated. */
+export interface RecipeRestartEvent extends ChatEventBase {
+  type: "recipeRestart";
+  stepId: string;
+  nodeId: string;
+  keptSteps: string[];
+  regeneratedSteps: string[];
+  reason: string;
 }
 
 export interface TodoUpdateEvent extends ChatEventBase {
@@ -416,6 +454,8 @@ export type ChatEvent =
   | PlanApprovalResolvedEvent
   | LocalExecutionApprovalResolved
   | EnvironmentIssueEvent
-  | DeviceAttachmentUploadNotify;
+  | DeviceAttachmentUploadNotify
+  | RecipeUpdateEvent
+  | RecipeRestartEvent;
 
 export type ServerMessage = ServerEnvelope | { type: "session_write_access"; sessionId: string; writable: boolean };

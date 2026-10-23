@@ -1,9 +1,10 @@
 import type { Config } from "../config.js";
 import type { ChatMessage, ChatResult, OllamaClient } from "../ollama.js";
-import type { PlanStepInfo, Usage } from "./events.js";
+import type { PlanStepInfo, RecipeStepInfo, RecipeStepStatus, Usage } from "./events.js";
 import { log } from "../log.js";
 import { chatWithFallback } from "./model.js";
 import { isCancelledError } from "../server/runControl.js";
+import { proposePrompt, type RecipeProposeContext } from "./recipe.js";
 
 export interface Plan {
   goal: string;
@@ -50,6 +51,35 @@ export const PLANNER_SYSTEM = [
   '- A request that edits a file attached in chat (an office document, spreadsheet, deck, image or layout) is a Craft-editor task, not a from-scratch build: it opens in the Workspace panel and is driven live. Keep it to 2-3 steps: (s1) open the attached file and read the live state (document.inspect / sheet.read / cell.get / ui.inspect); (s2) discover the command ids with engine.commands, apply the batched edits, then re-read the state to verify the change; (s3) export through the app so the bytes return into the task. Never invent a command id, never replay a failed command, and never write the office file with shell or Python. The last step must also report the exported file path to the user. If the app is unavailable or the panel never reports ready, say so in the user\'s language and fall back to the built-in editors instead of retrying.',
   '- Instructions must be concrete: files, commands, sources. No meta-work like "understand the task".',
   "- Write goal, titles, instructions and success criteria in the user's language.",
+].join("\n");
+
+/**
+ * System prompt for the incremental half of the Recipe engine (N4).
+ *
+ * One short call per finished step. The planner is shown the recipe, what the
+ * last step actually produced, and the tools that exist, then decides whether
+ * the recipe needs a new step, a reworded not-yet-run step, or a dropped step.
+ * It must never invent tools, never rewrite a step that already ran, and never
+ * claim completion while open steps remain.
+ */
+export const RECIPE_PLANNER_SYSTEM = [
+  "You are the recipe planner of a long-horizon agent running on the user's computer.",
+  "Unlike a one-shot plan, the recipe you maintain is INCREMENTAL: it is extended after every step, from the results that step actually produced.",
+  "",
+  "Your job for this round is narrow: look at the tool results of the step that just finished and decide what the recipe needs NEXT.",
+  "",
+  "Decision rules:",
+  "- Steps that already ran are EVIDENCE, not drafts. Never rewrite, reorder or reword a step whose status is done or skipped.",
+  '- Use "add" only for genuinely new work that the results show is still required to satisfy the user request.',
+  '- Use "rewrite" only for a step that has NOT run yet (status proposed or ready) AND only when the results change what that step must do. Give the step its own id.',
+  '- Use "drop" only for a pending step the results made unnecessary. Dropped steps are never re-added later in this round.',
+  '- Only operations possible with AVAILABLE TOOLS. Do not require shell, browser actions, or external services when those tools are absent.',
+  '- The recipe must end with a step that produces the complete, user-facing final answer (result, files, paths). If that step is missing, add it.',
+  '- When a tool FAILED, re-route: propose a step that reaches the same goal through a different available tool, and say in the instruction what to do if that one fails too. Never propose retrying the identical failing call.',
+  '- "remaining_estimate" is the number of recipe steps still to run, the current one included. Count only steps that are not done and not skipped. It must never exceed that count.',
+  '- Set "complete": true ONLY when every open step is done and the user request is fully satisfied by the work already performed.',
+  "- If the results already satisfy the request, return no additions, no rewrites, no drops and complete: true.",
+  "- Write titles, instructions and success criteria in the user's language. Instructions must be concrete: files, commands, sources. No meta-work like \"understand the task\".",
 ].join("\n");
 
 /** Extract the first JSON value from model output: raw JSON, fenced block, or balanced braces. */
@@ -193,4 +223,59 @@ export async function planTask(o: PlannerOptions): Promise<PlanResult> {
     model: o.cfg.model,
     usage: { promptTokens: 0, completionTokens: 0, durationMs: 0 },
   };
+}
+
+export interface NextStepOptions {
+  cfg: Config;
+  ollama: OllamaClient;
+  /** The proposal context: recipe so far plus the results of the last step. */
+  context: RecipeProposeContext;
+  /** Planner model override ("" = main model). */
+  model?: string;
+  signal?: AbortSignal;
+}
+
+export interface NextStepResult {
+  /** The raw model reply; useful for logs and for the "unparseable" fallback. */
+  content: string;
+  model: string;
+  usage: Usage;
+  /** True when the model produced no usable JSON, so the caller keeps the
+   *  recipe it already had instead of applying a decision. */
+  unparsed: boolean;
+}
+
+/**
+ * Propose the next recipe step(s) from the results of the step that just ran.
+ *
+ * This is the incremental half of the N4 Recipe engine: one short model call
+ * per finished step, so the recipe follows the evidence instead of a list that
+ * was frozen before the first tool ran. A failure or an unparseable reply is
+ * never fatal: the caller treats it as "propose nothing" and keeps going with
+ * the recipe it has, exactly as a failed upfront plan falls back to one step.
+ */
+export async function proposeNextSteps(o: NextStepOptions): Promise<NextStepResult> {
+  const empty: NextStepResult = { content: "", model: o.model ?? o.cfg.model, usage: { promptTokens: 0, completionTokens: 0, durationMs: 0 }, unparsed: true };
+  let res: ChatResult | null = null;
+  try {
+    res = await chatWithFallback({
+      cfg: o.cfg,
+      ollama: o.ollama,
+      messages: [{ role: "system", content: RECIPE_PLANNER_SYSTEM }, { role: "user", content: proposePrompt(o.context) }],
+      temperature: 0.1,
+      ...(o.model ? { model: o.model } : {}),
+      ...(o.signal ? { signal: o.signal } : {}),
+    });
+  } catch (err) {
+    // Cancellation stops the whole run; anything else is a skipped round.
+    if (o.signal?.aborted || isCancelledError(err)) throw err instanceof Error ? err : new Error(String(err));
+    log.warn(`recipe proposal failed: ${err instanceof Error ? err.message : String(err)}; keeping the current recipe`);
+    return empty;
+  }
+  const parsed = extractJson(res.content);
+  if (parsed === null) {
+    log.warn("recipe proposal: unparseable output; keeping the current recipe");
+    return { content: res.content, model: res.model, usage: res.usage, unparsed: true };
+  }
+  return { content: res.content, model: res.model, usage: res.usage, unparsed: false };
 }

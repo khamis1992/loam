@@ -222,6 +222,69 @@ describe("run graph: replay builds the expected tree", () => {
     assert.equal(positions.size, layout.nodes.length, "no two nodes overlap");
   });
 
+  it("creates no canvas node for recipe events", () => {
+    // Neo N4: the recipe is a live state row the protocol renders, not part of
+    // the run graph. The steps it names already have their own `recipe_step`
+    // nodes, created by the plan, so a recipe event must never add a node or
+    // duplicate a step that is already on the canvas.
+    const graph = new RunGraph();
+    graph.replay(RUN, recordedRun());
+    const before = graph.getRunNodes(RUN).map((node) => node.id);
+
+    const ids = graph.applyEvent(RUN, {
+      type: "recipe_update",
+      goal: "Write the quarterly report",
+      steps: [
+        { id: "s1", title: "Gather sources", instruction: "Search the web", successCriteria: "At least 3 sources", status: "done", nodeId: "seed-s1", completedCount: 2 },
+        { id: "s2", title: "Draft the report", instruction: "Write the document", successCriteria: "Report exists", status: "doing", completedCount: 2 },
+      ],
+      remainingEstimate: 1,
+      change: "propose",
+      source: "planner",
+    });
+    assert.deepEqual(ids, [], "a recipe update produces no node");
+    graph.applyEvent(RUN, {
+      type: "recipe_restart",
+      stepId: "s2",
+      nodeId: "seed-s2",
+      keptSteps: ["s1"],
+      regeneratedSteps: ["s2"],
+      reason: "user edited the input of step 2",
+    });
+    assert.deepEqual(graph.getRunNodes(RUN).map((node) => node.id), before, "the canvas is unchanged by recipe events");
+  });
+
+  it("keeps two steps distinct when the seed plan repeated an id", () => {
+    // Neo N4: a step id keys the canvas node, and a planner may repeat an id. The
+    // recipe de-duplicates it, so the plan the run executes carries the unique
+    // ids too. Two steps sharing an id would otherwise collapse onto one node
+    // while the recipe tracked them apart, and the second step's work would have
+    // nowhere to appear.
+    const graph = new RunGraph();
+    graph.applyEvent(RUN, {
+      type: "plan",
+      goal: "finish the request",
+      trivial: false,
+      source: "model",
+      steps: [
+        { id: "s1", title: "alpha", instruction: "do alpha", successCriteria: "alpha done" },
+        { id: "s1-2", title: "beta", instruction: "do beta", successCriteria: "beta done" },
+      ],
+    });
+    graph.applyEvent(RUN, { type: "plan_step", id: "s1", index: 1, total: 2, title: "alpha", phase: "start" });
+    graph.applyEvent(RUN, { type: "plan_step", id: "s1", index: 1, total: 2, title: "alpha", phase: "done" });
+    graph.applyEvent(RUN, { type: "plan_step", id: "s1-2", index: 2, total: 2, title: "beta", phase: "start" });
+    graph.applyEvent(RUN, { type: "plan_step", id: "s1-2", index: 2, total: 2, title: "beta", phase: "done" });
+
+    const steps = graph.getRunNodes(RUN).filter((node) => node.type === "recipe_step");
+    assert.equal(steps.length, 2, "each step has its own node");
+    assert.deepEqual(
+      steps.map((node) => `${(node.data as Record<string, unknown>).stepId}:${node.status}`),
+      ["s1:finished", "s1-2:finished"],
+      "both steps are tracked to completion",
+    );
+  });
+
   it("rejects illegal transitions on a live graph and keeps the node unchanged", () => {
     const graph = new RunGraph();
     graph.replay(RUN, recordedRun());
