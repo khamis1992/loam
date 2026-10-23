@@ -2548,3 +2548,94 @@ green.
 
 Working tree clean; no forbidden path touched; no real external model API was
 called by the tests (the scripted `neo-mock` model is used throughout).
+
+---
+
+## fc-05: Video Studio state sync (preserve manual edits)
+
+fc-05 complete. Builds on the fc-02 relay (`src/server/videoStudioRelay.ts`) and the
+fc-03 `video_studio` tool (`src/tools/videoStudio.ts`). The agent now reads the live
+editor timeline before every command, reports a manual-edit notice when the user
+edited the panel by hand, and persists the project (debounced) into the task's files.
+
+### What fc-05 delivers
+- `src/tools/videoStudioState.ts` (new, 603 lines):
+  - `summarizeProjectState(raw)`: turns the editor's loose `inspect` payload into a
+    compact, accurate summary (`durationSec`, `playheadSec`, `selection`, `tracks`,
+    `clips` with track/start/end and source in-out, `textLayers`, `audioClips`,
+    `transitions`, `effects`). Every extractor is defensive: an unrecognisable payload
+    degrades to an empty (or partial) summary instead of throwing. Clips inherit the
+    track's `kind` when they do not repeat it, so the text/audio buckets are accurate.
+  - `hashProjectState(summary)`: a stable 16-char sha256 fingerprint of the canonical
+    summary (sorted keys, no `undefined`), so a change is detected without storing the
+    whole project and unrelated editor internals never look like a manual edit.
+  - `diffProjectStates(prev, next)` / `formatStateDiff(diff)`: report added / removed /
+    moved clips (with from->to position), text, audio, transitions, effects and
+    playhead/duration changes as compact `+` / `-` / `~` tokens.
+  - `VideoStudioStateTracker`: keeps the last state the agent saw per task and produces
+    the manual-edit notice. An empty read is never reported as a manual edit and is
+    never adopted as the baseline, so a transient/unsupported editor response cannot
+    produce a false notice or mask the next real change.
+  - `VideoStudioProjectStore`: persists the project into
+    `loam-video/project.json` in the task workspace, debounced (default 500ms,
+    resets the timer on each change). Each write stores the raw `inspect` payload plus
+    the derived summary and an ISO `savedAt`, written via a temp file + rename. Writes
+    are best-effort: a filesystem failure is swallowed and never breaks an agent
+    command. `load` returns the typed `VideoStudioPersistedProject`, or null when the
+    file is missing/unreadable.
+  - Shared `videoStudioProjectStore` instance for the running server.
+- `src/tools/videoStudio.ts` (extended):
+  - `readStudioState(taskId, relay, tracker, store, workspace)` reads the live timeline
+    via the fc-02 relay `inspect` (best-effort: a relay failure returns undefined and
+    the action proceeds without a summary), updates the per-task tracker and schedules
+    a debounced persist.
+  - `run()` reads the state before and after every action. A `state` action reuses the
+    pre-read so it is a single `inspect` round trip instead of two. Every result body
+    now carries `summary` and `notice`; when the tracker reports a change, the notice
+    is prepended to the result content.
+  - The tool description now tells the model every result carries the compact timeline
+    summary, that a notice is prepended when the timeline changed since its last
+    action, and never to rebuild the project from memory.
+  - `stateTracker` / `projectStore` are injectable for tests.
+
+### Acceptance tests (fc-05 spec)
+- Unit: diff summary for added/removed/moved clips; the tool result carries the
+  summary; the manual-change notice appears only when the hash differs.
+- Covered by `src/tools/__tests__/videoStudioState.test.ts` (19 tests) and
+  `src/tools/__tests__/videoStudio.test.ts` (39 tests, including the dispatch order
+  `["inspect", "commands", "inspect"]` for `open`), plus
+  `src/server/__tests__/videoStudioE2E.test.ts` (4 tests, including a manual edit made
+  between two commands asserting the notice
+  `User edited the timeline manually since your last action` and the diff
+  `~clip clip_1 0s->3s`).
+
+### Gates (all run from the worktree root, on committed HEAD `68dfb62`)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test src/tools/__tests__/videoStudioState.test.ts src/tools/__tests__/videoStudio.test.ts src/server/__tests__/videoStudioRelay.test.ts src/server/__tests__/videoStudioE2E.test.ts`
+  -> tests 71, pass 71, fail 0
+- `(cd packages/web && npx vitest run)`      -> 72 files / 472 tests, all pass
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:eval` / `check:orchestrator` / `check:recovery` / `check:modes` -> exit 0
+- `node --import tsx --test "src/**/*.test.ts"` -> tests 2157, pass 2155, fail 2
+
+The two node failures are pre-existing on the manus-parity lineage and untouched by
+fc-05; both files are byte-identical to manus-parity (`git diff manus-parity HEAD` is
+empty for each):
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither
+   registered nor listed in PENDING_CODING_TOOLS". The inherited D4 defect.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+   throwing". Environmental: `readGitBranch` shells out to `git rev-parse`, which
+   walks up to the nearest enclosing repository.
+
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path
+touched. `git merge-base --is-ancestor manus-parity HEAD` exits 0.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  node --import tsx --test src/tools/__tests__/videoStudioState.test.ts src/tools/__tests__/videoStudio.test.ts src/server/__tests__/videoStudioRelay.test.ts src/server/__tests__/videoStudioE2E.test.ts
+  (cd packages/web && npx vitest run)
+  npm run check:encoding
