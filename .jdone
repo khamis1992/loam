@@ -1,3 +1,84 @@
+# N14 gate fix: landed parity's `.gitattributes` union driver, `.jdone` conflict is gone for good
+
+The recurring failure `MERGE CONFLICT with latest manus-parity in: .jdone` is fixed at the root
+cause, and the fix is durable: it comes from parity itself, not from this branch.
+
+## Root cause
+
+`.jdone` is a tracked, append-only runner rollup. Every worktree prepends its own report, and
+`manus-parity` keeps an equivalent file of its own. A normal 3-way merge therefore conflicts on
+nearly every region, which forced a hand-resolve on every parity merge and produced the
+`MERGE CONFLICT ... in: .jdone` gate failure again and again.
+
+Parity already fixed this. Commit `87abbc7` ("docs(jdone): record round 12 - root-cause
+union-merge fix for the recurring .jdone parity conflict") added a tracked `.gitattributes`:
+
+```
+.jdone merge=union
+.jcode-done merge=union
+```
+
+The union driver concatenates both sides, which is exactly the intended outcome for these files:
+each report stays intact and the result is a superset of both parents. `.gitignore` alone cannot
+untrack a file that is present in the merge source, so the attribute is the correct mechanism.
+
+## What was wrong on this branch
+
+`khamis1992/neo-n14` had merged an older parity tip (`590d358`) that predates `87abbc7`, so this
+branch had **no `.gitattributes` at all** (`git show HEAD:.gitattributes` -> does not exist) while
+parity's tip (`519f889`) carried it. The union driver was never in play here.
+
+## What this pass did
+
+1. Merged `manus-parity` (`519f889`, "merge khamis1992/om-o7 (O7 via loam-jcode-run) into
+   manus-parity") into `khamis1992/neo-n14`. `.gitattributes` landed, and `.jdone` auto-resolved
+   with **no conflict, no hand-resolve, and no dropped report**.
+2. Confirmed the union driver is active: `git check-attr merge -- .jdone .jcode-done` ->
+   `union` / `union`.
+3. Verified the merge is idempotent: a second `git merge manus-parity` -> `Already up to date.`
+4. Restored the tracked state after an earlier probe (`git rm --cached .jdone`) left it
+   staged-deleted; the file is tracked again and the tree is clean.
+
+## Verification on the final tip (`658ff2e`)
+
+1. `npm run verify` -> exit 0 (typecheck, check:encoding, check:eval, check:orchestrator,
+   check:recovery, check:modes)
+2. `npm run build:server` -> exit 0
+3. `node --import tsx --test "src/**/*.test.ts"` -> tests 2953, pass 2953, fail 0, skipped 0
+4. `(cd packages/web && npx tsc --noEmit)` -> exit 0
+5. `(cd packages/web && npx vitest run)` -> 93 files / 634 tests, all pass
+6. `(cd packages/web && npx next build)` -> exit 0
+
+Merge fidelity, verified mechanically against the real merge parents (`9e0be31` ours,
+`519f889` theirs):
+
+- `.jdone` auto-merged by the union driver: **0 lines under-present from either side**
+  (ours 18237 distinct lines present, theirs 20629 present; 0 missing from either), 0 conflict
+  markers, no BOM, no U+FFFD, and the encoding gate passes on the merged file.
+- `.gitattributes` is byte-identical to parity's; `.jcode-done` is byte-identical to parity's.
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0;
+  `git rev-list --left-right --count manus-parity...HEAD` -> `18  10`; working tree clean.
+- All N14 deliverables are tracked and intact: `packages/web/src/components/replay/ReplayViewer.tsx`
+  + `__tests__/ReplayViewer.test.tsx`, `packages/web/src/components/share/ShareReplay.tsx` +
+  `__tests__/ShareReplay.test.tsx`, `src/graph/export.ts`, `src/graph/__tests__/export.test.ts`.
+
+## Notes
+
+- `npm run build:server` / `next build` rewrite `src/agent/masterPromptText.ts` as a build
+  side-effect (LF in the index, CRLF in the worktree under `core.autocrlf=true`). It shows as
+  dirty after the build and was restored with `git checkout --` before the final state check.
+- The gate-failure string `MERGE CONFLICT with latest manus-parity in:` is not present anywhere
+  in the repository (0 matches); it is emitted by an external harness, so the fix had to make the
+  real `git merge manus-parity` conflict-free rather than silence a local check.
+- `.jgatefail.txt` is untracked and ignored (`.gitignore:29`).
+
+## Seams left
+
+- `.jdone` remains tracked on parity, so the union driver is what keeps merges clean. If parity
+  ever drops `.gitattributes`, this branch should re-add it.
+- After any parity merge, still confirm this report's heading is present in `.jdone` and that
+  `git ls-files -u` is empty.
+
 # N9 round 12: parity auto-unioned .jdone, full suite green on the final tip
 
 Parity advanced once more, to `ca08d4c` (14 commits ahead of the previous merge). This time the
