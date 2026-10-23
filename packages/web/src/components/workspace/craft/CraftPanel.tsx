@@ -142,7 +142,11 @@ export async function fetchTaskFileBytes(taskId: string, path: string): Promise<
   return new Uint8Array(await res.arrayBuffer());
 }
 
-/** MIME type used when storing saved bytes, derived from the file extension. */
+/**
+ * MIME type used when storing saved bytes, derived from the file extension.
+ * Shared with the agent relay (cr-04) so a `craft.waitSave` stores exactly the
+ * bytes the panel would have uploaded.
+ */
 export function craftSaveMime(name: string): string {
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
   switch (ext) {
@@ -572,8 +576,12 @@ export async function defaultLoadFallback(kind: WorkspaceKind): Promise<CraftFal
   }
 }
 
-/** Store saved bytes in the task's files through the existing upload endpoint. */
-async function uploadSave(taskId: string, name: string, bytes: Uint8Array): Promise<void> {
+/**
+ * Store saved bytes in the task's files through the existing upload endpoint.
+ * Shared with the agent relay (cr-04) so `craft.waitSave` resolves with the same
+ * task-file path the panel's own Save button produces.
+ */
+export async function uploadSave(taskId: string, name: string, bytes: Uint8Array): Promise<void> {
   const blob = new Blob([bytes as unknown as BlobPart], { type: craftSaveMime(name) });
   const params = new URLSearchParams({ taskId, name });
   const res = await fetch(`${getApiBase()}/api/upload?${params.toString()}`, {

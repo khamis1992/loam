@@ -241,6 +241,7 @@ export async function runFanout(options: FanoutRunOptions): Promise<FanoutReport
       phase: "done",
       nodeId: node.id,
       label,
+      ok,
       summary: ok ? `branch ${branch.index + 1} finished` : `branch ${branch.index + 1} failed: ${run.error ?? "empty result"}`,
     });
   };

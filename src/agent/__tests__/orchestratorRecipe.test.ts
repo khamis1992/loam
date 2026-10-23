@@ -69,6 +69,10 @@ interface Harness {
   /** Tool results of the recipe-planner rounds, in order. */
   plannerRounds: string[];
   toolRuns: Map<string, number>;
+  /** The system prompt each model turn received, in order. */
+  systemPrompts: string[];
+  /** The workspace the harness created, for slot-filling assertions. */
+  workspace: string;
   run: (options?: {
     recipeMode?: boolean;
     recipeRestart?: { stepId: string; nodeId?: string; reason: string };
@@ -130,6 +134,7 @@ function harness(steps: StepSpec[], tools: ToolSpec[], script: RecipeScript): Ha
   const calls: Record<Role, number> = { planner: 0, recipe: 0, critic: 0, final: 0, worker: 0, inspector: 0 };
   const plannerRounds: string[] = [];
   const toolRuns = new Map<string, number>();
+  const systemPrompts: string[] = [];
   /** Replies the recipe planner still owes, in order; the last one repeats. */
   const scriptQueue = [...script.rounds];
   /** Titles of the steps whose worker already made its one tool call. */
@@ -171,6 +176,7 @@ function harness(steps: StepSpec[], tools: ToolSpec[], script: RecipeScript): Ha
 
   const chat = async (opts: ChatOptions): Promise<ChatResult> => {
     const role = roleOf(opts.messages);
+    systemPrompts.push(opts.messages.find((m) => m.role === "system")?.content ?? "");
     calls[role] += 1;
     const last = opts.messages[opts.messages.length - 1]?.content ?? "";
     let content = "done";
@@ -225,6 +231,8 @@ function harness(steps: StepSpec[], tools: ToolSpec[], script: RecipeScript): Ha
     calls,
     plannerRounds,
     toolRuns,
+    systemPrompts,
+    workspace: cfg.workspace,
     async run(options = {}) {
       const events: AgentEvent[] = [];
       try {
@@ -575,5 +583,39 @@ describe("orchestrator recipe mode", () => {
     assert.equal(error, undefined, `the run completed: ${error ?? ""}`);
     assert.equal(h.calls.recipe, 0, "the recipe planner is not used outside recipe mode");
     assert.equal(events.filter((event) => event.type === "recipe_update").length, 0);
+  });
+
+  it("sends the long-horizon mission section to recipe-mode workers only (N19)", async () => {
+    const steps = [
+      { id: "s1", title: "gather", instruction: "gather with web_fetch", criteria: "the source is fetched", tool: "web_fetch" },
+      { id: "s2", title: "deliver", instruction: "deliver with file_write", criteria: "the answer is delivered", tool: "file_write" },
+    ];
+    const tools = [
+      { name: "web_fetch", output: "the source" },
+      { name: "file_write", output: "written" },
+    ];
+    const script = keepGoingScript(recipeJson([], {}, [], 1, true), 2);
+    const mission = harness(steps, tools, script);
+    const plain = harness(steps, tools, script);
+
+    const recipe = await mission.run({ recipeMode: true });
+    assert.equal(recipe.error, undefined, `the recipe run completed: ${recipe.error ?? ""}`);
+
+    const workerSystems = mission.systemPrompts.filter((system) => system.includes("executor (worker) sub-agent"));
+    assert.ok(workerSystems.length > 0, "the recipe run executed at least one worker");
+    for (const system of workerSystems) {
+      assert.ok(system.includes("## 25. Long-Horizon Missions (Recipe mode)"), "a recipe-mode worker must receive §25");
+      assert.ok(
+        !/\{\{(?!vault:)[^{}]+\}\}/.test(system),
+        `a recipe-mode worker left an unfilled slot: ${system.match(/\{\{(?!vault:)[^{}]+\}\}/)?.[0] ?? ""}`,
+      );
+      assert.ok(system.includes(mission.workspace), "the mission section fills the project_path slot");
+    }
+
+    const plainRun = await plain.run({ recipeMode: false });
+    assert.equal(plainRun.error, undefined, `the plain run completed: ${plainRun.error ?? ""}`);
+    for (const system of plain.systemPrompts) {
+      assert.ok(!system.includes("## 25. Long-Horizon Missions (Recipe mode)"), "a plain plan run must not receive §25");
+    }
   });
 });
