@@ -125,7 +125,7 @@ function harness(graph: () => CanvasGraphResponse, patches: Record<string, unkno
 function renderPanel(overrides: Partial<CanvasPanelProps> = {}, graph = sixStepGraph) {
   const { client, getGraph, patchNode } = harness(graph);
   const stream = idleStream();
-  render(
+  const { unmount } = render(
     <CanvasPanel
       taskId={RUN}
       live={false}
@@ -135,7 +135,29 @@ function renderPanel(overrides: Partial<CanvasPanelProps> = {}, graph = sixStepG
       {...overrides}
     />,
   );
-  return { client, getGraph, patchNode, stream };
+  return { client, getGraph, patchNode, stream, unmount };
+}
+
+/** The laid-out transform of each node card, keyed by its node id. */
+function nodeTransforms(): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const card of screen.getAllByTestId('canvas-node')) {
+    map.set(card.getAttribute('data-node-id') ?? '', (card as HTMLElement).style.transform);
+  }
+  return map;
+}
+
+/** Lay the graph out in `direction`, and return the id -> transform map. */
+async function laidOut(direction: 'ltr' | 'rtl', label: string): Promise<Map<string, string>> {
+  const mounted = renderPanel({ layoutOptions: { direction } });
+  await screen.findAllByTestId('canvas-node');
+  fireEvent.click(screen.getByRole('button', { name: label }));
+  // Organize is the only path that runs the layout; wait for the root to land
+  // on the first column, which proves the pass finished.
+  await waitFor(() => expect(nodeTransforms().get('root')).toContain('40px'));
+  const map = nodeTransforms();
+  mounted.unmount();
+  return map;
 }
 
 describe('canvas panel', () => {
@@ -280,5 +302,45 @@ describe('canvas panel', () => {
     fireEvent.keyDown(window, { key: 'e' });
     expect(await screen.findByText('Recent tools')).toBeInTheDocument();
     expect(screen.getByText('web_search')).toBeInTheDocument();
+  });
+
+  it('mirrors the same row from the right when the layout direction is rtl', async () => {
+    // `siblingX` reads the direction off the layout options, so pinning
+    // `layoutOptions.direction` proves the panel honours it without having to
+    // fake a locale: same nodes, same span, mirrored columns.
+    const ltr = await laidOut('ltr', 'Organize');
+    const rtl = await laidOut('rtl', 'Organize');
+
+    // The row keeps exactly the same span: the mirror swaps the ends, it does
+    // not grow the row or push it off the scroll surface.
+    expect(new Set(ltr.values()).size).toBe(7);
+    expect(new Set(rtl.values()).size).toBe(7);
+    // LTR reads the layer start-to-end, RTL right-to-left: the first step takes
+    // the last step's column and vice versa.
+    expect(ltr.get('step-one')).toBe(rtl.get('step-six'));
+    expect(ltr.get('step-six')).toBe(rtl.get('step-one'));
+    // A single-node layer is not mirrored: the root keeps its own cell.
+    expect(rtl.get('root')).toBe(ltr.get('root'));
+  });
+
+  it('lays an Arabic locale out right-to-left, and an explicit direction still wins', async () => {
+    // An Arabic locale mirrors the row by default; an explicit ltr override
+    // still wins, which is how the panel stays direction-pinnable in tests.
+    const mounted = renderPanel({ getLocale: () => 'ar' });
+    await screen.findAllByTestId('canvas-node');
+    fireEvent.click(screen.getByRole('button', { name: 'تنظيم' }));
+    await waitFor(() => expect(nodeTransforms().get('root')).toContain('40px'));
+    const rtl = nodeTransforms();
+    mounted.unmount();
+
+    const forced = renderPanel({ getLocale: () => 'ar', layoutOptions: { direction: 'ltr' } });
+    await screen.findAllByTestId('canvas-node');
+    fireEvent.click(screen.getByRole('button', { name: 'تنظيم' }));
+    await waitFor(() => expect(nodeTransforms().get('root')).toContain('40px'));
+    const ltr = nodeTransforms();
+    forced.unmount();
+
+    expect(rtl.get('step-one')).toBe(ltr.get('step-six'));
+    expect(ltr.get('step-one')).toBe(rtl.get('step-six'));
   });
 });
