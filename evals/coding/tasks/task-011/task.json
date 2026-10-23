@@ -1,0 +1,11 @@
+{
+  "id": "task-011",
+  "title": "Handle edge case in TypeScript",
+  "category": "bug-fix",
+  "language": "typescript",
+  "prompt": "`median` in `src/stats.ts` mishandles two inputs: an empty array returns `undefined` instead of `null`, and an even-length array returns the upper middle value instead of the average of the two middle values. Fix both cases; odd-length behaviour and the return type stay as they are.",
+  "testCommand": "node .eval/check.mjs",
+  "timeoutSec": 60,
+  "maxSteps": 14,
+  "tags": ["edge-case", "statistics"]
+}

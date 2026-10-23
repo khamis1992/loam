@@ -1,0 +1,11 @@
+{
+  "id": "task-001",
+  "title": "Fix function return value",
+  "category": "bug-fix",
+  "language": "typescript",
+  "prompt": "The function `calculateTotal` in `src/total.ts` returns the wrong value: it always returns 0. Make it return the sum of every number in the `values` array. Leave the function signature and the file's other contents unchanged.",
+  "testCommand": "node .eval/check.mjs",
+  "timeoutSec": 60,
+  "maxSteps": 12,
+  "tags": ["arithmetic", "sum"]
+}

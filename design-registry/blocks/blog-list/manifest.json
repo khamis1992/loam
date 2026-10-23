@@ -1,0 +1,18 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "blog-list",
+  "name": "Blog List",
+  "description": "A blog index with a featured post card and a list of recent articles showing date, category and read time.",
+  "category": "blog",
+  "license": "MIT",
+  "source": "shadcn/ui blocks",
+  "tags": ["blog", "articles", "content"],
+  "intent": "Present recent writing with a clear featured story and scannable list.",
+  "deps": ["react"],
+  "rtl": false,
+  "dir": "ltr",
+  "lang": "en",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"]
+}

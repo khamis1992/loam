@@ -8,9 +8,10 @@ mapping, and the branding rules for this staging integration.
 
 | Path | What it is |
 | --- | --- |
-| `electron/filmcraft/dist/` | Vendored web build (untracked; copied in separately). Files: `index.html`, `filmcraft_web.js`, `filmcraft_web_bg.wasm`, `audio-worklet.js`. |
+| `electron/filmcraft/dist/` | Vendored web build (untracked). Files: `index.html`, `filmcraft_web.js`, `filmcraft_web_bg.wasm`, `audio-worklet.js`, `favicon.png`. Fetched with `npm run vendor:filmcraft` (see `docs/vendor-dists.md`). |
+| `scripts/vendor/fetch-filmcraft.mjs` | Reproducible fetch: pinned GitHub release, sha256-verified, `LOAM_FILMCRAFT_ZIP`/`LOAM_FILMCRAFT_URL`/`LOAM_FILMCRAFT_SHA256` overrides, `--force`, `--from-source`. |
 | `electron/filmcraft/bridge-relay.js` | postMessage relay injected into the editor page (served from the overlay root, survives dist re-copies). |
-| `electron/filmcraft/rebrand.mjs` | Idempotent branding script — run it after every fresh dist copy. |
+| `electron/filmcraft/rebrand.mjs` | Idempotent branding script — `node electron/filmcraft/rebrand.mjs [distDir]`, run automatically by the fetch script. |
 | `electron/filmcraft/` licence files | Intentionally absent (`LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE`, `ATTRIBUTION.md` removed) — Loam is a private, local, non-commercial project. |
 | `packages/web/src/app/app/video/page.tsx` | The Video side panel (route `/app/video`). |
 | `packages/web/src/lib/filmcraft.ts` | Typed agent bridge. |
@@ -104,6 +105,19 @@ non-commercial project. Engine-internal identifiers (`window.filmcraft`,
 and are left untouched so the bridge and loader keep working.
 
 ## Refreshing the vendored dist
+
+Run the fetch script — it downloads the pinned release, verifies its sha256,
+extracts the web root, drops licence/hosting/README files and rebrands:
+
+```
+npm run vendor:filmcraft          # or: node scripts/vendor/fetch-filmcraft.mjs --force
+```
+
+The dist is gitignored; `npm run vendor` fetches both editors. See
+`docs/vendor-dists.md` for overrides and the EffectCraft sources.
+
+If you already have the upstream web release unpacked, the equivalent manual
+steps are:
 
 1. Copy the upstream web release into `electron/filmcraft/dist/`.
 2. Run `node electron/filmcraft/rebrand.mjs`.

@@ -1,8 +1,14 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+
+// Must come before any import that evaluates `config.js`: building a subagent
+// prompt reads personalization from the SQLite store under DATA_DIR, so without
+// this redirect the test creates the repository's real `data/manus.db`.
+import { cleanupIsolatedDataDir } from "../../test/isolation.js";
+import { closeDb } from "../../server/sqliteStore.js";
 import { createSubagentTools } from "../subagents.js";
 import { ToolRegistry } from "../registry.js";
 import type { OllamaClient } from "../../ollama.js";
@@ -13,6 +19,12 @@ import type { SubagentEvent, SubagentProvider, SubagentResult, SubagentStartOpti
 
 const WORKSPACE = fs.mkdtempSync(path.join(os.tmpdir(), "loam-delegate-"));
 const delegate = createSubagentTools({} as OllamaClient, new ToolRegistry()).find((t) => t.name === "delegate_task")!;
+
+after(() => {
+  closeDb();
+  cleanupIsolatedDataDir();
+  fs.rmSync(WORKSPACE, { recursive: true, force: true });
+});
 
 function cfgWith(over: Partial<{ maxDepth: number; maxConcurrentChildren: number }> = {}): Config {
   return {
