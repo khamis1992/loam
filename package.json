@@ -17,7 +17,7 @@
     "check:pentest-bench": "tsx src/scripts/check-pentest-bench.ts",
     "test:pentest-bench": "node --import tsx --test src/scripts/__tests__/check-pentest-bench.test.ts",
     "test:browser-operator": "node --import tsx --test src/tools/__tests__/browserOperator.test.ts",
-    "test:memory": "node --import tsx --test src/memory/__tests__/cache.test.ts src/server/__tests__/debugMemory.test.ts",
+    "test:memory": "node --import tsx --test src/memory/__tests__/cache.test.ts src/memory/__tests__/caps.test.ts src/server/__tests__/debugMemory.test.ts",
     "bench:mem": "node --import tsx bench/memBench.ts",
     "bench:ram:app": "node --import tsx bench/appRamBench.ts --spawn",
     "test:bench": "node --import tsx --test bench/__tests__/fakeModel.test.ts bench/__tests__/rssSampler.test.ts bench/__tests__/memBench.test.ts bench/__tests__/appRamBench.test.ts",
