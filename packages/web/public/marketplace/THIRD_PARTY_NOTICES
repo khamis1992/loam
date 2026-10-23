@@ -59,3 +59,18 @@ Fonts
 The marketplace UI uses the app's system font stack. It does not bundle Aeonik
 (commercial) or Geist. Geist and Geist Mono are licensed under the SIL Open
 Font License 1.1 when supplied separately.
+
+
+jcode (MIT)
+==========
+The Loam benchmark harness under bench/ and the local memory-budget primitives
+under src/memory/ are adapted from jcode, a Rust coding agent
+(https://github.com/1jehuang/jcode). Copyright (c) 2025 Jeremy Huang. MIT License.
+
+  bench/fakeModel.ts    — ref/fake_model.py
+  bench/rssSampler.ts   — ref/bench_memory_cli.py
+  bench/memBench.ts     — ref/jcode_daemon_bench.py
+  bench/appRamBench.ts  — ref/bench_memory_cli.py
+
+See the repo-root THIRD_PARTY_NOTICES for the full license text and the
+complete list of adapted files.
