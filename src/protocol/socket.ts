@@ -41,6 +41,7 @@ import type {
 } from "./types.js";
 import type { ProtocolStore } from "./store.js";
 import { tokenToUserUid } from "./rpc.js";
+import { enqueue, newInputId, type InputDelivery } from "../server/inputQueue.js";
 
 // Re-export for callers.
 export { Server } from "socket.io";
@@ -583,6 +584,21 @@ export function createChatSocket(deps: SocketDeps): Server {
           const text = um.contents.map((c) => c.value).join("").trim();
           const session = store.ensureSession(um.sessionId, "", text.slice(0, 80));
 
+          // O6 durable input queue: the message is stored *before* it is admitted
+          // to the run, so it survives a restart even if the run is busy or the
+          // process dies right here. `interrupt` is treated as a queued message
+          // too: Loam has no mid-run interrupt channel yet, and losing it would
+          // be worse than delivering it at the next step boundary.
+          const delivery: InputDelivery = um.deliveryMode === "interrupt" ? "steering" : "queued";
+          // The run below admits it at its first step boundary, so this message
+          // becomes a durable `input` event without any extra plumbing here.
+          enqueue({
+            id: newInputId(),
+            sessionId: um.sessionId,
+            text,
+            delivery,
+          });
+
           let taskId = session.taskId;
           if (!taskId || !getTask(taskId)) {
             if (getTask(um.sessionId)) {
@@ -747,6 +763,9 @@ export function createChatSocket(deps: SocketDeps): Server {
               projectId: um.extData.projectId ?? null,
               agentId: um.extData.agentId ?? undefined,
               workMode: um.extData.workMode ?? undefined,
+              // O6: this run owns the session's durable inbound queue, so messages
+              // arriving mid-run are admitted at the next step boundary.
+              inputSessionId: um.sessionId,
               ...(tierModel ? { model: tierModel } : {}),
             });
 

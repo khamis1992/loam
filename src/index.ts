@@ -47,6 +47,7 @@ import { createDesignLintTools } from "./tools/designLint.js";
 import { createDesignAssetsTools } from "./tools/designAssets.js";
 import { createDesignBriefTools } from "./tools/designBrief.js";
 import { createDesignAutofixTools } from "./tools/designAutofix.js";
+import { createDesignCritiqueTools } from "./tools/designCritique.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
 import { createWorkflowTools } from "./tools/workflow.js";
 import { applyPlanApprovalGate, applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
@@ -85,6 +86,11 @@ import { startProtocolAdapter } from "./protocol/adapter.js";
 import { executionQueue } from "./server/executionQueue.js";
 import { requiresReplayConfirmation, type SavedRun } from "./server/recovery.js";
 import { acquireRuntimeLease, releaseRuntimeLease, backupDatabase } from "./server/sqliteStore.js";
+import {
+  admitAllPending,
+  admitPending as admitPendingInputs,
+  hasPending,
+} from "./server/inputQueue.js";
 import { claimRunLease, releaseRunLease, startLeaseHeartbeat, type LeaseHeartbeat, type RunLease } from "./server/runLease.js";
 import { recordTaskUsage } from "./server/credits.js";
 // D19 session runtime: sleep/wake lifecycle + per-session compute budget.
@@ -100,6 +106,11 @@ async function main(): Promise<void> {
   backupDatabase();
   const recovered = recoverInterruptedTasks();
   if (recovered) log.info(`recovery: ${recovered} interrupted task(s) awaiting resume`);
+  // O6: messages that arrived while the process was down become durable `input`
+  // events now, even if their task is never resumed. Admitting twice is safe
+  // because the append is keyed by the input id.
+  const admittedInputs = admitAllPending();
+  if (admittedInputs.length > 0) log.info(`recovery: admitted ${admittedInputs.length} queued message(s)`);
   const bootSettings = loadSettings();
   const envRoot = process.env.LOAM_ROOT || process.env.MANUS_LOCAL_ROOT;
   if (!envRoot && bootSettings.workspace && fs.existsSync(bootSettings.workspace) && fs.statSync(bootSettings.workspace).isDirectory()) {
@@ -157,6 +168,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createDesignAssetsTools());
   rt.registry.registerAll(createDesignBriefTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createDesignAutofixTools());
+  rt.registry.registerAll(createDesignCritiqueTools(rt.preview, { ollama: rt.ollama }));
   rt.registry.registerAll(createConnectorTools());
   rt.registry.registerAll(createWorkflowTools({ ollama: rt.ollama, registry: rt.registry }));
   rt.registry.registerAll(createPlanTools());
@@ -502,6 +514,11 @@ async function main(): Promise<void> {
         signal: runSignal,
         taskId: task,
         sandboxMode: sandboxPolicy.mode,
+        // O6: drain the durable inbound queue at each step boundary so a message
+        // sent while this run was busy becomes a durable `input` event exactly once.
+        ...(opts.inputSessionId
+          ? { inputSessionId: opts.inputSessionId, onAdmitPending: (sessionId: string) => admitPendingInputs(sessionId) }
+          : {}),
         // D19 compute budget: shared with the UI badge so the counters and the
         // badge always agree, and the run stops when the ceiling is hit.
         budget: sessionRuntime.getBudget(task),
@@ -667,7 +684,16 @@ async function main(): Promise<void> {
         opts.emit(event); publishTaskEvent(task.id, event);
       }
       throw error;
-    } finally { clearRunSignal(task.id); heartbeat?.stop(); if (lease) releaseRunLease(lease); videoStudioRelay.cancelTask(task.id); }
+    } finally {
+      clearRunSignal(task.id); heartbeat?.stop(); if (lease) releaseRunLease(lease); videoStudioRelay.cancelTask(task.id);
+      // O6: a message that landed during the last step would otherwise sit
+      // `received` forever, since no further step boundary runs. Admit it on every
+      // exit path (done, error, cancel) so it is never silently lost.
+      if (opts.inputSessionId && hasPending(opts.inputSessionId)) {
+        const carried = admitPendingInputs(opts.inputSessionId);
+        log.info(`input queue: admitted ${carried.length} message(s) at run end for ${opts.inputSessionId}`);
+      }
+    }
   };
 
   // Bridge for src/server/routes/retryLast.ts: the route module cannot receive

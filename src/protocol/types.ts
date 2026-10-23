@@ -134,6 +134,9 @@ export interface ServerEnvelope<E extends ChatEvent = ChatEvent> {
   timestamp: number;
   event: E;
   webdevAddonEnabled?: boolean;
+  /** BUILD_SPEC §6.4: the durable log sequence of this frame (optional so older
+   *  clients are unaffected). */
+  seq?: number;
 }
 
 export interface ChatEventBase extends Base {

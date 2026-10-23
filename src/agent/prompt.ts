@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Config } from "../config.js";
 import { APP_CONTRACT_INSTRUCTIONS } from "./appVerification.js";
 import { BUILD_PHASE_PROMPT } from "../modes/buildPhases.js";
-import { DESIGN_LINT_PROMPT } from "../modes/designRules.js";
+import { DESIGN_CRITIQUE_PROMPT, DESIGN_LINT_PROMPT } from "../modes/designRules.js";
 import { personalizationBlock } from "../server/personalization.js";
 import { renderPolicyContext } from "../policy/riskTier.js";
 import { buildMasterPrompt, codingModeSection, deriveMasterSlots, isCodingTask } from "./masterPrompt.js";
@@ -123,6 +123,7 @@ export function buildSystemPrompt(
   if (toolNames.includes("loam_canvas")) lines.push("loam_canvas produces vector SVG artwork, not generated photographs. File tools can create custom SVG or HTML designs.");
   if (toolNames.includes("loam_design") || toolNames.includes("design_brief")) lines.push(BUILD_PHASE_PROMPT);
   if (toolNames.includes("design_lint")) lines.push(DESIGN_LINT_PROMPT);
+  if (toolNames.includes("design_critique")) lines.push(DESIGN_CRITIQUE_PROMPT);
   if (toolNames.includes("design_page_images") || toolNames.includes("design_image_generate")) lines.push("Images: never link a placeholder service (placehold.co, picsum.photos, via.placeholder.com and similar) or an unsplash/stock URL. Use design_image_generate to write real local assets into public/assets/ui/ and reference the returned src, or run design_page_images action=rewrite to replace every placeholder in a finished page with a generated asset. Every <img> needs meaningful alt text (Arabic pages use Arabic alt and dir=rtl); decorative images use alt=\"\". Verify with design_page_images action=audit that the page reports no placeholders and no missing alt before finishing.");
   if (toolNames.includes("loam_creative")) lines.push("For 3D scene requests, use loam_creative to read and update the live scene, preserving user work and using the returned revision. The scene supports primitives, imported self-contained GLB assets, materials, environment, camera, and spin animation. Do not claim Blender rendering, image generation, or video production unless a real available tool produced those outputs.");
   if (memories.length > 0) {
