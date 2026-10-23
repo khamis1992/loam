@@ -76,19 +76,66 @@ the video exports kept as backward-compatible aliases.
 `.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. `git merge
 manus-parity` (tip 35c8470) brought in the parallel V11 design_critique work
 (`src/design/critique.ts`, `src/tools/designCritique.ts`, `src/tools/files.ts`
-J3 edit-tool work, plus `docs/re/*-H0/O0.md`) and conflicted in exactly one file:
-`.jdone`. The rollup marker is additive, so the conflict was resolved keeping BOTH
-sides: parity's V11/J3/H0/O0 reports are preserved verbatim below and the cr-04
-report is prepended above. No source file conflicted, no test was weakened,
-deleted or skipped, and no code was dropped. The merge is committed as this
-commit.
+J3 edit-tool work, plus `docs/re/harness2-H0.md` and `docs/re/omnara-O0.md`) and
+conflicted in exactly one file: `.jdone`. The rollup marker is additive, so the
+conflict was resolved keeping BOTH sides: parity's V11/J3/H0/O0 reports are
+preserved verbatim below and the cr-04 report is prepended above. No source file
+conflicted, no test was weakened, deleted or skipped, and no code was dropped.
+The merge is committed as 83b3b61.
+
+Verified on the committed merge (`git diff a8130cc HEAD`): 0 files removed, 11
+files added, `git diff --check` clean, no conflict markers anywhere in the tree,
+and no forbidden path (`docs/handoff/watchdog.ps1`, `qa/*.png`,
+`packages/tests/visual/baselines`) touched. Every cr-04 source file is
+byte-identical to the pre-merge tip, so the merge lost nothing.
+
+### Relay consumption: what is actually wired (corrected)
+
+A later verification pass found that the claim "the relay is consumed
+end-to-end" is only true on the **server** side. Precisely:
+
+- Server: `workspaceRelay` is live. The video tool enqueues through it
+  (`src/tools/videoStudio.ts` -> `relay.enqueue(taskId, "film", ...)`), the result
+  route `/api/tasks/:id/{workspace,video-studio}/result` calls `workspaceRelay.resolve`,
+  and both new frame types are declared in `src/agent/events.ts` and handled as
+  live-only signals in `src/graph/runGraph.ts`.
+- Web: `CraftRelayClient` / `VideoStudioClient` are **not mounted by any app
+  code**. A repo-wide search finds them only in their own modules and their unit
+  tests; no component, page, hook or registry instantiates them. The same is true
+  of the fc-02 `VideoStudioClient` it was refactored from (fc-02 shipped the client
+  and its vitest but no mount site), so this is not a cr-04 regression. Per
+  `.cr-ref/CRAFT_PLAN.md` the real Craft agent tool is cr-05 ("replace office_craft
+  with real Craft apps tool, dep R4"), which is where the mount belongs.
+- Consequence: `craft.open` / `craft.waitSave` are implemented and unit-tested in
+  `packages/web/src/lib/craftRelayClient.test.ts`, but no production agent tool
+  issues them yet, and `takeOpenRequest` / `openRequestsFor` /
+  `CraftRelayClientOptions.onOpenRequest` have no production caller. The server
+  publishes `workspace_open_request` and the client reports it; nothing consumes
+  the report outside tests. This is recorded here as a known boundary, not a
+  cr-04 defect.
+
+### Gates (all run from the worktree root on committed HEAD 83b3b61)
+
+- `npx tsc --noEmit`                                     -> exit 0
+- `(cd packages/web && npx tsc --noEmit)`                 -> exit 0
+- `npm run build:server`                                 -> exit 0
+- `(cd packages/web && npx next build)`                  -> exit 0 (compiled successfully)
+- `node --import tsx --test src/server/__tests__/workspaceRelay.test.ts src/server/__tests__/videoStudioRelay.test.ts src/server/__tests__/videoStudioE2E.test.ts src/tools/__tests__/videoStudio.test.ts`
+                                                         -> 62 tests pass, 0 fail
+- `(cd packages/web && npx vitest run)`                  -> 73 files / 479 tests pass
+- `npm run check:encoding`                               -> OK (no BOM, no mojibake)
+- `npm run verify`                                       -> exit 0
+
+Two node tests fail on the full suite, but they fail identically on unmodified
+manus-parity itself (`suggest_plan` not registered; `worktrees.test.ts` assert),
+so they are pre-existing and unrelated to this merge.
 
 Test commands
 -------------
   npx tsc --noEmit
   npm run build:server
   (cd packages/web && npx next build)
-  node --import tsx --test src/server/__tests__/workspaceRelay.test.ts src/server/__tests__/videoStudioRelay.test.ts src/server/__tests__/videoStudioE2E.test.ts
+  node --import tsx --test src/server/__tests__/workspaceRelay.test.ts src/server/__tests__/videoStudioRelay.test.ts src/server/__tests__/videoStudioE2E.test.ts src/tools/__tests__/videoStudio.test.ts
   (cd packages/web && npx vitest run)
 
 ---
