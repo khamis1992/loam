@@ -158,6 +158,20 @@ describe("codemode engine", () => {
     assert.match(out.error ?? "", /timed out after 0s/);
   });
 
+  it("reports an awaited infinite loop as a timeout, not a silent success", async () => {
+    // An awaited loop never blocks the event loop, so the interrupt handler
+    // cannot stop it; the poller must read the deadline before the wrapper
+    // settles the outer promise with `undefined`.
+    const out = await runCodemode({
+      code: `while (true) { await Promise.resolve(); }`,
+      host: fakeHost({}),
+      tools: NO_TOOLS,
+      limits: { timeoutMs: 60 },
+    });
+    assert.equal(out.error, "timed out after 0s");
+    assert.equal(out.result, undefined);
+  });
+
   it("stops when the host signal is aborted", async () => {
     const controller = new AbortController();
     const code = `while (true) { await Promise.resolve(); } return "never";`;
@@ -170,14 +184,36 @@ describe("codemode engine", () => {
   });
 
   it("enforces the memory limit", async () => {
+    const t0 = Date.now();
     const out = await runCodemode({
-      code: `const chunks = []; while (true) { chunks.push(new Array(10000).fill("x").join("")); }`,
+      // A small heap cap trips promptly; `new Array(1000).fill("x")` allocates
+      // far more than 64 KB in QuickJS, so the loop cannot run to its deadline.
+      code: `const chunks = []; while (true) { chunks.push(new Array(1000).fill("x")); }`,
       host: fakeHost({}),
       tools: NO_TOOLS,
-      limits: { memoryBytes: 1024 * 1024 },
+      limits: { memoryBytes: 64 * 1024 },
     });
     assert.ok(out.error, "the allocation loop must be stopped");
-    assert.match(out.error ?? "", /memory limit|out of memory|interrupted|timed out/i);
+    assert.match(out.error ?? "", /memory limit|out of memory/i);
+    assert.ok(Date.now() - t0 < 2_000, `the memory limit must trip promptly, took ${Date.now() - t0}ms`);
+  });
+
+  it("frees the runtime without aborting on teardown", async () => {
+    // A run that leaves a pending promise or a job on the runtime's object list
+    // makes QuickJS abort the process in JS_FreeRuntime (its object list must be
+    // empty). Each shape below previously aborted the engine; this asserts the
+    // host survives and every run still reports an outcome.
+    const shapes: Array<{ code: string; limits: { memoryBytes?: number; timeoutMs: number } }> = [
+      { code: `return 42;`, limits: { timeoutMs: 2_000 } },
+      { code: `while (true) {}`, limits: { timeoutMs: 60 } },
+      { code: `while (true) { await Promise.resolve(); }`, limits: { timeoutMs: 60 } },
+      { code: `const c = []; while (true) { c.push(new Array(1000).fill("x")); }`, limits: { memoryBytes: 64 * 1024, timeoutMs: 5_000 } },
+      { code: `const c = []; while (true) { c.push(new Array(1000).fill("x")); await Promise.resolve(); }`, limits: { memoryBytes: 64 * 1024, timeoutMs: 5_000 } },
+    ];
+    for (const shape of shapes) {
+      const out = await runCodemode({ code: shape.code, host: fakeHost({}), tools: NO_TOOLS, limits: shape.limits });
+      assert.ok(out.error !== "codemode failed", `shape must run, got ${out.error}`);
+    }
   });
 
   it("has no filesystem access", async () => {

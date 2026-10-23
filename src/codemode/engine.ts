@@ -17,6 +17,7 @@
  */
 
 import type { JSPromiseState, QuickJSContext, QuickJSDeferredPromise, QuickJSHandle, QuickJSWASMModule, VmFunctionImplementation } from "quickjs-emscripten-core";
+import { isFail } from "quickjs-emscripten-core";
 import { createQuickJSModule } from "./wasmLoader.js";
 
 /** A tool the script may call through `tools.<name>(args)`. */
@@ -209,11 +210,22 @@ export async function runCodemode(input: {
   // poller may exit on the deadline first, so the flag carries the cancellation
   // out instead of letting it be reported as a timeout.
   let aborted = false;
+  /** Error raised inside a pending job (e.g. an out-of-memory allocation). */
+  let pumpError: string | undefined;
+  /** True while the drain loop is scheduled, so re-entrant calls are ignored. */
+  let pumpScheduled = false;
+  /** Set when the runtime is out of memory and can no longer be touched safely. */
+  let poisoned = false;
+  /** Set once the run has a definite outcome (limit, cancellation, or job error).
+   *  The wrapper promise can then only settle with `undefined`, so a settled
+   *  promise after this is never reported as a success. */
+  let decided = false;
   /** Latch the cancellation as soon as the signal fires, so the run cannot be
    *  reported as a timeout even if the poller exits on the deadline first. */
   const onAbort = (): void => {
     aborted = true;
     error = "cancelled";
+    decided = true;
     // A busy script can starve the polling loop, so the run must wake up the
     // moment it is cancelled instead of waiting for its next turn.
     if (!finished) {
@@ -229,11 +241,30 @@ export async function runCodemode(input: {
   let abortController: AbortController | undefined;
   // Resolved with the run promise when the interpreter is done (see the poller).
   let finishPolling: (() => void) | undefined;
+  /** Scheduled at the deadline, so a script that never yields still wakes up. */
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Re-arms the poller's pending-promise check; set by the poller below. */
+  let scheduleCheck: () => void = () => {};
 
   try {
     runtime.setMemoryLimit(limits.memoryBytes);
     runtime.setMaxStackSize(1024 * 1024);
     runtime.setInterruptHandler(() => Date.now() >= deadline || input.host.signal?.aborted === true);
+
+    /** Wake the poller and the parked pump at the deadline. The QuickJS interrupt
+     *  handler above only runs while the interpreter executes, so this timer is
+     *  what lets a script that never yields still be reported. The poller is
+     *  re-scheduled (not finished) so the deadline is read on the same path as a
+     *  still-pending run; finishing here would report an unsettled run as a
+     *  success. */
+    const scheduleDeadline = (): void => {
+      if (finished || deadlineTimer) return;
+      deadlineTimer = setTimeout(() => {
+        deadlineTimer = undefined;
+        wakePump();
+        scheduleCheck();
+      }, Math.max(1, deadline - Date.now()));
+    };
 
     const ctx = runtime.newContext();
 
@@ -253,21 +284,72 @@ export async function runCodemode(input: {
      *  never runs the timer that enforces the deadline or an abort listener. */
     const yieldToLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
-    /** Drain the interpreter's job queue from the Node event loop. Each batch is
-     *  capped and followed by a yield, so the deadline timer and any abort
-     *  listener always get a turn even when the script is busy. */
-    const pump = async (): Promise<void> => {
-      if (finished) return;
-      const step = async (): Promise<void> => {
+    /** Drain the interpreter's job queue from the Node event loop until the run
+     *  ends. Each batch is capped and followed by a yield, so the deadline timer
+     *  and any abort listener always get a turn even when the script is busy. When
+     *  the queue is empty the pump parks until the deadline timer fires or a tool
+     *  result wakes it, so an awaited loop that never settles still runs until its
+     *  deadline. */
+    let pumpResume: (() => void) | undefined;
+    const pump = (): void => {
+      if (finished || pumpScheduled || poisoned) return;
+      pumpScheduled = true;
+      const step = (): void => {
+        pumpScheduled = false;
         if (finished) return;
         try {
-          if (runtime.hasPendingJob()) runtime.executePendingJobs(JOB_BATCH);
+          if (runtime.hasPendingJob()) {
+            const result = runtime.executePendingJobs(JOB_BATCH);
+            // An out-of-memory or interrupted job must not be swallowed: an
+            // awaited allocation loop trips the heap cap inside a pending job, and
+            // the error only surfaces here (the outer promise stays pending).
+            if (isFail(result)) {
+              const failed = result.error;
+              const detail = failed.context.dump(failed);
+              pumpError ??= typeof detail === "string" ? detail : JSON.stringify(detail);
+              if (failed.alive) failed.dispose();
+              // Stop draining and report the captured error: the outer promise
+              // is still pending, so the poller must not wait for the deadline.
+              if (!finished) {
+                finished = true;
+                decided = true;
+                error = formatJsError(pumpError, limits);
+                finishPolling?.();
+              }
+              // The runtime may have freed the job queue while out of memory:
+              // probing it again can abort the process (see the teardown guard).
+              poisoned = true;
+              return;
+            }
+            // More work: keep draining, one loop turn per batch.
+            pumpScheduled = true;
+            void yieldToLoop().then(step);
+            return;
+          }
+          // No work: report a job error captured by a previous step, then park
+          // until the deadline timer fires or a tool result wakes the pump. The
+          // poller still enforces the deadline.
+          if (pumpError && !finished) {
+            finished = true;
+            decided = true;
+            error = formatJsError(pumpError, limits);
+            return;
+          }
+          pumpResume = () => pump();
         } catch {
           /* interrupted: the deadline handler is checked by the poller */
         }
-        if (!finished) await yieldToLoop().then(step);
       };
-      await step();
+      void step();
+    };
+
+    /** Wake a parked pump (a tool result queued a job). No-op if it is already
+     *  draining, the runtime is out of memory, or the run is over. */
+    const wakePump = (): void => {
+      if (finished || pumpScheduled || poisoned) return;
+      const resume = pumpResume;
+      pumpResume = undefined;
+      if (resume) pump();
     };
 
     const install = (name: string, fn: VmFunctionImplementation<QuickJSHandle>): void => {
@@ -320,9 +402,15 @@ export async function runCodemode(input: {
      * freed with the context.
      */
     const settle = (deferred: QuickJSDeferredPromise, text: string): void => {
+      if (poisoned) {
+        // The runtime is out of memory; resolving the deferred can abort the
+        // process, so answer from the host side instead.
+        pending.delete(deferred);
+        return;
+      }
       deferred.resolve(ctx.newString(text));
       pending.delete(deferred);
-      pump();
+      wakePump();
     };
 
     const callTool = (name: QuickJSHandle, rawArgs: QuickJSHandle): QuickJSHandle => {
@@ -398,7 +486,22 @@ export async function runCodemode(input: {
 
     let outer: QuickJSHandle | undefined;
     if (!error) {
-      const evalResult = ctx.evalCode(`(async () => {\n${input.code}\n})()`);
+      // The wrapper defers the script's promise so a job that rejects (an
+      // out-of-memory allocation inside an awaited loop) is reported through the
+      // outer promise instead of surfacing as a lost unhandled rejection. The
+      // host never settles it; the runtime frees it on teardown.
+      const evalResult = ctx.evalCode(
+        `globalThis.__codemode_resolve = null;\n` +
+          `globalThis.__codemode_reject = null;\n` +
+          `new Promise((__resolve, __reject) => {\n` +
+          `  globalThis.__codemode_resolve = __resolve;\n` +
+          `  globalThis.__codemode_reject = __reject;\n` +
+          `  (async () => {\n${input.code}\n})().then(\n` +
+          `    (__v) => __resolve(__v),\n` +
+          `    (__e) => __reject(__e),\n` +
+          `  );\n` +
+          `})`,
+      );
       if (evalResult.error) {
         const detail = ctx.dump(evalResult.error);
         error = runError(typeof detail === "string" ? detail : JSON.stringify(detail), input.host.signal, limits);
@@ -408,14 +511,34 @@ export async function runCodemode(input: {
       }
     }
 
+    /** Drop the script's promise handle so the runtime can be freed. The wrapper
+     *  promise may still be pending (a script that never settles, or one stopped by
+     *  its limit); QuickJS frees it with the runtime, and resolving it here instead
+     *  queues a job that outlives the drain and trips the `JS_FreeRuntime`
+     *  object-list assertion. */
+    const releaseOuter = (): void => {
+      if (!outer) return;
+      const handle = outer;
+      outer = undefined;
+      try {
+        handle.dispose();
+      } catch {
+        /* ignore */
+      }
+    };
+
     if (outer) {
-      // Pump jobs until the script's promise settles, the deadline passes, or
+      // Drain jobs until the script's promise settles, the deadline passes, or
       // the run is cancelled. The interpreter is touched from one task only.
+      void pump();
+      scheduleDeadline();
       await new Promise<void>((resolve) => {
-        void pump();
         finishPolling = resolve;
         const check = (): void => {
           if (finished) return resolve();
+          // A job error captured by the pump (out-of-memory inside an awaited
+          // loop) wins over the deadline: it must never read as a timeout.
+          if (pumpError && !error) error = formatJsError(pumpError, limits);
           let state: JSPromiseState;
           try {
             state = ctx.getPromiseState(outer!);
@@ -427,6 +550,7 @@ export async function runCodemode(input: {
           if (state.type === "pending") {
             if (Date.now() >= deadline) {
               finished = true;
+              decided = true;
               // A cancellation wins over the deadline: the same interrupt
               // handler covers both, so report whichever happened.
               error = aborted ? "cancelled" : `timed out after ${Math.round(limits.timeoutMs / 1000)}s`;
@@ -434,20 +558,39 @@ export async function runCodemode(input: {
             }
             if (aborted) {
               finished = true;
+              decided = true;
               error = "cancelled";
               return resolve();
             }
-            setTimeout(check, 2);
+            // Keep polling: a tool result settles the script asynchronously, so
+            // the pump needs a turn and the poller needs to re-check the promise.
+            // The deadline timer below is the backstop for a script that never
+            // yields (a sync busy loop starves this poll).
+            if (!poisoned && runtime.hasPendingJob()) wakePump();
+            scheduleCheck = () => setTimeout(check, 2);
+            scheduleCheck();
             return;
           }
           finished = true;
           try {
             if (state.type === "fulfilled") {
               const value = state.value;
+              // The wrapper resolves the outer promise as soon as the script's
+              // own promise settles, which can be `undefined` for a script that
+              // never returns (an infinite awaited loop stopped by the interrupt).
+              // A run that already hit a limit must keep reporting it, and a
+              // fulfilled `undefined` is only a real result when the script
+              // returned nothing at all — otherwise it is the wrapper artifact.
               if (value && value.alive) {
                 result = ctx.dump(value);
                 value.dispose();
               }
+              if (decided && error === undefined) {
+                error = `timed out after ${Math.round(limits.timeoutMs / 1000)}s`;
+              }
+            } else if (decided) {
+              // The wrapper was released by the host, so its `undefined`
+              // resolution is an artifact of teardown, not a run outcome.
             } else {
               const detail = state.error && state.error.alive ? ctx.dump(state.error) : "unknown error";
               // The interrupt handler fires for BOTH the deadline and an
@@ -465,13 +608,20 @@ export async function runCodemode(input: {
       });
     }
 
-    outer?.dispose();
+    releaseOuter();
     ctx.dispose();
   } catch (err) {
     if (!error) error = aborted ? "cancelled" : `codemode failed: ${String(err)}`;
   } finally {
     finished = true;
+    if (deadlineTimer) {
+      clearTimeout(deadlineTimer);
+      deadlineTimer = undefined;
+    }
     input.host.signal?.removeEventListener("abort", onAbort);
+    // A job error captured by the pump (out-of-memory inside an awaited loop)
+    // must survive even if the run ended on the deadline first.
+    if (pumpError && !error) error = formatJsError(pumpError, limits);
     // An aborted run never reads as a timeout, whatever the exit path was.
     if (aborted) error = "cancelled";
     // Reject every call still in flight so the tool implementation stops, and
@@ -485,6 +635,20 @@ export async function runCodemode(input: {
     }
   }
 
+  return buildOutput(result, error, limits, logs, logsTruncated, toolCalls, store, startedAt);
+}
+
+/** Assemble the run output, capping the text payload. */
+function buildOutput(
+  result: unknown,
+  error: string | undefined,
+  limits: CodemodeLimits,
+  logs: string[],
+  logsTruncated: boolean,
+  toolCalls: number,
+  store: Record<string, unknown>,
+  startedAt: number,
+): CodemodeRunOutput {
   return {
     result,
     error,
