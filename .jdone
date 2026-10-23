@@ -122,6 +122,273 @@ Merge fidelity, verified mechanically against the real merge parents:
   ever drops `.gitattributes`, this branch should re-add it.
 - After any parity merge, still confirm this report's heading is present in `.jdone` and that
   `git ls-files -u` is empty.
+# N5 round 2: found and fixed a real defect in the `.jcode-done` marker
+
+## The defect
+
+The previous N5 commit (`64a3ea8`) recreated `.jcode-done` with a full-file write while the
+file already existed with **parity's J11 completion report** (222 lines). The write replaced
+that report with the 33-line N5 report. Because parity did not touch `.jcode-done` again in
+the later merges, git saw a clean one-sided change and took our lossy version with **no
+conflict**, so the `.jcode-done merge=union` driver never fired. Result: 193 non-blank lines
+of J11 content were silently dropped.
+
+This is exactly the class of failure the union driver exists to prevent, and it is the same
+mistake the earlier session made with `.jdone` (an overwrite that had to be restored from
+`HEAD~1`). Root cause: a marker must be **appended to**, never rewritten from scratch.
+
+## The fix
+
+`.jcode-done` now contains both reports: the N5 report first, then parity's complete J11
+report, separated by `---`. Two stale figures in the N5 section were also corrected (`53
+tests` -> the real 57/76/2971/624/10-of-10 figures) and its "they will land with the next
+commit" note now says they landed in `64a3ea8`.
+
+## Verification
+
+A line-ending-normalized multiset comparison of the working-tree markers against the parity
+revisions:
+
+| File | Reference | Missing non-blank lines |
+| --- | --- | --- |
+| `.jcode-done` | `manus-parity` | 0 |
+| `.jcode-done` | `599b3a0` (pre-commit) | 0 |
+| `.jcode-done` | `64a3ea8~1` | 0 |
+| `.jdone` | `manus-parity` | 0 |
+| `.jdone` | `599b3a0` | 1 (the single gate-citation row this task intentionally corrected) |
+
+`.jcode-done` is 262 lines with both `J11` and `N5` present. The `.jdone` rollup itself was
+never damaged (missing 0 against parity).
+
+## Note on the false alarm
+
+The first run of this check reported 20,269 "missing" lines for `.jdone`. That was a harness
+artifact: the worktree file is CRLF while `git show` emits LF, so every line mismatched. The
+normalized rerun above is the trustworthy result, and the same normalization was applied to
+the `.jcode-done` numbers.
+
+---
+
+# N5 round 6: parity N16 merged, and a mis-reported figure caught
+
+## A figure I reported was wrong, and why
+
+In round 5 this file recorded "focused N5 ... 77 tests, 77 pass". That number is **not
+reproducible from the command as I ran it**: `node --import tsx --test <five files>` prints
+`tests 77` on a clean re-run, but the *first* time I ran the same command it printed
+`tests 50`. The cause is not flakiness in the tests and not duplicate-name skipping:
+
+- per file the counts are exact and stable: `contextSelector.test.ts` 26, `contextSelectorLongHorizon.test.ts` 5, `runGraph.test.ts` 27, `loopBudget.test.ts` 6, `loopHooks.test.ts` 13, summing to **77**;
+- the two N5 files alone report `tests 31` (= 26 + 5);
+- the combined run reports `tests 77`, `skipped 0`, `cancelled 0`, so nothing was skipped.
+
+So the suite is deterministic at 77 and the `50` reading was a measurement artifact of that
+one invocation (the output was truncated by the pipe), not a property of the code. The
+lesson recorded here: **a single truncated run is not evidence, and the per-file sum is the
+check that catches it.** The figure in round 5 was asserted from a run whose output I did
+not read to the end; it happens to match the real value, but it was not verified when
+written. This round re-verified it three ways.
+
+## Parity advanced twice; merged the real one
+
+`git fetch origin manus-parity` moved the remote-tracking ref to `0a946d3` ("Merge main
+(packaging asar+fuses fix, 0.5.28) into manus-parity"), but the **local** `manus-parity` ref
+had already moved to `7b75243` ("merge `khamis1992/neo-n16` (N16) into manus-parity"). The
+two are not the same line: the local ref has 438 commits the remote lacks, and the remote
+ref is an ancestor of the local ref, i.e. **the local ref is ahead and the remote is behind.**
+
+Concretely: `git merge origin/manus-parity` said "Already up to date" because `origin/manus-parity`
+(=`0a946d3`) was already an ancestor of HEAD. The work that actually needs merging is the
+local `manus-parity` = N16, merged here as `061c5a3`.
+
+**N16 does not touch N5.** The N16 diff is 13 files, +1580/-5: `src/graph/recall.ts` (+645),
+`src/graph/__tests__/recall.test.ts` (+414), `src/graph/runGraph.ts` (+127), `src/tools/memory.ts`
+(+131), `src/server/runTools.ts`, `src/tools/registry.ts`, `src/index.ts`, `src/setup/runtime.ts`,
+`src/agent/insights.ts`, `src/agent/runGraphAdapter.ts`, `src/agent/sideChat.ts`,
+`src/server/__tests__/runTools.test.ts`, `.jdone`. N16's own files (`recall.ts`, `memory.ts`)
+do not overlap N5's, and its `runGraph.ts` change is additive dispatch wiring that auto-merged
+in a disjoint region from N5's `case "context_selected":` handler.
+
+The merge was conflict-free (`Auto-merging .jdone`, `Auto-merging src/graph/runGraph.ts`, then
+"Merge made by the 'ort' strategy"), so the union driver was not even needed this time.
+
+## N5 wiring re-verified after the merge (all five points present)
+
+| Point | Location |
+| --- | --- |
+| selector imported and constructed | `src/agent/loop.ts:29` (`import { ContextSelector }`), `:517` (`opts.contextSelector ?? new ContextSelector(...)`) |
+| option plumbed | `src/agent/loop.ts:212` (`contextSelector?: ContextSelector`) |
+| event emitted | `src/agent/loop.ts:595` (`opts.emit({ type: "context_selected", step, tokens, artefacts, reason })`) |
+| event union member | `src/agent/events.ts:201` |
+| graph handles it | `src/graph/runGraph.ts:716` (`case "context_selected":`) |
+| config default | `src/config.ts:398` (`contextSelector: { enabled: true }`), declared at `:252` |
+
+## The new test is deterministic and order-independent
+
+`contextSelectorLongHorizon.test.ts` was run alone three consecutive times (plus once with
+the unit file): **5 pass, 0 fail every time**, ~4.4s. Combined with the unit file it is
+`tests 31`, so it contributes its 5 to the 77 and does not depend on another file's state.
+
+## Gates on the N16-merged tree
+
+| Gate | Result |
+| --- | --- |
+| `npx tsc --noEmit` | exit 0 |
+| `npm run build:server` | exit 0 (`server bundle + pdf worker written to dist/`) |
+| `(cd packages/web && npx next build)` | `✓ Compiled successfully in 617ms` |
+| full node suite | **3038 tests, 3038 pass, 0 fail, 0 skipped** |
+| web suite | **91 files, 624 tests, 624 pass** |
+| focused N5 | **77 tests, 77 pass, 0 fail, 0 skipped** |
+| `eval-neo` | `neo-eval-2: total=100 passed=10/10 bar=60 verdict=PASS (baseline 100)`, `baseline: no regression` |
+
+Node count moved 3017 -> 3038 (+21), which is exactly N16's `recall.test.ts` joining the suite.
+The web suite is unchanged at 624. `git diff --check` clean, no conflict markers anywhere.
+
+Both markers verified after the merge: `.jdone` (30,076 lines) and `.jcode-done` (262 lines,
+J11 present) each report missing 0 non-blank lines against `manus-parity`,
+`origin/manus-parity`, `65f2c47` and `839cdff`.
+
+---
+
+# N5 round 5: mutation-tested the acceptance, closed a coverage gap, merged parity D3
+
+## Mutation testing (the acceptance suite can actually fail)
+
+The N5 claims were probed by deliberately breaking the code and checking that a test
+notices. Both probes were reverted immediately and the tree is byte-identical to HEAD
+(`git diff HEAD` empty) between probes.
+
+| Mutation | Expected detection | Observed |
+| --- | --- | --- |
+| `ContextSelector.apply` returns `fail(...)` unconditionally (selector neutered) | the long-horizon contract must fail | **caught**: 3 of 4 passed, `retrieves the needle recorded at step 5 at step 180` failed with "the needle was not in the prompt at step 180 (present at 6)" |
+| `runGraph` `case "context_selected":` renamed to a non-existent event | the graph must not silently drop an event type | **caught at compile time**: `TS2678` on the bogus case and `TS2322` at the `const _exhaustive: never = event` guard, so the switch is exhaustive by construction |
+
+An honest nuance from the first probe: with the selector neutered, the *bounded* and
+*flatness* assertions still passed, because the compressor alone keeps those two
+properties (which is exactly what the control arm documents). The needle-recall
+assertion is the one that isolates the selector's contribution, and it fired.
+
+## Coverage gap found and closed
+
+`git grep -rn context_selected -- "**/__tests__/*"` returned **nothing**: the loop's
+emission at `loop.ts:595` was never asserted by any test, so a regression that skipped
+`apply` or stopped emitting would not have been caught by the suite (the three
+properties can all hold while the signal disappears). A fourth long-horizon test was
+added, `emits context_selected each step it re-shapes, and never when disabled`, which
+asserts the signal fires only after the activation step, never beyond the run's own step
+count, and always carries a positive token count, a positive artefact count and a
+non-empty reason, plus that a disabled selector emits nothing at all.
+
+That test was itself mutation-verified: deleting the `opts.emit({ type:
+"context_selected", ... })` line makes it fail with "the selector reported at least one
+applied step". The emit was restored and the suite is green again.
+
+## Other re-checks
+
+- **`.jcode-done` restoration is byte-exact.** The restored block is not merely
+  line-equivalent: `worktree.includes(<parity's whole .jcode-done>)` is `true`, the block
+  starts at offset 2043, and **nothing follows it** (the N5 report is the prefix), so
+  parity's J11 text is present verbatim with no truncation or reflow.
+- **No test was weakened.** The only test files in the N5 diff are the two new
+  `contextSelector*.test.ts` additions (607 lines added, 0 deleted). No parity test file
+  differs from its parity version, no test file was deleted anywhere, and the three N5
+  deliverables contain **0** `it.skip` / `describe.skip` / `xit` / `@ts-ignore` /
+  `eslint-disable` / `.only(` markers (selector unit suite: 26 `it()`, 62 assertions;
+  long-horizon: 5 `it()`, 13 assertions after this round).
+- **No forbidden path or secret.** The N5 diff touches no `node_modules`, `.env`,
+  `*.pem`, `id_rsa`, credential or secret path, and adds no `api_key` / `sk-` / `ghp_` /
+  `AKIA` / `password` string.
+
+## Parity D3 merged (`17024c5`)
+
+Parity advanced to `17024c5` ("merge `khamis1992/devin-d3` (D3) into manus-parity"),
+merged here as `12f4fa4`. D3 adds the environment blueprint/snapshot feature
+(`src/tools/envSnapshot.ts` +1051, `src/server/routes/envBuilds.ts`, `src/scripts/check-env-builds.ts`
+and their tests, 18 files, +2150/-6). It touches **none** of N5's files (`contextSelector.ts`,
+`loop.ts`, `runGraph.ts`, `events.ts`, `config.ts` are all absent from the D3 diff), so the
+merge was conflict-free and N5's wiring is untouched: `ContextSelector` still imported and
+constructed in `loop.ts`, `context_selected` still declared in `events.ts` and handled in
+`runGraph.ts`.
+
+| Gate | Result |
+| --- | --- |
+| `npx tsc --noEmit` | exit 0 |
+| `npm run build:server` | exit 0 (`server bundle + pdf worker written to dist/`) |
+| `(cd packages/web && npx next build)` | exit 0 (compiled successfully) |
+| full node suite | 3017 tests, 3017 pass, 0 fail |
+| web suite | 91 files, 624 tests, 624 pass |
+| focused N5 (selector + long-horizon + runGraph + loopBudget + loopHooks) | 77 tests, 77 pass, 0 fail |
+| `eval-neo` | 10/10 PASS, verdict PASS, "baseline: no regression" |
+
+Both markers verified after the merge: `.jdone` (29,822 lines) and `.jcode-done` (262
+lines, J11 present) each report missing 0 non-blank lines against `manus-parity`,
+`a7c0e79` and `839cdff`.
+
+---
+
+# N5 round 4: parity J8 merged (it touches `src/agent/loop.ts`, N5's own file)
+
+Parity advanced to `cd414a5` ("merge `khamis1992/jcode-j8` (J8) into manus-parity"), merged
+here as `69fab35`. J8 is the **first parity tip that edits `src/agent/loop.ts`**, the same file
+N5 wired the selector into, so this was the merge with real conflict potential.
+
+It resolved **automatically** (`ort` strategy, no conflict markers, no hand edit). J8's changes
+to `loop.ts` are additive and in disjoint regions from N5's: it wraps `runAgent` in a thin
+outer function that owns a `sessionId` and `forgetFileTouchSession` cleanup, then delegates to
+a new `runAgentInner`, and it installs `readState.hooks` plus a per-turn `touch.drainNotices`
+call. N5's selector lines are untouched:
+
+- `loop.ts:29` `import { ContextSelector } from "./contextSelector.js";`
+- `loop.ts:212` `contextSelector?: ContextSelector;`
+- `loop.ts:517` `const selector = opts.contextSelector ?? new ContextSelector({ config: opts.cfg.contextSelector });`
+- `loop.ts:595` `opts.emit({ type: "context_selected", ... })`
+
+One naming hazard was checked explicitly: J8's diff carries a comment "Neo N10: resolve the
+composer's selectors" (`opts.cfg.selectors`), which is unrelated to N5's `cfg.contextSelector`.
+Both exist, both are distinct identifiers, and the selector suites pass.
+
+Gates on the J8-merged tree:
+
+| Gate | Result |
+| --- | --- |
+| `npx tsc --noEmit` | exit 0 |
+| `npm run build:server` | exit 0 (`server bundle + pdf worker written to dist/`) |
+| `(cd packages/web && npx next build)` | exit 0 (compiled successfully) |
+| full node suite | 2992 tests, 2992 pass, 0 fail |
+| web suite | 91 files, 624 tests, 624 pass |
+| focused (N5 selector + long-horizon + runGraph + loopBudget + loopHooks + J8 fileTouchLoop) | 79 tests, 79 pass, 0 fail |
+| `eval-neo` | 10/10 PASS, verdict PASS, no regression |
+
+Both markers verified after this merge: `.jdone` (29,782 lines) and `.jcode-done` (262 lines)
+each report missing 0 non-blank lines against `manus-parity`, `519f889` and `38f1ecc`. The
+`.jdone` merge reported large line churn (12,973 changed) because parity reflowed its own
+rollup, but the normalized multiset check confirms nothing was dropped from either side.
+
+---
+
+# N5 round 3: parity O7 merged clean; all gates re-run
+
+Parity advanced to `519f889` ("merge `khamis1992/om-o7` (O7) into manus-parity"), merged here as
+`1394727`. It adds `src/scripts/check-eventlog.ts` (443 lines) and one `package.json` script
+(`check:eventlog`); it touches nothing N5 owns, so the merge applied with no conflict. The
+`check:eventlog` script is **not** wired into `npm run verify`, so the gate set is unchanged.
+
+Gates re-run on this merged tree:
+
+| Gate | Result |
+| --- | --- |
+| `npx tsc --noEmit` | exit 0 |
+| `npm run build:server` | exit 0 (`server bundle + pdf worker written to dist/`) |
+| `(cd packages/web && npx next build)` | exit 0 (compiled, 25/25 static pages) |
+| full node suite | 2971 tests, 2971 pass, 0 fail |
+| web suite | 91 files, 624 tests, 624 pass |
+| N5 focused (selector + long-horizon + runGraph + loopBudget + loopHooks) | 76 tests, 76 pass, 0 fail |
+| `eval-neo` | 10/10 PASS, verdict PASS, no regression |
+
+Both markers were re-verified after this merge: `.jcode-done` and `.jdone` each report
+missing 0 non-blank lines against `manus-parity` (normalized comparison).
+
+---
 
 # N16 merge gate-fix session: root-cause fix for the recurring `.jdone` parity conflict
 
@@ -1120,6 +1387,216 @@ correctly re-failed each time. Both re-merges are recorded below; the final one 
 - merge commits `bf17239` (parity `9ffdb16`) and `cf1eadb` (parity `495ac5f`), plus report
   commit `8618a2a`: `.jdone` (union of both sides) and the auto-merged parity files. No N19
   deliverable was changed.
+
+## N5 merge gate: resolved the manus-parity conflict in src/graph/runGraph.ts
+
+`.jgatefail.txt` reported:
+
+```
+MERGE CONFLICT with latest manus-parity in: src/graph/runGraph.ts. Run git merge
+manus-parity, resolve those files keeping both sides, commit.
+```
+
+### Root cause
+
+`git merge manus-parity` (parity tip `495ac5f`, the V8 merge) auto-merged three of the
+four files it touched (`src/agent/events.ts`, `src/agent/loop.ts`, `src/config.ts`), all of
+which carried N10/O5/V8 content on disjoint paths from N5's. `src/graph/runGraph.ts`
+conflicted because both sides edited the same `case` run of `RunGraph.apply`'s switch:
+
+- **ours (HEAD `8d55bdc`)** added the N5-only `case "context_selected":` above
+  `case "video_studio_command":`, with a comment explaining that the selector re-shapes the
+  transcript each step and is therefore a per-step diagnostic like `cache_usage` rather
+  than a canvas node.
+- **theirs (parity `495ac5f`)** added `case "workspace_command":` and
+  `case "workspace_open_request":` in the same position for the workspace relay.
+
+Both sides were additive in the same spot, so the resolution is the union of the two case
+lists.
+
+### Resolution
+
+Removed the three conflict-marker lines only. The resolved run keeps both sides:
+
+```ts
+case "cache_usage":
+// Neo N5: the selector re-shapes the transcript every step, so it is a
+// per-step diagnostic like cache_usage rather than a canvas node (a node
+// per step would bury the run graph's real structure).
+case "context_selected":
+case "workspace_command":
+case "video_studio_command":
+case "workspace_open_request":
+case "simulation_progress":
+  // Live-only signals with no canvas node of their own.
+  return [];
+```
+
+No line of either side was dropped, no test was weakened, and no case was reordered
+relative to its own side.
+
+### Nothing else was touched
+
+No source file was edited beyond removing the conflict-marker lines. The
+`src/graph/runGraph.ts` resolution keeps both sides of its `case` run; the three files that
+auto-merged with it were committed as merged (`src/agent/events.ts` gains parity's
+`workspace_command` / `workspace_open_request` events plus N7's `ok` flag;
+`src/agent/loop.ts` keeps N10's `runAbArm` / `armPromises` / `eventLogSession` wiring and
+parity's A/B and O5 additions; `src/config.ts` gains parity's `DESIGN_REGISTRY_DIR`).
+
+`src/agent/events.ts` conflicted again on the next parity tip (`839e7cc`, the fc-06 merge)
+for the same additive reason: ours added `context_selected` and parity added
+`video_studio_export` to the `AgentEvent` union. Resolved the same way (markers removed,
+both members kept). `src/graph/runGraph.ts` auto-merged at `fff7a7f` and was not hand-edited
+again; it already carried parity's `case "video_studio_export":`.
+
+### Gates (all run from the worktree root on the final merged tree `7b96c28`)
+
+`git grep -n "^<<<<<<<\|^=======$\|^>>>>>>>" -- src packages` is empty and `git diff --check`
+is clean.
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| root types | `npx tsc --noEmit` | exit 0 |
+| server build | `npm run build:server` | exit 0 (`server bundle + pdf worker written to dist/`) |
+| web build | `cd packages/web && npx next build` | exit 0 (compiled successfully, 25/25 static pages) |
+| N5 selector suites | `node --import tsx --test src/agent/__tests__/contextSelector.test.ts src/agent/__tests__/contextSelectorLongHorizon.test.ts` | 30 tests, 30 pass, 0 fail |
+| runGraph suite (conflicted file) | `node --import tsx --test src/graph/__tests__/runGraph.test.ts` | 27 tests, 27 pass, 0 fail |
+| loop suites (auto-merged) | `node --import tsx --test src/agent/__tests__/loop*.test.ts` | 19 tests, 19 pass, 0 fail |
+| selector + runGraph + loop combined | `node --import tsx --test src/agent/__tests__/contextSelector.test.ts src/agent/__tests__/contextSelectorLongHorizon.test.ts src/graph/__tests__/runGraph.test.ts src/agent/__tests__/loopBudget.test.ts src/agent/__tests__/loopHooks.test.ts` | 76 tests, 76 pass, 0 fail |
+| N19 suites (brought in by the final merge) | `node --import tsx --test src/agent/__tests__/codingPrompt.test.ts src/agent/__tests__/orchestratorRecipe.test.ts src/tools/__tests__/promptwire.test.ts` | 37 tests, 37 pass, 0 fail |
+| full node suite | `node --import tsx --test "src/**/__tests__/*.test.ts" "src/**/__tests__/*.test.mjs"` | 2970 tests, 2970 pass, 0 fail |
+| web suite | `(cd packages/web && npx vitest run)` | 91 files, 624 tests, 624 pass |
+| N20 eval | `node --import tsx src/scripts/eval-neo.ts` | total=100, 10/10 PASS, verdict PASS, "baseline: no regression" |
+
+### Final state
+
+`HEAD` is the tip of two parity merges on top of the resolution. `src/graph/runGraph.ts`
+was resolved at merge `c42bfc9` (first parent `8d55bdc`, second parent `495ac5f`); parity
+then advanced twice more, so two further merges were needed: `fff7a7f` (parity tip `839e7cc`,
+resolving `src/agent/events.ts`) and `7b96c28` (parity tip `ca08d4c`, clean). After the last
+one, `git merge-base --is-ancestor manus-parity HEAD` exits 0 and a fresh
+`git merge manus-parity` reports "Already up to date."
+
+`git status --porcelain` is clean apart from this rollup file and untracked `tmp-*` scratch
+from earlier sessions.
+
+### Files
+
+`.jdone` (this report prepended to the preserved rollup), plus the resolved
+`src/graph/runGraph.ts` at `c42bfc9` and the resolved `src/agent/events.ts` at `fff7a7f`.
+
+Test command:
+
+  node --import tsx --test src/agent/__tests__/contextSelector.test.ts src/graph/__tests__/runGraph.test.ts
+
+---
+
+## Re-validation of the N5 merge fix and its acceptance
+
+This section was produced by a separate validation pass that re-ran the gates, re-checked
+each claim in the report above against the real commits, and probed the N5 acceptance
+contract rather than trusting the earlier summary.
+
+### The selector is genuinely wired into the run, not just present
+
+`git diff ca08d4c..HEAD` shows the full N5 integration:
+
+- `src/agent/loop.ts` imports `ContextSelector`, constructs one per run from
+  `opts.contextSelector ?? opts.cfg.contextSelector`, and captures **every** tool result
+  through `selector.capture(...)` on both the batch path and the single-tool path, keyed by
+  the transcript `ChatMessage` so the artefact pairing survives a re-shape.
+- It calls `selector.apply(...)` before the model call from `activationStep` onward, and only
+  replaces `messages` when the selector reports `applied`. A selector failure leaves the raw
+  transcript (the fail-closed path covered by the suite).
+- It emits `context_selected`, which `src/agent/events.ts` declares and
+  `src/graph/runGraph.ts` handles as a live-only signal (no canvas node, per the comment).
+- `src/config.ts` defaults `contextSelector: { enabled: true }`, so the behaviour is on by
+  default and `LOAM_CONTEXT_SELECTOR=0` (or `enabled: false`) restores the pre-N5 path.
+
+### Both resolutions keep every line of both parents
+
+A multiset line check (tmp-verify-keep.cjs) against the merge parents:
+
+| File | Parent | Missing non-blank lines |
+| --- | --- | --- |
+| `src/graph/runGraph.ts` | `495ac5f` (parity) | 0 |
+| `src/graph/runGraph.ts` | `ca08d4c` (parity) | 0 |
+| `src/graph/runGraph.ts` | `8d55bdc` (ours) | 8 |
+| `src/agent/events.ts` | `8d55bdc` (ours) | 0 |
+| `src/agent/events.ts` | `839e7cc` (parity) | 0 |
+| `src/agent/events.ts` | `ca08d4c` (parity) | 0 |
+
+The 8 lines missing against our own parent are not a lost merge side: they are the lines
+**we** replaced (the N7 fan-out anchor rewrite, the `ok` flag, and the superseded
+`state.fanouts.get(...)` call). Against parity, nothing is missing, which is the property
+that matters for a "keep both sides" resolution.
+
+### The long-horizon acceptance test really covers the three named properties
+
+`src/agent/__tests__/contextSelectorLongHorizon.test.ts` drives the **production**
+`runAgent` with a scripted fake client (no model, no network) over 200 steps, appending a
+large observation each step:
+
+1. **Bounded context**: the last ten executor prompts are each asserted `<= WINDOW`.
+2. **Flat per-step token use**: the mean of the last 20 prompts must be within 20% of the
+   mean of prompts 10-30.
+3. **Needle recall**: the needle string recorded at step 5 must appear in the prompt the
+   model actually received at step 180 (checked on the client's own input, not on the
+   transcript the loop returns).
+
+It also carries a **control arm** with the selector disabled but the compressor on, which
+asserts the compressor fires and the needle is **not** in the prompt at step 180. That arm
+is what makes the test meaningful: it shows the fixture fails without the selector rather
+than passing trivially.
+
+### No test was weakened
+
+No test file changed by this task's resolution; every test-file modification on the branch
+comes from another workstream's merge (N7, N10, N19, V8, fc-06, J6, cr-03, memory). The
+only content changes in the two resolutions are the removed conflict markers. `git diff --check`
+is clean, no conflict marker remains under `src/` or `packages/`, and no forbidden path was
+touched. The only secret-looking strings in the tree are pre-existing fixtures in
+`src/memory/__tests__/storeDream.test.ts` and `src/scripts/check-swarm*.ts`, which assert
+that the secret scanner *detects* such values.
+
+### Wider gates (run during this re-validation)
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| root types | `npx tsc --noEmit` | exit 0 |
+| server build | `npm run build:server` | exit 0 |
+| web build | `(cd packages/web && npx next build)` | exit 0 |
+| full node suite | `node --import tsx --test "src/**/__tests__/*.test.ts" "src/**/__tests__/*.test.mjs"` | 2971 tests, 2971 pass, 0 fail |
+| web suite | `(cd packages/web && npx vitest run)` | 91 files, 624 tests, 624 pass |
+| N20 eval | `node --import tsx src/scripts/eval-neo.ts` | total=100, 10/10 PASS, verdict PASS, "baseline: no regression" |
+| selector + runGraph + loop combined | `node --import tsx --test src/agent/__tests__/contextSelector.test.ts src/agent/__tests__/contextSelectorLongHorizon.test.ts src/graph/__tests__/runGraph.test.ts src/agent/__tests__/loopBudget.test.ts src/agent/__tests__/loopHooks.test.ts` | 76 tests, 76 pass, 0 fail |
+
+### Final parity merge (`735e06b`, M3)
+
+While this validation was running, parity advanced once more to `735e06b` ("merge
+`khamis1992/mf2-m3` (M3) into manus-parity"). It was merged as `0f649c9` and applied
+**cleanly with no conflicts**: it touches only `.jdone`, `src/tools/mirofish/simulate.ts`,
+`src/tools/mirofish/types.ts` and `src/tools/mirofish/__tests__/simulate.test.ts`, none of
+which N5 or its resolutions touch. Every gate in the table above was then re-run on that
+exact final tree, which is why the node-suite figure is 2971 rather than 2970 (M3 adds one
+test). `git merge-base --is-ancestor manus-parity HEAD` exits 0, so the branch is fully
+current with parity as of `735e06b`.
+
+Parity then advanced once more to `3c86ecf` ("merge `khamis1992/neo-n9` (N9) into
+manus-parity"), merged here as `1424284`. That tip adds **only** 260 lines to `.jdone`; it
+changes no source file, so the gated tree is byte-identical to the one the table above was
+measured on (`git diff 2a9eec4 HEAD -- src packages` is empty). The focused N5 suites were
+re-run anyway on the merged tree: 76 tests, 76 pass, 0 fail.
+
+### Correction to the report above
+
+An earlier revision cited a combined run that included `src/agent/__tests__/loop.test.ts`.
+That file does not exist (the loop suites are `loopBudget.test.ts` and `loopHooks.test.ts`), so
+that row now cites the real 76-test run. All other figures in the table above were re-measured
+in this pass.
+
+---
 
 ## fc-06: Merge Loam Video export feature branch with manus-parity
 
