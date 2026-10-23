@@ -13,6 +13,7 @@ import path from "node:path";
 import { loadConfig, type Config } from "../../config.js";
 import { runOrchestratedAgent } from "../orchestrator.js";
 import type { ChatMessage, ChatOptions, ChatResult, OllamaClient } from "../../ollama.js";
+import type { CooldownStore, FailoverProvider } from "../../llm/failover.js";
 import { ToolRegistry } from "../../tools/registry.js";
 
 type Role = "planner" | "critic" | "final" | "worker";
@@ -86,6 +87,18 @@ function writeHooks(workspace: string, config: Record<string, unknown>): void {
   fs.writeFileSync(path.join(dir, "hooks.json"), JSON.stringify(config), "utf8");
 }
 
+/** In-memory cooldown store: a failing provider must not leave a process-wide
+ *  mark behind, and routing must not touch the real data folder. */
+function memoryStore(): CooldownStore {
+  const map = new Map<string, { expiresAt: number; backoffCount: number }>();
+  return {
+    get: (key) => map.get(key),
+    set: (key, entry) => void map.set(key, entry),
+    entries: () => [...map.entries()],
+    save: () => {},
+  };
+}
+
 function command(file: string): string {
   return `node "${file}"`;
 }
@@ -103,7 +116,27 @@ function testConfig(workspace: string): Config {
     maxReplans: 1,
     verifyFinal: true,
   };
+  // Keep these tests hermetic: no provider may serve a coding turn from the
+  // network. `createProviderClient` hands the router the same fake the rest of
+  // the run uses, so a worker that is itself a coding turn (a Stop continuation
+  // names the hook script and the answer) is answered by the fake instead of
+  // escaping to the real provider chain.
+  cfg.coding = { enabled: true, chain: [], logEdits: false };
+  cfg.failover = { providers: [] };
   return cfg;
+}
+
+/** Routing seams shared by every test: no real provider, no real cooldown
+ *  store, no real environment. The Stop-continuation prompt trips the coding
+ *  heuristic, so the worker would otherwise be routed to the network. */
+function routingSeams(workspace: string, client: OllamaClient) {
+  return {
+    createProviderClient: (_provider: FailoverProvider) => client as never,
+    cooldownStore: memoryStore(),
+    env: {} as Record<string, string | undefined>,
+    onCodingRoute: () => {},
+    cfg: testConfig(workspace),
+  };
 }
 
 test("an orchestrated run fires SessionStart, UserPromptSubmit and SessionEnd", async () => {
@@ -126,7 +159,7 @@ test("an orchestrated run fires SessionStart, UserPromptSubmit and SessionEnd", 
   });
 
   await runOrchestratedAgent({
-    cfg: testConfig(workspace),
+    ...routingSeams(workspace, client),
     ollama: client,
     tools: new ToolRegistry(),
     prompt: "echo hi",
@@ -164,7 +197,7 @@ test("nested orchestrated runs stay silent without lifecycleHooks", async () => 
   });
 
   await runOrchestratedAgent({
-    cfg: testConfig(workspace),
+    ...routingSeams(workspace, client),
     ollama: client,
     tools: new ToolRegistry(),
     prompt: "echo hi",
@@ -191,7 +224,7 @@ test("a blocked Stop forces the orchestrated run to keep working", async () => {
   });
 
   await runOrchestratedAgent({
-    cfg: testConfig(workspace),
+    ...routingSeams(workspace, client),
     ollama: client,
     tools: new ToolRegistry(),
     prompt: "echo hi",
@@ -221,7 +254,7 @@ test("SessionEnd reports cancelled for an aborted orchestrated run", async () =>
 
   await assert.rejects(
     runOrchestratedAgent({
-      cfg: testConfig(workspace),
+      ...routingSeams(workspace, client),
       ollama: client,
       tools: new ToolRegistry(),
       prompt: "echo hi",
@@ -255,7 +288,7 @@ test("a Stop continuation answer is verified again before the run finishes", asy
   });
 
   const result = await runOrchestratedAgent({
-    cfg: testConfig(workspace),
+    ...routingSeams(workspace, client),
     ollama: client,
     tools: new ToolRegistry(),
     prompt: "echo hi",

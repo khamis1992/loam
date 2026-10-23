@@ -1,20 +1,27 @@
 /**
- * Unit tests for the expanded hook surface.
+ * Unit tests for the workspace hook policy (hooks.ts).
  *
- * Each lifecycle event must run its configured command in the workspace with
- * the event exposed through the environment, and the expanded events must
- * honour JSON stdout decisions (`block`, `additionalContext`) plus the
- * conventional exit-code-2 blocking signal. The two original tool events keep
- * their existing contract.
+ * Two surfaces are covered together, because the merged policy keeps both:
+ *
+ *  - the expanded lifecycle surface: every event runs its configured command in
+ *    the workspace with the event exposed through the environment, and the
+ *    decision events honour JSON stdout decisions (`block`, `additionalContext`)
+ *    plus the conventional exit-code-2 blocking signal. The two tool events
+ *    (PreToolUse/PostToolUse) keep their original exit-code contract.
+ *  - the PreCompact surface: rules are loaded from the global and workspace
+ *    hooks.json files, the workspace copy is written back with every event
+ *    group, and a PreCompact hook receives the compaction context on stdin and
+ *    can veto the compaction.
  */
-import test from "node:test";
-import assert from "node:assert";
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import test, { afterEach, beforeEach, describe, it } from "node:test";
 import {
   loadHooksConfig,
   saveWorkspaceHooks,
+  runPreCompactHooks,
   runLifecycleHooks,
   type HookEvent,
   type HookRule,
@@ -59,7 +66,7 @@ function writeFixture(workspace: string): string {
   return file;
 }
 
-function writeHooks(workspace: string, config: HooksConfig): void {
+function writeHooks(workspace: string, config: HooksConfig | Record<string, unknown>): void {
   const dir = path.join(workspace, ".manus");
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "hooks.json"), JSON.stringify(config), "utf8");
@@ -217,4 +224,142 @@ test("PreToolUse matcher restricts which tool names trigger", async () => {
   const res = await runLifecycleHooks("PreToolUse", "file_read", {}, workspace);
   assert.equal(res.outcomes.length, 0);
   assert.equal(res.blocked, false);
+});
+
+// ---------------------------------------------------------------------------
+// PreCompact config loading and the stdin-based veto surface.
+// ---------------------------------------------------------------------------
+
+describe("hooks config", () => {
+  const originalCwd = process.cwd();
+  let tmpDir = "";
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-hooks-"));
+    process.chdir(tmpDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  });
+
+  /** A command that exits `code` and prints `text`. */
+  function shellExit(code: number, text = ""): string {
+    return `node -e "process.stdout.write(${JSON.stringify(text)});process.exit(${code})"`;
+  }
+
+  it("loads PreCompact rules from the workspace hooks file", () => {
+    writeHooks(tmpDir, { PreCompact: [{ command: shellExit(0) }] });
+    const cfg = loadHooksConfig(tmpDir);
+    assert.equal(cfg.PreCompact?.length, 1);
+    assert.equal(cfg.PreToolUse?.length ?? 0, 0);
+  });
+
+  it("ignores malformed hooks files without throwing", () => {
+    fs.mkdirSync(path.join(tmpDir, ".manus"), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, ".manus", "hooks.json"), "{not json", "utf8");
+    const cfg = loadHooksConfig(tmpDir);
+    // Every event key is simply absent; the malformed file contributes no rules.
+    assert.equal(cfg.PreToolUse?.length ?? 0, 0);
+    assert.equal(cfg.PreCompact?.length ?? 0, 0);
+  });
+
+  it("persists every event group and drops entries without a command", () => {
+    const config = {
+      PreToolUse: [{ matcher: "file_write", command: "echo pre" }],
+      PreCompact: [{ matcher: "", command: "echo compact" }, { matcher: "ignored" }],
+    } as unknown as HooksConfig;
+    const file = saveWorkspaceHooks(tmpDir, config);
+    assert.equal(fs.existsSync(file), true);
+    const saved = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+    assert.deepEqual(saved.PreToolUse, [{ matcher: "file_write", command: "echo pre" }]);
+    assert.deepEqual(saved.PreCompact, [{ matcher: "", command: "echo compact" }]);
+    assert.equal(Array.isArray(saved.PostToolUse), true);
+  });
+
+  it("blocks a matching PreToolUse rule that exits non-zero", async () => {
+    writeHooks(tmpDir, { PreToolUse: [{ matcher: "file_write", command: shellExit(1, "denied") }] });
+    const result = await runLifecycleHooks("PreToolUse", "file_write", { path: "a.ts" }, tmpDir);
+    assert.equal(result.blocked, true);
+    assert.match(result.message, /denied/);
+  });
+
+  it("does not run a rule whose matcher does not match", async () => {
+    writeHooks(tmpDir, { PreToolUse: [{ matcher: "file_write", command: shellExit(1) }] });
+    const result = await runLifecycleHooks("PreToolUse", "file_read", { path: "a.ts" }, tmpDir);
+    assert.equal(result.blocked, false);
+    assert.equal(result.outcomes.length, 0);
+  });
+
+  it("ignores PreCompact rules when running a tool lifecycle event", async () => {
+    writeHooks(tmpDir, { PreCompact: [{ command: shellExit(1) }] });
+    const result = await runLifecycleHooks("PreToolUse", "file_read", {}, tmpDir);
+    assert.equal(result.blocked, false);
+    assert.equal(result.outcomes.length, 0);
+  });
+});
+
+describe("PreCompact hooks", () => {
+  const originalCwd = process.cwd();
+  let tmpDir = "";
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-hooks-"));
+    process.chdir(tmpDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  });
+
+  function shellExit(code: number, text = ""): string {
+    return `node -e "process.stdout.write(${JSON.stringify(text)});process.exit(${code})"`;
+  }
+
+  it("does nothing when no rule is configured", async () => {
+    const result = await runPreCompactHooks({ model: "m", window: 1000, threshold: 500, tokens: 900, messages: 4 }, tmpDir);
+    assert.equal(result.blocked, false);
+    assert.equal(result.outcomes.length, 0);
+  });
+
+  it("passes the compaction context to the hook and lets it observe without vetoing", async () => {
+    const seen = path.join(tmpDir, "seen.json");
+    // A helper script avoids nested-quote breakage when the command is run through cmd.exe.
+    const helper = path.join(tmpDir, "dump-stdin.mjs");
+    fs.writeFileSync(helper, `import fs from "node:fs";\nfs.writeFileSync(${JSON.stringify(seen)}, JSON.stringify(JSON.parse(fs.readFileSync(0, "utf8"))));\n`, "utf8");
+    writeHooks(tmpDir, { PreCompact: [{ command: `node ${JSON.stringify(helper)}` }] });
+
+    const result = await runPreCompactHooks({ model: "qwen2.5:14b", window: 32768, threshold: 12768, tokens: 15000, messages: 42 }, tmpDir);
+
+    assert.equal(result.blocked, false);
+    assert.equal(result.outcomes.length, 1);
+    assert.equal(result.outcomes[0]!.code, 0);
+    const received = JSON.parse(fs.readFileSync(seen, "utf8")) as Record<string, unknown>;
+    assert.deepEqual(received, { model: "qwen2.5:14b", window: 32768, threshold: 12768, tokens: 15000, messages: 42 });
+  });
+
+  it("vetoes the compaction when a rule exits non-zero", async () => {
+    writeHooks(tmpDir, { PreCompact: [{ command: shellExit(3, "cannot compact now") }] });
+    const result = await runPreCompactHooks({ model: "m", window: 1000, threshold: 500, tokens: 900, messages: 4 }, tmpDir);
+    assert.equal(result.blocked, true);
+    assert.match(result.message, /blocked compaction/);
+    assert.match(result.message, /cannot compact now/);
+  });
+
+  it("honours blockOnFail: false so a failing rule only reports", async () => {
+    writeHooks(tmpDir, { PreCompact: [{ command: shellExit(1), blockOnFail: false }] });
+    const result = await runPreCompactHooks({ model: "m", window: 1000, threshold: 500, tokens: 900, messages: 4 }, tmpDir);
+    assert.equal(result.blocked, false);
+    assert.match(result.message, /PreCompact hook/);
+  });
 });

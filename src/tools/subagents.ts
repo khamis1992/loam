@@ -28,8 +28,8 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     name: "explore",
     description: "Fast read-only codebase explorer. Use to search files, symbols, outlines, and architecture without polluting the main context.",
     instructions:
-      "You are the Explore subagent (read-only). Use code_symbols, code_outline, file_search, file_list, and file_read to answer the question concisely with exact file paths and line numbers. Never attempt to modify files.",
-    allowTools: ["code_symbols", "code_outline", "file_read", "file_list", "file_search", "file_stat", "file_extract_text"],
+      "You are the Explore subagent (read-only). Use code_symbols, code_outline, grep, glob, file_search, file_list, and file_read to answer the question concisely with exact file paths and line numbers. Never attempt to modify files.",
+    allowTools: ["code_symbols", "code_outline", "grep", "glob", "file_read", "file_list", "file_search", "file_stat", "file_extract_text"],
     maxSteps: 10,
     source: "builtin",
   },
@@ -38,7 +38,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     description: "Code quality, bug, and security reviewer. Inspects files and diffs and reports concrete issues.",
     instructions:
       "You are the Reviewer subagent. Inspect the relevant code and return a concise, prioritized list of bugs, edge cases, type/lint issues, or security risks with exact file:line references.",
-    allowTools: ["code_symbols", "code_outline", "file_read", "file_list", "file_search", "file_stat", "shell_run"],
+    allowTools: ["code_symbols", "code_outline", "grep", "glob", "file_read", "file_list", "file_search", "file_stat", "shell_run"],
     maxSteps: 10,
     source: "builtin",
   },
@@ -53,40 +53,80 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
   },
 ];
 
+/** Split an inline list (`a, b`, `a b` or `[a, b]`) into trimmed tokens. */
 function parseList(raw: string | undefined): string[] | undefined {
   if (!raw) return undefined;
   const items = raw
+    .replace(/^\[|\]$/g, "")
     .split(/[,\s]+/)
-    .map((s) => s.trim())
+    .map((s) => s.trim().replace(/^["']|["']$/g, ""))
     .filter(Boolean);
   return items.length > 0 ? items : undefined;
+}
+
+interface AgentFrontmatter {
+  meta: Record<string, string | string[]>;
+  body: string;
+}
+
+/** Parse YAML-style frontmatter, accepting both inline (`key: a, b`) and
+ *  block (`key:` followed by `- item`) list values. */
+function parseFrontmatter(raw: string): AgentFrontmatter {
+  const m = /^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?([\s\S]*)$/.exec(raw);
+  if (!m) return { meta: {}, body: raw };
+  const meta: Record<string, string | string[]> = {};
+  let current: string | null = null;
+  for (const line of (m[1] ?? "").split(/\r?\n/)) {
+    const item = /^\s*-\s+(.*)$/.exec(line);
+    if (item && current) {
+      const value = item[1]!.trim().replace(/^["']|["']$/g, "");
+      if (value) {
+        const prev = meta[current];
+        if (Array.isArray(prev)) prev.push(value);
+        else meta[current] = [value];
+      }
+      continue;
+    }
+    const kv = /^([A-Za-z0-9_-]+)\s*:\s*(.*)$/.exec(line);
+    if (kv?.[1]) {
+      current = kv[1].trim();
+      meta[current] = (kv[2] ?? "").trim().replace(/^["']|["']$/g, "");
+    }
+  }
+  return { meta, body: m[2] ?? "" };
+}
+
+function frontmatterString(meta: Record<string, string | string[]>, key: string): string | undefined {
+  const value = meta[key];
+  if (Array.isArray(value)) return value.length > 0 ? value.join(", ") : undefined;
+  return value && value.trim() ? value.trim() : undefined;
+}
+
+function frontmatterList(meta: Record<string, string | string[]>, key: string): string[] | undefined {
+  const value = meta[key];
+  if (Array.isArray(value)) {
+    const items = value.map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+    return items.length > 0 ? items : undefined;
+  }
+  return parseList(value);
 }
 
 function parseAgentMarkdown(file: string): SubagentProfile | null {
   try {
     const raw = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "");
-    const m = /^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?([\s\S]*)$/.exec(raw);
-    const meta: Record<string, string> = {};
-    let body = raw;
-    if (m) {
-      body = m[2] ?? "";
-      for (const line of (m[1] ?? "").split(/\r?\n/)) {
-        const kv = /^([A-Za-z0-9_-]+)\s*:\s*(.+)$/.exec(line);
-        if (kv?.[1] && kv[2]) {
-          meta[kv[1].trim()] = kv[2].trim().replace(/^["']|["']$/g, "");
-        }
-      }
-    }
-    const name = (meta.name || path.basename(file, ".md")).trim();
+    const { meta, body } = parseFrontmatter(raw);
+    const name = (frontmatterString(meta, "name") || path.basename(file, ".md")).trim();
     if (!name) return null;
-    const maxSteps = meta.maxSteps || meta.maxTurns ? Number(meta.maxSteps ?? meta.maxTurns) : undefined;
+    const maxStepsRaw = frontmatterString(meta, "maxSteps") ?? frontmatterString(meta, "maxTurns");
+    const maxSteps = maxStepsRaw ? Number(maxStepsRaw) : undefined;
+    const model = frontmatterString(meta, "model");
     return {
       name,
-      description: meta.description || "Custom markdown subagent.",
+      description: frontmatterString(meta, "description") || "Custom markdown subagent.",
       instructions: body.trim(),
-      allowTools: parseList(meta.tools),
-      denyTools: parseList(meta.disallowedTools),
-      ...(meta.model ? { model: meta.model } : {}),
+      allowTools: frontmatterList(meta, "tools"),
+      denyTools: frontmatterList(meta, "disallowedTools") ?? frontmatterList(meta, "denyTools"),
+      ...(model ? { model } : {}),
       ...(maxSteps && Number.isFinite(maxSteps) ? { maxSteps } : {}),
       source: "file",
     };
@@ -104,6 +144,9 @@ export function discoverSubagents(workspace: string): SubagentProfile[] {
     path.join(workspace, "agents"),
     path.join(workspace, ".manus", "agents"),
     path.join(workspace, ".claude", "agents"),
+    // Repo-defined custom subagents (Loam's own convention; wins over the
+    // generic directories above because it is applied last).
+    path.join(workspace, ".loam", "agents"),
   ];
   for (const dir of dirs) {
     try {
@@ -132,6 +175,82 @@ export function discoverSubagents(workspace: string): SubagentProfile[] {
   return [...byName.values()];
 }
 
+/** Resolve a profile by name (case-insensitive) from every discovered source. */
+export function findSubagentProfile(workspace: string, name: string): SubagentProfile | undefined {
+  const needle = name.trim().toLowerCase();
+  if (!needle) return undefined;
+  return discoverSubagents(workspace).find((p) => p.name.toLowerCase() === needle);
+}
+
+/** The toolset a subagent may use: its allowlist (or everything), minus the
+ *  profile's denylist and the delegation tools. A subagent is a leaf worker, so
+ *  it can never spawn another subagent or escalate its own capabilities. */
+export function buildSubagentToolRegistry(parent: ToolRegistry, profile: SubagentProfile): ToolRegistry {
+  const deny = new Set([...(profile.denyTools ?? []), "delegate_subagent", "delegate_task"]);
+  return parent.cloneFiltered({ allow: profile.allowTools, deny: [...deny] });
+}
+
+interface ProfileSubagentOptions {
+  profile: SubagentProfile;
+  taskPrompt: string;
+  ctx: ToolContext;
+  ollama: OllamaClient;
+  parentRegistry: ToolRegistry;
+  /** Optional step-budget override; clamped to 1..30 with the profile default. */
+  maxSteps?: number;
+  /** Delegation depth for the child's own tool context (prevents recursion). */
+  depth?: number;
+}
+
+/** Run a repo-defined profile in an isolated in-process context and return only
+ *  its final report (no intermediate events reach the parent). */
+async function runProfileSubagent(opts: ProfileSubagentOptions): Promise<ToolResult> {
+  const { profile, taskPrompt, ctx, ollama, parentRegistry } = opts;
+  const subRegistry = buildSubagentToolRegistry(parentRegistry, profile);
+  const maxSteps = Math.min(Math.max(opts.maxSteps ?? profile.maxSteps ?? 12, 1), 30);
+  const effectiveCfg = profile.model && profile.model !== "inherit" ? { ...ctx.cfg, model: profile.model } : ctx.cfg;
+
+  const subStart = await runLifecycleHooks("SubagentStart", "", { subagent: profile.name, task: taskPrompt }, ctx.workspace);
+  if (subStart.blocked) {
+    return { ok: false, content: `SubagentStart hook blocked subagent "${profile.name}": ${subStart.message}` };
+  }
+  const systemSuffix = [subStart.additionalContext, `[Subagent: ${profile.name}]`, profile.instructions]
+    .filter((s) => s.trim().length > 0)
+    .join("\n");
+
+  let toolCalls = 0;
+  let stopFired = false;
+  let stopContext = "";
+  try {
+    const res = await runAgent({
+      cfg: effectiveCfg,
+      ollama,
+      tools: subRegistry,
+      emit: (ev) => {
+        if (ev.type === "tool_call") toolCalls += 1;
+      },
+      prompt: taskPrompt,
+      systemSuffix,
+      maxSteps,
+      signal: ctx.signal,
+      taskId: ctx.taskId,
+      suppressFinal: true,
+      ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
+    });
+    const subStop = await runLifecycleHooks("SubagentStop", "", { subagent: profile.name, steps: res.steps, stopReason: "completed" }, ctx.workspace);
+    stopFired = true;
+    stopContext = subStop.additionalContext;
+    return {
+      ok: true,
+      content: `[Subagent "${profile.name}" finished in ${res.steps} step(s), ${toolCalls} tool call(s)]\n\n${res.text}${stopContext ? `\n\n${stopContext}` : ""}`,
+    };
+  } finally {
+    if (!stopFired) {
+      await runLifecycleHooks("SubagentStop", "", { subagent: profile.name, stopReason: "failed" }, ctx.workspace);
+    }
+  }
+}
+
 export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRegistry): Tool[] {
   /** Register the built-in providers once so delegate_task can start them by name. */
   function ensureDefaultProviders(): void {
@@ -142,7 +261,8 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
   return [
     {
       name: "subagent_list",
-      description: "List available specialized subagents (built-in, agents/*.md, and custom agents) that can be invoked via delegate_subagent.",
+      description:
+        "List available specialized subagents (built-in, agents/*.md, .claude/agents/*.md, .loam/agents/*.md, and custom agents) that can be invoked via delegate_subagent or delegate_task.",
       parameters: { type: "object", properties: {} },
       async run(_args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
         const list = discoverSubagents(ctx.workspace);
@@ -180,76 +300,73 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
           };
         }
 
-        const deny = new Set([...(profile.denyTools ?? []), "delegate_subagent"]);
-        const subRegistry = parentRegistry.cloneFiltered({
-          allow: profile.allowTools,
-          deny: [...deny],
+        return runProfileSubagent({
+          profile,
+          taskPrompt,
+          ctx,
+          ollama,
+          parentRegistry,
+          maxSteps: num(args, "maxSteps", profile.maxSteps ?? 12),
         });
-
-        const maxSteps = Math.min(Math.max(num(args, "maxSteps", profile.maxSteps ?? 12), 1), 30);
-        const effectiveCfg = profile.model && profile.model !== "inherit" ? { ...ctx.cfg, model: profile.model } : ctx.cfg;
-
-        const subStart = await runLifecycleHooks("SubagentStart", "", { subagent: profile.name, task: taskPrompt }, ctx.workspace);
-        if (subStart.blocked) {
-          return { ok: false, content: `SubagentStart hook blocked subagent "${profile.name}": ${subStart.message}` };
-        }
-        const systemSuffix = [subStart.additionalContext, `[Subagent: ${profile.name}]`, profile.instructions]
-          .filter((s) => s.trim().length > 0)
-          .join("\n");
-
-        let toolCalls = 0;
-        let stopFired = false;
-        let stopContext = "";
-        try {
-          const res = await runAgent({
-            cfg: effectiveCfg,
-            ollama,
-            tools: subRegistry,
-            emit: (ev) => {
-              if (ev.type === "tool_call") toolCalls += 1;
-            },
-            prompt: taskPrompt,
-            systemSuffix,
-            maxSteps,
-            signal: ctx.signal,
-            taskId: ctx.taskId,
-            suppressFinal: true,
-          });
-          const subStop = await runLifecycleHooks("SubagentStop", "", { subagent: profile.name, steps: res.steps, stopReason: "completed" }, ctx.workspace);
-          stopFired = true;
-          stopContext = subStop.additionalContext;
-          return {
-            ok: true,
-            content: `[Subagent "${profile.name}" finished in ${res.steps} step(s), ${toolCalls} tool call(s)]\n\n${res.text}${stopContext ? `\n\n${stopContext}` : ""}`,
-          };
-        } finally {
-          if (!stopFired) {
-            await runLifecycleHooks("SubagentStop", "", { subagent: profile.name, stopReason: "failed" }, ctx.workspace);
-          }
-        }
       },
     },
     {
       name: "delegate_task",
       description:
-        "Delegate a task to an external or in-process subagent provider (ACP or in-process). Returns the child's final text. Depth limit 2, max concurrent children configurable (default 4).",
+        "Delegate a self-contained task to a subagent and get back only its final report. Pass subagent_type to run a repo-defined agent loaded from .loam/agents/*.md (also agents/*.md and .claude/agents/*.md); the agent runs in-process with its own tool allowlist and model. Or omit subagent_type and pass provider (in-process|acp) plus cwd to run an external or in-process child, providing acpCommand and optional acpArgs for the ACP provider. The child runs with its own context in a cwd that must be inside the workspace, so put everything it needs in the prompt. Delegation depth is limited (default 2) and concurrent children are capped (default 4). Use it for parallel, isolated work such as exploration or independent edits. When NOT to use: do the work directly when it needs your conversation context, use file_*/shell_* for simple steps, and remember the child cannot see the parent's history; never delegate work that requires an approval gate or a secret.",
       parameters: {
         type: "object",
         properties: {
-          provider: { type: "string", enum: ["in-process", "acp"], description: "Provider to use." },
-          prompt: { type: "string", description: "Task prompt for the child agent." },
-          cwd: { type: "string", description: "Working directory (must be within workspace)." },
-          model: { type: "string", description: "Model override for in-process provider." },
+          subagent_type: {
+            type: "string",
+            description:
+              "Repo-defined subagent name (from .loam/agents/*.md or agents/*.md). Runs in-process with the agent's tool allowlist and model; only its final report is returned. Takes precedence over provider.",
+          },
+          provider: { type: "string", enum: ["in-process", "acp"], description: "Provider to use when subagent_type is omitted." },
+          prompt: { type: "string", description: "Complete, self-contained task prompt for the subagent." },
+          cwd: { type: "string", description: "Working directory (required for provider mode; must be within workspace)." },
+          model: { type: "string", description: "Model override for the in-process provider." },
           timeoutMs: { type: "number", description: "Timeout in ms (default 120000)." },
           acpCommand: { type: "string", description: "Command for ACP provider (e.g. 'node', 'npx')." },
           acpArgs: { type: "array", items: { type: "string" }, description: "Args for ACP command." },
           permissionPolicy: { type: "string", enum: ["allow", "reject"], description: "ACP permission policy (default reject)." },
+          maxSteps: { type: "number", description: "Max tool steps for a subagent_type run (default from the profile or 12)." },
         },
-        required: ["provider", "prompt", "cwd"],
+        required: ["prompt"],
       },
       async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+        const prompt = str(args, "prompt").trim();
+        if (!prompt) return { ok: false, content: "delegate_task requires prompt" };
+
+        const subagentCfg = ctx.cfg.subagent ?? { maxDepth: 2, maxConcurrentChildren: 4 };
+        const depth = ctx.depth ?? 0;
+
+        // Repo-defined agent path: resolve the profile and run it in-process.
+        const subagentType = str(args, "subagent_type").trim();
+        if (subagentType) {
+          if (depth >= subagentCfg.maxDepth) {
+            return {
+              ok: false,
+              content: `delegate_task blocked: subagent depth limit ${subagentCfg.maxDepth} reached (current depth ${depth})`,
+            };
+          }
+          const profile = findSubagentProfile(ctx.workspace, subagentType);
+          if (!profile) {
+            const available = discoverSubagents(ctx.workspace).map((p) => p.name).join(", ");
+            return { ok: false, content: `unknown subagent_type "${subagentType}". Available: ${available}` };
+          }
+          return runProfileSubagent({
+            profile,
+            taskPrompt: prompt,
+            ctx,
+            ollama,
+            parentRegistry,
+            maxSteps: num(args, "maxSteps", profile.maxSteps ?? 12),
+            depth: depth + 1,
+          });
+        }
+
         const provider = str(args, "provider") as "in-process" | "acp";
-        const prompt = str(args, "prompt");
         const cwd = str(args, "cwd");
         const model = str(args, "model") || undefined;
         const timeoutMs =
@@ -258,7 +375,7 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
         const acpArgs = args.acpArgs as string[] | undefined;
         const permissionPolicy = (str(args, "permissionPolicy") as "allow" | "reject") || "reject";
 
-        if (!prompt || !cwd) return { ok: false, content: "delegate_task requires provider, prompt, and cwd" };
+        if (!provider || !cwd) return { ok: false, content: "delegate_task requires provider and cwd (or subagent_type)" };
 
         const workspaceRoot = path.resolve(ctx.workspace);
         const targetCwd = path.resolve(cwd);
@@ -267,8 +384,6 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
           return { ok: false, content: "cwd must be within workspace" };
         }
 
-        const subagentCfg = ctx.cfg.subagent ?? { maxDepth: 2, maxConcurrentChildren: 4 };
-        const depth = ctx.depth ?? 0;
         if (depth >= subagentCfg.maxDepth) {
           return {
             ok: false,

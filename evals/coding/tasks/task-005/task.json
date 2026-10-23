@@ -1,0 +1,12 @@
+{
+  "id": "task-005",
+  "title": "Add missing unit tests",
+  "category": "add-test",
+  "language": "typescript",
+  "prompt": "`src/strings.ts` exports three helpers but has no tests. Create `test/strings.test.mjs` that exercises `slugify`, `truncate` and `titleCase` with real assertions and exits non-zero on any failure. It must import the helpers from `../src/strings.ts` and run under `node test/strings.test.mjs`. Do not change `src/strings.ts`.",
+  "testCommand": "node .eval/check.mjs",
+  "timeoutSec": 90,
+  "maxSteps": 20,
+  "requireFiles": ["test/strings.test.mjs"],
+  "tags": ["testing", "mutation-check"]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "task-006",
+  "title": "Fix JavaScript syntax error",
+  "category": "bug-fix",
+  "language": "javascript",
+  "prompt": "`src/inventory.js` does not load because of a syntax error in `totalUnits`. Repair the file so it parses and `totalUnits` returns the sum of every `qty` in the given array. Do not change the exported names or the function signatures.",
+  "testCommand": "node .eval/check.mjs",
+  "timeoutSec": 60,
+  "maxSteps": 12,
+  "tags": ["syntax", "javascript"]
+}

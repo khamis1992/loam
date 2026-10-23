@@ -1,5 +1,7 @@
 {
   "Sign in to {product}": "Sign in to {product}",
+  "Prompt cache": "Prompt cache",
+  "{count} tokens reused": "{count} tokens reused",
   "Sign in": "Sign in",
   "Having trouble logging in?": "Having trouble logging in?",
   "Tap the top-right menu or copy the link to open it in your default browser.": "Tap the top-right menu or copy the link to open it in your default browser.",
@@ -600,6 +602,7 @@
   "Export": "Export",
   "Ready": "Ready",
   "Unavailable": "Unavailable",
+  "Loam Video is unavailable, so the built-in video editor is shown instead.": "Loam Video is unavailable, so the built-in video editor is shown instead.",
   "Studio": "Studio",
   "Design": "Design",
   "Edit and render videos": "Edit and render videos",
@@ -823,5 +826,17 @@
   "Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder.": "Pinned agent {name}. Alt+ArrowUp or Alt+ArrowDown to reorder, drag to reorder.",
   "Waiting for you": "Waiting for you",
   "Waiting for you: {message}": "Waiting for you: {message}",
-  "Role": "Role"
+  "Role": "Role",
+  "Loam Docs": "Loam Docs",
+  "Loam Sheets": "Loam Sheets",
+  "Loam Slides": "Loam Slides",
+  "Loam Photo": "Loam Photo",
+  "Loam Design": "Loam Design",
+  "Built-in editor": "Built-in editor",
+  "The Craft editor did not start, so the built-in editor is open instead.": "The Craft editor did not start, so the built-in editor is open instead.",
+  "Save to task files": "Save to task files",
+  "Changes are saved into the task files.": "Changes are saved into the task files.",
+  "Saved {name}": "Saved {name}",
+  "Loading {name}": "Loading {name}",
+  "The editor could not be loaded.": "The editor could not be loaded."
 }

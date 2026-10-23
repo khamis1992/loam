@@ -1,13 +1,50 @@
+/**
+ * Structured context compaction (C8).
+ *
+ * The compressor triggers when the estimated token count of the transcript
+ * reaches the model's context window minus a safety buffer. It then:
+ *
+ *   1. prunes old tool outputs in the middle to an elision marker,
+ *   2. replaces the middle with a *structured* summary written by an auxiliary
+ *      model call, using eight numbered sections that preserve intent, facts,
+ *      files and code, errors and fixes, every user message, the pending work,
+ *      the current work and the next step,
+ *   3. re-attaches the most recently read files (truncated) and the live todo
+ *      list as a hidden reminder so the model never loses its footing,
+ *   4. runs a PreCompact hook before the summarizer call, letting a workspace
+ *      script observe or veto compaction.
+ *
+ * Nothing here drops the system prompt or the newest message. A tool_call is
+ * never separated from its tool_result, and a summarizer failure degrades to
+ * pruning only.
+ */
 import type { Config } from "../config.js";
 import type { ChatMessage, OllamaClient } from "../ollama.js";
+import fs from "node:fs";
+import path from "node:path";
 import { chatWithFallback } from "./model.js";
 import { isCancelledError } from "../server/runControl.js";
-import type { Emit, Usage } from "./events.js";
+import type { Emit, Usage, TodoItem } from "./events.js";
+import { reminderMessage } from "./reminders.js";
+import { runPreCompactHooks, type PreCompactHookInput } from "../policy/hooks.js";
+import { ReadState } from "../tools/readState.js";
 
 /** Marker inserted where a pruned tool output used to be. */
 export const ELISION_MARKER = (chars: number) => `[... ${chars} chars elided ...]`;
 /** Label that marks a compaction summary message. */
 export const SUMMARY_LABEL = "compaction summary";
+
+/** The eight section headers the summarizer must produce, in order. */
+export const SUMMARY_SECTIONS = [
+  "1. Primary Request and Intent",
+  "2. Key Concepts and Technical Facts",
+  "3. Files and Code Snippets",
+  "4. Errors Encountered and Fixes Applied",
+  "5. All User Messages (condensed, verbatim where short)",
+  "6. Pending Tasks and Open Questions",
+  "7. Current Work",
+  "8. Next Step",
+] as const;
 
 /** Tool outputs shorter than this are never worth eliding. */
 const MIN_ELIDE_CHARS = 200;
@@ -23,6 +60,10 @@ export interface CompressionResult {
   step: 0 | 1 | 2;
   /** Token cost of the auxiliary summarizer call (0 when no call was made). */
   usage: Usage;
+  /** Hidden reminder re-attaching recent file contents and the todo list. */
+  reminders: ChatMessage[];
+  /** True when a PreCompact hook vetoed the compaction. */
+  hookBlocked: boolean;
 }
 
 function zeroUsage(): Usage {
@@ -60,6 +101,20 @@ export function getContextWindow(cfg: Config, model: string): number {
   return best > 0 ? best : 32768;
 }
 
+/**
+ * The token count at which compaction must start: the earlier of the ratio
+ * threshold and the window minus the safety buffer. The buffer reserves room
+ * for the answer, the re-attached files and the next tool outputs.
+ */
+export function getCompressionThreshold(cfg: Config, model: string): number {
+  const window = getContextWindow(cfg, model);
+  const ratioThreshold = Math.floor(window * cfg.compression.thresholdPercent);
+  const buffer = Number.isFinite(cfg.compression.bufferTokens) && cfg.compression.bufferTokens > 0
+    ? cfg.compression.bufferTokens
+    : 20000;
+  return Math.max(1, Math.min(ratioThreshold, window - buffer));
+}
+
 function clampRatio(ratio: number): number {
   if (!Number.isFinite(ratio)) return 0.2;
   return Math.min(0.8, Math.max(0.1, ratio));
@@ -78,8 +133,17 @@ export function isSummaryMessage(message: ChatMessage): boolean {
 export function extractSummary(content: string): string | null {
   const idx = content.toLowerCase().indexOf(SUMMARY_LABEL);
   if (idx < 0) return null;
-  const text = content.slice(idx + SUMMARY_LABEL.length).replace(/^\s*[:\-]?\s*/, "").trim();
+  const text = content
+    .slice(idx + SUMMARY_LABEL.length)
+    .replace(/^[\s\]\)]+/, "")
+    .replace(/^\s*[:\-—]?\s*/, "")
+    .trim();
   return text.length > 0 ? text : null;
+}
+
+/** True when every required section header is present in the summary. */
+export function hasAllSummarySections(content: string): boolean {
+  return SUMMARY_SECTIONS.every((header) => content.includes(header));
 }
 
 /**
@@ -127,12 +191,27 @@ function renderTranscript(messages: ChatMessage[]): string {
     .join("\n\n");
 }
 
+const SUMMARY_SYSTEM_PROMPT = [
+  "You are the context-compaction summarizer for an AI coding agent.",
+  "Your output becomes the agent's working memory after a long conversation is folded away, so it must be complete and faithful.",
+  "Produce the summary as exactly the eight numbered sections listed in the user message, in that order, with no extra preamble.",
+  "Write in the user's language when the conversation is not in English.",
+  "Never invent facts, file paths, identifiers, commands or test results that are not present in the input. Do not reproduce full file contents or full command outputs.",
+  "Preserve exact identifiers, file paths, line numbers, error text and decisions. Prefer terse bullet points over prose.",
+].join("\n");
+
+/** Build the user prompt that asks the summarizer for the eight-section schema. */
 function buildSummaryPrompt(middle: ChatMessage[], previousSummary: string | null, targetChars: number): string {
   const sections = [
-    "Summarize the following conversation segment for context compaction.",
-    `Target length: about ${targetChars} characters.`,
-    "Always preserve, when present: open tasks, decisions made, files touched, errors encountered, and any facts needed to continue.",
-    "Do not invent facts. Do not reproduce raw file contents or full command outputs.",
+    "Summarize the conversation segment below into a durable working memory. Use these eight sections and these exact headers, in this order:",
+    SUMMARY_SECTIONS.join("\n"),
+    "",
+    "Rules:",
+    "- Every section must appear, even when it holds a single short line such as \"(none so far)\".",
+    "- Section 5 must include EVERY user message that is present in the segment, condensed but never dropped.",
+    "- Keep the total near the target length, but never drop a fact that the next step depends on.",
+    `- Target length: about ${targetChars} characters.`,
+    "- Do not invent facts, and do not paste whole files or whole tool outputs.",
     "",
     renderTranscript(middle),
   ];
@@ -142,12 +221,88 @@ function buildSummaryPrompt(middle: ChatMessage[], previousSummary: string | nul
   return sections.join("\n");
 }
 
-const SUMMARY_SYSTEM_PROMPT =
-  "You are a context compaction summarizer for an AI agent. Produce a concise compaction summary of the conversation segment you are given.";
+/** Truncate a file snapshot to its first `maxChars` characters, marking the cut. */
+function truncateSnapshot(content: string, maxChars: number): string {
+  const limit = Math.max(1, maxChars);
+  if (content.length <= limit) return content;
+  return `${content.slice(0, limit)}\n[... snapshot truncated: ${content.length - limit} more chars not re-attached ...]`;
+}
+
+/**
+ * Re-attach the most recently read files (newest first, truncated) and the live
+ * todo list. The reminder is a hidden user-role tagged block: the model reads it
+ * as fresh context while the UI never renders it.
+ */
+export function buildReattachReminder(options: {
+  readState: ReadState;
+  workspace: string;
+  todos: TodoItem[];
+  reattachFiles: number;
+  reattachFileChars: number;
+}): string {
+  const { readState, workspace, todos, reattachFiles, reattachFileChars } = options;
+  const parts: string[] = ["The conversation was compacted. Re-orient with the facts below, then continue the task."];
+
+  const reads = readState.recent(reattachFiles).map((entry) => {
+    let body = "";
+    try {
+      body = fs.readFileSync(path.resolve(entry.path), "utf8");
+    } catch {
+      body = "(file is no longer readable)";
+    }
+    const relative = path.relative(workspace, entry.path) || entry.path;
+    return `### ${relative} (read ${entry.readAt.toISOString()})\n${truncateSnapshot(body, reattachFileChars)}`;
+  });
+  if (reads.length > 0) parts.push("## Recently read files\n" + reads.join("\n\n"));
+
+  if (todos.length > 0) {
+    const lines = todos.map((t) => `- [${t.status}] ${t.content}`);
+    parts.push("## Live task list (todo_write)\n" + lines.join("\n"));
+  }
+
+  return parts.join("\n\n");
+}
+
+/**
+ * Build the re-attach reminder for a completed compaction, or `[]` when there is
+ * nothing worth re-attaching (no todos and no read tracking). Every compaction
+ * that actually dropped transcript content needs this, not just the summarizer
+ * path: pruning alone also removes the working context the model was mid-task
+ * with.
+ */
+function buildCompactionReminders(options: CompressOptions): ChatMessage[] {
+  const todos = options.todos ?? [];
+  const reattachFiles = Math.max(0, Math.floor(options.cfg.compression.reattachFiles));
+  const reattachFileChars = Math.max(1, Math.floor(options.cfg.compression.reattachFileChars));
+  if (todos.length === 0 && !(reattachFiles > 0 && options.readState)) return [];
+  const body = buildReattachReminder({
+    readState: options.readState ?? new ReadState(),
+    workspace: options.cfg.workspace,
+    todos,
+    reattachFiles,
+    reattachFileChars,
+  });
+  return [reminderMessage(body)];
+}
+
+export interface CompressOptions {
+  cfg: Config;
+  ollama: OllamaClient;
+  messages: ChatMessage[];
+  emit: Emit;
+  signal?: AbortSignal;
+  /** Per-session read tracking; supplies the files re-attached after compaction. */
+  readState?: ReadState;
+  /** Current live task list, re-attached after compaction. */
+  todos?: TodoItem[];
+  /** Model name for context-window lookup (defaults to cfg.model). */
+  model?: string;
+}
 
 /**
  * Compress an agent transcript when it exceeds the configured fraction of the
- * model's context window. Never drops the system prompt or the newest message.
+ * model's context window or the window minus the safety buffer. Never drops the
+ * system prompt or the newest message.
  */
 export async function compressContext(
   cfg: Config,
@@ -155,13 +310,30 @@ export async function compressContext(
   messages: ChatMessage[],
   emit: Emit,
   signal?: AbortSignal,
+  extra?: Pick<CompressOptions, "readState" | "todos" | "model">,
 ): Promise<CompressionResult> {
-  const window = getContextWindow(cfg, cfg.model);
-  const threshold = Math.floor(window * cfg.compression.thresholdPercent);
+  const options: CompressOptions = { cfg, ollama, messages, emit, todos: [], ...(signal ? { signal } : {}), ...(extra ?? {}) };
+  const model = options.model ?? cfg.model;
+  const window = getContextWindow(cfg, model);
+  const threshold = getCompressionThreshold(cfg, model);
   const originalTokens = totalTokens(messages);
 
   if (originalTokens <= threshold) {
-    return { messages, compressed: false, step: 0, usage: zeroUsage() };
+    return { messages, compressed: false, step: 0, usage: zeroUsage(), reminders: [], hookBlocked: false };
+  }
+
+  // PreCompact hook: a workspace script may observe or veto the compaction.
+  const hookInput: PreCompactHookInput = {
+    model,
+    window,
+    threshold,
+    tokens: originalTokens,
+    messages: messages.length,
+  };
+  const hook = await runPreCompactHooks(hookInput, cfg.workspace);
+  if (hook.blocked) {
+    emit({ type: "compaction", step: 1, originalTokens, afterPruneTokens: originalTokens, finalTokens: originalTokens, fallback: true, blocked: true });
+    return { messages, compressed: false, step: 0, usage: zeroUsage(), reminders: [], hookBlocked: true };
   }
 
   // Safety floors: the system prompt (index 0) and the newest message always survive.
@@ -205,7 +377,7 @@ export async function compressContext(
   }
 
   if (middle.length === 0) {
-    return { messages, compressed: false, step: 0, usage: zeroUsage() };
+    return { messages, compressed: false, step: 0, usage: zeroUsage(), reminders: [], hookBlocked: false };
   }
 
   const { messages: prunedMiddle } = pruneMiddle(middle);
@@ -220,7 +392,7 @@ export async function compressContext(
       afterPruneTokens,
       finalTokens: afterPruneTokens,
     });
-    return { messages: afterPrune, compressed: true, step: 1, usage: zeroUsage() };
+    return { messages: afterPrune, compressed: true, step: 1, usage: zeroUsage(), reminders: buildCompactionReminders(options), hookBlocked: false };
   }
 
   const middleChars = prunedMiddle.reduce((sum, m) => sum + (m.content?.length ?? 0), 0);
@@ -242,11 +414,8 @@ export async function compressContext(
       signal,
     });
     summaryText = result.content.trim();
-    summaryUsage = {
-      promptTokens: result.usage.promptTokens,
-      completionTokens: result.usage.completionTokens,
-      durationMs: result.usage.durationMs,
-    };
+    // Spread so cache telemetry (cached/cache-write tokens) survives compaction.
+    summaryUsage = { ...result.usage };
   } catch (err) {
     if (isCancelledError(err) || signal?.aborted) throw err;
     // Step 2 failed: keep the cheap prune and never lose the protected head/tail.
@@ -258,7 +427,7 @@ export async function compressContext(
       finalTokens: afterPruneTokens,
       fallback: true,
     });
-    return { messages: afterPrune, compressed: true, step: 1, usage: zeroUsage() };
+    return { messages: afterPrune, compressed: true, step: 1, usage: zeroUsage(), reminders: [], hookBlocked: false };
   }
 
   if (summaryText.length === 0) {
@@ -270,7 +439,7 @@ export async function compressContext(
       finalTokens: afterPruneTokens,
       fallback: true,
     });
-    return { messages: afterPrune, compressed: true, step: 1, usage: zeroUsage() };
+    return { messages: afterPrune, compressed: true, step: 1, usage: zeroUsage(), reminders: [], hookBlocked: false };
   }
 
   const summaryMessage: ChatMessage = {
@@ -279,6 +448,9 @@ export async function compressContext(
   };
   const finalMessages = [...lead, summaryMessage, ...tail];
   const finalTokens = totalTokens(finalMessages);
+
+  // Re-attach recent file reads and the live todo list as a hidden reminder.
+  const reminders = buildCompactionReminders(options);
 
   emit({
     type: "compaction",
@@ -289,5 +461,5 @@ export async function compressContext(
     summaryChars: summaryText.length,
   });
 
-  return { messages: finalMessages, compressed: true, step: 2, usage: summaryUsage };
+  return { messages: finalMessages, compressed: true, step: 2, usage: summaryUsage, reminders, hookBlocked: false };
 }

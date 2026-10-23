@@ -85,6 +85,7 @@ const READ_TOOL_NAMES = new Set<string>([
   "session_search",
   "code_outline",
   "code_symbols",
+  "semantic_search",
   "explore",
   "task_get",
   "task_list",
@@ -122,6 +123,17 @@ const READ_TOOL_NAMES = new Set<string>([
   "computer_ui_tree",
   "computer_ui_list",
   "computer_list_windows",
+  // Control/communication tools never touch the filesystem or run a command, so
+  // they stay usable while plan mode is read-only.
+  "think",
+  "plan",
+  "plan_exit",
+  "finish",
+  "message",
+  "phase_set",
+  "suggestion",
+  "report_environment_issue",
+  "idle",
 ]);
 
 const WRITE_TOOL_NAMES = new Set<string>([
@@ -164,7 +176,6 @@ const WRITE_TOOL_NAMES = new Set<string>([
   "office_export",
   "office_import",
   "propose_instructions_update",
-  "message",
 ]);
 
 const EXEC_TOOL_NAMES = new Set<string>([
@@ -181,8 +192,10 @@ const EXEC_TOOL_NAMES = new Set<string>([
   "pty_kill",
   "deploy_app",
   "scaffold_backend",
+  "web_scaffold",
   "preview_serve",
   "preview_stop",
+  "preview_screenshot",
   "screen_stream_start",
   "screen_stream_stop",
   "swarm_run",
@@ -290,6 +303,46 @@ function firstString(args: Record<string, unknown> | undefined, keys: readonly s
     if (typeof value === "string" && value.trim().length > 0) return value;
   }
   return undefined;
+}
+
+const NETWORK_ARG_KEYS = ["url", "uri", "endpoint", "host", "address", "query"] as const;
+const SECRET_ARG_KEYS = ["id", "name", "key", "variable", "env", "path"] as const;
+
+/** Stable, key-sorted JSON used when a tool has no recognizable primary argument. */
+function stableStringify(value: unknown): string {
+  if (value === undefined) return "null";
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
+}
+
+/**
+ * Pick the single argument a permission pattern should be matched against.
+ *
+ * The choice mirrors the tier routing above so a rule like `shell_run(npm test*)`
+ * tests the command while `file_write(src/**)` tests the path. Unknown tools fall
+ * back to their stable JSON so `tool(*)` still behaves sensibly.
+ */
+export function primaryArgument(toolName: string, args?: Record<string, unknown> | null): string {
+  const name = normalizeToolName(toolName);
+  const a = args ?? undefined;
+  if (SECRET_TOOL_NAMES.has(name) || isSecretLikeName(name)) {
+    return firstString(a, SECRET_ARG_KEYS) ?? stableStringify(args ?? {});
+  }
+  if (NETWORK_TOOL_NAMES.has(name) || isNetworkLikeName(name)) {
+    return firstString(a, NETWORK_ARG_KEYS) ?? stableStringify(args ?? {});
+  }
+  if (EXEC_TOOL_NAMES.has(name) || isExecLikeName(name)) {
+    return firstString(a, SHELL_COMMAND_KEYS) ?? stableStringify(args ?? {});
+  }
+  if (WRITE_TOOL_NAMES.has(name) || isWriteLikeName(name)) {
+    return firstString(a, WRITE_PATH_KEYS) ?? stableStringify(args ?? {});
+  }
+  if (READ_TOOL_NAMES.has(name) || /(read|view|list|stat|cat|get|glob|grep)$/.test(name)) {
+    return firstString(a, WRITE_PATH_KEYS) ?? stableStringify(args ?? {});
+  }
+  return stableStringify(args ?? {});
 }
 
 /** Resolve a caller-supplied path against the workspace root (never the CWD). */

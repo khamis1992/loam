@@ -8,6 +8,7 @@ import type {
   ToolDetail,
   PlanUpdateEvent,
   NewPlanStepEvent,
+  TodoUpdateEvent,
   LiveStatusEvent,
   ModeEvent,
   UserStopEvent,
@@ -15,6 +16,7 @@ import type {
   ToolStatus,
   LocalExecutionApprovalRequested,
   FolderAccessRequestEvent,
+  CacheUsageEvent,
 } from "./types.js";
 
 const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -278,6 +280,17 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
       break;
     }
 
+    case "todo": {
+      const todoUpdate: TodoUpdateEvent = {
+        id: baseId(),
+        type: "todoUpdate",
+        timestamp: ts,
+        todos: event.todos.map((todo) => ({ id: todo.id, content: todo.content, status: todo.status })),
+      };
+      out.push(todoUpdate);
+      break;
+    }
+
     case "plan_step": {
       if (event.phase === "start") {
         state.lastPlanStepId = event.id;
@@ -423,6 +436,23 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
       break;
     }
 
+    case "cache_usage": {
+      // Prompt-cache accounting is a persistent chat row (never replayed as a
+      // miss when telemetry is absent), so it stays in the session history.
+      const cacheUsage: CacheUsageEvent = {
+        id: baseId(),
+        type: "cache_usage",
+        timestamp: ts,
+        provider: event.provider,
+        model: event.model,
+        promptTokens: event.promptTokens,
+        cachedTokens: event.cachedTokens,
+        ...(event.miss ? { miss: { ...event.miss } } : {}),
+      };
+      out.push(cacheUsage);
+      break;
+    }
+
     // State-only Loam events that do not have a chat-row rendering equivalent.
     case "task":
     case "step":
@@ -433,6 +463,7 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
     case "replan":
     case "verify":
     case "verification_progress":
+    case "permission_mode_changed":
       break;
   }
 

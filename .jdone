@@ -1,0 +1,246 @@
+C17 done. Merge gate failure fixed (final resolution commit 343385d).
+
+The .jgatefail.txt failure was MERGE CONFLICT with latest manus-parity (15a0ade,
+which had advanced past the earlier 79ec34c tip with the J10 prompt-cache work).
+Ran `git merge manus-parity`; two files conflicted, both resolved keeping BOTH sides:
+- src/agent/loop.ts: kept the C17 coding-model router (chatWithCodingRouter +
+  createProviderClient/cooldownStore/env/onCodingRoute seams, edit attribution via
+  auditEdit/recordEditModel) AND parity's J10 prompt-cache accounting (KvCacheMonitor,
+  requestSignature/hashText, providerRouteFor, addUsage, the cache_usage event, and the
+  provider/cacheTtlSecs/cacheTtlIsEstimate/account run options). The request block now
+  builds requestTools + route + cacheMonitor.beginRequest, then the chatRequest object
+  that feeds either chatWithCodingRouter (coding turns) or chatWithFallback.
+- .jdone: merged the C17 report with the incoming J10/V13/D16 parity reports.
+`git merge-tree --write-tree manus-parity HEAD` exits 0; branch is 0 commits behind.
+
+.gitignore must ignore the C17 report so it is not committed:
+  /.cc-report-c17.md
+The .jgatefail.txt failure was MERGE CONFLICT with latest manus-parity.
+Fix (commit fa87dc8 "Merge branch 'manus-parity' into khamis1992/cc-c17 (C17)"):
+- package.json: kept BOTH eval:coding-bench (C17) and eval:design / eval:coding-prompt (parity).
+- src/agent/loop.ts: kept BOTH the C17 coding router (chatWithCodingRouter +
+  createProviderClient/cooldownStore/env/onCodingRoute seams) AND parity's per-run
+  opts.model override for the quick-edit route. An explicit per-run model wins over
+  cfg.model; a coding turn still replaces it with the strongest coder in the chain.
+- src/scripts/check-test-isolation.ts: fixed TS18046 "error is of type unknown" that
+  the merge introduced (cast the execFileSync rejection before reading status/stdout/stderr).
+git merge-tree --write-tree manus-parity HEAD exits 0, so no conflict re-emerges.
+C17 deliverables:
+- src/llm/codingRouter.ts: coding turns prefer the strongest coder in a configurable
+  chain (LOAM_CODER_CHAIN / MANUS_LOCAL_CODER_CHAIN -> config.json coding.chain ->
+  failover order). Model ids only, never API keys. Rides the existing chatWithFailover
+  walk (cooldowns, key handling, failover).
+- src/llm/modelAudit.ts: logs which model handled each edit (data/model-edits.jsonl +
+  in-process ring); no contents, arguments or credentials; toggle via coding.logEdits.
+- src/eval/codingBenchmark.ts + src/scripts/eval-coding-bench.ts: benchmark harness that
+  runs the C11 eval set per candidate coder and reports the pass rate per model.
+- Tests: llm/__tests__/codingRouter.test.ts, llm/__tests__/modelAudit.test.ts,
+  agent/__tests__/codingRouting.test.ts (end-to-end routing + edit attribution),
+  eval/__tests__/codingBenchmarkE2E.test.ts (pass rate per model over the real C11 fixtures).
+Gates (from the worktree root):
+- npx tsc --noEmit                         -> exit 0
+- npm run build:server                     -> exit 0
+- (cd packages/web && npx next build)      -> exit 0 (25/25 static pages)
+- node --import tsx --test src/llm/__tests__/codingRouter.test.ts src/llm/__tests__/modelAudit.test.ts src/agent/__tests__/codingRouting.test.ts src/eval/__tests__/codingBenchmarkE2E.test.ts src/agent/__tests__/quickEdit.test.ts -> 50 pass, 0 fail
+- node --import tsx --test src/agent/__tests__/*.test.ts src/llm/__tests__/*.test.ts src/eval/__tests__/*.test.ts -> 203 pass, 0 fail
+- npm run check:eval                       -> PASS
+No existing test was weakened or deleted. Working tree clean.
+
+## Incoming manus-parity report (J10 prompt-cache + KV miss detection)
+
+J10 complete: prompt-cache (KV) miss detection + reusable-token accounting, and the
+merge gate now passes.
+
+Task (from `.jgatefail.txt`): the branch had a MERGE CONFLICT with manus-parity. Ran
+`git merge manus-parity`, resolved every conflict keeping BOTH sides (never dropping
+either), got all gates green, and recorded the result here.
+
+### Merge gate (the failure that was fixed)
+Two files conflicted on the first merge:
+- `src/agent/events.ts`: kept the incoming `compaction` event with `blocked?: boolean`
+  (parity) AND this branch's `cache_usage` event (J10). Both event kinds are in the
+  union now.
+- `packages/web/public/marketplace/THIRD_PARTY_NOTICES`: kept BOTH jcode MIT notices.
+  The J10 KV-miss-detection notice (HEAD) and the `bench/` adaptation notice (parity)
+  each keep their own section, sharing one MIT License block. Neither notice was dropped.
+Resolution committed as `6a6c3f5 Merge manus-parity (keep both sides) into jcode-j10`.
+
+A typecheck failure surfaced by that merge was fixed (not worked around): the
+`compression` literal in `src/agent/__tests__/cacheUsageAccounting.test.ts` was missing
+the new `bufferTokens` / `reattachFiles` / `reattachFileChars` fields. Added them to
+match the config type (same values as `contextCompressor.test.ts`). The test assertions
+are unchanged.
+
+manus-parity advanced three times while this gate ran (14 commits, then 7 more, then
+again). Each new tip was merged and re-verified:
+- `5fc32c4 Merge branch 'manus-parity' into khamis1992/jcode-j10`
+- `4e8ff1e Merge branch 'manus-parity' into khamis1992/jcode-j10` (current tip)
+All three merges were conflict-free after the first resolution, and the branch is now
+0 commits behind manus-parity.
+
+### What J10 delivers
+- `src/agent/kvCacheMonitor.ts`: normalizes provider usage into
+  `{ promptTokens, cachedTokens, cacheWriteTokens? }`.
+  - `parseOpenAiUsage`: `prompt_tokens` + `prompt_tokens_details.cached_tokens`
+    (plus the legacy top-level `cached_tokens`), clamped so cached never exceeds prompt.
+  - `parseAnthropicUsage`: `input_tokens` + `cache_read_input_tokens` +
+    `cache_creation_input_tokens`.
+  - `parseOllamaUsage`: Ollama prompt-eval counters (also accepts the nested
+    `cached_tokens.tokens` shape).
+  - Miss-reason detection: cached ratio collapses after compaction, idle gap past the
+    cache TTL, and model switch each produce a distinct reason.
+- `src/ollama.ts`: provider usage types carry the cache fields.
+- `src/agent/events.ts` + `src/protocol/{events,types}.ts` + `packages/shared/src/socket.ts`:
+  the `cache_usage` event/counter wire format.
+- `packages/web/src/components/chat/CacheUsageRow.tsx`: the small chat notice, wired into
+  `EventList.tsx`, with `en`/`ar` strings.
+- `src/agent/loop.ts`: reusable-token accounting on the per-step usage re-sum, so a
+  prompt-cache read is no longer dropped when usage is recomputed (fix `a12d0e0`).
+
+### Gates (all run from the worktree root, on merged tip `4e8ff1e`)
+- `npx tsc --noEmit` -> clean
+- `npm run build:server` -> dist/server.cjs 19.1mb, pdf worker copied
+- `(cd packages/web && npx next build)` -> compiled successfully
+- `npm run verify` -> exit 0 (encoding OK, eval PASS, orchestrator smoke PASS 114/114,
+  recovery PASS, modes PASS)
+- `node --import tsx --test src/{agent,server,tools,design,scripts,protocol,memory}/__tests__/*.test.ts`
+  -> tests 1340, pass 1340, fail 0
+- `(cd packages/web && npx vitest run)` -> 63 files, 372 tests passed
+- J10-specific: `kvCacheMonitor` + `cacheUsageEvents` + `cacheUsageAccounting`
+  -> 46 pass, 0 fail
+
+Working tree is clean; no existing test was weakened and no forbidden path was touched.
+
+---
+
+## Incoming manus-parity report (V13 quick-edit route)
+
+V13 (quick-edit route) is complete, and the merge gate passes.
+
+### What V13 delivers (commit 639a92c)
+- `src/agent/quickEdit.ts`: conservative classifier. Measured scope wins (text-only or
+  pure reorder, within limits) -> fast model; behavioural / structural / file-boundary /
+  oversized / multi-file / ambiguous -> base model. Short instructions classified by
+  narrow-vs-big patterns in English and Arabic; ambiguous or long instructions stay on
+  the base model.
+- `resolveQuickEditModel` uses the configured fast tier (`fallbackModel`), falling back
+  to the base model when it is unset; `planQuickEditRoute` adds a minimal targeted-edit
+  instruction (English + Arabic) only for the quick route.
+- `planTargetedDiff(before, after)` turns a before/after pair into line-anchored patches
+  via the now-exported `diffLines`/`DiffSummary`/`DiffHunk`.
+- Arabic/RTL: narrow-edit instructions are recognised in Arabic, `hasRtlScript` detects
+  RTL script, and a targeted patch preserves Arabic text exactly (covered by tests).
+- `src/agent/loop.ts` and `src/agent/orchestrator.ts`: optional per-run `model` override
+  so the quick-edit route can actually run on the fast model; `src/index.ts` passes it
+  through.
+
+### Gates
+- `npx tsc --noEmit` -> clean
+- `npm run build:server` -> dist/server.cjs built, pdf worker copied
+- `(cd packages/web && npx next build)` -> compiled successfully, 25/25 static pages
+- `node --import tsx --test src/agent/__tests__/*.test.ts src/server/__tests__/*.test.ts` -> 527 pass, 0 fail
+- `node --import tsx --test src/tools/__tests__/*.test.ts` -> 543 pass, 0 fail
+
+Working tree is clean; no existing test was weakened.
+
+### Incoming manus-parity report (V13 gate fix)
+
+V13 (quick-edit route) is complete, and the merge gate now passes.
+
+#### Merge gate (the failure that was fixed)
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity.
+Ran `git merge manus-parity`; conflicts were resolved keeping BOTH sides (never dropping either):
+- `src/index.ts`: kept the V13 quick-edit route (`planQuickEditRoute(effectiveCfg, effectivePrompt)` and
+  `quickEditRoute.suffix` / `quickEditRoute.model` wiring) AND the incoming manus-parity side-chat
+  additions (`SIDE_CHAT_READ_ONLY_TOOLS` import, `sideChatSuffix` in the prompt suffix array, the
+  read-only `baseRunAllow`/`runAllow` filtering, and `sideChat: opts.sideChat === true` on the saved run).
+- `.jdone`: this file merges the V13 report and the incoming D16 report instead of choosing one.
+Resolution committed as `872addf Merge branch 'manus-parity' into khamis1992/v0-v13`.
+`git merge-tree --write-tree manus-parity HEAD` exits 0, so no conflict re-emerges.
+
+Earlier in the task, a merge of manus-parity also resolved these files keeping both sides:
+- `src/index.ts`: quick-edit route + memory index summary (`memoryIndexSummary` from `memory.indexSummary(8)`).
+- `src/tools/multiEdit.ts`: V13 exports/doc comments on `DiffHunk` and `diffLines`.
+That resolution was committed as `7d52e7c merge manus-parity: keep quick-edit route with memory index summary (V13)`.
+
+#### What V13 delivers (commit 639a92c)
+- `src/agent/quickEdit.ts`: conservative classifier. Measured scope wins (text-only or pure reorder,
+  within limits) -> fast model; behavioural / structural / file-boundary / oversized / multi-file /
+  ambiguous -> base model. Short instructions classified by narrow-vs-big patterns in English and
+  Arabic; ambiguous or long instructions stay on the base model.
+- `resolveQuickEditModel` uses the configured fast tier (`fallbackModel`), falling back to the base
+  model when it is unset; `planQuickEditRoute` adds a minimal targeted-edit instruction (English +
+  Arabic) only for the quick route.
+- `planTargetedDiff(before, after)` turns a before/after pair into line-anchored patches (replacement,
+  deletion, insertion, insert-before-first-line) via the now-exported `diffLines`/`DiffSummary`/`DiffHunk`.
+- Arabic/RTL: narrow-edit instructions are recognised in Arabic, `hasRtlScript` detects RTL script,
+  and a targeted patch preserves Arabic text exactly (covered by tests).
+- `src/agent/loop.ts` and `src/agent/orchestrator.ts`: optional per-run `model` override so the
+  quick-edit route can actually run on the fast model; `src/index.ts` passes it through.
+
+#### Gates (all run from the worktree root)
+- `(cd packages/web && npx next build)` -> compiled successfully, 25/25 static pages generated
+  (full tools suite green on the final merged tip, including the search perf test)
+
+manus-parity advanced twice while this gate ran (to 8dddc3e, then to 29b9a62). Both were merged
+and re-resolved keeping both sides; the second resolution is `e872e8c Merge branch 'manus-parity'
+into khamis1992/v0-v13`. The branch is 0 commits behind manus-parity and
+`git merge-tree --write-tree manus-parity HEAD` exits 0.
+
+The earlier `src/tools/__tests__/search.test.ts` wall-clock flake (`elapsed < 1000` for a real
+repository grep) was load-induced while four heavy gates ran concurrently; it is machine-speed
+dependent and pre-existing on manus-parity (a clean parity worktree fails it at 1526ms). It passes
+on the final tip, and no test was weakened.
+
+---
+
+## Incoming manus-parity report (D16 gate fix)
+
+### Incoming manus-parity report (V10 gate fix)
+
+V10 complete.
+
+Task: resolve the merge conflict with manus-parity (keeping both sides) and get the
+gates green (typecheck, builds, tests) on khamis1992/devin-d9.
+
+What was done:
+- Merged manus-parity into khamis1992/devin-d9 and resolved every conflict by keeping
+  BOTH sides (never dropping either). Three conflicted files, one hunk each:
+  - src/server/runTools.ts: ALWAYS_ON_TOOLS is now the union. Kept D9's
+    "playbook_create_from_session" and parity's "web_scaffold", plus parity's
+    todo_write, design_image_generate, design_page_images, design_brief,
+    design_autofix and workflow_run/resume/status.
+  - src/server/http.ts: kept both route dispatch blocks. D9's handlePlaybookRoutes and
+    parity's handleWikiRoutes (D8) both dispatch now. All other parity routes
+    (craft, insights, automations, session control, video-studio relay) and the
+    sessionId/publicSchedule/event-trigger changes were preserved by the auto-merge.
+  - src/server/__tests__/runTools.test.ts: union of both registration sets. D9
+    registers createPlaybookTools (playbook_create_from_session always-on); parity
+    registers createDesignAssetsTools and createTodoTools. Both registered; the
+    todo_write exposure test is kept. No test was weakened or deleted.
+- Verified the resolution is a true union: zero lines from either side of HEAD or
+  manus-parity are absent from the merged files (modulo lines one side intentionally
+  rewrote, e.g. parity's publicSchedule/sessionId replacing HEAD's older forms).
+- manus-parity advanced while working (V12, D16, V10 merged upstream). Merged the
+  newer tip (29b9a62) as a second, conflict-free merge so the branch is now
+  0 commits behind manus-parity.
+
+Gates (all pass, from the worktree root):
+  npx tsc --noEmit                              -> exit 0
+  npm run build:server                          -> exit 0 (dist/server.cjs 19.1mb)
+  (cd packages/web && npx next build)           -> exit 0
+  npm run verify                                -> exit 0
+    - check:encoding OK (no BOM, no mojibake, all JSON valid)
+    - check:eval PASS, check:orchestrator PASS (114/114), check:recovery PASS,
+      check:modes PASS
+  node --import tsx --test src/{agent,server,tools,design,scripts,preview}/__tests__/*.test.ts
+    - tests 1266, pass 1266, fail 0
+  (cd packages/web && npx vitest run)           -> 62 files, 368 tests passed
+
+No test was weakened. Forbidden paths untouched.
+
+Note: src/agent/masterPromptText.ts shows as "modified" after a test run because
+src/tools/__tests__/promptwire.test.ts imports src/scripts/gen-master-prompt.ts, which
+calls main() at import time and rewrites the file with LF endings. The content is
+byte-identical to the committed version (git diff is empty); it is only line-ending
+noise under core.autocrlf=true. Restored with git checkout.
