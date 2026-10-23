@@ -3,39 +3,67 @@ V4 (Loam UI Kit / v0-parity design system) complete.
 Task: Loam UI Kit token linter (raw colours, >5 colours, >2 fonts, arbitrary px,
 emoji icons, missing alt text, gradients) + `design_lint` agent tool.
 
-Commits on khamis1992/v0-v4:
+Commits on khamis1992/v0-v4 (3 ahead of the manus-parity merge base):
   17b288d feat(design): add Loam UI Kit token linter and design_lint tool (V4)
   da9d6c6 fix(design): exempt every declaration on a shared token-definition line (V4)
+  353b506 docs(design): record V4 completion (.jdone)
 
-What was finished this session (continuing the interrupted one):
-- Resolved the stale interrupted merge: a leftover MERGE_HEAD pointed at an
-  unreachable commit, blocking commits. The merge resolution had already been
-  committed as 17b288d, so the marker was removed (no work discarded).
-- Root cause of the failing acceptance test
-  (`minimalDesignLinter > scores a clean site 100 with no issues`): the token
-  definition exemption only exempted a line declaring exactly ONE custom
-  property, so a one-line `:root { --background: oklch(...); --font-sans: ...; }`
-  had only its first token exempt and the rest flagged as raw colours.
-  Fixed in src/design/tokenLint.ts by computing byte-offset ranges for every
-  declaration on a token-definition line (lookbehind avoids `var(--x)` false
-  positives; a declaration separator avoids `red --note` false positives) and
-  reusing one `tokenRanges` array for the raw-colour rule, the palette counter
-  and the summary colour count, so they cannot drift.
-- Added three regression tests in src/design/__tests__/tokenLint.test.ts.
+Deliverables:
+- src/design/tokenLint.ts: the linter, with two complementary public views.
+  * lintDesignSource(source, options) checks one in-memory TSX/HTML/CSS/JS
+    string and returns deterministic 1-based line/column violations plus a
+    colour/font summary. It never executes the input and never touches disk.
+  * minimalDesignLinter() walks a generated site directory and returns a 0-100
+    score, a compact issue list and metrics for the design eval harness.
+  * Rules: raw-colour, too-many-colours (>5), too-many-fonts (>2),
+    arbitrary-px, emoji-icon, missing-alt, gradient, plus two RTL rules
+    (rtl-logical-properties, rtl-direction).
+  * Token definitions (CSS custom properties) are exempt by default, and one
+    shared `tokenRanges` array feeds the raw-colour rule, the palette counter
+    and the summary count so the three views cannot drift.
+- src/tools/designLint.ts: the `design_lint` agent tool. Accepts either
+  `source` + optional `fileName`, or `paths` (files/directories walked
+  recursively with an explicit extension allow-list). Read-only, bounded
+  (40 files, 200 KB/file, 4 s walk budget), reports skipped paths instead of
+  failing silently, and honours maxColours/maxFonts/allowedColours/disabled.
+- src/modes/designRules.ts: DESIGN_LINT_PROMPT, injected into the system
+  prompt so the model knows the linter exists and which categories it emits.
+- src/modes/buildPhases.ts + src/server/runTools.ts: `design_lint` is required
+  in the build phases that produce UI and is always-on for the model.
+- src/index.ts: registers createDesignLintTools() in the tool registry.
+
+Acceptance test (met):
+- src/design/__tests__/tokenLint.test.ts declares exactly 15 fixture cases and
+  asserts each one's pass/fail verdict and exact violation categories:
+  clean-token-page (pass), raw-tailwind-utility, inline-hex, named-colour,
+  rgb-colour, too-many-colours, five-colours-within-limit, too-many-fonts,
+  two-fonts-ok (pass), arbitrary-px-text, arbitrary-px-width, emoji-icon,
+  img-missing-alt, img-with-alt (pass), gradient.
+- src/tools/__tests__/designLint.test.ts covers the tool surface, the
+  filesystem walk and the prompt/registration wiring.
+- src/design/__tests__/evalDesign.test.ts covers the site-directory linter and
+  the eval harness integration.
 
 Tests (all pass from the worktree root):
-  npx tsc --noEmit
-  npm run build:server
-  (cd packages/web && npx next build)
-  node --import tsx --test src/design/__tests__/tokenLint.test.ts src/tools/__tests__/designLint.test.ts src/design/__tests__/evalDesign.test.ts
-  -> 81 tests, 81 pass, 0 fail (15 acceptance fixture cases + linter + tool + eval)
+  npx tsc --noEmit                                   -> exit 0
+  npm run build:server                               -> exit 0 (dist/server.cjs)
+  (cd packages/web && npx next build)                -> exit 0 (24/24 static pages)
+  node --import tsx --test src/design/__tests__/tokenLint.test.ts \
+      src/tools/__tests__/designLint.test.ts \
+      src/design/__tests__/evalDesign.test.ts         -> 81 pass, 0 fail
+  node --import tsx --test src/server/__tests__/runTools.test.ts \
+      src/tools/__tests__/designExplore.test.ts \
+      src/tools/__tests__/designStudio.test.ts        -> 39 pass, 0 fail
 
 Notes:
-- 15 design-eval fixture cases pass/fail as expected (acceptance criterion met).
-- Committed only V4's own files with an explicit pathspec; the pre-existing
-  staged pile from other workstreams is left in the index untouched.
-- Known pre-existing failure unrelated to V4: `src/agent/__tests__/codingPrompt.test.ts
-  > matches the committed snapshot` in the staged (uncommitted) merge pile. The
-  index carries a parity-era `masterPromptSha256` (890670...) while the resolved
-  `src/agent/masterPromptText.ts` yields c63a440... (the value parity and every
-  sibling branch commit). It is not caused by and not touched by V4.
+- The earlier interrupted session resolved a stale MERGE_HEAD (the merge
+  resolution was already committed as 17b288d) and fixed the failing acceptance
+  test in da9d6c6; this session re-verified the whole task end to end.
+- Arabic/RTL quality is part of the linter: Arabic content without dir="rtl"
+  is flagged, physical directional properties (ml-*/mr-*/pl-*/pr-*/text-left,
+  margin-left, ...) are flagged under an RTL layout with the logical replacement
+  suggested, and the site linter reports rtlReady only when the root declares
+  dir="rtl" and the source uses logical properties.
+- No existing test was weakened or deleted; only V4's own files are committed.
+- The pre-existing staged index pile from other workstreams is left untouched;
+  only .jdone is added by this session.
