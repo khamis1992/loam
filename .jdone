@@ -83,6 +83,26 @@ source node id, the source run id and the query.
 No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
 No Arabic text was written; no mojibake placeholder text was added.
 
+### Pre-existing gate failure (not caused by N16)
+
+`node --import tsx src/scripts/check-companions.ts` fails with "mode tools missing
+from the service catalog" listing 49 tools (`grep`, `glob`, `docs_lookup`, `think`,
+`finish`, `plan`, `pr_review`, `ci_watch`, ...). This is **pre-existing on the base
+commit `84c9af8`** and is unrelated to N16:
+
+- `recall` and `recall_status` are **not** in the uncovered list.
+- `uncoveredModeTools()` depends only on `src/modes/catalog.ts` and
+  `src/server/companionGateway.ts`; both are byte-identical between `84c9af8` and
+  HEAD (`git diff --quiet` reports no change for either).
+- The failure comes from earlier workstreams that added mode tools without a service
+  group (last touched in `df1ec49` / `ad16ec3`).
+- `recall` does not need a service entry anyway: `ALWAYS_ON_TOOLS` is merged into the
+  allowlist *after* gateway resolution (`mergeAlwaysOnTools` in `runTools.ts`), so an
+  always-on tool reaches every mode regardless of service membership.
+
+Left as-is: fixing the 49-tool catalog gap is a separate workstream's scope, and
+touching `companionGateway.ts` would widen this change beyond N16.
+
 ## Seams left for other workstreams
 
 - The shelf is embedded with the **memory** embedder only. A workstream that adds a
