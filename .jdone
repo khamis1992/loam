@@ -46,14 +46,28 @@ Everything else auto-merged cleanly, so the merged tree carries the D19 compute-
 session-sleep wiring together with parity's KV-cache-miss detection and reusable-token
 accounting. No test was weakened, deleted, or skipped.
 
-## Gates (all run from the worktree root, after the resolution)
+## Gates (all run from the worktree root on the committed merge ccd180b)
 - `npx tsc --noEmit` -> exit 0
-- `npm run build:server` -> dist/server.cjs, pdf worker copied
-- `(cd packages/web && npx next build)` -> compiled successfully
-- `node --import tsx --test` on the D19 budget/sleep suites and the parity KV-cache suites
-- `(cd packages/web && npx vitest run)` on the affected web suites
+- `npm run build:server` -> dist/server.cjs 19.2mb, pdf worker copied
+- `(cd packages/web && npx next build)` -> compiled successfully, 25/25 static pages
+- `node --import tsx --test` D19 budget/sleep suites (computeBudget, loopBudget,
+  orchestratorBudget, sessionRuntime, sessionSleep, ptySessions, sessionControl,
+  runTools) -> tests 78, pass 78, fail 0
+- `node --import tsx --test` parity KV-cache suites (cacheUsageAccounting, kvCacheMonitor,
+  cacheUsageEvents) -> tests 46, pass 46, fail 0
+- `(cd packages/web && npx vitest run)` affected web suites (SessionStatusBadge,
+  EnvironmentIssueCard, environmentIssueEventList, cacheUsageRow, useSessionRuntime)
+  -> 5 files / 26 tests passed
+- `npm run check:modes` -> PASS
+- `npm run check:orchestrator` -> PASS (114/114)
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
 
-No secrets committed. Working tree clean after the merge commit.
+No test was weakened, deleted, or skipped: every test file changed by this merge is
+byte-identical to manus-parity (`git diff manus-parity HEAD -- <test>` is empty for each),
+and no assertion was relaxed. No secrets committed. Working tree clean after the merge
+commit. `git merge manus-parity` now reports "Already up to date." and
+`git merge-base --is-ancestor manus-parity HEAD` succeeds (rev-list --left-right --count
+manus-parity...HEAD = 0  5), so the merge gate condition is satisfied.
 
 ## D19 feature recap
 - Sleep/wake: `src/server/sessionSleep.ts` idle N minutes (default 30, configurable via
