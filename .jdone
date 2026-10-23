@@ -1,3 +1,85 @@
+## N14 gate-fix session: merge with latest manus-parity (N15), all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity in: .jdone. Run git
+merge manus-parity, resolve those files keeping both sides, commit.`
+
+### Root cause
+No source file conflicted. The only file that conflicted was the tracked rollup `.jdone`,
+because both sides append their own report at the same end-of-file anchor:
+
+- **ours** (HEAD, `6d0e08a`): this branch's N14 report plus everything inherited from the
+  first merge.
+- **theirs** (manus-parity tip `d57df77`, `merge khamis1992/neo-n15 into manus-parity`):
+  the N15 Case Playbook report and the N15 gate-fix report.
+
+### The ref moved during the session (two merges were needed)
+- **Merge 1** - parity tip `851b3fe` (N7) -> commit `6d0e08a`.
+- **Merge 2** - parity tip `d57df77` (N15) -> commit `fb778e8`.
+
+`.jdone` was the only conflict in both merges. `CanvasPanel.tsx` did not conflict (our
+side carries the N14 changes; parity's side is unchanged against the merge base
+`851b3fe`).
+
+### The resolution
+`.jdone` was resolved as a **union** of both sides: every report block from both sides is
+kept, with only the three conflict-marker lines removed. Verified mechanically against the
+blobs in play:
+
+- the merged `.jdone` is a multiset-superset of the ours blob (`6d0e08a`), the theirs blob
+  (`d57df77`) and the merge base (`851b3fe`): **0 lines missing** from any of them;
+- 0 conflict-marker lines, 0 U+FFFD replacement characters, no mojibake;
+- LF-only, no BOM, no lone CR (matching the parents).
+
+### Nothing was dropped from the merge
+All 4766 files at the parity tip `d57df77` are present in the merged tree (**0 missing**),
+so the merge dropped nothing. `git merge-base --is-ancestor manus-parity HEAD` exits 0, and
+`git rev-list --left-right --count manus-parity...HEAD` reports `0` on the parity side
+(zero parity commits missing).
+
+### Gate condition verified
+From the worktree root, on the committed merged tree:
+- `git merge manus-parity`        -> `Already up to date.` (exit 0)
+- `git status --porcelain`        -> empty (working tree clean)
+
+### Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (`dist/server.cjs` + pdf worker written)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- N15 backend `node --import tsx --test src/templates/__tests__/flowTemplates.test.ts`
+                                              -> tests 13, pass 13, fail 0
+- merged-source node suites (`fanout`, `runGraph`, `export`, `runGraphAdapter`)
+                                              -> tests 44, pass 44, fail 0
+- full backend suite `node --import tsx --test "src/**/*.test.ts"`
+                                              -> tests 2774, suites 513, pass 2774, fail 0
+- full web suite `(cd packages/web && npx vitest run)`
+                                              -> 84 files, 564 tests, all pass
+
+One web test (`src/app/app/wiki/__tests__/wikiPage.test.tsx`) flaked once on the first
+full parallel run and passes in isolation and on re-run; the wiki files are byte-identical
+on both sides of the merge, so the flake is not merge-induced.
+
+No test was weakened, deleted or skipped. No assertion was relaxed. No secrets committed.
+No forbidden path (`docs/handoff/watchdog.ps1`, `qa/*.png`,
+`packages/tests/visual/baselines`, ZCode/Codex files) touched. No Arabic text was written
+by this session; no mojibake placeholder text was added.
+
+### Files
+`.jdone` only (this report prepended to the preserved rollup). No source file was modified
+by this session; the N14 deliverables are unchanged.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run check:encoding
+  node --import tsx --test src/templates/__tests__/flowTemplates.test.ts
+  node --import tsx --test src/agent/__tests__/fanout.test.ts src/graph/__tests__/runGraph.test.ts src/graph/__tests__/export.test.ts src/agent/__tests__/runGraphAdapter.test.ts
+  node --import tsx --test "src/**/*.test.ts"
+  (cd packages/web && npx vitest run)
+
+---
+
 ## N15 gate-fix session: merge with latest manus-parity, all gates green
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
