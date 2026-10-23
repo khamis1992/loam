@@ -55,6 +55,7 @@ import { applyPlanApprovalGate, applyPlanModeGate, createPlanTools } from "./too
 import { applyAskUserGate, createAskUserTools } from "./tools/askUserTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
+import { applyKnowledgeGate } from "./server/knowledgeTools.js";
 import { planQuickEditRoute } from "./agent/quickEdit.js";
 import { SIDE_CHAT_READ_ONLY_TOOLS } from "./agent/sideChat.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
@@ -441,8 +442,11 @@ async function main(): Promise<void> {
       const runAllow = opts.savedRun.sideChat
         ? baseRunAllow.filter((name) => SIDE_CHAT_READ_ONLY_TOOLS.includes(name))
         : baseRunAllow;
-      const runAllowSet = new Set(runAllow);
-      const agentTools = registry.forAllowlist(runAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
+      // N3 Knowledge Garden: kb_* tools stay registered (the companion gateway
+      // advertises them) but only reach the model when the run's garden is on.
+      const knowledgeRunAllow = applyKnowledgeGate(runAllow, opts.savedRun.knowledge === true);
+      const runAllowSet = new Set(knowledgeRunAllow);
+      const agentTools = registry.forAllowlist(knowledgeRunAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
 
       // Sensitive host-input actions need an explicit user decision first (section 18).
       // MF4 (option 14): the gate resolves each request idempotently — replay of a
@@ -654,6 +658,7 @@ async function main(): Promise<void> {
         workMode: normalizeWorkMode(opts.workMode ?? agent?.workMode),
         orchestrated: cfg.orchestrator.enabled, started: false,
         sideChat: opts.sideChat === true,
+        knowledge: opts.knowledge === true,
       };
     }
     const task = previous ?? createTask(saved.prompt, opts.title, saved.projectId, saved.agentId);
@@ -769,6 +774,7 @@ async function main(): Promise<void> {
     registry,
     runTask,
     memory: memory ?? undefined,
+    embedder: rt.embedder ?? undefined,
     screenLive: rt.screenLive,
     preview: rt.preview,
     mcp,
