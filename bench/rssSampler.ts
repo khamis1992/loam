@@ -282,11 +282,21 @@ export async function sampleProcessTree(rootPids: number[], options: SampleOptio
   // its work finishes, even when that happens before the timeout window ends.
   let stopped = false;
   if (options.stop) {
-    void Promise.race([options.stop.then(() => true), delay(MAX_SAFE_DELAY_MS).then(() => false)]).then(
-      (didStop) => {
-        stopped = didStop;
-      },
-    );
+    // The backstop must be cleared once the stop signal settles: an armed timer
+    // keeps the event loop alive, so a measurement process would linger for the
+    // full ten minutes after its report was written.
+    const backstop = setTimeout(() => {
+      /* no-op: the stop signal never settled, so keep sampling */
+    }, MAX_SAFE_DELAY_MS);
+    // A rejected stop signal means the caller's work failed. Treat that as
+    // "stop sampling" too: the rejection is already observed by the caller, and
+    // leaving it unhandled would crash the measurement process with an
+    // unhandled-rejection instead of reporting the run.
+    const settle = (): void => {
+      stopped = true;
+      clearTimeout(backstop);
+    };
+    void options.stop.then(settle, settle);
   }
 
   while (!stopped && Date.now() < deadline) {

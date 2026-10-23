@@ -210,7 +210,7 @@ function buildBrief(task: string, acceptance: string, filesHint: string[]): stri
 
 /** True when a path is a usable control socket on this platform. */
 export function isSharedSocketPath(socketPath: string): boolean {
-  return isNamedPipePath(socketPath);
+  return process.platform === "win32" ? isNamedPipePath(socketPath) : !isNamedPipePath(socketPath);
 }
 
 /**

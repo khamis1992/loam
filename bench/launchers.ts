@@ -21,7 +21,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { sampleProcessTree, type MemoryReport } from "./rssSampler.js";
-import { FakeModelServer } from "./fakeModel.js";
+import { FakeModelServer, type ScriptedTurn } from "./fakeModel.js";
 import { benchEnvFromProcessEnv } from "./perProcess.js";
 import { CALC_PY, TEST_CALC_PY, makeCalcRepo, isFixed } from "./memBench.js";
 import {
@@ -127,6 +127,12 @@ export interface RunLauncherBenchOptions {
   modelHost?: string;
   modelPort?: number;
   model?: string;
+  /**
+   * Turn script the fake model replays. Defaults to `BENCH_SEQUENCE`, which fixes
+   * the fixture. Tests override it to make a session genuinely fail without
+   * waiting out the agent loop's retry budget.
+   */
+  sequence?: ScriptedTurn[];
   suppressFinal?: boolean;
   /** Keep the generated repos (debugging). */
   keepCwd?: boolean;
@@ -250,7 +256,7 @@ export async function runLauncherBench(options: RunLauncherBenchOptions): Promis
   const model = new FakeModelServer({
     host: options.modelHost ?? "127.0.0.1",
     port: options.modelPort ?? 0,
-    sequence: BENCH_SEQUENCE,
+    sequence: options.sequence ?? BENCH_SEQUENCE,
     transport: "ollama",
     ...(options.model ? { model: options.model } : {}),
   });
@@ -259,11 +265,13 @@ export async function runLauncherBench(options: RunLauncherBenchOptions): Promis
   notes.push(`fake model ${modelUrl}`);
 
   const baseDir = options.cwd ?? fs.mkdtempSync(path.join(os.tmpdir(), "loam-j1-"));
-  if (!options.cwd) makeCalcRepo(baseDir);
   const cwds: string[] = [];
   for (let i = 0; i < n; i++) {
-    const cwd = options.cwd ? baseDir : path.join(baseDir, `s${i}`);
-    if (!options.cwd) makeCalcRepo(cwd);
+    // Every session gets its own repo under the base dir, even when the caller
+    // supplied one: sessions run concurrently, so sharing a workspace would let
+    // them edit the same files. `keepCwd` only controls whether it is deleted.
+    const cwd = path.join(baseDir, `s${i}`);
+    makeCalcRepo(cwd);
     cwds.push(cwd);
   }
 
@@ -280,11 +288,20 @@ export async function runLauncherBench(options: RunLauncherBenchOptions): Promis
     let finalMB = idleReport.finalMB;
     const sampleDuring = async (work: () => Promise<void>): Promise<void> => {
       const workDone = work();
-      // Sample for the whole run, but never longer than `sampleMs`: a run that
-      // finishes early must not keep sampling an empty tree, and a run that runs
-      // long must not be under-sampled (which would understate the peak).
-      const sampler = sampleProcessTree([process.pid], { timeoutMs: sampleMs, intervalMs, stop: workDone });
-      const report = await sampler;
+      // Sample for the whole run, stopping when the run's work is done. The window
+      // must not *cap* the run: N=30 takes ~15s, and capping the sampler at the
+      // 4s default truncates the peak (1.49 GB instead of the real 2.56 GB).
+      // `sampleMs` is therefore the backstop, not the deadline, and the sampler's
+      // own stop handling bounds a run that never finishes.
+      const sampler = sampleProcessTree([process.pid], {
+        timeoutMs: Math.max(sampleMs, MAX_SAMPLE_WINDOW_MS),
+        intervalMs,
+        stop: workDone,
+      });
+      // Await both: awaiting only the sampler would swallow a failure in the
+      // work (for example every control send rejecting) and report a run whose
+      // sessions never ran at all.
+      const [report] = await Promise.all([sampler, workDone]);
       peakMB = Math.max(peakMB, report.peakMB, idleReport.peakMB);
       finalMB = report.finalMB;
     };
@@ -439,6 +456,13 @@ export function collectOutput(child: ChildProcess): Promise<string> {
       finished = true;
       resolve(Buffer.concat(chunks).toString("utf8").slice(0, 2000));
     };
+    // A child that exited before this was called has already drained its pipes and
+    // will never emit `exit`/`close` again: resolve on its recorded exit code
+    // instead of waiting out the backstop.
+    if (child.exitCode !== null || child.signalCode !== null) {
+      finish();
+      return;
+    }
     for (const stream of [child.stdout, child.stderr]) {
       if (!stream) continue;
       // Attach immediately: a fast child can close its pipes before a caller
@@ -449,13 +473,16 @@ export function collectOutput(child: ChildProcess): Promise<string> {
     child.once("close", finish);
     child.once("exit", finish);
     // Backstop only: a child that somehow never emits close/exit must not hang
-    // the benchmark forever. Real exits are always observed above.
-    later(finish, 120_000);
+    // the benchmark forever. Real exits are always observed above. Unref'd so an
+    // armed timer cannot keep the process alive after its report is written: an
+    // isolated measurement would otherwise linger the full 120s and its parent
+    // would wait on that timer for every measurement.
+    later(finish, 120_000).unref();
   });
 }
 
-function later(fn: () => void, ms: number): void {
-  setTimeout(fn, ms);
+function later(fn: () => void, ms: number): NodeJS.Timeout {
+  return setTimeout(fn, ms);
 }
 
 function delay(ms: number): Promise<void> {
@@ -474,9 +501,18 @@ interface CliArgs {
   n?: number[];
   sampleMs?: number;
   intervalMs?: number;
+  cooldownMs?: number;
   jsonOut?: string;
+  beforeOut?: string;
+  afterOut?: string;
   help?: boolean;
   kinds?: LauncherKind[];
+  /** Isolated single-measurement mode: `--isolate <kind>`. */
+  isolate?: LauncherKind;
+  /** N=1 peak used to compute the marginal cost in isolated mode. */
+  baselineMB?: number;
+  /** Where the isolated measurement writes its JSON report. */
+  reportOut?: string;
 }
 
 export function parseJ1Args(argv: string[]): CliArgs {
@@ -497,11 +533,29 @@ export function parseJ1Args(argv: string[]): CliArgs {
       case "--interval-ms":
         args.intervalMs = Number(next());
         break;
+      case "--cooldown-ms":
+        args.cooldownMs = Number(next());
+        break;
       case "--json-out":
         args.jsonOut = next();
         break;
+      case "--before-out":
+        args.beforeOut = next();
+        break;
+      case "--after-out":
+        args.afterOut = next();
+        break;
       case "--kinds":
         args.kinds = next().split(",").map((k) => k.trim()) as LauncherKind[];
+        break;
+      case "--isolate":
+        args.isolate = next() as LauncherKind;
+        break;
+      case "--baseline-mb":
+        args.baselineMB = Number(next());
+        break;
+      case "--report-out":
+        args.reportOut = next();
         break;
       case "--help":
       case "-h":
@@ -524,7 +578,13 @@ Options:
       --kinds <list>    Launcher shapes to run: per-process,shared (default both)
       --sample-ms <ms>  Sampling window (default 4000)
       --interval-ms <ms> Sample interval (default 100)
+      --cooldown-ms <ms> Pause between measurements (default 8000; 0 disables)
+      --isolate <kind>   Run exactly one measurement of this shape (child mode)
+      --baseline-mb <mb> N=1 peak for the marginal calculation (child mode)
+      --report-out <path> Where the isolated measurement writes its JSON report
       --json-out <path> Write the JSON report here
+      --before-out <path> Write the BEFORE (per-process) shape reports here
+      --after-out <path>  Write the AFTER (shared) shape reports here
   -h, --help            Show this help
 `;
 
@@ -537,9 +597,112 @@ export interface J1Report {
   notes: string[];
 }
 
+/**
+ * Floor for the sampler window: the window must never *cap* a run that is still
+ * going. N=30 spawns 30 sessions one settle-delay apart (~45s of settling) and
+ * peaks part way through, so a window shorter than the run truncates the peak
+ * (4s gave 1.49 GB where the real peak is 2.56 GB). The sampler's stop signal
+ * ends sampling as soon as the run's work is done, so this only bounds a run
+ * that never finishes.
+ */
+const MAX_SAMPLE_WINDOW_MS = 120_000;
+
+/**
+ * Run one measurement in a fresh child process and read its report back.
+ *
+ * Memory benchmarks must not share a process with a previous measurement. The
+ * per-process N=30 run peaks around 4.2 GB, and V8 answers that pressure by
+ * growing the *next* measurement's heap, so a shared N=30 measured afterwards
+ * reads ~36 MB/session instead of the ~2 MB it really costs. Each measurement in
+ * its own process makes the AFTER number a property of the launcher, not of the
+ * measurement order.
+ */
+async function runIsolatedMeasurement(options: {
+  kind: LauncherKind;
+  n: number;
+  sampleMs?: number;
+  intervalMs?: number;
+  baselineMB?: number;
+  reportOut: string;
+  /** Injectable spawner so tests can assert the child invocation without spawning. */
+  spawnImpl?: SpawnFn;
+}): Promise<LauncherReport> {
+  const args = [
+    "--isolate",
+    options.kind,
+    "--n",
+    String(options.n),
+    "--sample-ms",
+    String(options.sampleMs ?? 4000),
+    "--interval-ms",
+    String(options.intervalMs ?? 100),
+    "--report-out",
+    options.reportOut,
+  ];
+  if (options.baselineMB !== undefined) {
+    args.push("--baseline-mb", String(options.baselineMB));
+  }
+  const child = (options.spawnImpl ?? spawn)(process.execPath, ["--import", "tsx", path.join(HERE, "launchers.ts"), ...args], {
+    cwd: PROJECT_ROOT,
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+  });
+  const output = await new Promise<string>((resolve) => {
+    const chunks: Buffer[] = [];
+    const done = (): void => resolve(Buffer.concat(chunks).toString("utf8"));
+    child.stdout?.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.stderr?.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.once("close", done);
+    child.once("error", done);
+    // Generous backstop: N=30 per-process spends ~45s settling alone. A child
+    // that never exits must not hang the benchmark forever, but an armed timer
+    // would keep this process alive long after the measurement finished.
+    setTimeout(done, 1_800_000).unref();
+  });
+  if (!fs.existsSync(options.reportOut)) {
+    throw new Error(
+      `isolated ${options.kind} N=${options.n} measurement produced no report: ${output.slice(0, 2000)}`,
+    );
+  }
+  const report = JSON.parse(fs.readFileSync(options.reportOut, "utf8")) as LauncherReport;
+  try {
+    fs.rmSync(options.reportOut, { force: true });
+  } catch {
+    /* best effort */
+  }
+  return report;
+}
+
 /** Run both launcher shapes at each N and return the combined report. */
-export async function runJ1Bench(options: { n: number[]; sampleMs?: number; intervalMs?: number; jsonOut?: string; kinds?: LauncherKind[] }): Promise<J1Report> {
+export async function runJ1Bench(options: {
+  n: number[];
+  sampleMs?: number;
+  intervalMs?: number;
+  /**
+   * Pause between measurements. Without it the shared run at a given N starts
+   * while the per-process run at the same N is still being reclaimed by the OS,
+   * and V8 responds to the memory pressure by growing the shared server's heap:
+   * a shared N=30 measured right after 30 per-process children peaked ~992 MB,
+   * against ~519 MB when the same run is measured on a settled machine. The
+   * cooldown keeps the AFTER number a property of the launcher, not of the
+   * measurement order.
+   */
+  cooldownMs?: number;
+  jsonOut?: string;
+  beforeOut?: string;
+  afterOut?: string;
+  kinds?: LauncherKind[];
+  /** Injectable spawner, forwarded to every measurement (tests). */
+  spawnImpl?: SpawnFn;
+  /**
+   * Run every measurement in its own child process (default true). Turn off for
+   * tests that assert on the in-process spawn order.
+   */
+  isolateEach?: boolean;
+}): Promise<J1Report> {
   const kinds = options.kinds ?? (["per-process", "shared"] as LauncherKind[]);
+  const cooldownMs = Math.max(0, options.cooldownMs ?? 8000);
+  const isolateEach = options.isolateEach ?? true;
   const before: LauncherReport[] = [];
   const after: LauncherReport[] = [];
   const notes: string[] = [];
@@ -547,22 +710,45 @@ export async function runJ1Bench(options: { n: number[]; sampleMs?: number; inte
   // that shape's fixed-overhead baseline for the marginal per-session number.
   const counts = [...options.n].sort((a, b) => a - b);
   const baselines = new Map<LauncherKind, number>();
-  for (const n of counts) {
-    for (const kind of kinds) {
-      const report = await runLauncherBench({
-        n,
-        kind,
-        sampleMs: options.sampleMs,
-        intervalMs: options.intervalMs,
-        model: "mock-coder",
-        ...(baselines.has(kind) ? { baselineMB: baselines.get(kind)! } : {}),
-      });
+  let measured = 0;
+  // Launcher-outer, N-inner: every per-process measurement happens before any
+  // shared one, so the AFTER numbers are never taken on a machine that the
+  // BEFORE shape has just filled with dying 130 MB processes.
+  for (const kind of kinds) {
+    for (const n of counts) {
+      // Let the previous measurement's processes exit and their memory be
+      // reclaimed before starting the next one (see `cooldownMs`).
+      if (measured > 0 && cooldownMs > 0) await delay(cooldownMs);
+      measured += 1;
+      const baselineMB = baselines.get(kind);
+      const report = isolateEach
+        ? await runIsolatedMeasurement({
+            kind,
+            n,
+            sampleMs: options.sampleMs,
+            intervalMs: options.intervalMs,
+            ...(baselineMB !== undefined ? { baselineMB } : {}),
+            reportOut: path.join(os.tmpdir(), `loam-j1-${kind}-${n}-${process.pid}.json`),
+            ...(options.spawnImpl ? { spawnImpl: options.spawnImpl } : {}),
+          })
+        : await runLauncherBench({
+            n,
+            kind,
+            sampleMs: options.sampleMs,
+            intervalMs: options.intervalMs,
+            model: "mock-coder",
+            ...(options.spawnImpl ? { spawnImpl: options.spawnImpl } : {}),
+            ...(baselineMB !== undefined ? { baselineMB } : {}),
+          });
       if (n === counts[0]) baselines.set(kind, report.peakMB);
       (kind === "shared" ? after : before).push(report);
       notes.push(
         `${kind} N=${n}: perSessionMB=${report.perSessionMB} marginalSessionMB=${report.marginalSessionMB ?? "n/a"} fixed=${report.fixed}/${n}`,
       );
     }
+  }
+  if (cooldownMs > 0) {
+    notes.push(`cooldown ${cooldownMs}ms between measurements (the OS reclaims the previous run's processes)`);
   }
 
   const payload: J1Report = {
@@ -581,6 +767,19 @@ export async function runJ1Bench(options: { n: number[]; sampleMs?: number; inte
       notes.push(`could not write ${options.jsonOut}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  // Shape files: the BEFORE/AFTER halves on their own, each carrying every N.
+  for (const [out, reports] of [
+    [options.beforeOut, before],
+    [options.afterOut, after],
+  ] as Array<[string | undefined, LauncherReport[]]>) {
+    if (!out || reports.length === 0) continue;
+    try {
+      fs.mkdirSync(path.dirname(out), { recursive: true });
+      fs.writeFileSync(out, JSON.stringify(reports, null, 2), "utf8");
+    } catch (err) {
+      notes.push(`could not write ${out}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   return payload;
 }
 
@@ -597,7 +796,61 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     return 0;
   }
   const counts = (args.n && args.n.length > 0 ? args.n : [1, 10, 30]).map((v) => Math.floor(v));
-  const report = await runJ1Bench({ n: counts, sampleMs: args.sampleMs, intervalMs: args.intervalMs, jsonOut: args.jsonOut, kinds: args.kinds });
+  // Child mode: one measurement, one process. The parent reads the report file.
+  if (args.isolate) {
+    const n = counts[0]!;
+    let report: LauncherReport;
+    let failure: string | null = null;
+    try {
+      report = await runLauncherBench({
+        n,
+        kind: args.isolate,
+        model: "mock-coder",
+        sampleMs: args.sampleMs,
+        intervalMs: args.intervalMs,
+        ...(args.baselineMB !== undefined ? { baselineMB: args.baselineMB } : {}),
+      });
+    } catch (err) {
+      // Still write a report: the parent treats a missing file as a hard error,
+      // so without this a crashed measurement looks like a hung one.
+      failure = err instanceof Error ? err.message : String(err);
+      report = {
+        launcher: args.isolate,
+        kind: args.isolate,
+        N: n,
+        idleMB: 0,
+        peakMB: 0,
+        finalMB: 0,
+        perSessionMB: 0,
+        baselineMB: args.baselineMB ?? null,
+        marginalSessionMB: null,
+        fixed: 0,
+        sessions: [],
+        durationMs: 0,
+        platform: process.platform,
+        notes: [`measurement failed: ${failure}`],
+      };
+    }
+    const payload = JSON.stringify(report);
+    if (args.reportOut) {
+      fs.mkdirSync(path.dirname(args.reportOut), { recursive: true });
+      fs.writeFileSync(args.reportOut, payload, "utf8");
+    } else {
+      process.stdout.write(`${payload}\n`);
+    }
+    if (failure) process.stderr.write(`isolated ${args.isolate} N=${n} failed: ${failure}\n`);
+    return report.fixed < n ? 1 : 0;
+  }
+  const report = await runJ1Bench({
+    n: counts,
+    sampleMs: args.sampleMs,
+    intervalMs: args.intervalMs,
+    cooldownMs: args.cooldownMs,
+    jsonOut: args.jsonOut,
+    beforeOut: args.beforeOut,
+    afterOut: args.afterOut,
+    kinds: args.kinds,
+  });
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   const failed = [...report.before, ...report.after].filter((r) => r.fixed < r.N);
   if (failed.length > 0) {

@@ -79,7 +79,7 @@
     "vendor": "npm run vendor:filmcraft && npm run vendor:effectcraft",
     "bench:mem": "node --import tsx bench/memBench.ts",
     "bench:j1": "node --import tsx bench/launchers.ts",
-    "test:bench": "node --import tsx --test bench/__tests__/fakeModel.test.ts bench/__tests__/rssSampler.test.ts bench/__tests__/memBench.test.ts"
+    "test:bench": "node --import tsx --test bench/__tests__/fakeModel.test.ts bench/__tests__/rssSampler.test.ts bench/__tests__/memBench.test.ts bench/__tests__/launchers.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
