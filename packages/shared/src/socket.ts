@@ -3,6 +3,16 @@ export type AgentStatus = 'running' | 'waiting' | 'stopped' | 'error';
 export type ToolStatus = 'success' | 'error' | 'running' | 'pending' | 'failed' | 'cancelled' | 'stopped' | 'rollback' | 'argumentsFinished' | 'streaming';
 export type ToolName = 'browser' | 'terminal' | 'search' | 'text_editor' | 'webdev' | 'map_reduce' | 'suggestion' | 'webpage_extract' | 'mcp' | (string & {});
 
+/** Neo N10: the composer's output-type selector. */
+export const OUTPUT_TYPES = ['auto', 'text', 'image', 'video', 'slides', 'website'] as const;
+export type OutputType = (typeof OUTPUT_TYPES)[number];
+/** Neo N10: the composer's effort selector. */
+export type EffortLevel = 'fast' | 'max';
+
+// The selector values are mirrored from the backend's `src/llm/router.ts` so a
+// composer payload that was built by hand still type checks; the server
+// re-validates every value before it reaches the routing map.
+
 export interface Attachment {
   id: string;
   filename: string;
@@ -59,6 +69,12 @@ export interface UserMessage extends Base {
     worktreeEnabled?: boolean;
     /** Option 18: composer model tier ("max" | "standard" | "lite" | "flex"). */
     modelTier?: string;
+    /** Neo N10: composer output type (auto|text|image|video|slides|website). */
+    outputType?: string;
+    /** Neo N10: composer effort level (fast|max). */
+    effort?: string;
+    /** Neo N10: explicit A/B arm model ids for the fan-out run. */
+    abModels?: string[];
   };
 }
 
@@ -351,6 +367,34 @@ export interface PlanApprovalResolvedEvent extends ChatEventBase {
   plan?: { summary?: string; steps?: string[]; files_to_edit?: string[]; trivial?: boolean };
 }
 
+/** N9: an `ask_user` clarification request awaiting the user's answer (ask-user card). */
+export interface AskUserRequestedEvent extends ChatEventBase {
+  type: 'askUserRequested';
+  requestId: string;
+  taskId: string;
+  title: string;
+  reason: string;
+  questions: Array<{ id: string; prompt: string; options?: string[]; allowFile?: boolean }>;
+  /** "auto" is the orchestrator's vague/missing-context trigger; "model" a tool call. */
+  source?: 'auto' | 'model';
+  /** Set when `source` is "auto"; the client localizes the reason from it. */
+  reasonCode?: 'vague' | 'missing_context' | 'ambiguous_target';
+}
+
+/** N9: the user answered or dismissed a pending ask-user card. */
+export interface AskUserResolvedEvent extends ChatEventBase {
+  type: 'askUserResolved';
+  requestId: string;
+  taskId: string;
+  reviewer: 'user' | 'auto';
+  result: 'answered' | 'dismissed' | 'expired';
+  answer?: {
+    text: string;
+    answers: Record<string, string>;
+    files: Array<{ path: string; name: string; bytes: number; contentType: string }>;
+  };
+}
+
 export type ChatEvent =
   | ChatMessageEvent
   | ChatDeltaEvent
@@ -378,6 +422,8 @@ export type ChatEvent =
   | EnvironmentIssueEvent
   | PlanApprovalRequestedEvent
   | PlanApprovalResolvedEvent
+  | AskUserRequestedEvent
+  | AskUserResolvedEvent
   | RecipeUpdateEvent
   | RecipeRestartEvent;
 

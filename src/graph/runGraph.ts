@@ -13,6 +13,7 @@ import {
   RUN_NODE_TYPES,
   RunGraphStore,
   eventNodeId,
+  siblingNodeId,
   type RunGraphExport,
   type RunNode,
   type RunNodeStatus,
@@ -255,6 +256,44 @@ export class RunGraph {
     return updated;
   }
 
+  /**
+   * Neo N10 multi-model A/B: the same prompt handed to several models.
+   *
+   * Every arm becomes a `sibling` node hanging off the same parent and carries
+   * the model it was dispatched to, so the canvas renders one branch per model
+   * with its model label. Arm ids are deterministic, so re-rendering the same
+   * A/B run never duplicates nodes.
+   */
+  addSiblings(runId: string, parentNodeId: string, models: string[]): RunNode[] {
+    const parent = this.store.getNode(parentNodeId, runId);
+    if (!parent) throw new Error(`run node not found: ${parentNodeId}`);
+    const state = this.stateFor(runId);
+    const created: RunNode[] = [];
+    transaction(() => {
+      models.forEach((model, arm) => {
+        const id = siblingNodeId(runId, arm, model);
+        const now = Date.now();
+        const node: RunNode = {
+          id,
+          run_id: runId,
+          parent_ids: [parent.id],
+          type: "sibling",
+          status: "init",
+          data: { model, arm, label: model },
+          position: state.seq,
+          version: 1,
+          created: now,
+          updated: now,
+        };
+        const stored = this.store.upsert(node, state.seq);
+        state.seq = this.nextSeq(state);
+        created.push(stored);
+      });
+    });
+    this.invalidate(runId);
+    return created;
+  }
+
   /** Layered layout plus aggregate stats. Deterministic, no dependencies. */
   getGraphLayout(runId: string): RunGraphLayout {
     const nodes = this.store.list({ runId });
@@ -396,6 +435,23 @@ export class RunGraph {
             steps: event.steps,
             filesToEdit: event.filesToEdit,
             trivial: event.trivial,
+          },
+          parent: state.lastId,
+        }).id];
+      case "ask_user_required":
+        // N9 ask_user: the run pauses for the user's clarification, so it is an
+        // ask_user node just like the plan-mode approval card. It is a question
+        // node (not a note): the run genuinely waits on the answer.
+        return [this.addNode(runId, state, {
+          type: "ask_user",
+          seed: `ask-user:${event.askUserId}`,
+          status: "running",
+          data: {
+            askUserId: event.askUserId,
+            tool: event.tool,
+            title: oneLine(event.title, 300),
+            reason: oneLine(event.reason, 400),
+            questions: event.questions,
           },
           parent: state.lastId,
         }).id];
