@@ -21,6 +21,7 @@ const NAMESPACES = [
   "desktopActivityIndicator",
   "storage",
   "inAppBrowser",
+  "debugMemory",
 ];
 
 module.exports = { IPC_INVOKE, IPC_EVENT_PREFIX, IPC_META, IPC_SYNC, NAMESPACES };

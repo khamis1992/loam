@@ -1,0 +1,101 @@
+{
+  "kind": "app-scenario",
+  "launcher": "app-scenario",
+  "iterations": 4,
+  "port": 3948,
+  "sourceCommit": "4d98e76802b6a2c545932798e11d7c5b1db140fd",
+  "debugRoutePresent": false,
+  "idleMB": 538.4,
+  "peakMB": 538.4,
+  "finalMB": 476.4,
+  "growthMB": 0,
+  "lastSampleMB": 476.4,
+  "retainedCacheBytes": 0,
+  "cacheEntries": 0,
+  "cacheCount": 0,
+  "sessions": [
+    {
+      "iteration": 1,
+      "taskId": "task_mvl0m3dfc3fe2209f246",
+      "chatStatus": 200,
+      "memoryStatus": 500,
+      "chatBytes": 424520,
+      "memoryBytes": 43,
+      "error": null
+    },
+    {
+      "iteration": 2,
+      "taskId": "task_mvl0nlnt5a91f64ff73a",
+      "chatStatus": 200,
+      "memoryStatus": 500,
+      "chatBytes": 424468,
+      "memoryBytes": 43,
+      "error": null
+    },
+    {
+      "iteration": 3,
+      "taskId": "task_mvl0nqkh8947998a3ef4",
+      "chatStatus": 200,
+      "memoryStatus": 500,
+      "chatBytes": 424468,
+      "memoryBytes": 43,
+      "error": null
+    },
+    {
+      "iteration": 4,
+      "taskId": "task_mvl0nuyv45c2cec76755",
+      "chatStatus": 200,
+      "memoryStatus": 500,
+      "chatBytes": 424468,
+      "memoryBytes": 43,
+      "error": null
+    }
+  ],
+  "thresholdMB": 64,
+  "thresholdExceeded": false,
+  "durationMs": 93393,
+  "platform": "win32",
+  "notes": [],
+  "samples": [
+    {
+      "at": 1792762771762,
+      "totalMB": 474.5,
+      "processCount": 5
+    },
+    {
+      "at": 1792762772397,
+      "totalMB": 476,
+      "processCount": 5
+    },
+    {
+      "at": 1792762772971,
+      "totalMB": 474.5,
+      "processCount": 5
+    },
+    {
+      "at": 1792762773555,
+      "totalMB": 474.6,
+      "processCount": 5
+    },
+    {
+      "at": 1792762774141,
+      "totalMB": 475.8,
+      "processCount": 5
+    },
+    {
+      "at": 1792762774698,
+      "totalMB": 476,
+      "processCount": 5
+    },
+    {
+      "at": 1792762775256,
+      "totalMB": 476.3,
+      "processCount": 5
+    },
+    {
+      "at": 1792762775781,
+      "totalMB": 476.4,
+      "processCount": 5
+    }
+  ]
+}

@@ -5,10 +5,17 @@ import { createHash } from 'node:crypto';
 import { StudioError } from './store.js';
 import { safeZip, xml, serialize, all, W } from './ooxml.js';
 import { wordRenderSession } from './word-render-session.js';
+import { LruCache, byteSizeOfBytes } from '../memory/cache.js';
+import { registerCacheStats } from '../memory/stats.js';
 
 let queue: Promise<unknown> = Promise.resolve();
-const pending = new Map<string, Promise<Buffer>>();
-const cache = new Map<string, Buffer>();
+/** In-flight renders (J6): capped, matching the previous `pending.size >= 8` busy check. */
+const pending = new LruCache<Promise<Buffer>>({ capacity: 8, name: 'word-preview-pending' });
+/** Rendered PDFs (J6): a preview PDF is up to 50 MB, so the byte ceiling is the
+ *  real bound; the entry cap keeps the working set small. */
+const cache = new LruCache<Buffer>({ capacity: 6, name: 'word-preview', maxBytes: 128 * 1024 * 1024, sizeOf: byteSizeOfBytes });
+registerCacheStats('word-preview', () => cache.stats());
+registerCacheStats('word-preview-pending', () => pending.stats());
 
 /** Prepare a disposable offline copy. Never change the imported/exported archive. */
 export async function offlinePreviewCopy(buffer: Buffer): Promise<Buffer> {
@@ -47,8 +54,8 @@ export async function renderWordPreview(buffer: Buffer): Promise<Buffer> {
       await wordRenderSession.render(input, output);
       const pdf = await fs.readFile(output);
       if (pdf.subarray(0, 5).toString() !== '%PDF-' || pdf.length > 50_000_000) throw new StudioError('تعذّر قراءة معاينة Word.', 503);
+      // LruCache enforces both caps itself (6 entries / 128 MB).
       cache.set(key, pdf);
-      while (cache.size > 6) cache.delete(cache.keys().next().value!);
       return pdf;
     } finally {
       await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
