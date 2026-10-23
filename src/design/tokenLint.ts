@@ -841,6 +841,21 @@ function isUiSource(relative: string): boolean {
     && !/(?:^|\/)(?:build|dist|out|node_modules)(?:\/|$)/i.test(relative);
 }
 
+/** The direction a site's locale and options call for, independent of what the markup says. */
+function requestedDirection(options: LintOptions): "ltr" | "rtl" {
+  return resolveDirection(options.locale ?? "", options.direction) === "rtl" ? "rtl" : "ltr";
+}
+
+/** Does any UI source actually declare `dir="rtl"`? */
+function declaresDirRtl(scanned: ScannedFile[]): boolean {
+  return scanned.some((file) => isUiSource(file.relative) && /\.html$/i.test(file.relative) && RTL_DIR_RE.test(file.text));
+}
+
+/** Does any UI source use direction-agnostic spacing? */
+function usesLogicalProperties(scanned: ScannedFile[]): boolean {
+  return scanned.some((file) => isUiSource(file.relative) && LOGICAL_PROPERTY_RE.test(file.text));
+}
+
 /**
  * The RTL rules are document-level. They are evaluated once over the whole site
  * rather than once per file, so a JavaScript or stylesheet module is never told
@@ -848,14 +863,22 @@ function isUiSource(relative: string): boolean {
  * of source files is never penalised because one module happens to use physical
  * spacing while another uses logical spacing.
  *
- * True when at least one UI source declares the direction and at least one
- * declares a direction-agnostic property.
+ * "RTL-ready" means the site is actually laid out for a right-to-left script:
+ * its document declares `dir="rtl"` and its layout uses logical properties. It
+ * is deliberately a property of the *rendered* document, not of the requested
+ * locale: a left-to-right site that ignores the direction it was asked for is not
+ * ready, and neither is a right-to-left site that never declared its direction.
+ * An unrequested direction is not a violation, so the metric stays true for a
+ * clean left-to-right page.
  */
-function rtlReadyFor(scanned: ScannedFile[]): boolean {
-  const sources = scanned.filter((file) => isUiSource(file.relative));
-  const hasDirRtl = sources.some((file) => /\.html$/i.test(file.relative) && RTL_DIR_RE.test(file.text));
-  const hasLogical = sources.some((file) => LOGICAL_PROPERTY_RE.test(file.text));
-  return hasDirRtl && hasLogical;
+function rtlReadyFor(scanned: ScannedFile[], options: LintOptions = {}): boolean {
+  const requested = requestedDirection(options);
+  const rtl = declaresDirRtl(scanned);
+  const logical = usesLogicalProperties(scanned);
+  // A right-to-left request is satisfied only by a document that declares the
+  // direction *and* lays out with logical properties; a left-to-right request is
+  // satisfied by a document that does not declare the other direction.
+  return requested === "rtl" ? rtl && logical : !rtl;
 }
 
 function collectFiles(dir: string, out: string[] = []): string[] {
@@ -930,14 +953,14 @@ function lintScannedFile(file: ScannedFile, options: LintOptions, issues: LintIs
  * some UI source uses direction-agnostic spacing.
  */
 function foldRtlIssues(scanned: ScannedFile[], options: LintOptions, issues: LintIssue[]): void {
-  const rtlRequested = resolveDirection(options.locale ?? "", options.direction) === "rtl";
+  const rtlRequested = requestedDirection(options) === "rtl";
   if (!rtlRequested) return;
 
   const sources = scanned.filter((file) => isUiSource(file.relative));
   if (sources.length === 0) return;
 
-  const hasDirRtl = sources.some((file) => /\.html$/i.test(file.relative) && RTL_DIR_RE.test(file.text));
-  const hasLogical = sources.some((file) => LOGICAL_PROPERTY_RE.test(file.text));
+  const hasDirRtl = declaresDirRtl(scanned);
+  const hasLogical = usesLogicalProperties(scanned);
 
   if (!hasDirRtl) {
     const document = sources.find((file) => /\.html$/i.test(file.relative)) ?? sources[0]!;
@@ -967,7 +990,7 @@ export function lintSiteSource(source: string, options: LintOptions = {}): LintR
   const scanned: ScannedFile[] = [{ relative: "inline", text }];
   lintScannedFile(scanned[0]!, options, issues);
   foldRtlIssues(scanned, options, issues);
-  const rtlRequested = resolveDirection(options.locale ?? "", options.direction) === "rtl";
+  const rtlRequested = requestedDirection(options) === "rtl";
   return {
     score: computeScore(issues),
     issues,
@@ -979,7 +1002,7 @@ export function lintSiteSource(source: string, options: LintOptions = {}): LintR
       emoji: issues.filter((issue) => issue.rule === "emoji-icon").length,
       gradients: issues.filter((issue) => issue.rule === "gradient").length,
       missingAlt: issues.filter((issue) => issue.rule === "missing-alt").length,
-      rtlReady: !rtlRequested || rtlReadyFor(scanned),
+      rtlReady: !rtlRequested || rtlReadyFor(scanned, options),
     },
   };
 }
@@ -1021,7 +1044,7 @@ export function minimalDesignLinter(): DesignLinter {
           emoji: issues.filter((i) => i.rule === "emoji-icon").length,
           gradients: issues.filter((i) => i.rule === "gradient").length,
           missingAlt: issues.filter((i) => i.rule === "missing-alt").length,
-          rtlReady: rtlReadyFor(scanned),
+          rtlReady: rtlReadyFor(scanned, options),
         },
       };
     },

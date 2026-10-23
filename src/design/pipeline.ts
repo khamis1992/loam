@@ -999,7 +999,12 @@ export async function scorePipelineSite(
 
 /** One isolated workspace per pipeline run. */
 export function createPipelineWorkspace(root?: string): string {
-  return fs.mkdtempSync(path.join(root ?? os.tmpdir(), "loam-design-pipeline-"));
+  // `mkdtemp` only creates the leaf, so a caller-supplied root that does not
+  // exist yet (a fresh checkout, a cleaned `out/`) would fail. Create it here:
+  // the workspace helper must be usable wherever the caller asks for it.
+  const base = root ?? os.tmpdir();
+  fs.mkdirSync(base, { recursive: true });
+  return fs.mkdtempSync(path.join(base, "loam-design-pipeline-"));
 }
 
 /** Remove a pipeline workspace and everything under it. */

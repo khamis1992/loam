@@ -20,6 +20,7 @@ import {
   PIPELINE_MAX_FILES,
   PIPELINE_PASS_THRESHOLD,
   applyFixInstruction,
+  createPipelineWorkspace,
   generateSite,
   isRtlFixture,
   measureCoverage,
@@ -398,6 +399,16 @@ describe("pipeline: generator and fixer", () => {
 });
 
 describe("pipeline: helpers", () => {
+  it("creates a workspace inside a root that does not exist yet", () => {
+    // `mkdtemp` only creates the leaf, so a caller-supplied root (a cleaned
+    // `out/`, a fresh checkout) must be created first or the whole gate fails.
+    const base = path.join(workspace(), "nested", "root");
+    assert.equal(fs.existsSync(base), false);
+    const created = createPipelineWorkspace(base);
+    assert.equal(fs.existsSync(created), true);
+    assert.ok(created.startsWith(base));
+  });
+
   it("measures expectation coverage the way the V1 harness does", () => {
     const coverage = measureCoverage(fixture(), {
       "index.html": "Northlight Roast page",
