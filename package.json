@@ -1,6 +1,6 @@
 {
   "name": "loam",
-  "version": "0.5.28",
+  "version": "0.5.30",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -20,6 +20,10 @@
     "test:browser-operator": "node --import tsx --test src/tools/__tests__/browserOperator.test.ts",
     "test:mirofish": "node --import tsx --test src/tools/mirofish/__tests__/nutrio-e2e.test.ts",
     "test:coding-eval": "node --import tsx --test src/scripts/__tests__/eval-coding.test.ts",
+    "test:memory": "node --import tsx --test src/memory/__tests__/cache.test.ts src/memory/__tests__/caps.test.ts src/server/__tests__/debugMemory.test.ts src/protocol/__tests__/blobRoute.test.ts",
+    "bench:mem": "node --import tsx bench/memBench.ts",
+    "bench:ram:app": "node --import tsx bench/appRamBench.ts --spawn",
+    "test:bench": "node --import tsx --test bench/__tests__/fakeModel.test.ts bench/__tests__/rssSampler.test.ts bench/__tests__/memBench.test.ts bench/__tests__/appRamBench.test.ts bench/__tests__/launchers.test.ts",
     "test:electron": "node --test electron/__tests__/inAppBrowser.test.cjs",
     "test:vendor": "node --test scripts/vendor/__tests__/fetch-craft.test.mjs",
     "test:vendor:protocol": "node --test electron/__tests__/vendorProtocol.test.cjs electron/__tests__/filmcraftRebrand.test.mjs",
@@ -32,6 +36,8 @@
     "eval": "tsx src/scripts/eval-run.ts",
     "eval:coding-bench": "tsx src/scripts/eval-coding-bench.ts",
     "eval:design": "tsx src/scripts/eval-design.ts",
+    "check:design-pipeline": "tsx src/scripts/check-design-pipeline.ts",
+    "test:design-pipeline": "node --import tsx --test src/design/__tests__/pipeline.test.ts src/models/__tests__/route.test.ts src/scripts/__tests__/check-design-pipeline.test.ts",
     "eval:selfplay": "tsx src/scripts/eval-selfplay.ts",
     "eval:coding": "tsx src/scripts/eval-coding.ts",
     "eval:neo": "tsx src/scripts/eval-neo.ts",
@@ -40,13 +46,14 @@
     "check:task-ui": "npm run check:loam-ui",
     "check:recovery": "tsx src/scripts/check-recovery.ts",
     "check:recovery:http": "tsx src/scripts/check-recovery-http.ts",
+    "check:eventlog": "tsx src/scripts/check-eventlog.ts",
     "verify": "npm run typecheck && npm run check:encoding && npm run check:eval && npm run check:orchestrator && npm run check:recovery && npm run check:modes",
-    "build:server": "esbuild src/index.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist/server.cjs --external:playwright --external:node-pty --external:@modelcontextprotocol/sdk --external:sharp --external:@nut-tree-fork/nut-js && node -e \"const fs=require('fs');fs.copyFileSync('node_modules/pdfjs-dist/build/pdf.worker.mjs','dist/pdf.worker.mjs');console.log('pdf worker copied to dist/')\"",
+    "build:server": "node -e \"require('./scripts/build-server.cjs')\"",
     "build:memory-skills": "esbuild addons/memory-skills-mcp/src/server.ts --bundle --platform=node --format=cjs --target=node22 --outfile=addons/memory-skills-mcp/dist/server.cjs --external:@modelcontextprotocol/sdk",
     "check:memory-skills": "tsc -p addons/memory-skills-mcp/tsconfig.json",
     "smoke:memory-skills": "node addons/memory-skills-mcp/test/smoke.mjs",
     "desktop": "npm run build:server && electron electron/main.cjs",
-    "dist": "npm run build:icon && npm run build:server && electron-builder --win --publish never",
+    "dist": "npm run build:icon && npm run build:server && npm --prefix packages/web run build && npm run vendor && npm run vendor:craft && electron-builder --win --publish never",
     "dist:publish": "npm run build:server && electron-builder --win --publish always",
     "feed:make": "node tools/update-feed/make-feed.mjs",
     "feed:serve": "node tools/update-feed/serve-feed.mjs",
@@ -55,6 +62,7 @@
     "ollama:check": "tsx src/scripts/check-ollama.ts",
     "check:modes": "tsx src/scripts/check-modes.ts",
     "check:isolation": "tsx src/scripts/check-isolation-http.ts",
+    "check:env-builds": "tsx src/scripts/check-env-builds.ts",
     "check:test-isolation": "tsx src/scripts/check-test-isolation.ts",
     "check:loam-ui": "tsx src/scripts/check-loam-ui.mjs",
     "check:promo-carousel": "node src/scripts/check-promo-carousel.mjs",
@@ -78,8 +86,7 @@
     "vendor:filmcraft": "node scripts/vendor/fetch-filmcraft.mjs",
     "vendor:effectcraft": "node scripts/vendor/fetch-effectcraft.mjs",
     "vendor": "npm run vendor:filmcraft && npm run vendor:effectcraft",
-    "bench:mem": "node --import tsx bench/memBench.ts",
-    "test:bench": "node --import tsx --test bench/__tests__/fakeModel.test.ts bench/__tests__/rssSampler.test.ts bench/__tests__/memBench.test.ts"
+    "bench:j1": "node --import tsx bench/launchers.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",

@@ -12,6 +12,8 @@ export interface AttachmentCardProps {
   size?: number;
   taskId?: string;
   path?: string;
+  /** Overrides the button label when `onOpen` opens the file in an editor (cr-03). */
+  openLabel?: string;
   onOpen?: () => void;
 }
 
@@ -92,7 +94,7 @@ export function mediaUrl(taskId: string, path: string): string {
   return `${getApiBase()}/api/media?${params.toString()}`;
 }
 
-export function AttachmentCard({ name, kind, size, taskId, path, onOpen }: AttachmentCardProps) {
+export function AttachmentCard({ name, kind, size, taskId, path, openLabel, onOpen }: AttachmentCardProps) {
   const resolvedKind = kind ?? kindFromName(name);
   const handleOpen = () => {
     if (onOpen) {
@@ -118,10 +120,11 @@ export function AttachmentCard({ name, kind, size, taskId, path, onOpen }: Attac
         type="button"
         onClick={handleOpen}
         disabled={!onOpen && !(taskId && path)}
+        title={onOpen ? openLabel : undefined}
         className="flex items-center gap-1 rounded-control px-2 py-1 text-xs font-medium text-text-secondary hover:bg-fill-hover disabled:opacity-50"
       >
         <ExternalLink className="size-3.5" />
-        {t('Open')}
+        {openLabel ?? t('Open')}
       </button>
     </div>
   );

@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DATA_DIR } from "../config.js";
+import { LruCache } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 /** Current on-disk event-log format. Older generations are migrated up to this. */
 export const CURRENT_FORMAT_VERSION = 1;
@@ -185,7 +187,11 @@ async function migrateStreaming(sourcePath: string, targetPath: string, chain: M
 }
 
 const projectionRegistry = new Map<string, Projection<any>>();
-const projectionCache = new Map<string, { lastSeq: number; state: unknown }>();
+/** Bounded incremental-fold cache (J6): one state per registered projection key.
+ *  A projection state can be large (it mirrors the whole transcript), so the
+ *  number of concurrently cached projections is capped. */
+const projectionCache = new LruCache<{ lastSeq: number; state: unknown }>({ capacity: 64, name: "eventlog-projection" });
+registerCacheStats("eventlog-projection", () => projectionCache.stats());
 
 export function registerProjection<S>(projection: Projection<S>): void {
   projectionRegistry.set(projection.key, projection);

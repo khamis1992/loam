@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { EventLog } from "./session/eventLog.js";
-import { ensureTaskWorkspace } from "./server/taskWorkspace.js";
+import { ensureTaskWorkspace, isManagedTaskWorkspace } from "./server/taskWorkspace.js";
+import { BLUEPRINT_FILE, bootTaskFromSnapshot } from "./tools/envSnapshot.js";
 import path from "node:path";
 import { loadConfig, ROOT, DATA_DIR } from "./config.js";
 import { setLocalAuthUserDataDir } from "./security/localAuth.js";
@@ -47,6 +48,7 @@ import { createDesignLintTools } from "./tools/designLint.js";
 import { createDesignAssetsTools } from "./tools/designAssets.js";
 import { createDesignBriefTools } from "./tools/designBrief.js";
 import { createDesignAutofixTools } from "./tools/designAutofix.js";
+import { createUiExamplesTools } from "./tools/uiExamples.js";
 import { createDesignCritiqueTools } from "./tools/designCritique.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
 import { createWorkflowTools } from "./tools/workflow.js";
@@ -54,6 +56,7 @@ import { applyPlanApprovalGate, applyPlanModeGate, createPlanTools } from "./too
 import { applyAskUserGate, createAskUserTools } from "./tools/askUserTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
+import { applyKnowledgeGate } from "./server/knowledgeTools.js";
 import { planQuickEditRoute } from "./agent/quickEdit.js";
 import { SIDE_CHAT_READ_ONLY_TOOLS } from "./agent/sideChat.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
@@ -63,8 +66,10 @@ import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { runAgent } from "./agent/loop.js";
 import { isOutputType, modelAbChain, normalizeEffort, type EffortLevel } from "./llm/router.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
+import { writeCheckpoint } from "./agent/checkpointLog.js";
 import type { Emit } from "./agent/events.js";
-import { applyRunEvent, beginRun } from "./agent/runGraphAdapter.js";
+import { applyRunEvent, beginRun, recallGraphHandle } from "./agent/runGraphAdapter.js";
+import { createRecallTools } from "./tools/memory.js";
 import { OllamaClient } from "./ollama.js";
 import { flexCredentials } from "./server/modelTiers.js";
 import { startServer, type RunTaskOptions } from "./server/http.js";
@@ -86,6 +91,9 @@ import { recoverInterruptedTasks, getSavedRun, saveRun, queueTaskRun, completeTa
 import { startProtocolAdapter } from "./protocol/adapter.js";
 import { executionQueue } from "./server/executionQueue.js";
 import { requiresReplayConfirmation, type SavedRun } from "./server/recovery.js";
+// O6b: opt-in startup auto-resume (LOAM_AUTO_RESUME=1). Off by default, and
+// still refuses any checkpoint that is in flight.
+import { autoResumeInterruptedTasks } from "./server/autoResume.js";
 import { acquireRuntimeLease, releaseRuntimeLease, backupDatabase } from "./server/sqliteStore.js";
 import {
   admitAllPending,
@@ -169,6 +177,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createDesignAssetsTools());
   rt.registry.registerAll(createDesignBriefTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createDesignAutofixTools());
+  rt.registry.registerAll(createUiExamplesTools());
   rt.registry.registerAll(createDesignCritiqueTools(rt.preview, { ollama: rt.ollama }));
   rt.registry.registerAll(createConnectorTools());
   rt.registry.registerAll(createWorkflowTools({ ollama: rt.ollama, registry: rt.registry }));
@@ -347,6 +356,20 @@ async function main(): Promise<void> {
     // a bounded context of its saved preferences/instructions.
     const memoryToolInstances = agentId ? createCompanionMemoryTools(agentId) : [];
     const teamToolInstances = agentId ? createCompanionTeamTools(agentId) : [];
+    // N16 cross-run recall: the shelf is process-wide, but *attaching* a recalled
+    // node is run-scoped, so these instances are rebuilt per run with the run id
+    // and a callback that files the hit into this run's graph.
+    const recallToolInstances = createRecallTools({
+      index: rt.recall ?? undefined,
+      runId: task,
+      attach: (source, runId, query) =>
+        recallGraphHandle().attachRecallNode(
+          runId,
+          source,
+          query,
+          (s) => recallGraphHandle().getNode(s.nodeId, s.runId),
+        ) ?? undefined,
+    });
     const memoryContextEntries = agentId ? memoryContext(agentId) : [];
     const memoryContextSuffix =
       memoryContextEntries.length > 0
@@ -439,8 +462,14 @@ async function main(): Promise<void> {
       const runAllow = opts.savedRun.sideChat
         ? baseRunAllow.filter((name) => SIDE_CHAT_READ_ONLY_TOOLS.includes(name))
         : baseRunAllow;
-      const runAllowSet = new Set(runAllow);
-      const agentTools = registry.forAllowlist(runAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
+      // N3 Knowledge Garden: kb_* tools stay registered (the companion gateway
+      // advertises them) but only reach the model when the run's garden is on.
+      const knowledgeRunAllow = applyKnowledgeGate(runAllow, opts.savedRun.knowledge === true);
+      const runAllowSet = new Set(knowledgeRunAllow);
+      // N16: recall/recall_status are always-on names (runTools.ts) but the
+      // run-scoped instances above are the ones that can attach a hit to THIS
+      // run, so they replace the process-wide copies instead of colliding.
+      const agentTools = registry.forAllowlist(knowledgeRunAllow).withBound([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances, ...recallToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
 
       // Sensitive host-input actions need an explicit user decision first (section 18).
       // MF4 (option 14): the gate resolves each request idempotently — replay of a
@@ -538,10 +567,24 @@ async function main(): Promise<void> {
         // D19 compute budget: shared with the UI badge so the counters and the
         // badge always agree, and the run stops when the ceiling is hit.
         budget: sessionRuntime.getBudget(task),
+        // O5: the durable event log is keyed by the task id (the protocol store
+        // binds a session to its task, and `session_events` outlives the JSON
+        // session cache). Setting this makes every tool call in this run append a
+        // `started` row before it runs and a terminal row after.
+        eventLogSession: task,
       };
       const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
         ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint, lifecycleHooks: true,
-        saveCheckpoint: (checkpoint) => { opts.savedRun.checkpoint = checkpoint; saveRun(task, opts.savedRun, opts.lease); },
+        saveCheckpoint: (checkpoint) => {
+          // O5: mirror the checkpoint into the durable append-only log and stamp it
+          // with the sequence it received. The stamp is what ties a resumed run to
+          // its log position, and `logSessionId` is what lets recovery ask the log
+          // whether a tool call started without ever reaching a terminal row.
+          checkpoint.logSeq = writeCheckpoint(task, checkpoint, task);
+          checkpoint.logSessionId = task;
+          opts.savedRun.checkpoint = checkpoint;
+          saveRun(task, opts.savedRun, opts.lease);
+        },
       }) : await runAgent(agentOpts);
       // The orchestrator can swallow an abort (it reports a failed step instead),
       // so treat a cancelled run explicitly — never as success.
@@ -652,12 +695,34 @@ async function main(): Promise<void> {
         workMode: normalizeWorkMode(opts.workMode ?? agent?.workMode),
         orchestrated: cfg.orchestrator.enabled, started: false,
         sideChat: opts.sideChat === true,
+        knowledge: opts.knowledge === true,
       };
     }
     const task = previous ?? createTask(saved.prompt, opts.title, saved.projectId, saved.agentId);
     saved.mode = getLoamMode(saved.mode).id;
     setTaskMode(task.id, saved.mode);
     saved.workspace = ensureTaskWorkspace(task.id, cfg.workspace);
+    // D3: when the project carries a `loam.env.yaml` and its environment snapshot
+    // was already built, boot the task worktree from that cached snapshot so the
+    // setup steps (npm ci, …) never run again. Purely an optimization: a missing
+    // or stale snapshot, an occupied workspace or a bound composer folder all
+    // leave the task exactly as it was, and a resume must not re-clone.
+    // Only Loam's own `.loam-tasks/<taskId>` workspace may be seeded: a task
+    // bound to the user's real folder (composer folder / git worktree) is never
+    // filled with a snapshot, even when it happens to be empty.
+    if (opts.resume !== true && isManagedTaskWorkspace(saved.workspace)) {
+      const envProject = saved.projectId ? getProject(saved.projectId) : undefined;
+      const envFolder = envProject?.folder;
+      if (envFolder && fs.existsSync(path.join(envFolder, BLUEPRINT_FILE))) {
+        const boot = bootTaskFromSnapshot({
+          taskWorkspace: saved.workspace,
+          projectId: saved.projectId ?? path.basename(envFolder),
+          projectFolder: envFolder,
+        });
+        if (boot.ok) log.info(`env snapshot reused for ${task.id}: ${boot.hash} → ${boot.projectDir}`);
+        else log.debug(`env snapshot not reused for ${task.id}: ${boot.reason}`);
+      }
+    }
     queueTaskRun(task.id, saved, opts.resume === true, opts.scheduleId, opts.title);
     // Resource locks (parallel lanes): browser/preview are the only shared
     // runtime states a run may reset — everything else (own devices, files,
@@ -767,10 +832,22 @@ async function main(): Promise<void> {
     registry,
     runTask,
     memory: memory ?? undefined,
+    embedder: rt.embedder ?? undefined,
     screenLive: rt.screenLive,
     preview: rt.preview,
     mcp,
   });
+
+  // O6b: opt-in startup auto-resume. `recoverInterruptedTasks` above already
+  // marked every interrupted task `interrupted` and wrote the
+  // "Resume requires review" error; only a checkpoint whose latest durable
+  // state is idle is continued here, and only when the user opted in with
+  // `LOAM_AUTO_RESUME=1`. Dispatch happens after `startServer` so the resumed
+  // run is visible on the UI's task stream immediately.
+  if (cfg.recovery?.autoResume) {
+    const resumed = autoResumeInterruptedTasks(cfg.workspace, runTask);
+    if (resumed) log.info(`auto-resume (O6b): ${resumed} interrupted task(s) continued at their checkpoint`);
+  }
 
   // Non-failing startup check: log how to install any missing Craft dists.
   // Never downloads; a missing dist just means the app falls back to Loam's

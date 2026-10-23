@@ -12,6 +12,7 @@
 import type { AgentEvent } from "./events.js";
 import { RunGraph, type RunGraphLayout, type RunGraphStats } from "../graph/runGraph.js";
 import type { RunGraphExport, RunNode, RunNodeStatus, RunNodeType } from "../graph/store.js";
+import { recallIndex, resetRecallIndex } from "../graph/recall.js";
 
 /** One graph change the live canvas cares about. */
 export interface RunGraphChange {
@@ -76,6 +77,7 @@ let graph: RunGraph | undefined;
 export function resetRunGraph(): void {
   graph = undefined;
   listeners.clear();
+  resetRecallIndex();
 }
 
 function liveGraph(): RunGraph {
@@ -91,6 +93,10 @@ export function beginRun(runId: string, goal = ""): RunNode | undefined {
   try {
     const instance = liveGraph();
     instance.resume(runId);
+    // Neo N16: keep a cross-run shelf of this graph's finished nodes. Attaching
+    // is idempotent per instance and never throws, so a recall failure cannot
+    // take down the run it is recording.
+    if (!instance.recallAttached) instance.attachRecall(recallIndex());
     return instance.beginRun(runId, goal);
   } catch (err) {
     console.warn(`[runGraph] failed to begin run ${runId}: ${String(err)}`);
@@ -176,7 +182,43 @@ export function addRunSiblings(runId: string, parentNodeId: string, models: stri
   return liveGraph().addSiblings(runId, parentNodeId, models);
 }
 
+/** N7 branch fan-out: open one branch of a fan-out as its own canvas subtree. */
+export function createFanoutBranch(
+  runId: string,
+  fanoutId: string,
+  index: number,
+  label = "",
+  parentNodeId?: string,
+): RunNode {
+  return liveGraph().createBranch(runId, fanoutId, index, label, parentNodeId);
+}
+
+/** N7 branch fan-out: the merge node that consumes every branch of a fan-out. */
+export function createFanoutMerge(
+  runId: string,
+  fanoutId: string,
+  branchNodeIds: string[],
+  summary: string,
+  parentNodeId?: string,
+): RunNode {
+  return liveGraph().createMerge(runId, fanoutId, branchNodeIds, summary, parentNodeId);
+}
+
 /** Drop every node of a run (used when a task is deleted). */
 export function clearRun(runId: string): void {
-  liveGraph().getStore().clearRun(runId);
+  const instance = liveGraph();
+  const removed = instance.getRunNodes(runId).map((node) => node.id);
+  instance.getStore().clearRun(runId);
+  // The shelf is derived, so a deleted run must leave the shelf too.
+  const shelf = instance.getRecall();
+  if (shelf) for (const nodeId of removed) void shelf.forget(nodeId);
+}
+
+/**
+ * The live graph handle, for callers that need run-scoped recall behaviour
+ * (attaching a recalled hit into the current run). It is the same instance
+ * `beginRun` attaches the shelf to, so the shelf and the graph never diverge.
+ */
+export function recallGraphHandle(): RunGraph {
+  return liveGraph();
 }

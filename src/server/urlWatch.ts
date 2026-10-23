@@ -15,6 +15,8 @@ import crypto from "node:crypto";
 import { addSchedule, deleteSchedule, listSchedules, getTask, updateUrlWatchState, markScheduleRun } from "./db.js";
 import { getAgent } from "./agents.js";
 import { log } from "../log.js";
+import { BoundedMap } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 export const MIN_URL_WATCH_INTERVAL_SECONDS = 5 * 60;
 /** Single fetch deadline; a hung endpoint must not wedge the poll loop. */
@@ -31,7 +33,14 @@ const MAX_DIFF_LINES = 4000;
 /** Fetch the textual content to hash for a watch of connector `kind`. */
 export type WatchContentFetcher = (input: { url: string; scheduleId: string }) => Promise<string>;
 
-const connectorFetchers = new Map<string, WatchContentFetcher>();
+/**
+ * Registered connector fetchers (J6). Previously an unbounded map: any code
+ * path that called `watchConnector` with a fresh kind accumulated a permanent
+ * entry. Bounded LRU; the unregister closure returned by `watchConnector` still
+ * removes its own entry.
+ */
+const connectorFetchers = new BoundedMap<string, WatchContentFetcher>(64, "url-watch-connectors");
+registerCacheStats("url-watch-connectors", () => connectorFetchers.stats());
 
 /** Register a connector-backed content fetcher for kind (e.g. "github-issues"). */
 export function watchConnector(kind: string, fetcher: WatchContentFetcher): () => void {

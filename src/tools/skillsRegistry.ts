@@ -9,6 +9,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DATA_DIR, SKILLS_DIR } from "../config.js";
+import { LruCache, byteSizeOfString } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 export const REGISTRY = {
   owner: "davila7",
@@ -110,7 +112,10 @@ export async function getCatalog(refresh = false): Promise<Catalog> {
   return catalog;
 }
 
-const descCache = new Map<string, string>();
+/** Bounded description cache (J6). One SKILL.md fetch per id; the catalog has
+ *  hundreds of skills, so an unbounded map would grow with every search. */
+const descCache = new LruCache<string>({ capacity: 128, name: "skills-desc", maxBytes: 4 * 1024 * 1024, sizeOf: byteSizeOfString });
+registerCacheStats("skills-desc", () => descCache.stats());
 
 async function describeSkill(id: string): Promise<string> {
   const cached = descCache.get(id);

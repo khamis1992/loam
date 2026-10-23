@@ -816,6 +816,7 @@ export function createChatSocket(deps: SocketDeps): Server {
               projectId: um.extData.projectId ?? null,
               agentId: um.extData.agentId ?? undefined,
               workMode: um.extData.workMode ?? undefined,
+              knowledge: um.extData.knowledge === true,
               // O6: this run owns the session's durable inbound queue, so messages
               // arriving mid-run are admitted at the next step boundary.
               inputSessionId: um.sessionId,
