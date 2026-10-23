@@ -15,12 +15,54 @@ Integrity of the resolved rollup, verified mechanically against the two real mer
 
   - non-blank lines missing from ours   = 0
   - non-blank lines missing from theirs = 0
-  - ours is a subsequence of the merged file   = true
   - theirs is a subsequence of the merged file = true
+  - ours is NOT a strict subsequence: the merged file carries both the round-8 and round-9
+    reports for the shared `## O4 gate-fix session` header (each side repeated that header in a
+    different position), so ours appears out of order. No line is missing, which is what matters.
   - conflict markers = 0
   - U+FFFD replacement characters = 0, NUL bytes = 0, BOM absent, strict UTF-8 valid
 
 No source file was edited by this session; the only committed file is `.jdone`.
+
+### Gate condition verified
+
+`git merge manus-parity` on the committed tree reports `Already up to date.` with no conflict.
+
+### Gates (all run from the worktree root on the merged tree at HEAD `7ab9316`)
+
+  1. `npx tsc --noEmit` -> exit 0
+  2. `npm run build:server` -> exit 0 (`server bundle + pdf worker written to dist/`)
+  3. `(cd packages/web && npx next build)` -> exit 0 (compiled successfully, 25/25 static pages)
+  4. `node --import tsx --test "src/**/*.test.ts"` -> tests 2773, pass 2773, fail 0,
+     cancelled 0, skipped 0
+  5. `node --import tsx --test src/agent/__tests__/contextCompressor.test.ts` -> tests 31, pass 31
+  6. `node --import tsx --test src/agent/__tests__/cacheUsageAccounting.test.ts` -> tests 4, pass 4
+  7. `node --import tsx --test src/agent/__tests__/parallelTools.test.ts` -> tests 2, pass 2
+  8. `node --import tsx --test src/agent/__tests__/reminders.test.ts` -> tests 12, pass 12
+  9. `npm run check:encoding` -> `encoding check: OK (no BOM, no mojibake, all JSON valid)`
+
+### Measured RAM
+
+No RAM measurement taken for this session: the change is a merge-conflict resolution in one
+tracked markdown rollup. The heaviest gate was the full node test suite (tests 2773, ~31 s wall
+clock), which ran without hitting any memory limit; no peak-RSS figure was captured.
+
+### J11 deliverables (already committed in earlier rounds, unchanged this session)
+
+- `docs/COMPACTION_SPEC.md` - compares Loam's compaction values with jcode's
+  (`ref/compaction-core.rs`: budget 200k, trigger 80%, critical 95%, keep last 10 turns,
+  min 2, emergency tool-result truncation 4000 chars) and justifies each difference.
+- `src/agent/contextCompressor.ts` - extended with the critical (95%) emergency path and
+  emergency tool-result truncation as config constants. No second compressor was created.
+- `src/config.ts` - the new constants.
+- `src/agent/__tests__/contextCompressor.test.ts` - the added constants are covered by tests.
+- `THIRD_PARTY_NOTICES` - jcode MIT notice entry.
+
+### Rules honoured
+
+Only `.jdone` (plus the restored `.jcode-done` marker) was committed. No source file was edited
+through the shell; the conflict markers were removed with file tools. No secrets, no forbidden
+path touched, no real external model API called by tests. Working tree clean.
 
 ## J11 gate-fix session (round 8): fifth merge round against parity tip `d57df77`, all gates green
 
