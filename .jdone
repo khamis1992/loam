@@ -9736,3 +9736,86 @@ ZCode/Codex files) touched. `git merge-base --is-ancestor manus-parity HEAD` exi
 - **N21 (Arabic/RTL):** the Arabic Nutrio flow carries real Arabic content, but the
   gallery chrome labels remain English-only beyond the 11 new keys.
 
+## R12: adversarial validation pass on the final tree (`20bb9f9`)
+
+Independently re-derived every claim of rounds 1-7 on the committed tree. All hold.
+
+### Parity merge inventory (corrected count: 8, not 7)
+
+`git log --merges manus-parity..HEAD` lists eight parity merges; the earliest
+(`fade6f6`, parity `045f3e2`) predates the numbered rounds and was not counted
+before. Full list, newest first:
+
+| merge | parity tip |
+| --- | --- |
+| `b607a39` | `bdae2ca` (jcode-j11) |
+| `ec7a089` | `1ccc8bd` (N2 Canvas) |
+| `96dbfae` | `d57df77` (N15 Case Playbook) |
+| `8338619` | `851b3fe` |
+| `b1892c5` | `26fcd6b` |
+| `662fd68` | `eb17ea0` |
+| `86b6f33` | `411df5e` |
+| `fade6f6` | `045f3e2` |
+
+`manus-parity` (`bdae2ca`) is an ancestor of HEAD; `git log HEAD..manus-parity` is empty.
+
+### R8: blob-level parity overwrite check
+
+Every file in the parity tip tree (4768, excluding `.jdone`) exists in HEAD. 4760
+are byte-identical; the 8 that differ are all fc-07-authored files that parity never
+edited since the merge base:
+
+`docs/filmcraft-integration.md`, `prompts/loam-master.md`,
+`src/agent/__tests__/__snapshots__/coding-prompt.snap.json`,
+`src/agent/masterPromptText.ts`, `src/agent/planner.ts`, `src/agent/prompt.ts`,
+`src/tools/__tests__/videoStudio.test.ts`, `src/tools/videoStudio.ts`.
+
+Result: NO PARITY FILE OVERWRITTEN (0 missing, 0 unexplained differences).
+
+### R9: fanout / isolation on the final tree
+
+`createFanoutTool` is registered in both `src/index.ts:158` and
+`src/setup/runtime.ts:124`. On the final tree `check:isolation` and `check:loam-e2e`
+both fail with `fatal: Error: duplicate tool: fanout` at `src/tools/registry.ts:108`,
+called from `src/index.ts:158`. This is the inherited parity defect (reproduced
+causally in round 6 on a throwaway worktree: removing only `src/index.ts:158` moves
+the failure from `duplicate tool: fanout` to `Timed out`, proving the `EADDRINUSE
+8787` layer underneath). Not introduced by fc-07; fc-07 touches no fanout code.
+
+### R11: real exit codes (PowerShell `$LASTEXITCODE`; cmd `%ERRORLEVEL%` is
+parse-time expanded and always reads 0)
+
+| gate | exit | signature |
+| --- | --- | --- |
+| `check:isolation` | 1 | `duplicate tool: fanout` at `src/index.ts:158` |
+| `check:loam-e2e` | 1 | `duplicate tool: fanout` at `src/index.ts:158` |
+| `check:loam-ui` | 1 | `AssertionError: 8 !== 7` at `check-loam-ui.mjs:43` |
+| `check:loam-ancillary` | 1 | Playwright `locator.click` timeout on `#rkSend` (nav subtree intercepts pointer events) |
+
+All four are inherited from parity and reproduce identically on a clean parity
+worktree at `d57df77`.
+
+### R7: wiki flake is inherited (two distinct races)
+
+`packages/web/src/app/app/wiki/__tests__/wikiPage.test.tsx` was run 9 times on a
+clean parity worktree at `bdae2ca` (node_modules junctioned from the fc-07 tree).
+Run 3 failed with `TestingLibraryElementError: Found multiple elements with the
+text: Overview` - the same signature seen in the merged tree. The wiki test was last
+touched by `9536efe` (D8), an ancestor of parity, and is not in the J11 gap. The
+merged tree passed 8/8 in isolation. Inherited flake, not a merge regression.
+
+### R10: hygiene
+
+No forbidden paths in the HEAD tree. No conflict markers anywhere. `.jdone` is
+CRLF=9738 / bareLF=0, 0 marker lines. The `output/` tree (2040 files) and
+`packages/web/public/marketplace/catalog.json` `Codex` strings are parity's own
+tracked artifacts; `src/tools/attachments.ts` `decodeXmlEntities` is a real function
+name, not a Codex reference. No secrets.
+
+### Conclusion
+
+The merge gate is closed. Every parity advance is merged with both sides kept and
+proven lossless; no parity file is overwritten; the task's real gates (`.jtask.md`
+rule 18: `tsc`, `build:server`, `next build`, touched-file tests) pass. The four
+failing gates are inherited parity defects, reproduced on a clean parity worktree.
+
