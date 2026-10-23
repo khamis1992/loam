@@ -50,6 +50,7 @@ import { createDesignAutofixTools } from "./tools/designAutofix.js";
 import { createDesignCritiqueTools } from "./tools/designCritique.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
 import { createWorkflowTools } from "./tools/workflow.js";
+import { createFanoutTool } from "./tools/fanout.js";
 import { applyPlanApprovalGate, applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
 import { applyAskUserGate, createAskUserTools } from "./tools/askUserTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
@@ -154,6 +155,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createBrowserOperatorTools());
   rt.registry.registerAll(createDeepResearchTools());
   rt.registry.register(createWideResearchTool({ ollama: rt.ollama, parentRegistry: rt.registry }));
+  rt.registry.register(createFanoutTool({ ollama: rt.ollama, parentRegistry: rt.registry }));
   rt.registry.registerAll(createFindAndEditTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createGroupTools());
   rt.registry.registerAll(createBackendScaffoldTools());

@@ -20,6 +20,7 @@ import { createWikiTools } from "../tools/wiki.js";
 import { pentestTools } from "../tools/pentest.js";
 import { mirofishTools } from "../tools/mirofish.js";
 import { createSubagentTools } from "../tools/subagents.js";
+import { createFanoutTool } from "../tools/fanout.js";
 import { createManagedSessionTools } from "../tools/managedSessionTools.js";
 import { webTools } from "../tools/web.js";
 import { browserTools, closeBrowser } from "../tools/browser.js";
@@ -120,6 +121,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createRorkTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createFrontierBridgeTools(preview).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createSubagentTools(ollama, registry));
+  registry.register(createFanoutTool({ ollama, parentRegistry: registry }));
   registry.registerAll(createManagedSessionTools({ ollama, parentRegistry: registry }));
   registry.registerAll(createGitWorkflowTools());
   // D2: CI watch polls the same D1 PR provider's check-runs; the local provider
