@@ -134,6 +134,7 @@ import { exportDatasets } from "../eval/export.js";
 import type { PreviewService } from "../preview/serve.js";
 import { getBrowserState } from "../tools/browser.js";
 import { getSavedRun } from "./db.js";
+import { isOutputType } from "../llm/router.js";
 import { requiresReplayConfirmation } from "./recovery.js";
 import { executionQueue } from "./executionQueue.js";
 import { SwarmService, SwarmError } from "../swarm/service.js";
@@ -149,6 +150,10 @@ export interface RunTaskOptions {
   projectId?: string | null;
   mode?: string;
   effort?: string;
+  /** Neo N10: output type selector (Auto/Text/Image/Video/Slides/Website). */
+  outputType?: string;
+  /** Neo N10: also run the same prompt on other models as sibling canvas nodes. */
+  abModels?: string[];
   agentId?: string;
   workMode?: string;
   resume?: boolean;
@@ -2610,6 +2615,8 @@ loadAgents();
             attachments?: unknown;
             mode?: unknown;
             effort?: unknown;
+            outputType?: unknown;
+            abModels?: unknown;
             agentId?: unknown;
             workMode?: unknown;
           };
@@ -2625,6 +2632,12 @@ loadAgents();
           try { mode = getLoamMode(typeof body.mode === "string" ? body.mode : (taskId ? getTask(taskId)?.mode : undefined)).id; }
           catch (error) { return sendJson(res, 400, { error: String(error) }); }
           const effort = typeof body.effort === "string" && body.effort ? body.effort : undefined;
+          // Neo N10: output type and A/B arm list come from the composer. Anything
+          // malformed is ignored rather than failing the whole run.
+          const outputType = isOutputType(body.outputType) ? body.outputType : undefined;
+          const abModels = Array.isArray(body.abModels)
+            ? [...new Set(body.abModels.filter((m): m is string => typeof m === "string" && m.trim().length > 0).map((m) => m.trim()))].slice(0, 4)
+            : undefined;
           const agentId = typeof body.agentId === "string" && body.agentId ? body.agentId : undefined;
           let workMode: string | undefined;
           try {
@@ -2666,6 +2679,8 @@ loadAgents();
               projectId,
               mode,
               effort,
+              ...(outputType ? { outputType } : {}),
+              ...(abModels && abModels.length > 0 ? { abModels } : {}),
               agentId,
               workMode,
             });

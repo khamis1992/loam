@@ -99,6 +99,11 @@ export function setRunNodeParents(nodeId: string, parentIds: string[], runId?: s
   return liveGraph().setParents(nodeId, parentIds, runId);
 }
 
+/** Neo N10 multi-model A/B: create one sibling arm per model off a parent node. */
+export function addRunSiblings(runId: string, parentNodeId: string, models: string[]): RunNode[] {
+  return liveGraph().addSiblings(runId, parentNodeId, models);
+}
+
 /** Drop every node of a run (used when a task is deleted). */
 export function clearRun(runId: string): void {
   liveGraph().getStore().clearRun(runId);

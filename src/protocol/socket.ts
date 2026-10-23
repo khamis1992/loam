@@ -672,6 +672,10 @@ export function createChatSocket(deps: SocketDeps): Server {
               agentId: um.extData.agentId ?? undefined,
               workMode: um.extData.workMode ?? undefined,
               ...(tierModel ? { model: tierModel } : {}),
+              // Neo N10: output type, effort and A/B arms travel with the message.
+              ...(um.extData.outputType ? { outputType: um.extData.outputType } : {}),
+              ...(um.extData.effort ? { effort: um.extData.effort } : {}),
+              ...(um.extData.abModels && um.extData.abModels.length > 0 ? { abModels: um.extData.abModels } : {}),
             });
 
             // Final assistant result if the agent stream did not already emit one.

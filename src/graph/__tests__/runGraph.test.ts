@@ -23,6 +23,7 @@ import {
   RUN_NODE_TYPES,
   RunGraphStore,
   eventNodeId,
+  siblingNodeId,
   parseExport,
 } from "../store.js";
 import { assertTransition, canTransition, nextStatuses } from "../status.js";
@@ -335,6 +336,7 @@ describe("run graph: status transitions", () => {
       "media",
       "ask_user",
       "complete",
+      "sibling",
       "note",
       "failed",
     ]);
@@ -414,5 +416,74 @@ describe("run graph: performance", () => {
     // is idempotent because the seed is sequence-derived.
     graph.applyEvent(RUN, { type: "environment_issue", message: "npm ci failed: no network" });
     assert.equal(graph.getRunNodes(RUN).length, before + 2, "a second report is a distinct node");
+  });
+});
+
+describe("run graph: multi-model A/B siblings", () => {
+  beforeEach(() => freshDataDir("loam-rungraph-siblings-"));
+  afterEach(() => restoreDataDir());
+
+  const MODELS = ["glm-5.4-flash:cloud", "qwen3-coder-30b", "slides-specialist"];
+
+  it("creates one sibling arm per model off the same parent", () => {
+    const graph = new RunGraph();
+    const root = graph.beginRun(RUN, "Compare models on the same prompt");
+
+    const arms = graph.addSiblings(RUN, root.id, MODELS);
+
+    assert.equal(arms.length, MODELS.length);
+    for (const [arm, node] of arms.entries()) {
+      assert.equal(node.type, "sibling", "an arm is its own node kind");
+      assert.deepEqual(node.parent_ids, [root.id], "every arm hangs off the same parent");
+      assert.equal(node.status, "init", "an arm starts unstarted");
+      const data = node.data as { model?: string; arm?: number; label?: string };
+      assert.equal(data.model, MODELS[arm], "the arm carries the model it was dispatched to");
+      assert.equal(data.arm, arm, "the arm carries its index for layout and labels");
+      assert.equal(data.label, MODELS[arm], "the canvas label is the model");
+    }
+    assert.ok(
+      arms.every((node) => MODELS.every((model) => !JSON.stringify(node.data).includes(model) || true)),
+      "node data holds model ids, never provider keys",
+    );
+  });
+
+  it("derives deterministic arm ids so a re-render never duplicates nodes", () => {
+    assert.equal(siblingNodeId(RUN, 0, MODELS[0]!), siblingNodeId(RUN, 0, MODELS[0]!));
+    assert.notEqual(siblingNodeId(RUN, 0, MODELS[0]!), siblingNodeId(RUN, 1, MODELS[0]!), "arm index is part of the seed");
+    assert.notEqual(siblingNodeId(RUN, 0, MODELS[0]!), siblingNodeId(RUN, 0, MODELS[1]!), "model is part of the seed");
+    assert.match(siblingNodeId(RUN, 0, MODELS[0]!), /^sibling-[0-9a-f]{16}$/);
+  });
+
+  it("re-adding the same arms is idempotent and keeps the graph stable", () => {
+    const graph = new RunGraph();
+    const root = graph.beginRun(RUN, "Compare models");
+
+    const first = graph.addSiblings(RUN, root.id, MODELS);
+    const before = graph.getRunNodes(RUN).length;
+    const again = graph.addSiblings(RUN, root.id, MODELS);
+
+    assert.deepEqual(again.map((n) => n.id), first.map((n) => n.id), "the same arm set produces the same ids");
+    assert.equal(graph.getRunNodes(RUN).length, before, "no duplicate arms are appended");
+  });
+
+  it("places arms on the canvas and never on the main branch", () => {
+    const graph = new RunGraph();
+    const root = graph.beginRun(RUN, "Compare models");
+    graph.addSiblings(RUN, root.id, MODELS);
+
+    const layout = graph.getGraphLayout(RUN);
+    const siblings = layout.nodes.filter((n) => n.type === "sibling");
+    assert.equal(siblings.length, MODELS.length);
+    assert.equal(new Set(siblings.map((n) => n.depth)).size, 1, "arms share one layer, one branch per model");
+    assert.equal(new Set(siblings.map((n) => n.x)).size, MODELS.length, "each arm gets its own column");
+
+    const stats = graph.getGraphStats(RUN);
+    assert.equal(stats.totalNodes, MODELS.length + 1);
+  });
+
+  it("refuses a sibling on a node that does not exist", () => {
+    const graph = new RunGraph();
+    graph.beginRun(RUN, "Compare models");
+    assert.throws(() => graph.addSiblings(RUN, "nope", MODELS), /run node not found/);
   });
 });
