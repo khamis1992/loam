@@ -3,7 +3,7 @@ import path from "node:path";
 import http from "node:http";
 import { randomUUID, createHash } from "node:crypto";
 import { chromium, type Browser } from "playwright";
-import { ROOT, UI_DIR, type Config } from "../config.js";
+import { ROOT, rootAsset, UI_DIR, type Config } from "../config.js";
 import { readScene, validateGlbAsset } from "../creative/store.js";
 import { resolveRead, resolveWrite } from "../policy/paths.js";
 import type { OllamaClient } from "../ollama.js";
@@ -64,7 +64,7 @@ export async function verifyCreative(o: { cfg: Config; ollama: OllamaClient; req
         let file: string;
         if (p.startsWith("/vendor/three/")) {
           const addon = p.startsWith("/vendor/three/addons/");
-          const base = path.join(ROOT, "node_modules", "three", addon ? "examples/jsm" : "build");
+          const base = rootAsset("node_modules", "three", addon ? "examples/jsm" : "build");
           file = resolveRead(base, p.slice(addon ? 21 : 14), false);
         } else {
           if (!/^\/[a-zA-Z0-9_./-]+\.(?:js|css)$/.test(p)) { res.writeHead(404).end(); return; }
