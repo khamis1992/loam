@@ -137,6 +137,7 @@ function turn(overrides: Partial<AgentTurnEvent> = {}): AgentTurnEvent {
     stance: 0.5,
     purchaseIntent: 0.5,
     reasons: ["curious"],
+    sharedWith: [],
     ok: true,
     latencyMs: 12,
     ...overrides,
@@ -175,7 +176,26 @@ describe("validateAgentTurn", () => {
       stance: 1,
       purchaseIntent: 0,
       reasons: ["trust"],
+      sharedWith: [],
     });
+  });
+
+  it("records share provenance in sharedWith and defaults it to empty", () => {
+    const withProvenance = validateAgentTurn({
+      action: "share",
+      text: "look at this",
+      stance: 0.4,
+      purchaseIntent: 0.7,
+      sharedWith: ["p1", "p2"],
+    });
+    assert.deepEqual(withProvenance.sharedWith, ["p1", "p2"]);
+
+    const withoutProvenance = validateAgentTurn({ action: "post", text: "hi", stance: 0, purchaseIntent: 0 });
+    assert.deepEqual(withoutProvenance.sharedWith, []);
+
+    // The alternate field name the model sometimes uses is accepted too.
+    const alt = validateAgentTurn({ action: "comment", text: "hi", stance: 0, purchaseIntent: 0, shared_with: ["p9"] });
+    assert.deepEqual(alt.sharedWith, ["p9"]);
   });
 
   it("accepts alternate field names the model sometimes uses", () => {
