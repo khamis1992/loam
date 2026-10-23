@@ -47,10 +47,10 @@ import { createDesignLintTools } from "./tools/designLint.js";
 import { createDesignAssetsTools } from "./tools/designAssets.js";
 import { createDesignBriefTools } from "./tools/designBrief.js";
 import { createDesignAutofixTools } from "./tools/designAutofix.js";
+import { createUiExamplesTools } from "./tools/uiExamples.js";
 import { createDesignCritiqueTools } from "./tools/designCritique.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
 import { createWorkflowTools } from "./tools/workflow.js";
-import { createFanoutTool } from "./tools/fanout.js";
 import { applyPlanApprovalGate, applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
 import { applyAskUserGate, createAskUserTools } from "./tools/askUserTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
@@ -66,6 +66,7 @@ import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { runAgent } from "./agent/loop.js";
 import { isOutputType, modelAbChain, normalizeEffort, type EffortLevel } from "./llm/router.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
+import { writeCheckpoint } from "./agent/checkpointLog.js";
 import type { Emit } from "./agent/events.js";
 import { applyRunEvent, beginRun } from "./agent/runGraphAdapter.js";
 import { OllamaClient } from "./ollama.js";
@@ -157,7 +158,6 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createBrowserOperatorTools());
   rt.registry.registerAll(createDeepResearchTools());
   rt.registry.register(createWideResearchTool({ ollama: rt.ollama, parentRegistry: rt.registry }));
-  rt.registry.register(createFanoutTool({ ollama: rt.ollama, parentRegistry: rt.registry }));
   rt.registry.registerAll(createFindAndEditTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createGroupTools());
   rt.registry.registerAll(createBackendScaffoldTools());
@@ -173,6 +173,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createDesignAssetsTools());
   rt.registry.registerAll(createDesignBriefTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createDesignAutofixTools());
+  rt.registry.registerAll(createUiExamplesTools());
   rt.registry.registerAll(createDesignCritiqueTools(rt.preview, { ollama: rt.ollama }));
   rt.registry.registerAll(createConnectorTools());
   rt.registry.registerAll(createWorkflowTools({ ollama: rt.ollama, registry: rt.registry }));
@@ -561,10 +562,24 @@ async function main(): Promise<void> {
         // D19 compute budget: shared with the UI badge so the counters and the
         // badge always agree, and the run stops when the ceiling is hit.
         budget: sessionRuntime.getBudget(task),
+        // O5: the durable event log is keyed by the task id (the protocol store
+        // binds a session to its task, and `session_events` outlives the JSON
+        // session cache). Setting this makes every tool call in this run append a
+        // `started` row before it runs and a terminal row after.
+        eventLogSession: task,
       };
       const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
         ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint, lifecycleHooks: true,
-        saveCheckpoint: (checkpoint) => { opts.savedRun.checkpoint = checkpoint; saveRun(task, opts.savedRun, opts.lease); },
+        saveCheckpoint: (checkpoint) => {
+          // O5: mirror the checkpoint into the durable append-only log and stamp it
+          // with the sequence it received. The stamp is what ties a resumed run to
+          // its log position, and `logSessionId` is what lets recovery ask the log
+          // whether a tool call started without ever reaching a terminal row.
+          checkpoint.logSeq = writeCheckpoint(task, checkpoint, task);
+          checkpoint.logSessionId = task;
+          opts.savedRun.checkpoint = checkpoint;
+          saveRun(task, opts.savedRun, opts.lease);
+        },
       }) : await runAgent(agentOpts);
       // The orchestrator can swallow an abort (it reports a failed step instead),
       // so treat a cancelled run explicitly — never as success.

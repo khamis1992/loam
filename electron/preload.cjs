@@ -15,6 +15,7 @@ function invoke(ns, method, args) {
 const apis = {
   auth: {
     getToken: (...args) => invoke("auth", "getToken", args),
+    localSignIn: (...args) => invoke("auth", "localSignIn", args),
     setToken: (...args) => invoke("auth", "setToken", args),
     removeToken: (...args) => invoke("auth", "removeToken", args),
     notifyLoginSuccess: (...args) => invoke("auth", "notifyLoginSuccess", args),
@@ -76,6 +77,10 @@ const apis = {
   },
   diagnosticLogs: {
     collect: (...args) => invoke("diagnosticLogs", "collect", args),
+  },
+  // J6 local debug surface: per-process RSS only (main + renderers + server).
+  debugMemory: {
+    snapshot: (...args) => invoke("debugMemory", "snapshot", args),
   },
   desktopActivityIndicator: {
     getState: (...args) => invoke("desktopActivityIndicator", "getState", args),

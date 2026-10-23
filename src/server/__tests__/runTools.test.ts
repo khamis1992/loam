@@ -152,6 +152,8 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll((await import("../../tools/designLint.js")).createDesignLintTools()); // V4 token linter
     registry.register(dummy("design_brief")); // V7 LLM-authored design brief (always-on grant)
     registry.register(dummy("design_autofix")); // V5 deterministic design repair pass (always-on grant)
+    // V8: the Loam UI Kit block search ships as always-on, so register the real tool.
+    registry.registerAll((await import("../../tools/uiExamples.js")).createUiExamplesTools());
     // V11: the vision rubric ships as an always-on tool, so register the real one.
     const { createDesignCritiqueTools } = await import("../../tools/designCritique.js");
     registry.registerAll(createDesignCritiqueTools({ status: { running: false, url: null, root: null, requests: 0, startedAt: null } } as never, { ollama: ollamaStub }));
