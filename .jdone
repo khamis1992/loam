@@ -1024,3 +1024,36 @@ side.
 - HEAD `00e7be6` (tenth-pass record) at the time these checks ran; `.jdone` is
   appended below and committed. Working tree clean (`git status --porcelain
   --untracked-files=all` = 0; no untracked files) after the isolation run.
+
+## Independent re-validation (2026-10-23, twelfth pass)
+
+This pass verified the server-side wiring that the earlier passes only asserted at
+the source level: route dispatch order, secret handling, and registry registration.
+
+- **Route dispatch order, exact.** In `src/server/http.ts` the four handlers are
+  dispatched in this order: `handleProjectContextRoutes` (`:1792`), then
+  `handleEnvBuildRoutes` (`:1794`, D3), then `handlePlaybookRoutes` (`:1796`,
+  parity), then `handleWikiRoutes` (`:1798`, parity). The imports sit at `:101-106`.
+  So D3's env routes and parity's playbooks/wiki routes all dispatch, with no
+  handler shadowing another.
+- **Secrets are resolved server-side through the existing vault module.** D3 does
+  not implement its own secret store. `src/tools/envSnapshot.ts:47` imports
+  `planVaultEnv`, `redactVaultValues`, `vaultRef`, `vaultScope` from
+  `./vaultTools.js`, and uses `vaultScope(...)` at `:660` (build) and `:955` (status
+  build). This matches the task rule "EXTEND existing modules; do not create
+  duplicates" and keeps secret values out of the blueprint file (names only).
+  `src/tools/vaultTools.ts` is tracked and present.
+- **Both tools are registered at runtime, in order.** `src/setup/runtime.ts:109`
+  calls `registry.registerAll(createEnvSnapshotTools())`, positioned after the
+  parity registrations (`createVaultTools()` `:80`, `createWikiTools()` `:85`,
+  `createLoamTools()` `:108`) and before `createLoamServiceTools()` (`:110`). So the
+  D3 tools join the same registry parity uses.
+- **The route module depends on D3 internals, not a copy.** `src/server/routes/
+  envBuilds.ts` imports 10 symbols from `../../tools/envSnapshot.js` and
+  `getProject` from `../db.js`, reusing the builder rather than reimplementing it.
+
+### Final state
+
+- HEAD `cf65d48` (eleventh-pass record) at the time these checks ran; `.jdone` is
+  appended below and committed. Working tree clean (`git status --porcelain
+  --untracked-files=all` = 0). `src/tools/vaultTools.ts` tracked and present.
