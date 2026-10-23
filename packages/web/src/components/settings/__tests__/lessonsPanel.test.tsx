@@ -103,6 +103,17 @@ describe('LessonsPanel', () => {
     expect(screen.getAllByText('Domain:').length).toBe(2);
     expect(screen.getByText('nutrio-content')).toBeInTheDocument();
     expect(screen.getAllByText('Delete').length).toBe(2);
+    // Source/confidence are machine enums, so they must be rendered through the
+    // per-locale label map. Asserting the English words here is what catches a
+    // panel that hardcodes one locale: the Arabic-only test used to pass while
+    // the English UI showed Arabic.
+    expect(screen.getAllByText('Source:').length).toBe(2);
+    expect(screen.getByText('User correction')).toBeInTheDocument();
+    expect(screen.getByText('Critic review')).toBeInTheDocument();
+    expect(screen.getByText('High')).toBeInTheDocument();
+    expect(screen.getByText('Low')).toBeInTheDocument();
+    expect(screen.queryByText('correction')).not.toBeInTheDocument();
+    expect(screen.queryByText('critic')).not.toBeInTheDocument();
   });
 
   it('sends a DELETE for the row and removes it from the list', async () => {
@@ -177,5 +188,13 @@ describe('LessonsPanel', () => {
     // The Arabic source label is rendered, not left as the raw enum value.
     expect(screen.getByText('تصحيح المستخدم')).toBeInTheDocument();
     expect(screen.queryByText('correction')).not.toBeInTheDocument();
+    expect(screen.queryByText('User correction')).not.toBeInTheDocument();
+    expect(screen.getByText('مراجعة الناقد')).toBeInTheDocument();
+    expect(screen.getByText('عالية')).toBeInTheDocument();
+    expect(screen.getByText('منخفضة')).toBeInTheDocument();
+    // Neither locale may leak the other's labels or the raw enum.
+    expect(screen.queryByText('Critic review')).not.toBeInTheDocument();
+    expect(screen.queryByText('High')).not.toBeInTheDocument();
+    expect(screen.queryByText('critic')).not.toBeInTheDocument();
   });
 });

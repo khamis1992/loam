@@ -24309,3 +24309,122 @@ because a caller may pass a full target), and two component-test assertions move
   surface added here is the part H9 depends on; the capture hook is the remaining H8 work
   and is the next thing to do before the learning loop can be observed end to end.
 
+# H9 validation round 2: three real defects found in the H9/H8 delivery, all fixed
+
+Independent re-validation of the H9 `LessonsPanel` plus the H8 REST surface delivered in
+`aa52eb5` / `bb0c7e8`. The first pass reported these as done and green; this pass re-derived
+the claims from the artifacts and found three defects the first pass missed. All three are
+fixed in this session.
+
+## Re-verified and confirmed correct (no change needed)
+
+- Merge `a99668f` resolved the tracked rollup as a strict line-level union: 0 lines
+  under-present from either parent, 0 conflict markers, and the working tree is
+  byte-identical to `HEAD:.jdone`.
+- Branch `khamis1992/h2-h8` carries no deliverable (H2 and merge commits only, no learning
+  route), so building the H8 surface inside H9 was the right call.
+- The authoritative spec is `.h2-ref/BUILD_SPEC.md` (443 lines). `docs/BUILD_SPEC.md` has no
+  learning section at all, so it is not the spec the H9 report cites.
+- `src/server/http.ts` dispatches the learning routes before the pre-existing inline
+  `GET /api/learning` audit-log handler, and that audit handler still answers.
+- Live end-to-end against the real server (`src/index.ts`) on a throwaway data dir, seeding
+  lessons and a correction through the real store and exercising the surface over HTTP:
+  13/13 checks passed (list; vector and dim stripping; Arabic UTF-8 round-trip; domain and
+  agentId filtering; PATCH 200/400/404; corrections by taskId; audit log; an unrelated path;
+  settings round-trip; DELETE 204/404; persistence across restart). This needed
+  `LOAM_AUTH_DISABLED=true`, the same pattern the repo's own live checks use.
+
+## Defect 1 - the panel hardcoded Arabic, so the English UI rendered Arabic
+
+`LessonsPanel.tsx` held six Arabic literals in two maps: the three `SOURCE_LABELS` values
+and the three `CONFIDENCE_LABELS` values. They were not locale-aware, so with the locale set
+to English the panel still printed the Arabic words. The existing test only asserted the
+Arabic locale, which is exactly why it passed while English was broken.
+
+Fix: both maps became `Record<..., Record<Locale, string>>` with `en` and `ar` entries, read
+through a `localeLabel()` helper that uses `getLocale()` and falls back to English then the
+raw value. This is the same `{ en, ar }` plus `getLocale()` shape the repo already uses in
+`EffortPanel` and `agentLabels.ts`; the prose catalog was not used because its keys are
+English sentences and these are machine enum values. `StoreProvider` remounts the tree on a
+locale change (`<div key={locale}>`), so the render-time `getLocale()` read is correct
+rather than stale.
+
+Proven by falsification, not by inspection: `localeLabel` was temporarily changed to always
+return the Arabic entry, the panel test was run, and the new English assertion failed with
+"Unable to find an element with the text: User correction" (1 failed, 5 passed). The fix was
+then restored and the file's sha256 was confirmed identical to the pre-experiment backup
+(`eee4d102d461c7877782d7dd730c31c97fafe705404bb63bd256d43b7aa60bc1`).
+
+## Defect 2 - the commit added duplicate and unused catalog keys
+
+`aa52eb5` added 20 key lines to `en.json` and `ar.json`, but two of them (`Source` and
+`Delete`) duplicated keys that already existed for other pages (marketplace, knowledge
+garden, skills, playbooks, automations, and more). The raw text therefore held 938 key lines
+with 2 duplicate names, while the distinct-key count stayed at 936. Four further keys added
+by the commit (`Cue`, `Lesson`, `Evidence`, `Failed to delete lesson`) had no consumer
+anywhere in `packages/web/src`.
+
+The original H9 report's claim "936 keys each, 0 missing in either direction, 0 duplicates"
+was wrong on duplicates because the check read the catalog through `JSON.parse`, which
+silently collapses duplicate keys to the last value. A raw-text scan is required to see
+them; that is why the first pass missed it.
+
+Fix: the 2 duplicate copies and the 4 unused keys were removed from both locales. Verified
+mechanically against `aa52eb5^`, `aa52eb5` and `HEAD`: the catalogs now hold 932 distinct
+keys each, no duplicate key names in the raw text, 0 missing in either direction, both
+parse, and both remain pure CRLF with no BOM.
+
+## Defect 3 - the test only asserted one locale
+
+`lessonsPanel.test.tsx` asserted the Arabic render only, so it could not catch Defect 1. The
+English test now also asserts the source and confidence labels (`User correction`,
+`Critic review`, `High`, `Low`) and that the raw enum values (`correction`, `critic`) are
+absent. The Arabic test now asserts the remaining Arabic labels and that no English label
+leaks into it. Both locales are therefore pinned in both directions, which is what turns the
+earlier silent break into a hard failure.
+
+## Gates re-run on the fixed tree (all green)
+
+| Gate | Result |
+|---|---|
+| `npx tsc --noEmit` | pass (exit 0, no output) |
+| `(cd packages/web && npx tsc --noEmit)` | pass (exit 0, no output) |
+| `npm run build:server` | pass (`server bundle + pdf worker written to dist/`) |
+| `(cd packages/web && npx next build)` | pass (compiled, 25/25 static pages) |
+| `(cd packages/web && npx vitest run)` | 93 files / 637 tests passed |
+| `node --import tsx --test src/learning/harness/__tests__/*.test.ts src/server/__tests__/learningRoutes.test.ts` | 80 tests / 80 pass / 0 fail |
+| `npm run check:encoding` | `OK (no BOM, no mojibake, all JSON valid)` |
+
+The strengthened panel test passes 6/6. No existing test was weakened, deleted or skipped,
+and no assertion was relaxed: the only test edits add assertions.
+
+## Files changed by this session
+
+- `packages/web/src/components/settings/LessonsPanel.tsx` - locale-aware source and
+  confidence labels (Defect 1).
+- `packages/web/src/components/settings/__tests__/lessonsPanel.test.tsx` - English and
+  cross-locale assertions (Defect 3).
+- `packages/web/src/i18n/en.json`, `packages/web/src/i18n/ar.json` - 2 duplicate copies and
+  4 unused keys removed from each (Defect 2).
+- `.jdone` - this report.
+
+No agent or system instruction was touched, nothing was auto-approved, no secret was
+committed, no test was weakened, and no forbidden path was staged. No push, no
+`reset --hard`, no discarded changes. The temporary verification scripts used for this pass
+were deleted; the working tree holds only the four intended source changes.
+
+## Observations and seams (not fixed here)
+
+- **`lessonsAutoApply` still has no production consumer.** The setting is persisted and the
+  panel toggles it, but nothing in the task path reads it: no production caller of
+  `detectCorrection` or `recordCorrection` exists on this branch, so the H5 injection half is
+  absent and no lesson is learned outside tests. The panel and the REST surface are complete;
+  the capture hook and the injector are the remaining H2/H5 work before the loop can be
+  observed end to end.
+- **Pre-existing, out of scope:** `packages/web/src/i18n/lint.mjs` fails at startup with
+  `The "path" argument must be of type string. Received an instance of URL` (it passes a
+  `URL` to `path.join`). It was committed in `89c49f9` (a06), is unmodified by this session,
+  and is referenced by no npm script or test, so it is not a gate this branch runs. The
+  repo's real i18n enforcement is `packages/web/src/i18n/__tests__/` plus the root encoding
+  check, both green. Flagged rather than fixed to avoid scope creep.
+

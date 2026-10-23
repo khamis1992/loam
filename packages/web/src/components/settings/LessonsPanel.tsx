@@ -16,32 +16,43 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, GraduationCap, Loader2, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
-import { t } from '@/i18n/t';
+import { getLocale, t, type Locale } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { deleteLesson, listLessons, type Lesson } from '@/services/lessonsApi';
 import { Row, Section } from './SettingsDialog';
 import { Button } from '@/components/ui/Button';
 
-const SOURCE_LABELS: Record<Lesson['source'], string> = {
-  correction: 'تصحيح المستخدم',
-  critic: 'مراجعة الناقد',
-  selfplay: 'اللعب الذاتي',
+/**
+ * Source and confidence are machine vocabulary, not prose: the store only ever
+ * emits these three values each. They still need a label per locale, so they use
+ * the same `{ en, ar }` + `getLocale()` shape as `EffortPanel`/`agentLabels`
+ * rather than the prose catalog (whose keys are English sentences).
+ */
+const SOURCE_LABELS: Record<Lesson['source'], Record<Locale, string>> = {
+  correction: { en: 'User correction', ar: 'تصحيح المستخدم' },
+  critic: { en: 'Critic review', ar: 'مراجعة الناقد' },
+  selfplay: { en: 'Self-play', ar: 'اللعب الذاتي' },
 };
 
-const CONFIDENCE_LABELS: Record<Lesson['confidence'], string> = {
-  low: 'منخفضة',
-  medium: 'متوسطة',
-  high: 'عالية',
+const CONFIDENCE_LABELS: Record<Lesson['confidence'], Record<Locale, string>> = {
+  low: { en: 'Low', ar: 'منخفضة' },
+  medium: { en: 'Medium', ar: 'متوسطة' },
+  high: { en: 'High', ar: 'عالية' },
 };
 
-/** Source labels are Arabic-only: a lesson's source is machine vocabulary, not a
- *  string we want to translate, and the store only ever emits these three. */
+/** Read a label in the active locale, falling back to English then the raw value. */
+function localeLabel(map: Record<Locale, string>, fallback: string): string {
+  return map[getLocale()] ?? map.en ?? fallback;
+}
+
 function sourceLabel(source: Lesson['source']): string {
-  return SOURCE_LABELS[source] ?? source;
+  const map = SOURCE_LABELS[source];
+  return map ? localeLabel(map, source) : source;
 }
 
 function confidenceLabel(confidence: Lesson['confidence']): string {
-  return CONFIDENCE_LABELS[confidence] ?? confidence;
+  const map = CONFIDENCE_LABELS[confidence];
+  return map ? localeLabel(map, confidence) : confidence;
 }
 
 function formatDate(iso: string): string {
