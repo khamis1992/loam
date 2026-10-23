@@ -6890,6 +6890,17 @@ dedup-based attempt that split a report block mid-section and lost content was
 abandoned in favour of the plain marker-strip, which is the correct keep-both rule.
 No source file, test, prompt or manifest was edited by the resolution.
 
+`refs/heads/manus-parity` moved AGAIN while this session was running, to `26befe6`
+(neo N10: output-type/effort routing with multi-model A/B siblings). That commit
+**deleted** the tracked rollup `.jdone` outright (698 lines removed), so the re-merge
+against `26befe6` produced a *modify/delete* conflict on `.jdone` rather than an
+add/add one. Keeping both sides here means keeping HEAD's version: parity's side of
+this conflict is an intentional deletion, and HEAD's side already holds the complete
+union of every earlier report. The working file is byte-identical to the pre-merge
+HEAD version (6957 lines, 0 markers, Arabic intact, CRLF), and the base blob
+`:1:` is preserved with **0 non-empty lines missing**. No report content was lost
+and no report content was invented.
+
 ## The two real merge intersections, checked line by line
 Two files were edited on both sides, so the auto-merge was verified rather than assumed:
 
