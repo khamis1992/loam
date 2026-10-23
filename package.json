@@ -81,6 +81,7 @@
     "test:bench": "node --import tsx --test bench/__tests__/fakeModel.test.ts bench/__tests__/rssSampler.test.ts bench/__tests__/memBench.test.ts"
   },
   "dependencies": {
+    "@jitl/quickjs-singlefile-cjs-release-sync": "^0.32.0",
     "@modelcontextprotocol/sdk": "^1.17.0",
     "@modelcontextprotocol/server-filesystem": "^1.0.0",
     "@modelcontextprotocol/server-memory": "^1.0.0",
@@ -96,6 +97,7 @@
     "pdf-parse": "^2.4.5",
     "playwright": "^1.49.0",
     "pptxgenjs": "^4.0.1",
+    "quickjs-emscripten-core": "^0.32.0",
     "sharp": "^0.35.5",
     "socket.io": "^4.8.1"
   },
