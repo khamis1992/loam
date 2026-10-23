@@ -50,7 +50,12 @@ async function readJson(req: http.IncomingMessage, maxBytes = 64_000): Promise<R
   });
 }
 
-/** Plan-approval routes. Dispatch before generic handlers; scoped to /api/plan-approvals. */
+/** Plan-approval routes. Dispatch before generic handlers; scoped to /api/plan-approvals.
+ *
+ * Unhandled verbs and paths that are not ours return `false` so the server
+ * falls through to its normal handlers: answering `true` here would leave the
+ * request without a response (a PUT to a plan id would hang until the client
+ * times out). */
 export async function handlePlanApprovalRoutes(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -65,8 +70,9 @@ export async function handlePlanApprovalRoutes(
     return true;
   }
 
-  const idMatch = p.match(/^\/api\/plan-approvals\/(.+)$/);
-  if (!idMatch) return true;
+  const idMatch = p.match(/^\/api\/plan-approvals\/([^/]+)$/);
+  // Not a path this module owns (sibling prefix, trailing slash): fall through.
+  if (!idMatch) return false;
 
   const id = decodeURIComponent(idMatch[1]!);
 
@@ -112,5 +118,7 @@ export async function handlePlanApprovalRoutes(
     return true;
   }
 
-  return true;
+  // GET and POST are the only supported verbs; anything else falls through so the
+  // request gets the server's normal 404 instead of hanging without a response.
+  return false;
 }

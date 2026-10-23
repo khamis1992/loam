@@ -149,7 +149,16 @@ export async function waitForPlanDecision(
 ): Promise<PlanApprovalStatus> {
   const until = Date.now() + timeoutMs;
   for (;;) {
-    if (signal?.aborted) return "rejected";
+    if (signal?.aborted) {
+      const cancelled = pendingPlans.get(id);
+      if (cancelled && cancelled.status === "pending") {
+        cancelled.status = "rejected";
+        cancelled.decidedAt = new Date().toISOString();
+        pendingPlans.delete(id);
+        resolveWaiters(cancelled);
+      }
+      return "rejected";
+    }
     const record = pendingPlans.get(id);
     if (!record) return "rejected";
     expire(record);

@@ -421,5 +421,107 @@ describe("plan approval gate (D4)", () => {
       const again = await callRoutes("POST", `/api/plan-approvals/${pending!.id}`, { decision: "approve" });
       assert.equal(again.res.status, 409);
     });
+
+    it("falls through for verbs and paths it does not own instead of hanging", async () => {
+      const taskId = "task_route_fallthrough";
+      const { gated } = buildGatedRegistry(taskId, ["suggest_plan"]);
+      const suggestion = gated.exec("suggest_plan", { summary: "Add a test" }, makeCtx(taskId));
+      const pending = await waitForPending(taskId);
+      assert.ok(pending);
+
+      // Claiming these would leave the request with no response at all, so the
+      // module must decline and let the server answer with its normal 404.
+      for (const method of ["PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"]) {
+        const unsupported = await callRoutes(method, `/api/plan-approvals/${pending!.id}`, { decision: "approve" });
+        assert.equal(unsupported.handled, false, `${method} must not be claimed by the route`);
+        assert.equal(unsupported.res.status, 0, `${method} must not write a response`);
+      }
+      for (const url of [
+        "/api/plan-approvals/",
+        `/api/plan-approvals/${pending!.id}/extra`,
+        "/api/plan-approvals-other/plan_1",
+        "/api/other/plan_approvals",
+      ]) {
+        const unowned = await callRoutes("GET", url);
+        assert.equal(unowned.handled, false, `${url} must not be claimed by the route`);
+        assert.equal(unowned.res.status, 0, `${url} must not write a response`);
+      }
+
+      // None of the declined calls decided anything.
+      assert.equal(store.getPlanApproval(pending!.id)?.status, "pending");
+      store.decidePlanApproval(pending!.id, { decision: "approve" });
+      await suggestion;
+    });
+  });
+
+  describe("concurrent plans for one task", () => {
+    /** The pending plans registered for a task, oldest first. */
+    function pendingFor(taskId: string) {
+      return store.listPlanApprovals(true).filter((record) => record.taskId === taskId);
+    }
+
+    it("keeps a second plan pending when the first is decided", async () => {
+      const taskId = "task_two_plans";
+      const { gated, calls } = buildGatedRegistry(taskId, ["file_write", "suggest_plan"]);
+      const ctx = makeCtx(taskId);
+
+      // The model presents a second plan while the first is still on the card.
+      const first = gated.exec("suggest_plan", { summary: "First plan", files_to_edit: ["a.ts"] }, ctx);
+      const firstPending = await waitForPending(taskId);
+      assert.ok(firstPending);
+      const second = gated.exec("suggest_plan", { summary: "Second plan", files_to_edit: ["b.ts"] }, ctx);
+      let secondPending: (typeof firstPending) | undefined;
+      for (let i = 0; i < 200 && !secondPending; i++) {
+        secondPending = pendingFor(taskId).find((record) => record.id !== firstPending!.id);
+        if (!secondPending) await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      assert.ok(secondPending, "the second plan must register too");
+
+      // Either plan still blocks mutations.
+      const blocked = await gated.exec("file_write", { path: "a.ts", content: "x" }, ctx);
+      assert.equal(blocked.ok, false);
+      assert.deepEqual(calls, []);
+
+      // Deciding the first must wake only its own waiter.
+      let secondSettled = false;
+      void second.then(() => {
+        secondSettled = true;
+      });
+      store.decidePlanApproval(firstPending!.id, { decision: "approve" });
+      assert.match((await first).content, /Plan approved/);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      assert.equal(secondSettled, false, "the second plan must still be awaiting its decision");
+      assert.equal((await gated.exec("file_write", { path: "a.ts", content: "x" }, ctx)).ok, false);
+
+      store.decidePlanApproval(secondPending!.id, { decision: "approve" });
+      assert.match((await second).content, /Plan approved/);
+      assert.equal((await gated.exec("file_write", { path: "a.ts", content: "x" }, ctx)).ok, true);
+      assert.deepEqual(calls, ["file_write"]);
+    });
+
+    it("clears the pending plan when the run is cancelled", async () => {
+      const taskId = "task_cancelled";
+      const { gated, calls } = buildGatedRegistry(taskId, ["file_write", "suggest_plan"]);
+      const controller = new AbortController();
+      const ctx = { ...makeCtx(taskId), signal: controller.signal };
+
+      // The wait polls on an unref'd timer, so hold the loop open across the abort.
+      const keepAlive = setInterval(() => {}, 25);
+      try {
+        const suggestion = gated.exec("suggest_plan", { summary: "Will be cancelled" }, ctx);
+        assert.ok(await waitForPending(taskId));
+        controller.abort();
+
+        const result = await suggestion;
+        assert.equal(result.ok, false);
+        assert.match(result.content, /not approved/);
+        // A cancelled plan must not keep blocking the task for the rest of the TTL.
+        assert.equal(store.pendingPlanForTask(taskId), undefined);
+        assert.equal((await gated.exec("file_write", { path: "a.ts", content: "x" }, ctx)).ok, true);
+        assert.deepEqual(calls, ["file_write"]);
+      } finally {
+        clearInterval(keepAlive);
+      }
+    });
   });
 });
