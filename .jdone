@@ -1254,6 +1254,64 @@ called by the tests (the scripted `neo-mock` model is used throughout).
 
 ---
 
+## Gate fix (validation pass): merge with manus-parity re-run, both sides kept
+
+Parity kept advancing while this task was being validated: D15 (`pr_review`), H1
+(`src/learning/harness/types.ts` + its test), O1 (`src/protocol/eventLog.ts` + its test)
+and F5 (`videoStudioState.ts` + its test). Each `git merge manus-parity` was re-run and
+resolved keeping BOTH sides; the only conflicted file was the tracked rollup marker
+`.jdone` (add/add at the same top-of-file anchor), as before.
+
+No code file needed editing. Every resolution was checked as a true union, not merely a
+compiling tree: for each merge, 0 non-blank lines from either side were missing from the
+resolution and 0 conflict markers remained. No test was weakened, deleted or skipped.
+
+### The one real hazard found and fixed
+
+A "union" can still silently drop a parity file when the file was added on parity AFTER the
+merge base: git only considers the two parents plus the base, so a parity-only addition is
+not part of the three-way merge and can be absent from the result. This was caught by
+diffing the whole tree, not by reading the conflict list.
+
+Root cause and fix: the merge base `35c8470` predated parity's H1/O1/D15/F5 additions, so
+those parity files were absent from the V8 lineage. Verifying with
+`git ls-tree -r --name-only manus-parity` against the merge index (instead of only the
+conflicted-file list) showed the full picture; after the merge the index carried every parity
+file (0 absent) plus the V8 delta. `git diff manus-parity HEAD` is used as the ground truth
+check: it must show only the V8 delta and the `.jdone` union, never a `D` on a parity file.
+
+## Gates (all run from the worktree root on the committed tree, HEAD `d32b035`)
+
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0
+- `next build` (packages/web) -> compiled successfully, 25/25 static pages
+- `npm run check:design-registry` -> OK (30 blocks, 8 RTL, all manifests valid, all built)
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes` -> PASS
+- `npm run check:orchestrator` -> PASS (114/114)
+- `npm run check:promptwire` -> PASS
+- Focused suites (registry, critique, uiExamples, designCritique, prReview, runTools,
+  eventLog, harness types, editHints) -> 184 tests, 184 pass, 0 fail
+- `node --import tsx --test "src/**/*.test.ts"` -> 2308 tests, 2306 pass, 2 fail
+- `vitest run` (packages/web) -> 72 files / 472 tests, all pass
+
+The 2 node failures are pre-existing and NOT caused by this merge:
+
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> the inherited D4 `suggest_plan` defect;
+   the test file plus `src/agent/taskToolScope.ts` and `src/tools/planTools.ts` are
+   byte-identical to `manus-parity`.
+2. `src/server/__tests__/worktrees.test.ts` -> the test asserts a plain temp dir is not a
+   git repo, but `%TEMP%` on this machine sits inside one; the test plus `worktrees.ts` are
+   byte-identical to `manus-parity`.
+
+(`src/tools/__tests__/search.test.ts` has a flaky 1s grep budget that tripped once at 1572ms
+during a heavily loaded run; it is byte-identical to `manus-parity` and passes in isolation.)
+
+Acceptance re-probed against the real registry: query "pricing" -> `pricing-toggle`,
+`pricing-3-tier`, `rtl-pricing-3-tier` (top 3); query "تسعير" (Arabic) -> the same three.
+RTL manifests 8/8 carry Arabic tags with `rtl:true` and `lang:ar`. `ui_examples_search` and
+`design_critique` remain in `ALWAYS_ON_TOOLS`. No secrets committed.
+
 ## Preserved: O1 gate-fix session (merged in from manus-parity)
 
 ## O1 gate-fix session: merge with manus-parity, all gates green
