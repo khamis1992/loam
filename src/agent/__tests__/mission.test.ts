@@ -447,6 +447,8 @@ async function runMission(options: {
   client: OllamaClient;
   resumeMission?: MissionCheckpoint;
   maxSteps?: number;
+  /** Also write each checkpoint to the app database, as `src/index.ts` does. */
+  persist?: boolean;
 }): Promise<MissionRunResult> {
   const events: AgentEvent[] = [];
   const checkpoints: MissionCheckpoint[] = [];
@@ -462,16 +464,31 @@ async function runMission(options: {
       mission: true,
       ...(options.resumeMission ? { resumeMission: options.resumeMission } : {}),
       ...(options.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
-      saveMissionCheckpoint: (checkpoint) => checkpoints.push(checkpoint),
+      saveMissionCheckpoint: (checkpoint) => {
+        checkpoints.push(checkpoint);
+        if (options.persist) missionCheckpoints.save(checkpoint);
+      },
       suppressFinal: true,
     });
   } catch (e) {
-    return { events, checkpoints, budget: options.budget, error: e instanceof Error ? e : new Error(String(e)) };
+    const error = e instanceof Error ? e : new Error(String(e));
+    // `src/index.ts` persists the stop's checkpoint from its catch block, since
+    // the loop throws before its own post-step save can run. Mirror that here or
+    // the durable record would be missing the reason the mission stopped.
+    if (options.persist && isMissionBudgetError(error)) {
+      missionCheckpoints.save(error.checkpoint);
+    }
+    return { events, checkpoints, budget: options.budget, error };
   }
   return { events, checkpoints, budget: options.budget };
 }
 
 describe("mission run end to end", () => {
+  // The restart case persists a checkpoint, so this suite needs its own data
+  // directory rather than the repo's real one.
+  beforeEach(() => freshDataDir("loam-mission-e2e-"));
+  afterEach(() => restoreDataDir());
+
   it("runs past the fixed step cap that bounds an ordinary run", async () => {
     // 45 tool steps is beyond the 40-step cap an ordinary run gets. A mission has
     // no cap, so the only thing that can end it is the script or the budget.
@@ -528,20 +545,29 @@ describe("mission run end to end", () => {
     assert.equal(result.budget.steps, 5, "no step ran past the ceiling");
   });
 
-  it("resumes at the checkpoint with the counters it already charged", async () => {
-    // A server restart: the process is gone, the budget object is gone, and all
-    // that survives is the checkpoint in the database. The mission must continue
+  it("resumes from the checkpoint the database kept after a server restart", async () => {
+    // A server restart: the process is gone, the budget object is gone, and the
+    // only thing that survives is the checkpoint row. The mission must continue
     // from the last completed step with the clock and spend already charged.
     const first = await runMission({
       budget: createMissionBudget({ steps: 10, tokens: 5_000_000, minutes: 60 }),
       client: stepScript(100),
+      persist: true,
     });
     const checkpoint = first.checkpoints.at(-1)!;
     assert.equal(checkpoint.lastStep, 10);
 
+    // Drop the connection and the process-wide graph, then read the checkpoint
+    // back the way a restarted process does: only from the durable store.
+    closeDb();
+    const stored = missionCheckpoints.load("task-mission-run");
+    assert.ok(stored, "the checkpoint outlives the run's own process state");
+    assert.equal(stored!.lastStep, 10, "the resume boundary is the last completed step");
+    assert.equal(stored!.endedReason, "budget");
+
     // Rebuild the budget the way a fresh process does: ceilings from config,
-    // counters from the checkpoint.
-    const resumed = missionBudgetFrom({ steps: 20, tokens: 5_000_000, minutes: 60 }, checkpoint.budget);
+    // counters from the stored checkpoint.
+    const resumed = missionBudgetFrom({ steps: 20, tokens: 5_000_000, minutes: 60 }, stored!.budget);
     assert.equal(resumed.steps, 10, "the counters come from the checkpoint");
     assert.equal(resumed.wallClockMs, checkpoint.budget.wallClockMs, "the clock does not restart");
     assert.equal(resumed.promptTokens, 1000, "the spend does not restart");
@@ -551,7 +577,7 @@ describe("mission run end to end", () => {
     const second = await runMission({
       budget: resumed,
       client: stepScript(4),
-      resumeMission: checkpoint,
+      resumeMission: stored,
     });
     assert.equal(second.error, undefined, "the resumed mission completes");
     assert.equal(second.budget.steps, 15, "10 carried + 5 more (4 tool steps + answer)");
