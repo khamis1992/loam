@@ -382,6 +382,23 @@ export class RunGraph {
           data: { approvalId: event.approvalId, tool: event.tool, summary: oneLine(event.summary, 300) },
           parent: state.lastId,
         }).id];
+      case "plan_approval_required":
+        // D4 suggest_plan: the plan waits for the user's decision, so it is an
+        // ask_user node just like the plan-mode approval card.
+        return [this.addNode(runId, state, {
+          type: "ask_user",
+          seed: `plan-approval:${event.planApprovalId}`,
+          status: "running",
+          data: {
+            approvalId: event.planApprovalId,
+            tool: event.tool,
+            summary: oneLine(event.summary, 300),
+            steps: event.steps,
+            filesToEdit: event.filesToEdit,
+            trivial: event.trivial,
+          },
+          parent: state.lastId,
+        }).id];
       case "compaction":
         return [this.addNode(runId, state, {
           type: "note",

@@ -34,3 +34,102 @@ check:encoding still flags the pre-existing scripts/repair-mojibake.cjs.
 Two pre-existing failures remain (codingPrompt masterPromptSha256 snapshot,
 craftStatus GET /api/craft/status line 86) - both reproduced identically at base
 088b4f2 in a throwaway worktree, so unrelated to D4. See .devin-done.
+
+---
+
+Merge note: this branch was merged with the latest manus-parity. The only
+conflict was this marker file (add/add: D4 vs the N20 marker); both sides are
+preserved below. The other three conflicts were mechanical import/field unions
+and were resolved by keeping both sides:
+- src/index.ts: `createWorkflowTools` (manus-parity) + the D4 plan-approval
+  import (`applyPlanApprovalGate`).
+- src/protocol/events.ts: `PlanApprovalRequestedEvent` + `CacheUsageEvent`.
+- src/server/settings.ts: `planApprovalSkipTrivial` + `location`.
+
+---
+
+# N20 - Offline long-horizon eval gate for Neo: done
+
+The gate is implemented, tested and recorded. All gates are green from the
+worktree root on commit `7975ac8`.
+
+## What N20 delivers
+
+- `src/neoEval/harness.ts`: runs one fixture through the **production** agent
+  loop (`runAgent`) with a scripted model. Produces the trace (steps, token
+  usage, tool calls, injected failures, recovered failures, appends), runs the
+  verifier script against the final answer, and scores it.
+- `src/neoEval/mockModel.ts`: deterministic scripted model. Replays a
+  `NeoScript` of `{ when, text, tool, citations }` turns, records every call
+  (requestId, attempt, message/tool counts, prompt/completion tokens), and
+  honours `when` guards by advancing the cursor past skipped turns.
+- `src/neoEval/mockClock.ts`: deterministic clock (step count, elapsed ms).
+- `src/neoEval/knowledge.ts`: seeded knowledge store + the citation extractor
+  (numbered markers resolved against declared seeds).
+- `src/neoEval/scoring.ts`: per-dimension scores (`completion`, `citation`,
+  `flatness`, `recovery`, `recurring`) with evidence strings, plus
+  `suiteResult` (pass bar 60, suite passes only when every case passes).
+- `src/neoEval/types.ts`: the fixture/case/trace contracts and
+  `NEO_HARNESS_VERSION`.
+- `evals/neo/fixtures.ts`: the ten long-horizon fixtures, each targeting a
+  distinct dimension (research-to-report, recurring-tracker,
+  long-document-assembly, kb-grounded-answer, tool-failure-recovery,
+  restart-from-step, step-budget, no-hallucinated-citations, deep-file-triage,
+  uninterrupted-baseline).
+- `src/scripts/eval-neo.ts`: the `npm run eval:neo` runner (`--list`, `--id`,
+  `--json`, `--record`) and the baseline regression guard.
+- `evals/neo/baseline.json`: the recorded baseline (see below).
+
+## Baseline and regression guard
+
+`evals/neo/baseline.json` is version-pinned to `NEO_HARNESS_VERSION`
+(`neo-eval-2`): 10/10 cases pass, suite total 100, bar 60. `compareBaseline`
+fails a run when a recorded case is missing, drops more than
+`BASELINE_TOLERANCE` (1) point, falls below the bar, or the suite stops
+clearing its own bar. A baseline recorded under a different harness version is
+not compared (its numbers are not comparable), and the guard is skipped for a
+single-fixture `--id` run. The version was bumped to `neo-eval-2` because the
+flatness band and recurring check were corrected, so `neo-eval-1` scores are
+not comparable.
+
+## Real bugs the tests exposed (fixed, not worked around)
+
+- `src/neoEval/harness.ts`: the harness's `observing` registry already injects
+  failures, so the mock's `onCall` hook was double-injecting **and**
+  double-recording calls. The mock is now built with `onCall: undefined`.
+- `src/neoEval/scoring.ts`: added flatness noise tolerance
+  (`flatToleranceRatio`, default 1.1) so small token wobble is not punished;
+  `scoreRecurring` now reads observed appends from the trace instead of the
+  fixture's own `count_min` expectation; `suiteResult([])` is now
+  `failed: 1, verdict: "fail"` (an empty suite is not a pass); `round2` added
+  to the flatness/recurring totals.
+- `src/neoEval/mockModel.ts`: `nextStep()` now advances the cursor past every
+  turn skipped by a `when` guard. Previously a guard that only became eligible
+  after the next call left the script exhausted and returned empty text.
+
+No test was weakened or deleted; no assertion was relaxed to make the gate
+green.
+
+## Gates (all run from the worktree root, on commit 7975ac8)
+
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run eval:neo`                          -> 10/10 cases pass, total 100
+- `node --import tsx --test src/neoEval/__tests__/{scoring,mockModel,harness,baseline}.test.ts`
+  -> tests 88, pass 88, fail 0
+  (scoring dimensions and suite totals; mock replay/`when` guards/`MockClock`/
+  `KnowledgeStore`/citation extractor; end-to-end acceptance through the
+  production loop: fixture catalogue, default verifier script, `runFixture`,
+  restart-from-step, recurring rounds, fault injection, and the "full suite
+  clears the bar" gate; baseline regression guard)
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:eval`    -> eval harness smoke: PASS
+- `npm run check:modes`   -> PASS (seven fail-closed modes, denied execution,
+  native document/data/canvas outputs, realpath/junction isolation)
+- `npm run check:recovery`-> PASS (SQLite migration/backup/retention/rollback/
+  restart/crash recovery; FIFO ownership, duplicate rejection, queued
+  cancellation, failure release, shutdown)
+- `npm run check:orchestrator` -> PASS
+- `npm run build:server`  -> exit 0 (dist/server.cjs 19.2mb, pdf worker copied)
+
+Working tree clean; no forbidden path touched; no real external model API was
+called by the tests (the scripted `neo-mock` model is used throughout).
