@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ROOT } from "../config.js";
 import type { PreviewService } from "../preview/serve.js";
+import { createCraftOfficeTool } from "./craftOffice.js";
 import { bool, str, type Tool, type ToolContext, type ToolResult } from "./registry.js";
 
 /**
@@ -255,95 +256,88 @@ export function createFrontierBridgeTools(preview?: PreviewService): Tool[] {
       },
     },
 
-    {
-      name: "office_craft",
-      description:
-        "Unified Office Craft & C-Suite War Room Engine: creates or edits standards-compliant Microsoft Word (.docx), Excel (.xlsx with 55+ live formulas) and PowerPoint (.pptx) files, or runs the 4-Agent C-Suite War Room (CEO + CFO + Legal + Auditor) with Split-Screen Live Studio.",
-      parameters: {
-        type: "object",
-        properties: {
-          engine: {
-            type: "string",
-            enum: ["word", "excel", "deck", "studio", "war_room"],
-            description: "Target Office engine: word (.docx), excel (.xlsx), deck (.pptx), studio (all 3 + live studio), or war_room (C-Suite consensus).",
-          },
-          title: { type: "string", description: "Document, workbook, or presentation title." },
-          instruction: { type: "string", description: "Natural-language edit or content instruction." },
-          outDir: { type: "string", description: "Relative output directory inside workspace (default: 'office-out')." },
-        },
-        required: ["engine"],
+    // cr-05: `office_craft` is now the agent driver of the five vendored Craft
+    // apps (Loam Docs / Sheets / Slides / Photo / Design) over the cr-04
+    // workspace relay. `src/tools/craftOffice.ts` owns the app/action surface;
+    // this factory supplies the two things that module must not own itself: the
+    // untouched `war_room` engine, and the existing built-in Loam implementation
+    // that runs when a Craft app is missing or the caller asks for it.
+    createCraftOfficeTool({
+      warRoom: async (args, ctx) => {
+        const title = str(args, "title", "وثيقة استديو الأوفيس التنفيذية");
+        const outDir = str(args, "outDir", "office-out");
+        const frontierOffice = await importFrontierModule<{
+          runCSuiteWarRoom: (opts: Record<string, unknown>) => Record<string, unknown>;
+        }>("office/frontier-suite.mjs");
+        const officeStudioMod = await importFrontierModule<{
+          buildOfficeStudioHtml: (opts: Record<string, unknown>) => string;
+        }>("office/office-studio.mjs");
+        const warRes = frontierOffice.runCSuiteWarRoom({
+          projectTitle: title,
+          outDir,
+          workspace: ctx.workspace,
+        });
+        const absOutDir = path.join(ctx.workspace, outDir);
+        fs.mkdirSync(absOutDir, { recursive: true });
+        const studioHtml = officeStudioMod.buildOfficeStudioHtml({
+          activeTab: "deck",
+          wordDoc: warRes.wordDoc,
+          gridWorkbook: warRes.workbook,
+          deckPresentation: warRes.presentation,
+        });
+        fs.writeFileSync(path.join(absOutDir, "index.html"), studioHtml, "utf8");
+        let previewUrl: string | null = null;
+        if (preview) {
+          try {
+            const inst = await preview.start(absOutDir);
+            previewUrl = inst.url;
+          } catch {
+            /* ignore */
+          }
+        }
+        return {
+          ok: true,
+          content: JSON.stringify(
+            {
+              consensus: warRes.consensus,
+              agentCount: warRes.agentCount,
+              files: {
+                ...(warRes.files as Record<string, unknown>),
+                studioHtml: `${outDir}/index.html`,
+              },
+              previewUrl,
+              transcript: warRes.transcript,
+            },
+            null,
+            2,
+          ),
+        };
       },
-      async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
-        const engine = str(args, "engine", "studio");
+      fallback: async (app, args, ctx) => {
         const title = str(args, "title", "وثيقة استديو الأوفيس التنفيذية");
         const instruction = str(args, "instruction");
         const outDir = str(args, "outDir", "office-out");
-
-        if (engine === "war_room") {
-          const frontierOffice = await importFrontierModule<{
-            runCSuiteWarRoom: (opts: Record<string, unknown>) => Record<string, unknown>;
-          }>("office/frontier-suite.mjs");
-          const officeStudioMod = await importFrontierModule<{
-            buildOfficeStudioHtml: (opts: Record<string, unknown>) => string;
-          }>("office/office-studio.mjs");
-          const warRes = frontierOffice.runCSuiteWarRoom({
-            projectTitle: title,
-            outDir,
-            workspace: ctx.workspace,
-          });
-          const absOutDir = path.join(ctx.workspace, outDir);
-          fs.mkdirSync(absOutDir, { recursive: true });
-          const studioHtml = officeStudioMod.buildOfficeStudioHtml({
-            activeTab: "deck",
-            wordDoc: warRes.wordDoc,
-            gridWorkbook: warRes.workbook,
-            deckPresentation: warRes.presentation,
-          });
-          fs.writeFileSync(path.join(absOutDir, "index.html"), studioHtml, "utf8");
-          let previewUrl: string | null = null;
-          if (preview) {
-            try {
-              const inst = await preview.start(absOutDir);
-              previewUrl = inst.url;
-            } catch {
-              /* ignore */
-            }
-          }
-          return {
-            ok: true,
-            content: JSON.stringify(
-              {
-                consensus: warRes.consensus,
-                agentCount: warRes.agentCount,
-                files: {
-                  ...(warRes.files as Record<string, unknown>),
-                  studioHtml: `${outDir}/index.html`,
-                },
-                previewUrl,
-                transcript: warRes.transcript,
-              },
-              null,
-              2,
-            ),
-          };
-        }
-
+        // The legacy `engine: "studio"` generator built all three office files
+        // plus the live studio page through the single `office_studio` entry
+        // point; the per-app Craft fallback uses the matching `*_craft` one.
+        const legacyStudio = str(args, "engine").trim().toLowerCase() === "studio";
         const officeMod = await importFrontierModule<{
           createOfficeCraftService: (opts: { workspace: string }) => {
             call: (name: string, a: Record<string, unknown>) => Promise<{ ok: boolean; result: Record<string, unknown> }>;
           };
         }>("office/office-studio.mjs");
         const svc = officeMod.createOfficeCraftService({ workspace: ctx.workspace });
-        const toolName =
-          engine === "word"
+        const toolName = legacyStudio
+          ? "office_studio"
+          : app === "docs"
             ? "word_craft"
-            : engine === "excel"
+            : app === "sheets"
               ? "grid_craft"
-              : engine === "deck"
+              : app === "slides"
                 ? "deck_craft"
                 : "office_studio";
         const res = await svc.call(toolName, {
-          action: instruction ? "ai_edit" : engine === "studio" ? "build_studio" : "create",
+          action: instruction ? "ai_edit" : legacyStudio ? "build_studio" : "create",
           title,
           instruction: instruction || undefined,
           outDir,
@@ -357,7 +351,7 @@ export function createFrontierBridgeTools(preview?: PreviewService): Tool[] {
         }
         return { ok: res.ok, content: JSON.stringify(res.result, null, 2) };
       },
-    },
+    }),
 
     {
       name: "lovable_studio",
