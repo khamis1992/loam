@@ -85,6 +85,7 @@ import { handleAutomationsRoutes } from "./routes/automations.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
 import { handleGraphRoutes } from "./routes/graph.js";
+import { handleGraphNodeRoutes } from "./routes/graphNodes.js";
 import { handleCraftRoutes } from "./routes/craft.js";
 import { handleInstructionsRoutes } from "./routes/instructions.js";
 import { handleAgentSpawnRoutes } from "./routes/agentSpawn.js";
@@ -1780,6 +1781,15 @@ loadAgents();
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;
         // Neo N2 canvas: the run graph built live by the agent (N1).
         if (await handleGraphRoutes(req, res, p, { enabled: cfg.runGraph?.enabled !== false })) return;
+        // Neo N13: node-level actions on that graph (versions/diff, Add to KB,
+        // webpage artifact). Mounted right after the graph so `/nodes/:id/...`
+        // paths are not swallowed by the graph's own `/nodes/:id` route.
+        if (await handleGraphNodeRoutes(req, res, p, {
+          workspace: cfg.workspace,
+          ...(preview ? { preview } : {}),
+          ...(deps.embedder ? { embedder: deps.embedder } : {}),
+          model: cfg.memory.model || cfg.model,
+        })) return;
         // Craft apps (/api/craft/status): which vendored dists are installed.
         if (await handleCraftRoutes(req, res, p)) return;
         if (await handleInstructionsRoutes(req, res, p)) return;

@@ -638,6 +638,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           ok: toolResult.ok,
           summary: summarize(toolResult.content),
           ms: Date.now() - item.t0,
+          // N13: keep the raw output so the run graph can version it. Capped
+          // (40k chars) so a large fetch cannot bloat the event payload.
+          ...(toolResult.content ? { content: toolResult.content.slice(0, 40_000) } : {}),
           ...(toolResult.kbSeedIds && toolResult.kbSeedIds.length > 0 ? { kbSeedIds: toolResult.kbSeedIds } : {}),
           ...(toolResult.kbSeeds && toolResult.kbSeeds.length > 0 ? { kbSeeds: toolResult.kbSeeds } : {}),
         });
@@ -671,6 +674,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           ok: toolResult.ok,
           summary: summarize(toolResult.content),
           ms: Date.now() - t0,
+          ...(toolResult.content ? { content: toolResult.content.slice(0, 40_000) } : {}),
           ...(toolResult.kbSeedIds && toolResult.kbSeedIds.length > 0 ? { kbSeedIds: toolResult.kbSeedIds } : {}),
           ...(toolResult.kbSeeds && toolResult.kbSeeds.length > 0 ? { kbSeeds: toolResult.kbSeeds } : {}),
         });

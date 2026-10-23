@@ -12,6 +12,8 @@
 import type { AgentEvent } from "./events.js";
 import { RunGraph, type RunGraphLayout, type RunGraphStats } from "../graph/runGraph.js";
 import type { RunGraphExport, RunNode, RunNodeStatus, RunNodeType } from "../graph/store.js";
+import type { NodeIndex } from "../graph/nodeVersions.js";
+import { setNodeIndex } from "../graph/nodeVersions.js";
 
 /** One graph change the live canvas cares about. */
 export interface RunGraphChange {
@@ -69,6 +71,23 @@ export function subscribeRunGraph(runId: string, listener: RunGraphListener): ()
 let graph: RunGraph | undefined;
 
 /**
+ * N13: the row index the live graph writes through.
+ *
+ * Version capture (`src/graph/nodeVersions.ts`) reads run nodes to snapshot their
+ * text. It must read the *same* store instance, not a second `RunGraphStore`:
+ * a store snapshots its rows on first read, so a separate instance created
+ * before the run existed would never see the nodes this graph writes, and every
+ * capture would miss. Handing the graph's own store over keeps the two in step.
+ */
+export function liveNodeIndex(): NodeIndex | undefined {
+  const store = liveGraph().getStore();
+  return {
+    getRow: (id) => store.getRow(id),
+    listRows: (query) => store.listRows(query),
+  };
+}
+
+/**
  * Forget the process-wide graph. A test that swaps the data directory must also
  * drop the in-memory `runs` cursors, or the next `applyRunEvent` resumes a stale
  * cursor and writes into the old database file.
@@ -101,7 +120,11 @@ export function beginRun(runId: string, goal = ""): RunNode | undefined {
 /** Feed one agent event into the run graph. Returns the ids of the nodes it touched. */
 export function applyRunEvent(runId: string, event: AgentEvent): string[] {
   try {
-    const ids = liveGraph().applyEvent(runId, event);
+    const instance = liveGraph();
+    // The row index must be the graph's own store, or capture reads a snapshot
+    // taken before this run existed and silently snapshots nothing.
+    setNodeIndex(liveNodeIndex());
+    const ids = instance.applyEvent(runId, event);
     // The canvas listens for this: a node appears on the graph as the agent
     // emits the event that created it, without a polling round-trip.
     if (ids.length > 0) publish(runId, ids);
@@ -114,7 +137,9 @@ export function applyRunEvent(runId: string, event: AgentEvent): string[] {
 
 /** Rebuild a run from a recorded event log (the "replay" entry point). */
 export function replayRun(runId: string, events: AgentEvent[]): string[] {
-  return liveGraph().replay(runId, events);
+  const instance = liveGraph();
+  setNodeIndex(liveNodeIndex());
+  return instance.replay(runId, events);
 }
 
 export function getRunGraphLayout(runId: string): RunGraphLayout {

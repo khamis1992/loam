@@ -16,7 +16,7 @@
  */
 import { Keyboard, Loader2, Maximize2, Minus, Plus, Waypoints, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getLocale, setLocale as syncDocumentLocale, t } from '@/i18n/t';
+import { getLocale, setLocale as syncDocumentLocale, t, type Locale } from '@/i18n/t';
 import type { ChatEvent } from '@shared/socket';
 import {
   type CanvasEdge,
@@ -28,6 +28,10 @@ import {
 import { applyLayout, layoutBounds, screenToGraph, type LayoutOptions } from './layout';
 import { CanvasClient, type CanvasClientOptions } from './client';
 import { CanvasStream, type CanvasStreamChange, type CanvasStreamHandlers } from './stream';
+import { VersionPanel } from './VersionPanel';
+import { KnowledgePanel } from './KnowledgePanel';
+import { WebpageActions } from './WebpageActions';
+import { getLoamBase } from '@/services/rpc';
 
 /** Panel geometry. Graph space, not direction-aware: the canvas is transform-based. */
 const NODE_WIDTH = 220;
@@ -53,7 +57,7 @@ export interface CanvasPanelProps {
   /** Injectable layout options (tests). */
   layoutOptions?: LayoutOptions;
   /** Injectable locale provider (tests). */
-  getLocale?: () => typeof getLocale extends () => infer L ? L : never;
+  getLocale?: () => Locale;
 }
 
 interface ViewTransform {
@@ -118,6 +122,8 @@ const NODE_TYPE_KEYS: Record<string, string> = {
   merge: 'Merged',
   note: 'Note',
   failed: 'Failed',
+  // N3: a cited Knowledge Garden seed, drawn as a document node.
+  kb_seed: 'Knowledge seed',
 };
 
 const NODE_STATUS_KEYS: Record<string, string> = {
@@ -186,8 +192,16 @@ export function CanvasPanel({
   const locale = localeProvider ? localeProvider() : getLocale();
   const isRtl = locale === 'ar';
 
-  /** Translate with this panel's locale, so a locale change needs no global state. */
-  const tr = useCallback((key: string) => t(key, {}, locale), [locale]);
+  /**
+   * Translate with this panel's locale, so a locale change needs no global
+   * state. `vars` is threaded through because the node-action panels interpolate
+   * counts and names ("{count} versions"), and a translator that dropped them
+   * would print the placeholder instead of the number.
+   */
+  const tr = useCallback(
+    (key: string, vars?: Record<string, string | number>) => t(key, vars ?? {}, locale),
+    [locale],
+  );
 
   // The panel lays itself out with logical CSS (`border-s`, `ms-`/`me-`), so the
   // document direction has to follow the locale the panel renders in. An
@@ -665,6 +679,8 @@ export function CanvasPanel({
           events={events}
           isRtl={isRtl}
           tr={tr}
+          client={apiRef.current}
+          runId={taskId}
           onClose={() => setExpandedId(null)}
           onPatch={(patch) => void savePatch(expanded.id, patch)}
         />
@@ -681,13 +697,19 @@ function NodeDetail({
   tr,
   onClose,
   onPatch,
+  client,
+  runId,
 }: {
   node: CanvasLayoutNode;
   events: ChatEvent[];
   isRtl: boolean;
-  tr: (key: string) => string;
+  tr: (key: string, vars?: Record<string, string | number>) => string;
   onClose: () => void;
   onPatch: (patch: CanvasNodePatch) => void;
+  /** Absent when the panel has no client yet (first render); panels wait for it. */
+  client?: CanvasClient | null;
+  /** The run this node belongs to, needed for every node action. */
+  runId?: string;
 }) {
   const [draft, setDraft] = useState<string>(() => readString(node.data, TITLE_KEYS));
   const [saving, setSaving] = useState(false);
@@ -697,6 +719,15 @@ function NodeDetail({
     () => events.filter((event) => event.type === 'toolUsed').slice(-5),
     [events],
   );
+
+  /**
+   * The node-action panels (N13: versions, knowledge, webpage) each decide for
+   * themselves whether a node kind supports them, so the sheet only has to hand
+   * them the client and the run. Without a client there is nothing to render:
+   * the panel's own guard skips it rather than making the sheet special-case a
+   * moment that only exists on the first render.
+   */
+  const canAct = Boolean(client && runId);
 
   const save = async (): Promise<void> => {
     setSaving(true);
@@ -769,6 +800,24 @@ function NodeDetail({
               </li>
             ))}
           </ul>
+        </div>
+      ) : null}
+
+      {canAct && client && runId ? (
+        <div
+          className="flex shrink-0 flex-col gap-3 border-t border-border-main pt-2"
+          data-testid="canvas-node-actions"
+        >
+          <VersionPanel client={client} runId={runId} nodeId={node.id} nodeType={node.type} tr={tr} />
+          <KnowledgePanel client={client} runId={runId} nodeId={node.id} nodeType={node.type} tr={tr} />
+          <WebpageActions
+            client={client}
+            runId={runId}
+            nodeId={node.id}
+            nodeType={node.type}
+            tr={tr}
+            apiBase={getLoamBase()}
+          />
         </div>
       ) : null}
     </aside>
