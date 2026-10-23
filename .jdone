@@ -1,4 +1,17 @@
-C17 done. Merge gate failure fixed.
+C17 done. Merge gate failure fixed (final resolution commit 343385d).
+
+The .jgatefail.txt failure was MERGE CONFLICT with latest manus-parity (15a0ade,
+which had advanced past the earlier 79ec34c tip with the J10 prompt-cache work).
+Ran `git merge manus-parity`; two files conflicted, both resolved keeping BOTH sides:
+- src/agent/loop.ts: kept the C17 coding-model router (chatWithCodingRouter +
+  createProviderClient/cooldownStore/env/onCodingRoute seams, edit attribution via
+  auditEdit/recordEditModel) AND parity's J10 prompt-cache accounting (KvCacheMonitor,
+  requestSignature/hashText, providerRouteFor, addUsage, the cache_usage event, and the
+  provider/cacheTtlSecs/cacheTtlIsEstimate/account run options). The request block now
+  builds requestTools + route + cacheMonitor.beginRequest, then the chatRequest object
+  that feeds either chatWithCodingRouter (coding turns) or chatWithFallback.
+- .jdone: merged the C17 report with the incoming J10/V13/D16 parity reports.
+`git merge-tree --write-tree manus-parity HEAD` exits 0; branch is 0 commits behind.
 
 .gitignore must ignore the C17 report so it is not committed:
   /.cc-report-c17.md
