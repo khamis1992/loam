@@ -1,0 +1,19 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "rtl-bento-grid",
+  "name": "Bento Grid (Arabic RTL)",
+  "description": "The Arabic RTL variant of the bento feature grid with an Arabic lead card and right-to-left layout.",
+  "category": "bento",
+  "license": "original",
+  "source": "Loam",
+  "tags": ["bento", "features", "rtl", "arabic", "مزايا", "شبكة"],
+  "intent": "عرض مزايا باللغة العربية مع بقاء إحدى القدرات بارزة بصريًا.",
+  "deps": ["react"],
+  "rtl": true,
+  "dir": "rtl",
+  "lang": "ar",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"],
+  "base": "bento-grid"
+}

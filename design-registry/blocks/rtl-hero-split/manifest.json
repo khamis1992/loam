@@ -1,0 +1,19 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "rtl-hero-split",
+  "name": "Split Hero (Arabic RTL)",
+  "description": "The Arabic RTL variant of the split hero: right-to-left copy, logical spacing and real Arabic marketing text.",
+  "category": "hero",
+  "license": "original",
+  "source": "Loam",
+  "tags": ["hero", "landing", "rtl", "arabic", "صفحة-هبوط", "واجهة-مقسومة"],
+  "intent": "واجهة هبوط لجمهور عربي باتجاه من اليمين إلى اليسار ونص تسويقي عربي أصيل.",
+  "deps": ["react"],
+  "rtl": true,
+  "dir": "rtl",
+  "lang": "ar",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"],
+  "base": "hero-split"
+}

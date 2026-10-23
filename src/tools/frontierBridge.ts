@@ -258,7 +258,7 @@ export function createFrontierBridgeTools(preview?: PreviewService): Tool[] {
     {
       name: "office_craft",
       description:
-        "Unified Office Craft & C-Suite War Room Engine: creates or edits standards-compliant Microsoft Word (.docx via WordCraft), Excel (.xlsx with 55+ live formulas via GridCraft), PowerPoint (.pptx via DeckCraft), or runs the 4-Agent C-Suite War Room (CEO + CFO + Legal + Auditor) with Split-Screen Live Studio.",
+        "Unified Office Craft & C-Suite War Room Engine: creates or edits standards-compliant Microsoft Word (.docx), Excel (.xlsx with 55+ live formulas) and PowerPoint (.pptx) files, or runs the 4-Agent C-Suite War Room (CEO + CFO + Legal + Auditor) with Split-Screen Live Studio.",
       parameters: {
         type: "object",
         properties: {

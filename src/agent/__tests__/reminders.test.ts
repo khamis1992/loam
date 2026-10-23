@@ -6,7 +6,19 @@
  * only, and `visibleMessages` filters them out of any rendered history.
  */
 import assert from "node:assert";
-import { describe, it, mock } from "node:test";
+import { after, describe, it, mock } from "node:test";
+
+// Must come before any import that evaluates `config.js`: `runAgent` builds the
+// system prompt, which reads personalization from the SQLite store under
+// DATA_DIR, so without this redirect the loop would create the repository's
+// real `data/manus.db`.
+import { cleanupIsolatedDataDir } from "../../test/isolation.js";
+import { closeDb } from "../../server/sqliteStore.js";
+
+after(() => {
+  closeDb();
+  cleanupIsolatedDataDir();
+});
 
 import {
   ReminderChannel,
@@ -75,6 +87,7 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     },
     sessionLog: { enabled: false },
     subagent: { maxDepth: 2, maxConcurrentChildren: 4 },
+    skills: { autoSuggest: false, suggestModel: "" },
     ...overrides,
   };
 }

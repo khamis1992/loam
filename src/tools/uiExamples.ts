@@ -1,10 +1,14 @@
 /**
  * ui_examples_search — retrieve vetted Loam UI Kit blocks.
  *
- * Thin agent-tool wrapper over the design registry (src/design/registry.ts).
- * Given a natural-language query it returns the top-k vetted blocks with their
- * manifest (intent, tags, dependencies, tokens, source file) and, when present,
- * a screenshot attached as a vision image for the next model call.
+ * Thin agent-tool wrapper over the design registry retrieval surface
+ * (`src/design/retrieval.ts`, backed by the manifest contract and scoring
+ * primitive in `src/design/registry.ts`). Given a natural-language query —
+ * English or Arabic — it returns the top-k vetted blocks with their manifest
+ * (name, category, intent, tags, dependencies, entry file, license) and a short
+ * code snippet, and attaches each block's screenshot as a vision image when one
+ * exists. The point is to make the model compose proven blocks instead of
+ * inventing layout from scratch.
  */
 
 import fs from "node:fs";
@@ -14,9 +18,9 @@ import {
   loadDesignRegistry,
   rerankWithEmbeddings,
   searchDesignBlocks,
-  type DesignBlockHit,
+  type BlockHit,
   type DesignEmbedder,
-} from "../design/registry.js";
+} from "../design/retrieval.js";
 import { num, str, type Tool, type ToolContext, type ToolResult } from "./registry.js";
 
 export const UI_EXAMPLES_TOOL_NAME = "ui_examples_search";
@@ -29,32 +33,34 @@ const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
 export interface UiExamplesOptions {
   /** Explicit registry directory; defaults to DESIGN_REGISTRY_DIR. */
   dir?: string;
-  /** Optional embedder used to re-rank the BM25 shortlist. */
+  /** Optional embedder used to re-rank the lexical shortlist. */
   embedder?: DesignEmbedder;
   /** Maximum screenshots to attach per call (default 3). */
   maxImages?: number;
 }
 
-function hitToJson(hit: DesignBlockHit): Record<string, unknown> {
+function hitToJson(hit: BlockHit): Record<string, unknown> {
   return {
     id: hit.id,
     name: hit.name,
-    type: hit.type,
+    category: hit.category,
     description: hit.description,
     tags: hit.tags,
-    intents: hit.intents,
-    dependencies: hit.dependencies,
-    tokens: hit.tokens,
-    file: hit.file,
-    ...(hit.screenshot ? { screenshot: hit.screenshot } : {}),
+    intent: hit.intent,
+    deps: hit.deps,
     rtl: hit.rtl,
-    accessibility: hit.accessibility,
+    lang: hit.lang,
+    entry: hit.entry,
+    license: hit.license,
+    source: hit.source,
+    ...(hit.screenshot ? { screenshot: hit.screenshot } : {}),
     ...(hit.code ? { code: hit.code } : {}),
-    score: Number(hit.score.toFixed(4)),
+    score: hit.score,
   };
 }
 
-function loadScreenshot(dir: string, relative: string | undefined): string | null {
+/** Read a block screenshot (base64) when it exists and is an image. */
+function loadScreenshot(dir: string, relative: string | null): string | null {
   if (!relative) return null;
   const file = path.resolve(dir, relative);
   const ext = path.extname(file).toLowerCase();
@@ -71,13 +77,31 @@ export function createUiExamplesTools(options: UiExamplesOptions = {}): Tool[] {
   return [{
     name: UI_EXAMPLES_TOOL_NAME,
     description:
-      "Search the Loam UI Kit registry for vetted, reusable UI blocks before writing interface code. Returns the top-k blocks (hero, bento, pricing, dashboard shell, auth, table, settings, empty states, navigation, CTA, testimonials, FAQ, stats, footer and RTL variants) with their manifest: intent, tags, dependencies, design tokens, source file and a short code snippet; when a block has a screenshot it is attached as an image. Compose these proven blocks instead of inventing layout from scratch, adapt them to the chosen design tokens, and prefer the Arabic/RTL variants for Arabic content.",
+      "Search the Loam UI Kit registry for vetted, reusable UI blocks before writing interface code. Returns the top-k blocks (hero, bento, pricing, dashboard, auth, table, settings, empty states, navigation, CTA, social proof, FAQ, stats, gallery, footer and Arabic/RTL variants) with their manifest — category, intent, tags, dependencies, entry file, license — plus a short code snippet; when a block ships a screenshot it is attached as an image. Compose these proven blocks instead of inventing layout from scratch, adapt them to the chosen design tokens, and prefer the Arabic/RTL variants for Arabic content.",
     parameters: {
       type: "object",
       properties: {
-        query: { type: "string", description: "What you need, in plain language (e.g. \"pricing\", \"empty state\", \"لوحة تحكم\")." },
-        k: { type: "integer", description: "Number of blocks to return.", minimum: MIN_K, maximum: MAX_K, default: DEFAULT_K },
-        type: { type: "string", description: "Optional block type filter (hero, bento, pricing, dashboard, auth, table, settings, empty-state, navigation, cta, testimonials, faq, stats, footer)." },
+        query: {
+          type: "string",
+          description:
+            "What you need, in plain language, in any language (e.g. \"pricing\", \"empty state\", \"لوحة تحكم\", \"تسعير\").",
+        },
+        k: {
+          type: "integer",
+          description: "Number of blocks to return.",
+          minimum: MIN_K,
+          maximum: MAX_K,
+          default: DEFAULT_K,
+        },
+        category: {
+          type: "string",
+          description:
+            "Optional category filter (hero, bento, pricing, dashboard, auth, table, settings, empty-state, features, cta, social-proof, stats, gallery, blog, faq, contact, navigation, footer, logos).",
+        },
+        rtl: {
+          type: "boolean",
+          description: "Restrict to Arabic/RTL blocks when true, or LTR blocks when false.",
+        },
       },
       required: ["query"],
     },
@@ -85,14 +109,16 @@ export function createUiExamplesTools(options: UiExamplesOptions = {}): Tool[] {
       const query = str(args, "query").trim();
       if (query.length === 0) return { ok: false, content: "query is required" };
       const k = Math.max(MIN_K, Math.min(MAX_K, num(args, "k", DEFAULT_K)));
-      const type = str(args, "type").trim() || undefined;
+      const category = str(args, "category").trim() || undefined;
+      const rtlArg = args["rtl"];
+      const rtl = typeof rtlArg === "boolean" ? rtlArg : undefined;
       const dir = options.dir ?? DESIGN_REGISTRY_DIR;
       try {
         const registrySize = loadDesignRegistry(dir).length;
         if (registrySize === 0) {
           return { ok: false, content: `design registry not found at ${dir}` };
         }
-        let hits = searchDesignBlocks(query, { k: k * 2, type, dir });
+        let hits = searchDesignBlocks(query, { k: k * 2, category, rtl, dir });
         if (options.embedder) hits = await rerankWithEmbeddings(hits, query, options.embedder);
         hits = hits.slice(0, k);
         const maxImages = Math.max(0, options.maxImages ?? 3);

@@ -69,6 +69,9 @@ describe("agent pin / reorder / hide endpoints", () => {
   before(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-agentpins-api-"));
     process.env.MANUS_LOCAL_DATA_DIR = tmpDir;
+    // `loadConfig()` mkdirs `workspace/` and `workspace/.screenshots/` as a side
+    // effect; LOAM_ROOT keeps them inside the temp dir instead of the repo.
+    process.env.LOAM_ROOT = tmpDir;
     process.env.MANUS_LOCAL_SKILLS_DIR = path.join(tmpDir, "skills");
     process.env.MANUS_LOCAL_EVALS_DIR = path.join(tmpDir, "evals");
     process.env.LOAM_AUTH_DISABLED = "true";

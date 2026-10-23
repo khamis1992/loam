@@ -1,0 +1,18 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "pricing-toggle",
+  "name": "Monthly / Yearly Pricing",
+  "description": "A pricing section with a local monthly-yearly toggle that rescales the plan prices and shows the savings.",
+  "category": "pricing",
+  "license": "MIT",
+  "source": "shadcn/ui blocks",
+  "tags": ["pricing", "billing", "toggle", "تسعير", "أسعار"],
+  "intent": "Pricing page that lets visitors compare monthly and annual billing. (مقارنة فوترة شهرية وسنوية.)",
+  "deps": ["react"],
+  "rtl": false,
+  "dir": "ltr",
+  "lang": "en",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"]
+}

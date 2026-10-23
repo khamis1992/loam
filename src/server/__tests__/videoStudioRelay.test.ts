@@ -63,6 +63,19 @@ describe("videoStudioRelay", () => {
     }
   });
 
+  it("rejects with COMMAND_REJECTED when the panel reports a failed command", async () => {
+    const relay = new VideoStudioRelay();
+    const { commands, unsubscribe } = attach("t1");
+    try {
+      const promise = relay.enqueue("t1", "film", "execute", { command: "sequence.applyVideoTransition" });
+      await waitFor(() => commands.length === 1);
+      assert.equal(relay.resolve({ id: commands[0]!.id, taskId: "t1", ok: false, error: "unsupported transition" }), true);
+      await assert.rejects(promise, (err: unknown) => (err as { code?: string }).code === "COMMAND_REJECTED");
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it("ignores results for unknown command ids", () => {
     const relay = new VideoStudioRelay();
     assert.equal(relay.resolve({ id: "does-not-exist", taskId: "t1", ok: true, result: 1 }), false);

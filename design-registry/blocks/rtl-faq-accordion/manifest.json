@@ -1,0 +1,19 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "rtl-faq-accordion",
+  "name": "FAQ Accordion (Arabic RTL)",
+  "description": "The Arabic RTL variant of the FAQ accordion with native details elements and real Arabic questions and answers.",
+  "category": "faq",
+  "license": "original",
+  "source": "Loam",
+  "tags": ["faq", "accordion", "rtl", "arabic", "أسئلة-شائعة"],
+  "intent": "قسم دعم بالعربية يجيب عن الأسئلة الشائعة في قائمة قابلة للطي.",
+  "deps": ["react"],
+  "rtl": true,
+  "dir": "rtl",
+  "lang": "ar",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"],
+  "base": "faq-accordion"
+}

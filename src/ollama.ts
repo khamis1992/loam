@@ -56,7 +56,15 @@ export interface ChatResult {
   toolCalls: OllamaToolCall[];
   model: string;
   doneReason?: string;
-  usage: { promptTokens: number; completionTokens: number; durationMs: number };
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    durationMs: number;
+    /** Tokens served from the provider's prompt cache; undefined when not reported. */
+    cachedTokens?: number;
+    /** Tokens written into the cache on this request, when reported. */
+    cacheWriteTokens?: number;
+  };
 }
 
 interface OllamaStreamChunk {
@@ -91,13 +99,21 @@ export interface CloudModelConfig {
   apiKey?: string;
 }
 
+interface OpenAIUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number };
+  /** Azure-compatible nested shape. */
+  cached_tokens?: { tokens?: number };
+}
+
 interface OpenAIStreamChunk {
   model?: string;
   choices?: Array<{
     delta?: { content?: string | null; tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }> };
     finish_reason?: string | null;
   }>;
-  usage?: { prompt_tokens?: number; completion_tokens?: number };
+  usage?: OpenAIUsage;
   error?: { message?: string };
 }
 
@@ -228,6 +244,7 @@ export class OllamaClient {
     let doneReason: string | undefined;
     let promptTokens = 0;
     let completionTokens = 0;
+    let cachedTokens: number | undefined;
     const started = Date.now();
     let sawFinish = false;
 
@@ -261,6 +278,7 @@ export class OllamaClient {
       if (parsed.usage) {
         promptTokens = parsed.usage.prompt_tokens ?? promptTokens;
         completionTokens = parsed.usage.completion_tokens ?? completionTokens;
+        cachedTokens = parsed.usage.prompt_tokens_details?.cached_tokens ?? parsed.usage.cached_tokens?.tokens ?? cachedTokens;
       }
     };
     for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
@@ -277,7 +295,13 @@ export class OllamaClient {
     if (!sawFinish) throw new IncompleteModelStream("cloud");
     const toolCalls = [...toolAcc.entries()].sort((a, b) => a[0] - b[0]).map(([, call]) => ({ function: { name: call.name, arguments: normalizeArgs(call.args) } }));
     log.debug(`cloud chat model=${model} tools=${toolCalls.length} chars=${content.length}`);
-    return { content, toolCalls, model, doneReason, usage: { promptTokens, completionTokens, durationMs: Date.now() - started } };
+    return {
+      content,
+      toolCalls,
+      model,
+      doneReason,
+      usage: { promptTokens, completionTokens, durationMs: Date.now() - started, ...(cachedTokens !== undefined ? { cachedTokens } : {}) },
+    };
   }
 
   async chatLocal(opts: ChatOptions): Promise<ChatResult> {
