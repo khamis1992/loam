@@ -79,17 +79,38 @@ describe("Neo N10 output types", () => {
     assert.equal(isOutputType(undefined), false);
   });
 
-  it("maps each output type to its pipeline tools", () => {
+  it("maps each output type to its pipeline tools plus the run essentials", () => {
     const registered = [
       "loam_document", "loam_studio", "loam_creative", "loam_canvas", "gen_image", "gen_video",
       "office_export", "web_scaffold", "preview_serve", "artifact_publish", "file_read",
+      "finish", "think",
     ];
-    assert.deepEqual(outputTypeTools("slides", registered), ["loam_studio", "office_export"]);
-    assert.deepEqual(outputTypeTools("website", registered), ["web_scaffold", "preview_serve", "artifact_publish"]);
-    assert.deepEqual(outputTypeTools("image", registered), ["loam_creative", "loam_canvas", "gen_image"]);
+    const slides = outputTypeTools("slides", registered);
+    // The pipeline leads, so the deliverable tools stay first in the list.
+    assert.deepEqual(slides.slice(0, 2), ["loam_studio", "office_export"]);
+    assert.ok(slides.includes("finish"), "a run must always be able to finish");
+    assert.ok(slides.includes("artifact_publish"), "a run must always be able to publish");
+    const website = outputTypeTools("website", registered);
+    assert.deepEqual(website.slice(0, 3), ["web_scaffold", "preview_serve", "artifact_publish"]);
+    const image = outputTypeTools("image", registered);
+    assert.deepEqual(image.slice(0, 3), ["loam_creative", "loam_canvas", "gen_image"]);
     assert.deepEqual(outputTypeTools("auto", registered), [], "auto must not invent a pipeline");
     // A tool that is not registered is never offered, even if the type wants it.
     assert.deepEqual(outputTypeTools("video", ["loam_canvas"]), ["loam_canvas"]);
+  });
+
+  it("never strips the control surface from a narrowed run", () => {
+    // Regression: narrowing to the pipeline alone left the model with no `finish`
+    // (the only tool that emits `done` and runs the workspace gates), no
+    // `artifact_publish` (which every output-type prompt instructs) and no
+    // inspection tools (which the independent verifier needs).
+    const registered = ["finish", "think", "plan", "artifact_publish", "file_read", "file_stat", "file_list", "loam_studio", "loam_creative"];
+    for (const type of ["text", "image", "video", "slides", "website"] as const) {
+      const tools = outputTypeTools(type, registered);
+      for (const essential of ["finish", "artifact_publish", "file_read"]) {
+        assert.ok(tools.includes(essential), `${type} must keep ${essential}`);
+      }
+    }
   });
 
   it("slides mode hits the slides pipeline in the system prompt", () => {

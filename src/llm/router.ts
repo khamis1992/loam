@@ -57,6 +57,42 @@ export const OUTPUT_TYPE_TOOLS: Record<OutputType, readonly string[]> = {
 };
 
 /**
+ * Tools every output-type run keeps, pipeline or not.
+ *
+ * The output type narrows a run to the tools that *produce* its deliverable, but
+ * it must never strip the run's own control surface: `finish` (the only tool
+ * that emits `done` and runs the workspace verification gates), `think`, the plan
+ * tools, `artifact_publish` (every output-type prompt instructs the model to
+ * publish its result) and the read/inspection tools the independent verifier
+ * intersects with `INSPECTION_TOOLS`. A narrowed set without them is not a
+ * stricter run, it is a run that cannot finish, cannot publish and cannot be
+ * verified. The write/edit tools are kept because the pipeline tools build their
+ * deliverables from workspace files.
+ */
+export const OUTPUT_TYPE_ESSENTIALS: readonly string[] = [
+  "finish",
+  "think",
+  "plan",
+  "phase_set",
+  "message",
+  "plan_exit",
+  "suggest_plan",
+  "artifact_publish",
+  "file_read",
+  "file_list",
+  "file_search",
+  "file_stat",
+  "file_extract_text",
+  "file_view_image",
+  "file_write",
+  "file_edit",
+  "file_mkdir",
+  "file_multi_edit",
+  "grep",
+  "glob",
+];
+
+/**
  * The system-prompt suffix for one output type. It is deliberately complete:
  * it states the deliverable, the tools that produce it and the acceptance bar,
  * because the same prompt text is handed to small and large models alike.
@@ -78,10 +114,20 @@ export function outputTypeSuffix(type: OutputType): string {
   }
 }
 
-/** Tools added to a run for its output type (already mode-filtered upstream). */
+/**
+ * The tool set an output-type run may use: its pipeline tools plus the run
+ * essentials, intersected with what is actually registered (mode-filtered
+ * upstream). Deterministic and deduplicated; `auto` yields nothing so an
+ * unspecified run keeps its whole scope untouched.
+ */
 export function outputTypeTools(type: OutputType, registered: readonly string[]): string[] {
+  if (type === "auto") return [];
   const available = new Set(registered);
-  return OUTPUT_TYPE_TOOLS[type].filter((name) => available.has(name));
+  const out: string[] = [];
+  for (const name of [...OUTPUT_TYPE_TOOLS[type], ...OUTPUT_TYPE_ESSENTIALS]) {
+    if (available.has(name) && !out.includes(name)) out.push(name);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
