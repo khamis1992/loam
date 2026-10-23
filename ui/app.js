@@ -7,6 +7,8 @@ import { mountTaskView } from './task-view.js';
 import { mountLivePreview } from './live-preview.js';
 import { renderMarkdown } from './markdown.js';
 import { studios, studioById, installStudioBridge } from './studio-routes.js';
+// Per-bot chat accent color (C20): a task owned by a companion tints the chat.
+import { chatAccentFor, accentVars } from './chat-color.js';
 const $ = id => document.getElementById(id);
 const updateNavigation=createNavigation();
 mountAppUpdates({confirm:confirmAction});
@@ -191,6 +193,8 @@ function receiveEvent(event) {
 async function loadTask(id,refresh=false) {
   const seq=state.sequence;const data=await api(`/api/tasks/${encodeURIComponent(id)}`);if(seq!==state.sequence)return;
   state.task=data.task;state.mode=modeById(data.task.mode);if(!refresh){state.attachments=[];resetWorkspace();$('chatAttachments').replaceChildren();}
+  if(data.task.agentId && !findChatAgent(data.task.agentId))await loadChatAgents();
+  applyChatAccent(data.task.agentId ?? null);
   const showBuildConversation=data.task.mode==='build' && (!refresh || $('activityTab').getAttribute('aria-selected')==='true');
   show('chat',data.task.title);taskView.reset(data.task,data.recovery);renderTaskState();renderRecovery(data.recovery);
   if(showBuildConversation)$('activityTab').click();
@@ -214,6 +218,26 @@ function renderRecovery(recovery) {
 async function stopTask(){const id=state.task?.id;if(!id)return;await post(`/api/tasks/${encodeURIComponent(id)}/cancel`,{});notice('أُرسل طلب الإيقاف.');await loadTask(id,true);}
 async function retryLastTurn(id,button){if(!id){notice('لا توجد مهمة لإعادة تشغيلها.',true);return;}if(busy(state.task)){notice('انتظر اكتمال المهمة أو أوقفها قبل إعادة التشغيل.',true);return;}button.disabled=true;try{await post(`/api/tasks/${encodeURIComponent(id)}/retry-last`,{});notice('أُعيد تشغيل آخر رسالة.');await loadTask(id,true);}catch(error){notice(error.message,true);}finally{button.disabled=false;}}
 function taskQuery(id=state.task?.id){if(!id)throw new Error('اختر مهمة لعرض ملفاتها.');return `taskId=${encodeURIComponent(id)}`;}
+// Per-bot chat accent (C20): tint the chat surface for a companion-owned task.
+// The companion list is cached for the session so a reload keeps the same color.
+// A task with no companion gets no custom properties at all, so the CSS falls
+// back to the app accent via var(--chat-accent, var(--accent)).
+let chatAgents=[];
+function findChatAgent(id){return chatAgents.find(a=>a.id===id)||null;}
+async function loadChatAgents(){try{const d=await api('/api/agents');chatAgents=d.agents||[];}catch{/* offline: the id hash still colors the chat */}}
+function applyChatAccent(agentId){
+  const view=$('view-chat');if(!view)return;
+  const agent=agentId?findChatAgent(agentId):null;
+  const color=chatAccentFor(agent??(agentId?{id:agentId}:null));
+  // `accentVars("")` returns null, which is exactly the "no accent" signal: the
+  // vars are dropped and every CSS rule falls back to the app accent.
+  const vars=color?accentVars(color,'auto'):null;
+  view.dataset.chatAccent=vars?'bot':'';
+  for(const name of ['--chat-accent','--chat-accent-2','--chat-accent-ink']){
+    if(vars)view.style.setProperty(name,vars[name]);
+    else view.style.removeProperty(name);
+  }
+}
 async function loadFiles(){const id=state.task?.id;if(!id)return;const data=await api(`/api/files?${taskQuery(id)}&max=400`);if(state.task?.id!==id)return;const entries=data.entries||[];$('filesList').innerHTML=entries.filter(f=>!f.dir).map(f=>`<button class="file-row" data-file="${esc(f.path)}" dir="auto">${esc(f.path)}</button>`).join('')||'<div class="empty">لا ملفات في هذه المهمة بعد.</div>';}
 async function openFile(path){
   const id=state.task?.id;if(!id)return;document.querySelector('.sidepanel').hidden=false;$('taskWorkspace').setAttribute('aria-expanded','true');$('previewFrame').hidden=true;await loadFiles();if(id!==state.task?.id)return;
@@ -271,7 +295,7 @@ $('taskSearch').oninput=renderTaskLists;
 $('menuToggle').onclick=()=>{const sidebar=$('sidebar');const open=sidebar.classList.contains('collapsed')||!sidebar.classList.contains('open');sidebar.classList.remove('collapsed');sidebar.classList.toggle('open',open);$('menuToggle').setAttribute('aria-expanded',String(open));if(open)$('collapseBtn').focus();};
 document.addEventListener('click',event=>{if($('sidebar').classList.contains('open')&&!$('sidebar').contains(event.target)&&!$('menuToggle').contains(event.target)){$('sidebar').classList.remove('open');$('menuToggle').setAttribute('aria-expanded','false');}});
 document.addEventListener('keydown',event=>{if(event.key==='Escape'){$('sidebar').classList.remove('open');$('menuToggle').setAttribute('aria-expanded','false');}});
-$('theme').onclick=run(async()=>{const theme=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=theme;localStorage.setItem('loam-theme',theme);await post('/api/settings',{theme});});
+$('theme').onclick=run(async()=>{const theme=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=theme;localStorage.setItem('loam-theme',theme);applyChatAccent(state.task?.agentId??null);await post('/api/settings',{theme});});
 async function navigate(){
   const requestedRoute=location.hash;
   try{await route();}catch(error){
@@ -284,6 +308,7 @@ async function navigate(){
 window.addEventListener('hashchange',()=>void navigate());
 async function boot(){
   const results=await Promise.allSettled([api('/api/modes'),api('/api/settings'),api('/api/models')]);
+  void loadChatAgents();
   if(results[0].status==='fulfilled'){state.modes=results[0].value.modes||[];renderModes();$('connection').textContent='متصل محليًا';$('connection').classList.add('online');}else{notice('تعذّر تحميل مساحات Loam. تحقق من تشغيل الخادم ثم أعد تحميل الصفحة.',true);$('connection').textContent='غير متصل';}
   if(results[2].status==='fulfilled')$('model').innerHTML=(results[2].value.models||[]).map(m=>`<option>${esc(typeof m==='string'?m:m.name)}</option>`).join('');
   if(results[1].status==='fulfilled'&&results[1].value.model)$('model').value=results[1].value.model;

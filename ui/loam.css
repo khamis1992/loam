@@ -128,7 +128,17 @@ html[data-theme="light"] {
 /* Loam retains the original command workspace, obsidian/cyan/violet palette. */
 body { font-family:"Readex Pro","Tajawal","Segoe UI",system-ui,sans-serif; font-size:14px; background:radial-gradient(750px 340px at 78% -8%,color-mix(in srgb,var(--accent-2) 20%,transparent),transparent 70%),var(--bg); }
 h1 { font-size:28px; } h2 { font-size:18px; } .lede { font-size:14px; }
-.primary { background:linear-gradient(135deg,var(--accent-2),var(--accent)); border-color:transparent; color:white; box-shadow:0 5px 16px color-mix(in srgb,var(--accent-2) 22%,transparent); }
+/* C20: #sendChat carries `.primary`, and --chat-accent* live on #view-chat only
+   while a companion owns the task, so the fallback keeps every other `.primary`
+   button (and the base-agent send) byte-for-byte the app accent. */
+.primary { background:linear-gradient(135deg,var(--chat-accent-2,var(--accent-2)),var(--chat-accent,var(--accent))); border-color:transparent; color:var(--chat-accent-ink,white); box-shadow:0 5px 16px color-mix(in srgb,var(--chat-accent-2,var(--accent-2)) 22%,transparent); }
+/* C20 overrides for index.html. `ui/icons.css` is loaded after this sheet and
+   `.loam-shell .primary` (0,2,0) outranks `.primary`, so these must out-specify it.
+   Scoped to #view-chat so no other screen is touched. */
+#view-chat #sendChat{background:linear-gradient(135deg,var(--chat-accent-2),var(--chat-accent));border-color:transparent;color:var(--chat-accent-ink);box-shadow:0 8px 22px color-mix(in srgb,var(--chat-accent-2) 36%,transparent);}
+#view-chat #sendChat:hover{filter:none;background:linear-gradient(135deg,var(--chat-accent),var(--chat-accent-2));}
+#view-chat .composer textarea:focus{border-color:var(--chat-accent);}
+#view-chat .log-entry.user{border-color:color-mix(in srgb,var(--chat-accent) 40%,var(--border));}
 .sidebar { width:332px; padding:0; flex-direction:row; overflow:hidden; background:var(--bg-2); }
 .rail { display:flex; flex-direction:column; gap:7px; width:62px; flex-shrink:0; padding:16px 8px; border-inline-end:1px solid var(--border); background:color-mix(in srgb,var(--bg) 70%,transparent); overflow:auto; }
 .rail-btn { display:flex; align-items:center; justify-content:center; min-height:42px; width:44px; flex-shrink:0; border:1px solid transparent; border-radius:11px; background:transparent; color:var(--muted); font-size:20px; }
