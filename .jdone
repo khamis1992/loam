@@ -1,3 +1,61 @@
+# J1 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
+
+## The failure that was fixed
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.
+
+## What the merge produced
+`git merge manus-parity` conflicted in exactly two files. Both were resolved keeping
+BOTH sides; no test was weakened, deleted or skipped, and no code was dropped:
+
+1. `THIRD_PARTY_NOTICES` (content conflict): HEAD (J1) listed the ported bench files
+   (`src/server/sharedCodeSession.ts`, `bench/{fakeModel,memBench,rssSampler,perProcess,launchers}.ts`);
+   manus-parity added its own entries for `src/tools/fileLock.ts`,
+   `src/policy/commandRisk/{index,lib,paths,tokenize,gate}.ts` and `src/tools/files.ts`.
+   The duplicate `src/tools/fileLock.ts` line from both sides collapsed into the single
+   HEAD-formatted entry (the parity entry carried the same source path), and the merged
+   "Adapted files" list now carries every entry from both sides: J1's bench/server entries
+   plus parity's `commandRisk` and `files.ts` entries. `git diff --cached --stat` shows
+   +9/-0 relative to the pre-merge HEAD version, i.e. parity's three entries added.
+2. `.jdone` (modify/delete conflict): manus-parity deleted the marker; this branch carries
+   the J1 report. The marker was kept from HEAD (the required gate artefact) and
+   `.jcode-done` was restored from HEAD, so both done markers are present in the tree.
+
+## Gate condition verified
+After the resolution was committed as `9475f43 merge manus-parity: resolve
+THIRD_PARTY_NOTICES keeping both sides`, `git merge manus-parity` reports "Already up to
+date.", `git merge-base --is-ancestor manus-parity HEAD` exits 0, and
+`git rev-list --left-right --count manus-parity...HEAD` is `0  4`, so parity is fully
+merged. No conflict markers remain anywhere in the tree and the working tree is clean.
+
+## Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                                  -> exit 0
+- `npm run build:server`                              -> exit 0 (dist/server.cjs 19.5mb, pdf worker copied)
+- `(cd packages/web && npx next build)`               -> exit 0 (compiled successfully, 25/25 static pages)
+- `npm run test:bench`                                -> tests 37, pass 37, fail 0
+- `node --import tsx --test` code-session suites      -> tests 24, pass 23, fail 0, skip 1
+- `(cd packages/web && npx vitest run)`               -> 78 files / 528 tests, all pass
+- `node --import tsx --test "src/**/*.test.ts" "src/**/*.test.mjs"`
+                                                      -> tests 2586, pass 2584, fail 1, skip 1
+- `npm run check:encoding`                            -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                               -> PASS
+- `npm run check:orchestrator`                        -> PASS
+- `npm run check:promptwire`                          -> PASS
+
+The single node failure is pre-existing and NOT caused by this merge:
+`src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing":
+`readGitBranch` on a plain temp dir reports `isGit: true` because that temp dir is inside
+a git working tree, so `git rev-parse` succeeds. The test assumes a temp dir is never
+under a repo, which does not hold on this machine. That file, `src/agent/__tests__/toolDescriptions.test.ts`,
+`src/server/worktrees.ts`, `src/agent/taskToolScope.ts` and `src/tools/planTools.ts` are all
+byte-identical to manus-parity (`git diff manus-parity HEAD -- <file>` is empty for each),
+and the same failure is documented in the preserved D2/D10/D19 reports below. It is left
+untouched.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+
+---
+
 # J1 - Shared agent server spike: DONE
 
 Summary
