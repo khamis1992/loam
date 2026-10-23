@@ -376,7 +376,9 @@ export function loadConfig(): Config {
   if (process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT) cfg.server.port = Number(process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT);
   if (process.env.LOAM_HOST || process.env.MANUS_LOCAL_HOST) cfg.server.host = (process.env.LOAM_HOST || process.env.MANUS_LOCAL_HOST)!;
   const envRoot = process.env.LOAM_ROOT || process.env.MANUS_LOCAL_ROOT;
-  if (envRoot) {
+  // Packaged builds pass ROOT = resources/app.asar (read-only archive); the
+  // desktop shell already points config.workspace at the user-data folder.
+  if (envRoot && !/\.asar$/i.test(envRoot)) {
     const root = path.resolve(envRoot);
     // LOAM_ROOT is the install/user-data root: keep workspace and screenshots under it
     // rather than letting config.json silently override them back into the source tree.
