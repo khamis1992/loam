@@ -23,6 +23,7 @@ import { symbolTools } from "../../tools/symbols.js";
 import { createFinishTools } from "../../tools/finishTools.js";
 import { createMultiEditTools } from "../../tools/multiEdit.js";
 import { createSubagentTools } from "../../tools/subagents.js";
+import { createPlanTools } from "../../tools/planTools.js";
 import { createAskUserTools } from "../../tools/askUserTools.js";
 
 /** Minimum description length for a tool that a small model must rely on. */
@@ -37,7 +38,7 @@ const NOT_TO_USE = /When NOT to use/i;
  * those land, at which point they must be removed from this list so their
  * descriptions are covered too.
  */
-const PENDING_CODING_TOOLS = ["grep", "glob", "todo_write", "plan_exit"];
+const PENDING_CODING_TOOLS = ["grep", "glob", "todo_write"];
 
 /** Other commonly used tools held to the same description standard. */
 const COMMON_TOOLS = [
@@ -61,6 +62,8 @@ function codingRegistry(): ToolRegistry {
   registry.registerAll(createFinishTools());
   registry.registerAll(createMultiEditTools());
   registry.registerAll(createSubagentTools({} as OllamaClient, new ToolRegistry()));
+  // `suggest_plan` (D4) is a coding-profile tool, so its description is linted too.
+  registry.registerAll(createPlanTools());
   // N9: `ask_user` is a coding-profile tool, so its description is linted too.
   registry.registerAll(createAskUserTools());
   return registry;
