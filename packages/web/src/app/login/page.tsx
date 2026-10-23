@@ -50,6 +50,15 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
+      // Local single-user desktop: sign in against the bundled server, never an external page.
+      if (await desktopApis.auth.localSignIn()) { router.replace('/app'); return; }
+      if (!(window as unknown as { desktopSync?: unknown }).desktopSync) {
+        const nonce = crypto.randomUUID();
+        await desktopApis.system.openExternal(`http://localhost:8787/login?from=desktop&type=${type}&nonce=${nonce}`);
+        return;
+      }
+      setError('token_exchange_failed');
+      return;
       const nonce = crypto.randomUUID();
       const webBase = 'http://localhost:8787';
       const url = `${webBase}/login?from=desktop&type=${type}&nonce=${nonce}`;
@@ -60,7 +69,7 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [router]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-bg-login px-6">
