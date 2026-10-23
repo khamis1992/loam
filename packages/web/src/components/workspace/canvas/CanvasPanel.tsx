@@ -113,6 +113,9 @@ const NODE_TYPE_KEYS: Record<string, string> = {
   media: 'Media',
   ask_user: 'Waiting for you',
   complete: 'Completed',
+  sibling: 'Model arm',
+  branch: 'Branch',
+  merge: 'Merged',
   note: 'Note',
   failed: 'Failed',
 };
