@@ -10,6 +10,9 @@ import { SKILLS_DIR } from "../config.js";
 import type { WorkerCheckpoint } from "./checkpoint.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { chatWithFallback } from "./model.js";
+import { chatWithCodingRouter, isCodingTurn } from "../llm/codingRouter.js";
+import { isEditTool, recordEditModel } from "../llm/modelAudit.js";
+import type { CooldownStore, FailoverProvider, ProviderClient } from "../llm/failover.js";
 import { createStallGuard } from "./stallGuard.js";
 import { compressContext } from "./contextCompressor.js";
 import { throwIfCancelled } from "../server/runControl.js";
@@ -52,6 +55,19 @@ export interface RunOptions {
   saveWorker?: (checkpoint: WorkerCheckpoint | undefined) => void;
   /** Resolved sandbox mode for this run; rendered into the system prompt. */
   sandboxMode?: SandboxMode;
+  /** Internal seam for the coding-model router: builds the client for one
+   *  failover provider. Defaults to the real provider client (network). Tests
+   *  inject a fake so routing can be verified without contacting a model. */
+  createProviderClient?: (provider: FailoverProvider) => ProviderClient;
+  /** Internal seam: persisted failover cooldown store. Defaults to the on-disk
+   *  store. Tests inject an in-memory store so a failed provider never leaves a
+   *  process-wide cooldown behind. */
+  cooldownStore?: CooldownStore;
+  /** Internal seam: environment used to resolve provider keys. Defaults to
+   *  `process.env`; tests inject a fake env so no real key is read. */
+  env?: Record<string, string | undefined>;
+  /** Called once per model call with the resolved coding model and chain. */
+  onCodingRoute?: (info: { model: string; chain: string[]; providerId?: string }) => void;
   /** Shared reminder channel. Callers may push external file changes or memory
    *  updates into it; the loop appends due reminders as hidden user messages. */
   reminderChannel?: ReminderChannel;
@@ -96,7 +112,7 @@ function requestSignature(
   messages: ChatMessage[],
 ): RequestSignature {
   const messageHashes = messages.map((m) =>
-    hashText(`${m.role}\\u0000${m.content}\\u0000${JSON.stringify(m.tool_calls ?? null)}\\u0000${m.tool_name ?? ""}`),
+    hashText(`${m.role}\u0000${m.content}\u0000${JSON.stringify(m.tool_calls ?? null)}\u0000${m.tool_name ?? ""}`),
   );
   return {
     systemStaticHash: hashText(system),
@@ -111,6 +127,22 @@ function requestSignature(
 function normalizeArgs(v: unknown): Record<string, unknown> {
   if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
   return {};
+}
+
+/** Best-effort target path for an edit tool call (never the full arguments). */
+function editTargetPath(args: Record<string, unknown>): string | undefined {
+  for (const key of ["path", "file", "filePath", "target", "old_path", "from"]) {
+    const value = args[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+/** Attribute a workspace edit to the model that produced it. No-op when the
+ *  operator disabled edit auditing through `coding.logEdits`. */
+function auditEdit(name: string, args: Record<string, unknown>, model: string, ok: boolean, step: number, enabled: boolean, taskId?: string): void {
+  if (!enabled || !isEditTool(name)) return;
+  recordEditModel({ taskId, step, model, tool: name, path: editTargetPath(args), ok });
 }
 
 /**
@@ -219,6 +251,10 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // The tool names this run may use. Tools that fan out to child agents read
   // it from the tool context so a child never exceeds the parent's reach.
   const runAllowedTools = opts.tools.names();
+  // Coding turns route through the strongest coder in the configured chain.
+  const routeCoding = opts.cfg.coding?.enabled !== false && isCodingTurn(opts.prompt, opts.history);
+  // Edit attribution is on by default and can be disabled per config.
+  const auditEdits = opts.cfg.coding?.logEdits !== false;
   // Harness reminders (stale todo list, external file change, plan mode, memory
   // update) are injected as hidden user-role blocks. They are never emitted as
   // events, so the UI cannot render them.
@@ -264,18 +300,35 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     };
     cacheMonitor.beginRequest(route, requestSignature(system, requestTools, messages));
 
-    const result = await chatWithFallback({
-      cfg: opts.cfg,
-      ollama: opts.ollama,
+    const chatRequest = {
+      model: opts.cfg.model,
       messages,
       tools: requestTools,
       temperature: opts.cfg.agent.temperature,
+      // An explicit per-run model (the quick-edit route) wins over the config
+      // default; the router still replaces it with the strongest coder on a
+      // coding turn.
       ...(opts.model && opts.model.trim() ? { model: opts.model.trim() } : {}),
-      signal: opts.signal,
-      // Buffer candidate answers: streaming an unverified success claim would
-      // expose a result that the completion gate may subsequently reject.
-      notify: (message) => opts.emit({ type: "error", message }),
-    });
+      ...(opts.signal ? { signal: opts.signal } : {}),
+    };
+    const result = routeCoding
+      ? await chatWithCodingRouter({
+          cfg: opts.cfg,
+          chat: chatRequest,
+          fallback: opts.ollama,
+          env: opts.env,
+          store: opts.cooldownStore,
+          createClient: opts.createProviderClient,
+          onRoute: opts.onCodingRoute,
+        })
+      : await chatWithFallback({
+          cfg: opts.cfg,
+          ollama: opts.ollama,
+          ...chatRequest,
+          // Buffer candidate answers: streaming an unverified success claim would
+          // expose a result that the completion gate may subsequently reject.
+          notify: (message) => opts.emit({ type: "error", message }),
+        });
     throwIfCancelled(opts.signal, opts.taskId);
     usedModel = result.model;
     if (providerCompaction) cacheMonitor.noteProviderCompaction();
@@ -394,6 +447,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         const evidence = { name: item.name, args: item.args, ok: toolResult.ok, summary: toolResult.content };
         trace.push(evidence);
         opts.onToolEvidence?.(evidence);
+        auditEdit(item.name, item.args, usedModel, toolResult.ok, step, auditEdits, opts.taskId);
         const notice = stallGuard(item.name, item.args, toolResult.ok);
         if (notice) stallNotices.push(notice);
         if (TODO_UPDATE_TOOLS.has(item.name) && toolResult.ok) {
@@ -434,6 +488,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         const evidence = { name, args, ok: toolResult.ok, summary: toolResult.content };
         trace.push(evidence);
         opts.onToolEvidence?.(evidence);
+        auditEdit(name, args, usedModel, toolResult.ok, step, auditEdits, opts.taskId);
         const notice = stallGuard(name, args, toolResult.ok);
         if (notice) stallNotices.push(notice);
         if (TODO_UPDATE_TOOLS.has(name) && toolResult.ok) {
