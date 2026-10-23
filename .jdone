@@ -25563,3 +25563,59 @@ whole`, `WRITE_FIRST`, `WRITE_SECOND`), so the section cannot perturb the fixtur
 - N19 only *prompts* the behaviour. Enforcement of the budget ceiling, the completion node
   and restart-from-step already lives in the harness; §25 points at it and does not
   duplicate it.
+
+---
+
+# Merge with manus-parity `519f889`: `.jdone` add/add resolved via the union driver
+
+`git merge manus-parity` conflicted in exactly ONE file: `.jdone` (add/add). Parity
+advanced to `519f889` (merge base is `bec4181`), and parity **now tracks `.jdone`**
+again and ships a **union merge driver** for it: the merge added `.gitattributes` with
+`.jdone merge=union` (and `.jcode-done merge=union`). That is the sibling convention
+finally landing upstream, so from here on the rollup should auto-union instead of
+hand-resolving on every parity merge.
+
+## What happened mechanically
+
+`.gitattributes` was introduced *by* this merge, so the driver was not yet in effect
+when the merge ran its 3-way pass over `.jdone`; the result was a normal add/add
+conflict with 13 marker triples. `git merge-tree --write-tree HEAD manus-parity`
+(post-merge, with `.gitattributes` staged) reports `Auto-merging .jdone` and produces
+a **clean union tree** with no markers, confirming the intended outcome.
+
+## Resolution
+
+Removed the 13 `<<<<<<< HEAD` / `=======` / `>>>>>>> manus-parity` marker lines with
+the file tool (both sides' content kept, markers dropped). Verified the result is
+byte-identical to the clean union tree from `git merge-tree` (25565 lines, 0 markers,
+diffCount 0), and that it is a superset of **both** stage blobs (0 non-blank lines
+missing from either parent). CRLF line endings preserved.
+
+## Gates (all run from the worktree root on the merged tree)
+
+- `npx tsc --noEmit`                              -> exit 0
+- `npm run build:server`                          -> exit 0 (server bundle written)
+- `(cd packages/web && npx next build)`           -> exit 0 (compiled, 25/25 static pages)
+- `(cd packages/web && npx tsc --noEmit)`          -> exit 0
+- `node --import tsx --test src/server/__tests__/eventsRoutes.test.ts`
+  -> tests 13, pass 13, fail 0 (O8 deliverable unchanged)
+- `node --import tsx --test src/protocol/__tests__/eventLog.test.ts
+   src/protocol/__tests__/eventLogMigrate.test.ts src/protocol/__tests__/seqReplay.test.ts
+   src/protocol/__tests__/storeCompat.test.ts src/session/__tests__/eventLog.test.ts`
+  -> tests 47, pass 47, fail 0
+- `npm run check:encoding`                         -> OK (no BOM, no mojibake, all JSON valid)
+- `git grep -E "^(<{7} |={7}$|>{7} )"`           -> no matches (no markers anywhere)
+
+## Integrity
+
+- O8 source is byte-identical to `e335eb7`: `git diff --stat e335eb7 --
+  src/server/routes/events.ts src/server/__tests__/eventsRoutes.test.ts` is empty.
+- `src/server/http.ts` auto-merged cleanly (no markers), keeping both sides: parity's
+  J6 `LruCache` bounded `ollamaTagCache`, `debugMemory` routes, and the
+  `workspaceRelay` / `videoStudioExport` additions, alongside O8's
+  `handleEventsRoutes` import and route (both still wired).
+- Committed as merge commit `b7cd3c7`. `git status --porcelain` empty; no unmerged
+  index entries.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No `.neo-*` or `.jcode-*` marker file was staged.
