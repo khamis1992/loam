@@ -193,6 +193,13 @@ export type AgentEvent =
   /** A workspace file was published as a task artifact via artifact_publish. */
   | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string }
   /**
+   * Neo N5: the per-step context selector re-shaped the transcript for this
+   * step. `tokens` is the estimated size of the selected blocks, `artefacts`
+   * the number of artefacts in the run's store, and `reason` why the selector
+   * applied (or why it declined).
+   */
+  | { type: "context_selected"; step: number; tokens: number; artefacts: number; reason: string }
+  /**
    * fc-06: a Loam Video export is in flight. Live-only (no canvas node): the
    * rendered file lands in the task workspace when the stage reaches "saving".
    */
