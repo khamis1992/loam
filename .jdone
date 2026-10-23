@@ -258,6 +258,272 @@ which is additive only (345 insertions, 0 deletions in
 
 ---
 
+## M3 gate-fix session (round 7): re-merged parity N19/F6 (`ca08d4c`); the union driver auto-resolved `.jdone` with no conflict
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity in: .jdone. Run
+git merge manus-parity, resolve those files keeping both sides, commit.`
+
+### Root cause
+No source file conflicted. The only conflict path is the tracked rollup `.jdone`, because both
+sides append their own completion report at the same anchor.
+
+### What happened this round
+Parity advanced again, from the round-6 tip `495ac5f` (V8) to `ca08d4c` (`merge
+khamis1992/neo-n19 (N19 via loam-jcode-run) into manus-parity`, carrying the F6 video-export
+workstream). `git merge manus-parity` **completed with exit 0 and no conflict**: `.jdone` was
+auto-merged by the committed `.gitattributes` union driver (`Auto-merging .jdone`), and no
+source file needed a manual resolve. This is the root-cause fix working as designed: the
+recurring gate failure cannot recur now that the union rule is present.
+
+The union driver concatenated both sides. Verified mechanically against both parents
+(multiset diff of non-blank lines): 0 lines missing from parent 1 (`5d0a29d`) and 0 lines
+missing from parent 2 (`ca08d4c`), so the result is a strict superset and no report content
+was dropped.
+
+### Integrity of the merge
+- `.jdone` blob `a95b3b0` at the parity tip is present verbatim; this branch's round-5/6
+  reports stay at the top and parity's N19/F6 rollup is appended below.
+- 0 conflict markers remain in any tracked file (`^(<{7}|={7}|>{7}|\|{7})$` matches zero lines).
+- LF-only working copy, valid UTF-8, no BOM, no NUL/U+FFFD, Arabic intact.
+- No mirofish file changed in this merge (`git diff --name-only 495ac5f ca08d4c --
+  src/tools/mirofish` is empty), so the M3 deliverable is untouched.
+- No forbidden path staged: `docs/handoff/watchdog.ps1`, `qa/*.png`,
+  `packages/tests/visual/baselines`, and ZCode/Codex files are untouched.
+- No test was weakened, deleted or skipped. No secret committed. No force-push, no `reset --hard`.
+
+### The M3 deliverable (unchanged this round, committed at `6bcbe4c`)
+`fix(mirofish): record sharedWith[] share provenance in the M3 turn schema` adds the
+`sharedWith` field to the agent-turn output schema so share provenance (who the agent
+amplified or answered) is recorded: the `AgentTurnOutput.sharedWith: string[]` type, the
+`MAX_SHARED_WITH = 8` cap, validation that accepts `sharedWith` / `shared_with` /
+`sharedAgents`, the field in the two neutral fallbacks, and the model prompt rule and JSON
+example. Covered by `src/tools/mirofish/__tests__/simulate.test.ts`.
+
+### Gates (all run from the worktree root on the final merged tree `9f67341`)
+- `git merge-base --is-ancestor manus-parity HEAD`               -> exit 0 (0 commits missing)
+- `git rev-list --left-right --count manus-parity...HEAD`       -> 0 (parity fully merged)
+- `npx tsc --noEmit`                                             -> exit 0
+- `npm run build:server`                                         -> exit 0
+- `npm run check:encoding`                                       -> exit 0 (no BOM, no mojibake)
+- `npm run verify`                                               -> exit 0
+    (typecheck + check:encoding + check:eval + orchestrator 114/114 + check:recovery +
+     check:modes; "orchestrator smoke: PASS (114/114)")
+- `(cd packages/web && npx next build)`                          -> exit 0 (25/25 static pages)
+- `node --import tsx --test src/tools/mirofish/__tests__/*.test.ts
+   src/agent/__tests__/mirofishLoop.test.ts src/server/__tests__/mirofishHttp.test.ts
+   src/tools/__tests__/mirofishIntent.test.ts`                     -> exit 0 (144 tests, 144 pass)
+- `(cd packages/web && npx vitest run)`                          -> exit 0 (91 files, 624 tests)
+
+Note on vitest: the first full run failed once in the pre-existing flaky
+`packages/web/src/app/app/wiki/__tests__/wikiPage.test.tsx` ("opens a page through GET
+/api/wiki/:project/:slug"). It passes in isolation (2/2) and passes on a full re-run
+(91 files / 624 tests, 0 failed). The wiki files are byte-identical to parity tip `ca08d4c`
+(`git diff --name-only 495ac5f ca08d4c -- packages/web/src/app/app/wiki` is empty) and were
+not modified by this merge, so the flake is not introduced here. No test was changed.
+
+### Commands used
+  git merge manus-parity
+  git merge-base --is-ancestor manus-parity HEAD
+  git rev-list --left-right --count manus-parity...HEAD
+  git diff --stat 495ac5f ca08d4c
+  git diff --name-only 495ac5f ca08d4c -- src/tools/mirofish
+  npx tsc --noEmit
+  npm run build:server
+  npm run check:encoding
+  npm run verify
+  node --import tsx --test src/tools/mirofish/__tests__/*.test.ts src/agent/__tests__/mirofishLoop.test.ts src/server/__tests__/mirofishHttp.test.ts src/tools/__tests__/mirofishIntent.test.ts
+  (cd packages/web && npx next build)
+  (cd packages/web && npx vitest run)
+
+### Measured RAM
+No RAM measurement taken for this task: the change is a merge-conflict resolution in one tracked
+markdown rollup plus a small, already-committed schema addition, and no long-running or
+memory-intensive process was exercised beyond the standard gates. The heaviest gate was the
+full `npm run verify` and the web vitest run; neither approached any memory limit and no
+peak-RSS figure was captured.
+
+### Files
+Only `.jdone` was changed by this resolution (this report prepended over the parity rollup).
+No source file was edited. No `.cc-*` marker file was touched.
+
+---
+
+## M3 gate-fix session (round 6): merged parity V8 (`495ac5f`), resolved `.jdone` keeping both sides, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity in: .jdone. Run
+git merge manus-parity, resolve those files keeping both sides, commit.`
+
+### Root cause (this round)
+No source file conflicted. The only conflict path was the tracked rollup `.jdone`, because both
+sides append their own completion report at the same anchor.
+
+The `.jdone` tracking state had churned across earlier rounds (parity untracked it, then
+re-tracked it), so it is a **tracked** file at the parity tip again. This round's parity tip
+`495ac5f` is the V8 merge (`merge khamis1992/v0-v8 (V8 via loam-jcode-run) into manus-parity`),
+which is the round where V8 landed the committed `.gitattributes` union-merge rule for these
+markers.
+
+**Correction (verified later in round 7).** The round-6 draft of this report claimed the round-6
+conflict was an *add/add* conflict that the union driver could not auto-resolve. That was a
+guess and it is **wrong**. An add/add conflict on `.jdone` while `merge=union` is declared is
+empirically **not** a conflict: a throwaway reproduction (base without `.jdone`, both sides
+adding it, `.jdone merge=union` present) merges with `Auto-merging .jdone` and no markers. The
+union driver handles add/add correctly. What the union driver does *not* cover is a genuine
+same-region content conflict on a file that exists in the merge base; that is what the round-6
+hand resolution addressed. The earlier V8 round-12 report's claim that add/add is auto-resolved
+is correct and is confirmed by the round-7 merge below.
+
+### What was done
+`git merge manus-parity` (tip `495ac5f`) auto-merged every source file and conflicted only on
+`.jdone` (status `UU`). Resolved with the file editor: removed the three conflict markers
+(`<<<<<<< HEAD`, `=======`, `>>>>>>> manus-parity`) and kept **both** blocks, this branch's M3
+report at the top and parity's V8/N10 rollup below it. The merge also brought in `.gitattributes`
+(declaring `.jdone merge=union` and `.jcode-done merge=union`) and re-added `.jcode-done`, which
+are now present so every future parity merge auto-resolves these markers.
+
+### Integrity of the resolution
+- Multiset line diff against both parents: 0 non-blank lines missing from ours, 0 from theirs,
+  so no report content was dropped and no separator was lost.
+- 0 conflict markers remain in any tracked file (`^(<{7}|={7}|>{7}|\|{7})$` matches zero lines).
+- LF-only working copy (normalized before the report was prepended; `core.autocrlf=true` writes
+  CRLF), valid UTF-8, no BOM, no NUL/U+FFFD, Arabic intact.
+- No forbidden path staged: `docs/handoff/watchdog.ps1`, `qa/*.png`,
+  `packages/tests/visual/baselines`, and ZCode/Codex files are untouched.
+- No test was weakened, deleted or skipped. No secret committed. No force-push, no `reset --hard`.
+
+### The M3 deliverable (unchanged this round, committed at `6bcbe4c`)
+`fix(mirofish): record sharedWith[] share provenance in the M3 turn schema` adds the
+`sharedWith` field to the agent-turn output schema so share provenance (who the agent
+amplified or answered) is recorded: the `AgentTurnOutput.sharedWith: string[]` type, the
+`MAX_SHARED_WITH = 8` cap, validation that accepts `sharedWith` / `shared_with` /
+`sharedAgents`, the field in the two neutral fallbacks, and the model prompt rule and JSON
+example. Covered by `src/tools/mirofish/__tests__/simulate.test.ts`.
+
+### Gates (all run from the worktree root on the final merged tree)
+- `git merge-base --is-ancestor manus-parity HEAD`               -> exit 0 (0 commits missing)
+- `git rev-list --left-right --count manus-parity...HEAD`       -> 0 (parity fully merged)
+- `npx tsc --noEmit`                                             -> exit 0
+- `npm run build:server`                                         -> exit 0
+- `npm run check:encoding`                                       -> exit 0 (no BOM, no mojibake)
+- `npm run verify`                                               -> exit 0
+    (typecheck + check:encoding + check:eval + orchestrator 114/114 + check:recovery +
+     check:modes; "orchestrator smoke: PASS (114/114)")
+- `(cd packages/web && npx next build)`                          -> exit 0 (25/25 static pages)
+- `node --import tsx --test src/tools/mirofish/__tests__/*.test.ts
+   src/agent/__tests__/mirofishLoop.test.ts src/server/__tests__/mirofishHttp.test.ts
+   src/tools/__tests__/mirofishIntent.test.ts`                     -> exit 0 (144 tests, 144 pass)
+- `(cd packages/web && npx vitest run)`                          -> exit 0 (89 files, 614 tests)
+
+### Commands used
+  git merge manus-parity
+  git merge-base --is-ancestor manus-parity HEAD
+  git rev-list --left-right --count manus-parity...HEAD
+  git diff --stat manus-parity...HEAD
+  npx tsc --noEmit
+  npm run build:server
+  npm run check:encoding
+  npm run verify
+  node --import tsx --test src/tools/mirofish/__tests__/*.test.ts src/agent/__tests__/mirofishLoop.test.ts src/server/__tests__/mirofishHttp.test.ts src/tools/__tests__/mirofishIntent.test.ts
+  (cd packages/web && npx next build)
+  (cd packages/web && npx vitest run)
+
+### Measured RAM
+No RAM measurement taken for this task: the change is a merge-conflict resolution in one tracked
+markdown rollup plus a small, already-committed schema addition, and no long-running or
+memory-intensive process was exercised beyond the standard gates. The heaviest gate was the
+full `npm run verify` and the web vitest run; neither approached any memory limit and no
+peak-RSS figure was captured.
+
+### Files
+Only `.jdone` was changed by this resolution (this report prepended over the parity rollup).
+No source file was edited. No `.cc-*` marker file was touched.
+
+---
+
+## M3 gate-fix session (round 5): parity re-tracked `.jdone`; merged every advancing parity tip, resolved keeping both sides, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity in: .jdone. Run
+git merge manus-parity, resolve those files keeping both sides, commit.`
+
+### Root cause (this round)
+No source file conflicts. The only conflict path is the tracked rollup `.jdone`, because both
+sides append their own completion report at the same anchor.
+
+The `.jdone` tracking state churned across this session, which is the whole story:
+
+- Parity commit `d3d7b88` ("chore: untrack runner markers .jdone/.jcode-done") **deleted** the
+  tracked rollup, and `398eb7c` ("chore: untrack .jdone marker file") did the same again.
+- Parity then **re-tracked** it: `bbdca0d` ("docs(jdone): record N10 final merge-gate
+  validation") added `.jdone` back, and it is carried at the parity tip through
+  `a0524f4` (N10 merge) and `590d358` (cr-04 merge) up to `9ffdb16`.
+- So `.jdone` is a **tracked** file again at the parity tip, and every `git merge manus-parity`
+  that brings a parity report alongside our own M3 report conflicts there.
+
+### What was done
+`manus-parity` advanced concurrently all session (other agents push to it). Every new tip was
+re-merged until parity was an ancestor of HEAD. The final merge (`534eda9`, parents `6c1a1c1`
++ `9ffdb16`) was **clean**; the working-tree `.jdone` came from the parity side (the N10
+rollup). This report is then **prepended** to that rollup, so the result is a strict union of
+both sides: the M3 report block at the top, the full N10/parity rollup verbatim below it. Not
+one line from either side was dropped and no separator was lost.
+
+The merge driver writes the working copy as CRLF while the blobs are LF-only
+(`core.autocrlf=true`), so the file was normalized back to LF before this report was prepended.
+
+### The M3 deliverable (unchanged this round, committed at `6bcbe4c`)
+`fix(mirofish): record sharedWith[] share provenance in the M3 turn schema` adds the
+`sharedWith` field to the agent-turn output schema so share provenance (who the agent
+amplified or answered) is recorded: the `AgentTurnOutput.sharedWith: string[]` type, the
+`MAX_SHARED_WITH = 8` cap, validation that accepts `sharedWith` / `shared_with` /
+`sharedAgents`, the field in the two neutral fallbacks, and the model prompt rule and JSON
+example. Covered by `src/tools/mirofish/__tests__/simulate.test.ts`.
+
+### Integrity of the branch tree
+- `.jdone` is tracked at HEAD and carries both this report and the parity rollup.
+- No conflict marker remains in any tracked file (`^(<{7}|={7}|>{7})$` matches zero lines).
+- No forbidden path staged: `docs/handoff/watchdog.ps1`, `qa/*.png`,
+  `packages/tests/visual/baselines`, and ZCode/Codex files are untouched.
+- No test was weakened, deleted or skipped. No secret committed. No force-push, no
+  `reset --hard`.
+
+### Gates (all run from the worktree root on the final merged tree)
+- `git merge-base --is-ancestor manus-parity HEAD`               -> exit 0
+- `npx tsc --noEmit`                                             -> exit 0
+- `npm run build:server`                                         -> exit 0
+- `(cd packages/web && npx next build)`                          -> exit 0 (25/25 static pages)
+- `npm run check:encoding`                                       -> exit 0 (no BOM, no mojibake)
+- `npm run verify`                                               -> exit 0
+    (typecheck + check:encoding + check:eval + orchestrator 114/114 + check:recovery +
+     check:modes; "orchestrator smoke: PASS (114/114)")
+- `node --import tsx --test src/tools/mirofish/__tests__/*.test.ts
+   src/agent/__tests__/mirofishLoop.test.ts src/server/__tests__/mirofishHttp.test.ts
+   src/tools/__tests__/mirofishIntent.test.ts`                     -> exit 0 (144 tests, 144 pass)
+- `(cd packages/web && npx vitest run)`                          -> exit 0 (88 files, 606 tests)
+
+### Commands used
+  git merge manus-parity
+  git merge-base --is-ancestor manus-parity HEAD
+  git rev-list --left-right --count manus-parity...HEAD
+  npx tsc --noEmit
+  npm run build:server
+  npm run check:encoding
+  npm run verify
+  node --import tsx --test src/tools/mirofish/__tests__/*.test.ts src/agent/__tests__/mirofishLoop.test.ts src/server/__tests__/mirofishHttp.test.ts src/tools/__tests__/mirofishIntent.test.ts
+  (cd packages/web && npx next build)
+  (cd packages/web && npx vitest run)
+
+### Measured RAM
+No RAM measurement taken for this task: the change is a merge-conflict resolution in one tracked
+markdown rollup plus a small, already-committed schema addition, and no long-running or
+memory-intensive process was exercised beyond the standard gates. The heaviest gate was the
+full `npm run verify` and the web vitest run; neither approached any memory limit and no
+peak-RSS figure was captured.
+
+### Files
+Only `.jdone` was changed by this resolution (this report prepended over the parity rollup).
+No source file was edited. No `.cc-*` marker file was touched.
+
+---
 # N19 gate fix (third pass): manus-parity re-merged, .jdone conflicts resolved as unions
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
@@ -498,6 +764,9 @@ No secrets committed. No forbidden path touched. Nothing pushed. Working tree cl
 ---
 
 ## V8 gate-fix session (round 10): merge with manus-parity, all gates green
+
+---
+
 # N10 final merge gate: parity advanced 3x again, all re-merged, .jdone kept, full suites green
 
 This pass started from the previous `.jdone` merge report. Parity's local ref had advanced again
