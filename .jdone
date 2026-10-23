@@ -56,6 +56,77 @@ skipped; no `.neo-*` or `.jcode-*` marker was staged.
 - `CANVAS_NODE_TYPES` + `NODE_TYPE_KEYS` are the canvas node vocabulary; a new
   run-graph node type must be added to both (N7's `sibling`/`branch`/`merge` were).
 
+## Deep validation pass (this session, after the first report)
+
+Re-ran everything and inspected the real code paths rather than trusting the first
+pass. Nothing changed; the findings below are what the deeper look confirmed.
+
+- **Full web suite**: `(cd packages/web && npx vitest run)` -> **81 files /
+  545 tests, all pass**. The first report only ran the canvas and workspace
+  subsets; the whole web suite is green too.
+- **Full node sweep**: `node --import tsx --test "src/**/*.test.ts"` ->
+  **tests 2749, pass 2749, fail 0, cancelled 0, skipped 0**. (The inherited
+  `worktrees.test.ts` environmental failure documented in the preserved reports is
+  gone on this parity tip: parity commit `5549aad` made that assertion hermetic.)
+- **Touched node suites**: `graphRoutes` + `recipeEngine` + `orchestratorRecipe` +
+  `recipeIds` + `recipeEvents` + `recipeReplay` + `runGraph` -> **67 tests, 67
+  pass, 0 fail**.
+- **Acceptance criteria against the real paths**:
+  - 6+ nodes live: `CanvasPanel` renders one `canvas-node` button per graph node
+    and lists `recipe_step` nodes in the Recipe panel; the fixture is a 7-node
+    graph (root + 6 steps) and the test asserts 7 cards and `7 nodes`.
+  - Organize without overlap: `applyLayout` groups by `depthMap` (longest-path
+    depth, cycle-safe) and spaces siblings on x and layers on y, so two nodes can
+    only share a cell on a duplicate id, which `applyLayout` drops (first wins).
+    `hasOverlaps` is the pinned invariant and the test asserts every card
+    transform is distinct after clicking Organize.
+  - E opens the detail: the `keydown` handler opens the newest node
+    (`nodesRef.current.at(-1)`), Escape closes it, and clicking a card toggles the
+    same sheet; the test pins `data-node-id="step-six"`.
+  - RTL: `ar.json` carries the real strings (`Recipe` -> `الوصفة`, `nodes` ->
+    `عقد`, `RTL` -> `من اليمين إلى اليسار`), the panel calls `setLocale(locale)`
+    when it owns the locale, and the surface stays `dir="ltr"`.
+- **Wiring verified by reading it**: `registerEditor({ kind: 'canvas', ... })`;
+  `handleGraphRoutes` is called from `src/server/http.ts:1777` before the normal
+  404 path; the client hits `/api/graph/:runId`, `/stream` and `/nodes/:nodeId`;
+  the stream is fetch-based SSE carrying a `snapshot` frame then one `change`
+  frame per write; `runGraph` exposes `getGraphLayout` / `addSiblings` /
+  `createBranch` / `createMerge` and `store` knows `sibling`/`branch`/`merge`.
+- **`.jdone` superset re-verified at HEAD**: the committed `.jdone` (8232 lines)
+  contains **0** non-empty lines missing vs parity's 8168-line rollup and **0**
+  missing vs this branch's earlier 4646-line version; Arabic present, no BOM, no
+  mojibake; the working copy is byte-identical to the committed file.
+- **Merge state re-verified**: `git merge manus-parity` -> "Already up to date";
+  `manus-parity` is an ancestor of HEAD; `rev-list --left-right --count` -> `0 2`;
+  no conflict markers.
+
+### One honest finding: the auto-layout is not dagre/elk
+
+The task's *suggested* files list mentions auto-layout "via dagre/elk". N2 ships
+an **original layered-grid layout** in `canvas/layout.ts` instead: no dagre, elk
+or graphlib dependency exists in `packages/web/package.json`, and none was added.
+This is a deliberate choice, not an omission:
+
+- the acceptance rule ("Organize lays out without overlap") is satisfied by
+  construction (layers on y, siblings on x, duplicate ids dropped), and
+  `hasOverlaps` + the distinct-transform assertion pin it;
+- it is a pure function with no DOM, no server round trip and no dependency, so
+  the panel can re-layout hand-moved nodes and live deltas locally;
+- the server already returns its own layered `RunGraph.getGraphLayout`, so a
+  client-side layered layout is consistent with what the server computes.
+
+A dagre/elk layout can still be dropped in behind the same `applyLayout`
+signature through the `layoutOptions` seam; that is left to whoever needs
+force-directed spacing.
+
+### Working-tree note
+
+`src/agent/masterPromptText.ts` shows as modified in `git status` after the full
+node sweep, but `git diff` is empty and its blob hash is identical to
+`HEAD:src/agent/masterPromptText.ts` (`f4fe52f`). It is a content-identical
+CRLF stat refresh (`core.autocrlf=true`), not a change. No source file was edited
+by this session; the only committed file is `.jdone`.
+
 No secrets committed. No forbidden path touched. No real external model API was
 called by the tests. Working tree clean.
 
