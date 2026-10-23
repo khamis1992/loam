@@ -86,3 +86,35 @@ itself, not a regression from fc-09.
 
 Also noted: `@testing-library/user-event` is not installed in `packages/web`, so the panel
 test uses `fireEvent` from `@testing-library/react` instead.
+
+## Self-review after the fact (interpretations and gaps)
+
+Re-auditing the delivered work surfaced two things worth stating plainly.
+
+**1. The `createEffectcraftExecutor` / `createRoundTripExecutor` are not yet consumed.**
+A reference search confirms `createRoundTripExecutor` and `createEffectcraftExecutor`
+appear only in `packages/web/src/lib/videoStudioClient.ts` (the definitions) and in
+`packages/web/src/lib/videoStudioClient.test.ts` (the tests). Nothing constructs a
+`VideoStudioClient` anywhere in `packages/web/src` yet, so no production code path reaches
+the effects executor today. The interpretation I had to guess at: the task asked for these
+executors, and the panel drives its round trip directly through the two bridge refs, so I
+delivered the executors as the documented seam and tested them, rather than inventing a
+wiring that no caller needs yet. If the intent was that agent `target: "effects"` commands
+must be executable end to end, that wiring is still missing and is the next piece.
+
+**2. `Done` is disabled rather than explained when there is no project.** I initially
+"fixed" this by making `Done` show a notice when `projectPath` was null. A test I wrote for
+that branch failed and disproved the premise: `openInEffects` always sets a derived path via
+`effectsProjectPathFor(clip, taskId)`, so while the effects engine is showing, `projectPath`
+is never null. The branch was unreachable dead code, so I reverted both the change and the
+test. Current behaviour stands as delivered: `Done` is disabled (via `!projectPath`) and the
+round trip reports failures through the notice banner.
+
+**3. `openInEffects` trusts the panel's own project path.** It derives the path from the
+clip and the task id rather than requiring the effects engine to confirm it saved. This is
+consistent with `planRoundTrip`, which does the same, but it means a user-edited composition
+is named by Loam rather than by the engine. Left as is deliberately: the engine's own
+`inspect()` result takes precedence when it reports one.
+
+Gates re-run after the reverts: web `tsc --noEmit` exit 0, touched web suites 12/12 pass,
+working tree clean.
