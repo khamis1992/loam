@@ -1,3 +1,91 @@
+## J11 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge manus-parity, resolve all conflicts keeping both sides, commit.`
+
+`git merge manus-parity` produced exactly two conflicts, both resolved by keeping BOTH sides
+(no line dropped from either side):
+
+1. `THIRD_PARTY_NOTICES` (add/add). J11's compaction provenance paragraph kept, parity's
+   heading ("Third-party notices") and its "Adapted files" block kept.
+2. `src/agent/events.ts` (content). J11's extended `compaction` event
+   (`step: 1 | 2 | 3`, `emergency`, `droppedTurns`) kept together with parity's
+   new `cache_usage` event, so neither feature regressed.
+
+One silent drop the auto-merge introduced, found by tsc and restored:
+`src/agent/__tests__/cacheUsageAccounting.test.ts` had parity's `skills` line win while
+losing J11's four `compression` constants from its config factory
+(`criticalThresholdPercent`, `recentTurnsToKeep`, `minTurnsToKeep`,
+`emergencyToolResultMaxChars`) -> tsc error TS2739. All four were restored. No test was
+weakened, deleted, relaxed or skipped; the only edit to a test file was adding back
+constants the merge had removed.
+
+## Post-merge gates (all run from the worktree root on the committed merge tree, commit 4134668)
+
+  1. `npx tsc --noEmit`                        -> exit 0
+  2. `npm run build:server`                    -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+  3. `(cd packages/web && npx next build)`     -> exit 0 (compiled, 25/25 static pages)
+  4. `node --import tsx --test src/agent/__tests__/contextCompressor.test.ts`
+                                                -> tests 31, pass 31, fail 0
+
+J11 touched suites (re-run after the merge):
+  `node --import tsx --test src/agent/__tests__/contextCompressor.test.ts src/agent/__tests__/cacheUsageAccounting.test.ts src/agent/__tests__/codingPrompt.test.ts`
+                                                -> tests 43, pass 43, fail 0
+  `(cd packages/web && npx vitest run)`        -> 72 files / 472 tests, all pass, 0 fail
+
+Full-suite run `node --import tsx --test "src/**/*.test.ts"` -> tests 2284, pass 2277, fail 7.
+All 7 are pre-existing and environmental/parity issues, documented in manus-parity's own
+`.jdone`; none is caused by this merge and none touches J11:
+  1. `src/agent/__tests__/loopHooks.test.ts` -> "SessionStart block prevents the run from starting"
+     (`Missing expected rejection`, /SessionStart/) and "SessionEnd reports the real terminal
+     reason on a cancelled run" (ENOENT `.session-end-reason`). Environment-dependent: the
+     hook subprocess needs the spawned shell to honour the fixture path.
+  2. `src/agent/__tests__/orchestratorHooks.test.ts` -> "a Stop continuation answer is verified
+     again before the run finishes" (actual 1, expected 2). Same environment class.
+  3. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered nor
+     listed in PENDING_CODING_TOOLS". Inherited from parity: D4 added `suggest_plan` to
+     `CODING_PROFILE.tools` and the mode catalog but not to the test's `PENDING_CODING_TOOLS`,
+     and the test's registry does not include `createPlanTools`.
+  4. `src/policy/__tests__/hooks.test.ts` -> "SubagentStart exposes the subagent name and
+     additionalContext" (actual `''`, expected `'injected context'`). Environment-dependent.
+  5. `src/server/__tests__/worktrees.test.ts` -> "reads the real branch of a git folder" and
+     "reports non-git folders without throwing". Environment-dependent: the test asserts a fresh
+     `os.tmpdir()` folder is *not* a git repo, but this worktree's temp dir resolves under a git
+     repository, so `info.isGit` is true.
+
+## Acceptance criteria (all covered)
+
+- Doc committed: `docs/COMPACTION_SPEC.md` is present at HEAD and compares every jcode
+  `compaction-core.rs` constant to Loam's value with a justification.
+- Added constants covered by tests: `src/agent/__tests__/contextCompressor.test.ts` covers the
+  jcode defaults, malformed-value clamping, the critical-ratio clamp, tool-result truncation,
+  the emergency path, the tool-pair invariant, and the UTF-8 byte basis of both the truncation
+  budget and the token estimate (31 tests, 31 pass).
+- Gates pass: tsc, build:server, web build and the touched suites all exit 0.
+
+## Commands used
+
+  git merge manus-parity
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  node --import tsx --test src/agent/__tests__/contextCompressor.test.ts
+  node --import tsx --test src/agent/__tests__/contextCompressor.test.ts src/agent/__tests__/cacheUsageAccounting.test.ts src/agent/__tests__/codingPrompt.test.ts
+  (cd packages/web && npx vitest run)
+  node --import tsx --test "src/**/*.test.ts"
+
+## Measured RAM
+
+No RAM measurement taken for this task: the change is documentation plus four config
+constants, and no long-running or memory-intensive process was exercised. The heaviest gate
+was the full node test suite (tests 2284, ~1.5 min wall clock), which ran without a memory
+limit being hit; no peak-RSS figure was captured.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+
+---
+
+## Preserved: manus-parity rollup (O1 gate-fix report)
+
 ## O1 gate-fix session: merge with manus-parity, all gates green
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
