@@ -89,7 +89,7 @@ export interface VideoStudioRelayLike {
 export const VIDEO_STUDIO_FALLBACK_TOOL = "video_edit";
 
 export type VideoStudioFallbackReason =
-  | "filmcraft_dist_missing"
+  | "loam_video_dist_missing"
   | "panel_not_open"
   | "bridge_unavailable"
   | "command_rejected"
@@ -717,7 +717,7 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
 
         if (!isFilmcraftDistInstalled(root)) {
           return fallbackResult(
-            "filmcraft_dist_missing",
+            "loam_video_dist_missing",
             `The Loam Video dist is not installed (${filmcraftDistDir(root)}). Install it with the vendor script, then retry.`,
             routing,
           );

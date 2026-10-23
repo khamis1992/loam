@@ -101,7 +101,7 @@ describe("video_studio availability + fallback", () => {
     assert.equal(res.ok, false);
     const parsed = JSON.parse(res.content) as { fallback: string; reason: string };
     assert.equal(parsed.fallback, "video_edit");
-    assert.equal(parsed.reason, "filmcraft_dist_missing");
+    assert.equal(parsed.reason, "loam_video_dist_missing");
     // The fallback must not dispatch anything to the panel.
     assert.deepEqual(relay.dispatched, []);
   });
@@ -492,6 +492,98 @@ describe("video_studio actions produce the expected command sequence", () => {
     assert.equal(parsed.fallback, "video_edit");
     assert.equal(parsed.reason, "bridge_unavailable");
     assert.match(parsed.message, /socket closed/);
+  });
+});
+
+describe("video_studio branding", () => {
+  // The prompt-side branding contract lives in videoPrompt.test.ts. This one covers
+  // the other half: the JSON the tool hands back is read by the model and often
+  // relayed to the user, so an upstream project name must never appear as a bare
+  // word there. A real filesystem path is allowed, because the agent needs the
+  // location to fix the install and a path is a fact rather than a product name.
+  const UPSTREAM_NAMES = ["filmcraft", "effectcraft", "artcraft"];
+
+  /** Drop path-like tokens so a legitimate directory name is not counted as a leak. */
+  function stripPaths(text: string): string {
+    return text.replace(/[^\s"'`,)\]]*[\\/][^\s"'`,)\]]*/g, "<path>");
+  }
+
+  /** A local root carrying the vendored dist, so the shared `root` fixture stays intact. */
+  function withDist(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-vs-brand-"));
+    fs.mkdirSync(path.join(dir, "electron", "filmcraft", "dist"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "electron", "filmcraft", "dist", "index.html"), "<html></html>");
+    return dir;
+  }
+
+  function brandTool(brandRoot: string): ReturnType<typeof createVideoStudioTools>[number] {
+    return createVideoStudioTools({ relay, root: brandRoot })[0]!;
+  }
+
+  it("never names an upstream project in a result the model reads", async () => {
+    const brandRoot = withDist();
+    const missingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "loam-vs-nodist-"));
+    const brandWs = fs.mkdtempSync(path.join(os.tmpdir(), "loam-vs-brand-ws-"));
+    const brandCtx = { cfg: {} as never, workspace: brandWs, emit: () => undefined, taskId: "task_1" } as never;
+    const contents: string[] = [];
+
+    // dist missing
+    relay = new MockRelay();
+    contents.push((await brandTool(missingRoot).run({ action: "state" }, brandCtx)).content);
+
+    // panel not open, bridge failure, rejected command, cancelled
+    for (const failWith of [
+      { code: "PANEL_NOT_OPEN", message: "no panel" },
+      { code: "TIMEOUT", message: "timed out" },
+      { code: "COMMAND_REJECTED", message: "bad clip" },
+      { code: "CANCELLED", message: "task stopped" },
+    ]) {
+      relay = new MockRelay();
+      relay.commands = CATALOG;
+      relay.failWith = failWith;
+      contents.push((await brandTool(brandRoot).run({ action: "cut", atSec: 5 }, brandCtx)).content);
+    }
+
+    // missing command, unknown action, success
+    relay = new MockRelay();
+    relay.commands = ["file.newProject", "export"];
+    contents.push((await brandTool(brandRoot).run({ action: "cut", atSec: 5 }, brandCtx)).content);
+    relay = new MockRelay();
+    contents.push((await brandTool(brandRoot).run({ action: "teleport" }, brandCtx)).content);
+    relay = new MockRelay();
+    relay.commands = CATALOG;
+    contents.push((await brandTool(brandRoot).run({ action: "split", atSec: 8 }, brandCtx)).content);
+
+    try {
+      for (const content of contents) {
+        const text = stripPaths(content).toLowerCase();
+        for (const name of UPSTREAM_NAMES) {
+          assert.ok(!text.includes(name), `upstream name "${name}" leaked into a tool result: ${content}`);
+        }
+      }
+    } finally {
+      for (const dir of [brandRoot, missingRoot, brandWs]) {
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+      }
+    }
+  });
+
+  it("keeps the reason codes brand-neutral", async () => {
+    // The dist-missing reason used to be spelled with an upstream project name.
+    const missingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "loam-vs-nodist-"));
+    const brandWs = fs.mkdtempSync(path.join(os.tmpdir(), "loam-vs-brand-ws-"));
+    const brandCtx = { cfg: {} as never, workspace: brandWs, emit: () => undefined, taskId: "task_1" } as never;
+    try {
+      relay = new MockRelay();
+      const parsed = JSON.parse((await brandTool(missingRoot).run({ action: "state" }, brandCtx)).content) as { reason: string };
+      for (const name of UPSTREAM_NAMES) {
+        assert.ok(!parsed.reason.includes(name), `reason "${parsed.reason}" names an upstream project`);
+      }
+    } finally {
+      for (const dir of [missingRoot, brandWs]) {
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+      }
+    }
   });
 });
 
