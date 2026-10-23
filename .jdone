@@ -1,3 +1,121 @@
+# N9 - Ask-User-More clarification node: complete (merge gate fixed)
+
+## The failure that was fixed
+
+`.jgatefail.txt` reported:
+
+    MERGE CONFLICT with latest manus-parity: run git merge manus-parity, resolve all
+    conflicts keeping both sides, commit.
+
+Root cause: `manus-parity` advanced while N9's own commits (`3136f14`, `ed6376d`,
+`1cdc5f4`, `c6c5ba6`) were landing, so this branch was no longer an ancestor of
+parity and `git merge manus-parity` conflicted.
+
+## What was done
+
+Two sequential merges, both cleanly resolved by keeping BOTH sides; no test was
+weakened, deleted or skipped and no code was dropped:
+
+1. `git merge manus-parity` (parity tip `045f3e2`, J5) -> merge commit `df1ec49`.
+   No conflict: N9's files (`src/tools/askUser*.ts`, `src/server/routes/askUser.ts`,
+   `src/protocol/*`) are disjoint from J5's `src/policy/commandRisk/*` and
+   `src/tools/shell.ts`, and parity's prepended `.jdone` rollup auto-merged.
+   `git rev-list --left-right --count manus-parity...HEAD` after this merge was `8 5`
+   (8 parity commits still missing).
+2. `git merge manus-parity` (parity tip `cf45585`, C19 failover endpoints + hermetic
+   budget suite) -> merge commit `1f2b7a4`. No conflict: C19's `src/config.ts`,
+   `src/__tests__/configFailover.test.ts` and `src/agent/__tests__/orchestratorBudget.test.ts`
+   are disjoint from every N9 file, and the shared `.jdone` rollup auto-merged (both
+   sides prepend at the same anchor, git's ort strategy produced a valid union).
+
+After `1f2b7a4`, `git merge manus-parity` reports **"Already up to date."**,
+`git merge-base --is-ancestor manus-parity HEAD` exits 0, and
+`git rev-list --left-right --count manus-parity...HEAD` is `0  6` — zero parity
+commits missing. `git status --porcelain` is empty and no conflict marker
+(`^<{7}$`, `^={7}$`, `^>{7}$`) remains anywhere in the tree.
+
+## N9 deliverables (unchanged by this session)
+
+Structured clarification that pauses a run and resumes with the answers attached as
+context, plus the auto-trigger the planner's low-confidence flag feeds:
+
+- `src/tools/askUserTools.ts` — the `ask_user` agent tool (questions with options,
+  `allowFile` upload flag, free-text fallback).
+- `src/tools/askUserStore.ts` — durable pending-request records with a TTL,
+  `waitForAskUser` that clears the record on abort so a cancelled card cannot leave
+  the task's mutating tools blocked for the rest of the window.
+- `src/tools/askUserGate.ts` — the fail-closed seam the orchestrator calls.
+- `src/server/routes/askUser.ts` — the HTTP route the web client answers through.
+- `src/agent/orchestrator.ts` — the pause/resume wiring and the auto trigger
+  (`src/agent/__tests__/askUserAutoTrigger.test.ts` covers the vague-prompt fixture
+  producing an ask node **before any tool call**).
+- `src/protocol/{types,events,socket}.ts` + `src/agent/events.ts` — the
+  `askUserRequested` / `askUserResolved` event pair and the `resolve_ask_user`
+  client message, carried over the socket bridge
+  (`src/protocol/__tests__/askUserSocket.test.ts`).
+- `src/graph/runGraph.ts` — the ask node on the run graph, mirroring
+  `approval_required`.
+- `packages/web/src/components/approval/AskUserCard.tsx` — the right-panel card
+  (auto-opens when the event arrives, user can edit or continue from chat),
+  Arabic/RTL via `dir="auto"` and `packages/web/src/i18n/{en,ar}.json`.
+- Registration: `src/index.ts`, `src/setup/runtime.ts`, `src/modes/catalog.ts`
+  (`ask_user` in the mode-catalog CONTROL set), `prompts/loam-master.md` and
+  `src/agent/masterPromptText.ts` (regenerated).
+
+Acceptance criteria are covered by passing automated tests: the vague-prompt fixture
+produces an ask node before any tool call (`askUserAutoTrigger.test.ts`), and an
+answer plus an attached file resumes the run and the file is used as context
+(`askUser.test.ts` + `AskUserCard.test.tsx`, the latter via vitest +
+@testing-library because the Playwright harness is unavailable here).
+
+## Gates (all run from the worktree root on the merged tree `1f2b7a4`)
+
+  1. `npx tsc --noEmit`                            -> exit 0
+  2. `npm run build:server`                        -> exit 0 (dist/server.cjs 19.5mb,
+                                                         pdf worker copied)
+  3. `(cd packages/web && npx next build)`         -> exit 0 (compiled, 25/25 static pages)
+  4. N9 suites:
+     `node --import tsx --test src/tools/__tests__/askUser.test.ts
+       src/agent/__tests__/askUserAutoTrigger.test.ts src/protocol/__tests__/askUserSocket.test.ts`
+                                                  -> tests 25, pass 25, fail 0
+     `node --import tsx --test src/graph/__tests__/runGraph.test.ts
+       src/server/__tests__/runTools.test.ts src/agent/__tests__/toolProfile.test.ts
+       src/agent/__tests__/toolDescriptions.test.ts`
+                                                  -> tests 40, pass 40, fail 0
+     `(cd packages/web && npx vitest run src/components/approval/__tests__/askUserCard.test.tsx)`
+                                                  -> 1 file / 7 tests, all pass
+  5. `npm run check:encoding`                      -> OK (no BOM, no mojibake, all JSON valid)
+  6. `npm run check:modes`                         -> PASS
+  7. `npm run check:orchestrator`                  -> PASS
+
+Full-suite validation on the merged tree:
+
+  `node --import tsx --test "src/**/*.test.ts"`    -> tests 2504, pass 2503, fail 1
+
+The single failure is `src/server/__tests__/worktrees.test.ts`
+("reports non-git folders without throwing"), environmental and **not** caused by N9:
+the test asserts that a fresh `os.tmpdir()` folder is not a git repo, but `%TEMP%` on
+this machine sits inside a git work tree (`git -C %TEMP% rev-parse --is-inside-work-tree`
+-> true), so a `mkdtemp`'d dir reports a branch instead of throwing.
+`src/server/worktrees.ts` and its test are byte-identical to manus-parity
+(`git diff manus-parity HEAD -- <file>` is empty for both). It also reproduces on
+parity alone.
+
+## Merge safety checks
+
+- `git diff manus-parity HEAD` -> 31 files, 2622 insertions, 17 deletions: the N9 files
+  above plus `packages/shared/src/socket.ts`, `packages/web/src/components/chat/EventList.tsx`,
+  `packages/web/src/services/chatSocket.ts`, `src/agent/taskToolScope.ts`,
+  `src/server/http.ts` and the i18n JSON. Nothing outside N9's scope.
+- No added line contains the mojibake marker (0 of 2622 added lines).
+- Arabic in `packages/web/src/i18n/ar.json` is valid UTF-8 and the file parses; no
+  mojibake placeholder text was written anywhere.
+- No test was weakened, deleted or skipped; no code was dropped from either side.
+
+No secrets committed. No forbidden path touched. Working tree clean.
+
+---
+
 # C19 gate-fix session: hermetic budget suite + merge with manus-parity
 
 `.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. The only file
