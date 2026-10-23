@@ -27,6 +27,49 @@ files fully zeroed on disk.
 - `src/server/routes/envBuilds.ts` + route wiring in `src/server/http.ts`.
 - `src/scripts/check-env-builds.ts`.
 
+## Independent re-validation (2026-10-23, second pass)
+
+Every claim above was re-checked from scratch rather than trusted:
+
+- **Union audit (set-based, line level).** Extracted the pre-merge base `088b4f2`,
+  D3 parent `053cd0e`, parity tip `03f8aef` and merge `ac0cf67` for all three
+  conflicted files, then compared line multisets. Result: `d3LinesMissing=0` and
+  `parityLinesMissing=0` for `package.json`, `src/server/http.ts` and
+  `src/server/runTools.ts`. Nothing from either side was dropped. Line counts are
+  exactly additive (merge = base + D3's additions + parity's additions).
+- **No test weakening.** `git diff 03f8aef HEAD -- '*__tests__*'` is purely
+  additive: 658 insertions, 0 deletions; `runTools.test.ts` only gained the D3
+  union lines. `git diff --diff-filter=D` against parity is empty (no test file
+  deleted). 4 new D3 test files added.
+- **Gates re-run with exit codes captured:** `npx tsc --noEmit` exit 0;
+  `npm run build:server` exit 0 (dist/server.cjs 20,272,471 bytes);
+  `next build` exit 0 (compiled successfully, 25/25 static pages);
+  D3 env tests 24/24; tools 632/632; server 414/414; agent+llm+memory 305/305;
+  web vitest 437/437 (66 files).
+- **Conflict markers:** `git grep -E '^(<<<<<<<|>>>>>>>)$' HEAD` returns nothing.
+- **Forbidden paths:** `git diff --name-only 03f8aef HEAD -- docs/handoff/watchdog.ps1
+  qa/ packages/tests/visual/baselines` returns nothing (count 0).
+- **Tree state:** `git status --porcelain` empty (0 entries); `git merge-tree
+  --write-tree manus-parity HEAD` exits 0 (no re-emerging conflict);
+  `git rev-list --count HEAD..manus-parity` = 0 (not behind).
+- **Merge shape:** `ac0cf67` has two parents, `053cd0e` (D3) and `03f8aef` (parity
+  tip); `manus-parity` is an ancestor of HEAD.
+- **Encoding:** `.jdone` is UTF-8 without BOM and contains no U+FFFD; Arabic
+  text is intact in `src/agent/masterPromptText.ts` (388 Arabic chars) and
+  `packages/web/src/i18n/ar.json` (11,266).
+
+### Note on `git fsck`
+`git fsck` in this shared repo prints `error: bad signature 0x00000000 / fatal:
+index file corrupt`. This is **not** caused by this worktree. `fsck` walks every
+registered worktree, and `devin-d19` and `devin-d4` have fully zeroed indexes
+(signature `0x00000000`). Every other worktree (including this one and the
+`manus-parity` main worktree) has a valid `DIRC` index, and the error reproduces
+identically from an unrelated worktree. Confirmed the object store itself is
+sound: `git verify-pack -v .../pack-4f9df149...idx` reports `ok`, a fresh
+`git clone` of the same repo runs `git fsck` at exit 0, and a bare clone also
+exits 0. This worktree's index is valid (593,276 bytes, signature `DIRC`,
+version 2) and every index-reading command (`ls-files`, `status`, `diff`) works.
+
 ## Gates (all pass, run from the worktree root)
 1. `npx tsc --noEmit` — PASS
 2. `npm run build:server` — PASS (dist/server.cjs 19.3mb)
