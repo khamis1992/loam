@@ -38,6 +38,29 @@ export function isVideoStudioTool(tool: string): boolean {
 }
 
 /**
+ * Neo N2: the canvas shows the whole run graph, so it is a task-wide surface.
+ * Any plan/step/tool event is enough to bring it up; the exact node set is the
+ * server's to decide.
+ */
+export function isCanvasSignalTool(tool: string): boolean {
+  const name = (tool ?? '').toLowerCase();
+  return (
+    name.startsWith('web_') ||
+    name.startsWith('browser_') ||
+    name.startsWith('gen_') ||
+    name.startsWith('loam_') ||
+    name.startsWith('office_') ||
+    name.includes('docx') ||
+    name.includes('xlsx') ||
+    name.includes('pptx') ||
+    name === 'file_write' ||
+    name === 'file_edit' ||
+    name === 'code_session' ||
+    name === 'web_scaffold'
+  );
+}
+
+/**
  * Edit/motion intent in the user's own words (Arabic + English). A bare mention
  * of "video" is not enough — the user must be asking for an edit.
  */
@@ -154,6 +177,8 @@ export function decideWorkspaceOpen(event: ToolUsedEvent): WorkspaceOpenTarget |
     return null;
   }
   if (isWorkspaceToolName(event.tool)) return { path: null, kind: null };
+  // A tool with no file output still moves the run graph, so it opens the canvas.
+  if (isCanvasSignalTool(event.tool)) return { path: null, kind: 'canvas' };
   return null;
 }
 
