@@ -45,6 +45,30 @@ the `.jcode-done` numbers.
 
 ---
 
+# N5 round 3: parity O7 merged clean; all gates re-run
+
+Parity advanced to `519f889` ("merge `khamis1992/om-o7` (O7) into manus-parity"), merged here as
+`1394727`. It adds `src/scripts/check-eventlog.ts` (443 lines) and one `package.json` script
+(`check:eventlog`); it touches nothing N5 owns, so the merge applied with no conflict. The
+`check:eventlog` script is **not** wired into `npm run verify`, so the gate set is unchanged.
+
+Gates re-run on this merged tree:
+
+| Gate | Result |
+| --- | --- |
+| `npx tsc --noEmit` | exit 0 |
+| `npm run build:server` | exit 0 (`server bundle + pdf worker written to dist/`) |
+| `(cd packages/web && npx next build)` | exit 0 (compiled, 25/25 static pages) |
+| full node suite | 2971 tests, 2971 pass, 0 fail |
+| web suite | 91 files, 624 tests, 624 pass |
+| N5 focused (selector + long-horizon + runGraph + loopBudget + loopHooks) | 76 tests, 76 pass, 0 fail |
+| `eval-neo` | 10/10 PASS, verdict PASS, no regression |
+
+Both markers were re-verified after this merge: `.jcode-done` and `.jdone` each report
+missing 0 non-blank lines against `manus-parity` (normalized comparison).
+
+---
+
 # N9 round 12: parity auto-unioned .jdone, full suite green on the final tip
 
 Parity advanced once more, to `ca08d4c` (14 commits ahead of the previous merge). This time the
