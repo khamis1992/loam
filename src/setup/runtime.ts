@@ -1,4 +1,5 @@
 import { createLoamTools } from "../tools/loam.js";
+import { createEnvSnapshotTools } from "../tools/envSnapshot.js";
 import { createLoamServiceTools } from "../tools/loamServices.js";
 import { createCreativeTools } from "../tools/creative.js";
 import { createCreativeStudioTools } from "../tools/creativeStudio.js";
@@ -117,6 +118,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createSkillTools({ gate, ollama, projectRoot: cfg.workspace }));
   registry.registerAll(sessionTools);
   registry.registerAll(createLoamTools());
+  registry.registerAll(createEnvSnapshotTools());
   registry.registerAll(createLoamServiceTools());
   registry.registerAll(createCreativeTools());
   registry.registerAll(createCreativeStudioTools());
