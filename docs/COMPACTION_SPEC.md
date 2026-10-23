@@ -107,6 +107,13 @@ drops the middle. The cap is applied only to `role: "tool"` messages, never to
 user or assistant text, and only when the context is already past the critical
 threshold.
 
+The cut lands on a character boundary. jcode's `emergency_truncated_tool_result`
+uses `truncate_str_boundary` and `tail_str_boundary` for exactly this reason and
+asserts it in `emergency_truncation_is_utf8_safe`; a raw slice can leave a lone
+surrogate at the cut, which decodes as U+FFFD as soon as the tool result is
+written back to disk. `sliceCodeUnits` and `tailCodeUnits` back the cut off by
+one code unit when it would split a pair.
+
 ### System overhead tokens
 
 jcode adds a flat 18,000-token overhead for the system prompt and tool
