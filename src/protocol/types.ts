@@ -30,6 +30,11 @@ export interface JoinSession extends Base {
   type: "join_session";
   sessionId: string;
   lastMessageId?: string;
+  /** BUILD_SPEC §6.4: the highest durable log sequence this client has already
+   *  rendered. When present the server replays by sequence (events with
+   *  `seq > lastSeq`), which survives a client that never saw a given event id.
+   *  Omitted by older clients, which fall back to `lastMessageId`. */
+  lastSeq?: number;
   version: 2;
 }
 
@@ -414,6 +419,43 @@ export interface EnvironmentIssueEvent extends ChatEventBase {
   details?: string;
 }
 
+/**
+ * MiroFish swarm simulation progress (M3). The M3 loop emits round/agent
+ * milestones; the payload shape is owned by `tools/mirofish/types.ts` and is
+ * mirrored here structurally so the protocol layer stays free of tool imports.
+ */
+export interface SimulationProgressEvent extends ChatEventBase {
+  type: "simulation_progress";
+  sessionId: string;
+  payload: {
+    type:
+      | "simulation_start"
+      | "simulation_round_start"
+      | "simulation_agent"
+      | "simulation_round"
+      | "simulation_arm_done"
+      | "simulation_done";
+    sessionId: string;
+    agents?: number;
+    rounds?: number;
+    arms?: string[];
+    arm?: "baseline" | "scenario";
+    round?: number;
+    totalRounds?: number;
+    agentId?: string;
+    agentName?: string;
+    ok?: boolean;
+    action?: "post" | "comment" | "share" | "ignore" | "buy" | "cancel";
+    error?: string;
+    metrics?: unknown;
+    calls?: number;
+    failures?: number;
+    modelCalls?: number;
+    comparison?: unknown;
+    [key: string]: unknown;
+  };
+}
+
 /** D4: a `suggest_plan` plan awaiting the user's decision (plan-approval card). */
 export interface PlanApprovalRequestedEvent extends ChatEventBase {
   type: "planApprovalRequested";
@@ -501,6 +543,7 @@ export type ChatEvent =
   | PlanApprovalResolvedEvent
   | LocalExecutionApprovalResolved
   | EnvironmentIssueEvent
+  | SimulationProgressEvent
   | AskUserRequestedEvent
   | AskUserResolvedEvent
   | DeviceAttachmentUploadNotify

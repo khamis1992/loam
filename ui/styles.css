@@ -982,8 +982,10 @@ html.embed a.back { display: none !important; }
   white-space: pre-wrap;
   line-height: 1.7;
   font-size: 14.5px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-2) 20%, var(--panel)), color-mix(in srgb, var(--accent) 12%, var(--panel)));
-  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  /* C20: --chat-accent* live on #view-chat only while a companion owns the
+     task, so the fallback keeps a base-agent chat byte-for-byte the app accent. */
+  background: linear-gradient(135deg, color-mix(in srgb, var(--chat-accent-2, var(--accent-2)) 20%, var(--panel)), color-mix(in srgb, var(--chat-accent, var(--accent)) 12%, var(--panel)));
+  border: 1px solid color-mix(in srgb, var(--chat-accent, var(--accent)) 32%, var(--border));
   padding: 12px 18px;
   border-radius: 16px;
   border-start-start-radius: 6px;

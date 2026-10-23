@@ -165,8 +165,10 @@ export type AgentEvent =
   | { type: "permission_mode_changed"; mode: import("../policy/permissionModes.js").LocalPermissionMode; previousMode: import("../policy/permissionModes.js").LocalPermissionMode; reason: string }
   /** End-to-end verification of the completed task. */
   | { type: "verify"; verdict: Verdict; reason: string; parsed?: boolean }
-  /** Context compression happened. */
-  | { type: "compaction"; step: 1 | 2; originalTokens: number; afterPruneTokens: number; finalTokens: number; summaryChars?: number; fallback?: boolean; blocked?: boolean }
+  /** Context compression happened. step 3 is the synchronous emergency hard-compact
+   *  (no summarizer call); `blocked` marks the case where a PreCompact hook vetoed
+   *  the compaction and nothing was compressed. */
+  | { type: "compaction"; step: 1 | 2 | 3; originalTokens: number; afterPruneTokens: number; finalTokens: number; summaryChars?: number; fallback?: boolean; emergency?: boolean; droppedTurns?: number; blocked?: boolean }
   /**
    * Prompt-cache (KV cache) accounting. Emitted on every completed provider
    * request that reported cache telemetry, so clients can show reusable-token
@@ -191,10 +193,45 @@ export type AgentEvent =
   /** A workspace file was published as a task artifact via artifact_publish. */
   | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string }
   /**
+   * MiroFish swarm simulation progress. Carries one `SimulationProgressEvent`
+   * from the M3 loop as `payload` (the tool module owns that type; the agent core
+   * deliberately does not import a tool module).
+   */
+  | { type: "simulation_progress"; sessionId: string; payload: unknown }
+  /**
    * Loam Video Studio relay: one command for the panel attached to this task's
    * event stream. The panel executes it with its editor bridge and posts the
    * result back to /api/tasks/:id/video-studio/result.
    */
-  | { type: "video_studio_command"; id: string; target: "film" | "effects"; method: string; params: Record<string, unknown> };
+  | { type: "video_studio_command"; id: string; target: "film" | "effects"; method: string; params: Record<string, unknown> }
+  /**
+   * N7 branch fan-out: one independent branch of a fan-out started or finished.
+   *
+   * A branch is a whole subtree of its own, so it gets its own canvas node off
+   * the parent step instead of one node per tool call inside the child.
+   */
+  | {
+      type: "fanout_branch";
+      /** Stable id of the fan-out this branch belongs to. */
+      fanoutId: string;
+      /** Zero-based branch index within the fan-out. */
+      index: number;
+      phase: "start" | "done";
+      /** Run-graph node id of the branch root (also present on `done`). */
+      nodeId?: string;
+      /** Branch label (the prompt or model this branch ran). */
+      label?: string;
+      /** Short summary of what the branch produced, on `done`. */
+      summary?: string;
+    }
+  /** N7 branch fan-out: the merge step consumed every branch of a fan-out. */
+  | {
+      type: "fanout_merge";
+      fanoutId: string;
+      /** Run-graph node ids of every branch this merge consumed. */
+      branchNodeIds: string[];
+      /** The merged result. */
+      summary: string;
+    };
 
 export type Emit = (event: AgentEvent) => void;

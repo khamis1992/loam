@@ -146,3 +146,103 @@ export interface SeedResult {
   /** Number of model calls actually made. */
   modelCalls: number;
 }
+
+/* -------------------------------------------------------------------------- */
+/* M3: simulation loop                                                        */
+/* -------------------------------------------------------------------------- */
+
+/** The six things a simulated agent can do in one round. */
+export type AgentAction = "post" | "comment" | "share" | "ignore" | "buy" | "cancel";
+
+/** Which arm of a variable comparison a turn belongs to. */
+export type ArmId = "baseline" | "scenario";
+
+/** The structured output of one agent-turn. */
+export interface AgentTurnOutput {
+  action: AgentAction;
+  text: string;
+  /** -1 (hostile) .. 1 (enthusiastic). */
+  stance: number;
+  /** 0 (will never buy) .. 1 (will buy immediately). */
+  purchaseIntent: number;
+  reasons: string[];
+}
+
+/** One recorded agent-turn, including its model-call outcome. */
+export interface AgentTurnEvent extends AgentTurnOutput {
+  round: number;
+  agentId: string;
+  agentName: string;
+  arm: ArmId;
+  model?: string;
+  latencyMs: number;
+  /** False when the model call failed: the turn is logged, never fabricated. */
+  ok: boolean;
+  error?: string;
+}
+
+/** Who an agent follows and how much reach it has. */
+export interface SocialGraph {
+  follows: Map<string, string[]>;
+  influence: Map<string, number>;
+}
+
+/** Opinion spread computed from one round's recorded outputs. */
+export interface RoundMetrics {
+  round: number;
+  arm: ArmId;
+  agentsActed: number;
+  agentsSkipped: number;
+  meanIntent: number;
+  stanceDistribution: { negative: number; neutral: number; positive: number };
+  actionCounts: Record<AgentAction, number>;
+  shareCascades: { count: number; totalShares: number; maxDepth: number };
+  topThemes: Array<{ theme: string; count: number }>;
+}
+
+/** One arm of a simulation (baseline or scenario). */
+export interface SimulationArmResult {
+  arm: ArmId;
+  rounds: RoundMetrics[];
+  turns: AgentTurnEvent[];
+  calls: number;
+  failures: number;
+  skipped: number;
+}
+
+/** Baseline vs scenario comparison computed from the two arms' outputs. */
+export interface ArmComparison {
+  variable?: SimulationVariable;
+  baselineMeanIntent: number;
+  scenarioMeanIntent: number;
+  intentDelta: number;
+  baselinePositiveShare: number;
+  scenarioPositiveShare: number;
+  positiveShareDelta: number;
+  baselineBuyRate: number;
+  scenarioBuyRate: number;
+  buyRateDelta: number;
+}
+
+/** Progress events emitted while a simulation runs. */
+export type SimulationProgressEvent =
+  | { type: "simulation_start"; sessionId: string; agents: number; rounds: number; arms: ArmId[] }
+  | { type: "simulation_round_start"; sessionId: string; arm: ArmId; round: number; totalRounds: number }
+  | { type: "simulation_agent"; sessionId: string; arm: ArmId; round: number; agentId: string; agentName: string; ok: boolean; action?: AgentAction; error?: string }
+  | { type: "simulation_round"; sessionId: string; arm: ArmId; round: number; totalRounds: number; metrics: RoundMetrics }
+  | { type: "simulation_arm_done"; sessionId: string; arm: ArmId; calls: number; failures: number }
+  | { type: "simulation_done"; sessionId: string; agents: number; rounds: number; modelCalls: number; failures: number; comparison?: ArmComparison };
+
+/** The complete result of a simulation run. */
+export interface SimulationResult {
+  sessionId: string;
+  seed: number;
+  agents: number;
+  rounds: number;
+  arms: SimulationArmResult[];
+  comparison?: ArmComparison;
+  logPath: string;
+  metricsPath: string;
+  modelCalls: number;
+  failures: number;
+}
