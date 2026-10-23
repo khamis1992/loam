@@ -1,5 +1,97 @@
 J6 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
 
+---
+
+## A third and fourth parity merge landed while this was in flight
+The gate was re-checked after the first resolution was committed, and manus-parity had moved
+twice more (tips `3fc4529` O1/F5 and `6b9b453` O2/D5). Each merge conflicted in exactly one
+file, `.jdone` (add/add: this J6 report vs parity's new top report). Every resolution keeps
+BOTH reports verbatim, separated by a `---` rule, and is mechanically verified to be a
+superset of both parents (every non-blank line of each parent blob appears in the resolved
+file; zero conflict markers remain). Committed as merge commits `821b031` (O1 event log +
+F5 video studio) and `7c6fa6e` (O2 pr verification + D5 event-log migration).
+
+A real regression was found and fixed in the first resolution: `package.json` had dropped
+nine manus-parity scripts (`check:design-registry`, `check:test-isolation`,
+`test:vendor:editors`, `eval:coding-bench`, `eval:neo`, `eval:coding-prompt`,
+`vendor:filmcraft`, `vendor:effectcraft`, `vendor`). The resolution was rewritten to the full
+union: all 69 parity scripts byte-identical to parity, plus J6's `test:memory`,
+`bench:ram:app` and the J6-aware `test:bench`. Verified with a script-diff against the parity
+blob (0 missing, 0 mismatched parity values). Committed as `61160fa`.
+
+## Gate condition verified (final)
+After all four resolutions are committed (merge commits `526fcd7`, `e8f4a07`, `821b031`,
+`7c6fa6e`, plus the `package.json` fix `61160fa`):
+- `git merge manus-parity` reports "Already up to date."
+- `git merge-base --is-ancestor manus-parity HEAD` exits 0
+- `git rev-list --left-right --count manus-parity...HEAD` = `0  20`
+- `git status --porcelain` is empty (working tree clean)
+- `git grep -E "^(<<<<<<<|>>>>>>>|=======$)"` over tracked sources returns 0 matches
+
+## Gates (all run from the worktree root on committed HEAD 7c6fa6e)
+- `npx tsc --noEmit`                                  -> exit 0 (no output)
+- `npm run build:server`                              -> exit 0 (dist/server.cjs, pdf worker copied)
+- `(cd packages/web && npx next build)`               -> exit 0 (compiled, 25/25 static pages)
+- `(cd packages/web && npx tsc --noEmit)`             -> exit 0
+- `npm run verify`                                    -> exit 0 (typecheck, encoding OK, eval harness smoke PASS,
+                                                          orchestrator smoke PASS 114/114, recovery PASS, modes PASS)
+- `npm run check:encoding`                            -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                               -> PASS
+- `npm run check:promptwire`                          -> PASS
+- `npm run check:orchestrator`                        -> PASS (114/114)
+- `npm run check:design-registry`                     -> OK (30 blocks, 8 RTL, all manifests valid, all built)
+- `npm run test:vendor`                               -> tests 7, pass 7, fail 0
+- `npm run test:vendor:editors`                       -> tests 15, pass 15, fail 0
+- `npm run test:memory`                               -> tests 49, pass 49, fail 0
+- `npm run test:bench`                                -> tests 40, pass 40, fail 0
+- incoming O1/F5/O2 suites: `src/protocol/__tests__/eventLog.test.ts` (11/11),
+  `src/tools/__tests__/videoStudioState.test.ts` + `src/tools/__tests__/videoStudio.test.ts`
+  (58/58), `src/tools/__tests__/verifyAndRecord.test.ts` +
+  `src/agent/__tests__/prVerification.test.ts` + `src/protocol/__tests__/eventLogMigrate.test.ts`
+  (27/27)
+- `node --import tsx --test "src/**/*.test.ts"`       -> tests 2369, pass 2366, fail 3
+- `(cd packages/web && npx vitest run)`               -> 72 files / 472 tests, all pass
+
+The three node failures are pre-existing on the manus-parity lineage and untouched by these
+merges; all three files are byte-identical to manus-parity (`git diff manus-parity HEAD --
+<file>` is empty for each) and parity fails them identically on this host:
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered nor
+   listed in PENDING_CODING_TOOLS". The inherited D4 defect documented in the preserved
+   reports below.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing".
+   Environmental: `readGitBranch` shells out to `git rev-parse`, which walks up to the nearest
+   enclosing repository, so a temp folder on this host reports `isGit: true`.
+3. `src/tools/__tests__/search.test.ts` -> "greps and globs the repository in under 1 second"
+   (1285ms vs a 1000ms budget). Load-sensitive: 19/19 pass when run on its own.
+
+`check:test-isolation` fails on this host with residue under `data/` (`agents.json`,
+`llm-cooldown.json`, `manus.db`, `model-edits.jsonl`). Confirmed pre-existing: manus-parity
+fails it with the byte-identical residue, and the check script is unchanged by these merges.
+Not a regression from the merge resolutions.
+
+`check:loam-ui` (asserts 7 home-mode buttons, finds 8) and `check:loam-ancillary`
+(Playwright `#rkSend` click intercepted) both fail on manus-parity identically, and the
+`ui/` tree plus both check scripts are byte-identical to parity. Pre-existing, not a regression.
+
+## J6 app-RAM benchmark (run against a real spawned server)
+`npm run bench:ram:app -- --spawn --iterations 4` spawns the real `src/index.ts` server
+(auth disabled, isolated throwaway data dir) and drives the fixed scenario. Result:
+- `debugRoutePresent` true, `cacheCount` 40, `cacheEntries` 2, `growthMB` 0
+- `thresholdExceeded` false (threshold 64 MB)
+- exit 0
+
+Note: the harness sets `LOAM_PORT` but not `AS_PROTOCOL_PORT`, and `src/protocol/adapter.ts`
+binds the protocol adapter to a hardcoded `8787` unless `AS_PROTOCOL_PORT` is set. On this host
+another node process already owns 8787, so a bare `npm run bench:ram:app` exits 1 with
+"server did not become ready". This is a pre-existing J6 harness gap (present at the harness's
+origin commit `2dfe448`, and `src/protocol/adapter.ts`/`src/index.ts`/`src/config.ts` are
+byte-identical to parity), not something the merge resolutions introduced. The measurement
+above was taken with a free adapter port supplied (`AS_PROTOCOL_PORT=4259`), which the server
+picks up and binds correctly.
+
+No secrets committed. No forbidden path touched. No test was weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added.
+
 ## The failure that was fixed
 `.jgatefail.txt` reported: "MERGE CONFLICT with latest manus-parity: run git merge
 manus-parity, resolve all conflicts keeping both sides, commit."
