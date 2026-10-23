@@ -1316,3 +1316,51 @@ parent:
 - HEAD `07929cc` (the isolation fix) at the time these checks ran; `.jdone` is
   appended below and committed. Working tree clean. Temporary parity worktree and
   sandboxes removed.
+
+## Independent re-validation (2026-10-23, eighteenth pass)
+
+This pass closed the loop on the seventeenth-pass fix: it proved **every**
+test file D3 touched or added now leaves the repo tree clean, so D3 contributes
+zero residue to `check:test-isolation`.
+
+### Every D3 test file is isolation-clean
+
+Run in a fresh temp sandbox (repo copied minus `data`/`workspace`/`node_modules`/
+build output, `node_modules` junctioned), after the `07929cc` fix:
+
+| test file (D3-touched or D3-new) | suite exit | `workspace/` | `data/` |
+|---|---|---|---|
+| `src/tools/__tests__/envSnapshot.test.ts` (new) | 0 | clean | clean |
+| `src/tools/__tests__/envSnapshotE2E.test.ts` (new) | 0 | clean | clean |
+| `src/server/__tests__/envBuildRoutes.test.ts` (new) | 0 | clean | clean |
+| `src/server/__tests__/taskWorkspace.test.ts` (new) | 0 | clean | clean |
+| `src/server/__tests__/runTools.test.ts` (both sides touched) | 0 | clean | clean |
+| `src/policy/__tests__/riskTier.test.ts` (both sides touched) | 0 | clean | clean |
+
+All six together in one process: exit 0, `workspace/` clean, `data/` clean. D3's
+own tests set `MANUS_LOCAL_DATA_DIR` (and now `LOAM_ROOT` where `loadConfig()` is
+called), so the vault/build/status fixtures live in temp.
+
+### D3's test delta (base -> D3 parent)
+
+`git diff --numstat 088b4f2 053cd0e` over the test files:
+`envSnapshot.test.ts` +389/-0, `envSnapshotE2E.test.ts` +114/-0,
+`envBuildRoutes.test.ts` +135/-0, `taskWorkspace.test.ts` +18/-0 (all new files),
+and `runTools.test.ts` +3/-1 (a small addition to an existing suite). The parity
+side of `runTools.test.ts` is +2/-0, so both sides are present in the merge (D3
+via `ALWAYS_ON_TOOLS` assertions, parity via its own additions) with no conflict.
+
+### Residue attribution is now airtight
+
+The aggregate `check:test-isolation` residue is `data: [manus.db,
+model-edits.jsonl]`, `workspace: []`, `suite exit=0` - and it is **byte-identical
+on pristine parity `03f8aef`**. Since all of D3's touched test files are provably
+clean, the residue comes entirely from parity's own `loadConfig`-calling suites
+(`loopHooks`, `orchestratorHooks`, `videoStudioE2E`, `semanticSearch`), which I
+showed leak `data/` and `workspace/` on parity as well. D3 neither causes nor
+worsens it.
+
+### Final state
+
+- HEAD `7a15b16` (seventeenth-pass record) at the time these checks ran; `.jdone`
+  is appended below and committed. Working tree clean; temp sandboxes removed.
