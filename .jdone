@@ -1,4 +1,44 @@
 
+# N6 merge gate session note (2026-10-23, parity tip `3c86ecf`, second merge)
+
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. Parity had advanced
+again (tip `3c86ecf`, merge base `590d358`, ours `77620c2`), so
+`git merge --no-commit --no-ff manus-parity` conflicted on three paths: `.jdone`,
+`src/agent/events.ts` and `src/agent/orchestrator.ts`. Every other file auto-merged and was
+staged. Each conflict was resolved as a strict superset: no line from either side was dropped.
+
+Per file:
+- `.jdone`: the committed `.gitattributes` union driver (`.jdone merge=union`) auto-resolved
+  the three regions, concatenating both sides. Verified mechanically against both parents
+  (multiset diff of non-blank lines): 0 lines missing from ours and 0 missing from theirs,
+  no conflict markers, no BOM, no U+FFFD.
+- `src/agent/events.ts`: one region where HEAD added the `budget_exhausted` event and parity
+  added `video_studio_export`; both kept, and the missing newline after the
+  `video_studio_export` line restored.
+- `src/agent/orchestrator.ts`: the import region kept both `masterPrompt` (N19) and `mission`
+  (N6) imports with the newline after `} from "./mission.js";` restored; the `runWorker`
+  region kept both sides and the recipe-mode suffix now reads
+  `recipeMode ? \`${suffix}\n\n${missionSuffix(o.cfg)}\` : suffix` (a prior edit had mangled
+  the template literal to `` `\n\n` ``), plus the newline after `worker = undefined;`.
+
+Merge commit `7e85883` (parents `77620c2` and `3c86ecf`).
+
+Gates (all run from the worktree root on the merged tree):
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (server bundle + pdf worker written)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test src/agent/__tests__/mission.test.ts src/agent/__tests__/computeBudget.test.ts`
+                                              -> tests 42, pass 42, fail 0
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run eval:neo`                          -> total=100 passed=10/10 verdict=PASS (baseline 100, no regression)
+
+Integrity of the resolved tree: `git grep -n "^<<<<<<<\|^=======$\|^>>>>>>>\|^|||||||"`
+over `src`, `packages` and `.jdone` returns empty; no conflict markers remain. No test was
+weakened, deleted or skipped. No secret committed. No forbidden path touched. No Arabic
+text was written by this session; no mojibake placeholder text was added.
+
+---
+
 # N6 complete: mission runs and budgets (unbounded steps, four-dimension budget, durable checkpoints)
 
 Branch `khamis1992/neo-n6` (base `manus-parity`), spec row G6, key spec line
