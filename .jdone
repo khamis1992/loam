@@ -1,16 +1,31 @@
-D4 plan approval gate (Devin suggest_plan) complete and committed on
-khamis1992/devin-d4. Original work: 25da47e. Adversarial round 2: abda171.
+D4 plan approval gate (Devin suggest_plan) complete, merged with the latest
+manus-parity, and committed on khamis1992/devin-d4.
 
-Gates (all from the worktree root):
+D4 work: 25da47e (feature) + abda171 (adversarial round 2).
+Merge: 31dc1b9, plus 8c6854d (run-graph event mapping).
+
+Gates (all from the worktree root, on the merged tree):
 - npx tsc --noEmit -> PASS (no output)
-- npm run build:server -> PASS (dist/server.cjs 18.7mb)
-- (cd packages/web && npx next build) -> PASS (24 static pages)
+- npm run build:server -> PASS (dist/server.cjs 19.2mb, pdf worker copied)
+- (cd packages/web && npx next build) -> PASS (25 static pages)
 - node --import tsx --test src/tools/__tests__/planApproval.test.ts -> 18/18 PASS
+- node --import tsx --test src/graph/__tests__/runGraph.test.ts -> 11/11 PASS
 - node --import tsx --test src/agent/__tests__/toolProfile.test.ts
   src/policy/__tests__/permissionModes.test.ts src/modes/__tests__/catalog.test.ts -> 23/23 PASS
-- (cd packages/web && npx vitest run) -> 54 files / 333 tests PASS
-- full server suite: 111 files run one-by-one, only the two pre-existing failures
-  below (identical at base 088b4f2)
+- (cd packages/web && npx vitest run) -> 67 files / 443 tests PASS
+
+Merge conflicts (4, all resolved by keeping both sides):
+1. src/index.ts: `createWorkflowTools` (manus-parity) + the D4 plan-approval
+   import (`applyPlanApprovalGate`).
+2. src/protocol/events.ts: `PlanApprovalRequestedEvent` + `CacheUsageEvent`.
+3. src/server/settings.ts: `planApprovalSkipTrivial` + `location`.
+4. .jdone: add/add D4 vs N20 marker. Both sides preserved.
+
+One real defect the merge exposed (fixed, not worked around):
+- src/graph/runGraph.ts: the exhaustive AgentEvent switch shipped by N1 did not
+  know the D4 `plan_approval_required` event, so tsc failed with
+  "not assignable to type never". It is now handled as an `ask_user` node,
+  mirroring `approval_required`, and covered by the runGraph suite.
 
 Round 2 (adversarial) found and fixed two real defects, both now covered by tests:
 1. src/server/routes/planApproval.ts answered true for unsupported verbs
@@ -30,21 +45,6 @@ change was reverted, so the store diff is only the cancel fix.
 
 Repo checks: check:modes / check:promptwire / check:orchestrator PASS.
 check:encoding still flags the pre-existing scripts/repair-mojibake.cjs.
-
-Two pre-existing failures remain (codingPrompt masterPromptSha256 snapshot,
-craftStatus GET /api/craft/status line 86) - both reproduced identically at base
-088b4f2 in a throwaway worktree, so unrelated to D4. See .devin-done.
-
----
-
-Merge note: this branch was merged with the latest manus-parity. The only
-conflict was this marker file (add/add: D4 vs the N20 marker); both sides are
-preserved below. The other three conflicts were mechanical import/field unions
-and were resolved by keeping both sides:
-- src/index.ts: `createWorkflowTools` (manus-parity) + the D4 plan-approval
-  import (`applyPlanApprovalGate`).
-- src/protocol/events.ts: `PlanApprovalRequestedEvent` + `CacheUsageEvent`.
-- src/server/settings.ts: `planApprovalSkipTrivial` + `location`.
 
 ---
 
@@ -116,18 +116,10 @@ green.
 - `npm run eval:neo`                          -> 10/10 cases pass, total 100
 - `node --import tsx --test src/neoEval/__tests__/{scoring,mockModel,harness,baseline}.test.ts`
   -> tests 88, pass 88, fail 0
-  (scoring dimensions and suite totals; mock replay/`when` guards/`MockClock`/
-  `KnowledgeStore`/citation extractor; end-to-end acceptance through the
-  production loop: fixture catalogue, default verifier script, `runFixture`,
-  restart-from-step, recurring rounds, fault injection, and the "full suite
-  clears the bar" gate; baseline regression guard)
 - `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
 - `npm run check:eval`    -> eval harness smoke: PASS
-- `npm run check:modes`   -> PASS (seven fail-closed modes, denied execution,
-  native document/data/canvas outputs, realpath/junction isolation)
-- `npm run check:recovery`-> PASS (SQLite migration/backup/retention/rollback/
-  restart/crash recovery; FIFO ownership, duplicate rejection, queued
-  cancellation, failure release, shutdown)
+- `npm run check:modes`   -> PASS
+- `npm run check:recovery`-> PASS
 - `npm run check:orchestrator` -> PASS
 - `npm run build:server`  -> exit 0 (dist/server.cjs 19.2mb, pdf worker copied)
 
