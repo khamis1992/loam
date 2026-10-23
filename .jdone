@@ -24173,3 +24173,139 @@ whole`, `WRITE_FIRST`, `WRITE_SECOND`), so the section cannot perturb the fixtur
 - N19 only *prompts* the behaviour. Enforcement of the budget ceiling, the completion node
   and restart-from-step already lives in the harness; §25 points at it and does not
   duplicate it.
+
+# H9 done - Learned lessons panel (plus the H8 REST surface it depends on)
+
+Worktree `h2-h9`, branch `khamis1992/h2-h9`, base `manus-parity`. Commit `aa52eb5`
+("H9: lessons panel (H8 REST routes + auto-apply setting)"), 11 files, +1053/-4.
+
+## Summary
+
+H9 asked for the `LessonsPanel` web component per BUILD_SPEC §5: a list of lessons
+(cue, lesson, domain, uses, confidence, created) with a Delete action and an
+"Auto-apply lessons" toggle (default on), backed by `GET /api/learning/lessons`.
+
+H8 was listed as H9's dependency, but branch `khamis1992/h2-h8` carries no deliverable
+and `src/server/routes/learning.ts` did not exist anywhere in the tree (the only learning
+endpoint was the inline `GET /api/learning` audit-log handler in `src/server/http.ts`).
+The panel cannot render without the endpoint, so the H8 REST surface was built here
+rather than re-running a separate task. Both are in one commit because they form one
+coherent change.
+
+### H8 - learned-lesson REST surface
+
+`src/server/routes/learning.ts` (new) exports
+`handleLearningRoutes(req, res, p, ctx?): Promise<boolean>`, implementing the §8 contract:
+
+| Method + path | Response |
+|---|---|
+| `GET /api/learning/lessons?agentId=&domain=` | `200 { data: Lesson[] }` |
+| `PATCH /api/learning/lessons/:id { disabled }` | `200 { data: Lesson }` or `404` |
+| `DELETE /api/learning/lessons/:id` | `204` or `404` |
+| `GET /api/learning/corrections?taskId=` | `200 { data: CorrectionEvent[] }` |
+
+It is a pure adapter over the real H2 store (`src/learning/harness/experienceStore.ts`:
+`listLessons`, `setLessonDisabled`, `deleteLesson`, `listCorrections`) and holds no
+learning logic of its own, so the panel lists exactly what the agent would inject.
+
+Adaptations forced by the real code, all recorded in the module header:
+
+- `listLessons` hides disabled rows unless `includeDisabled` is passed, so the list route
+  passes it and the PATCH route reads the row back the same way.
+- The §8 contract says "vector fields stripped"; `vector` (base64) and `dim` are removed
+  in `lessonJson()` before any response is written.
+- `p` is split on `?` before matching, the same tolerance `handleKnowledgeRoutes` uses, so
+  callers may pass a bare pathname or a full target. A query string never selects a route.
+- The handler returns `false` for anything it does not own, including the exact path
+  `/api/learning`, so the pre-existing audit-log handler is untouched.
+
+`src/server/http.ts`: imported beside the other route modules and dispatched immediately
+before the `GET /api/learning` audit-log handler.
+
+`src/server/settings.ts` + `POST /api/settings`: new `lessonsAutoApply` boolean, read
+through in `loadSettings()` and applied in `updateSettings()`. A missing key is treated as
+ON, which is the §5 default, so an older `settings.json` keeps the learning loop active.
+
+### H9 - the panel
+
+- `packages/web/src/services/lessonsApi.ts` (new) - typed client mirroring
+  `knowledgeApi.ts`: `listLessons(filter)`, `setLessonDisabled(id, disabled)`,
+  `deleteLesson(id)`. Uses the shared `getApiBase` / `getApiHeaders` so the local token
+  travels with every call.
+- `packages/web/src/components/settings/LessonsPanel.tsx` (new) - the §5 panel. Two
+  `Section`s: the auto-apply toggle (a `role="switch"` button that POSTs to
+  `/api/settings` and rolls back on failure, because the server is the source of truth)
+  and the lesson list. Each row shows the lesson text, the cue, the evidence, and a
+  `<dl>` of confidence / uses / source / domain / created, plus a Delete button with
+  `aria-label="Delete: <lesson>"`. States: loading spinner, load error, empty state, and a
+  fixed toast (ok/err) that clears after 4200 ms.
+- Mounted in `SettingsDialog.tsx` as `Settings > Capabilities > Learned lessons`
+  (nav entry, `MVP_TAB_IDS`, the `case`, and a `GraduationCap` glyph).
+- i18n: 20 keys added to both `en.json` and `ar.json`. Verified mechanically: 936 keys
+  each, 0 missing in either direction, 0 duplicates. Arabic labels come from the shared
+  catalog via `t(...)`, never hardcoded. The two machine-vocabulary maps
+  (`SOURCE_LABELS`, `CONFIDENCE_LABELS`) are Arabic-only and fall back to the raw value
+  rather than emitting an untranslated placeholder.
+
+No agent or system instruction was modified, and nothing was auto-approved: the panel only
+reads and deletes lessons, and the auto-apply flag is a plain user setting.
+
+## Tests
+
+- `src/server/__tests__/learningRoutes.test.ts` (new, node:test, 9 cases). Points
+  `MANUS_LOCAL_DATA_DIR` at a fresh temp dir *before* importing the store, then seeds
+  lessons through the real `addLesson` and exercises the route handler directly. Covers:
+  list + vector/dim stripped; domain and agentId filtering; PATCH round-trip; a non-boolean
+  `disabled` rejected as `400`; `404` on PATCH and DELETE of an unknown id; DELETE
+  returning `204` with no body then `404`; correction events filtered by `taskId`;
+  non-matching paths and methods left unhandled (so the audit-log handler still runs); and
+  a malformed JSON body classified as `400` rather than a server fault.
+- `packages/web/src/services/__tests__/lessonsApi.test.ts` (new, vitest, 7 cases) - envelope
+  unwrapping, query-param encoding (`agentId=a%2Fb`, `domain=nutrio+content`), no `?` when
+  unfiltered, PATCH body `{disabled:true}`, DELETE `204` with a percent-encoded id, and
+  server-error surfacing for both read and delete.
+- `packages/web/src/components/settings/__tests__/lessonsPanel.test.tsx` (new, vitest,
+  6 cases) - renders list + metadata, DELETE removes the row, a refused delete keeps the
+  row and shows the error, empty state, load failure, and the Arabic render asserting no
+  raw enum value appears (the Arabic source label is present, the raw `correction` value is
+  not).
+
+## Gates (all run from the worktree root, all green)
+
+| Gate | Result |
+|---|---|
+| `npx tsc --noEmit` | pass (exit 0, no output) |
+| `npm run build:server` | pass (`server bundle + pdf worker written to dist/`) |
+| `(cd packages/web && npx next build)` | pass (25/25 static pages) |
+| `(cd packages/web && npx tsc --noEmit)` | pass (exit 0) |
+| `(cd packages/web && npx vitest run)` | 93 files / 637 tests passed |
+| `node --import tsx --test src/learning/harness/__tests__/*.test.ts` | 71 tests passed |
+| `node --import tsx --test src/server/__tests__/learningRoutes.test.ts` | 9 tests passed |
+| `npm run check:encoding` | `OK (no BOM, no mojibake, all JSON valid)` |
+
+No existing test was weakened, deleted or skipped. No assertion was relaxed.
+
+Two fixes were needed after the first run, both in this session: the route now strips the
+query string from `p` (the first version failed to match `/api/learning/lessons?domain=`
+because a caller may pass a full target), and two component-test assertions moved to
+`getAllByText` because the label repeats once per row.
+
+## Notes for the merge
+
+- New files were written by the file tool and are LF on disk. The repository has
+  `core.autocrlf=true`, so the index stores LF and the working tree is CRLF; every file
+  added by a recent commit on this branch is the same shape, and the encoding gate does not
+  inspect line endings.
+- `SettingsDialog.tsx` was already line-ending-mixed before this change (three
+  `Knowledge Garden` lines added by an earlier task); the diff for this task is untouched
+  apart from the five `Learned lessons` lines.
+- `.jcode-done` was deleted in the working tree by the worktree setup, before this session
+  started. It was restored with `git checkout -- .jcode-done` rather than left deleted, so
+  the branch does not carry a stray deletion.
+- `docs/re/harness2-H0.md` (U4) recommends hooking the chat route for correction capture.
+  That wiring is H8's second half and is still absent: nothing in production calls
+  `detectCorrection` or `recordCorrection` yet, so no lesson is being learned until it
+  lands. The panel therefore reads a store that is populated only by tests today. The REST
+  surface added here is the part H9 depends on; the capture hook is the remaining H8 work
+  and is the next thing to do before the learning loop can be observed end to end.
+
