@@ -1,0 +1,24 @@
+{
+  "launcher": "node-echo",
+  "N": 1,
+  "idleMB": 156.6,
+  "peakMB": 160.3,
+  "finalMB": 160.3,
+  "perSessionMB": 3.7,
+  "fixed": 1,
+  "sessions": [
+    {
+      "index": 0,
+      "cwd": "C:\\Users\\khamis\\AppData\\Local\\Temp\\loam-bench-sqPw43\\s0",
+      "pid": 37264,
+      "exitCode": 0,
+      "fixed": true,
+      "output": ""
+    }
+  ],
+  "thresholdMB": 250,
+  "thresholdExceeded": false,
+  "durationMs": 7921,
+  "platform": "win32",
+  "notes": []
+}

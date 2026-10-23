@@ -8,9 +8,10 @@ mapping, and the branding rules for this staging integration.
 
 | Path | What it is |
 | --- | --- |
-| `electron/filmcraft/dist/` | Vendored web build (untracked; copied in separately). Files: `index.html`, `filmcraft_web.js`, `filmcraft_web_bg.wasm`, `audio-worklet.js`. |
+| `electron/filmcraft/dist/` | Vendored web build (untracked). Files: `index.html`, `filmcraft_web.js`, `filmcraft_web_bg.wasm`, `audio-worklet.js`, `favicon.png`. Fetched with `npm run vendor:filmcraft` (see `docs/vendor-dists.md`). |
+| `scripts/vendor/fetch-filmcraft.mjs` | Reproducible fetch: pinned GitHub release, sha256-verified, `LOAM_FILMCRAFT_ZIP`/`LOAM_FILMCRAFT_URL`/`LOAM_FILMCRAFT_SHA256` overrides, `--force`, `--from-source`. |
 | `electron/filmcraft/bridge-relay.js` | postMessage relay injected into the editor page (served from the overlay root, survives dist re-copies). |
-| `electron/filmcraft/rebrand.mjs` | Idempotent branding script — run it after every fresh dist copy. |
+| `electron/filmcraft/rebrand.mjs` | Idempotent branding script — `node electron/filmcraft/rebrand.mjs [distDir]`, run automatically by the fetch script. |
 | `electron/filmcraft/` licence files | Intentionally absent (`LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE`, `ATTRIBUTION.md` removed) — Loam is a private, local, non-commercial project. |
 | `packages/web/src/app/app/video/page.tsx` | The Video side panel (route `/app/video`). |
 | `packages/web/src/lib/filmcraft.ts` | Typed agent bridge. |
@@ -105,9 +106,101 @@ and are left untouched so the bridge and loader keep working.
 
 ## Refreshing the vendored dist
 
+Run the fetch script — it downloads the pinned release, verifies its sha256,
+extracts the web root, drops licence/hosting/README files and rebrands:
+
+```
+npm run vendor:filmcraft          # or: node scripts/vendor/fetch-filmcraft.mjs --force
+```
+
+The dist is gitignored; `npm run vendor` fetches both editors. See
+`docs/vendor-dists.md` for overrides and the EffectCraft sources.
+
+If you already have the upstream web release unpacked, the equivalent manual
+steps are:
+
 1. Copy the upstream web release into `electron/filmcraft/dist/`.
 2. Run `node electron/filmcraft/rebrand.mjs`.
 3. Remove the favicon `<link rel="icon">` and the loading-screen
    `<img src="favicon.png">` from `index.html`, then delete `favicon.png`.
 4. Delete any licence/attribution files that came with the copy
    (`LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE`, `ATTRIBUTION.md`).
+
+## Agent tool: `video_studio`
+
+`src/tools/videoStudio.ts` is the single agent tool that drives this editor. The
+agent never talks to the iframe directly: the tool runs in the Node server and
+every step goes through the fc-02 relay
+(`src/server/videoStudioRelay.ts` → SSE `video_studio_command` → the attached
+panel executes it with `FilmcraftBridge` → `POST
+/api/tasks/:id/video-studio/result`).
+
+### Actions
+
+| Action | Relay steps | Notes |
+| --- | --- | --- |
+| `open` | `commands` | Confirms the bridge is alive and returns the command catalog. |
+| `state` | `inspect` | Reads sequences/tracks/clips/playhead. Call it before mutating so manual panel edits are not lost. |
+| `import` | `importUrl` (url) or `importFiles` (task file) | A task file is resolved inside the task workspace first. |
+| `cut` | `execute` × n | One razor per time; `atSec` accepts a single time or an array. |
+| `trim` | `execute` | Requires `fromSec`/`toSec`; an empty range is refused. |
+| `delete` | `execute` | Same range plus optional `ripple`. |
+| `move` / `reorder` | `execute` | `move` takes `clipId` + `toIndex`; `reorder` takes a full 1-based `order` permutation, exactly `1..n` each once (anything else is refused before dispatch). |
+| `split` | `execute` | Splits at `atSec`. |
+| `speed` | `execute` | `clipId` + positive `rate` (1 = normal). |
+| `add_text` | `execute` | Title/graphics layer with `position`, `size`, `color`, `atSec`, `durationSec`. |
+| `add_audio` / `music` | `importFiles`/`importUrl`, then `execute` | Imports the audio, then places it on the audio track with `gain`, `fadeInSec`, `fadeOutSec`, `trackId`. |
+| `transition_basic` | `execute` | FilmCraft-native video transition, falling back to the audio transition id. |
+| `effect_basic` | `execute` | `effects.apply` with the effect `name` plus free-form `params` (a `params.name` is ignored: the positional `name` wins). |
+| `undo` | `execute` | History undo. |
+| `raw` | `execute` | Any command id, validated against the live catalog. |
+
+### Command-id resolution
+
+The tool never hardcodes a command id. Before issuing a mutating action it asks
+the editor for its real catalog (`commands()`) and picks the first id the build
+actually exposes from `VIDEO_STUDIO_COMMAND_CANDIDATES`:
+
+| Purpose | Candidates (most-likely first) |
+| --- | --- |
+| razor / cut | `timeline.razor`, `sequence.razor`, `edit.razor` |
+| trim | `timeline.trim`, `sequence.trim`, `clip.trim` |
+| delete | `timeline.delete`, `sequence.delete`, `edit.delete` |
+| split | `timeline.split`, `sequence.split`, `edit.split` |
+| move | `sequence.move`, `timeline.move`, `edit.move` |
+| reorder | `sequence.reorder`, `sequence.move`, `timeline.reorder` |
+| speed | `clip.speed`, `sequence.speed`, `timeline.speed` |
+| add text | `graphics.addText`, `sequence.addText`, `text.add`, `title.add` |
+| add audio | `audio.add`, `sequence.addAudio`, `audio.import` |
+| video transition | `sequence.applyVideoTransition`, `transition.applyVideo` |
+| audio transition | `sequence.applyAudioTransition`, `transition.applyAudio` |
+| effect apply | `effects.apply`, `effect.apply` |
+| effect param | `effects.setParam`, `effect.setParam` |
+| undo | `edit.undo`, `history.undo`, `undo` |
+
+If no candidate is exposed the tool answers with the ids it looked for, the
+closest catalog ids (Levenshtein-ranked) and the available command list, so the
+agent can retry with `raw`. The mapping is exercised in
+`src/tools/__tests__/videoStudio.test.ts`.
+
+### Time arguments
+
+Every time argument accepts seconds (`90`) or timecode (`1:30`, `00:01:30`)
+through the shared `parseTimeToken` grammar already used by the fallback editor.
+
+### Fallback contract
+
+When the editor cannot be driven the tool returns `ok: false` with a JSON body
+telling the agent what to do next:
+
+| `reason` | When | Body |
+| --- | --- | --- |
+| `filmcraft_dist_missing` | `electron/filmcraft/dist/index.html` is absent | `fallback: "video_edit"` |
+| `bridge_unavailable` | The panel never answered (`TIMEOUT`) or the transport failed | `fallback: "video_edit"` |
+| `command_rejected` | The panel ran the command and the editor refused it (`COMMAND_REJECTED`) | `fallback: "video_edit"`, the editor's own error in `message` and a hint to fix the command first |
+| `cancelled` | The task stopped mid-command (`CANCELLED`) | `fallback: "video_edit"` |
+| `panel_not_open` | The relay rejects with `PANEL_NOT_OPEN` | `retry: true` (the Workspace panel opens automatically; retry once attached) |
+
+`video_edit` (`src/tools/videoEditAgent.ts`) is the fallback path: it compiles an
+edit-decision-list and renders with ffmpeg, so it needs neither the vendored dist
+nor the editor bridge.

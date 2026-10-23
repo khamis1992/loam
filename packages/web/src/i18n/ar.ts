@@ -62,6 +62,8 @@ export const ar = {
   "No approval rules yet.": "لا توجد قواعد موافقة بعد.",
   "Decided": "تمت المعالجة",
   "Tool": "الأداة",
+  "Environment issue": "مشكلة في البيئة",
+  "Continue by relying on CI, skipping this step with an explicit note, or asking the user to fix the environment. Do not report the step as passed.": "واصل بالاعتماد على CI، أو بتخطي هذه الخطوة مع ملاحظة صريحة، أو بطلب إصلاح البيئة من المستخدم. لا تُقر بأن الخطوة قد نجحت.",
   "This agent": "هذا الوكيل",
   "Global": "عام",
   "Remove": "إزالة",
@@ -206,5 +208,15 @@ export const ar = {
   "Plan switcher": "مبدل الخطة",
   "Credits ›": "الأرصدة ›",
   "Homepage ↗": "الصفحة الرئيسية ↗",
-  "Docs ↗": "المستندات ↗"
+  "Docs ↗": "المستندات ↗",
+  "Plan approval": "الموافقة على الخطة",
+  "Plan approved": "تمت الموافقة على الخطة",
+  "Plan rejected": "تم رفض الخطة",
+  "Plan updated": "تم تحديث الخطة",
+  "Steps": "الخطوات",
+  "Trivial": "بسيطة",
+  "Approve": "موافقة",
+  "Reject": "رفض",
+  "Edit": "تعديل",
+  "Save and approve": "حفظ وموافقة"
 } as const;

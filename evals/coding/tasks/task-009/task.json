@@ -1,0 +1,11 @@
+{
+  "id": "task-009",
+  "title": "Fix Python logical error",
+  "category": "bug-fix",
+  "language": "python",
+  "prompt": "`src/discounts.py` applies the wrong rule: `apply_discount` currently subtracts the rate instead of applying it as a percentage off. Make it return the price after taking `rate` (a fraction such as 0.2 for 20%) off, rounded to 2 decimals. Keep the signature and the guard for out-of-range rates.",
+  "testCommand": "py -3 .eval/check.py",
+  "timeoutSec": 60,
+  "maxSteps": 12,
+  "tags": ["python", "logic"]
+}

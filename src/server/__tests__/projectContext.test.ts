@@ -36,6 +36,9 @@ describe("projectContext routes", () => {
   before(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-ctx-"));
     process.env.MANUS_LOCAL_DATA_DIR = tmpDir;
+    // `projectContext.js` calls `loadConfig()` at module load, which mkdirs
+    // `workspace/` and `workspace/.screenshots/`; LOAM_ROOT keeps them in temp.
+    process.env.LOAM_ROOT = tmpDir;
   });
 
   it("GET /api/model-tiers lists all four tiers and never returns a key", async () => {
