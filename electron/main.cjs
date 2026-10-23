@@ -1,20 +1,22 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain, protocol } = require("electron");
+const { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain, protocol, utilityProcess } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
 const { createHash } = require("node:crypto");
-const { spawn } = require("node:child_process");
 const updater = require("./updater.cjs");
 const inAppBrowser = require("./inAppBrowser.cjs");
 const mcpBridge = require("./mcp-bridge.cjs");
 const vendorProtocol = require("./vendorProtocol.cjs");
 const { IPC_INVOKE, IPC_EVENT_PREFIX, IPC_META, IPC_SYNC, NAMESPACES } = require("./ipc-constants.cjs");
 
-const ASAR_ROOT = path.resolve(__dirname, "..");
-const ROOT =
-  ASAR_ROOT.endsWith(".asar") && fs.existsSync(ASAR_ROOT + ".unpacked")
-    ? ASAR_ROOT + ".unpacked"
-    : ASAR_ROOT;
+// App root: the repo folder in dev, resources/app.asar when packaged. Electron's
+// fs patch reads files inside the asar transparently, so ROOT stays the asar path.
+// Files that must exist on real disk (native modules, ffmpeg, three jsm addons)
+// live in app.asar.unpacked; see asarUnpack/extraResources in electron-builder.yml.
+const ASAR_ROOT = app.getAppPath();
+const ROOT = ASAR_ROOT;
+const UNPACKED_ROOT = ASAR_ROOT.endsWith(".asar") ? ASAR_ROOT + ".unpacked" : ASAR_ROOT;
+const DISK_ROOT = fs.existsSync(UNPACKED_ROOT) ? UNPACKED_ROOT : path.dirname(ASAR_ROOT);
 app.setName("Loam");
 if (process.env.LOAM_USER_DATA_DIR) {
   app.setPath("userData", path.resolve(process.env.LOAM_USER_DATA_DIR));
@@ -30,6 +32,7 @@ const BRIDGE_PORT = Number(process.env.LOAM_MCP_BRIDGE_PORT || 3002);
 process.env.MANUS_LOCAL_ROOT = ROOT;
 process.env.MANUS_LOCAL_PORT = String(PORT);
 process.env.LOAM_ROOT = ROOT;
+process.env.LOAM_UNPACKED_ROOT = UNPACKED_ROOT;
 process.env.LOAM_PORT = String(PORT);
 const EXPECTED_VERSION = require(path.join(ROOT, "package.json")).version;
 
@@ -168,27 +171,35 @@ async function ensureServer() {
   if (!fs.existsSync(bundle)) throw new Error("dist/server.cjs missing - run: npm run build:server");
   for (let attempt = 1; attempt <= 3; attempt++) {
     const nodePaths = [
+      path.join(UNPACKED_ROOT, "node_modules"),
       path.join(ROOT, "node_modules"),
-      path.join(ASAR_ROOT, "node_modules"),
       process.env.NODE_PATH || "",
     ]
       .filter(Boolean)
       .join(path.delimiter);
-    serverChild = spawn(process.execPath, [bundle], {
-      cwd: ROOT,
-      env: Object.assign({}, process.env, {
-        ELECTRON_RUN_AS_NODE: "1",
-        MANUS_LOCAL_ROOT: ROOT,
-        MANUS_LOCAL_PORT: String(PORT),
-        NODE_PATH: nodePaths,
-      }),
-      stdio: ["ignore", "pipe", "pipe"],
+    // Run the server in an Electron utility process instead of re-launching the
+    // executable with ELECTRON_RUN_AS_NODE (works with asar and does not depend on
+    // the RunAsNode fuse for the server itself).
+    const serverEnv = Object.assign({}, process.env, {
+      LOAM_SERVER_BUNDLE: bundle,
+      MANUS_LOCAL_ROOT: ROOT,
+      LOAM_ROOT: ROOT,
+      LOAM_UNPACKED_ROOT: UNPACKED_ROOT,
+      MANUS_LOCAL_PORT: String(PORT),
+      NODE_PATH: nodePaths,
+    });
+    delete serverEnv.ELECTRON_RUN_AS_NODE;
+    serverChild = utilityProcess.fork(path.join(__dirname, "server-host.cjs"), [], {
+      cwd: DISK_ROOT,
+      env: serverEnv,
+      stdio: "pipe",
+      serviceName: "Loam Server",
     });
     let exited = false;
     serverChild.on("exit", () => { exited = true; });
     serverChild.on("error", error => { exited = true; console.error("[electron] server: " + error.message); });
-    serverChild.stdout.on("data", (d) => process.stdout.write("[server] " + d));
-    serverChild.stderr.on("data", (d) => process.stderr.write("[server] " + d));
+    serverChild.stdout?.on("data", (d) => process.stdout.write("[server] " + d));
+    serverChild.stderr?.on("data", (d) => process.stderr.write("[server] " + d));
     const startupDeadline = Date.now() + 120_000;
     while (Date.now() < startupDeadline) {
       if (await ping()) return attempt === 1 ? "spawned" : "spawned-retry" + attempt;
@@ -875,7 +886,7 @@ app.whenReady().then(async () => {
 
   buildMenu();
   createTray();
-  await mcpBridge.start(ROOT, BRIDGE_PORT);
+  await mcpBridge.start(ROOT, BRIDGE_PORT, DISK_ROOT);
   try {
     console.log("[electron] server mode: " + (await ensureServer()));
     loamServerReady = true;

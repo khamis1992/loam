@@ -34,7 +34,7 @@ const NOT_TO_USE = /When NOT to use/i;
 /**
  * Coding-profile tools that are declared in the profile but not yet
  * implemented; they are owned by other tasks (grep/glob by C5, todo_write by
- * C6, plan_exit by C13). They have no registered description to lint until
+ * C6). They have no registered description to lint until
  * those land, at which point they must be removed from this list so their
  * descriptions are covered too.
  */
