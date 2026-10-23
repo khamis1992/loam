@@ -58,7 +58,7 @@ interface ProfileBody {
   main?: { rssBytes?: number };
   renderer?: { rssBytes?: number; heapUsedBytes?: number; count?: number } | null;
   system?: { totalBytes?: number; freeBytes?: number };
-  caches?: Array<{ name: string; size: number; capacity: number; bytes: number }>;
+  caches?: Array<{ name: string; size: number; capacity: number; bytes: number; maxBytes: number }>;
   totals?: { caches: number; entries: number; bytes: number };
 }
 
@@ -102,18 +102,18 @@ describe("debug:memory route", () => {
   });
 
   it("reports one counter row per registered cache, with the configured cap", async () => {
-    registerCacheStats("alpha-cache", () => ({ name: "alpha-cache", size: 3, capacity: 32, bytes: 300 }));
-    registerCacheStats("beta-cache", () => ({ name: "beta-cache", size: 1, capacity: 8, bytes: 0 }));
+    registerCacheStats("alpha-cache", () => ({ name: "alpha-cache", size: 3, capacity: 32, bytes: 300, maxBytes: 0 }));
+    registerCacheStats("beta-cache", () => ({ name: "beta-cache", size: 1, capacity: 8, bytes: 0, maxBytes: 0 }));
     const res = await callRoute("GET", "/api/debug/memory");
     const body = res.json() as ProfileBody;
     const names = (body.caches ?? []).map((c) => c.name);
     assert.deepEqual(names, ["alpha-cache", "beta-cache"]);
-    assert.deepEqual(body.caches?.find((c) => c.name === "alpha-cache"), { name: "alpha-cache", size: 3, capacity: 32, bytes: 300 });
+    assert.deepEqual(body.caches?.find((c) => c.name === "alpha-cache"), { name: "alpha-cache", size: 3, capacity: 32, bytes: 300, maxBytes: 0 });
     assert.deepEqual(body.totals, { caches: 2, entries: 4, bytes: 300 });
   });
 
   it("never reports more live entries than the configured cap", async () => {
-    registerCacheStats("tight", () => ({ name: "tight", size: 4, capacity: 4, bytes: 0 }));
+    registerCacheStats("tight", () => ({ name: "tight", size: 4, capacity: 4, bytes: 0, maxBytes: 0 }));
     const res = await callRoute("GET", "/api/debug/memory");
     const body = res.json() as ProfileBody;
     for (const cache of body.caches ?? []) {

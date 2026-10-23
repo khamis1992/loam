@@ -49,3 +49,8 @@ electron/filmcraft/dist/
 .jcode-done
 .jdone
 .jblocked
+
+# throwaway local probe scripts (never commit)
+tmp-*.mjs
+tmp-*.mts
+

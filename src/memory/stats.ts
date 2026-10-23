@@ -21,6 +21,9 @@ export interface CacheStats {
   capacity: number;
   /** Estimated retained bytes (0 when the cache has no byte estimator). */
   bytes: number;
+  /** Configured byte ceiling in bytes (0 = no byte cap). Lets the doc↔code
+   *  parity check assert the documented "<n> MiB" ceilings, not just entries. */
+  maxBytes: number;
 }
 
 type Snapshot = () => CacheStats;
@@ -50,7 +53,7 @@ export function collectCacheStats(): CacheStats[] {
     try {
       out.push(snapshot());
     } catch {
-      out.push({ name, size: 0, capacity: 0, bytes: 0 });
+      out.push({ name, size: 0, capacity: 0, bytes: 0, maxBytes: 0 });
     }
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));

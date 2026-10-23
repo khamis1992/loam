@@ -88,7 +88,7 @@ describe("LruCache", () => {
   it("reports its own counter row", () => {
     const cache = new LruCache<Buffer>({ capacity: 2, name: "t-lru-stats", maxBytes: 1024, sizeOf: byteSizeOfBytes });
     cache.set("a", Buffer.alloc(10));
-    assert.deepEqual(cache.stats(), { name: "t-lru-stats", size: 1, capacity: 2, bytes: 10 });
+    assert.deepEqual(cache.stats(), { name: "t-lru-stats", size: 1, capacity: 2, bytes: 10, maxBytes: 1024 });
   });
 });
 
@@ -141,7 +141,7 @@ describe("BoundedMap", () => {
     map.set("a", 1);
     assert.deepEqual([...map.entries()], [["a", 1]]);
     assert.deepEqual([...map], [["a", 1]]);
-    assert.deepEqual(map.stats(), { name: "t-bounded-entries", size: 1, capacity: 5, bytes: 0 });
+    assert.deepEqual(map.stats(), { name: "t-bounded-entries", size: 1, capacity: 5, bytes: 0, maxBytes: 0 });
     assert.equal(map.capacityLimit, 5);
   });
 });
@@ -150,8 +150,8 @@ describe("cache stats registry", () => {
   beforeEach(() => resetCacheStatsRegistry());
 
   it("collects snapshots sorted by name and totals them", () => {
-    registerCacheStats("zeta", () => ({ name: "zeta", size: 2, capacity: 4, bytes: 20 }));
-    registerCacheStats("alpha", () => ({ name: "alpha", size: 1, capacity: 4, bytes: 10 }));
+    registerCacheStats("zeta", () => ({ name: "zeta", size: 2, capacity: 4, bytes: 20, maxBytes: 0 }));
+    registerCacheStats("alpha", () => ({ name: "alpha", size: 1, capacity: 4, bytes: 10, maxBytes: 0 }));
     assert.deepEqual(cacheNames(), ["alpha", "zeta"]);
     const stats = collectCacheStats();
     assert.deepEqual(stats.map((s) => s.name), ["alpha", "zeta"]);
@@ -159,22 +159,22 @@ describe("cache stats registry", () => {
   });
 
   it("replaces a duplicate name instead of double counting", () => {
-    registerCacheStats("dup", () => ({ name: "dup", size: 1, capacity: 2, bytes: 1 }));
-    registerCacheStats("dup", () => ({ name: "dup", size: 1, capacity: 9, bytes: 1 }));
+    registerCacheStats("dup", () => ({ name: "dup", size: 1, capacity: 2, bytes: 1, maxBytes: 0 }));
+    registerCacheStats("dup", () => ({ name: "dup", size: 1, capacity: 9, bytes: 1, maxBytes: 0 }));
     assert.equal(collectCacheStats().length, 1);
     assert.equal(collectCacheStats()[0]!.capacity, 9);
   });
 
   it("skips a snapshot that throws rather than failing the whole surface", () => {
     registerCacheStats("broken", () => { throw new Error("boom"); });
-    registerCacheStats("fine", () => ({ name: "fine", size: 1, capacity: 1, bytes: 0 }));
+    registerCacheStats("fine", () => ({ name: "fine", size: 1, capacity: 1, bytes: 0, maxBytes: 0 }));
     const stats = collectCacheStats();
     assert.equal(stats.length, 2);
-    assert.deepEqual(stats.find((s) => s.name === "broken"), { name: "broken", size: 0, capacity: 0, bytes: 0 });
+    assert.deepEqual(stats.find((s) => s.name === "broken"), { name: "broken", size: 0, capacity: 0, bytes: 0, maxBytes: 0 });
   });
 
   it("unregisters by name", () => {
-    registerCacheStats("gone", () => ({ name: "gone", size: 0, capacity: 1, bytes: 0 }));
+    registerCacheStats("gone", () => ({ name: "gone", size: 0, capacity: 1, bytes: 0, maxBytes: 0 }));
     unregisterCacheStats("gone");
     assert.deepEqual(cacheNames(), []);
   });

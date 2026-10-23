@@ -25,6 +25,7 @@ registerCacheStats("protocol-blobs", () => ({
   size: blobs.size,
   capacity: BLOB_STORE_MAX_ENTRIES,
   bytes: retainedBytes,
+  maxBytes: BLOB_STORE_MAX_BYTES,
 }));
 
 function evictUntilBytesFit(protect: string): void {

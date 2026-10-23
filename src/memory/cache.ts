@@ -139,6 +139,7 @@ export class LruCache<V> {
       size: this.map.size,
       capacity: this.options.capacity,
       bytes: this.bytes,
+      maxBytes: this.options.maxBytes ?? 0,
     };
   }
 }
@@ -168,7 +169,7 @@ export class BoundedMap<K, V> {
 
   /** Counter row for the local `debug:memory` surface (no byte estimator). */
   stats(): CacheStats {
-    return { name: this.name, size: this.map.size, capacity: this.capacity, bytes: 0 };
+    return { name: this.name, size: this.map.size, capacity: this.capacity, bytes: 0, maxBytes: 0 };
   }
 
   get size(): number {

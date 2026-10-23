@@ -30,7 +30,7 @@ export interface MemoryDebugPayload extends Partial<MemoryDebugSnapshot> {
     count: number;
   } | null;
   system?: { totalBytes: number; freeBytes: number };
-  caches?: Array<{ name: string; size: number; capacity: number; bytes: number }>;
+  caches?: Array<{ name: string; size: number; capacity: number; bytes: number; maxBytes: number }>;
   totals?: { caches: number; entries: number; bytes: number };
 }
 

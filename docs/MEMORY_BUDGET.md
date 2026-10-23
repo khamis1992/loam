@@ -73,11 +73,13 @@ asserts every cap's documented bound matches the code. The remaining 11 caps
 are enforced in code and appear on the debug surface, but driving them past the
 bound needs a live browser, an ffmpeg child, the video sidecar or a render
 round-trip, so their bounds are covered by the parity check rather than by an
-eviction case. The byte-ceiling mechanism itself is unit-tested on
-`LruCache`/`BoundedMap` in `src/memory/__tests__/cache.test.ts`, which is what
-the three byte-capped rows (`slide-preview`, `word-preview`, `skills-desc`) rely
-on. Adding a cap therefore requires its row in this table, and the parity test
-fails if the number drifts.
+eviction case. The `LruCache` byte-ceiling mechanism itself is unit-tested in
+`src/memory/__tests__/cache.test.ts`, which is what the three `LruCache`
+byte-capped rows (`slide-preview`, `word-preview`, `skills-desc`) rely on;
+`protocol-blobs` carries its own byte ceiling (`BLOB_STORE_MAX_BYTES`) enforced
+by its eviction hook, and the parity test asserts that value too. Adding a cap
+therefore requires its row in this table, and the parity test fails if the
+number drifts.
 
 ### Agent and session caches
 
@@ -97,7 +99,7 @@ fails if the number drifts.
 | `protocol-session-tokens` | 512 | `src/protocol/rpc.ts` | One row per active Connect-RPC session token. |
 | `protocol-temp-codes` | 128 | `src/protocol/rpc.ts` | OAuth device/temporary codes; single-use, so a short bound is safe. |
 | `protocol-login-tokens` | 256 | `src/protocol/rpc.ts` | Single-use login tokens (`consumeLoginToken` deletes on read). |
-| `protocol-blobs` | 64 | `src/protocol/blobStore.ts` | Outbound binary blobs; the eviction hook releases the buffer. |
+| `protocol-blobs` | 64 entries / 64 MiB | `src/protocol/blobStore.ts` | Outbound binary blobs; the eviction hook releases the buffer. Entry **and** byte ceiling. |
 | `workspace-directory-requests` | 128 | `src/protocol/approvals.ts` | Pending interactive directory approvals, keyed by request id; eviction clears the 15-minute timer. |
 
 ### Server and connector caches
@@ -203,7 +205,7 @@ These are not strict caps yet, but they are the expected relationships.
 |---|---|
 | `totals.entries` vs `totals.caches` | Average occupancy should stay well below 1.0 per cache; a cache pinned at its cap means the cap is too small or the workload is too hot. |
 | `caches[].size` vs `caches[].capacity` | No row may exceed its `capacity`. The `debug:memory` route test asserts this for every registered cache. |
-| `caches[].bytes` vs the byte ceiling | For byte-capped caches (`slide-preview`, `word-preview`, `skills-desc`) the reported `bytes` must stay at or below the configured ceiling. |
+| `caches[].bytes` vs the byte ceiling | For byte-capped caches (`slide-preview`, `word-preview`, `skills-desc`, `protocol-blobs`) the reported `bytes` must stay at or below the configured ceiling. |
 | `finalMB` vs `peakMB` (bench) | A leak shows up as `finalMB` staying near `peakMB` after the workload ends. A healthy run returns close to `idleMB`. Both the BEFORE and AFTER runs above satisfy this. |
 | `growthMB` (bench) | Expected to stay at 0, well below the harness threshold (64 MB); see `bench/results/J6-before.json` and `J6-after.json`. |
 

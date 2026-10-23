@@ -474,10 +474,12 @@ describe("docs/MEMORY_BUDGET.md stays in sync with the code", () => {
     new (await import("../../tools/browserOperator.js")).BrowserToolSurface(ctx(W, "parity"));
     const doc = fs.readFileSync(new URL("../../../docs/MEMORY_BUDGET.md", import.meta.url), "utf8");
     // Match every cap-table row: a plain numeric cap, or "<n> entries / <n> MiB"
-    // for the byte-capped rows. The unbackticked "Renderer sample bound" row and
-    // the unbounded-by-design table have no backticked counter name and are
-    // skipped, as are the baseline metrics (their names contain uppercase).
-    const rows = [...doc.matchAll(/^\|\s*`([a-z0-9-]+)`\s*\|\s*(\d+)(?:\s*entries\s*\/\s*\d+\s*MiB)?\s*\|/gm)];
+    // for the byte-capped rows (the MiB value is captured and asserted too, so a
+    // drifted byte ceiling fails the same way a drifted entry cap does). The
+    // unbackticked "Renderer sample bound" row and the unbounded-by-design table
+    // have no backticked counter name and are skipped, as are the baseline metrics
+    // (their names contain uppercase).
+    const rows = [...doc.matchAll(/^\|\s*`([a-z0-9-]+)`\s*\|\s*(\d+)(?:\s*entries\s*\/\s*(\d+)\s*MiB)?\s*\|/gm)];
     assert.ok(rows.length >= 30, `expected the budget table to list many caps, found ${rows.length}`);
     const registered = collectCacheStats();
     const registeredNames = new Set(registered.map((c) => c.name));
@@ -485,6 +487,7 @@ describe("docs/MEMORY_BUDGET.md stays in sync with the code", () => {
     for (const match of rows) {
       const name = match[1];
       const capText = match[2];
+      const mibText = match[3];
       if (!name || !capText) continue;
       documentedNames.add(name);
       const row = registered.find((c) => c.name === name);
@@ -503,6 +506,21 @@ describe("docs/MEMORY_BUDGET.md stays in sync with the code", () => {
         Number(capText),
         `docs/MEMORY_BUDGET.md lists ${name} at ${capText} but the code enforces ${row.capacity}`,
       );
+      // Byte-capped rows must match too. Without this the doc could advertise a
+      // 96 MiB ceiling while the code enforces something else.
+      if (mibText) {
+        assert.equal(
+          row.maxBytes,
+          Number(mibText) * 1024 * 1024,
+          `docs/MEMORY_BUDGET.md lists ${name} at ${mibText} MiB but the code enforces ${row.maxBytes} bytes`,
+        );
+      } else {
+        assert.equal(
+          row.maxBytes,
+          0,
+          `docs/MEMORY_BUDGET.md lists ${name} with no byte ceiling but the code enforces ${row.maxBytes} bytes`,
+        );
+      }
     }
     // Reverse direction: every cap registered in code must have a doc row. Without
     // this a cache added to the code passes while the doc silently goes stale.
