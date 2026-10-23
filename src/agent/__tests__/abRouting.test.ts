@@ -4,8 +4,9 @@
  * The router decides *which* models are compared (llm/__tests__/router.test.ts) and
  * the graph decides *how* an arm is stored (graph/__tests__/runGraph.test.ts). These
  * tests cover the boundary between them: that a run carrying `abModels` records one
- * sibling arm per model off the run's root node, and that a graph failure is logged
- * instead of failing the task.
+ * sibling arm per model off the run's root node **and actually runs that model**,
+ * so the arm's node ends in a terminal state carrying the answer that model
+ * produced, and that a graph failure is logged instead of failing the task.
  */
 import assert from "node:assert";
 import fs from "node:fs";
@@ -26,8 +27,7 @@ process.env.MANUS_LOCAL_DATA_DIR = path.join(tmp, "data");
 
 const { runAgent } = await import("../loop.js");
 const { ToolRegistry: RegistryCtor } = await import("../../tools/registry.js");
-const { getRunNodes, clearRun } = await import("../runGraphAdapter.js");
-const { beginRun } = await import("../runGraphAdapter.js");
+const { getRunNodes, clearRun, beginRun } = await import("../runGraphAdapter.js");
 const { closeDb } = await import("../../server/sqliteStore.js");
 
 type ToolRegistry = import("../../tools/registry.js").ToolRegistry;
@@ -112,10 +112,15 @@ function registry(): ToolRegistry {
  * the agent's own turn answers with a tool-free "done" (which stops the loop after
  * one step), while the independent final verifier answers with a valid `pass`
  * verdict. A real model API is never contacted.
+ *
+ * Every call records the model it was asked for, so a test can prove that an A/B
+ * arm was actually dispatched to *its own* model rather than merely recorded.
  */
-function chatClient(model = "weak-default"): OllamaClient {
+function chatClient(model = "weak-default", calls: string[] = []): OllamaClient {
   return {
-    async chat(options: { messages?: Array<{ role: string; content: string }> }): Promise<ChatResult> {
+    async chat(options: { model?: string; messages?: Array<{ role: string; content: string }> }): Promise<ChatResult> {
+      const requested = options.model ?? model;
+      calls.push(requested);
       const system = options.messages?.find((message) => message.role === "system")?.content ?? "";
       const verifier = system.includes("verdict") || system.includes("finalAnswer");
       return verifier
@@ -125,23 +130,33 @@ function chatClient(model = "weak-default"): OllamaClient {
             model,
             usage: { promptTokens: 1, completionTokens: 1, durationMs: 1 },
           }
-        : { content: "done", toolCalls: [] as OllamaToolCall[], model, usage: { promptTokens: 1, completionTokens: 1, durationMs: 1 } };
+        : { content: `done by ${requested}`, toolCalls: [] as OllamaToolCall[], model: requested, usage: { promptTokens: 1, completionTokens: 1, durationMs: 1 } };
+    },
+  } as unknown as OllamaClient;
+}
+
+/** A client whose every call fails, so an arm can be shown to fail in isolation. */
+function failingClient(): OllamaClient {
+  return {
+    async chat(): Promise<ChatResult> {
+      throw new Error("model unavailable");
     },
   } as unknown as OllamaClient;
 }
 
 describe("runAgent multi-model A/B", () => {
-  it("records one sibling arm per model off the run's root node", async () => {
+  it("records one sibling arm per model and runs each arm's own model", async () => {
     const taskId = "task_ab_1";
     beginRun(taskId, "Compare models");
-    const events: Array<{ type: string; text?: string }> = [];
+    const events: Array<{ type: string; text: string }> = [];
+    const armCalls: string[] = [];
 
     const result = await runAgent({
       cfg: cfg(),
-      ollama: chatClient(),
+      ollama: chatClient("weak-default", armCalls),
       tools: registry(),
       emit: ((event: { type: string; text?: string }) => {
-        events.push({ type: event.type, text: event.text });
+        events.push({ type: event.type, text: typeof event.text === "string" ? event.text : "" });
       }) as Emit,
       prompt: "Summarise the quarter",
       suppressFinal: false,
@@ -150,7 +165,7 @@ describe("runAgent multi-model A/B", () => {
       abModels: ["glm-5.4-flash:cloud", "qwen3-coder-30b"],
     });
 
-    assert.equal(result.text, "done", "the run itself still completes");
+    assert.equal(result.text, "done by weak-default", "the run itself still completes");
     const nodes = getRunNodes(taskId);
     const arms = nodes.filter((node) => node.type === "sibling");
     assert.equal(arms.length, 2, "one arm per model");
@@ -164,9 +179,56 @@ describe("runAgent multi-model A/B", () => {
       // Model ids only: the arms must never carry provider keys.
       assert.ok(!JSON.stringify(arm).includes("apiKey"), "an arm never carries key material");
     }
-    const announced = events.filter((event) => typeof event.text === "string" && event.text.startsWith("A/B arm started on"));
+    const announced = events.filter((event) => event.text.startsWith("A/B arm started on"));
     assert.equal(announced.length, 2, "each arm is announced to the session");
 
+    // The defect this covers: an arm used to be *recorded* but never executed, so
+    // it stayed `init` and its model was never called. Now every arm is dispatched
+    // to its own model and lands in a terminal state carrying that model's answer.
+    const finished = events.filter((event) => event.text.startsWith("A/B arm finished on"));
+    assert.equal(finished.length, 2, "each arm actually ran its model and finished");
+    for (const model of ["glm-5.4-flash:cloud", "qwen3-coder-30b"]) {
+      assert.ok(armCalls.includes(model), `arm model ${model} was actually dispatched`);
+    }
+    assert.ok(armCalls.includes("weak-default"), "the main run's own model is dispatched too");
+    for (const arm of arms) {
+      const data = arm.data as { answer?: string; model?: string };
+      assert.equal(arm.status, "finished", `arm ${data.model} finished`);
+      assert.equal(data.answer, `done by ${data.model}`, `arm ${data.model} stored its own answer`);
+    }
+
+    clearRun(taskId);
+  });
+
+  it("marks a failed arm failed without failing the run that owns it", async () => {
+    const taskId = "task_ab_4";
+    beginRun(taskId, "Compare models, one arm is down");
+
+    // The main run's own model call fails too, so the run rejects. What matters is
+    // that the arm failure is contained on its own node instead of surfacing as an
+    // unhandled rejection or a node stuck in `running`.
+    await assert.rejects(
+      () => runAgent({
+        cfg: cfg(),
+        ollama: failingClient(),
+        tools: registry(),
+        emit: (() => {}) as Emit,
+        prompt: "Summarise the quarter",
+        suppressFinal: false,
+        maxSteps: 3,
+        taskId,
+        abModels: ["model-a", "model-b"],
+      }),
+      /model unavailable/,
+    );
+
+    const arms = getRunNodes(taskId).filter((node) => node.type === "sibling");
+    assert.equal(arms.length, 2, "both arms were recorded");
+    for (const arm of arms) {
+      const data = arm.data as { error?: string };
+      assert.equal(arm.status, "failed", "an unreachable arm fails on its own node");
+      assert.ok(typeof data.error === "string" && data.error.includes("unavailable"), "the arm records why it failed");
+    }
     clearRun(taskId);
   });
 
@@ -211,3 +273,4 @@ describe("runAgent multi-model A/B", () => {
     clearRun(taskId);
   });
 });
+
