@@ -45,6 +45,46 @@ the `.jcode-done` numbers.
 
 ---
 
+# N5 round 4: parity J8 merged (it touches `src/agent/loop.ts`, N5's own file)
+
+Parity advanced to `cd414a5` ("merge `khamis1992/jcode-j8` (J8) into manus-parity"), merged
+here as `69fab35`. J8 is the **first parity tip that edits `src/agent/loop.ts`**, the same file
+N5 wired the selector into, so this was the merge with real conflict potential.
+
+It resolved **automatically** (`ort` strategy, no conflict markers, no hand edit). J8's changes
+to `loop.ts` are additive and in disjoint regions from N5's: it wraps `runAgent` in a thin
+outer function that owns a `sessionId` and `forgetFileTouchSession` cleanup, then delegates to
+a new `runAgentInner`, and it installs `readState.hooks` plus a per-turn `touch.drainNotices`
+call. N5's selector lines are untouched:
+
+- `loop.ts:29` `import { ContextSelector } from "./contextSelector.js";`
+- `loop.ts:212` `contextSelector?: ContextSelector;`
+- `loop.ts:517` `const selector = opts.contextSelector ?? new ContextSelector({ config: opts.cfg.contextSelector });`
+- `loop.ts:595` `opts.emit({ type: "context_selected", ... })`
+
+One naming hazard was checked explicitly: J8's diff carries a comment "Neo N10: resolve the
+composer's selectors" (`opts.cfg.selectors`), which is unrelated to N5's `cfg.contextSelector`.
+Both exist, both are distinct identifiers, and the selector suites pass.
+
+Gates on the J8-merged tree:
+
+| Gate | Result |
+| --- | --- |
+| `npx tsc --noEmit` | exit 0 |
+| `npm run build:server` | exit 0 (`server bundle + pdf worker written to dist/`) |
+| `(cd packages/web && npx next build)` | exit 0 (compiled successfully) |
+| full node suite | 2992 tests, 2992 pass, 0 fail |
+| web suite | 91 files, 624 tests, 624 pass |
+| focused (N5 selector + long-horizon + runGraph + loopBudget + loopHooks + J8 fileTouchLoop) | 79 tests, 79 pass, 0 fail |
+| `eval-neo` | 10/10 PASS, verdict PASS, no regression |
+
+Both markers verified after this merge: `.jdone` (29,782 lines) and `.jcode-done` (262 lines)
+each report missing 0 non-blank lines against `manus-parity`, `519f889` and `38f1ecc`. The
+`.jdone` merge reported large line churn (12,973 changed) because parity reflowed its own
+rollup, but the normalized multiset check confirms nothing was dropped from either side.
+
+---
+
 # N5 round 3: parity O7 merged clean; all gates re-run
 
 Parity advanced to `519f889` ("merge `khamis1992/om-o7` (O7) into manus-parity"), merged here as
