@@ -1,4 +1,40 @@
 
+# N6 merge gate session note (2026-10-23, parity tip `cd414a5`, J8, third merge)
+
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. Parity advanced once more
+(tip `cd414a5`, J8; merge base `3c86ecf`, ours `e50aa0c`), so `git merge manus-parity`
+conflicted on one path: `src/agent/loop.ts`. Every other file auto-merged and was staged.
+
+Per file:
+- `src/agent/loop.ts`: the import region conflicted. HEAD's richer `./computeBudget.js` import
+  (`checkBudget`, `consumeCost`, `consumeSteps`, `consumeTokens`, `consumeWallClock`,
+  `createUnlimitedBudget`, `ComputeBudget`) is a semantic superset of parity's subset
+  (`checkBudget`, `consumeSteps`, `consumeTokens`, `ComputeBudget`), so no unique line from
+  parity is dropped. Kept HEAD's form and added parity's new
+  `import { fileTouchRegistry, forgetFileTouchSession } from "../tools/fileTouch.js";` (J8)
+  below it. The loop-body line the mechanical diff flagged
+  (`for (step = ... maxSteps ...)`) is N6's own mission-aware change, not a conflict, and stays.
+
+Merge commit `a3d15db` (parents `e50aa0c` and `cd414a5`).
+
+Gates (all run from the worktree root on the merged tree):
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (server bundle + pdf worker written)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test src/agent/__tests__/mission.test.ts src/agent/__tests__/computeBudget.test.ts`
+                                              -> tests 42, pass 42, fail 0
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run eval:neo`                          -> total=100 passed=10/10 verdict=PASS (baseline 100, no regression)
+
+Integrity of the resolved tree: `git grep -n "^<<<<<<<\|^=======$\|^>>>>>>>\|^|||||||"`
+over `src`, `packages` and `.jdone` returns empty; no conflict markers remain. `.jdone`
+auto-merged by the union driver and was verified as a strict superset of both parents (0 lines
+missing from either side). No test was weakened, deleted or skipped. No secret committed. No
+forbidden path touched. No Arabic text was written by this session; no mojibake placeholder
+text was added.
+
+---
+
 # N6 merge gate session note (2026-10-23, parity tip `3c86ecf`, second merge)
 
 `.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. Parity had advanced
