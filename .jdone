@@ -1,5 +1,109 @@
 fc-07 complete: the Loam Video / Loam Effects router and a full "Video editing" prompt section. One product, one workflow, Arabic + English routing, FilmCraft-native fallback.
 
+## Merge gate fix (merge commit `fade6f6`)
+
+The `manus-parity` merge gate failed with MERGE CONFLICT. The merge is now
+committed with every conflict resolved by keeping BOTH sides, and no test
+weakened, deleted or skipped.
+
+Merge shape: `HEAD^1` = `a302ac5` (the fc-07 branch tip), `HEAD^2` = `045f3e2`
+(the `manus-parity` tip), merge base `a8130cc`. Four files conflicted.
+
+**`src/agent/masterPromptText.ts`.** The conflict was at the generated header
+(lines 38/40/42). `prompts/loam-master.md` had auto-merged cleanly (both sides
+kept: fc-07's §6.12 plus parity's §6.11 Craft-editors additions), so the fix was
+to regenerate the derived module rather than hand-edit it: `npm run
+gen:master-prompt` reproduces `masterPromptText.ts` from the merged markdown with
+no markers and no manual patching, and the result is idempotent (regenerating
+leaves the tree clean). The generated asset is now 27 sections with §6.11
+ordered before §6.12 as the Appendix B order requires.
+
+**`src/agent/__tests__/__snapshots__/coding-prompt.snap.json`.** Because the
+merged master prompt changed, the pinned hash had to be recomputed. A throwaway
+script assembled the prompt exactly as `codingPrompt.test.ts` does
+(`buildMasterPrompt(ALL_SLOTS, { model: "qwen2.5:14b" })`) and produced
+`masterPromptSha256 = 123b5ba7fe42c9bf1d5012723154994ebbf2ff24d6def86572fddc4346617c0f`.
+`codingSectionSha256 = ef715eb596edf9d39281878ee278a18a64cef025e38f4bbb82d576eeb327249f`
+is unchanged (the coding section itself did not change), and `masterSectionIds`
+is the 27-element list. The scratch generator was deleted afterwards.
+
+**`src/tools/videoStudio.ts`.** Both sides' changes were kept: the fc-07 router
+wiring (the `routing` object carried in every result, including the three early
+failure envelopes) and the parity-side edits.
+
+**`.jdone`.** Resolved as a union of both sides. The structure was
+`HEADblob[1..182] + PARblob[1..2074]` around three markers; the fix removed the
+leading `<<<<<<< HEAD` marker, inserted a `---` separator between fc-07's "D2 gate
+fix complete" tail and parity's "J5 — Blast-radius" header, and removed the
+`=======` / `>>>>>>> manus-parity` markers. Verified afterwards that no unique
+line from either side was dropped and that no markers remain (2259 lines). The
+fc-07 report stays at the top, followed by the full parity rollup (J5
+blast-radius classifier, O3 ProtocolStore, V11, and the preserved
+D2/D10/D19/D17/D4/N20 reports).
+
+Also carried in the merge: a small fc-07 router follow-up. §6.12 and the tool
+description both name the transition kinds that need the effects engine ("wipes,
+zooms, glitches, spins, morphs" / "a wipe/zoom/glitch and similar"), but only the
+bare words that are *also* visual-effect nouns (`wipe`, `glitch`) reached the
+effects route; a `type` of `"zoom"`, `"spin"` or `"morph"` was reported as a
+native edit. `EFFECTS_PHRASES` now lists those three bare kinds (with a comment
+explaining why the ambiguous ones stay matched only as `"<kind> transition"`,
+e.g. "slide in the text" is text animation), plus the bare `"grading"` synonym.
+A new test pins the whole documented set — `wipe`/`zoom`/`glitch`/`spin`/`morph`
+route to `effects`, `dissolve`/`fade`/`crossfade`/`fade to black` stay on the
+timeline engine.
+
+### Gates (all run from the worktree root on the merged tree)
+
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0 (pdf worker copied)
+- `(cd packages/web && npx next build)` -> exit 0 (compiled successfully, 25/25 static pages)
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:promptwire` -> PASS
+- `npm run check:modes` -> PASS
+- `npm run check:eval` -> PASS
+- `npm run check:orchestrator` -> PASS
+- `npm run check:loam-agents` -> PASS ("seven modes accepted; unknown create/update rejected without partial mutation")
+- `npm run check:recovery` -> PASS ("invalid migration preserves source; all recovery checks passed")
+- `node --import tsx --test src/tools/__tests__/videoStudioRouter.test.ts` -> tests 48, pass 48, fail 0
+- `node --import tsx --test src/tools/__tests__/videoStudioRouter.test.ts src/tools/__tests__/videoStudio.test.ts` -> tests 90, pass 90, fail 0
+- `node --import tsx --test src/agent/__tests__/codingPrompt.test.ts` -> tests 8, pass 8, fail 0
+- `node --import tsx --test "src/**/*.test.ts"` -> tests 2543, pass 2541, fail 2
+
+The two full-suite failures are inherited from the parity lineage, not
+regressions from this merge. Neither file is touched by fc-07 (`git diff --stat
+MERGE_HEAD HEAD` is empty for both), the failing test files auto-merged
+byte-identically across base `a8130cc`, HEAD and MERGE_HEAD, and every dependency
+they import is byte-identical to MERGE_HEAD:
+
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "keeps every coding-profile
+   tool either linted or explicitly pending" (`suggest_plan is neither registered
+   nor listed in PENDING_CODING_TOOLS`). The inherited `suggest_plan` defect.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+   throwing". Environmental: `readGitBranch` shells out to `git rev-parse`, which
+   walks up to the nearest enclosing repository, so a fresh temp dir under this
+   machine reports `isGit: true`.
+
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path
+touched. No conflict markers remain anywhere in the tracked tree
+(`git grep -E "^(<<<<<<< |>>>>>>> |=======$)"` -> empty), and the merge is
+committed (`MERGE_HEAD` is gone).
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run check:encoding
+  npm run check:promptwire
+  npm run check:modes
+  npm run check:eval
+  npm run check:orchestrator
+  npm run check:loam-agents
+  npm run check:recovery
+  node --import tsx --test src/tools/__tests__/videoStudioRouter.test.ts src/tools/__tests__/videoStudio.test.ts
+
+---
+
 ## Fourth validation pass (one real defect fixed: commits `b36a8af`, `5b6dbc4`)
 Drove the router and the tool envelope through an ad-hoc probe (bilingual inputs,
 normalisation, classification, `plan()` degradation, and the real `run()` against a stub
