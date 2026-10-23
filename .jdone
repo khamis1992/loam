@@ -1,3 +1,38 @@
+# J9 gate-fix session (round 3): manus-parity merge conflict resolved, all gates green
+
+`.jgatefail.txt` reported: `git merge manus-parity` -> `CONFLICT (content): Merge conflict in
+packages/web/public/marketplace/THIRD_PARTY_NOTICES. Run git merge manus-parity, resolve those
+files keeping both sides, commit.`
+
+## Root cause and fix
+
+manus-parity advanced 86 commits since the last J9 merge and both sides had added a different
+paragraph under the same `jcode (MIT)` heading in the marketplace notices file. Resolved by
+keeping BOTH sides: the J9 Codemode paragraph (HEAD) followed by the parity file-touch
+notification paragraph. The repo-root `THIRD_PARTY_NOTICES` already carried the J9 Codemode
+entry, so root and marketplace notices agree. No test, product file or marker was weakened.
+
+## Gates re-run on the merged tree (measured)
+
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (server bundle + pdf worker written to dist/)
+- `(cd packages/web && npx next build)`       -> exit 0 (25/25 static pages)
+- `node --import tsx --test src/codemode/__tests__/*.test.ts` -> 46/46 pass
+- `node --import tsx --test <12 merge-touched suites>`        -> 134/134 pass
+
+## J9 acceptance re-verified on the merged tree
+
+- The read+grep 20x fan-out test passes with transcript growth asserted < 2 KB
+  (`src/codemode/__tests__/tool.test.ts`).
+- No-fs/net/process, timeout, memory limit and policy-denied-tool tests all pass
+  (46 codemode tests, 0 fail).
+- Bundling: `quickjs-emscripten-core` and `@jitl/quickjs-singlefile-cjs-release-sync`
+  are in package.json + package-lock.json and installed in node_modules, so the wasm
+  inlines into `dist/server.cjs`.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added.
+
 # J9 gate-fix session (round 2): parity merge resolved, all gates green
 
 `.jgatefail.txt` reported: `git merge manus-parity failed (not a conflict): untracked working
