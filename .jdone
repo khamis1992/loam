@@ -1,3 +1,113 @@
+J6 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
+
+## The failure that was fixed
+`.jgatefail.txt` reported: "MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit."
+
+## What the merge produced
+`git merge manus-parity` (MERGE_HEAD tip 35c8470, the V11 design_critique merge) brought in
+the accumulated parallel workstreams (V11 design critique, V0-V11, H0, O0, J3, and the
+many earlier Devin-parity tasks). Exactly four files conflicted. Every conflict was resolved
+by keeping BOTH sides; no test was weakened, deleted or skipped, and no code was dropped:
+
+1. `package.json`: HEAD (J6) added `test:memory`, `bench:mem`, `bench:ram:app` and the
+   J6-aware `test:bench`; manus-parity added `test:coding-eval`. Resolution keeps the parity
+   script AND all four J6 scripts. The merge had also auto-inserted a duplicate tail block
+   (`bench:mem` / `test:bench`) from parity's line 80-81 region into the end of the scripts
+   object; that duplicate was removed so `bench:mem` and `test:bench` appear exactly once,
+   in the union form. Verified with `node -e "JSON.parse(...)"` (valid JSON) and
+   `npm run test:memory` / `npm run test:bench` (both 0 fail).
+2. `THIRD_PARTY_NOTICES` (repo root): HEAD added the J6 memory-budget / bench adaptation
+   entries (`src/memory/{cache,stats,profile}.ts`, `src/server/routes/debugMemory.ts`,
+   `docs/MEMORY_BUDGET.md`, `bench/*.ts`, and their tests); manus-parity added the
+   `src/tools/files.ts` J3 edit-hints entry. Resolution is the union of both lists, in order,
+   with the jcode MIT license text kept once.
+3. `packages/web/public/marketplace/THIRD_PARTY_NOTICES`: HEAD added the J6 bench/memory
+   attribution paragraph; manus-parity added the `src/agent/kvCacheMonitor.ts` KV-cache
+   paragraph plus the jcode MIT license block. Resolution keeps both attribution paragraphs
+   AND the single license text (the merge would otherwise have produced two `=====` rules).
+4. `bench/README.md`: HEAD documented the J6 app-RAM harness; manus-parity documented the
+   `memBench` threshold sentence, the options table and the report shape. Resolution keeps
+   both, with the two option tables split into clearly labelled `## Options (bench/memBench.ts)`
+   and `### Options (appRamBench)` sections and the J6 before/after table preserved verbatim.
+
+Everything else auto-merged cleanly. No conflict markers remain anywhere in the tree
+(`findstr /s /n "<<<<<<<" "*.ts" "*.json" "*.md" "*.cjs"` finds only the pre-existing
+`mergeConflictMarkerLength` literal inside `dist/` and `output/` build artifacts, which are
+generated outputs, not sources).
+
+## Gate condition verified
+After the resolution is committed as merge commit `526fcd7`:
+- `git merge manus-parity` reports "Already up to date."
+- `git merge-base --is-ancestor manus-parity HEAD` exits 0
+- `git rev-list --left-right --count manus-parity...HEAD` = `0  14`
+- `git status --porcelain` is empty (working tree clean; one CRLF-only stat refresh on
+  `src/agent/masterPromptText.ts` was normalized with `git add --renormalize`).
+
+## Gates (all run from the worktree root on committed HEAD 526fcd7)
+- `npx tsc --noEmit`                                  -> exit 0 (no output)
+- `npm run build:server`                              -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`               -> exit 0 (compiled successfully, 25/25 static pages)
+- `npm run verify`                                    -> exit 0 (typecheck, encoding OK, eval harness smoke PASS,
+                                                          orchestrator smoke PASS 114/114, recovery PASS, modes PASS)
+- `npm run check:encoding`                            -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                               -> PASS
+- `npm run check:promptwire`                          -> PASS
+- `npm run check:orchestrator`                        -> PASS (114/114)
+- J6 suites: `node --import tsx --test src/memory/__tests__/cache.test.ts
+  src/memory/__tests__/caps.test.ts src/server/__tests__/debugMemory.test.ts
+  bench/__tests__/fakeModel.test.ts bench/__tests__/rssSampler.test.ts
+  bench/__tests__/memBench.test.ts bench/__tests__/appRamBench.test.ts`
+                                                   -> tests 89, pass 89, fail 0
+- `npm run test:memory`                               -> tests 49, pass 49, fail 0
+- `npm run test:bench`                                -> tests 40, pass 40, fail 0
+- `node --import tsx --test "src/**/*.test.ts"`       -> tests 2254, pass 2252, fail 2
+- `(cd packages/web && npx vitest run)`               -> 72 files / 472 tests, all pass
+
+The two node failures are pre-existing on the manus-parity lineage and untouched by this
+merge; both files are byte-identical to manus-parity (`git diff manus-parity HEAD -- <file>`
+is empty for each):
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered nor
+   listed in PENDING_CODING_TOOLS". The inherited D4 defect documented in the preserved
+   reports below.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing".
+   Environmental: `readGitBranch` shells out to `git rev-parse`, which walks up to the
+   nearest enclosing repository, so a temp folder on this host reports `isGit: true`.
+
+## J6 acceptance recap (already on this branch, re-verified after the merge)
+- **Eviction tests for each cap**: `src/memory/__tests__/cache.test.ts` (LruCache, BoundedMap,
+  stats registry) + `src/memory/__tests__/caps.test.ts` (one eviction case per cap through the
+  real public APIs, including the 40th cap `run-active-flags`).
+- **docs**: `docs/MEMORY_BUDGET.md` lists every cap, and
+  `src/memory/__tests__/caps.test.ts`'s "docs/MEMORY_BUDGET.md stays in sync with the code"
+  asserts a documented cap for every registered cache.
+- **debug surface**: `GET /api/debug/memory` (`src/server/routes/debugMemory.ts`) returns
+  per-process RSS and one counter row per registered cache with its configured cap; covered
+  by `src/server/__tests__/debugMemory.test.ts` (10 tests). The desktop surfaces the same
+  numbers in Settings > Memory.
+- **before/after RSS**: `bench/results/J6-before.json` and `bench/results/J6-after.json`
+  (committed pair, `growthMB` 0 in both, AFTER `cacheCount` 39 / `debugRoutePresent` true);
+  `bench/__tests__/appRamBench.test.ts` asserts the pair is self-consistent.
+- `npm run bench:ram:app` exists and is the J6 app-RAM harness.
+
+No secrets committed. No forbidden path touched. No test was weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added.
+
+## Test commands
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run verify
+  npm run check:encoding
+  npm run test:memory
+  npm run test:bench
+  node --import tsx --test "src/**/*.test.ts"
+  (cd packages/web && npx vitest run)
+
+---
+
+## Preserved: V11 report (previous .jdone content)
+
 V11 complete: design_critique — vision rubric critique loop for generated UIs.
 
 What shipped
