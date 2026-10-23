@@ -145,6 +145,18 @@ class CanvasServer {
   readonly comments: Record<string, CanvasCommentSeed[]> = {};
   notes: CanvasNoteSeed[] = [];
   private seq = 0;
+  /**
+   * Serve the graph over HTTP only: the SSE endpoint answers 404, so the panel must
+   * use its own `GET /api/graph/:runId` load rather than the stream snapshot. That
+   * load is the only path that runs the graph coercion, so without it a placement
+   * bug would be masked by the snapshot handing the panel ready-made coordinates.
+   */
+  httpOnly = false;
+
+  /** 404 the stream so the panel falls back to the HTTP graph load. */
+  refuseStream(): void {
+    this.httpOnly = true;
+  }
 
   private get annotations() {
     return {
@@ -167,6 +179,7 @@ class CanvasServer {
     // pattern.
     if (/^\/api\/graph\/([^/]+)\/stream$/.test(path)) {
       if (method !== 'GET') return json(route, { error: 'method not allowed' }, 405);
+      if (this.httpOnly) return json(route, { error: 'streaming is not enabled' }, 404);
       // The live stream: one snapshot then it stays open, exactly like the server.
       await route.fulfill({
         status: 200,
@@ -279,9 +292,12 @@ async function openCanvas(
     preloadedTags?: Record<string, string>;
     preloadedComments?: Record<string, CanvasCommentSeed[]>;
     preloadedNotes?: CanvasNoteSeed[];
+    /** Serve the graph over HTTP only, so the panel cannot lean on the stream snapshot. */
+    refuseStream?: boolean;
   } = {},
 ) {
   const server = new CanvasServer();
+  if (options.refuseStream) server.refuseStream();
   if (options.preloadedTags) Object.assign(server.tags, options.preloadedTags);
   if (options.preloadedComments) Object.assign(server.comments, options.preloadedComments);
   if (options.preloadedNotes) server.notes.push(...options.preloadedNotes);
@@ -357,9 +373,25 @@ async function openCanvas(
   return server;
 }
 
-/** The pan/zoom transform of a node card, which the minimap and cards both follow. */
+/**
+ * The pan/zoom transform of a node card, which the minimap and cards both follow.
+ */
 function nodeTransform(page: Page, nodeId: string) {
   return page.locator(`[data-testid="canvas-node"][data-node-id="${nodeId}"]`).evaluate((el) => el.style.transform);
+}
+
+/**
+ * The `x`/`y` the canvas was given for a node, as a plain pair. The initial graph
+ * load (`CanvasClient.getGraph` -> `coerceCanvasGraphResponse`) is the only path that
+ * carries the server layout, so a card whose placement was dropped would render at
+ * `translate(NaNpx, NaNpx)` and be discarded by the browser: this reads the transform
+ * back as numbers so that failure is visible rather than silent.
+ */
+async function nodePosition(page: Page, nodeId: string): Promise<{ x: number; y: number }> {
+  const transform = await nodeTransform(page, nodeId);
+  const match = /translate\(([-\d.]+)px, ([-\d.]+)px\)/.exec(transform);
+  expect(match, `node ${nodeId} has a finite transform, got ${transform}`).not.toBeNull();
+  return { x: Number(match![1]), y: Number(match![2]) };
 }
 
 test.describe('N18 canvas controls', () => {
@@ -375,6 +407,36 @@ test.describe('N18 canvas controls', () => {
     await expect(page.getByTestId('canvas-stats')).toHaveText(/2 nodes/);
     // The canvas is the live surface: it reports the stream it is following.
     await expect(page.getByTestId('canvas-live')).toContainText('Live');
+    // The initial HTTP load is the only path that carries the server layout, so the
+    // placement must survive coercion: a dropped `x`/`y` renders every card at
+    // `translate(NaNpx, NaNpx)`, which the browser discards as invalid.
+    const root = await nodePosition(page, 'n1');
+    const leaf = await nodePosition(page, 'n2');
+    expect(root.x).toBe(40);
+    expect(root.y).toBe(40);
+    // The second node sits one layer down and `GRAPH_SPAN` across, which is only true
+    // if the server's `x`/`y` were kept rather than replaced by the origin.
+    expect(leaf.x).toBe(40 + GRAPH_SPAN);
+    expect(leaf.y).toBe(40 + GRAPH_SPAN);
+    expect(leaf.y).toBeGreaterThan(root.y);
+  });
+
+  test('a graph served over HTTP keeps its placement without the stream', async ({ page }) => {
+    // The stream snapshot hands the panel ready-made coordinates and so would mask a
+    // placement bug; refusing the stream forces the panel down its own HTTP graph load,
+    // which is the only path that runs the graph coercion.
+    const server = await openCanvas(page, { refuseStream: true });
+
+    await expect(page.getByTestId('canvas-node')).toHaveCount(2, { timeout: 20_000 });
+    const root = await nodePosition(page, 'n1');
+    const leaf = await nodePosition(page, 'n2');
+    expect(root.x).toBe(40);
+    expect(root.y).toBe(40);
+    // `GRAPH_SPAN` apart in both axes: only the server's `x`/`y` produce this.
+    expect(leaf.x).toBe(40 + GRAPH_SPAN);
+    expect(leaf.y).toBe(40 + GRAPH_SPAN);
+    // The nodes were still served, just not over the stream.
+    expect(server.nodes).toHaveLength(2);
   });
 
   test('tagging a node paints the card and the edit is served back', async ({ page }) => {
