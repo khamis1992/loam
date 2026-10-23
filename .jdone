@@ -1,3 +1,392 @@
+## O6 gate-fix session: merge with manus-parity, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+### Root cause
+No source file conflicted. `git merge manus-parity` applied cleanly with the `ort`
+strategy both times; the only file the merge touched on our side that parity also
+touched was the tracked rollup `.jdone`, and even that auto-merged (parity's O2 report
+was appended below). The O6 deliverables (`src/server/inputQueue.ts`,
+`src/server/__tests__/inputQueue.test.ts`, `src/server/__tests__/inputQueueAdmit.test.ts`
+and the loop/socket/http wiring, commits `050652b` + `0b1d991`) were already committed,
+present and untouched.
+
+`manus-parity` advanced twice while the session ran, so the merge was run twice:
+1. tip `d05e4b1` (D5) -> clean auto-merge, commit `24bc149`.
+2. tip `6b9b453` (O2, +5 commits incl. D5) -> clean auto-merge, commit `d131ff5`.
+
+Nothing was dropped, no test was weakened, deleted or skipped, and no source file was
+edited by this session.
+
+### Gate condition verified
+`git merge manus-parity` reports "Already up to date.", `git merge-base --is-ancestor
+manus-parity HEAD` exits 0 and `git rev-list --left-right --count manus-parity...HEAD` is
+`0  4` (parity fully merged, zero parity commits missing). No conflict marker remains in
+the tree and `git status --porcelain` is empty.
+
+### Gates (all run from the worktree root on the committed tree `d131ff5`)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.4mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled, 25/25 static pages)
+- `node --import tsx --test src/server/__tests__/inputQueue.test.ts src/server/__tests__/inputQueueAdmit.test.ts`
+                                              -> tests 15, pass 15, fail 0
+- `node --import tsx --test src/protocol/__tests__/*.test.ts`
+                                              -> tests 41, pass 41, fail 0
+- `(cd packages/web && npx vitest run)`       -> 72 files / 472 tests, all pass
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                       -> PASS
+- `npm run check:promptwire`                  -> PASS (every promptwire tool ok:true)
+
+Full-suite run `node --import tsx --test "src/**/__tests__/*.test.ts"`
+-> tests 2327, pass 2324, fail 3. All three are the pre-existing, documented failures and
+each file is byte-identical to manus-parity (`git diff manus-parity HEAD -- <file>` is
+empty for all seven):
+
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered
+   nor listed in PENDING_CODING_TOOLS". The inherited D4 defect.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing"
+   (`info.isGit` is true for a plain temp dir because `%TEMP%` sits inside a git repo on
+   this host). Environmental.
+3. `src/tools/__tests__/search.test.ts` -> "grep took 1128ms" against a 1000ms budget.
+   Load-sensitive: 19/19 pass when run on its own (re-verified on this tree).
+
+`git diff manus-parity...HEAD` contains 0 added lines with the mojibake marker and 0
+conflict markers.
+
+### Files
+- `.jdone` only (this report prepended to the preserved rollup). No source file was
+  modified by this session; the O6 deliverables are unchanged from commits `050652b`
+  and `0b1d991`.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  node --import tsx --test src/server/__tests__/inputQueue.test.ts src/server/__tests__/inputQueueAdmit.test.ts
+  npm run check:encoding
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added. Working tree clean.
+
+---
+
+## O6 complete: durable input queue + agent-loop admit hook
+
+`src/server/inputQueue.ts` (132 lines, from BUILD_SPEC §6.6) with `enqueue` /
+`admitPending` / `markAdmitted` / `cancel` / `drop` / `admitAllPending`, plus the loop
+wiring that admits a queued message at an agent step boundary via
+`append('input', ..., { idempotencyKey: q.id })` + `markAdmitted`.
+
+Acceptance (plan row O6: "message sent during a busy run survives restart and is
+admitted once") is covered by passing automated tests:
+- `src/server/__tests__/inputQueue.test.ts` (12 tests): stores as received without
+  appending a log event, session isolation, admits pending once in arrival order,
+  idempotent across a crash between append and markAdmitted, survives a restart,
+  no re-admit after a restart, markAdmitted records the sequence and ignores unknown
+  ids, cancel/drop semantics, boot sweep, arrival order on tied timestamps, steering
+  distinct from queued delivery.
+- `src/server/__tests__/inputQueueAdmit.test.ts` (3 tests): the loop admit hook admits a
+  message that arrives mid-run exactly once at a step boundary, admits nothing when no
+  hook is wired, and never fails the run when the hook throws.
+
+Test commands:
+  node --import tsx --test src/server/__tests__/inputQueue.test.ts src/server/__tests__/inputQueueAdmit.test.ts
+
+---
+
+## O2 gate-fix session: merge with manus-parity, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+### Root cause
+At the time the O2 deliverables were committed (`cb463a9`), `manus-parity` had
+advanced past the O2 base (`b073763`): parity merged fc-05 (F5, `3fc4529`) and then
+devin-d5 (D5, `d05e4b1`), and the tracked rollup `.jdone` is prepended by every
+branch, so a merge from that tip necessarily conflicts there. No O2 source file
+conflicted; nothing in the O2 change set was at risk.
+
+### What was done
+`git merge manus-parity` was run and, on the first attempt, aborted because a
+regenerated `src/agent/masterPromptText.ts` had local CRLF differences in the working
+tree. The tree was returned to the index state (`git checkout --` on that one file,
+which is generated from `prompts/loam-master.md`), after which the merge applied cleanly
+with the `ort` strategy and **no conflict at all**. Committed as `02df9b8`.
+
+The O2 deliverables survive the merge byte-identically
+(`src/protocol/eventLogMigrate.ts` and `src/protocol/__tests__/eventLogMigrate.test.ts`
+are unchanged from `cb463a9`), and the O2 delta against parity is still exactly the five
+O2 files. No conflict marker remains in any tracked file and no report in the preserved
+rollup was dropped.
+
+### Gate condition verified
+`git merge manus-parity` reports "Already up to date.", `git merge-base --is-ancestor
+manus-parity HEAD` exits 0, and `git rev-list --left-right --count manus-parity...HEAD`
+is `0  3` (parity fully merged, zero parity commits missing).
+
+### Gates (all run from the worktree root on the committed tree)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.4mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully)
+- `node --import tsx --test` on the O2 and merged-feature suites
+  (eventLogMigrate, eventLog, credits, assets, prVerification, verifyAndRecord)
+                                              -> tests 52, pass 52, fail 0
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `git diff manus-parity...HEAD` contains 0 added lines with the mojibake marker
+
+### Files
+- `.jdone` only (this report). No source file was modified by this session; the O2
+  deliverables are unchanged from commit `cb463a9`.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  node --import tsx --test src/protocol/__tests__/eventLogMigrate.test.ts
+  npm run check:encoding
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was added or corrupted. Working tree clean.
+
+---
+
+O2 complete: one-time legacy session import (`src/protocol/eventLogMigrate.ts` +
+`src/protocol/__tests__/eventLogMigrate.test.ts`), implemented from BUILD_SPEC §6.2 and
+committed as `cb463a9`. `getMeta`/`setMeta` were added to `src/server/sqliteStore.ts`
+and reused by `src/server/credits.ts` and `src/server/assets.ts` so the metadata helpers
+exist once.
+
+## Acceptance criteria (all covered by passing automated tests)
+
+| Plan row acceptance | Covered by |
+|---|---|
+| fixture 2 sessions / 5 events -> 7 rows | `imports 2 sessions and 5 events as 7 rows` |
+| rerun imports 0 rows | `is a no-op on a second run (imports 0 rows)` |
+| `.bak` created | `leaves a .pre-eventlog.bak copy of the original file` |
+
+Additional coverage: missing legacy file is a no-op, sessions that already have rows are
+skipped and `noPersistent` events are not imported, `importLegacySession` refuses a
+session that already has rows, `legacySessionsFile()` resolves inside the configured data
+dir, and the imported rows (plus the one-shot marker) survive a `closeDb()`/`resetDb()`
+restart. The test points `LOAM_DATA_DIR` at a throwaway temp dir before importing the
+store, so no real data is touched.
+
+---
+
+## D5 gate-fix session: merge with manus-parity (D15 pr_review + O1 event log), all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+### The failure that was fixed
+`git merge manus-parity` (tip `6699257`, then `b073763`) conflicted in six files. Every
+conflict was resolved by keeping BOTH sides; no test was weakened, deleted or skipped
+and no code was dropped:
+
+1. `src/modes/catalog.ts`: HEAD (D5) had added `verify_and_record` to the `GIT` tool list
+   and manus-parity (D15) had added `pr_review`. The union keeps both entries.
+2. `src/setup/runtime.ts`: HEAD imported and registered `createVerifyAndRecordTool`;
+   parity imported and registered `createPrReviewTool`. Both imports and both
+   registrations are present.
+3. `src/tools/gitPrProvider.ts`: HEAD added `setPrBody` to `PrProvider` and both
+   implementations; parity added `prDiff`/`PrDiff`/`PrFileDiff`. The resolution keeps
+   D15's `prDiff` on `GitHubPrProvider` and D5's `setPrBody` right after it, and the
+   interface carries both methods. The local provider already had both.
+4. `prompts/loam-master.md`: both the §6.3 catalog rows (`pr_review` and
+   `verify_and_record`) and the §8.5 rules are present.
+5. `src/agent/masterPromptText.ts` is generated, so it was regenerated with
+   `npm run gen:master-prompt` from the merged markdown (27 sections) rather than edited
+   by hand.
+6. `src/agent/__tests__/__snapshots__/coding-prompt.snap.json`: only `masterPromptSha256`
+   conflicted. The correct value is the hash of the prompt assembled from the merged
+   source, recomputed with the test's own `buildMasterPrompt(ALL_SLOTS, { model })` and
+   the test's `codingModeSection()`; `codingSectionSha256` is unchanged
+   (`ef715eb5...`). The snapshot now matches and `codingPrompt.test.ts` passes 8/8.
+
+The O1 merge (parity tip `b073763`) then conflicted only in the tracked rollup `.jdone`,
+where both sides prepend a report at the same top-of-file anchor. Resolved as a superset:
+the D5 report, the O1 gate-fix report, the D15 report and the preserved V11/parity
+reports are all present, in that order, with no report altered and no separator lost.
+
+### Gate condition verified
+`git merge manus-parity` reports "Already up to date.", `git merge-base --is-ancestor
+manus-parity HEAD` exits 0 and `git rev-list --left-right --count manus-parity...HEAD` is
+`0  7` (parity fully merged, zero parity commits missing). No conflict marker remains in
+the tree (`^(<{7}|={7}|>{7})$` matches zero lines in every tracked file) and
+`git status --porcelain` is empty.
+
+### Gates (all run from the worktree root on the committed tree)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled, 25/25 static pages)
+- `npm run check:modes`                       -> PASS
+- `npm run check:promptwire`                  -> PASS (every promptwire tool ok:true)
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+
+Tests on the merged tree:
+- touched suites (videoStudio, videoStudioState, prReview, ciWatch, prVerification,
+  verifyAndRecord, codingPrompt, catalog, eventLog)
+  -> tests 165, pass 165, fail 0
+- `node --import tsx --test "src/**/__tests__/*.test.ts"`
+  -> tests 2312, pass 2310, fail 2
+- `(cd packages/web && npx vitest run)`       -> 72 files / 472 tests, all pass
+
+Both node failures are pre-existing and NOT caused by this merge (both files are
+byte-identical to manus-parity, `git diff manus-parity HEAD -- <file>` is empty):
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered
+   nor listed in PENDING_CODING_TOOLS". The inherited D4 defect.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing"
+   (`info.isGit` is true for a plain temp dir because `%TEMP%` sits inside a git repo on
+   this host). Environmental.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added.
+
+---
+
+D5 complete: verify_and_record proof-of-work verification for a pull request.
+
+Added a `verify_and_record` agent tool that attaches real evidence to a PR before
+its author claims it is done. The tool derives a test plan from the PR's own diff,
+runs the user flows with Playwright against a local static app (a recorded video and
+a screenshot per flow), saves the artifacts, and appends a `## Verification`
+checklist with the artifact links to the PR body through the D1 `PrProvider`.
+
+## What was produced
+- `src/agent/prVerification.ts` (638 lines): the plan derivation, the Playwright
+  runner, the checklist renderer and the idempotent section appender. Pure
+  functions (`planFromDiff`, `renderVerificationChecklist`, `appendVerificationSection`,
+  `artifactLink`, `slug`, `fixtureFlows`) plus one async runner (`runPrVerification`).
+- `src/tools/verifyAndRecordTools.ts` (233 lines): the tool schema and `run()`. Reads
+  `git diff <base>...HEAD` from the workspace, resolves the provider through the D2
+  `resolvePrProvider` seam (no network in tests) and writes the body through the new
+  `setPrBody` method.
+- `src/tools/gitPrProvider.ts`: added `setPrBody(repo, number, body)` to the
+  `PrProvider` interface and both implementations - `GitHubPrProvider` issues
+  `PATCH /repos/{repo}/pulls/{number}`; `LocalPrProvider` stores the new body so the
+  section persists in tests.
+- `src/modes/catalog.ts`: `verify_and_record` added to the `GIT` tool set, so it is
+  available in the git/PR modes (and the modes that extend them).
+- `src/setup/runtime.ts`: the tool registered alongside `createCiWatchTool`.
+- `prompts/loam-master.md` + `src/agent/masterPromptText.ts` (regenerated via
+  `npm run gen:master-prompt`): a §6.3 tool-catalog row and a §8.5 rule, matching the
+  D2 `ci_watch` wiring pattern. The `coding-prompt.snap.json` snapshot
+  `masterPromptSha256` was updated (`499c8c39...` -> `35b2bf36...`).
+
+## Acceptance criteria
+- **Plan derived from the diff, not invented.** `planFromDiff` parses a unified diff,
+  finds changed paths, anchors interaction flows in selectors the diff itself
+  introduces (`selectorFromDiffText`), and never claims a flow the diff does not
+  support (`isClaimedByDiff`). A declarative fixture plan (`PrVerificationFixture`) is
+  supported for cases where the diff does not name the page.
+- **Real Playwright evidence, per flow.** `runPrVerification` serves the app over a
+  loopback-only static server and runs each flow in its own browser context, recording
+  a video and a screenshot into the task artifacts directory (slugged file names).
+- **Fail-closed.** A missing PR number, an empty local app root, or an app root that
+  escapes the workspace is refused before anything runs; an empty plan is refused
+  rather than running nothing. A failing flow reports `Verification failed` and does
+  not claim success.
+- **Idempotent PR body update.** `appendVerificationSection` is guarded by a marker
+  comment, so re-running replaces the previous `## Verification` section instead of
+  appending a second one, and preserves the original body.
+- **`noPost` for local-only runs.** With `noPost` the plan still runs but the PR body
+  is not written.
+- **Artifacts always linked or named missing.** A captured artifact is linked; a
+  missing one is reported as missing rather than silently dropped.
+
+## Files
+- `src/agent/prVerification.ts` - new, plan derivation + runner + renderer.
+- `src/tools/verifyAndRecordTools.ts` - new, tool schema + `run()` + `prDiff`.
+- `src/agent/__tests__/prVerification.test.ts` - new, 12 tests.
+- `src/tools/__tests__/verifyAndRecord.test.ts` - new, 7 tests (real git repo,
+  `LocalPrProvider`, real Playwright, mocked GitHub fetch).
+- `src/tools/__tests__/ciWatch.test.ts` - 3 `setPrBody` stubs added to the existing
+  fake providers (interface contract only; no assertion weakened).
+- `src/tools/gitPrProvider.ts` - `setPrBody` on the interface + both implementations.
+- `src/modes/catalog.ts`, `src/setup/runtime.ts` - registration/allowlisting.
+- `prompts/loam-master.md`, `src/agent/masterPromptText.ts`,
+  `src/agent/__tests__/__snapshots__/coding-prompt.snap.json` - prompt wiring.
+
+## Defects found and fixed while implementing
+**1. The tool test repo defaulted to `master`, not `main`.** `seedRepo()` used a plain
+`git init`, which on this machine creates `master`, while the tool's default diff base
+is `main`, so the first version of the test had no diff to derive a plan from. The
+seeding now runs `git init -q -b main` and the tests pass.
+
+**2. The D5 prompt wiring was missing.** The previous handoff recorded that
+`masterPromptText.ts` and `prompts/loam-master.md` had been edited, but both were
+byte-identical to HEAD and `verify_and_record` was absent from both. The §6.3 row and
+the §8.5 rule were added (following the D2 `ci_watch` pattern), the master prompt
+asset was regenerated, and the snapshot hash updated.
+
+## Gates (all run from the worktree root, on commit e3f0af9)
+- `npx tsc --noEmit`                                -> exit 0
+- `npm run build:server`                            -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`             -> exit 0 (compiled, 25/25 static pages)
+- `(cd packages/web && npx vitest run)`             -> 72 files / 472 tests, all pass
+- `npm run verify`                                  -> exit 0 (typecheck, encoding, eval, orchestrator, recovery, modes)
+- `npm run check:encoding`                          -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                             -> PASS
+- `npm run check:promptwire`                        -> PASS (every promptwire tool ok:true)
+- touched suites (ciWatch, verifyAndRecord, prVerification, codingPrompt)
+  -> tests 48, pass 48, fail 0
+- full node suite `node --import tsx --test "src/**/__tests__/*.test.ts"`
+  -> tests 2182, pass 2180, fail 2 (both pre-existing; see below)
+
+The 2 node-suite failures are not caused by this task:
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither
+   registered nor listed in PENDING_CODING_TOOLS". The inherited D4 defect, documented
+   in the J3 section below; `src/agent/taskToolScope.ts` and `src/tools/planTools.ts`
+   are byte-identical to the base.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+   throwing". Environmental: the test asserts a fresh `os.tmpdir()` folder is not a
+   git repo, but `%TEMP%` on this machine sits inside the git repo `C:/Users/khamis`,
+   so `git -C <tmp> rev-parse` succeeds and `isGit` is true. Reproduced identically on
+   the untouched base commit `a8130cc`, and this task touches no file under
+   `src/server`.
+
+`git diff manus-parity HEAD --name-only` is the 11 files listed above, so no other
+module is affected. No secrets committed. No forbidden path touched
+(`docs/handoff/watchdog.ps1`, `qa/*.png`, `packages/tests/visual/baselines`, any
+ZCode/Codex file). No test weakened, deleted or skipped. No real GitHub PR was opened
+and no real external API was called in the tests (the scripted `LocalPrProvider` and a
+mocked `fetch` are used throughout). Working tree clean;
+`git merge-base --is-ancestor manus-parity HEAD` succeeds.
+
+## Merge with manus-parity
+After the D5 commits, `manus-parity` had advanced by two commits (V11
+`design_critique`, tip `35c8470`). `git merge manus-parity` auto-merged every source
+file and conflicted only on the tracked rollup `.jdone` (V11 had prepended its own
+section, as D5 had). The conflict was resolved keeping both reports (D5 first, then
+V11), with the file normalised to LF and no conflict markers left. Nothing from the
+D5 report or the V11 report was altered, no test was weakened or deleted, and no
+source file changed in the resolution. Committed as the merge commit `704bddf`.
+
+Gates re-run on the merged tree (`704bddf`), all green:
+- `npx tsc --noEmit`                                -> exit 0
+- `npm run build:server`                            -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `npm run verify`                                  -> exit 0 (encoding, eval, orchestrator 114/114, recovery, modes)
+- `npm run check:encoding`                          -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                             -> PASS
+- `npm run check:promptwire`                        -> PASS (every promptwire tool ok:true)
+- `(cd packages/web && npx next build)`             -> exit 0 (compiled, 25/25 static pages)
+- `(cd packages/web && npx vitest run)`             -> 72 files / 472 tests, all pass
+- D5 + V11 + prompt suites (ciWatch, verifyAndRecord, prVerification, codingPrompt,
+  designCritique, critique)                         -> tests 90, pass 90, fail 0
+- full node suite `node --import tsx --test "src/**/__tests__/*.test.ts"`
+  -> tests 2224, pass 2222, fail 2 (the same two pre-existing failures above; the
+  suite grew by 42 tests from the V11 merge, all passing)
+
+`git merge-base --is-ancestor manus-parity HEAD` exits 0 and
+`git rev-list --left-right --count manus-parity...HEAD` is `0 3`, so parity is fully
+merged and the tree is clean.
+
+Test command:
+  node --import tsx --test src/tools/__tests__/verifyAndRecord.test.ts
+
+---
+
 ## O1 gate-fix session: merge with manus-parity, all gates green
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
@@ -151,7 +540,7 @@ No secrets committed. No forbidden path touched. No test weakened, deleted or
 skipped. No Arabic text was added or corrupted; the only Arabic in the change set
 is the pre-existing fixture in the test, still valid UTF-8.
 
-
+---
 
 D15 — PR reviewer + bug catcher: DONE
 
@@ -1290,3 +1679,94 @@ green.
 
 Working tree clean; no forbidden path touched; no real external model API was
 called by the tests (the scripted `neo-mock` model is used throughout).
+
+---
+
+## fc-05: Video Studio state sync (preserve manual edits)
+
+fc-05 complete. Builds on the fc-02 relay (`src/server/videoStudioRelay.ts`) and the
+fc-03 `video_studio` tool (`src/tools/videoStudio.ts`). The agent now reads the live
+editor timeline before every command, reports a manual-edit notice when the user
+edited the panel by hand, and persists the project (debounced) into the task's files.
+
+### What fc-05 delivers
+- `src/tools/videoStudioState.ts` (new, 603 lines):
+  - `summarizeProjectState(raw)`: turns the editor's loose `inspect` payload into a
+    compact, accurate summary (`durationSec`, `playheadSec`, `selection`, `tracks`,
+    `clips` with track/start/end and source in-out, `textLayers`, `audioClips`,
+    `transitions`, `effects`). Every extractor is defensive: an unrecognisable payload
+    degrades to an empty (or partial) summary instead of throwing. Clips inherit the
+    track's `kind` when they do not repeat it, so the text/audio buckets are accurate.
+  - `hashProjectState(summary)`: a stable 16-char sha256 fingerprint of the canonical
+    summary (sorted keys, no `undefined`), so a change is detected without storing the
+    whole project and unrelated editor internals never look like a manual edit.
+  - `diffProjectStates(prev, next)` / `formatStateDiff(diff)`: report added / removed /
+    moved clips (with from->to position), text, audio, transitions, effects and
+    playhead/duration changes as compact `+` / `-` / `~` tokens.
+  - `VideoStudioStateTracker`: keeps the last state the agent saw per task and produces
+    the manual-edit notice. An empty read is never reported as a manual edit and is
+    never adopted as the baseline, so a transient/unsupported editor response cannot
+    produce a false notice or mask the next real change.
+  - `VideoStudioProjectStore`: persists the project into
+    `loam-video/project.json` in the task workspace, debounced (default 500ms,
+    resets the timer on each change). Each write stores the raw `inspect` payload plus
+    the derived summary and an ISO `savedAt`, written via a temp file + rename. Writes
+    are best-effort: a filesystem failure is swallowed and never breaks an agent
+    command. `load` returns the typed `VideoStudioPersistedProject`, or null when the
+    file is missing/unreadable.
+  - Shared `videoStudioProjectStore` instance for the running server.
+- `src/tools/videoStudio.ts` (extended):
+  - `readStudioState(taskId, relay, tracker, store, workspace)` reads the live timeline
+    via the fc-02 relay `inspect` (best-effort: a relay failure returns undefined and
+    the action proceeds without a summary), updates the per-task tracker and schedules
+    a debounced persist.
+  - `run()` reads the state before and after every action. A `state` action reuses the
+    pre-read so it is a single `inspect` round trip instead of two. Every result body
+    now carries `summary` and `notice`; when the tracker reports a change, the notice
+    is prepended to the result content.
+  - The tool description now tells the model every result carries the compact timeline
+    summary, that a notice is prepended when the timeline changed since its last
+    action, and never to rebuild the project from memory.
+  - `stateTracker` / `projectStore` are injectable for tests.
+
+### Acceptance tests (fc-05 spec)
+- Unit: diff summary for added/removed/moved clips; the tool result carries the
+  summary; the manual-change notice appears only when the hash differs.
+- Covered by `src/tools/__tests__/videoStudioState.test.ts` (19 tests) and
+  `src/tools/__tests__/videoStudio.test.ts` (39 tests, including the dispatch order
+  `["inspect", "commands", "inspect"]` for `open`), plus
+  `src/server/__tests__/videoStudioE2E.test.ts` (4 tests, including a manual edit made
+  between two commands asserting the notice
+  `User edited the timeline manually since your last action` and the diff
+  `~clip clip_1 0s->3s`).
+
+### Gates (all run from the worktree root, on committed HEAD `68dfb62`)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test src/tools/__tests__/videoStudioState.test.ts src/tools/__tests__/videoStudio.test.ts src/server/__tests__/videoStudioRelay.test.ts src/server/__tests__/videoStudioE2E.test.ts`
+  -> tests 71, pass 71, fail 0
+- `(cd packages/web && npx vitest run)`      -> 72 files / 472 tests, all pass
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:eval` / `check:orchestrator` / `check:recovery` / `check:modes` -> exit 0
+- `node --import tsx --test "src/**/*.test.ts"` -> tests 2157, pass 2155, fail 2
+
+The two node failures are pre-existing on the manus-parity lineage and untouched by
+fc-05; both files are byte-identical to manus-parity (`git diff manus-parity HEAD` is
+empty for each):
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither
+   registered nor listed in PENDING_CODING_TOOLS". The inherited D4 defect.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+   throwing". Environmental: `readGitBranch` shells out to `git rev-parse`, which
+   walks up to the nearest enclosing repository.
+
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path
+touched. `git merge-base --is-ancestor manus-parity HEAD` exits 0.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  node --import tsx --test src/tools/__tests__/videoStudioState.test.ts src/tools/__tests__/videoStudio.test.ts src/server/__tests__/videoStudioRelay.test.ts src/server/__tests__/videoStudioE2E.test.ts
+  (cd packages/web && npx vitest run)
+  npm run check:encoding

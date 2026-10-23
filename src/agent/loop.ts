@@ -27,6 +27,7 @@ import { checkBudget, consumeSteps, consumeTokens, type ComputeBudget } from "./
 import { KvCacheMonitor, missMessage, type RequestRoute, type RequestSignature } from "./kvCacheMonitor.js";
 import { addUsage } from "./usageAccounting.js";
 import { recordToolCall, recordToolResult } from "./checkpointLog.js";
+import { admitPending, hasPending, type QueuedInput } from "../server/inputQueue.js";
 
 /** Stable per-tool-call id: the model's own id when it supplies one, otherwise
  *  a synthetic id derived from the turn and call index. */
@@ -101,6 +102,15 @@ export interface RunOptions {
    *  durable log with a `started` row before it runs and a terminal row after, so
    *  a call that began without finishing is visible after a crash. */
   eventLogSession?: string;
+  /**
+   * O6 durable input queue: a user message sent while this run is busy is stored
+   * as `received` and admitted here, at a step boundary, so it is never lost.
+   * The hook appends the `input` event and returns the admitted messages; a
+   * failure must never break the run, so the caller swallows and logs it.
+   */
+  onAdmitPending?: (sessionId: string) => QueuedInput[];
+  /** Session id whose queued messages this run should admit (defaults to taskId). */
+  inputSessionId?: string;
 }
 
 export interface RunResult {
@@ -298,6 +308,21 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // bracketed by a `started` and a terminal event so a crash mid-call is visible.
   const logSession = opts.eventLogSession;
   let index = 0;
+  // O6: the session whose inbound queue this run drains at step boundaries.
+  const inputSessionId = opts.inputSessionId ?? opts.taskId;
+  /**
+   * Admit any message the user sent while this run was busy. Best-effort: a
+   * failure to reach the queue must never fail the run.
+   */
+  const admitPendingInputs = (): void => {
+    if (!inputSessionId || !opts.onAdmitPending) return;
+    try {
+      if (!hasPending(inputSessionId)) return;
+      opts.onAdmitPending(inputSessionId);
+    } catch (error) {
+      opts.emit({ type: "error", message: `failed to admit a queued message: ${error instanceof Error ? error.message : String(error)}` });
+    }
+  };
   // The model's live task list, mirrored here so a compaction can re-attach it
   // as a hidden reminder after the conversation is folded away.
   let currentTodos: TodoItem[] = [];
@@ -325,6 +350,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
       throw new Error(msg);
     }
     if (opts.budget) consumeSteps(opts.budget, 1);
+    // O6: a step boundary is the safe place to pick up messages that arrived
+    // while the previous step (or the whole run) was busy.
+    admitPendingInputs();
     opts.emit({ type: "step", index: step });
     opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
 
