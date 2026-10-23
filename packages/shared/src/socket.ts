@@ -33,6 +33,9 @@ export interface JoinSession extends Base {
   type: 'join_session';
   sessionId: string;
   lastMessageId?: string;
+  /** BUILD_SPEC §6.4: highest durable log sequence already rendered. The server
+   *  replays by sequence when this is present, otherwise by `lastMessageId`. */
+  lastSeq?: number;
   version: 2;
 }
 
@@ -69,6 +72,8 @@ export interface UserMessage extends Base {
     worktreeEnabled?: boolean;
     /** Option 18: composer model tier ("max" | "standard" | "lite" | "flex"). */
     modelTier?: string;
+    /** Neo N3: opt this run into the user's Knowledge Garden (kb_* tools). */
+    knowledge?: boolean;
     /** Neo N10: composer output type (auto|text|image|video|slides|website). */
     outputType?: string;
     /** Neo N10: composer effort level (fast|max). */
@@ -92,6 +97,8 @@ export interface ServerEnvelope<E extends ChatEvent = ChatEvent> {
   timestamp: number;
   event: E;
   webdevAddonEnabled?: boolean;
+  /** BUILD_SPEC §6.4: the durable log sequence of this frame. */
+  seq?: number;
 }
 
 export interface ChatEventBase extends Base {
@@ -346,6 +353,43 @@ export interface EnvironmentIssueEvent extends ChatEventBase {
   details?: string;
 }
 
+/**
+ * MiroFish swarm simulation progress (M3). The M3 loop emits round/agent
+ * milestones; the payload shape mirrors `src/protocol/types.ts` so the protocol
+ * layer stays free of tool imports.
+ */
+export interface SimulationProgressEvent extends ChatEventBase {
+  type: 'simulation_progress';
+  sessionId: string;
+  payload: {
+    type:
+      | 'simulation_start'
+      | 'simulation_round_start'
+      | 'simulation_agent'
+      | 'simulation_round'
+      | 'simulation_arm_done'
+      | 'simulation_done';
+    sessionId: string;
+    agents?: number;
+    rounds?: number;
+    arms?: string[];
+    arm?: 'baseline' | 'scenario';
+    round?: number;
+    totalRounds?: number;
+    agentId?: string;
+    agentName?: string;
+    ok?: boolean;
+    action?: 'post' | 'comment' | 'share' | 'ignore' | 'buy' | 'cancel';
+    error?: string;
+    metrics?: unknown;
+    calls?: number;
+    failures?: number;
+    modelCalls?: number;
+    comparison?: unknown;
+    [key: string]: unknown;
+  };
+}
+
 /** D4: a `suggest_plan` plan awaiting the user's decision (plan-approval card). */
 export interface PlanApprovalRequestedEvent extends ChatEventBase {
   type: 'planApprovalRequested';
@@ -420,6 +464,7 @@ export type ChatEvent =
   | LocalExecutionApprovalRequestedEvent
   | LocalExecutionApprovalResolvedEvent
   | EnvironmentIssueEvent
+  | SimulationProgressEvent
   | PlanApprovalRequestedEvent
   | PlanApprovalResolvedEvent
   | AskUserRequestedEvent

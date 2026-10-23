@@ -147,16 +147,20 @@ export class ProtocolStore {
    *  replays everything, exactly as the pre-O3 `findIndex` fallback did. */
   eventsAfter(sessionId: string, lastMessageId?: string): ServerEnvelope[] {
     const after = lastMessageId ? seqOfId(sessionId, lastMessageId) ?? 0 : 0;
-    return afterSeq(sessionId, after, REPLAY_PAGE)
-      .filter((e) => e.kind === "chat_event")
-      .map((e) => e.payload as ServerEnvelope);
+    return this.eventsAfterSeq(sessionId, after);
   }
 
-  /** Preferred replay path: every persistent event with `seq > afterSeq` (O4). */
+  /** Preferred replay path: every persistent event with `seq > afterSeq` (O4).
+   *  Every envelope carries its durable log `seq`, because the payload is a fresh
+   *  JSON object after a restart and would otherwise arrive without one — and a
+   *  client that cannot see a `seq` can never resume by sequence (§6.4). */
   eventsAfterSeq(sessionId: string, afterSeqValue: number): ServerEnvelope[] {
     return afterSeq(sessionId, Math.max(0, afterSeqValue), REPLAY_PAGE)
       .filter((e) => e.kind === "chat_event")
-      .map((e) => e.payload as ServerEnvelope);
+      .map((e) => {
+        const envelope = e.payload as ServerEnvelope;
+        return { ...envelope, seq: envelope.seq ?? e.seq };
+      });
   }
 
   listSessions(): ProtocolSession[] {

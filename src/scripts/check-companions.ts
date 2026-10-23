@@ -36,8 +36,20 @@ for (const service of COMPANION_SERVICES) {
   assert.equal(new Set(service.tools).size, service.tools.length, `service ${service.id} has duplicate tools`);
 }
 
-/* ---------- 3. gateway resolution ---------- */
+/* ---------- 2b. N3 Knowledge Garden reachability ---------- */
+// A service that no work mode grants is unreachable, which makes the per-run
+// garden toggle a no-op. Every work mode must be able to hand kb_* to a run.
 const ALL_TOOLS = [...new Set(COMPANION_SERVICES.flatMap((s) => s.tools).concat(LOAM_MODES.flatMap((m) => m.tools)))];
+for (const workMode of WORK_MODES) {
+  const resolved = resolveCompanionCapabilities({
+    mode: 'build', workMode: workMode.id, registeredTools: ALL_TOOLS,
+  } as Parameters<typeof resolveCompanionCapabilities>[0]);
+  const kb = resolved.allow.filter((tool) => tool.startsWith('kb_'));
+  assert.ok(kb.length === COMPANION_SERVICES.find((s) => s.id === 'knowledge')!.tools.length,
+    `work mode ${workMode.id} must grant the knowledge service (kb_*), got ${JSON.stringify(kb)}`);
+}
+
+/* ---------- 3. gateway resolution ---------- */
 const res = (over: Record<string, unknown> = {}) =>
   resolveCompanionCapabilities({ mode: 'build', workMode: 'loam', registeredTools: ALL_TOOLS, ...over } as Parameters<typeof resolveCompanionCapabilities>[0]);
 

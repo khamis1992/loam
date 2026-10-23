@@ -1,6 +1,6 @@
 import type { Config } from "../config.js";
 import type { Emit } from "../agent/events.js";
-import type { OllamaFunctionTool } from "../ollama.js";
+import type { OllamaClient, OllamaFunctionTool } from "../ollama.js";
 import { runLifecycleHooks } from "../policy/hooks.js";
 import { getLoamMode } from "../modes/catalog.js";
 import { getToolProfile } from "../agent/taskToolScope.js";
@@ -11,6 +11,10 @@ export interface ToolContext {
   workspace: string;
   emit: Emit;
   signal?: AbortSignal;
+  /** Provider client for tools that talk to the model layer themselves (M3
+   *  MiroFish swarm runs). Optional so unit tests and read-only/script
+   *  contexts can construct a context without one. */
+  ollama?: OllamaClient;
   /** Active task id, so long-running tools can poll for cancellation. */
   taskId?: string;
   /** Owning companion agent id (vault/memory scope). Optional: tools fall back
@@ -32,6 +36,16 @@ export interface ToolResult {
   content: string;
   /** Optional base64 images (no data: prefix) to attach to the next model call (vision). */
   images?: string[];
+  /**
+   * N3 Knowledge Garden: seed ids this tool call produced or retrieved. The run
+   * graph reads it to hang `kb_seed` nodes off the step that used them, so the
+   * citation trail on the canvas is derived from real tool output rather than
+   * parsed back out of prose. Ignored by every tool that does not set it.
+   */
+  kbSeedIds?: string[];
+  /** Human-readable shape of those seeds, so the canvas can render the nodes
+   *  without the graph layer reaching into the knowledge store. */
+  kbSeeds?: Array<{ id: string; title: string; tags: string[]; preview: string }>;
 }
 
 export interface Tool {
@@ -163,6 +177,8 @@ export class ToolRegistry {
         ok: result.ok,
         content: truncate(combined),
         ...(result.images && result.images.length > 0 ? { images: result.images } : {}),
+        ...(result.kbSeedIds && result.kbSeedIds.length > 0 ? { kbSeedIds: result.kbSeedIds } : {}),
+        ...(result.kbSeeds && result.kbSeeds.length > 0 ? { kbSeeds: result.kbSeeds } : {}),
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

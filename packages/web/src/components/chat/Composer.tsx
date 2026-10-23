@@ -11,7 +11,7 @@ import {
 } from 'react';
 import {
   ArrowUp, Plus, ShieldCheck, Laptop, FolderGit, Folder, GitBranch, Square, X, ChevronDown,
-  Mic, Github, Mail, Calendar, Loader2, Wrench, Plug, Bot, Check,
+  Mic, Github, Mail, Calendar, Loader2, Wrench, Plug, Bot, Check, Leaf,
 } from 'lucide-react';
 import { VoiceIcon } from '@/components/home/VoiceIcon';
 import { useVoiceTranscribe } from '@/components/chat/useVoiceTranscribe';
@@ -53,6 +53,9 @@ interface ComposerProps {
   /** MF4: "Approve for me" chip — auto-approve the current task's sensitive actions. */
   approveForMe?: boolean;
   onToggleApproveForMe?: () => void;
+  /** Neo N3: Knowledge Garden chip: let this run read the user's own sources. */
+  knowledgeOn?: boolean;
+  onToggleKnowledge?: () => void;
   /** Option 18: composer model tier sent with the task. */
   modelTier?: string;
   /** Neo N10: output type sent with the task (Auto/Text/Image/Video/Slides/Website). */
@@ -72,7 +75,7 @@ interface ComposerProps {
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { onSend, onStop, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode, placeholder, approveForMe, onToggleApproveForMe, modelTier, outputType, effort, compareModels: initialCompareModels, abModels, projectId, worktreeEnabled, assistantReply }: ComposerProps,
+  { onSend, onStop, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode, placeholder, approveForMe, onToggleApproveForMe, knowledgeOn, onToggleKnowledge, modelTier, outputType, effort, compareModels: initialCompareModels, abModels, projectId, worktreeEnabled, assistantReply }: ComposerProps,
   ref: Ref<ComposerHandle>,
 ) {
   const router = useRouter();
@@ -615,6 +618,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           )}
         >
           <ShieldCheck className="size-3.5" /> {t('Approve for me')}
+        </button>
+
+        <button
+          type="button"
+          onClick={onToggleKnowledge}
+          aria-pressed={knowledgeOn === true}
+          title={t('Let this run read your Knowledge Garden sources')}
+          className={clsx(
+            'hidden items-center gap-1 rounded-full border px-2 py-1 text-xs sm:flex',
+            knowledgeOn ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
+          )}
+        >
+          <Leaf className="size-3.5" /> {t('Knowledge Garden')}
         </button>
 
         <select
