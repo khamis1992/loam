@@ -153,6 +153,8 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     // D13: resumable workflow tools ship as always-on, so register the real set.
     const workflowToolsMod = await import("../../tools/workflow.js");
     registry.registerAll(workflowToolsMod.createWorkflowTools({ ollama: {} as never, registry }));
+    // N16: cross-run recall ships as always-on, so register the real set.
+    registry.registerAll((await import("../../tools/memory.js")).createRecallTools());
   });
 
   after(() => {

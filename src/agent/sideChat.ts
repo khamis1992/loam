@@ -77,6 +77,8 @@ export const MUTATING_TOOLS: readonly string[] = [
   "device_push_file",
   "memory_store",
   "memory_delete",
+  "recall",
+  "recall_status",
   "scratchpad_add",
   "scratchpad_complete",
   "task_create",

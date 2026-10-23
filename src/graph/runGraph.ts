@@ -23,6 +23,14 @@ import {
 } from "./store.js";
 import { assertTransition, canTransition } from "./status.js";
 import { transaction } from "../server/sqliteStore.js";
+import { RecallIndex, type RecallResolver, type RecallSource } from "./recall.js";
+import type { OllamaEmbedder } from "../memory/embeddings.js";
+
+/** The embedder's model name, for the shelf's `model` column. */
+function embedderModel(embedder?: OllamaEmbedder | null): string {
+  if (!embedder) return "";
+  return (embedder as unknown as { model?: string }).model ?? "";
+}
 
 /** Tools that produce a search node on the canvas. */
 const SEARCH_TOOLS = new Set(["web_search", "kb_search"]);
@@ -102,6 +110,8 @@ export interface RunGraphOptions {
 export class RunGraph {
   private readonly store: RunGraphStore;
   private readonly runs = new Map<string, RunState>();
+  /** Neo N16: the derived cross-run shelf for this graph (optional by design). */
+  private recall?: RecallIndex;
 
   constructor(options: RunGraphOptions = {}) {
     this.store = options.store ?? new RunGraphStore();
@@ -109,6 +119,67 @@ export class RunGraph {
 
   getStore(): RunGraphStore {
     return this.store;
+  }
+
+  /** Neo N16: the cross-run shelf this graph indexes into (if attached). */
+  getRecall(): RecallIndex | undefined {
+    return this.recall;
+  }
+
+  /**
+   * Neo N16: give this graph a cross-run recall shelf.
+   *
+   * Attaching is optional so the graph stays usable on its own (and in tests);
+   * without it the graph simply does not maintain a shelf.
+   */
+  attachRecall(index?: RecallIndex, embedder?: OllamaEmbedder | null): void {
+    this.recall = index ?? new RecallIndex({ embedder, model: embedderModel(embedder) });
+  }
+
+  /** True when a cross-run shelf is attached to this graph. */
+  get recallAttached(): boolean {
+    return this.recall !== undefined;
+  }
+
+  /**
+   * Neo N16: file a recalled node into the current run as a linked node.
+   *
+   * The recalled node is *not* copied: a `note` node is created whose payload names
+   * the original node id, run id, type and the query that surfaced it, so the
+   * canvas shows a real edge back to the run the asset came from. When the origin
+   * still exists, its text/path/url are carried over too, so the current run can
+   * reopen the artifact instead of only hearing about it.
+   */
+  attachRecallNode(runId: string, source: RecallSource, query: string, resolve?: RecallResolver): RunNode | undefined {
+    const state = this.stateFor(runId);
+    const parent = state.lastId || state.rootId;
+    if (!parent) return undefined;
+    const origin = resolve?.(source);
+    const node = this.addNode(runId, state, {
+      type: "note",
+      // Deterministic: attaching the same hit twice must not create two nodes.
+      seed: `recall:${source.nodeId}:${source.runId}`,
+      status: "finished",
+      data: {
+        recalled: true,
+        query: oneLine(query, 200),
+        sourceNodeId: source.nodeId,
+        sourceRunId: source.runId,
+        sourceType: source.type,
+        // Provenance: the origin's own text and location when it still exists.
+        ...(origin
+          ? {
+              text: recallTextOf(origin),
+              title: dataTitleOf(origin),
+              path: dataPathOf(origin),
+              url: dataUrlOf(origin),
+              mime: dataMimeOf(origin),
+            }
+          : {}),
+      },
+      parent,
+    });
+    return node;
   }
 
   /** Prepare a run so events can be applied without a `task` event first.
@@ -238,6 +309,7 @@ export class RunGraph {
     }
     const updated = this.store.update(nodeId, { status });
     if (!updated) throw new Error(`run node disappeared: ${nodeId}`);
+    this.scheduleRecallSync(updated.run_id);
     return updated;
   }
 
@@ -247,6 +319,7 @@ export class RunGraph {
     if (!node) throw new Error(`run node not found: ${nodeId}`);
     const updated = this.store.update(nodeId, { data });
     if (!updated) throw new Error(`run node disappeared: ${nodeId}`);
+    this.scheduleRecallSync(updated.run_id);
     return updated;
   }
 
@@ -257,6 +330,7 @@ export class RunGraph {
     const unique = [...new Set(parentIds)].filter((id) => id !== nodeId);
     const updated = this.store.update(nodeId, { parent_ids: unique });
     if (!updated) throw new Error(`run node disappeared: ${nodeId}`);
+    this.scheduleRecallSync(updated.run_id);
     return updated;
   }
 
@@ -448,6 +522,19 @@ export class RunGraph {
   invalidate(runId: string): void {
     this.depthCache.delete(runId);
     this.statsCache.delete(runId);
+    this.scheduleRecallSync(runId);
+  }
+
+  /**
+   * Neo N16: queue a shelf refresh after a write.
+   *
+   * The refresh is coalesced and never throws, because a recall miss must not
+   * break the task that produced the node.
+   */
+  private scheduleRecallSync(runId: string): void {
+    const recall = this.recall;
+    if (!recall) return;
+    recall.scheduleSync(runId, (id) => this.store.list({ runId: id }));
   }
 
   private apply(runId: string, state: RunState, event: AgentEvent): string[] {
@@ -878,6 +965,46 @@ function toolCallData(name: string, args: Record<string, unknown>): Record<strin
   if (typeof args.title === "string") data.title = args.title;
   if (typeof args.kind === "string") data.kind = args.kind;
   return data;
+}
+
+/* --------------------------- Neo N16 recall metadata --------------------------- */
+
+/** Read one string field off a node payload without assuming its shape. */
+function dataField(node: RunNode, key: string): string | undefined {
+  if (typeof node.data !== "object" || node.data === null) return undefined;
+  const value = (node.data as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function dataTitleOf(node: RunNode): string | undefined {
+  return dataField(node, "title") ?? dataField(node, "label");
+}
+
+function dataPathOf(node: RunNode): string | undefined {
+  return dataField(node, "path");
+}
+
+function dataUrlOf(node: RunNode): string | undefined {
+  return dataField(node, "url");
+}
+
+function dataMimeOf(node: RunNode): string | undefined {
+  return dataField(node, "mime");
+}
+
+/**
+ * The text a recalled node carries into its new run.
+ *
+ * Reuses the same field order as the recall index, so what the shelf matched on
+ * is exactly what the attached node shows.
+ */
+function recallTextOf(node: RunNode): string {
+  const parts: string[] = [];
+  for (const key of ["title", "label", "query", "url", "path", "summary", "text", "reason", "message", "verdict", "tool"]) {
+    const value = dataField(node, key);
+    if (value && !parts.includes(value)) parts.push(value);
+  }
+  return parts.length === 0 ? `${node.type} ${node.run_id}` : oneLine(parts.join(" — "), 8000);
 }
 
 export { assertTransition, canTransition, RUN_NODE_ENTITY };
