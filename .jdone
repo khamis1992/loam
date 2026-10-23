@@ -1,3 +1,57 @@
+# N16 merge gate-fix session: root-cause fix for the recurring `.jdone` parity conflict
+
+Merged parity tip `cd414a5` (J8, O7, N9 rounds 11/12, M3 round 7, N19, fc-06, V8 round 12,
+C19, N10, N15, cr-04) into `khamis1992/neo-n16` and resolved the `.jdone` conflict
+with the union merge driver. Commit `00920ea` (151 files, +26076/-4249).
+
+## Root cause (found this session, not worked around)
+
+The recurring `MERGE CONFLICT with latest manus-parity in: .jdone` gate failure was
+**not** a content problem in any report. `.gitattributes` with `.jdone merge=union`
+existed only on `manus-parity` (`aab6be5`), so this branch had no merge driver and
+hand-resolved the rollup on every single parity merge. The driver is now on this
+branch too, and `.jdone` auto-resolves as a superset of both parents.
+
+Measured on the resolution: 29624 lines, **zero conflict markers**, and both the
+N16 report (line 1) and the parity J8 report (`# J8 - Cross-session file-touch
+notifications`) are present intact. No report was dropped from the merge.
+
+## The pre-existing companions gate failure (unchanged, honestly reported)
+
+`node --import tsx src/scripts/check-companions.ts` still fails, with the same 49
+tools (`grep`, `glob`, `docs_lookup`, `think`, `finish`, `plan`, `pr_review`,
+`ci_watch`, `security_status`, ...). Unchanged by this merge:
+
+- `count=49`, `has_recall=false`, `has_recall_status=false` — N16's tools are not in
+  the uncovered list.
+- `git diff --quiet 84c9af8 HEAD -- src/modes/catalog.ts src/server/companionGateway.ts`
+  exits 0: both inputs to `uncoveredModeTools()` are byte-identical to the N16 base
+  commit `84c9af8`, so the failure predates and is independent of N16.
+- `recall` needs no service entry anyway: `ALWAYS_ON_TOOLS` is merged into the
+  allowlist *after* gateway resolution (`mergeAlwaysOnTools` in `runTools.ts`).
+
+Left as-is on purpose: fixing the 49-tool catalog gap belongs to the workstreams
+that added those mode tools (`df1ec49` / `ad16ec3`), and touching
+`companionGateway.ts` would widen this change beyond N16.
+
+## Gates (all run from the worktree root on the merged tree, committed `00920ea`)
+
+- `npx tsc --noEmit -p tsconfig.json`                -> exit 0
+- `npm run build:server`                             -> exit 0 (server bundle + pdf worker written to dist/)
+- `(cd packages/web && npx next build)`              -> exit 0 (Compiled successfully, TypeScript finished)
+- `node --import tsx --test src/graph/__tests__/*.test.ts src/tools/__tests__/*.test.ts src/server/__tests__/*.test.ts src/agent/__tests__/*.test.ts`
+                                                     -> tests 1829, pass 1829, fail 0, skipped 0
+
+N16 work is intact after the merge: `src/graph/recall.ts`,
+`src/graph/__tests__/recall.test.ts`, `src/tools/memory.ts`,
+`src/graph/runGraph.ts`, `src/tools/registry.ts` and `src/agent/runGraphAdapter.ts`
+are unchanged from `85964cc` (the parity changes touched other areas).
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or
+skipped. No Arabic text was written; no mojibake placeholder text was added.
+
+---
+
 # N16 - Cross-run recall (bookshelf): DONE
 
 Committed as `85964cc` ("N16: cross-run recall bookshelf (recall/recall_status tools)")
