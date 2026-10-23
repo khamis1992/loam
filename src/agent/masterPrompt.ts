@@ -59,6 +59,14 @@ export const MASTER_ORDER: readonly (readonly string[])[] = [
 /** Appendix C is authored in the master asset but sent only for coding tasks. */
 export const CODING_MODE_SECTION_ID = "appendix-c";
 
+/**
+ * §25 (long-horizon missions / recipe mode) is authored in the master asset but
+ * sent only to runs that actually execute a Recipe, so a plain chat or build run
+ * never pays for the mission rules. The orchestrator opts in through
+ * `systemSuffix`, which `buildSystemPrompt` appends to the assembled prompt.
+ */
+export const MISSION_SECTION_ID = "25";
+
 /** Tools whose presence marks a run as a coding task (Appendix C applies). */
 const CODING_TASK_TOOLS = [
   "file_edit",
@@ -76,6 +84,13 @@ export function isCodingTask(toolNames: readonly string[]): boolean {
 /** Render the coding-mode appendix (Appendix C) with its heading. */
 export function codingModeSection(): string {
   const section = MASTER_PROMPT_SECTIONS.find((s) => s.id === CODING_MODE_SECTION_ID);
+  if (!section) return "";
+  return `## ${section.title}\n\n${section.body}`;
+}
+
+/** Render the long-horizon mission section (§25) with its heading. */
+export function missionSection(): string {
+  const section = MASTER_PROMPT_SECTIONS.find((s) => s.id === MISSION_SECTION_ID);
   if (!section) return "";
   return `## ${section.title}\n\n${section.body}`;
 }

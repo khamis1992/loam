@@ -15,6 +15,8 @@ import { URLSearchParams } from "node:url";
 import { DATA_DIR } from "../../config.js";
 import { log } from "../../log.js";
 import { setSecret, resolveSecret, deleteSecret } from "../secretsVault.js";
+import { BoundedMap } from "../../memory/cache.js";
+import { registerCacheStats } from "../../memory/stats.js";
 
 export interface OAuthConfig {
   authorizeUrl: string;
@@ -110,7 +112,11 @@ interface PendingFlow {
   redirectUri: string;
   createdAt: number;
 }
-const pending = new Map<string, PendingFlow>();
+/** In-flight OAuth flows (J6). Each holds a PKCE verifier and state; the map
+ *  was unbounded, so an abandoned authorization (user never returns) kept its
+ *  entry until the process exited. Bounded LRU plus the existing TTL prune. */
+const pending = new BoundedMap<string, PendingFlow>(64, "oauth-pending-flows");
+registerCacheStats("oauth-pending-flows", () => pending.stats());
 
 function prunePending(): void {
   const now = Date.now();

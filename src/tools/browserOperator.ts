@@ -15,6 +15,8 @@ import fs from "node:fs";
 import { browserTools } from "./browser.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { num, str } from "./registry.js";
+import { BoundedMap } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 export interface OperatorElement {
   index: number;
@@ -681,6 +683,19 @@ function browserTool(name: string): Tool {
   return tool;
 }
 
+/** Test seam: replace the inner browser_* dispatch with a stub, so the operator's
+ *  per-instance snapshot counter can be exercised without a browser binary.
+ *  Mirrors `setPtyModule` in `tools/pty.ts`. */
+let browserToolOverride: ((name: string) => Tool) | null = null;
+
+export function setBrowserOperatorToolSource(resolve: ((name: string) => Tool) | null): void {
+  browserToolOverride = resolve;
+}
+
+function resolveBrowserTool(name: string): Tool {
+  return browserToolOverride ? browserToolOverride(name) : browserTool(name);
+}
+
 /**
  * Dispatch one inner browser_* call. The operator is an always-on tool, but it
  * may never widen the calling run's policy: when the run scope is known
@@ -693,7 +708,7 @@ async function runBrowserTool(name: string, args: Record<string, unknown>, ctx: 
   if (allowed && !allowed.includes(name)) {
     return { ok: false, content: `browser_operator cannot use "${name}": it is not allowed in this run` };
   }
-  return browserTool(name).run(args, ctx);
+  return resolveBrowserTool(name).run(args, ctx);
 }
 
 /** The inner tools the operator drives; a run must allow at least one to be useful. */
@@ -724,10 +739,17 @@ const BODY_JS = `(() => {
   };
 })()`;
 
-class BrowserToolSurface implements OperatorSurface {
-  private readonly snapshots = new Map<string, number>();
+/** Exported for tests: the surface owns the per-instance `browser-operator-snapshots`
+ *  counter, and the counter's eviction is exercised without a real browser. */
+export class BrowserToolSurface implements OperatorSurface {
+  /** Last observation id per page (J6: bounded). A loop that opens many pages
+   *  must not retain every snapshot id; the oldest page is dropped, and a
+   *  dropped page simply re-observes before its next action. */
+  private readonly snapshots = new BoundedMap<string, number>(64, "browser-operator-snapshots");
 
-  constructor(private readonly ctx: ToolContext) {}
+  constructor(private readonly ctx: ToolContext) {
+    registerCacheStats("browser-operator-snapshots", () => this.snapshots.stats());
+  }
 
   async open(url?: string): Promise<{ pageId: string }> {
     const args: Record<string, unknown> = {};
