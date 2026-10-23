@@ -21,6 +21,8 @@ import type {
   AskUserRequestedEvent,
   AskUserResolvedEvent,
   CacheUsageEvent,
+  RecipeUpdateEvent,
+  RecipeRestartEvent,
 } from "./types.js";
 
 const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -292,6 +294,47 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
         todos: event.todos.map((todo) => ({ id: todo.id, content: todo.content, status: todo.status })),
       };
       out.push(todoUpdate);
+      break;
+    }
+
+    case "recipe_update": {
+      // Neo N4 incremental Recipe engine: the live recipe replaces whatever the
+      // panel showed before, so the row is a persistent, replaceable state row.
+      const recipe: RecipeUpdateEvent = {
+        id: baseId(),
+        type: "recipeUpdate",
+        timestamp: ts,
+        goal: event.goal,
+        steps: event.steps.map((step) => ({
+          id: step.id,
+          title: step.title,
+          instruction: step.instruction,
+          successCriteria: step.successCriteria,
+          status: step.status,
+          ...(step.nodeId ? { nodeId: step.nodeId } : {}),
+          ...(step.replaces && step.replaces.length > 0 ? { replaces: step.replaces } : {}),
+          completedCount: step.completedCount,
+        })),
+        remainingEstimate: event.remainingEstimate,
+        change: event.change,
+        source: event.source,
+      };
+      out.push(recipe);
+      break;
+    }
+
+    case "recipe_restart": {
+      const restart: RecipeRestartEvent = {
+        id: baseId(),
+        type: "recipeRestart",
+        timestamp: ts,
+        stepId: event.stepId,
+        nodeId: event.nodeId,
+        keptSteps: event.keptSteps,
+        regeneratedSteps: event.regeneratedSteps,
+        reason: event.reason,
+      };
+      out.push(restart);
       break;
     }
 

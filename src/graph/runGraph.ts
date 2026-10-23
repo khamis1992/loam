@@ -481,6 +481,8 @@ export class RunGraph {
           parent: state.lastId,
         }).id];
       case "todo":
+      case "recipe_update":
+      case "recipe_restart":
       case "phase":
       case "task":
       case "task-status":
