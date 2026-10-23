@@ -343,7 +343,12 @@ export function createChatSocket(deps: SocketDeps): Server {
       try {
         if (m.type === "join_session") {
           await socket.join(m.sessionId);
-          let replay = store.eventsAfter(m.sessionId, m.lastMessageId);
+          // BUILD_SPEC §6.4: a client that tracks the durable log sequence resumes
+          // by seq, which is exact even when it never saw a given event id. A client
+          // that only has a cursor id keeps the pre-O4 replay behaviour.
+          let replay = typeof m.lastSeq === "number"
+            ? store.eventsAfterSeq(m.sessionId, m.lastSeq)
+            : store.eventsAfter(m.sessionId, m.lastMessageId);
           // If the protocol store has no events for this session but the Loam task
           // has persisted messages/steps, synthesize the conversation history.
           if (replay.length === 0) {
@@ -371,11 +376,16 @@ export function createChatSocket(deps: SocketDeps): Server {
             }
           }
           const ts = Date.now();
+          // BUILD_SPEC §6.4: the replay frame carries the highest durable log seq
+          // it contains, so a client that records `seq` advances past everything
+          // just delivered and cannot re-request it on its next reconnect.
+          const lastReplayedSeq = replay.length ? replay[replay.length - 1]!.seq : undefined;
           const frame: ServerEnvelope = {
             id: baseId(),
             type: "event",
             sessionId: m.sessionId,
             timestamp: ts,
+            ...(typeof lastReplayedSeq === "number" ? { seq: lastReplayedSeq } : {}),
             event: {
               id: baseId(),
               type: "eventsNotifyEventsAfter",

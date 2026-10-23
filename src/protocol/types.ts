@@ -30,6 +30,11 @@ export interface JoinSession extends Base {
   type: "join_session";
   sessionId: string;
   lastMessageId?: string;
+  /** BUILD_SPEC §6.4: the highest durable log sequence this client has already
+   *  rendered. When present the server replays by sequence (events with
+   *  `seq > lastSeq`), which survives a client that never saw a given event id.
+   *  Omitted by older clients, which fall back to `lastMessageId`. */
+  lastSeq?: number;
   version: 2;
 }
 
