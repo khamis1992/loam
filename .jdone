@@ -94,8 +94,10 @@ Merge fidelity, verified mechanically against the real merge parents:
   left-right 14 -> 16). 0 conflict markers, no BOM, no U+FFFD, and `git ls-files -u` is empty
   (no unresolved paths).
 - `.gitattributes` is byte-identical to parity's; `.jcode-done` is byte-identical to parity's.
-- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0;
-  `git rev-list --left-right --count manus-parity...HEAD` -> `0  16`; working tree clean.
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0, i.e. every parity commit is already an
+  ancestor of HEAD (`git rev-list --left-right --count manus-parity...HEAD` -> `0  N`, where `N` is
+  just this branch's own commits since the last parity tip and grows by one per report commit);
+  working tree clean.
 - All N14 deliverables are tracked and intact: `packages/web/src/components/replay/ReplayViewer.tsx`
   + `__tests__/ReplayViewer.test.tsx`, `packages/web/src/components/share/ShareReplay.tsx` +
   `__tests__/ShareReplay.test.tsx`, `src/graph/export.ts`, `src/graph/__tests__/export.test.ts`.
