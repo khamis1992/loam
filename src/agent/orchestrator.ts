@@ -1,4 +1,5 @@
 import type { ChatMessage } from "../ollama.js";
+import type { Config } from "../config.js";
 import type { Emit, PlanStepInfo, RecipeChange, RecipeStepInfo, ToolTraceItem, Usage, VerdictInfo } from "./events.js";
 import { log } from "../log.js";
 import { runAgent, type RunOptions, type RunResult } from "./loop.js";
@@ -9,6 +10,7 @@ import type { ExecutionCheckpoint, WorkerCheckpoint } from "./checkpoint.js";
 import { AcceptanceGuard } from "./acceptanceGuard.js";
 import { IndependentAcceptanceGuard, independentRequirements } from "./independentAcceptance.js";
 import { taskScopedTools, fileOnlyRequested } from "./taskToolScope.js";
+import { missionSection, fillMasterSlots, deriveMasterSlots } from "./masterPrompt.js";
 import { checkBudget, consumeTokens, type ComputeBudget } from "./computeBudget.js";
 import { addUsage, sumUsage } from "./usageAccounting.js";
 import { openSession, closeSession, cancelled, type SessionEndReason } from "./sessionHooks.js";
@@ -73,6 +75,17 @@ const WORKER_SUFFIX = [
   "If the current step is the last one, end with the complete, user-facing answer.",
 ].join("\n");
 
+/** §25 (long-horizon missions) sent only to recipe-mode workers.
+ *
+ *  A plain plan run has no Recipe, so it must not pay for the mission rules;
+ *  the orchestrator is the only place that knows the run is a mission. The
+ *  section carries runtime `{{slots}}`, so they are filled here with the same
+ *  derivation the assembled master prompt uses; a raw placeholder must never
+ *  reach the model. */
+function missionSuffix(cfg: Config): string {
+  return fillMasterSlots(missionSection(), deriveMasterSlots(cfg));
+}
+
 function oneLine(text: string, max = 300): string {
   const t = text.trim().replace(/\s+/g, " ");
   return t.length > max ? `${t.slice(0, max)}...` : t;
@@ -101,12 +114,15 @@ async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: s
   };
   const inherited = o.systemSuffix && o.systemSuffix.trim().length > 0 ? `${o.systemSuffix.trim()}\n\n` : "";
   try {
+    // Each worker is its own agent session: a file one worker writes must be
+    // reported to a later worker that read it (jcode J8 file-touch).
     const res = await runAgent({
       cfg: o.cfg,
       ollama: o.ollama,
       tools: o.tools,
       emit,
       prompt,
+      sessionId: `orch-${o.taskId ?? "task"}-w${++workerSeq}`,
       ...(o.history ? { history: o.history } : {}),
       ...(o.memories ? { memories: o.memories } : {}),
       ...(o.signal ? { signal: o.signal } : {}),
@@ -156,6 +172,9 @@ async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: s
     };
   }
 }
+
+/** Distinguishes executor workers of one orchestrated run for file-touch tracking. */
+let workerSeq = 0;
 
 function stepPrompt(o: OrchestratorOptions, plan: Plan, step: PlanStepInfo, index: number, completed: string[], critique: VerdictInfo | null): string {
   const lines: string[] = [];
@@ -505,7 +524,12 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
     const workerLimit = restored && resumeWorker && resumeWorker.steps >= oc.maxStepsPerWorker
       ? resumeWorker.steps + oc.maxStepsPerWorker
       : oc.maxStepsPerWorker;
-    const w = await runWorker({ ...o, resumeWorker, saveWorker: value => { worker = value; checkpoint(true); } }, prompt, suffix, workerLimit);
+    const w = await runWorker(
+      { ...o, resumeWorker, saveWorker: value => { worker = value; checkpoint(true); } },
+      prompt,
+      recipeMode ? `${suffix}\n\n${missionSuffix(o.cfg)}` : suffix,
+      workerLimit,
+    );
     worker = undefined;
     totalSteps += w.steps;
     addUsage(usage, w.usage);
