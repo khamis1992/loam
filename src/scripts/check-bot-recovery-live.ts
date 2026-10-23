@@ -37,6 +37,8 @@ const autoResumeCase = async (): Promise<{ workspace: string; dataDir: string; t
   const previousDataDir = process.env.MANUS_LOCAL_DATA_DIR;
   process.env.MANUS_LOCAL_DATA_DIR = dataDir;
   const previousAutoResume = process.env.LOAM_AUTO_RESUME;
+  const previousRoot = process.env.LOAM_ROOT;
+  process.env.LOAM_ROOT = autoResumeBase;
   process.env.LOAM_AUTO_RESUME = "1";
   closeDb(); resetDb();
   const autoResumeCfg = loadConfig();
