@@ -97,22 +97,37 @@ the model always has a recent user turn to answer. Both are clamped to at least
 one message, with the jcode defaults as fallback when the configured value is
 not a finite number.
 
-### Emergency tool-result cap (4000 chars)
+### Emergency tool-result cap (4000 bytes)
 
-Ported verbatim. A single tool output is the one thing that can blow past the
-token estimate on its own: a large file read, a long shell output or a big JSON
-payload. Bounding it to 4000 characters (roughly 1,000 tokens) keeps the
-head and the tail, which is where the useful content of most outputs lives, and
-drops the middle. The cap is applied only to `role: "tool"` messages, never to
-user or assistant text, and only when the context is already past the critical
-threshold.
+Ported from jcode, with one important detail the name hides: the budget is in
+**UTF-8 bytes**, not characters or UTF-16 code units. jcode's
+`emergency_truncated_tool_result` is handed `EMERGENCY_TOOL_RESULT_MAX_CHARS`
+and passes it straight to `truncate_str_boundary` / `tail_str_boundary`, both of
+which take `max_bytes` (`value.len()` is the UTF-8 length and the boundary walk
+is a byte walk). jcode's estimator agrees: `content_char_count` sums
+`String::len()` (bytes) and `estimate_compaction_tokens_from_chars` divides those
+bytes by `CHARS_PER_TOKEN`. Loam keeps the same shape, so the cap is applied in
+bytes too.
 
-The cut lands on a character boundary. jcode's `emergency_truncated_tool_result`
-uses `truncate_str_boundary` and `tail_str_boundary` for exactly this reason and
-asserts it in `emergency_truncation_is_utf8_safe`; a raw slice can leave a lone
-surrogate at the cut, which decodes as U+FFFD as soon as the tool result is
-written back to disk. `sliceCodeUnits` and `tailCodeUnits` back the cut off by
-one code unit when it would split a pair.
+This matters. A 4,000-character CJK tool result is 12,000 bytes; a code-unit
+sliced port would keep 4,000 of those characters (12,000 bytes), three times the
+budget, while jcode keeps 1,998 bytes of head plus 999 of tail. The oversized
+result is exactly the case this path exists to bound, so over-keeping it would
+let a single read still blow the window.
+
+A single tool output is the one thing that can blow past the token estimate on
+its own: a large file read, a long shell output or a big JSON payload. Bounding
+it keeps the head and the tail, which is where the useful content of most
+outputs lives, and drops the middle. The cap is applied only to `role: "tool"`
+messages, never to user or assistant text, and only when the context is already
+past the critical threshold.
+
+The cut lands on a UTF-8 character boundary, so no surrogate pair is split.
+jcode asserts this in `emergency_truncation_is_utf8_safe`; a cut through a pair
+would decode as U+FFFD as soon as the tool result is written back to disk.
+`sliceUtf8Bytes` and `tailUtf8Bytes` walk to the boundary in bytes, which keeps
+them byte-identical to jcode's helpers for ASCII, CJK and 4-byte characters
+alike.
 
 ### System overhead tokens
 

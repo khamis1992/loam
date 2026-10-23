@@ -209,29 +209,34 @@ function pruneMiddle(middle: ChatMessage[]): { messages: ChatMessage[]; elidedCh
 }
 
 /**
- * Slice `end` code units, backing off when that would leave a high surrogate
- * stranded at the cut. jcode's `truncate_str_boundary` walks back to a Rust
- * `char` boundary; the equivalent here keeps a lone surrogate from appearing in
- * the tool result, which would otherwise decode as U+FFFD when the content is
- * written back to disk (jcode covers this with `is_char_boundary` assertions).
+ * Slice `maxBytes` from the start, backing off to the last UTF-8 character
+ * boundary. jcode's `truncate_str_boundary` takes `max_bytes` and walks back
+ * with `is_char_boundary`, and its token estimator divides UTF-8 bytes by
+ * `CHARS_PER_TOKEN`, so the budget is a byte budget. Slicing by code unit
+ * instead keeps up to 3x too much text on CJK output, which is exactly the
+ * oversized-tool-result case this path exists to bound.
  */
-function sliceCodeUnits(value: string, end: number): string {
-  let stop = end;
-  if (stop > 0 && stop < value.length) {
-    const last = value.charCodeAt(stop - 1);
-    if (last >= 0xd800 && last <= 0xdbff) stop -= 1;
-  }
-  return value.slice(0, stop);
+function sliceUtf8Bytes(value: string, maxBytes: number): string {
+  const bytes = Buffer.from(value, "utf8");
+  if (bytes.length <= maxBytes) return value;
+  let end = Math.min(maxBytes, bytes.length);
+  while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end -= 1;
+  return bytes.subarray(0, end).toString("utf8");
 }
 
-/** Slice the last `maxChars` code units, backing off a leading low surrogate. */
-function tailCodeUnits(value: string, maxChars: number): string {
-  let from = value.length - maxChars;
-  if (from > 0) {
-    const first = value.charCodeAt(from);
-    if (first >= 0xdc00 && first <= 0xdfff) from -= 1;
-  }
-  return value.slice(from);
+/**
+ * Slice the last `maxBytes` from the end, backing off a leading partial
+ * character so no surrogate pair is split. jcode's `tail_str_boundary` walks
+ * forward from `len() - max_bytes` for the same reason; a cut through a
+ * surrogate pair would decode as U+FFFD when the tool result is written back
+ * to disk (jcode asserts this with `is_char_boundary`).
+ */
+function tailUtf8Bytes(value: string, maxBytes: number): string {
+  const bytes = Buffer.from(value, "utf8");
+  if (bytes.length <= maxBytes) return value;
+  let from = bytes.length - maxBytes;
+  while (from < bytes.length && (bytes[from]! & 0xc0) === 0x80) from += 1;
+  return bytes.subarray(from).toString("utf8");
 }
 
 /**
@@ -251,12 +256,15 @@ export function emergencyTruncateToolResults(
   for (const message of out) {
     if (message.role !== "tool") continue;
     const content = message.content ?? "";
-    if (content.length <= maxChars) continue;
+    // The cap is a UTF-8 byte budget, matching jcode's `max_bytes` semantics.
+    if (Buffer.byteLength(content, "utf8") <= maxChars) continue;
     const keepHead = Math.floor(maxChars / 2);
     const keepTail = Math.floor(maxChars / 4);
-    const head = sliceCodeUnits(content, keepHead);
-    const tail = content.length - keepTail > head.length ? tailCodeUnits(content, keepTail) : "";
-    const dropped = content.length - head.length - tail.length;
+    const head = sliceUtf8Bytes(content, keepHead);
+    const tail = Buffer.byteLength(content, "utf8") - keepTail > Buffer.byteLength(head, "utf8")
+      ? tailUtf8Bytes(content, keepTail)
+      : "";
+    const dropped = Buffer.byteLength(content, "utf8") - Buffer.byteLength(head, "utf8") - Buffer.byteLength(tail, "utf8");
     message.content = [head, EMERGENCY_TRUNCATION_MARKER(dropped), tail].join("\n\n");
     truncated++;
   }

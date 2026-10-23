@@ -531,8 +531,26 @@ describe("context compressor", () => {
     assert.deepEqual(out, messages);
   });
 
+  it("budgets the truncation in UTF-8 bytes, not code units", () => {
+    // jcode's `truncate_str_boundary`/`tail_str_boundary` take `max_bytes` and
+    // its estimator divides UTF-8 bytes by CHARS_PER_TOKEN, so 4000 chars of
+    // CJK is a 12,000-byte result and must be cut far shorter than ASCII. A
+    // code-unit slice would keep ~3x too much of it, defeating the cap.
+    const cjk = "\u5c3e".repeat(5000); // 15,000 UTF-8 bytes
+    const { messages, truncated } = emergencyTruncateToolResults([toolMsg("read", cjk)], 4000);
+    assert.equal(truncated, 1);
+    const content = messages[0]!.content;
+    const bytes = Buffer.byteLength(content, "utf8");
+    // head = 2000 bytes, tail = 1000 bytes, plus the marker.
+    assert.ok(bytes < 4000 + 80, `kept ${bytes} bytes, expected under ~4080`);
+    assert.match(content, /chars truncated for context recovery/);
+    // ASCII is byte-for-byte the same budget, so the common case is unchanged.
+    const ascii = emergencyTruncateToolResults([toolMsg("read", "x".repeat(10000))], 4000);
+    assert.equal(ascii.messages[0]!.content.startsWith("x".repeat(2000)), true);
+  });
+
   it("truncates on a character boundary so no surrogate pair is split", () => {
-    // jcode truncates on a Rust char boundary (`truncate_str_boundary`); a cut
+    // jcode truncates on a UTF-8 char boundary (`truncate_str_boundary`); a cut
     // through a surrogate pair would decode as U+FFFD when the tool result is
     // written back to disk. Odd keepHead/keepTail values make the cut land
     // inside a 4-byte character, which is exactly what must not happen.
