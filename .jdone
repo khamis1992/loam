@@ -37,7 +37,7 @@ conflict is bookkeeping-only; it is not a code divergence.
 - `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
 - `(cd packages/web && npx vitest run src/components/workspace)` -> 8 files, 74 tests passed
 - `node --import tsx --test` (codingPrompt, ciWatch, verifyAndRecord, prVerification, eventLog, prReview) -> 99 tests passed, 0 failed
-- `.jdone` integrity: U+FFFD 0, `???` 0, Arabic codepoints 208, no BOM
+- `.jdone` integrity: U+FFFD 0, `\?\?\?` 0, Arabic codepoints 208, no BOM
 
 ### Files
 - `.jdone` (merge resolution only; both sides kept)
