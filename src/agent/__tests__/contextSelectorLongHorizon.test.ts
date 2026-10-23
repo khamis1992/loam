@@ -190,6 +190,8 @@ interface ArmResult {
   steps: number;
   /** The compressor folded the middle at least once. */
   compacted: boolean;
+  /** Every `context_selected` event the loop emitted, in order. */
+  selected: Extract<AgentEvent, { type: "context_selected" }>[];
 }
 
 /** Run one arm of the comparison and collect the evidence the contract names. */
@@ -220,7 +222,13 @@ async function runArm(selectorEnabled: boolean): Promise<ArmResult> {
   });
 
   fs.rmSync(workspace, { recursive: true, force: true });
-  return { samples, needleSeenAt, steps: result.steps, compacted: events.some((e) => e.type === "compaction") };
+  return {
+    samples,
+    needleSeenAt,
+    steps: result.steps,
+    compacted: events.some((e) => e.type === "compaction"),
+    selected: events.filter((e): e is Extract<AgentEvent, { type: "context_selected" }> => e.type === "context_selected"),
+  };
 }
 
 /** Mean of a list, which is where flatness is judged. */
@@ -278,5 +286,26 @@ describe("N5 long-horizon selector acceptance", () => {
       !arm.needleSeenAt.includes(RECALL_STEP),
       "with the selector disabled the compressor folds the needle away",
     );
+  });
+
+  // The wiring itself is asserted here rather than assumed: the loop only emits
+  // `context_selected` when the selector actually re-shaped the transcript, so a
+  // regression that skips `apply` (or silently stops emitting) is caught even
+  // though the three properties above could still pass on their own.
+  it("emits context_selected each step it re-shapes, and never when disabled", { timeout: 120_000 }, async () => {
+    const on = await runArm(true);
+    assert.ok(on.selected.length > 0, "the selector reported at least one applied step");
+    for (const event of on.selected) {
+      // It must start after the activation step, not from step 1.
+      assert.ok(event.step > 4, `context_selected fired at step ${event.step}, before activation`);
+      assert.ok(event.step <= on.steps, `context_selected step ${event.step} exceeds the run's ${on.steps} steps`);
+      // A real selection carries a token count and at least one artefact.
+      assert.ok(event.tokens > 0, `context_selected at step ${event.step} reported ${event.tokens} tokens`);
+      assert.ok(event.artefacts > 0, `context_selected at step ${event.step} reported ${event.artefacts} artefacts`);
+      assert.ok(event.reason.length > 0, `context_selected at step ${event.step} had an empty reason`);
+    }
+    // The control arm must stay silent: no selector, no signal.
+    const off = await runArm(false);
+    assert.equal(off.selected.length, 0, "a disabled selector emitted context_selected");
   });
 });
