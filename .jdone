@@ -67,7 +67,34 @@ byte-identical to manus-parity (`git diff manus-parity HEAD -- <test>` is empty 
 and no assertion was relaxed. No secrets committed. Working tree clean after the merge
 commit. `git merge manus-parity` now reports "Already up to date." and
 `git merge-base --is-ancestor manus-parity HEAD` succeeds (rev-list --left-right --count
-manus-parity...HEAD = 0  5), so the merge gate condition is satisfied.
+manus-parity...HEAD = 0  6), so the merge gate condition is satisfied.
+
+## Full-suite validation (run on committed HEAD 2ee5ca6, after the targeted gates)
+- `node --import tsx --test "src/**/*.test.ts" "src/**/*.test.mjs"` (all 176 suites under src)
+  -> tests 2093, pass 2091, fail 2
+- `(cd packages/web && npx vitest run)` (whole web suite)
+  -> 72 files / 472 tests passed, 0 fail
+- `npm run check:promptwire` -> PASS
+- `npm run check:recovery` -> PASS (SQLite migration/backup/rollback + FIFO ownership/cancellation)
+- `npm run check:design-registry` -> OK (30 blocks, 8 RTL, all manifests valid)
+
+Both node failures are pre-existing and NOT caused by this merge:
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered nor
+   listed in PENDING_CODING_TOOLS". This is the exact inherited D4 defect documented in the
+   preserved D17 report above; the failing file, taskToolScope.ts and planTools.ts are all
+   byte-identical to manus-parity (`git diff manus-parity HEAD -- <file>` is empty).
+2. `src/preview/__tests__/shot.test.ts` -> `EADDRINUSE: address already in use 127.0.0.1:4317`.
+   An environmental port collision from concurrent runs, not a code failure; nothing is bound
+   to port 4317 when the suite is run on its own.
+
+Resolution judgment call (documented so it can be reviewed): the `src/agent/loop.ts`
+per-step usage block conflicted because HEAD accumulated `usage.promptTokens`/
+`usage.completionTokens`/`usage.durationMs` inline while parity called
+`addUsage(usage, result.usage)`. Keeping both literally would DOUBLE-COUNT tokens, so the
+resolution keeps parity's `addUsage` (which accumulates prompt/completion/duration plus the
+cache counters) and retains HEAD's `consumeTokens` budget charge. This is "both features",
+not a double tally; `addUsage`'s implementation was read and verified to cover every field
+HEAD set inline. All unioned import symbols were confirmed used (occurrence count >= 1 each).
 
 ## D19 feature recap
 - Sleep/wake: `src/server/sessionSleep.ts` idle N minutes (default 30, configurable via
