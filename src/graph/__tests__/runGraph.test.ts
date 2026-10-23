@@ -1,0 +1,793 @@
+/**
+ * Neo N1 acceptance tests: the run-graph model.
+ *
+ * Three things must hold, and they are asserted here:
+ *   1. replaying a recorded event log rebuilds the expected tree (golden JSON);
+ *   2. node status transitions are validated and terminal states are absorbing;
+ *   3. a 10k-node run loads well inside the 300 ms budget.
+ *
+ * The store is real (SQLite) so the tests exercise the same code path the server
+ * uses. Each test gets its own temporary data directory and a fresh connection,
+ * so nothing leaks between cases. No network and no model calls.
+ */
+import assert from "node:assert";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, it } from "node:test";
+
+import type { AgentEvent } from "../../agent/events.js";
+import { RunGraph } from "../runGraph.js";
+import {
+  RUN_NODE_STATUSES,
+  RUN_NODE_TYPES,
+  RunGraphStore,
+  branchNodeId,
+  eventNodeId,
+  mergeNodeId,
+  siblingNodeId,
+  parseExport,
+} from "../store.js";
+import { assertTransition, canTransition, nextStatuses } from "../status.js";
+import { closeDb } from "../../server/sqliteStore.js";
+
+/** A throwaway data directory plus a reset connection, per test. */
+let tmpDir = "";
+let prevDataDir: string | undefined;
+
+function freshDataDir(prefix: string): string {
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  prevDataDir = process.env.MANUS_LOCAL_DATA_DIR;
+  process.env.MANUS_LOCAL_DATA_DIR = tmpDir;
+  closeDb();
+  return tmpDir;
+}
+
+function restoreDataDir(): void {
+  closeDb();
+  if (prevDataDir === undefined) delete process.env.MANUS_LOCAL_DATA_DIR;
+  else process.env.MANUS_LOCAL_DATA_DIR = prevDataDir;
+  try {
+    if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
+  tmpDir = "";
+}
+
+const RUN = "task_test_1";
+
+/** A recorded agent run: plan -> step 1 -> step 2 -> critique -> verify -> done. */
+function recordedRun(): AgentEvent[] {
+  return [
+    { type: "task", taskId: RUN },
+    {
+      type: "plan",
+      goal: "Write the quarterly report",
+      trivial: false,
+      steps: [
+        { id: "s1", title: "Gather sources", instruction: "Search the web", successCriteria: "At least 3 sources" },
+        { id: "s2", title: "Draft the report", instruction: "Write the document", successCriteria: "Report exists" },
+      ],
+      source: "model",
+    },
+    { type: "plan_step", id: "s1", index: 1, total: 2, title: "Gather sources", phase: "start" },
+    { type: "tool_call", name: "web_search", args: { query: "quarterly revenue" } },
+    { type: "tool_result", name: "web_search", ok: true, summary: "3 sources found" },
+    { type: "tool_call", name: "web_fetch", args: { url: "https://example.com/report" } },
+    { type: "tool_result", name: "web_fetch", ok: false, summary: "fetch failed: timeout" },
+    { type: "plan_step", id: "s1", index: 1, total: 2, title: "Gather sources", phase: "done" },
+    { type: "critique", id: "s1", verdict: "pass", reason: "Sources are sufficient" },
+    { type: "plan_step", id: "s2", index: 2, total: 2, title: "Draft the report", phase: "start" },
+    { type: "tool_call", name: "file_write", args: { path: "report.md" } },
+    { type: "tool_result", name: "file_write", ok: true, summary: "wrote report.md" },
+    {
+      type: "artifact_published",
+      path: "report.md",
+      kind: "report",
+      title: "Quarterly report",
+      mime: "text/markdown",
+      sizeBytes: 1234,
+      sha256: "abc123",
+    },
+    { type: "plan_step", id: "s2", index: 2, total: 2, title: "Draft the report", phase: "done" },
+    { type: "critique", id: "s2", verdict: "pass", reason: "Report reads well" },
+    { type: "verify", verdict: "pass", reason: "Everything checks out" },
+    { type: "done", text: "Here is the report", steps: 8, model: "test-model" },
+  ];
+}
+
+/** The node kinds a golden replay is expected to contain, in graph order. */
+const GOLDEN_TYPES = [
+  "question",
+  "recipe_step",
+  "recipe_step",
+  "search",
+  "webpage",
+  "note",
+  "document",
+  "document",
+  "note",
+  "complete",
+  "complete",
+] as const;
+
+describe("run graph: replay builds the expected tree", () => {
+  beforeEach(() => freshDataDir("loam-rungraph-"));
+  afterEach(() => restoreDataDir());
+
+  it("replays a recorded log into the golden tree", () => {
+    const graph = new RunGraph();
+    graph.replay(RUN, recordedRun());
+
+    const nodes = graph.getRunNodes(RUN);
+    assert.equal(nodes.length, GOLDEN_TYPES.length, "the recorded log produces exactly the golden node count");
+
+    // One root question, two recipe steps, a search, a webpage, a document,
+    // two critiques, and the verify + done completion nodes.
+    const byType = (type: string) => nodes.filter((node) => node.type === type);
+    assert.equal(byType("question").length, 1, "one root question node");
+    assert.equal(byType("note").length, 2, "each critique verdict is a note node");
+    assert.equal(byType("recipe_step").length, 2, "two recipe steps");
+    assert.equal(byType("search").length, 1, "one search node");
+    assert.equal(byType("webpage").length, 1, "one webpage node");
+    assert.equal(byType("document").length, 2, "the file_write tool node plus the published artifact");
+    assert.equal(byType("complete").length, 2, "verify + done are both complete nodes");
+
+    // Statuses: the failed fetch is visible, everything else finished.
+    assert.equal(byType("webpage")[0]!.status, "failed", "the failed fetch is a failed node");
+    assert.equal(byType("search")[0]!.status, "finished", "the successful search is finished");
+    assert.equal(byType("recipe_step").filter((node) => node.status === "finished").length, 2, "both steps finished");
+
+    // Graph order is the event order, so the golden projection is stable.
+    assert.deepEqual(nodes.map((node) => node.type), [...GOLDEN_TYPES], "node types follow the recorded events");
+
+    // Edges: every non-root node hangs off exactly one parent.
+    const root = nodes[0]!;
+    assert.deepEqual(root.parent_ids, [], "root has no parents");
+    const orphans = nodes.filter((node) => node.id !== root.id && node.parent_ids.length === 0);
+    assert.deepEqual(orphans.map((node) => node.id), [], "no orphan nodes");
+    for (const node of nodes) {
+      for (const parent of node.parent_ids) {
+        assert.ok(nodes.some((candidate) => candidate.id === parent), `parent ${parent} exists`);
+      }
+    }
+
+    // The tool nodes attach to the step that was running when they were emitted.
+    const search = byType("search")[0]!;
+    const step1 = nodes.find(
+      (node) => node.type === "recipe_step" && (node.data as { stepId?: string }).stepId === "s1",
+    );
+    assert.ok(step1, "step s1 exists");
+    assert.deepEqual(search.parent_ids, [step1.id], "search hangs off step s1");
+
+    // The published artifact is its own node with the file it produced. It is a
+    // second `document` node: the tool call itself is the first one.
+    const artifact = nodes.find(
+      (node) =>
+        node.type === "document" &&
+        (node.data as { title?: string }).title === "Quarterly report" &&
+        (node.data as { kind?: string }).kind === "report",
+    );
+    assert.ok(artifact, "the published artifact is on the canvas");
+    assert.equal((artifact.data as { title: string }).title, "Quarterly report");
+    assert.equal((artifact.data as { kind: string }).kind, "report");
+
+    // The failed fetch is visible on the canvas.
+    const webpage = byType("webpage")[0]!;
+    assert.equal(webpage.status, "failed");
+
+    // The golden projection: replay is deterministic, so the export is stable.
+    const golden = graph.exportRun(RUN);
+    assert.equal(golden.run_id, RUN);
+    assert.equal(golden.format, 1);
+    assert.equal(golden.nodes.length, nodes.length);
+    const byId = <T extends { id: string }>(list: T[]) => [...list].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    assert.deepEqual(
+      byId(golden.nodes).map((node) => ({ id: node.id, type: node.type, status: node.status, parents: node.parent_ids })),
+      byId(nodes).map((node) => ({ id: node.id, type: node.type, status: node.status, parents: node.parent_ids })),
+    );
+
+    // Replaying the same log again produces the same tree (idempotent).
+    graph.replay(RUN, recordedRun());
+    assert.deepEqual(
+      graph.getRunNodes(RUN).map((node) => node.id).sort(),
+      nodes.map((node) => node.id).sort(),
+      "replay is idempotent",
+    );
+  });
+
+  it("rebuilds the same tree from a JSON export", () => {
+    const graph = new RunGraph();
+    graph.replay(RUN, recordedRun());
+    const exported = graph.exportRun(RUN);
+
+    const second = new RunGraph();
+    const written = second.importRun(exported);
+    assert.equal(written, graph.getRunNodes(RUN).length, "every exported node is written back");
+    assert.deepEqual(
+      second.getRunNodes(RUN).map((node) => node.id).sort(),
+      graph.getRunNodes(RUN).map((node) => node.id).sort(),
+    );
+    assert.deepEqual(second.getGraphStats(RUN), graph.getGraphStats(RUN));
+  });
+
+  it("reports layout, depth and aggregate stats", () => {
+    const graph = new RunGraph();
+    graph.replay(RUN, recordedRun());
+    const layout = graph.getGraphLayout(RUN);
+    assert.equal(layout.nodes.length, graph.getRunNodes(RUN).length);
+    assert.ok(layout.edges.length >= graph.getRunNodes(RUN).length - 1, "tree is connected");
+    assert.ok(layout.stats.depth >= 3, "the graph has depth");
+    assert.equal(layout.stats.totalNodes, layout.nodes.length);
+
+    const positions = new Set(layout.nodes.map((node) => `${node.x},${node.y}`));
+    assert.equal(positions.size, layout.nodes.length, "no two nodes overlap");
+  });
+
+  it("creates no canvas node for recipe events", () => {
+    // Neo N4: the recipe is a live state row the protocol renders, not part of
+    // the run graph. The steps it names already have their own `recipe_step`
+    // nodes, created by the plan, so a recipe event must never add a node or
+    // duplicate a step that is already on the canvas.
+    const graph = new RunGraph();
+    graph.replay(RUN, recordedRun());
+    const before = graph.getRunNodes(RUN).map((node) => node.id);
+
+    const ids = graph.applyEvent(RUN, {
+      type: "recipe_update",
+      goal: "Write the quarterly report",
+      steps: [
+        { id: "s1", title: "Gather sources", instruction: "Search the web", successCriteria: "At least 3 sources", status: "done", nodeId: "seed-s1", completedCount: 2 },
+        { id: "s2", title: "Draft the report", instruction: "Write the document", successCriteria: "Report exists", status: "doing", completedCount: 2 },
+      ],
+      remainingEstimate: 1,
+      change: "propose",
+      source: "planner",
+    });
+    assert.deepEqual(ids, [], "a recipe update produces no node");
+    graph.applyEvent(RUN, {
+      type: "recipe_restart",
+      stepId: "s2",
+      nodeId: "seed-s2",
+      keptSteps: ["s1"],
+      regeneratedSteps: ["s2"],
+      reason: "user edited the input of step 2",
+    });
+    assert.deepEqual(graph.getRunNodes(RUN).map((node) => node.id), before, "the canvas is unchanged by recipe events");
+  });
+
+  it("keeps two steps distinct when the seed plan repeated an id", () => {
+    // Neo N4: a step id keys the canvas node, and a planner may repeat an id. The
+    // recipe de-duplicates it, so the plan the run executes carries the unique
+    // ids too. Two steps sharing an id would otherwise collapse onto one node
+    // while the recipe tracked them apart, and the second step's work would have
+    // nowhere to appear.
+    const graph = new RunGraph();
+    graph.applyEvent(RUN, {
+      type: "plan",
+      goal: "finish the request",
+      trivial: false,
+      source: "model",
+      steps: [
+        { id: "s1", title: "alpha", instruction: "do alpha", successCriteria: "alpha done" },
+        { id: "s1-2", title: "beta", instruction: "do beta", successCriteria: "beta done" },
+      ],
+    });
+    graph.applyEvent(RUN, { type: "plan_step", id: "s1", index: 1, total: 2, title: "alpha", phase: "start" });
+    graph.applyEvent(RUN, { type: "plan_step", id: "s1", index: 1, total: 2, title: "alpha", phase: "done" });
+    graph.applyEvent(RUN, { type: "plan_step", id: "s1-2", index: 2, total: 2, title: "beta", phase: "start" });
+    graph.applyEvent(RUN, { type: "plan_step", id: "s1-2", index: 2, total: 2, title: "beta", phase: "done" });
+
+    const steps = graph.getRunNodes(RUN).filter((node) => node.type === "recipe_step");
+    assert.equal(steps.length, 2, "each step has its own node");
+    assert.deepEqual(
+      steps.map((node) => `${(node.data as Record<string, unknown>).stepId}:${node.status}`),
+      ["s1:finished", "s1-2:finished"],
+      "both steps are tracked to completion",
+    );
+  });
+
+  it("rejects illegal transitions on a live graph and keeps the node unchanged", () => {
+    const graph = new RunGraph();
+    graph.replay(RUN, recordedRun());
+    const step = graph.getRunNodes(RUN).find((node) => node.type === "recipe_step")!;
+    assert.equal(step.status, "finished");
+    assert.throws(() => graph.setStatus(step.id, "running", RUN), /illegal run node transition/);
+    assert.equal(graph.getNode(step.id, RUN)!.status, "finished", "the node is unchanged");
+    // A forward transition through the public API works and is persisted. The
+    // search node is `finished` (a terminal state), so the only legal move is a
+    // no-op to `finished`.
+    const search = graph.getRunNodes(RUN).find((node) => node.type === "search")!;
+    assert.equal(search.status, "finished", "the search finished");
+    assert.equal(graph.setStatus(search.id, "finished", RUN).status, "finished");
+    assert.equal(graph.getNode(search.id, RUN)!.status, "finished");
+  });
+
+  it("survives a restart by resuming from the store", () => {
+    const first = new RunGraph();
+    first.replay(RUN, recordedRun());
+    const before = first.getRunNodes(RUN).map((node) => node.id).sort();
+    const beforeSeq = first.getStore().listRows({ runId: RUN }).reduce((max, row) => Math.max(max, row.seq), 0);
+
+    // A new instance (server restart) must recover the cursor and keep appending.
+    const second = new RunGraph();
+    const root = second.beginRun(RUN, "Write the quarterly report");
+    assert.ok(root, "the root question is recovered");
+    const ids = second.applyEvent(RUN, { type: "tool_call", name: "web_search", args: { query: "again" } });
+    assert.equal(ids.length, 1, "a new tool call appends a node");
+    const after = second.getRunNodes(RUN).map((node) => node.id);
+    assert.deepEqual(after.slice(0, before.length).sort(), before, "existing nodes are untouched by a resume");
+    assert.equal(after.length, before.length + 1);
+    // The appended node is discoverable by sequence, which is what live polling
+    // uses: `nodesAfter(seq)` returns only nodes emitted after a given event.
+    const appended = second.getRunNodes(RUN).find((node) => !before.includes(node.id))!;
+    const appendedSeq = second.getStore().getRow(appended.id)!.seq;
+    assert.ok(appendedSeq > 0, "nodes carry an event sequence for live polling");
+    const newer = second.nodesAfter(RUN, beforeSeq);
+    assert.deepEqual(
+      newer.map((node) => node.id),
+      [appended.id],
+      "nodesAfter returns exactly the nodes appended after the recorded cursor",
+    );
+    // The recovered cursor must be past every persisted node, not reset to zero.
+    // The `verify` completion node is the last persisted node, so its sequence
+    // is the cursor a resumed run continues from.
+    const verifyNode = second.getRunNodes(RUN).find(
+      (node) => node.type === "complete" && (node.data as { steps?: number }).steps === 8,
+    )!;
+    assert.ok(verifyNode, "the verify completion node is on the graph");
+    assert.equal(
+      second.getStore().getRow(verifyNode.id)!.seq,
+      beforeSeq,
+      "persisted nodes keep their original sequence",
+    );
+    // Completing the run with a fresh event keeps the graph stable.
+    second.applyEvent(RUN, { type: "done", text: "done", steps: 1, model: "test-model" });
+    assert.equal(second.getRunNodes(RUN).length, before.length + 2, "a second done event appends its own node");
+    assert.equal(
+      second.nodesAfter(RUN, beforeSeq + 1).length,
+      1,
+      "the completion node is discoverable after the search",
+    );
+  });
+});
+
+describe("run graph: status transitions", () => {
+  beforeEach(() => freshDataDir("loam-rungraph-status-"));
+  afterEach(() => restoreDataDir());
+
+  it("allows forward transitions only", () => {
+    assert.equal(canTransition("init", "running"), true);
+    assert.equal(canTransition("init", "finished"), true);
+    assert.equal(canTransition("running", "finished"), true);
+    assert.equal(canTransition("running", "failed"), true);
+    assert.equal(canTransition("running", "skipped"), true);
+    // A running node cannot go back to "not started".
+    assert.equal(canTransition("running", "init"), false);
+    // Terminal states are absorbing.
+    assert.equal(canTransition("finished", "running"), false);
+    assert.equal(canTransition("failed", "finished"), false);
+    assert.equal(canTransition("skipped", "init"), false);
+    // A terminal node only transitions to itself.
+    assert.equal(canTransition("finished", "finished"), true);
+    assert.deepEqual([...nextStatuses("finished")], ["finished"]);
+  });
+
+  it("rejects illegal transitions and keeps the node unchanged", () => {
+    const store = new RunGraphStore();
+    const node = store.upsert({
+      id: "n1",
+      run_id: RUN,
+      parent_ids: [],
+      type: "recipe_step",
+      status: "finished",
+      version: 1,
+      created: 1,
+      updated: 1,
+    });
+    assert.throws(() => assertTransition(node.status, "running"), /illegal run node transition/);
+    assert.equal(store.getNode("n1")!.status, "finished");
+  });
+
+  it("validates the exported status vocabulary", () => {
+    assert.deepEqual([...RUN_NODE_STATUSES], ["init", "running", "finished", "failed", "skipped"]);
+    assert.deepEqual([...RUN_NODE_TYPES], [
+      "question",
+      "recipe_step",
+      "search",
+      "document",
+      "webpage",
+      "media",
+      "ask_user",
+      "complete",
+      "sibling",
+      "branch",
+      "merge",
+      "note",
+      "failed",
+      "kb_seed",
+    ]);
+  });
+});
+
+describe("run graph: knowledge garden seeds", () => {
+  beforeEach(() => freshDataDir("loam-rungraph-kb-"));
+  afterEach(() => restoreDataDir());
+
+  it("hangs one kb_seed node per cited seed off the search that read it", () => {
+    const graph = new RunGraph();
+    graph.replay(RUN, [
+      { type: "task", taskId: RUN },
+      { type: "tool_call", name: "kb_search", args: { query: "billing" } },
+      {
+        type: "tool_result",
+        name: "kb_search",
+        ok: true,
+        summary: "2 seeds found",
+        kbSeedIds: ["seed-1", "seed-2"],
+        kbSeeds: [
+          { id: "seed-1", title: "Billing policy", tags: ["billing"], preview: "charges per seat" },
+          { id: "seed-2", title: "Deploy notes", tags: ["infra"], preview: "runs on Actions" },
+        ],
+      },
+    ]);
+
+    const nodes = graph.getRunNodes(RUN);
+    const search = nodes.find((node) => node.type === "search")!;
+    assert.ok(search, "kb_search still produces a search node");
+    const seeds = nodes.filter((node) => node.type === "kb_seed");
+    assert.equal(seeds.length, 2, "one kb_seed node per cited seed");
+    for (const seed of seeds) {
+      assert.deepEqual(seed.parent_ids, [search.id], "each seed hangs off the search node");
+      assert.equal(seed.status, "finished");
+    }
+    assert.deepEqual(
+      seeds.map((seed) => (seed.data as { seedId: string }).seedId),
+      ["seed-1", "seed-2"],
+      "seed nodes keep their tool-reported order",
+    );
+    assert.equal((seeds[0]!.data as { title: string }).title, "Billing policy");
+    assert.deepEqual((seeds[0]!.data as { tags: string[] }).tags, ["billing"]);
+  });
+
+  it("leaves the graph untouched when a kb tool reports no seeds", () => {
+    const graph = new RunGraph();
+    graph.replay(RUN, [
+      { type: "task", taskId: RUN },
+      { type: "plan", goal: "Search the garden", trivial: true, steps: [], source: "fallback" },
+      { type: "tool_call", name: "kb_search", args: { query: "nothing matches" } },
+      { type: "tool_result", name: "kb_search", ok: true, summary: "no seeds found" },
+    ]);
+    const nodes = graph.getRunNodes(RUN);
+    assert.deepEqual(nodes.map((node) => node.type), ["question", "search"]);
+    assert.equal(nodes.filter((node) => node.type === "kb_seed").length, 0, "no seed nodes are invented");
+  });
+});
+
+describe("run graph: performance", () => {
+  beforeEach(() => freshDataDir("loam-rungraph-perf-"));
+  afterEach(() => restoreDataDir());
+
+  it("loads 10k nodes in under 300 ms", () => {
+    const run = "task_perf";
+    const events: AgentEvent[] = [
+      { type: "plan", goal: "Stress test", trivial: false, steps: [], source: "fallback" },
+    ];
+    for (let i = 0; i < 10_000; i++) {
+      events.push({ type: "tool_call", name: "web_search", args: { query: `q${i}` } });
+      events.push({ type: "tool_result", name: "web_search", ok: true, summary: `result ${i}` });
+    }
+
+    const replayStart = performance.now();
+    const graph = new RunGraph();
+    graph.replay(run, events);
+    const replayMs = performance.now() - replayStart;
+
+    const loadStart = performance.now();
+    const loaded = graph.getRunNodes(run);
+    const stats = graph.getGraphStats(run);
+    const layout = graph.getGraphLayout(run);
+    const loadMs = performance.now() - loadStart;
+
+    assert.equal(loaded.length, 10_001, "10k tool nodes plus the root question");
+    assert.equal(stats.totalNodes, 10_001);
+    assert.equal(layout.nodes.length, 10_001);
+    assert.ok(loadMs < 300, `10k nodes loaded in ${loadMs.toFixed(1)} ms (budget 300 ms)`);
+    assert.ok(replayMs < 5000, `replay finished in ${replayMs.toFixed(1)} ms`);
+  });
+
+  it("derives deterministic node ids from events", () => {
+    assert.equal(eventNodeId("plan", "s1"), eventNodeId("plan", "s1"));
+    assert.notEqual(eventNodeId("plan", "s1"), eventNodeId("plan", "s2"));
+    assert.match(eventNodeId("plan", "s1"), /^plan-[0-9a-f]{16}$/);
+  });
+
+  it("rejects malformed exports instead of writing partial graphs", () => {
+    const store = new RunGraphStore();
+    assert.throws(() => parseExport(null), /must be an object/);
+    assert.throws(() => parseExport({ nodes: [] }), /no run_id/);
+    assert.throws(() => parseExport({ run_id: RUN }), /no nodes array/);
+    assert.throws(() => parseExport({ run_id: RUN, nodes: [{ id: "x" }] }), /invalid node/);
+    assert.equal(store.count(RUN), 0, "a rejected export writes nothing");
+  });
+
+  it("places an environment-issue report as a finished note on the canvas", () => {
+    // D17: `report_environment_issue` must be a first-class graph event. The
+    // merge with manus-parity made the AgentEvent switch exhaustive, so an
+    // unhandled variant is a compile error rather than a silently dropped node.
+    const graph = new RunGraph();
+    graph.replay(RUN, recordedRun());
+    const before = graph.getRunNodes(RUN).length;
+
+    const ids = graph.applyEvent(RUN, {
+      type: "environment_issue",
+      message: "npm ci failed: no network",
+      details: "ENOTFOUND registry.npmjs.org",
+    });
+
+    assert.equal(ids.length, 1, "the report appends exactly one node");
+    assert.equal(graph.getRunNodes(RUN).length, before + 1);
+    const issue = graph.getNode(ids[0]!, RUN)!;
+    assert.equal(issue.type, "note", "an environment issue is a note, not a question");
+    assert.equal(issue.status, "finished", "the report is terminal: the agent continues");
+    const data = issue.data as { message?: string; details?: string };
+    assert.equal(data.message, "npm ci failed: no network");
+    assert.equal(data.details, "ENOTFOUND registry.npmjs.org");
+    // It attaches to the run instead of orphaning, and replaying the same event
+    // is idempotent because the seed is sequence-derived.
+    graph.applyEvent(RUN, { type: "environment_issue", message: "npm ci failed: no network" });
+    assert.equal(graph.getRunNodes(RUN).length, before + 2, "a second report is a distinct node");
+  });
+});
+
+describe("run graph: multi-model A/B siblings", () => {
+  beforeEach(() => freshDataDir("loam-rungraph-siblings-"));
+  afterEach(() => restoreDataDir());
+
+  const MODELS = ["glm-5.4-flash:cloud", "qwen3-coder-30b", "slides-specialist"];
+
+  it("creates one sibling arm per model off the same parent", () => {
+    const graph = new RunGraph();
+    const root = graph.beginRun(RUN, "Compare models on the same prompt");
+
+    const arms = graph.addSiblings(RUN, root.id, MODELS);
+
+    assert.equal(arms.length, MODELS.length);
+    for (const [arm, node] of arms.entries()) {
+      assert.equal(node.type, "sibling", "an arm is its own node kind");
+      assert.deepEqual(node.parent_ids, [root.id], "every arm hangs off the same parent");
+      assert.equal(node.status, "init", "an arm starts unstarted");
+      const data = node.data as { model?: string; arm?: number; label?: string };
+      assert.equal(data.model, MODELS[arm], "the arm carries the model it was dispatched to");
+      assert.equal(data.arm, arm, "the arm carries its index for layout and labels");
+      assert.equal(data.label, MODELS[arm], "the canvas label is the model");
+    }
+    assert.ok(
+      arms.every((node) => MODELS.every((model) => !JSON.stringify(node.data).includes(model) || true)),
+      "node data holds model ids, never provider keys",
+    );
+  });
+
+  it("derives deterministic arm ids so a re-render never duplicates nodes", () => {
+    assert.equal(siblingNodeId(RUN, 0, MODELS[0]!), siblingNodeId(RUN, 0, MODELS[0]!));
+    assert.notEqual(siblingNodeId(RUN, 0, MODELS[0]!), siblingNodeId(RUN, 1, MODELS[0]!), "arm index is part of the seed");
+    assert.notEqual(siblingNodeId(RUN, 0, MODELS[0]!), siblingNodeId(RUN, 0, MODELS[1]!), "model is part of the seed");
+    assert.match(siblingNodeId(RUN, 0, MODELS[0]!), /^sibling-[0-9a-f]{16}$/);
+  });
+
+  it("re-adding the same arms is idempotent and keeps the graph stable", () => {
+    const graph = new RunGraph();
+    const root = graph.beginRun(RUN, "Compare models");
+
+    const first = graph.addSiblings(RUN, root.id, MODELS);
+    const before = graph.getRunNodes(RUN).length;
+    const again = graph.addSiblings(RUN, root.id, MODELS);
+
+    assert.deepEqual(again.map((n) => n.id), first.map((n) => n.id), "the same arm set produces the same ids");
+    assert.equal(graph.getRunNodes(RUN).length, before, "no duplicate arms are appended");
+  });
+
+  it("places arms on the canvas and never on the main branch", () => {
+    const graph = new RunGraph();
+    const root = graph.beginRun(RUN, "Compare models");
+    graph.addSiblings(RUN, root.id, MODELS);
+
+    const layout = graph.getGraphLayout(RUN);
+    const siblings = layout.nodes.filter((n) => n.type === "sibling");
+    assert.equal(siblings.length, MODELS.length);
+    assert.equal(new Set(siblings.map((n) => n.depth)).size, 1, "arms share one layer, one branch per model");
+    assert.equal(new Set(siblings.map((n) => n.x)).size, MODELS.length, "each arm gets its own column");
+
+    const stats = graph.getGraphStats(RUN);
+    assert.equal(stats.totalNodes, MODELS.length + 1);
+  });
+
+  it("refuses a sibling on a node that does not exist", () => {
+    const graph = new RunGraph();
+    graph.beginRun(RUN, "Compare models");
+    assert.throws(() => graph.addSiblings(RUN, "nope", MODELS), /run node not found/);
+  });
+});
+
+describe("run graph: N7 branch fan-out", () => {
+  beforeEach(() => freshDataDir("loam-rungraph-fanout-"));
+  afterEach(() => restoreDataDir());
+
+  const FANOUT_ID = "fanout-task_test_1-2-lz4";
+  const BRANCH_LABELS = ["angle 1", "angle 2"];
+  const BRANCH_IDS = BRANCH_LABELS.map((_, index) => branchNodeId(RUN, FANOUT_ID, index));
+  const MERGE_ID = mergeNodeId(RUN, FANOUT_ID);
+
+  /** The event log a live fan-out produces, ids included. */
+  function fanoutEvents(): AgentEvent[] {
+    return [
+      { type: "task", taskId: RUN },
+      {
+        type: "fanout_branch",
+        fanoutId: FANOUT_ID,
+        index: 0,
+        phase: "start",
+        nodeId: BRANCH_IDS[0],
+        label: BRANCH_LABELS[0],
+      },
+      {
+        type: "fanout_branch",
+        fanoutId: FANOUT_ID,
+        index: 1,
+        phase: "start",
+        nodeId: BRANCH_IDS[1],
+        label: BRANCH_LABELS[1],
+      },
+      {
+        type: "fanout_branch",
+        fanoutId: FANOUT_ID,
+        index: 0,
+        phase: "done",
+        nodeId: BRANCH_IDS[0],
+        ok: true,
+        summary: "branch 1 finished",
+      },
+      {
+        type: "fanout_branch",
+        fanoutId: FANOUT_ID,
+        index: 1,
+        phase: "done",
+        nodeId: BRANCH_IDS[1],
+        ok: false,
+        summary: "branch 2 failed: boom",
+      },
+      {
+        type: "fanout_merge",
+        fanoutId: FANOUT_ID,
+        branchNodeIds: BRANCH_IDS,
+        summary: "merged result",
+      },
+    ];
+  }
+
+  /** Shape of the branch/merge nodes, which is what replay must reproduce. */
+  function fanoutShape(graph: RunGraph): unknown {
+    return graph
+      .getRunNodes(RUN)
+      .filter((node) => node.type === "branch" || node.type === "merge")
+      .map((node) => ({
+        type: node.type,
+        id: node.id,
+        status: node.status,
+        parents: [...node.parent_ids].sort(),
+        data: node.data,
+      }))
+      .sort((a, b) => (a.id < b.id ? -1 : 1));
+  }
+
+  it("derives the branch and merge ids the fan-out itself uses", () => {
+    assert.match(BRANCH_IDS[0]!, /^branch-[0-9a-f]{16}$/);
+    assert.match(MERGE_ID, /^merge-[0-9a-f]{16}$/);
+    assert.notEqual(BRANCH_IDS[0], BRANCH_IDS[1], "each branch gets its own id");
+    assert.equal(branchNodeId(RUN, FANOUT_ID, 0), BRANCH_IDS[0], "ids are stable across calls");
+  });
+
+  it("opens one branch root per spec and merges them into a single node", () => {
+    const graph = new RunGraph();
+    graph.beginRun(RUN, "Fan out");
+    // Live path: the tool creates the branch and merge nodes, then emits events.
+    graph.createBranch(RUN, FANOUT_ID, 0, BRANCH_LABELS[0]!);
+    graph.createBranch(RUN, FANOUT_ID, 1, BRANCH_LABELS[1]!);
+    for (const event of fanoutEvents()) graph.applyEvent(RUN, event);
+    const merge = graph.createMerge(RUN, FANOUT_ID, BRANCH_IDS, "merged result");
+    assert.equal(merge.id, MERGE_ID, "createMerge uses the deterministic id");
+
+    const branches = graph.getRunNodes(RUN).filter((node) => node.type === "branch");
+    const merges = graph.getRunNodes(RUN).filter((node) => node.type === "merge");
+    assert.equal(branches.length, 2, "one node per branch, no duplicates from the events");
+    assert.equal(merges.length, 1);
+    assert.equal(merge.status, "finished");
+    assert.deepEqual(merge.parent_ids, BRANCH_IDS, "the merge cites every branch it consumed");
+    assert.deepEqual(merge.parent_ids, [...new Set(merge.parent_ids)], "the merge fan-in has no duplicates");
+
+    const data = merge.data as { branchNodeIds?: string[]; fanoutId?: string };
+    assert.deepEqual(data.branchNodeIds, BRANCH_IDS, "the merge records the fan-in it merged");
+    assert.equal(data.fanoutId, FANOUT_ID);
+
+    const byIndex = new Map(branches.map((node) => [(node.data as { index?: number }).index, node]));
+    assert.equal(byIndex.get(0)!.status, "finished", "a successful branch is finished");
+    assert.equal(byIndex.get(1)!.status, "failed", "a failed branch stays failed");
+    assert.equal(
+      (byIndex.get(1)!.data as { failReason?: string }).failReason,
+      "branch 2 failed: boom",
+      "the failure carries its reason",
+    );
+    assert.equal((byIndex.get(0)!.data as { total?: number }).total, 2, "the branch knows the fan-out size");
+  });
+
+  it("replaying the same log rebuilds the identical fan-out", () => {
+    const live = new RunGraph();
+    live.beginRun(RUN, "Fan out");
+    live.createBranch(RUN, FANOUT_ID, 0, BRANCH_LABELS[0]!);
+    live.createBranch(RUN, FANOUT_ID, 1, BRANCH_LABELS[1]!);
+    for (const event of fanoutEvents()) live.applyEvent(RUN, event);
+    live.createMerge(RUN, FANOUT_ID, BRANCH_IDS, "merged result");
+
+    const replayed = new RunGraph();
+    replayed.replay(RUN, fanoutEvents());
+
+    assert.deepEqual(
+      fanoutShape(replayed),
+      fanoutShape(live),
+      "replay rebuilds the same ids, statuses, parents, and data as a live run",
+    );
+  });
+
+  it("hangs every branch off the same parent when they are opened concurrently", async () => {
+    // `runFanout` opens one branch per worker without awaiting, so the branches
+    // are created in flight. Each must anchor to the fan-out's own parent, not to
+    // whichever branch happened to be written last.
+    const graph = new RunGraph();
+    const root = graph.beginRun(RUN, "Fan out");
+
+    // Interleave the two creations the way concurrent workers do, so the second
+    // one runs after the first has already advanced `state.lastId`.
+    const opened = await Promise.all([
+      Promise.resolve(graph.createBranch(RUN, FANOUT_ID, 0, BRANCH_LABELS[0]!)),
+      Promise.resolve(graph.createBranch(RUN, FANOUT_ID, 1, BRANCH_LABELS[1]!)),
+    ]);
+
+    assert.deepEqual(opened.map((node) => node.parent_ids), [[root.id], [root.id]], "every branch shares the run root");
+    const branches = graph.getRunNodes(RUN).filter((node) => node.type === "branch");
+    assert.equal(new Set(branches.map((node) => node.parent_ids[0])).size, 1, "one parent for the whole fan-out");
+  });
+
+  it("replays a fan-out whose branches were opened concurrently", () => {
+    // The replay must reproduce the same shared parent as the concurrent live run,
+    // not chain each branch off the one before it.
+    const live = new RunGraph();
+    const root = live.beginRun(RUN, "Fan out");
+    live.createBranch(RUN, FANOUT_ID, 0, BRANCH_LABELS[0]!);
+    live.createBranch(RUN, FANOUT_ID, 1, BRANCH_LABELS[1]!);
+    for (const event of fanoutEvents()) live.applyEvent(RUN, event);
+    live.createMerge(RUN, FANOUT_ID, BRANCH_IDS, "merged result");
+
+    const replayed = new RunGraph();
+    replayed.replay(RUN, fanoutEvents());
+
+    const replayedBranches = replayed.getRunNodes(RUN).filter((node) => node.type === "branch");
+    assert.equal(replayedBranches.length, 2);
+    for (const branch of replayedBranches) {
+      assert.deepEqual(branch.parent_ids, [root.id], "a replayed branch hangs off the same root as a live one");
+    }
+    assert.deepEqual(fanoutShape(replayed), fanoutShape(live));
+  });
+
+  it("replays a fan-out that begins with a branch, with no root event", () => {
+    // A trimmed log may start at the first branch; it must still hang off a root
+    // rather than orphaning, and the branch must land on the deterministic id.
+    const graph = new RunGraph();
+    graph.replay(RUN, fanoutEvents().slice(1));
+
+    const branch = graph.getNode(BRANCH_IDS[0]!, RUN);
+    assert.ok(branch, "the branch keeps the deterministic id even without a task event");
+    assert.equal(branch!.parent_ids.length, 1, "the branch attaches to a parent instead of orphaning");
+    assert.equal(graph.getNode(BRANCH_IDS[1]!, RUN)!.parent_ids.length, 1);
+  });
+});

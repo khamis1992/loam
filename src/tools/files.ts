@@ -12,6 +12,230 @@ import { bool, num, str, strFirst } from "./registry.js";
 import { guardExistingEdit } from "./readState.js";
 import { withLock, withLocks } from "./fileLock.js";
 
+/** Cap on the number of replacements a single batch may perform. */
+const MAX_BATCH_EDITS = 50;
+/** Lines of context shown around each applied edit in the post-edit snippet. */
+const EDIT_CONTEXT_LINES = 3;
+
+/**
+ * 1-based line number at which a literal substring starts (1 when absent).
+ * Counted on `\n`, so it stays correct for CRLF content.
+ */
+export function findLineNumber(content: string, substring: string): number {
+  const pos = content.indexOf(substring);
+  if (pos < 0) return 1;
+  let line = 1;
+  for (let i = 0; i < pos; i++) if (content.charCodeAt(i) === 10) line++;
+  return line;
+}
+
+/**
+ * A line-numbered excerpt of `content` around the edited range. `start`/`end`
+ * are 1-based inclusive lines; `padding` context lines are added on both sides,
+ * clamped to the file bounds.
+ */
+export function extractContext(
+  content: string,
+  start: number,
+  end: number,
+  padding: number,
+): { startLine: number; endLine: number; text: string } {
+  const lines = content.split("\n");
+  const first = Math.max(1, start - padding);
+  const last = Math.min(lines.length, end + padding);
+  const numbered = lines.slice(first - 1, last).map((line, i) => `${String(first + i).padStart(4)}| ${line}`);
+  return { startLine: first, endLine: last, text: numbered.join("\n") };
+}
+
+/**
+ * Diagnose why a literal `old_string` is absent. Adapted from jcode (MIT)
+ * crates/jcode-app-core/src/tool/edit.rs (`flexible_match_hint`). The edit is
+ * never applied from the hint; the hint only tells the model what to change.
+ */
+export function flexibleMatchHint(content: string, oldString: string, filePath: string): string {
+  const trimmed = oldString.trim();
+  if (trimmed.length > 0 && trimmed !== oldString && content.includes(trimmed)) {
+    return `old_string not found exactly, but found after trimming whitespace. Use the exact string from the file, including leading/trailing whitespace.`;
+  }
+
+  const wanted = oldString.split("\n");
+  if (wanted.length > 0) {
+    const source = content.split("\n");
+    for (let i = 0; i + wanted.length <= source.length; i++) {
+      let matches = true;
+      for (let j = 0; j < wanted.length; j++) {
+        if ((source[i + j] ?? "").trim() !== (wanted[j] ?? "").trim()) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) {
+        return `old_string not found exactly, but found with different indentation around line ${i + 1}. Preserve the exact whitespace from the file.`;
+      }
+    }
+  }
+
+  return `old_string not found in ${filePath}. Use file_read to see the current file contents.`;
+}
+
+/** A parsed single replacement: exactly one literal find and its replacement. */
+export interface EditOperation {
+  oldString: string;
+  newString: string;
+  replaceAll: boolean;
+}
+
+/**
+ * Replace the first literal occurrence. `String.prototype.replace` is NOT used
+ * here: with a string pattern it still expands `$&`, `` $` ``, `$'` and `$$` in
+ * the replacement, whereas the spec (jcode `ref/edit.rs`) substitutes the text
+ * verbatim. Replacing via slice keeps `$` in the new_string literal.
+ */
+function replaceFirstLiteral(content: string, find: string, replacement: string): string {
+  const at = content.indexOf(find);
+  if (at < 0) return content;
+  return content.slice(0, at) + replacement + content.slice(at + find.length);
+}
+
+/**
+ * Number of lines a replacement occupies, counted the way Rust's `str::lines`
+ * does: a trailing newline does not start a further line, and "" is 0 lines.
+ * Used only to place the end of the post-edit context window.
+ */
+function countLines(text: string): number {
+  if (text.length === 0) return 0;
+  const segments = text.split("\n").length;
+  return text.endsWith("\n") ? segments - 1 : segments;
+}
+
+/** Where one replacement landed. */
+interface AppliedEdit {
+  occurrences: number;
+  startLine: number;
+  endLine: number;
+}
+
+/**
+ * Apply every operation in order to an in-memory copy. All-or-nothing: every
+ * failure is collected and the caller only writes when the list is empty, so a
+ * batch never leaves the file half-edited.
+ */
+export function applyEditOperations(
+  content: string,
+  operations: EditOperation[],
+  filePath: string,
+): { ok: true; content: string; applied: AppliedEdit[] } | { ok: false; failures: string[] } {
+  let work = content;
+  const applied: AppliedEdit[] = [];
+  const failures: string[] = [];
+  const label = (index: number): string => (operations.length === 1 ? "" : `Edit ${index + 1}: `);
+
+  for (let index = 0; index < operations.length; index++) {
+    const op = operations[index]!;
+    const tag = label(index);
+    if (op.oldString === op.newString) {
+      failures.push(`${tag}old_string and new_string must be different`);
+      continue;
+    }
+    if (op.oldString.length === 0) {
+      failures.push(`${tag}old_string must not be empty`);
+      continue;
+    }
+    let occurrences = 0;
+    let from = 0;
+    while (from <= work.length - op.oldString.length) {
+      const at = work.indexOf(op.oldString, from);
+      if (at < 0) break;
+      occurrences++;
+      from = at + op.oldString.length;
+    }
+    if (occurrences === 0) {
+      failures.push(`${tag}${flexibleMatchHint(work, op.oldString, filePath)}`);
+      continue;
+    }
+    if (occurrences > 1 && !op.replaceAll) {
+      failures.push(
+        `${tag}old_string found ${occurrences} times. Either:\n1. Provide more context to make it unique, or\n2. Set replace_all: true to replace all occurrences`,
+      );
+      continue;
+    }
+    const startLine = findLineNumber(work, op.oldString);
+    work = op.replaceAll ? work.split(op.oldString).join(op.newString) : replaceFirstLiteral(work, op.oldString, op.newString);
+    applied.push({ occurrences, startLine, endLine: startLine + countLines(op.newString) - 1 });
+  }
+
+  if (failures.length > 0) return { ok: false, failures };
+  return { ok: true, content: work, applied };
+}
+
+/**
+ * Build the failure body for a batch that was rejected. A single operation
+ * returns its own message; a batch lists every failure so the model can fix
+ * them all at once.
+ */
+export function formatEditFailures(filePath: string, failures: string[], total: number): string {
+  if (failures.length === 1) return failures[0]!;
+  return [
+    `No changes written to ${filePath}. ${failures.length} of ${total} edits failed:`,
+    ...failures.map((failure) => `  x ${failure}`),
+    "Edits apply in order, so later edits see the result of earlier ones.",
+  ].join("\n");
+}
+
+/**
+ * Turn the tool arguments into an ordered list of operations. Accepts either
+ * the `edits` array or the single-edit shorthand (`old_string`/`new_string`,
+ * with `find`/`replace` aliases), never both, and never an empty batch.
+ * `usedBatch` tells the caller which validation rules apply (the single-edit
+ * path honours the legacy `count` argument; a batch requires each entry to be
+ * unique unless its own `replace_all` is set).
+ */
+export function resolveEditOperations(
+  args: Record<string, unknown>,
+): { ok: true; operations: EditOperation[]; usedBatch: boolean } | { ok: false; content: string } {
+  const hasSingle = args.old_string !== undefined || args.new_string !== undefined;
+  const rawEdits = args.edits;
+  const hasBatch = rawEdits !== undefined;
+
+  if (hasBatch && hasSingle) {
+    return { ok: false, content: `file_edit: use either edits (array) or old_string/new_string, not both.` };
+  }
+
+  if (hasBatch) {
+    if (!Array.isArray(rawEdits)) return { ok: false, content: "file_edit: edits must be an array" };
+    if (rawEdits.length < 1 || rawEdits.length > MAX_BATCH_EDITS) {
+      return { ok: false, content: `file_edit: edits must contain between 1 and ${MAX_BATCH_EDITS} items` };
+    }
+    const operations: EditOperation[] = [];
+    for (let index = 0; index < rawEdits.length; index++) {
+      const entry = rawEdits[index];
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+        return { ok: false, content: `edit ${index + 1}: must be an object` };
+      }
+      const record = entry as Record<string, unknown>;
+      const oldString = strFirst(record, "old_string", "find");
+      const newString = strFirst(record, "new_string", "replace");
+      if (oldString === undefined) {
+        return { ok: false, content: `edit ${index + 1}: requires old_string (or its alias find)` };
+      }
+      if (newString === undefined) {
+        return { ok: false, content: `edit ${index + 1}: requires new_string (or its alias replace)` };
+      }
+      if (oldString.length === 0) return { ok: false, content: `edit ${index + 1}: old_string must be non-empty` };
+      operations.push({ oldString, newString, replaceAll: bool(record, "replace_all", false) });
+    }
+    return { ok: true, operations, usedBatch: true };
+  }
+
+  const oldString = strFirst(args, "old_string", "find");
+  const newString = strFirst(args, "new_string", "replace");
+  if (oldString === undefined) return { ok: false, content: "file_edit requires old_string (or its alias find)" };
+  if (newString === undefined) return { ok: false, content: "file_edit requires new_string (or its alias replace)" };
+  if (oldString.length === 0) return { ok: false, content: "old_string must be non-empty" };
+  const replaceAll = bool(args, "replace_all", false);
+  return { ok: true, operations: [{ oldString, newString, replaceAll }], usedBatch: false };
+}
+
 /** Append per-edit diagnostics to a successful write result. Never throws and
  *  never turns a successful edit into a failure. */
 async function withDiagnostics(content: string, file: string, ctx: ToolContext): Promise<string> {
@@ -135,7 +359,9 @@ export const fileTools: Tool[] = [
         const content = str(args, "content");
         if (bool(args, "append")) fs.appendFileSync(p, content, "utf8");
         else fs.writeFileSync(p, content, "utf8");
-        ctx.readState?.record(p);
+        // Refresh the read snapshot and publish the write to other sessions that
+        // already read this path (jcode J8 file-touch notifications).
+        ctx.readState?.recordWrite(p);
         const size = fs.statSync(p).size;
         return { ok: true, content: await withDiagnostics(`wrote ${size} bytes to ${p}`, p, ctx) };
       });
@@ -144,7 +370,7 @@ export const fileTools: Tool[] = [
   {
     name: "file_edit",
     description:
-      "Replace exact text inside a workspace file with a targeted edit. Pass the exact old_string to find and the new_string to write in its place; find/replace are accepted as aliases. The match must be unique unless you pass replace_all, which replaces every occurrence, or count, which must equal the number of occurrences. Include enough surrounding context (a full line or more) so the find text matches exactly once, and remember the match is literal, not a regular expression. Read the file first: an unread or stale file is refused, and a successful edit refreshes the read snapshot. An old_string equal to new_string is reported as a no-op and writes nothing. When NOT to use: use file_multi_edit for several changes to the same file (it is atomic and reports a diff); use file_write to create a file or fully rewrite one you have read; use file_search to find text; never build a file through repeated shell echo/Set-Content, which bypasses read tracking and can corrupt line endings.",
+      "Replace exact text inside a workspace file with a targeted edit. Pass the exact old_string to find and the new_string to write in its place; find/replace are accepted as aliases. The match must be unique unless you pass replace_all, which replaces every occurrence, or count, which must equal the number of occurrences. Include enough surrounding context (a full line or more) so the find text matches exactly once, and remember the match is literal, not a regular expression. To change several spots at once, pass `edits` (an ordered array of {old_string, new_string, replace_all?}); the batch is all-or-nothing and reports every failure, so nothing is written unless every edit matches. A missing match never fuzzy-applies: the error says whether the text was found after trimming whitespace or with different indentation, and the indentation hint names the 1-based line, otherwise it is a plain not-found. Read the file first: an unread or stale file is refused, and a successful edit refreshes the read snapshot. An old_string equal to new_string is reported as a no-op and writes nothing. On success the result includes a line-numbered snippet of the file around the change. When NOT to use: use file_multi_edit for several changes to the same file (it is atomic and reports a diff); use file_write to create a file or fully rewrite one you have read; use file_search to find text; never build a file through repeated shell echo/Set-Content, which bypasses read tracking and can corrupt line endings.",
     parameters: {
       type: "object",
       properties: {
@@ -155,12 +381,41 @@ export const fileTools: Tool[] = [
         replace: { type: "string", description: "Alias for new_string." },
         replace_all: { type: "boolean", description: "Replace every occurrence instead of requiring a single unique match (default false)." },
         count: { type: "number", description: "Legacy: expected occurrence count when replace_all is false (default 1)." },
+        edits: {
+          type: "array",
+          description:
+            "Ordered batch of replacements applied in one atomic operation. Each entry is applied in order, so a later edit sees the result of an earlier one. All-or-nothing: if any entry fails, nothing is written and every failure is reported. Mutually exclusive with old_string/new_string.",
+          minItems: 1,
+          maxItems: MAX_BATCH_EDITS,
+          items: {
+            type: "object",
+            properties: {
+              old_string: { type: "string", description: "Exact text to find. Must occur exactly once unless replace_all is true." },
+              new_string: { type: "string", description: "Replacement text. Must differ from old_string." },
+              find: { type: "string", description: "Alias for old_string." },
+              replace: { type: "string", description: "Alias for new_string." },
+              replace_all: { type: "boolean", description: "Replace every occurrence for this entry instead of requiring a single match (default false)." },
+            },
+            anyOf: [{ required: ["old_string", "new_string"] }, { required: ["find", "replace"] }],
+          },
+        },
       },
       required: ["path"],
-      anyOf: [{ required: ["old_string", "new_string"] }, { required: ["find", "replace"] }],
+      anyOf: [{ required: ["edits"] }, { required: ["old_string", "new_string"] }, { required: ["find", "replace"] }],
     },
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
-      const p = resolveWrite(ctx.workspace, str(args, "path"));
+      let p: string;
+      try {
+        p = resolveWrite(ctx.workspace, str(args, "path"));
+      } catch (err) {
+        return { ok: false, content: err instanceof Error ? err.message : String(err) };
+      }
+
+      // Resolve the requested operations before taking the lock: argument
+      // shape problems are reported without touching the file.
+      const operations = resolveEditOperations(args);
+      if (!operations.ok) return { ok: false, content: operations.content };
+
       // Read the file, verify the match and write the replacement under one
       // per-path lock, so two concurrent edits cannot both read the same
       // original and race their writes (a lost update).
@@ -168,38 +423,81 @@ export const fileTools: Tool[] = [
         const guard = guardExistingEdit(ctx, p);
         if (guard) return guard;
         if (!fs.existsSync(p)) return { ok: false, content: `not found: ${p}` };
-        const original = fs.readFileSync(p, "utf8");
-        const oldString = strFirst(args, "old_string", "find");
-        const newString = strFirst(args, "new_string", "replace");
-        if (oldString === undefined) return { ok: false, content: "file_edit requires old_string (or its alias find)" };
-        if (newString === undefined) return { ok: false, content: "file_edit requires new_string (or its alias replace)" };
-        if (oldString.length === 0) return { ok: false, content: "old_string must be non-empty" };
-        if (oldString === newString) {
+        let original: string;
+        try {
+          original = fs.readFileSync(p, "utf8");
+        } catch (err) {
+          return { ok: false, content: `cannot read ${p}: ${err instanceof Error ? err.message : String(err)}` };
+        }
+
+        const first = operations.operations[0]!;
+
+        if (!operations.usedBatch && first.oldString === first.newString) {
           return {
             ok: false,
             content: `old_string and new_string are identical, so this edit would change nothing. Provide a new_string that actually differs from old_string (or drop this no-op edit).`,
           };
         }
-        const occurrences = original.split(oldString).length - 1;
-        if (occurrences === 0) return { ok: false, content: `old_string not present in ${p}` };
-        const replaceAll = bool(args, "replace_all", false);
-        if (replaceAll) {
-          fs.writeFileSync(p, original.split(oldString).join(newString), "utf8");
-          ctx.readState?.record(p);
-          return { ok: true, content: `replaced ${occurrences} occurrence(s) in ${p} (replace_all)` };
-        }
-        const want = num(args, "count", 1);
-        if (occurrences !== want) {
+
+        // Legacy `count` (single-edit path, replace_all unset): the caller asserts
+        // how many occurrences exist. That assertion takes the place of the
+        // uniqueness rule, and the legacy write behaviour is to replace every
+        // occurrence, so the count is checked against what was actually replaced
+        // before anything is written. Without an explicit count the spec rule
+        // applies (the match must be unique unless replace_all is set).
+        const legacyCount =
+          !operations.usedBatch && !first.replaceAll && args.count !== undefined ? num(args, "count", 1) : undefined;
+        const requested =
+          legacyCount === undefined
+            ? operations.operations
+            : operations.operations.map((operation) => ({ ...operation, replaceAll: true }));
+
+        const outcome = applyEditOperations(original, requested, p);
+        if (!outcome.ok) return { ok: false, content: formatEditFailures(p, outcome.failures, requested.length) };
+
+        const applied = outcome.applied;
+        const occurrences = applied.reduce((sum, edit) => sum + edit.occurrences, 0);
+
+        if (!operations.usedBatch) {
+          // Single-edit shorthand: honour the legacy `count` expectation.
+          const replaceAll = first.replaceAll;
+          if (legacyCount !== undefined && occurrences !== legacyCount) {
+            return {
+              ok: false,
+              content: `Found ${occurrences} matches of old_string in ${p}, but replace_all is false and count is ${legacyCount}. Add more surrounding context to old_string (include more lines or words around the change) so it matches exactly ${legacyCount} time(s), or set replace_all to true to replace every match.`,
+            };
+          }
+          fs.writeFileSync(p, outcome.content, "utf8");
+          // Refresh the read snapshot so a follow-up edit in the same session is
+          // not rejected as stale; the model already saw the pre-edit content.
+          ctx.readState?.recordWrite(p);
+          const where = extractContext(outcome.content, applied[0]!.startLine, applied[0]!.endLine, EDIT_CONTEXT_LINES);
+          const snippet = `\nContext after edit (lines ${where.startLine}-${where.endLine}):\n${where.text}`;
+          const suffix = replaceAll ? " (replace_all)" : "";
           return {
-            ok: false,
-            content: `Found ${occurrences} matches of old_string in ${p}, but replace_all is false and the match is not unique. Add more surrounding context to old_string (include more lines or words around the change) so it matches exactly once, or set replace_all to true to replace every match.`,
+            ok: true,
+            content: await withDiagnostics(`replaced ${occurrences} occurrence(s) in ${p}${suffix}${snippet}`, p, ctx),
           };
         }
-        fs.writeFileSync(p, original.split(oldString).join(newString), "utf8");
-        // Refresh the read snapshot so a follow-up edit in the same session is
-        // not rejected as stale; the model already saw the pre-edit content.
-        ctx.readState?.record(p);
-        return { ok: true, content: await withDiagnostics(`replaced ${occurrences} occurrence(s) in ${p}`, p, ctx) };
+
+        // Batch: apply in order to the in-memory content, line endings and a
+        // BOM are preserved by operating on the raw string.
+        fs.writeFileSync(p, outcome.content, "utf8");
+        ctx.readState?.recordWrite(p);
+        const lines: string[] = [`applied ${operations.operations.length} edit(s) to ${p} (${occurrences} replacement(s))`];
+        for (let i = 0; i < applied.length; i++) {
+          const edit = applied[i]!;
+          lines.push(`  ok edit ${i + 1}: replaced ${edit.occurrences} occurrence(s) at line ${edit.startLine}`);
+        }
+        lines.push("");
+        for (let i = 0; i < applied.length; i++) {
+          const edit = applied[i]!;
+          const where = extractContext(outcome.content, edit.startLine, edit.endLine, EDIT_CONTEXT_LINES);
+          lines.push(`Context after edit ${i + 1} (lines ${where.startLine}-${where.endLine}):`);
+          lines.push(where.text);
+          lines.push("");
+        }
+        return { ok: true, content: await withDiagnostics(lines.join("\n").trimEnd(), p, ctx) };
       });
     },
   },
@@ -328,6 +626,10 @@ export const fileTools: Tool[] = [
         if (!fs.existsSync(from)) return { ok: false, content: `not found: ${from}` };
         fs.mkdirSync(path.dirname(to), { recursive: true });
         fs.renameSync(from, to);
+        // The old path is gone and the new one changed: tell other sessions that
+        // already read them (jcode J8 file-touch notifications).
+        ctx.readState?.forget(from);
+        ctx.readState?.recordWrite(to);
         return { ok: true, content: `moved ${from} -> ${to}` };
       });
     },
@@ -346,6 +648,8 @@ export const fileTools: Tool[] = [
       return withLock(p, async () => {
         if (!fs.existsSync(p)) return { ok: false, content: `not found: ${p}` };
         fs.rmSync(p, { recursive: bool(args, "recursive"), force: true });
+        // Other sessions that read this path are told it is gone (jcode J8).
+        ctx.readState?.forget(p);
         return { ok: true, content: `deleted ${p}` };
       });
     },

@@ -1,7 +1,17 @@
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert";
 import fs from "node:fs/promises";
 import path from "node:path";
+
+// Must come before any import that evaluates `config.js`: this test writes event
+// logs straight into `DATA_DIR/sessions`, so without this redirect it leaves
+// residue in the repository's real `data/` folder.
+import { cleanupIsolatedDataDir } from "../../test/isolation.js";
+
+after(() => {
+  cleanupIsolatedDataDir();
+});
+
 import {
   EventLog,
   ContiguityError,

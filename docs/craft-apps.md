@@ -104,3 +104,88 @@ behaviour is unchanged.
 for the five apps, read from each dist's `.vendor.json`. The web panel uses this
 to choose the Craft app or the Loam fallback editor. On startup the server logs
 how to fetch any missing dist (never auto-downloads).
+
+## End-user flow
+
+### English
+
+1. **Attach the file.** Drop or attach a `.docx`, `.xlsx`, `.pptx`, image or
+   layout file in the chat, then write the instruction ("add a paragraph about
+   the budget", "colour the chart by region", "crop the logo").
+2. **The panel opens by itself.** The matching editor (Loam Docs, Loam Sheets,
+   Loam Slides, Loam Photo or Loam Design) opens in the right-side Workspace
+   panel with the attached file loaded. The agent picked the app from the file
+   type and the intent.
+3. **Edits land live.** The agent reads the document's current state, applies the
+   edits through the app's own control channel, and re-reads the state to confirm
+   each change. The user sees the changes as they happen and can keep editing the
+   same file by hand at any time.
+4. **More prompts, more edits.** Each follow-up instruction is applied on top of
+   the current state, so the agent re-reads before every batch of edits and never
+   assumes the file on disk is the truth.
+5. **Export.** Export from the panel button, or say "export"/"save" in chat. The
+   saved bytes come back into the task's files, ready to download or to hand off.
+
+### العربية
+
+1. **أرفق الملف.** أضف ملف `.docx` أو `.xlsx` أو `.pptx` أو صورة أو ملف تصميم في
+   المحادثة، ثم اكتب التعليمة («أضف فقرة عن الميزانية»، «لوّن الرسم حسب المنطقة»،
+   «اقتطع الشعار»).
+2. **اللوحة تفتح تلقائيًا.** يفتح المحرر المناسب (لوام دوكس أو لوام شيتس أو لوام
+   سلايدس أو لوام فوتو أو لوام ديزاين) في لوحة «مساحة العمل» على اليمين والملف
+   محمّل فيه. يختار المساعد التطبيق من نوع الملف ونية الطلب.
+3. **التعديلات تظهر مباشرة.** يقرأ المساعد حالة المستند الحالية، ثم يطبّق
+   التعديلات عبر قناة التحكم الخاصة بالتطبيق نفسه، ثم يعيد قراءة الحالة
+   للتأكد من كل تعديل. يرى المستخدم التغييرات فورًا، ويستطيع متابعة التحرير
+   بنفسه في أي لحظة.
+4. **أوامر إضافية وتعديلات إضافية.** كل تعليمة لاحقة تُطبَّق فوق الحالة الحالية،
+   لذلك يعيد المساعد القراءة قبل كل مجموعة تعديلات، ولا يفترض أبدًا أن الملف
+   على القرص هو الحالة الصحيحة.
+5. **التصدير.** صدّر من زر اللوحة، أو قل في المحادثة «صدّر» أو «احفظ». تعود
+   البايتات المحفوظة إلى ملفات المهمة، وتصبح جاهزة للتنزيل أو للتسليم.
+
+## Agent loop and fallback
+
+The agent drives the panel over the `craft:*` postMessage bridge. The loop it must
+follow is:
+
+1. **Open** with the attached file (`{type:'craft:open', name, bytes}`).
+2. **Read the live state** (`document.inspect` / `sheet.read` / `cell.get` /
+   `ui.inspect`) before every batch of edits; the user may have edited the file by
+   hand between calls.
+3. **Discover commands** with `engine.commands` and read the returned ids,
+   labels, params docs and `enabled` / `disabledReason` / `needsDocument` flags.
+   Loam Sheets narrows the same call with `{search}`; the other control channels
+   always return the full command list.
+4. **Batch the edits**, then re-read the state and confirm the change is present.
+5. **Export** through the app so the bytes return to the host (`craft:save`).
+
+If no app is installed, the panel never reports ready, a command is refused, or
+the app reports `no document open`, the agent says so plainly in the user's
+language and falls back to Loam's own editors (`loam_studio` with
+`office_import` / `office_export` / `office_edit`, or `loam_document` for
+Markdown/HTML). It never retries the same unavailable command and never writes
+the office file itself through shell or Python.
+
+### Per-app command cheat-sheet
+
+Conservative command ids, each verified against the app's own control protocol and
+re-checked at runtime with `engine.commands`:
+
+| App | Read state | Common edits | Export / save |
+| --- | --- | --- | --- |
+| Loam Docs | `document.inspect`, `ui.inspect`, `ui.render {page?}` | `text.insert {text}`, `format.set`, `para.set`, `styles.modify`, `table.modifyStyle` | `engine.execute {command:'file.save'}` |
+| Loam Sheets | `sheet.read {range?, sheet?, formulas?, formatted?}`, `cell.get {cell?}`, `document.inspect` | `cell.set {cell, input}`, `range.setValues {range, values}` | `engine.execute {command:'file.save'}` |
+| Loam Slides | `document.inspect`, `ui.inspect`, `ui.render {slide?, scale?}` | `shape.insert {preset, rect, text}` | `file.save` (native) or `{command:'app.saveAsDialog', params:{format:'pptx'}}` |
+| Loam Photo | `document.inspect`, `layer.list`, `document.pixel {x, y}`, `ui.inspect` | `layer.new.layer {name}`, `layer.setProps`, `paint.stroke {points, size, color}`, `select.rect`, `type.editText` | read the full `engine.commands` list (this control channel takes no filter), pick the UI-level export command, then `app.save` |
+| Loam Design | `document.inspect`, `ui.inspect`, `ui.render {page?, scale?, bleed?}` | `frame.create {rect, content}` | read the full `engine.commands` list (this control channel takes no filter), pick the UI-level export command, then `app.save` / `app.export` |
+
+Every app answers the same core control methods `engine.execute`, `engine.commands`,
+`document.inspect`, `ui.inspect`, `ui.screenshot`, `ui.key` and `ui.click`, and reports
+errors as `ok:false` with the app's own message. Everything beyond that core is
+app-specific: `ui.render` and `ui.set` are not universal (Loam Sheets lists neither; its
+UI state goes through `ui.ribbon` / `ui.backstage` / `ui.dialog`), the pointer surface
+differs (Docs, Sheets, Slides and Design take `ui.move` / `ui.drag`; Slides, Photo and
+Design also take the richer `ui.pointer`; Photo takes `ui.click` / `ui.move` but no
+`ui.drag`), and the file-level methods differ (`file.save` on Docs and Sheets,
+`app.save` / `app.export` on Photo and Design).

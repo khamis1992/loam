@@ -154,8 +154,10 @@
         overflow-wrap: anywhere;
       }
       .rk-msg.user .rk-bubble {
-        background: color-mix(in srgb, var(--accent) 12%, var(--panel));
-        border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+        /* C20: --chat-accent* live on .rk-main only while a companion is selected,
+           so the fallback keeps the base-agent chat the app accent. */
+        background: color-mix(in srgb, var(--chat-accent, var(--accent)) 12%, var(--panel));
+        border: 1px solid color-mix(in srgb, var(--chat-accent, var(--accent)) 22%, var(--border));
         color: var(--text);
       }
       .rk-msg.assistant .rk-bubble {
@@ -378,6 +380,25 @@
         .rk-ta { min-width: 0; padding-inline: 4px; }
       }
       button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+      /* ================= per-bot chat accent color (C20) =================
+         ui/companions.js writes --chat-accent* on .rk-main when a bot is selected
+         (data-chat-accent="bot"). These rules sit at the end of the sheet on
+         purpose: at equal specificity the later declaration wins, so the
+         overrides below must follow `.rk-send:disabled` (line ~235) and the
+         global `button:focus-visible` outline rule above. */
+      .rk-main[data-chat-accent="bot"] .rk-bar:focus-within { border-color: var(--chat-accent); }
+      .rk-main[data-chat-accent="bot"] .rk-send:not(:disabled) {
+        background: var(--chat-accent);
+        border-color: var(--chat-accent);
+        color: var(--chat-accent-ink);
+      }
+      .rk-main[data-chat-accent="bot"] .rk-send:not(:disabled):hover {
+        background: var(--chat-accent-2);
+        border-color: var(--chat-accent-2);
+      }
+      .rk-main[data-chat-accent="bot"] button:focus-visible,
+      .rk-main[data-chat-accent="bot"] a:focus-visible { outline-color: var(--chat-accent); }
     </style>
     <link rel="stylesheet" href="/loam.css" />
   <link rel="stylesheet" href="/icons.css"><script type="module" src="/icons.js"></script><link rel="icon" href="/assets/loam-symbol.svg"></head>
@@ -396,7 +417,7 @@
     </aside>
 
     <!-- ============ main ============ -->
-    <main class="rk-main">
+    <main class="rk-main" data-chat-accent>
       <header class="rk-header">
         <span class="av" id="rkHeadAv"><loam-icon name="companions"></loam-icon></span>
         <span class="who">
@@ -733,6 +754,6 @@
       </div>
     </div>
 
-    <script src="/companions.js"></script>
+    <script type="module" src="/companions.js"></script>
   </body>
 </html>

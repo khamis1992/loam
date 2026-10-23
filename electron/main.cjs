@@ -1,20 +1,82 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain, protocol } = require("electron");
+const { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain, protocol, utilityProcess } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
 const { createHash } = require("node:crypto");
-const { spawn } = require("node:child_process");
 const updater = require("./updater.cjs");
 const inAppBrowser = require("./inAppBrowser.cjs");
 const mcpBridge = require("./mcp-bridge.cjs");
 const vendorProtocol = require("./vendorProtocol.cjs");
 const { IPC_INVOKE, IPC_EVENT_PREFIX, IPC_META, IPC_SYNC, NAMESPACES } = require("./ipc-constants.cjs");
 
-const ASAR_ROOT = path.resolve(__dirname, "..");
-const ROOT =
-  ASAR_ROOT.endsWith(".asar") && fs.existsSync(ASAR_ROOT + ".unpacked")
-    ? ASAR_ROOT + ".unpacked"
-    : ASAR_ROOT;
+// ---------------------------------------------------------------------------
+// Local-only memory sampling (J6). The desktop main process is the only place
+// that can see both the Node server child and every renderer, so it samples
+// them on a slow timer and answers the renderer's debugMemory IPC from that
+// snapshot. Nothing here is ever sent anywhere: the numbers stay in the
+// renderer process that asked for them.
+// ---------------------------------------------------------------------------
+let lastMemorySample = { at: null, main: null, renderers: [], server: null };
+
+function mb(bytes) {
+  return Math.round((Number(bytes) / (1024 * 1024)) * 100) / 100;
+}
+
+function sampleMainProcess() {
+  const m = process.memoryUsage();
+  return { pid: process.pid, rssBytes: m.rss, heapUsedBytes: m.heapUsed, heapTotalBytes: m.heapTotal, externalBytes: m.external };
+}
+
+function sampleRenderers() {
+  const out = [];
+  for (const contents of require("electron").webContents.getAllWebContents()) {
+    let metrics = null;
+    try { metrics = contents.getProcessMemoryInfo(); } catch { continue; }
+    if (!metrics) continue;
+    out.push({
+      pid: metrics.pid ?? 0,
+      rssBytes: metrics.residentSetSize ?? 0,
+      workingSetBytes: metrics.workingSetSize ?? 0,
+      type: String(contents.getType ? contents.getType() : "window"),
+    });
+  }
+  return out;
+}
+
+function sampleServerProcess() {
+  if (!serverChild || !serverChild.pid) return null;
+  // /proc is Linux-only; elsewhere the server reports its own numbers over the
+  // loopback debug:memory route, so this stays a best-effort pid + rss hint.
+  let rss = 0;
+  try {
+    const stat = fs.readFileSync(`/proc/${serverChild.pid}/status`, "utf8");
+    const m = /^VmRSS:\s*(\d+)\s*kB/m.exec(stat);
+    if (m) rss = Number(m[1]) * 1024;
+  } catch { /* not available on this platform */ }
+  return { pid: serverChild.pid, rssBytes: rss };
+}
+
+function startMemorySampler() {
+  const timer = setInterval(() => {
+    lastMemorySample = {
+      at: new Date().toISOString(),
+      main: sampleMainProcess(),
+      renderers: sampleRenderers(),
+      server: sampleServerProcess(),
+    };
+  }, 15_000);
+  if (timer.unref) timer.unref();
+  lastMemorySample = { at: new Date().toISOString(), main: sampleMainProcess(), renderers: sampleRenderers(), server: sampleServerProcess() };
+}
+
+// App root: the repo folder in dev, resources/app.asar when packaged. Electron's
+// fs patch reads files inside the asar transparently, so ROOT stays the asar path.
+// Files that must exist on real disk (native modules, ffmpeg, three jsm addons)
+// live in app.asar.unpacked; see asarUnpack/extraResources in electron-builder.yml.
+const ASAR_ROOT = app.getAppPath();
+const ROOT = ASAR_ROOT;
+const UNPACKED_ROOT = ASAR_ROOT.endsWith(".asar") ? ASAR_ROOT + ".unpacked" : ASAR_ROOT;
+const DISK_ROOT = fs.existsSync(UNPACKED_ROOT) ? UNPACKED_ROOT : path.dirname(ASAR_ROOT);
 app.setName("Loam");
 if (process.env.LOAM_USER_DATA_DIR) {
   app.setPath("userData", path.resolve(process.env.LOAM_USER_DATA_DIR));
@@ -30,6 +92,7 @@ const BRIDGE_PORT = Number(process.env.LOAM_MCP_BRIDGE_PORT || 3002);
 process.env.MANUS_LOCAL_ROOT = ROOT;
 process.env.MANUS_LOCAL_PORT = String(PORT);
 process.env.LOAM_ROOT = ROOT;
+process.env.LOAM_UNPACKED_ROOT = UNPACKED_ROOT;
 process.env.LOAM_PORT = String(PORT);
 const EXPECTED_VERSION = require(path.join(ROOT, "package.json")).version;
 
@@ -44,6 +107,14 @@ const MIME_TYPES = {
   ".ttf": "font/ttf", ".otf": "font/otf", ".eot": "application/vnd.ms-fontobject",
   ".wasm": "application/wasm",
 };
+
+// Non-failing vendored-dist check: when a dist is missing, print how to fetch it.
+// Never auto-downloads (see scripts/vendor/*); the app falls back gracefully.
+function warnIfVendorDistMissing(label, distDir, npmScript) {
+  if (fs.existsSync(path.join(distDir, "index.html"))) return;
+  console.warn(`[electron] ${label} dist not found at ${distDir}.`);
+  console.warn(`[electron] Fetch it with: npm run ${npmScript}`);
+}
 
 let serverChild = null;
 let win = null;
@@ -160,27 +231,35 @@ async function ensureServer() {
   if (!fs.existsSync(bundle)) throw new Error("dist/server.cjs missing - run: npm run build:server");
   for (let attempt = 1; attempt <= 3; attempt++) {
     const nodePaths = [
+      path.join(UNPACKED_ROOT, "node_modules"),
       path.join(ROOT, "node_modules"),
-      path.join(ASAR_ROOT, "node_modules"),
       process.env.NODE_PATH || "",
     ]
       .filter(Boolean)
       .join(path.delimiter);
-    serverChild = spawn(process.execPath, [bundle], {
-      cwd: ROOT,
-      env: Object.assign({}, process.env, {
-        ELECTRON_RUN_AS_NODE: "1",
-        MANUS_LOCAL_ROOT: ROOT,
-        MANUS_LOCAL_PORT: String(PORT),
-        NODE_PATH: nodePaths,
-      }),
-      stdio: ["ignore", "pipe", "pipe"],
+    // Run the server in an Electron utility process instead of re-launching the
+    // executable with ELECTRON_RUN_AS_NODE (works with asar and does not depend on
+    // the RunAsNode fuse for the server itself).
+    const serverEnv = Object.assign({}, process.env, {
+      LOAM_SERVER_BUNDLE: bundle,
+      MANUS_LOCAL_ROOT: ROOT,
+      LOAM_ROOT: ROOT,
+      LOAM_UNPACKED_ROOT: UNPACKED_ROOT,
+      MANUS_LOCAL_PORT: String(PORT),
+      NODE_PATH: nodePaths,
+    });
+    delete serverEnv.ELECTRON_RUN_AS_NODE;
+    serverChild = utilityProcess.fork(path.join(__dirname, "server-host.cjs"), [], {
+      cwd: DISK_ROOT,
+      env: serverEnv,
+      stdio: "pipe",
+      serviceName: "Loam Server",
     });
     let exited = false;
     serverChild.on("exit", () => { exited = true; });
     serverChild.on("error", error => { exited = true; console.error("[electron] server: " + error.message); });
-    serverChild.stdout.on("data", (d) => process.stdout.write("[server] " + d));
-    serverChild.stderr.on("data", (d) => process.stderr.write("[server] " + d));
+    serverChild.stdout?.on("data", (d) => process.stdout.write("[server] " + d));
+    serverChild.stderr?.on("data", (d) => process.stderr.write("[server] " + d));
     const startupDeadline = Date.now() + 120_000;
     while (Date.now() < startupDeadline) {
       if (await ping()) return attempt === 1 ? "spawned" : "spawned-retry" + attempt;
@@ -358,6 +437,11 @@ let currentTheme = "system";
 const ipcHandlers = {
   auth: {
     getToken: () => sessionToken,
+    localSignIn: async () => {
+      const ok = await ensureLocalSession();
+      if (ok && win) win.webContents.send("desktop-ipc-event:auth:onLoginSuccess", {});
+      return ok;
+    },
     setToken: (_sender, token) => {
       pendingLoginNonce = String(token ?? "");
       if (pendingLoginNonce) {
@@ -475,6 +559,22 @@ const ipcHandlers = {
   diagnosticLogs: {
     collect: () => ({ path: "" }),
   },
+  // J6 local debug surface: per-process RSS. The renderer never receives
+  // anything but these counters — no prompt text, no file paths, no tokens.
+  debugMemory: {
+    snapshot: () => {
+      const sample = lastMemorySample;
+      const rendererRss = (sample.renderers || []).reduce((a, r) => a + (r.rssBytes || 0), 0);
+      return {
+        at: sample.at,
+        mainRssMb: sample.main ? mb(sample.main.rssBytes) : 0,
+        rendererRssMb: mb(rendererRss),
+        rendererCount: (sample.renderers || []).length,
+        serverRssMb: sample.server ? mb(sample.server.rssBytes) : 0,
+        serverPid: sample.server?.pid ?? null,
+      };
+    },
+  },
   storage: {
     getItem: (_sender, key) => {
       if (typeof key !== "string") throw new Error("key must be a string");
@@ -591,6 +691,43 @@ async function exchangeAgentStudioSession(loginToken) {
   const exchData = await exch.json();
   if (!exchData.token) throw new Error("no session token returned");
   return exchData.token;
+}
+
+// Loam is local and single-user: unless LOAM_REQUIRE_LOGIN=1, mint a session
+// from the local protocol adapter so the app opens straight into /app.
+function localLoginEnabled() {
+  return process.env.LOAM_REQUIRE_LOGIN !== "1";
+}
+
+async function ensureLocalSession() {
+  if (!localLoginEnabled()) return false;
+  try {
+    if (sessionToken) {
+      const check = await fetch(AGENT_STUDIO_BACKEND + "/user.v1.UserService/UserInfo", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${sessionToken}`, "Content-Type": "application/json", "Connect-Protocol-Version": "1" },
+        body: "{}",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (check.ok) return true;
+      if (check.status !== 401 && check.status !== 403) return false;
+    }
+    const nonce = "local-" + Date.now();
+    const res = await fetch(AGENT_STUDIO_BACKEND + "/login?from=desktop&type=signIn&nonce=" + nonce, { redirect: "manual", signal: AbortSignal.timeout(5000) });
+    const location = res.headers.get("location") || "";
+    const loginToken = location ? new URL(location).searchParams.get("token") : "";
+    if (!loginToken) throw new Error("no local login token (status " + res.status + ")");
+    sessionToken = await exchangeAgentStudioSession(loginToken);
+    const data = readLocalStorage();
+    data["session_token"] = sessionToken;
+    delete data["login_nonce"];
+    writeLocalStorage(data);
+    console.log("[electron] local session ready");
+    return true;
+  } catch (err) {
+    console.warn("[electron] local sign-in failed: " + err.message);
+    return false;
+  }
 }
 
 async function handleDeepLinkCallback(url) {
@@ -758,6 +895,10 @@ app.whenReady().then(async () => {
   const FILMCRAFT_DIST = path.join(ROOT, "electron", "filmcraft", "dist");
   const FILMCRAFT_OVERLAY = path.join(ROOT, "electron", "filmcraft");
   const FILMCRAFT_BASE_DIRS = [FILMCRAFT_DIST, FILMCRAFT_OVERLAY];
+  // Non-failing startup hints: a fresh clone has no vendored dists yet, so
+  // tell the developer how to fetch them instead of failing to boot.
+  warnIfVendorDistMissing("Loam Video", FILMCRAFT_DIST, "vendor:filmcraft");
+  warnIfVendorDistMissing("Loam Effects", path.join(ROOT, "electron", "effectcraft", "dist"), "vendor:effectcraft");
   protocol.handle("loamfilm", async (request) => {
     const url = new URL(request.url);
     let pathname = decodeURIComponent(url.pathname);
@@ -863,7 +1004,7 @@ app.whenReady().then(async () => {
 
   buildMenu();
   createTray();
-  await mcpBridge.start(ROOT, BRIDGE_PORT);
+  await mcpBridge.start(ROOT, BRIDGE_PORT, DISK_ROOT);
   try {
     console.log("[electron] server mode: " + (await ensureServer()));
     loamServerReady = true;
@@ -877,6 +1018,7 @@ app.whenReady().then(async () => {
       return;
     }
   }
+  if (loamServerReady) await ensureLocalSession();
   createWindow();
   if (loamServerReady && win) {
     // Inject the install token into all renderer requests to the local API.
@@ -887,6 +1029,9 @@ app.whenReady().then(async () => {
     });
   }
   if (loamServerReady) startServerWatchdog();
+  // J6: sample this process, every renderer and the server child so the
+  // Settings > Memory debug surface always has fresh local numbers.
+  startMemorySampler();
   if (loamServerReady) {
     const localUpdates = await require("./local-updates.cjs").startLocalUpdates(path.join(app.getPath("userData"), "updates"));
     updater.init({

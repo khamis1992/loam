@@ -79,6 +79,7 @@ const TOOL_LABEL: Record<string, ToolLabel> = {
   preview_serve: { verb: 'Started', noun: 'preview' },
   preview_status: { verb: 'Checked', noun: 'preview' },
   preview_stop: { verb: 'Stopped', noun: 'preview' },
+  preview_screenshot: { verb: 'Captured', noun: 'screenshots' },
 
   // Routine & task management
   schedule_create: { verb: 'Scheduled', noun: 'routine' },

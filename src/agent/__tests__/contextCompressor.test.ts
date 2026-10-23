@@ -21,6 +21,12 @@ import {
   getCompressionThreshold,
   ELISION_MARKER,
   SUMMARY_LABEL,
+  EMERGENCY_TRUNCATION_MARKER,
+  criticalThreshold,
+  emergencyKeepTurns,
+  emergencyMinTurns,
+  emergencyToolResultMaxChars,
+  emergencyTruncateToolResults,
   SUMMARY_SECTIONS,
   isSummaryMessage,
   extractSummary,
@@ -77,11 +83,16 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
       bufferTokens: 20000,
       reattachFiles: 5,
       reattachFileChars: 4000,
+      criticalThresholdPercent: 0.95,
+      recentTurnsToKeep: 10,
+      minTurnsToKeep: 2,
+      emergencyToolResultMaxChars: 4000,
       model: "",
       contextWindow: { "qwen2.5": 32768 },
     },
     sessionLog: { enabled: false },
     subagent: { maxDepth: 2, maxConcurrentChildren: 4 },
+    skills: { autoSuggest: false, suggestModel: "" },
     ...overrides,
   };
 }
@@ -114,6 +125,10 @@ function toolMsg(name: string, content: string): ChatMessage {
   return { role: "tool", tool_name: name, content };
 }
 
+function isToolCall(message: ChatMessage): boolean {
+  return message.role === "assistant" && Array.isArray(message.tool_calls) && message.tool_calls.length > 0;
+}
+
 function sentPrompt(chat: { mock: { calls: Array<{ arguments: any[] }> } }): string {
   const opts = chat.mock.calls[0]?.arguments[0] as { messages: ChatMessage[] } | undefined;
   return (opts?.messages ?? []).map((m) => m.content).join("\n");
@@ -138,6 +153,31 @@ describe("context compressor", () => {
     assert.equal(estimateTokens(""), 0);
     assert.equal(estimateTokens("abcd"), 1);
     assert.equal(estimateTokens("abcde"), 2);
+  });
+
+  it("budgets the token estimate in UTF-8 bytes, not code units", () => {
+    // jcode's `content_char_count` sums `String::len()` (bytes) and
+    // `estimate_compaction_tokens_from_chars` divides by CHARS_PER_TOKEN, so
+    // the estimate is a byte budget. Counting UTF-16 code units charged CJK
+    // one token per three characters and let a transcript run 3x too long
+    // before compacting.
+    const cjk = "\u5c3e".repeat(400); // 1200 bytes, 400 code units
+    assert.equal(Buffer.byteLength(cjk, "utf8"), 1200);
+    assert.equal(estimateTokens(cjk), 300); // 1200 / 4, not ceil(400/4) = 100
+    // A 4-byte character occupies two code units but is one UTF-8 character.
+    const emoji = "\ud83d\ude00".repeat(100); // 400 bytes, 200 code units
+    assert.equal(Buffer.byteLength(emoji, "utf8"), 400);
+    assert.equal(estimateTokens(emoji), 100);
+    // ASCII is byte-for-byte the old behaviour, so the common case is unchanged.
+    assert.equal(estimateTokens("a".repeat(100)), 25);
+  });
+
+  it("counts a surrogate pair as one UTF-8 character and a lone surrogate as one", () => {
+    // A proper pair is one 4-byte character; a lone surrogate is malformed but
+    // still occupies one UTF-8 character, matching Buffer.byteLength.
+    assert.equal(estimateTokens("\ud83d\ude00"), 1);
+    assert.equal(estimateTokens("\ud83d"), 1);
+    assert.equal(estimateTokens("\ude00"), 1);
   });
 
   it("does nothing when under the threshold", async () => {
@@ -260,7 +300,13 @@ describe("context compressor", () => {
 
   it("summarizes the middle with an auxiliary call (step 2)", async () => {
     const cfg = makeConfig({
-      compression: { ...makeConfig().compression, thresholdPercent: 0.01, protectLead: 1, protectTail: 1 },
+      compression: {
+        ...makeConfig().compression,
+        thresholdPercent: 0.01,
+        protectLead: 1,
+        protectTail: 1,
+        contextWindow: { "qwen2.5": 1000000 },
+      },
     });
     const { ollama, chat } = makeOllama(() => okResult("Compact summary of the segment."));
     const { emit, events } = makeEmit();
@@ -284,7 +330,15 @@ describe("context compressor", () => {
 
   it("asks the summarizer for the eight required sections", async () => {
     const cfg = makeConfig({
-      compression: { ...makeConfig().compression, thresholdPercent: 0.01, protectLead: 1, protectTail: 1 },
+      compression: {
+        ...makeConfig().compression,
+        thresholdPercent: 0.01,
+        protectLead: 1,
+        protectTail: 1,
+        // A large window keeps the transcript below the critical ratio so the
+        // summarizer path is reached instead of the emergency hard-compact.
+        contextWindow: { "qwen2.5": 1000000 },
+      },
     });
     const { ollama, chat } = makeOllama(() => okResult("summary"));
     const { emit } = makeEmit();
@@ -297,7 +351,13 @@ describe("context compressor", () => {
 
   it("updates an existing summary instead of re-summarizing", async () => {
     const cfg = makeConfig({
-      compression: { ...makeConfig().compression, thresholdPercent: 0.01, protectLead: 1, protectTail: 1 },
+      compression: {
+        ...makeConfig().compression,
+        thresholdPercent: 0.01,
+        protectLead: 1,
+        protectTail: 1,
+        contextWindow: { "qwen2.5": 1000000 },
+      },
     });
     const { ollama, chat } = makeOllama(() => okResult("Updated summary with new facts."));
     const { emit } = makeEmit();
@@ -342,7 +402,13 @@ describe("context compressor", () => {
 
   it("falls back to pruning only when the summarizer fails", async () => {
     const cfg = makeConfig({
-      compression: { ...makeConfig().compression, thresholdPercent: 0.01, protectLead: 1, protectTail: 1 },
+      compression: {
+        ...makeConfig().compression,
+        thresholdPercent: 0.01,
+        protectLead: 1,
+        protectTail: 1,
+        contextWindow: { "qwen2.5": 1000000 },
+      },
     });
     const { ollama } = makeOllama(() => {
       throw new Error("summarizer unavailable");
@@ -360,7 +426,16 @@ describe("context compressor", () => {
 
   it("falls back to pruning when the summarizer returns an empty summary", async () => {
     const cfg = makeConfig({
-      compression: { ...makeConfig().compression, thresholdPercent: 0.01, protectLead: 1, protectTail: 1 },
+      compression: {
+        ...makeConfig().compression,
+        thresholdPercent: 0.01,
+        protectLead: 1,
+        protectTail: 1,
+        // A large window keeps the transcript below the critical ratio so the
+        // summarizer is reached (and can return an empty summary) instead of
+        // the emergency hard-compact.
+        contextWindow: { "qwen2.5": 1000000 },
+      },
     });
     const { ollama } = makeOllama(() => okResult("   "));
     const { emit, events } = makeEmit();
@@ -422,9 +497,191 @@ describe("context compressor", () => {
     assert.equal(result.messages[result.messages.length - 2]!.content, "Last user message");
   });
 
+  it("defaults match the jcode compaction constants", () => {
+    const cfg = makeConfig();
+    assert.equal(cfg.compression.criticalThresholdPercent, 0.95);
+    assert.equal(cfg.compression.recentTurnsToKeep, 10);
+    assert.equal(cfg.compression.minTurnsToKeep, 2);
+    assert.equal(cfg.compression.emergencyToolResultMaxChars, 4000);
+    assert.equal(criticalThreshold(cfg), 0.95);
+    assert.equal(emergencyKeepTurns(cfg), 10);
+    assert.equal(emergencyMinTurns(cfg), 2);
+    assert.equal(emergencyToolResultMaxChars(cfg), 4000);
+  });
+
+  it("clamps malformed emergency constants to the jcode defaults", () => {
+    const cfg = makeConfig({
+      compression: {
+        ...makeConfig().compression,
+        criticalThresholdPercent: Number.NaN,
+        recentTurnsToKeep: 0,
+        minTurnsToKeep: -5,
+        emergencyToolResultMaxChars: 0,
+      },
+    });
+    assert.equal(criticalThreshold(cfg), 0.95);
+    assert.equal(emergencyKeepTurns(cfg), 10);
+    assert.equal(emergencyMinTurns(cfg), 2);
+    assert.equal(emergencyToolResultMaxChars(cfg), 4000);
+  });
+
+  it("clamps the critical ratio so it can never exceed the trigger", () => {
+    // Above the trigger it is capped, otherwise the emergency path would be
+    // dead code. Below the trigger it is raised to the trigger in compressContext.
+    const cfg = makeConfig({
+      compression: { ...makeConfig().compression, criticalThresholdPercent: 1.5 },
+    });
+    assert.equal(criticalThreshold(cfg), 0.99);
+    const high = makeConfig({
+      compression: { ...makeConfig().compression, thresholdPercent: 0.1, criticalThresholdPercent: 0.05 },
+    });
+    assert.equal(criticalThreshold(high), 0.05);
+  });
+
+  it("truncates an oversized tool result to a head and tail with a marker", () => {
+    const big = "x".repeat(10000);
+    const { messages, truncated } = emergencyTruncateToolResults([toolMsg("read", big)], 4000);
+    assert.equal(truncated, 1);
+    assert.equal(messages.length, 1);
+    const content = messages[0]!.content;
+    assert.ok(content.length < big.length, "truncated content is smaller than the input");
+    assert.match(content, /chars truncated for context recovery/);
+    assert.match(content, new RegExp(EMERGENCY_TRUNCATION_MARKER(7000).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.equal(content.startsWith("x".repeat(2000)), true);
+  });
+
+  it("leaves short tool results and non-tool messages untouched", () => {
+    const messages = [userMsg("hello"), toolMsg("read", "short"), asstMsg("done")];
+    const { messages: out, truncated } = emergencyTruncateToolResults(messages, 4000);
+    assert.equal(truncated, 0);
+    assert.deepEqual(out, messages);
+  });
+
+  it("budgets the truncation in UTF-8 bytes, not code units", () => {
+    // jcode's `truncate_str_boundary`/`tail_str_boundary` take `max_bytes` and
+    // its estimator divides UTF-8 bytes by CHARS_PER_TOKEN, so 4000 chars of
+    // CJK is a 12,000-byte result and must be cut far shorter than ASCII. A
+    // code-unit slice would keep ~3x too much of it, defeating the cap.
+    const cjk = "\u5c3e".repeat(5000); // 15,000 UTF-8 bytes
+    const { messages, truncated } = emergencyTruncateToolResults([toolMsg("read", cjk)], 4000);
+    assert.equal(truncated, 1);
+    const content = messages[0]!.content;
+    const bytes = Buffer.byteLength(content, "utf8");
+    // head = 2000 bytes, tail = 1000 bytes, plus the marker.
+    assert.ok(bytes < 4000 + 80, `kept ${bytes} bytes, expected under ~4080`);
+    assert.match(content, /chars truncated for context recovery/);
+    // ASCII is byte-for-byte the same budget, so the common case is unchanged.
+    const ascii = emergencyTruncateToolResults([toolMsg("read", "x".repeat(10000))], 4000);
+    assert.equal(ascii.messages[0]!.content.startsWith("x".repeat(2000)), true);
+  });
+
+  it("truncates on a character boundary so no surrogate pair is split", () => {
+    // jcode truncates on a UTF-8 char boundary (`truncate_str_boundary`); a cut
+    // through a surrogate pair would decode as U+FFFD when the tool result is
+    // written back to disk. Odd keepHead/keepTail values make the cut land
+    // inside a 4-byte character, which is exactly what must not happen.
+    const loneHigh = (s: string) => (s.match(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g) ?? []).length;
+    const loneLow = (s: string) => (s.match(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g) ?? []).length;
+    for (const maxChars of [3999, 3997, 13, 9, 7]) {
+      const big = "😀".repeat(3000);
+      const { messages } = emergencyTruncateToolResults([toolMsg("read", big)], maxChars);
+      const content = messages[0]!.content;
+      assert.equal(loneHigh(content) + loneLow(content), 0, `maxChars=${maxChars} left a lone surrogate`);
+    }
+  });
+
+  it("emergency hard-compacts when the estimate passes the critical threshold", async () => {
+    // A small window makes it trivial to exceed 95% of it.
+    const cfg = makeConfig({
+      compression: {
+        ...makeConfig().compression,
+        thresholdPercent: 0.01,
+        criticalThresholdPercent: 0.5,
+        recentTurnsToKeep: 2,
+        minTurnsToKeep: 2,
+        emergencyToolResultMaxChars: 4000,
+        contextWindow: { "qwen2.5": 2000 },
+      },
+    });
+    const { ollama, chat } = makeOllama(() => okResult("unused"));
+    const { emit, events } = makeEmit();
+
+    const long = "y".repeat(12000);
+    const messages: ChatMessage[] = [
+      sysMsg("System prompt"),
+      userMsg("task"),
+      asstMsg("r1"),
+      userMsg(long),
+      asstMsg(long),
+      userMsg("latest user"),
+      asstMsg("final answer"),
+    ];
+
+    const result = await compressContext(cfg, ollama, messages, emit);
+
+    assert.equal(result.compressed, true);
+    assert.equal(result.step, 3);
+    assert.equal(result.emergency, true);
+    assert.equal(result.usage.promptTokens, 0, "no auxiliary summarizer call");
+    assert.equal(chat.mock.callCount(), 0, "emergency path must be synchronous");
+    assert.ok(result.droppedTurns! > 0, "older turns were dropped");
+    assert.ok(result.tokensAfter! < result.tokensBefore!, "recovery reduced the estimate");
+    assert.equal(result.messages[0]!.content, "System prompt");
+    assert.match(result.messages[result.messages.length - 1]!.content, /final answer/);
+
+    const event = events.find((e) => e.type === "compaction");
+    assert.equal(event?.type === "compaction" && event.step, 3);
+    assert.equal(event?.type === "compaction" && event.emergency, true);
+  });
+
+  it("emergency compaction never splits a tool_call from its tool_result", async () => {
+    const cfg = makeConfig({
+      compression: {
+        ...makeConfig().compression,
+        thresholdPercent: 0.01,
+        criticalThresholdPercent: 0.5,
+        recentTurnsToKeep: 3,
+        minTurnsToKeep: 2,
+        emergencyToolResultMaxChars: 4000,
+        contextWindow: { "qwen2.5": 2000 },
+      },
+    });
+    const { ollama } = makeOllama(() => okResult("unused"));
+    const { emit } = makeEmit();
+
+    const long = "z".repeat(6000);
+    const messages: ChatMessage[] = [
+      sysMsg("System prompt"),
+      userMsg("task"),
+      asstMsg("", [{ function: { name: "tool_a", arguments: {} } }]),
+      toolMsg("tool_a", long),
+      userMsg("next"),
+      asstMsg("final answer"),
+    ];
+
+    const result = await compressContext(cfg, ollama, messages, emit);
+
+    assert.equal(result.step, 3);
+    for (let i = 0; i < result.messages.length; i++) {
+      const m = result.messages[i]!;
+      if (m.role === "tool") {
+        const prev = result.messages[i - 1];
+        assert.ok(prev && isToolCall(prev), "every kept tool result keeps its tool_call");
+      }
+    }
+  });
+
   it("re-attaches the live todo list as a hidden reminder after compaction", async () => {
     const cfg = makeConfig({
-      compression: { ...makeConfig().compression, thresholdPercent: 0.01, protectLead: 1, protectTail: 1 },
+      compression: {
+        ...makeConfig().compression,
+        thresholdPercent: 0.01,
+        protectLead: 1,
+        protectTail: 1,
+        // A large window keeps the transcript below the critical ratio so the
+        // summarizer path runs and emits its re-attach reminder.
+        contextWindow: { "qwen2.5": 1000000 },
+      },
     });
     const { ollama } = makeOllama(() => okResult("Summary."));
     const { emit } = makeEmit();

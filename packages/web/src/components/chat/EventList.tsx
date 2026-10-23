@@ -1,5 +1,5 @@
 import { memo, useMemo, Fragment, type ReactNode } from 'react';
-import type { ChatEvent, ToolUsedEvent, CascadeTaskClockEvent, AttachmentEvent, ModeEvent } from '@shared/socket';
+import type { ChatEvent, ToolUsedEvent, CascadeTaskClockEvent, AttachmentEvent, ModeEvent, EnvironmentIssueEvent, CacheUsageEvent } from '@shared/socket';
 import { t, PRODUCT } from '@/i18n/t';
 import { Markdown } from './Markdown';
 import { UserBubble } from './ChatBubble';
@@ -7,19 +7,47 @@ import { GrokBotNote, grokBotNoteText, isGrokBotNote } from './GrokBotNote';
 import { CopyMessageButton } from './CopyMessageButton';
 import { ToolUsedRow } from './ToolUsedRow';
 import { StatusUpdateRow } from './StatusUpdateRow';
+import { CacheUsageRow } from './CacheUsageRow';
 import { PlanStepRow, PlanUpdateRow, TodoListRow } from './PlanStep';
-import { ApprovalCard, FolderAccessApprovalCard, type LocalExecutionApprovalRequested } from '@/components/approval';
+import { ApprovalCard, AskUserCard, FolderAccessApprovalCard, PlanApprovalCard, type LocalExecutionApprovalRequested, type PlanApprovalRequested } from '@/components/approval';
 import { AttachmentCard } from './AttachmentCard';
+import { craftAppForExtension, craftExtOf, editorKindForExtension } from '@/components/workspace/craft';
+import { EnvironmentIssueCard } from './EnvironmentIssueCard';
 import { summarizeTools } from './toolLabels';
 import type { ChatSocket } from '@/services/chatSocket';
 
-export type RenderableEvent = ChatEvent | LocalExecutionApprovalRequested;
+export type RenderableEvent = ChatEvent | LocalExecutionApprovalRequested | PlanApprovalRequested;
+
+/** The exact user-facing Loam name of each Craft app, for the open-in-app label. */
+const CRAFT_APP_LABEL: Record<string, string> = {
+  docs: 'Open in Loam Docs',
+  sheets: 'Open in Loam Sheets',
+  slides: 'Open in Loam Slides',
+  photo: 'Open in Loam Photo',
+  design: 'Open in Loam Design',
+};
+
+/**
+ * The action label for opening an attachment in its Loam app. Craft files name the
+ * app that owns them (`Open in Loam Docs`); the built-in editors keep a neutral
+ * label so the button never lies about where the file opens.
+ */
+function openInEditorLabel(kind: string, path: string): string {
+  if (kind !== 'craft') return t('Open in editor');
+  const app = craftAppForExtension(craftExtOf(path));
+  return app ? CRAFT_APP_LABEL[app] : t('Open in editor');
+}
 
 interface EventListProps {
   events: ChatEvent[];
   sessionId: string;
   socket?: ChatSocket | null;
   onOpenComputer?: (e: ToolUsedEvent) => void;
+  /**
+   * Open an attachment in its registered editor on the Workspace tab. Only files an
+   * editor can actually open are offered, so a `.txt` keeps its download behaviour.
+   */
+  onOpenFile?: (file: { taskId: string; path: string; name: string; mime?: string }) => void;
 }
 
 export interface ChatEventRowProps {
@@ -28,6 +56,7 @@ export interface ChatEventRowProps {
   socket?: ChatSocket | null;
   /** Optional override for chat rows (e.g. Grok-style bubbles in the agent thread). */
   renderChat?: (e: ChatEvent) => ReactNode;
+  onOpenFile?: (file: { taskId: string; path: string; name: string; mime?: string }) => void;
 }
 
 /**
@@ -35,7 +64,7 @@ export interface ChatEventRowProps {
  * a `renderChat` override is supplied, which lets the agent thread restyle
  * messages without duplicating the non-chat event handling.
  */
-export function ChatEventRow({ e, sessionId, socket, renderChat }: ChatEventRowProps) {
+export function ChatEventRow({ e, sessionId, socket, renderChat, onOpenFile }: ChatEventRowProps) {
   if (e.type === 'chat') {
     if (renderChat) return renderChat(e);
     if (e.sender === 'user' && isGrokBotNote(e.content)) {
@@ -57,6 +86,8 @@ export function ChatEventRow({ e, sessionId, socket, renderChat }: ChatEventRowP
       return <ToolUsedRow e={e as ToolUsedEvent} />;
     case 'statusUpdate':
       return <StatusUpdateRow e={e} />;
+    case 'cache_usage':
+      return <CacheUsageRow e={e as CacheUsageEvent} />;
     case 'explanation':
       return <p className="text-sm text-text-secondary">{e.content}</p>;
     case 'mode': {
@@ -70,7 +101,28 @@ export function ChatEventRow({ e, sessionId, socket, renderChat }: ChatEventRowP
     }
     case 'attachment': {
       const a = e as AttachmentEvent;
-      return <AttachmentCard name={a.name} mime={a.mime} size={a.sizeBytes} taskId={a.taskId} path={a.path} />;
+      // Only files a workspace editor owns (Craft apps, doc/sheet/slides) get the
+      // open-in-editor action; everything else keeps its media download behaviour.
+      const kind = a.path ? editorKindForExtension(craftExtOf(a.path)) : null;
+      const canOpen = Boolean(kind) && Boolean(a.taskId) && Boolean(a.path) && Boolean(onOpenFile);
+      return (
+        <AttachmentCard
+          name={a.name}
+          mime={a.mime}
+          size={a.sizeBytes}
+          taskId={a.taskId}
+          path={a.path}
+          openLabel={kind ? openInEditorLabel(kind, a.path ?? '') : undefined}
+          onOpen={
+            canOpen && onOpenFile && a.taskId && a.path
+              ? () => onOpenFile({ taskId: a.taskId, path: a.path, name: a.name, mime: a.mime })
+              : undefined
+          }
+        />
+      );
+    }
+    case 'environmentIssue': {
+      return <EnvironmentIssueCard issue={e as EnvironmentIssueEvent} />;
     }
     case 'liveStatus':
       return <div className="text-sm text-text-tertiary">{t('{name} is thinking', { name: PRODUCT })}…</div>;
@@ -105,6 +157,34 @@ export function ChatEventRow({ e, sessionId, socket, renderChat }: ChatEventRowP
           }}
         />
       );
+    case 'planApprovalRequested':
+      return (
+        <PlanApprovalCard
+          request={e}
+          onRespond={(decision, plan) => {
+            socket?.resolvePlanApproval(
+              sessionId,
+              e.requestId,
+              decision,
+              decision === 'edit' && plan
+                ? { summary: plan.summary, steps: plan.steps, files_to_edit: plan.files_to_edit }
+                : undefined,
+            );
+          }}
+        />
+      );
+    case 'askUserRequested':
+      return (
+        <AskUserCard
+          request={e}
+          onRespond={(decision, answer) => {
+            // N9: the card answers through the socket; a dismissal closes the
+            // request without an answer, and the run continues with its
+            // assumptions stated instead.
+            socket?.resolveAskUser(sessionId, e.requestId, decision, answer);
+          }}
+        />
+      );
     case 'chatDelta':
     case 'cascadeTaskClock':
     case 'queueStatusChange':
@@ -118,11 +198,21 @@ export function ChatEventRow({ e, sessionId, socket, renderChat }: ChatEventRowP
   }
 }
 
-const Row = memo(function Row({ e, sessionId, socket }: { e: RenderableEvent; sessionId: string; socket?: ChatSocket | null }) {
-  return <ChatEventRow e={e} sessionId={sessionId} socket={socket} />;
+const Row = memo(function Row({
+  e,
+  sessionId,
+  socket,
+  onOpenFile,
+}: {
+  e: RenderableEvent;
+  sessionId: string;
+  socket?: ChatSocket | null;
+  onOpenFile?: (file: { taskId: string; path: string; name: string; mime?: string }) => void;
+}) {
+  return <ChatEventRow e={e} sessionId={sessionId} socket={socket} onOpenFile={onOpenFile} />;
 });
 
-export function EventList({ events, sessionId, socket, onOpenComputer }: EventListProps) {
+export function EventList({ events, sessionId, socket, onOpenComputer, onOpenFile }: EventListProps) {
   const collapsed = useMemo(() => collapseEvents(events as unknown as RenderableEvent[]), [events]);
   const summary = useMemo(() => {
     const tools = collapsed.filter((e): e is ToolUsedEvent => e.type === 'toolUsed');
@@ -140,7 +230,7 @@ export function EventList({ events, sessionId, socket, onOpenComputer }: EventLi
             className={isTool ? 'ms-5 cursor-pointer' : undefined}
             onClick={isTool ? () => onOpenComputer?.(e as ToolUsedEvent) : undefined}
           >
-            <Row e={e} sessionId={sessionId} socket={socket} />
+            <Row e={e} sessionId={sessionId} socket={socket} onOpenFile={onOpenFile} />
           </li>
         );
         if (i === firstToolIndex && summary) {

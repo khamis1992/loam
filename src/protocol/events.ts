@@ -16,6 +16,14 @@ import type {
   ToolStatus,
   LocalExecutionApprovalRequested,
   FolderAccessRequestEvent,
+  EnvironmentIssueEvent,
+  PlanApprovalRequestedEvent,
+  AskUserRequestedEvent,
+  AskUserResolvedEvent,
+  CacheUsageEvent,
+  SimulationProgressEvent,
+  RecipeUpdateEvent,
+  RecipeRestartEvent,
 } from "./types.js";
 
 const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -290,6 +298,47 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
       break;
     }
 
+    case "recipe_update": {
+      // Neo N4 incremental Recipe engine: the live recipe replaces whatever the
+      // panel showed before, so the row is a persistent, replaceable state row.
+      const recipe: RecipeUpdateEvent = {
+        id: baseId(),
+        type: "recipeUpdate",
+        timestamp: ts,
+        goal: event.goal,
+        steps: event.steps.map((step) => ({
+          id: step.id,
+          title: step.title,
+          instruction: step.instruction,
+          successCriteria: step.successCriteria,
+          status: step.status,
+          ...(step.nodeId ? { nodeId: step.nodeId } : {}),
+          ...(step.replaces && step.replaces.length > 0 ? { replaces: step.replaces } : {}),
+          completedCount: step.completedCount,
+        })),
+        remainingEstimate: event.remainingEstimate,
+        change: event.change,
+        source: event.source,
+      };
+      out.push(recipe);
+      break;
+    }
+
+    case "recipe_restart": {
+      const restart: RecipeRestartEvent = {
+        id: baseId(),
+        type: "recipeRestart",
+        timestamp: ts,
+        stepId: event.stepId,
+        nodeId: event.nodeId,
+        keptSteps: event.keptSteps,
+        regeneratedSteps: event.regeneratedSteps,
+        reason: event.reason,
+      };
+      out.push(restart);
+      break;
+    }
+
     case "plan_step": {
       if (event.phase === "start") {
         state.lastPlanStepId = event.id;
@@ -421,6 +470,51 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
       break;
     }
 
+    case "environment_issue": {
+      const issue: EnvironmentIssueEvent = {
+        id: baseId(),
+        type: "environmentIssue",
+        timestamp: ts,
+        message: event.message,
+        ...(event.details ? { details: event.details } : {}),
+      };
+      out.push(issue);
+      break;
+    }
+
+    case "plan_approval_required": {
+      const plan: PlanApprovalRequestedEvent = {
+        id: baseId(),
+        type: "planApprovalRequested",
+        timestamp: ts,
+        requestId: event.planApprovalId,
+        taskId: event.taskId,
+        summary: event.summary,
+        steps: event.steps,
+        filesToEdit: event.filesToEdit,
+        trivial: event.trivial,
+      };
+      out.push(plan);
+      break;
+    }
+
+    case "ask_user_required": {
+      const ask: AskUserRequestedEvent = {
+        id: baseId(),
+        type: "askUserRequested",
+        timestamp: ts,
+        requestId: event.askUserId,
+        taskId: event.taskId,
+        title: event.title,
+        reason: event.reason,
+        questions: event.questions,
+        ...(event.source ? { source: event.source } : {}),
+        ...(event.reasonCode ? { reasonCode: event.reasonCode } : {}),
+      };
+      out.push(ask);
+      break;
+    }
+
     case "mode": {
       const modeEv: ModeEvent = {
         id: baseId(),
@@ -432,6 +526,39 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
         reason: event.reason,
       };
       out.push(modeEv);
+      break;
+    }
+
+    case "cache_usage": {
+      // Prompt-cache accounting is a persistent chat row (never replayed as a
+      // miss when telemetry is absent), so it stays in the session history.
+      const cacheUsage: CacheUsageEvent = {
+        id: baseId(),
+        type: "cache_usage",
+        timestamp: ts,
+        provider: event.provider,
+        model: event.model,
+        promptTokens: event.promptTokens,
+        cachedTokens: event.cachedTokens,
+        ...(event.miss ? { miss: { ...event.miss } } : {}),
+      };
+      out.push(cacheUsage);
+      break;
+    }
+
+    case "simulation_progress": {
+      // MiroFish M3 progress: transient by nature (round/agent milestones), so
+      // it never lands in session history. The payload is forwarded as-is.
+      const payload = event.payload as SimulationProgressEvent["payload"];
+      const progress: SimulationProgressEvent = {
+        id: baseId(),
+        type: "simulation_progress",
+        timestamp: ts,
+        sessionId: event.sessionId,
+        payload,
+        noPersistent: true,
+      };
+      out.push(progress);
       break;
     }
 

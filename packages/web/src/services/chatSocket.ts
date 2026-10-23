@@ -33,6 +33,11 @@ export interface ChatSocketOptions {
 export class ChatSocket {
   private socket?: Socket;
   private rejoin?: () => void;
+  /** BUILD_SPEC §6.4: the highest durable log `seq` seen per session, so a
+   *  reconnect resumes by sequence instead of by a single cursor id. */
+  private readonly lastSeqBySession = new Map<string, number>();
+  /** Extra frame observers, called before `options.onMessage`. */
+  private readonly messageListeners = new Set<(m: ServerMessage) => void>();
   private disposed = false;
 
   constructor(private readonly options: ChatSocketOptions) {}
@@ -69,6 +74,9 @@ export class ChatSocket {
       this.options.onError?.(msg);
     });
     this.socket.on('message', (m: ServerMessage) => this.options.onMessage(m));
+    this.socket.on('message', (m: ServerMessage) => {
+      for (const listener of this.messageListeners) listener(m);
+    });
 
     // Wait for the initial websocket handshake so callers can emit immediately.
     return new Promise<void>((resolve, reject) => {
@@ -90,19 +98,31 @@ export class ChatSocket {
     this.socket?.disconnect();
     this.socket = undefined;
     this.rejoin = undefined;
+    this.lastSeqBySession.clear();
+    this.messageListeners.clear();
+  }
+
+  /** Observe every server frame (in addition to `options.onMessage`).
+   *  Returns an unsubscribe function. */
+  onMessage(listener: (m: ServerMessage) => void): () => void {
+    this.messageListeners.add(listener);
+    return () => {
+      this.messageListeners.delete(listener);
+    };
   }
 
   private emit(m: ClientMessage) {
     this.socket?.emit('message', m);
   }
 
-  private emitJoin(sessionId: string, lastMessageId?: string) {
+  private emitJoin(sessionId: string, lastMessageId?: string, lastSeq?: number) {
     this.emit({
       type: 'join_session',
       id: shortUid(),
       timestamp: Date.now(),
       sessionId,
       lastMessageId,
+      ...(typeof lastSeq === 'number' ? { lastSeq } : {}),
       version: 2,
     });
   }
@@ -110,19 +130,36 @@ export class ChatSocket {
   /**
    * Join a session. If a dynamic last-seen id getter is supplied it is used
    * when re-joining after a reconnect, otherwise the static `lastMessageId`
-   * is replayed.
+   * is replayed. The highest `seq` observed on incoming frames is remembered
+   * per session and sent as `lastSeq` on every join, so a reconnect resumes by
+   * sequence.
    */
-  join(sessionId: string, lastMessageId?: string, getLastId?: () => string | undefined) {
+  join(
+    sessionId: string,
+    lastMessageId?: string,
+    getLastId?: () => string | undefined,
+    getLastSeq?: () => number | undefined,
+  ) {
     this.rejoin = () => {
       // On reconnect only ask for events we have not already rendered.
       const id = getLastId?.() ?? lastMessageId;
-      this.emitJoin(sessionId, id);
+      const seq = getLastSeq?.() ?? this.lastSeqBySession.get(sessionId);
+      this.emitJoin(sessionId, id, seq);
     };
-    this.emitJoin(sessionId, lastMessageId);
+    this.emitJoin(sessionId, lastMessageId, getLastSeq?.() ?? this.lastSeqBySession.get(sessionId));
+  }
+
+  /** BUILD_SPEC §6.4: record the durable log sequence of a frame so the next
+   *  reconnect resumes after it. No-op for frames without a `seq`. */
+  noteSeq(sessionId: string, seq?: number) {
+    if (typeof seq !== 'number' || !Number.isFinite(seq)) return;
+    const current = this.lastSeqBySession.get(sessionId);
+    if (current === undefined || seq > current) this.lastSeqBySession.set(sessionId, seq);
   }
 
   /** Stop sending the join payload after reconnects (e.g. on navigation away). */
   leave(sessionId: string) {
+    this.lastSeqBySession.delete(sessionId);
     this.emit({
       type: 'leave_session',
       id: shortUid(),
@@ -183,6 +220,45 @@ export class ChatSocket {
       sessionId,
       requestId,
       resolution,
+    } as unknown as ClientMessage);
+  }
+
+  resolvePlanApproval(
+    sessionId: string,
+    requestId: string,
+    decision: 'approve' | 'reject' | 'edit',
+    plan?: { summary?: string; steps?: string[]; files_to_edit?: string[]; trivial?: boolean },
+  ) {
+    this.emit({
+      type: 'resolve_plan_approval',
+      id: shortUid(),
+      timestamp: Date.now(),
+      sessionId,
+      requestId,
+      decision,
+      ...(plan ? { plan } : {}),
+    } as unknown as ClientMessage);
+  }
+
+  /**
+   * N9: answer or dismiss a pending ask-user clarification. `answer` carries the
+   * free-text note, the per-question answers and any files already uploaded for
+   * the request; `dismiss` closes the card without an answer.
+   */
+  resolveAskUser(
+    sessionId: string,
+    requestId: string,
+    decision: 'answer' | 'dismiss',
+    answer?: { text: string; answers: Record<string, string>; files: Array<{ path: string; name: string; bytes: number; contentType: string }> },
+  ) {
+    this.emit({
+      type: 'resolve_ask_user',
+      id: shortUid(),
+      timestamp: Date.now(),
+      sessionId,
+      requestId,
+      decision,
+      ...(decision === 'answer' && answer ? { answer } : {}),
     } as unknown as ClientMessage);
   }
 

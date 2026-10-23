@@ -36,8 +36,12 @@ export const COMPANION_SERVICES: CompanionService[] = [
   { id: "shell", labelAr: "بيئة الأوامر", description: "أوامر وطرفيات داخل مساحة المهمة", tools: ["shell_run", "shell_start", "shell_write", "shell_read", "shell_list", "shell_kill", "pty_start", "pty_write", "pty_read", "pty_list", "pty_kill"] },
   { id: "code", labelAr: "فهم الكود", description: "رموز المشروع وهيكلته والبحث الدلالي في الملفات", tools: ["code_symbols", "code_outline", "semantic_search"] },
   { id: "memory", labelAr: "الذاكرة والمعرفة", description: "ذاكرة دائمة وبحث في الجلسات", tools: ["memory_store", "memory_search", "memory_list", "memory_delete", "session_search"] },
+  // N3 Knowledge Garden: the user's own imported documents, split into
+  // retrievable seeds. Reachable only when the run's KB toggle is on, so the
+  // service grants the names and src/index.ts applies the per-run gate.
+  { id: "knowledge", labelAr: "حديقة المعرفة", description: "مستنداتك المستوردة مقسّمة إلى بذور قابلة للبحث مع الوسوم والاسترجاع الهجين (يقرأها الوكيل فقط عند تفعيل مفتاح الحديقة في التشغيل)", tools: ["kb_search", "kb_ingest", "kb_manage"] },
   { id: "skills", labelAr: "المهارات", description: "اكتشاف المهارات وتشغيلها", tools: ["skill_list", "skill_view", "skill_create", "skill_patch", "skill_delete", "skill_search", "skill_install"] },
-  { id: "preview", labelAr: "المعاينة", description: "تشغيل معاينات المشروع محليًا", tools: ["preview_serve", "preview_status", "preview_stop"] },
+  { id: "preview", labelAr: "المعاينة", description: "تشغيل معاينات المشروع محليًا", tools: ["preview_serve", "preview_status", "preview_stop", "preview_screenshot"] },
   { id: "screen", labelAr: "متابعة الشاشة", description: "قراءة شاشة المستخدم الحية (يتطلب وضع العمل على جهازي)", tools: ["screen_look", "screen_stream_start", "screen_stream_status", "screen_stream_stop", "screen_watch"] },
   { id: "computer", labelAr: "التحكم بالكمبيوتر", description: "أدوات واجهة أصلية على جهاز المستخدم (يتطلب وضع العمل على جهازي)", tools: ["computer_screenshot", "computer_list_windows", "computer_focus_window", "computer_ui_tree", "computer_ui_list", "computer_ui_click", "computer_ui_set_text", "computer_click", "computer_type", "computer_key"] },
   { id: "integrations", labelAr: "الخدمات المتصلة", description: "موصلات خارجية مصرّح بها للمساعد", tools: ["integration_list", "integration_call", "mirofish_chat", "lovable_studio"] },
@@ -67,17 +71,17 @@ export interface WorkModeDef {
 export const COMPANION_DYNAMIC_TOOL_NAMES: string[] = COMPANION_SERVICES.filter((s) => s.dynamic).flatMap((s) => s.tools);
 
 export const WORK_MODES: WorkModeDef[] = [
-  { id: "chat", labelAr: "المحادثة", description: "يجيب ويبحث ويخطط ضمن الأدوات المسموحة دون تحكم بالجهاز أو أوامر تنفيذية", grants: ["companion-memory"], revokes: ["shell", "computer", "screen", "tasks", "automation"], requiresDevice: false,
+  { id: "chat", labelAr: "المحادثة", description: "يجيب ويبحث ويخطط ضمن الأدوات المسموحة دون تحكم بالجهاز أو أوامر تنفيذية", grants: ["companion-memory", "knowledge"], revokes: ["shell", "computer", "screen", "tasks", "automation"], requiresDevice: false,
     policy: "وضع «المحادثة»: أجب وابحث وخطط ضمن الأدوات المتاحة. لا تتحكم بجهاز المستخدم ولا تنفّذ أوامر نظام؛ إن طُلب التنفيذ فاقترح على المستخدم التبديل إلى وضع «تنفيذ داخل Loam»." },
-  { id: "loam", labelAr: "تنفيذ داخل Loam", description: "يستخدم خدمات التطبيق وينشئ نتائج قابلة للتحرير دون لمس جهاز المستخدم", grants: ["tasks", "automation", "companion-memory", "team", "learning"], revokes: ["computer", "screen"], requiresDevice: false,
+  { id: "loam", labelAr: "تنفيذ داخل Loam", description: "يستخدم خدمات التطبيق وينشئ نتائج قابلة للتحرير دون لمس جهاز المستخدم", grants: ["tasks", "automation", "companion-memory", "team", "learning", "knowledge"], revokes: ["computer", "screen"], requiresDevice: false,
     policy: "وضع «تنفيذ داخل Loam»: أنجز العمل عبر خدمات Loam داخل مساحة المهمة، وأنتج نتائج قابلة للفتح والتحرير، ولا تتحكم بجهاز المستخدم." },
-  { id: "user_device", labelAr: "العمل على جهازي", description: "يتحكم بجهاز المستخدم ضمن النطاق المسموح مع توقف فوري عند التدخل", grants: ["computer", "screen", "tasks", "automation", "companion-memory", "learning"], revokes: [], requiresDevice: false,
+  { id: "user_device", labelAr: "العمل على جهازي", description: "يتحكم بجهاز المستخدم ضمن النطاق المسموح مع توقف فوري عند التدخل", grants: ["computer", "screen", "tasks", "automation", "companion-memory", "learning", "knowledge"], revokes: [], requiresDevice: false,
     policy: "وضع «العمل على جهازي»: تتحكم بجهاز المستخدم ضمن نطاق المهمة فقط. اقرأ عناصر الواجهة قبل أي إجراء، تحقق من نتيجة كل إجراء قبل التالي، لا تفتح بيانات خارج نطاق المهمة، وتوقف فورًا عند تدخل المستخدم أو طلب الإيقاف (مفتاح الإيقاف الفوري متاح للمستخدم)." },
-  { id: "own_device", labelAr: "جهاز المساعد المستقل", description: "ينفّذ داخل بيئة معزولة خاصة به (عمليات وملفات وحساب مستقل) دون لمس جهاز المستخدم", grants: ["device", "tasks", "automation", "companion-memory", "team", "learning"], revokes: ["computer", "screen", "preview", "shell", "browser"], requiresDevice: true,
+  { id: "own_device", labelAr: "جهاز المساعد المستقل", description: "ينفّذ داخل بيئة معزولة خاصة به (عمليات وملفات وحساب مستقل) دون لمس جهاز المستخدم", grants: ["device", "tasks", "automation", "companion-memory", "team", "learning", "knowledge"], revokes: ["computer", "screen", "preview", "shell", "browser"], requiresDevice: true,
     policy: "وضع «جهاز المساعد المستقل»: نفّذ العمل داخل جهازك الافتراضي المعزول عبر أدوات device_* (exec/قراءة/كتابة/سرد/سحب/دفع) — لا تلمس جهاز المستخدم إطلاقًا. جهّز الملفات التي تحتاجها بـ device_push_file وأخرج النتائج إلى مساحة المهمة بـ device_pull_file حتى تصل للمستخدم. إن تولّى المستخدم التحكم ستُرجأ أوامرك؛ أبلغ المستخدم حينها وانتظر." },
-  { id: "team", labelAr: "العمل ضمن فريق", description: "يتعاون مع مساعدين آخرين مع ملكية واضحة للمهام", grants: ["swarm", "tasks", "automation", "companion-memory", "team", "learning"], revokes: ["computer", "screen"], requiresDevice: false,
+  { id: "team", labelAr: "العمل ضمن فريق", description: "يتعاون مع مساعدين آخرين مع ملكية واضحة للمهام", grants: ["swarm", "tasks", "automation", "companion-memory", "team", "learning", "knowledge"], revokes: ["computer", "screen"], requiresDevice: false,
     policy: "وضع «العمل ضمن فريق»: فوّض أجزاء المهمة لمساعدين متخصصين عبر أدوات السرب، مع ملكية واضحة لكل مهمة، وتحقق من تكامل النتائج قبل التسليم، وابقَ أنت الواجهة الوحيدة أمام المستخدم." },
-  { id: "continuous", labelAr: "العمل المستمر", description: "يتابع أهدافًا وروتينات ومواعيد في الخلفية", grants: ["tasks", "automation", "companion-memory"], revokes: ["computer", "screen"], requiresDevice: false,
+  { id: "continuous", labelAr: "العمل المستمر", description: "يتابع أهدافًا وروتينات ومواعيد في الخلفية", grants: ["tasks", "automation", "companion-memory", "knowledge"], revokes: ["computer", "screen"], requiresDevice: false,
     policy: "وضع «العمل المستمر»: تابع الهدف عبر خطوات قابلة للاستئناف، واحفظ نقاط الاستكمال، واقترح على المستخدم روتينًا مجدولًا (عبر خدمة الجدولة) عندما يكون التكرار جزءًا من الهدف." },
 ];
 

@@ -4,11 +4,14 @@
  * Two implementations:
  *  - GitHubPrProvider talks to the GitHub REST API using the sealed OAuth token
  *    from the existing github connector (src/server/connectors/providers/github.ts).
- *  - LocalPrProvider stores pull requests and review comments as JSON under a
- *    local directory (tests and local bare-remote workflows).
+ *  - LocalPrProvider stores pull requests, review comments and CI check-runs as
+ *    JSON under a local directory (tests and local bare-remote workflows).
  *
- * No network happens unless a live provider is used; tests inject a mocked
- * fetch, so nothing here reaches the network by itself.
+ * CI check-runs (D2) extend the same provider seam: `listCheckRuns` on the
+ * GitHub provider hits the check-runs API, while LocalPrProvider returns the
+ * scripted results stored per head ref. No network happens unless a live
+ * provider is used; tests inject a mocked fetch, so nothing here reaches the
+ * network by itself.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -40,11 +43,64 @@ export interface CreatePrInput {
   head: string;
   base: string;
   body?: string;
+  /**
+   * Optional explicit PR number. The local provider otherwise numbers PRs
+   * itself; tests pin it so a scripted diff can be seeded under the number the
+   * review will fetch.
+   */
+  number?: number;
 }
 
 export interface AddCommentOptions {
   path?: string;
   line?: number;
+}
+
+/**
+ * One file of a pull request diff, with the file's full unified-diff hunks.
+ *
+ * The diff is intentionally plain text: the reviewer parses the hunk headers
+ * itself (D15) so it can compute the new-file line numbers findings are reported
+ * against without asking the model to do arithmetic on the patch.
+ */
+export interface PrFileDiff {
+  path: string;
+  status: string;
+  /** Unified diff for this file, including the `@@` hunk headers. */
+  diff: string;
+}
+
+/** The diff of a whole pull request, one entry per changed file. */
+export interface PrDiff {
+  repo: string;
+  number: number;
+  head: string;
+  base: string;
+  files: PrFileDiff[];
+}
+
+/** One CI check-run as the agent needs it (D2 ci_watch). */
+export interface CheckRunInfo {
+  /** Check-run id. */
+  id: string;
+  /** Job/check name, e.g. "build (node 22)". */
+  name: string;
+  /** queued | in_progress | completed | waiting | requested | pending */
+  status: string;
+  /** success | failure | neutral | cancelled | skipped | timed_out | action_required | stale | null */
+  conclusion: string | null;
+  /** Target branch/ref the check-run belongs to. */
+  head: string;
+}
+
+/** A failing check-run plus the trimmed tail of its job log. */
+export interface FailingJob {
+  /** Job/check name. */
+  name: string;
+  /** Normalized failure signature used to key the fix budget. */
+  signature: string;
+  /** Last lines of the job log, already trimmed and capped. */
+  logTail: string;
 }
 
 export interface PrProvider {
@@ -53,6 +109,14 @@ export interface PrProvider {
   viewPr(repo: string, number: number): Promise<PrInfo>;
   listReviewComments(repo: string, number: number): Promise<PrComment[]>;
   addComment(repo: string, number: number, body: string, opts?: AddCommentOptions): Promise<PrComment>;
+  /** D5: replace a pull request's body (used to append the Verification section). */
+  setPrBody(repo: string, number: number, body: string): Promise<PrInfo>;
+  /** D2: CI check-runs for a pull request's head ref (scripted for the local provider). */
+  listCheckRuns(repo: string, ref: string): Promise<CheckRunInfo[]>;
+  /** D2: job log for a failing check-run (scripted for the local provider). */
+  getCheckRunLog(repo: string, checkRunId: string): Promise<string>;
+  /** D15: unified diff per changed file, used by pr_review. */
+  prDiff(repo: string, number: number): Promise<PrDiff>;
 }
 
 function sanitizeRepo(repo: string): string {
@@ -82,6 +146,16 @@ function normalizeComment(data: Record<string, unknown>): PrComment {
     ...(typeof data.path === "string" ? { path: data.path } : {}),
     ...(typeof data.line === "number" ? { line: data.line } : {}),
     createdAt: String(data.created_at ?? ""),
+  };
+}
+
+function normalizeCheckRun(data: Record<string, unknown>): CheckRunInfo {
+  return {
+    id: String(data.id ?? ""),
+    name: String(data.name ?? ""),
+    status: String(data.status ?? ""),
+    conclusion: typeof data.conclusion === "string" ? data.conclusion : null,
+    head: String(data.head_sha ?? "").slice(0, 7),
   };
 }
 
@@ -149,6 +223,45 @@ export class GitHubPrProvider implements PrProvider {
     const data = await this.request("POST", `/repos/${repo}/pulls/${number}/comments`, payload);
     return normalizeComment(data);
   }
+
+  async listCheckRuns(repo: string, ref: string): Promise<CheckRunInfo[]> {
+    const data = await this.request("GET", `/repos/${repo}/commits/${encodeURIComponent(ref)}/check-runs`);
+    const runs = (data.check_runs ?? data) as unknown;
+    if (!Array.isArray(runs)) return [];
+    return runs.map(normalizeCheckRun);
+  }
+
+  async getCheckRunLog(_repo: string, checkRunId: string): Promise<string> {
+    // GitHub requires a separate log download that is not always available for
+    // every check-run; the tool degrades to "no log" rather than failing the
+    // whole watch. The provider interface keeps it injectable for tests.
+    return `check-run ${checkRunId} has no downloadable log`;
+  }
+
+  async prDiff(repo: string, number: number): Promise<PrDiff> {
+    const pr = await this.viewPr(repo, number);
+    const data = await this.request("GET", `/repos/${repo}/pulls/${number}/files?per_page=100`);
+    const files = Array.isArray(data) ? data : ((data.files ?? []) as unknown[]);
+    return {
+      repo,
+      number,
+      head: pr.head,
+      base: pr.base,
+      files: (files as Record<string, unknown>[]).map((file) => ({
+        path: String(file.filename ?? ""),
+        status: String(file.status ?? ""),
+        // GitHub omits `patch` for binary files and for very large diffs; the
+        // reviewer skips files whose patch is missing rather than guessing.
+        diff: typeof file.patch === "string" ? file.patch : "",
+      })),
+    };
+  }
+
+  /** D5: replace the pull request body (PATCH /repos/{repo}/pulls/{number}). */
+  async setPrBody(repo: string, number: number, body: string): Promise<PrInfo> {
+    const data = await this.request("PATCH", `/repos/${repo}/pulls/${number}`, { body });
+    return normalizePr(data);
+  }
 }
 
 interface LocalPrRecord {
@@ -156,7 +269,29 @@ interface LocalPrRecord {
   comments: PrComment[];
 }
 
-/** Stores PRs and review comments as JSON under a directory (`.loam/prs`). */
+interface LocalCheckRecord {
+  repo: string;
+  ref: string;
+  runs: CheckRunInfo[];
+  logs: Record<string, string>;
+}
+
+/** Scripted diff for the local provider: one pull request's changed files. */
+interface LocalDiffRecord {
+  repo: string;
+  number: number;
+  head: string;
+  base: string;
+  files: PrFileDiff[];
+}
+
+/** Scripted check-runs for the local provider: `fail -> fail -> pass` by default. */
+export interface LocalCheckScript {
+  runs?: CheckRunInfo[];
+  logs?: Record<string, string>;
+}
+
+/** Stores PRs, review comments and CI check-runs as JSON under a directory (`.loam/prs`). */
 export class LocalPrProvider implements PrProvider {
   readonly id = "local";
   constructor(private readonly dir: string) {}
@@ -196,7 +331,7 @@ export class LocalPrProvider implements PrProvider {
   }
 
   async createPr(input: CreatePrInput): Promise<PrInfo> {
-    const number = this.nextNumber(input.repo);
+    const number = input.number ?? this.nextNumber(input.repo);
     const pr: PrInfo = {
       number,
       title: input.title,
@@ -237,6 +372,123 @@ export class LocalPrProvider implements PrProvider {
     this.write(repo, record);
     return comment;
   }
+
+  /** D5: replace the stored pull request body so the Verification section sticks. */
+  async setPrBody(repo: string, number: number, body: string): Promise<PrInfo> {
+    const record = this.read(repo, number);
+    if (!record) throw new Error(`no local pull request #${number} for ${repo}`);
+    record.pr.body = body;
+    this.write(repo, record);
+    return record.pr;
+  }
+
+  private checkFileFor(repo: string): string {
+    return path.join(this.dir, `${sanitizeRepo(repo)}-checks.json`);
+  }
+
+  private readChecks(repo: string): LocalCheckRecord[] {
+    try {
+      return JSON.parse(fs.readFileSync(this.checkFileFor(repo), "utf8")) as LocalCheckRecord[];
+    } catch {
+      return [];
+    }
+  }
+
+  private writeChecks(repo: string, records: LocalCheckRecord[]): void {
+    fs.mkdirSync(this.dir, { recursive: true });
+    const tmp = `${this.checkFileFor(repo)}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(records, null, 2), "utf8");
+    fs.renameSync(tmp, this.checkFileFor(repo));
+  }
+
+  /** Scripted check-runs for a ref (tests drive the fail->pass sequence). */
+  setCheckScript(repo: string, ref: string, script: LocalCheckScript): void {
+    const records = this.readChecks(repo).filter((r) => r.ref !== ref);
+    records.push({
+      repo,
+      ref,
+      runs: script.runs ?? defaultCheckRuns(),
+      logs: script.logs ?? {},
+    });
+    this.writeChecks(repo, records);
+  }
+
+  async listCheckRuns(repo: string, ref: string): Promise<CheckRunInfo[]> {
+    const record = this.readChecks(repo).find((r) => r.ref === ref);
+    return record?.runs ?? defaultCheckRuns();
+  }
+
+  async getCheckRunLog(repo: string, checkRunId: string): Promise<string> {
+    const records = this.readChecks(repo);
+    for (const record of records) {
+      if (record.logs[checkRunId]) return record.logs[checkRunId]!;
+    }
+    return `no local log for check-run ${checkRunId}`;
+  }
+
+  private diffFileFor(repo: string): string {
+    return path.join(this.dir, `${sanitizeRepo(repo)}-diffs.json`);
+  }
+
+  private readDiffs(repo: string): LocalDiffRecord[] {
+    try {
+      return JSON.parse(fs.readFileSync(this.diffFileFor(repo), "utf8")) as LocalDiffRecord[];
+    } catch {
+      return [];
+    }
+  }
+
+  private writeDiffs(repo: string, records: LocalDiffRecord[]): void {
+    fs.mkdirSync(this.dir, { recursive: true });
+    const tmp = `${this.diffFileFor(repo)}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(records, null, 2), "utf8");
+    fs.renameSync(tmp, this.diffFileFor(repo));
+  }
+
+  /** Scripted diff for a pull request (tests drive the reviewed patch). */
+  setPrDiff(repo: string, number: number, diff: Omit<PrDiff, "repo" | "number">): void {
+    const records = this.readDiffs(repo).filter((r) => r.number !== number);
+    records.push({ repo, number, ...diff });
+    this.writeDiffs(repo, records);
+  }
+
+  async prDiff(repo: string, number: number): Promise<PrDiff> {
+    const record = this.readDiffs(repo).find((r) => r.number === number);
+    if (!record) throw new Error(`no local diff for pull request #${number} in ${repo}`);
+    return { repo, number, head: record.head, base: record.base, files: record.files };
+  }
+}
+
+/**
+ * Seed the diff `pr_diff` returns for a pull request on a LocalPrProvider.
+ *
+ * The local provider cannot compute a diff from a real git remote (and D15's
+ * tests must not touch the network), so the diff is scripted exactly like
+ * {@link LocalPrProvider.setCheckScript}.
+ */
+export function setPrDiff(
+  provider: PrProvider,
+  repo: string,
+  number: number,
+  diff: Omit<PrDiff, "repo" | "number">,
+): void {
+  if (typeof (provider as { setPrDiff?: unknown }).setPrDiff !== "function") {
+    throw new Error("setPrDiff requires a LocalPrProvider");
+  }
+  (provider as unknown as { setPrDiff: (r: string, n: number, d: Omit<PrDiff, "repo" | "number">) => void }).setPrDiff(
+    repo,
+    number,
+    diff,
+  );
+}
+
+/** The default local script: two failing jobs and one passing job. */
+export function defaultCheckRuns(): CheckRunInfo[] {
+  return [
+    { id: "1001", name: "build (node 22)", status: "completed", conclusion: "failure", head: "" },
+    { id: "1002", name: "lint", status: "completed", conclusion: "failure", head: "" },
+    { id: "1003", name: "test", status: "completed", conclusion: "success", head: "" },
+  ];
 }
 
 export type ChecklistStatus = "open" | "done" | "outdated";
