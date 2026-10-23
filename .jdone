@@ -15,6 +15,32 @@ there was no common ancestor blob). It was resolved keeping BOTH sides:
 - No source file conflicted, so no test was weakened, deleted or skipped, and no code
   was dropped.
 
+## Gate results on the merged tree (commit `ab01afc`)
+
+| Gate | Result |
+| --- | --- |
+| `npx tsc --noEmit` | clean (exit 0) |
+| `node --import tsx --test "src/**/*.test.ts" "src/**/*.test.mjs"` | 2611 tests, 2609 pass, 1 fail, 1 skip |
+| `npm run test:bench` | 37/37 pass |
+| `src/agent/__tests__/toolDescriptions.test.ts` | 4/4 pass (parity fixed the inherited D4 defect) |
+| `npm run check:encoding` | OK (no BOM, no mojibake, all JSON valid) |
+| `npm run check:modes` | PASS |
+| `npm run check:orchestrator` | PASS (114/114) |
+| `npm run check:recovery` | PASS (SQLite migration/backup/rollback + FIFO recovery) |
+| `npm run check:eval` | PASS |
+| `npm run build:server` | dist/server.cjs 19.5mb (exit 0) |
+| `(cd packages/web && npx vitest run)` | 79 files / 535 tests passed |
+| `(cd packages/web && npx next build)` | all pages prerendered (exit 0) |
+
+The single remaining failure is `src/server/__tests__/worktrees.test.ts` - "reports
+non-git folders without throwing" (`readGitBranch` on a plain temp dir reports
+`isGit: true`). It is pre-existing and environmental: `C:\Users\khamis` is itself a git
+repository, so `git rev-parse` run inside `%TEMP%` walks up and finds it. The test file
+is byte-identical to the merge base `26befe6` (`git diff 26befe6 -- <file>` is empty) and
+the failure reproduces identically on the untouched `manus-parity` worktree, so it is not
+caused by this merge. It was the only failure in the J1 suite (2609 pass / 1 fail / 1 skip)
+and the previously-failing `toolDescriptions` test now passes.
+
 ## The failure that was fixed
 `.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity: run git merge
 manus-parity, resolve all conflicts keeping both sides, commit.
