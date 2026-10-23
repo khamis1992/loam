@@ -15,6 +15,7 @@
 import { getLoamAuthHeaders, getLoamBase } from '@/services/rpc';
 import { RelayClientBase, type RelayExecutor } from './relayClientBase';
 import type { FilmcraftBridge, FilmcraftMethod } from './filmcraft';
+import type { EffectcraftBridge, EffectcraftMethod } from './effectcraft';
 
 export type VideoStudioTarget = 'film' | 'effects';
 
@@ -88,3 +89,41 @@ export function createFilmcraftExecutor(bridge: FilmcraftBridge): VideoStudioExe
 /** Neutral alias: the Video Studio client is the film/effects relay client. */
 export const WorkspaceRelayClient = VideoStudioClient;
 export type WorkspaceRelayExecutor = RelayExecutor<VideoStudioTarget>;
+
+/**
+ * Executor for the hidden "Loam Effects" backend.
+ *
+ * The effects engine answers the same `execute` / `inspect` / `readFile`
+ * surface as the video editor, but it is a different iframe with its own
+ * bridge, so a `target: "effects"` command must never be handed to the video
+ * bridge (which would answer with the wrong engine's state).
+ */
+export function createEffectcraftExecutor(bridge: EffectcraftBridge): VideoStudioExecutor {
+  return async (command) => {
+    if (command.target !== 'effects') {
+      throw new Error(`Loam Video commands are not handled by the Loam Effects bridge (target "${command.target}")`);
+    }
+    return bridge.call(command.method as EffectcraftMethod, command.params);
+  };
+}
+
+/**
+ * Route a command to whichever bridge owns it.
+ *
+ * The round trip alternates between the two engines, so the panel registers
+ * exactly one executor that fans out by `target` and refuses anything else.
+ */
+export function createRoundTripExecutor(
+  film: FilmcraftBridge,
+  effects: EffectcraftBridge,
+): VideoStudioExecutor {
+  return async (command) => {
+    if (command.target === 'film') {
+      return film.call(command.method as FilmcraftMethod, command.params);
+    }
+    if (command.target === 'effects') {
+      return effects.call(command.method as EffectcraftMethod, command.params);
+    }
+    throw new Error(`unknown video studio target "${command.target}"`);
+  };
+}

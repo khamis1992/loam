@@ -1,0 +1,11 @@
+{
+  "id": "data-analysis",
+  "title": "Data Analysis",
+  "description": "Analyze a CSV dataset and produce a summary report with charts and key insights.",
+  "prompt": "Analyze the attached CSV file containing sales data from the past 12 months. Calculate total revenue, average order value, and month-over-month growth. Identify the top 5 products by revenue and the best-performing sales region. Create a line chart for monthly revenue and a bar chart for product rankings. Write a summary report with your findings and recommendations.",
+  "mode": "data",
+  "effort": "max",
+  "outputType": "text",
+  "icon": "📈",
+  "category": "Analysis"
+}
