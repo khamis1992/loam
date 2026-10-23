@@ -1,0 +1,11 @@
+{
+  "id": "security-audit",
+  "title": "Security Audit",
+  "description": "Run a security assessment on a web application and generate a SARIF report.",
+  "prompt": "Run a security audit on the web application at http://127.0.0.1:3000. Check for exposed files, missing security headers, TLS configuration, and common web vulnerabilities. Use the pentest_check and security_assess tools. Generate a SARIF report with all findings, severity ratings, and remediation recommendations.",
+  "mode": "security",
+  "effort": "max",
+  "outputType": "text",
+  "icon": "🛡",
+  "category": "Security"
+}
