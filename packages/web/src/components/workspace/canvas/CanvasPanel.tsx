@@ -85,8 +85,8 @@ interface PanState {
 }
 
 /** The fields a node title is read from, most specific first. */
-const TITLE_KEYS = ['title', 'query', 'url', 'path', 'summary', 'reason', 'message', 'verdict', 'tool', 'stepId'] as const;
-const SUBTITLE_KEYS = ['path', 'url'] as const;
+const TITLE_KEYS = ['title', 'model', 'query', 'url', 'path', 'summary', 'reason', 'message', 'verdict', 'tool', 'stepId'] as const;
+const SUBTITLE_KEYS = ['answer', 'path', 'url'] as const;
 
 function readString(data: unknown, keys: readonly string[]): string {
   if (typeof data !== 'object' || data === null) return '';

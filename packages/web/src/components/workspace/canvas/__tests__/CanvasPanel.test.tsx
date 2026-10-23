@@ -286,6 +286,58 @@ describe('canvas panel', () => {
     expect(detail).toHaveTextContent('من اليمين إلى اليسار');
   });
 
+  it('renders a model arm with its own label and the answer its model produced', async () => {
+    const graph = sixStepGraph();
+    // N10 A/B: an arm is a sibling node off the root carrying the model it ran.
+    graph.nodes.push(
+      {
+        id: 'sibling-1',
+        run_id: RUN,
+        parent_ids: ['root'],
+        type: 'sibling',
+        status: 'finished',
+        data: { model: 'glm-5.4-flash:cloud', answer: 'done by glm-5.4-flash:cloud' },
+        position: 8,
+        version: 1,
+        created: 1,
+        updated: 1,
+        x: 1960,
+        y: 240,
+        depth: 1,
+      },
+      {
+        id: 'sibling-2',
+        run_id: RUN,
+        parent_ids: ['root'],
+        type: 'sibling',
+        status: 'finished',
+        data: { model: 'qwen3-coder-30b', answer: 'done by qwen3-coder-30b' },
+        position: 9,
+        version: 1,
+        created: 1,
+        updated: 1,
+        x: 2240,
+        y: 240,
+        depth: 1,
+      },
+    );
+    graph.stats.totalNodes = graph.nodes.length;
+    graph.stats.nodesByType.sibling = 2;
+
+    renderPanel({}, () => graph);
+    await screen.findAllByTestId('canvas-node');
+    // Each arm card carries the model it ran plus the answer that model
+    // produced, so the comparison is readable straight off the canvas.
+    const arm = (id: string) =>
+      document.querySelector<HTMLElement>(`[data-testid="canvas-node"][data-node-id="${id}"]`)!;
+    expect(arm('sibling-1')).toHaveTextContent('glm-5.4-flash:cloud');
+    expect(arm('sibling-1')).toHaveTextContent('done by glm-5.4-flash:cloud');
+    expect(arm('sibling-2')).toHaveTextContent('qwen3-coder-30b');
+    expect(arm('sibling-2')).toHaveTextContent('done by qwen3-coder-30b');
+    // The card still names its kind and state, not just the payload.
+    expect(arm('sibling-1')).toHaveTextContent('Model arm · Finished');
+  });
+
   it('lists the recent tools on the node detail sheet', async () => {
     renderPanel();
     await screen.findAllByTestId('canvas-node');
