@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { EffortLevel } from "./llm/router.js";
 
 function resolveRoot(): string {
   const candidates: string[] = [];
@@ -48,6 +49,15 @@ function fromEnv(name: string, fallback: string): string {
 
 export function dataDir(): string {
   return fromEnv("MANUS_LOCAL_DATA_DIR", path.join(ROOT, "data"));
+}
+
+/** Fold a config effort key to `fast` / `max`, or "" when it is not one of them.
+ *  Kept local (see `loadConfig`) so config.ts never value-imports the router. */
+function normalizeEffortName(value: string): EffortLevel | "" {
+  const key = value.trim().toLowerCase();
+  if (key === "fast" || key === "quick" || key === "low" || key === "lite") return "fast";
+  if (key === "max" || key === "maximum" || key === "best") return "max";
+  return "";
 }
 
 export const DATA_DIR = dataDir();
@@ -232,6 +242,12 @@ export interface Config {
   };
   /** Optional per-edit diagnostics overrides (LOAM.md may override these). */
   diagnostics?: import("./agent/diagnostics.js").DiagnosticSettings;
+  /**
+   * Neo N10 routing: the model map behind the composer's output-type and
+   * effort selectors. Shares this key with C17/V14. Entries are model ids only,
+   * never API keys. `perTool` names a tool; `effort` names a Fast/Max level.
+   */
+  routing?: import("./llm/router.js").RoutingConfig;
 }
 
 export const DEFAULTS: Config = {
@@ -352,6 +368,9 @@ export const DEFAULTS: Config = {
   sessionLog: { enabled: true },
   runGraph: { enabled: true },
   coding: { enabled: true, chain: [], logEdits: true },
+  // Neo N10: no map by default, so an unconfigured run keeps its current
+  // behaviour (the coding chain for coding turns, the configured model else).
+  routing: { perTool: {}, effort: {} },
 };
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -387,6 +406,22 @@ export function loadConfig(): Config {
       .filter((m) => m.length > 0);
   }
   if (process.env.LOAM_CODER_ROUTING === "0" || process.env.LOAM_CODER_ROUTING === "false") cfg.coding.enabled = false;
+  // Neo N10: normalize the routing map. Unknown effort levels are dropped and
+  // model ids are trimmed, so a stale config can never select a bogus entry.
+  const perTool: Record<string, string> = {};
+  for (const [tool, model] of Object.entries(cfg.routing?.perTool ?? {})) {
+    if (typeof model === "string" && model.trim()) perTool[tool] = model.trim().slice(0, 120);
+  }
+  const routingEffort: { fast?: string; max?: string } = {};
+  for (const [level, model] of Object.entries(cfg.routing?.effort ?? {})) {
+    // Normalized inline: importing the router here would create a load-time
+    // cycle (`router -> codingRouter -> config`), and `failover.ts` reads the
+    // module-level `DATA_DIR` from config at import time, so the cycle surfaces
+    // as "Cannot access 'DATA_DIR' before initialization" in unrelated tests.
+    const key = normalizeEffortName(level);
+    if (key && typeof model === "string" && model.trim()) routingEffort[key] = model.trim().slice(0, 120);
+  }
+  cfg.routing = { perTool, effort: routingEffort };
   if (process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT) cfg.server.port = Number(process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT);
   if (process.env.LOAM_HOST || process.env.MANUS_LOCAL_HOST) cfg.server.host = (process.env.LOAM_HOST || process.env.MANUS_LOCAL_HOST)!;
   const envRoot = process.env.LOAM_ROOT || process.env.MANUS_LOCAL_ROOT;
