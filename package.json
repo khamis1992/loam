@@ -1,6 +1,6 @@
 {
   "name": "loam",
-  "version": "0.5.29",
+  "version": "0.5.30",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -19,6 +19,10 @@
     "test:pentest-bench": "node --import tsx --test src/scripts/__tests__/check-pentest-bench.test.ts",
     "test:browser-operator": "node --import tsx --test src/tools/__tests__/browserOperator.test.ts",
     "test:coding-eval": "node --import tsx --test src/scripts/__tests__/eval-coding.test.ts",
+    "test:memory": "node --import tsx --test src/memory/__tests__/cache.test.ts src/memory/__tests__/caps.test.ts src/server/__tests__/debugMemory.test.ts src/protocol/__tests__/blobRoute.test.ts",
+    "bench:mem": "node --import tsx bench/memBench.ts",
+    "bench:ram:app": "node --import tsx bench/appRamBench.ts --spawn",
+    "test:bench": "node --import tsx --test bench/__tests__/fakeModel.test.ts bench/__tests__/rssSampler.test.ts bench/__tests__/memBench.test.ts bench/__tests__/appRamBench.test.ts",
     "test:electron": "node --test electron/__tests__/inAppBrowser.test.cjs",
     "test:vendor": "node --test scripts/vendor/__tests__/fetch-craft.test.mjs",
     "test:vendor:protocol": "node --test electron/__tests__/vendorProtocol.test.cjs electron/__tests__/filmcraftRebrand.test.mjs",
@@ -39,6 +43,7 @@
     "check:task-ui": "npm run check:loam-ui",
     "check:recovery": "tsx src/scripts/check-recovery.ts",
     "check:recovery:http": "tsx src/scripts/check-recovery-http.ts",
+    "check:eventlog": "tsx src/scripts/check-eventlog.ts",
     "verify": "npm run typecheck && npm run check:encoding && npm run check:eval && npm run check:orchestrator && npm run check:recovery && npm run check:modes",
     "build:server": "node -e \"require('./scripts/build-server.cjs')\"",
     "build:memory-skills": "esbuild addons/memory-skills-mcp/src/server.ts --bundle --platform=node --format=cjs --target=node22 --outfile=addons/memory-skills-mcp/dist/server.cjs --external:@modelcontextprotocol/sdk",
@@ -76,9 +81,7 @@
     "check:promptwire": "tsx src/scripts/check-promptwire.ts",
     "vendor:filmcraft": "node scripts/vendor/fetch-filmcraft.mjs",
     "vendor:effectcraft": "node scripts/vendor/fetch-effectcraft.mjs",
-    "vendor": "npm run vendor:filmcraft && npm run vendor:effectcraft",
-    "bench:mem": "node --import tsx bench/memBench.ts",
-    "test:bench": "node --import tsx --test bench/__tests__/fakeModel.test.ts bench/__tests__/rssSampler.test.ts bench/__tests__/memBench.test.ts"
+    "vendor": "npm run vendor:filmcraft && npm run vendor:effectcraft"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",

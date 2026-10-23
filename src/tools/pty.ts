@@ -2,6 +2,8 @@ import path from "node:path";
 import type { Config } from "../config.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { num, str } from "./registry.js";
+import { BoundedMap } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 interface PtyProcess {
   onData(cb: (data: string) => void): void;
@@ -27,7 +29,19 @@ interface Session {
   subscribers: Set<(chunk: string) => void>;
 }
 
-const sessions = new Map<string, Session>();
+/**
+ * Live pty sessions (J6). Each entry owns a pseudo-terminal, so the map is
+ * capped and an evicted session is killed — a leaked pty keeps its process and
+ * its 200 KB scrollback alive for the life of the server.
+ */
+const sessions = new BoundedMap<string, Session>(16, "pty-sessions", (_id, session) => {
+  try {
+    session.proc.kill();
+  } catch {
+    /* already exited */
+  }
+});
+registerCacheStats("pty-sessions", () => sessions.stats());
 let ptyModule: PtyModule | null = null;
 let ptyLoadError: string | null = null;
 

@@ -166,6 +166,11 @@ export interface AgentTurnOutput {
   /** 0 (will never buy) .. 1 (will buy immediately). */
   purchaseIntent: number;
   reasons: string[];
+  /**
+   * Share provenance: the people whose post the agent amplified or answered.
+   * Populated for `share` (required) and `comment`; empty otherwise.
+   */
+  sharedWith: string[];
 }
 
 /** One recorded agent-turn, including its model-call outcome. */
