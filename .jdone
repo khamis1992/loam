@@ -1,3 +1,56 @@
+# N10 final merge gate: parity advanced 3x again, all re-merged, .jdone kept, full suites green
+
+This pass started from the previous `.jdone` merge report. Parity's local ref had advanced again
+during the session (`bec4181` -> `c77161b` -> `0ea829f` -> `109617a`), so each tip was re-merged.
+
+### Merge rounds in this pass (measured)
+- Round 3: parity tip `c77161b` -> merge commit `f2a72df`. Auto-merged, no conflict.
+- Round 4: parity tip `0ea829f` -> merge commit `afdf7a3`. A mechanical file-set superset check
+  caught a **real regression from our own earlier merge**: parity's O5 durable-event-log files
+  (`src/agent/checkpointLog.ts` and `src/agent/__tests__/checkpointLog.test.ts`) had been silently
+  dropped because a modify/delete was taken on the deletion side. Merging the true parity tip
+  restored both files and kept **both** O5 wiring (`recordToolCall` / `recordToolResult` /
+  `eventLogSession` in `loop.ts`, `writeCheckpoint` + `eventLogSession` in `src/index.ts`,
+  `hasUnfinishedToolCall` in `src/server/recovery.ts`, `logSeq` / `logSessionId` in
+  `src/agent/checkpoint.ts`, worker forwarding in `src/agent/orchestrator.ts`) **and** N10 arm code.
+- Round 5: parity tip `109617a` (desktop crash fix / fanout dedup / Arabic default locale) -> merge
+  commit `b68ab8b`. Auto-merged, no conflict. Parity again deletes `.jdone`, so the kept (HEAD)
+  version was restored into the merge: `.jdone` blob `e16d471` is byte-identical to the previous
+  kept version, and the worktree file is present at 500,415 bytes.
+
+### Superset check after the final merge
+- Files in `manus-parity` missing from HEAD: **0**.
+- Files in HEAD not in parity: only `.jdone` (this task's deliverable, as intended).
+
+### Final gates re-run on committed `b68ab8b` (measured)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (`server bundle + pdf worker written to dist/`)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test "src/**/__tests__/*.test.ts" "src/**/__tests__/*.test.mjs"`
+                                              -> **tests 2881, pass 2881, fail 0** (full node suite)
+- `(cd packages/web && npx vitest run)`       -> **88 files / 607 tests, all passed**
+- Focused: `abRouting` + `checkpointLog` + `fanout` + `router` + `routingModel` -> tests 50, pass 50
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0 (`0 6`: parity is a direct ancestor)
+
+### Merge safety verified (N10 + O5 work intact, not assumed)
+- `src/agent/loop.ts` contains `runAbArm`, `armPromises`, `eventLogSession`,
+  `recordToolCall`, `recordToolResult` and the `await Promise.all(armPromises)` call sites.
+- `src/agent/__tests__/abRouting.test.ts` (N10 arms) and
+  `src/agent/__tests__/checkpointLog.test.ts` (O5 durable events) both present and passing.
+- `src/llm/router.ts` and `src/tools/routingModel.ts` (N10 output-type/effort routing) unchanged.
+- No conflict markers; `git diff --check` clean.
+
+No test was weakened, deleted or skipped. No source file was edited for conflict resolution; the
+only change to `.jdone` in the final merge was restoring the kept version. `.jdone` is present and
+committed as required.
+
+Test command:
+
+  node --import tsx --test src/agent/__tests__/abRouting.test.ts
+
+---
+
 # N10 merge gate: manus-parity (bec4181) merged, .jdone modify/delete resolved keeping both sides
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity in: .jdone. Run git merge
