@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Clapperboard, Loader2, MonitorPlay, X } from 'lucide-react';
+import { Clapperboard, Loader2, MonitorPlay, Waypoints, X } from 'lucide-react';
 import type { ChatEvent, ToolUsedEvent } from '@shared/socket';
 import { t } from '@/i18n/t';
 import { useAppSelector } from '@/store';
@@ -17,6 +17,7 @@ import {
 } from './registry';
 import {
   LOAM_VIDEO_STUDIO_PATH,
+  CANVAS_RUN_PATH,
   type WorkspaceEditorDef,
   type WorkspaceEditorProps,
   type WorkspaceFile,
@@ -306,6 +307,12 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
       if (firstCraft) setSelectedPath(firstCraft.path);
       return;
     }
+    // The Canvas tab is task-wide (the run graph), so there is no file to
+    // match: any request for it selects the canvas sentinel.
+    if (requestedKind === 'canvas') {
+      setSelectedPath(CANVAS_RUN_PATH);
+      return;
+    }
     if (requestedPath && files.some((f) => f.path === requestedPath)) setSelectedPath(requestedPath);
     else if (requestedPath && files.length > 0) setSelectedPath(files[0].path);
   }, [files, requestedPath, requestedKind]);
@@ -321,6 +328,7 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
       files.length > 0 &&
       !files.some((f) => f.path === selectedPath) &&
       selectedPath !== LOAM_VIDEO_STUDIO_PATH &&
+      selectedPath !== CANVAS_RUN_PATH &&
       selectedPath !== requestedPath
     ) {
       setSelectedPath(files[0].path);
@@ -331,11 +339,15 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
     if (selectedPath === LOAM_VIDEO_STUDIO_PATH) {
       return { taskId, path: LOAM_VIDEO_STUDIO_PATH, name: t('Loam Video'), kind: 'loam-video' as const };
     }
+    if (selectedPath === CANVAS_RUN_PATH) {
+      return { taskId, path: CANVAS_RUN_PATH, name: t('Canvas'), kind: 'canvas' as const };
+    }
     return files.find((f) => f.path === selectedPath) ?? null;
   }, [files, selectedPath, taskId]);
 
   const def = useMemo(() => (selected ? getEditorForFile(selected) : null), [selected]);
   const loamVideoDef = getEditorForKind('loam-video');
+  const canvasDef = getEditorForKind('canvas');
 
   const onSave = useMemo(() => {
     if (!selected) return async () => undefined;
@@ -381,8 +393,23 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
         {loading && <Loader2 className="size-3.5 animate-spin text-text-tertiary" />}
       </div>
 
-      {(files.length > 1 || loamVideoDef) && (
+      {(files.length > 1 || loamVideoDef || canvasDef) && (
         <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border-main px-2 py-1.5">
+          {canvasDef && (
+            <button
+              type="button"
+              onClick={() => setSelectedPath(CANVAS_RUN_PATH)}
+              title={t('Canvas')}
+              className={
+                selectedPath === CANVAS_RUN_PATH
+                  ? 'flex items-center gap-1 whitespace-nowrap rounded-control bg-fill-tsp px-2 py-1 text-xs font-medium text-text-primary'
+                  : 'flex items-center gap-1 whitespace-nowrap rounded-control px-2 py-1 text-xs text-text-tertiary hover:bg-fill-hover hover:text-text-secondary'
+              }
+            >
+              <Waypoints className="size-3" />
+              {t('Canvas')}
+            </button>
+          )}
           {loamVideoDef && (
             <button
               type="button"

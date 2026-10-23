@@ -110,7 +110,9 @@ export interface TelemetryRecord {
   mode?: string;
   toolset?: string[];
   dedicatedTools?: string[];
-  source?: "explicit" | "detected";
+  /** How the mode was chosen: an explicit mode, an explicit composer output
+   *  type, or keyword detection. */
+  source?: "explicit" | "output-type" | "detected";
 }
 
 export interface VerifyContext {

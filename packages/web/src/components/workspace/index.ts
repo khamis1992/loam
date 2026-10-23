@@ -10,6 +10,7 @@ void import('./doc/register').catch(() => undefined);
 void import('./sheet/register').catch(() => undefined);
 void import('./slides/register').catch(() => undefined);
 void import('./craft/register').catch(() => undefined);
+void import('./canvas/register').catch(() => undefined);
 
 export * from './types';
 export {
@@ -28,6 +29,7 @@ export {
   latestWorkspaceDecision,
   isWorkspaceToolName,
   isVideoStudioTool,
+  isCanvasSignalTool,
   hasVideoEditIntent,
   type WorkspaceOpenTarget,
 } from './autoOpen';

@@ -9,7 +9,7 @@ import { ToolUsedRow } from './ToolUsedRow';
 import { StatusUpdateRow } from './StatusUpdateRow';
 import { CacheUsageRow } from './CacheUsageRow';
 import { PlanStepRow, PlanUpdateRow, TodoListRow } from './PlanStep';
-import { ApprovalCard, FolderAccessApprovalCard, PlanApprovalCard, type LocalExecutionApprovalRequested, type PlanApprovalRequested } from '@/components/approval';
+import { ApprovalCard, AskUserCard, FolderAccessApprovalCard, PlanApprovalCard, type LocalExecutionApprovalRequested, type PlanApprovalRequested } from '@/components/approval';
 import { AttachmentCard } from './AttachmentCard';
 import { craftAppForExtension, craftExtOf, editorKindForExtension } from '@/components/workspace/craft';
 import { EnvironmentIssueCard } from './EnvironmentIssueCard';
@@ -170,6 +170,18 @@ export function ChatEventRow({ e, sessionId, socket, renderChat, onOpenFile }: C
                 ? { summary: plan.summary, steps: plan.steps, files_to_edit: plan.files_to_edit }
                 : undefined,
             );
+          }}
+        />
+      );
+    case 'askUserRequested':
+      return (
+        <AskUserCard
+          request={e}
+          onRespond={(decision, answer) => {
+            // N9: the card answers through the socket; a dismissal closes the
+            // request without an answer, and the run continues with its
+            // assumptions stated instead.
+            socket?.resolveAskUser(sessionId, e.requestId, decision, answer);
           }}
         />
       );

@@ -129,6 +129,14 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const draftAttachments = useMemo(() => parseAttachments(attachmentsParam), [attachmentsParam]);
   const draftExtData = useMemo(() => parseExtData(extDataParam), [extDataParam]);
   const draftLoamMode = typeof draftExtData?.loamMode === 'string' ? draftExtData.loamMode : undefined;
+  // Neo N10: the draft extData can pre-select an output type / effort (a deep
+  // link, or a starter card) and name the A/B arm models.
+  const draftOutputType = typeof draftExtData?.outputType === 'string' ? draftExtData.outputType : undefined;
+  const draftEffort = typeof draftExtData?.effort === 'string' ? draftExtData.effort : undefined;
+  const draftAbModels = Array.isArray(draftExtData?.abModels)
+    ? draftExtData.abModels.filter((m): m is string => typeof m === 'string')
+    : undefined;
+  const draftCompare = draftAbModels !== undefined && draftAbModels.length > 1;
   const socketRef = useRef<ChatSocket | null>(null);
   const sentDraft = useRef<{ uid: string; sent: boolean }>({ uid: '', sent: false });
   if (sentDraft.current.uid !== sessionUid) {
@@ -629,6 +637,10 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               assistantReply={assistantText}
               approveForMe={approveForMe}
               onToggleApproveForMe={handleToggleApproveForMe}
+              outputType={draftOutputType}
+              effort={draftEffort}
+              compareModels={draftCompare}
+              abModels={draftAbModels}
             />
             <SideChatPanel taskId={taskId ?? null} />
           </div>

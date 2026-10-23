@@ -5,6 +5,7 @@ import {
   decideUserMessageOpen,
   decideWorkspaceOpen,
   hasVideoEditIntent,
+  isCanvasSignalTool,
   isWorkspaceToolName,
   latestWorkspaceDecision,
 } from '../autoOpen';
@@ -71,6 +72,53 @@ describe('workspace auto-open decision', () => {
     expect(decision?.event).toBe(second);
     expect(decision?.target).toEqual({ path: 'a.docx', kind: 'doc' });
     expect(latestWorkspaceDecision([first, third] as ChatEvent[])).toBeNull();
+  });
+});
+
+describe('Neo N2 canvas auto-open decision', () => {
+  it('names the long-horizon tools the agent really registers', () => {
+    // Real tool names (src/tools/browser.ts, web.ts, deepResearch.ts, wideResearch.ts,
+    // codeSession.ts): the canvas opens for work with no single file to point at.
+    expect(isCanvasSignalTool('browser_open')).toBe(true);
+    expect(isCanvasSignalTool('browser_goto')).toBe(true);
+    expect(isCanvasSignalTool('browser_operator')).toBe(true);
+    expect(isCanvasSignalTool('web_search')).toBe(true);
+    expect(isCanvasSignalTool('web_fetch')).toBe(true);
+    expect(isCanvasSignalTool('deep_research')).toBe(true);
+    expect(isCanvasSignalTool('wide_research')).toBe(true);
+    expect(isCanvasSignalTool('code_session')).toBe(true);
+    expect(isCanvasSignalTool('code_session_collect')).toBe(true);
+  });
+
+  it('does not treat a display label or a file-producing tool as a canvas signal', () => {
+    // `browser_navigate` is only a display label in toolLabels.ts, not a tool.
+    expect(isCanvasSignalTool('browser_navigate')).toBe(false);
+    expect(isCanvasSignalTool('terminal')).toBe(false);
+    expect(isCanvasSignalTool('office_export')).toBe(false);
+    expect(isCanvasSignalTool('file_write')).toBe(false);
+    expect(isCanvasSignalTool('video_studio')).toBe(false);
+    expect(isCanvasSignalTool('')).toBe(false);
+  });
+
+  it('opens the canvas for a long-horizon tool with no file output', () => {
+    expect(decideWorkspaceOpen(toolEvent({ tool: 'web_search', argumentsDetail: { query: 'loam canvas' } }))).toEqual({
+      path: null,
+      kind: 'canvas',
+    });
+  });
+
+  it('keeps a workspace artifact ahead of the canvas', () => {
+    // A file the agent wrote resolves to its editor, so the canvas does not steal it.
+    const ev = toolEvent({ tool: 'browser_goto', argumentsDetail: { url: 'https://x.test', outputPath: 'out/report.docx' } });
+    expect(decideWorkspaceOpen(ev)).toEqual({ path: 'out/report.docx', kind: 'doc' });
+  });
+
+  it('latestWorkspaceDecision opens the canvas for the newest long-horizon tool', () => {
+    const older = toolEvent({ tool: 'office_export', argumentsDetail: { path: 'a.docx' }, timestamp: 1 });
+    const newer = toolEvent({ tool: 'web_search', argumentsDetail: { query: 'x' }, timestamp: 2 });
+    const decision = latestWorkspaceDecision([older, newer] as ChatEvent[]);
+    expect(decision?.event).toBe(newer);
+    expect(decision?.target).toEqual({ path: null, kind: 'canvas' });
   });
 });
 
