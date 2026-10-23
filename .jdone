@@ -154,6 +154,118 @@ the tests (the rerank path uses a local embedder stub).
 
 ## Preserved: H0 recon (merged in from manus-parity)
 
+V11 complete: design_critique — vision rubric critique loop for generated UIs.
+
+What shipped
+------------
+A new always-on agent tool, `design_critique`, that scores a built interface against
+the Loam UI Kit rubric by sending the captured screenshots to the vision model. It
+reuses the existing `visualReview` (Ollama vision) and the `preview_screenshot`
+capture machinery rather than duplicating either.
+
+- `src/design/critique.ts` (extended, +489):
+  - `CRITIQUE_DIMENSION_IDS` = hierarchy, spacing, contrast, alignment,
+    color-count, overflow, rtl. Blocking dimensions: contrast, overflow, rtl.
+    Per-dimension floor 60, pass threshold 80 on the mean, max 2 fix rounds,
+    max 2 model repair attempts.
+  - `normalizeCritiqueVerdict`: strict rubric contract. Every dimension exactly
+    once, numeric score, non-empty note. `accept` requires an empty issues list,
+    every dimension at or above the floor, and the mean at or above the
+    threshold; `revise` must name at least one visible defect; the `rtl` dimension
+    must be exactly 100 on an `ltr` page. The mean is always recomputed from the
+    dimensions and the declared `score` is ignored, so a model cannot inflate its
+    own verdict.
+  - `critiquePasses`: gates on the blocking dimensions independently of the mean.
+  - `runVisionCritique`: throws `VisualReviewUnavailable` when no client or no
+    readable screenshot, retries a malformed answer with the validation errors,
+    reads screenshots from disk as base64 images, reports `source: "model"`.
+  - `runCritiqueLoop`: rounds 0..maxRounds, `instruction = fixes[0] ?? issues[0] ?? ""`,
+    accumulates usage across rounds, always reports the best score it saw.
+- `src/tools/designCritique.ts` (new): `createDesignCritiqueTools(preview, { ollama })`,
+  `formatCritiqueReport` (reports round/maxRounds), `lintSiteDirectory`,
+  `captureForCritique`, and a deterministic `fallbackCritique` for the no-model path.
+  Params: `dir`, `url`, `screenshots`, `source`, `prompt`, `language`, `direction`,
+  `brief`, `threshold`, `maxAttempts`, `round`, `maxRounds`, `format`.
+  One critique call per invocation; the caller drives the edit/rebuild/capture loop.
+  At the last allowed round the report says the round budget is exhausted and tells
+  the caller to stop; otherwise it says to apply the first fix, rebuild, capture
+  again and call with `round=N+1`. Returns `{ ok: verdict === "accept" }`.
+- `src/design/tokenLint.ts`: `lintSiteSource()` lints one in-memory source with the
+  same rules as the filesystem linter (so an editor buffer and a directory on disk
+  are scored by one code path); `SiteRule` exported; `runCritiqueLoop`'s `options`
+  argument is now required.
+- Wiring: registered in `src/index.ts` and added to `ALWAYS_ON_TOOLS` in
+  `src/server/runTools.ts`; the build Implement phase now instructs
+  lint -> capture -> critique with `design_lint`, `preview_screenshot`,
+  `design_critique`; `DESIGN_CRITIQUE_PROMPT` in `src/modes/designRules.ts` is
+  pushed into the system prompt when the tool is present (`src/agent/prompt.ts`).
+
+All prompts, tool descriptions and rules are original Loam wording.
+
+Acceptance test (V11 spec)
+--------------------------
+"A mock vision model drives a fix round; the threshold logic is tested" — covered by
+`src/design/__tests__/critique.test.ts` (31 tests) and
+`src/tools/__tests__/designCritique.test.ts` (11 tests):
+- fake and sequence Ollama clients, no network, no real model;
+- `revise` -> `accept` drives exactly one fix round, with the second call receiving
+  the first round's fix instruction;
+- round budget exhaustion, custom threshold, floor/mean threshold logic;
+- safety gates: a high mean with a failing contrast/overflow/rtl still fails;
+- `rtl` must be exactly 100 on an `ltr` page, and an Arabic RTL page is gated on it;
+- an unusable model answer never becomes a pass;
+- deterministic fallback, JSON output, always-on + prompt wiring.
+
+Gates (all run from the worktree root on the committed tree, HEAD 27b42ed)
+-----------------------------------------------------------------------
+- `npx tsc --noEmit`                                  -> exit 0
+- `npm run build:server`                              -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`               -> exit 0 (compiled successfully)
+- `npm run verify`                                    -> exit 0 (typecheck, encoding, eval, orchestrator 114/114, recovery, modes)
+- `npm run check:encoding`                            -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:design-registry`                     -> OK (30 blocks, 8 RTL, all manifests valid, all built)
+- `npm run eval:design -- --self-check`               -> self-check fixture=landing lint=100 critique=94 build=100 total=98 verdict=pass
+
+Tests on the committed tree:
+- `node --import tsx --test "src/**/*.test.ts"`       -> tests 2205, pass 2203, fail 2
+- `(cd packages/web && npx vitest run)`               -> 72 files / 472 tests, all pass
+
+The two node failures are pre-existing on the manus-parity lineage and untouched by
+V11 — both files are byte-identical to manus-parity (`git diff manus-parity HEAD` is
+empty for each):
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither
+   registered nor listed in PENDING_CODING_TOOLS". The inherited D4 defect: D4 added
+   `suggest_plan` to `CODING_PROFILE.tools` but never to the test's pending list, and
+   the test's registry does not include `createPlanTools`.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+   throwing". Environmental: `readGitBranch` shells out to `git rev-parse`, which
+   walks up to the nearest enclosing repository. The host machine's `C:\` carries a
+   git repo marker, so a temp folder that is not a repo reports `isGit: true`. It
+   fails identically on manus-parity.
+
+No test was weakened, deleted or skipped. No secrets committed.
+
+Merge gate
+----------
+`git merge manus-parity` (parity tip 4fa0376, J3) merged cleanly with no conflicts;
+committed as 143f613 and now `git rev-list --left-right --count manus-parity...HEAD`
+is `0 2` and `git merge-base --is-ancestor manus-parity HEAD` exits 0.
+
+Test commands
+-------------
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run verify
+  npm run check:encoding
+  npm run check:design-registry
+  npm run eval:design -- --self-check
+  node --import tsx --test "src/**/*.test.ts"
+  (cd packages/web && npx vitest run)
+  node --import tsx --test src/design/__tests__/critique.test.ts src/tools/__tests__/designCritique.test.ts
+
+---
+
 J3 complete: edit-tool miss hints + post-edit context.
 
 Extended Loam's existing `file_edit` tool in `src/tools/files.ts` (no parallel

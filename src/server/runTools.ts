@@ -51,6 +51,7 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "design_lint",
   "design_autofix",
   "ui_examples_search",
+  "design_critique",
   "workflow_run",
   "workflow_resume",
   "workflow_status",
