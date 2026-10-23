@@ -367,6 +367,34 @@ export interface PlanApprovalResolvedEvent extends ChatEventBase {
   plan?: { summary?: string; steps?: string[]; files_to_edit?: string[]; trivial?: boolean };
 }
 
+/** N9: an `ask_user` clarification request awaiting the user's answer (ask-user card). */
+export interface AskUserRequestedEvent extends ChatEventBase {
+  type: 'askUserRequested';
+  requestId: string;
+  taskId: string;
+  title: string;
+  reason: string;
+  questions: Array<{ id: string; prompt: string; options?: string[]; allowFile?: boolean }>;
+  /** "auto" is the orchestrator's vague/missing-context trigger; "model" a tool call. */
+  source?: 'auto' | 'model';
+  /** Set when `source` is "auto"; the client localizes the reason from it. */
+  reasonCode?: 'vague' | 'missing_context' | 'ambiguous_target';
+}
+
+/** N9: the user answered or dismissed a pending ask-user card. */
+export interface AskUserResolvedEvent extends ChatEventBase {
+  type: 'askUserResolved';
+  requestId: string;
+  taskId: string;
+  reviewer: 'user' | 'auto';
+  result: 'answered' | 'dismissed' | 'expired';
+  answer?: {
+    text: string;
+    answers: Record<string, string>;
+    files: Array<{ path: string; name: string; bytes: number; contentType: string }>;
+  };
+}
+
 export type ChatEvent =
   | ChatMessageEvent
   | ChatDeltaEvent
@@ -394,6 +422,8 @@ export type ChatEvent =
   | EnvironmentIssueEvent
   | PlanApprovalRequestedEvent
   | PlanApprovalResolvedEvent
+  | AskUserRequestedEvent
+  | AskUserResolvedEvent
   | RecipeUpdateEvent
   | RecipeRestartEvent;
 

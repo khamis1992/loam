@@ -99,6 +99,7 @@ import { handleDataControlsRoutes } from "./routes/dataControls.js";
 import { handleMemorySkillsRoutes } from "./routes/memorySkills.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
 import { handlePlanApprovalRoutes } from "./routes/planApproval.js";
+import { handleAskUserRoutes } from "./routes/askUser.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
 import { handleRetryLastRoutes } from "./routes/retryLast.js";
 import { handleSessionControlRoutes } from "./routes/sessionControl.js";
@@ -1808,6 +1809,8 @@ loadAgents();
         if (await handleApprovalRuleRoutes(req, res, p, url)) return;
         // Pending plan approvals (D4): the suggest_plan gate's approve/edit/reject.
         if (await handlePlanApprovalRoutes(req, res, p)) return;
+        // Pending ask-user requests (N9): list, read, answer or dismiss.
+        if (await handleAskUserRoutes(req, res, p)) return;
         if (await handleGrokbotBridgeRoutes(req, res, p, url)) return;
         // Public read-only task shares (option #11): create/revoke are authed,
         // GET /api/share/:token is the anonymous replay feed exempted above.
@@ -2753,11 +2756,15 @@ loadAgents();
           const rawName = url.searchParams.get("name") ?? "upload.bin";
           const safe = path.basename(rawName).replace(/[^\w.\u0600-\u06ff -]+/g, "_").slice(0, 120) || "upload.bin";
           const root = requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace);
-          const dir = taskPath(root, "uploads");
+          // N9: an ask-user card uploads into `<workspace>/uploads/<requestId>/` so
+          // the request's attachments stay together and the recorded path is stable.
+          const askUser = url.searchParams.get("askUser");
+          const sub = askUser ? path.join("uploads", path.basename(askUser).replace(/[^\w-]+/g, "_")) : "uploads";
+          const dir = taskPath(root, sub);
           fs.mkdirSync(dir, { recursive: true });
           const buf = await readRawBody(req);
           if (buf.length === 0) return sendJson(res, 400, { error: "empty upload" });
-          const abs = taskPath(root, path.join("uploads", `${Date.now()}-${safe}`));
+          const abs = taskPath(root, path.join(sub, `${Date.now()}-${safe}`));
           fs.writeFileSync(abs, buf);
           sendJson(res, 200, {
             name: safe,
