@@ -22,6 +22,7 @@ export interface SavedRun {
   checkpoint?: ExecutionCheckpoint;
   /** Side-chat ("/btw") run: restricted to read-only inspection tools. */
   sideChat?: boolean;
+  knowledge?: boolean;
 }
 export function requiresReplayConfirmation(run: SavedRun): boolean {
   return run.checkpoint ? run.checkpoint.inFlight : run.started;
