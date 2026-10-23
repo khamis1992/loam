@@ -944,3 +944,48 @@ scan over the D3-added source, and the freshly rebuilt artifact.
 
 - HEAD `c1732a5` (eighth-pass record) at the time these checks ran; `.jdone` is
   appended below and committed. Working tree clean; encoding check OK.
+
+## Independent re-validation (2026-10-23, tenth pass)
+
+This pass closed the last gaps: the merge's file-level delta vs the earlier
+17-file set, the `README.md` warning, and the required run of existing tests for
+touched files.
+
+- **Merge delta is 16 files, not 17.** `git diff --name-only 03f8aef HEAD -- src
+  package.json` lists exactly 16 files: `package.json`, `src/index.ts`,
+  `src/policy/riskTier.ts`, `src/scripts/check-env-builds.ts`,
+  `src/server/__tests__/envBuildRoutes.test.ts`, `src/server/__tests__/runTools.test.ts`,
+  `src/server/__tests__/taskWorkspace.test.ts`, `src/server/http.ts`,
+  `src/server/routes/envBuilds.ts`, `src/server/runTools.ts`,
+  `src/server/taskWorkspace.ts`, `src/setup/runtime.ts`,
+  `src/tools/__tests__/envSnapshot.test.ts`,
+  `src/tools/__tests__/envSnapshotE2E.test.ts`, `src/tools/envSnapshot.ts`,
+  `src/types/js-yaml.d.ts`. Adding `.jdone` gives the 17th path reported by the
+  unfiltered `git diff --name-only 03f8aef HEAD`. The earlier "17 D3 delta files"
+  phrasing counted `.jdone` alongside the 16 code/config files.
+- **`README.md` is byte-identical to parity.** `git diff --quiet 03f8aef HEAD --
+  README.md` exits 0 and `README.md` does not appear in the delta file list. The
+  recurring `warning: in the working copy of 'README.md', LF will be replaced by
+  CRLF` during the tenth pass was only git's autocrlf notice on checkout, not a
+  content change.
+- **Required existing tests for touched files, run and green.** `node --import tsx
+  --test src/policy/__tests__/riskTier.test.ts src/policy/__tests__/permissionModes.test.ts
+  src/policy/__tests__/permissionRules.test.ts src/server/__tests__/runTools.test.ts
+  src/server/__tests__/taskWorkspace.test.ts src/server/__tests__/envBuildRoutes.test.ts
+  src/server/__tests__/projectContext.test.ts
+  src/server/__tests__/liveViewRoutes.test.ts` -> exit 0, `# tests 162, # pass 162,
+  # fail 0, # skipped 0, # todo 0`. These cover the parity-side behavior of every
+  non-test file the merge modified (`http.ts`, `runTools.ts`, `taskWorkspace.ts`,
+  `runtime.ts`, `riskTier.ts`, `index.ts`).
+- **D3 test files, line counts.** `envSnapshot.test.ts` 389, `envSnapshotE2E.test.ts`
+  114, `envBuildRoutes.test.ts` 135, `taskWorkspace.test.ts` 18; all four run with
+  `# skipped 0` / `# todo 0` in the full suite.
+- **Reference copies present.** `.devin-ref/` holds the sibling progress reports
+  (`agentport-progress.md`, `promptwire-progress.md`, `devin-progress.md`, etc.),
+  confirming this worktree is the expected isolated checkout.
+
+### Final state
+
+- HEAD `16abca2` (ninth-pass record) at the time these checks ran; `.jdone` is
+  appended below and committed. Working tree clean (`git status --porcelain
+  --untracked-files=all` = 0).
