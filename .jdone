@@ -119,8 +119,8 @@ Gates re-run on the corrected tree (report-only change, no source touched):
 `npx tsc --noEmit` -> exit 0; `npm run build:server` -> exit 0;
 `(cd packages/web && npx next build)` -> compiled successfully;
 `node --import tsx --test src/server/__tests__/eventsRoutes.test.ts` -> tests 13, pass 13,
-fail 0, suites 2; `npm run check:encoding` -> OK. No `???` and no conflict markers in this
-file.
+fail 0, suites 2; `npm run check:encoding` -> OK. This file contains no question-mark
+placeholder text and no conflict markers.
 
 ## Pre-existing failures (not caused by O8)
 
