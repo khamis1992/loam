@@ -18,7 +18,7 @@ import "../../test/isolation.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import test from "node:test";
+import test, { describe } from "node:test";
 import { DEFAULTS, loadConfig } from "../../config.js";
 
 /** The two variable names the flag accepts, plus the ones it must not read. */
@@ -91,4 +91,74 @@ test("an unrecognised value leaves the default in place", () => {
 
 test("the isolated root exists so the test never reads the real config.json", () => {
   assert.ok(fs.existsSync(isolatedRoot()), "src/test/isolation.ts must have redirected LOAM_ROOT");
+});
+
+/**
+ * The config-file path is the one a user edits by hand, so a value that merely
+ * *looks* like an off switch must not silently switch the gate ON: a stray `"0"`
+ * is truthy in JavaScript, and `1`/`"yes"` are not the documented spellings.
+ */
+describe("config.json recovery.autoResume", () => {
+  const file = path.join(isolatedRoot(), "config-recovery-probe.json");
+
+  /** Load a config whose `recovery` value can only have come from the file. */
+  function fromFile(value: unknown): boolean {
+    const previous = process.env.LOAM_CONFIG;
+    const previousFlag = process.env.LOAM_AUTO_RESUME;
+    delete process.env.LOAM_AUTO_RESUME;
+    delete process.env.MANUS_LOCAL_AUTO_RESUME;
+    process.env.LOAM_CONFIG = file;
+    fs.writeFileSync(file, JSON.stringify({ recovery: { autoResume: value } }));
+    try {
+      return loadConfig().recovery?.autoResume ?? false;
+    } finally {
+      fs.rmSync(file, { force: true });
+      if (previous === undefined) delete process.env.LOAM_CONFIG; else process.env.LOAM_CONFIG = previous;
+      if (previousFlag === undefined) delete process.env.LOAM_AUTO_RESUME; else process.env.LOAM_AUTO_RESUME = previousFlag;
+    }
+  }
+
+  test("accepts the two documented on spellings", () => {
+    assert.equal(fromFile(true), true);
+    assert.equal(fromFile("1"), true);
+    assert.equal(fromFile("true"), true);
+  });
+
+  test("never lets a value that is not an on spelling enable it", () => {
+    // This is the fail-open the first draft had: the row was copied verbatim, so
+    // the truthy string `"0"` turned auto-resume ON.
+    for (const value of [false, "0", "false", 0, 1, "yes", "on", "TRUE", " 1", ""]) {
+      assert.equal(fromFile(value), false, `config value ${JSON.stringify(value)} must not enable it`);
+    }
+  });
+
+  test("an explicit env 0 disables it even when the file asks for it", () => {
+    const previousFlag = process.env.LOAM_AUTO_RESUME;
+    process.env.LOAM_CONFIG = file;
+    fs.writeFileSync(file, JSON.stringify({ recovery: { autoResume: true } }));
+    try {
+      process.env.LOAM_AUTO_RESUME = "0";
+      assert.equal(loadConfig().recovery?.autoResume, false);
+      process.env.LOAM_AUTO_RESUME = "1";
+      assert.equal(loadConfig().recovery?.autoResume, true);
+    } finally {
+      fs.rmSync(file, { force: true });
+      if (previousFlag === undefined) delete process.env.LOAM_AUTO_RESUME; else process.env.LOAM_AUTO_RESUME = previousFlag;
+    }
+  });
+
+  test("an unrecognised env value leaves the file's value alone", () => {
+    // A typo in the launch script must not open the gate, and must not silently
+    // disable a file that asked for it either: it is simply not read.
+    const previousFlag = process.env.LOAM_AUTO_RESUME;
+    process.env.LOAM_CONFIG = file;
+    fs.writeFileSync(file, JSON.stringify({ recovery: { autoResume: true } }));
+    try {
+      process.env.LOAM_AUTO_RESUME = "yes";
+      assert.equal(loadConfig().recovery?.autoResume, true);
+    } finally {
+      fs.rmSync(file, { force: true });
+      if (previousFlag === undefined) delete process.env.LOAM_AUTO_RESUME; else process.env.LOAM_AUTO_RESUME = previousFlag;
+    }
+  });
 });
