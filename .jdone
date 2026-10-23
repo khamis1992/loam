@@ -1,4 +1,4 @@
-# N19 gate fix (third pass): manus-parity re-merged, .jdone add/add resolved as a union
+# N19 gate fix (third pass): manus-parity re-merged, .jdone conflicts resolved as unions
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
 manus-parity, resolve all conflicts keeping both sides, commit.`
@@ -39,15 +39,28 @@ Verified mechanically against the blobs in play, comparing non-empty trimmed lin
 
 The resolved file is 8569 lines (7245 non-empty), a strict superset of both parents.
 
+### Second merge in this pass (parity tip `495ac5f`, commit `cf1eadb`)
+Parity advanced again while the first resolution was being verified, so the merge was re-run.
+This round `.jdone` conflicted on **content** rather than add/add: parity side 20014 non-empty
+lines, this branch 7245. Resolved the same way, as a strict union with only the six conflict
+markers removed. Verified against both parents: **0 lines missing** from ours (7245 non-empty)
+and **0** from theirs (20014 non-empty); resolved file 23471 lines / 20168 non-empty.
+
 No test was weakened, deleted or skipped. No assertion was relaxed. No source file was
 edited by this session beyond the automatic merge result.
 
-## Gate condition verified (commit bf17239)
+## Gate condition verified (final commit cf1eadb)
 - `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
-- `git rev-list --left-right --count manus-parity...HEAD` -> `0 5`
+- `git rev-list --left-right --count manus-parity...HEAD` -> `0 7`
 - `git status --porcelain` -> empty
+- no conflict marker remains in `.jdone`
 
-## Gates (all run from the worktree root on the merged tree)
+`manus-parity` was advancing continuously during this session (tip `109617a` -> `9ffdb16` ->
+`495ac5f`, the V8 merge), so the parity-ancestor condition went false again twice and the gate
+correctly re-failed each time. Both re-merges are recorded below; the final one (parity tip
+`495ac5f`, commit `cf1eadb`) is the tree all gates were re-run on.
+
+## Gates (all run from the worktree root on the final merged tree, commit cf1eadb)
 - `npx tsc --noEmit`                                            -> exit 0
 - `npm run build:server`                                        -> exit 0 (dist/server.cjs)
 - `(cd packages/web && npx next build)`                          -> exit 0
@@ -57,11 +70,12 @@ edited by this session beyond the automatic merge result.
                                                                -> tests 20, pass 20, fail 0
   (N19 suite: `codingPrompt` 11/11 and `orchestratorRecipe` 9/9)
 - `node --import tsx --test src/tools/__tests__/promptwire.test.ts` -> tests 17, pass 17, fail 0
-- `node --import tsx --test src/agent/__tests__/*.test.ts`        -> exit 0 (all pass)
+- `node --import tsx --test src/agent/__tests__/*.test.ts`        -> tests 362, pass 362, fail 0
 
 ## Files
-- the merge commit `bf17239` only: `.jdone` (union of both sides) plus the auto-merged
-  parity files. No N19 deliverable was changed.
+- merge commits `bf17239` (parity `9ffdb16`) and `cf1eadb` (parity `495ac5f`), plus report
+  commit `8618a2a`: `.jdone` (union of both sides) and the auto-merged parity files. No N19
+  deliverable was changed.
 
 ## V8 gate-fix session (round 12): root-cause fix for the recurring `.jdone` parity conflict
 
