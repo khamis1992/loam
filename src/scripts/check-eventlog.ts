@@ -112,8 +112,17 @@ async function checkBKillDurability(): Promise<string> {
   assert.ok(committed >= 8, "child never reported a committed event");
 
   killChild(child.pid!);
-  const exit = await new Promise<number | null>((resolve) => child.on("exit", (code) => resolve(code)));
-  assert.notEqual(exit, 0, "the child must be killed mid-run, not exit on its own");
+  // `taskkill /F` returns before the kill lands, so wait for the child's own exit
+  // and require that it was a signal death rather than a clean `process.exit(0)`.
+  const exit = await new Promise<number | null>((resolve) => {
+    const timer = setTimeout(() => resolve(null), 10_000);
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      resolve(code);
+    });
+  });
+  assert.ok(exit !== null, "the child never exited after the kill was requested");
+  assert.notEqual(exit, 0, `the child must be killed mid-run, not exit on its own (exit=${exit})`);
 
   // The marker may lag the log by one append; read the final high-water mark.
   const reported = Number((JSON.parse(fs.readFileSync(markerPath, "utf8")) as { committed: number }).committed);
