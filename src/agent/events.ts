@@ -121,6 +121,12 @@ export type AgentEvent =
   /** A workspace file was published as a task artifact via artifact_publish. */
   | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string }
   /**
+   * MiroFish swarm simulation progress. Carries one `SimulationProgressEvent`
+   * from the M3 loop as `payload` (the tool module owns that type; the agent core
+   * deliberately does not import a tool module).
+   */
+  | { type: "simulation_progress"; sessionId: string; payload: unknown }
+  /**
    * Loam Video Studio relay: one command for the panel attached to this task's
    * event stream. The panel executes it with its editor bridge and posts the
    * result back to /api/tasks/:id/video-studio/result.
