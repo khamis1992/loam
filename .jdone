@@ -989,3 +989,38 @@ touched files.
 - HEAD `16abca2` (ninth-pass record) at the time these checks ran; `.jdone` is
   appended below and committed. Working tree clean (`git status --porcelain
   --untracked-files=all` = 0).
+
+## Independent re-validation (2026-10-23, eleventh pass)
+
+This pass nailed down the one number that had been reported imprecisely (the
+isolation check's exit code) and confirmed the D3 feature's own delta and the web
+side.
+
+- **D3's own delta is exactly 16 files.** `git diff --name-only 088b4f2 053cd0e`
+  lists the same 16 files as the merge delta minus `.jdone` (verified in the tenth
+  pass). This is the feature as D3 shipped it, before the merge.
+- **`check:test-isolation` exit code, measured correctly.** Earlier passes reported
+  exit 1; a tenth-pass run printed `ISO-EXIT=0` because cmd expanded `%ERRORLEVEL%`
+  at parse time, which always yields 0. A batch file that reads `%ERRORLEVEL%` after
+  `call npm run check:test-isolation` reports the true value: **exit 1**, with
+  `AssertionError [ERR_ASSERTION]: the test suite wrote into the repository tree:
+  data, workspace`. Critically, the same output shows `suite exit=0`: the suite
+  itself passes; only the residue assertion fails. The failure is the known parity
+  gap, not a D3 regression.
+- **The gap is documented in parity's own tests.** `src/agent/__tests__/
+  codingPrompt.test.ts:19` states that without a redirect "the prompt tests create
+  the repository's real `data/manus.db`", and `codingRouting.test.ts:222-234` asserts
+  the audit file lands under a *redirected* `DATA_DIR` rather than the repo. So the
+  residue (`data/`, `workspace/`) is a standing parity isolation leak that this merge
+  neither introduced nor widened.
+- **Web side does not touch env-builds (by design).** `git grep -n "env-builds|
+  envBuilds|env_blueprint" -- packages/web` returns **0 hits**. The spec makes "a
+  minimal UI/status via existing server route optional", and the implementation
+  ships the server route (`src/server/routes/envBuilds.ts` + wiring in `http.ts`)
+  without a new web page. The `next build` gate still passes (25/25 static pages).
+
+### Final state
+
+- HEAD `00e7be6` (tenth-pass record) at the time these checks ran; `.jdone` is
+  appended below and committed. Working tree clean (`git status --porcelain
+  --untracked-files=all` = 0; no untracked files) after the isolation run.
