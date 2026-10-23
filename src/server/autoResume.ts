@@ -124,21 +124,26 @@ export interface AutoResumeRunOptions {
  * that became unsafe in between therefore stays `interrupted` instead of
  * silently re-running a side-effecting tool.
  *
- * Returns how many tasks were dispatched. A failure to enqueue one task is
- * logged and never stops the others.
+ * Returns how many tasks were dispatched. A task already in the execution queue is
+ * skipped (a route resumed it first), and a failure to enqueue one task is logged
+ * and never stops the others. The count is therefore the number actually handed to
+ * `runTask`, not the number found eligible: the boot log must not claim a run was
+ * continued when it was not.
  */
 export function autoResumeInterruptedTasks(
   baseWorkspace: string,
   runTask: (opts: AutoResumeRunOptions) => Promise<unknown>,
 ): number {
   const candidates = findAutoResumableTasks(baseWorkspace);
+  let dispatched = 0;
   for (const { task, saved } of candidates) {
     // The queue is empty at boot, but a resume triggered from a route before
     // this ran must not double-queue the same task.
     if (executionQueue.has(task.id)) continue;
     log.info(`auto-resume (O6b): continuing ${task.id} at checkpoint step ${saved.checkpoint?.nextStep ?? 0}`);
+    dispatched += 1;
     void runTask({ taskId: task.id, prompt: saved.prompt, resume: true, emit: () => {} })
       .catch((error) => log.warn(`auto-resume ${task.id}: ${String(error)}`));
   }
-  return candidates.length;
+  return dispatched;
 }

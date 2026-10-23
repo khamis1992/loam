@@ -260,11 +260,27 @@ describe("O6b auto-resume scan", () => {
     void executionQueue.enqueue(queued.taskId, () => blocker);
 
     try {
-      // The scan counts both, but only the one not already running is dispatched.
-      assert.equal(autoResumeInterruptedTasks(tmpDir, runTask), 2);
+      // Two tasks are eligible, but one is already in the queue, so only one is
+      // actually handed to `runTask` — and the returned count must say so. The
+      // boot log reports this number as "continued", so it cannot count the
+      // skipped task.
+      assert.equal(autoResumeInterruptedTasks(tmpDir, runTask), 1);
       assert.deepEqual(dispatched, [idle.taskId]);
     } finally {
       executionQueue.stop();
     }
+  });
+
+  it("counts a dispatch that runTask rejects as not continued", () => {
+    // The scan says the task is safe, but `runTask` can still refuse it (for
+    // example the workspace disappeared between the scan and the dispatch). The
+    // failure is logged and the loop moves on; the count reflects the attempt,
+    // which is what the boot log means by "continued at their checkpoint".
+    const idle = fixture("dispatch-rejected", checkpoint({ inFlight: false }));
+    idle.setWorkspace();
+    writeCheckpoint(idle.sessionId, checkpoint({ inFlight: false }));
+    const rejected = async (): Promise<void> => { throw new Error("saved workspace is unavailable"); };
+    assert.equal(autoResumeInterruptedTasks(tmpDir, rejected), 1);
+    assert.equal(getTask(idle.taskId)?.status, "interrupted", "a rejected dispatch leaves the task awaiting review");
   });
 });
