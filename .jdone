@@ -1,5 +1,98 @@
 fc-07 complete: the Loam Video / Loam Effects router and a full "Video editing" prompt section. One product, one workflow, Arabic + English routing, FilmCraft-native fallback.
 
+## Independent validation pass (round-5 tree, `7b777a2`, 2026-10-23)
+
+Adversarial re-verification of the round-5 merge, challenging every claim with fresh
+evidence rather than re-reading the notes above. All checks were re-run on the final tree.
+
+### 1. The gate file is a stale artifact, not a live gate
+
+`.jgatefail.txt` still contains the round-1 conflict text, but it is NOT a live gate:
+it is untracked (`git ls-files .jgatefail.txt` is empty), has no commit history
+(`git log -- .jgatefail.txt` is empty), is LF-only, and no script in `scripts/` or
+`package.json` references `gatefail`. `.jdone` exists and the working tree is clean
+(`git status --porcelain` empty; `git diff --stat HEAD` empty), so the merge is committed
+and `MERGE_HEAD` is gone.
+
+### 2. The N15 merge dropped nothing
+
+All 26 files changed in the gap `eebf6d6...d57df77` are present in HEAD, and 25 of 26
+are byte-identical to parity's tip blob. The only difference is `.jdone`, which is the
+union by design. At tree level, HEAD has 0 files missing vs the parity tip and 4 added
+(fc-07's own `videoStudio.ts`, `videoStudioRouter.ts` and their two test files).
+
+### 3. The 8 blobs that differ from parity are fc-07's own, not merge damage
+
+A blob-level comparison of the parity tip against HEAD shows 8 files whose blob differs:
+`docs/filmcraft-integration.md`, `prompts/loam-master.md`,
+`src/agent/__tests__/__snapshots__/coding-prompt.snap.json`, `src/agent/masterPromptText.ts`,
+`src/agent/planner.ts`, `src/agent/prompt.ts`, `src/tools/__tests__/videoStudio.test.ts`
+and `src/tools/videoStudio.ts`. All 8 are fc-07-owned (`git diff 2f5c69c...HEAD`), all 8
+were byte-identical to parity at the merge base (`base==parity: true`, i.e. parity never
+changed them), and the round-5 merge did NOT touch any of them
+(`git diff --name-only eebf6d6 HEAD -- <file>` is empty for all 8). The differences are
+fc-07's authored additions/reframes, e.g. `fallbackResult(reason, message, hint?)` gaining
+the `routing` parameter, `filmcraft_dist_missing` renamed to the brand-neutral
+`loam_video_dist_missing`, and the `VideoStudioRouting` interface added. Nothing from
+parity was overwritten by the merge.
+
+### 4. The fanout root cause is real and causal on the merged tree
+
+`check:isolation` exits 1 with `fatal: Error: duplicate tool: fanout`, and
+`check:loam-e2e` exits 1 with the same error. Both `src/index.ts:158` and
+`src/setup/runtime.ts:124` register `createFanoutTool`. Reproduced causally on a throwaway
+worktree at HEAD: with the duplicate register removed, the failure moved from
+`duplicate tool: fanout` to `Timed out` (the next error in the chain), proving the
+`EADDRINUSE 8787` layer underneath is real and ordered after the fanout collision. Both
+files are byte-identical to parity, so this is inherited from parity's N7 commit
+`3188703`, not a merge regression.
+
+### 5. The wiki flake is inherited, and it is not one flake but two
+
+`src/app/app/wiki/__tests__/wikiPage.test.tsx` is not fc-07 or N15 code. Running the
+full web suite on the merged tree once produced a failure in "opens a page through GET
+/api/wiki/:project/:slug" (`Unable to find an element with the text: /Hello wiki/`).
+Re-running that file in isolation 8 times on the merged tree passed 8/8. Creating a clean
+parity worktree at `d57df77` and running the same file 3 times produced a failure on the
+first run, but in a DIFFERENT test ("lists wiki projects and their pages from GET
+/api/wiki", `Found multiple elements with the text: Overview`). So the wiki test file has at
+least two independent async races, both inherited from parity's `9536efe` (which is an
+ancestor of `manus-parity`), and neither is caused by this merge.
+
+### 6. The validator is not blind
+
+A fresh self-test of the losslessness checker, run against the merge parents `eebf6d6`
+and `d57df77`, passes 9/9: the worktree file and the committed merge blob are both clean
+(0 missing), an identical control copy is clean, and the checker detects 1 dropped unique
+line, 10 dropped unique lines, an empty file, a half-truncation, 1 replaced unique line,
+and a one-sided (theirs-only) resolution. 2151 unique lines were available as tamper
+targets, so every tamper case is non-vacuous. The same checker confirms the final `.jdone`
+is a lossless union of both merge parents (0 missing vs either parent and vs the union,
+0 conflict markers).
+
+### 7. The 401 auth gate claim is false
+
+No check script in `scripts/`, `package.json` or `.jtask.md` declares a 401 gate. The only
+401 assertion anywhere is `scripts/check-a9.ps1` line 66-75, which expects 401 for an
+unauthenticated `/api/config`; that script is not referenced by any gate and fc-07
+touches no auth code. The earlier "401 auth gate" label was a session artifact.
+
+### 8. No forbidden paths, no secrets, no encoding damage
+
+`git diff --name-only d57df77 HEAD` touches no `docs/handoff/watchdog.ps1`, no `qa/*.png`,
+no `packages/tests/visual/baselines`, and no ZCode/Codex files. The N15-added files
+contain no secret patterns (no `sk-`, `AKIA`, `ghp_`, or private-key headers).
+`check:encoding` exits 0 (no BOM, no mojibake, all JSON valid).
+
+### 9. Both fc-07 and fc-09 features survive in `videoStudio.ts`
+
+The merged file carries fc-07's `VideoStudioRouter` import, the `routing` object on every
+result path, and the `loam_video_dist_missing` reason (32 `routing` references), alongside
+fc-09's `runEffectsAction` and `effects_dist_missing` (6 references). Touched-file tests pass
+102/102.
+
+---
+
 ## Merge gate fix, round 5 (merge commit `96dbfae`)
 
 Parity advanced a fifth time while the round-4 gate was being re-verified (`d57df77`,
