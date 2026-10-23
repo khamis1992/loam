@@ -10,12 +10,22 @@ export interface FileReadRecord {
   mtimeMs: number;
   size: number;
   hash: string;
+  /** Wall-clock time the read was recorded, used to order re-attachment. */
+  readAtMs: number;
 }
 
 export type ReadGuardResult = { ok: true } | { ok: false; code: ReadGuardCode; message: string };
 
 function hashContent(content: string): string {
   return crypto.createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+/** One entry returned by `ReadState.recent`. */
+export interface ReadEntry {
+  /** Absolute path of the file that was read. */
+  path: string;
+  /** Wall-clock time the read was recorded. */
+  readAt: Date;
 }
 
 /**
@@ -33,8 +43,13 @@ export class ReadState {
     return path.resolve(p);
   }
 
-  /** Record a file as read. Pass the content when the caller already read it. */
-  record(p: string, content?: string): void {
+  /**
+   * Record a file as read. Pass the content when the caller already read it.
+   * `readAtMs` overrides the wall-clock read time, which keeps the
+   * newest-first ordering of `recent()` deterministic when several reads land
+   * in the same millisecond.
+   */
+  record(p: string, content?: string, readAtMs?: number): void {
     const abs = this.key(p);
     let st: fs.Stats;
     try {
@@ -52,12 +67,28 @@ export class ReadState {
         return;
       }
     }
-    this.records.set(abs, { mtimeMs: st.mtimeMs, size: st.size, hash });
+    const at = Number.isFinite(readAtMs) ? (readAtMs as number) : Date.now();
+    this.records.set(abs, { mtimeMs: st.mtimeMs, size: st.size, hash, readAtMs: at });
   }
 
   /** Forget a file (for example after it was deleted or moved). */
   forget(p: string): void {
     this.records.delete(this.key(p));
+  }
+
+  /**
+   * The most recently read files, newest first, capped at `limit`.
+   *
+   * Post-compaction re-attachment uses this to hand the model back the files it
+   * was working from without re-reading them all.
+   */
+  recent(limit: number): ReadEntry[] {
+    const entries: ReadEntry[] = [];
+    for (const [abs, record] of this.records) {
+      entries.push({ path: abs, readAt: new Date(record.readAtMs) });
+    }
+    entries.sort((a, b) => b.readAt.getTime() - a.readAt.getTime());
+    return entries.slice(0, Math.max(0, limit));
   }
 
   hasRead(p: string): boolean {

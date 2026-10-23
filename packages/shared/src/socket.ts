@@ -133,6 +133,11 @@ export interface NewPlanStepEvent extends ChatEventBase {
   title: string;
 }
 
+export interface TodoUpdateEvent extends ChatEventBase {
+  type: 'todoUpdate';
+  todos: { id: string; content: string; status: 'pending' | 'in_progress' | 'completed' | (string & {}) }[];
+}
+
 export interface LiveStatusEvent extends ChatEventBase {
   type: 'liveStatus';
   text: string;
@@ -224,6 +229,24 @@ export interface ExplanationEvent extends ChatEventBase {
   content: string;
 }
 
+/** Prompt-cache (KV cache) accounting for one completed provider request. */
+export interface CacheUsageEvent extends ChatEventBase {
+  type: 'cache_usage';
+  provider: string;
+  model: string;
+  promptTokens: number;
+  cachedTokens: number;
+  /** Present only when the provider reported a real miss/refresh. */
+  miss?: {
+    reason: string;
+    expectedTokens: number;
+    readTokens: number;
+    missedTokens: number;
+    documentedCause?: string;
+    message: string;
+  };
+}
+
 export interface FolderAccessRequestEvent extends ChatEventBase {
   type: 'folderAccessRequest';
   requestId: string;
@@ -271,6 +294,7 @@ export type ChatEvent =
   | QueueStatusChangeEvent
   | PlanUpdateEvent
   | NewPlanStepEvent
+  | TodoUpdateEvent
   | LiveStatusEvent
   | ModeEvent
   | AttachmentEvent
@@ -282,6 +306,7 @@ export type ChatEvent =
   | LocalPermissionModeChangeResultEvent
   | EventsNotifyEventsAfterEvent
   | ExplanationEvent
+  | CacheUsageEvent
   | FolderAccessRequestEvent
   | BrowserFrameEvent
   | LocalExecutionApprovalRequestedEvent

@@ -1,5 +1,7 @@
 {
   "Sign in to {product}": "تسجيل الدخول إلى {product}",
+  "Prompt cache": "ذاكرة التخزين المؤقت للمدخلات",
+  "{count} tokens reused": "تمت إعادة استخدام {count} رمزًا",
   "Sign in": "تسجيل الدخول",
   "Having trouble logging in?": "هل تواجه مشكلة في تسجيل الدخول؟",
   "Tap the top-right menu or copy the link to open it in your default browser.": "اضغط على القائمة في الزاوية العليا اليمنى أو انسخ الرابط ثم افتحه في متصفحك الافتراضي.",
@@ -598,6 +600,7 @@
   "Export": "تصدير",
   "Ready": "جاهز",
   "Unavailable": "غير متوفر",
+  "Loam Video is unavailable, so the built-in video editor is shown instead.": "فيديو Loam غير متوفر، لذا يظهر محرر الفيديو المدمج بدلاً منه.",
   "Studio": "استوديو",
   "Design": "تصميم",
   "Edit and render videos": "تحرير الفيديوهات وعرضها",

@@ -1,0 +1,15 @@
+{
+  "id": "task-010",
+  "title": "Simplify Python function",
+  "category": "refactor",
+  "language": "python",
+  "prompt": "`src/parser.py` builds its result with a manual index loop and an `if`/`else` that appends the same kind of value twice. Rewrite `parse_pairs` to be idiomatic Python using a single comprehension, preserving behaviour exactly (a malformed entry with no separator must still be skipped). The `while` loop, the `if`/`else` and the mutable `result` dict must all be gone.",
+  "testCommand": "py -3 .eval/check.py",
+  "timeoutSec": 60,
+  "maxSteps": 14,
+  "forbidPatterns": [
+    { "path": "src/parser.py", "pattern": "while |result = " },
+    { "path": "src/parser.py", "pattern": "if \"=\" in part|split(\"=\", 1)" }
+  ],
+  "tags": ["python", "idiomatic"]
+}

@@ -1,0 +1,18 @@
+{
+  "schema": "loam-design-block/1",
+  "id": "cta-banner",
+  "name": "Call-to-Action Banner",
+  "description": "A full-width conversion banner with a headline, one supporting line and a contrasting action button.",
+  "category": "cta",
+  "license": "MIT",
+  "source": "shadcn/ui blocks",
+  "tags": ["cta", "banner", "conversion"],
+  "intent": "Convert engaged readers with a single, unmissable call to action.",
+  "deps": ["react"],
+  "rtl": false,
+  "dir": "ltr",
+  "lang": "en",
+  "screenshot": "pending",
+  "entry": "Block.tsx",
+  "files": ["Block.tsx", "manifest.json", "README.md"]
+}

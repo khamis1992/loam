@@ -1,5 +1,7 @@
 {
   "Sign in to {product}": "Sign in to {product}",
+  "Prompt cache": "Prompt cache",
+  "{count} tokens reused": "{count} tokens reused",
   "Sign in": "Sign in",
   "Having trouble logging in?": "Having trouble logging in?",
   "Tap the top-right menu or copy the link to open it in your default browser.": "Tap the top-right menu or copy the link to open it in your default browser.",
@@ -600,6 +602,7 @@
   "Export": "Export",
   "Ready": "Ready",
   "Unavailable": "Unavailable",
+  "Loam Video is unavailable, so the built-in video editor is shown instead.": "Loam Video is unavailable, so the built-in video editor is shown instead.",
   "Studio": "Studio",
   "Design": "Design",
   "Edit and render videos": "Edit and render videos",
