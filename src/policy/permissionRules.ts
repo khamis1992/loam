@@ -32,6 +32,8 @@ import {
   type GateRuleLike,
   type SandboxMode,
 } from "./riskTier.js";
+import { LruCache } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 // ----------------------------------------------------------------------------
 // Types
@@ -141,7 +143,10 @@ export function buildPermissionRuleSet(input: BuildRuleSetInput = {}): {
 // Glob matching
 // ----------------------------------------------------------------------------
 
-const globCache = new Map<string, RegExp>();
+/** Bounded glob→RegExp cache (J6): only user-authored patterns ever enter it,
+ *  but a long-lived session with many distinct rules must not grow forever. */
+const globCache = new LruCache<RegExp>({ capacity: 256, name: "policy-glob" });
+registerCacheStats("policy-glob", () => globCache.stats());
 
 function compileGlob(glob: string): RegExp {
   let out = "";
