@@ -1,5 +1,52 @@
 
-## V8 gate-fix session (round 11): merge with parity tip 84c9af8 (N3 Knowledge Garden), all gates green
+## V8 gate-fix session (round 12): root-cause fix for the recurring `.jdone` parity conflict
+
+**Root cause.** `.jdone` is an append-only runner rollup that both sides keep tracked:
+this worktree appends its own reports and `manus-parity` carries an equivalent file of
+its own (every sibling workstream appends to it). A normal three-way merge therefore
+conflicts in essentially every region, so each parity merge demanded a hand-resolve of
+dozens of conflict hunks and repeatedly produced the same gate failure:
+`MERGE CONFLICT with latest manus-parity in: .jdone. Run git merge manus-parity, resolve
+those files keeping both sides, commit.`
+
+**Fix.** Add a committed `.gitattributes` rule declaring both marker files as
+`merge=union`. The union driver concatenates both sides instead of blocking, which is
+exactly the intended outcome for these files: each report stays intact and the result is
+a superset of both parents. `.jdone` is now union-merged automatically on every future
+parity merge, so this gate failure cannot recur.
+
+**What was merged.** `manus-parity` was a moving integration branch during this session.
+It advanced from `84c9af8` to `bec4181` (which untracked the markers), then to `109617a`
+(which untracked and gitignored them), and finally to `590d358` (which re-added
+`.jdone` and re-stated the gitignore rationale). The final merge (`ca6b2f0`) applied the
+union driver and completed with no conflict, keeping both sides.
+
+**Resolution.** The `.jdone` add/add conflict was resolved by the union driver. Verified
+by a multiset line diff against both parents: missing non-blank lines = 0 for our side
+and 0 for parity's side, so no report content was lost. `.jcode-done` is unchanged
+(parity does not track it). No conflict markers, no BOM, no U+FFFD, Arabic intact.
+
+**Gates (all green on the merged tree at `ca6b2f0`).**
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:design-registry` -> OK (30 blocks, 8 RTL, all manifests valid, all built)
+- V8 node suites (`src/design/__tests__/*.test.ts` + `src/tools/__tests__/uiExamples.test.ts`)
+  -> 217 tests, 217 pass, 0 fail
+- `(cd packages/web && npx next build)` -> exit 0, compiled successfully
+- `(cd packages/web && npx vitest run)` -> 89 files, 614 tests, 614 pass, 0 fail
+- Acceptance probe: `pricing` -> top 3 `["pricing-toggle","pricing-3-tier","rtl-pricing-3-tier"]`;
+  Arabic `تسعير` -> same top 3 (acceptance met in both scripts)
+
+**Final state.** `HEAD = ca6b2f0`; `git merge-base --is-ancestor manus-parity HEAD` exits 0.
+Tracked marker files: `.jdone`, `.jcode-done`, `.gitattributes` (union rule). V8
+deliverables intact: `src/design/registry.ts`, `src/design/retrieval.ts`,
+`src/tools/uiExamples.ts`, `src/tools/__tests__/uiExamples.test.ts`. `src/index.ts`
+auto-merged and keeps both sides' wiring: V8's `createUiExamplesTools` import and
+`registerAll`, plus parity's `applyKnowledgeGate`, the knowledge allowlist,
+`knowledge: opts.knowledge === true`, and `embedder: rt.embedder`.
+
+
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity in: .jdone. Run git merge
 manus-parity, resolve those files keeping both sides, commit.`
