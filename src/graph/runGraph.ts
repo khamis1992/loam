@@ -474,7 +474,9 @@ export class RunGraph {
       case "verification_progress":
       case "permission_mode_changed":
       case "cache_usage":
+      case "workspace_command":
       case "video_studio_command":
+      case "workspace_open_request":
         // Live-only signals with no canvas node of their own.
         return [];
       default: {

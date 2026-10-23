@@ -121,7 +121,7 @@ import { setSecret, listSecrets, deleteSecret } from "./secretsVault.js";
 import { createApproval, decideApproval, getApproval, listApprovals } from "./approvals.js";
 import { setTaskAgent } from "./db.js";
 import { subscribeTask } from "./streams.js";
-import { videoStudioRelay, type VideoStudioResult } from "./videoStudioRelay.js";
+import { workspaceRelay, workspaceRelay as videoStudioRelay, type WorkspaceRelayResult } from "./workspaceRelay.js";
 import { appendLearning, readLearning } from "./learning.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { installDraft, listSuites, loadSuite } from "../eval/suites.js";
@@ -2443,23 +2443,25 @@ loadAgents();
           return;
         }
 
-        // Loam Video Studio relay: the panel attached to this task posts the
+        // Workspace relay: the editor panel attached to this task posts the
         // result of a command that was dispatched over the task's event stream.
-        if (req.method === "POST" && /^\/api\/tasks\/[^/]+\/video-studio\/result$/.test(p)) {
+        // The /video-studio/result path stays as the fc-02 (Video Studio) alias.
+        if (req.method === "POST" && /^\/api\/tasks\/[^/]+\/(?:workspace|video-studio)\/result$/.test(p)) {
           const origin = req.headers.origin;
           if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") {
             return sendJson(res, 403, { error: "same-origin requests required" });
           }
-          const taskId = decodeURIComponent(p.slice("/api/tasks/".length, -"/video-studio/result".length));
+          const route = p.includes("/video-studio/result") ? "/video-studio/result" : "/workspace/result";
+          const taskId = decodeURIComponent(p.slice("/api/tasks/".length, -route.length));
           if (!getTask(taskId)) return sendJson(res, 404, { error: "task not found" });
           let raw: unknown;
           try { raw = await readBody(req, 64_000); } catch { return sendJson(res, 400, { error: "invalid JSON body" }); }
-          const result = raw as VideoStudioResult;
+          const result = raw as WorkspaceRelayResult;
           if (!result || typeof result !== "object" || typeof result.id !== "string" || typeof result.taskId !== "string") {
             return sendJson(res, 400, { error: "id and taskId are required" });
           }
           if (result.taskId !== taskId) return sendJson(res, 400, { error: "taskId mismatch" });
-          const handled = videoStudioRelay.resolve(result);
+          const handled = workspaceRelay.resolve(result);
           return sendJson(res, 200, { ok: handled, ...(handled ? {} : { ignored: true }) });
         }
 
