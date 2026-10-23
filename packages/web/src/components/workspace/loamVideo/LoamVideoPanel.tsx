@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, Sparkles, Video } from 'lucide-react';
+import { Check, Download, Loader2, Sparkles, Video } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { FilmcraftBridge, FILMCRAFT_FRAME_URL, type FilmcraftMethod } from '@/lib/filmcraft';
 import { setLoamVideoTarget } from '@/lib/filmcraftClient';
+import { exportLoamVideo, type LoamVideoExportProgress } from '@/lib/videoStudioExport';
 import { EffectcraftBridge, EFFECTCRAFT_FRAME_URL, type EffectcraftMethod } from '@/lib/effectcraft';
 import { setLoamEffectsTarget } from '@/lib/effectcraftClient';
 import {
@@ -47,6 +48,13 @@ export interface LoamVideoPanelProps {
   onProjectPathChange?: (projectPath: string | null) => void;
 }
 
+/** One-shot export state for the panel's header button. */
+type ExportState =
+  | { phase: 'idle' }
+  | { phase: 'running'; progress: number | null }
+  | { phase: 'done'; name: string; path: string; bytes: number }
+  | { phase: 'error'; message: string };
+
 /**
  * Shared "Loam Video" studio surface: mounts the FilmCraft iframe, owns its
  * bridge, imports an optional source clip and reports availability.
@@ -58,6 +66,10 @@ export interface LoamVideoPanelProps {
  * Used by the `/app/video` page and the `loam-video` Workspace panel editor.
  * Rendering the iframe is safe even when the vendored dist is missing — the
  * host decides what to show for the `unavailable` status.
+ *
+ * The Export button renders the timeline through the server (fc-06) and saves
+ * the file into the task's files; it needs a taskId, so it stays hidden on the
+ * standalone `/app/video` page.
  */
 export function LoamVideoPanel({
   taskId,
@@ -77,6 +89,7 @@ export function LoamVideoPanel({
   const filmCatalogRef = useRef<string[]>([]);
   const importedRef = useRef<string | null>(null);
   const [status, setStatus] = useState<LoamVideoBridgeStatus>('loading');
+  const [exportState, setExportState] = useState<ExportState>({ phase: 'idle' });
   const [effectsStatus, setEffectsStatus] = useState<LoamVideoBridgeStatus>('loading');
   const [engine, setEngine] = useState<LoamVideoEngine>('video');
   const [effectsAvailability, setEffectsAvailability] = useState<LoamEffectsAvailability>('loading');
@@ -194,14 +207,14 @@ export function LoamVideoPanel({
       reopenedRef.current = reopenProjectPath;
       setBusy(true);
       try {
-          for (const step of planReopenEffects(reopenProjectPath)) {
-            const value = await bridge.call(step.method as EffectcraftMethod, step.params);
-            if (step.method === 'inspect') {
-              const path = readEffectsProjectPath(value) ?? reopenProjectPath;
-              setProjectPath(path ?? null);
-              projectCb.current?.(path ?? null);
-            }
+        for (const step of planReopenEffects(reopenProjectPath)) {
+          const value = await bridge.call(step.method as EffectcraftMethod, step.params);
+          if (step.method === 'inspect') {
+            const path = readEffectsProjectPath(value) ?? reopenProjectPath;
+            setProjectPath(path ?? null);
+            projectCb.current?.(path ?? null);
           }
+        }
         setEngine('effects');
         engineCb.current?.('effects');
         setNotice(null);
@@ -339,6 +352,28 @@ export function LoamVideoPanel({
     }
   };
 
+  const runExport = async () => {
+    if (!taskId || status !== 'ready') return;
+    setExportState({ phase: 'running', progress: null });
+    try {
+      const result = await exportLoamVideo({
+        taskId,
+        options: { format: 'mp4' },
+        onProgress: (progress: LoamVideoExportProgress) => {
+          setExportState({
+            phase: 'running',
+            progress: progress.progress ?? null,
+          });
+        },
+      });
+      setExportState({ phase: 'done', name: result.name, path: result.path, bytes: result.bytes });
+    } catch (error) {
+      setExportState({ phase: 'error', message: error instanceof Error ? error.message : String(error) });
+    }
+  };
+
+  const exporting = exportState.phase === 'running';
+
   return (
     <div className="relative flex h-full w-full flex-col bg-black">
       {/* One engine is visible at a time, but both stay mounted so switching is
@@ -351,7 +386,49 @@ export function LoamVideoPanel({
         <span className="flex items-center gap-1.5 text-xs font-medium text-text-primary">
           <Sparkles className="size-3.5" /> {t('Loam Effects')}
         </span>
+        <span
+          className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+            status === 'ready'
+              ? 'bg-fill-tsp text-text-secondary'
+              : status === 'unavailable'
+                ? 'bg-function-error-tsp text-function-error'
+                : 'bg-fill-tsp text-text-tertiary'
+          }`}
+        >
+          {status === 'ready' ? t('Ready') : status === 'unavailable' ? t('Unavailable') : t('Loading')}
+        </span>
+        {exportState.phase === 'done' && (
+          <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-xs text-text-tertiary" title={exportState.path}>
+            <Check className="size-3.5 shrink-0 text-function-success" />
+            {exportState.name} ({formatBytes(exportState.bytes)})
+          </span>
+        )}
+        {exportState.phase === 'error' && (
+          <span className="min-w-0 flex-1 truncate text-xs text-function-error" title={exportState.message}>
+            {exportState.message}
+          </span>
+        )}
         <div className="flex-1" />
+        {taskId && (
+          <button
+            type="button"
+            data-testid="loam-video-export"
+            disabled={status !== 'ready' || exporting}
+            onClick={() => void runExport()}
+            className="flex h-row-sm shrink-0 items-center gap-1.5 rounded-control bg-fill-tsp px-3 text-sm text-text-primary hover:bg-fill-hover disabled:opacity-50"
+          >
+            {exporting ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                {exportState.progress !== null ? `${Math.round(exportState.progress * 100)}%` : t('Exporting')}
+              </>
+            ) : (
+              <>
+                <Download className="size-4" /> {t('Export')}
+              </>
+            )}
+          </button>
+        )}
         {engine === 'video' ? (
           <button
             type="button"
@@ -411,6 +488,20 @@ export function LoamVideoPanel({
       </div>
     </div>
   );
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB'];
+  let value = bytes;
+  let unit = 'B';
+  for (const next of units) {
+    value /= 1024;
+    unit = next;
+    if (value < 1024) break;
+  }
+  return `${value.toFixed(value < 10 ? 1 : 0)} ${unit}`;
 }
 
 /** Human-readable message for an engine failure. */
