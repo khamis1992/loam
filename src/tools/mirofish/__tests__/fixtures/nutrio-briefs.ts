@@ -47,7 +47,7 @@ export const NUTRIO_LONDON: NutrioBrief = {
 /** No location set: the pipeline must infer Qatar/QAR from the Nutrio brief. */
 export const NUTRIO_NO_LOCATION: NutrioBrief = {
   label: "nutrio-inferred",
-  settings: baseSettings(null),
+  settings: baseSettings(undefined),
 };
 
 /** Same brief with a different active price (scenario value). */

@@ -1,11 +1,26 @@
 /**
  * MiroFish swarm simulation: shared types.
  *
- * This module defines the contract between the swarm pipeline stages
+ * This module is the single contract between the swarm pipeline stages
  * (seed -> simulate -> report) and the deterministic test doubles used by the
- * e2e gate. It never imports a provider and never calls a real model: the only
- * entry point for model access is the injectable {@link ModelCaller}.
+ * e2e gate. It is provider-neutral: no country, currency or language is
+ * hard-coded here, and the only model boundary is the injectable
+ * {@link ModelCaller} (defined in `./model.js` for the seed/model chain).
+ *
+ * It carries two families of types that describe the same domain objects:
+ *  - seed/locale/persona types (M2) used by `locale.ts` and `seed.ts`;
+ *  - pipeline/report types (M7) used by `pipeline.ts` and the e2e gate.
+ *
+ * `LocaleProfile`, `IncomeBand`, `Persona` and `SimulationSettings` are defined
+ * once here as supertypes that satisfy both consumers, so neither family is
+ * weakened: every field the seed chain produces is present, and every field the
+ * e2e fixtures emit is accepted.
  */
+import type { ModelCaller as SeedModelCaller } from "./model.js";
+
+// ---------------------------------------------------------------------------
+// Model boundary (M7 pipeline)
+// ---------------------------------------------------------------------------
 
 /** The stage a model call belongs to. Drives prompt construction and parsing. */
 export type ModelRole = "locale" | "persona" | "simulate" | "report";
@@ -29,80 +44,188 @@ export interface ModelCallOutput {
 }
 
 /**
- * The only model boundary the pipeline may use. Production wires this to
- * `chatWithFailover`; tests inject a deterministic double.
+ * The model boundary the pipeline may use. Production wires this to
+ * `chatWithFailover`; tests inject a deterministic double. This is a distinct
+ * shape from the seed chain's {@link SeedModelCaller}, which carries
+ * `temperature`/`timeoutMs` per call.
  */
 export interface ModelCaller {
   call(input: ModelCallInput): Promise<ModelCallOutput>;
 }
 
-/** User-selected location, any country/city/region worldwide. */
-export interface LocaleLocation {
+/** Re-export the seed chain's caller so `types.ts` remains a single import site. */
+export type { SeedModelCaller };
+
+// ---------------------------------------------------------------------------
+// Locale (shared by M2 seed and M7 pipeline)
+// ---------------------------------------------------------------------------
+
+/** A location the user explicitly selected. Any country/city/region worldwide. */
+export interface LocationSetting {
   country?: string;
   city?: string;
   region?: string;
 }
 
+/** Alias kept for callers that spell the setting "LocaleLocation". */
+export type LocaleLocation = LocationSetting;
+
 /** One income band expressed in the locale's own currency. */
 export interface IncomeBand {
+  /** Human label, e.g. "low", "middle", "affluent" (localized is fine). */
   label: string;
+  /** Lower bound in local currency (monthly, per household unless noted). */
   min: number;
-  max: number;
+  /** Upper bound in local currency; omit for the open-ended top band. */
+  max?: number;
+  /** ISO 4217 currency code the bounds are expressed in. */
+  currency: string;
 }
 
-/** Everything personas, currency, language and dialect derive from. */
+/**
+ * Resolved, locale-aware context used to build personas and prompts.
+ *
+ * Every field here is produced by the seed chain (`locale.ts`). The pipeline
+ * stage reads the same shape, so the two families share one definition.
+ */
 export interface LocaleProfile {
   country: string;
-  city: string | null;
-  region: string | null;
-  /** ISO 4217 currency code, e.g. "QAR", "GBP". */
+  city?: string;
+  region?: string;
+  /** ISO 4217 currency code (e.g. "QAR", "GBP", "USD"). */
   currency: string;
+  /** Languages in order of prominence (BCP-47 tags, e.g. ["ar-QA", "en"]). */
   languages: string[];
-  dialect: string;
+  /** Dialect / register note, e.g. "Gulf Arabic", "British English". */
+  dialect?: string;
+  /** Income bands expressed in the local currency. */
   incomeBands: IncomeBand[];
-  demographics: string;
+  /** Short demographic / market notes that shape persona diversity. */
+  demographics: string[];
+  /** IANA timezone name when known. */
+  timezone?: string;
+  /** Free-form note about how the locale was resolved. */
+  notes?: string;
 }
 
-/** A scalar variable whose value is varied between simulation rounds. */
+// ---------------------------------------------------------------------------
+// Settings / entities (shared by M2 seed and M7 pipeline)
+// ---------------------------------------------------------------------------
+
+/** The variable the user wants to stress, e.g. a price change. */
 export interface SimulationVariable {
   name: string;
-  baseline: number;
-  scenario: number;
+  baseline: string | number;
+  /** Alias for `baseline` kept for the M7 pipeline contract. */
+  scenario?: string | number;
   unit?: string;
 }
 
-/** Normalized settings for one swarm run. */
+/** Full simulation settings accepted by the tool/HTTP layer. */
 export interface SimulationSettings {
   brief: string;
-  docs: string[];
-  /** Null when the user did not set a location; the pipeline infers it. */
-  location: LocaleLocation | null;
-  /** Default 12, max 20 unless explicitly raised; hard cap 100. */
-  agents: number;
-  rounds: number;
-  variable: SimulationVariable | null;
-  language: "auto" | "ar" | "en";
-  seed: number;
+  /** Optional uploaded document paths (text/markdown/pdf-text/office). */
+  docs?: string[];
+  /** Optional user-selected location; inferred from brief/docs when absent. */
+  location?: LocationSetting;
+  /** Number of simulated agents. Default 12, max 20 unless explicitly raised. */
+  agents?: number;
+  /** Number of simulation rounds. Default 3. */
+  rounds?: number;
+  /** Optional variable to vary between rounds (e.g. price 1200 -> 1450). */
+  variable?: SimulationVariable | null;
+  /** Output language: "auto" (follow locale/user) or a BCP-47 tag. */
+  language?: string;
+  /** Optional RNG seed for reproducible runs. */
+  seed?: number;
 }
 
-/** A simulated persona. All locale-derived fields come from LocaleProfile. */
+/** A named thing extracted from the brief/docs (product, competitor, ...). */
+export interface EntityRef {
+  name: string;
+  kind?: string;
+  detail?: string;
+}
+
+/** A price point extracted from the brief/docs. */
+export interface PricePoint {
+  product?: string;
+  amount: number;
+  /** ISO 4217 currency code. */
+  currency: string;
+  /** Billing period, e.g. "month", "year", "one-time". */
+  period?: string;
+}
+
+/** The structured facts the seed step pulls out of the brief + docs. */
+export interface EntitySet {
+  products: EntityRef[];
+  prices: PricePoint[];
+  competitors: EntityRef[];
+  audiences: string[];
+  variable?: SimulationVariable;
+  /** One-paragraph neutral summary of the target product/market. */
+  summary?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Persona (supertype satisfying both the M2 seed and the M7 pipeline)
+// ---------------------------------------------------------------------------
+
+/**
+ * One simulated customer/agent persona.
+ *
+ * Fields produced by the seed chain (M2) and the fields emitted by the pipeline
+ * e2e gate (M7) are merged here. Fields owned by only one stage are optional so
+ * each stage can populate the subset it produces without weakening the other.
+ */
 export interface Persona {
   id: string;
   name: string;
+  /** Short first-person bio used as the agent's system prompt seed. */
   bio: string;
-  persona: string;
   age: number;
   gender: string;
-  mbti: string;
   country: string;
-  city: string | null;
-  profession: string;
-  interestedTopics: string[];
-  currency: string;
-  language: string;
-  dialect: string;
+  city?: string;
+  /** Income band label from the locale profile. */
   incomeBand: string;
+  currency: string;
+  /** Language the persona primarily uses. */
+  language: string;
+
+  /** Nationality/cultural background, realistic for the locale (M2 seed). */
+  nationality?: string;
+  /** Representative monthly income in local currency (M2 seed). */
+  incomeAmount?: number;
+  /** Household composition, e.g. "single", "family of four" (M2 seed). */
+  household?: string;
+  /** Occupation/profession (M2 seed). */
+  occupation?: string;
+  /** Primary channel (e.g. "Instagram", "X", "word of mouth") (M2 seed). */
+  channel?: string;
+  /** Baseline attitude toward the product category (M2 seed). */
+  attitude?: string;
+  /** Everyday habits that shape how they discover and buy (M2 seed). */
+  habits?: string[];
+
+  /** Diet / consumption preferences when relevant (M2 seed). */
+  diet?: string;
+  dialect?: string;
+
+  /** Seed-style persona descriptor (M2). */
+  persona?: string;
+  /** M7 pipeline field: MBTI-style personality descriptor. */
+  mbti?: string;
+  /** M7 pipeline alias for `occupation`. */
+  profession?: string;
+  /** M7 pipeline alias for `habits` (topics the persona cares about). */
+  interestedTopics?: string[];
 }
+
+// ---------------------------------------------------------------------------
+// Simulation log / report (M7 pipeline)
+// ---------------------------------------------------------------------------
 
 export type SimulationAction = "post" | "comment" | "like" | "repost" | "follow";
 
@@ -155,12 +278,25 @@ export interface SwarmReport {
   disclaimer: string;
 }
 
+/** The complete output of the M2 seed step. */
+export interface SeedResult {
+  locale: LocaleProfile;
+  entities: EntitySet;
+  personas: Persona[];
+  /** How the locale was resolved: user setting, model inference, or fallback. */
+  localeSource: "user" | "inferred" | "fallback";
+  /** Number of model calls actually made. */
+  modelCalls: number;
+}
+
 /** Output of a full seed -> simulate -> report run. */
 export interface PipelineResult {
   locale: LocaleProfile;
   personas: Persona[];
   log: SimulationLog;
   report: SwarmReport;
+  /** Seed-step facts (M2) carried alongside the pipeline result. */
+  entities?: EntitySet;
 }
 
 /** Input to the core pipeline. */
