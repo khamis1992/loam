@@ -9,8 +9,14 @@ import type { ExecutionCheckpoint, WorkerCheckpoint } from "./checkpoint.js";
 import { AcceptanceGuard } from "./acceptanceGuard.js";
 import { IndependentAcceptanceGuard, independentRequirements } from "./independentAcceptance.js";
 import { taskScopedTools, fileOnlyRequested } from "./taskToolScope.js";
-import { checkBudget, consumeTokens, type ComputeBudget } from "./computeBudget.js";
+import { checkBudget, consumeTokens, consumeWallClock, type ComputeBudget } from "./computeBudget.js";
+import {
+  budgetStoppedCheckpoint,
+  resumeStep as resumeMissionStep,
+  type MissionCheckpoint,
+} from "./mission.js";
 import { addUsage, sumUsage } from "./usageAccounting.js";
+import { MissionBudgetError, isMissionBudgetError } from "./loop.js";
 import { openSession, closeSession, cancelled, type SessionEndReason } from "./sessionHooks.js";
 import { runLifecycleHooks } from "../policy/hooks.js";
 import { needsAskUser } from "../tools/askUserGate.js";
@@ -60,6 +66,16 @@ export interface OrchestratorOptions extends RunOptions {
   recipeState?: RecipeState;
   /** Persist the recipe with every checkpoint so a resume keeps its shape. */
   saveRecipe?: (state: RecipeState) => void;
+  /**
+   * Neo N6: mission mode. The orchestrator has no fixed step cap; the budget
+   * (steps/tokens/wall-clock/cost) is the only ceiling, and a durable checkpoint
+   * is written after every step so a restart resumes the mission.
+   */
+  mission?: boolean;
+  /** Neo N6: resume the mission from this durable checkpoint. */
+  resumeMission?: import("./mission.js").MissionCheckpoint;
+  /** Neo N6: persist the mission checkpoint after each step. */
+  saveMissionCheckpoint?: (checkpoint: import("./mission.js").MissionCheckpoint) => void;
 }
 
 /** How many times a blocked Stop hook may force the orchestrated run to
@@ -243,6 +259,13 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
   const usage: Usage = { ...(restored?.usage ?? { promptTokens: 0, completionTokens: 0, durationMs: 0 }) };
   let totalSteps = restored?.totalSteps ?? 0;
   let usedModel = restored?.model ?? o.cfg.model;
+  // Neo N6: a mission that was stopped mid-step resumes at its last checkpoint,
+  // so the step counter is offset by the steps already recorded there.
+  const missionResumeOffset = o.mission === true && o.resumeMission ? resumeMissionStep(o.resumeMission) - 1 : 0;
+  // Neo N6: a resumed mission already carries elapsed wall-clock in its
+  // checkpoint, so the fresh step timer starts at that offset and the clock
+  // never restarts on a restart.
+  const missionStartedAt = o.mission === true ? (o.resumeMission?.budget.wallClockMs ?? 0) : 0;
   let lastMessages: ChatMessage[] = [];
   /** Stops the orchestrated run the moment the user presses cancel. */
   const guard = (): void => throwIfCancelled(o.signal, o.taskId);
@@ -327,6 +350,27 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
   };
   checkpoint(restored?.inFlight ?? false);
 
+  // Neo N6: a mission is bounded only by its budget, so it checkpoints after
+  // every orchestration-level step and resumes from the last safe boundary.
+  // Persistence is best-effort and never fails the run.
+  const mission = o.mission === true;
+  const missionBudget = o.budget;
+  const saveMissionCheckpoint = (lastStep: number, inFlight = false): void => {
+    if (!mission || !o.saveMissionCheckpoint) return;
+    try {
+      o.saveMissionCheckpoint({
+        version: 1,
+        taskId: o.taskId ?? "",
+        prompt: o.prompt,
+        lastStep,
+        budget: { ...(missionBudget ?? { steps: 0, promptTokens: 0, completionTokens: 0, wallClockMs: 0, costUsd: 0 }) },
+        checkpointedAt: new Date().toISOString(),
+        ...(inFlight ? { inFlight: true } : {}),
+      });
+    } catch (err) {
+      log.warn(`mission checkpoint not persisted: ${String(err)}`);
+    }
+  };
   const emitPlan = (): void => {
     o.emit({ type: "plan", goal: plan.goal, trivial: plan.trivial, steps: plan.steps, source: plan.source });
   };
@@ -502,7 +546,20 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
     const workerLimit = restored && resumeWorker && resumeWorker.steps >= oc.maxStepsPerWorker
       ? resumeWorker.steps + oc.maxStepsPerWorker
       : oc.maxStepsPerWorker;
-    const w = await runWorker({ ...o, resumeWorker, saveWorker: value => { worker = value; checkpoint(true); } }, prompt, suffix, workerLimit);
+    const w = await runWorker({
+      ...o,
+      resumeWorker,
+      saveWorker: value => { worker = value; checkpoint(true); },
+      // Neo N6: a mission worker is itself a mission: the per-worker step cap is
+      // lifted (the budget is the ceiling) and a checkpoint is written after each
+      // step so a restart resumes the mission instead of losing it.
+      ...(o.mission === true ? {
+        mission: true,
+        ...(o.resumeMission ? { resumeMission: o.resumeMission } : {}),
+        maxSteps: undefined,
+        ...(o.saveMissionCheckpoint ? { saveMissionCheckpoint: o.saveMissionCheckpoint } : {}),
+      } : {}),
+    }, prompt, suffix, workerLimit);
     worker = undefined;
     totalSteps += w.steps;
     addUsage(usage, w.usage);
@@ -539,6 +596,9 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
   let failure: string | null = null;
   /** D19: set when a worker stopped on the compute-budget ceiling. */
   let budgetExhausted = false;
+  /** Neo N6: the checkpoint of a clean mission budget stop, carried out of the
+   *  loop so the terminal throw can report it the same way `runAgent` does. */
+  let missionStopped: MissionCheckpoint | undefined;
 
   for (;;) {
     let failedStep: string | null = null;
@@ -563,11 +623,27 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
       // verification) is charged to the same session budget, so consult the
       // ceiling BEFORE dispatching another worker. Otherwise a long plan or a
       // token-heavy verifier could burn past 100% unchecked.
+      // Neo N6: a mission's per-step timer starts before its first dispatch so
+      // the wall-clock ceiling is enforced on the orchestrated path too.
+      const missionStepStartedAt = mission ? Date.now() : 0;
       if (o.budget) {
         const budgetDecision = checkBudget(o.budget);
         if (budgetDecision.action === "stop") {
           failedStep = budgetDecision.reason;
           budgetExhausted = true;
+          // Neo N6: a budget stop ends the mission cleanly, so the checkpoint
+          // is written with the budget reason and the run can be resumed.
+          if (mission) {
+            const stopped = budgetStoppedCheckpoint({
+              taskId: o.taskId, prompt: o.prompt,
+              lastStep: missionResumeOffset + (restored?.totalSteps ?? 0) + (nextStep > 0 ? i : 0),
+              budget: o.budget,
+            });
+            stopped.endedReason = "budget";
+            o.saveMissionCheckpoint?.(stopped);
+            o.emit({ type: "budget_exhausted", taskId: o.taskId ?? "", reason: budgetDecision.reason, checkpoint: stopped });
+            missionStopped = stopped;
+          }
           break;
         }
       }
@@ -609,6 +685,18 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
           // stays idle and the user can raise the ceiling to continue.
           failedStep = outcome.error ?? "compute budget exhausted";
           budgetExhausted = true;
+          // Neo N6: the worker stopped on its budget, so the mission checkpoint
+          // is the boundary a resume continues from.
+          if (mission && o.budget) {
+            const stopped = budgetStoppedCheckpoint({
+              taskId: o.taskId, prompt: o.prompt,
+              lastStep: missionResumeOffset + totalSteps,
+              budget: o.budget,
+            });
+            o.saveMissionCheckpoint?.(stopped);
+            o.emit({ type: "budget_exhausted", taskId: o.taskId ?? "", reason: failedStep, checkpoint: stopped });
+            missionStopped = stopped;
+          }
           break;
         }
         if (outcome.error) {
@@ -685,6 +773,22 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
       if (outcome && outcome.text.trim().length > 0) lastText = outcome.text;
       nextStep = i + 1;
       checkpoint(false);
+      // Neo N6: the step completed, so charge its wall-clock and estimated cost
+      // and checkpoint the new safe boundary. The budget is the mission's only
+      // ceiling, so a step that crossed the clock ends the mission here.
+      if (mission && o.budget) {
+        consumeWallClock(o.budget, Date.now() - (missionStepStartedAt || missionStartedAt));
+        saveMissionCheckpoint(missionResumeOffset + totalSteps + 1);
+        const after = checkBudget(o.budget);
+        if (after.action === "stop") {
+          failedStep = after.reason;
+          budgetExhausted = true;
+          const stopped = budgetStoppedCheckpoint({ taskId: o.taskId, prompt: o.prompt, lastStep: missionResumeOffset + totalSteps + 1, budget: o.budget });
+          o.saveMissionCheckpoint?.(stopped);
+          o.emit({ type: "budget_exhausted", taskId: o.taskId ?? "", reason: after.reason, checkpoint: stopped });
+          missionStopped = stopped;
+        }
+      }
 
       if (recipeMode) {
         // The step's results are now evidence. Ask the planner what the recipe
@@ -796,6 +900,10 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
     }
 
     if (failure) {
+      // Neo N6: a mission stopped on its budget ended cleanly, not with a
+      // failure. The checkpoint already carries the summary, so the caller can
+      // persist it and offer a raise instead of reporting an error.
+      if (budgetExhausted && missionStopped) throw new MissionBudgetError(`orchestrator: ${failure}`, missionStopped);
       throw new Error(`orchestrator: task incomplete: ${failure}`);
     }
 

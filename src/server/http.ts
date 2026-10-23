@@ -166,6 +166,11 @@ export interface RunTaskOptions {
   sideChat?: boolean;
   /** O6: protocol session whose durable inbound queue this run should drain. */
   inputSessionId?: string;
+  /**
+   * Neo N6: run type `mission`. The fixed step cap is lifted and the mission
+   * budget (steps/tokens/wall-clock/cost) governs the run instead.
+   */
+  mission?: boolean;
 }
 
 export interface ServerDeps {
@@ -2628,6 +2633,7 @@ loadAgents();
             abModels?: unknown;
             agentId?: unknown;
             workMode?: unknown;
+            mission?: unknown;
           };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
           if (!prompt) return sendJson(res, 400, { error: "prompt required" });
@@ -2654,6 +2660,9 @@ loadAgents();
           } catch (error) {
             return sendJson(res, 400, { error: String(error) });
           }
+          // Neo N6: run type `mission` is a request flag. Anything malformed is
+          // ignored rather than failing the run.
+          const mission = body.mission === true;
 
           res.writeHead(200, {
             "content-type": "text/event-stream; charset=utf-8",
@@ -2692,6 +2701,7 @@ loadAgents();
               ...(abModels && abModels.length > 0 ? { abModels } : {}),
               agentId,
               workMode,
+              ...(mission ? { mission: true } : {}),
             });
             if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify({ type: "task", taskId: result.taskId })}\n\n`);
           } catch (err) {

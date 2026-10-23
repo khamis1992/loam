@@ -191,6 +191,21 @@ export type AgentEvent =
   /** A workspace file was published as a task artifact via artifact_publish. */
   | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string }
   /**
+   * Neo N6: a mission reached its budget ceiling and stopped *cleanly*.
+   *
+   * This is not a failure: the mission ran until the limit the user set. The
+   * canvas renders it as a summary node so the run shows where it got to and
+   * what it consumed instead of an error banner.
+   */
+  | {
+      type: "budget_exhausted";
+      taskId: string;
+      /** Why the budget stopped the mission (steps/tokens/wall-clock/cost). */
+      reason: string;
+      /** The checkpoint at the stop, carried so the summary is truthful. */
+      checkpoint: import("./mission.js").MissionCheckpoint;
+    }
+  /**
    * MiroFish swarm simulation progress. Carries one `SimulationProgressEvent`
    * from the M3 loop as `payload` (the tool module owns that type; the agent core
    * deliberately does not import a tool module).

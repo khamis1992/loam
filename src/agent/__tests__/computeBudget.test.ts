@@ -18,7 +18,10 @@ import {
 describe("compute budget limits", () => {
   it("treats only positive finite numbers as limits", () => {
     assert.equal(normalizeLimit(10), 10);
-    assert.equal(normalizeLimit(10.9), 10);
+    // A limit is not always a count of whole units: a cost ceiling is USD and
+    // `$0.01` is a real ceiling, so fractional limits are preserved as-is.
+    assert.equal(normalizeLimit(10.9), 10.9);
+    assert.equal(normalizeLimit(0.01), 0.01);
     assert.equal(normalizeLimit(0), undefined);
     assert.equal(normalizeLimit(-5), undefined);
     assert.equal(normalizeLimit(NaN), undefined);

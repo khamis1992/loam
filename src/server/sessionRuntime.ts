@@ -17,6 +17,8 @@ import {
 } from "./sessionSleep.js";
 import {
   checkBudget,
+  consumeCost,
+  consumeWallClock,
   consumeSteps,
   consumeTokens,
   createComputeBudget,
@@ -39,6 +41,10 @@ export interface SessionRuntimeOptions {
   idleMinutes?: number;
   stepLimit?: number;
   tokenLimit?: number;
+  /** Neo N6: default wall-clock ceiling in minutes (0/undefined = no ceiling). */
+  wallClockMinutes?: number;
+  /** Neo N6: default cost ceiling in USD. */
+  costLimitUsd?: number;
   now?: () => number;
   hooks?: Partial<Record<string, SleepHooks>>;
 }
@@ -59,10 +65,16 @@ export class SessionRuntime {
   private readonly entries = new Map<string, RuntimeEntry>();
   private readonly stepLimit?: number;
   private readonly tokenLimit?: number;
+  private readonly wallClockLimitMs?: number;
+  private readonly costLimitUsd?: number;
 
   constructor(options: SessionRuntimeOptions = {}) {
     this.stepLimit = options.stepLimit;
     this.tokenLimit = options.tokenLimit;
+    this.wallClockLimitMs = options.wallClockMinutes && options.wallClockMinutes > 0
+      ? Math.floor(options.wallClockMinutes * 60_000)
+      : undefined;
+    this.costLimitUsd = options.costLimitUsd && options.costLimitUsd > 0 ? options.costLimitUsd : undefined;
     this.sleep = new SessionSleepManager({
       idleMinutes: options.idleMinutes,
       now: options.now,
@@ -80,7 +92,14 @@ export class SessionRuntime {
   private ensure(sessionId: string): RuntimeEntry {
     let entry = this.entries.get(sessionId);
     if (!entry) {
-      entry = { budget: createComputeBudget({ stepLimit: this.stepLimit, tokenLimit: this.tokenLimit }) };
+      entry = {
+        budget: createComputeBudget({
+          stepLimit: this.stepLimit,
+          tokenLimit: this.tokenLimit,
+          wallClockMs: this.wallClockLimitMs,
+          costUsd: this.costLimitUsd,
+        }),
+      };
       this.entries.set(sessionId, entry);
     }
     return entry;
@@ -90,6 +109,27 @@ export class SessionRuntime {
 
   getBudget(sessionId: string): ComputeBudget {
     return this.ensure(sessionId).budget;
+  }
+
+  /**
+   * Neo N6: adopt a mission budget for this session. A mission carries its own
+   * ceilings (and the counters carried over from its checkpoint) instead of the
+   * ordinary session defaults, so the badge and the run agree on the ceiling.
+   */
+  adoptBudget(sessionId: string, budget: ComputeBudget): void {
+    this.entries.set(sessionId, { budget });
+  }
+
+  /**
+   * Neo N6: the mission budget is mutated by the run itself (wall-clock and cost
+   * are charged inside the loop, not through this store). Hand the same object
+   * back to the store so the badge and the raise endpoint keep seeing the
+   * mission's real counters after the run ends.
+   */
+  adoptBudgetAfterRun(sessionId: string, budget: ComputeBudget): void {
+    const entry = this.ensure(sessionId);
+    entry.budget = budget;
+    entry.stoppedOnBudget = checkBudget(budget).action === "stop";
   }
 
   /** Consume one completed step and return the verdict for the NEXT step. */
@@ -106,10 +146,29 @@ export class SessionRuntime {
     return this.evaluate(sessionId);
   }
 
+  /** Neo N6: consume elapsed wall-clock time and return the next verdict. */
+  recordWallClock(sessionId: string, ms: number): ReturnType<typeof checkBudget> {
+    const entry = this.ensure(sessionId);
+    consumeWallClock(entry.budget, ms);
+    return this.evaluate(sessionId);
+  }
+
+  /** Neo N6: consume estimated USD cost and return the next verdict. */
+  recordCost(sessionId: string, usd: number): ReturnType<typeof checkBudget> {
+    const entry = this.ensure(sessionId);
+    consumeCost(entry.budget, usd);
+    return this.evaluate(sessionId);
+  }
+
   /** Evaluate the budget and remember the warning/stop reason. */
   evaluate(sessionId: string): ReturnType<typeof checkBudget> {
     const entry = this.ensure(sessionId);
-    const decision = checkBudget(entry.budget, { stepLimit: this.stepLimit, tokenLimit: this.tokenLimit });
+    const decision = checkBudget(entry.budget, {
+      stepLimit: this.stepLimit,
+      tokenLimit: this.tokenLimit,
+      wallClockMs: this.wallClockLimitMs,
+      costUsd: this.costLimitUsd,
+    });
     if (decision.action === "stop") entry.stoppedOnBudget = true;
     if (decision.action === "warn") entry.lastWarning = decision.reason;
     return decision;
@@ -127,7 +186,7 @@ export class SessionRuntime {
    * Raise the ceiling. The counters are NOT reset: work already done still
    * counts, so a raise can only ever allow more, never erase usage.
    */
-  raise(sessionId: string, delta: { steps?: number; tokens?: number }): { ok: boolean; reason?: string; budget: ComputeBudget } {
+  raise(sessionId: string, delta: { steps?: number; tokens?: number; wallClockMs?: number; costUsd?: number }): { ok: boolean; reason?: string; budget: ComputeBudget } {
     const entry = this.ensure(sessionId);
     const result = raiseBudget(entry.budget, delta);
     if (result.ok) {
@@ -186,7 +245,19 @@ export class SessionRuntime {
   snapshot(sessionId: string): {
     sessionId: string;
     state: string;
-    budget: { steps: number; stepLimit?: number; tokens: number; tokenLimit?: number; percent: number; warning?: string; stopped: boolean };
+    budget: {
+      steps: number;
+      stepLimit?: number;
+      tokens: number;
+      tokenLimit?: number;
+      wallClockMs?: number;
+      wallClockLimitMs?: number;
+      costUsd?: number;
+      costLimitUsd?: number;
+      percent: number;
+      warning?: string;
+      stopped: boolean;
+    };
     sleeping: boolean;
     msUntilSleep?: number;
     raised: boolean;
@@ -195,6 +266,8 @@ export class SessionRuntime {
     const budget = entry.budget;
     const stepPct = budget.stepLimit ? budget.steps / budget.stepLimit : 0;
     const tokenPct = budget.tokenLimit ? totalTokens(budget) / budget.tokenLimit : 0;
+    const clockPct = budget.wallClockLimitMs ? (budget.wallClockMs ?? 0) / budget.wallClockLimitMs : 0;
+    const costPct = budget.costLimitUsd ? (budget.costUsd ?? 0) / budget.costLimitUsd : 0;
     return {
       sessionId,
       state: this.sleep.getState(sessionId),
@@ -203,7 +276,11 @@ export class SessionRuntime {
         ...(budget.stepLimit !== undefined ? { stepLimit: budget.stepLimit } : {}),
         tokens: totalTokens(budget),
         ...(budget.tokenLimit !== undefined ? { tokenLimit: budget.tokenLimit } : {}),
-        percent: Math.round(Math.max(stepPct, tokenPct) * 100),
+        ...(budget.wallClockMs !== undefined ? { wallClockMs: budget.wallClockMs } : {}),
+        ...(budget.wallClockLimitMs !== undefined ? { wallClockLimitMs: budget.wallClockLimitMs } : {}),
+        ...(budget.costUsd !== undefined ? { costUsd: budget.costUsd } : {}),
+        ...(budget.costLimitUsd !== undefined ? { costLimitUsd: budget.costLimitUsd } : {}),
+        percent: Math.round(Math.max(stepPct, tokenPct, clockPct, costPct) * 100),
         ...(entry.lastWarning ? { warning: entry.lastWarning } : {}),
         stopped: entry.stoppedOnBudget ?? false,
       },

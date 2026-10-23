@@ -101,6 +101,13 @@ export interface Config {
    *  budget. Optional so test configs and older config.json files keep working;
    *  `loadConfig` fills it from DEFAULTS. */
   session?: { idleMinutes: number; stepLimit: number; tokenLimit: number };
+  /**
+   * Neo N6 mission budget: the ceiling a `mission` run type is bounded by.
+   * Unlike `session`, which gates an ordinary run, these limits lift the fixed
+   * step cap. `steps: 0` (or omitted) means unbounded steps, so a mission runs
+   * until the model answers, the user stops it, or another dimension runs out.
+   */
+  mission?: { steps: number; tokens: number; minutes: number; costUsd: number };
   workspace: string;
   policy: PolicyConfig;
   browser: { channel: string; headless: boolean; viewport: { width: number; height: number } };
@@ -259,6 +266,9 @@ export const DEFAULTS: Config = {
   // D19: sessions idle 30 minutes before their resources are reclaimed; the
   // per-session compute budget warns at 80% and stops at 100% (both raisable).
   session: { idleMinutes: 30, stepLimit: 40, tokenLimit: 500000 },
+  // Neo N6: a mission is unbounded in steps (0 = no cap) and bounded only by the
+  // generous defaults below. Each dimension is raisable through the budget route.
+  mission: { steps: 0, tokens: 5_000_000, minutes: 0, costUsd: 0 },
   workspace: path.join(ROOT, "workspace"),
   policy: {
     networkEnabled: true,
