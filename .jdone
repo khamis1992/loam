@@ -1,3 +1,25 @@
+# cr-05 merge gate: manus-parity (6e17246) merged, .jdone conflict resolved keeping both sides
+
+`.jgatefail.txt` reported: `UNRESOLVED MERGE in progress. Resolve conflict markers in: .jdone (keep both sides), git add them, git commit, then create .jdone.`
+
+The merge of `manus-parity` (tip `6e17246`) into `khamis1992/cr-05` conflicted only in `.jdone`. It was resolved keeping BOTH sides:
+- All conflict markers removed.
+- Every report line from both sides is present: 0 lines dropped from either side.
+- Merge commit: `b2df085`.
+
+## Gates re-run on the merged tree (all passed)
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0 (server bundle + pdf worker written to dist/)
+- `(cd packages/web && npx next build)` -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test src/tools/__tests__/craftOffice.test.ts` -> 58 tests, 58 pass, 0 fail
+- `npx tsx src/scripts/check-tools.ts` -> PASS (frontier_office_apps / frontier_office_actions / frontier_war_room true)
+- `npm run check:modes` -> PASS
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `node --import tsx --test src/policy/__tests__/riskTier.test.ts` -> 92 tests, 92 pass, 0 fail
+- `(cd packages/web && npx vitest run)` -> 91 files / 624 tests, all pass
+
+---
+
 # cr-05 complete: `office_craft` is now the agent driver of the five Craft apps
 
 Committed as `4a154b4` on `khamis1992/cr-05` (base `590d358`, the cr-04 merge). The tool
