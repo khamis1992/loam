@@ -121,9 +121,21 @@ Parity-side files from both merges, re-run on the final tree:
 
 - `git merge manus-parity` -> `Already up to date.`
 - `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
-- `git rev-list --left-right --count manus-parity...HEAD` -> `0  12`
-  (parity commits still missing: 0)
+- `git rev-list --left-right --count manus-parity...HEAD` -> `0  14`
+  (parity commits still missing: 0; the 14 on the right are this branch's own
+  commits and merge commits)
 - `git grep -n "^<<<<<<<\|^=======$\|^>>>>>>>\|^|||||||" -- src packages` -> empty
+  (re-verified at the end of the session with an explicit `NO-MARKERS-CONFIRMED`
+  branch, because an earlier `%errorlevel%` reading in this shell was unreliable:
+  cmd expands `%errorlevel%` at parse time, so it cannot be trusted after a pipe)
+
+The same checks were re-run on the final committed tree `f159cbb` (after the done
+summary was prepended and committed):
+
+- `git status --porcelain` -> empty (working tree clean, nothing unstaged)
+- `git diff HEAD --stat -- .jdone` -> empty (the rollup is fully committed)
+- `git ls-tree HEAD -- .jdone` -> `100644 blob 60a486bb...  .jdone` (tracked)
+- `.jdone` exists on disk at the worktree root and is committed
 
 No test was weakened, deleted or skipped; no assertion was relaxed; no source file
 was edited. No secrets committed. No forbidden path touched. No `.neo-*` or
