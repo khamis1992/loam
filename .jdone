@@ -1,4 +1,4 @@
-N2 - Canvas view: DONE. Third session (adversarial validation + a real wiring fix + a CRLF pass)
+N2 - Canvas view: DONE. Third session (adversarial validation + a real wiring fix)
 
 ## What this session changed (source fix, not only a report)
 The first report claimed "no source file was edited". This second session found
@@ -132,6 +132,11 @@ edits, so the merge dropped nothing.
   same edits through the file tools so the final artifact is produced the
   sanctioned way; the commit message of `381a7df` still records the earlier
   measurement, which is unchanged.
+- **No CRLF pass was needed.** The header above briefly claimed this session added
+  a "CRLF pass"; that is wrong and is corrected here. The file was already LF-only
+  (0 CRLF measured) before this pass, because the previous session's node scripts
+  wrote LF. The only edits this pass makes are the text corrections recorded in
+  the commit `f1c5c9f`.
 
 No secrets committed. No forbidden path (`docs/handoff/watchdog.ps1`, `qa/*.png`,
 `packages/tests/visual/baselines`, ZCode/Codex files) touched. No real external
