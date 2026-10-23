@@ -16,6 +16,7 @@ import { ConnectorsPane } from './ConnectorsPane';
 import { SkillsPane } from './SkillsPane';
 import { PlaybooksPane } from './PlaybooksPane';
 import { ShortcutsPane } from './ShortcutsPane';
+import { KnowledgeGardenPane } from './KnowledgeGardenPane';
 import { MemoryPane } from './MemoryPane';
 import { InAppBrowserPane } from './InAppBrowserPane';
 import { PersonalizationPane } from './PersonalizationPane';
@@ -35,6 +36,7 @@ const TABS = [
   { id: 'Skills', group: 'Capabilities', icon: 'Blocks' },
   { id: 'Playbooks', group: 'Capabilities', icon: 'BookMarked' },
   { id: 'Memory', group: 'Capabilities', icon: 'Database' },
+  { id: 'Knowledge Garden', group: 'Capabilities', icon: 'Leaf' },
   { id: 'Integrations', group: 'Data', icon: 'Unplug' },
   { id: 'Developers', group: 'Data', icon: 'Blocks' },
   { id: 'My Computer', group: 'Computers', icon: 'Monitor' },
@@ -45,7 +47,7 @@ const TABS = [
   { id: 'About', group: 'About', icon: 'Info' },
 ];
 
-const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'Personalization', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Playbooks', 'Memory', 'In-App Browser', 'Email', 'Phone', 'Wallet', 'Integrations', 'Developers']);
+const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'Personalization', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Playbooks', 'Memory', 'Knowledge Garden', 'In-App Browser', 'Email', 'Phone', 'Wallet', 'Integrations', 'Developers']);
 
 const GROUP_ORDER = ['Account', 'Settings', 'Capabilities', 'Computers', 'Data', 'Assets', 'About'];
 
@@ -144,6 +146,7 @@ function SettingsContent({ tab }: { tab: string }) {
     case 'Skills': return <SkillsPane />;
     case 'Playbooks': return <PlaybooksPane />;
     case 'Memory': return <MemoryPane />;
+    case 'Knowledge Garden': return <KnowledgeGardenPane />;
     case 'In-App Browser': return <InAppBrowserPane />;
     case 'Email': return <AssetsPane kind="Email" />;
     case 'Phone': return <AssetsPane kind="Phone" />;
@@ -158,7 +161,7 @@ function SettingsContent({ tab }: { tab: string }) {
 function glyphFor(icon: string) {
   const map: Record<string, string> = {
     SlidersHorizontal: '⚙', User: '👤', Sparkles: '✨', Palette: '🎨', Keyboard: '⌨',
-    Blocks: '▦', Unplug: '🔌', Database: '🗄', BookMarked: '📖', Monitor: '🖥', Globe: '🌐', Mail: '✉', Phone: '📞',
+    Blocks: '▦', Unplug: '🔌', Database: '🗄', BookMarked: '📖', Leaf: '🌱', Monitor: '🖥', Globe: '🌐', Mail: '✉', Phone: '📞',
     Wallet: '👛', Info: 'ℹ',
   };
   return map[icon] || '•';

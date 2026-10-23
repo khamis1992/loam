@@ -65,7 +65,7 @@ export const EVENT_CATEGORIES = {
   browser: ['toolUsed'],
   terminal: ['toolUsed', 'terminalUpdate'],
   textEditor: ['toolUsed'],
-  planner: ['planUpdate', 'todoUpdate', 'statusUpdate', 'cascadeJobUpdate'],
+  planner: ['planUpdate', 'recipeUpdate', 'recipeRestart', 'todoUpdate', 'statusUpdate', 'cascadeJobUpdate'],
   timeline: ['toolUsed', 'addonWidgetCard'],
   eventStream: ['toolUsed', 'addonWidgetCard', 'statusUpdate'],
 } as const;
