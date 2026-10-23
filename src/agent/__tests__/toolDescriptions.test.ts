@@ -23,6 +23,7 @@ import { symbolTools } from "../../tools/symbols.js";
 import { createFinishTools } from "../../tools/finishTools.js";
 import { createMultiEditTools } from "../../tools/multiEdit.js";
 import { createSubagentTools } from "../../tools/subagents.js";
+import { createPlanTools } from "../../tools/planTools.js";
 
 /** Minimum description length for a tool that a small model must rely on. */
 const MIN_DESCRIPTION = 200;
@@ -32,11 +33,11 @@ const NOT_TO_USE = /When NOT to use/i;
 /**
  * Coding-profile tools that are declared in the profile but not yet
  * implemented; they are owned by other tasks (grep/glob by C5, todo_write by
- * C6, plan_exit by C13). They have no registered description to lint until
- * those land, at which point they must be removed from this list so their
- * descriptions are covered too.
+ * C6). They have no registered description to lint until those land, at which
+ * point they must be removed from this list so their descriptions are covered
+ * too.
  */
-const PENDING_CODING_TOOLS = ["grep", "glob", "todo_write", "plan_exit"];
+const PENDING_CODING_TOOLS = ["grep", "glob", "todo_write"];
 
 /** Other commonly used tools held to the same description standard. */
 const COMMON_TOOLS = [
@@ -60,6 +61,7 @@ function codingRegistry(): ToolRegistry {
   registry.registerAll(createFinishTools());
   registry.registerAll(createMultiEditTools());
   registry.registerAll(createSubagentTools({} as OllamaClient, new ToolRegistry()));
+  registry.registerAll(createPlanTools());
   return registry;
 }
 
