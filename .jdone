@@ -82,7 +82,7 @@ Files
 Merge with manus-parity: resolved keeping both sides
 ----------------------------------------------------
 `.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. The merge was
-eight times, because `refs/heads/manus-parity` kept advancing while each merge was
+run eight times, because `refs/heads/manus-parity` kept advancing while each merge was
 being resolved (parity merges land continuously on this branch):
 
   1. merge of parity tip `a8130cc` (c20) -> committed as `4c54d5c`. Conflict:
