@@ -120,6 +120,141 @@ No RAM measurement taken for this task: the change is documentation plus four co
 constants, and no long-running or memory-intensive process was exercised. The heaviest gate
 was the full node test suite (tests 2304, ~1.7 min wall clock), which ran without a memory
 limit being hit; no peak-RSS figure was captured.
+## O4 gate-fix session: merge with latest manus-parity, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+### Root cause
+No source file conflicted in any merge round. `git merge manus-parity` brought in other
+workstreams' code (N2 canvas, N4 recipe engine, C19 failover, J5 command-risk, N10
+output-type/effort routing, N9 ask-user, C20 and more) and every one of those files
+auto-merged cleanly with `ort`. The only file that ever conflicted was the tracked rollup
+`.jdone`, because every branch prepends its own report at the same top-of-file anchor:
+
+- **add/add** when both sides modified `.jdone` (parity tip `ed26550`, and again at
+  `61aca0c`, `585fd55`). Resolved as a **superset**: this report stays at the top and the
+  whole parity rollup follows verbatim, with only the conflict-marker lines removed.
+- **modify/delete** when a parity commit deleted `.jdone` outright while this branch
+  modified it (parity tip `26befe6`). Resolved by keeping the modified version, since
+  `.jdone` is this task's required deliverable.
+
+`manus-parity` advanced several times while this session ran, so the merge was re-run and
+re-resolved each time it did.
+
+### Round 5 (parity tip `411df5e`, C21 mirofish)
+`manus-parity` re-added its own rollup to `.jdone` (the M3/C21 report block), so this round
+was a **content** conflict on that file only. Resolved as a union: this O4 report stays at the
+top and parity's M3/C21 report block follows verbatim, with only the three conflict-marker
+lines removed. Every source file again auto-merged with `ort`, including the O4 socket and
+protocol surfaces (`src/protocol/types.ts`, `packages/shared/src/socket.ts`).
+
+Deep validation also caught a real gap in an earlier round: 25 lines of this branch's own
+earlier header wording had been rewritten rather than preserved. They are now archived
+verbatim in a labeled `Superseded header wording (preserved verbatim)` section, so `.jdone`
+is a **strict** superset of both merge parents rather than merely of their bodies.
+
+Nothing in the O4 change set was at risk. The O4 files
+(`src/protocol/__tests__/seqReplay.test.ts`, `src/protocol/store.ts`,
+`packages/web/src/services/chatSocket.ts`, `packages/web/src/services/chatSocket.test.ts`,
+`packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx`) are byte-identical to commit
+`5114c89`. `src/protocol/types.ts`, `src/protocol/socket.ts` and
+`packages/shared/src/socket.ts` differ from `5114c89` only by purely additive
+other-workstream lines (for example the N4 `RecipeUpdateEvent` / `RecipeRestartEvent` and
+the N9 `ResolveAskUser` / `AskUserRequestedEvent`), which is why they auto-merged; the O4
+`lastSeq` / `seq` / `eventsAfterSeq` additions are all still present in the merged tree.
+
+### What was done
+Every `.jdone` conflict was resolved by **keeping both sides**, never by choosing one side
+and dropping the other, and never by weakening a test. Verification was mechanical after
+each resolution: the merged `.jdone` is a multiset-superset of the ours blob, the theirs
+blob and the previous HEAD blob (0 non-empty lines missing from any of them), with 0
+conflict markers and 0 U+FFFD replacement characters left in the tree.
+
+No source file was edited by this session and no test was weakened, deleted or skipped.
+
+### Gate condition verified
+`git merge-base --is-ancestor manus-parity HEAD` exits 0, and
+`git rev-list --left-right --count manus-parity...HEAD` has `0` on the parity side. No
+conflict marker remains in any tracked file and `git status --porcelain` is empty.
+
+### Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25 static pages)
+- `npm run verify`                            -> exit 0 (typecheck, encoding, eval, orchestrator
+                                                114/114, recovery, modes)
+- `node --import tsx --test "src/**/*.test.ts"`
+                                              -> tests 2601, pass 2600, fail 1 (the one
+                                                 failure is the inherited `worktrees.test.ts`
+                                                 environment defect, see below)
+- `node --import tsx --test src/protocol/__tests__/*.test.ts`
+                                              -> tests 55, pass 55, fail 0 (O4 seqReplay included)
+- `(cd packages/web && npx vitest run src/services/chatSocket.test.ts)`
+                                              -> 7 passed
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+
+### Inherited failure, not introduced here
+`src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing"
+(`true == false` at `src/server/__tests__/worktrees.test.ts:44`). Both
+`src/server/__tests__/worktrees.test.ts` and `src/server/worktrees.ts` are byte-identical
+to `manus-parity` and are untouched by the merge. The cause is environmental: this
+machine's home directory `C:\Users\khamis` contains a stray `.git`, so a `mkdtemp`'d
+directory under `%TEMP%` still resolves a repository when git walks upward
+(`git -C <tmp> rev-parse --show-toplevel` prints `C:/Users/khamis`). Confirmed with
+`GIT_CEILING_DIRECTORIES=%TEMP%`, under which the probe fails as the test expects. The
+test passes 3/4 here and the same single failure reproduces on the untouched
+`manus-parity` worktree. This task touches no file under `src/server`.
+
+### Files
+- `.jdone` only (this report prepended to the preserved rollup). No source file was
+  modified by this session; the O4 deliverables are unchanged from commit `5114c89`.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run verify
+  node --import tsx --test "src/**/*.test.ts"
+  node --import tsx --test src/protocol/__tests__/*.test.ts
+  (cd packages/web && npx vitest run src/services/chatSocket.test.ts)
+  npm run check:encoding
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added. Working tree clean.
+
+### Superseded header wording (preserved verbatim)
+Earlier revisions of this header are archived below verbatim, so that no line from either
+side of any merge conflict is dropped. The sections above are the current wording.
+
+No source file conflicted in either merge round. `git merge manus-parity` brought in
+other workstreams' code (N2 canvas, N4 recipe engine, C19 failover, J5 command-risk, N10
+output-type/effort routing) and every one of those files auto-merged cleanly with `ort`.
+The only file that ever conflicted was the tracked rollup `.jdone`:
+- Round 1, parity tip `ed26550` (N2 merge): **add/add**. Both sides prepend a report at
+  the same top-of-file anchor (O4's report here; the N2/C19/J3/O3/O6/O2/D5/O1/V11/fc-05
+  rollup on parity). Six conflict-marker lines, resolved as a superset.
+- Round 2, parity tip `26befe6` (N10 merge): **modify/delete**. Parity's N10 commit
+  `e3d05f6` deleted `.jdone` outright (`git ls-tree manus-parity -- .jdone` is empty),
+  while this branch modified it. Kept our side, since `.jdone` is this task's required
+  deliverable and the branch must not lose its report.
+other-workstream lines (the N4 `RecipeUpdateEvent` / `RecipeRestartEvent`), which is why
+they auto-merged; the O4 `lastSeq` / `seq` / `eventsAfterSeq` additions are all still
+- Round 1: the `.jdone` add/add conflict was resolved as a **superset** - the O4 report
+  stays at the top and the full parity rollup follows verbatim, with the six
+  conflict-marker lines removed and no report text altered.
+- Round 2: the `.jdone` modify/delete conflict was resolved by keeping the modified
+  version (`git add .jdone`), which is the union of the O4 report and the parity rollup
+  carried forward from round 1.
+Both resolutions were verified mechanically against the blobs in play: 0 non-empty lines
+missing from the ours blob, 0 non-empty lines missing from the theirs blob (round 1), 0
+non-empty lines missing from the merge-base blob, and 0 conflict markers left in the tree.
+                                              -> tests 2576, pass 2575, fail 1 (the one
+                                              -> tests 52, pass 52, fail 0 (O4 seqReplay included)
+present.
+
+---
+
 M3 second validation round: found and fixed a real follow-up routing regression on the async surface (commit 0138720 + the fix commit below).
 
 ---
@@ -740,6 +875,10 @@ Test commands:
   npx tsc --noEmit
   npm run build:server
   (cd packages/web && npx next build)
+  npm run verify
+  node --import tsx --test "src/**/*.test.ts"
+  node --import tsx --test src/protocol/__tests__/*.test.ts
+  (cd packages/web && npx vitest run src/services/chatSocket.test.ts)
   node --import tsx --test src/agent/__tests__/computeBudget.test.ts src/agent/__tests__/loopBudget.test.ts src/agent/__tests__/orchestratorBudget.test.ts src/server/__tests__/sessionRuntime.test.ts src/server/__tests__/sessionSleep.test.ts src/tools/__tests__/ptySessions.test.ts
   (cd packages/web && npx vitest run src/components/chat/__tests__/SessionStatusBadge.test.tsx src/components/chat/__tests__/useSessionRuntime.test.tsx src/services/__tests__/sessionRuntimeApi.test.ts)
 
@@ -1340,6 +1479,97 @@ No Arabic text was written; no mojibake placeholder text was added. Working tree
 
 ---
 
+## O4 complete: socket replay by durable-log sequence
+
+Branch: `khamis1992/om-o4` (worktree `C:\Users\khamis\orca\workspaces\manus-local\om-o4`)
+Commit: `5114c89` "O4: seq-based replay"
+Base branch: `manus-parity`
+
+Implements BUILD_SPEC §6.4: a reconnecting client sends the highest durable-log
+`seq` it already rendered and receives only frames with `seq > lastSeq`, instead of
+relying on a single `lastMessageId` cursor.
+
+### What changed
+
+**`src/protocol/types.ts`, `packages/shared/src/socket.ts`**
+- Added the optional `seq?: number` field to `ServerEnvelope` and the optional
+  `lastSeq?: number` field to `JoinSession`, so both the frame and the join request
+  can carry a durable-log sequence.
+
+**`src/protocol/store.ts`**
+- `eventsAfter(sessionId, lastMessageId?)` now delegates to `eventsAfterSeq`, keeping
+  the pre-O4 cursor fallback (`seqOfId`) byte-for-byte.
+- `eventsAfterSeq(sessionId, afterSeqValue)` maps every payload to
+  `{ ...envelope, seq: envelope.seq ?? e.seq }`. This closes the real spec gap: a
+  replayed envelope is a fresh JSON object after a restart and would otherwise arrive
+  with no `seq`, so a client could never advance its cursor.
+
+**`src/protocol/socket.ts` (join handler, ~line 343)**
+- When the client sends `lastSeq` (number) the replay uses
+  `store.eventsAfterSeq(sessionId, m.lastSeq)`; otherwise it keeps
+  `store.eventsAfter(sessionId, m.lastMessageId)`.
+- The `eventsNotifyEventsAfter` replay frame now carries `seq: <highest seq delivered>`,
+  so a client that records `seq` advances past everything just delivered.
+
+**`packages/web/src/services/chatSocket.ts`**
+- `ChatSocket` keeps a per-session `lastSeqBySession` map and exposes
+  `onMessage(listener)` (an extra frame observer with an unsubscribe function) plus
+  `noteSeq(sessionId, seq)`. `join()` gained a `getLastSeq` getter argument and sends
+  `lastSeq` on the initial join and on every reconnect; `leave()` clears the cursor.
+
+**`packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx`**
+- The socket effect registers a seq observer through `socket.onMessage` and records
+  `m.seq` via `socket.noteSeq(sessionUid, ...)`. The observer and its unsubscribe are
+  declared outside the async closure so the effect cleanup can call them before
+  `socket.disconnect()`.
+
+**`packages/web/src/services/chatSocket.test.ts`** (existing, extended)
+- The mock server now replays by `lastSeq` (slicing `seq > lastSeq`) and reports the
+  highest delivered seq on the replay frame, falling back to the `lastMessageId`
+  cursor when `lastSeq` is absent.
+- Three new tests: replay only frames after the last seq (lastSeq=2 of seqs 2,3
+  yields only the seq-3 frame, and the replay frame carries `seq: 3`); `noteSeq`
+  drives the cursor so a reconnect resumes at that seq; and a listener stops receiving
+  frames after unsubscribe and after `disconnect()`.
+
+**`src/protocol/__tests__/seqReplay.test.ts`** (new, 334 lines)
+- A real socket.io + HTTP-login-chain integration test against a throwaway
+  `LOAM_DATA_DIR`, with a fake `runTask`/`getTask` and `adapter.store` seeding. It
+  covers the plan row (a client with `lastSeq=4` of 6 frames receives exactly frames
+  4,5,6 and the replay frame carries `seq=7`), replay-by-sequence rather than index,
+  the `lastMessageId` fallback, an unknown session (empty, `seq` undefined),
+  `lastSeq=0` (everything), cursor advance after appending one more frame, a purged
+  session (empty), and replay by sequence after an adapter restart with no frame id.
+
+### Acceptance (plan row O4: "socket test: client with lastSeq=3 of 6 receives exactly seq 4,5,6")
+Covered by `src/protocol/__tests__/seqReplay.test.ts` (the lastSeq=4 of 6 case) and by
+the three new web tests in `packages/web/src/services/chatSocket.test.ts`.
+
+### Gates (all run from the worktree root)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.4mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully)
+- `npx tsc --noEmit` in `packages/web`        -> exit 0
+- `node --import tsx --test src/protocol/__tests__/*.test.ts`
+                                              -> tests 43, pass 43, fail 0
+- `(cd packages/web && npx vitest run)`       -> 72 files / 472 tests, all pass
+- `node --import tsx src/protocol/__tests__/run.ts` (A1 adapter integration)
+                                              -> PASS
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                       -> PASS
+- `npm run check:orchestrator`                -> PASS
+- `npm run check:recovery`                    -> PASS (3 succeeded)
+- `npm run check:promptwire`                  -> PASS (every promptwire tool ok:true)
+
+### Notes
+- `manus-parity` has advanced 49 commits since this branch's base `8e197c6` (which is
+  now an ancestor of `manus-parity`). The work was left uncommitted until the gates
+  were green, so the merge is clean: no parity source file was touched by this change
+  set, and `.jdone` is the only tracked file that both sides prepend to.
+- The runner had deleted the tracked rollup `.jdone` in the working tree; it was
+  restored from `HEAD` and this report prepended, so the rollup is a superset.
+- No test was weakened, deleted or skipped. No secret was committed. No forbidden
+  path was touched. No Arabic text was written; no mojibake placeholder was added.
 # N2 gate-fix session: merge with latest manus-parity
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
@@ -3240,6 +3470,12 @@ Test commands:
   npx tsc --noEmit
   npm run build:server
   (cd packages/web && npx next build)
+  node --import tsx --test src/protocol/__tests__/*.test.ts
+  (cd packages/web && npx vitest run src/services/chatSocket.test.ts)
+  npm run check:encoding
+
+---
+
   node --import tsx --test src/agent/__tests__/computeBudget.test.ts src/agent/__tests__/loopBudget.test.ts src/agent/__tests__/orchestratorBudget.test.ts src/server/__tests__/sessionRuntime.test.ts src/server/__tests__/sessionSleep.test.ts src/tools/__tests__/ptySessions.test.ts
   (cd packages/web && npx vitest run src/components/chat/__tests__/SessionStatusBadge.test.tsx src/components/chat/__tests__/useSessionRuntime.test.tsx src/services/__tests__/sessionRuntimeApi.test.ts)
 
