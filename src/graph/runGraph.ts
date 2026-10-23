@@ -13,6 +13,7 @@ import {
   RUN_NODE_TYPES,
   RunGraphStore,
   eventNodeId,
+  siblingNodeId,
   type RunGraphExport,
   type RunNode,
   type RunNodeStatus,
@@ -255,6 +256,44 @@ export class RunGraph {
     return updated;
   }
 
+  /**
+   * Neo N10 multi-model A/B: the same prompt handed to several models.
+   *
+   * Every arm becomes a `sibling` node hanging off the same parent and carries
+   * the model it was dispatched to, so the canvas renders one branch per model
+   * with its model label. Arm ids are deterministic, so re-rendering the same
+   * A/B run never duplicates nodes.
+   */
+  addSiblings(runId: string, parentNodeId: string, models: string[]): RunNode[] {
+    const parent = this.store.getNode(parentNodeId, runId);
+    if (!parent) throw new Error(`run node not found: ${parentNodeId}`);
+    const state = this.stateFor(runId);
+    const created: RunNode[] = [];
+    transaction(() => {
+      models.forEach((model, arm) => {
+        const id = siblingNodeId(runId, arm, model);
+        const now = Date.now();
+        const node: RunNode = {
+          id,
+          run_id: runId,
+          parent_ids: [parent.id],
+          type: "sibling",
+          status: "init",
+          data: { model, arm, label: model },
+          position: state.seq,
+          version: 1,
+          created: now,
+          updated: now,
+        };
+        const stored = this.store.upsert(node, state.seq);
+        state.seq = this.nextSeq(state);
+        created.push(stored);
+      });
+    });
+    this.invalidate(runId);
+    return created;
+  }
+
   /** Layered layout plus aggregate stats. Deterministic, no dependencies. */
   getGraphLayout(runId: string): RunGraphLayout {
     const nodes = this.store.list({ runId });
@@ -464,6 +503,8 @@ export class RunGraph {
           parent: state.lastId,
         }).id];
       case "todo":
+      case "recipe_update":
+      case "recipe_restart":
       case "phase":
       case "task":
       case "task-status":

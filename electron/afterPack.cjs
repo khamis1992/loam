@@ -1,5 +1,5 @@
 const path = require("node:path");
-const { flipFuses, FuseVersion, FuseV1Name, FuseV1Options } = require("@electron/fuses");
+const { flipFuses, FuseVersion, FuseV1Options } = require("@electron/fuses");
 
 /** Flip the security fuses required by BUILD_SPEC §10.4 after the packaged
  *  Electron executable has been produced.
@@ -13,12 +13,18 @@ module.exports = async function afterPack(context) {
 
   await flipFuses(exePath, {
     version: FuseVersion.V1,
-    [FuseV1Name.RunAsNode]: FuseV1Options.Disable,
-    [FuseV1Name.EnableNodeOptionsEnvironmentVariable]: FuseV1Options.Disable,
-    [FuseV1Name.EnableNodeCliInspectArguments]: FuseV1Options.Disable,
-    [FuseV1Name.EnableEmbeddedAsarIntegrityValidation]: FuseV1Options.Enable,
-    [FuseV1Name.OnlyLoadAppFromAsar]: FuseV1Options.Enable,
-    [FuseV1Name.EnableCookieEncryption]: FuseV1Options.Enable,
-    [FuseV1Name.GrantFileProtocolExtraPrivileges]: FuseV1Options.Disable,
+    // RunAsNode stays ENABLED on purpose. The server and MCP bridge no longer need
+    // it (they run via utilityProcess.fork), but server tools still spawn
+    // process.execPath with ELECTRON_RUN_AS_NODE=1 to run plain Node scripts
+    // (design build checks: "node build.mjs", TypeScript/ESLint diagnostics).
+    // Disabling it would make those children launch a second Loam window.
+    // Follow-up: route those through utilityProcess or a bundled node, then set false.
+    [FuseV1Options.RunAsNode]: true,
+    [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+    [FuseV1Options.EnableNodeCliInspectArguments]: false,
+    [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+    [FuseV1Options.OnlyLoadAppFromAsar]: true,
+    [FuseV1Options.EnableCookieEncryption]: true,
+    [FuseV1Options.GrantFileProtocolExtraPrivileges]: false,
   });
 };

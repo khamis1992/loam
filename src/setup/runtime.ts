@@ -42,6 +42,7 @@ import { createIntegrationTools } from "../tools/integrations.js";
 import { createGitWorkflowTools } from "../tools/gitWorkflowTools.js";
 import { createCiWatchTool } from "../tools/ciWatchTools.js";
 import { createPrReviewTool } from "../tools/prReviewTools.js";
+import { createVerifyAndRecordTool } from "../tools/verifyAndRecordTools.js";
 
 import { createPhaseTools } from "../tools/phaseTools.js";
 import { createFinishTools } from "../tools/finishTools.js";
@@ -127,6 +128,9 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   // D15: pr_review runs the same provider's diff through the model, one changed
   // file at a time, and returns deduplicated findings.
   registry.register(createPrReviewTool({ modelClient: ollama }));
+  // D5: verify_and_record derives a test plan from the PR diff, runs it with
+  // Playwright against a local static app and posts the checklist to the PR body.
+  registry.register(createVerifyAndRecordTool());
 
   registry.registerAll(createCodeSessionTools());
   registry.registerAll(createDocsLookupTools());

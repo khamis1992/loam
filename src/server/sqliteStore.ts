@@ -51,6 +51,17 @@ export function transaction<T>(fn: () => T): T {
   try { const result = fn(); db.exec("COMMIT"); return result; }
   catch (error) { db.exec("ROLLBACK"); throw error; }
 }
+/** Read one `metadata` row (the key/value bag used for import markers and the runtime lease). */
+export function getMeta(key: string): string | undefined {
+  const row = database().prepare("SELECT value FROM metadata WHERE key=?").get(key) as { value: string } | undefined;
+  return row?.value;
+}
+
+/** Insert or replace one `metadata` row. Safe to call inside a `transaction()`. */
+export function setMeta(key: string, value: string): void {
+  database().prepare("INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, value);
+}
+
 export function putEntity(kind: string, value: { id: string }): void {
   database().prepare("INSERT INTO entities(kind,id,payload) VALUES(?,?,?) ON CONFLICT(kind,id) DO UPDATE SET payload=excluded.payload")
     .run(kind, value.id, JSON.stringify(value));
@@ -82,15 +93,15 @@ export function resetDb(): void {
 /** Prevent two local server processes from independently owning the same task queue. */
 export function acquireRuntimeLease(): void {
   transaction(() => {
-    const row = database().prepare("SELECT value FROM metadata WHERE key='runtime-pid'").get();
-    if (row) {
-      const pid = Number(row.value);
+    const existing = getMeta("runtime-pid");
+    if (existing) {
+      const pid = Number(existing);
       if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error("Invalid runtime owner record");
       let alive = true;
       try { process.kill(pid, 0); } catch (error) { alive = (error as NodeJS.ErrnoException).code !== "ESRCH"; }
       if (alive) throw new Error(`Another runtime owns this data directory (PID ${pid})`);
     }
-    database().prepare("INSERT INTO metadata(key,value) VALUES('runtime-pid',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(process.pid));
+    setMeta("runtime-pid", String(process.pid));
   });
 }
 export function releaseRuntimeLease(): void {

@@ -3,6 +3,16 @@ export type AgentStatus = 'running' | 'waiting' | 'stopped' | 'error';
 export type ToolStatus = 'success' | 'error' | 'running' | 'pending' | 'failed' | 'cancelled' | 'stopped' | 'rollback' | 'argumentsFinished' | 'streaming';
 export type ToolName = 'browser' | 'terminal' | 'search' | 'text_editor' | 'webdev' | 'map_reduce' | 'suggestion' | 'webpage_extract' | 'mcp' | (string & {});
 
+/** Neo N10: the composer's output-type selector. */
+export const OUTPUT_TYPES = ['auto', 'text', 'image', 'video', 'slides', 'website'] as const;
+export type OutputType = (typeof OUTPUT_TYPES)[number];
+/** Neo N10: the composer's effort selector. */
+export type EffortLevel = 'fast' | 'max';
+
+// The selector values are mirrored from the backend's `src/llm/router.ts` so a
+// composer payload that was built by hand still type checks; the server
+// re-validates every value before it reaches the routing map.
+
 export interface Attachment {
   id: string;
   filename: string;
@@ -59,6 +69,12 @@ export interface UserMessage extends Base {
     worktreeEnabled?: boolean;
     /** Option 18: composer model tier ("max" | "standard" | "lite" | "flex"). */
     modelTier?: string;
+    /** Neo N10: composer output type (auto|text|image|video|slides|website). */
+    outputType?: string;
+    /** Neo N10: composer effort level (fast|max). */
+    effort?: string;
+    /** Neo N10: explicit A/B arm model ids for the fan-out run. */
+    abModels?: string[];
   };
 }
 
@@ -131,6 +147,42 @@ export interface NewPlanStepEvent extends ChatEventBase {
   type: 'newPlanStep';
   stepId: string;
   title: string;
+}
+
+/**
+ * Neo N4 incremental Recipe engine: the live step list of a recipe-mode run.
+ *
+ * Sent whenever the recipe changes (after each step's result, after a restart).
+ * Unlike `planUpdate`, which describes the plan as it was at the start, this
+ * event carries the *current* recipe with per-step status and the remaining-work
+ * estimate, so the right panel can show the recipe shrinking as the run proceeds.
+ */
+export interface RecipeUpdateEvent extends ChatEventBase {
+  type: 'recipeUpdate';
+  goal: string;
+  steps: {
+    id: string;
+    title: string;
+    instruction: string;
+    successCriteria: string;
+    status: 'proposed' | 'ready' | 'doing' | 'done' | 'blocked' | 'skipped';
+    nodeId?: string;
+    replaces?: string[];
+    completedCount: number;
+  }[];
+  remainingEstimate: number;
+  change: 'init' | 'propose' | 'advance' | 'rewrite' | 'drop' | 'restart';
+  source: 'planner' | 'restart' | 'auto';
+}
+
+/** Neo N4: the recipe restarted from one step; downstream is regenerated. */
+export interface RecipeRestartEvent extends ChatEventBase {
+  type: 'recipeRestart';
+  stepId: string;
+  nodeId: string;
+  keptSteps: string[];
+  regeneratedSteps: string[];
+  reason: string;
 }
 
 export interface TodoUpdateEvent extends ChatEventBase {
@@ -379,6 +431,8 @@ export type ChatEvent =
   | EnvironmentIssueEvent
   | SimulationProgressEvent
   | PlanApprovalRequestedEvent
-  | PlanApprovalResolvedEvent;
+  | PlanApprovalResolvedEvent
+  | RecipeUpdateEvent
+  | RecipeRestartEvent;
 
 export type ServerMessage = ServerEnvelope | { type: 'session_write_access'; sessionId: string; writable: boolean };

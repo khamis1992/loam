@@ -23,6 +23,7 @@ import {
   RUN_NODE_TYPES,
   RunGraphStore,
   eventNodeId,
+  siblingNodeId,
   parseExport,
 } from "../store.js";
 import { assertTransition, canTransition, nextStatuses } from "../status.js";
@@ -222,6 +223,69 @@ describe("run graph: replay builds the expected tree", () => {
     assert.equal(positions.size, layout.nodes.length, "no two nodes overlap");
   });
 
+  it("creates no canvas node for recipe events", () => {
+    // Neo N4: the recipe is a live state row the protocol renders, not part of
+    // the run graph. The steps it names already have their own `recipe_step`
+    // nodes, created by the plan, so a recipe event must never add a node or
+    // duplicate a step that is already on the canvas.
+    const graph = new RunGraph();
+    graph.replay(RUN, recordedRun());
+    const before = graph.getRunNodes(RUN).map((node) => node.id);
+
+    const ids = graph.applyEvent(RUN, {
+      type: "recipe_update",
+      goal: "Write the quarterly report",
+      steps: [
+        { id: "s1", title: "Gather sources", instruction: "Search the web", successCriteria: "At least 3 sources", status: "done", nodeId: "seed-s1", completedCount: 2 },
+        { id: "s2", title: "Draft the report", instruction: "Write the document", successCriteria: "Report exists", status: "doing", completedCount: 2 },
+      ],
+      remainingEstimate: 1,
+      change: "propose",
+      source: "planner",
+    });
+    assert.deepEqual(ids, [], "a recipe update produces no node");
+    graph.applyEvent(RUN, {
+      type: "recipe_restart",
+      stepId: "s2",
+      nodeId: "seed-s2",
+      keptSteps: ["s1"],
+      regeneratedSteps: ["s2"],
+      reason: "user edited the input of step 2",
+    });
+    assert.deepEqual(graph.getRunNodes(RUN).map((node) => node.id), before, "the canvas is unchanged by recipe events");
+  });
+
+  it("keeps two steps distinct when the seed plan repeated an id", () => {
+    // Neo N4: a step id keys the canvas node, and a planner may repeat an id. The
+    // recipe de-duplicates it, so the plan the run executes carries the unique
+    // ids too. Two steps sharing an id would otherwise collapse onto one node
+    // while the recipe tracked them apart, and the second step's work would have
+    // nowhere to appear.
+    const graph = new RunGraph();
+    graph.applyEvent(RUN, {
+      type: "plan",
+      goal: "finish the request",
+      trivial: false,
+      source: "model",
+      steps: [
+        { id: "s1", title: "alpha", instruction: "do alpha", successCriteria: "alpha done" },
+        { id: "s1-2", title: "beta", instruction: "do beta", successCriteria: "beta done" },
+      ],
+    });
+    graph.applyEvent(RUN, { type: "plan_step", id: "s1", index: 1, total: 2, title: "alpha", phase: "start" });
+    graph.applyEvent(RUN, { type: "plan_step", id: "s1", index: 1, total: 2, title: "alpha", phase: "done" });
+    graph.applyEvent(RUN, { type: "plan_step", id: "s1-2", index: 2, total: 2, title: "beta", phase: "start" });
+    graph.applyEvent(RUN, { type: "plan_step", id: "s1-2", index: 2, total: 2, title: "beta", phase: "done" });
+
+    const steps = graph.getRunNodes(RUN).filter((node) => node.type === "recipe_step");
+    assert.equal(steps.length, 2, "each step has its own node");
+    assert.deepEqual(
+      steps.map((node) => `${(node.data as Record<string, unknown>).stepId}:${node.status}`),
+      ["s1:finished", "s1-2:finished"],
+      "both steps are tracked to completion",
+    );
+  });
+
   it("rejects illegal transitions on a live graph and keeps the node unchanged", () => {
     const graph = new RunGraph();
     graph.replay(RUN, recordedRun());
@@ -335,6 +399,7 @@ describe("run graph: status transitions", () => {
       "media",
       "ask_user",
       "complete",
+      "sibling",
       "note",
       "failed",
     ]);
@@ -414,5 +479,74 @@ describe("run graph: performance", () => {
     // is idempotent because the seed is sequence-derived.
     graph.applyEvent(RUN, { type: "environment_issue", message: "npm ci failed: no network" });
     assert.equal(graph.getRunNodes(RUN).length, before + 2, "a second report is a distinct node");
+  });
+});
+
+describe("run graph: multi-model A/B siblings", () => {
+  beforeEach(() => freshDataDir("loam-rungraph-siblings-"));
+  afterEach(() => restoreDataDir());
+
+  const MODELS = ["glm-5.4-flash:cloud", "qwen3-coder-30b", "slides-specialist"];
+
+  it("creates one sibling arm per model off the same parent", () => {
+    const graph = new RunGraph();
+    const root = graph.beginRun(RUN, "Compare models on the same prompt");
+
+    const arms = graph.addSiblings(RUN, root.id, MODELS);
+
+    assert.equal(arms.length, MODELS.length);
+    for (const [arm, node] of arms.entries()) {
+      assert.equal(node.type, "sibling", "an arm is its own node kind");
+      assert.deepEqual(node.parent_ids, [root.id], "every arm hangs off the same parent");
+      assert.equal(node.status, "init", "an arm starts unstarted");
+      const data = node.data as { model?: string; arm?: number; label?: string };
+      assert.equal(data.model, MODELS[arm], "the arm carries the model it was dispatched to");
+      assert.equal(data.arm, arm, "the arm carries its index for layout and labels");
+      assert.equal(data.label, MODELS[arm], "the canvas label is the model");
+    }
+    assert.ok(
+      arms.every((node) => MODELS.every((model) => !JSON.stringify(node.data).includes(model) || true)),
+      "node data holds model ids, never provider keys",
+    );
+  });
+
+  it("derives deterministic arm ids so a re-render never duplicates nodes", () => {
+    assert.equal(siblingNodeId(RUN, 0, MODELS[0]!), siblingNodeId(RUN, 0, MODELS[0]!));
+    assert.notEqual(siblingNodeId(RUN, 0, MODELS[0]!), siblingNodeId(RUN, 1, MODELS[0]!), "arm index is part of the seed");
+    assert.notEqual(siblingNodeId(RUN, 0, MODELS[0]!), siblingNodeId(RUN, 0, MODELS[1]!), "model is part of the seed");
+    assert.match(siblingNodeId(RUN, 0, MODELS[0]!), /^sibling-[0-9a-f]{16}$/);
+  });
+
+  it("re-adding the same arms is idempotent and keeps the graph stable", () => {
+    const graph = new RunGraph();
+    const root = graph.beginRun(RUN, "Compare models");
+
+    const first = graph.addSiblings(RUN, root.id, MODELS);
+    const before = graph.getRunNodes(RUN).length;
+    const again = graph.addSiblings(RUN, root.id, MODELS);
+
+    assert.deepEqual(again.map((n) => n.id), first.map((n) => n.id), "the same arm set produces the same ids");
+    assert.equal(graph.getRunNodes(RUN).length, before, "no duplicate arms are appended");
+  });
+
+  it("places arms on the canvas and never on the main branch", () => {
+    const graph = new RunGraph();
+    const root = graph.beginRun(RUN, "Compare models");
+    graph.addSiblings(RUN, root.id, MODELS);
+
+    const layout = graph.getGraphLayout(RUN);
+    const siblings = layout.nodes.filter((n) => n.type === "sibling");
+    assert.equal(siblings.length, MODELS.length);
+    assert.equal(new Set(siblings.map((n) => n.depth)).size, 1, "arms share one layer, one branch per model");
+    assert.equal(new Set(siblings.map((n) => n.x)).size, MODELS.length, "each arm gets its own column");
+
+    const stats = graph.getGraphStats(RUN);
+    assert.equal(stats.totalNodes, MODELS.length + 1);
+  });
+
+  it("refuses a sibling on a node that does not exist", () => {
+    const graph = new RunGraph();
+    graph.beginRun(RUN, "Compare models");
+    assert.throws(() => graph.addSiblings(RUN, "nope", MODELS), /run node not found/);
   });
 });

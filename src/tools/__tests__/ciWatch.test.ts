@@ -63,6 +63,9 @@ class FakeProvider implements PrProvider {
   async addComment(): Promise<PrComment> {
     throw new Error("not used");
   }
+  async setPrBody(): Promise<PrInfo> {
+    throw new Error("not used");
+  }
   async listCheckRuns() {
     this.calls++;
     return this.runs();
@@ -116,6 +119,9 @@ function hangingProvider(): PrProvider {
       return [];
     },
     async addComment() {
+      throw new Error("not used");
+    },
+    async setPrBody(): Promise<PrInfo> {
       throw new Error("not used");
     },
     async listCheckRuns() {
