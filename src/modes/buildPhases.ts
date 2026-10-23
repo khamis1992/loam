@@ -42,8 +42,8 @@ const PHASES: BuildPhase[] = [
     order: 1,
     title: "Implement",
     titleAr: "تنفيذ",
-    instruction: "Implement the chosen design directly in the task workspace without renegotiating the visual concept mid-run. Lint the UI with design_lint before finishing and fix every reported violation.",
-    tools: ["design_lint"],
+    instruction: "Implement the chosen design directly in the task workspace without renegotiating the visual concept mid-run. Lint the UI with design_lint before finishing and fix every reported violation, then capture the site with preview_screenshot and have it judged with design_critique; apply the returned fix instruction, rebuild and capture again until the rubric accepts or the round limit is reached.",
+    tools: ["design_lint", "preview_screenshot", "design_critique"],
   },
 ];
 

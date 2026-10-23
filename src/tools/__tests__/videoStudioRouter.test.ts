@@ -256,6 +256,31 @@ describe("action routing", () => {
     assert.equal(available.plan("raw", "effects.apply").route, "film");
   });
 
+  it("promotes every transition kind the guidance names, not just wipe and glitch", () => {
+    // §6.12 and the tool description both name the kinds that need the effects
+    // engine ("wipes, zooms, glitches, spins, morphs" / "a wipe/zoom/glitch and
+    // similar"). Bare "wipe" and "glitch" reached the effects route only because
+    // they are also visual-effect words; the other named kinds did not. Pin the
+    // whole documented set so a `type` of "zoom"/"spin"/"morph" is not reported
+    // as a native edit.
+    const available = router(true);
+    for (const type of ["wipe", "zoom", "glitch", "spin", "morph"]) {
+      assert.equal(
+        available.plan("transition_basic", type).route,
+        "effects",
+        `a ${type} transition must route to the effects engine`,
+      );
+    }
+    // The one transition the timeline engine owns stays native.
+    for (const type of ["dissolve", "fade", "crossfade", "fade to black"]) {
+      assert.equal(
+        available.plan("transition_basic", type).route,
+        "film",
+        `a ${type} transition is timeline-native and must stay on the timeline engine`,
+      );
+    }
+  });
+
   it("classifies free-form text through classify()", () => {
     assert.equal(router(true).classify("wipe"), "effects");
     assert.equal(router(true).classify("cut"), "film");

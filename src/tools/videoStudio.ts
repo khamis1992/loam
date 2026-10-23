@@ -45,6 +45,12 @@ import { parseTimeToken } from "./videoEditAgent.js";
 import { VideoStudioRouter, videoStudioRouter } from "./videoStudioRouter.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { num, str } from "./registry.js";
+import {
+  VideoStudioProjectStore,
+  VideoStudioStateTracker,
+  videoStudioProjectStore,
+  type VideoStudioStateSummary,
+} from "./videoStudioState.js";
 
 // ---------------------------------------------------------------------------
 // Relay contract (structural, so tests can inject a mock)
@@ -598,6 +604,10 @@ export interface VideoStudioToolOptions {
   root?: string;
   /** Engine router (fc-07); defaults to the shared server router. */
   router?: VideoStudioRouter;
+  /** fc-05: per-task state tracker (manual-edit detection). Injectable for tests. */
+  stateTracker?: VideoStudioStateTracker;
+  /** fc-05: debounced project persistence into the task files. Injectable for tests. */
+  projectStore?: VideoStudioProjectStore;
 }
 
 const TIME_SCHEMA = {
@@ -625,6 +635,37 @@ function routingHint(args: Record<string, unknown>): string {
 }
 
 /**
+ * Read the live timeline state from the editor (fc-05). Best-effort: a state
+ * read must never break the command it precedes, so a relay failure here
+ * returns undefined and the action proceeds without a summary.
+ *
+ * The read also (a) updates the per-task tracker, which reports a manual-edit
+ * notice when the timeline differs from the state the agent last saw, and
+ * (b) schedules a debounced persist of the raw project into the task files.
+ */
+async function readStudioState(
+  taskId: string,
+  relay: VideoStudioRelayLike,
+  tracker: VideoStudioStateTracker,
+  store: VideoStudioProjectStore,
+  workspace: string,
+): Promise<{ raw: unknown; summary: VideoStudioStateSummary; notice: string | null } | undefined> {
+  let raw: unknown;
+  try {
+    raw = await relay.enqueue(taskId, "film", "inspect", {});
+  } catch {
+    return undefined;
+  }
+  const observation = tracker.observe(taskId, raw);
+  try {
+    store.schedule(taskId, workspace, raw, observation.summary);
+  } catch {
+    /* persistence is best-effort */
+  }
+  return { raw, summary: observation.summary, notice: observation.notice };
+}
+
+/**
  * Create the `video_studio` tool. The description is intentionally complete: it
  * is the model's only guide for driving the editor.
  */
@@ -632,6 +673,10 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
   const relay = options.relay ?? videoStudioRelay;
   const root = options.root ?? ROOT;
   const router = options.router ?? videoStudioRouter;
+  // fc-05: one tracker/store per tool instance, so change detection survives
+  // across commands within a run. Tests inject their own to control the hash.
+  const stateTracker = options.stateTracker ?? new VideoStudioStateTracker();
+  const projectStore = options.projectStore ?? videoStudioProjectStore;
 
   return [
     {
@@ -641,6 +686,8 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
         "Every action is sent through the Video Studio relay to the attached editor panel, which applies it to the live timeline and returns the result. " +
         "Use this for direct, precise timeline work: open, state, import, cut, trim, delete, move, reorder, split, speed, add_text, add_audio (or music), transition_basic, effect_basic, undo and raw. " +
         "Always call state first to read the current project (sequences, tracks, clips, playhead) so manual edits made in the panel are never lost, then apply the edit. " +
+        "Every result carries a compact timeline summary (tracks, clips with track/start/end and source in-out, text layers, audio clips, transitions, effects, duration, playhead, selection); when the timeline changed since your last action, a notice describing that change is prepended so you can adapt instead of repeating an edit the user already made. " +
+        "Never rebuild the project from memory: every edit is an incremental command on the live project. " +
         "Timestamps accept seconds (90) or timecode (1:30, 00:01:30.500). " +
         "One tool, two engines: the router (src/tools/videoStudioRouter.ts) sends timeline work (cut, trim, arrange, speed, audio, music, volume, static text, a plain dissolve/fade, export) to the Loam Video timeline engine and richer work (wipes/zooms/glitches and other transitions beyond a basic dissolve, visual effects, colour looks, text/motion animation, keyframed motion, animated titles) to the Loam Effects engine. " +
         "Every result carries a `routing` object: `route` is the engine the operation belongs to, `target` is the engine that actually ran it, `degraded` says whether the operation was downgraded, and `note` explains the decision in one line. Read it before telling the user what was applied. " +
@@ -735,23 +782,44 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
           }
         }
 
+        // fc-05: read the live timeline before acting. Manual edits the user
+        // made in the panel are surfaced here, and the project is persisted so
+        // a reload can restore it.
+        const before = await readStudioState(taskId, relay, stateTracker, projectStore, ctx.workspace);
+
         const built = buildAction(action, args, catalog, ctx.workspace);
         if ("error" in built) return { ok: false, content: built.error };
 
         const results: Array<{ method: string; ok: boolean; result?: unknown }> = [];
-        for (const step of built.steps) {
-          try {
-            const value = await relay.enqueue(taskId, target, step.method, step.params);
-            results.push({ method: step.method, ok: true, result: value });
-          } catch (err) {
-            return relayErrorResult(err, routing);
+        // `state` is itself a state read: reuse the pre-read so the result is a
+        // single inspect round trip instead of two.
+        const isStateRead = built.steps.length === 1 && built.steps[0]!.method === "inspect";
+        if (isStateRead && before) {
+          results.push({ method: "inspect", ok: true, result: before.raw });
+        } else {
+          for (const step of built.steps) {
+            try {
+              const value = await relay.enqueue(taskId, target, step.method, step.params);
+              results.push({ method: step.method, ok: true, result: value });
+            } catch (err) {
+              return relayErrorResult(err, routing);
+            }
           }
         }
 
-        if (action === "open") {
-          return { ok: true, content: JSON.stringify({ action, available: true, routing, commands: results[0]?.result ?? [] }) };
-        }
-        return { ok: true, content: JSON.stringify({ action, routing, steps: results }) };
+        // fc-05: re-read after a mutating action so the next command's change
+        // detection starts from the state the agent last saw (its own edit
+        // included) and the result reports the timeline as it now stands.
+        const after = isStateRead && before ? before : await readStudioState(taskId, relay, stateTracker, projectStore, ctx.workspace);
+        const summary = (after ?? before)?.summary ?? null;
+        const notice = before?.notice ?? null;
+
+        const body =
+          action === "open"
+            ? { action, available: true, routing, commands: results[0]?.result ?? [], summary, notice }
+            : { action, routing, steps: results, summary, notice };
+        const json = JSON.stringify(body);
+        return { ok: true, content: notice ? `${notice}\n${json}` : json };
       },
     },
   ];

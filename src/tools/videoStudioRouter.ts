@@ -113,6 +113,14 @@ function anyPhrase(text: string, phrases: readonly string[]): boolean {
 export const EFFECTS_PHRASES: readonly string[] = [
   // --- transitions beyond a basic dissolve -------------------------------
   "zoom transition", "wipe", "whip pan", "slide transition", "spin transition",
+  // Bare transition-kind nouns. §6.12 names the kinds that need the effects
+  // engine as "wipes, zooms, glitches, spins, morphs"; the tool description
+  // promises the same ("a wipe/zoom/glitch and similar"). Bare "wipe" and
+  // "glitch" are already listed below as visual effects, so these add the other
+  // three named kinds. The remaining kinds stay matched only as
+  // "<kind> transition" (see the lines below) because their bare forms are
+  // ambiguous: "slide in the text" is text animation, not a wipe.
+  "zoom", "spin", "morph",
   "glitch transition", "3d transition", "luma transition", "morph transition",
   "light leak transition", "shatter transition", "blur transition", "push transition",
   "swipe transition", "burn transition", "dip transition", "shape transition",
@@ -125,7 +133,8 @@ export const EFFECTS_PHRASES: readonly string[] = [
   "تاثير", "تاثيرات", "مفعول بصري", "تشويش", "تشويه", "حبيبات", "انحراف لوني",
   "تظليل الحواف", "خطوط المسح", "فلتر", "فلاتر",
   // --- colour looks ------------------------------------------------------
-  "color grade", "colour grade", "color grading", "colour grading", "color look",
+  "color grade", "colour grade", "color grading", "colour grading", "grading",
+  "color look",
   "colour look", "cinematic look", "color correction", "colour correction",
   "luts", "teal and orange", "film look",
   "فلتر الوان", "تصحيح الوان", "الوان", "تدرج لوني", "تشبع الوان", "درجه لونيه",
