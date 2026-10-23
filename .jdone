@@ -896,7 +896,7 @@ session.
 merged, zero parity commits missing). `git status --porcelain` is empty and
 `git grep -E "^(<{7}|={7}|>{7})( |$)"` finds no conflict marker in any tracked file.
 
-## Gates (all run from the worktree root on the final merged tree `ecb7586`)
+## Gates (all run from the worktree root on the final merged tree `e4a0cce`)
 - `npx tsc --noEmit`                          -> exit 0
 - `npm run build:server`                      -> exit 0 (dist/server.cjs 19.5mb, pdf worker copied)
 - `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
