@@ -1,11 +1,13 @@
 /**
- * J6 acceptance: eviction tests for every hard cap.
+ * J6 acceptance: eviction tests for the hard caps a test can reach offline.
  *
  * docs/MEMORY_BUDGET.md lists a bound for every in-memory hot-path cache and
  * says each one is enforced by a real `LruCache`/`BoundedMap`. This file is the
- * executable half of that claim: for each counter it drives the cache through
- * its own public API past the cap and asserts the live size never exceeds the
- * configured bound and that the oldest entry is the one dropped.
+ * executable half of that claim for the 32 caps reachable without a live
+ * browser, PTY, ffmpeg child or video sidecar: for each of those it drives the
+ * cache through its own public API past the cap and asserts the live size never
+ * exceeds the configured bound and that the oldest entry is the one dropped. The
+ * remaining 11 caps are covered by the doc↔code parity check at the bottom.
  *
  * Everything is in-process and offline: no model calls, no network, no
  * telemetry. The data dir is redirected to a throwaway temp folder so the run
@@ -536,6 +538,14 @@ describe("docs/MEMORY_BUDGET.md stays in sync with the code", () => {
       [...listed].sort(),
       actuallyRemaining,
       "docs/MEMORY_BUDGET.md names the wrong caps as lacking an eviction case",
+    );
+    // The doc must not claim blanket eviction coverage anywhere else. This is the
+    // exact phrasing that previously overstated the suite ("drives every
+    // registered cache") while 11 caps had no eviction case.
+    assert.doesNotMatch(
+      doc,
+      /drives every registered cache|eviction test for every|one eviction case per cap|for each cap/i,
+      "docs/MEMORY_BUDGET.md claims eviction coverage for every cap, which is false",
     );
   });
 });

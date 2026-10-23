@@ -243,7 +243,7 @@ Any intentional change to those limits must update this document in the same PR.
 ## Tests
 
 - `src/memory/__tests__/cache.test.ts` — the bounded-cache primitives and the counter registry
-- `src/memory/__tests__/caps.test.ts` — the executable half of the cap table: drives every registered cache past its bound through its own public API and checks eviction, plus a doc↔code parity check
+- `src/memory/__tests__/caps.test.ts` — the executable half of the cap table: drives 32 of the 43 documented caps past their bound through their own public API and checks eviction (the rest are covered by the parity check), plus a doc↔code parity check
 - `src/server/__tests__/debugMemory.test.ts` — the HTTP route boundary
 - `bench/__tests__/appRamBench.test.ts` — the offline before/after measurement
 
