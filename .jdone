@@ -76,6 +76,49 @@ test passes 3/4 here and the same single failure reproduces on the untouched
 - `.jdone` only (this report prepended to the preserved rollup). No source file was
   modified by this session; the O4 deliverables are unchanged from commit `5114c89`.
 
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run verify
+  node --import tsx --test "src/**/*.test.ts"
+  node --import tsx --test src/protocol/__tests__/*.test.ts
+  (cd packages/web && npx vitest run src/services/chatSocket.test.ts)
+  npm run check:encoding
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added. Working tree clean.
+
+### Superseded header wording (preserved verbatim)
+Earlier revisions of this header are archived below verbatim, so that no line from either
+side of any merge conflict is dropped. The sections above are the current wording.
+
+No source file conflicted in either merge round. `git merge manus-parity` brought in
+other workstreams' code (N2 canvas, N4 recipe engine, C19 failover, J5 command-risk, N10
+output-type/effort routing) and every one of those files auto-merged cleanly with `ort`.
+The only file that ever conflicted was the tracked rollup `.jdone`:
+- Round 1, parity tip `ed26550` (N2 merge): **add/add**. Both sides prepend a report at
+  the same top-of-file anchor (O4's report here; the N2/C19/J3/O3/O6/O2/D5/O1/V11/fc-05
+  rollup on parity). Six conflict-marker lines, resolved as a superset.
+- Round 2, parity tip `26befe6` (N10 merge): **modify/delete**. Parity's N10 commit
+  `e3d05f6` deleted `.jdone` outright (`git ls-tree manus-parity -- .jdone` is empty),
+  while this branch modified it. Kept our side, since `.jdone` is this task's required
+  deliverable and the branch must not lose its report.
+other-workstream lines (the N4 `RecipeUpdateEvent` / `RecipeRestartEvent`), which is why
+they auto-merged; the O4 `lastSeq` / `seq` / `eventsAfterSeq` additions are all still
+- Round 1: the `.jdone` add/add conflict was resolved as a **superset** - the O4 report
+  stays at the top and the full parity rollup follows verbatim, with the six
+  conflict-marker lines removed and no report text altered.
+- Round 2: the `.jdone` modify/delete conflict was resolved by keeping the modified
+  version (`git add .jdone`), which is the union of the O4 report and the parity rollup
+  carried forward from round 1.
+Both resolutions were verified mechanically against the blobs in play: 0 non-empty lines
+missing from the ours blob, 0 non-empty lines missing from the theirs blob (round 1), 0
+non-empty lines missing from the merge-base blob, and 0 conflict markers left in the tree.
+                                              -> tests 2576, pass 2575, fail 1 (the one
+                                              -> tests 52, pass 52, fail 0 (O4 seqReplay included)
+present.
+
 ---
 
 D2 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
