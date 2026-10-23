@@ -1,5 +1,48 @@
 fc-07 complete: the Loam Video / Loam Effects router and a full "Video editing" prompt section. One product, one workflow, Arabic + English routing, FilmCraft-native fallback.
 
+## Merge gate fix, round 2 (merge commit `662fd68`)
+
+The gate asks for the LATEST `manus-parity`, which advanced twice during the fix.
+Two merges were committed, each keeping BOTH sides of every conflict.
+
+- Round 2a: `86b6f33` merged parity `411df5e` (it had advanced past `045f3e2`).
+- Round 2b: `662fd68` merged parity `eb17ea0` (advanced again: seq-replay plus the
+  deterministic correction detector, 11 files).
+
+Only `.jdone` conflicted in either merge. Every other parity delta (canvas panel,
+ask-user node, recipe engine, mirofish, output-type routing, packaging) auto-merged
+cleanly. `.jdone` was resolved as the union of both sides and verified with a
+throwaway multiset-inclusion checker: 0 lines missing from either side, CRLF
+endings preserved, no markers left. `git merge-base --is-ancestor manus-parity HEAD`
+now succeeds (merge base `411df5e`).
+
+Gates on the merged tree (`662fd68`), each with its real exit code:
+
+- `npx tsc --noEmit` -> 0
+- `npm run build:server` -> 0
+- `cd packages/web && npx next build` -> 0 (25/25 pages)
+- `check:encoding`, `check:promptwire`, `check:modes`, `check:eval` -> 0
+- `check:orchestrator` (114/114), `check:loam-agents`, `check:recovery` -> 0
+- video-studio suites -> 74/74 pass
+- full server suite -> 2756 tests / 2756 pass / 0 fail
+- web vitest -> 79 files / 538 tests pass
+
+Pre-existing environmental gates. These fail identically on a clean parity
+worktree at `045f3e2` in all four configurations (with/without `AS_PROTOCOL_PORT`,
+with/without `LOAM_AUTH_DISABLED`), so they are inherited, not merge regressions:
+
+- `check:isolation` and `check:loam-e2e`: `EADDRINUSE 127.0.0.1:8787` (held by PID
+  68964, an orphaned `node --test` process), then a chat timeout because these two
+  scripts set neither `AS_PROTOCOL_PORT` nor `LOAM_AUTH_DISABLED` (the sibling
+  scripts `check-studio.ts` and `check-library-pages.ts` set both).
+- `check:loam-ui`: a stale assertion, `8 !== 7` at `check-loam-ui.mjs:43`.
+- `check:loam-ancillary`: a `#rkSend` Playwright timeout (pointer intercepted).
+
+No test weakened, deleted or skipped. No secrets committed. No conflict markers
+remain anywhere in the tracked tree (`git grep -E "^(<<<<<<< |>>>>>>> |=======$)"` -> empty).
+
+---
+
 ## Merge gate fix (merge commit `fade6f6`)
 
 The `manus-parity` merge gate failed with MERGE CONFLICT. The merge is now
