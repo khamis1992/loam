@@ -56,3 +56,4 @@ electron/filmcraft/dist/
 # throwaway local probe scripts (never commit)
 tmp-*.mjs
 tmp-*.mts
+

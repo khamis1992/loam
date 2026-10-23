@@ -31,6 +31,7 @@ export const RUN_NODE_TYPES = [
   "merge",
   "note",
   "failed",
+  "kb_seed",
 ] as const;
 export type RunNodeType = (typeof RUN_NODE_TYPES)[number];
 

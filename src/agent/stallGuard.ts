@@ -2,6 +2,8 @@
  *  keeps failing, without any new progress. Each detection returns a short
  *  instruction the agent injects into the conversation so the model changes
  *  course instead of looping. */
+import { BoundedMap } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 /** Repeated identical or failing calls before nudging the model off the loop. */
 const MAX_CONSECUTIVE_NO_PROGRESS = 6;
@@ -24,6 +26,16 @@ export function isDedicatedTool(name: string): boolean {
   return DEDICATED_TOOL_PREFIX.test(name) || DEDICATED_TOOL_EXACT.has(name);
 }
 
+/**
+ * Failure counters and "already warned" flags (J6). One guard is created per
+ * agent run, so both collections are scoped to that run and die with it — but a
+ * single run can still call the whole tool list, and an unbounded `Map` would
+ * keep one entry per distinct tool name for the life of the run. Capped: the
+ * counters only matter for the tools the run is actually repeating, so the
+ * least-recently-used names are the right ones to drop.
+ */
+const GUARD_FAILURE_CAPACITY = 64;
+
 export const STALL_NOTICE =
   "You have repeated the same failing or identical tool call several times without progress. Stop repeating it: re-read the available tool list, change the arguments or the tool, or state the concrete blocker. Do not claim success without new evidence.";
 
@@ -39,8 +51,15 @@ export function dedicatedFailureNotice(name: string): string {
 export function createStallGuard(): (name: string, args: Record<string, unknown>, ok: boolean) => string | null {
   let stalled = 0;
   let lastSignature: string | null = null;
-  const failures = new Map<string, number>();
-  const warned = new Set<string>();
+  const failures = new BoundedMap<string, number>(GUARD_FAILURE_CAPACITY, "stall-guard-failures");
+  const warned = new BoundedMap<string, true>(GUARD_FAILURE_CAPACITY, "stall-guard-warned");
+
+  // Both collections are bounded, so report them on the local `debug:memory`
+  // surface. Registration is by name and last-wins, which matches the other
+  // per-instance caches (e.g. videoStudioRelay); every guard shares the same
+  // cap, so the newest guard is a representative row.
+  registerCacheStats("stall-guard-failures", () => failures.stats());
+  registerCacheStats("stall-guard-warned", () => warned.stats());
 
   return (name, args, ok) => {
     let notice: string | null = null;
@@ -55,7 +74,7 @@ export function createStallGuard(): (name: string, args: Record<string, unknown>
         const count = (failures.get(name) ?? 0) + 1;
         failures.set(name, count);
         if (count >= MAX_DEDICATED_FAILURES && !warned.has(name)) {
-          warned.add(name);
+          warned.set(name, true);
           failures.delete(name);
           notice = dedicatedFailureNotice(name);
         }

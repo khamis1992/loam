@@ -93,7 +93,7 @@ export type AgentEvent =
   | { type: "assistant_token"; text: string }
   | { type: "assistant_message"; text: string }
   | { type: "tool_call"; name: string; args: unknown }
-  | { type: "tool_result"; name: string; ok: boolean; summary: string; ms?: number }
+  | { type: "tool_result"; name: string; ok: boolean; summary: string; ms?: number; kbSeedIds?: string[]; kbSeeds?: Array<{ id: string; title: string; tags: string[]; preview: string }> }
   | { type: "done"; text: string; steps: number; model: string }
   | { type: "cancelled" }
   | { type: "error"; message: string }
@@ -165,8 +165,10 @@ export type AgentEvent =
   | { type: "permission_mode_changed"; mode: import("../policy/permissionModes.js").LocalPermissionMode; previousMode: import("../policy/permissionModes.js").LocalPermissionMode; reason: string }
   /** End-to-end verification of the completed task. */
   | { type: "verify"; verdict: Verdict; reason: string; parsed?: boolean }
-  /** Context compression happened. */
-  | { type: "compaction"; step: 1 | 2; originalTokens: number; afterPruneTokens: number; finalTokens: number; summaryChars?: number; fallback?: boolean; blocked?: boolean }
+  /** Context compression happened. step 3 is the synchronous emergency hard-compact
+   *  (no summarizer call); `blocked` marks the case where a PreCompact hook vetoed
+   *  the compaction and nothing was compressed. */
+  | { type: "compaction"; step: 1 | 2 | 3; originalTokens: number; afterPruneTokens: number; finalTokens: number; summaryChars?: number; fallback?: boolean; emergency?: boolean; droppedTurns?: number; blocked?: boolean }
   /**
    * Prompt-cache (KV cache) accounting. Emitted on every completed provider
    * request that reported cache telemetry, so clients can show reusable-token

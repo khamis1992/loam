@@ -1,0 +1,11 @@
+{
+  "id": "image-generation",
+  "title": "Image Generation",
+  "description": "Generate a set of themed images for a marketing campaign using AI image generation.",
+  "prompt": "Generate a set of 5 marketing images for a coffee brand called 'Morning Ritual'. The images should depict: 1) a steaming cup of coffee on a wooden table with morning light, 2) a barista pouring latte art, 3) coffee beans in a burlap sack, 4) a person enjoying coffee while reading a book, and 5) a coffee shop storefront at sunrise. Use a warm, inviting color palette with soft lighting.",
+  "mode": "media",
+  "effort": "fast",
+  "outputType": "image",
+  "icon": "🎨",
+  "category": "Media"
+}
