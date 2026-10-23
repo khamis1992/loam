@@ -1,3 +1,99 @@
+## O5 gate-fix session: merge with manus-parity, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+### Root cause
+This time a source file really did conflict. `git merge manus-parity` (tip `603d71c`,
+which carried O6 `src/server/inputQueue.ts`) produced:
+
+    Auto-merging src/agent/loop.ts
+    CONFLICT (content): Merge conflict in src/agent/loop.ts
+    Auto-merging src/index.ts
+    Automatic merge failed; fix conflicts and then commit the result.
+
+`src/agent/loop.ts` is the one file both branches touched from the same base: O5 added
+the durable event-log wiring (imports of `checkpointLog.js`, `RunOptions.eventLogSession`,
+`logSession`/`index` locals and the tool-call bracketing) while O6 added the durable
+input-queue wiring (imports of `inputQueue.js`, `RunOptions.onAdmitPending` /
+`inputSessionId`, the `inputSessionId` local and the `admitPendingInputs` hook). Three
+hunks conflicted, all of them purely additive from both sides, so all three were resolved
+by **keeping both sides**: no line of either feature was dropped.
+
+The file has CRLF endings, so the resolution was done with the file-edit tools
+(`apply_patch`), never through the shell, and the conflict markers were verified gone
+afterwards (`findstr` for `<<<<<<<` / `=======` / `>>>>>>>` finds none).
+
+### What was kept on both sides
+1. Imports: `checkpointLog.js` (`recordToolCall`, `recordToolResult`, `toolCallIdOf`)
+   AND `inputQueue.js` (`admitPending`, `hasPending`, `QueuedInput`).
+2. `RunOptions`: O5's `eventLogSession?` AND O6's `onAdmitPending?` / `inputSessionId?`.
+3. `runAgent` locals: O5's `logSession` / `index` AND O6's `inputSessionId` /
+   `admitPendingInputs`, with O6's `admitPendingInputs()` call site at its original
+   step boundary (now line 355) intact.
+4. O5's own change inside the loop survived: `return { name, args, t0: Date.now(),
+   callId: toolCallIdOf(call, step, index++) }`.
+
+`src/index.ts` auto-merged (O6's queue wiring and O5's log wiring are in different
+regions of `runTask`). No other file conflicted.
+
+### Gate condition verified
+`git merge manus-parity` reports "Already up to date.", `git merge-base --is-ancestor
+manus-parity HEAD` exits 0 and `git rev-list --left-right --count manus-parity...HEAD` is
+`0  3` (parity fully merged, zero parity commits missing). `git status --porcelain` is
+empty, `git diff manus-parity HEAD` has 0 added lines with the `???` mojibake marker, and
+`git grep -E "^(<<<<<<<|=======|>>>>>>>)"` over `src` finds nothing.
+
+Parity advanced again while the session ran (O4, 5 commits), so the merge was run twice:
+1. tip `603d71c` (O6) -> conflict in `src/agent/loop.ts`, resolved keeping both sides,
+   commit `f66b200`.
+2. tip `8e197c6` (O4, `src/protocol/store.ts` + `storeCompat.test.ts`) -> clean
+   auto-merge, no conflict, commit `082e211`.
+
+### Gates (all run from the worktree root on the final committed tree `082e211`)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled, 25/25 static pages)
+- `node --import tsx --test src/agent/__tests__/checkpointLog.test.ts
+   src/server/__tests__/inputQueue.test.ts src/server/__tests__/inputQueueAdmit.test.ts
+   src/protocol/__tests__/eventLog.test.ts src/protocol/__tests__/storeCompat.test.ts`
+                                              -> tests 50, pass 50, fail 0
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+
+### `check-bot-final-repair-resume` (the plan-row Verify command)
+Run twice on the committed tree, and once on a pristine detached `manus-parity`
+worktree (`8e197c6`) used as a control. **All three fail identically**, so the failure
+is environmental and not caused by this merge:
+
+    AssertionError: The input did not match the regular expression /cancel/i.
+    'Error: orchestrator: task incomplete: draft: All providers failed or cooled:
+     longcat: cloud /chat/completions HTTP 404 ... ; ollama: ollama /api/chat HTTP 429:
+     {"error":"usage credits auto reload monthly max reached ..."}'
+
+The script drives the real orchestrator against live providers (`loadConfig()` +
+`runOrchestratedAgent`); both providers are currently unavailable on this host (ollama
+out of monthly usage credits, longcat 404), so the run never reaches the abort the
+script asserts on. The O5 change under test is unrelated to provider availability and is
+covered by the deterministic fake-model tests in `src/agent/__tests__/checkpointLog.test.ts`
+(14 tests, all pass), which do not touch the network. The probe worktree was removed
+afterwards (`git worktree remove --force`).
+
+### Files
+- `src/agent/loop.ts` - the only source file edited (merge resolution, both sides kept).
+- `.jdone` only (this report prepended to the preserved rollup).
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  node --import tsx --test src/agent/__tests__/checkpointLog.test.ts
+  npm run check:encoding
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added. Working tree clean.
+
+---
+
 ## O3 gate-fix session: merge with manus-parity, all gates green
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
