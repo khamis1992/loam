@@ -112,6 +112,7 @@ import { handlePlaybookRoutes } from "./routes/playbooks.js";
 import { handleFlowTemplateRoutes } from "./routes/flowTemplates.js";
 import { handleVoiceRoutes } from "./routes/voice.js";
 import { handleConnectorsRoutes } from "./routes/connectors.js";
+import { handleEnvBuildRoutes } from "./routes/envBuilds.js";
 import { handleKnowledgeRoutes } from "./routes/knowledge.js";
 import { handleWikiRoutes } from "./routes/wiki.js";
 import { importGrokbotBundle, sanitizeGrokbotBundle } from "./grokbotImport.js";
@@ -1837,6 +1838,8 @@ loadAgents();
         if (await handlePlaybookRoutes(req, res, p)) return;
 
         if (await handleFlowTemplateRoutes(req, res, p)) return;
+        // Environment snapshots (D3): read-only build status + redacted log.
+        if (await handleEnvBuildRoutes(req, res, p)) return;
         // Repo wiki (D8): list/generate/read DeepWiki-style pages.
         if (await handleWikiRoutes(req, res, p, { workspace: cfg.workspace, ollama, model: cfg.model })) return;
 
