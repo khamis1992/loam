@@ -25,6 +25,14 @@ import { fetchProjectBranch, type ProjectOption } from '@/services/projectContex
 import { useRouter } from 'next/navigation';
 import { ModeChip, type ModeChipResolved } from './ModeChip';
 import type { TaskMode } from '@shared/socket';
+import {
+  EFFORT_OPTIONS,
+  OUTPUT_TYPE_OPTIONS,
+  normalizeEffort,
+  normalizeOutputType,
+  routingExtData,
+  type OutputType,
+} from './routingControls';
 
 export interface ComposerHandle {
   focus: () => void;
@@ -50,6 +58,14 @@ interface ComposerProps {
   onToggleKnowledge?: () => void;
   /** Option 18: composer model tier sent with the task. */
   modelTier?: string;
+  /** Neo N10: output type sent with the task (Auto/Text/Image/Video/Slides/Website). */
+  outputType?: string;
+  /** Neo N10: effort level sent with the task (Fast/Max). */
+  effort?: string;
+  /** Neo N10: "Compare models" runs the same prompt on several models as sibling nodes. */
+  compareModels?: boolean;
+  /** Neo N10: the model ids the A/B fan-out may use. */
+  abModels?: readonly string[];
   /** Option 17: project id sent with the task (sets the task's project). */
   projectId?: string | null;
   /** Option 17: start the task in a fresh git worktree under the bound folder. */
@@ -59,7 +75,7 @@ interface ComposerProps {
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { onSend, onStop, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode, placeholder, approveForMe, onToggleApproveForMe, knowledgeOn, onToggleKnowledge, modelTier, projectId, worktreeEnabled, assistantReply }: ComposerProps,
+  { onSend, onStop, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode, placeholder, approveForMe, onToggleApproveForMe, knowledgeOn, onToggleKnowledge, modelTier, outputType, effort, compareModels: initialCompareModels, abModels, projectId, worktreeEnabled, assistantReply }: ComposerProps,
   ref: Ref<ComposerHandle>,
 ) {
   const router = useRouter();
@@ -76,6 +92,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const [attachLoading, setAttachLoading] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [connectedOAuth, setConnectedOAuth] = useState<string[]>([]);
+  // Neo N10: output type and effort are composer controls, both defaulting to
+  // "let the agent decide" so a plain run is unchanged.
+  const [selectedOutputType, setSelectedOutputType] = useState<OutputType>(
+    normalizeOutputType(outputType) ?? 'auto',
+  );
+  const [selectedEffort, setSelectedEffort] = useState<'fast' | 'max' | ''>(normalizeEffort(effort));
+  const [compareModels, setCompareModels] = useState<boolean>(initialCompareModels === true);
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -125,6 +148,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   useEffect(() => {
     setSelectedLoamMode(defaultLoamMode);
   }, [defaultLoamMode]);
+
+  // Neo N10: a page-level change (e.g. a task page reopening with a stored
+  // output type) wins over the composer's own state.
+  useEffect(() => {
+    setSelectedOutputType(normalizeOutputType(outputType) ?? 'auto');
+  }, [outputType]);
+
+  useEffect(() => {
+    setSelectedEffort(normalizeEffort(effort));
+  }, [effort]);
 
   useEffect(() => {
     let mounted = true;
@@ -189,6 +222,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     if (modelTier) extData.modelTier = modelTier;
     if (projectId) extData.projectId = projectId;
     if (worktreeEnabled) extData.worktreeEnabled = true;
+    Object.assign(extData, routingExtData({
+      outputType: selectedOutputType,
+      effort: selectedEffort,
+      compareModels,
+      abModels,
+    }));
     await onSend(text.trim(), mode, files, Object.keys(extData).length > 0 ? extData : undefined);
     setText('');
     setFiles([]);
@@ -196,6 +235,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     setAttachedSkills([]);
     setAttachedConnectors([]);
     setSelectedLoamMode(defaultLoamMode);
+    setSelectedOutputType(normalizeOutputType(outputType) ?? 'auto');
+    setSelectedEffort(normalizeEffort(effort));
   };
 
   const onKey = async (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -601,6 +642,58 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           <option value="lite">{t('Lite')}</option>
           <option value="max">{t('Max')}</option>
         </select>
+
+        {/* Neo N10: output type narrows the tool set and the routing map; effort
+            picks the model tier behind the run. Both default to "decide for me". */}
+        <label className="hidden items-center gap-1 text-xs text-text-tertiary sm:flex">
+          <span className="sr-only">{t('Output type')}</span>
+          <select
+            value={selectedOutputType}
+            onChange={(e) => setSelectedOutputType(e.target.value as OutputType)}
+            aria-label={t('Output type')}
+            title={t('Output type')}
+            className="h-row-sm rounded-control bg-transparent px-2 text-sm text-text-secondary outline-none"
+          >
+            {OUTPUT_TYPE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{t(option.label)}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="hidden items-center gap-1 text-xs text-text-tertiary sm:flex">
+          <span className="sr-only">{t('Effort')}</span>
+          <select
+            value={selectedEffort}
+            onChange={(e) => setSelectedEffort(e.target.value as 'fast' | 'max' | '')}
+            aria-label={t('Effort')}
+            title={t('Effort')}
+            className="h-row-sm rounded-control bg-transparent px-2 text-sm text-text-secondary outline-none"
+          >
+            {EFFORT_OPTIONS.map((option) => (
+              <option key={option.value || 'effort'} value={option.value}>{t(option.label)}</option>
+            ))}
+          </select>
+        </label>
+
+        {abModels && abModels.length > 1 && (
+          <button
+            type="button"
+            onClick={() => setCompareModels((v) => !v)}
+            aria-pressed={compareModels}
+            title={t('Compare models (A/B)')}
+            className={clsx(
+              'hidden items-center gap-1 rounded-full border px-2 py-1 text-xs sm:flex',
+              compareModels
+                ? 'border-icon-blue bg-fill-tsp text-icon-blue'
+                : 'border-border-main text-text-secondary hover:bg-fill-hover',
+            )}
+          >
+            <span className="flex -space-x-1">
+              <Bot className="size-3.5" />
+            </span>
+            {t('Compare models')}
+          </button>
+        )}
 
         <ModeChip
           resolved={resolvedLoamMode}

@@ -3,6 +3,16 @@ export type AgentStatus = 'running' | 'waiting' | 'stopped' | 'error';
 export type ToolStatus = 'success' | 'error' | 'running' | 'pending' | 'failed' | 'cancelled' | 'stopped' | 'rollback' | 'argumentsFinished' | 'streaming';
 export type ToolName = 'browser' | 'terminal' | 'search' | 'text_editor' | 'webdev' | 'map_reduce' | 'suggestion' | 'webpage_extract' | 'mcp' | (string & {});
 
+/** Neo N10: the composer's output-type selector. */
+export const OUTPUT_TYPES = ['auto', 'text', 'image', 'video', 'slides', 'website'] as const;
+export type OutputType = (typeof OUTPUT_TYPES)[number];
+/** Neo N10: the composer's effort selector. */
+export type EffortLevel = 'fast' | 'max';
+
+// The selector values are mirrored from the backend's `src/llm/router.ts` so a
+// composer payload that was built by hand still type checks; the server
+// re-validates every value before it reaches the routing map.
+
 export interface Attachment {
   id: string;
   filename: string;
@@ -61,6 +71,12 @@ export interface UserMessage extends Base {
     modelTier?: string;
     /** Neo N3: opt this run into the user's Knowledge Garden (kb_* tools). */
     knowledge?: boolean;
+    /** Neo N10: composer output type (auto|text|image|video|slides|website). */
+    outputType?: string;
+    /** Neo N10: composer effort level (fast|max). */
+    effort?: string;
+    /** Neo N10: explicit A/B arm model ids for the fan-out run. */
+    abModels?: string[];
   };
 }
 

@@ -293,6 +293,52 @@ No secrets committed. No forbidden path touched. No test weakened, deleted or sk
 
 ---
 
+
+---
+
+# N3 merge with manus-parity (N10): resolved keeping both sides
+
+`manus-parity` advanced to `26befe6` (N10 merge). That commit **deleted** `.jdone`
+outright (`CONFLICT (modify/delete): .jdone deleted in manus-parity and modified in
+HEAD`), so the file was kept rather than deleted: HEAD's side (the N3 report plus the
+resolution blocks above) is preserved verbatim, and parity's most recent tracked `.jdone`
+(`ed26550`, the last commit that carried it) is preserved verbatim below under the same
+`## Preserved:` heading. No report text was dropped or shortened.
+
+## Other conflicts resolved keeping both sides
+- `packages/shared/src/socket.ts` (`UserMessage.extData`): kept N3's `knowledge?: boolean`
+  **and** N10's `outputType?` / `effort?` / `abModels?`.
+- `src/protocol/types.ts` (same interface): kept all four fields, each with its own comment.
+- `packages/web/src/components/chat/Composer.tsx`: kept N3's `knowledgeOn` /
+  `onToggleKnowledge` props and N10's `outputType` / `effort` / `compareModels` / `abModels`
+  props, and merged the destructure list to include every one of them.
+- `packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx`: kept N3's `knowledgeOn` /
+  `onToggleKnowledge` wiring and N10's `outputType` / `effort` / `compareModels` / `abModels`
+  wiring on the same `<Composer>` element.
+
+## Gate condition verified on the merged tree
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
+- `git rev-list --left-right --count manus-parity...HEAD` -> left count 0
+- `git grep -E "^(<{7}|={7}|>{7})( |$)"` -> no matches
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0
+- `(cd packages/web && npx next build)` -> exit 0
+- `(cd packages/web && npx tsc --noEmit)` -> exit 0
+- `node --import tsx --test src/server/__tests__/graphRoutes.test.ts
+   src/server/__tests__/knowledgeRoutes.test.ts src/graph/__tests__/runGraph.test.ts`
+  src/agent/__tests__/recipeEngine.test.ts src/agent/__tests__/recipeIds.test.ts`
+  -> tests 67, pass 67, fail 0
+- `node --import tsx --test src/protocol/__tests__/recipeEvents.test.ts
+   src/protocol/__tests__/recipeReplay.test.ts src/protocol/__tests__/eventLog.test.ts
+   src/protocol/__tests__/storeCompat.test.ts src/server/__tests__/inputQueue.test.ts
+   src/server/__tests__/inputQueueAdmit.test.ts` -> tests 45, pass 45, fail 0
+- `(cd packages/web && npx vitest run)` -> 80 files / 544 tests passed, 0 fail
+- `npm run check:encoding` -> OK
+- `npm run check:modes` -> PASS
+- `npm run check:recovery` -> PASS
+- `npm run check:orchestrator` -> PASS
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
 ## Preserved: manus-parity .jdone rollup (merged in from parity)
 
 N4 — Incremental Recipe engine: DONE

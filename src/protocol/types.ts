@@ -70,6 +70,12 @@ export interface UserMessage extends Base {
     modelTier?: string;
     /** Neo N3: opt this run into the user's Knowledge Garden (kb_* tools). */
     knowledge?: boolean;
+    /** Neo N10: composer output type (Auto/Text/Image/Video/Slides/Website). */
+    outputType?: string;
+    /** Neo N10: composer effort level (Fast/Max). */
+    effort?: string;
+    /** Neo N10: explicit A/B arm model ids, when the composer asked for a fan-out. */
+    abModels?: string[];
   };
 }
 
