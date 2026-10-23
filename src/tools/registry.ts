@@ -1,6 +1,6 @@
 import type { Config } from "../config.js";
 import type { Emit } from "../agent/events.js";
-import type { OllamaFunctionTool } from "../ollama.js";
+import type { OllamaClient, OllamaFunctionTool } from "../ollama.js";
 import { runLifecycleHooks } from "../policy/hooks.js";
 import { getLoamMode } from "../modes/catalog.js";
 import { getToolProfile } from "../agent/taskToolScope.js";
@@ -11,6 +11,10 @@ export interface ToolContext {
   workspace: string;
   emit: Emit;
   signal?: AbortSignal;
+  /** Provider client for tools that talk to the model layer themselves (M3
+   *  MiroFish swarm runs). Optional so unit tests and read-only/script
+   *  contexts can construct a context without one. */
+  ollama?: OllamaClient;
   /** Active task id, so long-running tools can poll for cancellation. */
   taskId?: string;
   /** Owning companion agent id (vault/memory scope). Optional: tools fall back
