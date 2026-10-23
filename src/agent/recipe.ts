@@ -466,6 +466,29 @@ export function restartEventReason(reason: string): string {
 }
 
 /**
+ * Put a discarded tail back after a restart could not regenerate it.
+ *
+ * `restartFrom` drops the steps after the restart point because they were planned
+ * from the input the user just replaced, and the engine's rule is that the
+ * planner proposes their replacement. When that round cannot (an unparsed reply,
+ * or an exhausted compute budget), dropping them would lose work the
+ * `recipe_restart` event has already told the client was regenerated, and the run
+ * would finish while the recipe silently shrank.
+ *
+ * The tail is therefore restored as pending work: the run executes it and the
+ * planner gets another chance to rewrite or drop it after the reopened step
+ * finishes. That is the same fallback a failed upfront plan uses.
+ */
+export function restoreTail(state: RecipeState, steps: readonly RecipeStepInfo[]): RecipeState {
+  const next = [
+    ...state.steps.map((step) => ({ ...step })),
+    ...steps.map((step) => ({ ...step, status: "proposed" as RecipeStepStatus, nodeId: undefined })),
+  ];
+  const unique = withUniqueIds(next);
+  return { ...state, steps: unique, completedCount: completedCount(unique) };
+}
+
+/**
  * Re-seed the recipe after a full replan.
  *
  * A replan exists because a step failed, so the plan is replaced. The steps that

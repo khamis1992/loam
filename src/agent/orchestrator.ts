@@ -26,6 +26,7 @@ import {
   reseedRecipe,
   restartFrom,
   restartEventReason,
+  restoreTail,
   stepContract,
   type RecipeState,
 } from "./recipe.js";
@@ -283,8 +284,6 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
   const emitPlan = (): void => {
     o.emit({ type: "plan", goal: plan.goal, trivial: plan.trivial, steps: plan.steps, source: plan.source });
   };
-  emitPlan();
-  log.info(`orchestrator: plan (${plan.source}, trivial=${plan.trivial}) steps=${plan.steps.length}`);
 
   // ---------------------------------------------------------------------
   // Neo N4 incremental Recipe engine.
@@ -297,6 +296,13 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
   // ---------------------------------------------------------------------
   let recipeMode = o.recipeMode === true;
   let recipe: RecipeState = o.recipeState ?? initRecipe(plan.goal, plan.steps);
+  // The plan is the recipe's projection from the very first event: the recipe
+  // de-duplicates the planner's ids, and the run graph, the frozen plan and the
+  // restart target all resolve a step by `id`, so the seed plan has to carry the
+  // same ids the recipe does. A plan whose two steps shared one id would
+  // otherwise put both steps on one canvas node while the recipe tracked them
+  // apart, and a restart from the second step would target the first.
+  if (recipeMode) plan = { ...plan, steps: planStepsOf(recipe) };
   let restartRequest = o.recipeRestart;
   let restartApplied = false;
 
@@ -311,6 +317,8 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
     });
   };
 
+  emitPlan();
+  log.info(`orchestrator: plan (${plan.source}, trivial=${plan.trivial}) steps=${plan.steps.length}`);
   if (recipeMode) {
     // The seed plan is the first recipe snapshot: the client renders it before
     // the first step even starts.
@@ -394,6 +402,10 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
       log.warn(`orchestrator: recipe restart ignored, unknown step ${stepId}`);
       return;
     }
+    // The steps the restart is about to discard, kept so they can be restored if
+    // the regeneration round cannot produce their replacement.
+    const restartIndex = recipe.steps.findIndex((step) => step.id === stepId);
+    const discarded = recipe.steps.slice(restartIndex + 1).map((step) => ({ ...step }));
     const result = restartFrom(recipe, stepId, request.reason);
     recipe = result.state;
     plan = { ...plan, steps: planStepsOf(recipe), goal: recipe.goal };
@@ -415,8 +427,17 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
     // discarded steps are regenerated rather than silently lost. A restart that
     // discarded nothing (the restart point was already the last step) is left
     // alone: the recipe already says what comes next.
-    if (recipeMode && result.regenerated.length > 1) {
+    if (result.regenerated.length > 1) {
       await proposeNext(recipe.steps.findIndex((step) => step.id === stepId), `${target.title}: ${restartEventReason(request.reason)}`, []);
+      // The regeneration round is best-effort: an unparsed reply or an exhausted
+      // compute budget leaves the recipe holding nothing but the reopened step,
+      // even though the restart event just reported the discarded tail as
+      // regenerated. Put that tail back as pending work rather than finishing a
+      // recipe that silently shrank.
+      if (recipe.steps.length === restartIndex + 1 && discarded.length > 0) {
+        log.warn(`orchestrator: recipe restart at ${stepId} could not regenerate ${discarded.length} step(s); restoring them`);
+        recipe = restoreTail(recipe, discarded);
+      }
       plan = { ...plan, steps: planStepsOf(recipe), goal: recipe.goal };
     }
     emitRecipe("restart", "restart");

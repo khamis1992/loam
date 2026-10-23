@@ -20,6 +20,7 @@ import { loadConfig } from "../../config.js";
 import { ToolRegistry, type ToolContext, type ToolResult } from "../../tools/registry.js";
 import { runOrchestratedAgent } from "../orchestrator.js";
 import { finishStep, initRecipe, type RecipeState } from "../recipe.js";
+import { consumeTokens, createComputeBudget, type ComputeBudget } from "../computeBudget.js";
 import type { AgentEvent, RecipeChange } from "../events.js";
 import type { ChatMessage, ChatOptions, ChatResult, OllamaClient, OllamaToolCall } from "../../ollama.js";
 
@@ -72,6 +73,7 @@ interface Harness {
     recipeMode?: boolean;
     recipeRestart?: { stepId: string; nodeId?: string; reason: string };
     recipeState?: RecipeState;
+    budget?: ComputeBudget;
   }) => Promise<{
     events: AgentEvent[];
     text: string;
@@ -235,6 +237,7 @@ function harness(steps: StepSpec[], tools: ToolSpec[], script: RecipeScript): Ha
           ...(options.recipeMode === undefined ? {} : { recipeMode: options.recipeMode }),
           ...(options.recipeRestart ? { recipeRestart: options.recipeRestart } : {}),
           ...(options.recipeState ? { recipeState: options.recipeState } : {}),
+          ...(options.budget ? { budget: options.budget } : {}),
         });
         return { events, text: result.text };
       } catch (error) {
@@ -441,6 +444,124 @@ describe("orchestrator recipe mode", () => {
     const last = recipeUpdates(events)[recipeUpdates(events).length - 1]!;
     assert.deepEqual(last.steps.map((step) => step.id), ["s1", "s2", "s3"]);
     assert.equal(last.steps.filter((step) => step.status === "done").length, 3);
+  });
+
+  it("restores a restart's discarded tail when the regeneration round is unparseable", async () => {
+    // A restart reopens its step and drops everything after it, then asks the
+    // planner to regenerate that tail. An unparseable round proposes nothing, and
+    // the run would otherwise finish holding only the reopened step while the
+    // recipe_restart event already reported the tail as regenerated. The dropped
+    // steps have to come back as work instead of silently disappearing.
+    const h = harness(
+      [
+        { id: "s1", title: "one", instruction: "do the first thing", criteria: "one is done", tool: "file_write" },
+        { id: "s2", title: "two", instruction: "do the second thing", criteria: "two is done", tool: "file_write" },
+        { id: "s3", title: "three", instruction: "do the third thing", criteria: "three is done", tool: "file_write" },
+      ],
+      [{ name: "file_write", output: "written" }],
+      // The regeneration round is not JSON, so the planner proposes nothing.
+      { rounds: ["not json at all", recipeJson([], {}, [], 0, true)] },
+    );
+
+    const { events, error } = await h.run({
+      recipeMode: true,
+      recipeRestart: { stepId: "s2", reason: "user edited the input of step 2" },
+      recipeState: (() => {
+        let state = initRecipe("finish the request", [
+          { id: "s1", title: "one", instruction: "do the first thing", successCriteria: "one is done" },
+          { id: "s2", title: "two", instruction: "do the second thing", successCriteria: "two is done" },
+          { id: "s3", title: "three", instruction: "do the third thing", successCriteria: "three is done" },
+        ]);
+        state = finishStep(state, 0, true);
+        state = finishStep(state, 1, true);
+        return state;
+      })(),
+    });
+    assert.equal(error, undefined, `the run completed: ${error ?? ""}`);
+
+    const restart = events.find((event): event is Extract<AgentEvent, { type: "recipe_restart" }> => event.type === "recipe_restart");
+    assert.deepEqual(restart!.regeneratedSteps, ["s2", "s3"], "the restart reports the tail as regenerated");
+
+    // The discarded step is restored and run, so the recipe does not shrink.
+    const starts = events.filter((event): event is Extract<AgentEvent, { type: "plan_step" }> => event.type === "plan_step" && event.phase === "start");
+    assert.deepEqual(starts.map((event) => event.id), ["s2", "s3"], "the discarded tail is restored and executed");
+    assert.equal(h.toolRuns.get("file_write"), 2, "the reopened step and the restored step both run");
+
+    const last = recipeUpdates(events)[recipeUpdates(events).length - 1]!;
+    assert.deepEqual(last.steps.map((step) => step.id), ["s1", "s2", "s3"], "the recipe keeps its three steps");
+    assert.equal(last.steps.filter((step) => step.status === "done").length, 3);
+  });
+
+  it("restores a restart's discarded tail when the regeneration round is unaffordable", async () => {
+    // An exhausted compute budget skips the regeneration round entirely. That is
+    // the same "no replacement proposed" outcome as an unparseable reply, so the
+    // discarded tail has to be restored rather than lost. The run then stops on
+    // the ceiling, which is what the budget is for.
+    const h = harness(
+      [
+        { id: "s1", title: "one", instruction: "do the first thing", criteria: "one is done", tool: "file_write" },
+        { id: "s2", title: "two", instruction: "do the second thing", criteria: "two is done", tool: "file_write" },
+        { id: "s3", title: "three", instruction: "do the third thing", criteria: "three is done", tool: "file_write" },
+      ],
+      [{ name: "file_write", output: "written" }],
+      { rounds: [recipeJson([], {}, [], 0, true)] },
+    );
+
+    // Burn the ceiling before the run starts, so every orchestration call is
+    // refused and the restart cannot regenerate anything.
+    const budget = createComputeBudget({ tokenLimit: 1_000_000 });
+    consumeTokens(budget, 2_000_000, 0);
+
+    const { events, error } = await h.run({
+      recipeMode: true,
+      budget,
+      recipeRestart: { stepId: "s2", reason: "user edited the input of step 2" },
+      recipeState: (() => {
+        let state = initRecipe("finish the request", [
+          { id: "s1", title: "one", instruction: "do the first thing", successCriteria: "one is done" },
+          { id: "s2", title: "two", instruction: "do the second thing", successCriteria: "two is done" },
+          { id: "s3", title: "three", instruction: "do the third thing", successCriteria: "three is done" },
+        ]);
+        state = finishStep(state, 0, true);
+        state = finishStep(state, 1, true);
+        return state;
+      })(),
+    });
+    assert.match(error ?? "", /budget exhausted/i, "the run stops on the ceiling");
+
+    const last = recipeUpdates(events)[recipeUpdates(events).length - 1]!;
+    assert.deepEqual(
+      last.steps.map((step) => `${step.id}:${step.status}`),
+      ["s1:done", "s2:ready", "s3:proposed"],
+      "the discarded tail is restored as pending work instead of being lost",
+    );
+  });
+
+  it("emits the seed plan with the recipe's unique step ids", async () => {
+    // A step id keys the run-graph canvas node, the frozen `plan` and the restart
+    // target, and the recipe de-duplicates the planner's ids. The `plan` event
+    // therefore has to carry the recipe's ids, not the planner's raw ones: a plan
+    // whose two steps shared one id would put both steps on one canvas node and a
+    // restart from the second step would target the first.
+    const h = harness(
+      [
+        { id: "s1", title: "one", instruction: "do the first thing", criteria: "one is done", tool: "file_write" },
+        { id: "s1", title: "two", instruction: "do the second thing", criteria: "two is done", tool: "file_write" },
+      ],
+      [{ name: "file_write", output: "written" }],
+      keepGoingScript(recipeJson([], {}, [], 1, true)),
+    );
+
+    const { events, error } = await h.run({ recipeMode: true });
+    assert.equal(error, undefined, `the run completed: ${error ?? ""}`);
+
+    const planEvent = events.find((event): event is Extract<AgentEvent, { type: "plan" }> => event.type === "plan");
+    assert.ok(planEvent, "the run emitted a plan");
+    assert.deepEqual(planEvent.steps.map((step) => step.id), ["s1", "s1-2"], "the plan carries the recipe's unique ids");
+
+    // Both steps really ran, so neither was collapsed onto the other's node.
+    const starts = events.filter((event): event is Extract<AgentEvent, { type: "plan_step" }> => event.type === "plan_step" && event.phase === "start");
+    assert.deepEqual(starts.map((event) => event.id), ["s1", "s1-2"], "both steps are executed as distinct steps");
   });
 
   it("does not consult the recipe planner when recipe mode is off", async () => {
