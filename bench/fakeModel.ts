@@ -36,7 +36,20 @@ export interface FakeModelOptions {
   sequence?: ScriptedTurn[];
   /** Default model id for /v1/models and /api/tags. */
   modelId?: string;
+  /**
+   * Wire dialect `/api/chat` streams in. `openai` = OpenAI-compatible SSE (what
+   * most CLIs and Loam's cloud path use); `ollama` = Ollama's NDJSON stream,
+   * which is what `OllamaClient.chatLocal` parses. Defaults to "openai".
+   */
+  transport?: FakeModelTransport;
 }
+
+/**
+ * Wire dialect a client speaks. `openai` = OpenAI-compatible SSE (what most
+ * CLIs and Loam's cloud path use); `ollama` = Ollama's NDJSON `/api/chat` stream,
+ * which is what `OllamaClient.chatLocal` parses.
+ */
+export type FakeModelTransport = "openai" | "ollama";
 
 export interface RecordedRequest {
   method: string;
@@ -78,6 +91,7 @@ export class FakeModelServer {
   private readonly sequence: ScriptedTurn[];
   private readonly model: string;
   private readonly modelId: string;
+  private readonly transport: FakeModelTransport;
   private _port = 0;
 
   constructor(options: FakeModelOptions = {}) {
@@ -85,6 +99,7 @@ export class FakeModelServer {
     this.requestedPort = options.port ?? 11435;
     this.model = options.model ?? "mock-coder";
     this.modelId = options.modelId ?? this.model;
+    this.transport = options.transport ?? "openai";
     this.sequence = options.sequence ?? defaultSequence();
     this.server = createServer((req, res) => {
       void this.handle(req, res);
@@ -158,7 +173,11 @@ export class FakeModelServer {
     if (path === "/v1/chat/completions" || path === "/chat/completions" || path === "/api/chat") {
       const requested = (body as { stream?: unknown }).stream;
       const wantsStream = requested === true || req.headers.accept === "text/event-stream";
-      if (wantsStream) return sendStream(res, this.buildChunks(body));
+      if (wantsStream) {
+        return this.transport === "ollama"
+          ? sendOllamaStream(res, this.buildOllamaChunks(body))
+          : sendStream(res, this.buildChunks(body));
+      }
       return sendJson(res, 200, this.buildNonStream(body));
     }
     return sendJson(res, 404, { error: { message: `mock model: unknown path ${path}` } });
@@ -205,6 +224,49 @@ export class FakeModelServer {
       chunks.push(base({ role: "assistant", content: turn.text ?? "" }));
       if (!turn.omitFinishReason) chunks.push(base({}, "stop"));
     }
+    return chunks;
+  }
+
+  /**
+   * Ollama `/api/chat` stream chunks: NDJSON, one `message` per line, ending with
+   * a `done: true` line carrying token counts and timings. This is the shape
+   * `OllamaClient.chatLocal` actually parses.
+   */
+  private buildOllamaChunks(body: unknown): Array<Record<string, unknown>> {
+    const turn = this.turnForBody(body);
+    const chunks: Array<Record<string, unknown>> = [];
+    const message = (content: string, toolCalls?: unknown): Record<string, unknown> => ({
+      model: this.model,
+      created_at: new Date(0).toISOString(),
+      message: { role: "assistant", content, ...(toolCalls ? { tool_calls: toolCalls } : {}) },
+      done: false,
+    });
+    if (turn.tool) {
+      if (turn.prefixText) chunks.push(message(turn.prefixText));
+      chunks.push(
+        message("", [
+          {
+            function: {
+              name: turn.tool.name,
+              arguments: turn.tool.arguments ?? {},
+            },
+          },
+        ]),
+      );
+    } else {
+      chunks.push(message(turn.text ?? ""));
+    }
+    chunks.push({
+      model: this.model,
+      created_at: new Date(0).toISOString(),
+      done: true,
+      done_reason: turn.tool ? "tool_calls" : "stop",
+      prompt_eval_count: 100,
+      eval_count: 10,
+      total_duration: 1_000_000,
+      prompt_eval_duration: 500_000,
+      eval_duration: 500_000,
+    });
     return chunks;
   }
 
@@ -283,6 +345,17 @@ function sendStream(res: ServerResponse, chunks: Array<Record<string, unknown>>)
     connection: "keep-alive",
   });
   res.write(formatSse(chunks));
+  res.end();
+}
+
+/** Ollama's NDJSON stream: one JSON object per line, no SSE framing. */
+function sendOllamaStream(res: ServerResponse, chunks: Array<Record<string, unknown>>): void {
+  res.writeHead(200, {
+    "content-type": "application/x-ndjson; charset=utf-8",
+    "cache-control": "no-store",
+    connection: "keep-alive",
+  });
+  res.write(chunks.map((chunk) => `${JSON.stringify(chunk)}\n`).join(""));
   res.end();
 }
 
