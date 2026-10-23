@@ -1,5 +1,11 @@
 N3 (Knowledge Garden) complete: user-built RAG store with KB CRUD, text/file/URL import, tags, hybrid search, the kb_search tool, a per-run toggle, and cited seeds in the run graph. All gates green. A post-completion audit (commit ad16ec3) then found and fixed three real defects in that toggle; see the second section below.
 
+# C20 - Per-bot chat color (UI1): DONE
+
+Each conversation now takes the color of the bot it belongs to. The user
+bubble, send button and composer focus ring follow the companion's avatar
+instead of the single global accent; a conversation with no bot keeps the
+app accent exactly as before.
 ## What N3 delivered
 A per-workspace knowledge base the agent can build itself and search during a run:
 - `src/knowledge/` — `store.ts` (SQLite-backed bases + seeds), `ingest.ts` (import pipeline),
@@ -18,6 +24,41 @@ A per-workspace knowledge base the agent can build itself and search during a ru
   off the `search` node (`src/graph/runGraph.ts`, `src/graph/store.ts`, `src/agent/events.ts`,
   `src/agent/loop.ts`), so the retrieved evidence is cited on the canvas.
 
+New pure module `ui/chat-color.js` + `ui/chat-color.d.ts`
+- `AVATAR_HEX` / `AVATAR_COLORS`: a hex for every server `AVATAR_COLORS`
+  token (a test enforces the two stay in sync).
+- `chatAccentFor(agent, {cache})`: (a) `avatarColor` token -> hex,
+  (b) dominant color extracted client-side from `avatarImage` via a small
+  canvas downsample (near-white / near-black / transparent pixels ignored),
+  cached in `localStorage` under `loam.chatColor.<agentId>` keyed by a hash
+  of the image URL, (c) deterministic hash of the agent id into the palette,
+  (d) no agent -> `null`.
+- `accentVars(hex, theme)`: `--chat-accent`, `--chat-accent-2`,
+  `--chat-accent-ink`; a lightness ladder tuned per theme so the chosen ink
+  clears WCAG AA 4.5:1 against the fill in both themes.
+- Reuses the existing `readableInk` contrast helper rather than duplicating it.
+
+Wiring
+- `ui/app.js`: `applyChatAccent` resolves the task's agent and writes the vars
+  on `#view-chat` only while a companion owns the task; it removes them
+  otherwise and recomputes on the theme toggle.
+- `ui/companions.js`: same shape on `.rk-main`, plus a `MutationObserver` on
+  `data-theme` so the lightness/ink follow a theme change without a reload.
+
+CSS (fallback pattern)
+- `ui/loam.css`: `.primary` uses `var(--chat-accent-2,var(--accent-2))` /
+  `var(--chat-accent,var(--accent))` and `color:var(--chat-accent-ink,white)`,
+  plus chat-scoped `#view-chat[data-chat-accent="bot"] #sendChat`, composer
+  focus and `.log-entry.user` overrides (needed because `ui/icons.css`
+  `.loam-shell .primary` outranks a bare `.primary`).
+- `ui/styles.css`: `.msg.user .user-bubble` falls back to the app accent.
+- `ui/companions.html`: `.rk-msg.user .rk-bubble` falls back to the app accent;
+  the companion send button and focus-within ring overrides sit at the end of
+  the sheet so they out-rank `.rk-send:disabled` and the global focus rule.
+
+## Verification
+
+Gates, all run from the worktree root:
 ## Gates (all run from the worktree root on committed HEAD 23d67dc)
 - `npx tsc --noEmit -p tsconfig.json`                -> exit 0
 - `(cd packages/web && npx tsc --noEmit)`             -> exit 0
@@ -278,6 +319,82 @@ in the result (0 missing), no conflict markers, no BOM, no replacement character
 - `npx tsc --noEmit` -> exit 0
 - `npm run build:server` -> exit 0
 - `(cd packages/web && npx next build)` -> exit 0
+- `node --import tsx --test src/__tests__/chatColor.test.ts src/design/__tests__/contrast.test.ts`
+  -> tests 60, pass 60, fail 0
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+
+Browser check (Playwright, both chat surfaces, view made visible first):
+- task chat with a violet agent: send button gradient
+  `rgb(139,123,216) -> rgb(166,152,226)`, ink `rgb(11,18,32)`, composer
+  focus border `rgb(166,152,226)`, user entry border tinted. Without a bot
+  every one of those falls back to the app accent.
+- companion chat with the same agent: send button background
+  `rgb(166,152,226)`, ink `rgb(11,18,32)`, accent border, and
+  `.rk-bar:focus-within` ring all switch; without a bot they revert to the
+  defaults.
+
+Note: `.rk-send` carries `transition: background .12s`, so a measurement taken
+in the same tick as the button becoming enabled reads the in-flight value.
+The accent is present once the transition settles (~150 ms).
+
+## Notes
+- Pre-existing gate failures unrelated to this task (proved by stashing the C20
+  work and re-running on the clean base, which fails identically):
+  `check:loam-ui` asserts `#homeModes button` == 7 but finds 8, and the
+  Playwright-based `check:loam-ancillary` / `check:isolation` time out. Neither
+  touches a file this task changed.
+- `ui/loam.css` was normalized to uniform CRLF to match every other file under
+  `ui/` (it was the only mixed-EOL file in the tree).
+- No forbidden path touched, no test weakened or deleted, no secrets committed.
+
+## Round 2 - deeper validation (after the first pass was accepted)
+
+A second pass drove the previously-untested runtime paths in a real browser
+(Playwright) instead of only re-reading the code, and found one real defect.
+
+### Defect found and fixed: the extracted avatar color was never painted
+
+`chatAccentFor` samples an `avatarImage` asynchronously and returns the id-hash
+fallback for the first paint, reporting the extracted color through the
+`onAccent` callback. Both chat call sites called it **without** that callback:
+
+- `ui/app.js` `applyChatAccent` (`#view-chat`)
+- `ui/companions.js` `applyChatAccent` (`.rk-main`)
+
+So on a cold cache (first time a bot with only an `avatarImage` was opened) the
+conversation painted the id-hash fallback and the extracted avatar color was
+never applied. It was only written to `localStorage`, so the correct color
+appeared only after leaving and re-opening the conversation. A bot-less
+conversation was unaffected, which is why the first pass (which used named-color
+bots) did not catch it.
+
+Fix (commit `f767cfa`): both call sites now pass `onAccent` and repaint as soon
+as the sample lands. A monotonically increasing `applyChatAccentToken` per call
+site drops a late sample that belongs to a conversation the user has already
+left, so switching bots cannot be crossed by an out-of-order callback.
+
+### What the deep probe confirmed (0 page errors, 0 console errors, 0 stub 404s)
+
+- Real canvas extraction end to end: a hand-built 1x1 PNG served at
+  `/avatar.png` (magenta `#c94fb0`) is sampled through the app's own
+  `extractWithCanvas` path and painted as `#e09ad1` in dark, `#d16bbc` in light.
+- Cold cache: selecting the image bot for the first time now paints the
+  extracted color, not the id-hash fallback (`#f387bc`).
+- Cache reuse: leaving for a hash bot (`#87f2e6`) and returning to the image bot
+  restores the cached extracted color immediately, with no re-sample.
+- Offline / ghost id: a task whose `agentId` is not in `/api/agents` still gets
+  a deterministic id-hash color (`#98e1be`), matching the "offline: the id hash
+  still colors the chat" fallback.
+- Isolation: the accent lives only on `.rk-main` / `#view-chat`; `:root`,
+  `body` and the sidebar carry no inline accent.
+- Theme flip: the `MutationObserver` on `data-theme` recomputes lightness and
+  ink in both themes (`#a698e2`/`#0b1220` dark, `#7760d2`/`#ffffff` light) and
+  returns correctly to dark.
+- Task chat: violet gradient `rgb(187,176,232) -> rgb(166,152,226)`, ink
+  `rgb(11,18,32)`; a bot-less task leaves every accent property unset and falls
+  back to the app accent.
+
+### Gates re-run after the fix
 - `node --import tsx --test src/server/__tests__/graphRoutes.test.ts
    src/server/__tests__/knowledgeRoutes.test.ts src/graph/__tests__/runGraph.test.ts`
   -> tests 37, pass 37, fail 0
@@ -322,6 +439,19 @@ resolution blocks above) is preserved verbatim, and parity's most recent tracked
 - `git grep -E "^(<{7}|={7}|>{7})( |$)"` -> no matches
 - `npx tsc --noEmit` -> exit 0
 - `npm run build:server` -> exit 0
+- `node --import tsx --test src/__tests__/chatColor.test.ts src/design/__tests__/contrast.test.ts`
+  -> tests 60, pass 60, fail 0
+- `node --import tsx --test src/design/__tests__/*.test.ts`
+  -> tests 171, pass 171, fail 0
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`, `check:orchestrator` (114/114), `check:recovery`,
+  `check:design-registry`, `check:promo-carousel`, `check:loam-agents` -> all pass
+
+The deep probe was a scratch artifact and was removed before committing; the fix
+itself is covered by the existing `chatColor.test.ts` async-callback tests plus
+this browser-verified behaviour.
+
+# C20 merge gate-fix session: merge with latest manus-parity, all gates green
 - `(cd packages/web && npx next build)` -> exit 0
 - `(cd packages/web && npx tsc --noEmit)` -> exit 0
 - `node --import tsx --test src/server/__tests__/graphRoutes.test.ts
@@ -338,6 +468,68 @@ resolution blocks above) is preserved verbatim, and parity's most recent tracked
 - `npm run check:recovery` -> PASS
 - `npm run check:orchestrator` -> PASS
 
+## Root cause
+No source file conflicted on the first merge. `git merge manus-parity` (tip
+`ed26550`, the N2 merge, bringing in N10/N2/N4/C19/O3/O6/O2/D5/O1/V11/H0/O0/fc-05/
+J5/F5) auto-merged everything except the tracked rollup `.jdone`, where both sides
+prepend a report at the same top-of-file anchor. Nothing in the C20 change set was
+at risk: `git diff manus-parity -- ui/` still shows exactly the C20 files
+(`ui/chat-color.js`, `ui/chat-color.d.ts`, `ui/app.js`, `ui/companions.js`,
+`ui/companions.html`, `ui/loam.css`, `ui/styles.css`, 712 insertions / 9 deletions).
+
+## What was done
+Two merges were needed because `refs/heads/manus-parity` advanced twice while this
+session ran.
+
+1. **First merge** (parity tip `ed26550`, committed as `cd9ee76`). `.jdone` was
+   resolved as a superset of both conflict sides. The base blob (`1d220ff4`) is a
+   strict prefix of the ours blob (`f09b6564`), so the resolution keeps the base
+   verbatim, then the C20 report (the part ours added), then a `---` separator, then
+   the whole manus-parity rollup (`d58e75a3`) verbatim. Verified mechanically
+   against both stage blobs: **0 non-empty lines missing from the ours side, 0
+   non-empty lines missing from the theirs side**, and no conflict marker remains
+   anywhere in the tree.
+
+2. **Second merge** (parity tip `26befe6`, the N10 merge, committed as `c85f020`).
+   The new conflict was a **modify/delete** on `.jdone`: N10's own commit `e3d05f6`
+   had deleted the tracked rollup (698 lines removed) and the parity tip
+   re-confirmed that deletion (`.jdone` is absent from `git ls-tree 26befe6`), while
+   this branch still carried the full rollup. Resolved by **keeping our side** (the
+   C20 branch's `.jdone`), because the deletion is a worktree-hygiene choice made on
+   the N10 branch, not a content claim about the reports: every report the deletion
+   would have dropped is still present verbatim in the resolved rollup, so nothing
+   that either side wrote is lost. No other file conflicted.
+
+3. **Third merge** (parity tip `3139f07`, the J9 revert, committed as `f017f96`).
+   Parity advanced again in between (the J9 merge, then its revert). This merge
+   applied cleanly with no conflict at all.
+
+4. **Fourth merge** (parity tip `61aca0c`, the N9 merge, committed as `ecb7586`).
+   N9 re-added `.jdone`, so the file conflicted again as an **add/add**: this
+   branch's rollup (base + C20 reports) against parity's rollup (base + N9's
+   Ask-User-More report). Both sides share a 5239-line suffix (the common
+   rollup), so the resolution keeps ours verbatim, then a `---` separator, then
+   N9's new report block, then the shared suffix. Verified mechanically as a
+   multiset union of both stage blobs: **0 non-empty lines missing from the ours
+   side, 0 non-empty lines missing from the theirs side**, and no conflict marker
+   remains anywhere in the tree. No other file conflicted.
+
+No test was weakened, deleted or skipped and no source file was edited by this
+session.
+
+## Gate condition verified
+`git merge manus-parity` reports `Already up to date.`,
+`git merge-base --is-ancestor manus-parity HEAD` exits 0 and
+`git rev-list --left-right --count manus-parity...HEAD` is `0  10` (parity fully
+merged, zero parity commits missing). `git status --porcelain` is empty and
+`git grep -E "^(<{7}|={7}|>{7})( |$)"` finds no conflict marker in any tracked file.
+
+## Gates (all run from the worktree root on the final merged tree `e4a0cce`)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.5mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test src/__tests__/chatColor.test.ts src/design/__tests__/contrast.test.ts`
+                                               -> tests 60, pass 60, fail 0
 No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
 ## Preserved: manus-parity .jdone rollup (merged in from parity)
 
@@ -719,6 +911,8 @@ Three regression tests were added and the `count: 3` case was confirmed to fail
 against the broken implementation and to match the base behaviour after the fix.
 
 ## Files
+- `.jdone` only (this report added to the resolved rollup). No source file was
+  modified by this session; the C20 deliverables are unchanged from commit `8c4c180`.
 - `src/tools/files.ts` - helpers `findLineNumber`, `extractContext`,
   `flexibleMatchHint`, `applyEditOperations`, `formatEditFailures`,
   `resolveEditOperations`; constants `MAX_BATCH_EDITS` (50),
@@ -1231,9 +1425,11 @@ Test commands:
   npx tsc --noEmit
   npm run build:server
   (cd packages/web && npx next build)
+  node --import tsx --test src/__tests__/chatColor.test.ts src/design/__tests__/contrast.test.ts
   node --import tsx --test src/agent/__tests__/computeBudget.test.ts src/agent/__tests__/loopBudget.test.ts src/agent/__tests__/orchestratorBudget.test.ts src/server/__tests__/sessionRuntime.test.ts src/server/__tests__/sessionSleep.test.ts src/tools/__tests__/ptySessions.test.ts
   (cd packages/web && npx vitest run src/components/chat/__tests__/SessionStatusBadge.test.tsx src/components/chat/__tests__/useSessionRuntime.test.tsx src/services/__tests__/sessionRuntimeApi.test.ts)
 
+## What was done
 ---
 
 ## Preserved: manus-parity reports (D17 / D4 / N20, parity side)
@@ -17113,3 +17309,4 @@ Test commands:
   node --import tsx --test src/tools/__tests__/videoStudioState.test.ts src/tools/__tests__/videoStudio.test.ts src/server/__tests__/videoStudioRelay.test.ts src/server/__tests__/videoStudioE2E.test.ts
   (cd packages/web && npx vitest run)
   npm run check:encoding
+
