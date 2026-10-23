@@ -134,8 +134,64 @@ Post-merge gate condition verified
 `git merge manus-parity` now reports "Already up to date." and
 `git merge-base --is-ancestor manus-parity HEAD` succeeds, so manus-parity
 (97c53d7) is fully merged (rev-list --left-right --count manus-parity...HEAD
-= 0  7). The gate's condition is satisfied: there are no remaining conflicts
-to resolve.
+= 0  8, i.e. parity is 8 commits ahead of D17's first parent). The gate's
+condition is satisfied: there are no remaining conflicts to resolve.
+
+Re-verified on the final committed HEAD (1ef99fe) after the .jdone commits:
+`git merge manus-parity` -> "Already up to date."; `--is-ancestor` -> exit 0;
+`rev-list --left-right --count manus-parity...HEAD` -> `0 8`; working tree
+clean (`git status --porcelain` empty). manus-parity is a local-only branch
+(no remote tracking ref), and its tip 97c53d7 is the latest merge recorded in
+its reflog, so there is no newer parity state the gate could be testing.
+
+Independent end-to-end probe (no stubs, real production objects)
+---------------------------------------------------------------
+A standalone probe composed the real registry, tool, event and protocol mapper:
+  registry -> tool.run -> emitted AgentEvent -> mapAgentEvent -> ChatEvent[]
+written outside the worktree (%TEMP%\d17-e2e-probe.mts, run with
+`node --import tsx`), 15/15 checks passed:
+  - always-on: present in ALWAYS_ON_TOOLS; granted when registered+not denied;
+    withheld when denied; never granted when unregistered; reachable through
+    `registry.forAllowlist(merged)`.
+  - happy path: tool.run returns ok + guidance, emits exactly one
+    `environment_issue` AgentEvent carrying both `message` and `details`.
+  - mapping: that event maps to exactly one `environmentIssue` ChatEvent with
+    the same message/details plus a non-empty id and numeric timestamp.
+  - optional field: omitting `details` leaves the key absent on BOTH the agent
+    event and the mapped chat event (not synthesized).
+  - validation: blank, over-long (2001 chars) and missing `message` are all
+    rejected with ok:false and emit nothing.
+  - merge-time defect still fixed: src/protocol/types.ts declares the
+    `environmentIssue` chat event, src/agent/events.ts declares the
+    `environment_issue` agent event, and src/graph/runGraph.ts contains a
+    `case "environment_issue"` with no `Unknown agent event` throw guard.
+
+Acceptance-criteria suites re-run on committed HEAD 1ef99fe
+---------------------------------------------------------
+  node --import tsx --test src/tools/__tests__/environmentIssueTools.test.ts \
+    src/server/__tests__/runTools.test.ts
+    -> tests 20, pass 20, fail 0
+  node --import tsx --test src/protocol/__tests__/environmentIssue.test.ts \
+    src/graph/__tests__/runGraph.test.ts src/agent/__tests__/prompt.test.ts
+    -> tests 17, pass 17, fail 0
+  (cd packages/web && npx vitest run \
+     src/components/chat/__tests__/EnvironmentIssueCard.test.tsx \
+     src/components/chat/__tests__/environmentIssueEventList.test.tsx)
+    -> 2 files / 4 tests, all pass
+
+Mandatory gates re-run on committed HEAD 1ef99fe (not the intermediate merge
+commit) from the worktree root:
+  1. npx tsc --noEmit                                  PASS (exit 0)
+  2. npm run build:server                              PASS (dist/server.cjs 19.2mb, pdf worker copied)
+  3. (cd packages/web && npx next build)               PASS (25 static pages)
+  4. (cd packages/web && npx tsc --noEmit)              PASS (exit 0)
+
+Single remaining failure re-confirmed on HEAD 1ef99fe
+----------------------------------------------------
+src/agent/__tests__/toolDescriptions.test.ts -> 3 pass / 1 fail, with exactly
+the documented assertion ("suggest_plan is neither registered nor listed in
+PENDING_CODING_TOOLS"). Same failure, same file, same line as before the merge;
+it is the inherited upstream defect described below.
 
 Full-suite validation on the merged tree
 ---------------------------------------
