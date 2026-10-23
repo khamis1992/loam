@@ -21,17 +21,22 @@ interface Dispatched {
   params: Record<string, unknown>;
 }
 
+/** Raw `inspect` payload the mock editor answers with (fc-05 state read). */
+const EMPTY_PROJECT = { sequences: [{ id: "seq1", tracks: [], clips: [] }], playheadSec: 0 };
+
 /** In-memory relay: records every dispatch and answers from a command catalog. */
 class MockRelay implements VideoStudioRelayLike {
   readonly dispatched: Dispatched[] = [];
   commands: unknown = [];
   failWith: { code: string; message: string } | null = null;
+  /** When set, every `inspect` returns this payload (defaults to an empty timeline). */
+  project: unknown = EMPTY_PROJECT;
 
   async enqueue(taskId: string, target: "film" | "effects", method: string, params: Record<string, unknown> = {}): Promise<unknown> {
     this.dispatched.push({ taskId, target, method, params });
     if (this.failWith) throw Object.assign(new Error(this.failWith.message), { code: this.failWith.code });
     if (method === "commands") return this.commands;
-    if (method === "inspect") return { sequences: [{ id: "seq1", tracks: [], clips: [] }], playheadSec: 0 };
+    if (method === "inspect") return this.project;
     if (method === "importFiles") return { imported: 1 };
     if (method === "importUrl") return { imported: 1 };
     return { ok: true };
@@ -78,7 +83,7 @@ function allDispatched(): VideoStudioStep[] {
 
 /** Work steps only: the catalog read that precedes every execute is filtered out. */
 function commandsDispatched(): VideoStudioStep[] {
-  return allDispatched().filter((s) => s.method !== "commands");
+  return allDispatched().filter((s) => s.method !== "commands" && s.method !== "inspect");
 }
 
 function lastExecuteCommand(): { command: string; params: Record<string, unknown> } {
@@ -145,7 +150,9 @@ describe("video_studio actions produce the expected command sequence", () => {
     relay.commands = CATALOG;
     const res = await tool().run({ action: "open" }, ctx());
     assert.equal(res.ok, true, res.content);
-    assert.deepEqual(allDispatched(), [{ method: "commands", params: {} }]);
+    // The catalog read plus the fc-05 timeline read before and after it.
+    assert.deepEqual(allDispatched().filter((s) => s.method === "commands"), [{ method: "commands", params: {} }]);
+    assert.deepEqual(allDispatched().map((s) => s.method), ["inspect", "commands", "inspect"]);
     const parsed = JSON.parse(res.content) as { available: boolean; commands: unknown[] };
     assert.equal(parsed.available, true);
     assert.equal(parsed.commands.length, CATALOG.length);
@@ -155,7 +162,8 @@ describe("video_studio actions produce the expected command sequence", () => {
     relay = new MockRelay();
     const res = await tool().run({ action: "state" }, ctx());
     assert.equal(res.ok, true, res.content);
-    assert.deepEqual(commandsDispatched(), [{ method: "inspect", params: {} }]);
+    // The tool reads the live timeline before acting, so `state` is one inspect.
+    assert.deepEqual(allDispatched(), [{ method: "inspect", params: {} }]);
   });
 
   it("add_audio imports from a url then places it on the audio track", async () => {

@@ -38,8 +38,16 @@ interface StreamEvent {
  * A fake editor panel: attaches to the task's SSE stream, runs each relayed
  * command through a small stand-in for the wasm editor, and posts the result
  * back to the real HTTP route (the same route the browser panel uses).
+ *
+ * `inspectProject` (optional) overrides the timeline returned for `inspect`,
+ * so a test can simulate the user editing the timeline by hand.
  */
-function attachPanel(base: string, taskId: string, log: StreamEvent[]): { stop: () => void; done: Promise<void>; ready: Promise<void> } {
+function attachPanel(
+  base: string,
+  taskId: string,
+  log: StreamEvent[],
+  inspectProject?: () => unknown,
+): { stop: () => void; done: Promise<void>; ready: Promise<void> } {
   const controller = new AbortController();
   let resolveDone: () => void = () => undefined;
   let resolveReady: () => void = () => undefined;
@@ -74,7 +82,9 @@ function attachPanel(base: string, taskId: string, log: StreamEvent[]): { stop: 
         const event = JSON.parse(line.slice("data: ".length)) as StreamEvent;
         if (event.type !== "video_studio_command" || typeof event.id !== "string") continue;
         log.push(event);
-        const result = await runCommand(event);
+        const result = inspectProject && event.method === "inspect"
+          ? { ok: true, result: inspectProject() }
+          : runCommand(event);
         await fetch(`${base}/api/tasks/${encodeURIComponent(taskId)}/video-studio/result`, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -211,10 +221,41 @@ describe("video_studio end-to-end over the real server", () => {
       assert.equal(parsed.steps[0]!.method, "execute");
       assert.deepEqual(parsed.steps[0]!.result, { command: "timeline.razor", applied: true });
 
-      // The panel saw the catalog read first, then the resolved razor command.
+      // fc-05: the catalog read first, then the timeline read before the edit,
+      // the resolved razor command, then the timeline read after it.
       const methods = log.map((e) => e.method);
-      assert.deepEqual(methods, ["commands", "execute"]);
-      assert.deepEqual(log[1]!.params, { command: "timeline.razor", params: { atSec: 5 } });
+      assert.deepEqual(methods, ["commands", "inspect", "execute", "inspect"]);
+      assert.deepEqual(log[2]!.params, { command: "timeline.razor", params: { atSec: 5 } });
+    } finally {
+      panel.stop();
+      await waitForDetached(taskId);
+    }
+  });
+
+  it("reports a manual edit the user made between two commands", async () => {
+    // fc-05: the panel reports a hand-edited timeline the second time around,
+    // and the tool must prepend the manual-edit notice to the result.
+    const log: StreamEvent[] = [];
+    let inspects = 0;
+    const panel = attachPanel(base, taskId, log, () => {
+      inspects += 1;
+      const tracks =
+        inspects === 1
+          ? [{ id: "v1", kind: "video", clips: [{ id: "clip_1", startSec: 0, endSec: 5 }] }]
+          : [{ id: "v1", kind: "video", clips: [{ id: "clip_1", startSec: 3, endSec: 8 }] }];
+      return { sequences: [{ id: "seq1", tracks }], playheadSec: 0 };
+    });
+    try {
+      await panel.ready;
+      await waitForAttached(taskId);
+      const before = await tools[0]!.run({ action: "state" }, ctx());
+      assert.equal(before.ok, true, before.content);
+      assert.doesNotMatch(before.content, /User edited the timeline manually/);
+
+      const moved = await tools[0]!.run({ action: "cut", atSec: 5 }, ctx());
+      assert.equal(moved.ok, true, moved.content);
+      assert.match(moved.content, /User edited the timeline manually since your last action/);
+      assert.match(moved.content, /~clip clip_1 0s->3s/);
     } finally {
       panel.stop();
       await waitForDetached(taskId);
