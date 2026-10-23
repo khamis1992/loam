@@ -7880,3 +7880,51 @@ Test commands:
   node --import tsx --test src/tools/__tests__/videoStudioState.test.ts src/tools/__tests__/videoStudio.test.ts src/server/__tests__/videoStudioRelay.test.ts src/server/__tests__/videoStudioE2E.test.ts
   (cd packages/web && npx vitest run)
   npm run check:encoding
+
+
+# Merge with manus-parity `bec4181`: `.jdone` modify/delete resolved
+
+`git merge manus-parity` conflicted in exactly ONE file: `.jdone` (modify/delete).
+Every source file auto-merged cleanly, so no code, test or prompt was touched by
+the resolution.
+
+## The resolution
+The conflict was modify/delete, not add/add: parity's `d3d7b88` ("chore: untrack
+runner markers `.jdone`/`.jcode-done`") removed `.jdone` from parity entirely, while
+this branch's rollup is the only copy. The worktree therefore had `.jdone` deleted
+(`UD` state). Restored with `git checkout HEAD -- .jdone` + `git add .jdone`, which
+is the documented convention every sibling branch on this conflict uses
+(`jcode-j8` fdbe7f8, `h2-h4` 83191fb, `neo-n2` 634a23a, and this branch's own
+`75b0989`). Deleting it would have discarded this branch's report and the parity
+rollup's history. Nothing else was edited.
+
+`src/server/http.ts` auto-merged with both sides registered: this branch's
+`handleEventsRoutes` (import L82, dispatch L1780) and parity's
+`handleKnowledgeRoutes` (import L113, dispatch L1834), plus N9's
+`handleAskUserRoutes` and the M3 mirofish wiring.
+
+## Root cause of the recurring conflict
+The runner marker is untracked on parity and excluded by `.git/info/exclude`
+(line 25: `.jdone`). As long as parity keeps the markers untracked, every
+parity-into-branch merge yields a modify/delete on `.jdone`. This is a
+harness/marker policy matter, not a code defect, and is not fixable from this
+branch without reintroducing the marker on parity.
+
+## Gates re-run on the merged tree `c1d392c`
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0
+- `(cd packages/web && npx next build)` -> compiled successfully, 25/25 static pages
+- `node --import tsx --test src/server/__tests__/eventsRoutes.test.ts` -> tests 13,
+  pass 13, fail 0, suites 2
+- `node --import tsx --test src/protocol/__tests__/eventLog.test.ts src/protocol/__tests__/storeCompat.test.ts src/protocol/__tests__/seqReplay.test.ts`
+  -> tests 28, pass 28, fail 0, suites 3
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `git grep -n "^<<<<<<< \|^>>>>>>> " -- src packages` -> empty
+- `git diff --diff-filter=D --name-only d72fb78 HEAD` -> empty (the merge deleted
+  nothing relative to this branch's pre-merge tip)
+- O8's own source is byte-identical to `e335eb7`
+  (`git diff --stat e335eb7 HEAD -- src/server/routes/events.ts src/server/__tests__/eventsRoutes.test.ts`
+  is empty)
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No `.neo-*` or `.jcode-*` marker file was staged.
