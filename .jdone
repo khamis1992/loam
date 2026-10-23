@@ -33417,3 +33417,57 @@ whole`, `WRITE_FIRST`, `WRITE_SECOND`), so the section cannot perturb the fixtur
 - N19 only *prompts* the behaviour. Enforcement of the budget ceiling, the completion node
   and restart-from-step already lives in the harness; §25 points at it and does not
   duplicate it.
+
+## J1 - merge gate resolution (final round, parity `519f889`)
+
+`.jgatefail.txt` reported:
+
+> MERGE CONFLICT with latest manus-parity: run `git merge manus-parity`, resolve all
+> conflicts keeping both sides, commit.
+
+Parity advanced repeatedly during this session (`109617a` -> `495ac5f` -> `ca08d4c` ->
+`519f889`), so the merge was performed in successive rounds, each on the newest tip. No test
+was weakened, deleted or skipped; no source file needed editing for this gate.
+
+### Merge rounds (every conflict kept both sides)
+- `3a2cda3` - merge `109617a`: `.jdone` + `.jcode-done` (modify/delete), `THIRD_PARTY_NOTICES`,
+  `bench/README.md`, `package.json` (content). Resolved with a line-union for the two marker
+  files and by hand for the rest; `package.json` deduped (`vendor`, `bench:mem`, `test:bench`)
+  with `test:bench` the union of both sides' file lists.
+- `65c141a` - merge `495ac5f`: `.jdone` + `.jcode-done` (add/add, no merge base, so the
+  `merge=union` driver does not apply). Resolved by concatenating stage-2 (ours) + stage-3
+  (theirs) and proving the superset property.
+- `cc5de13` - merge `ca08d4c`: `.jdone` alone, auto-merged by the `merge=union` driver.
+- `6885739` - merge `839e7cc`: auto-merged, no conflicts.
+- `87fc429` - merge `519f889` (final): `.jdone` (union driver) + `package.json` (auto).
+
+`.gitattributes` carries `.jdone merge=union` / `.jcode-done merge=union`, so from `cc5de13`
+onward the rollup merges automatically. Integrity of the final rollup (33420 lines):
+- parent1 (`cc5de13`) subset of merged: true, 0 lines missing;
+- parent2 (`519f889`) subset of merged: true, 0 lines missing;
+- conflict markers 0; no BOM; no lone CR; trailing newline present.
+
+### Gate condition (on `87fc429`)
+- `git merge --no-edit manus-parity` -> "Already up to date."
+- `git merge-base --is-ancestor manus-parity HEAD` -> true (local tip `519f889`)
+- `git merge-base --is-ancestor origin/manus-parity HEAD` -> true (origin tip `0a946d3`)
+- divergence vs local `manus-parity`: 0 behind / 15 ahead; vs `origin/manus-parity`: 0 / 391
+- conflict markers repo-wide: 0 (`^(<{7}|={7}|>{7})( |$)`)
+- `.jdone` and `.jcode-done` exist, tracked, 0 markers.
+
+### Gates on the merged tree (run from the worktree root)
+- `npx tsc --noEmit` -> exit 0, 0 errors
+- `npm run build:server` -> exit 0 (server bundle + pdf worker written to dist/)
+- `(cd packages/web && npx next build)` -> exit 0 (compiled successfully; 25/25 static pages)
+- `node --import tsx --test "src/**/*.test.ts"` -> tests 2957, pass 2956, fail 0, skipped 1
+- `(cd packages/web && npx vitest run)` -> Test Files 91 passed (91), Tests 624 passed (624)
+- `npm run test:bench` -> tests 54, pass 54, fail 0, skipped 0
+- `npm run verify` -> exit 0 (typecheck, encoding OK, eval PASS, orchestrator PASS,
+  recovery PASS, modes PASS)
+
+A note on the working tree: `src/scripts/check-slide-layouts.ts` and
+`src/scripts/check-slide-text-import.ts` carried uncommitted edits from a concurrent
+workstream while this report was being produced. They are a strict superset of the committed
+blob (`check-slide-layouts.ts`: 0 committed lines missing; `check-slide-text-import.ts`:
+1 line replaced). They are **not** part of this commit and were left untouched; `tsc` run
+against the committed tree reports 0 errors.
