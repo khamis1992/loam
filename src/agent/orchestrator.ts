@@ -1,8 +1,8 @@
 import type { ChatMessage } from "../ollama.js";
-import type { Emit, PlanStepInfo, ToolTraceItem, Usage, VerdictInfo } from "./events.js";
+import type { Emit, PlanStepInfo, RecipeChange, RecipeStepInfo, ToolTraceItem, Usage, VerdictInfo } from "./events.js";
 import { log } from "../log.js";
 import { runAgent, type RunOptions, type RunResult } from "./loop.js";
-import { planTask, type Plan, type PlanResult } from "./planner.js";
+import { extractJson, planTask, proposeNextSteps, type Plan, type PlanResult } from "./planner.js";
 import { critiqueStep, verifyFinal, formatExecutorMessage, type VerdictOutcome } from "./verifier.js";
 import { CancelledError, isCancelled, isCancelledError, throwIfCancelled } from "../server/runControl.js";
 import type { ExecutionCheckpoint, WorkerCheckpoint } from "./checkpoint.js";
@@ -13,6 +13,22 @@ import { checkBudget, consumeTokens, type ComputeBudget } from "./computeBudget.
 import { addUsage, sumUsage } from "./usageAccounting.js";
 import { openSession, closeSession, cancelled, type SessionEndReason } from "./sessionHooks.js";
 import { runLifecycleHooks } from "../policy/hooks.js";
+import {
+  applyProposal,
+  beginStep,
+  finishStep,
+  initRecipe,
+  observationsFromTrace,
+  parseProposal,
+  pendingCount,
+  planStepsOf,
+  remainingEstimate,
+  reseedRecipe,
+  restartFrom,
+  restartEventReason,
+  stepContract,
+  type RecipeState,
+} from "./recipe.js";
 
 export interface VerdictRecord extends VerdictInfo {
   scope: string;
@@ -26,6 +42,21 @@ export interface OrchestratorOptions extends RunOptions {
   /** Session lifecycle hooks run only for a top-level orchestrated task;
    *  nested runs (workers, subagent children) omit this so they stay silent. */
   lifecycleHooks?: boolean;
+  /**
+   * Neo N4: incremental Recipe mode. The upfront plan is only the seed; after
+   * every step the planner proposes what comes next from that step's results,
+   * so the recipe grows, shrinks and re-routes instead of executing a frozen
+   * list. The remaining-work estimate and the restart seam are part of it.
+   */
+  recipeMode?: boolean;
+  /** Run-graph node id the user asked to restart from. Applies once, at the
+   *  first opportunity, and never re-runs the steps before it. */
+  recipeRestart?: { stepId: string; nodeId?: string; reason: string };
+  /** Recipe state restored from a checkpoint, so a resume continues the same
+   *  recipe instead of restarting from the seed plan. */
+  recipeState?: RecipeState;
+  /** Persist the recipe with every checkpoint so a resume keeps its shape. */
+  saveRecipe?: (state: RecipeState) => void;
 }
 
 /** How many times a blocked Stop hook may force the orchestrated run to
@@ -255,6 +286,132 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
   emitPlan();
   log.info(`orchestrator: plan (${plan.source}, trivial=${plan.trivial}) steps=${plan.steps.length}`);
 
+  // ---------------------------------------------------------------------
+  // Neo N4 incremental Recipe engine.
+  //
+  // In recipe mode the plan above is only the SEED. After every step the planner
+  // is asked what the recipe needs next, from that step's tool results, so the
+  // recipe can grow (add), change (rewrite) or shrink (drop) while the run is
+  // still going. The plan is kept as the projection of the recipe so the frozen
+  // "plan" event and the live recipe never describe two different tasks.
+  // ---------------------------------------------------------------------
+  let recipeMode = o.recipeMode === true;
+  let recipe: RecipeState = o.recipeState ?? initRecipe(plan.goal, plan.steps);
+  let restartRequest = o.recipeRestart;
+  let restartApplied = false;
+  /** Set once the recipe says the work is finished and no open step remains. */
+  let recipeComplete = false;
+
+  const emitRecipe = (change: RecipeChange, source: "planner" | "restart" | "auto"): void => {
+    o.emit({
+      type: "recipe_update",
+      goal: recipe.goal,
+      steps: recipe.steps.map((step) => ({ ...step })),
+      remainingEstimate: remainingEstimate(recipe.steps),
+      change,
+      source,
+    });
+  };
+
+  if (recipeMode) {
+    // The seed plan is the first recipe snapshot: the client renders it before
+    // the first step even starts.
+    emitRecipe("init", "auto");
+    o.saveRecipe?.(structuredClone(recipe));
+    log.info(`orchestrator: recipe mode on; seed steps=${recipe.steps.length}`);
+  }
+
+  /**
+   * Propose the next recipe step(s) from the results of the step that just ran.
+   *
+   * A round is real work, so it is charged to the session budget like any other
+   * model call. An unparseable or failed round is not fatal: the recipe is kept
+   * as it is and the run continues with the next open step.
+   */
+  const proposeNext = async (stepIndex: number, digest: string, evidence: ToolTraceItem[]): Promise<void> => {
+    guard();
+    if (o.budget && checkBudget(o.budget).action === "stop") return;
+    // The step that just ran is the observation source, not a precondition: a
+    // round is also asked for when a step failed, because a failure is exactly
+    // the result that decides what comes next.
+    const step = stepIndex >= 0 ? recipe.steps[stepIndex] : undefined;
+    const stepId = step?.id ?? "";
+    const next = await proposeNextSteps({
+      cfg: o.cfg,
+      ollama: o.ollama,
+      context: {
+        goal: recipe.goal,
+        steps: recipe.steps.map((item) => ({ ...item })),
+        currentIndex: stepIndex,
+        completed: [digest],
+        observations: observationsFromTrace(evidence, stepId),
+        availableTools: o.tools.names(),
+      },
+      ...(oc.plannerModel ? { model: oc.plannerModel } : {}),
+      ...(o.signal ? { signal: o.signal } : {}),
+      ...(o.taskId ? { taskId: o.taskId } : {}),
+    });
+    addUsage(usage, next.usage);
+    if (o.budget) consumeTokens(o.budget, next.usage.promptTokens, next.usage.completionTokens);
+    totalSteps += 1;
+    // A model that could not be understood is not evidence: the recipe is kept
+    // exactly as it is and the run continues with the next open step.
+    if (next.unparsed) {
+      emitRecipe("advance", "auto");
+      return;
+    }
+
+    const applied = applyProposal(recipe, parseProposal(extractJson(next.content)));
+    recipe = applied.state;
+    // The frozen plan is the recipe's projection, so a client that renders the
+    // original plan sees the same steps the run is actually executing.
+    plan = { ...plan, steps: planStepsOf(recipe) };
+    emitRecipe(applied.change, "planner");
+    o.saveRecipe?.(structuredClone(recipe));
+    checkpoint(false);
+    log.info(
+      `orchestrator: recipe round (change=${applied.change}, +${applied.replaced.length} rewritten, ${applied.dropped.length} dropped) steps=${recipe.steps.length} remaining=${applied.remainingEstimate}`,
+    );
+    recipeComplete = recipe.steps.every((item) => item.status === "done" || item.status === "skipped" || item.status === "blocked");
+  };
+
+  /**
+   * Restart the recipe from one step, if the user asked for one.
+   *
+   * Everything before the restart point is kept verbatim, so the steps that
+   * already ran are never re-run: the run simply continues at the step the user
+   * picked. Applied at most once per run.
+   */
+  const maybeRestart = (): void => {
+    if (!recipeMode || restartApplied || !restartRequest) return;
+    restartApplied = true;
+    const request = restartRequest;
+    restartRequest = undefined;
+    const stepId = request.stepId;
+    const target = recipe.steps.find((step) => step.id === stepId);
+    if (!target) {
+      log.warn(`orchestrator: recipe restart ignored, unknown step ${stepId}`);
+      return;
+    }
+    const result = restartFrom(recipe, stepId, request.reason);
+    recipe = result.state;
+    plan = { ...plan, steps: planStepsOf(recipe), goal: recipe.goal };
+    nextStep = recipe.steps.findIndex((step) => step.id === stepId);
+    recipeComplete = false;
+    o.emit({
+      type: "recipe_restart",
+      stepId,
+      nodeId: target.nodeId ?? request.nodeId ?? stepId,
+      keptSteps: result.kept,
+      regeneratedSteps: result.regenerated,
+      reason: restartEventReason(request.reason),
+    });
+    emitRecipe("restart", "restart");
+    o.saveRecipe?.(structuredClone(recipe));
+    checkpoint(false);
+    log.info(`orchestrator: recipe restarted at ${stepId}; kept ${result.kept.length}, regenerated ${result.regenerated.length}`);
+  };
+
   const runStepWorker = async (prompt: string, suffix: string): Promise<WorkerOutcome> => {
     const resumeWorker = worker?.prompt === prompt ? worker : undefined;
     worker = resumeWorker;
@@ -306,8 +463,22 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
   for (;;) {
     let failedStep: string | null = null;
 
+    maybeRestart();
+
     for (let i = nextStep; i < plan.steps.length; i++) {
       guard();
+      // Recipe mode: a step the planner dropped is not work, so the run skips it
+      // instead of executing a step that no longer belongs to the recipe.
+      const recipeStep = recipeMode ? recipe.steps.find((item) => item.id === plan.steps[i]!.id) : undefined;
+      if (recipeStep && (recipeStep.status === "skipped" || recipeStep.status === "blocked")) {
+        if (recipeStep.status === "blocked" && plan.steps[i]!.successCriteria) {
+          // A blocked step is terminal evidence: the planner re-routes around
+          // it in the next proposal round, so it is never retried here.
+          completed.push(`${plan.steps[i]!.title}: blocked`);
+        }
+        nextStep = i + 1;
+        continue;
+      }
       // D19 compute budget: orchestration-level work (planner, verifier, final
       // verification) is charged to the same session budget, so consult the
       // ceiling BEFORE dispatching another worker. Otherwise a long plan or a
@@ -319,6 +490,10 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
           budgetExhausted = true;
           break;
         }
+      }
+      if (recipeMode) {
+        const index = recipe.steps.findIndex((item) => item.id === plan.steps[i]!.id);
+        if (index >= 0) recipe = beginStep(recipe, index);
       }
       nextStep = i;
       checkpoint(true);
@@ -334,6 +509,7 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
         });
       };
       emitStep("start");
+      if (recipeMode) emitRecipe("advance", "auto");
 
       const maxAttempts = Math.max(1, oc.maxRevisionsPerStep + 1);
       let attempt = 0;
@@ -393,6 +569,32 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
 
       if (failedStep || verdict?.verdict !== "pass") {
         failedStep ??= `${step.title}: ${verdict?.reason ?? "verification missing"}`;
+        if (recipeMode) {
+          // Recipe mode: a failed step is EVIDENCE, not a reason to rebuild the
+          // whole plan. Mark it blocked, ask the planner what to do about the
+          // result it just saw, and continue with whatever it proposes (a
+          // re-route through another tool, an extra step, a reworded one).
+          const recipeIndex = recipe.steps.findIndex((item) => item.id === step.id);
+          if (recipeIndex >= 0) recipe = finishStep(recipe, recipeIndex, false);
+          await proposeNext(recipeIndex, `${step.title}: ${failedStep}`, stepEvidence);
+          plan = { ...plan, steps: planStepsOf(recipe) };
+          emitRecipe("advance", "auto");
+          // The planner found another way forward: keep going instead of falling
+          // back to a whole-plan replan, which would discard the recipe.
+          const rerouted = recipe.steps.some(
+            (item, index) =>
+              index !== recipeIndex &&
+              item.status !== "done" &&
+              item.status !== "skipped" &&
+              item.status !== "blocked",
+          );
+          if (rerouted) {
+            failedStep = null;
+            nextStep = i + 1;
+            checkpoint(false);
+            continue;
+          }
+        }
         break;
       }
       completed.push(`${step.title}: ${oneLine(outcome?.text ?? "", 200) || "(no output)"}`);
@@ -403,6 +605,20 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
       if (outcome && outcome.text.trim().length > 0) lastText = outcome.text;
       nextStep = i + 1;
       checkpoint(false);
+
+      if (recipeMode) {
+        // The step's results are now evidence. Ask the planner what the recipe
+        // needs next and let the loop pick up whatever it decided: a step that
+        // was just proposed, a rewritten one, or a recipe that is now complete.
+        const recipeIndex = recipe.steps.findIndex((item) => item.id === step.id);
+        if (recipeIndex >= 0) recipe = finishStep(recipe, recipeIndex, true);
+        const digest = `${step.title}: ${oneLine(outcome?.text ?? "", 200) || "(no output)"}`;
+        await proposeNext(recipeIndex, digest, stepEvidence);
+        // The recipe may have grown, in which case the frozen plan has to grow
+        // with it or the loop would stop early.
+        plan = { ...plan, steps: planStepsOf(recipe) };
+        emitRecipe("advance", "auto");
+      }
     }
 
     if (!failedStep) break;
@@ -436,6 +652,13 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
     // D19 compute budget: a replan is real work and counts against the ceiling.
     if (o.budget) consumeTokens(o.budget, replanned.usage.promptTokens, replanned.usage.completionTokens);
     totalSteps += 1;
+    if (recipeMode) {
+      // A replan replaces the plan, so the recipe is re-seeded from it: the
+      // steps that already ran stay, the ones the new plan does not mention are
+      // dropped, and the rest are taken as the new plan has them.
+      recipe = reseedRecipe(recipe, replanned.plan.goal, replanned.plan.steps);
+      emitRecipe("advance", "planner");
+    }
     emitPlan();
     round += 1;
     nextStep = 0;

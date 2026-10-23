@@ -222,6 +222,38 @@ describe("run graph: replay builds the expected tree", () => {
     assert.equal(positions.size, layout.nodes.length, "no two nodes overlap");
   });
 
+  it("creates no canvas node for recipe events", () => {
+    // Neo N4: the recipe is a live state row the protocol renders, not part of
+    // the run graph. The steps it names already have their own `recipe_step`
+    // nodes, created by the plan, so a recipe event must never add a node or
+    // duplicate a step that is already on the canvas.
+    const graph = new RunGraph();
+    graph.replay(RUN, recordedRun());
+    const before = graph.getRunNodes(RUN).map((node) => node.id);
+
+    const ids = graph.applyEvent(RUN, {
+      type: "recipe_update",
+      goal: "Write the quarterly report",
+      steps: [
+        { id: "s1", title: "Gather sources", instruction: "Search the web", successCriteria: "At least 3 sources", status: "done", nodeId: "seed-s1", completedCount: 2 },
+        { id: "s2", title: "Draft the report", instruction: "Write the document", successCriteria: "Report exists", status: "doing", completedCount: 2 },
+      ],
+      remainingEstimate: 1,
+      change: "propose",
+      source: "planner",
+    });
+    assert.deepEqual(ids, [], "a recipe update produces no node");
+    graph.applyEvent(RUN, {
+      type: "recipe_restart",
+      stepId: "s2",
+      nodeId: "seed-s2",
+      keptSteps: ["s1"],
+      regeneratedSteps: ["s2"],
+      reason: "user edited the input of step 2",
+    });
+    assert.deepEqual(graph.getRunNodes(RUN).map((node) => node.id), before, "the canvas is unchanged by recipe events");
+  });
+
   it("rejects illegal transitions on a live graph and keeps the node unchanged", () => {
     const graph = new RunGraph();
     graph.replay(RUN, recordedRun());
