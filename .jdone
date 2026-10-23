@@ -1,5 +1,59 @@
 fc-07 complete: the Loam Video / Loam Effects router and a full "Video editing" prompt section. One product, one workflow, Arabic + English routing, FilmCraft-native fallback.
 
+## Fourth validation pass (one real defect fixed: commit `b36a8af`)
+Drove the router and the tool envelope through an ad-hoc probe (bilingual inputs,
+normalisation, classification, `plan()` degradation, and the real `run()` against a stub
+relay with temp dist roots), then swept every string the tool can hand back to the model.
+
+The probe found one genuine branding defect the three earlier passes had waved through as
+"machine-readable, therefore fine": the dist-missing fallback envelope returned
+`reason: "filmcraft_dist_missing"`, an upstream project name inside the JSON the model reads
+and routinely relays to the user. A `git grep` confirmed no frontend consumer parses that
+reason, so it is renamed to `loam_video_dist_missing` in the `VideoStudioFallbackReason`
+union, at the call site, in the pinned test assertion and in the docs table. The rest of the
+tool's user-facing text was already clean: every remaining `filmcraft` occurrence is a doc
+comment, an internal identifier (`filmcraftDistDir`, `isFilmcraftDistInstalled`) or the real
+vendored path `electron/filmcraft/dist`, and the dist-missing *message* is already branded
+("The Loam Video dist is not installed (...)"). The rename is safe against future merges:
+`manus-parity` still uses the old spelling, so there is nothing to collide with.
+
+A regression test now pins the class of leak, not just the instance. `video_studio branding`
+drives the tool through nine envelopes (dist missing, panel not open, bridge failure,
+rejected command, cancelled, missing command, unknown action, success) and asserts no
+upstream name appears in any of them, stripping real filesystem paths first so the
+legitimate vendored dist location is not miscounted as a leak; it also asserts the reason
+codes are brand-neutral. `videoStudio.test.ts` is now 42 tests, 42 pass.
+
+Also verified in this pass:
+- Regenerating the master prompt is idempotent: `npm run gen:master-prompt` leaves the
+  working tree clean (27 sections), so `masterPromptText.ts` matches `prompts/loam-master.md`.
+- The probe corrected several of my own wrong assumptions rather than exposing code defects:
+  the tool method is `run(args, ctx)` (from `Tool` in `src/tools/registry.ts`), not
+  `execute`; the stub relay must answer the `commands` method with a catalog or the tool
+  reports "editor returned no command list"; and `transition_basic` carrying a transition
+  hint degrades as `effects_engine_unsupported` when the effects dist is installed but
+  `effects_backend_unavailable` when it is missing, exactly as the committed tests pin.
+- Both full-suite failures (`node --import tsx --test "src/**/*.test.ts"`: 2203 tests,
+  2201 pass, 2 fail) reproduce identically on the clean `manus-parity` worktree, and both
+  files are untouched by fc-07 (`git diff --stat manus-parity` is empty for each), so
+  neither is a regression: `src/agent/__tests__/toolDescriptions.test.ts` (the inherited
+  `suggest_plan` defect) and `src/server/__tests__/worktrees.test.ts` "reports non-git
+  folders without throwing" (3 pass / 1 fail on `manus-parity` too; `readGitBranch` on a
+  fresh temp dir under this machine's git configuration reports `isGit: true`, an
+  environment quirk, not a code failure).
+
+Gates re-run on the committed tree (all green):
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)` -> exit 0 (compiled successfully, 25/25 static pages)
+- `npm run check:encoding` / `check:promptwire` / `check:modes` / `check:loam-agents` -> PASS
+- `node --import tsx --test` targeted suites (videoStudio 42, videoStudioRouter 47,
+  videoEditAgent 12, videoPrompt 16, codingPrompt 8) -> all pass
+- `node --import tsx --test "src/**/*.test.ts"` -> tests 2203, pass 2201, fail 2 (both
+  pre-existing, above)
+
+---
+
 ## Third validation pass (no new defects)
 Re-verified the snapshot and the routing contract end to end, then re-ran every gate.
 The earlier `TypeError [ERR_INVALID_ARG_TYPE]` while recomputing the snapshot hash was
@@ -46,7 +100,7 @@ every action x hint combination), so the dead field is not a behaviour bug; `raw
 its command id against the *target* engine's catalog, so degradation cannot dispatch a
 foreign id; and no upstream engine name appears in any user-facing string (all occurrences
 are internal identifiers, doc comments, or the pre-existing machine-readable reason code
-`filmcraft_dist_missing`).
+`filmcraft_dist_missing`, since renamed to `loam_video_dist_missing` in the fourth pass).
 
 ## Extra validation pass (commit `c4aa207`)
 Beyond the first gates, the router tables were probed directly with ad-hoc bilingual
@@ -107,7 +161,7 @@ order (§6.11 < §6.12 < §7), carries no upstream engine name, and `videoPrompt
   (full paths: src/tools/__tests__/{videoStudio,videoStudioRouter}.test.ts,
   src/agent/__tests__/{videoPrompt,craftPrompt,codingPrompt}.test.ts,
   src/server/__tests__/{videoStudioE2E,videoStudioRelay,autoVideo,runTools}.test.ts,
-  src/policy/__tests__/riskTier.test.ts -> 237 tests total)
+  src/policy/__tests__/riskTier.test.ts -> 239 tests total after the fourth pass)
   -> tests 237, pass 237, fail 0
 
 Branding: one product ("Loam Video" / "Loam Effects"); upstream names (FilmCraft /
