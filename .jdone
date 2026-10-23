@@ -1,3 +1,108 @@
+V8 complete: Loam UI Kit / v0 design-system parity - a vetted design-block registry plus the
+`ui_examples_search` agent tool, so the model retrieves proven interface blocks (and their
+source code) before writing UI by hand.
+
+## What was produced (19 files, all original work; no v0/Vercel prompt text copied)
+
+### 1. Multilingual registry core - `src/design/registry.ts` (+94)
+Single source of truth for the design blocks. V8 extended it so Arabic/RTL retrieval works:
+- `TAG_RE` now accepts either a Latin kebab tag OR an Arabic word (`[\u0600-\u06FF]+`).
+- Added `ARABIC_WORD_RE`; added Arabic stopwords to `STOPWORDS` (e.g. ال, في, من, على).
+- New validator rule: every RTL block must carry at least one Arabic tag or the manifest is
+  rejected. This keeps RTL blocks discoverable from Arabic queries instead of only by
+  directory name.
+- New `BlockHit` + `SearchBlockOptions` interfaces; `searchBlocks(query, k, blocksRoot, options)`
+  now takes `category` / `rtl` filters.
+- Appended `toBlockHit`, `readEntry`, `snippet` so a hit carries the block's own source snippet.
+
+### 2. Retrieval layer - `src/design/retrieval.ts` (new, 143)
+A thin, non-duplicating layer over `registry.ts`: `loadDesignRegistry`, `searchDesignBlocks`,
+`cosineSimilarity`, `rerankWithEmbeddings`, and the `BlockHit`/`BlockRecord`/`ScoredBlock`/
+`DesignEmbedder` types. BM25 scores the registry; `rerankWithEmbeddings` optionally re-ranks
+the top-K with a caller-supplied embedder. No scoring logic is duplicated from registry.ts.
+
+### 3. Agent tool - `src/tools/uiExamples.ts` (new, 141)
+`ui_examples_search` returns `BlockHit`s: id / name / category / description / tags / intent /
+deps / rtl / lang / entry / license / source / code / score. `k` is clamped to 1..10. When a
+block has a screenshot it is attached as a base64 image content part.
+
+### 4. Wiring (all in the existing registry, following existing conventions)
+- `src/index.ts` - register the tool factory.
+- `src/server/runTools.ts` - `ui_examples_search` added to `ALWAYS_ON_TOOLS`.
+- `src/agent/prompt.ts` - one-line guidance injected after the `design_lint` check.
+- `src/config.ts` - the design blocks directory constant.
+- `src/server/__tests__/runTools.test.ts` - the fixture registry now registers the tool so the
+  always-on assertion keeps passing (the test was updated, not weakened).
+
+### 5. Block manifests enriched with Arabic tags/intents
+All 8 RTL blocks plus `pricing-3-tier` and `pricing-toggle` gained Arabic `tags`/`intent` values
+so Arabic and English queries both resolve to the right block.
+
+## Acceptance test (from the task spec)
+`node --import tsx` probe against the real registry, no stubs:
+- query "pricing" -> top 3 are `pricing-toggle` (0.446), `pricing-3-tier` (0.401),
+  `rtl-pricing-3-tier` (0.317). A pricing block is in the top 3. PASS.
+- query "تسعير" (Arabic for "pricing") -> `pricing-toggle`, `pricing-3-tier`,
+  `rtl-pricing-3-tier`. Arabic retrieval works. PASS.
+
+Covered by `src/tools/__tests__/uiExamples.test.ts` (V9 shape): loader, BM25 ranking, embedding
+rerank, category/rtl filters, k clamping, screenshot attachment, and the allowlist/prompt wiring.
+
+## Git: merge with manus-parity resolved keeping BOTH sides
+- `8f82564` was the previous V8-only merge commit and held the OLD manifest-only V8 registry.
+- `manus-parity` had advanced to `a8130cc` (V9 schema: 30 blocks = 22 LTR + 8 RTL, each with a
+  real `Block.tsx` + `README.md`).
+- The working tree/index already contained the correct full resolution (parity's V9 schema +
+  the V8 `ui_examples_search` delta), so it was committed as a real two-parent merge `a41c4a2`
+  (`8f82564` + `a8130cc`), making `manus-parity` an ancestor.
+- `4031d67` restored parity's O0 recon (`.jdone` + `docs/re/omnara-O0.md`) that the index rebuild
+  had dropped.
+- HEAD now differs from `manus-parity` by exactly the V8 delta (19 files). No conflict markers,
+  no stale references to removed symbols (`DESIGN_BLOCK_TYPES`, `DesignBlockHit`, ...).
+
+## Gates (all run from the worktree root on the committed tree)
+- `npm run check:design-registry` -> OK (30 blocks, 8 RTL, all manifests valid, all built)
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)` -> compiled successfully
+- `(cd packages/web && npx vitest run)` -> 72 files / 472 tests passed, 0 fail
+- `node --import tsx --test "src/**/*.test.ts"` -> tests 2152, pass 2151, fail 1
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes` -> PASS
+- `npm run check:orchestrator` -> PASS (114/114)
+- `npm run check:promptwire` -> PASS
+- Focused V8 suites (registry, uiExamples, runTools) -> tests 48, pass 48, fail 0
+
+### The single node failure is pre-existing and NOT caused by V8
+`src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered nor
+listed in PENDING_CODING_TOOLS". That test file, `taskToolScope.ts` and `planTools.ts` are
+byte-identical to `manus-parity` (`git diff manus-parity HEAD -- <file>` is empty for each),
+and the same test fails identically on the manus-parity lineage (D4 added `suggest_plan` to
+`CODING_PROFILE.tools` but never to the test's pending list). Left untouched per the task rules
+("do not weaken or delete existing tests"; fixing it would mean editing another task's test or
+tool profile).
+
+Test commands:
+  npm run check:design-registry
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  (cd packages/web && npx vitest run)
+  npx tsx --test "src/**/*.test.ts"
+  npx tsx --test src/design/__tests__/registry.test.ts src/tools/__tests__/uiExamples.test.ts src/server/__tests__/runTools.test.ts
+  npm run check:encoding
+  npm run check:modes
+  npm run check:orchestrator
+  npm run check:promptwire
+
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path touched.
+Working tree clean (`git status --porcelain` empty). No real external model API was called by
+the tests (the rerank path uses a local embedder stub).
+
+---
+
+## Preserved: manus-parity O0 recon (previous .jdone content)
+
 O0 complete: read-only recon for the Omnara durable event log. No source file touched.
 
 ## What was produced
