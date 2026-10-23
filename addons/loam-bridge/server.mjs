@@ -100,3 +100,5 @@ async function shutdown() {
 for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, async () => { await shutdown(); process.exit(0); });
 process.on('message', async (message) => { if (message?.type === 'shutdown') { await shutdown(); process.exit(0); } });
 process.on('disconnect', async () => { await shutdown(); process.exit(0); });
+// Electron utility process (utilityProcess.fork): shutdown arrives via parentPort.
+process.parentPort?.on('message', async (event) => { if (event?.data?.type === 'shutdown') { await shutdown(); process.exit(0); } });

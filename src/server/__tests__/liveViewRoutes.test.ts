@@ -73,6 +73,9 @@ describe("live view routes", () => {
   before(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-liveview-routes-"));
     process.env.MANUS_LOCAL_DATA_DIR = tmpDir;
+    // `loadConfig()` mkdirs `workspace/` and `workspace/.screenshots/`; keep them
+    // inside the temp dir rather than the repository tree.
+    process.env.LOAM_ROOT = tmpDir;
     const db = await import("../db.js");
     closeDb = (await import("../sqliteStore.js")).closeDb;
     const task = db.createTask("live view route test", "lv");

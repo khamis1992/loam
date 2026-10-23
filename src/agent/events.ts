@@ -33,6 +33,34 @@ export interface PlanStepInfo {
   note?: string;
 }
 
+/**
+ * Live status of one step of an incremental Recipe (N4).
+ *
+ * `proposed` is a step the planner has put forward but the engine has not started
+ * yet; `ready` is a step whose turn has come and which is executable. `doing`,
+ * `done`, `blocked` and `skipped` match the run-graph node lifecycle so a recipe
+ * row and its canvas node never disagree about the same step.
+ */
+export type RecipeStepStatus = "proposed" | "ready" | "doing" | "done" | "blocked" | "skipped";
+
+/** How a recipe changed since the previous `recipe_update` event. */
+export type RecipeChange = "init" | "propose" | "advance" | "rewrite" | "drop" | "restart";
+
+/** One step of an incremental Recipe, as carried by `recipe_update`. */
+export interface RecipeStepInfo {
+  id: string;
+  title: string;
+  instruction: string;
+  successCriteria: string;
+  status: RecipeStepStatus;
+  /** Run-graph node id this step maps to; undefined while it is only proposed. */
+  nodeId?: string;
+  /** Recipe step ids this step replaced, when the planner rewrote them. */
+  replaces?: string[];
+  /** Recipe steps finished so far (never counts the current step). */
+  completedCount: number;
+}
+
 export interface ToolTraceItem {
   name: string;
   ok: boolean;
@@ -46,6 +74,13 @@ export interface Usage {
   promptTokens: number;
   completionTokens: number;
   durationMs: number;
+  /**
+   * Tokens the provider reported as served from its prompt cache. Undefined when
+   * the provider reports no cache telemetry, which is never treated as a miss.
+   */
+  cachedTokens?: number;
+  /** Tokens written into the cache on this request, when reported. */
+  cacheWriteTokens?: number;
 }
 
 export type AgentEvent =
@@ -66,6 +101,44 @@ export type AgentEvent =
   | { type: "workmode"; workMode: string; labelAr: string; deviceRequired: boolean; deviceId?: string; deviceName?: string; reason?: string }
   /** Orchestrator: the full execution plan for this task. */
   | { type: "plan"; goal: string; trivial: boolean; steps: PlanStepInfo[]; source: "model" | "fallback" }
+  /**
+   * Neo N4 incremental Recipe engine: the live step list of a recipe-mode run.
+   *
+   * Emitted whenever the recipe changes: at the start, after a step's result
+   * (when the planner proposes the next step(s)), and after a restart. Unlike
+   * `plan`, which describes the plan as it was at the start, this event carries
+   * the *current* ordered recipe with the per-step status the canvas renders, so
+   * the remaining work is visible and shrinks as the run proceeds.
+   */
+  | {
+      type: "recipe_update";
+      goal: string;
+      steps: RecipeStepInfo[];
+      /** Estimated number of recipe steps still to run, current step included. */
+      remainingEstimate: number;
+      /** How the recipe changed since the previous `recipe_update`. */
+      change: RecipeChange;
+      /** Who produced the change; "auto" is a local engine adjustment. */
+      source: "planner" | "restart" | "auto";
+    }
+  /**
+   * Neo N4: the recipe restarted from one step.
+   *
+   * Everything downstream of `stepId` is regenerated; the outputs of the steps
+   * before it are kept verbatim, which is why the event names the node it keeps.
+   */
+  | {
+      type: "recipe_restart";
+      /** Recipe step id the restart begins at. */
+      stepId: string;
+      /** Run-graph node id the restart begins at (same step). */
+      nodeId: string;
+      /** Recipe step ids kept verbatim (everything before the restart point). */
+      keptSteps: string[];
+      /** Recipe step ids regenerated from the restart point onwards. */
+      regeneratedSteps: string[];
+      reason: string;
+    }
   /** Orchestrator: lifecycle of one plan step (executor worker run). */
   | { type: "plan_step"; id: string; index: number; total: number; title: string; phase: "start" | "done"; summary?: string }
   /** The model's live task list, replaced in full by the `todo_write` tool. */
@@ -80,12 +153,37 @@ export type AgentEvent =
   | { type: "replan"; round: number; reason: string }
   /** Sensitive-action gate: a host input action awaits an explicit user decision. */
   | { type: "approval_required"; approvalId: string; tool: string; summary: string }
+  /** Environment-issue report: a step cannot run because of the local environment. */
+  | { type: "environment_issue"; message: string; details?: string }
+  /** Pending plan approval (D4): a `suggest_plan` plan awaits the user's decision. */
+  | { type: "plan_approval_required"; planApprovalId: string; taskId: string; tool: string; summary: string; steps: string[]; filesToEdit: string[]; trivial: boolean }
   /** Plan mode: the task's local permission mode changed (plan_exit approval, user switch). */
   | { type: "permission_mode_changed"; mode: import("../policy/permissionModes.js").LocalPermissionMode; previousMode: import("../policy/permissionModes.js").LocalPermissionMode; reason: string }
   /** End-to-end verification of the completed task. */
   | { type: "verify"; verdict: Verdict; reason: string; parsed?: boolean }
   /** Context compression happened. */
-  | { type: "compaction"; step: 1 | 2; originalTokens: number; afterPruneTokens: number; finalTokens: number; summaryChars?: number; fallback?: boolean }
+  | { type: "compaction"; step: 1 | 2; originalTokens: number; afterPruneTokens: number; finalTokens: number; summaryChars?: number; fallback?: boolean; blocked?: boolean }
+  /**
+   * Prompt-cache (KV cache) accounting. Emitted on every completed provider
+   * request that reported cache telemetry, so clients can show reusable-token
+   * counters and a cold-cache notice.
+   */
+  | {
+      type: "cache_usage";
+      provider: string;
+      model: string;
+      promptTokens: number;
+      cachedTokens: number;
+      /** Present only when the provider reported a real miss/refresh. */
+      miss?: {
+        reason: string;
+        expectedTokens: number;
+        readTokens: number;
+        missedTokens: number;
+        documentedCause?: string;
+        message: string;
+      };
+    }
   /** A workspace file was published as a task artifact via artifact_publish. */
   | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string }
   /**

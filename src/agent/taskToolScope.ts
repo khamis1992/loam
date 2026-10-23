@@ -51,6 +51,7 @@ export const CODING_PROFILE: ToolProfile = {
     "web_search",
     "delegate_task",
     "plan_exit",
+    "suggest_plan",
     "finish",
   ],
 };

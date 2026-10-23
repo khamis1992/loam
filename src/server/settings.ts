@@ -11,6 +11,9 @@ export interface Settings {
   recentWorkspaces?: string[];
   /** When false, mutating agent operations (skills/memory installs) stage for manual approval instead of applying. */
   autoApprove?: boolean;
+  /** D4: when true, a plan the agent marks `trivial` (single obvious action) is
+   *  approved automatically, so single-step requests never stop for a card. */
+  planApprovalSkipTrivial?: boolean;
   /** Custom electron-updater generic feed URL or GitHub repo ("owner/repo"). */
   updateFeedUrl?: string;
   githubRepo?: string;
@@ -26,10 +29,19 @@ export interface Settings {
   codemode?: boolean;
   /** Settings › Data controls: when true, user data is excluded from model training. */
   trainingOptOut?: boolean;
+  /** MiroFish swarm simulation: user-selected location (any country/city/region). */
+  location?: { country?: string; city?: string; region?: string };
 }
 
 const FILE = path.join(DATA_DIR, "settings.json");
 let settings: Settings = { theme: "dark", projectId: null };
+
+/** True when a persisted value is a plausible location setting. */
+function isLocationSetting(value: unknown): value is NonNullable<Settings["location"]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const rec = value as Record<string, unknown>;
+  return typeof rec.country === "string" || typeof rec.city === "string" || typeof rec.region === "string";
+}
 
 export function loadSettings(): Settings {
   try {
@@ -50,6 +62,8 @@ export function loadSettings(): Settings {
         ...(typeof parsed.codemode === "boolean" ? { codemode: parsed.codemode } : {}),
         ...(typeof parsed.trainingOptOut === "boolean" ? { trainingOptOut: parsed.trainingOptOut } : {}),
         ...(typeof parsed.autoApprove === "boolean" ? { autoApprove: parsed.autoApprove } : {}),
+        ...(typeof parsed.planApprovalSkipTrivial === "boolean" ? { planApprovalSkipTrivial: parsed.planApprovalSkipTrivial } : {}),
+        ...(isLocationSetting(parsed.location) ? { location: parsed.location } : {}),
       };
     }
   } catch {
@@ -78,12 +92,22 @@ export function updateSettings(patch: Partial<Settings>): Settings {
   if (typeof patch.updateFeedUrl === "string") settings.updateFeedUrl = patch.updateFeedUrl.trim();
   if (typeof patch.githubRepo === "string") settings.githubRepo = patch.githubRepo.trim();
   if (typeof patch.autoApprove === "boolean") settings.autoApprove = patch.autoApprove;
+  if (typeof patch.planApprovalSkipTrivial === "boolean") settings.planApprovalSkipTrivial = patch.planApprovalSkipTrivial;
   if (typeof patch.browserHeadless === "boolean") settings.browserHeadless = patch.browserHeadless;
   if (patch.browserHomepage !== undefined) settings.browserHomepage = typeof patch.browserHomepage === "string" ? patch.browserHomepage.trim() : "";
   if (typeof patch.flexBaseUrl === "string") settings.flexBaseUrl = patch.flexBaseUrl.trim();
   if (typeof patch.flexModel === "string") settings.flexModel = patch.flexModel.trim();
   if (typeof patch.codemode === "boolean") settings.codemode = patch.codemode;
   if (typeof patch.trainingOptOut === "boolean") settings.trainingOptOut = patch.trainingOptOut;
+  if (patch.location !== undefined) {
+    settings.location = isLocationSetting(patch.location)
+      ? {
+          ...(typeof patch.location.country === "string" && patch.location.country.trim() ? { country: patch.location.country.trim() } : {}),
+          ...(typeof patch.location.city === "string" && patch.location.city.trim() ? { city: patch.location.city.trim() } : {}),
+          ...(typeof patch.location.region === "string" && patch.location.region.trim() ? { region: patch.location.region.trim() } : {}),
+        }
+      : undefined;
+  }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     const tmp = `${FILE}.tmp`;

@@ -12,6 +12,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readScene, saveScene, CreativeError, validateGlb, MAX_GLB_BYTES } from "../creative/store.js";
 import { requireTaskWorkspace, taskPath } from "./taskWorkspace.js";
 import { getLoamMode } from "../modes/catalog.js";
+import { expandPlaybookMacros } from "./playbooks.js";
 import { readStudio, saveStudio, validateStudio, StudioError, type StudioArtifact } from "../studio/store.js";
 import { exportStudio } from "../studio/export.js";
 import { renderWordPreview } from "../studio/word-preview.js";
@@ -22,7 +23,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import nodeChildProcess from "node:child_process";
-import { ROOT, UI_DIR, DATA_DIR, type Config } from "../config.js";
+import { ROOT, rootAsset, UI_DIR, DATA_DIR, type Config } from "../config.js";
 import type { OllamaClient } from "../ollama.js";
 import type { AgentEvent, Emit } from "../agent/events.js";
 import { log, redact } from "../log.js";
@@ -31,6 +32,7 @@ import { isInside, resolveRead, resolveWrite } from "../policy/paths.js";
 import type { MemoryStore } from "../memory/store.js";
 import { getPending, listPending, removePending, type PendingItem } from "./pending.js";
 import { applySkill, buildSkillFile, listSkillRecords, readSkillFile } from "../tools/skills.js";
+import { acceptSkillSuggestion } from "../tools/skillSuggest.js";
 import { extractOfficeText, OFFICE_EXT, prepareParser as buildPdfParser } from "../tools/attachments.js";
 import { loadHooksConfig, saveWorkspaceHooks, type HooksConfig } from "../policy/hooks.js";
 import { outlineWorkspacePath, queryWorkspaceSymbols } from "../tools/symbols.js";
@@ -68,16 +70,21 @@ import {
   listProjects,
   listSchedules,
   listTasks,
+  publicSchedule,
   updateProject,
 } from "./db.js";
 import { getSettings, updateSettings } from "./settings.js";
 import { cancelRunSignal } from "./runControl.js";
 import { createAgent, deleteAgent, getAgent, listAgents, listAgentsWithChatMeta, reorderAgents, sanitizeAvatarFields, setAgentArchived, setAgentHidden, setAgentPinned, updateAgent } from "./agents.js";
 import { handleScratchpadRoutes } from "./routes/scratchpad.js";
+// Session sleep/wake + compute budget (D19): dispatched before generic handlers.
+import { handleSessionRuntimeRoutes } from "./routes/sessionRuntime.js";
 import { handleDesignStudioRoutes } from "./routes/designStudio.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
+import { handleAutomationsRoutes } from "./routes/automations.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
+import { handleGraphRoutes } from "./routes/graph.js";
 import { handleCraftRoutes } from "./routes/craft.js";
 import { handleInstructionsRoutes } from "./routes/instructions.js";
 import { handleAgentSpawnRoutes } from "./routes/agentSpawn.js";
@@ -90,12 +97,17 @@ import { handleApiKeysRoutes } from "./routes/apiKeys.js";
 import { handleDataControlsRoutes } from "./routes/dataControls.js";
 import { handleMemorySkillsRoutes } from "./routes/memorySkills.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
+import { handlePlanApprovalRoutes } from "./routes/planApproval.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
 import { handleRetryLastRoutes } from "./routes/retryLast.js";
+import { handleSessionControlRoutes } from "./routes/sessionControl.js";
+import { handleInsightsRoutes } from "./routes/insights.js";
 import { handleShareRoutes } from "./routes/shares.js";
 import { handleProjectContextRoutes } from "./routes/projectContext.js";
+import { handlePlaybookRoutes } from "./routes/playbooks.js";
 import { handleVoiceRoutes } from "./routes/voice.js";
 import { handleConnectorsRoutes } from "./routes/connectors.js";
+import { handleWikiRoutes } from "./routes/wiki.js";
 import { importGrokbotBundle, sanitizeGrokbotBundle } from "./grokbotImport.js";
 import { isValidTimezone } from "./scheduleTime.js";
 import { getWorkModesUi, normalizeWorkMode, resolveCompanionCapabilities } from "./companionGateway.js";
@@ -123,11 +135,13 @@ import { exportDatasets } from "../eval/export.js";
 import type { PreviewService } from "../preview/serve.js";
 import { getBrowserState } from "../tools/browser.js";
 import { getSavedRun } from "./db.js";
+import { isOutputType } from "../llm/router.js";
 import { requiresReplayConfirmation } from "./recovery.js";
 import { executionQueue } from "./executionQueue.js";
 import { SwarmService, SwarmError } from "../swarm/service.js";
 import type { McpToolset } from "../tools/mcp.js";
 import { integrationCatalog, integrationGrants, saveIntegrationGrants } from '../tools/integrations.js';
+import { admitPending as admitPendingInputs, pending as pendingInputs } from './inputQueue.js';
 
 export interface RunTaskOptions {
   prompt: string;
@@ -138,11 +152,19 @@ export interface RunTaskOptions {
   projectId?: string | null;
   mode?: string;
   effort?: string;
+  /** Neo N10: output type selector (Auto/Text/Image/Video/Slides/Website). */
+  outputType?: string;
+  /** Neo N10: also run the same prompt on other models as sibling canvas nodes. */
+  abModels?: string[];
   agentId?: string;
   workMode?: string;
   resume?: boolean;
   retryInterruptedStep?: boolean;
   scheduleId?: string;
+  /** Side-chat ("/btw") run: restricted to read-only inspection tools. */
+  sideChat?: boolean;
+  /** O6: protocol session whose durable inbound queue this run should drain. */
+  inputSessionId?: string;
 }
 
 export interface ServerDeps {
@@ -375,7 +397,8 @@ async function applyPendingItem(item: PendingItem, memory?: MemoryStore): Promis
     if (!text) throw new Error("staged memory entry has no text");
     const kind = typeof item.payload["kind"] === "string" ? item.payload["kind"] : "note";
     const tags = Array.isArray(item.payload["tags"]) ? (item.payload["tags"] as unknown[]).map((t) => String(t)) : [];
-    const entry = await memory.add(text, { kind, tags });
+    const sessionId = typeof item.payload["sessionId"] === "string" ? item.payload["sessionId"] : undefined;
+    const entry = await memory.add(text, { kind, tags, ...(sessionId ? { sessionId } : {}) });
     return `memory_store ${entry.id}`;
   }
   if (item.kind === "skill_install") {
@@ -384,6 +407,9 @@ async function applyPendingItem(item: PendingItem, memory?: MemoryStore): Promis
       force: item.payload["force"] === true,
     });
     return `skill_install ${res.id}`;
+  }
+  if (item.kind === "skill_suggest") {
+    return acceptSkillSuggestion(item);
   }
   const res = applySkill(item.kind, item.payload);
   if (!res.ok) throw new Error(res.content);
@@ -834,7 +860,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
 
         if (req.method === "GET" && p.startsWith("/vendor/three/")) {
           const addon = p.startsWith("/vendor/three/addons/");
-          const base = path.join(ROOT, "node_modules", "three", addon ? "examples/jsm" : "build");
+          const base = rootAsset("node_modules", "three", addon ? "examples/jsm" : "build");
           const relative = p.slice(addon ? "/vendor/three/addons/".length : "/vendor/three/".length);
           const file = path.resolve(base, relative);
           if (!file.startsWith(base + path.sep) || !relative.endsWith(".js") || (!addon && !["three.module.js", "three.core.js"].includes(relative)) || !fs.existsSync(file)) return sendJson(res, 404, { error: "Not found" });
@@ -979,12 +1005,13 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
 
         if (req.method === "POST" && p === "/api/memory") {
           if (!memory) return sendJson(res, 503, { error: "memory disabled in config" });
-          const body = (await readBody(req)) as { text?: unknown; kind?: unknown; tags?: unknown };
+          const body = (await readBody(req)) as { text?: unknown; kind?: unknown; tags?: unknown; sessionId?: unknown };
           const text = typeof body.text === "string" ? body.text.trim() : "";
           if (!text) return sendJson(res, 400, { error: "text required" });
           const tags = Array.isArray(body.tags) ? (body.tags as unknown[]).map((t) => String(t)) : [];
+          const sessionId = typeof body.sessionId === "string" ? body.sessionId : undefined;
           try {
-            const entry = await memory.add(text, { kind: typeof body.kind === "string" ? body.kind : "note", tags });
+            const entry = await memory.add(text, { kind: typeof body.kind === "string" ? body.kind : "note", tags, ...(sessionId ? { sessionId } : {}) });
             sendJson(res, 200, { entry });
           } catch (err) {
             sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
@@ -1232,8 +1259,8 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (req.method === "POST" && p === "/api/settings") {
-          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; codemode?: unknown };
-          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; codemode?: boolean } = {}
+          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; codemode?: unknown; planApprovalSkipTrivial?: unknown };
+          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; codemode?: boolean; planApprovalSkipTrivial?: boolean } = {};
           if (body.theme === "dark" || body.theme === "light" || body.theme === "system") patch.theme = body.theme;
           if (typeof body.model === "string") patch.model = body.model;
           if (body.projectId === null || typeof body.projectId === "string") patch.projectId = body.projectId;
@@ -1241,6 +1268,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           if (typeof body.trainingOptOut === "boolean") patch.trainingOptOut = body.trainingOptOut;
           // Codemode master switch (opt-in): only an explicit boolean is stored.
           if (typeof body.codemode === "boolean") patch.codemode = body.codemode;
+          if (typeof body.planApprovalSkipTrivial === "boolean") patch.planApprovalSkipTrivial = body.planApprovalSkipTrivial;
           sendJson(res, 200, updateSettings(patch));
           return;
         }
@@ -1741,16 +1769,26 @@ loadAgents();
         }
 
         if (await handleScratchpadRoutes(req, res, p)) return;
+        // Session sleep/wake + compute budget (D19).
+        if (await handleSessionRuntimeRoutes(req, res, p)) return;
         // Design Studio (/api/design/*): brand kits, templates, generate, outputs.
         if (await handleDesignStudioRoutes(req, res, p)) return;
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        // Neo N2 canvas: the run graph built live by the agent (N1).
+        if (await handleGraphRoutes(req, res, p, { enabled: cfg.runGraph?.enabled !== false })) return;
         // Craft apps (/api/craft/status): which vendored dists are installed.
         if (await handleCraftRoutes(req, res, p)) return;
         if (await handleInstructionsRoutes(req, res, p)) return;
         if (await handleAgentSpawnRoutes(req, res, p)) return;
         if (await handleAgentThreadRoutes(req, res, p)) return;
         if (await handleRetryLastRoutes(req, res, p)) return;
+        // Session timeline UX (D16): side-chat questions + pause/take-over.
+        if (await handleSessionControlRoutes(req, res, p)) return;
+        // Session insights (D18): post-mortem metrics, issue timeline, feedback.
+        if (await handleInsightsRoutes(req, res, p, { ollama, model: cfg.model })) return;
         if (await handleSchedulesRoutes(req, res, p)) return;
+        // D14: event-trigger deliveries (HMAC-verified webhook / GitHub events).
+        if (await handleAutomationsRoutes(req, res, p)) return;
         if (await handleAutoVideoRoutes(req, res, p)) return;
         if (await handleLiveViewRoutes(req, res, p, { screenLive: live })) return;
         if (await handleTranscriptRoutes(req, res, p, { workspace: cfg.workspace })) return;
@@ -1767,6 +1805,8 @@ loadAgents();
         // Settings › Skills (UNIMPLEMENTED_OPTIONS #4): proxy the memory-skills MCP.
         if (await handleMemorySkillsRoutes(req, res, p, { call: memorySkillsCall })) return;
         if (await handleApprovalRuleRoutes(req, res, p, url)) return;
+        // Pending plan approvals (D4): the suggest_plan gate's approve/edit/reject.
+        if (await handlePlanApprovalRoutes(req, res, p)) return;
         if (await handleGrokbotBridgeRoutes(req, res, p, url)) return;
         // Public read-only task shares (option #11): create/revoke are authed,
         // GET /api/share/:token is the anonymous replay feed exempted above.
@@ -1774,6 +1814,10 @@ loadAgents();
         // Project context + model tiers (options 17/18/22): must precede the
         // generic /api/projects/ and /api/schedules/ handlers below.
         if (await handleProjectContextRoutes(req, res, p)) return;
+        // Playbooks (D9): versioned reusable prompt library + macro expansion.
+        if (await handlePlaybookRoutes(req, res, p)) return;
+        // Repo wiki (D8): list/generate/read DeepWiki-style pages.
+        if (await handleWikiRoutes(req, res, p, { workspace: cfg.workspace, ollama, model: cfg.model })) return;
 
         // ---- avatar (Grok Bot-style): set shape/color/image on an existing agent ----
         // Must run before the generic /api/agents/:id prefix block.
@@ -2470,12 +2514,12 @@ loadAgents();
         }
 
         if (req.method === "GET" && p === "/api/schedules") {
-          sendJson(res, 200, { schedules: listSchedules() });
+          sendJson(res, 200, { schedules: listSchedules().map(publicSchedule) });
           return;
         }
 
         if (req.method === "POST" && p === "/api/schedules") {
-          const body = (await readBody(req)) as { prompt?: unknown; intervalSeconds?: unknown; agentId?: unknown; workMode?: unknown; enabled?: unknown; cron?: unknown; at?: unknown; runAt?: unknown; timezone?: unknown };
+          const body = (await readBody(req)) as { prompt?: unknown; intervalSeconds?: unknown; agentId?: unknown; workMode?: unknown; enabled?: unknown; cron?: unknown; at?: unknown; runAt?: unknown; timezone?: unknown; trigger?: unknown; webhookSecret?: unknown; githubEvents?: unknown; projectId?: unknown; playbook?: unknown };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
           const intervalSeconds = Number(body.intervalSeconds ?? 0);
           const agentId = typeof body.agentId === "string" && body.agentId ? body.agentId : undefined;
@@ -2483,15 +2527,28 @@ loadAgents();
           const cron = typeof body.cron === "string" && body.cron.trim() ? body.cron.trim() : undefined;
           const runAt = typeof body.at === "string" && body.at.trim() ? body.at.trim() : typeof body.runAt === "string" && body.runAt.trim() ? body.runAt.trim() : undefined;
           const timezone = typeof body.timezone === "string" && body.timezone.trim() ? body.timezone.trim() : undefined;
+          // D14: event triggers (webhook / github). They carry no schedule of
+          // their own, so the interval/cron requirement only applies to cron.
+          const trigger = body.trigger === "cron" || body.trigger === "webhook" || body.trigger === "github" ? body.trigger : undefined;
+          const webhookSecret = typeof body.webhookSecret === "string" && body.webhookSecret.trim() ? body.webhookSecret.trim() : undefined;
+          const githubEvents = Array.isArray(body.githubEvents)
+            ? body.githubEvents.filter((e): e is string => typeof e === "string" && e.trim().length > 0).map((e) => e.trim()).slice(0, 50)
+            : undefined;
+          const projectId = typeof body.projectId === "string" && body.projectId ? body.projectId : undefined;
+          const playbook = typeof body.playbook === "string" ? body.playbook : undefined;
+          const isEventTrigger = trigger === "webhook" || trigger === "github";
           if (!prompt) return sendJson(res, 400, { error: "prompt required" });
           if (cron && runAt) return sendJson(res, 400, { error: "cron and at are mutually exclusive" });
           if (timezone && !isValidTimezone(timezone)) return sendJson(res, 400, { error: `منطقة زمنية غير معروفة: ${timezone}` });
           if (runAt && Number.isNaN(Date.parse(runAt))) return sendJson(res, 400, { error: "at must be an ISO timestamp" });
-          if (!cron && !runAt && (!Number.isFinite(intervalSeconds) || intervalSeconds < 30)) return sendJson(res, 400, { error: "intervalSeconds must be >= 30" });
+          if (!isEventTrigger && !cron && !runAt && (!Number.isFinite(intervalSeconds) || intervalSeconds < 30)) return sendJson(res, 400, { error: "intervalSeconds must be >= 30" });
           if (agentId && !getAgent(agentId)) return sendJson(res, 400, { error: "الوكيل غير موجود" });
+          if (projectId && !getProject(projectId)) return sendJson(res, 400, { error: "project not found" });
+          if (trigger === "webhook" && !webhookSecret) return sendJson(res, 400, { error: "webhook trigger requires webhookSecret" });
+          if (trigger === "github" && (!githubEvents || githubEvents.length === 0)) return sendJson(res, 400, { error: "github trigger requires githubEvents" });
           try {
-            const schedule = addSchedule(prompt, Number.isFinite(intervalSeconds) ? intervalSeconds : 0, agentId, workMode, cron || runAt ? "cron" : undefined, undefined, body.enabled !== false, { cron, runAt, timezone });
-            sendJson(res, 200, { schedule });
+            const schedule = addSchedule(prompt, isEventTrigger ? 3600 : Number.isFinite(intervalSeconds) ? intervalSeconds : 0, agentId, workMode, cron || runAt ? "cron" : undefined, undefined, body.enabled !== false, { cron, runAt, timezone, trigger, webhookSecret, githubEvents, projectId, playbook });
+            sendJson(res, 200, { schedule: publicSchedule(schedule) });
           } catch (err) {
             sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
           }
@@ -2566,11 +2623,15 @@ loadAgents();
             attachments?: unknown;
             mode?: unknown;
             effort?: unknown;
+            outputType?: unknown;
+            abModels?: unknown;
             agentId?: unknown;
             workMode?: unknown;
           };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
           if (!prompt) return sendJson(res, 400, { error: "prompt required" });
+          const expansion = expandPlaybookMacros(prompt);
+          const runPrompt = expansion.text;
           let taskId = typeof body.taskId === "string" && body.taskId ? body.taskId : undefined;
           const title = typeof body.title === "string" ? body.title : undefined;
           const model = typeof body.model === "string" && body.model ? body.model : undefined;
@@ -2579,6 +2640,12 @@ loadAgents();
           try { mode = getLoamMode(typeof body.mode === "string" ? body.mode : (taskId ? getTask(taskId)?.mode : undefined)).id; }
           catch (error) { return sendJson(res, 400, { error: String(error) }); }
           const effort = typeof body.effort === "string" && body.effort ? body.effort : undefined;
+          // Neo N10: output type and A/B arm list come from the composer. Anything
+          // malformed is ignored rather than failing the whole run.
+          const outputType = isOutputType(body.outputType) ? body.outputType : undefined;
+          const abModels = Array.isArray(body.abModels)
+            ? [...new Set(body.abModels.filter((m): m is string => typeof m === "string" && m.trim().length > 0).map((m) => m.trim()))].slice(0, 4)
+            : undefined;
           const agentId = typeof body.agentId === "string" && body.agentId ? body.agentId : undefined;
           let workMode: string | undefined;
           try {
@@ -2612,7 +2679,7 @@ loadAgents();
             setTaskMode(taskId, mode);
             const attachmentsBlock = await buildAttachmentsBlock(body.attachments, root);
             const result = await runTask({
-              prompt: attachmentsBlock ? `${prompt}\n\n${attachmentsBlock}` : prompt,
+              prompt: attachmentsBlock ? `${runPrompt}\n\n${attachmentsBlock}` : runPrompt,
               emit,
               taskId,
               title,
@@ -2620,6 +2687,8 @@ loadAgents();
               projectId,
               mode,
               effort,
+              ...(outputType ? { outputType } : {}),
+              ...(abModels && abModels.length > 0 ? { abModels } : {}),
               agentId,
               workMode,
             });
@@ -2635,6 +2704,20 @@ loadAgents();
 
         if (req.method === "GET" && p === "/api/queue") {
           return sendJson(res, 200, executionQueue.snapshot());
+        }
+        // O6 durable input queue: the UI (or a boot hook) can read what is waiting
+        // and force admission of a message that arrived while no run was active.
+        if (req.method === "GET" && p === "/api/inputs") {
+          const sessionId = url.searchParams.get("sessionId") ?? "";
+          const items = sessionId ? pendingInputs(sessionId) : [];
+          return sendJson(res, 200, { inputs: items });
+        }
+        if (req.method === "POST" && p === "/api/inputs/admit") {
+          const body = (await readBody(req)) as { sessionId?: unknown };
+          const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
+          if (!sessionId) return sendJson(res, 400, { error: "sessionId required" });
+          const admitted = admitPendingInputs(sessionId);
+          return sendJson(res, 200, { admitted });
         }
         if (req.method === "POST" && p.startsWith("/api/tasks/") && p.endsWith("/resume")) {
           const id = decodeURIComponent(p.slice("/api/tasks/".length, -"/resume".length));

@@ -43,6 +43,12 @@ const CLASSIFICATION_CASES: Array<{ tool: string; args?: Record<string, unknown>
   { tool: "edit", args: { filePath: "d.txt" }, ws: WS, expected: "write-workspace", note: "generic edit" },
   { tool: "FILE_WRITE", args: { path: "e.txt" }, ws: WS, expected: "write-workspace", note: "case-insensitive tool name" },
   { tool: "scratchpad_add", args: { text: "x" }, ws: WS, expected: "write-workspace", note: "scratchpad (no path)" },
+  { tool: "video_studio", args: { action: "cut", atSec: 5 }, ws: WS, expected: "write-workspace", note: "video_studio mutating action (no path)" },
+  { tool: "video_studio", args: { action: "import", path: "clip.mp4" }, ws: WS, expected: "write-workspace", note: "video_studio import inside workspace" },
+  // video_studio reuses from/to as time aliases, but they are also write-path
+  // keys, so a timecode like "1:30" is read as a relative path (write-workspace,
+  // harmless). Documented here so the coupling is visible if WRITE_PATH_KEYS changes.
+  { tool: "video_studio", args: { action: "trim", from: "0:00", to: "1:30" }, ws: WS, expected: "write-workspace", note: "video_studio from/to time aliases resolve as workspace paths" },
   // write-outside
   { tool: "file_write", args: { path: "../outside.txt" }, ws: WS, expected: "write-outside", note: "parent escape" },
   { tool: "file_edit", args: { path: "/etc/passwd" }, ws: WS, expected: "write-outside", note: "absolute outside" },
@@ -61,6 +67,21 @@ const CLASSIFICATION_CASES: Array<{ tool: string; args?: Record<string, unknown>
   { tool: "bash", args: { command: "format C:" }, expected: "destructive", note: "format" },
   { tool: "bash", args: { command: "reg add HKLM\\Software\\X /v Y /t REG_SZ /d 1" }, expected: "destructive", note: "registry edit" },
   { tool: "bash", args: { command: "echo hi && rm -rf /" }, expected: "destructive", note: "compound destructive" },
+  // Blast-radius classifier (stage 1) catches what the name-based denylist
+  // cannot see: a name it does not know, or a target it cannot name.
+  { tool: "bash", args: { command: "shred -u /etc/hosts" }, expected: "destructive", note: "shred (not in the denylist)" },
+  { tool: "bash", args: { command: "find / -name '*.tmp' -delete" }, expected: "destructive", note: "find -delete" },
+  { tool: "bash", args: { command: "dd if=/dev/zero of=/dev/sda" }, expected: "destructive", note: "dd of= a device" },
+  { tool: "bash", args: { command: "echo x > /etc/passwd" }, expected: "destructive", note: "truncating redirect outside the workspace" },
+  { tool: "bash", args: { command: "sudo rm -rf /var/data" }, expected: "destructive", note: "wrapper hides the destructive verb" },
+  { tool: "bash", args: { command: "Remove-Item -Recurse -Force $HOME\\Documents" }, expected: "destructive", note: "PowerShell home destruction" },
+  { tool: "bash", args: { command: "find ~ -type f | xargs rm" }, expected: "destructive", note: "piped delete hides its targets" },
+  // Routine commands the classifier leaves alone: the blast-radius stage must
+  // not make the common case ask. (`rm -rf dist` is already `destructive` from
+  // the name-based denylist above, which is pre-existing behavior.)
+  { tool: "bash", args: { command: "git status" }, expected: "exec", note: "read-only git stays exec" },
+  { tool: "bash", args: { command: "npm test" }, expected: "exec", note: "routine build stays exec" },
+  { tool: "bash", args: { command: "echo x > out.log" }, expected: "exec", note: "in-workspace redirect stays exec" },
   // network-external
   { tool: "web_fetch", args: { url: "https://example.com" }, expected: "network-external", note: "web_fetch" },
   { tool: "browser_open", args: { url: "https://example.com" }, expected: "network-external", note: "browser open" },

@@ -1,6 +1,7 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import crypto from "node:crypto";
 import { checkCommand, headOutput, tailOutput } from "../policy/commands.js";
+import { checkCommandRisk } from "../policy/commandRisk/index.js";
 import { resolveWrite } from "../policy/paths.js";
 import { currentCancelEpoch, isCancelled } from "../server/runControl.js";
 import { planVaultEnv, redactVaultValues, vaultScope } from "./vaultTools.js";
@@ -144,7 +145,7 @@ export const shellTools: Tool[] = [
   {
     name: "shell_run",
     description:
-      "Run a shell command once in the workspace and return exit code + stdout/stderr. Destructive commands are blocked by policy.",
+      "Run a single shell command in the workspace and get back its exit code plus captured stdout and stderr. Destructive commands are blocked by policy before execution, and {{vault:NAME}} references are resolved into the child environment and redacted from the returned output. Use cwd to run in a subdirectory (defaults to the workspace root), timeoutSeconds to bound it (the policy maximum is enforced), and env for extra variables. Independent read-only commands may be issued in parallel; keep mutating commands serial. When NOT to use: use shell_start/shell_write/shell_read for an interactive session, file_read/file_search for in-workspace files, and code_symbols instead of a shell grep; never pipe file contents through shell cat/type when file_read fits.",
     parameters: {
       type: "object",
       properties: {
@@ -162,6 +163,23 @@ export const shellTools: Tool[] = [
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
       const command = str(args, "command").trim();
       if (!command) return { ok: false, content: "command is required" };
+      // Stage 1 of the blast-radius gate: the jcode command-risk classifier
+      // first, for what a denylist cannot see, then the substring pattern list
+      // (cheap, catches things the structural classifier treats as opaque).
+      // Both are gates, so the order only changes the message; what must hold is
+      // the union: dropping either half opens a bypass.
+      const risk = checkCommandRisk(command, { workingDir: ctx.workspace });
+      if (risk.level === "Catastrophic") {
+        return { ok: false, content: `blocked by policy: ${risk.reason ?? "command risk is catastrophic"}` };
+      }
+      if (risk.level === "Confirm") {
+        return {
+          ok: false,
+          content: `requires approval: ${risk.reason ?? "command blast radius is outside the workspace"}\n`
+            + `To allow it once for this task, the user must approve it at the gate with a justification; `
+            + `a task-scoped rule cannot auto-approve this. Otherwise re-run the command inside the workspace.`,
+        };
+      }
       const check = checkCommand(ctx.cfg, command);
       if (!check.ok) return { ok: false, content: `blocked by policy: ${check.reason ?? "denied"}` };
       const rawEnv = strObj(args, "env");
@@ -209,7 +227,8 @@ export const shellTools: Tool[] = [
   },
   {
     name: "shell_start",
-    description: "Start a persistent interactive shell session (powershell or cmd) in a workspace directory. Returns a session id.",
+    description:
+      "Start a persistent interactive shell session (powershell or cmd) in a workspace directory and get a session id back. Use it when you need a stateful shell — a long-running server, a REPL, or a command whose environment must survive across steps. Drive it with shell_write to send input and shell_read to collect output, and end it with shell_kill. Independent sessions may run concurrently. When NOT to use: use shell_run for a one-shot command that finishes on its own, and always kill a session when the task ends rather than leaving it running.",
     parameters: {
       type: "object",
       properties: {
@@ -240,7 +259,8 @@ export const shellTools: Tool[] = [
   },
   {
     name: "shell_write",
-    description: "Send a line of input to a persistent shell session (a newline is appended).",
+    description:
+      "Send a line of input to a persistent shell session started with shell_start; a newline is appended automatically. The input is still checked against policy before it is written. Use it to drive an interactive program step by step, then follow with shell_read to see what happened. When NOT to use: use shell_run for a self-contained command, and shell_start to create the session before writing to it.",
     parameters: {
       type: "object",
       properties: {
@@ -256,13 +276,25 @@ export const shellTools: Tool[] = [
       const input = str(args, "input");
       const check = checkCommand(ctx.cfg, input);
       if (!check.ok) return { ok: false, content: `blocked by policy: ${check.reason ?? "denied"}` };
+      const risk = checkCommandRisk(input, { workingDir: session.cwd });
+      if (risk.level === "Catastrophic") {
+        return { ok: false, content: `blocked by policy: ${risk.reason ?? "command risk is catastrophic"}` };
+      }
+      if (risk.level === "Confirm") {
+        return {
+          ok: false,
+          content: `requires approval: ${risk.reason ?? "command blast radius is outside the workspace"}\n`
+            + `Run this in a one-shot shell_run call the user can approve instead.`,
+        };
+      }
       session.child.stdin.write(`${input}\n`);
       return { ok: true, content: `sent to ${id}` };
     },
   },
   {
     name: "shell_read",
-    description: "Read any new output from a persistent shell session since the last read (waits up to waitMs).",
+    description:
+      "Read any output a persistent shell session has produced since your last read, waiting up to waitMs (default 700, maximum 10000) for new data. Use it after shell_write to collect results, or on its own to poll a long-running process. The buffer is consumed, so each call returns only fresh output while the session keeps its own history. When NOT to use: use shell_run for one-shot output, shell_list to enumerate sessions, and shell_kill to terminate one.",
     parameters: {
       type: "object",
       properties: {
@@ -288,7 +320,8 @@ export const shellTools: Tool[] = [
   },
   {
     name: "shell_list",
-    description: "List active persistent shell sessions.",
+    description:
+      "List the active persistent shell sessions with their id, shell and working directory. Use it to recover a session id you have lost track of, or to check for sessions that should be cleaned up before the task ends. It is a cheap read and may be batched with other reads. When NOT to use: use shell_read/shell_write to interact with a known session, shell_start to create one, and shell_kill to end one.",
     parameters: { type: "object", properties: {} },
     async run(): Promise<ToolResult> {
       if (sessions.size === 0) return { ok: true, content: "(no active sessions)" };
@@ -297,7 +330,8 @@ export const shellTools: Tool[] = [
   },
   {
     name: "shell_kill",
-    description: "Terminate a persistent shell session.",
+    description:
+      "Terminate a persistent shell session and free its resources. Use it when a session is no longer needed or has stalled, and always when a task finishes with a session still open. It is a mutating effect. When NOT to use: use shell_read to drain the final output first if you need it, and shell_list to confirm the id before killing.",
     parameters: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
     async run(args: Record<string, unknown>): Promise<ToolResult> {
       const id = str(args, "id");

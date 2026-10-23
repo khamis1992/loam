@@ -271,9 +271,13 @@ function toFailureInput(err: unknown): FailureInput {
 const defaultNow = (): number => Date.now();
 const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Chat request for the failover loop. `model` is ignored: each provider supplies
+ *  its own model via `providerModel`. */
+export type FailoverChatRequest = Omit<ChatOptions, "model"> & { model?: string };
+
 export interface ChatWithFailoverOptions {
   providers: FailoverProvider[];
-  chat: ChatOptions;
+  chat: FailoverChatRequest;
   store?: CooldownStore;
   env?: Record<string, string | undefined>;
   now?: () => number;

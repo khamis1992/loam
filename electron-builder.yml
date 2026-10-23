@@ -30,19 +30,25 @@ files:
   - "!node_modules/**/prebuilds/win32-arm64/**/*"
   - "!node_modules/**/win10-arm64/**/*"
 asar: true
+# Only files that must be real on disk are unpacked: native addons and the
+# helper binaries/DLLs they load (node-pty conpty/winpty, sharp libvips).
+# The server and MCP bridge run from inside app.asar via utilityProcess.fork.
 asarUnpack:
   - "**/*.node"
+  - "**/node_modules/node-pty/**/*"
+  - "**/node_modules/@img/**/*"
+  - "**/node_modules/sharp/**/*"
 afterPack: ./electron/afterPack.cjs
 # electron-builder's dependency collector excludes directories named examples.
 # Three.js ships its runtime controls/loaders/exporters in examples/jsm.
 extraResources:
   - from: node_modules/ffmpeg-static
-    to: app/node_modules/ffmpeg-static
+    to: app.asar.unpacked/node_modules/ffmpeg-static
     filter:
       - "ffmpeg.exe*"
       - "LICENSE"
   - from: node_modules/three/examples/jsm
-    to: app/node_modules/three/examples/jsm
+    to: app.asar.unpacked/node_modules/three/examples/jsm
     filter:
       - "**/*.js"
 npmRebuild: false

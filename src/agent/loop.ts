@@ -1,23 +1,53 @@
 import type { Config } from "../config.js";
-import type { OllamaClient, ChatMessage } from "../ollama.js";
-import type { Emit, Usage, ToolTraceItem } from "./events.js";
+import type { ChatResult, OllamaClient, ChatMessage } from "../ollama.js";
+import type { Emit, Usage, ToolTraceItem, TodoItem, TodoStatus } from "./events.js";
 import { verifyFinal } from "./verifier.js";
 import { AcceptanceGuard } from "./acceptanceGuard.js";
 import { IndependentAcceptanceGuard, independentRequirements } from "./independentAcceptance.js";
 import { taskScopedTools } from "./taskToolScope.js";
-import { buildSystemPrompt, loadSkills } from "./prompt.js";
-import { SKILLS_DIR } from "../config.js";
+import { buildSystemPrompt } from "./prompt.js";
+import { loadProjectSkills } from "../tools/skills.js";
 import type { WorkerCheckpoint } from "./checkpoint.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { chatWithFallback } from "./model.js";
+import { chatWithCodingRouter, isCodingTurn } from "../llm/codingRouter.js";
+import { chatWithRouting } from "../tools/routingModel.js";
+import {
+  effortStepBudget,
+  isOutputType,
+  normalizeEffort,
+  outputTypeSuffix,
+  outputTypeTools,
+  type EffortLevel,
+  type OutputType,
+} from "../llm/router.js";
+import { isEditTool, recordEditModel } from "../llm/modelAudit.js";
+import type { CooldownStore, FailoverProvider, ProviderClient } from "../llm/failover.js";
 import { createStallGuard } from "./stallGuard.js";
+import { ciWatchEscalationNotice } from "./ciWatchLoop.js";
 import { compressContext } from "./contextCompressor.js";
-import { throwIfCancelled } from "../server/runControl.js";
+import { runLifecycleHooks, wrapHookContext } from "../policy/hooks.js";
+import { throwIfCancelled, isCancelled } from "../server/runControl.js";
+import { openSession, closeSession } from "./sessionHooks.js";
 import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/riskTier.js";
 import { ReminderChannel, TODO_UPDATE_TOOLS, MEMORY_UPDATE_TOOLS, type ReminderChannelOptions } from "./reminders.js";
 import { getTaskPhase } from "../tools/phaseTools.js";
 import { ReadState } from "../tools/readState.js";
+import { checkBudget, consumeSteps, consumeTokens, type ComputeBudget } from "./computeBudget.js";
+import { KvCacheMonitor, missMessage, type RequestRoute, type RequestSignature } from "./kvCacheMonitor.js";
+import { addUsage } from "./usageAccounting.js";
+import { log } from "../log.js";
+import { addRunSiblings, getRunNodes } from "./runGraphAdapter.js";
+import { eventNodeId } from "../graph/store.js";
+import { admitPending, hasPending, type QueuedInput } from "../server/inputQueue.js";
 
+/** Neo N10 A/B: the run's root node is the natural parent of its sibling arms. */
+function siblingParentFor(opts: RunOptions): string {
+  const taskId = opts.taskId ?? "";
+  const root = getRunNodes(taskId).find((node) => node.type === "question");
+  if (root) return root.id;
+  return eventNodeId("run", taskId);
+}
 export interface RunOptions {
   cfg: Config;
   ollama: OllamaClient;
@@ -35,6 +65,9 @@ export interface RunOptions {
   systemSuffix?: string;
   /** Overrides cfg.agent.maxSteps for this run (orchestrator workers get a tighter budget). */
   maxSteps?: number;
+  /** Preferred model for this run. Used by the quick-edit route to send a
+   *  narrow edit to the fast model; defaults to cfg.model. */
+  model?: string;
   /** Skip the terminal assistant_message/done events (the orchestrator emits its own). */
   suppressFinal?: boolean;
   /** Subagent delegation depth for this run (0 = top-level). */
@@ -47,11 +80,53 @@ export interface RunOptions {
   saveWorker?: (checkpoint: WorkerCheckpoint | undefined) => void;
   /** Resolved sandbox mode for this run; rendered into the system prompt. */
   sandboxMode?: SandboxMode;
+  /** D19: per-session compute budget (steps/tokens) enforced inside this run.
+   *  The runtime store owns the counters; the loop only consults it. */
+  budget?: ComputeBudget;
+  /** Internal seam for the coding-model router: builds the client for one
+   *  failover provider. Defaults to the real provider client (network). Tests
+   *  inject a fake so routing can be verified without contacting a model. */
+  createProviderClient?: (provider: FailoverProvider) => ProviderClient;
+  /** Internal seam: persisted failover cooldown store. Defaults to the on-disk
+   *  store. Tests inject an in-memory store so a failed provider never leaves a
+   *  process-wide cooldown behind. */
+  cooldownStore?: CooldownStore;
+  /** Internal seam: environment used to resolve provider keys. Defaults to
+   *  `process.env`; tests inject a fake env so no real key is read. */
+  env?: Record<string, string | undefined>;
+  /** Called once per model call with the resolved coding model and chain. */
+  onCodingRoute?: (info: { model: string; chain: string[]; providerId?: string }) => void;
   /** Shared reminder channel. Callers may push external file changes or memory
    *  updates into it; the loop appends due reminders as hidden user messages. */
   reminderChannel?: ReminderChannel;
   /** Overrides the stale-todo threshold and initial plan mode for this run. */
   reminders?: ReminderChannelOptions;
+  /** Provider label used for prompt-cache classification (`openai-api` for
+   *  cloud routes, `ollama` for the local endpoint). Defaults to `ollama`. */
+  provider?: string;
+  /** Expected prompt-cache retention in seconds, when known. */
+  cacheTtlSecs?: number;
+  /** Whether `cacheTtlSecs` is only an estimate (never treated as hard expiry). */
+  cacheTtlIsEstimate?: boolean;
+  /** OAuth account label bound to every request of this run; caches are per account. */
+  account?: string;
+  /** Neo N10: the composer's output type (Auto/Text/Image/Video/Slides/Website). */
+  outputType?: OutputType | "";
+  /** Neo N10: the composer's effort level (Fast/Max). */
+  effort?: EffortLevel | "";
+  /** Neo N10: also run the same prompt on 2-4 other models as sibling canvas nodes. */
+  abModels?: string[];
+  /** Neo N10: create the A/B sibling nodes on this parent node of the run graph. */
+  abParentNodeId?: string;
+  /**
+   * O6 durable input queue: a user message sent while this run is busy is stored
+   * as `received` and admitted here, at a step boundary, so it is never lost.
+   * The hook appends the `input` event and returns the admitted messages; a
+   * failure must never break the run, so the caller swallows and logs it.
+   */
+  onAdmitPending?: (sessionId: string) => QueuedInput[];
+  /** Session id whose queued messages this run should admit (defaults to taskId). */
+  inputSessionId?: string;
 }
 
 export interface RunResult {
@@ -64,9 +139,74 @@ export interface RunResult {
   usage: Usage;
 }
 
+/** Deterministic 32-bit FNV-1a hash; stable across processes for the same input. */
+function hashText(text: string): number {
+  let hash = 2_166_136_261;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16_777_619) >>> 0;
+  }
+  return hash >>> 0;
+}
+
+/** Prompt-shape signature for one provider request: anything that invalidates
+ *  the cached prefix changes one of these hashes. */
+function requestSignature(
+  system: string,
+  tools: Array<{ function: { name: string; description: string; parameters: unknown } }>,
+  messages: ChatMessage[],
+): RequestSignature {
+  const messageHashes = messages.map((m) =>
+    hashText(`${m.role}\u0000${m.content}\u0000${JSON.stringify(m.tool_calls ?? null)}\u0000${m.tool_name ?? ""}`),
+  );
+  return {
+    systemStaticHash: hashText(system),
+    toolsHash: hashText(JSON.stringify(tools)),
+    toolCount: tools.length,
+    messagesHash: messages.reduce((sum, _, i) => sum + messageHashes[i]!, 0) >>> 0,
+    messageHashes,
+    messageCount: messages.length,
+  };
+}
+
 function normalizeArgs(v: unknown): Record<string, unknown> {
   if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
   return {};
+}
+
+/** Best-effort target path for an edit tool call (never the full arguments). */
+function editTargetPath(args: Record<string, unknown>): string | undefined {
+  for (const key of ["path", "file", "filePath", "target", "old_path", "from"]) {
+    const value = args[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+/** Attribute a workspace edit to the model that produced it. No-op when the
+ *  operator disabled edit auditing through `coding.logEdits`. */
+function auditEdit(name: string, args: Record<string, unknown>, model: string, ok: boolean, step: number, enabled: boolean, taskId?: string): void {
+  if (!enabled || !isEditTool(name)) return;
+  recordEditModel({ taskId, step, model, tool: name, path: editTargetPath(args), ok });
+}
+
+/**
+ * Route metadata for the prompt-cache classifier: a `:cloud` model hits a remote
+ * OpenAI-compatible upstream (whose cache is what a miss measures), and a
+ * non-cloud model hits the local endpoint, which never reports cache telemetry.
+ * The remote provider's TTL is an estimate, so it is never treated as hard expiry.
+ */
+export function providerRouteFor(model: string, provider: string | undefined): RequestRoute {
+  // The client asks for `glm-5.3:cloud` but the provider echoes the real model
+  // (`glm-5.3:flash:cloud`). Drop the routing suffix so an echoed name and a
+  // genuine model change are told apart. Either side ending in `:cloud` marks the
+  // remote upstream, so a model echo can never flip a route to the local one.
+  const cloudId = model.endsWith(":cloud") ? model.slice(0, -":cloud".length) : model;
+  const isCloud = model.endsWith(":cloud") || cloudId !== model;
+  // The remote upstream serves the cache either way, so classify an echoed
+  // `:cloud` model as cloud too (the local route has no cache telemetry).
+  if (!isCloud) return { provider: "ollama", model: cloudId };
+  return { provider: provider ?? "openai-api", model: cloudId, cacheTtlSecs: 1_800, ttlIsEstimate: true };
 }
 
 function summarize(text: string, lines = 10): string {
@@ -112,17 +252,43 @@ async function mapWithConcurrency<T, R>(
 
 export async function runAgent(opts: RunOptions): Promise<RunResult> {
   if (!opts.suppressFinal) opts = { ...opts, tools: taskScopedTools(opts.tools, opts.prompt, opts.history) };
+  // Neo N10: resolve the composer's selectors once, before anything is built.
+  // An unrecognized value degrades to the pre-N10 behaviour (auto / unset).
+  const outputType: OutputType = isOutputType(opts.outputType) ? opts.outputType : "auto";
+  const effortLevel = normalizeEffort(opts.effort ?? "");
+  if (effortLevel) opts = { ...opts, maxSteps: opts.maxSteps ?? effortStepBudget(effortLevel) };
+  // An output type pins the run to its pipeline: only the tools that can produce
+  // that deliverable stay in the registry, so a Slides run cannot drift into a
+  // file-writing detour. `auto` keeps the whole run scope untouched.
+  if (outputType !== "auto") {
+    const wanted = outputTypeTools(outputType, opts.tools.names());
+    if (wanted.length > 0) opts = { ...opts, tools: opts.tools.forAllowlist(wanted) };
+  }
   const acceptanceGuard = new AcceptanceGuard(undefined, opts.suppressFinal ? undefined : opts.prompt);
   const independentRequest = independentRequirements(opts.prompt, opts.history);
   const independentGuard = new IndependentAcceptanceGuard(independentRequest);
   const baseSystem =
     opts.systemOverride ??
-    buildSystemPrompt(opts.cfg, loadSkills(SKILLS_DIR), opts.tools.names(), opts.memories ?? [], undefined, opts.sandboxMode);
+    buildSystemPrompt(
+      opts.cfg,
+      loadProjectSkills(opts.cfg.workspace).skills,
+      opts.tools.names(),
+      opts.memories ?? [],
+      undefined,
+      opts.sandboxMode,
+      undefined,
+      opts.prompt,
+    );
   const system =
     opts.systemSuffix && opts.systemSuffix.trim().length > 0
       ? `${baseSystem}\n\n${opts.systemSuffix.trim()}`
       : baseSystem;
-  let messages: ChatMessage[] = [{ role: "system", content: system }];
+  // Neo N10: the output type is a binding constraint, so it is appended after
+  // every other suffix (including an agent's own instructions) rather than
+  // before them. `auto` adds nothing, which keeps pre-N10 prompts byte-identical.
+  const outputInstruction = outputTypeSuffix(outputType);
+  const routingSystem = outputInstruction ? `${system}\n\n${outputInstruction}` : system;
+  let messages: ChatMessage[] = [{ role: "system", content: routingSystem }];
 
   if (opts.history && opts.history.length > 0) {
     // History selection already preserves user constraints under its explicit
@@ -133,13 +299,40 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   messages.push({ role: "user", content: opts.prompt });
 
   let finalText = "";
-  let usedModel = opts.cfg.model;
+  let usedModel = opts.model && opts.model.trim() ? opts.model.trim() : opts.cfg.model;
   let step = 0;
-  const usage = { promptTokens: 0, completionTokens: 0, durationMs: 0 };
+  // How this run actually ended, so SessionEnd can report a truthful reason
+  // instead of a blanket "failed".
+  let endedReason: "completed" | "cancelled" | "failed" = "failed";
+  const usage: Usage = { promptTokens: 0, completionTokens: 0, durationMs: 0 };
+  // Prompt-cache (KV) accounting: classify a miss whenever a meaningful part of
+  // the previously reusable prefix was not read back.
+  const cacheMonitor = new KvCacheMonitor();
   const trace: ToolTraceItem[] = [];
+  // Neo N10: the last tool this run asked for, so the next model call can take
+  // the per-tool routing entry when one is configured. Cleared each step.
+  let lastToolCallName: string | null = null;
+  // Neo N10 multi-model A/B: the sibling arms of this run. Created once, right
+  // after the run's root node exists, so the canvas shows the same prompt fanned
+  // out to several models before any of them answers.
+  const siblingArms = opts.abModels ?? [];
   let verificationAttempts = 0;
   let emptyAnswerRecoveries = 0;
   const stallGuard = createStallGuard();
+  // Neo N10 A/B: one sibling node per model, hanging off the parent node (the
+  // run's root unless the caller named another). Recording must never break the
+  // task, so a graph failure is logged and the run continues without arms.
+  if (siblingArms.length > 0 && !opts.suppressFinal) {
+    try {
+      const created = addRunSiblings(opts.taskId ?? "", opts.abParentNodeId ?? siblingParentFor(opts), siblingArms);
+      for (const arm of created) {
+        const model = (arm.data as { model?: string } | undefined)?.model ?? "";
+        opts.emit({ type: "assistant_message", text: `A/B arm started on ${model}.` });
+      }
+    } catch (err) {
+      log.warn(`A/B siblings not recorded: ${String(err)}`);
+    }
+  }
   const restored = opts.resumeWorker;
   if (restored) {
     if (!opts.suppressFinal || restored.prompt !== opts.prompt) throw new Error("Worker checkpoint does not match this execution");
@@ -153,6 +346,10 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // The tool names this run may use. Tools that fan out to child agents read
   // it from the tool context so a child never exceeds the parent's reach.
   const runAllowedTools = opts.tools.names();
+  // Coding turns route through the strongest coder in the configured chain.
+  const routeCoding = opts.cfg.coding?.enabled !== false && isCodingTurn(opts.prompt, opts.history);
+  // Edit attribution is on by default and can be disabled per config.
+  const auditEdits = opts.cfg.coding?.logEdits !== false;
   // Harness reminders (stale todo list, external file change, plan mode, memory
   // update) are injected as hidden user-role blocks. They are never emitted as
   // events, so the UI cannot render them.
@@ -161,10 +358,51 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // so the model cannot blind-edit content it never saw or clobber a file that
   // changed since it was read. A fresh instance per run matches Claude Code.
   const readState = new ReadState();
+  // O6: the session whose inbound queue this run drains at step boundaries.
+  const inputSessionId = opts.inputSessionId ?? opts.taskId;
+  /**
+   * Admit any message the user sent while this run was busy. Best-effort: a
+   * failure to reach the queue must never fail the run.
+   */
+  const admitPendingInputs = (): void => {
+    if (!inputSessionId || !opts.onAdmitPending) return;
+    try {
+      if (!hasPending(inputSessionId)) return;
+      opts.onAdmitPending(inputSessionId);
+    } catch (error) {
+      opts.emit({ type: "error", message: `failed to admit a queued message: ${error instanceof Error ? error.message : String(error)}` });
+    }
+  };
+  // The model's live task list, mirrored here so a compaction can re-attach it
+  // as a hidden reminder after the conversation is folded away.
+  let currentTodos: TodoItem[] = [];
+  const workspace = opts.cfg.workspace;
+
+  try {
+    // SessionStart and UserPromptSubmit fire once per run, before any model call.
+    // A block prevents the run from starting; additionalContext is injected as a
+    // tagged user message (never rendered by the UI as user input). They run here
+    // so a hook that stops the run still produces a SessionEnd notification.
+    if (!opts.suppressFinal) {
+      const session = await openSession({ workspace, prompt: opts.prompt, signal: opts.signal, taskId: opts.taskId, enabled: true });
+      if (session.injected) messages.push({ role: "user", content: session.injected });
+    }
 
   for (step = (restored?.steps ?? 0) + 1; step <= maxSteps; step++) {
     // Stop immediately when the user pressed the cancel button (checked between every step).
     throwIfCancelled(opts.signal, opts.taskId);
+    // D19 compute budget: consult BEFORE the step runs so the first crossing
+    // of the ceiling stops the run instead of burning one more step.
+    const budgetDecision = opts.budget ? checkBudget(opts.budget) : { action: "allow" as const };
+    if (budgetDecision.action === "stop") {
+      const msg = `${budgetDecision.reason}. Raise the session budget to continue.`;
+      opts.emit({ type: "error", message: msg });
+      throw new Error(msg);
+    }
+    if (opts.budget) consumeSteps(opts.budget, 1);
+    // O6: a step boundary is the safe place to pick up messages that arrived
+    // while the previous step (or the whole run) was busy.
+    admitPendingInputs();
     opts.emit({ type: "step", index: step });
     opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
 
@@ -172,33 +410,116 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     if (opts.taskId) reminders.setPlanMode(getTaskPhase(opts.taskId) === "plan");
     for (const message of reminders.drainMessages(step)) messages.push(message);
 
+    let providerCompaction = false;
     if (opts.cfg.compression.enabled) {
-      const compressed = await compressContext(opts.cfg, opts.ollama, messages, opts.emit, opts.signal);
+      const compressed = await compressContext(opts.cfg, opts.ollama, messages, opts.emit, opts.signal, { readState, todos: currentTodos, model: usedModel });
       if (compressed.compressed) {
         messages = compressed.messages;
+        providerCompaction = true;
         usage.promptTokens += compressed.usage.promptTokens;
         usage.completionTokens += compressed.usage.completionTokens;
         usage.durationMs += compressed.usage.durationMs;
       }
+      // Re-attach recent file reads and the live task list as hidden reminders.
+      for (const reminder of compressed.reminders) messages.push(reminder);
     }
 
-    const result = await chatWithFallback({
-      cfg: opts.cfg,
-      ollama: opts.ollama,
+    const requestTools = opts.tools.toOllama();
+    // Neo N10: the tool about to be called can narrow the model for this
+    // request only. `null` means "not yet known", so the run's own plan applies.
+    const routingTool: string | null = lastToolCallName;
+    const route: RequestRoute = {
+      ...providerRouteFor(usedModel, opts.provider),
+      ...(opts.account ? { account: opts.account } : {}),
+      ...(opts.cacheTtlSecs !== undefined ? { cacheTtlSecs: opts.cacheTtlSecs } : {}),
+      ...(opts.cacheTtlIsEstimate !== undefined ? { ttlIsEstimate: opts.cacheTtlIsEstimate } : {}),
+    };
+    cacheMonitor.beginRequest(route, requestSignature(routingSystem, requestTools, messages));
+
+    const chatRequest = {
+      model: opts.cfg.model,
       messages,
-      tools: opts.tools.toOllama(),
+      tools: requestTools,
       temperature: opts.cfg.agent.temperature,
-      signal: opts.signal,
-      // Buffer candidate answers: streaming an unverified success claim would
-      // expose a result that the completion gate may subsequently reject.
-      notify: (message) => opts.emit({ type: "error", message }),
-    });
+      // An explicit per-run model (the quick-edit route) wins over the config
+      // default; the router still replaces it with the strongest coder on a
+      // coding turn.
+      ...(opts.model && opts.model.trim() ? { model: opts.model.trim() } : {}),
+      ...(opts.signal ? { signal: opts.signal } : {}),
+    };
+    // Neo N10: one dispatch point. A mapped route (per-tool, then effort) takes
+    // precedence; otherwise the existing coding-turn routing applies, and a run
+    // with no map at all keeps the plain fallback chain it had before N10.
+    const result: ChatResult = routeCoding
+      ? await chatWithCodingRouter({
+          cfg: opts.cfg,
+          chat: chatRequest,
+          fallback: opts.ollama,
+          env: opts.env,
+          store: opts.cooldownStore,
+          createClient: opts.createProviderClient,
+          onRoute: opts.onCodingRoute,
+        })
+      : await chatWithRouting({
+          cfg: opts.cfg,
+          ollama: opts.ollama,
+          messages,
+          tools: requestTools,
+          temperature: opts.cfg.agent.temperature,
+          timeoutMs: opts.cfg.agent.requestTimeoutMs,
+          ...(opts.signal ? { signal: opts.signal } : {}),
+          ...(opts.model && opts.model.trim() ? { model: opts.model.trim() } : {}),
+          ...(outputType !== "auto" ? { outputType } : {}),
+          ...(effortLevel ? { effort: effortLevel } : {}),
+          ...(routingTool ? { tool: routingTool } : {}),
+          env: opts.env,
+          store: opts.cooldownStore,
+          createClient: opts.createProviderClient,
+          // Buffer candidate answers: streaming an unverified success claim would
+          // expose a result that the completion gate may subsequently reject.
+          notify: (message) => opts.emit({ type: "error", message }),
+        });
     throwIfCancelled(opts.signal, opts.taskId);
     usedModel = result.model;
-    usage.promptTokens += result.usage.promptTokens;
-    usage.completionTokens += result.usage.completionTokens;
-    usage.durationMs += result.usage.durationMs;
+    if (providerCompaction) cacheMonitor.noteProviderCompaction();
+    // Reusable boundary = cached reads plus cache writes (uncached input is not
+    // reusable). Providers with no cache telemetry report neither field.
+    const readTokens = result.usage.cachedTokens;
+    const reusableCacheTokens = (readTokens ?? 0) + (result.usage.cacheWriteTokens ?? 0);
+    addUsage(usage, result.usage);
+    // D19 compute budget: model tokens are real work, so they count against the
+    // session ceiling too (addUsage already tallied the same numbers above).
+    if (opts.budget) consumeTokens(opts.budget, result.usage.promptTokens, result.usage.completionTokens);
+    if (opts.budget && checkBudget(opts.budget).action === "warn") {
+      opts.emit({ type: "error", message: "Compute budget is close to its ceiling; consider raising it." });
+    }
     opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
+    const miss = cacheMonitor.finishRequest(reusableCacheTokens, readTokens);
+    // Emit the accounting row for every request that reported cache telemetry so
+    // the reusable-token counters stay visible; `miss` is attached only when the
+    // classifier found a real cold-cache event. Providers that omit the fields
+    // (e.g. local Ollama) emit nothing, and absent telemetry is never a miss.
+    if (readTokens !== undefined) {
+      opts.emit({
+        type: "cache_usage",
+        provider: route.provider,
+        model: usedModel,
+        promptTokens: result.usage.promptTokens,
+        cachedTokens: readTokens ?? 0,
+        ...(miss
+          ? {
+              miss: {
+                reason: miss.reason,
+                expectedTokens: miss.expectedTokens,
+                readTokens: miss.readTokens,
+                missedTokens: miss.missedTokens,
+                ...(miss.documentedCause ? { documentedCause: miss.documentedCause } : {}),
+                message: missMessage(miss),
+              },
+            }
+          : {}),
+      });
+    }
 
     if (result.toolCalls.length === 0) {
       finalText = result.content.trim();
@@ -213,11 +534,22 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         continue;
       }
       if (opts.suppressFinal !== true) {
+        // Stop: a hook may force the agent to continue for another step.
+        const stop = await runLifecycleHooks("Stop", "", { stopReason: "completed" }, workspace);
+        if (stop.blocked) {
+          messages.push({ role: "assistant", content: finalText });
+          messages.push({
+            role: "user",
+            content: `Stop hook blocked completion${stop.message ? `: ${stop.message}` : ""}. Continue working toward the original request; do not claim completion yet.`,
+          });
+          continue;
+        }
+        if (stop.additionalContext) {
+          messages.push({ role: "user", content: wrapHookContext(stop.additionalContext) });
+        }
         const checked = await verifyFinal({ acceptanceGuard, independentGuard, independentRequest, cfg: opts.cfg, ollama: opts.ollama, request: opts.prompt, goal: opts.prompt, finalText, completedSteps: [], trace,
           history: opts.history, tools: opts.tools, emit: opts.emit, signal: opts.signal, taskId: opts.taskId });
-        usage.promptTokens += checked.usage.promptTokens;
-        usage.completionTokens += checked.usage.completionTokens;
-        usage.durationMs += checked.usage.durationMs;
+        addUsage(usage, checked.usage);
         throwIfCancelled(opts.signal, opts.taskId);
         opts.emit({ type: "verify", verdict: checked.verdict, reason: checked.reason });
         verificationAttempts++;
@@ -231,6 +563,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         finalText = checked.finalAnswer ?? finalText;
         opts.emit({ type: "assistant_message", text: finalText });
         opts.emit({ type: "done", text: finalText, steps: step, model: usedModel });
+        endedReason = "completed";
       }
       return { text: finalText, messages, steps: step, model: usedModel, usage, verified: opts.suppressFinal !== true };
     }
@@ -266,6 +599,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.emit({ type: "tool_call", name, args });
         return { name, args, t0: Date.now() };
       });
+      // Neo N10: remember the batch's tool so the next request can honour a
+      // per-tool routing entry. Parallel reads share one tool, so this is exact.
+      lastToolCallName = prepared.length === 1 ? prepared[0]!.name : null;
       const batchResults = await mapWithConcurrency(prepared, PARALLEL_READ_LIMIT, (item) =>
         opts.tools.exec(item.name, item.args, {
           cfg: opts.cfg,
@@ -284,9 +620,15 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         const evidence = { name: item.name, args: item.args, ok: toolResult.ok, summary: toolResult.content };
         trace.push(evidence);
         opts.onToolEvidence?.(evidence);
+        auditEdit(item.name, item.args, usedModel, toolResult.ok, step, auditEdits, opts.taskId);
         const notice = stallGuard(item.name, item.args, toolResult.ok);
         if (notice) stallNotices.push(notice);
-        if (TODO_UPDATE_TOOLS.has(item.name) && toolResult.ok) reminders.noteTodoUpdate(step);
+        const ciNotice = ciWatchEscalationNotice(toolResult.content);
+        if (ciNotice) stallNotices.push(ciNotice);
+        if (TODO_UPDATE_TOOLS.has(item.name) && toolResult.ok) {
+          reminders.noteTodoUpdate(step);
+          currentTodos = parseTaskList(item.name, item.args);
+        }
         if (MEMORY_UPDATE_TOOLS.has(item.name) && toolResult.ok) reminders.memoryUpdated();
         opts.emit({
           type: "tool_result",
@@ -304,6 +646,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         const name = call.function?.name ?? "";
         const args = normalizeArgs(call.function?.arguments);
         opts.emit({ type: "tool_call", name, args });
+        lastToolCallName = name;
 
         const t0 = Date.now();
         const toolResult = await opts.tools.exec(name, args, {
@@ -321,9 +664,15 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         const evidence = { name, args, ok: toolResult.ok, summary: toolResult.content };
         trace.push(evidence);
         opts.onToolEvidence?.(evidence);
+        auditEdit(name, args, usedModel, toolResult.ok, step, auditEdits, opts.taskId);
         const notice = stallGuard(name, args, toolResult.ok);
         if (notice) stallNotices.push(notice);
-        if (TODO_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.noteTodoUpdate(step);
+        const ciNotice = ciWatchEscalationNotice(toolResult.content);
+        if (ciNotice) stallNotices.push(ciNotice);
+        if (TODO_UPDATE_TOOLS.has(name) && toolResult.ok) {
+          reminders.noteTodoUpdate(step);
+          currentTodos = parseTaskList(name, args);
+        }
         if (MEMORY_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.memoryUpdated();
         messages.push({ role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) });
         // Cancel pressed while the tool ran? Stop before the next tool/step.
@@ -354,4 +703,50 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   const msg = `stopped after ${maxSteps} steps without finishing`;
   opts.emit({ type: "error", message: msg });
   throw new Error(msg);
+  } finally {
+    // SessionEnd fires once the run reaches any terminal state (completed,
+    // cancelled or failed) for a top-level run. The reason is the real
+    // outcome, so a hook can tell a cancelled or failed session apart from a
+    // completed one instead of always seeing "completed".
+    if (!opts.suppressFinal) {
+      // Cancellation is detected here: a run may be aborted before the loop ever
+      // assigns a reason, in which case the real outcome is "cancelled".
+      if (opts.signal?.aborted || isCancelled(opts.taskId)) endedReason = "cancelled";
+      await closeSession(workspace, endedReason);
+    }
+  }
+}
+
+/**
+ * Mirror the live task list the model just sent into the run-local copy used for
+ * post-compaction re-attachment. Two tools maintain that list, with different
+ * shapes: `todo_write` sends `{ todos: [{ content, status }] }` and `plan` sends
+ * `{ steps: [{ title, status? }] }` with statuses in a different vocabulary.
+ * Parsing is best-effort: a malformed list leaves the previous mirror in place
+ * rather than throwing.
+ */
+export function parseTaskList(toolName: string, args: Record<string, unknown>): TodoItem[] {
+  const raw = args.todos ?? args.steps;
+  if (!Array.isArray(raw)) return [];
+  const items: TodoItem[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    const content = typeof record.content === "string" ? record.content.trim()
+      : typeof record.title === "string" ? record.title.trim() : "";
+    if (!content) continue;
+    const status = normalizeTodoStatus(String(record.status ?? ""), toolName);
+    items.push({ id: `todo-${items.length}`, content, status });
+  }
+  return items.length > 0 ? items : [];
+}
+
+/** Fold the `plan` tool's status vocabulary onto the todo one. */
+function normalizeTodoStatus(status: string, toolName: string): TodoStatus {
+  if (toolName === "plan") {
+    if (status === "doing") return "in_progress";
+    if (status === "done") return "completed";
+  }
+  if (status === "pending" || status === "in_progress" || status === "completed") return status;
+  return "pending";
 }

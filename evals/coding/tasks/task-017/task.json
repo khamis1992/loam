@@ -1,0 +1,11 @@
+{
+  "id": "task-017",
+  "title": "Fix TypeScript function return type",
+  "category": "bug-fix",
+  "language": "typescript",
+  "prompt": "`describeScore` in `src/scores.ts` is declared to return `string`, but its last branch returns the numeric score instead of a label. Return the label `\"poor\"` for scores below 50 so every branch yields a string. Do not change the thresholds or the function name.",
+  "testCommand": "node .eval/check.mjs",
+  "timeoutSec": 60,
+  "maxSteps": 12,
+  "tags": ["return-type", "branch"]
+}
