@@ -1,3 +1,47 @@
+## cr-03 gate-fix session: merge with manus-parity (O6 tip 603d71c), all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+### The failure that was fixed
+`git merge manus-parity` (parity tip `603d71c`, the O6 merge that added `eventLogMigrate`
+and `inputQueue`) conflicted in exactly ONE file: the tracked rollup marker `.jdone`
+(add/add). No source file conflicted and no source file needed editing. Every other file
+auto-merged cleanly with the `ort` strategy.
+
+### Root cause
+Both branches prepend a new report section at the same top-of-file anchor in the tracked
+rollup marker `.jdone`, so Git cannot pick a side and emits an add/add conflict. The
+conflict is bookkeeping-only; it is not a code divergence.
+
+### What was done
+- Extracted both sides with `git show :2:.jdone` (ours) and `git show :3:.jdone` (theirs).
+- Resolved the 4 conflict hunks by keeping BOTH sides, with CRLF normalized before matching
+  (`/^<<<<<<< /`, `/^=======$/`, `/^>>>>>>> /`).
+- Verified mechanically: 0 line-start conflict markers; the resolved `.jdone` is a
+  wrap-tolerant superset of both sides (the only "missing" lines were re-wrapped duplicates
+  of already-present sentences); both report headings are present.
+- Committed the merge as `a57f255` (parity tip `603d71c`). No source file was modified.
+
+### Gate condition verified
+- `git merge manus-parity` -> `Already up to date.`
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
+- `git rev-list --left-right --count manus-parity...HEAD` -> `0  8`
+- `git status --porcelain` -> empty (clean tree)
+- `.jdone` committed at 2713 lines; both sides' report sections intact; 0 conflict markers
+
+### Gates (all run from the worktree root on the committed tree `a57f255`)
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0 (`dist\server.cjs 19.4mb`, pdf worker copied)
+- `(cd packages/web && npx next build)` -> exit 0 (Next.js 16.4.2, Turbopack)
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `(cd packages/web && npx vitest run src/components/workspace)` -> 8 files, 74 tests passed
+- `node --import tsx --test` (codingPrompt, ciWatch, verifyAndRecord, prVerification, eventLog, prReview) -> 99 tests passed, 0 failed
+- `.jdone` integrity: U+FFFD 0, `???` 0, Arabic codepoints 208, no BOM
+
+### Files
+- `.jdone` (merge resolution only; both sides kept)
+
 ## cr-03 gate-fix session: merge with manus-parity (D5 pr_review + O1 event log + fc-05), all gates green
 ## O6 gate-fix session: merge with manus-parity, all gates green
 
