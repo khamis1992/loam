@@ -33,6 +33,32 @@ function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
 
+/**
+ * Shared bounded-concurrency fan-out used by map_reduce and the workflow runner.
+ * Workers pull the next index in order and stop when `signal` aborts, so a
+ * cancelled run never starts new work. A worker may return `null` to signal
+ * "skipped" (e.g. aborted before starting); nulls are dropped from the result.
+ */
+export async function runBounded<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R | null>,
+  signal?: AbortSignal,
+): Promise<R[]> {
+  const results: R[] = [];
+  let cursor = 0;
+  const workers = Array.from({ length: concurrency }, async () => {
+    while (cursor < items.length) {
+      if (signal?.aborted) break;
+      const i = cursor++;
+      const value = await worker(items[i]!, i);
+      if (value !== null) results.push(value);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 export interface MapReduceOptions {
   ollama: OllamaClient;
   parentRegistry: ToolRegistry;
@@ -96,11 +122,7 @@ export function createMapReduceTool(options: MapReduceOptions): Tool {
 
       ctx.emit({ type: "tool_call", name: "map_reduce", args: { count: items.length, concurrency, subagent: subagentName } });
 
-      const results: SubResult[] = [];
-      const pending = new Map<number, Promise<void>>();
-      let index = 0;
-
-      const runChild = async (i: number, item: string): Promise<void> => {
+      const runChild = async (i: number, item: string): Promise<SubResult> => {
         const subSessionId = `mapreduce-${ctx.taskId ?? "anon"}-${i}`;
         const prompt = instructionTemplate.replace(/\{item\}/g, item);
         let toolCalls = 0;
@@ -125,41 +147,30 @@ export function createMapReduceTool(options: MapReduceOptions): Tool {
             taskId: ctx.taskId,
             suppressFinal: true,
           });
-          results.push({ index: i, item, ok: true, content: res.text, subSessionId, steps: res.steps, toolCalls });
           ctx.emit({
             type: "tool_result",
             name: "mapReduceSubSessionStatus",
             ok: true,
             summary: `subagent ${subSessionId} finished`,
           });
+          return { index: i, item, ok: true, content: res.text, subSessionId, steps: res.steps, toolCalls };
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          results.push({ index: i, item, ok: false, content: msg, subSessionId, steps: 0, toolCalls });
           ctx.emit({
             type: "tool_result",
             name: "mapReduceSubSessionStatus",
             ok: false,
             summary: `subagent ${subSessionId} failed: ${msg}`,
           });
+          return { index: i, item, ok: false, content: msg, subSessionId, steps: 0, toolCalls };
         }
       };
 
-      const next = async (): Promise<void> => {
-        if (index >= items.length) return;
-        const i = index++;
-        await runChild(i, items[i]!);
-      };
-
-      // Fan-out with bounded concurrency.
-      const workers = Array.from({ length: concurrency }, async () => {
-        while (index < items.length) {
-          if (ctx.signal?.aborted) break;
-          await next();
-        }
-      });
-      await Promise.all(workers);
-
-      results.sort((a, b) => a.index - b.index);
+      // Fan-out with bounded concurrency; results are re-sorted by item index so
+      // the output order is deterministic regardless of completion order.
+      const results = (
+        await runBounded(items, concurrency, (item, i) => runChild(i, item), ctx.signal)
+      ).sort((a, b) => a.index - b.index);
 
       const outputSchema = args.outputSchema as Record<string, unknown> | undefined;
       const parsed = results.map((r) => {

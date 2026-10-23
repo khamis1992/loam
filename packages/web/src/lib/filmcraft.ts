@@ -12,6 +12,22 @@
  * protocol.
  */
 
+import {
+  DEFAULT_CALL_TIMEOUT_MS,
+  type BridgeId,
+  type BridgePending,
+  type BridgeReadyCallback,
+  addMessageListener,
+  armCallTimeout,
+  BridgeQueue,
+  bridgeTags,
+  disposeBridge,
+  parseBridgeMessage,
+  rejectAllPending,
+  settlePending,
+  waitForApi,
+} from './bridge-base';
+
 /** URL the Video panel loads the editor iframe from. */
 export const FILMCRAFT_FRAME_URL = 'loamfilm://app/index.html';
 
@@ -34,16 +50,16 @@ export interface FilmcraftCommandInfo {
   [key: string]: unknown;
 }
 
+/** Loose shape of project info returned by inspect/info. */
 export interface FilmcraftProjectInfo {
   [key: string]: unknown;
 }
 
-interface PendingCall {
-  resolve: (value: unknown) => void;
-  reject: (reason: Error) => void;
-}
+/** Pending call contract, shared with bridge-base. */
+interface PendingCall extends BridgePending {}
 
-type ReadyCallback = (hasApi: boolean) => void;
+/** Ready callback type. */
+type ReadyCallback = BridgeReadyCallback;
 
 /**
  * Promise-based bridge to one editor iframe. Construct it once per mounted
@@ -51,24 +67,22 @@ type ReadyCallback = (hasApi: boolean) => void;
  */
 export class FilmcraftBridge {
   private readonly iframe: HTMLIFrameElement;
-  private readonly pending = new Map<string, PendingCall>();
+  private readonly pending = new Map<BridgeId, PendingCall>();
   private readonly readyCallbacks = new Set<ReadyCallback>();
   private nextId = 0;
-  private readonly onMessage: (event: MessageEvent) => void;
+  private readonly tags = bridgeTags('filmcraft');
+  private readonly removeListener: () => void;
+  /** Editor calls are serialised so the control channel stays deterministic. */
+  private readonly queue = new BridgeQueue();
 
   constructor(iframe: HTMLIFrameElement) {
     this.iframe = iframe;
-    this.onMessage = (event) => this.handleMessage(event);
-    window.addEventListener('message', this.onMessage);
+    this.tags = bridgeTags('filmcraft');
+    this.removeListener = addMessageListener(iframe, (event) => this.handleMessage(event));
   }
 
   dispose(): void {
-    window.removeEventListener('message', this.onMessage);
-    for (const { reject } of this.pending.values()) {
-      reject(new Error('Loam Video bridge disposed'));
-    }
-    this.pending.clear();
-    this.readyCallbacks.clear();
+    disposeBridge(this.pending, this.readyCallbacks, this.removeListener, 'Loam Video bridge disposed');
   }
 
   /**
@@ -77,23 +91,12 @@ export class FilmcraftBridge {
    * Rejects if the relay never answers within `timeoutMs`.
    */
   waitForApi(timeoutMs = 150_000): Promise<{ hasApi: boolean }> {
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      const timer = window.setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        this.readyCallbacks.delete(onReady);
-        reject(new Error('Timed out waiting for the Loam Video editor bridge'));
-      }, timeoutMs);
-      const onReady: ReadyCallback = (hasApi) => {
-        if (settled) return;
-        settled = true;
-        window.clearTimeout(timer);
-        this.readyCallbacks.delete(onReady);
-        resolve({ hasApi });
-      };
-      this.readyCallbacks.add(onReady);
-    });
+    return waitForApi(
+      this.readyCallbacks,
+      timeoutMs,
+      (hasApi) => this.readyCallbacks.forEach((cb) => cb(hasApi)),
+      (reason) => rejectAllPending(this.pending, reason),
+    );
   }
 
   /** Subscribe to bridge readiness announcements (fires at most once per boot). */
@@ -107,12 +110,17 @@ export class FilmcraftBridge {
    * 'commands', 'inspect'). Prefer the typed helpers below in agent code.
    */
   async call<T = unknown>(method: FilmcraftMethod, ...args: unknown[]): Promise<T> {
+    return this.queue.run(() => this.sendCall<T>(method, ...args));
+  }
+
+  private sendCall<T>(method: FilmcraftMethod, ...args: unknown[]): Promise<T> {
     const id = `fc-${++this.nextId}`;
     const target = this.iframe.contentWindow;
-    if (!target) throw new Error('Loam Video editor iframe is not mounted');
+    if (!target) return Promise.reject(new Error('Loam Video editor iframe is not mounted'));
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
-      target.postMessage({ type: 'filmcraft:call', id, method, args }, '*');
+      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer: null });
+      armCallTimeout(this.pending, id, DEFAULT_CALL_TIMEOUT_MS, 'Loam Video editor call timed out');
+      target.postMessage({ type: this.tags.call, id, method, args }, '*');
     });
   }
 
@@ -196,24 +204,23 @@ export class FilmcraftBridge {
     return this.execute('export', params);
   }
 
-  // -- Internals ------------------------------------------------------------
+  // -- Internals --------------------------------------------------------
 
   private handleMessage(event: MessageEvent): void {
-    if (event.source !== this.iframe.contentWindow) return;
-    const data = event.data as
-      | { type?: string; id?: string; ok?: boolean; result?: unknown; error?: string; hasApi?: boolean }
-      | null
-      | undefined;
-    if (!data || typeof data !== 'object' || typeof data.type !== 'string') return;
-    if (data.type === 'filmcraft:ready') {
+    const data = parseBridgeMessage(event.data);
+    if (!data) return;
+    if (data.type === this.tags.ready) {
       for (const callback of [...this.readyCallbacks]) callback(Boolean(data.hasApi));
       return;
     }
-    if (data.type !== 'filmcraft:result' || typeof data.id !== 'string') return;
-    const pending = this.pending.get(data.id);
-    if (!pending) return;
-    this.pending.delete(data.id);
-    if (data.ok) pending.resolve(data.result);
-    else pending.reject(new Error(data.error ?? 'Loam Video editor call failed'));
+    if (data.type !== this.tags.result || typeof data.id !== 'string') return;
+    if (data.ok) {
+      settlePending(this.pending, data.id, { ok: true, value: data.result });
+      return;
+    }
+    settlePending(this.pending, data.id, {
+      ok: false,
+      error: new Error(typeof data.error === 'string' ? data.error : 'Loam Video editor call failed'),
+    });
   }
 }

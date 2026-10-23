@@ -4,6 +4,11 @@
  * A `todo_write` call restarts the staleness clock; after the default eight
  * silent steps the loop injects a hidden reminder telling the model to update
  * its task list. The reminder is a user-role tagged block, never a UI event.
+ *
+ * `parseTaskList` mirrors the live task list for post-compaction re-attachment
+ * (C8). Two tools maintain that list with different shapes and status
+ * vocabularies: `todo_write` sends `{ todos: [{ content, status }] }` and `plan`
+ * sends `{ steps: [{ title, status? }] }`.
  */
 import assert from "node:assert/strict";
 import { describe, it, mock } from "node:test";
@@ -11,7 +16,7 @@ import { describe, it, mock } from "node:test";
 import type { Config } from "../../config.js";
 import type { ChatResult, OllamaClient } from "../../ollama.js";
 import type { AgentEvent, Emit } from "../events.js";
-import { runAgent } from "../loop.js";
+import { runAgent, parseTaskList } from "../loop.js";
 import { isReminderMessage } from "../reminders.js";
 import { ToolRegistry } from "../../tools/registry.js";
 import { todoWriteTool } from "../../tools/todoTools.js";
@@ -144,5 +149,55 @@ describe("todo staleness reminder in the loop", () => {
     const reminders = result.messages.filter((m) => isReminderMessage(m));
     assert.equal(reminders.length, 1, "the clock must restart from the latest todo_write");
     assert.match(reminders[0]!.content, /task list has not been updated for 8 steps/);
+  });
+});
+
+describe("parseTaskList", () => {
+  it("mirrors a todo_write list with its own status vocabulary", () => {
+    const items = parseTaskList("todo_write", {
+      todos: [
+        { content: "  parse the file  ", status: "completed" },
+        { content: "add tests", status: "in_progress" },
+        { content: "ship it", status: "pending" },
+      ],
+    });
+    assert.deepEqual(items, [
+      { id: "todo-0", content: "parse the file", status: "completed" },
+      { id: "todo-1", content: "add tests", status: "in_progress" },
+      { id: "todo-2", content: "ship it", status: "pending" },
+    ]);
+  });
+
+  it("mirrors a plan step list and folds its status vocabulary", () => {
+    const items = parseTaskList("plan", {
+      steps: [
+        { title: "research", status: "done" },
+        { title: "implement", status: "doing" },
+        { title: "verify", status: "pending" },
+      ],
+      currentStep: 1,
+    });
+    assert.deepEqual(items, [
+      { id: "todo-0", content: "research", status: "completed" },
+      { id: "todo-1", content: "implement", status: "in_progress" },
+      { id: "todo-2", content: "verify", status: "pending" },
+    ]);
+  });
+
+  it("defaults an omitted plan status to pending", () => {
+    const items = parseTaskList("plan", { steps: [{ title: "write it" }], currentStep: 0 });
+    assert.deepEqual(items, [{ id: "todo-0", content: "write it", status: "pending" }]);
+  });
+
+  it("drops entries with no usable text and returns empty for a malformed list", () => {
+    assert.deepEqual(parseTaskList("todo_write", { todos: [{ content: "   ", status: "pending" }, null, 7] }), []);
+    assert.deepEqual(parseTaskList("plan", { steps: [] }), []);
+    assert.deepEqual(parseTaskList("todo_write", {}), []);
+    assert.deepEqual(parseTaskList("todo_write", { todos: "nope" }), []);
+  });
+
+  it("treats an unrecognised status as pending rather than dropping the item", () => {
+    const items = parseTaskList("todo_write", { todos: [{ content: "keep me", status: "bogus" }] });
+    assert.deepEqual(items, [{ id: "todo-0", content: "keep me", status: "pending" }]);
   });
 });

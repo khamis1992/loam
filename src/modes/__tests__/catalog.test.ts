@@ -7,7 +7,19 @@
  * wrote Python instead of using loam_studio/office_export.
  */
 import assert from "node:assert";
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
+
+// Must come before any import that evaluates `config.js`: `buildSystemPrompt`
+// reads user personalization from the SQLite store under DATA_DIR, so without
+// this redirect the prompt assertions create the repository's real
+// `data/manus.db`.
+import { cleanupIsolatedDataDir } from "../../test/isolation.js";
+import { closeDb } from "../../server/sqliteStore.js";
+
+after(() => {
+  closeDb();
+  cleanupIsolatedDataDir();
+});
 
 import { LOAM_MODES, getLoamMode, getLoamModesUi } from "../catalog.js";
 import { ToolRegistry } from "../../tools/registry.js";

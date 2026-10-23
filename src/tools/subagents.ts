@@ -27,8 +27,8 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     name: "explore",
     description: "Fast read-only codebase explorer. Use to search files, symbols, outlines, and architecture without polluting the main context.",
     instructions:
-      "You are the Explore subagent (read-only). Use code_symbols, code_outline, file_search, file_list, and file_read to answer the question concisely with exact file paths and line numbers. Never attempt to modify files.",
-    allowTools: ["code_symbols", "code_outline", "file_read", "file_list", "file_search", "file_stat", "file_extract_text"],
+      "You are the Explore subagent (read-only). Use code_symbols, code_outline, grep, glob, file_search, file_list, and file_read to answer the question concisely with exact file paths and line numbers. Never attempt to modify files.",
+    allowTools: ["code_symbols", "code_outline", "grep", "glob", "file_read", "file_list", "file_search", "file_stat", "file_extract_text"],
     maxSteps: 10,
     source: "builtin",
   },
@@ -37,7 +37,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     description: "Code quality, bug, and security reviewer. Inspects files and diffs and reports concrete issues.",
     instructions:
       "You are the Reviewer subagent. Inspect the relevant code and return a concise, prioritized list of bugs, edge cases, type/lint issues, or security risks with exact file:line references.",
-    allowTools: ["code_symbols", "code_outline", "file_read", "file_list", "file_search", "file_stat", "shell_run"],
+    allowTools: ["code_symbols", "code_outline", "grep", "glob", "file_read", "file_list", "file_search", "file_stat", "shell_run"],
     maxSteps: 10,
     source: "builtin",
   },
@@ -294,7 +294,7 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
     {
       name: "delegate_task",
       description:
-        "Delegate a self-contained task to a subagent and get back only its final report. Pass subagent_type to run a repo-defined agent loaded from .loam/agents/*.md (also agents/*.md and .claude/agents/*.md); the agent runs in-process with its own tool allowlist and model. Or omit subagent_type and pass provider (in-process|acp) plus cwd to run an external/in-process child. Depth limit 2, max concurrent children configurable (default 4).",
+        "Delegate a self-contained task to a subagent and get back only its final report. Pass subagent_type to run a repo-defined agent loaded from .loam/agents/*.md (also agents/*.md and .claude/agents/*.md); the agent runs in-process with its own tool allowlist and model. Or omit subagent_type and pass provider (in-process|acp) plus cwd to run an external or in-process child, providing acpCommand and optional acpArgs for the ACP provider. The child runs with its own context in a cwd that must be inside the workspace, so put everything it needs in the prompt. Delegation depth is limited (default 2) and concurrent children are capped (default 4). Use it for parallel, isolated work such as exploration or independent edits. When NOT to use: do the work directly when it needs your conversation context, use file_*/shell_* for simple steps, and remember the child cannot see the parent's history; never delegate work that requires an approval gate or a secret.",
       parameters: {
         type: "object",
         properties: {

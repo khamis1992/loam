@@ -5,6 +5,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { readCraftStatus } from "../craftStatus.js";
 import { ROOT } from "../../config.js";
 
+/** Injectable so tests can point at a fixture tree instead of the real repo root. */
+export interface CraftRouteOptions {
+  root?: string;
+}
+
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(text) });
@@ -15,7 +20,7 @@ export async function handleCraftRoutes(
   req: IncomingMessage,
   res: ServerResponse,
   p: string,
-  opts: { root?: string } = {},
+  opts: CraftRouteOptions = {},
 ): Promise<boolean> {
   if (!p.startsWith("/api/craft")) return false;
   // Resolve the project root in the same order the rest of the server does:

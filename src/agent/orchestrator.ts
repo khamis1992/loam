@@ -9,6 +9,7 @@ import type { ExecutionCheckpoint, WorkerCheckpoint } from "./checkpoint.js";
 import { AcceptanceGuard } from "./acceptanceGuard.js";
 import { IndependentAcceptanceGuard, independentRequirements } from "./independentAcceptance.js";
 import { taskScopedTools, fileOnlyRequested } from "./taskToolScope.js";
+import { addUsage, sumUsage } from "./usageAccounting.js";
 
 export interface VerdictRecord extends VerdictInfo {
   scope: string;
@@ -33,12 +34,6 @@ function oneLine(text: string, max = 300): string {
   return t.length > max ? `${t.slice(0, max)}...` : t;
 }
 
-function addUsage(target: Usage, add: Usage): void {
-  target.promptTokens += add.promptTokens;
-  target.completionTokens += add.completionTokens;
-  target.durationMs += add.durationMs;
-}
-
 interface WorkerOutcome {
   text: string;
   messages: ChatMessage[];
@@ -51,9 +46,10 @@ interface WorkerOutcome {
 
 async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: string, maxSteps: number): Promise<WorkerOutcome> {
   const trace: ToolTraceItem[] = [];
+  const preferredModel = o.model && o.model.trim() ? o.model.trim() : o.cfg.model;
   let progress = o.resumeWorker
     ? { steps: o.resumeWorker.steps, model: o.resumeWorker.model, usage: { ...o.resumeWorker.usage } }
-    : { steps: 0, model: o.cfg.model, usage: { promptTokens: 0, completionTokens: 0, durationMs: 0 } };
+    : { steps: 0, model: preferredModel, usage: { promptTokens: 0, completionTokens: 0, durationMs: 0 } };
   const emit: Emit = (event) => {
     o.emit(event);
   };
@@ -71,6 +67,7 @@ async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: s
     ...(o.taskId ? { taskId: o.taskId } : {}),
       systemSuffix: `${inherited}${systemSuffix}`,
       maxSteps,
+      ...(o.model && o.model.trim() ? { model: o.model.trim() } : {}),
       suppressFinal: true,
       onToolEvidence: (item) => trace.push(item),
       onProgress: (value) => { progress = value; },
@@ -205,7 +202,7 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
   let worker: WorkerCheckpoint | undefined = restored?.worker;
   const checkpoint = (inFlight: boolean, complete = false, pendingUsage?: Usage): void => {
     o.saveCheckpoint?.(structuredClone({ version: 1, plan, nextStep, completed, lastText,
-      trace: allTrace, round, usage: pendingUsage ? { promptTokens: usage.promptTokens + pendingUsage.promptTokens, completionTokens: usage.completionTokens + pendingUsage.completionTokens, durationMs: usage.durationMs + pendingUsage.durationMs } : usage, totalSteps, model: usedModel, inFlight, complete, finalRepairUsed, finalRepairAttempts, finalRepairPrompt: pendingFinalRepair, acceptanceContract: acceptanceGuard.snapshot(), independentAcceptance: independentGuard.snapshot(), independentRequirements: independentRequest, fileOnlyTools, worker }));
+      trace: allTrace, round, usage: pendingUsage ? sumUsage(usage, pendingUsage) : usage, totalSteps, model: usedModel, inFlight, complete, finalRepairUsed, finalRepairAttempts, finalRepairPrompt: pendingFinalRepair, acceptanceContract: acceptanceGuard.snapshot(), independentAcceptance: independentGuard.snapshot(), independentRequirements: independentRequest, fileOnlyTools, worker }));
   };
   checkpoint(restored?.inFlight ?? false);
 

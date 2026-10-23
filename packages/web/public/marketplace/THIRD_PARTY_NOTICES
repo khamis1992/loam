@@ -59,3 +59,40 @@ Fonts
 The marketplace UI uses the app's system font stack. It does not bundle Aeonik
 (commercial) or Geist. Geist and Geist Mono are licensed under the SIL Open
 Font License 1.1 when supplied separately.
+
+
+jcode (MIT)
+===========
+The prompt-cache (KV) miss detection ported in `src/agent/kvCacheMonitor.ts`
+adapts jcode's daemon-side `src/kv_cache_monitor.rs` design (provider usage
+normalization, reusable-token boundary, miss-reason classification and the
+human-readable summaries).
+
+The TypeScript files under `bench/` were adapted from jcode, a coding agent
+copyright (c) 2025 Jeremy Huang. Only bench/fakeModel.ts, bench/rssSampler.ts
+and bench/memBench.ts are adapted from jcode; the rest of the app is original
+Loam code.
+
+jcode is published under the MIT License below.
+
+MIT License
+
+Copyright (c) 2025 Jeremy Huang
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
