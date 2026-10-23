@@ -39746,3 +39746,63 @@ is a true multiset superset of both sides.
 - `npm run check:recovery`                     -> PASS
 - `npm run check:orchestrator`                 -> PASS (114/114)
 - `npm run check:encoding`                         -> OK (no BOM, no mojibake, all JSON valid)
+
+---
+
+# N8 gate fix: resolved the manus-parity merge conflict (tip 6e17246)
+
+`.jgatefail.txt` reported:
+
+    error: Your local changes to the following files would be overwritten by merge:
+        .jdone
+
+The working tree carried `.jdone` deleted (unstaged) while `manus-parity` had modified it, so
+`git merge --no-edit manus-parity` aborted before touching anything. Restoring `.jdone` from HEAD
+(`git checkout -- .jdone`) let the merge run, which then surfaced four real conflicts.
+
+## Root causes and resolutions (all additive; both sides kept, no line dropped)
+
+- **`src/agent/events.ts`** (content) - both branches appended a member to the `AgentEvent` union
+  at the same spot. HEAD added `budget_exhausted` (N6 mission budget stop); parity added
+  `context_selected` (N5 per-step context selector). Kept BOTH members.
+- **`src/agent/loop.ts`** (content) - both branches replaced the same import block. HEAD extended
+  the budget import with `consumeCost` / `consumeWallClock` / `createUnlimitedBudget` and added the
+  `insights.js` and `mission.js` imports; parity added `fileTouch.js` plus the `contextSelector`
+  plumbing. Kept BOTH import groups. `budgetSummary` was dropped from the import list because it is
+  unused in `loop.ts` (exported from `mission.ts`, consumed only by `mission.test.ts`); `consumeSteps`
+  is retained as it is still used at the per-step charge site.
+- **`src/index.ts`** (content) - HEAD widened the `events.js` import to `AgentEvent, Emit`; parity
+  added `recallGraphHandle` and `createRecallTools`. Kept BOTH.
+- **`.jcode-done`** (modify/delete) - an untracked `.jcode-*` marker the task rules forbid
+  committing. Resolved by removing it (`git rm --cached` + delete), matching how earlier parity
+  merges treated it.
+- **`.jdone`** (add/add) - auto-merged cleanly; both sides' rollups preserved.
+
+No test was weakened, deleted, relaxed or skipped. No source file was edited except to remove
+conflict-marker lines.
+
+## Gates (all run from the worktree root on the committed merge tree `c6a64f6`)
+
+  1. `npx tsc --noEmit`                        -> exit 0
+  2. `npm run build:server`                    -> exit 0 (server bundle + pdf worker written to dist/)
+  3. `(cd packages/web && npx next build)`     -> exit 0 (compiled successfully, 25/25 static pages)
+  4. N8 acceptance suites
+     `node --import tsx --test src/server/__tests__/neoWakeup.test.ts src/server/__tests__/schedulerRetry.test.ts src/server/__tests__/automationCron.test.ts src/server/__tests__/automationsCrud.test.ts`
+                                                -> tests 17, pass 17, fail 0, skipped 0
+  5. Suites for the files the merge touched
+     `node --import tsx --test src/agent/__tests__/mission.test.ts src/agent/__tests__/loopBudget.test.ts src/agent/__tests__/contextSelector.test.ts src/agent/__tests__/fileTouchLoop.test.ts src/graph/__tests__/recall.test.ts`
+                                                -> tests 82, pass 82, fail 0, skipped 0
+
+The N8 acceptance suite (`src/server/__tests__/neoWakeup.test.ts`) covers the scheduled mock-clock
+behaviour: the `until` boundary stops recurring rounds, round counts advance on schedule outcome,
+`schedule_wakeup` registers a schedule with `round=1` and emits the event, `cancel_wakeup` cancels
+by schedule id or defaults to the mission id, and the run graph creates round subtrees on
+`round_start` / `round_done`. Approval-gated round email is covered by
+`sendRoundEmailWithApproval gates notification behind user approval`.
+
+## State
+
+- Merge commit `c6a64f6` on `khamis1992/neo-n8`; `git merge-base --is-ancestor manus-parity HEAD`
+  exits 0 and `git merge --no-edit manus-parity` reports "Already up to date."
+- N8 feature work from `bd473c5` is preserved on top of the merge.
+- Working tree clean. No seams left for other workstreams beyond the N8 scope in `.jtask.md`.
