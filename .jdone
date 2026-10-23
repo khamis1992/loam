@@ -73,16 +73,16 @@ action drives the Craft editor.
 
 ## Acceptance criteria (from `.jtask.md`)
 
-| Requirement | Where asserted |
+| Requirement | Where asserted (literal test names) |
 | --- | --- |
-| each action produces the expected relay calls | `craftOffice.test.ts` asserts the exact `dispatched` sequence per action (`methods()`, `dispatched`) |
-| unknown command id → error with close matches | "refuses an unknown command id with close matches", "stops at the first unknown id and reports the failed step" |
+| each action produces the expected relay calls | `craftOffice.test.ts` asserts the exact `dispatched` sequence per action: "validates the id, runs it, then re-reads the state" (`["engine.commands","document.inspect","engine.execute","document.inspect"]`), "runs the steps in order and reports the completed count", "state reads only the app's state methods" (`["document.inspect"]`), "opens an attached file then reads the state" |
+| unknown command id → error with close matches | "refuses an unknown command id with close matches and the available ids", "stops at the first unknown id and reports the failed step" |
 | batch stops at first failure | "stops at the first unknown id and reports the failed step", "reports a rejected step as a command_rejected failure", "surfaces a panel failure during a batch with the failed step attached" |
-| state is read before execute | "reads the live state before a mutating action" (asserts `document.inspect` precedes `engine.execute`) |
-| export returns the stored path | "exports through craft.waitSave and returns the stored path" (asserts `path === "out/final.docx"`) |
-| legacy engine aliases work | "routes a legacy word/excel/deck engine to the built-in generator", "routes the legacy studio engine", "war_room is untouched" |
-| fallback path when dist missing | "falls back when the app dist is missing", "falls back when fallback:true is requested", "fails clearly when fallback:true is requested with no built-in wired" |
-| war_room untouched | "war_room is untouched", and `check-tools` → `frontier_war_room: true` |
+| state is read before execute | "validates the id, runs it, then re-reads the state" — asserts `document.inspect` precedes `engine.execute` and that `body.before` carries the pre-edit state |
+| export returns the stored path | "exports through craft.waitSave and returns the stored path" |
+| legacy engine aliases work | "keeps the legacy word/excel/deck engines generating files when no action is given", "sends the legacy studio engine to the built-in implementation" |
+| fallback path when dist missing | "runs the built-in implementation when the dist is missing", "honours fallback:true even when the dist is installed", "fails clearly when fallback:true is requested with no built-in wired" |
+| war_room untouched | "routes engine:war_room to the untouched handler and skips the relay", and `check-tools` → `frontier_war_room: true` |
 
 ## Gates (all run from the worktree root)
 
