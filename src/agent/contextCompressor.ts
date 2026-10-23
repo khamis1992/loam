@@ -90,7 +90,35 @@ function zeroUsage(): Usage {
 
 /** Rough token estimate: ~4 characters per token. */
 export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+  return Math.ceil(utf8Bytes(text) / 4);
+}
+
+/**
+ * UTF-8 byte length, counted per code point so a surrogate pair is one
+ * character. This mirrors jcode: `content_char_count` sums `String::len()`
+ * (bytes) and `estimate_compaction_tokens_from_chars` divides those bytes by
+ * `CHARS_PER_TOKEN`. Counting UTF-16 code units instead (the previous
+ * implementation) charged CJK text one token per three characters, so the
+ * estimate under-counted by up to 3x and compaction started far too late.
+ */
+function utf8Bytes(value: string): number {
+  let total = 0;
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code < 0x80) {
+      total += 1;
+    } else if (code < 0x800) {
+      total += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      // High surrogate: the pair is one 4-byte character. A lone high surrogate
+      // (malformed input) still counts one character, matching `Buffer`.
+      i += 1;
+      total += 4;
+    } else {
+      total += 3;
+    }
+  }
+  return total;
 }
 
 function messageTokens(message: ChatMessage): number {

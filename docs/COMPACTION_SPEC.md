@@ -40,6 +40,22 @@ so the window is per-model and resolved by longest-prefix match in
 for a 1M-token Gemini window alike. The per-model table is therefore kept, and
 the *fractions* of the window are what are ported from jcode.
 
+#### The budget is counted in UTF-8 bytes, not UTF-16 code units
+
+The threshold comparison is only meaningful if both sides count the same unit.
+jcode's `content_char_count` sums `String::len()`, i.e. UTF-8 **bytes**, and
+`estimate_compaction_tokens_from_chars` divides that byte count by
+`CHARS_PER_TOKEN`. Loam's `estimateTokens` must therefore divide the same byte
+count, which is what `estimateTokens` does now (`src/agent/contextCompressor.ts`,
+helper `utf8Bytes`). Counting `text.length` (UTF-16 code units) instead is a
+3x under-count for CJK text, 2x for Latin-1 accents and 2x for astral-plane
+characters, so a Chinese-language transcript could run to roughly three times the
+configured window before compaction triggered. The per-code-point walker also
+handles malformed lone surrogates identically to `Buffer.byteLength`, so a
+corrupted input cannot make the estimate disagree with the truncation budget.
+ASCII text is byte-identical either way, which is why the existing assertions
+(`"" -> 0`, `"abcd" -> 1`, `"abcde" -> 2`) are unchanged.
+
 ### Trigger threshold (0.50 vs 0.80)
 
 Loam triggers at 50% of the window, earlier than jcode's 80%. This is deliberate:
@@ -129,6 +145,14 @@ would decode as U+FFFD as soon as the tool result is written back to disk.
 them byte-identical to jcode's helpers for ASCII, CJK and 4-byte characters
 alike.
 
+There is exactly one deliberate divergence in the truncation helpers, at a budget
+of zero bytes. jcode guards with `content.len() > max_chars`, so a zero budget
+would truncate the result to an empty string; the port treats a zero budget as a
+no-op and returns the content unchanged. Zero is unreachable through `Config`,
+which clamps `emergencyToolResultMaxChars` up to the 4000 default, and a
+truncate-to-nothing cap is a worse failure than leaving the result alone, so the
+port keeps the guard explicit rather than inheriting it.
+
 ### System overhead tokens
 
 jcode adds a flat 18,000-token overhead for the system prompt and tool
@@ -154,7 +178,8 @@ recorded as a known difference rather than changed.
 * Tests in `src/agent/__tests__/contextCompressor.test.ts` covering the default
   values, malformed-value clamping, the critical-ratio clamp, tool-result
   truncation, the emergency path itself, and the tool-pair invariant under
-  emergency compaction.
+  emergency compaction, plus the UTF-8 byte basis of both the truncation budget
+  and the token estimate.
 
 No second compressor was introduced and no existing behaviour was weakened: the
 normal step 1 (prune) and step 2 (prune + summarize) paths are unchanged, and the

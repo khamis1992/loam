@@ -154,6 +154,31 @@ describe("context compressor", () => {
     assert.equal(estimateTokens("abcde"), 2);
   });
 
+  it("budgets the token estimate in UTF-8 bytes, not code units", () => {
+    // jcode's `content_char_count` sums `String::len()` (bytes) and
+    // `estimate_compaction_tokens_from_chars` divides by CHARS_PER_TOKEN, so
+    // the estimate is a byte budget. Counting UTF-16 code units charged CJK
+    // one token per three characters and let a transcript run 3x too long
+    // before compacting.
+    const cjk = "\u5c3e".repeat(400); // 1200 bytes, 400 code units
+    assert.equal(Buffer.byteLength(cjk, "utf8"), 1200);
+    assert.equal(estimateTokens(cjk), 300); // 1200 / 4, not ceil(400/4) = 100
+    // A 4-byte character occupies two code units but is one UTF-8 character.
+    const emoji = "\ud83d\ude00".repeat(100); // 400 bytes, 200 code units
+    assert.equal(Buffer.byteLength(emoji, "utf8"), 400);
+    assert.equal(estimateTokens(emoji), 100);
+    // ASCII is byte-for-byte the old behaviour, so the common case is unchanged.
+    assert.equal(estimateTokens("a".repeat(100)), 25);
+  });
+
+  it("counts a surrogate pair as one UTF-8 character and a lone surrogate as one", () => {
+    // A proper pair is one 4-byte character; a lone surrogate is malformed but
+    // still occupies one UTF-8 character, matching Buffer.byteLength.
+    assert.equal(estimateTokens("\ud83d\ude00"), 1);
+    assert.equal(estimateTokens("\ud83d"), 1);
+    assert.equal(estimateTokens("\ude00"), 1);
+  });
+
   it("does nothing when under the threshold", async () => {
     const cfg = makeConfig();
     const { ollama } = makeOllama(() => okResult("unused"));
