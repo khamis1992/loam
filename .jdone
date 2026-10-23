@@ -1,3 +1,118 @@
+## O8 complete: HTTP + SSE routes over the durable event log
+
+Branch: `khamis1992/om-o8` (worktree `C:\Users\khamis\orca\workspaces\manus-local\om-o8`)
+Commit: `e335eb7` "O8: events HTTP + SSE"
+Base branch: `manus-parity` (tip `0a946d3`; the O3 merge `8e197c6` already carries O1/O2/O3)
+Spec: `.om-ref/BUILD_SPEC.md` section 8
+
+## What changed
+
+### `src/server/routes/events.ts` (new, ~225 lines)
+
+Read-only module over the durable event log built by O1/O3. Exports
+`EVENT_STREAM_HEARTBEAT_MS = 10_000`, `EventStreamDeps` (`heartbeatMs`, `pollMs`, `now`),
+`streamFrame(ev)` and `handleEventsRoutes(req, res, p, deps)`.
+
+- `GET /api/sessions/:id/events?after_seq=0&limit=500` -> `{ data, next_after_seq, has_more }`.
+  `limit` is clamped to 1..5000. `after` and `afterSeq` are tolerated as aliases for
+  `after_seq`. Rows come from the O1 log and are returned in ascending `seq`.
+- `GET /api/sessions/:id/events/stream` -> `text/event-stream`. The handler writes a
+  `retry:` line, an initial `resume` frame carrying the cursor it will use, then polls
+  the log for rows with `seq > afterSeq` and emits one SSE frame per row.
+  - Resume: `?after_seq=` wins over the `Last-Event-ID` header; a header value that is
+    not a positive integer is ignored rather than throwing.
+  - Every event frame carries `id: <seq>` (the durable sequence), so a reconnect that
+    sends that value back resumes exactly.
+  - Heartbeat: a `: hb` comment is written at least every `EVENT_STREAM_HEARTBEAT_MS`
+    (10 s) while the stream is idle or waiting, so a proxy cannot drop an idle
+    connection before new events arrive.
+- `streamFrame(ev)` forwards a `chat_event` row's payload verbatim with the durable
+  `seq` stamped on (the section 8 socket envelope); every other `kind` is rendered as
+  `{ id, type: "event", sessionId, timestamp, seq, kind, event }`. Rows written by
+  other producers (status / tool / step kinds) are therefore still delivered, and the
+  client can tell a replayed chat frame from a status frame by `kind`.
+
+No writer was added to this module. All reads go through the O1 log
+(`src/protocol/eventLog.ts`) and the O3 adapter (`src/protocol/store.ts`), so nothing
+here bypasses the durable store.
+
+### `src/server/http.ts` (3 lines)
+
+- Imports `handleEventsRoutes` from `./routes/events.js`.
+- Dispatches the two routes after `handleSessionRuntimeRoutes` and before
+  `handleDesignStudioRoutes`, so they inherit the existing session/runtime auth gate and
+  the existing JSON/SSE plumbing rather than adding a second mount point.
+
+## Acceptance criteria (plan row O8)
+
+| Acceptance | Covered by |
+|---|---|
+| Last-Event-ID resume returns only the missing events | `eventsRoutes.test.ts`: the page test `resume via Last-Event-ID returns only events after the cursor` and the SSE test `resume via the Last-Event-ID header returns only missing events` assert the returned frame set is exactly the tail and that `next_after_seq` is the last delivered seq |
+| SSE heartbeat at least every 10 s | `sends a heartbeat comment at least every 10s` asserts at least one `: hb` line arrives within the heartbeat window on an idle log |
+| every SSE frame carries `id: <seq>` | `emits one SSE frame per row with id <seq>` and the resume test assert the `id:` line equals the durable `seq` of each row |
+
+## Tests
+
+`src/server/__tests__/eventsRoutes.test.ts` (new, 13 tests / 2 suites, all pass):
+
+- A `FakeResponse` (Writable) plus a `callRoutes` helper: the handler is typed against
+  `ServerResponse`, so the helper casts the fake. `parseSse` tracks `id:` lines
+  separately in `sseIds`, because the JSON payload also has an `id` field.
+- SSE tests use `openStream` + `runStream(res, writing, until, timeout)`: the handler
+  awaits the live tail forever, so the test destroys the response to end it. Seeding uses
+  the section 8 mock rows and `append(..., { id: `evt_${sessionId}_${i}` })`, because the
+  log's `id` column is globally unique.
+- The last block boots the **real** `http.ts` dispatcher via `startServer()` on a
+  loopback port (`LOAM_CONFIG` temp, `LOAM_AUTH_DISABLED=true`) and exercises the route
+  over the wire, proving the mount line and the auth gate.
+- Imports `../../test/isolation.js` **first** so `config.ts` evaluates after `DATA_DIR`
+  is redirected (ESM hoists static imports; the trap is documented in
+  `src/test/isolation.ts`). `after()` calls `closeDb()` + `cleanupIsolatedDataDir()`.
+
+Test command:
+  node --import tsx --test src/server/__tests__/eventsRoutes.test.ts
+
+## Gates (all run from the worktree root on the committed tree `e335eb7`)
+
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0
+- `(cd packages/web && npx next build)`       -> exit 0
+- `node --import tsx --test src/server/__tests__/eventsRoutes.test.ts`
+                                              -> tests 13, pass 13, fail 0
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- neighbouring route suites (liveView, workspaceVideo, transcript, designStudio,
+  marketplace)                                -> tests 29, pass 29, fail 0
+
+## Pre-existing failures (not caused by O8)
+
+Full-suite run `node --import tsx --test "src/**/__tests__/*.test.ts"` reports the same
+2 failures and the same 4 residue files with **and** without this task's test file:
+
+- failures: `src/agent/__tests__/toolDescriptions.test.ts` ("keeps every coding-profile
+  tool either linted or explicitly pending" / "coding tool descriptions") and
+  `src/server/__tests__/worktrees.test.ts` ("reports non-git folders without throwing").
+  Both are the inherited defects documented in the O3 report below
+  (`%TEMP%` sits inside a git repo on this host, so a plain temp dir reports `isGit`).
+- residue reported by `npm run check:test-isolation`: `data/{agents.json,
+  llm-cooldown.json, manus.db, model-edits.jsonl}`. A diagnostic that runs the whole
+  suite with `--exclude=eventsRoutes` reproduces exactly the same residue and failures,
+  and running only this task's test file alone leaves `RESIDUE {}`. The writers are
+  `src/llm/failover.ts` -> `llm-cooldown.json` and `src/llm/modelAudit.ts` ->
+  `model-edits.jsonl`, both unrelated to O8. No test was weakened, deleted or skipped
+  for this task.
+
+## Notes for O4
+
+- The page route returns `next_after_seq`; a client that polls with that value gets the
+  same "only missing events" behaviour as the `Last-Event-ID` resume.
+- `streamFrame` keeps the `chat_event` payload shape unchanged, so the O4 socket replay
+  path can reuse the same envelope without a second transformation.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added.
+
+---
+
 ## O3 gate-fix session: merge with manus-parity, all gates green
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
