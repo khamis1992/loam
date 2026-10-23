@@ -119,7 +119,7 @@ ever-conflicting files were `THIRD_PARTY_NOTICES` (merges 1-2) and `.jdone` (mer
 
 Merge gate condition verified on the final tree:
   `git merge-base --is-ancestor manus-parity HEAD`  -> exit 0
-  `git rev-list --left-right --count manus-parity...HEAD` -> `0 13`
+  `git rev-list --left-right --count manus-parity...HEAD` -> `0 14`
   `git diff --name-only manus-parity HEAD` -> the J5 files above (the 15 J5 files plus
   `THIRD_PARTY_NOTICES`), and nothing else (so the tree is parity + J5, with no parity
   change lost)
