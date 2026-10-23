@@ -51,8 +51,9 @@ the O0 Verify column.
 - `npm run check:encoding`                            -> OK (no BOM, no mojibake)
 - O0 Verify column `file exists`                      -> satisfied by `docs/re/omnara-O0.md`
 
-Read-only: no source file modified; the commit contains only the report. No `???`
-added. No instruction-related change (nothing to propose). Working tree clean.
+Read-only: no source file modified; the commit contains only the report. No mojibake
+placeholder text was added. No instruction-related change (nothing to propose).
+Working tree clean.
 
 ---
 
