@@ -68,6 +68,12 @@ export interface UserMessage extends Base {
     worktreeEnabled?: boolean;
     /** Option 18: composer model tier ("max" | "standard" | "lite" | "flex"). */
     modelTier?: string;
+    /** Neo N10: composer output type (Auto/Text/Image/Video/Slides/Website). */
+    outputType?: string;
+    /** Neo N10: composer effort level (Fast/Max). */
+    effort?: string;
+    /** Neo N10: explicit A/B arm model ids, when the composer asked for a fan-out. */
+    abModels?: string[];
   };
 }
 

@@ -4,6 +4,7 @@
 
 import type { UserMessage } from "../protocol/types.js";
 import { normalizeModeId, getLoamMode, LOAM_MODES } from "./catalog.js";
+import { OUTPUT_TYPE_MODE, isOutputType } from "./outputTypeMap.js";
 
 // Ordered keyword rules. First match wins.
 // Use word boundaries for single tokens and phrase patterns for multi-word
@@ -25,6 +26,20 @@ export function detectModeFromText(text: string): string {
   return "build";
 }
 
+/**
+ * Resolve one run's Loam mode.
+ *
+ * Precedence, strongest first:
+ *
+ *   1. an explicit `loamMode` (a real Loam mode wins; an alias is normalized;
+ *      an unknown value is ignored and falls through);
+ *   2. an explicit output type (`agent_type`, §4.2) — the composer asked for a
+ *      deliverable, so the run gets that deliverable's tool scope. Before N10's
+ *      fix this table existed but nothing read it, so "Slides mode hits the
+ *      slides pipeline" only held by accident of keyword detection;
+ *   3. fast offline keyword detection;
+ *   4. `build`, except the legacy `lite`/`discuss` task modes which map to `ask`.
+ */
 export function resolveLoamMode(um: UserMessage, prompt: string): string {
   // (a) Explicit Loam mode from client extData takes precedence if valid.
   const explicit = (um.extData.loamMode ?? "").trim();
@@ -33,11 +48,18 @@ export function resolveLoamMode(um: UserMessage, prompt: string): string {
     if (LOAM_MODES.some((m) => m.id === normalized)) return normalized;
   }
 
-  // (b) Fast offline keyword detection from the user prompt.
+  // (b) Explicit output type: it names a deliverable, which pins a pipeline.
+  const outputType = um.extData.outputType;
+  if (isOutputType(outputType) && outputType !== "auto") {
+    const fromType = OUTPUT_TYPE_MODE[outputType].trim();
+    if (fromType && LOAM_MODES.some((m) => m.id === fromType)) return fromType;
+  }
+
+  // (c) Fast offline keyword detection from the user prompt.
   const detected = detectModeFromText(prompt);
   if (detected !== "build") return detected;
 
-  // Preserve legacy lite/discuss mapping to ask; everything else defaults to build.
+  // (d) Preserve legacy lite/discuss mapping to ask; everything else defaults to build.
   const taskMode = (um.extData.mode ?? um.taskMode ?? "").trim().toLowerCase();
   if (taskMode === "lite" || taskMode === "discuss") return "ask";
   return "build";

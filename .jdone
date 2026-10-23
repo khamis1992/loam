@@ -5554,3 +5554,47 @@ Test commands:
   npm run check:modes
   npm run check:orchestrator
   npm run check:recovery
+
+## Third merge: the ref moved again (`ed26550` -> `26befe6`, N10)
+
+`refs/heads/manus-parity` advanced once more while the second merge was being
+finalized, so this session merged the tip again and re-ran every gate.
+
+  * `ed26550` (N2: canvas view, graph routes, auto-open fix, i18n) -> merged by
+    `fdbe7f8`, zero conflicts.
+  * `26befe6` (N10: output-type and effort routing, multi-model A/B siblings,
+    `src/llm/router.ts`, `src/modes/outputTypeMap.ts`, `src/tools/routingModel.ts`)
+    -> merged by this session. The ONLY conflict was `.jdone`
+    (modify/delete: N10 deleted the tracked rollup, this branch had appended the
+    J8 record). Resolved keeping BOTH sides by keeping the J8 file: it is a strict
+    superset of parity's, containing the whole parity rollup (N4 / C19 / fc-05 /
+    O6 / O2 / D5 / O1 / V11 / H0 / O0 / N2) plus the J8 merge record, so deleting
+    it would lose parity's reports and keeping theirs would lose the J8 record.
+    `src/agent/loop.ts` auto-merged and now carries BOTH sides: N10's
+    `chatWithRouting` / `siblingParentFor` / `outputType` / `effort` / `abModels`
+    RunOptions plus J8's `fileTouchRegistry` / `forgetFileTouchSession` / `subSeq`
+    and O6's `inputQueue` / `onAdmitPending` / `inputSessionId`.
+
+Re-checked every J8 symbol after the third merge, all present: `recordWrite`
+(readState, files, multiEdit), `withLocks` (files), `multiEditRun` (multiEdit),
+`SubagentStop` (subagents), `stageSeq` + `semantic_search` (swarm/service),
+`fileTouchRegistry` + `forgetFileTouchSession` + `subSeq` (loop), and
+`src/tools/fileTouch.ts` (353 lines) untouched. All 4713 parity files present in
+the index (set comparison of the two trees). No conflict marker remains anywhere.
+
+Gates re-run on this third merged tree
+--------------------------------------
+  * npx tsc --noEmit                                  -> exit 0
+  * npm run build:server                              -> exit 0 (dist/server.cjs 19.5mb)
+  * (cd packages/web && npx tsc --noEmit)              -> exit 0
+  * (cd packages/web && npx next build)                -> exit 0
+  * (cd packages/web && npx vitest run)               -> 78 files / 528 tests, all pass
+  * node --import tsx --test "src/**/*.test.ts"       -> tests 2590, pass 2589, fail 1
+  * conflict-relevant suites                           -> 83/83 pass
+  * npm run check:encoding / check:modes / check:orchestrator / check:recovery -> exit 0
+
+The single failure is again `src/server/__tests__/worktrees.test.ts` "reports
+non-git folders without throwing", identical to parity (`git diff 26befe6 HEAD` is
+empty for both the test and `src/server/worktrees.ts`) and environmental:
+`%TEMP%` resolves under `C:\Users\khamis`, itself a git repository. Re-running that
+suite with `TEMP` moved outside any repository passes 4/4.
