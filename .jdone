@@ -9540,19 +9540,27 @@ files (`src/design/registry.ts`, `src/design/retrieval.ts`, `src/tools/uiExample
 `src/tools/__tests__/uiExamples.test.ts`) are byte-identical to V8's `f5e4360` versions and were never
 touched by parity. No test was weakened, deleted or skipped.
 
+Committed as `91e7243` ("merge: resolve manus-parity (eb17ea0c, H3) keeping both sides"), a genuine
+2-parent merge of `f5e4360` and `eb17ea0c`. Final state: `git merge-base --is-ancestor manus-parity HEAD`
+exits 0, `git merge manus-parity` reports "Already up to date.", counts 0/26, worktree clean, no
+conflict markers in any tracked file. Committed `.jdone` (9568 lines) is a superset of both sides with
+0 lines missing from base/ours/theirs, `61aca0c`, `eb17ea0c`, `693d8b6`, `eee7c8a`, `f5e4360`, `3736a1e`; 0
+conflict markers, 0 mojibake, Arabic intact (339 Arabic chars), no BOM, CRLF only (0 bare LF).
+
 Gates (all run from the worktree root on the merged tree):
 - `npx tsc --noEmit`                          -> exit 0
 - `npm run verify`                            -> exit 0 (typecheck, encoding, eval, orchestrator, recovery, modes)
 - `npm run check:design-registry`             -> exit 0
-- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.5mb)
-- `(cd packages/web && npm run build)`       -> exit 0
-- `(cd packages/web && npm test)`            -> 79 files / 535 tests, all pass
-- `node --import tsx --test "src/**/__tests__/*.test.ts"` -> 2566 pass / 1 fail
-  The single failure is `src/server/__tests__/worktrees.test.ts` "reports non-git folders without
-  throwing", reproduced identically on a clean worktree checked out at the parity tip and byte-identical
-  between HEAD and parity (same blob). Cause is environmental: `%TEMP%` is `C:\Users\khamis\AppData\Local\Temp`
-  and `git -C %TEMP% rev-parse --show-toplevel` walks up to `C:/Users/khamis`, itself a git repo, so a
-  fresh temp dir reports as a git folder. Pre-existing; not merge-caused.
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.6mb)
+- `(cd packages/web && npm run build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `(cd packages/web && npm test)`            -> 79 files / 538 tests, all pass
+- `node --import tsx --test "src/**/__tests__/*.test.ts"` -> 2704 pass / 0 fail
+  (parity's newly merged tests are included; the earlier `worktrees.test.ts` environmental failure
+  does not occur on this tree, and it was reproduced identically on a clean worktree at the parity
+  tip with the file byte-identical to HEAD, so it is not merge-caused.)
+- V8 focused suites (`src/design/__tests__`, `uiExamples`, `runTools`) -> 217/217 pass
+- V8 acceptance probe -> `pricing` and Arabic `تسعير` both return `pricing-toggle`, `pricing-3-tier`,
+  `rtl-pricing-3-tier` in the top 3; 30 blocks, 8 RTL, all 8 RTL blocks carry an Arabic tag
 
 No secrets committed. No forbidden path touched. No `.neo-*` or `.jcode-*` marker file staged, and
 nothing under `tmp/` is tracked (`.gitignore:43: tmp/`). No real external model API was called by the
