@@ -77,6 +77,10 @@ const apis = {
   diagnosticLogs: {
     collect: (...args) => invoke("diagnosticLogs", "collect", args),
   },
+  // J6 local debug surface: per-process RSS only (main + renderers + server).
+  debugMemory: {
+    snapshot: (...args) => invoke("debugMemory", "snapshot", args),
+  },
   desktopActivityIndicator: {
     getState: (...args) => invoke("desktopActivityIndicator", "getState", args),
     rendererReady: (...args) => invoke("desktopActivityIndicator", "rendererReady", args),

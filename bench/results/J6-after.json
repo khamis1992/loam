@@ -1,0 +1,76 @@
+{
+  "kind": "app-scenario",
+  "launcher": "app-scenario",
+  "iterations": 4,
+  "port": 3948,
+  "sourceCommit": "be6a44ba3806a8abeac8a7adf6c05551b0d2861e-dirty",
+  "debugRoutePresent": true,
+  "idleMB": 538.2,
+  "peakMB": 538.2,
+  "finalMB": 467.8,
+  "growthMB": 0,
+  "lastSampleMB": 467.8,
+  "retainedCacheBytes": 0,
+  "cacheEntries": 2,
+  "cacheCount": 40,
+  "sessions": [
+    {
+      "iteration": 1,
+      "taskId": "task_mvl3qs7yb3ed730c89a4",
+      "chatStatus": 200,
+      "memoryStatus": 500,
+      "chatBytes": 424520,
+      "memoryBytes": 43,
+      "error": null
+    },
+    {
+      "iteration": 2,
+      "taskId": "task_mvl3s7ud0d5b1f18d6d2",
+      "chatStatus": 200,
+      "memoryStatus": 500,
+      "chatBytes": 424468,
+      "memoryBytes": 43,
+      "error": null
+    },
+    {
+      "iteration": 3,
+      "taskId": "task_mvl3sce56be912c0edb7",
+      "chatStatus": 200,
+      "memoryStatus": 500,
+      "chatBytes": 424468,
+      "memoryBytes": 43,
+      "error": null
+    },
+    {
+      "iteration": 4,
+      "taskId": "task_mvl3sgqd2eef91e444bd",
+      "chatStatus": 200,
+      "memoryStatus": 500,
+      "chatBytes": 424468,
+      "memoryBytes": 43,
+      "error": null
+    }
+  ],
+  "thresholdMB": 64,
+  "thresholdExceeded": false,
+  "durationMs": 95275,
+  "platform": "win32",
+  "notes": [],
+  "samples": [
+    {
+      "at": 1792768031378,
+      "totalMB": 467.6,
+      "processCount": 5
+    },
+    {
+      "at": 1792768033292,
+      "totalMB": 467.1,
+      "processCount": 5
+    },
+    {
+      "at": 1792768034374,
+      "totalMB": 467.8,
+      "processCount": 5
+    }
+  ]
+}
