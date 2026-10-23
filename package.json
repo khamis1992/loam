@@ -1,6 +1,6 @@
 {
   "name": "loam",
-  "version": "0.5.28",
+  "version": "0.5.29",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -45,7 +45,7 @@
     "check:memory-skills": "tsc -p addons/memory-skills-mcp/tsconfig.json",
     "smoke:memory-skills": "node addons/memory-skills-mcp/test/smoke.mjs",
     "desktop": "npm run build:server && electron electron/main.cjs",
-    "dist": "npm run build:icon && npm run build:server && electron-builder --win --publish never",
+    "dist": "npm run build:icon && npm run build:server && npm --prefix packages/web run build && npm run vendor && npm run vendor:craft && electron-builder --win --publish never",
     "dist:publish": "npm run build:server && electron-builder --win --publish always",
     "feed:make": "node tools/update-feed/make-feed.mjs",
     "feed:serve": "node tools/update-feed/serve-feed.mjs",
