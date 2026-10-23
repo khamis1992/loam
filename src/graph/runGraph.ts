@@ -321,6 +321,7 @@ export class RunGraph {
     const node = this.addNode(runId, state, {
       type: "branch",
       seed: `fanout:${fanoutId}:${index}`,
+      id: branchNodeId(runId, fanoutId, index),
       status: "running",
       data: {
         fanoutId,
@@ -353,6 +354,7 @@ export class RunGraph {
     const node = this.addNode(runId, state, {
       type: "merge",
       seed: `fanout-merge:${fanoutId}`,
+      id: mergeNodeId(runId, fanoutId),
       status: "finished",
       data: {
         fanoutId,
@@ -621,6 +623,7 @@ export class RunGraph {
           event.label,
           event.summary,
           event.nodeId,
+          event.ok,
         );
       case "fanout_merge":
         return this.onFanoutMerge(runId, state, event.fanoutId, event.branchNodeIds, event.summary);
@@ -645,28 +648,51 @@ export class RunGraph {
     label?: string,
     summary?: string,
     nodeId?: string,
+    ok?: boolean,
   ): string[] {
     if (phase === "start") {
+      // A recorded log may begin with a branch when no earlier event created the
+      // root (a live run always has one, because `beginRun` runs first). Creating
+      // it here is what gives a replayed branch the same parent as a live one.
+      if (!state.rootId) this.ensureRoot(runId, "");
       if (!state.fanouts.has(fanoutId)) state.fanouts.set(fanoutId, { total: index + 1 });
       // Branches arrive in flight order, so the label's "of N" grows to the
       // highest index seen rather than freezing at the first branch.
       const known = state.fanouts.get(fanoutId)!;
       if (index + 1 > known.total) known.total = index + 1;
+      // Branches already on the canvas were opened before this one was counted,
+      // so they still show the old "of N". Bumping them here is what keeps every
+      // branch of a fan-out agreeing on the size, live or replayed.
+      for (let earlier = 0; earlier < index; earlier += 1) {
+        const sibling = this.store.getNode(branchNodeId(runId, fanoutId, earlier), runId);
+        if (!sibling || (sibling.data as { total?: number }).total === known.total) continue;
+        this.store.update(sibling.id, {
+          status: sibling.status,
+          data: { ...(sibling.data as Record<string, unknown>), total: known.total },
+        });
+      }
       const existing = nodeId ? this.store.getNode(nodeId, runId) : undefined;
       if (existing) {
-        const data = { ...(existing.data as Record<string, unknown>), fanoutId, index, ...(label ? { label: oneLine(label, 200) } : {}) };
+        // A live run already opened this branch through `createBranch`, which could
+        // not know the fan-out total yet. Writing it here is what makes the live
+        // node identical to the one a replay builds from the same event.
+        const data = { ...(existing.data as Record<string, unknown>), fanoutId, index, total: known.total, ...(label ? { label: oneLine(label, 200) } : {}) };
         this.store.update(existing.id, { status: "running", data });
         return [existing.id];
       }
       const created = this.addNode(runId, state, {
         type: "branch",
         seed: `fanout:${fanoutId}:${index}`,
+        // Live runs open the branch through `createBranch` and the event carries
+        // that id; a replay sees only the event, so it must derive the same id or
+        // the branch would not be the node the `done` event and the merge refer to.
+        id: nodeId ?? branchNodeId(runId, fanoutId, index),
         status: "running",
         data: {
           fanoutId,
           index,
-          total: state.fanouts.get(fanoutId)?.total,
           ...(label ? { label: oneLine(label, 200) } : {}),
+          total: known.total,
         },
         parent: state.stepId ?? state.lastId,
       });
@@ -677,12 +703,14 @@ export class RunGraph {
     // opened, which keeps the branch subtree on the canvas intact.
     const target = nodeId ? this.store.getNode(nodeId, runId) : undefined;
     if (!target) return [];
-    const ok = !summary || !/^failed\b/i.test(summary);
-    const nextStatus: RunNodeStatus = ok ? "finished" : "failed";
+    // The caller's explicit flag is authoritative; the prose regex is only a
+    // fallback for event logs recorded before the flag existed.
+    const branchOk = ok ?? (!summary || !/^failed\b/i.test(summary));
+    const nextStatus: RunNodeStatus = branchOk ? "finished" : "failed";
     if (canTransition(target.status, nextStatus)) {
       this.store.update(target.id, {
         status: nextStatus,
-        data: { ...(target.data as Record<string, unknown>), ...(summary ? { summary: oneLine(summary, 600) } : {}) },
+        data: { ...(target.data as Record<string, unknown>), ...(summary ? { summary: oneLine(summary, 600) } : {}), ...(!branchOk ? { failReason: oneLine(summary || "branch failed", 600) } : {}) },
       });
     }
     return [target.id];
@@ -797,11 +825,13 @@ export class RunGraph {
   private addNode(
     runId: string,
     state: RunState,
-    spec: { type: RunNodeType; seed: string; status: RunNodeStatus; data?: unknown; parent: string },
+    spec: { type: RunNodeType; seed: string; status: RunNodeStatus; data?: unknown; parent: string; id?: string },
   ): RunNode {
     // The event seed makes the id deterministic across replays; the occurrence
     // counter keeps two calls to the same tool inside one step from colliding.
-    const id = eventNodeId(spec.type, spec.seed + "#" + String(state.seq));
+    // Nodes with a stable identity of their own (a fan-out branch, a merge) pass
+    // the id explicitly so live and replayed runs agree on it.
+    const id = spec.id ?? eventNodeId(spec.type, spec.seed + "#" + String(state.seq));
     const position = state.seq;
     const existing = this.store.getRow(id);
     state.seq = this.nextSeq(state);

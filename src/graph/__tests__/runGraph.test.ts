@@ -22,7 +22,9 @@ import {
   RUN_NODE_STATUSES,
   RUN_NODE_TYPES,
   RunGraphStore,
+  branchNodeId,
   eventNodeId,
+  mergeNodeId,
   siblingNodeId,
   parseExport,
 } from "../store.js";
@@ -550,5 +552,147 @@ describe("run graph: multi-model A/B siblings", () => {
     const graph = new RunGraph();
     graph.beginRun(RUN, "Compare models");
     assert.throws(() => graph.addSiblings(RUN, "nope", MODELS), /run node not found/);
+  });
+});
+
+describe("run graph: N7 branch fan-out", () => {
+  beforeEach(() => freshDataDir("loam-rungraph-fanout-"));
+  afterEach(() => restoreDataDir());
+
+  const FANOUT_ID = "fanout-task_test_1-2-lz4";
+  const BRANCH_LABELS = ["angle 1", "angle 2"];
+  const BRANCH_IDS = BRANCH_LABELS.map((_, index) => branchNodeId(RUN, FANOUT_ID, index));
+  const MERGE_ID = mergeNodeId(RUN, FANOUT_ID);
+
+  /** The event log a live fan-out produces, ids included. */
+  function fanoutEvents(): AgentEvent[] {
+    return [
+      { type: "task", taskId: RUN },
+      {
+        type: "fanout_branch",
+        fanoutId: FANOUT_ID,
+        index: 0,
+        phase: "start",
+        nodeId: BRANCH_IDS[0],
+        label: BRANCH_LABELS[0],
+      },
+      {
+        type: "fanout_branch",
+        fanoutId: FANOUT_ID,
+        index: 1,
+        phase: "start",
+        nodeId: BRANCH_IDS[1],
+        label: BRANCH_LABELS[1],
+      },
+      {
+        type: "fanout_branch",
+        fanoutId: FANOUT_ID,
+        index: 0,
+        phase: "done",
+        nodeId: BRANCH_IDS[0],
+        ok: true,
+        summary: "branch 1 finished",
+      },
+      {
+        type: "fanout_branch",
+        fanoutId: FANOUT_ID,
+        index: 1,
+        phase: "done",
+        nodeId: BRANCH_IDS[1],
+        ok: false,
+        summary: "branch 2 failed: boom",
+      },
+      {
+        type: "fanout_merge",
+        fanoutId: FANOUT_ID,
+        branchNodeIds: BRANCH_IDS,
+        summary: "merged result",
+      },
+    ];
+  }
+
+  /** Shape of the branch/merge nodes, which is what replay must reproduce. */
+  function fanoutShape(graph: RunGraph): unknown {
+    return graph
+      .getRunNodes(RUN)
+      .filter((node) => node.type === "branch" || node.type === "merge")
+      .map((node) => ({
+        type: node.type,
+        id: node.id,
+        status: node.status,
+        parents: [...node.parent_ids].sort(),
+        data: node.data,
+      }))
+      .sort((a, b) => (a.id < b.id ? -1 : 1));
+  }
+
+  it("derives the branch and merge ids the fan-out itself uses", () => {
+    assert.match(BRANCH_IDS[0]!, /^branch-[0-9a-f]{16}$/);
+    assert.match(MERGE_ID, /^merge-[0-9a-f]{16}$/);
+    assert.notEqual(BRANCH_IDS[0], BRANCH_IDS[1], "each branch gets its own id");
+    assert.equal(branchNodeId(RUN, FANOUT_ID, 0), BRANCH_IDS[0], "ids are stable across calls");
+  });
+
+  it("opens one branch root per spec and merges them into a single node", () => {
+    const graph = new RunGraph();
+    graph.beginRun(RUN, "Fan out");
+    // Live path: the tool creates the branch and merge nodes, then emits events.
+    graph.createBranch(RUN, FANOUT_ID, 0, BRANCH_LABELS[0]!);
+    graph.createBranch(RUN, FANOUT_ID, 1, BRANCH_LABELS[1]!);
+    for (const event of fanoutEvents()) graph.applyEvent(RUN, event);
+    const merge = graph.createMerge(RUN, FANOUT_ID, BRANCH_IDS, "merged result");
+    assert.equal(merge.id, MERGE_ID, "createMerge uses the deterministic id");
+
+    const branches = graph.getRunNodes(RUN).filter((node) => node.type === "branch");
+    const merges = graph.getRunNodes(RUN).filter((node) => node.type === "merge");
+    assert.equal(branches.length, 2, "one node per branch, no duplicates from the events");
+    assert.equal(merges.length, 1);
+    assert.equal(merge.status, "finished");
+    assert.deepEqual(merge.parent_ids, BRANCH_IDS, "the merge cites every branch it consumed");
+    assert.deepEqual(merge.parent_ids, [...new Set(merge.parent_ids)], "the merge fan-in has no duplicates");
+
+    const data = merge.data as { branchNodeIds?: string[]; fanoutId?: string };
+    assert.deepEqual(data.branchNodeIds, BRANCH_IDS, "the merge records the fan-in it merged");
+    assert.equal(data.fanoutId, FANOUT_ID);
+
+    const byIndex = new Map(branches.map((node) => [(node.data as { index?: number }).index, node]));
+    assert.equal(byIndex.get(0)!.status, "finished", "a successful branch is finished");
+    assert.equal(byIndex.get(1)!.status, "failed", "a failed branch stays failed");
+    assert.equal(
+      (byIndex.get(1)!.data as { failReason?: string }).failReason,
+      "branch 2 failed: boom",
+      "the failure carries its reason",
+    );
+    assert.equal((byIndex.get(0)!.data as { total?: number }).total, 2, "the branch knows the fan-out size");
+  });
+
+  it("replaying the same log rebuilds the identical fan-out", () => {
+    const live = new RunGraph();
+    live.beginRun(RUN, "Fan out");
+    live.createBranch(RUN, FANOUT_ID, 0, BRANCH_LABELS[0]!);
+    live.createBranch(RUN, FANOUT_ID, 1, BRANCH_LABELS[1]!);
+    for (const event of fanoutEvents()) live.applyEvent(RUN, event);
+    live.createMerge(RUN, FANOUT_ID, BRANCH_IDS, "merged result");
+
+    const replayed = new RunGraph();
+    replayed.replay(RUN, fanoutEvents());
+
+    assert.deepEqual(
+      fanoutShape(replayed),
+      fanoutShape(live),
+      "replay rebuilds the same ids, statuses, parents, and data as a live run",
+    );
+  });
+
+  it("replays a fan-out that begins with a branch, with no root event", () => {
+    // A trimmed log may start at the first branch; it must still hang off a root
+    // rather than orphaning, and the branch must land on the deterministic id.
+    const graph = new RunGraph();
+    graph.replay(RUN, fanoutEvents().slice(1));
+
+    const branch = graph.getNode(BRANCH_IDS[0]!, RUN);
+    assert.ok(branch, "the branch keeps the deterministic id even without a task event");
+    assert.equal(branch!.parent_ids.length, 1, "the branch attaches to a parent instead of orphaning");
+    assert.equal(graph.getNode(BRANCH_IDS[1]!, RUN)!.parent_ids.length, 1);
   });
 });

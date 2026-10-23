@@ -221,6 +221,8 @@ export type AgentEvent =
       label?: string;
       /** Short summary of what the branch produced, on `done`. */
       summary?: string;
+      /** True when the branch produced a usable result; the canvas marks the node failed otherwise. */
+      ok?: boolean;
     }
   /** N7 branch fan-out: the merge step consumed every branch of a fan-out. */
   | {
