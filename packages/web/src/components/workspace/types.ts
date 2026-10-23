@@ -31,6 +31,9 @@ export interface WorkspaceEditorProps {
   live: boolean;
   onSave: (data: Blob | string) => Promise<void>;
   onChatEdit: (instruction: string) => void;
+  /** The task's chat events. Only the canvas reads them (its node detail lists
+   * the recent tools that produced a node); every other editor can ignore it. */
+  events?: import('@shared/socket').ChatEvent[];
 }
 
 export interface WorkspaceEditorDef {

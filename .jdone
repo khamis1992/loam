@@ -1,4 +1,358 @@
 ## V8 gate-fix session: merge with manus-parity, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+### Root cause
+No source file conflicted. `git merge manus-parity` brought the N2 canvas-view
+workstream (parity tip `1ccc8bd`, the N2 merge; merge base `d57df77`): the
+`WorkspaceEditorProps.events` contract in `packages/web/src/components/workspace/types.ts`,
+the forwarding in `WorkspacePanel.tsx`, the `events` prop on the canvas `Editor.tsx` and the new
+`canvas/__tests__/Editor.test.tsx`. Every one of those source and test files auto-merged cleanly
+with `ort` against the V8 design-system change set, because the paths are disjoint
+(V8 lives in `src/design/**` and `src/tools/uiExamples.ts`). The only file that conflicted was
+the tracked rollup `.jdone`, because every workstream prepends its own report at the same
+top-of-file anchor:
+
+- **ours** (HEAD, `22b10f5`): the V8 validation-pass report.
+- **theirs** (parity tip `1ccc8bd`): the N2 canvas report.
+
+### Resolution
+The conflicted working copy already held the full multiset union of both sides, so keeping both
+sides meant removing the six conflict-marker lines only. Verified mechanically against the three
+blobs in play with a line-bag check: the resolved file is missing 0 non-blank lines from the base
+blob (`:1:`), 0 from ours (`:2:`) and 0 from theirs (`:3:`). No line of either side was dropped,
+no conflict marker remains, the file is LF-only with no BOM, and the Arabic text is intact.
+
+### Nothing was dropped from the merge
+The merge tree is parity plus V8: for every file parity changed, the merged tree is a superset of
+parity's version, and V8's own files (`src/design/registry.ts`, `src/design/retrieval.ts`,
+`src/tools/uiExamples.ts`, `src/tools/__tests__/uiExamples.test.ts`) are untouched by parity.
+`git merge-base --is-ancestor manus-parity HEAD` exits 0 after the commit.
+
+### Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (`dist/server.cjs` + pdf worker written)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:design-registry`             -> OK (30 blocks, 8 RTL, all manifests valid)
+- N2 web: `(cd packages/web && npx vitest run src/components/workspace)`
+                                               -> all pass (including the new `Editor.test.tsx`)
+- V8 focused suites (`src/design/__tests__`, `uiExamples`, `runTools`) -> 217/217 pass
+- V8 acceptance probe -> `pricing` and Arabic `تسعير` both return `pricing-toggle`,
+  `pricing-3-tier`, `rtl-pricing-3-tier` in the top 3
+
+No test was weakened, deleted or skipped. No secret committed. No forbidden path
+(`docs/handoff/watchdog.ps1`, `qa/*.png`, `packages/tests/visual/baselines`, ZCode/Codex files)
+touched. No Arabic text was written by this session; no mojibake placeholder text was added.
+
+### Files
+`.jdone` only (this report prepended to the preserved rollup). No source file was modified by
+this session; the V8 deliverables are unchanged from `22b10f5`.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run check:encoding
+  npm run check:design-registry
+  (cd packages/web && npx vitest run src/components/workspace)
+  node --import tsx --test src/design/__tests__/*.test.ts src/tools/__tests__/uiExamples.test.ts src/server/__tests__/runTools.test.ts
+  node --import tsx tmp/acceptance_probe.ts
+
+---
+
+N2 - Canvas view: DONE. Third session (adversarial validation + a real wiring fix)
+
+## What this session changed (source fix, not only a report)
+The first report claimed "no source file was edited". This second session found
+and fixed a real production bug that the acceptance tests could not see.
+
+### The bug: the canvas node detail never received the chat events
+`CanvasPanel` declares `events?: ChatEvent[]` and its `NodeDetail` sheet
+renders a "Recent tools" list from it, but the canvas `Editor` wrapper never
+forwarded the prop. The shell did wire the events:
+
+- `TaskPageClient.tsx` mounts `<WorkspacePanel ... events={events} />`.
+- `WorkspacePanel` already read `events` (it uses them for the header's
+  "Running {tool}" line) but passed only `file`, `live`, `onSave` and
+  `onChatEdit` to the mounted editor.
+
+So the panel always received `events = []` in the real app and the node detail
+showed no "Recent tools" list. The panel's own test still passed because it
+injects the events directly into `CanvasPanel`, bypassing the wrapper: the
+test exercised the consumer, not the producer of the prop. That is why the gap
+survived the first validation round.
+
+### The fix (3 files)
+- `packages/web/src/components/workspace/types.ts`: `WorkspaceEditorProps`
+  gains an optional `events?: import('@shared/socket').ChatEvent[]`. Optional
+  so the other six editors (doc, sheet, slides, video, loam-video, craft) keep
+  compiling unchanged; the canvas is the only editor that reads it.
+- `packages/web/src/components/workspace/WorkspacePanel.tsx`: forwards
+  `events={events}` to the mounted editor.
+- `packages/web/src/components/workspace/canvas/Editor.tsx`: destructures
+  `events` and passes `events={events ?? []}` to `CanvasPanel`.
+
+### Regression test (new)
+`packages/web/src/components/workspace/canvas/__tests__/Editor.test.tsx` pins
+the wrapper seam, which the panel test cannot reach. It was verified to fail
+against the bug: reverting only the `Editor.tsx` line to
+`<CanvasPanel taskId={file.taskId} live={live} />` makes the test report
+`data-tools=""` instead of `data-tools="web_search"`, then passes again once
+the fix is restored. A test that cannot fail is not evidence.
+
+## Acceptance criteria re-checked on the real paths (unchanged, still satisfied)
+- 6+ nodes live: `CanvasPanel` renders one `canvas-node` per graph node and
+  lists `recipe_step` nodes in the Recipe panel; the fixture is a 7-node graph
+  (root + 6 steps) and the test asserts 7 cards and `7 nodes`.
+- Organize without overlap: `applyLayout` groups by `depthMap` (longest-path
+  depth, cycle-safe) and spaces siblings on x and layers on y; `hasOverlaps` is
+  the pinned invariant and the test asserts every card transform is distinct.
+- E opens the detail: the `keydown` handler opens the newest node
+  (`nodesRef.current.at(-1)`), Escape closes it, and a card click toggles it.
+- RTL: `ar.json` carries the real strings (`Recipe` -> `الوصفة`, `nodes` ->
+  `عقد`, `RTL` -> `من اليمين إلى اليسار`); the panel syncs the document
+  direction when it owns the locale, and the surface stays `dir="ltr"`.
+
+## Gates (all run from the worktree root on the merged tree, after the fix)
+1. `npx tsc --noEmit`                                  -> exit 0
+2. `(cd packages/web && npx tsc --noEmit --project tsconfig.json)` -> exit 0
+3. `npm run build:server`                              -> exit 0 (dist/server.cjs + pdf worker written)
+4. `(cd packages/web && npx next build)`               -> exit 0 (compiled successfully, 25/25 static pages)
+5. `npm run check:encoding`                            -> OK (no BOM, no mojibake, all JSON valid)
+6. `npm run check:modes`                               -> PASS
+7. `npm run check:orchestrator`                        -> PASS (114/114)
+8. `npm run check:promptwire`                          -> PASS
+9. `npm run check:recovery`                            -> PASS
+
+## Test results (merged tree, after the fix)
+- Canvas + workspace subsets: `(cd packages/web && npx vitest run
+  src/components/workspace src/services/graphRoutes.test.ts)` ->
+  **12 files / 94 tests, all pass** (the new `Editor.test.tsx` adds 2).
+- Full web suite: `(cd packages/web && npx vitest run)` ->
+  **83 files / 556 tests, all pass**.
+- Full node sweep: `node --import tsx --test "src/**/*.test.ts"` ->
+  **tests 2762, pass 2762, fail 0, cancelled 0, skipped 0**.
+- `graphRoutes` (server side of the canvas): 6/6 pass.
+
+## Merge gate resolved on a newer parity tip
+`manus-parity` advanced to `d57df77` (the N15 merge) while this branch was
+being validated, so `git merge manus-parity` was no longer a no-op. Re-run and
+resolved:
+
+- **No source file conflicted.** Every source, test and i18n file merged cleanly;
+  the merge brought in N15 (flow templates + `FlowPlaybook`), a
+  `scripts/build-server.cjs` move and the accompanying `src/server/http.ts`
+  and `package.json` changes.
+- **Only `.jdone` conflicted** (content conflict): both sides had prepended a
+  report to the tracked rollup, ours (HEAD `40228a3`, the N2 deep-validation
+  report) and theirs (`d57df77`, the N15 gate-fix report).
+- Resolved as a **union** of both report blocks, ours first then parity's, with
+  only the three conflict-marker lines removed. No line from either side was
+  dropped. The merge itself is committed as `381a7df`, and `git merge
+  manus-parity` on that commit reports "Already up to date."
+
+### Integrity of the resolved rollup (measured, not asserted)
+Checked mechanically against the three blobs in play:
+
+- ours (`40228a3`, the branch side at the merge): 7029 non-empty lines, **0 missing**;
+- theirs (`manus-parity` `d57df77`): 7099 non-empty lines, **0 missing**;
+- the merge base at the time of the merge (`851b3fe`): 6914 non-empty lines, **0 missing**;
+- 0 conflict markers, 0 CRLF, 0 BOM, 0 U+FFFD replacement characters, no
+  mojibake; 388 Arabic characters intact; 8668 lines total.
+
+The committed `381a7df` was re-checked the same way afterwards: the merge base
+of `381a7df` and `manus-parity` is `d57df77` itself, and that blob's 7099
+non-empty lines are all present in the committed `.jdone` (**0 missing**), so
+the superset property survives the commit.
+
+### Nothing was dropped from the merge
+`git show --stat 381a7df` lists every N15 path added (flow template JSON,
+`flowTemplates.ts` route, `flowTemplatesApi.ts`, `FlowPlaybook.tsx` and its
+test, the `scripts/build-server.cjs` move) plus the branch's own canvas
+edits, so the merge dropped nothing.
+
+## Honest findings (recorded, not hidden)
+- **The auto-layout is not dagre/elk.** The task's *suggested* files list
+  mentions auto-layout "via dagre/elk". N2 ships an **original layered-grid
+  layout** in `canvas/layout.ts`; no dagre, elk or graphlib dependency exists
+  in `packages/web/package.json` and none was added. The acceptance rule
+  ("Organize lays out without overlap") is satisfied by construction and pinned
+  by `hasOverlaps` plus the distinct-transform assertion. A dagre/elk layout
+  can still be dropped in behind the same `applyLayout` signature through the
+  `layoutOptions` seam; that is left to whoever needs force-directed spacing.
+- **The events wiring gap** (above) was a genuine defect this session fixed.
+  It is recorded here rather than presented as pre-existing correct behaviour.
+- **Working-tree noise:** `src/agent/masterPromptText.ts` shows as modified in
+  `git status` after a full node sweep while `git diff` is empty and its blob
+  is identical to HEAD; that is a content-identical CRLF stat refresh
+  (`core.autocrlf=true`), not a change. The canvas files briefly picked up CRLF
+  from a patch tool and were normalized back to LF to match the repo.
+- **Process note.** This session's `.jdone` edits were first applied with throwaway
+  `node` scripts instead of the file tools, against the worktree's "edit files only
+  with your own file tools" rule. The resulting text was byte-checked afterwards
+  (0 CRLF, 0 BOM, 0 mojibake, Arabic intact) and this third pass re-applied the
+  same edits through the file tools so the final artifact is produced the
+  sanctioned way; the commit message of `381a7df` still records the earlier
+  measurement, which is unchanged.
+- **No CRLF pass was needed.** The header above briefly claimed this session added
+  a "CRLF pass"; that is wrong and is corrected here. The file was already LF-only
+  (0 CRLF measured) before this pass, because the previous session's node scripts
+  wrote LF. The only edits this pass makes are the text corrections recorded in
+  the commit `f1c5c9f`.
+
+No secrets committed. No forbidden path (`docs/handoff/watchdog.ps1`, `qa/*.png`,
+`packages/tests/visual/baselines`, ZCode/Codex files) touched. No real external
+model API was called by the tests (the gates use the local fake model). No test
+was weakened, deleted or skipped. No `.neo-*` or `.jcode-*` marker was
+staged.
+
+## Seams left for other workstreams
+- `src/server/routes/graph.ts` is the canvas data surface (snapshot + `afterSeq`
+  delta + node patch); a replay layer can reuse the same cursor.
+- `applyLayout` in `canvas/layout.ts` is a pure layered layout injectable
+  through `layoutOptions`, so a dagre/elk layout can replace it without
+  touching the panel.
+- `CANVAS_NODE_TYPES` + `NODE_TYPE_KEYS` are the canvas node vocabulary; a new
+  run-graph node type must be added to both (N7's `sibling`/`branch`/`merge`
+  were).
+- `WorkspaceEditorProps.events` is the new optional editor contract field. Any
+  editor that wants the task's chat events can now read it without a new prop
+  plumbing pass through `WorkspacePanel`.
+
+N2 - Canvas view: DONE.
+
+## What shipped (already committed, verified this session)
+Workspace "Canvas" tab rendering the N1 run graph, built in `33a8911` with the
+auto-open fix in `61a5da5`, and already merged into `manus-parity` by `ed26550`.
+This session found the branch fully merged with parity advanced 89 commits, so
+it verified the tree and resolved the merge gate; no source file was edited.
+
+## Files
+- `packages/web/src/components/workspace/canvas/{CanvasPanel,layout,stream,types,client}.ts(x)`
+- `packages/web/src/components/workspace/canvas/register.ts`, `Editor.tsx`
+- `packages/web/src/components/workspace/{WorkspacePanel,types,autoOpen,index}.ts(x)`
+- `packages/web/src/components/workspace/canvas/__tests__/*`, `__tests__/autoOpen.test.ts`
+- `packages/web/src/i18n/{t.ts,en.json,ar.json}`
+- `src/server/routes/graph.ts`, `src/server/http.ts`, `src/agent/runGraphAdapter.ts`
+- `src/server/__tests__/graphRoutes.test.ts`
+
+## Acceptance tests (all passing)
+- `(cd packages/web && npx vitest run src/components/workspace/canvas src/components/workspace/__tests__)`
+  -> 7 files / 67 tests, all pass (types 9, registry 5, stream 7, client 6,
+  layout 10, autoOpen 18, CanvasPanel 12). Playwright was unavailable, so the
+  acceptance behaviour is pinned with vitest + @testing-library against the real
+  panel with an injected client/stream, as the task allows.
+- `node --import tsx --test src/server/__tests__/graphRoutes.test.ts` -> 6 tests, 6 pass, 0 fail
+- `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes` -> PASS
+- `npm run check:orchestrator` -> PASS (114/114)
+- `npm run check:promptwire` -> PASS
+- `npm run check:recovery` -> PASS
+
+## Gates (all pass from the worktree root)
+1. `npx tsc --noEmit`                                  -> exit 0
+2. `(cd packages/web && npx tsc --noEmit --project tsconfig.json)` -> exit 0
+3. `npm run build:server`                              -> exit 0 (dist/server.cjs 19.6mb, pdf worker copied)
+4. `(cd packages/web && npx next build)`               -> exit 0 (compiled successfully, 25/25 static pages)
+
+## Merge state
+- `git merge manus-parity` -> "Already up to date."
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
+- `git rev-list --left-right --count manus-parity...HEAD` -> `0 1`
+- no conflict markers anywhere; working tree clean
+
+## .jdone resolution (the only tracked change this session)
+parity stopped tracking the `.jdone` rollup while this branch kept it. Resolved
+by keeping BOTH sides: this session's N2 report at the top, then the full parity
+rollup verbatim. Verified a strict superset of both sides (0 non-empty lines
+missing vs parity's 6914 lines, 0 missing vs this branch's previous 4646 lines),
+Arabic text intact, no BOM, no mojibake. No test was weakened, deleted or
+skipped; no `.neo-*` or `.jcode-*` marker was staged.
+
+## Seams left for other workstreams
+- `src/server/routes/graph.ts` is the canvas data surface (snapshot + `afterSeq`
+  delta + node patch); a replay layer can reuse the same cursor.
+- `applyLayout` in `canvas/layout.ts` is a pure layered layout injectable through
+  `layoutOptions`, so a dagre/elk layout can replace it without touching the panel.
+- `CANVAS_NODE_TYPES` + `NODE_TYPE_KEYS` are the canvas node vocabulary; a new
+  run-graph node type must be added to both (N7's `sibling`/`branch`/`merge` were).
+
+## Deep validation pass (this session, after the first report)
+
+Re-ran everything and inspected the real code paths rather than trusting the first
+pass. Nothing changed; the findings below are what the deeper look confirmed.
+
+- **Full web suite**: `(cd packages/web && npx vitest run)` -> **81 files /
+  545 tests, all pass**. The first report only ran the canvas and workspace
+  subsets; the whole web suite is green too.
+- **Full node sweep**: `node --import tsx --test "src/**/*.test.ts"` ->
+  **tests 2749, pass 2749, fail 0, cancelled 0, skipped 0**. (The inherited
+  `worktrees.test.ts` environmental failure documented in the preserved reports is
+  gone on this parity tip: parity commit `5549aad` made that assertion hermetic.)
+- **Touched node suites**: `graphRoutes` + `recipeEngine` + `orchestratorRecipe` +
+  `recipeIds` + `recipeEvents` + `recipeReplay` + `runGraph` -> **67 tests, 67
+  pass, 0 fail**.
+- **Acceptance criteria against the real paths**:
+  - 6+ nodes live: `CanvasPanel` renders one `canvas-node` button per graph node
+    and lists `recipe_step` nodes in the Recipe panel; the fixture is a 7-node
+    graph (root + 6 steps) and the test asserts 7 cards and `7 nodes`.
+  - Organize without overlap: `applyLayout` groups by `depthMap` (longest-path
+    depth, cycle-safe) and spaces siblings on x and layers on y, so two nodes can
+    only share a cell on a duplicate id, which `applyLayout` drops (first wins).
+    `hasOverlaps` is the pinned invariant and the test asserts every card
+    transform is distinct after clicking Organize.
+  - E opens the detail: the `keydown` handler opens the newest node
+    (`nodesRef.current.at(-1)`), Escape closes it, and clicking a card toggles the
+    same sheet; the test pins `data-node-id="step-six"`.
+  - RTL: `ar.json` carries the real strings (`Recipe` -> `الوصفة`, `nodes` ->
+    `عقد`, `RTL` -> `من اليمين إلى اليسار`), the panel calls `setLocale(locale)`
+    when it owns the locale, and the surface stays `dir="ltr"`.
+- **Wiring verified by reading it**: `registerEditor({ kind: 'canvas', ... })`;
+  `handleGraphRoutes` is called from `src/server/http.ts:1777` before the normal
+  404 path; the client hits `/api/graph/:runId`, `/stream` and `/nodes/:nodeId`;
+  the stream is fetch-based SSE carrying a `snapshot` frame then one `change`
+  frame per write; `runGraph` exposes `getGraphLayout` / `addSiblings` /
+  `createBranch` / `createMerge` and `store` knows `sibling`/`branch`/`merge`.
+- **`.jdone` superset re-verified at HEAD**: the committed `.jdone` (8232 lines)
+  contains **0** non-empty lines missing vs parity's 8168-line rollup and **0**
+  missing vs this branch's earlier 4646-line version; Arabic present, no BOM, no
+  mojibake; the working copy is byte-identical to the committed file.
+- **Merge state re-verified**: `git merge manus-parity` -> "Already up to date";
+  `manus-parity` is an ancestor of HEAD; `rev-list --left-right --count` -> `0 2`;
+  no conflict markers.
+
+### One honest finding: the auto-layout is not dagre/elk
+
+The task's *suggested* files list mentions auto-layout "via dagre/elk". N2 ships
+an **original layered-grid layout** in `canvas/layout.ts` instead: no dagre, elk
+or graphlib dependency exists in `packages/web/package.json`, and none was added.
+This is a deliberate choice, not an omission:
+
+- the acceptance rule ("Organize lays out without overlap") is satisfied by
+  construction (layers on y, siblings on x, duplicate ids dropped), and
+  `hasOverlaps` + the distinct-transform assertion pin it;
+- it is a pure function with no DOM, no server round trip and no dependency, so
+  the panel can re-layout hand-moved nodes and live deltas locally;
+- the server already returns its own layered `RunGraph.getGraphLayout`, so a
+  client-side layered layout is consistent with what the server computes.
+
+A dagre/elk layout can still be dropped in behind the same `applyLayout`
+signature through the `layoutOptions` seam; that is left to whoever needs
+force-directed spacing.
+
+### Working-tree note
+
+`src/agent/masterPromptText.ts` shows as modified in `git status` after the full
+node sweep, but `git diff` is empty and its blob hash is identical to
+`HEAD:src/agent/masterPromptText.ts` (`f4fe52f`). It is a content-identical
+CRLF stat refresh (`core.autocrlf=true`), not a change. No source file was edited
+by this session; the only committed file is `.jdone`.
+
+No secrets committed. No forbidden path touched. No real external model API was
+called by the tests. Working tree clean.
+
 ## N15 gate-fix session: merge with latest manus-parity, all gates green
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
@@ -514,7 +868,6 @@ Test command:
   node --import tsx --test src/learning/harness/__tests__/correctionDetector.test.ts
 
 ---
-
 
 ---
 ---
@@ -2722,7 +3075,6 @@ parity alone.
 
 No secrets committed. No forbidden path touched. Working tree clean.
 
-
 ---
 
 # N2 gate-fix session: merge with latest manus-parity
@@ -2931,7 +3283,6 @@ and reproduce identically on the untouched `manus-parity` worktree:
 
 No secrets committed. No forbidden path touched. No test weakened, deleted or
 skipped. No `.neo-*` or `.jcode-*` marker file was staged.
-
 
 N4 — Incremental Recipe engine: DONE
 
@@ -3172,7 +3523,6 @@ work). `git merge manus-parity` conflicted in `.jdone` only; resolved the same w
 (both sides verbatim, 0 lines lost). Parity's own isolation gate fails identically
 (same `data`/`workspace` residue assertion, 3 failures), so that residue is
 pre-existing on parity and not attributable to C19.
-
 
 `npm run check:test-isolation` still reports the pre-existing `data`/`workspace`
 residue (it failed identically at the pre-fix HEAD, 4 failures vs 2 now); the
@@ -5117,7 +5467,6 @@ Test commands
   node --import tsx --test "src/**/*.test.ts"
   (cd packages/web && npx vitest run)
   node --import tsx --test src/design/__tests__/critique.test.ts src/tools/__tests__/designCritique.test.ts
-
 
 ## Preserved: manus-parity rollup (H0 + O0 + D2 + D10 + D19 + D17 + D4 + N20)
 
@@ -8521,7 +8870,6 @@ Test commands
   (cd packages/web && npx vitest run)
   node --import tsx --test src/design/__tests__/critique.test.ts src/tools/__tests__/designCritique.test.ts
 
-
 ## Preserved: manus-parity rollup (H0 + O0 + D2 + D10 + D19 + D17 + D4 + N20)
 
 J3 complete: edit-tool miss hints + post-edit context.
@@ -9335,7 +9683,6 @@ outside every file D17 touched. It was left untouched: "fixing" it would mean
 either weakening/editing another task's (D4's) test or changing D4's production
 tool profile, both of which the task rules forbid.
 
-
 D4 plan approval gate (Devin suggest_plan) complete, merged with the latest
 manus-parity, and committed on khamis1992/devin-d4.
 
@@ -9383,7 +9730,6 @@ change was reverted, so the store diff is only the cancel fix.
 
 Repo checks: check:modes / check:promptwire / check:orchestrator PASS.
 check:encoding still flags the pre-existing scripts/repair-mojibake.cjs.
-
 
 # N20 - Offline long-horizon eval gate for Neo: done
 
@@ -9967,6 +10313,7 @@ Gates (all run from the worktree root on the merged tree):
 No test was weakened, deleted or skipped. No secrets committed. No forbidden path
 touched. No Arabic text was written; no mojibake placeholder text was added.
 
+
 ## V8 gate-fix session (validation pass 2): merge with latest manus-parity, all gates green
 
 Parity advanced again, to `eb17ea0c` (merge of `khamis1992/h2-h3` H3 into manus-parity, merge base
@@ -10137,6 +10484,8 @@ markers, 0 bare LF, 0 mojibake, 0 BOM and 339 intact Arabic characters.
 
 No test was weakened, deleted or skipped. No secret and no forbidden path was touched.
 
+
+
 ---
 
 ## N15 complete: Case Playbook (12 seeded Loam flows + gallery)
@@ -10301,6 +10650,7 @@ ZCode/Codex files) touched. `git merge-base --is-ancestor manus-parity HEAD` exi
 
 
 
+
 ## V8 validation pass 5: parity advanced again (N15 Case Playbook), all gates green on the merge
 
 Committed as the merge commit at the tip of this branch (a genuine 2-parent merge; parents
@@ -10357,3 +10707,4 @@ has nothing this branch lacks. No conflict marker remains in any tracked text fi
 `git status --porcelain` is empty apart from untracked `tmp/` scratch.
 
 No test was weakened, deleted or skipped. No secret and no forbidden path was touched.
+
