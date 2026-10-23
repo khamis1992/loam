@@ -68,7 +68,8 @@ import { isOutputType, modelAbChain, normalizeEffort, type EffortLevel } from ".
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
 import { writeCheckpoint } from "./agent/checkpointLog.js";
 import type { Emit } from "./agent/events.js";
-import { applyRunEvent, beginRun } from "./agent/runGraphAdapter.js";
+import { applyRunEvent, beginRun, recallGraphHandle } from "./agent/runGraphAdapter.js";
+import { createRecallTools } from "./tools/memory.js";
 import { OllamaClient } from "./ollama.js";
 import { flexCredentials } from "./server/modelTiers.js";
 import { startServer, type RunTaskOptions } from "./server/http.js";
@@ -352,6 +353,20 @@ async function main(): Promise<void> {
     // a bounded context of its saved preferences/instructions.
     const memoryToolInstances = agentId ? createCompanionMemoryTools(agentId) : [];
     const teamToolInstances = agentId ? createCompanionTeamTools(agentId) : [];
+    // N16 cross-run recall: the shelf is process-wide, but *attaching* a recalled
+    // node is run-scoped, so these instances are rebuilt per run with the run id
+    // and a callback that files the hit into this run's graph.
+    const recallToolInstances = createRecallTools({
+      index: rt.recall ?? undefined,
+      runId: task,
+      attach: (source, runId, query) =>
+        recallGraphHandle().attachRecallNode(
+          runId,
+          source,
+          query,
+          (s) => recallGraphHandle().getNode(s.nodeId, s.runId),
+        ) ?? undefined,
+    });
     const memoryContextEntries = agentId ? memoryContext(agentId) : [];
     const memoryContextSuffix =
       memoryContextEntries.length > 0
@@ -448,7 +463,10 @@ async function main(): Promise<void> {
       // advertises them) but only reach the model when the run's garden is on.
       const knowledgeRunAllow = applyKnowledgeGate(runAllow, opts.savedRun.knowledge === true);
       const runAllowSet = new Set(knowledgeRunAllow);
-      const agentTools = registry.forAllowlist(knowledgeRunAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
+      // N16: recall/recall_status are always-on names (runTools.ts) but the
+      // run-scoped instances above are the ones that can attach a hit to THIS
+      // run, so they replace the process-wide copies instead of colliding.
+      const agentTools = registry.forAllowlist(knowledgeRunAllow).withBound([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances, ...recallToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
 
       // Sensitive host-input actions need an explicit user decision first (section 18).
       // MF4 (option 14): the gate resolves each request idempotently — replay of a

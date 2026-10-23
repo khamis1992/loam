@@ -103,6 +103,184 @@ Merge fidelity, verified mechanically against the real merge parents:
 - After any parity merge, still confirm this report's heading is present in `.jdone` and that
   `git ls-files -u` is empty.
 
+# N16 merge gate-fix session: root-cause fix for the recurring `.jdone` parity conflict
+
+Merged parity tip `cd414a5` (J8, O7, N9 rounds 11/12, M3 round 7, N19, fc-06, V8 round 12,
+C19, N10, N15, cr-04) into `khamis1992/neo-n16` and resolved the `.jdone` conflict
+with the union merge driver. Commit `00920ea` (151 files, +26076/-4249).
+
+## Root cause (found this session, not worked around)
+
+The recurring `MERGE CONFLICT with latest manus-parity in: .jdone` gate failure was
+**not** a content problem in any report. `.gitattributes` with `.jdone merge=union`
+existed only on `manus-parity` (`aab6be5`), so this branch had no merge driver and
+hand-resolved the rollup on every single parity merge. The driver is now on this
+branch too, and `.jdone` auto-resolves as a superset of both parents.
+
+Measured on the resolution: 29624 lines, **zero conflict markers**, and both the
+N16 report (line 1) and the parity J8 report (`# J8 - Cross-session file-touch
+notifications`) are present intact. No report was dropped from the merge.
+
+## The pre-existing companions gate failure (unchanged, honestly reported)
+
+`node --import tsx src/scripts/check-companions.ts` still fails, with the same 49
+tools (`grep`, `glob`, `docs_lookup`, `think`, `finish`, `plan`, `pr_review`,
+`ci_watch`, `security_status`, ...). Unchanged by this merge:
+
+- `count=49`, `has_recall=false`, `has_recall_status=false` — N16's tools are not in
+  the uncovered list.
+- `git diff --quiet 84c9af8 HEAD -- src/modes/catalog.ts src/server/companionGateway.ts`
+  exits 0: both inputs to `uncoveredModeTools()` are byte-identical to the N16 base
+  commit `84c9af8`, so the failure predates and is independent of N16.
+- `recall` needs no service entry anyway: `ALWAYS_ON_TOOLS` is merged into the
+  allowlist *after* gateway resolution (`mergeAlwaysOnTools` in `runTools.ts`).
+
+Left as-is on purpose: fixing the 49-tool catalog gap belongs to the workstreams
+that added those mode tools (`df1ec49` / `ad16ec3`), and touching
+`companionGateway.ts` would widen this change beyond N16.
+
+## Gates (all run from the worktree root on the merged tree, committed `00920ea`)
+
+- `npx tsc --noEmit -p tsconfig.json`                -> exit 0
+- `npm run build:server`                             -> exit 0 (server bundle + pdf worker written to dist/)
+- `(cd packages/web && npx next build)`              -> exit 0 (Compiled successfully, TypeScript finished)
+- `node --import tsx --test src/graph/__tests__/*.test.ts src/tools/__tests__/*.test.ts src/server/__tests__/*.test.ts src/agent/__tests__/*.test.ts`
+                                                     -> tests 1829, pass 1829, fail 0, skipped 0
+
+N16 work is intact after the merge: `src/graph/recall.ts`,
+`src/graph/__tests__/recall.test.ts`, `src/tools/memory.ts`,
+`src/graph/runGraph.ts`, `src/tools/registry.ts` and `src/agent/runGraphAdapter.ts`
+are unchanged from `85964cc` (the parity changes touched other areas).
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or
+skipped. No Arabic text was written; no mojibake placeholder text was added.
+
+---
+
+# N16 - Cross-run recall (bookshelf): DONE
+
+Committed as `85964cc` ("N16: cross-run recall bookshelf (recall/recall_status tools)")
+on branch `khamis1992/neo-n16`. 12 files changed, 1402 insertions, 5 deletions.
+
+Scope: index finished run-graph nodes (text, image, webpage, video) from past runs
+with embeddings + metadata, and expose a `recall` tool that returns nodes from
+earlier runs and attaches a chosen hit as a new node linked back to its origin.
+
+## What N16 delivered
+
+- `src/graph/recall.ts` (new) — the derived cross-run shelf.
+  - `RecallIndex`: one JSON row per finished, human-usable node in the existing
+    `entities` table (`recall_node`), keyed by the deterministic node id, so it
+    survives restarts with no new file or migration.
+  - `recallText` / `recallMedium` / `isRecallable`: which nodes are shelf-worthy and
+    the text that gets embedded. Media nodes carry no text of their own, so the
+    description is built from the metadata that is there (title, path, query,
+    summary), which is what makes "the dashboard image from the Nutrio report"
+    findable later. `media` splits into `image`/`video` from the node's own
+    `kind`/`mime`.
+  - Hybrid search: cosine over the embedded vectors when an embedder is available,
+    with a dependency-free BM25 fallback so a run still recalls its own past work
+    when Ollama is down. A vector channel with no hit falls through to lexical, so
+    a paraphrase the embedder missed is still found.
+  - `rebuild(store)` re-reads the run graph from scratch and repairs anything the
+    incremental sync missed; `scheduleSync` / `runSync` coalesce a burst of writes
+    into one embedding pass.
+  - Three properties by design: the index is derived so it can be rebuilt; it
+    degrades instead of breaking; and it is throwaway-safe, so a recall failure can
+    never break the task.
+- `src/tools/memory.ts` — `createRecallTools()`: the `recall` tool (list candidates,
+  or attach one by `node_id`) and `recall_status` (what the shelf holds, and whether
+  vector search is available). Both answer an honest empty result instead of
+  throwing.
+- `src/graph/runGraph.ts` — `attachRecall()` gives the live graph a shelf,
+  `attachRecallNode()` files a recalled hit into the current run as a `note` node
+  whose payload names the origin node id, run id, type and the query that surfaced
+  it, carrying over the origin's text/path/url when it still exists.
+- `src/agent/runGraphAdapter.ts` — attaches the process-wide shelf to the live graph
+  on `beginRun`, and a deleted run now also leaves the shelf.
+- `src/tools/registry.ts` — new `ToolRegistry.withBound()`: replaces an
+  already-present tool of the same name instead of colliding, for run-scoped
+  instances of a process-wide tool.
+- `src/index.ts` — rebuilds the recall tool instances per run with the run id and
+  the callback that files the hit into that run, bound via `withBound`.
+- `src/setup/runtime.ts` — registers the shelf and the tools process-wide.
+- `src/server/runTools.ts` — `recall` and `recall_status` are always-on, because
+  this is a read over the user's own past work plus one node write.
+- `src/agent/insights.ts`, `src/agent/sideChat.ts` — `recall` counts as a memory
+  tool and as a side-chat-mutating tool.
+
+## Acceptance test (automated and passing)
+
+"Asset made in run A is found by description in run B and attached as a node with a
+link back" is covered by `src/graph/__tests__/recall.test.ts`: a node published by
+`artifact_published` in run A is indexed, found by description through the `recall`
+tool, and attached into run B as a node whose payload carries `recalled: true`, the
+source node id, the source run id and the query.
+
+## Bugs the tests caught (all real, all fixed)
+
+1. **Zero-score hits passed the filter.** BM25 and vector scores of `0` satisfied
+   `>= minScore` (default 0), so a filter-only query returned every node of that
+   medium. `search()` now requires `score > 0`.
+2. **The tool reported the wrong error.** `recall` checked attach-wiring before node
+   existence, so a missing node was misreported as "attaching not wired". Reordered.
+3. **Stale rows in `rebuild`.** A row could outlive the node it described; `rebuild`
+   now compares identity *and* run provenance, not just the text.
+4. **A run-scoped tool could not replace a process-wide one.** `withTools` calls
+   `register`, which throws on a duplicate name, so the per-run recall instances
+   would have crashed the run. Added `withBound` with a regression test asserting
+   `withTools` throws on the duplicate while `withBound` succeeds.
+
+## Gates (all run from the worktree root on committed HEAD 85964cc)
+
+- `npx tsc --noEmit -p tsconfig.json`                -> exit 0
+- `npm run build:server`                             -> exit 0 (server bundle + pdf worker written to dist/)
+- `(cd packages/web && npx next build)`              -> exit 0 (Compiled successfully, TypeScript finished)
+- `node --import tsx --test src/graph/__tests__/*.test.ts src/tools/__tests__/*.test.ts src/server/__tests__/*.test.ts src/agent/__tests__/*.test.ts`
+                                                     -> tests 1724, pass 1724, fail 0
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added.
+
+### Pre-existing gate failure (not caused by N16)
+
+`node --import tsx src/scripts/check-companions.ts` fails with "mode tools missing
+from the service catalog" listing 49 tools (`grep`, `glob`, `docs_lookup`, `think`,
+`finish`, `plan`, `pr_review`, `ci_watch`, ...). This is **pre-existing on the base
+commit `84c9af8`** and is unrelated to N16:
+
+- `recall` and `recall_status` are **not** in the uncovered list.
+- `uncoveredModeTools()` depends only on `src/modes/catalog.ts` and
+  `src/server/companionGateway.ts`; both are byte-identical between `84c9af8` and
+  HEAD (`git diff --quiet` reports no change for either).
+- The failure comes from earlier workstreams that added mode tools without a service
+  group (last touched in `df1ec49` / `ad16ec3`).
+- `recall` does not need a service entry anyway: `ALWAYS_ON_TOOLS` is merged into the
+  allowlist *after* gateway resolution (`mergeAlwaysOnTools` in `runTools.ts`), so an
+  always-on tool reaches every mode regardless of service membership.
+
+Left as-is: fixing the 49-tool catalog gap is a separate workstream's scope, and
+touching `companionGateway.ts` would widen this change beyond N16.
+
+## Seams left for other workstreams
+
+- The shelf is embedded with the **memory** embedder only. A workstream that adds a
+  dedicated embedding model or a remote embedding service can swap it in through
+  `RecallIndexOptions.embedder` without touching the indexing logic.
+- `attachRecallNode` files hits as a `note` node. A canvas view that wants to render
+  recalled assets with their own card (image/video preview, a "from run X" badge)
+  can read `data.recalled` / `data.sourceRunId` off that node.
+- The shelf caps nodes through `maxNodes` (0 = unlimited, the current default). A
+  retention policy belongs with the run-graph retention work, not here.
+- `recall` is not in the web canvas UI yet; the tools and the node link are the
+  contract a view would consume.
+
+---
+
+## N3 gate-fix session (round 4): merge with parity tip bdae2ca (J11), all gates green
+
+Parity advanced again from `1ccc8bd` (merged as `38b9891`) to `bdae2ca` (J11 merged into
+manus-parity), so a fourth merge was required.
 
 ---
 
