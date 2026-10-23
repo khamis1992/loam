@@ -208,6 +208,28 @@ export function addCanvasBridgeNode(
   return node;
 }
 
+/** N7 branch fan-out: open one branch of a fan-out as its own canvas subtree. */
+export function createFanoutBranch(
+  runId: string,
+  fanoutId: string,
+  index: number,
+  label = "",
+  parentNodeId?: string,
+): RunNode {
+  return liveGraph().createBranch(runId, fanoutId, index, label, parentNodeId);
+}
+
+/** N7 branch fan-out: the merge node that consumes every branch of a fan-out. */
+export function createFanoutMerge(
+  runId: string,
+  fanoutId: string,
+  branchNodeIds: string[],
+  summary: string,
+  parentNodeId?: string,
+): RunNode {
+  return liveGraph().createMerge(runId, fanoutId, branchNodeIds, summary, parentNodeId);
+}
+
 /** Drop every node of a run (used when a task is deleted). */
 export function clearRun(runId: string): void {
   liveGraph().getStore().clearRun(runId);
