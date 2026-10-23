@@ -32,6 +32,9 @@ export interface SubagentStartOptions {
   depth?: number;
   /** Max tool steps for the in-process child loop. Defaults to 20. */
   maxSteps?: number;
+  /** Stable session id for this child inside its workspace. Distinct children get
+   *  distinct ids so cross-session file-touch notices reach the right run (jcode J8). */
+  sessionId?: string;
   /** Runtime dependencies for the in-process provider. */
   cfg?: Config;
   ollama?: OllamaClient;

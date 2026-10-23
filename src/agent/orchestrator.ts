@@ -114,12 +114,15 @@ async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: s
   };
   const inherited = o.systemSuffix && o.systemSuffix.trim().length > 0 ? `${o.systemSuffix.trim()}\n\n` : "";
   try {
+    // Each worker is its own agent session: a file one worker writes must be
+    // reported to a later worker that read it (jcode J8 file-touch).
     const res = await runAgent({
       cfg: o.cfg,
       ollama: o.ollama,
       tools: o.tools,
       emit,
       prompt,
+      sessionId: `orch-${o.taskId ?? "task"}-w${++workerSeq}`,
       ...(o.history ? { history: o.history } : {}),
       ...(o.memories ? { memories: o.memories } : {}),
       ...(o.signal ? { signal: o.signal } : {}),
@@ -169,6 +172,9 @@ async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: s
     };
   }
 }
+
+/** Distinguishes executor workers of one orchestrated run for file-touch tracking. */
+let workerSeq = 0;
 
 function stepPrompt(o: OrchestratorOptions, plan: Plan, step: PlanStepInfo, index: number, completed: string[], critique: VerdictInfo | null): string {
   const lines: string[] = [];
