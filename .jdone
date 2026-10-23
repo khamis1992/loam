@@ -41201,3 +41201,39 @@ region was edited with the file-edit tool only (the working-tree file is CRLF un
 file content. No test was weakened, deleted or skipped. No secret committed. No forbidden
 path touched. No Arabic text was written by this session; no mojibake placeholder text was
 added.
+
+---
+
+# N6 merge gate session note (2026-10-23, parity tip `6e17246`, seventh merge)
+
+While finalising the sixth merge, parity advanced once more (J1, the shared code-session
+server and launcher bench, merged into manus-parity as `6e17246`). Merged it the same way
+so the branch again contains the whole parity tip.
+
+`git merge --no-commit --no-ff manus-parity` auto-merged with **no conflicts**: J1 touches
+none of N6's files (new `src/server/sharedCodeSession.ts` + tests, new
+`src/tools/codeSession.ts` rework + tests, new `bench/launchers.ts` harness and results,
+`package.json` scripts, `THIRD_PARTY_NOTICES`). The N6 mission machinery and the N5 selector
+survived untouched (verified against the staged tree before committing). `.jdone` merged by
+the union driver.
+
+Merge commit `7fec1cb` (parents `f483790` and `6e17246`); `git merge-base --is-ancestor
+manus-parity HEAD` exits 0 on the final tree.
+
+## Gates re-run on the final merged tree (both merges in)
+
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (server bundle + pdf worker written)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test` over the touched suites (`mission`, `computeBudget`,
+  `contextSelector`, `contextSelectorLongHorizon`, `runGraph`, `recall`, `runTools`,
+  `sessionRuntime`, plus the newly merged J1 `sharedCodeSession` and `codeSession` suites)
+  -> tests 178, pass 177, fail 0, skipped 1. The single skip is J1's own platform gate
+  (`removes a stale Unix socket file before binding`, `{ skip: process.platform === "win32" }`),
+  correct on Windows and untouched by this branch.
+- `npm run eval:neo`                          -> total=100 passed=10/10 verdict=PASS
+  (baseline 100, no regression)
+
+No test was weakened, deleted or skipped by this branch. No secret committed. No forbidden
+path touched. No Arabic text was written by this session; no mojibake placeholder text was
+added. Working tree clean after the merge and the rollup commits.
