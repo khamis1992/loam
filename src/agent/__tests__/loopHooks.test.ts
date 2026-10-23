@@ -217,3 +217,100 @@ test("SessionEnd reports the real terminal reason on a cancelled run", async () 
   const reason = fs.readFileSync(path.join(workspace, ".session-end-reason"), "utf8").trim();
   assert.equal(reason, "cancelled", "SessionEnd must not claim a completed session");
 });
+
+test("UserPromptSubmit additionalContext is injected into the first model call", async () => {
+  const workspace = makeWorkspace();
+  const fixture = writeFile(workspace, "ups_context.js", `console.log(JSON.stringify({ additionalContext: 'PROMPT-CTX' }));`);
+  writeHooks(workspace, { UserPromptSubmit: [{ matcher: "", command: command(fixture), timeoutMs: 10000 }] });
+
+  const captured: string[] = [];
+  const { client } = makeClient((_call, messages) => {
+    captured.push(messages.map((m) => m.content).join("\n"));
+    return answer("done");
+  });
+  await runAgent({ cfg: makeConfig(workspace), ollama: client, tools: new ToolRegistry(), prompt: "hi", emit: () => {} });
+  assert.ok(captured[0]!.includes("PROMPT-CTX"), "UserPromptSubmit context reached the model");
+});
+
+test("Stop additionalContext is injected before the next loop step", async () => {
+  const workspace = makeWorkspace();
+  const fixture = writeFile(
+    workspace,
+    "stop_context.js",
+    `const fs = require('fs');\nconst path = require('path');\nconst ws = process.env.MANUS_WORKSPACE || process.cwd();\nconst counter = path.join(ws, '.stop-context-count');\nconst count = fs.existsSync(counter) ? Number(fs.readFileSync(counter, 'utf8')) : 0;\nif (count === 0) { fs.writeFileSync(counter, '1'); console.log(JSON.stringify({ decision: 'block', additionalContext: 'CONTINUE-CTX' })); } else { console.log('{}'); }`,
+  );
+  writeHooks(workspace, { Stop: [{ matcher: "", command: command(fixture), timeoutMs: 10000 }] });
+
+  const captured: string[] = [];
+  const { client } = makeClient((_call, messages) => {
+    captured.push(messages.map((m) => m.content).join("\n"));
+    return answer("all done");
+  });
+  const result = await runAgent({ cfg: makeConfig(workspace), ollama: client, tools: new ToolRegistry(), prompt: "do the thing", emit: () => {} });
+  assert.equal(result.steps, 2);
+  assert.ok(captured[1]!.includes("CONTINUE-CTX"), "Stop context reached the follow-up step");
+});
+
+test("a Stop hook with a non-matching matcher still runs", async () => {
+  const workspace = makeWorkspace();
+  const fixture = writeFile(
+    workspace,
+    "stop_matcher.js",
+    `const fs = require('fs');\nconst path = require('path');\nconst ws = process.env.MANUS_WORKSPACE || process.cwd();\nconst counter = path.join(ws, '.stop-matcher-count');\nconst count = fs.existsSync(counter) ? Number(fs.readFileSync(counter, 'utf8')) : 0;\nif (count === 0) { fs.writeFileSync(counter, '1'); console.log(JSON.stringify({ decision: 'block', reason: 'once' })); } else { console.log('{}'); }`,
+  );
+  writeHooks(workspace, { Stop: [{ matcher: "some-tool", command: command(fixture), timeoutMs: 10000 }] });
+
+  const { client, executorCalls } = makeClient(() => answer("all done"));
+  const result = await runAgent({ cfg: makeConfig(workspace), ollama: client, tools: new ToolRegistry(), prompt: "do the thing", emit: () => {} });
+  assert.equal(result.steps, 2);
+  assert.equal(executorCalls(), 2);
+});
+
+test("SubagentStart blocks delegate_subagent before it runs the child", async () => {
+  const workspace = makeWorkspace();
+  const fixture = writeFile(workspace, "sub_block.js", `console.log(JSON.stringify({ decision: 'block', reason: 'no subagents' }));`);
+  writeHooks(workspace, { SubagentStart: [{ matcher: "", command: command(fixture), timeoutMs: 10000 }] });
+
+  const { createSubagentTools } = await import("../../tools/subagents.js");
+  const tools = createSubagentTools({} as never, new ToolRegistry());
+  const delegate = tools.find((t) => t.name === "delegate_subagent")!;
+  const res = await delegate.run(
+    { subagent: "explore", task: "look around" },
+    { cfg: makeConfig(workspace), workspace, emit: () => {} },
+  );
+  assert.equal(res.ok, false);
+  assert.match(res.content, /no subagents/);
+});
+
+test("SubagentStart additionalContext and SubagentStop both fire for delegate_subagent", async () => {
+  const workspace = makeWorkspace();
+  const fixture = writeFile(
+    workspace,
+    "sub_events.js",
+    `const fs = require('fs');\nconst path = require('path');\nconst ws = process.env.MANUS_WORKSPACE || process.cwd();\nfs.appendFileSync(path.join(ws, '.sub-log'), (process.env.MANUS_HOOK_EVENT || '?') + '\\n');\nif (process.env.MANUS_HOOK_EVENT === 'SubagentStart') console.log(JSON.stringify({ additionalContext: 'SUB-CTX' }));\n`,
+  );
+  writeHooks(workspace, {
+    SubagentStart: [{ matcher: "", command: command(fixture), timeoutMs: 10000 }],
+    SubagentStop: [{ matcher: "", command: command(fixture), timeoutMs: 10000 }],
+  });
+
+  const { createSubagentTools } = await import("../../tools/subagents.js");
+  const { ToolRegistry } = await import("../../tools/registry.js");
+  const captured: string[] = [];
+  const { client } = makeClient((_call, messages) => {
+    captured.push(messages.map((m) => m.content).join("\n"));
+    return answer("child result");
+  });
+  const tools = createSubagentTools(client, new ToolRegistry());
+  const delegate = tools.find((t) => t.name === "delegate_subagent")!;
+
+  const res = await delegate.run(
+    { subagent: "explore", task: "look around" },
+    { cfg: makeConfig(workspace), workspace, emit: () => {} },
+  );
+  assert.equal(res.ok, true);
+  assert.ok(captured[0]!.includes("SUB-CTX"), "SubagentStart context reached the child");
+  const events = fs.readFileSync(path.join(workspace, ".sub-log"), "utf8").trim().split(/\r?\n/);
+  assert.ok(events.includes("SubagentStart"), "SubagentStart fired");
+  assert.ok(events.includes("SubagentStop"), "SubagentStop fired");
+});

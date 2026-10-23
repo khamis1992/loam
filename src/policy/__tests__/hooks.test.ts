@@ -199,6 +199,16 @@ test("PostToolUse never blocks on its own exit code", async () => {
   assert.equal(res.blocked, false);
 });
 
+test("a matcher does not disable a lifecycle event hook", async () => {
+  const workspace = makeWorkspace();
+  const fixture = writeFixture(workspace);
+  writeHooks(workspace, configWith("Stop", { matcher: "never-used", command: command(fixture, "context") }));
+
+  const res = await runLifecycleHooks("Stop", "", {}, workspace);
+  assert.equal(res.outcomes.length, 1);
+  assert.equal(res.additionalContext, "injected context");
+});
+
 test("PreToolUse matcher restricts which tool names trigger", async () => {
   const workspace = makeWorkspace();
   const fixture = writeFixture(workspace);

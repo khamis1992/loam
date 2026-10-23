@@ -150,6 +150,10 @@ export function saveWorkspaceHooks(workspace: string, config: HooksConfig): stri
   return file;
 }
 
+function isToolScoped(event: HookEvent): boolean {
+  return !DECISION_EVENTS.has(event);
+}
+
 function matchesTool(matcher: string, toolName: string): boolean {
   if (!matcher || matcher === "*") return true;
   try {
@@ -270,7 +274,9 @@ function execHook(command: string, cwd: string, env: Record<string, string>, tim
 }
 
 /**
- * Run every hook configured for `event` whose matcher accepts `toolName`.
+ * Run every hook configured for `event`. PreToolUse/PostToolUse are tool-scoped
+ * and honour a rule matcher; the expanded lifecycle events carry no tool name,
+ * so their matchers are ignored instead of silently disabling the hook.
  *
  * PreToolUse keeps its original contract: a non-zero exit blocks the tool
  * call unless `blockOnFail` is false. The expanded lifecycle events use JSON
@@ -287,7 +293,7 @@ export async function runLifecycleHooks(
 ): Promise<HookRunResult> {
   const cfg = loadHooksConfig(workspace);
   const rules = cfg[event] ?? [];
-  const matching = rules.filter((r) => matchesTool(r.matcher, toolName));
+  const matching = isToolScoped(event) ? rules.filter((r) => matchesTool(r.matcher, toolName)) : rules;
   if (matching.length === 0) return { blocked: false, message: "", additionalContext: "", outcomes: [] };
 
   const env = buildHookEnv(event, toolName, args, workspace);
