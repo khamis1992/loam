@@ -51,6 +51,7 @@ import { createDesignCritiqueTools } from "./tools/designCritique.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
 import { createWorkflowTools } from "./tools/workflow.js";
 import { applyPlanApprovalGate, applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
+import { applyAskUserGate, createAskUserTools } from "./tools/askUserTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
 import { planQuickEditRoute } from "./agent/quickEdit.js";
@@ -172,6 +173,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createConnectorTools());
   rt.registry.registerAll(createWorkflowTools({ ollama: rt.ollama, registry: rt.registry }));
   rt.registry.registerAll(createPlanTools());
+  rt.registry.registerAll(createAskUserTools());
   const { ollama, registry, memory, mcp } = rt;
 
   // D19 session runtime: one manager owns both the sleep lifecycle and the
@@ -493,6 +495,11 @@ async function main(): Promise<void> {
       // The wrapper re-checks the pending store on each call, so once the plan
       // is approved later edits in the same run proceed.
       applyPlanApprovalGate(agentTools, { taskId: task, workspaceRoot: effectiveCfg.workspace });
+      // Pending ask-user request (N9): while a clarification is unanswered, every
+      // mutating tool call is refused so the run cannot guess past the question.
+      // Read/network tools stay available so the agent can still gather context
+      // while it waits, and `ask_user` stays available for a follow-up question.
+      applyAskUserGate(agentTools, { taskId: task, workspaceRoot: effectiveCfg.workspace });
       // Sandbox gate (risk-tier approval): config default < per-task persisted
       // override < explicit approved override. The resolved mode is rendered into
       // the system prompt so the model knows what it may do without asking.
