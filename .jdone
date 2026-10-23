@@ -8028,3 +8028,46 @@ Gates (all run from the worktree root on the merged tree):
 
 No test was weakened, deleted or skipped. No secrets committed. No forbidden path
 touched. No Arabic text was written; no mojibake placeholder text was added.
+
+---
+
+## H3 gate-fix session note (2026-10-23, eighth merge of manus-parity)
+
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. Local `manus-parity`
+had advanced to `eb17ea0` (23 commits not in HEAD, merge base `411df5e`), bringing O4
+seq-based replay and the H3 correction detector. `git merge manus-parity --no-edit` produced
+exactly one conflicted file: the tracked rollup marker `.jdone` (one hunk, lines 1-447).
+Every code change from O4/H3 auto-merged cleanly and was staged (`M`/`A`), including
+`src/protocol/socket.ts`, `src/protocol/store.ts`, `src/protocol/types.ts`,
+`src/protocol/__tests__/seqReplay.test.ts`, `src/learning/harness/correctionDetector.ts`,
+`src/learning/harness/__tests__/correctionDetector.test.ts`,
+`packages/shared/src/socket.ts`, `packages/web/.../TaskPageClient.tsx`, and
+`packages/web/.../chatSocket.ts` + its test. No source file was edited.
+
+Resolution method: the three conflict markers were removed so the resolved file is the
+concatenation of the HEAD block and the manus-parity block plus the shared tail (the union).
+`.jdone` was then normalized to LF-only. Integrity of the resolved rollup, checked against
+the staged base/ours/theirs blobs: non-empty line counts ours 6484, theirs 6606, base 6280,
+merged 6810; containment missing 0 vs HEAD, 0 vs manus-parity, 0 vs BASE; conflict markers 0;
+no CRLF, no BOM, no mojibake. `.jdone` is an append-only rollup and was not overwritten
+wholesale - only the conflicted hunk was replaced by its superset.
+
+A phantom stat-dirty `src/agent/masterPromptText.ts` (content hash identical to HEAD, a pure
+CRLF/autocrlf artifact) was cleared with `git checkout --` so it could not pollute the merge.
+
+Gates (all run from the worktree root on the merged tree):
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.6mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0
+- `node --import tsx --test src/protocol/__tests__/seqReplay.test.ts src/learning/harness/__tests__/correctionDetector.test.ts`
+                                              -> tests 28, pass 28, fail 0
+- `node --import tsx --test "src/**/*.test.ts" "src/**/*.test.mjs"`
+                                              -> tests 2712, pass 2712, fail 0
+- `(cd packages/web && npx vitest run)`       -> 81 files passed, 548 tests passed
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run verify`                            -> exit 0 (typecheck, encoding, eval, orchestrator, recovery, modes)
+
+Merge commit `0cb968f` (parents `bd5f010`, `eb17ea0`). `git rev-list --count HEAD..manus-parity`
+is 0, so a further `git merge manus-parity` reports "Already up to date."
+No test was weakened, deleted or skipped. No secrets committed. No forbidden path
+touched. No Arabic text was written; no mojibake placeholder text was added.
