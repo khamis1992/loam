@@ -210,6 +210,31 @@ export type AgentEvent =
    */
   | { type: "video_studio_command"; id: string; target: "film" | "effects"; method: string; params: Record<string, unknown> }
   /**
+   * Workspace relay: one command for the editor panel attached to this task's
+   * event stream. The panel executes it with its editor bridge and posts the
+   * result back to /api/tasks/:id/workspace/result.
+   *
+   * It carries both the Video Studio targets (film/effects) and the Craft app
+   * targets (docs/sheets/slides/photo/design); `craft.open` and `craft.waitSave`
+   * are pseudo-methods the panel handles itself. See src/server/workspaceRelay.ts.
+   */
+  | {
+      type: "workspace_command";
+      id: string;
+      target: "film" | "effects" | "docs" | "sheets" | "slides" | "photo" | "design";
+      method: string;
+      params: Record<string, unknown>;
+    }
+  /**
+   * No editor panel was attached for this task+target, so the relay asked the
+   * shell to open the right panel (cr-03) before the caller retries.
+   */
+  | {
+      type: "workspace_open_request";
+      target: "film" | "effects" | "docs" | "sheets" | "slides" | "photo" | "design";
+      path: string | null;
+    }
+  /**
    * N7 branch fan-out: one independent branch of a fan-out started or finished.
    *
    * A branch is a whole subtree of its own, so it gets its own canvas node off
@@ -228,6 +253,8 @@ export type AgentEvent =
       label?: string;
       /** Short summary of what the branch produced, on `done`. */
       summary?: string;
+      /** True when the branch produced a usable result; the canvas marks the node failed otherwise. */
+      ok?: boolean;
     }
   /** N7 branch fan-out: the merge step consumed every branch of a fan-out. */
   | {

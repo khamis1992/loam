@@ -27,7 +27,7 @@ import { createStallGuard } from "./stallGuard.js";
 import { ciWatchEscalationNotice } from "./ciWatchLoop.js";
 import { compressContext } from "./contextCompressor.js";
 import { runLifecycleHooks, wrapHookContext } from "../policy/hooks.js";
-import { throwIfCancelled, isCancelled } from "../server/runControl.js";
+import { throwIfCancelled, isCancelled, isCancelledError } from "../server/runControl.js";
 import { openSession, closeSession } from "./sessionHooks.js";
 import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/riskTier.js";
 import { ReminderChannel, TODO_UPDATE_TOOLS, MEMORY_UPDATE_TOOLS, type ReminderChannelOptions } from "./reminders.js";
@@ -36,10 +36,18 @@ import { ReadState } from "../tools/readState.js";
 import { checkBudget, consumeSteps, consumeTokens, type ComputeBudget } from "./computeBudget.js";
 import { KvCacheMonitor, missMessage, type RequestRoute, type RequestSignature } from "./kvCacheMonitor.js";
 import { addUsage } from "./usageAccounting.js";
+import { recordToolCall, recordToolResult } from "./checkpointLog.js";
 import { log } from "../log.js";
-import { addRunSiblings, getRunNodes } from "./runGraphAdapter.js";
-import { eventNodeId } from "../graph/store.js";
+import { addRunSiblings, getRunNodes, setRunNodeData, setRunNodeStatus } from "./runGraphAdapter.js";
+import { eventNodeId, type RunNode } from "../graph/store.js";
 import { admitPending, hasPending, type QueuedInput } from "../server/inputQueue.js";
+
+/** Stable per-tool-call id: the model's own id when it supplies one, otherwise
+ *  a synthetic id derived from the turn and call index. */
+function toolCallIdOf(call: { function?: { name?: string; arguments?: unknown }; id?: string }, turn: number, index: number): string {
+  const id = typeof call.id === "string" && call.id.trim() ? call.id.trim() : "";
+  return id || `call_${turn}_${index}`;
+}
 
 /** Neo N10 A/B: the run's root node is the natural parent of its sibling arms. */
 function siblingParentFor(opts: RunOptions): string {
@@ -48,6 +56,64 @@ function siblingParentFor(opts: RunOptions): string {
   if (root) return root.id;
   return eventNodeId("run", taskId);
 }
+/** Collapse whitespace so a stored arm answer stays one readable line. */
+function oneLine(text: string, max = 400): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+/**
+ * Neo N10 A/B: run one sibling arm.
+ *
+ * Recording an arm is not the same as answering it: this hands the run's own
+ * system prompt and prompt to the arm's model, moves the node through the real
+ * lifecycle (`init` -> `running` -> `finished`/`failed`/`skipped`) and stores the
+ * answer on the node so the canvas shows what that model produced. An arm is a
+ * comparison, never a dependency: its failure is recorded on its own node and
+ * never fails the run that owns it.
+ */
+async function runAbArm(
+  opts: RunOptions,
+  system: string,
+  arm: RunNode,
+  model: string,
+): Promise<void> {
+  const runId = opts.taskId ?? "";
+  try {
+    setRunNodeStatus(arm.id, "running", runId);
+    const result = await chatWithFallback({
+      cfg: opts.cfg,
+      ollama: opts.ollama,
+      model,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: opts.prompt },
+      ],
+      temperature: opts.cfg.agent.temperature,
+      timeoutMs: opts.cfg.agent.requestTimeoutMs,
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      notify: (message) => opts.emit({ type: "error", message }),
+    });
+    const answer = result.content.trim();
+    const existing = (arm.data ?? {}) as Record<string, unknown>;
+    setRunNodeData(arm.id, { ...existing, model: result.model, answer: oneLine(answer) }, runId);
+    setRunNodeStatus(arm.id, "finished", runId);
+    opts.emit({ type: "assistant_message", text: `A/B arm finished on ${result.model}.` });
+  } catch (err) {
+    // A cancelled arm is "skipped", not "failed": the user stopped the run, so the
+    // arm never had a chance to answer.
+    if (isCancelledError(err) || opts.signal?.aborted || isCancelled(runId)) {
+      setRunNodeStatus(arm.id, "skipped", runId);
+      return;
+    }
+    const reason = err instanceof Error ? err.message : String(err);
+    const existing = (arm.data ?? {}) as Record<string, unknown>;
+    setRunNodeData(arm.id, { ...existing, model, error: oneLine(reason) }, runId);
+    setRunNodeStatus(arm.id, "failed", runId);
+    opts.emit({ type: "error", message: `A/B arm ${model} failed: ${reason}` });
+  }
+}
+
 export interface RunOptions {
   cfg: Config;
   ollama: OllamaClient;
@@ -110,6 +176,10 @@ export interface RunOptions {
   cacheTtlIsEstimate?: boolean;
   /** OAuth account label bound to every request of this run; caches are per account. */
   account?: string;
+  /** Event-log session for this run. When set, every tool call is recorded in the
+   *  durable log with a `started` row before it runs and a terminal row after, so
+   *  a call that began without finishing is visible after a crash. */
+  eventLogSession?: string;
   /** Neo N10: the composer's output type (Auto/Text/Image/Video/Slides/Website). */
   outputType?: OutputType | "";
   /** Neo N10: the composer's effort level (Fast/Max). */
@@ -316,18 +386,27 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // after the run's root node exists, so the canvas shows the same prompt fanned
   // out to several models before any of them answers.
   const siblingArms = opts.abModels ?? [];
+  // Each arm answers the same prompt under its own model in parallel with the
+  // main run, and every one is awaited before this run returns so the canvas
+  // never shows an arm that is still pending.
+  const armPromises: Promise<void>[] = [];
   let verificationAttempts = 0;
   let emptyAnswerRecoveries = 0;
   const stallGuard = createStallGuard();
   // Neo N10 A/B: one sibling node per model, hanging off the parent node (the
   // run's root unless the caller named another). Recording must never break the
-  // task, so a graph failure is logged and the run continues without arms.
+  // task, so a graph failure is logged and the run continues without arms; an arm
+  // that fails to answer fails only its own node.
   if (siblingArms.length > 0 && !opts.suppressFinal) {
     try {
       const created = addRunSiblings(opts.taskId ?? "", opts.abParentNodeId ?? siblingParentFor(opts), siblingArms);
       for (const arm of created) {
         const model = (arm.data as { model?: string } | undefined)?.model ?? "";
+        // An arm with no model label cannot be dispatched; leave it `init` rather
+        // than silently sending it to the config default model.
+        if (!model) continue;
         opts.emit({ type: "assistant_message", text: `A/B arm started on ${model}.` });
+        armPromises.push(runAbArm(opts, routingSystem, arm, model));
       }
     } catch (err) {
       log.warn(`A/B siblings not recorded: ${String(err)}`);
@@ -358,6 +437,10 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // so the model cannot blind-edit content it never saw or clobber a file that
   // changed since it was read. A fresh instance per run matches Claude Code.
   const readState = new ReadState();
+  // O5 durable event log: when the caller supplies a session, every tool call is
+  // bracketed by a `started` and a terminal event so a crash mid-call is visible.
+  const logSession = opts.eventLogSession;
+  let index = 0;
   // O6: the session whose inbound queue this run drains at step boundaries.
   const inputSessionId = opts.inputSessionId ?? opts.taskId;
   /**
@@ -565,6 +648,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.emit({ type: "done", text: finalText, steps: step, model: usedModel });
         endedReason = "completed";
       }
+      // Every A/B arm finishes before the run reports completion, so the canvas
+      // never leaves a sibling node in `running` once the run is done.
+      await Promise.all(armPromises);
       return { text: finalText, messages, steps: step, model: usedModel, usage, verified: opts.suppressFinal !== true };
     }
 
@@ -598,8 +684,11 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         const name = call.function?.name ?? "";
         const args = normalizeArgs(call.function?.arguments);
         opts.emit({ type: "tool_call", name, args });
-        return { name, args, t0: Date.now() };
+        return { name, args, t0: Date.now(), callId: toolCallIdOf(call, step, index++) };
       });
+      if (logSession) {
+        for (const item of prepared) recordToolCall(logSession, item.callId, item.name, opts.taskId);
+      }
       // Neo N10: remember the batch's tool so the next request can honour a
       // per-tool routing entry. Parallel reads share one tool, so this is exact.
       lastToolCallName = prepared.length === 1 ? prepared[0]!.name : null;
@@ -619,6 +708,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
       for (let i = 0; i < prepared.length; i++) {
         const item = prepared[i]!;
         const toolResult = batchResults[i]!;
+        if (logSession) {
+          recordToolResult(logSession, item.callId, item.name, toolResult.ok ? "succeeded" : "failed", toolResult.content, opts.taskId, opts.cfg.workspace);
+        }
         const evidence = { name: item.name, args: item.args, ok: toolResult.ok, summary: toolResult.content };
         trace.push(evidence);
         opts.onToolEvidence?.(evidence);
@@ -652,6 +744,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.emit({ type: "tool_call", name, args });
         lastToolCallName = name;
 
+        const callId = toolCallIdOf(call, step, index++);
+        if (logSession) recordToolCall(logSession, callId, name, opts.taskId);
         const t0 = Date.now();
         const toolResult = await opts.tools.exec(name, args, {
           cfg: opts.cfg,
@@ -665,6 +759,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           ...(opts.taskId ? { taskId: opts.taskId } : {}),
         });
 
+        if (logSession) {
+          recordToolResult(logSession, callId, name, toolResult.ok ? "succeeded" : "failed", toolResult.content, opts.taskId, opts.cfg.workspace);
+        }
         opts.emit({
           type: "tool_result",
           name,
@@ -713,10 +810,16 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     opts.saveWorker?.(structuredClone({ prompt: opts.prompt, messages, trace, steps: step, model: usedModel, usage }));
   }
 
+  // The step budget ran out: stop recording arms as pending so a later replay
+  // cannot resurrect a node the run abandoned.
+  await Promise.all(armPromises);
   const msg = `stopped after ${maxSteps} steps without finishing`;
   opts.emit({ type: "error", message: msg });
   throw new Error(msg);
   } finally {
+    // A run that throws (model failure, cancellation, step budget) must still let
+    // every arm settle, so no sibling node is left in `running` or `init`.
+    await Promise.all(armPromises);
     // SessionEnd fires once the run reaches any terminal state (completed,
     // cancelled or failed) for a top-level run. The reason is the real
     // outcome, so a hook can tell a cancelled or failed session apart from a
