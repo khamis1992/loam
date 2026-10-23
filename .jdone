@@ -1,3 +1,63 @@
+CR-03 validation round: adversarial probing found the verb-gating incomplete; now fixed
+(commit fd38d77), all gates green.
+
+## Why this round happened
+An independent validation pass was requested rather than trusting the earlier report. It
+did not take the previous fix on faith: it read the committed regex, then ran an
+adversarial probe (a throwaway vitest file, deleted afterwards) through the real
+`hasCraftEditIntent` module with cases the committed suite did not cover.
+
+## What the probe found
+**The verb-gating was incomplete.** Eight mismatches against correct behaviour:
+
+1. Seven FALSE POSITIVES, all the same shape: a verb that is *also* a noun, used as the
+   object of a question. "what is the export format?", "what is the blur radius?",
+   "what is the zoom level?", "what is the print size?", "what is the scale of the map?",
+   "what does polish mean?" and the Arabic "ما هي صيغة تصدير الملف؟", "ما هو تصميم
+   الشعار؟", "ما هو دمج الملفين؟", "ما هو تقسيم الصفحات؟", "ما هو التلوين المناسب؟".
+   These ask about a term and still auto-opened the Craft editor.
+2. One FALSE NEGATIVE: "make the whole background slightly darker" (three words between
+   `make` and the comparative, beyond the two the pattern allowed).
+
+The root cause is that a word list alone cannot separate the verb from the noun; the
+distinguishing signal is the question frame around it.
+
+## What changed in `autoOpen.ts`
+- `QUESTION_FRAME_GUARDS`: a set of fixed-width lookbehinds placed in front of the whole
+  alternation, so they are evaluated at whichever position the match starts. They reject
+  a verb that is the object of `what is the` / `what's the` / `what does` / `what are the`
+  and the Arabic `ما هو ` / `ما هي `, plus `صيغة `, `شكل `, `نوع ` and `طريقة ` (format,
+  shape, type, method), which is exactly where these nouns appear.
+- Added the Arabic imperative `صدّر`/`صدر` (the list carried only the verbal noun
+  تصدير), so "صدّر الملف إلى pdf" matches.
+- Widened the `make ... comparative` window from 2 to 4 intervening words.
+- No English verb was removed, so every previously-working edit request keeps working.
+
+## Verification (not assumed)
+- Probe against the real module: 28 innocent cases (0 mismatches) and 37 edit cases
+  (0 mismatches), including the Arabic noun/verb frames, capitalisation variants
+  ("What is the export format?") and punctuation.
+- ReDoS sanity: a 40 KB adversarial string returns in 9 ms (no catastrophic
+  backtracking; all constructs are linear/atomic).
+- The committed suite now pins this: `craftAutoOpen.test.ts` grew from 18 to 20 tests,
+  adding 11 guard cases and 8 real-verb cases (Arabic included). The two added tests are
+  the ones the probe validated. No test was weakened or skipped.
+
+## Gates (run from the worktree root on the committed tree, fd38d77)
+- `npx tsc --noEmit` (root)                        -> exit 0
+- `(cd packages/web && npx tsc --noEmit)`          -> exit 0
+- `(cd packages/web && npx vitest run)`           -> 75 files / 506 tests, all pass
+- `npm run build:server`                           -> exit 0 (pdf worker copied)
+- `(cd packages/web && npx next build)`           -> exit 0 (compiled, 25/25 static pages)
+- `npm run check:encoding`                         -> OK (no BOM, no mojibake, all JSON valid)
+
+Working tree clean; the probe file and the temporary fix attempts were deleted before
+committing. Note for reviewers: `edit` silently unescapes `\\b`/`\\s` in TS regex literals
+in this environment, which broke the module mid-edit; the fix was applied with
+`apply_patch` and the regex bytes were re-verified against HEAD.
+
+---
+
 CR-03 follow-up: the craft edit-intent detector is verb-gated, so ordinary questions no
 longer auto-open the Craft editor; all gates green (commit 4cb92f2).
 
