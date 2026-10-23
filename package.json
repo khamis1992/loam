@@ -40,7 +40,7 @@
     "check:recovery": "tsx src/scripts/check-recovery.ts",
     "check:recovery:http": "tsx src/scripts/check-recovery-http.ts",
     "verify": "npm run typecheck && npm run check:encoding && npm run check:eval && npm run check:orchestrator && npm run check:recovery && npm run check:modes",
-    "build:server": "esbuild src/index.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist/server.cjs --external:playwright --external:node-pty --external:@modelcontextprotocol/sdk --external:sharp --external:@nut-tree-fork/nut-js && node -e \"const fs=require('fs');fs.copyFileSync('node_modules/pdfjs-dist/build/pdf.worker.mjs','dist/pdf.worker.mjs');console.log('pdf worker copied to dist/')\"",
+    "build:server": "node -e \"require('./scripts/build-server.cjs')\"",
     "build:memory-skills": "esbuild addons/memory-skills-mcp/src/server.ts --bundle --platform=node --format=cjs --target=node22 --outfile=addons/memory-skills-mcp/dist/server.cjs --external:@modelcontextprotocol/sdk",
     "check:memory-skills": "tsc -p addons/memory-skills-mcp/tsconfig.json",
     "smoke:memory-skills": "node addons/memory-skills-mcp/test/smoke.mjs",
