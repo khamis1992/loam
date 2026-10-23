@@ -69,6 +69,16 @@ export interface HookRunResult {
   outcomes: HookOutcome[];
 }
 
+/** Tag that wraps hook-provided context so it is distinguishable from user input
+ *  and can never be mistaken for it by the model or the UI. */
+export const HOOK_CONTEXT_TAG = "hook-context";
+
+/** Wrap hook-provided context so it is visibly not user input. */
+export function wrapHookContext(context: string): string {
+  const text = context.trim();
+  return text.length > 0 ? "<" + HOOK_CONTEXT_TAG + ">\n" + text + "\n</" + HOOK_CONTEXT_TAG + ">" : "";
+}
+
 const EVENT_KEYS: readonly HookEvent[] = [
   "PreToolUse",
   "PostToolUse",

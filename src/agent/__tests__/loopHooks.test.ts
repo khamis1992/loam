@@ -148,6 +148,30 @@ test("SessionStart additionalContext is injected and SessionEnd fires", async ()
   assert.ok(events.includes("SessionEnd"), "SessionEnd fired");
 });
 
+test("SessionStart and UserPromptSubmit context reaches the first model call together", async () => {
+  const workspace = makeWorkspace();
+  const fixture = writeFile(
+    workspace,
+    "session_prompt_ctx.js",
+    `const fs = require('fs');\nconst path = require('path');\nconst ws = process.env.MANUS_WORKSPACE || process.cwd();\nif (process.env.MANUS_HOOK_EVENT === 'SessionStart') console.log(JSON.stringify({ additionalContext: 'SESSION-START-CTX' }));\nif (process.env.MANUS_HOOK_EVENT === 'UserPromptSubmit') console.log(JSON.stringify({ additionalContext: 'PROMPT-CTX' }));\n`,
+  );
+  writeHooks(workspace, {
+    SessionStart: [{ matcher: "", command: command(fixture), timeoutMs: 10000 }],
+    UserPromptSubmit: [{ matcher: "", command: command(fixture), timeoutMs: 10000 }],
+  });
+
+  const captured: string[] = [];
+  const { client } = makeClient((_call, messages) => {
+    captured.push(messages.map((m) => m.content).join("\n"));
+    return answer("done");
+  });
+
+  const result = await runAgent({ cfg: makeConfig(workspace), ollama: client, tools: new ToolRegistry(), prompt: "hi", emit: () => {} });
+  assert.equal(result.verified, true);
+  assert.ok(captured[0]!.includes("SESSION-START-CTX"), "SessionStart context reached the model");
+  assert.ok(captured[0]!.includes("PROMPT-CTX"), "UserPromptSubmit context reached the model");
+});
+
 test("UserPromptSubmit block prevents the run from starting", async () => {
   const workspace = makeWorkspace();
   const fixture = writeFile(workspace, "ups_fixture.js", BLOCK_FIXTURE);
@@ -216,6 +240,26 @@ test("SessionEnd reports the real terminal reason on a cancelled run", async () 
 
   const reason = fs.readFileSync(path.join(workspace, ".session-end-reason"), "utf8").trim();
   assert.equal(reason, "cancelled", "SessionEnd must not claim a completed session");
+});
+
+test("SessionEnd still fires when a blocked start prevents the run", async () => {
+  const workspace = makeWorkspace();
+  const fixture = writeFile(workspace, "se_blocked_start.js", SESSION_END_REASON_FIXTURE);
+  const block = writeFile(workspace, "se_block.js", BLOCK_FIXTURE);
+  writeHooks(workspace, {
+    SessionStart: [{ matcher: "", command: command(block), timeoutMs: 10000 }],
+    SessionEnd: [{ matcher: "", command: command(fixture), timeoutMs: 10000 }],
+  });
+
+  const { client, executorCalls } = makeClient(() => answer("should not run"));
+  await assert.rejects(
+    runAgent({ cfg: makeConfig(workspace), ollama: client, tools: new ToolRegistry(), prompt: "hi", emit: () => {} }),
+    /SessionStart/,
+  );
+  assert.equal(executorCalls(), 0, "no model call after a blocked start");
+
+  const reason = fs.readFileSync(path.join(workspace, ".session-end-reason"), "utf8").trim();
+  assert.equal(reason, "failed", "a blocked start reports the run as not completed");
 });
 
 test("UserPromptSubmit additionalContext is injected into the first model call", async () => {

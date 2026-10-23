@@ -12,8 +12,9 @@ import type { ToolRegistry } from "../tools/registry.js";
 import { chatWithFallback } from "./model.js";
 import { createStallGuard } from "./stallGuard.js";
 import { compressContext, getContextWindow, totalTokens } from "./contextCompressor.js";
-import { runLifecycleHooks } from "../policy/hooks.js";
+import { runLifecycleHooks, wrapHookContext } from "../policy/hooks.js";
 import { throwIfCancelled, isCancelled } from "../server/runControl.js";
+import { openSession, closeSession } from "./sessionHooks.js";
 import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/riskTier.js";
 
 export interface RunOptions {
@@ -96,25 +97,11 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   }
   messages.push({ role: "user", content: opts.prompt });
 
-  // SessionStart and UserPromptSubmit fire once per run, before any model call.
-  // A block prevents the run from starting; additionalContext is injected as a
-  // tagged user message (never rendered by the UI as user input).
-  if (!opts.suppressFinal) {
-    throwIfCancelled(opts.signal, opts.taskId);
-    const sessionStart = await runLifecycleHooks("SessionStart", "", { source: "startup" }, workspace);
-    if (sessionStart.blocked) throw new Error(`SessionStart hook blocked the session: ${sessionStart.message}`);
-    const promptSubmit = await runLifecycleHooks("UserPromptSubmit", "", { prompt: opts.prompt }, workspace);
-    if (promptSubmit.blocked) throw new Error(`UserPromptSubmit hook blocked the prompt: ${promptSubmit.message}`);
-    const injected = [sessionStart.additionalContext, promptSubmit.additionalContext]
-      .filter((s) => s.trim().length > 0)
-      .join("\n");
-    if (injected) messages.push({ role: "user", content: `<hook-context>\n${injected}\n</hook-context>` });
-  }
-
   let finalText = "";
   let usedModel = opts.cfg.model;
   let step = 0;
-  // How this run actually ended, so SessionEnd can report a truthful reason.
+  // How this run actually ended, so SessionEnd can report a truthful reason
+  // instead of a blanket "failed".
   let endedReason: "completed" | "cancelled" | "failed" = "failed";
   const usage = { promptTokens: 0, completionTokens: 0, durationMs: 0 };
   const trace: ToolTraceItem[] = [];
@@ -136,6 +123,15 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   const runAllowedTools = opts.tools.names();
 
   try {
+    // SessionStart and UserPromptSubmit fire once per run, before any model call.
+    // A block prevents the run from starting; additionalContext is injected as a
+    // tagged user message (never rendered by the UI as user input). They run here
+    // so a hook that stops the run still produces a SessionEnd notification.
+    if (!opts.suppressFinal) {
+      const session = await openSession({ workspace, prompt: opts.prompt, signal: opts.signal, taskId: opts.taskId, enabled: true });
+      if (session.injected) messages.push({ role: "user", content: session.injected });
+    }
+
     for (step = (restored?.steps ?? 0) + 1; step <= maxSteps; step++) {
       // Stop immediately when the user pressed the cancel button (checked between every step).
       throwIfCancelled(opts.signal, opts.taskId);
@@ -155,7 +151,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           if (preCompact.blocked) {
             opts.emit({ type: "error", message: `PreCompact hook blocked context compression: ${preCompact.message}` });
           } else if (preCompact.additionalContext) {
-            messages.push({ role: "user", content: `<hook-context>\n${preCompact.additionalContext}\n</hook-context>` });
+            messages.push({ role: "user", content: wrapHookContext(preCompact.additionalContext) });
           }
         }
         if (!compactBlocked) {
@@ -211,7 +207,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
             continue;
           }
           if (stop.additionalContext) {
-            messages.push({ role: "user", content: `<hook-context>\n${stop.additionalContext}\n</hook-context>` });
+            messages.push({ role: "user", content: wrapHookContext(stop.additionalContext) });
           }
           const checked = await verifyFinal({ acceptanceGuard, independentGuard, independentRequest, cfg: opts.cfg, ollama: opts.ollama, request: opts.prompt, goal: opts.prompt, finalText, completedSteps: [], trace,
             history: opts.history, tools: opts.tools, emit: opts.emit, signal: opts.signal, taskId: opts.taskId });
@@ -357,8 +353,10 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     // outcome, so a hook can tell a cancelled or failed session apart from a
     // completed one instead of always seeing "completed".
     if (!opts.suppressFinal) {
+      // Cancellation is detected here: a run may be aborted before the loop ever
+      // assigns a reason, in which case the real outcome is "cancelled".
       if (opts.signal?.aborted || isCancelled(opts.taskId)) endedReason = "cancelled";
-      await runLifecycleHooks("SessionEnd", "", { reason: endedReason }, workspace);
+      await closeSession(workspace, endedReason);
     }
   }
 }
