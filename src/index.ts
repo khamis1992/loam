@@ -6,7 +6,7 @@ import { loadConfig, ROOT, DATA_DIR } from "./config.js";
 import { setLocalAuthUserDataDir } from "./security/localAuth.js";
 import { buildRuntime } from "./setup/runtime.js";
 import { type ToolTraceItem } from "./agent/reflect.js";
-import { loadPending } from "./server/pending.js";
+import { loadPending, writeGate } from "./server/pending.js";
 import { getSettings, loadSettings } from "./server/settings.js";
 import { createRunSignal, clearRunSignal, isCancelledError, cancelRunSignal, listRunningSignals, activateRunSignal } from "./server/runControl.js";
 import { agentSystemSuffix, getAgent, loadAgents } from "./server/agents.js";
@@ -29,6 +29,7 @@ import { createBoardTools } from "./tools/boardTools.js";
 import { createInstructionHistoryTools } from "./tools/instructionTools.js";
 import { createAgentSpawnTools } from "./tools/agentSpawnTools.js";
 import { createBrowserOperatorTools } from "./tools/browserOperator.js";
+import { suggestSkillsAfterSession } from "./tools/skillSuggest.js";
 import { createWideResearchTool } from "./tools/wideResearch.js";
 import { createFindAndEditTools } from "./tools/findAndEdit.js";
 import { createGroupTools } from "./tools/groupTools.js";
@@ -518,6 +519,19 @@ async function main(): Promise<void> {
       // Turn boundary: drain pending appends and fsync the session log.
       await sessionLog?.flush();
       recordTelemetry("done", { model: result.model, steps: result.steps, usage: { promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens } });
+      // Repo-local skill auto-suggest: after a successful session, propose a new
+      // SKILL.md from the observed setup/verify steps. Staged for approval only.
+      if (effectiveCfg.skills.autoSuggest) {
+        void suggestSkillsAfterSession({
+          cfg: effectiveCfg,
+          ollama: runOllama,
+          projectRoot: effectiveCfg.workspace,
+          prompt: effectivePrompt,
+          finalText: result.text,
+          trace,
+          gate: writeGate,
+        }).catch((err) => log.warn(`skill suggest failed: ${String(err)}`));
+      }
       // Actor-critic reflection memory: non-pass verdicts feed the learning review and the audit log.
       const notable = verdicts.filter((v) => v.verdict !== "pass");
       if (notable.length > 0) {

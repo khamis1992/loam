@@ -32,6 +32,7 @@ import { isInside, resolveRead, resolveWrite } from "../policy/paths.js";
 import type { MemoryStore } from "../memory/store.js";
 import { getPending, listPending, removePending, type PendingItem } from "./pending.js";
 import { applySkill, buildSkillFile, listSkillRecords, readSkillFile } from "../tools/skills.js";
+import { acceptSkillSuggestion } from "../tools/skillSuggest.js";
 import { extractOfficeText, OFFICE_EXT, prepareParser as buildPdfParser } from "../tools/attachments.js";
 import { loadHooksConfig, saveWorkspaceHooks, type HooksConfig } from "../policy/hooks.js";
 import { outlineWorkspacePath, queryWorkspaceSymbols } from "../tools/symbols.js";
@@ -397,6 +398,9 @@ async function applyPendingItem(item: PendingItem, memory?: MemoryStore): Promis
       force: item.payload["force"] === true,
     });
     return `skill_install ${res.id}`;
+  }
+  if (item.kind === "skill_suggest") {
+    return acceptSkillSuggestion(item);
   }
   const res = applySkill(item.kind, item.payload);
   if (!res.ok) throw new Error(res.content);
