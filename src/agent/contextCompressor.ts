@@ -1,5 +1,5 @@
 /**
- * Structured context compaction (C8).
+ * Structured context compaction (C8) with jcode's emergency recovery path.
  *
  * The compressor triggers when the estimated token count of the transcript
  * reaches the model's context window minus a safety buffer. It then:
@@ -12,11 +12,18 @@
  *   3. re-attaches the most recently read files (truncated) and the live todo
  *      list as a hidden reminder so the model never loses its footing,
  *   4. runs a PreCompact hook before the summarizer call, letting a workspace
- *      script observe or veto compaction.
+ *      script observe or veto compaction,
+ *   5. past the critical threshold, hard-compacts synchronously: old turns are
+ *      dropped to a small verbatim tail and oversized tool results are bounded,
+ *      so the next provider request is guaranteed to fit without a summarizer
+ *      call.
  *
  * Nothing here drops the system prompt or the newest message. A tool_call is
  * never separated from its tool_result, and a summarizer failure degrades to
  * pruning only.
+ *
+ * Adapted from jcode (MIT) src/compaction/compaction-core.rs: emergency
+ * compaction constants, truncation marker and head/tail shape.
  */
 import type { Config } from "../config.js";
 import type { ChatMessage, OllamaClient } from "../ollama.js";
@@ -33,6 +40,9 @@ import { ReadState } from "../tools/readState.js";
 export const ELISION_MARKER = (chars: number) => `[... ${chars} chars elided ...]`;
 /** Label that marks a compaction summary message. */
 export const SUMMARY_LABEL = "compaction summary";
+/** Marker inserted in place of a tool output truncated during emergency recovery. */
+export const EMERGENCY_TRUNCATION_MARKER = (chars: number) =>
+  `... [${chars} chars truncated for context recovery] ...`;
 
 /** The eight section headers the summarizer must produce, in order. */
 export const SUMMARY_SECTIONS = [
@@ -56,8 +66,16 @@ export interface CompressionResult {
   messages: ChatMessage[];
   /** False when the transcript is under the trigger threshold. */
   compressed: boolean;
-  /** 0 = nothing, 1 = prune only, 2 = prune + summarize. */
-  step: 0 | 1 | 2;
+  /** 0 = nothing, 1 = prune only, 2 = prune + summarize, 3 = emergency hard-compact. */
+  step: 0 | 1 | 2 | 3;
+  /** True when the synchronous emergency path was used (no summarizer call). */
+  emergency?: boolean;
+  /** Turns dropped by the emergency path. */
+  droppedTurns?: number;
+  /** Token estimate before emergency recovery. */
+  tokensBefore?: number;
+  /** Token estimate after emergency recovery. */
+  tokensAfter?: number;
   /** Token cost of the auxiliary summarizer call (0 when no call was made). */
   usage: Usage;
   /** Hidden reminder re-attaching recent file contents and the todo list. */
@@ -72,7 +90,35 @@ function zeroUsage(): Usage {
 
 /** Rough token estimate: ~4 characters per token. */
 export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+  return Math.ceil(utf8Bytes(text) / 4);
+}
+
+/**
+ * UTF-8 byte length, counted per code point so a surrogate pair is one
+ * character. This mirrors jcode: `content_char_count` sums `String::len()`
+ * (bytes) and `estimate_compaction_tokens_from_chars` divides those bytes by
+ * `CHARS_PER_TOKEN`. Counting UTF-16 code units instead (the previous
+ * implementation) charged CJK text one token per three characters, so the
+ * estimate under-counted by up to 3x and compaction started far too late.
+ */
+function utf8Bytes(value: string): number {
+  let total = 0;
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code < 0x80) {
+      total += 1;
+    } else if (code < 0x800) {
+      total += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      // High surrogate: the pair is one 4-byte character. A lone high surrogate
+      // (malformed input) still counts one character, matching `Buffer`.
+      i += 1;
+      total += 4;
+    } else {
+      total += 3;
+    }
+  }
+  return total;
 }
 
 function messageTokens(message: ChatMessage): number {
@@ -118,6 +164,20 @@ export function getCompressionThreshold(cfg: Config, model: string): number {
 function clampRatio(ratio: number): number {
   if (!Number.isFinite(ratio)) return 0.2;
   return Math.min(0.8, Math.max(0.1, ratio));
+}
+
+function clampCriticalRatio(ratio: number): number {
+  if (!Number.isFinite(ratio)) return 0.95;
+  // Never above the trigger: otherwise the emergency path could be unreachable.
+  return Math.min(0.99, Math.max(0.05, ratio));
+}
+
+function clampKeepTurns(value: number, fallback: number): number {
+  return Number.isFinite(value) && value >= 1 ? Math.floor(value) : fallback;
+}
+
+function clampEmergencyChars(value: number): number {
+  return Number.isFinite(value) && value >= 1 ? Math.floor(value) : 4000;
 }
 
 function isToolCallMessage(message: ChatMessage): boolean {
@@ -174,6 +234,84 @@ function pruneMiddle(middle: ChatMessage[]): { messages: ChatMessage[]; elidedCh
     elidedChars += chars;
   }
   return { messages: out, elidedChars };
+}
+
+/**
+ * Slice `maxBytes` from the start, backing off to the last UTF-8 character
+ * boundary. jcode's `truncate_str_boundary` takes `max_bytes` and walks back
+ * with `is_char_boundary`, and its token estimator divides UTF-8 bytes by
+ * `CHARS_PER_TOKEN`, so the budget is a byte budget. Slicing by code unit
+ * instead keeps up to 3x too much text on CJK output, which is exactly the
+ * oversized-tool-result case this path exists to bound.
+ */
+function sliceUtf8Bytes(value: string, maxBytes: number): string {
+  const bytes = Buffer.from(value, "utf8");
+  if (bytes.length <= maxBytes) return value;
+  let end = Math.min(maxBytes, bytes.length);
+  while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end -= 1;
+  return bytes.subarray(0, end).toString("utf8");
+}
+
+/**
+ * Slice the last `maxBytes` from the end, backing off a leading partial
+ * character so no surrogate pair is split. jcode's `tail_str_boundary` walks
+ * forward from `len() - max_bytes` for the same reason; a cut through a
+ * surrogate pair would decode as U+FFFD when the tool result is written back
+ * to disk (jcode asserts this with `is_char_boundary`).
+ */
+function tailUtf8Bytes(value: string, maxBytes: number): string {
+  const bytes = Buffer.from(value, "utf8");
+  if (bytes.length <= maxBytes) return value;
+  let from = bytes.length - maxBytes;
+  while (from < bytes.length && (bytes[from]! & 0xc0) === 0x80) from += 1;
+  return bytes.subarray(from).toString("utf8");
+}
+
+/**
+ * Emergency recovery: bound a single oversized tool output to `maxChars` by
+ * keeping a head and a tail around a truncation marker. Unlike `pruneMiddle`
+ * this runs on the whole transcript and can touch tool results whose owning
+ * tool_call sits in the protected lead, so a huge recent screenshot output is
+ * still trimmed when the context is already critical.
+ */
+export function emergencyTruncateToolResults(
+  messages: ChatMessage[],
+  maxChars: number,
+): { messages: ChatMessage[]; truncated: number } {
+  if (maxChars <= 0 || !Number.isFinite(maxChars)) return { messages, truncated: 0 };
+  const out = messages.map((m) => ({ ...m }));
+  let truncated = 0;
+  for (const message of out) {
+    if (message.role !== "tool") continue;
+    const content = message.content ?? "";
+    // The cap is a UTF-8 byte budget, matching jcode's `max_bytes` semantics.
+    if (Buffer.byteLength(content, "utf8") <= maxChars) continue;
+    const keepHead = Math.floor(maxChars / 2);
+    const keepTail = Math.floor(maxChars / 4);
+    const head = sliceUtf8Bytes(content, keepHead);
+    const tail = Buffer.byteLength(content, "utf8") - keepTail > Buffer.byteLength(head, "utf8")
+      ? tailUtf8Bytes(content, keepTail)
+      : "";
+    const dropped = Buffer.byteLength(content, "utf8") - Buffer.byteLength(head, "utf8") - Buffer.byteLength(tail, "utf8");
+    message.content = [head, EMERGENCY_TRUNCATION_MARKER(dropped), tail].join("\n\n");
+    truncated++;
+  }
+  return { messages: out, truncated };
+}
+
+/** Number of trailing messages kept verbatim when the context is already critical. */
+export function emergencyKeepTurns(cfg: Config): number {
+  return clampKeepTurns(cfg.compression.recentTurnsToKeep, 10);
+}
+
+/** Absolute floor for messages kept during emergency compaction. */
+export function emergencyMinTurns(cfg: Config): number {
+  return clampKeepTurns(cfg.compression.minTurnsToKeep, 2);
+}
+
+/** Max characters kept for a single tool result during emergency recovery. */
+export function emergencyToolResultMaxChars(cfg: Config): number {
+  return clampEmergencyChars(cfg.compression.emergencyToolResultMaxChars);
 }
 
 function renderTranscript(messages: ChatMessage[]): string {
@@ -300,6 +438,62 @@ export interface CompressOptions {
 }
 
 /**
+ * Synchronous emergency recovery for a transcript that is already past the
+ * critical threshold: drop old turns down to a small verbatim tail and bound
+ * every oversized tool output. No auxiliary model call, so it can never fail or
+ * add latency to the next provider request.
+ */
+function emergencyCompact(
+  cfg: Config,
+  messages: ChatMessage[],
+  window: number,
+  originalTokens: number,
+): CompressionResult {
+  const keep = Math.min(
+    emergencyKeepTurns(cfg),
+    Math.max(emergencyMinTurns(cfg), messages.length - MIN_PROTECT_LEAD),
+  );
+  const lead = messages.slice(0, MIN_PROTECT_LEAD);
+  let tailStart = messages.length - keep;
+  // Keep tool_call/tool_result pairs together: if the tail would start on a tool
+  // result, pull its owning tool_call (and any preceding tool results) into the
+  // tail so the provider never receives an orphaned result.
+  while (tailStart > MIN_PROTECT_LEAD && messages[tailStart]!.role === "tool") tailStart--;
+  const tail = messages.slice(tailStart);
+  const dropped = messages.length - lead.length - tail.length;
+  // The protected lead can hold the newest huge tool output (its owning tool_call
+  // lives there), so it is truncated too; only the very newest message survives
+  // untouched so the model still sees the latest user turn.
+  const leadTrunc = emergencyTruncateToolResults(lead, emergencyToolResultMaxChars(cfg)).messages;
+  const tailTrunc = emergencyTruncateToolResults(tail, emergencyToolResultMaxChars(cfg)).messages;
+  const emergencyMessage: ChatMessage = {
+    role: "assistant",
+    content: `[${SUMMARY_LABEL}]\nEmergency compaction: ${dropped} older turns were dropped and oversized tool outputs truncated because the context exceeded ${Math.round(
+      criticalThreshold(cfg) * 100,
+    )}% of the ${Math.round(window / 1000)}k window. Re-read the task list, plan and any file you need before continuing.`,
+  };
+  const finalMessages = [...leadTrunc, emergencyMessage, ...tailTrunc];
+  const finalTokens = totalTokens(finalMessages);
+  return {
+    messages: finalMessages,
+    compressed: true,
+    step: 3,
+    usage: zeroUsage(),
+    emergency: true,
+    droppedTurns: dropped,
+    tokensBefore: originalTokens,
+    tokensAfter: finalTokens,
+    reminders: [],
+    hookBlocked: false,
+  };
+}
+
+/** Critical threshold as a fraction of the context window (default 0.95). */
+export function criticalThreshold(cfg: Config): number {
+  return clampCriticalRatio(cfg.compression.criticalThresholdPercent);
+}
+
+/**
  * Compress an agent transcript when it exceeds the configured fraction of the
  * model's context window or the window minus the safety buffer. Never drops the
  * system prompt or the newest message.
@@ -316,6 +510,10 @@ export async function compressContext(
   const model = options.model ?? cfg.model;
   const window = getContextWindow(cfg, model);
   const threshold = getCompressionThreshold(cfg, model);
+  // The emergency path must always be reachable: a critical ratio at or below the
+  // trigger would make it dead code, so it is raised to the trigger.
+  const criticalRatio = Math.max(threshold / Math.max(1, window), criticalThreshold(cfg));
+  const critical = Math.floor(window * criticalRatio);
   const originalTokens = totalTokens(messages);
 
   if (originalTokens <= threshold) {
@@ -334,6 +532,22 @@ export async function compressContext(
   if (hook.blocked) {
     emit({ type: "compaction", step: 1, originalTokens, afterPruneTokens: originalTokens, finalTokens: originalTokens, fallback: true, blocked: true });
     return { messages, compressed: false, step: 0, usage: zeroUsage(), reminders: [], hookBlocked: true };
+  }
+
+  // Critical: the next request would not fit. Recover synchronously instead of
+  // spending an auxiliary summarizer call on a transcript that is already too big.
+  if (originalTokens > critical) {
+    const emergency = emergencyCompact(cfg, messages, window, originalTokens);
+    emit({
+      type: "compaction",
+      step: 3,
+      originalTokens,
+      afterPruneTokens: originalTokens,
+      finalTokens: emergency.tokensAfter ?? originalTokens,
+      emergency: true,
+      droppedTurns: emergency.droppedTurns,
+    });
+    return emergency;
   }
 
   // Safety floors: the system prompt (index 0) and the newest message always survive.

@@ -11,6 +11,8 @@ files:
   - electron/**/*
   - dist/**/*
   - ui/**/*
+  # Next.js static export served by the app:// protocol (main window renderer).
+  - packages/web/out/**/*
   - skills/**/*
   - agents/**/*
   - evals/**/*

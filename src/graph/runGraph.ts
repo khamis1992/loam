@@ -13,6 +13,8 @@ import {
   RUN_NODE_TYPES,
   RunGraphStore,
   eventNodeId,
+  branchNodeId,
+  mergeNodeId,
   siblingNodeId,
   type RunGraphExport,
   type RunNode,
@@ -23,7 +25,7 @@ import { assertTransition, canTransition } from "./status.js";
 import { transaction } from "../server/sqliteStore.js";
 
 /** Tools that produce a search node on the canvas. */
-const SEARCH_TOOLS = new Set(["web_search"]);
+const SEARCH_TOOLS = new Set(["web_search", "kb_search"]);
 /** Tools that produce a webpage node on the canvas. */
 const WEBPAGE_TOOLS = new Set(["web_fetch", "browser_open", "browser_goto", "browser_snapshot", "browser_act", "browser_pages"]);
 /** Tools that produce a document node on the canvas. */
@@ -74,6 +76,8 @@ interface RunState {
   pending: Array<{ name: string; nodeId: string }>;
   /** Plan step id -> the node created for it, so a later event updates it. */
   steps: Map<string, string>;
+  /** Fan-out id -> the branch count it was opened with (labels the branches). */
+  fanouts: Map<string, { total: number }>;
 }
 
 /** Graph projection returned to the canvas and the stats panel. */
@@ -119,7 +123,7 @@ export class RunGraph {
   private stateFor(runId: string): RunState {
     let state = this.runs.get(runId);
     if (!state) {
-      state = { runId, rootId: "", lastId: "", seq: 0, pending: [], steps: new Map() };
+      state = { runId, rootId: "", lastId: "", seq: 0, pending: [], steps: new Map(), fanouts: new Map() };
       this.runs.set(runId, state);
     }
     return state;
@@ -294,6 +298,85 @@ export class RunGraph {
     return created;
   }
 
+  /**
+   * N7 branch fan-out: open one branch of a fan-out as its own canvas subtree.
+   *
+   * The branch root hangs off the step that fanned out (or the last node when
+   * no step is running) and carries the branch index and label, so the canvas
+   * renders N parallel branch roots instead of flattening every child tool call
+   * into one column. Node ids are deterministic, so re-rendering the same
+   * fan-out never duplicates branch roots.
+   */
+  createBranch(
+    runId: string,
+    fanoutId: string,
+    index: number,
+    label = "",
+    parentNodeId?: string,
+  ): RunNode {
+    const state = this.stateFor(runId);
+    if (!state.rootId) this.ensureRoot(runId, "");
+    // Branches are opened lazily, one per concurrent worker, so `state.lastId`
+    // is whatever the previously-scheduled branch happened to set: without an
+    // explicit anchor they chain onto each other instead of fanning out. The
+    // fan-out's own parent is captured once, when the first branch is opened,
+    // and every later branch reuses it.
+    const parent = parentNodeId ?? this.fanoutAnchors.get(`${runId}:${fanoutId}`) ?? state.stepId ?? state.lastId;
+    this.fanoutAnchors.set(`${runId}:${fanoutId}`, parent);
+    if (!parent) throw new Error(`run node not found: ${parentNodeId ?? ""}`);
+    const node = this.addNode(runId, state, {
+      type: "branch",
+      seed: `fanout:${fanoutId}:${index}`,
+      id: branchNodeId(runId, fanoutId, index),
+      status: "running",
+      data: {
+        fanoutId,
+        index,
+        ...(label ? { label: oneLine(label, 200) } : {}),
+        total: state.fanouts.get(fanoutId)?.total,
+      },
+      parent,
+    });
+    return node;
+  }
+
+  /**
+   * N7 branch fan-out: the merge step that consumes every branch of a fan-out.
+   *
+   * One node with one parent per branch, so the canvas shows the fan-in edge and
+   * the node data names every branch node id it merged.
+   */
+  createMerge(
+    runId: string,
+    fanoutId: string,
+    branchNodeIds: string[],
+    summary: string,
+    parentNodeId?: string,
+  ): RunNode {
+    const state = this.stateFor(runId);
+    if (!state.rootId) this.ensureRoot(runId, "");
+    const parents = [...new Set(branchNodeIds)].filter((id) => this.store.getNode(id, runId));
+    const parent = parentNodeId ?? state.lastId;
+    const node = this.addNode(runId, state, {
+      type: "merge",
+      seed: `fanout-merge:${fanoutId}`,
+      id: mergeNodeId(runId, fanoutId),
+      status: "finished",
+      data: {
+        fanoutId,
+        branchNodeIds: parents,
+        summary: oneLine(summary, 1000),
+      },
+      parent: parents[0] ?? parent,
+    });
+    // A merge is a fan-in: every branch is a parent, not just the first.
+    if (parents.length > 1) {
+      this.store.update(node.id, { parent_ids: parents });
+      this.invalidate(runId);
+    }
+    return this.store.getNode(node.id, runId) ?? node;
+  }
+
   /** Layered layout plus aggregate stats. Deterministic, no dependencies. */
   getGraphLayout(runId: string): RunGraphLayout {
     const nodes = this.store.list({ runId });
@@ -349,6 +432,14 @@ export class RunGraph {
 
   private depthCache = new Map<string, Map<string, number>>();
   private statsCache = new Map<string, RunGraphStats>();
+  /**
+   * N7 branch fan-out: the parent each fan-out's branch roots hang off.
+   *
+   * Captured on the first branch a fan-out opens and reused by the rest, so the
+   * branches of one fan-out all share a parent even though `runFanout` opens
+   * them lazily from concurrent workers.
+   */
+  private fanoutAnchors = new Map<string, string>();
 
   private depthMap(runId: string): Map<string, number> {
     const cached = this.depthCache.get(runId);
@@ -486,7 +577,7 @@ export class RunGraph {
       case "tool_call":
         return this.onToolCall(runId, state, event.name, event.args);
       case "tool_result":
-        return this.onToolResult(runId, state, event.name, event.ok, event.summary);
+        return this.onToolResult(runId, state, event.name, event.ok, event.summary, event.kbSeedIds, event.kbSeeds);
       case "error":
         return [this.addNode(runId, state, {
           type: "failed",
@@ -557,15 +648,132 @@ export class RunGraph {
       case "verification_progress":
       case "permission_mode_changed":
       case "cache_usage":
+      case "workspace_command":
       case "video_studio_command":
+      case "video_studio_export":
+      case "workspace_open_request":
       case "simulation_progress":
         // Live-only signals with no canvas node of their own.
         return [];
+      case "fanout_branch":
+        return this.onFanoutBranch(
+          runId,
+          state,
+          event.fanoutId,
+          event.index,
+          event.phase,
+          event.label,
+          event.summary,
+          event.nodeId,
+          event.ok,
+        );
+      case "fanout_merge":
+        return this.onFanoutMerge(runId, state, event.fanoutId, event.branchNodeIds, event.summary);
       default: {
         const _exhaustive: never = event;
         return _exhaustive;
       }
     }
+  }
+
+  /**
+   * N7 branch fan-out: one branch started (a new `branch` node) or finished
+   * (the same node moves to its terminal status). The fan-out total is recorded
+   * on the first branch so the canvas can label "branch 2 of 4".
+   */
+  private onFanoutBranch(
+    runId: string,
+    state: RunState,
+    fanoutId: string,
+    index: number,
+    phase: "start" | "done",
+    label?: string,
+    summary?: string,
+    nodeId?: string,
+    ok?: boolean,
+  ): string[] {
+    if (phase === "start") {
+      // A recorded log may begin with a branch when no earlier event created the
+      // root (a live run always has one, because `beginRun` runs first). Creating
+      // it here is what gives a replayed branch the same parent as a live one.
+      if (!state.rootId) this.ensureRoot(runId, "");
+      // Record the fan-out's anchor the first time a replay sees a branch, so the
+      // rest of the replayed branches share it instead of chaining off each other.
+      const anchorKey = `${runId}:${fanoutId}`;
+      if (!this.fanoutAnchors.has(anchorKey)) this.fanoutAnchors.set(anchorKey, state.stepId ?? state.lastId);
+      if (!state.fanouts.has(fanoutId)) state.fanouts.set(fanoutId, { total: index + 1 });
+      // Branches arrive in flight order, so the label's "of N" grows to the
+      // highest index seen rather than freezing at the first branch.
+      const known = state.fanouts.get(fanoutId)!;
+      if (index + 1 > known.total) known.total = index + 1;
+      // Branches already on the canvas were opened before this one was counted,
+      // so they still show the old "of N". Bumping them here is what keeps every
+      // branch of a fan-out agreeing on the size, live or replayed.
+      for (let earlier = 0; earlier < index; earlier += 1) {
+        const sibling = this.store.getNode(branchNodeId(runId, fanoutId, earlier), runId);
+        if (!sibling || (sibling.data as { total?: number }).total === known.total) continue;
+        this.store.update(sibling.id, {
+          status: sibling.status,
+          data: { ...(sibling.data as Record<string, unknown>), total: known.total },
+        });
+      }
+      const existing = nodeId ? this.store.getNode(nodeId, runId) : undefined;
+      if (existing) {
+        // A live run already opened this branch through `createBranch`, which could
+        // not know the fan-out total yet. Writing it here is what makes the live
+        // node identical to the one a replay builds from the same event.
+        const data = { ...(existing.data as Record<string, unknown>), fanoutId, index, total: known.total, ...(label ? { label: oneLine(label, 200) } : {}) };
+        this.store.update(existing.id, { status: "running", data });
+        return [existing.id];
+      }
+      const created = this.addNode(runId, state, {
+        type: "branch",
+        seed: `fanout:${fanoutId}:${index}`,
+        // Live runs open the branch through `createBranch` and the event carries
+        // that id; a replay sees only the event, so it must derive the same id or
+        // the branch would not be the node the `done` event and the merge refer to.
+        id: nodeId ?? branchNodeId(runId, fanoutId, index),
+        status: "running",
+        data: {
+          fanoutId,
+          index,
+          ...(label ? { label: oneLine(label, 200) } : {}),
+          total: known.total,
+        },
+        // Same anchor the live path uses, so a replayed fan-out has the same
+        // branch roots as the run that produced the log.
+        parent: this.fanoutAnchors.get(`${runId}:${fanoutId}`) ?? state.stepId ?? state.lastId,
+      });
+      return [created.id];
+    }
+
+    // `done`: the branch root is terminal. The caller supplies the node id it
+    // opened, which keeps the branch subtree on the canvas intact.
+    const target = nodeId ? this.store.getNode(nodeId, runId) : undefined;
+    if (!target) return [];
+    // The caller's explicit flag is authoritative; the prose regex is only a
+    // fallback for event logs recorded before the flag existed.
+    const branchOk = ok ?? (!summary || !/^failed\b/i.test(summary));
+    const nextStatus: RunNodeStatus = branchOk ? "finished" : "failed";
+    if (canTransition(target.status, nextStatus)) {
+      this.store.update(target.id, {
+        status: nextStatus,
+        data: { ...(target.data as Record<string, unknown>), ...(summary ? { summary: oneLine(summary, 600) } : {}), ...(!branchOk ? { failReason: oneLine(summary || "branch failed", 600) } : {}) },
+      });
+    }
+    return [target.id];
+  }
+
+  /** N7 branch fan-out: the merge node that consumes every branch of a fan-out. */
+  private onFanoutMerge(
+    runId: string,
+    state: RunState,
+    fanoutId: string,
+    branchNodeIds: string[],
+    summary: string,
+  ): string[] {
+    const node = this.createMerge(runId, fanoutId, branchNodeIds, summary, state.stepId);
+    return [node.id];
   }
 
   private onPlan(runId: string, state: RunState, goal: string, stepIds: string[], total: number): string[] {
@@ -629,7 +837,15 @@ export class RunGraph {
     return [node.id];
   }
 
-  private onToolResult(runId: string, state: RunState, name: string, ok: boolean, summary: string): string[] {
+  private onToolResult(
+    runId: string,
+    state: RunState,
+    name: string,
+    ok: boolean,
+    summary: string,
+    kbSeedIds?: string[],
+    kbSeeds?: Array<{ id: string; title: string; tags: string[]; preview: string }>,
+  ): string[] {
     const index = state.pending.findIndex((entry) => entry.name === name);
     if (index === -1) return [];
     const [entry] = state.pending.splice(index, 1);
@@ -641,7 +857,28 @@ export class RunGraph {
       this.store.update(node.id, { status, data: { ...(node.data as Record<string, unknown>), summary: oneLine(summary, 600), ok } });
     }
     state.lastId = node.id;
-    return [node.id];
+    // N3 Knowledge Garden: a `kb_search` result carries the seeds it actually read
+    // (`kbSeedIds` + `kbSeeds`). Each becomes a child node hanging off the tool
+    // node, so "where did this answer come from?" is a real edge on the run graph
+    // rather than prose. Nothing is invented: the ids come from the tool.
+    if (!kbSeedIds || kbSeedIds.length === 0) return [node.id];
+    const created: string[] = [];
+    for (const seedId of kbSeedIds) {
+      const meta = kbSeeds?.find((seed) => seed.id === seedId);
+      const seedNode = this.addNode(runId, state, {
+        type: "kb_seed",
+        seed: `kb_seed:${name}:${seedId}:${state.seq}`,
+        status: "finished",
+        data: {
+          seedId,
+          tool: name,
+          ...(meta ? { title: meta.title, tags: meta.tags, preview: meta.preview } : {}),
+        },
+        parent: node.id,
+      });
+      created.push(seedNode.id);
+    }
+    return [node.id, ...created];
   }
 
   private onArtifact(
@@ -665,11 +902,13 @@ export class RunGraph {
   private addNode(
     runId: string,
     state: RunState,
-    spec: { type: RunNodeType; seed: string; status: RunNodeStatus; data?: unknown; parent: string },
+    spec: { type: RunNodeType; seed: string; status: RunNodeStatus; data?: unknown; parent: string; id?: string },
   ): RunNode {
     // The event seed makes the id deterministic across replays; the occurrence
     // counter keeps two calls to the same tool inside one step from colliding.
-    const id = eventNodeId(spec.type, spec.seed + "#" + String(state.seq));
+    // Nodes with a stable identity of their own (a fan-out branch, a merge) pass
+    // the id explicitly so live and replayed runs agree on it.
+    const id = spec.id ?? eventNodeId(spec.type, spec.seed + "#" + String(state.seq));
     const position = state.seq;
     const existing = this.store.getRow(id);
     state.seq = this.nextSeq(state);

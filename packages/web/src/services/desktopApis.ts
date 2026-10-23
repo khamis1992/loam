@@ -26,6 +26,7 @@ const noOpSync = () => undefined;
 export const desktopApis = {
   auth: {
     getToken: () => invoke('auth', 'getToken') as Promise<string | null>,
+    localSignIn: () => invoke('auth', 'localSignIn') as Promise<boolean | undefined>,
     setToken: (token: string) => invoke('auth', 'setToken', [token]),
     removeToken: () => invoke('auth', 'removeToken'),
     notifyLoginSuccess: () => invoke('auth', 'notifyLoginSuccess'),

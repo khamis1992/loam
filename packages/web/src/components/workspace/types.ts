@@ -1,6 +1,6 @@
 import type React from "react";
 
-export type WorkspaceKind = "video" | "loam-video" | "doc" | "sheet" | "slides" | "canvas";
+export type WorkspaceKind = "video" | "loam-video" | "craft" | "canvas" | "doc" | "sheet" | "slides";
 
 /**
  * Sentinel path for the Workspace panel's always-available "Loam Video" entry.
@@ -31,6 +31,9 @@ export interface WorkspaceEditorProps {
   live: boolean;
   onSave: (data: Blob | string) => Promise<void>;
   onChatEdit: (instruction: string) => void;
+  /** The task's chat events. Only the canvas reads them (its node detail lists
+   * the recent tools that produced a node); every other editor can ignore it. */
+  events?: import('@shared/socket').ChatEvent[];
 }
 
 export interface WorkspaceEditorDef {

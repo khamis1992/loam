@@ -47,6 +47,7 @@ import { createDesignLintTools } from "./tools/designLint.js";
 import { createDesignAssetsTools } from "./tools/designAssets.js";
 import { createDesignBriefTools } from "./tools/designBrief.js";
 import { createDesignAutofixTools } from "./tools/designAutofix.js";
+import { createUiExamplesTools } from "./tools/uiExamples.js";
 import { createDesignCritiqueTools } from "./tools/designCritique.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
 import { createWorkflowTools } from "./tools/workflow.js";
@@ -54,6 +55,7 @@ import { applyPlanApprovalGate, applyPlanModeGate, createPlanTools } from "./too
 import { applyAskUserGate, createAskUserTools } from "./tools/askUserTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
+import { applyKnowledgeGate } from "./server/knowledgeTools.js";
 import { planQuickEditRoute } from "./agent/quickEdit.js";
 import { SIDE_CHAT_READ_ONLY_TOOLS } from "./agent/sideChat.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
@@ -63,6 +65,7 @@ import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { runAgent } from "./agent/loop.js";
 import { isOutputType, modelAbChain, normalizeEffort, type EffortLevel } from "./llm/router.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
+import { writeCheckpoint } from "./agent/checkpointLog.js";
 import type { AgentEvent, Emit } from "./agent/events.js";
 import { applyRunEvent, beginRun } from "./agent/runGraphAdapter.js";
 import { OllamaClient } from "./ollama.js";
@@ -191,6 +194,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createDesignAssetsTools());
   rt.registry.registerAll(createDesignBriefTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createDesignAutofixTools());
+  rt.registry.registerAll(createUiExamplesTools());
   rt.registry.registerAll(createDesignCritiqueTools(rt.preview, { ollama: rt.ollama }));
   rt.registry.registerAll(createConnectorTools());
   rt.registry.registerAll(createWorkflowTools({ ollama: rt.ollama, registry: rt.registry }));
@@ -461,8 +465,11 @@ async function main(): Promise<void> {
       const runAllow = opts.savedRun.sideChat
         ? baseRunAllow.filter((name) => SIDE_CHAT_READ_ONLY_TOOLS.includes(name))
         : baseRunAllow;
-      const runAllowSet = new Set(runAllow);
-      const agentTools = registry.forAllowlist(runAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
+      // N3 Knowledge Garden: kb_* tools stay registered (the companion gateway
+      // advertises them) but only reach the model when the run's garden is on.
+      const knowledgeRunAllow = applyKnowledgeGate(runAllow, opts.savedRun.knowledge === true);
+      const runAllowSet = new Set(knowledgeRunAllow);
+      const agentTools = registry.forAllowlist(knowledgeRunAllow).withTools([...deviceToolInstances, ...memoryToolInstances, ...teamToolInstances].filter((t) => dynamicAllow.has(t.name) && runAllowSet.has(t.name)));
 
       // Sensitive host-input actions need an explicit user decision first (section 18).
       // MF4 (option 14): the gate resolves each request idempotently — replay of a
@@ -582,27 +589,41 @@ async function main(): Promise<void> {
         ...(opts.inputSessionId
           ? { inputSessionId: opts.inputSessionId, onAdmitPending: (sessionId: string) => admitPendingInputs(sessionId) }
           : {}),
-      // D19 compute budget: shared with the UI badge so the counters and the
-      // badge always agree, and the run stops when the ceiling is hit.
-      budget: sessionRuntime.getBudget(task),
-      // Neo N6: a mission lifts the fixed step cap. Its budget comes from
-      // `cfg.mission`, carries over from the durable checkpoint on a resume so
-      // the clock and counters never restart, and is bounded by the steps the
-      // checkpoint already recorded.
-      ...(missionRun ? {
-        mission: true,
-        budget: missionBudget,
-        ...(missionResume ? { resumeMission: missionResume } : {}),
-        saveMissionCheckpoint: (checkpoint: MissionCheckpoint) => {
-          missionCheckpoints.save(checkpoint);
-          opts.savedRun.missionCheckpoint = checkpoint;
-          saveRun(task, opts.savedRun, opts.lease);
-        },
-      } : {}),
-    };
+        // D19 compute budget: shared with the UI badge so the counters and the
+        // badge always agree, and the run stops when the ceiling is hit.
+        budget: sessionRuntime.getBudget(task),
+        // O5: the durable event log is keyed by the task id (the protocol store
+        // binds a session to its task, and `session_events` outlives the JSON
+        // session cache). Setting this makes every tool call in this run append a
+        // `started` row before it runs and a terminal row after.
+        eventLogSession: task,
+        // Neo N6: a mission lifts the fixed step cap. Its budget comes from
+        // `cfg.mission`, carries over from the durable checkpoint on a resume so
+        // the clock and counters never restart, and is bounded by the steps the
+        // checkpoint already recorded.
+        ...(missionRun ? {
+          mission: true,
+          budget: missionBudget,
+          ...(missionResume ? { resumeMission: missionResume } : {}),
+          saveMissionCheckpoint: (checkpoint: MissionCheckpoint) => {
+            missionCheckpoints.save(checkpoint);
+            opts.savedRun.missionCheckpoint = checkpoint;
+            saveRun(task, opts.savedRun, opts.lease);
+          },
+        } : {}),
+      };
       const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
         ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint, lifecycleHooks: true,
-        saveCheckpoint: (checkpoint) => { opts.savedRun.checkpoint = checkpoint; saveRun(task, opts.savedRun, opts.lease); },
+        saveCheckpoint: (checkpoint) => {
+          // O5: mirror the checkpoint into the durable append-only log and stamp it
+          // with the sequence it received. The stamp is what ties a resumed run to
+          // its log position, and `logSessionId` is what lets recovery ask the log
+          // whether a tool call started without ever reaching a terminal row.
+          checkpoint.logSeq = writeCheckpoint(task, checkpoint, task);
+          checkpoint.logSessionId = task;
+          opts.savedRun.checkpoint = checkpoint;
+          saveRun(task, opts.savedRun, opts.lease);
+        },
       }) : await runAgent(agentOpts);
       // The orchestrator can swallow an abort (it reports a failed step instead),
       // so treat a cancelled run explicitly — never as success.
@@ -758,6 +779,7 @@ async function main(): Promise<void> {
         // Neo N6: the run type must survive the queue so a queued mission runs
         // as a mission and a resumed run keeps its checkpoint.
         mission: opts.mission === true,
+        knowledge: opts.knowledge === true,
       };
     }
     const task = previous ?? createTask(saved.prompt, opts.title, saved.projectId, saved.agentId);
@@ -873,6 +895,7 @@ async function main(): Promise<void> {
     registry,
     runTask,
     memory: memory ?? undefined,
+    embedder: rt.embedder ?? undefined,
     screenLive: rt.screenLive,
     preview: rt.preview,
     mcp,
