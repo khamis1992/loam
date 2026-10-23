@@ -72,6 +72,8 @@ export interface UserMessage extends Base {
     worktreeEnabled?: boolean;
     /** Option 18: composer model tier ("max" | "standard" | "lite" | "flex"). */
     modelTier?: string;
+    /** Neo N3: opt this run into the user's Knowledge Garden (kb_* tools). */
+    knowledge?: boolean;
     /** Neo N10: composer output type (auto|text|image|video|slides|website). */
     outputType?: string;
     /** Neo N10: composer effort level (fast|max). */

@@ -1,0 +1,11 @@
+{
+  "id": "nutrio-dashboard",
+  "title": "Nutrio Dashboard",
+  "description": "Build an interactive analytics dashboard for Nutrio, the nutrition-tracking app, with charts and meal insights.",
+  "prompt": "Create a Nutrio analytics dashboard that shows daily calorie intake, macronutrient breakdown, and meal frequency over the past week. Include a line chart for calories, a donut chart for macros, and a bar chart for meal timing. Use a clean, modern design with a sidebar navigation.",
+  "mode": "build",
+  "effort": "max",
+  "outputType": "website",
+  "icon": "📊",
+  "category": "Dashboard"
+}
