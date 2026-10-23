@@ -1,0 +1,11 @@
+{
+  "id": "landing-site",
+  "title": "Landing Site",
+  "description": "Build a responsive landing page with hero, features, pricing, and call-to-action sections.",
+  "prompt": "Build a responsive landing page for a SaaS product called 'TaskFlow'. Include a hero section with a headline and subheadline, a features grid with icons, a pricing table with three tiers, and a call-to-action section. Use a modern, minimal design with a primary color of indigo and ensure it looks great on mobile and desktop.",
+  "mode": "build",
+  "effort": "max",
+  "outputType": "website",
+  "icon": "🌐",
+  "category": "Website"
+}

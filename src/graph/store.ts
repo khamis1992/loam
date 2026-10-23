@@ -25,8 +25,13 @@ export const RUN_NODE_TYPES = [
   "complete",
   /** Multi-model A/B arm: one sibling run of the same prompt under one model. */
   "sibling",
+  /** N7 branch fan-out: the root of one parallel branch subtree. */
+  "branch",
+  /** N7 branch fan-out: the node that consumes every branch of a fan-out. */
+  "merge",
   "note",
   "failed",
+  "kb_seed",
 ] as const;
 export type RunNodeType = (typeof RUN_NODE_TYPES)[number];
 
@@ -371,6 +376,22 @@ export function parseExport(data: unknown): RunGraphExport {
  */
 export function siblingNodeId(runId: string, arm: number, model: string): string {
   return eventNodeId("sibling", `${runId}:${arm}:${model}`);
+}
+
+/**
+ * N7 branch fan-out: the deterministic id of one branch's root node.
+ *
+ * A branch is not derived from a single agent event, so it needs its own seed:
+ * the same fan-out id and branch index always produce the same node id, which
+ * keeps a re-rendered canvas stable instead of duplicating branch roots.
+ */
+export function branchNodeId(runId: string, fanoutId: string, index: number): string {
+  return eventNodeId("branch", `${runId}:${fanoutId}:${index}`);
+}
+
+/** N7 branch fan-out: the deterministic id of one fan-out's merge node. */
+export function mergeNodeId(runId: string, fanoutId: string): string {
+  return eventNodeId("merge", `${runId}:${fanoutId}`);
 }
 
 /** Stable graph order: event order first, then position, then id. */

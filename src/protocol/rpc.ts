@@ -5,6 +5,8 @@ import { listTasks, getTask, createTask, updateProject, deleteProjectR, listProj
 import { log } from "../log.js";
 import type { ProtocolStore } from "./store.js";
 import { shortUid } from "./events.js";
+import { BoundedMap, LruCache } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 export interface RpcContext {
   userUid: string | null;
@@ -34,9 +36,25 @@ const DEMO_USER = {
   membership_version: "pro",
 };
 
-const tokens = new Map<string, string>(); // sessionToken -> userUid
-const tempCodes = new Set<string>();
-const loginTokens = new Map<string, string>(); // deep-link loginToken -> nonce
+/** Session tokens (J6). Previously an unbounded map: every login added an entry
+ *  and only an explicit logout removed it, so a long-lived server accumulated a
+ *  token per session forever. Bounded LRU — the oldest session's token is
+ *  dropped, which is exactly the session the user has most likely abandoned. */
+const tokens = new BoundedMap<string, string>(512, "protocol-session-tokens");
+/** Single-use temp auth codes (J6). Added on GenerateTempAuthCode and removed
+ *  on exchange; an unbounded Set kept every code a client generated and never
+ *  exchanged. Bounded LRU. */
+const tempCodes = new BoundedMap<string, true>(128, "protocol-temp-codes");
+registerCacheStats("protocol-session-tokens", () => tokens.stats());
+registerCacheStats("protocol-temp-codes", () => ({ ...tempCodes.stats(), capacity: 128 }));
+/**
+ * Deep-link loginToken -> nonce (J6). `consumeLoginToken` reads without
+ * deleting, so an unbounded map here grows with every login attempt in a
+ * long-lived process. Bounded LRU: the oldest pending login link is dropped
+ * (the user just retries and gets a fresh one).
+ */
+const loginTokens = new LruCache<string>({ capacity: 256, name: "protocol-login-tokens" });
+registerCacheStats("protocol-login-tokens", () => loginTokens.stats());
 
 function getDataDir(): string {
   const dir = process.env.LOAM_DATA_DIR || process.env.MANUS_LOCAL_DATA_DIR;
@@ -135,7 +153,7 @@ export function makeRpcHandlers(store: ProtocolStore): Record<string, (body: Rec
     "user.v1.UserAuthService/GenerateTempAuthCode": (_body, ctx) => {
       if (!ctx.isPublic) throw rpcError("unauthorized", "unauthenticated");
       const c = randomUUID();
-      tempCodes.add(c);
+      tempCodes.set(c, true);
       return { token: c };
     },
     "user.v1.UserAuthPublicService/ExchangeTokenByCode": ({ token }) => {
