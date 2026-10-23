@@ -1,0 +1,11 @@
+{
+  "id": "market-research",
+  "title": "Market Research",
+  "description": "Research a market segment and compile a report with sources, trends, and competitive landscape.",
+  "prompt": "Research the current state of the electric vehicle charging infrastructure market in Europe. Identify the major players, market size and growth projections, key regulatory developments, and emerging technologies. Compile a structured report with an executive summary, market overview, competitive landscape, and future outlook. Cite all sources with URLs.",
+  "mode": "research",
+  "effort": "max",
+  "outputType": "text",
+  "icon": "🔍",
+  "category": "Research"
+}
