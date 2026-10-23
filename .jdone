@@ -1,3 +1,51 @@
+# J1 gate fix: restore the two corrupted slide scripts and the deleted done-markers.
+
+`.jgatefail.txt` reported a `tsc` failure (TS2451 redeclared block-scoped variables,
+TS2300 duplicate identifier) in `src/scripts/check-slide-layouts.ts` and
+`src/scripts/check-slide-text-import.ts`. Root cause: the working tree carried
+uncommitted edits from a concurrent workstream that had DUPLICATED lines inside those
+two files (a bad-merge artifact), and `.jdone` / `.jcode-done` had been deleted from the
+working tree. No test was weakened; the fix restores the exact committed blobs.
+
+## What was wrong (and the fix)
+- `src/scripts/check-slide-layouts.ts`: `import ExcelJS from 'exceljs';` appeared twice
+  (line 1 + line 3), and the whole table/image test block (19 lines) was duplicated
+  verbatim (lines 43-61 repeated after line 42). Restored to the committed blob
+  (`git diff --exit-code` clean, 43 lines).
+- `src/scripts/check-slide-text-import.ts`: `import {renderSlidePreview} ...` appeared
+  twice, and the `/api/studio/slide-preview` handler, the `.office-native-ready` wait +
+  click + opacity assert, the `.office-native-status` wait, and the `const data = ...`
+  preview block were each duplicated inside the single long line 11. Restored to the
+  committed blob (`git diff --exit-code` clean, 10 lines).
+- `.jdone` and `.jcode-done` (both tracked) were deleted from the working tree; restored
+  with `git checkout -- .jdone .jcode-done` (both now tracked, unmodified, no conflict
+  markers).
+
+No source logic changed: both scripts are byte-identical to `HEAD` (verified with
+`git diff --exit-code`). No test was weakened, deleted or skipped.
+
+## Deliverable state (unchanged, already committed)
+- `bench/results/J1-before.json`, `bench/results/J1-after.json` (and `J1.json`) tracked.
+- Shared launcher: `src/server/sharedCodeSession.ts` + `src/server/__tests__/sharedCodeSession.test.ts`.
+- `bench/launchers.ts` + `bench/__tests__/launchers.test.ts`; launcher option `code_session`.
+- J1 measured AFTER (shared): N=10 -> marginal 5.6 MB/session, N=30 -> 3.1 MB/session
+  (both < the 10 MB target); all N sessions `fixed: true` (10/10 and 30/30).
+  BEFORE (per-process): N=10 -> 123.7 MB marginal, N=30 -> 71.3 MB marginal.
+
+## Gates (run from the worktree root, on the restored tree)
+- `npx tsc --noEmit` -> exit 0, 0 errors
+- `npm run build:server` -> exit 0 (server bundle + pdf worker written to dist/)
+- `(cd packages/web && npx next build)` -> exit 0 (compiled successfully, 25/25 static pages)
+- `node --import tsx --test "src/**/*.test.ts" "src/**/*.test.mjs"` -> 2979 tests,
+  2978 pass, 0 fail, 1 skipped
+- `node --import tsx --test bench/__tests__/*.test.ts` -> 54 tests, 54 pass, 0 fail
+- `node --import tsx --test src/server/__tests__/sharedCodeSession.test.ts` -> 14 tests,
+  13 pass, 0 fail, 1 skipped
+- `(cd packages/web && npx vitest run)` -> 91 files / 624 tests, all pass
+- `npm run verify` -> exit 0 (encoding OK, eval PASS, orchestrator PASS 114/114, recovery PASS,
+  modes PASS)
+- Working tree: `git diff --exit-code` clean; `git diff --cached --exit-code` clean.
+
 # J1 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
 
 ## Resolution report (this commit)
