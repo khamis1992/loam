@@ -1,3 +1,164 @@
+# N9 complete: ask-user clarification node that pauses a run and resumes with answers
+
+Committed as `3136f14` (`feat(n9): ask-user clarification node that pauses a run
+and resumes with answers`), merged into `manus-parity` via `61aca0c`
+(`merge khamis1992/neo-n9 (N9 via loam-jcode-run) into manus-parity`), with the
+follow-ups `c6c5ba6` and `1cdc5f4`. This session re-verified the shipped
+implementation on the current parity tip and did not need to change any code.
+
+## Why this report exists
+
+This worktree (`khamis1992/neo-n9`) was re-launched by the scheduler against the
+current `manus-parity` tip. At start:
+
+- `git rev-list manus-parity..HEAD` -> empty (the branch has no commits of its own
+  beyond the parity tip; HEAD `851b3fe` is the N7 merge into parity).
+- The only uncommitted change was `D .jdone` (the inherited deletion of the tracked
+  rollup).
+- The N9 implementation was already present and intact: nine of the ten N9-owned
+  files are byte-identical to the upstream merge, and the tenth (the shared
+  `packages/shared/src/socket.ts`) was advanced by parity without changing the
+  ask-user contract (see "Merge safety checks" below).
+
+So the work was: confirm the implementation is intact, re-run every gate on the
+current tree, restore the `.jdone` rollup as a superset, and commit.
+
+## What shipped (N9)
+
+- `src/tools/askUserStore.ts` - in-memory pending-request records with a TTL (a
+  `Map`, no fs/persist; a process restart loses pending requests).
+- `src/tools/askUserGate.ts` - the `ask_user` payload type/parsing and the two
+  classifiers (the pending-request tool-call blocker and the vague-prompt
+  auto-trigger); it stays a pure classifier over the store's read API.
+- `src/tools/askUserTools.ts` - the `ask_user` agent tool (questions with options,
+  free-text answers, an uploaded file) and `applyAskUserGate`, which wraps every
+  mutating tool so a pending request refuses the call.
+- `src/server/routes/askUser.ts` - the HTTP route the web client answers through
+  (`GET /api/ask-user`, `GET /api/ask-user/:id`, `POST .../answer`, `POST .../dismiss`).
+- `packages/web/src/components/approval/AskUserCard.tsx` - the chat-event card
+  rendered by `EventList.tsx` on an `askUserRequested` event; localized through the
+  i18n catalogs (Arabic included) and laid out with logical CSS properties.
+- Registered in the existing tool registry (`src/index.ts:178`) and the mode-catalog
+  CONTROL set (`src/modes/catalog.ts:21`); the agent-facing wording lives in
+  `src/agent/prompt.ts:114` and the user-facing wording in the web i18n JSON
+  (`packages/web/src/i18n/{en,ar}.json`).
+- `packages/shared/src/socket.ts` carries the `askUserRequested` / `askUserResolved`
+  event shapes so the socket bridge and the web client share one shape;
+  `ask_user_required` is the server-internal event (`src/protocol/events.ts:501`)
+  and `resolve_ask_user` is the client action (`src/protocol/types.ts:118`).
+
+The `ask_user` tool creates a record, emits `ask_user_required` / `askUserRequested`,
+and blocks until the request is answered, dismissed or expires. The orchestrator's
+auto-trigger classifier runs before the planner (`src/agent/orchestrator.ts:257`),
+so a low-confidence or vague prompt raises the card before any tool call. Files
+upload via `/api/upload?taskId=...&askUser=...` and attach to the resumed answer.
+
+### Corrections to the inherited N9 block
+
+The older N9 report further down this rollup (the parity copy) says
+`askUserStore.ts` holds "durable" records, calls the card a "Workspace right-panel"
+card, credits `prompts/loam-master.md` with the wording, and labels `askUserGate.ts`
+the "fail-closed gate". All four are wrong on the current tree: the store is an
+in-memory `Map`, the card is rendered by `EventList.tsx` in the chat event list,
+`prompts/loam-master.md` contains no `ask_user` wording (the prompt text is
+`src/agent/prompt.ts:114`), and `askUserGate.ts` is the payload parsing plus the two
+classifiers (the blocking wrapper is `applyAskUserGate` in `askUserTools.ts`; the
+repo never uses the term "fail-closed" for it). The parity lines are left verbatim
+so the rollup still matches the upstream blob; this note records the correction.
+
+## Acceptance criteria (automated, all passing on the current parity tip)
+
+1. **Vague prompt fixture -> ask node appears before any tool call**
+   `src/agent/__tests__/askUserAutoTrigger.test.ts` - all cases pass. Read literally,
+   the test pins the event half: a vague prompt emits `ask_user_required` and the
+   planner is never called while the card waits (`prompts.length === 0`, line 146),
+   and a concrete prompt emits nothing (line 234). The auto-trigger block sits
+   before `planTask` (`src/agent/orchestrator.ts:257`), so no agent loop, and
+   therefore no tool call, can run first. The graph half is real but is not
+   asserted by that test: `src/index.ts:259` feeds every emitted event to
+   `applyRunEvent`, and `src/graph/runGraph.ts:516` maps `ask_user_required` to an
+   `ask_user` node (runtime-verified: one `question` root plus one `ask_user` node
+   carrying the request data). No N9 test asserts the node object; the only graph
+   test mention is the type vocabulary at `src/graph/__tests__/runGraph.test.ts:400`.
+2. **Answer + file -> run resumes and uses the file**
+   `src/tools/__tests__/askUser.test.ts` and
+   `src/protocol/__tests__/askUserSocket.test.ts` - all cases pass.
+   The UI component is covered by vitest + @testing-library (Playwright was not
+   used): `packages/web/src/components/approval/__tests__/askUserCard.test.tsx`.
+
+## Gates (all run from the worktree root on the current parity tip)
+
+- `npx tsc --noEmit`                            -> exit 0
+- `npm run build:server`                        -> exit 0 (`dist/server.cjs` 19.6mb)
+- `(cd packages/web && npx next build)`         -> exit 0 (compiled successfully)
+- `node --import tsx --test src/agent/__tests__/askUserAutoTrigger.test.ts`
+  -> all cases pass
+- `node --import tsx --test src/tools/__tests__/askUser.test.ts
+  src/protocol/__tests__/askUserSocket.test.ts
+  src/server/__tests__/runTools.test.ts
+  src/agent/__tests__/toolDescriptions.test.ts
+  src/agent/__tests__/toolProfile.test.ts`       -> all pass
+- `(cd packages/web && npx vitest run
+  src/components/approval/__tests__/askUserCard.test.tsx)` -> all pass
+- Related suites re-run on the same tree: `orchestratorRecipe.test.ts`,
+  `graph/__tests__/runGraph.test.ts`, `protocol/__tests__/run.ts`,
+  `tools/__tests__/planTools.test.ts` - no failures.
+
+## Merge safety checks on the current tree
+
+These were true at commit time (branch tip `851b3fe`); `manus-parity` has since advanced, so the "up to date" line no longer holds and the current conflict is described below.
+
+- `git merge manus-parity` -> `Already up to date.`
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
+- `git rev-list --count manus-parity..HEAD` -> `0` (this branch is at the parity tip;
+  the N9 code arrived through the upstream merge `61aca0c`)
+- `git grep -n "^<<<<<<<\|^=======$\|^>>>>>>>\|^|||||||" -- src packages` -> empty
+  (no conflict markers anywhere)
+
+- Nine of the ten N9-owned files are byte-identical to the upstream merge blob `61aca0c`
+  (normalising CRLF): `askUserTools.ts`, `askUserGate.ts`, `askUserStore.ts`,
+  `askUser.ts`, `askUserAutoTrigger.test.ts`, `askUser.test.ts`,
+  `askUserSocket.test.ts`, `AskUserCard.tsx`, `askUserCard.test.tsx`, plus the
+  shared `packages/shared/src/socket.ts` is the one exception: parity has since
+  advanced it (adding `lastSeq`/`seq` and `SimulationProgressEvent`) while keeping the ask-user contract (`AskUserRequestedEvent` / `AskUserResolvedEvent`) unchanged.
+
+### Current merge state (re-checked against the current parity tip)
+
+`manus-parity` has since moved to `1ccc8bd` (the N2 canvas session), which is 12 commits ahead of this branch's base and adds its own `.jdone` section. A test `git merge manus-parity` at that tip still reports `CONFLICT (content): Merge conflict in .jdone` and nothing else: `git diff --name-only --diff-filter=U` lists `.jdone` alone, so every source file merges cleanly and only the tracked rollup conflicts. The resolution is the one described in "Seams left for other workstreams" below: keep BOTH sides (this branch's report at the top, the parity rollup verbatim after it). It was verified mechanically against the stage blobs: `:2:.jdone` is 8320 lines and `:3:.jdone` is 8685 lines, and taking the union drops 0 non-empty lines from either side (parity contributes 397 lines of its own). The test merge was aborted, so the branch tip is this report's own commit (`27dac8d` at the time of writing) with a clean tree; amend it and re-read the hash rather than trusting this line.
+
+## Seams left for other workstreams
+
+- `.jdone` is a tracked rollup every workstream appends to, so it will keep
+  conflicting on each `git merge manus-parity`. The resolution that satisfies the
+  gate is always: keep BOTH sides (this branch's report at the top, the parity
+  rollup verbatim after it), and verify mechanically against both stage blobs
+  (`:2:.jdone`, `:3:.jdone`) that 0 non-empty lines are missing from either side.
+  Note the conflict may be add/add or modify/delete depending on whether parity
+  still tracks `.jdone`.
+- The ask-user auto-trigger classifier is heuristic (keyword/pronoun based). A
+  later workstream could replace it with a model-judged confidence signal without
+  changing the gate seam in `src/tools/askUserGate.ts`.
+- `resolve_ask_user` and the `askUserRequested` / `askUserResolved` event pair are
+  the extension point if a workstream wants to attach answers to the run graph as a
+  first-class node rather than a prompt prefix.
+
+## Rules honoured
+
+- Only `.jdone` was restored and committed. No `.neo-*` marker file or `.jcode-*`
+  file was committed. No forbidden path (`docs/handoff/watchdog.ps1`, `qa/*.png`,
+  `packages/tests/visual/baselines`, ZCode/Codex files) was touched.
+- No real external model API was called in tests: every test uses the local fake
+  model or an injected fake runner/graph.
+- No secrets committed, nothing pushed, no `git reset --hard`, no discarded work.
+- No test was weakened, deleted or skipped; no assertion was relaxed; no source file
+  was edited.
+
+Test command:
+
+  node --import tsx --test src/tools/__tests__/askUser.test.ts src/agent/__tests__/askUserAutoTrigger.test.ts src/protocol/__tests__/askUserSocket.test.ts
+
+---
+
 # N7 complete: branch fan-out (`fanout` / `merge` step types, gap G14)
 
 Committed as `3188703`. Implements Neo N7: N independent branches run as child
