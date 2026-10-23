@@ -69,12 +69,399 @@ Test command:
 
 ---
 ---
+## O4 gate-fix session: merge with latest manus-parity, all gates green
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+### Root cause
+No source file conflicted in any merge round. `git merge manus-parity` brought in other
+workstreams' code (N2 canvas, N4 recipe engine, C19 failover, J5 command-risk, N10
+output-type/effort routing, N9 ask-user, C20 and more) and every one of those files
+auto-merged cleanly with `ort`. The only file that ever conflicted was the tracked rollup
+`.jdone`, because every branch prepends its own report at the same top-of-file anchor:
+
+- **add/add** when both sides modified `.jdone` (parity tip `ed26550`, and again at
+  `61aca0c`, `585fd55`). Resolved as a **superset**: this report stays at the top and the
+  whole parity rollup follows verbatim, with only the conflict-marker lines removed.
+- **modify/delete** when a parity commit deleted `.jdone` outright while this branch
+  modified it (parity tip `26befe6`). Resolved by keeping the modified version, since
+  `.jdone` is this task's required deliverable.
+
+`manus-parity` advanced several times while this session ran, so the merge was re-run and
+re-resolved each time it did.
+
+### Round 5 (parity tip `411df5e`, C21 mirofish)
+`manus-parity` re-added its own rollup to `.jdone` (the M3/C21 report block), so this round
+was a **content** conflict on that file only. Resolved as a union: this O4 report stays at the
+top and parity's M3/C21 report block follows verbatim, with only the three conflict-marker
+lines removed. Every source file again auto-merged with `ort`, including the O4 socket and
+protocol surfaces (`src/protocol/types.ts`, `packages/shared/src/socket.ts`).
+
+Deep validation also caught a real gap in an earlier round: 25 lines of this branch's own
+earlier header wording had been rewritten rather than preserved. They are now archived
+verbatim in a labeled `Superseded header wording (preserved verbatim)` section, so `.jdone`
+is a **strict** superset of both merge parents rather than merely of their bodies.
+
+Nothing in the O4 change set was at risk. The O4 files
+(`src/protocol/__tests__/seqReplay.test.ts`, `src/protocol/store.ts`,
+`packages/web/src/services/chatSocket.ts`, `packages/web/src/services/chatSocket.test.ts`,
+`packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx`) are byte-identical to commit
+`5114c89`. `src/protocol/types.ts`, `src/protocol/socket.ts` and
+`packages/shared/src/socket.ts` differ from `5114c89` only by purely additive
+other-workstream lines (for example the N4 `RecipeUpdateEvent` / `RecipeRestartEvent` and
+the N9 `ResolveAskUser` / `AskUserRequestedEvent`), which is why they auto-merged; the O4
+`lastSeq` / `seq` / `eventsAfterSeq` additions are all still present in the merged tree.
+
+### What was done
+Every `.jdone` conflict was resolved by **keeping both sides**, never by choosing one side
+and dropping the other, and never by weakening a test. Verification was mechanical after
+each resolution: the merged `.jdone` is a multiset-superset of the ours blob, the theirs
+blob and the previous HEAD blob (0 non-empty lines missing from any of them), with 0
+conflict markers and 0 U+FFFD replacement characters left in the tree.
+
+No source file was edited by this session and no test was weakened, deleted or skipped.
+
+### Gate condition verified
+`git merge-base --is-ancestor manus-parity HEAD` exits 0, and
+`git rev-list --left-right --count manus-parity...HEAD` has `0` on the parity side. No
+conflict marker remains in any tracked file and `git status --porcelain` is empty.
+
+### Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully, 25 static pages)
+- `npm run verify`                            -> exit 0 (typecheck, encoding, eval, orchestrator
+                                                114/114, recovery, modes)
+- `node --import tsx --test "src/**/*.test.ts"`
+                                              -> tests 2601, pass 2600, fail 1 (the one
+                                                 failure is the inherited `worktrees.test.ts`
+                                                 environment defect, see below)
+- `node --import tsx --test src/protocol/__tests__/*.test.ts`
+                                              -> tests 55, pass 55, fail 0 (O4 seqReplay included)
+- `(cd packages/web && npx vitest run src/services/chatSocket.test.ts)`
+                                              -> 7 passed
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+
+### Inherited failure, not introduced here
+`src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing"
+(`true == false` at `src/server/__tests__/worktrees.test.ts:44`). Both
+`src/server/__tests__/worktrees.test.ts` and `src/server/worktrees.ts` are byte-identical
+to `manus-parity` and are untouched by the merge. The cause is environmental: this
+machine's home directory `C:\Users\khamis` contains a stray `.git`, so a `mkdtemp`'d
+directory under `%TEMP%` still resolves a repository when git walks upward
+(`git -C <tmp> rev-parse --show-toplevel` prints `C:/Users/khamis`). Confirmed with
+`GIT_CEILING_DIRECTORIES=%TEMP%`, under which the probe fails as the test expects. The
+test passes 3/4 here and the same single failure reproduces on the untouched
+`manus-parity` worktree. This task touches no file under `src/server`.
+
+### Files
+- `.jdone` only (this report prepended to the preserved rollup). No source file was
+  modified by this session; the O4 deliverables are unchanged from commit `5114c89`.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run verify
+  node --import tsx --test "src/**/*.test.ts"
+  node --import tsx --test src/protocol/__tests__/*.test.ts
+  (cd packages/web && npx vitest run src/services/chatSocket.test.ts)
+  npm run check:encoding
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added. Working tree clean.
+
+### Superseded header wording (preserved verbatim)
+Earlier revisions of this header are archived below verbatim, so that no line from either
+side of any merge conflict is dropped. The sections above are the current wording.
+
+No source file conflicted in either merge round. `git merge manus-parity` brought in
+other workstreams' code (N2 canvas, N4 recipe engine, C19 failover, J5 command-risk, N10
+output-type/effort routing) and every one of those files auto-merged cleanly with `ort`.
+The only file that ever conflicted was the tracked rollup `.jdone`:
+- Round 1, parity tip `ed26550` (N2 merge): **add/add**. Both sides prepend a report at
+  the same top-of-file anchor (O4's report here; the N2/C19/J3/O3/O6/O2/D5/O1/V11/fc-05
+  rollup on parity). Six conflict-marker lines, resolved as a superset.
+- Round 2, parity tip `26befe6` (N10 merge): **modify/delete**. Parity's N10 commit
+  `e3d05f6` deleted `.jdone` outright (`git ls-tree manus-parity -- .jdone` is empty),
+  while this branch modified it. Kept our side, since `.jdone` is this task's required
+  deliverable and the branch must not lose its report.
+other-workstream lines (the N4 `RecipeUpdateEvent` / `RecipeRestartEvent`), which is why
+they auto-merged; the O4 `lastSeq` / `seq` / `eventsAfterSeq` additions are all still
+- Round 1: the `.jdone` add/add conflict was resolved as a **superset** - the O4 report
+  stays at the top and the full parity rollup follows verbatim, with the six
+  conflict-marker lines removed and no report text altered.
+- Round 2: the `.jdone` modify/delete conflict was resolved by keeping the modified
+  version (`git add .jdone`), which is the union of the O4 report and the parity rollup
+  carried forward from round 1.
+Both resolutions were verified mechanically against the blobs in play: 0 non-empty lines
+missing from the ours blob, 0 non-empty lines missing from the theirs blob (round 1), 0
+non-empty lines missing from the merge-base blob, and 0 conflict markers left in the tree.
+                                              -> tests 2576, pass 2575, fail 1 (the one
+                                              -> tests 52, pass 52, fail 0 (O4 seqReplay included)
+present.
+
+---
+
+M3 second validation round: found and fixed a real follow-up routing regression on the async surface (commit 0138720 + the fix commit below).
+
+---
+
+# M3 merge gate: FINAL - manus-parity merged three times, all gates green
+
+The gate (`MERGE CONFLICT with latest manus-parity: run git merge manus-parity,
+resolve all conflicts keeping both sides, commit`) requires `manus-parity` to be a
+live ancestor of this branch. The branch advanced three times while this was being
+worked, so the merge was performed three times; each one is committed and the
+ancestor condition holds against the final tip `585fd55`.
+
+## The three merges
+
+1. `330e135` - parity tip `26befe6`. Conflicts: `src/protocol/events.ts`,
+   `src/protocol/types.ts` (union of both sides) and `.jdone` (modify/delete; kept
+   the branch version, the convention on every sibling branch).
+2. `7d8da0e` - parity tip `61aca0c` (+22 commits: N9 ask-user node, J9 codemode).
+   Conflicts: `src/protocol/types.ts` (kept `SimulationProgressEvent` plus parity's
+   `AskUserRequestedEvent`/`AskUserResolvedEvent`) and `.jdone` (add/add; kept both
+   report sets).
+3. `9a70093` - parity tip `585fd55` (+13 commits: C20 chat accent, docs). Only
+   `.jdone` conflicted. It is a prepend/append rollup and both stages share the
+   previous base as a suffix, so the resolution is a pure union of the two report
+   blocks; only the nine conflict-marker lines were removed.
+
+After every merge, no parity file was dropped: all 4726 files at the final parity
+tip are present in the merged index. `git rev-list --left-right --count
+manus-parity...HEAD` is `0 13`.
+
+## Final gate results (on the merged tree at 9a70093)
+
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.6mb, pdf worker copied)
+- `(cd packages/web && npx next build)`        -> exit 0 (Compiled successfully)
+- `node --import tsx --test "src/**/*.test.ts" "src/**/*.test.mjs"`
+  -> tests 2661, suites 489, pass 2661, fail 0
+- `(cd packages/web && npx vitest run)`        -> 79 files, 535 tests, all pass
+- `npm run check:encoding`                     -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                        -> PASS
+- `npm run check:eval`                         -> eval harness smoke: PASS
+- `npm run check:recovery`                     -> PASS
+- `npm run check:orchestrator`                 -> PASS (114/114)
+
+Working tree clean. No test weakened, deleted or skipped; no assertion relaxed.
+
+---
+
+# M3 merge gate resolved: manus-parity fully merged, gates green
 D2 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
 
 ## The failure that was fixed
 `.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity: run git merge
 manus-parity, resolve all conflicts keeping both sides, commit.
 
+The gate is not about a code defect. It asks for `manus-parity` to be a live
+ancestor of this branch, so the merge had to be redone against whatever tip the
+branch had at gate time. It advanced twice while this was being done, so two
+merges were required rather than one.
+
+## Merge 1 - parity tip 26befe6 (commit 330e135)
+`git merge manus-parity` produced three conflicts:
+
+- `src/protocol/events.ts` (content): HEAD imported `SimulationProgressEvent`;
+  parity imported `RecipeUpdateEvent, RecipeRestartEvent`. Resolved as the union
+  of both import lists.
+- `src/protocol/types.ts` (content): the `ChatEvent` union. HEAD contributed
+  `SimulationProgressEvent`; parity contributed `RecipeUpdateEvent,
+  RecipeRestartEvent` alongside the shared `DeviceAttachmentUploadNotify`.
+  Resolved keeping every member from both sides.
+- `.jdone` (modify/delete): parity had deleted it, HEAD had modified it. Restored
+  the branch version, which is the convention every sibling branch on this
+  conflict uses (`jcode-j8` fdbe7f8, `h2-h4` 83191fb, `neo-n2` 634a23a).
+
+Verified afterwards that all 4706 parity-only files were present, so the merge
+dropped nothing.
+
+## Merge 2 - parity tip 61aca0c (commit 7d8da0e)
+Between the first merge and the gate re-check, `manus-parity` advanced 22 commits
+(N9 ask-user node, J9 codemode, plus their own merge-gate fixes). The ancestor
+check `git merge-base --is-ancestor manus-parity HEAD` correctly went false again,
+so the new tip was merged. This time there were two conflicts, and
+`src/protocol/events.ts` auto-merged:
+
+- `src/protocol/types.ts` (content): HEAD now had `SimulationProgressEvent`; the
+  new parity work added `AskUserRequestedEvent` and `AskUserResolvedEvent`.
+  Resolved keeping all three, next to the shared
+  `DeviceAttachmentUploadNotify`/`RecipeUpdateEvent`/`RecipeRestartEvent`.
+- `.jdone` (add/add): parity now also tracks the file. Kept both sides - HEAD's M3
+  conversational-wiring and regression reports, and parity's N9 done report plus
+  its preserved rollup. Only the conflict markers were removed; no report text
+  from either side was dropped.
+
+After both merges: `git rev-list --left-right --count manus-parity...HEAD` is
+`0 11`, and `git merge-base --is-ancestor manus-parity HEAD` exits 0. Every one
+of the 4723 files at parity tip 61aca0c is present in the merged index.
+
+## A real environmental test bug that the merge exposed
+The full suite reported one failure that had nothing to do with the merge:
+`src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+throwing".
+
+Root cause: `readGitBranch` runs `git -C <dir> rev-parse --abbrev-ref HEAD`, and
+git walks up to the nearest enclosing repository. `os.tmpdir()` on this machine
+is `C:\Users\khamis\AppData\Local\Temp`, and `C:\Users\khamis` is itself a git
+repository, so the "plain" temp folder was reported as git. Proved rather than
+assumed: with `TEMP` pointed at a directory outside any repository the case
+passes 4/4, and `git -C <tmpdir> rev-parse --show-toplevel` prints
+`C:/Users/khamis`.
+
+The test was asserting a property of the machine, not of the code. Fixed by
+ceiling git's upward search at the temp root with `GIT_CEILING_DIRECTORIES`,
+which is the convention already used for the identical assertion in
+`src/tools/__tests__/codeSession.test.ts`. The assertions are unchanged and no
+test was weakened or deleted. Committed as 5549aad.
+
+## Gates (all run from the worktree root on the merged tree)
+
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.6mb, pdf worker copied)
+- `(cd packages/web && npx next build)`        -> exit 0 (Compiled successfully)
+- `node --import tsx --test "src/**/*.test.ts" "src/**/*.test.mjs"`
+  -> tests 2634, suites 484, pass 2634, fail 0
+- `(cd packages/web && npx vitest run)`        -> 79 files, 535 tests, all pass
+- `npm run check:encoding`                     -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                        -> PASS
+- `npm run check:eval`                         -> eval harness smoke: PASS
+- `npm run check:recovery`                     -> PASS
+- `npm run check:orchestrator`                 -> PASS (114/114)
+
+No test was weakened or deleted; no assertion was relaxed to make the gate green.
+No real external model API was called by any test.
+
+## The regression that was found and fixed
+The M3 async conversational surface did not route follow-ups. `asyncRunner.ts` classified with
+`classifyWithSession(text, false)` and unconditionally ran a full simulation, so on the async path
+(which is the live path whenever a provider client is present) every what-if / interview / roundtable /
+A-B / auto-fix request started a **brand-new** simulation and overwrote the active session, instead of
+answering against it. The synchronous surface routed all of these correctly, so the two surfaces had
+silently diverged.
+
+Proved before fixing, with a throwaway probe driving both surfaces against a deterministic fake
+`ModelCaller`:
+
+- sync  follow-up "what if we raise the price to 1300?" -> `what_if_injection` (correct)
+- async follow-up "what if we raise the price to 1300?" -> `full_application_analysis` (wrong: ran a fresh sim)
+
+## The fix
+- `src/tools/mirofish.ts`: extracted `runMirofishFollowUp`, the single router for every
+  session-bound branch (what-if, interview, roundtable, A/B, auto-fix, export, chaos, competitor,
+  tests, time-travel, pricing, cross-project memory, compliance, viral GTM, red/blue, app synthesis,
+  multi-region, podcast, MCTS, digital twin, NAS, formal verification, SLA, 3D). It returns `null`
+  when the message is a full-analysis request. Both surfaces now call it first, so follow-up routing
+  exists in exactly one place. `runConversationalMirofish` keeps its synchronous template full
+  analysis (`runMirofishFullAnalysisSync`); `runConversationalMirofishAsync` falls through to the real
+  swarm simulation. The async path passes only the caller's explicit `target` to the router, matching
+  the synchronous behaviour (which guesses a target only inside the full-analysis branch).
+- `src/tools/mirofish/asyncRunner.ts`: now reports `intent: "full_application_analysis"` instead of the
+  raw classification, because follow-ups are routed before it is reached and it always runs a
+  simulation. Previously unrelated text was labelled `unrelated` while a simulation really ran, which
+  contradicted the synchronous surface.
+
+## Behaviour preserved, proven not assumed
+A 29-case routing battery (every follow-up family + full analysis + unrelated) was captured from the
+synchronous surface **before** the refactor and re-captured after. The two maps are byte-identical
+(`fc` clean), so the refactor changed no synchronous routing decision.
+
+## Regression tests added (and proven to catch the bug)
+`src/tools/mirofish/__tests__/asyncRunner.test.ts`:
+- follow-ups reuse the active simulation and do not clobber the session (what-if, interview,
+  roundtable, auto-fix)
+- a full-analysis request still starts a fresh simulation
+- a run the async surface actually executed is labelled `full_application_analysis`, matching sync
+
+Negative control: with the router call temporarily disabled the new follow-up test fails
+(`"what if we raise the price to 1300?" must route as a follow-up`), so the test genuinely guards the
+regression rather than passing vacuously. The temporary hook was then reverted.
+
+## Gates (run from the worktree root after the fix)
+- `npx tsc --noEmit`                              -> exit 0
+- `npm run check:encoding`                         -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run build:server`                           -> exit 0
+- mirofish + protocol suites (asyncRunner, seed, simulate, intent, runner, http, loop, progress) -> tests 147, pass 147, fail 0
+- `src/server/__tests__/*` + `src/agent/__tests__/*` -> tests 713, pass 711, fail 2
+
+The two failures are outside this diff and pre-existing: `toolDescriptions.test.ts` (`suggest_plan`
+pending-list defect, documented below) and `worktrees.test.ts` ("reports non-git folders without
+throwing") which fails because `%TEMP%` resolves to `C:/Users/khamis`, itself inside a git repo, so
+`readGitBranch` correctly reports `isGit: true`. Neither file references mirofish.
+
+## Correction: the parity-ancestor claims in the preserved reports below are now stale
+The preserved D2 / D10 / D19 reports below state that `git merge-base --is-ancestor manus-parity HEAD`
+exits 0 with `rev-list --left-right --count manus-parity...HEAD = 0 N`. Those statements were true for
+the merges they describe, but they are **no longer true of the current branch**: manus-parity has
+advanced 78 commits since, so at HEAD `0138720`:
+
+- `git merge-base --is-ancestor manus-parity HEAD` -> **exits 1** (not an ancestor)
+- `git rev-list --left-right --count manus-parity...HEAD` -> **78  7**
+- `git merge-base manus-parity HEAD` -> `b073763`
+
+The historical reports are left as written (they record what was verified at the time); this note is
+the authoritative current state.
+
+---
+
+M3 conversational wiring validation complete (commit 33922e6, on top of the M3 wiring commit 9010d7e).
+
+## What was validated
+Independently validated the M3 wiring claims rather than only re-running the author's tests:
+
+1. **ToolContext threading** (`src/agent/__tests__/mirofishLoop.test.ts`, 3 tests, new): the agent loop hands
+   the provider client to every tool through `ToolContext`, on the sequential path and on the parallel
+   tool-batch path alike. A tool that carries a client drives the real MiroFish swarm (seed + agent-turn
+   calls through the fake `ModelCaller`, `simulation_progress` events on the run bus, artifacts written
+   under `.manus/mirofish/simulations`). Two harness bugs surfaced while getting this green: the tool body
+   dynamically imported a wrong path (`../../mirofish.js` instead of `../../tools/mirofish.js`), and the loop
+   replaces the system prompt on every run so the fake client could not recognise its verifier request
+   (settled with `suppressFinal: true` / `NO_VERIFICATION`).
+
+2. **HTTP route delegation** (`src/server/__tests__/mirofishHttp.test.ts`, 4 tests, new): `POST
+   /api/mirofish/chat` runs the real swarm through the server's injected client with no network, returns
+   honest `model_calls` / `rounds_completed` / `model_unavailable:false`, writes locale-faithful artifacts,
+   and persists the active session so the follow-up branches keep working. A second case shows an ambiguous
+   brief degrading to a neutral `Global` locale (country `Global`, currency `USD`) instead of inventing a
+   market. The server is started once and the neutral case runs under a second task workspace, because
+   `loadConfig` pins `DATA_DIR` at module load.
+
+3. **Artifacts** (`src/tools/mirofish/asyncRunner.ts`): a real gap was found and fixed. The async
+   conversational path wrote the legacy profile/report artifacts but **not** the seed artifact the
+   synchronous runner leaves. `writeSeedArtifact` is now exported from `runner.ts` and called from
+   `runConversationalMirofishAsync`, so both surfaces expose the resolved locale, entities and personas.
+
+4. **Progress bus** (`src/tools/mirofish/__tests__/asyncRunner.test.ts`, extended): `simulation_progress`
+   events reach the run event bus tagged with the run's `simulation_id`, and `simulation_done.rounds`
+   agrees with the reported `rounds_completed`.
+
+5. **Honest degradation**: with no reachable provider the run still completes, reports
+   `model_unavailable:true`, records every agent-turn as skipped, and never fabricates output.
+
+## Locale fidelity, not a hard-coded default
+The locale is derived from the brief (or the user's authoritative location), never a hard-coded market.
+Two locale assertions in the new tests accept either the Latin or the market-language spelling of the city
+(`Riyadh`/`الرياض`, `Doha`/`الدوحة`): the locale prompt asks labels to match the market's primary language,
+so an Arabic-market brief yields an Arabic city label. The country and currency are asserted stable and
+follow the brief (`Saudi Arabia`/`SAR`, `Qatar`/`QAR`), and an ambiguous brief degrades to `Global`/`USD`
+instead of inventing a place.
+
+## Gates (run from the worktree root on the committed tree)
+- `npx tsc --noEmit`                              -> exit 0
+- `npm run check:encoding`                         -> OK (no BOM, no mojibake, all JSON valid)
+- mirofish suites (asyncRunner, seed, simulate, mirofishLoop) -> tests 42, pass 42, fail 0
+- `src/server/__tests__/mirofishHttp.test.ts`     -> tests 4, pass 4, fail 0
+- `src/agent/__tests__/*.test.ts`                  -> tests 266, pass 265, fail 1
+- `npm run check:modes` / `check:orchestrator`     -> PASS
+
+The single agent-suite failure is the inherited, pre-existing `src/agent/__tests__/toolDescriptions.test.ts`
+("suggest_plan is neither registered nor listed in PENDING_CODING_TOOLS"), byte-identical to manus-parity and
+documented in the preserved reports below. It is unrelated to M3 and left untouched.
 ## What the merge produced
 `git merge manus-parity` (MERGE_HEAD tip e31314b, D12) conflicted in exactly five files.
 Every conflict was resolved by keeping BOTH sides; no test was weakened, deleted or
@@ -148,6 +535,7 @@ No secrets committed. No forbidden path touched. No test weakened, deleted or sk
 
 ---
 
+M3 conversational wiring complete: the mirofish_chat tool and POST /api/mirofish/chat now run the real model-aware swarm simulation when a provider client is present, the synchronous entry point is preserved as the legacy fallback, and the legacy full-analysis branch regains its deterministic OASIS personas + report so the no-model path and the follow-up branches keep working. Covered by src/tools/mirofish/__tests__/asyncRunner.test.ts (deterministic fake ModelCaller, no real API calls).
 ## Preserved: D10 gate-fix report (previous merge)
 
 D10 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
@@ -391,6 +779,10 @@ Test commands:
   npx tsc --noEmit
   npm run build:server
   (cd packages/web && npx next build)
+  npm run verify
+  node --import tsx --test "src/**/*.test.ts"
+  node --import tsx --test src/protocol/__tests__/*.test.ts
+  (cd packages/web && npx vitest run src/services/chatSocket.test.ts)
   node --import tsx --test src/agent/__tests__/computeBudget.test.ts src/agent/__tests__/loopBudget.test.ts src/agent/__tests__/orchestratorBudget.test.ts src/server/__tests__/sessionRuntime.test.ts src/server/__tests__/sessionSleep.test.ts src/tools/__tests__/ptySessions.test.ts
   (cd packages/web && npx vitest run src/components/chat/__tests__/SessionStatusBadge.test.tsx src/components/chat/__tests__/useSessionRuntime.test.tsx src/services/__tests__/sessionRuntimeApi.test.ts)
 
@@ -991,6 +1383,97 @@ No Arabic text was written; no mojibake placeholder text was added. Working tree
 
 ---
 
+## O4 complete: socket replay by durable-log sequence
+
+Branch: `khamis1992/om-o4` (worktree `C:\Users\khamis\orca\workspaces\manus-local\om-o4`)
+Commit: `5114c89` "O4: seq-based replay"
+Base branch: `manus-parity`
+
+Implements BUILD_SPEC §6.4: a reconnecting client sends the highest durable-log
+`seq` it already rendered and receives only frames with `seq > lastSeq`, instead of
+relying on a single `lastMessageId` cursor.
+
+### What changed
+
+**`src/protocol/types.ts`, `packages/shared/src/socket.ts`**
+- Added the optional `seq?: number` field to `ServerEnvelope` and the optional
+  `lastSeq?: number` field to `JoinSession`, so both the frame and the join request
+  can carry a durable-log sequence.
+
+**`src/protocol/store.ts`**
+- `eventsAfter(sessionId, lastMessageId?)` now delegates to `eventsAfterSeq`, keeping
+  the pre-O4 cursor fallback (`seqOfId`) byte-for-byte.
+- `eventsAfterSeq(sessionId, afterSeqValue)` maps every payload to
+  `{ ...envelope, seq: envelope.seq ?? e.seq }`. This closes the real spec gap: a
+  replayed envelope is a fresh JSON object after a restart and would otherwise arrive
+  with no `seq`, so a client could never advance its cursor.
+
+**`src/protocol/socket.ts` (join handler, ~line 343)**
+- When the client sends `lastSeq` (number) the replay uses
+  `store.eventsAfterSeq(sessionId, m.lastSeq)`; otherwise it keeps
+  `store.eventsAfter(sessionId, m.lastMessageId)`.
+- The `eventsNotifyEventsAfter` replay frame now carries `seq: <highest seq delivered>`,
+  so a client that records `seq` advances past everything just delivered.
+
+**`packages/web/src/services/chatSocket.ts`**
+- `ChatSocket` keeps a per-session `lastSeqBySession` map and exposes
+  `onMessage(listener)` (an extra frame observer with an unsubscribe function) plus
+  `noteSeq(sessionId, seq)`. `join()` gained a `getLastSeq` getter argument and sends
+  `lastSeq` on the initial join and on every reconnect; `leave()` clears the cursor.
+
+**`packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx`**
+- The socket effect registers a seq observer through `socket.onMessage` and records
+  `m.seq` via `socket.noteSeq(sessionUid, ...)`. The observer and its unsubscribe are
+  declared outside the async closure so the effect cleanup can call them before
+  `socket.disconnect()`.
+
+**`packages/web/src/services/chatSocket.test.ts`** (existing, extended)
+- The mock server now replays by `lastSeq` (slicing `seq > lastSeq`) and reports the
+  highest delivered seq on the replay frame, falling back to the `lastMessageId`
+  cursor when `lastSeq` is absent.
+- Three new tests: replay only frames after the last seq (lastSeq=2 of seqs 2,3
+  yields only the seq-3 frame, and the replay frame carries `seq: 3`); `noteSeq`
+  drives the cursor so a reconnect resumes at that seq; and a listener stops receiving
+  frames after unsubscribe and after `disconnect()`.
+
+**`src/protocol/__tests__/seqReplay.test.ts`** (new, 334 lines)
+- A real socket.io + HTTP-login-chain integration test against a throwaway
+  `LOAM_DATA_DIR`, with a fake `runTask`/`getTask` and `adapter.store` seeding. It
+  covers the plan row (a client with `lastSeq=4` of 6 frames receives exactly frames
+  4,5,6 and the replay frame carries `seq=7`), replay-by-sequence rather than index,
+  the `lastMessageId` fallback, an unknown session (empty, `seq` undefined),
+  `lastSeq=0` (everything), cursor advance after appending one more frame, a purged
+  session (empty), and replay by sequence after an adapter restart with no frame id.
+
+### Acceptance (plan row O4: "socket test: client with lastSeq=3 of 6 receives exactly seq 4,5,6")
+Covered by `src/protocol/__tests__/seqReplay.test.ts` (the lastSeq=4 of 6 case) and by
+the three new web tests in `packages/web/src/services/chatSocket.test.ts`.
+
+### Gates (all run from the worktree root)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.4mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled successfully)
+- `npx tsc --noEmit` in `packages/web`        -> exit 0
+- `node --import tsx --test src/protocol/__tests__/*.test.ts`
+                                              -> tests 43, pass 43, fail 0
+- `(cd packages/web && npx vitest run)`       -> 72 files / 472 tests, all pass
+- `node --import tsx src/protocol/__tests__/run.ts` (A1 adapter integration)
+                                              -> PASS
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                       -> PASS
+- `npm run check:orchestrator`                -> PASS
+- `npm run check:recovery`                    -> PASS (3 succeeded)
+- `npm run check:promptwire`                  -> PASS (every promptwire tool ok:true)
+
+### Notes
+- `manus-parity` has advanced 49 commits since this branch's base `8e197c6` (which is
+  now an ancestor of `manus-parity`). The work was left uncommitted until the gates
+  were green, so the merge is clean: no parity source file was touched by this change
+  set, and `.jdone` is the only tracked file that both sides prepend to.
+- The runner had deleted the tracked rollup `.jdone` in the working tree; it was
+  restored from `HEAD` and this report prepended, so the rollup is a superset.
+- No test was weakened, deleted or skipped. No secret was committed. No forbidden
+  path was touched. No Arabic text was written; no mojibake placeholder was added.
 # N2 gate-fix session: merge with latest manus-parity
 
 `.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
@@ -2891,6 +3374,12 @@ Test commands:
   npx tsc --noEmit
   npm run build:server
   (cd packages/web && npx next build)
+  node --import tsx --test src/protocol/__tests__/*.test.ts
+  (cd packages/web && npx vitest run src/services/chatSocket.test.ts)
+  npm run check:encoding
+
+---
+
   node --import tsx --test src/agent/__tests__/computeBudget.test.ts src/agent/__tests__/loopBudget.test.ts src/agent/__tests__/orchestratorBudget.test.ts src/server/__tests__/sessionRuntime.test.ts src/server/__tests__/sessionSleep.test.ts src/tools/__tests__/ptySessions.test.ts
   (cd packages/web && npx vitest run src/components/chat/__tests__/SessionStatusBadge.test.tsx src/components/chat/__tests__/useSessionRuntime.test.tsx src/services/__tests__/sessionRuntimeApi.test.ts)
 
