@@ -385,11 +385,13 @@ export function KnowledgeGardenPane() {
                     </button>
                     <BookMarked className="mt-0.5 size-4 shrink-0 text-text-tertiary" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-text-primary">{base.name}</p>
+                      <p className="text-sm font-medium text-text-primary" dir="auto">{base.name}</p>
                       <p className="text-[11px] text-text-tertiary">
                         {base.seeds} {t('seeds')} · {t('updated')} {new Date(base.updatedAt).toLocaleString()}
                       </p>
-                      {base.description && <p className="mt-1 line-clamp-2 text-xs text-text-secondary">{base.description}</p>}
+                      {base.description && (
+                        <p className="mt-1 line-clamp-2 text-xs text-text-secondary" dir="auto">{base.description}</p>
+                      )}
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
                       <Button variant="ghost" size="sm" onClick={() => openImport(base.id)}>
@@ -521,13 +523,13 @@ export function KnowledgeGardenPane() {
               {results.map((hit) => (
                 <li key={hit.seedId} className="rounded-card border border-border-main bg-bg-menu p-3">
                   <div className="flex items-center gap-2">
-                    <p className="min-w-0 flex-1 truncate text-sm font-medium text-text-primary">{hit.title}</p>
+                    <p className="min-w-0 flex-1 truncate text-sm font-medium text-text-primary" dir="auto">{hit.title}</p>
                     <span className="shrink-0 rounded-full bg-fill-tsp px-2 py-0.5 text-[10px] font-medium text-text-tertiary">
                       {hit.score.toFixed(3)}
                     </span>
                   </div>
                   <p className="text-[11px] text-text-tertiary">{baseName(hit.baseId)}</p>
-                  <p className="mt-1 line-clamp-3 text-xs text-text-secondary">{hit.preview}</p>
+                  <p className="mt-1 line-clamp-3 text-xs text-text-secondary" dir="auto">{hit.preview}</p>
                   {hit.tags.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1">
                       {hit.tags.map((tag) => (
@@ -705,8 +707,8 @@ function SeedRow({
     <li className="rounded-control border border-border-main bg-fill-tsp p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-text-primary">{seed.title}</p>
-          <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">{seed.body}</p>
+          <p className="text-sm font-medium text-text-primary" dir="auto">{seed.title}</p>
+          <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary" dir="auto">{seed.body}</p>
           {seed.provenance && (
             <p className="mt-1 text-[10px] text-text-tertiary">
               {seed.provenance.source}{seed.provenance.ref ? ` · ${seed.provenance.ref}` : ''}
