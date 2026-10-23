@@ -1236,3 +1236,83 @@ sides as `.jgatefail.txt` requires.
 - HEAD `0aa9f23` (fifteenth-pass record) at the time these checks ran; `.jdone` is
   appended below and committed. Working tree clean. `.devin-done` present
   (untracked, ignored by `.git/info/exclude`).
+
+## Independent re-validation (2026-10-23, seventeenth pass) — one real defect found and fixed
+
+This pass attacked the three claims in the previous summary directly. It found a
+genuine defect in D3's *own new tests* and fixed the root cause; the aggregate
+`check:test-isolation` failure is confirmed pre-existing parity behaviour.
+
+### Defect found: D3's two new test files wrote `workspace/` into the repo tree
+
+`check:test-isolation` copies the repo (minus build output), deletes `data/` and
+`workspace/`, runs the whole server suite, and fails if either folder reappears
+(`src/scripts/check-test-isolation.ts`). I attributed the residue by copying the
+repo to a temp sandbox and running test files there one at a time:
+
+| test file | suite exit | residue |
+|---|---|---|
+| `src/tools/__tests__/envSnapshot.test.ts` | 0 | clean |
+| `src/tools/__tests__/envSnapshotE2E.test.ts` | 0 | **`workspace/` leaked** |
+| `src/server/__tests__/envBuildRoutes.test.ts` | 0 | **`workspace/` leaked** |
+| `src/server/__tests__/taskWorkspace.test.ts` | 0 | clean |
+
+Root cause: both files call `loadConfig()` (`envSnapshotE2E.test.ts:40-41`,
+`envBuildRoutes.test.ts:69`), and `loadConfig()` eagerly
+`fs.mkdirSync(cfg.workspace)` + `fs.mkdirSync(cfg.computerUse.screenshotDir)`
+(`src/config.ts:358-359`). They set `MANUS_LOCAL_DATA_DIR` but **not
+`LOAM_ROOT`**, so `cfg.workspace` resolved to the repo's real `workspace/` and
+`workspace/.screenshots/`. This is exactly the contract `src/test/isolation.ts`
+documents and the reason peer tests set `LOAM_ROOT` (`liveViewRoutes.test.ts:78`,
+`projectContext.test.ts:41`); `codingBenchmarkE2E.test.ts` comments the same trap.
+
+**Fix (root cause, not a weakened assertion):** set `process.env.LOAM_ROOT = tmpDir`
+alongside `MANUS_LOCAL_DATA_DIR` in both `before` hooks and `delete
+process.env.LOAM_ROOT` in both `after` hooks. Commit **`07929cc`**, +8 lines across
+2 files. No test assertion changed.
+
+Re-measured after the fix: all four D3 files clean individually **and** together
+(`D3-workspace-CLEAN`, `D3-data-CLEAN`). D3 tests still 24/24 pass.
+
+### The aggregate `check:test-isolation` failure is pre-existing parity behaviour
+
+After the fix `check:test-isolation` still exits 1, but the residue is byte-identical
+to pristine parity:
+
+- D3 HEAD: `the test suite wrote into the repository tree: data, workspace`,
+  `"data": ["manus.db", "model-edits.jsonl"]`, `"workspace": []`, `suite exit=0`.
+- Pristine parity `03f8aef` (worktree `%TEMP%\d3-parity-wt3`): **the same
+  message, the same `"data": ["manus.db", "model-edits.jsonl"]`, the same
+  `"workspace": []`, the same `suite exit=0`.**
+
+The `workspace: []` entry is an empty folder (a test created it and wrote
+nothing); the `data/` entries come from parity's own `loadConfig`-calling tests
+(`loopHooks`, `orchestratorHooks`, `videoStudioE2E`, `semanticSearch`), which
+leak on parity too (proven: running them in a clean sandbox leaves both `data/`
+and `workspace/`). So the aggregate assertion is a known parity gap; D3 no longer
+contributes to it.
+
+### Conflict unions re-confirmed (both sides kept)
+
+`git diff --numstat <parent> ac0cf67` for the three conflicted files shows both
+sides present, and the D3-side additions appear when diffing from the parity
+parent:
+
+- `package.json`: D3 keeps `"check:env-builds"` (+1 from parity side).
+- `src/server/runTools.ts`: D3 keeps `env_blueprint_generate`, `env_build_status`
+  in `ALWAYS_ON_TOOLS` (+2).
+- `src/server/http.ts`: D3 keeps the `handleEnvBuildRoutes` import and its
+  dispatch call; parity keeps its many additions (playbooks, wiki, session
+  control, insights, automations, video-studio relay). Neither shadows the other.
+
+### Gates re-run after the fix (all green)
+
+`npx tsc --noEmit` 0; `npm run check:encoding` 0; `npm run build:server` 0;
+`npm run check:env-builds` 0 (PASS); D3 tests 24/24; full suite
+`# tests 1945, # pass 1945, # fail 0, # skipped 0, # todo 0`.
+
+### Final state
+
+- HEAD `07929cc` (the isolation fix) at the time these checks ran; `.jdone` is
+  appended below and committed. Working tree clean. Temporary parity worktree and
+  sandboxes removed.
