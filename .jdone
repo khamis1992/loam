@@ -1,3 +1,160 @@
+J5 â€” Blast-radius shell command risk classifier: DONE
+
+Summary
+-------
+Ports jcode's `command-risk` crate (MIT, `ref/command-risk/src/{lib,paths,tokenize,gate}.rs`)
+to TypeScript under `src/policy/commandRisk`, and wires it in as **stage 1** of the
+shell approval gate. The classifier is deliberately a *union* with the existing
+`isDestructiveCommand` pattern denylist, never a replacement, so neither half can be
+bypassed.
+
+Implemented end to end:
+  - Stage 1 (deterministic, high-recall):  src/policy/commandRisk/{tokenize,paths,lib}.ts
+    - `tokenize`: shell-word tokenizer with quoting, `&&`/`||`/`;` segment splitting
+      and embedded-substitution detection (a command hidden inside `$(...)`/backticks
+      is still assessed, not skipped).
+    - `paths`: `classifyTarget` / `expand` / `normalize` / `isCatastrophicTarget` /
+      `isSafeRedirectSink` / `isTempPath` â€” resolves relative targets against the
+      working dir and home dir and decides whether a write/delete target is
+      catastrophic (workspace root, home, a whole drive, `/` , temp/scratch).
+    - `lib`: `assess()` -> `RiskLevel` Safe | Low | Confirm | Catastrophic, with
+      `maxLevel`, `severity`, `runsImmediately`, `isAbsoluteDeny`, `explanation`.
+      Classifies by blast radius and reversibility: what the command would destroy
+      and whether that is reversible.
+  - Stage 2 (reflection, not a second model): src/policy/commandRisk/gate.ts
+    - `gate()`: Safe/Low -> Allow; Catastrophic -> Deny (absolute, no justification
+      unlocks it); Confirm -> Reflect (a refusal prompt that forces the *generating*
+      model to name the user request it serves) unless the supplied `justification` is
+      substantive (>=25 chars and not a bare affirmation such as "yes"/"ok"/"sure").
+    - The refusal is not satisfiable by repetition: a blind retry of the identical
+      call fails again.
+  - Entry points:  src/policy/commandRisk/index.ts
+    - `riskContextFromEnvironment(workingDir?, scratchDir?)`, `assessCommand(cmd, ctx)`,
+      `checkCommandRisk(cmd, {workingDir, scratchDir, justification})` ->
+      `{ ok, level, reason?, retryable }` (the seam the approval gate calls).
+
+Wiring (union, not replacement):
+  - `src/policy/riskTier.ts`: new `isBlastRadiusDestructive()` maps `Confirm` and
+    `Catastrophic` to the `destructive` tier; `isDestructiveShell()` =
+    `isDestructiveCommand(cmd) || isBlastRadiusDestructive(cmd, root)`. The pattern
+    list catches what the structural classifier treats as opaque (`curl â€¦ | sh`,
+    `reg add`, `git push`); the classifier catches what a name-based denylist cannot
+    see (`find -delete`, `shred`, `dd of=`, `>file`, `sudo rm -rf ~`). Dropping either
+    half would open a bypass. `classifyToolCall` now routes shell tools through
+    `isDestructiveShell`.
+  - `src/tools/shell.ts`: `shell_run` and `shell_write` call `checkCommandRisk` before
+    the existing `checkCommand` substring denylist. `Catastrophic` returns a hard
+    `blocked by policy`; `Confirm` returns a `requires approval` message telling the
+    user to approve at the gate with a justification (a task-scoped rule cannot
+    auto-approve it). Both gates run, so order only changes the message.
+  - `THIRD_PARTY_NOTICES`: jcode (MIT) entry listing the adapted `commandRisk` files.
+
+Acceptance criteria (AC) met
+----------------------------
+The port carries the upstream crate's own cases as fixtures (85 upstream cases) plus
+25 Windows/PowerShell cases added here, all green:
+  - a command whose blast radius cannot be checked in advance is never auto-approved
+      -> `assess.test.ts` ("unresolvable targets escalate rather than pass")
+  - a destructive command chained after a safe one does not slip through
+      -> `assess.test.ts` / `gate.test.ts` ("chaining does not bypass the gate")
+  - an inline shell script is assessed, not skipped
+      -> `shellRisk.test.ts` ("inline shell scripts are assessed not skipped")
+  - a known env variable does not exempt a protected path
+      -> `assess.test.ts` ("known variables do not bypass protected paths")
+  - safe commands pass straight through
+      -> `gate.test.ts` ("safe commands pass straight through")
+  - the union with the legacy denylist holds
+      -> `riskTier.test.ts` (15 new assertions) + `shellRisk.test.ts` (11)
+
+No network in tests: the classifier is pure string/path logic, no model and no I/O.
+
+Files
+-----
+  src/policy/commandRisk/{index,lib,paths,tokenize,gate}.ts
+  src/policy/commandRisk/__tests__/{assess,gate,paths,tokenize}.test.ts   (1301 lines, new)
+  src/policy/__tests__/riskTier.test.ts                                    (+15)
+  src/tools/__tests__/shellRisk.test.ts                                    (+165)
+  src/policy/riskTier.ts                                                   (+32)
+  src/tools/shell.ts                                                       (+29)
+  THIRD_PARTY_NOTICES                                                      (+5)
+  14 files changed, 3344 insertions(+), 2 deletions(-)  (`git diff --stat manus-parity HEAD`)
+
+Merge with manus-parity: resolved keeping both sides
+----------------------------------------------------
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. The merge was
+run twice, because `refs/heads/manus-parity` advanced while the first merge was being
+resolved (parity merges land continuously on this branch):
+
+  1. merge of parity tip `a8130cc` (c20) -> committed as `4c54d5c`. Conflict:
+     `THIRD_PARTY_NOTICES` (add/add). Resolved keeping both sides: parity's
+     `src/tools/fileLock.ts` entry AND J5's `src/policy/commandRisk` entry.
+  2. merge of parity tip `35c8470` (V11 design_critique) -> committed as `b5c7da1`.
+     Conflict: `THIRD_PARTY_NOTICES` again. Resolved keeping both sides: J5's
+     `commandRisk` entry AND parity's new `src/tools/files.ts` entry.
+
+A third parity tip (`6699257`, H1) landed during the second merge and is now already
+merged (the second merge's `MERGE_HEAD` was `6699257`). No parity commit at either tip
+touches any J5 source file (`src/policy/commandRisk`, `src/policy/riskTier.ts`,
+`src/tools/shell.ts`); the only ever-conflicting file was `THIRD_PARTY_NOTICES`.
+
+Merge gate condition verified on the final tree:
+  `git merge-base --is-ancestor manus-parity HEAD`  -> exit 0
+  `git rev-list --left-right --count manus-parity...HEAD` -> `0 6`
+  `git diff --name-only manus-parity HEAD` -> the 14 J5 files above, and nothing else
+  (so the tree is parity + J5, with no parity change lost)
+
+No test was weakened, deleted or skipped. No code was dropped.
+
+Gates (all run from the worktree root on the merged tree)
+---------------------------------------------------------
+  1. npx tsc --noEmit                                  -> exit 0
+  2. npm run build:server                              -> exit 0 (dist/server.cjs 19.4mb, pdf worker copied)
+  3. (cd packages/web && npx next build)               -> exit 0 (Compiled successfully, 25/25 static pages)
+  4. (cd packages/web && npx vitest run)               -> 72 files / 472 tests, all pass
+  5. J5 + touched suites:
+     node --import tsx --test src/policy/commandRisk/__tests__/*.test.ts \
+       src/policy/__tests__/riskTier.test.ts src/tools/__tests__/shellRisk.test.ts \
+       src/agent/__tests__/toolProfile.test.ts src/agent/__tests__/codingPrompt*.test.ts
+     -> 204 + 83 + 11 + 8 + 8 tests, 0 fail
+  6. npm run check:encoding   -> OK (no BOM, no mojibake, all JSON valid)
+  7. npm run check:modes      -> exit 0
+  8. npm run check:orchestrator -> exit 0
+  9. npm run check:promptwire -> exit 0
+ 10. npm run check:recovery   -> exit 0
+
+Full-suite validation (committed tree, `src/**/*.test.ts`)
+---------------------------------------------------------
+  node --import tsx --test "src/**/*.test.ts"
+  -> tests 2393, suites 433, pass 2391, fail 2
+
+Both failures are pre-existing on the manus-parity lineage and untouched by J5 â€” the
+three files are byte-identical to manus-parity (`git diff manus-parity HEAD -- <file>`
+is empty for each):
+
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither
+   registered nor listed in PENDING_CODING_TOOLS". The inherited D4 defect: D4 added
+   `suggest_plan` to `CODING_PROFILE.tools` and the mode catalog but never to the test's
+   `PENDING_CODING_TOOLS` list, and the test's registry does not include
+   `createPlanTools`. `toolDescriptions.test.ts`, `taskToolScope.ts` and
+   `planTools.ts` are byte-identical to manus-parity.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+   throwing" (`actual: true, expected: false`). Environmental: the test asserts that a
+   fresh `os.tmpdir()` folder is not a git repo, but `%TEMP%` on this machine sits
+   inside a git work tree (`git -C %TEMP% rev-parse --is-inside-work-tree` -> true),
+   so a `mkdtemp`'d dir reports a branch instead of throwing. `src/server/worktrees.ts`
+   and the test are byte-identical to manus-parity.
+
+A third failure, `src/tools/__tests__/search.test.ts` ("greps and globs the repository
+in under 1 second"), appears only under the parallel full-suite load (it failed once at
+2539ms against a 1000ms budget and did not recur in this run); it is a timing flake in
+a file byte-identical to manus-parity, unrelated to J5.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added.
+
+---
+
+## Preserved: manus-parity rollup (D15 / V11 / J3 / H0 / O0 / D2 reports, merged in from parity)
 D15 — PR reviewer + bug catcher: DONE
 
 Summary
