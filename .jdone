@@ -1,4 +1,128 @@
 
+# N9 gate-fix session: two merge rounds against advancing parity, all gates green
+
+`.jgatefail.txt` reported `MERGE CONFLICT with latest manus-parity in: .jdone`.
+The tracked rollup conflicts on every re-merge because each workstream prepends its own
+report at the same top-of-file anchor. `manus-parity` advanced twice during this session,
+so two merge rounds were needed:
+
+1. parity tip `bdae2ca` (J11 round 9) -> merge commit `f14c3d1`
+2. parity tip `84c9af8` (N3 knowledge garden) -> merge commit `14e04b3`
+
+## Round 1 (parity tip `bdae2ca`)
+
+`git merge --no-edit manus-parity` conflicted in exactly one file, `.jdone`. Every source
+file auto-merged cleanly and was staged unmodified. Both conflict regions (the top-of-file
+anchor and a mid-file append anchor) were resolved by keeping BOTH sides, so no report line
+from either side is lost.
+
+## Round 2 (parity tip `84c9af8`, N3)
+
+Parity had advanced again by the time round 1 was committed, so the merge was re-run. Again
+only `.jdone` conflicted, in two regions. The same resolution was applied: keep both sides.
+
+## Integrity of the resolved rollup
+
+Verified mechanically against the real merge parents (`f14c3d1` ours, `84c9af8` theirs):
+
+  - non-blank lines missing from ours   = 0
+  - non-blank lines missing from theirs = 0
+  - ours is a strict subsequence of the merged file   = false (expected: both sides repeat
+    their own `## ... gate-fix session` headers at different anchors, so ours appears out of
+    order; no line is missing, which is what matters)
+  - theirs is a strict subsequence of the merged file = true
+  - multiset deficit (a line present fewer times than on either side) = 0 for both sides
+  - conflict markers = 0
+  - U+FFFD replacement characters = 0, NUL bytes = 0, BOM absent, strict UTF-8 valid
+  - 440 Arabic characters intact; CRLF throughout (19729 CRLF, 0 lone LF)
+
+## Gate condition verified on the committed tree (HEAD `14e04b3`)
+
+  - `git merge --no-edit manus-parity`            -> `Already up to date.`
+  - `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
+  - `git rev-list --left-right --count manus-parity...HEAD` -> `0  3`
+  - working tree clean
+
+## Gates (all run from the worktree root on the merged tree)
+
+  1. `npx tsc --noEmit`                     -> exit 0
+  2. `npm run build:server`                 -> exit 0 (`server bundle + pdf worker written to dist/`)
+  3. `(cd packages/web && npx next build)`  -> exit 0 (compiled successfully)
+  4. `npm run check:encoding`               -> OK (no BOM, no mojibake, all JSON valid)
+  5. `node --import tsx --test "src/**/*.test.ts"`
+                                            -> tests 2790, pass 2790, fail 0, cancelled 0, skipped 0
+  6. `(cd packages/web && npx vitest run)`  -> 83 files / 556 tests, all pass, 0 fail
+  7. `node --import tsx --test src/tools/__tests__/askUser.test.ts
+     src/agent/__tests__/askUserAutoTrigger.test.ts
+     src/protocol/__tests__/askUserSocket.test.ts`
+                                            -> tests 25, pass 25, fail 0
+  8. `(cd packages/web && npx vitest run
+     src/components/approval/__tests__/askUserCard.test.tsx)` -> 1 file / 7 tests, all pass
+
+No source file was edited by this session and no test was weakened, deleted, relaxed or
+skipped. The two commits are merge commits whose only hand-resolved file is `.jdone`.
+
+## N9 acceptance criteria (still satisfied on this tree)
+
+1. **Vague prompt fixture -> ask node appears before any tool call**:
+   `src/agent/__tests__/askUserAutoTrigger.test.ts` passes. A vague prompt emits
+   `ask_user_required` and the planner is never called while the card waits; the classifier
+   block sits before `planTask`, so no agent loop and no tool call can run first.
+2. **Answer + file -> run resumes and uses the file**:
+   `src/tools/__tests__/askUser.test.ts` and `src/protocol/__tests__/askUserSocket.test.ts`
+   pass, including the uploaded-file resume case; the card component is covered by vitest +
+   @testing-library (`askUserCard.test.tsx`, 7 tests).
+
+## Measured RAM
+
+No RAM measurement taken for this session. The change is a merge-conflict resolution in one
+tracked markdown rollup; the heaviest gate was the full node suite (2790 tests, ~34 s wall
+clock), which ran without hitting any memory limit. No peak-RSS figure was captured.
+
+## Rules honoured
+
+- Only `.jdone` was hand-resolved; every source file came from the merge itself and was staged
+  unmodified. No `.neo-*` or `.jcode-*` marker file was committed.
+- No forbidden path (`docs/handoff/watchdog.ps1`, `qa/*.png`,
+  `packages/tests/visual/baselines`, ZCode/Codex files) was touched.
+- No real external model API was called by tests; every test uses the local fake model or an
+  injected fake runner/graph.
+- No secrets committed, nothing pushed, no `git reset --hard`, no discarded work.
+- No Arabic text was written by this session; the 440 Arabic characters in the rollup are
+  inherited verbatim from earlier reports.
+
+## Seams left for other workstreams
+
+- `.jdone` is a tracked rollup every workstream prepends to, so it will keep conflicting on
+  each `git merge manus-parity`. The resolution that satisfies the gate is always: keep BOTH
+  sides (this branch's report at the top, the parity rollup verbatim after it), and verify
+  mechanically against both stage blobs (`:2:.jdone`, `:3:.jdone`) that 0 non-blank lines are
+  missing from either side. The conflict may be add/add or modify/delete depending on whether
+  parity still tracks `.jdone`.
+- The ask-user auto-trigger classifier is heuristic (keyword/pronoun based). A later
+  workstream could replace it with a model-judged confidence signal without changing the gate
+  seam in `src/tools/askUserGate.ts`.
+- `resolve_ask_user` and the `askUserRequested` / `askUserResolved` event pair are the
+  extension point if a workstream wants to attach answers to the run graph as a first-class
+  node rather than a prompt prefix.
+- N3's knowledge garden (`src/knowledge/*`, `src/tools/knowledge.ts`,
+  `src/server/routes/knowledge.ts`, `KnowledgeGardenPane.tsx`) is now in the tree and is the
+  natural consumer of those answers as knowledge material.
+
+Test commands:
+
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run check:encoding
+  node --import tsx --test src/tools/__tests__/askUser.test.ts src/agent/__tests__/askUserAutoTrigger.test.ts src/protocol/__tests__/askUserSocket.test.ts
+  (cd packages/web && npx vitest run src/components/approval/__tests__/askUserCard.test.tsx)
+  node --import tsx --test "src/**/*.test.ts"
+  (cd packages/web && npx vitest run)
+
+---
+
+
 # N9 complete: ask-user clarification node that pauses a run and resumes with answers
 
 Committed as `3136f14` (`feat(n9): ask-user clarification node that pauses a run
