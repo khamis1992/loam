@@ -178,7 +178,7 @@ here. That is a pre-existing environmental condition (the whole-suite sandbox wr
 No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
 No Arabic text was written; no mojibake placeholder text was added.
 
-## Independent validation, fourth pass (HEAD `b35d086`)
+## Independent validation, fourth pass (report recorded in commit `2a800d6`)
 
 A re-validation pass over the merged tree, distinct from the gates above. It boots the
 **real** `http.ts` dispatcher on a loopback port with the install-token gate **enabled**
