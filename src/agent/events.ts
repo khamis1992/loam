@@ -1,3 +1,5 @@
+import type { AskUserQuestion } from "../tools/askUserStore.js";
+
 export type Verdict = "pass" | "revise" | "fail";
 
 export interface VerdictInfo {
@@ -157,6 +159,8 @@ export type AgentEvent =
   | { type: "environment_issue"; message: string; details?: string }
   /** Pending plan approval (D4): a `suggest_plan` plan awaits the user's decision. */
   | { type: "plan_approval_required"; planApprovalId: string; taskId: string; tool: string; summary: string; steps: string[]; filesToEdit: string[]; trivial: boolean }
+  /** Pending ask-user clarification (N9): a `ask_user` request awaits the user's answer. */
+  | { type: "ask_user_required"; askUserId: string; taskId: string; tool: string; title: string; reason: string; questions: AskUserQuestion[]; source?: import("../tools/askUserStore.js").AskUserSource; reasonCode?: import("../tools/askUserStore.js").AskUserReasonCode }
   /** Plan mode: the task's local permission mode changed (plan_exit approval, user switch). */
   | { type: "permission_mode_changed"; mode: import("../policy/permissionModes.js").LocalPermissionMode; previousMode: import("../policy/permissionModes.js").LocalPermissionMode; reason: string }
   /** End-to-end verification of the completed task. */
@@ -188,6 +192,12 @@ export type AgentEvent =
     }
   /** A workspace file was published as a task artifact via artifact_publish. */
   | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string }
+  /**
+   * MiroFish swarm simulation progress. Carries one `SimulationProgressEvent`
+   * from the M3 loop as `payload` (the tool module owns that type; the agent core
+   * deliberately does not import a tool module).
+   */
+  | { type: "simulation_progress"; sessionId: string; payload: unknown }
   /**
    * Loam Video Studio relay: one command for the panel attached to this task's
    * event stream. The panel executes it with its editor bridge and posts the

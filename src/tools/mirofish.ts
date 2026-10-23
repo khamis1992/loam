@@ -1,13 +1,17 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { OllamaClient } from "../ollama.js";
 import { scanWorkspaceRoutesAndRisks } from "./pentest.js";
 import { num, str, type Tool, type ToolContext, type ToolResult } from "./registry.js";
+import type { Config } from "../config.js";
+import type { AgentEvent } from "../agent/events.js";
 import {
   classifyWithSession,
   extractMirofishSettings,
   type MirofishIntentKind,
 } from "./mirofish/intent.js";
+export type { MirofishRuntimeDeps } from "./mirofish/runBridge.js";
 
 export interface MirofishActiveSession {
   project_id: string;
@@ -21,6 +25,24 @@ export interface MirofishActiveSession {
   updated_at: string;
   /** Location the user named for the simulation (city/country/region), if any. */
   location?: { city: string | null; country: string | null; region: string | null };
+}
+
+/**
+ * Optional runtime handle for the real (M3) path.
+ *
+ * The synchronous surface stays dependency-free, so a caller that has a config
+ * and a provider client can pass them in and get the real swarm simulation
+ * instead of the legacy template output. Anything omitted falls back to the
+ * deterministic rule-based run.
+ */
+export interface MirofishRuntimeOptions {
+  cfg?: Config;
+  ollama?: OllamaClient;
+  /** Test seam: a deterministic caller replaces the whole provider chain. */
+  caller?: import("./mirofish/model.js").ModelCaller;
+  /** Run event bus: M3 progress is forwarded here as `simulation_progress`. */
+  emit?: (event: AgentEvent) => void;
+  signal?: AbortSignal;
 }
 
 const DEFAULT_ONTOLOGY_TYPES = [
@@ -309,6 +331,96 @@ export function runConversationalMirofish(
     injectedVariable?: string;
   },
 ): { ok: boolean; intent: string; reply: string; data: Record<string, unknown> } {
+  // Follow-ups (what-if, interview, roundtable, ...) route onto the active
+  // session; anything else is a full analysis, rendered from the fixed template
+  // because this entry point has no provider client.
+  return runMirofishFollowUp(workspace, opts) ?? runMirofishFullAnalysisSync(workspace, opts);
+}
+
+/**
+ * Real M3 path: the same conversational surface, but the full analysis is the
+ * model-aware swarm simulation (`asyncRunner`) instead of a fixed template.
+ *
+ * Only the full-analysis branch differs. Follow-ups (what-if, interview,
+ * roundtable, A/B, auto-fix, ...) are handled by `runMirofishFollowUp`, the same
+ * router the synchronous entry point uses, so a follow-up never starts a new
+ * simulation and never clobbers the active session.
+ */
+export async function runConversationalMirofishAsync(
+  workspace: string,
+  opts: {
+    message: string;
+    target?: string;
+    maxRounds?: number;
+    injectedVariable?: string;
+    runtime?: MirofishRuntimeOptions;
+  },
+): Promise<{ ok: boolean; intent: string; reply: string; data: Record<string, unknown> }> {
+  const runtime = opts.runtime ?? {};
+  if (!runtime.cfg) {
+    throw new Error("runConversationalMirofishAsync requires runtime.cfg (a Config)");
+  }
+  const text = (opts.message || "").trim();
+
+  // Follow-ups route onto the active session before any model work. The router
+  // only sees the caller's explicit `target`, matching the synchronous surface
+  // (which guesses a target only inside the full-analysis branch).
+  const followUp = runMirofishFollowUp(workspace, {
+    message: text,
+    ...(opts.target ? { target: opts.target } : {}),
+    ...(opts.maxRounds ? { maxRounds: opts.maxRounds } : {}),
+    ...(opts.injectedVariable ? { injectedVariable: opts.injectedVariable } : {}),
+  });
+  if (followUp) return followUp;
+
+  const { runConversationalMirofishAsync: runAsync } = await import("./mirofish/asyncRunner.js");
+  return runAsync(
+    workspace,
+    {
+      message: text,
+      target: opts.target || guessTarget(text, workspace) || undefined,
+      ...(opts.maxRounds ? { maxRounds: opts.maxRounds } : {}),
+      ...(opts.injectedVariable ? { injectedVariable: opts.injectedVariable } : {}),
+    },
+    {
+      cfg: runtime.cfg,
+      workspace,
+      ...(runtime.ollama ? { ollama: runtime.ollama } : {}),
+      ...(runtime.caller ? { caller: runtime.caller } : {}),
+      ...(runtime.emit ? { emit: runtime.emit } : {}),
+      ...(runtime.signal ? { signal: runtime.signal } : {}),
+    },
+  );
+}
+
+function guessTarget(text: string, workspace: string): string {
+  const words = text.split(/[\s,،"']+/).filter((w) => w.length >= 2 && !w.startsWith("-"));
+  for (const w of words) {
+    const candidate = path.join(workspace, w);
+    if (fs.existsSync(candidate) && w !== ".manus" && w !== "node_modules") return candidate;
+  }
+  return "";
+}
+
+/**
+ * Follow-up routing shared by both conversational surfaces.
+ *
+ * Every branch here works on the active session (what-if, interview, roundtable,
+ * A/B, auto-fix, export, ...) and is deterministic: no model calls. Returning
+ * `null` means the message is a full-analysis request, which is the one branch
+ * the two surfaces implement differently (fixed template vs. real swarm
+ * simulation). Routing the follow-ups in one place is what keeps the async and
+ * synchronous entry points behaviourally identical.
+ */
+function runMirofishFollowUp(
+  workspace: string,
+  opts: {
+    message: string;
+    target?: string;
+    maxRounds?: number;
+    injectedVariable?: string;
+  },
+): { ok: boolean; intent: string; reply: string; data: Record<string, unknown> } | null {
   const root = getMirofishRoot(workspace);
   const text = (opts.message || "").trim();
   const isAr = /[\u0600-\u06FF]/.test(text);
@@ -1133,6 +1245,32 @@ export function runConversationalMirofish(
     };
   }
 
+  // Nothing above matched: this is a full-analysis request, which each surface
+  // implements for itself (see `runMirofishFullAnalysisSync` and the async
+  // runner). No follow-up branch fires, so no session is mutated here.
+  return null;
+}
+
+/**
+ * The synchronous full analysis: the pre-M3 fixed-template implementation.
+ *
+ * `runConversationalMirofish` uses it as the fallback for callers that have no
+ * provider client; the async entry point runs the real swarm simulation instead.
+ */
+function runMirofishFullAnalysisSync(
+  workspace: string,
+  opts: {
+    message: string;
+    target?: string;
+    maxRounds?: number;
+    injectedVariable?: string;
+  },
+): { ok: boolean; intent: string; reply: string; data: Record<string, unknown> } {
+  const root = getMirofishRoot(workspace);
+  const text = (opts.message || "").trim();
+  const isAr = /[\u0600-\u06FF]/.test(text);
+  const settings = extractMirofishSettings(text);
+
   // Full 5-stage analysis (with Proposal 4 Pentest Grounding & Proposal 5 REA Binary Bridge)
   let targetCandidate = opts.target || "";
   if (!targetCandidate) {
@@ -1161,54 +1299,77 @@ export function runConversationalMirofish(
   fs.mkdirSync(path.join(simDir, "reddit"), { recursive: true });
   fs.mkdirSync(repDir, { recursive: true });
 
-  const profiles = DEFAULT_ONTOLOGY_TYPES.slice(0, 8).map((et, idx) => ({
-    user_id: idx,
-    username: `${et.name.toLowerCase()}_${100 + idx}`,
-    name: `${targetInfo.targetName} ${et.name}`,
-    bio: et.description,
-    persona: `${et.name} evaluating ${targetInfo.targetName} (${targetInfo.techStack.join(", ")})`,
-    age: 26 + idx * 3,
-    gender: idx === 6 ? "other" : idx % 2 === 0 ? "male" : "female",
-    mbti: ["INTJ", "ENTP", "ISTJ", "ENFJ", "INTP", "ENTJ", "ISTJ", "INFJ"][idx] ?? "INTJ",
-    country: settings.location.country ?? settings.location.city ?? settings.location.region ?? "Global",
-    profession: et.name,
-  }));
-
-  fs.writeFileSync(path.join(simDir, "reddit_profiles.json"), JSON.stringify(profiles, null, 2), "utf8");
-  const csvHeader = "user_id,name,username,user_char,description\n";
-  const csvRows = profiles
-    .map((p) => `${p.user_id},"${p.name}","${p.username}","${p.persona}","${p.bio}"`)
-    .join("\n");
-  fs.writeFileSync(path.join(simDir, "twitter_profiles.csv"), csvHeader + csvRows + "\n", "utf8");
-
-  const reportMd = [
-    `# MiroFish Swarm Intelligence Report: ${targetInfo.targetName}`,
-    "",
-    `> ${targetInfo.summary} — Requirement: ${text || "Full Application Analysis"}`,
-    "",
-    `**Market Location**: ${locationLabel(settings.location)}${settings.variables.length ? ` — **Injected Variables**: ${settings.variables.map((v) => `${v.name}=${v.value}`).join(", ")}` : ""}`,
-    "",
-    "## 1. Architecture & Temporal Knowledge Graph (InsightForge & PanoramaSearch)",
-    "",
-    `**Target Telemetry**: Inspected ${targetInfo.filesCount} source files (${targetInfo.pentestRoutesCount} routes, ${targetInfo.pentestRisksCount} static security signals). Tech stack: ${targetInfo.techStack.join(", ")}. Core components: ${targetInfo.components.join(", ")}. APIs: ${targetInfo.apis.join(", ")}.`,
-    "",
-    `> "Graph ${graphId} constructed with 10 ontology entity types (${DEFAULT_ONTOLOGY_TYPES.map((e) => e.name).join(", ")}) and ${DEFAULT_EDGE_TYPES.length} relationship types."`,
-    "",
-    "## 2. Multi-Agent Swarm Dynamics (Twitter & Reddit Dual Simulation)",
-    "",
-    `**Simulation Summary**: ${profiles.length} OASIS personas executed ${rounds} rounds across Twitter (rapid viral feedback) and Reddit (deep technical threads).`,
-    "",
-    `> "${targetInfo.targetName} PowerUser: Core interactive workflows respond quickly; edge-case error recovery and onboarding tooltips drive long-term retention."`,
-    "",
-    "## 3. Security Boundaries & Future Trajectory Recommendations",
-    "",
-    `**Security & Scalability Verdict**: ${targetInfo.securitySignals.join("; ") || "Standard workspace boundary"}.`,
-    "",
-    `> "${targetInfo.targetName} SecurityAuditor: Enforce strict schema validation, rate limiting, and Row-Level Security (RLS) on ${targetInfo.apis.join(", ")} before scaling traffic."`,
-  ].join("\n");
+  const personaNames = [
+    "EndUser",
+    "PowerUser",
+    "Developer",
+    "SecurityAuditor",
+    "ProductManager",
+    "DevOpsEngineer",
+    "SoftwarePlatform",
+    "MarketAnalyst",
+  ];
+  const profilesPath = path.join(simDir, "reddit_profiles.json");
+  let profiles: Array<Record<string, unknown>> = [];
+  try {
+    profiles = JSON.parse(fs.readFileSync(profilesPath, "utf8")) as Array<Record<string, unknown>>;
+  } catch {
+    profiles = [];
+  }
+  // The legacy (no-provider) path still has to produce a usable simulation
+  // folder: deterministic OASIS personas seeded from the ontology types, so the
+  // report and the follow-up branches (what-if, interview, roundtable) keep
+  // working without a model.
+  if (profiles.length === 0) {
+    profiles = DEFAULT_ONTOLOGY_TYPES.slice(0, 8).map((et, idx) => ({
+      user_id: idx,
+      username: `${et.name.toLowerCase()}_${100 + idx}`,
+      name: `${targetInfo.targetName} ${et.name}`,
+      bio: et.description,
+      persona: `${et.name} evaluating ${targetInfo.targetName} (${targetInfo.techStack.join(", ")})`,
+      age: 26 + idx * 3,
+      gender: idx === 6 ? "other" : idx % 2 === 0 ? "male" : "female",
+      mbti: ["INTJ", "ENTP", "ISTJ", "ENFJ", "INTP", "ENTJ", "ISTJ", "INFJ"][idx] ?? "INTJ",
+      country: settings.location.country ?? settings.location.city ?? settings.location.region ?? "Global",
+      profession: et.name,
+    }));
+    fs.writeFileSync(profilesPath, JSON.stringify(profiles, null, 2), "utf8");
+    const csvHeader = "user_id,name,username,user_char,description\n";
+    const csvRows = profiles
+      .map((p) => `${p.user_id},"${p.name}","${p.username}","${p.persona}","${p.bio}"`)
+      .join("\n");
+    fs.writeFileSync(path.join(simDir, "twitter_profiles.csv"), csvHeader + csvRows + "\n", "utf8");
+  }
 
   const reportMdPath = path.join(repDir, "report.md");
-  fs.writeFileSync(reportMdPath, reportMd, "utf8");
+  if (!fs.existsSync(reportMdPath)) {
+    const reportMd = [
+      `# MiroFish Swarm Intelligence Report: ${targetInfo.targetName}`,
+      "",
+      `> ${targetInfo.summary} — Requirement: ${text || "Full Application Analysis"}`,
+      "",
+      `**Market Location**: ${locationLabel(settings.location)}${settings.variables.length ? ` — **Injected Variables**: ${settings.variables.map((v) => `${v.name}=${v.value}`).join(", ")}` : ""}`,
+      "",
+      "## 1. Architecture & Temporal Knowledge Graph (InsightForge & PanoramaSearch)",
+      "",
+      `**Target Telemetry**: Inspected ${targetInfo.filesCount} source files (${targetInfo.pentestRoutesCount} routes, ${targetInfo.pentestRisksCount} static security signals). Tech stack: ${targetInfo.techStack.join(", ")}. Core components: ${targetInfo.components.join(", ")}. APIs: ${targetInfo.apis.join(", ")}.`,
+      "",
+      `> "Graph ${graphId} constructed with 10 ontology entity types (${DEFAULT_ONTOLOGY_TYPES.map((e) => e.name).join(", ")}) and ${DEFAULT_EDGE_TYPES.length} relationship types."`,
+      "",
+      "## 2. Multi-Agent Swarm Dynamics (Twitter & Reddit Dual Simulation)",
+      "",
+      `**Simulation Summary**: ${profiles.length} OASIS personas executed ${rounds} rounds across Twitter (rapid viral feedback) and Reddit (deep technical threads).`,
+      "",
+      `> "${targetInfo.targetName} PowerUser: Core interactive workflows respond quickly; edge-case error recovery and onboarding tooltips drive long-term retention."`,
+      "",
+      "## 3. Security Boundaries & Future Trajectory Recommendations",
+      "",
+      `**Security & Scalability Verdict**: ${targetInfo.securitySignals.join("; ") || "Standard workspace boundary"}.`,
+      "",
+      `> "${targetInfo.targetName} SecurityAuditor: Enforce strict schema validation, rate limiting, and Row-Level Security (RLS) on ${targetInfo.apis.join(", ")} before scaling traffic."`,
+    ].join("\n");
+    fs.writeFileSync(reportMdPath, reportMd, "utf8");
+  }
 
   const session: MirofishActiveSession = {
     project_id: projectId,
@@ -1230,7 +1391,7 @@ export function runConversationalMirofish(
     ? [
         `تم تشغيل نظام **MiroFish (ذكاء السرب)** لتحليل تطبيق **${targetInfo.targetName}** عبر المراحل الخمس بالكامل من خلال المحادثة:`,
         `- **1. بناء الأنطولوجيا والرسم المعرفي (\`${graphId}\`)**: تم استخراج 10 أنواع كيانات قياسية ومكونات التطبيق (\`${targetInfo.components.slice(0, 6).join("`, `")}\`) ومسارات الـ API (\`${targetInfo.apis.slice(0, 6).join("`, `")}\`)${targetInfo.reaEvidence ? ` + دليل REA (\`${targetInfo.reaEvidence.evidence_id}\`)` : ""}.`,
-        `- **2. إعداد البيئة وشخصيات OASIS (\`${simulationId}\`)**: تم توليد **${profiles.length} شخصيات وكلاء** (\`EndUser\`, \`PowerUser\`, \`Developer\`, \`SecurityAuditor\`, \`ProductManager\`, \`DevOpsEngineer\`, \`SoftwarePlatform\`, \`MarketAnalyst\`) بصيغتَي Reddit JSON وTwitter CSV.`,
+        `- **2. إعداد البيئة وشخصيات OASIS (\`${simulationId}\`)**: تم توليد **${personaNames.length} شخصيات وكلاء** (\`${personaNames.join("`, `")}\`) بصيغتَي Reddit JSON وTwitter CSV.`,
         `- **3. المحاكاة المتوازية لمنصتَي Twitter وReddit + الفحص الأمني الحي**: تم تنفيذ **${rounds} جولات** تفاعلية مع ربط **${targetInfo.pentestRoutesCount} مسار** و**${targetInfo.pentestRisksCount} مؤشر أمني**.`,
         `- **4. خلاصة تقرير ReACT التنبؤي (\`${reportId}\`)**:`,
         `  > **المستخدم النشط (PowerUser)**: "مسارات الاستخدام الأساسية في ${targetInfo.targetName} سريعة وواضحة، وتحسين رسائل الحالات الحدية يرفع معدل الاحتفاظ بالمستخدمين."`,
@@ -1241,7 +1402,7 @@ export function runConversationalMirofish(
     : [
         `Completed 5-stage **MiroFish Swarm Intelligence** analysis for **${targetInfo.targetName}**:`,
         `- **1. Ontology & Temporal Graph (\`${graphId}\`)**: Extracted 10 entity types, components (\`${targetInfo.components.slice(0, 6).join("`, `")}\`), and APIs (\`${targetInfo.apis.slice(0, 6).join("`, `")}\`).`,
-        `- **2. OASIS Personas (\`${simulationId}\`)**: Generated **${profiles.length} stakeholder personas** in Reddit JSON & Twitter CSV formats.`,
+        `- **2. OASIS Personas (\`${simulationId}\`)**: Generated **${personaNames.length} stakeholder personas** (\`${personaNames.join("`, `")}\`) in Reddit JSON & Twitter CSV formats.`,
         `- **3. Dual-Platform Simulation & Pentest Grounding**: Ran **${rounds} rounds** across Twitter & Reddit (${targetInfo.pentestRoutesCount} routes grounded).`,
         `- **4. ReACT Report (\`${reportId}\`)**: Saved to \`${reportMdPath}\`.`,
         `\n💬 **Continue in chat**: Ask *"What if traffic spikes 10x?"*, *"Run a roundtable debate"*, *"Compare two strategies"*, *"Apply swarm recommendations"*, or *"Export to slides"*!`,
@@ -1289,12 +1450,27 @@ export function mirofishTools(): Tool[] {
         required: ["message"],
       },
       async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
-        const res = runConversationalMirofish(ctx.workspace, {
+        const request = {
           message: str(args, "message"),
           target: str(args, "target") || undefined,
           maxRounds: num(args, "maxRounds", 3),
           injectedVariable: str(args, "injectedVariable") || undefined,
-        });
+        };
+        // M3: the full-analysis branch is the real swarm simulation. When the
+        // context carries a provider client we take the async path; otherwise we
+        // fall back to the synchronous legacy implementation so the tool still
+        // works from scripts and unit tests.
+        const res = ctx.ollama
+          ? await runConversationalMirofishAsync(ctx.workspace, {
+              ...request,
+              runtime: {
+                cfg: ctx.cfg,
+                ollama: ctx.ollama,
+                emit: ctx.emit,
+                ...(ctx.signal ? { signal: ctx.signal } : {}),
+              },
+            })
+          : runConversationalMirofish(ctx.workspace, request);
         return {
           ok: res.ok,
           content: `${res.reply}\n\n---\n${JSON.stringify(res.data, null, 2)}`,
