@@ -1,5 +1,47 @@
 fc-07 complete: the Loam Video / Loam Effects router and a full "Video editing" prompt section. One product, one workflow, Arabic + English routing, FilmCraft-native fallback.
 
+## Merge gate fix, round 3 (merge commit `b1892c5`)
+
+Parity advanced a third time while the gate was being fixed (`26fcd6b`, fc-09's
+effects round-trip planner plus the "Open in effects" panel surface, 13 files).
+Merged as `b1892c5`, keeping BOTH sides of every conflict. `manus-parity` is an
+ancestor of HEAD and `git log HEAD..manus-parity` is empty, so the gate is fully
+satisfied.
+
+Two files conflicted this round.
+
+- **`.jdone`**: one hunk. Resolved as the lossless union of both sides (the fc-07
+  round-2 report plus fc-09's round-trip report, then the parity rollup), verified
+  with the throwaway multiset-inclusion checker: 0 lines missing from either side,
+  CRLF endings preserved, no markers left.
+
+- **`src/tools/videoStudio.ts`**: three hunks. Both sides kept. The
+  `transition_basic` / `effect_basic` schema descriptions now describe both the
+  timeline-engine and Loam-Effects routes; `type` / `name` / `params` describe
+  both the fc-07 and fc-09 actions; and fc-09's `runEffectsAction` hook was
+  re-added ahead of the film catalog read.
+
+**Merge-integration fix.** The merge left three real `tsc` errors because fc-07
+made `relayErrorResult(err, routing)` require the routing object, while fc-09's
+new `runEffectsAction` called it with one argument. Fixed by threading the fc-07
+`routing` object into `runEffectsAction` and every return path inside it, so the
+fc-07 guarantee still holds (the routing decision is echoed in every result,
+including the early failure envelopes). No test was weakened, deleted or skipped.
+
+Gates on the merged tree (`b1892c5`), each with its real exit code:
+
+- `npx tsc --noEmit` -> 0 (after the routing thread-through)
+- `npm run build:server` -> 0
+- `cd packages/web && npx next build` -> 0
+- `check:encoding`, `check:promptwire`, `check:modes`, `check:eval` -> 0
+- `check:orchestrator`, `check:loam-agents`, `check:recovery` -> 0
+- full server suite -> 2805 tests / 2805 pass / 0 fail
+- web vitest -> 81 files / 545 tests pass
+- `check:isolation`, `check:loam-ui` still fail with the same pre-existing,
+  environmental causes as in round 2 (EADDRINUSE 8787; stale `8 !== 7`).
+
+---
+
 ## Merge gate fix, round 2 (merge commit `662fd68`)
 
 The gate asks for the LATEST `manus-parity`, which advanced twice during the fix.
