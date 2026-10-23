@@ -18,6 +18,7 @@
     "check:pentest-bench": "tsx src/scripts/check-pentest-bench.ts",
     "test:pentest-bench": "node --import tsx --test src/scripts/__tests__/check-pentest-bench.test.ts",
     "test:browser-operator": "node --import tsx --test src/tools/__tests__/browserOperator.test.ts",
+    "test:mirofish": "node --import tsx --test src/tools/mirofish/__tests__/nutrio-e2e.test.ts",
     "test:coding-eval": "node --import tsx --test src/scripts/__tests__/eval-coding.test.ts",
     "test:memory": "node --import tsx --test src/memory/__tests__/cache.test.ts src/memory/__tests__/caps.test.ts src/server/__tests__/debugMemory.test.ts src/protocol/__tests__/blobRoute.test.ts",
     "bench:mem": "node --import tsx bench/memBench.ts",

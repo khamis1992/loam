@@ -570,7 +570,7 @@ export function extractVariables(raw: string): ExtractedVariable[] {
   const seen = new Set<string>();
 
   // Quantity token: digits with optional decimal, optionally followed by a
-  // multiplier/percent suffix ("10x", "50%", "2 الف", "1.5k").
+  // multiplier/percent suffix ("10x", "2 الف", "1.5k").
   const QUANTITY = '[0-9]+(?:[.,][0-9]+)?(?:\\s*(?:x|ضعف|اضعاف|أضعاف|%|k|m|thousand|million|مليون|ألف|الف))?';
 
   for (const group of VARIABLE_NAME_GROUPS) {
