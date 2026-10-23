@@ -115,7 +115,77 @@ the tests (the rerank path uses a local embedder stub).
 
 ---
 
-## Preserved: manus-parity O0 recon (previous .jdone content)
+## Preserved: H0 recon (merged in from manus-parity)
+
+H0 complete: read-only recon for the Harness2 correction-learning workstream. No source file was touched; no agent instruction was changed (nothing to propose).
+
+## What was produced
+`docs/re/harness2-H0.md` (556 lines, committed as `ea8c597`). Every claim carries a
+`file:line` read from this worktree at baseline HEAD `a8130cc`. No source file was
+modified; `node_modules` was excluded from all searches.
+
+## Answers to the listed unknowns
+- **U1** `src/memory/embeddings.ts:12` `embed(texts: string[]): Promise<number[][]>` (batch)
+  and `:48` `embedOne(text)`; codec `toBase64`/`fromBase64`/`normalize`/`dot` at
+  `:55,60,68,79`; embedder built once at `src/setup/runtime.ts:89`.
+- **U2** `src/learning/critic.ts:76-84` `input.ollama.chat({ model, messages, temperature:
+  0.1, timeoutMs: 180_000 })` -> `ChatResult.content`; contract at `src/ollama.ts:42,54,168`;
+  model choice at `critic.ts:53`; `CritiqueResult.lessons` at `src/eval/types.ts:51`.
+- **U4** chat route `POST /api/chat` at `src/server/http.ts:2603`; append primitive
+  `src/server/db.ts:150`; chat-path append at `src/server/db.ts:320` inside
+  `queueTaskRun`; other appenders `src/server/routes/sessionControl.ts:157`,
+  `src/server/bridge/grokbot.ts:146`, `src/swarm/service.ts:232,468`;
+  retry helper `src/server/routes/retryLast.ts:34,52`.
+- **U5** system prompt built in `src/agent/loop.ts:220-235` from
+  `buildSystemPrompt` (`src/agent/prompt.ts:67`); injection slot `extraContext` at
+  `src/agent/prompt.ts:131`, or `systemSuffix` at `loop.ts:232-235`.
+- **U6** no `src/server/routes/learning.ts` exists; the only learning endpoint is
+  inline `GET /api/learning` at `src/server/http.ts:1058-1062`, backed by
+  `src/server/learning.ts:5-36`; route dispatch pattern at `src/server/http.ts:79-109`
+  and `:1760-1807`.
+- **U7** yes: `src/memory/redact.ts:26,33,38` `findSecret`/`containsSecret`/`assertNoSecret`
+  for the pre-store guard, and `src/log.ts:14` `redact()` for log/output scrubbing.
+- **U8** no root `build:web`; the web build is `packages/web/package.json:8`
+  `"build": "next build"`, so the gate is `(cd packages/web && npx next build)`.
+
+## Spec assumptions corrected (15, listed in the report)
+W1 `embed` takes an array not a single text; W2 `ollama.chatText` does not exist
+(`ollama.chat` is the shape); W3 `appendMessage` is NOT called by the chat route (the
+user message is pushed by `queueTaskRun` at `db.ts:320`); W4 the system prompt is
+built in `loop.ts`, not `planner.ts` (U5 decision A); W5 there is no learning router
+(U6 decision B, create `src/server/routes/learning.ts`); W6 an existing redaction
+helper is reused (decision A); W7 the gate form for the web build; W8 `proposeInstructions`
+returns an `InstructionProposal` with `id`; W9 the proposal UI already exists
+(`packages/web/src/components/agents/InstructionHistory.tsx:43,67,148-179` +
+`AgentThreadView.tsx:203,505-510`); W10-W15 as listed in the report table.
+
+## Merge with manus-parity (this gate fix)
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. `git merge manus-parity`
+(tip `63e6f70`, the O0 merge) applied cleanly with the `ort` strategy and no conflicts:
+it only brought in `docs/re/omnara-O0.md` and the O0 section of the tracked rollup
+`.jdone`, both of which are parity's own files and were kept as-is. Nothing from the
+H0 report was altered, no test was weakened or deleted, and no source file changed.
+Committed as the merge commit `1778cad`.
+
+## Gate condition verified
+`git merge manus-parity` reports "Already up to date." and
+`git merge-base --is-ancestor manus-parity HEAD` exits 0
+(rev-list --left-right --count manus-parity...HEAD = 0 2), so parity is fully merged
+and the tree is clean.
+
+## Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled, 25/25 static pages)
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- H0 Verify column `file exists`              -> satisfied by `docs/re/harness2-H0.md`
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added.
+
+---
+
+## Preserved: manus-parity O0 report (merged in from parity)
 
 O0 complete: read-only recon for the Omnara durable event log. No source file touched.
 
