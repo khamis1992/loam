@@ -30,6 +30,11 @@ export interface JoinSession extends Base {
   type: "join_session";
   sessionId: string;
   lastMessageId?: string;
+  /** BUILD_SPEC §6.4: the highest durable log sequence this client has already
+   *  rendered. When present the server replays by sequence (events with
+   *  `seq > lastSeq`), which survives a client that never saw a given event id.
+   *  Omitted by older clients, which fall back to `lastMessageId`. */
+  lastSeq?: number;
   version: 2;
 }
 
@@ -68,6 +73,14 @@ export interface UserMessage extends Base {
     worktreeEnabled?: boolean;
     /** Option 18: composer model tier ("max" | "standard" | "lite" | "flex"). */
     modelTier?: string;
+    /** Neo N3: opt this run into the user's Knowledge Garden (kb_* tools). */
+    knowledge?: boolean;
+    /** Neo N10: composer output type (Auto/Text/Image/Video/Slides/Website). */
+    outputType?: string;
+    /** Neo N10: composer effort level (Fast/Max). */
+    effort?: string;
+    /** Neo N10: explicit A/B arm model ids, when the composer asked for a fan-out. */
+    abModels?: string[];
   };
 }
 
@@ -103,6 +116,20 @@ export interface ResolvePlanApproval extends Base {
   plan?: { summary?: string; steps?: string[]; files_to_edit?: string[]; trivial?: boolean };
 }
 
+/** N9: user answer for a pending `ask_user` clarification card. */
+export interface ResolveAskUser extends Base {
+  type: "resolve_ask_user";
+  sessionId: string;
+  requestId: string;
+  /** "dismiss" closes the card without answering; anything else is an answer. */
+  decision: "answer" | "dismiss" | string;
+  answer?: {
+    text?: string;
+    answers?: Record<string, string>;
+    files?: Array<{ path: string; name: string; bytes: number; contentType: string }>;
+  };
+}
+
 export type ClientMessage =
   | JoinSession
   | LeaveSession
@@ -110,7 +137,8 @@ export type ClientMessage =
   | StopSession
   | SubmitWorkspaceDirectoryAccess
   | ResolveLocalExecutionApproval
-  | ResolvePlanApproval;
+  | ResolvePlanApproval
+  | ResolveAskUser;
 
 export interface ServerEnvelope<E extends ChatEvent = ChatEvent> {
   id: string;
@@ -393,6 +421,43 @@ export interface EnvironmentIssueEvent extends ChatEventBase {
   details?: string;
 }
 
+/**
+ * MiroFish swarm simulation progress (M3). The M3 loop emits round/agent
+ * milestones; the payload shape is owned by `tools/mirofish/types.ts` and is
+ * mirrored here structurally so the protocol layer stays free of tool imports.
+ */
+export interface SimulationProgressEvent extends ChatEventBase {
+  type: "simulation_progress";
+  sessionId: string;
+  payload: {
+    type:
+      | "simulation_start"
+      | "simulation_round_start"
+      | "simulation_agent"
+      | "simulation_round"
+      | "simulation_arm_done"
+      | "simulation_done";
+    sessionId: string;
+    agents?: number;
+    rounds?: number;
+    arms?: string[];
+    arm?: "baseline" | "scenario";
+    round?: number;
+    totalRounds?: number;
+    agentId?: string;
+    agentName?: string;
+    ok?: boolean;
+    action?: "post" | "comment" | "share" | "ignore" | "buy" | "cancel";
+    error?: string;
+    metrics?: unknown;
+    calls?: number;
+    failures?: number;
+    modelCalls?: number;
+    comparison?: unknown;
+    [key: string]: unknown;
+  };
+}
+
 /** D4: a `suggest_plan` plan awaiting the user's decision (plan-approval card). */
 export interface PlanApprovalRequestedEvent extends ChatEventBase {
   type: "planApprovalRequested";
@@ -412,6 +477,34 @@ export interface PlanApprovalResolvedEvent extends ChatEventBase {
   reviewer: "user" | "auto";
   result: "approve" | "reject" | "edit";
   plan?: { summary?: string; steps?: string[]; files_to_edit?: string[]; trivial?: boolean };
+}
+
+/** N9: a `ask_user` clarification request awaiting the user's answer. */
+export interface AskUserRequestedEvent extends ChatEventBase {
+  type: "askUserRequested";
+  requestId: string;
+  taskId: string;
+  title: string;
+  reason: string;
+  questions: Array<{ id: string; prompt: string; options?: string[]; allowFile?: boolean }>;
+  /** "auto" is the orchestrator's vague/missing-context trigger; "model" a tool call. */
+  source?: "auto" | "model";
+  /** Set when `source` is "auto"; the client localizes the reason from it. */
+  reasonCode?: "vague" | "missing_context" | "ambiguous_target";
+}
+
+/** N9: the user answered or dismissed a pending ask-user card. */
+export interface AskUserResolvedEvent extends ChatEventBase {
+  type: "askUserResolved";
+  requestId: string;
+  taskId: string;
+  reviewer: "user" | "auto";
+  result: "answered" | "dismissed" | "expired";
+  answer?: {
+    text: string;
+    answers: Record<string, string>;
+    files: Array<{ path: string; name: string; bytes: number; contentType: string }>;
+  };
 }
 
 export interface DeviceAttachmentUploadNotify extends ChatEventBase {
@@ -452,6 +545,9 @@ export type ChatEvent =
   | PlanApprovalResolvedEvent
   | LocalExecutionApprovalResolved
   | EnvironmentIssueEvent
+  | SimulationProgressEvent
+  | AskUserRequestedEvent
+  | AskUserResolvedEvent
   | DeviceAttachmentUploadNotify
   | RecipeUpdateEvent
   | RecipeRestartEvent;

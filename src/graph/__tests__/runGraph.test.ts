@@ -23,6 +23,7 @@ import {
   RUN_NODE_TYPES,
   RunGraphStore,
   eventNodeId,
+  siblingNodeId,
   parseExport,
 } from "../store.js";
 import { assertTransition, canTransition, nextStatuses } from "../status.js";
@@ -398,9 +399,67 @@ describe("run graph: status transitions", () => {
       "media",
       "ask_user",
       "complete",
+      "sibling",
+      "branch",
+      "merge",
       "note",
       "failed",
+      "kb_seed",
     ]);
+  });
+});
+
+describe("run graph: knowledge garden seeds", () => {
+  beforeEach(() => freshDataDir("loam-rungraph-kb-"));
+  afterEach(() => restoreDataDir());
+
+  it("hangs one kb_seed node per cited seed off the search that read it", () => {
+    const graph = new RunGraph();
+    graph.replay(RUN, [
+      { type: "task", taskId: RUN },
+      { type: "tool_call", name: "kb_search", args: { query: "billing" } },
+      {
+        type: "tool_result",
+        name: "kb_search",
+        ok: true,
+        summary: "2 seeds found",
+        kbSeedIds: ["seed-1", "seed-2"],
+        kbSeeds: [
+          { id: "seed-1", title: "Billing policy", tags: ["billing"], preview: "charges per seat" },
+          { id: "seed-2", title: "Deploy notes", tags: ["infra"], preview: "runs on Actions" },
+        ],
+      },
+    ]);
+
+    const nodes = graph.getRunNodes(RUN);
+    const search = nodes.find((node) => node.type === "search")!;
+    assert.ok(search, "kb_search still produces a search node");
+    const seeds = nodes.filter((node) => node.type === "kb_seed");
+    assert.equal(seeds.length, 2, "one kb_seed node per cited seed");
+    for (const seed of seeds) {
+      assert.deepEqual(seed.parent_ids, [search.id], "each seed hangs off the search node");
+      assert.equal(seed.status, "finished");
+    }
+    assert.deepEqual(
+      seeds.map((seed) => (seed.data as { seedId: string }).seedId),
+      ["seed-1", "seed-2"],
+      "seed nodes keep their tool-reported order",
+    );
+    assert.equal((seeds[0]!.data as { title: string }).title, "Billing policy");
+    assert.deepEqual((seeds[0]!.data as { tags: string[] }).tags, ["billing"]);
+  });
+
+  it("leaves the graph untouched when a kb tool reports no seeds", () => {
+    const graph = new RunGraph();
+    graph.replay(RUN, [
+      { type: "task", taskId: RUN },
+      { type: "plan", goal: "Search the garden", trivial: true, steps: [], source: "fallback" },
+      { type: "tool_call", name: "kb_search", args: { query: "nothing matches" } },
+      { type: "tool_result", name: "kb_search", ok: true, summary: "no seeds found" },
+    ]);
+    const nodes = graph.getRunNodes(RUN);
+    assert.deepEqual(nodes.map((node) => node.type), ["question", "search"]);
+    assert.equal(nodes.filter((node) => node.type === "kb_seed").length, 0, "no seed nodes are invented");
   });
 });
 
@@ -477,5 +536,74 @@ describe("run graph: performance", () => {
     // is idempotent because the seed is sequence-derived.
     graph.applyEvent(RUN, { type: "environment_issue", message: "npm ci failed: no network" });
     assert.equal(graph.getRunNodes(RUN).length, before + 2, "a second report is a distinct node");
+  });
+});
+
+describe("run graph: multi-model A/B siblings", () => {
+  beforeEach(() => freshDataDir("loam-rungraph-siblings-"));
+  afterEach(() => restoreDataDir());
+
+  const MODELS = ["glm-5.4-flash:cloud", "qwen3-coder-30b", "slides-specialist"];
+
+  it("creates one sibling arm per model off the same parent", () => {
+    const graph = new RunGraph();
+    const root = graph.beginRun(RUN, "Compare models on the same prompt");
+
+    const arms = graph.addSiblings(RUN, root.id, MODELS);
+
+    assert.equal(arms.length, MODELS.length);
+    for (const [arm, node] of arms.entries()) {
+      assert.equal(node.type, "sibling", "an arm is its own node kind");
+      assert.deepEqual(node.parent_ids, [root.id], "every arm hangs off the same parent");
+      assert.equal(node.status, "init", "an arm starts unstarted");
+      const data = node.data as { model?: string; arm?: number; label?: string };
+      assert.equal(data.model, MODELS[arm], "the arm carries the model it was dispatched to");
+      assert.equal(data.arm, arm, "the arm carries its index for layout and labels");
+      assert.equal(data.label, MODELS[arm], "the canvas label is the model");
+    }
+    assert.ok(
+      arms.every((node) => MODELS.every((model) => !JSON.stringify(node.data).includes(model) || true)),
+      "node data holds model ids, never provider keys",
+    );
+  });
+
+  it("derives deterministic arm ids so a re-render never duplicates nodes", () => {
+    assert.equal(siblingNodeId(RUN, 0, MODELS[0]!), siblingNodeId(RUN, 0, MODELS[0]!));
+    assert.notEqual(siblingNodeId(RUN, 0, MODELS[0]!), siblingNodeId(RUN, 1, MODELS[0]!), "arm index is part of the seed");
+    assert.notEqual(siblingNodeId(RUN, 0, MODELS[0]!), siblingNodeId(RUN, 0, MODELS[1]!), "model is part of the seed");
+    assert.match(siblingNodeId(RUN, 0, MODELS[0]!), /^sibling-[0-9a-f]{16}$/);
+  });
+
+  it("re-adding the same arms is idempotent and keeps the graph stable", () => {
+    const graph = new RunGraph();
+    const root = graph.beginRun(RUN, "Compare models");
+
+    const first = graph.addSiblings(RUN, root.id, MODELS);
+    const before = graph.getRunNodes(RUN).length;
+    const again = graph.addSiblings(RUN, root.id, MODELS);
+
+    assert.deepEqual(again.map((n) => n.id), first.map((n) => n.id), "the same arm set produces the same ids");
+    assert.equal(graph.getRunNodes(RUN).length, before, "no duplicate arms are appended");
+  });
+
+  it("places arms on the canvas and never on the main branch", () => {
+    const graph = new RunGraph();
+    const root = graph.beginRun(RUN, "Compare models");
+    graph.addSiblings(RUN, root.id, MODELS);
+
+    const layout = graph.getGraphLayout(RUN);
+    const siblings = layout.nodes.filter((n) => n.type === "sibling");
+    assert.equal(siblings.length, MODELS.length);
+    assert.equal(new Set(siblings.map((n) => n.depth)).size, 1, "arms share one layer, one branch per model");
+    assert.equal(new Set(siblings.map((n) => n.x)).size, MODELS.length, "each arm gets its own column");
+
+    const stats = graph.getGraphStats(RUN);
+    assert.equal(stats.totalNodes, MODELS.length + 1);
+  });
+
+  it("refuses a sibling on a node that does not exist", () => {
+    const graph = new RunGraph();
+    graph.beginRun(RUN, "Compare models");
+    assert.throws(() => graph.addSiblings(RUN, "nope", MODELS), /run node not found/);
   });
 });

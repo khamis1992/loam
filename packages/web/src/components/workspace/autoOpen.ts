@@ -38,6 +38,50 @@ export function isVideoStudioTool(tool: string): boolean {
 }
 
 /**
+ * The browser tools the agent really registers (`src/tools/browser.ts`,
+ * `browserOperator.ts`). `browser_navigate` is a legacy display label only
+ * (`toolLabels.ts`), so it is deliberately absent: it is not a tool the agent
+ * can call, and the workspace tests pin it as non-qualifying.
+ */
+const BROWSER_TOOL_STEMS = [
+  'browser_open',
+  'browser_goto',
+  'browser_snapshot',
+  'browser_click',
+  'browser_type',
+  'browser_press',
+  'browser_eval',
+  'browser_screenshot',
+  'browser_table',
+  'browser_act',
+  'browser_pages',
+  'browser_close',
+  'browser_som',
+  'browser_trace',
+  // One tool whose tool-use event carries a timestamped name
+  // (`browser_operator_<timestamp>`), so the stem is matched with its suffix.
+  'browser_operator',
+] as const;
+
+/**
+ * Neo N2: the canvas shows the whole run graph, so it is a task-wide surface.
+ * It opens for the long-horizon work that has no single file to point at: the
+ * web/research/code tools below. Everything else (file output, office/video
+ * artifacts) still routes to its own editor first, so the canvas never steals
+ * an event that resolved to a workspace artifact.
+ */
+export function isCanvasSignalTool(tool: string): boolean {
+  const name = (tool ?? '').toLowerCase();
+  return (
+    BROWSER_TOOL_STEMS.some((stem) => name === stem || name.startsWith(`${stem}_`)) ||
+    name.startsWith('web_') ||
+    name === 'deep_research' ||
+    name === 'wide_research' ||
+    name.startsWith('code_session')
+  );
+}
+
+/**
  * Edit/motion intent in the user's own words (Arabic + English). A bare mention
  * of "video" is not enough — the user must be asking for an edit.
  */
@@ -154,6 +198,10 @@ export function decideWorkspaceOpen(event: ToolUsedEvent): WorkspaceOpenTarget |
     return null;
   }
   if (isWorkspaceToolName(event.tool)) return { path: null, kind: null };
+  // A long-horizon tool with no file output still moves the run graph, so it
+  // opens the canvas. This is the last resort: a file path or an office/video
+  // tool always wins above.
+  if (isCanvasSignalTool(event.tool)) return { path: null, kind: 'canvas' };
   return null;
 }
 
