@@ -73,7 +73,10 @@ export class CanvasStream {
     this.handlers = options.handlers ?? {};
     this.apiBase = options.apiBase ?? getLoamBase();
     this.headers = options.headers;
-    this.fetchFn = options.fetchFn ?? fetch;
+    // Bound, not bare: this is called as a method, so a bare `fetch` would run with
+    // `this` set to the client and throw "Illegal invocation" in a browser. Node's
+    // fetch ignores its receiver, so only a real browser catches this.
+    this.fetchFn = options.fetchFn ?? ((input, init) => fetch(input, init));
     this.autoReconnect = options.autoReconnect ?? true;
     this.reconnectDelayMs = options.reconnectDelayMs ?? 1_000;
     this.scheduler = options.scheduler ?? ((fn, ms) => setTimeout(fn, ms));
