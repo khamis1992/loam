@@ -5330,7 +5330,7 @@ regions of `runTask`). No other file conflicted.
 `git merge manus-parity` reports "Already up to date.", `git merge-base --is-ancestor
 manus-parity HEAD` exits 0 and `git rev-list --left-right --count manus-parity...HEAD` is
 `0  3` (parity fully merged, zero parity commits missing). `git status --porcelain` is
-empty, `git diff manus-parity HEAD` has 0 added lines with the `???` mojibake marker, and
+empty, `git diff manus-parity HEAD` has 0 added lines containing the mojibake marker, and
 `git grep -E "^(<<<<<<<|=======|>>>>>>>)"` over `src` finds nothing.
 
 Parity advanced again while the session ran (O4, 5 commits), so the merge was run twice:
