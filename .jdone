@@ -1,3 +1,117 @@
+D5 complete: verify_and_record proof-of-work verification for a pull request.
+
+Added a `verify_and_record` agent tool that attaches real evidence to a PR before
+its author claims it is done. The tool derives a test plan from the PR's own diff,
+runs the user flows with Playwright against a local static app (a recorded video and
+a screenshot per flow), saves the artifacts, and appends a `## Verification`
+checklist with the artifact links to the PR body through the D1 `PrProvider`.
+
+## What was produced
+- `src/agent/prVerification.ts` (638 lines): the plan derivation, the Playwright
+  runner, the checklist renderer and the idempotent section appender. Pure
+  functions (`planFromDiff`, `renderVerificationChecklist`, `appendVerificationSection`,
+  `artifactLink`, `slug`, `fixtureFlows`) plus one async runner (`runPrVerification`).
+- `src/tools/verifyAndRecordTools.ts` (233 lines): the tool schema and `run()`. Reads
+  `git diff <base>...HEAD` from the workspace, resolves the provider through the D2
+  `resolvePrProvider` seam (no network in tests) and writes the body through the new
+  `setPrBody` method.
+- `src/tools/gitPrProvider.ts`: added `setPrBody(repo, number, body)` to the
+  `PrProvider` interface and both implementations - `GitHubPrProvider` issues
+  `PATCH /repos/{repo}/pulls/{number}`; `LocalPrProvider` stores the new body so the
+  section persists in tests.
+- `src/modes/catalog.ts`: `verify_and_record` added to the `GIT` tool set, so it is
+  available in the git/PR modes (and the modes that extend them).
+- `src/setup/runtime.ts`: the tool registered alongside `createCiWatchTool`.
+- `prompts/loam-master.md` + `src/agent/masterPromptText.ts` (regenerated via
+  `npm run gen:master-prompt`): a §6.3 tool-catalog row and a §8.5 rule, matching the
+  D2 `ci_watch` wiring pattern. The `coding-prompt.snap.json` snapshot
+  `masterPromptSha256` was updated (`499c8c39...` -> `35b2bf36...`).
+
+## Acceptance criteria
+- **Plan derived from the diff, not invented.** `planFromDiff` parses a unified diff,
+  finds changed paths, anchors interaction flows in selectors the diff itself
+  introduces (`selectorFromDiffText`), and never claims a flow the diff does not
+  support (`isClaimedByDiff`). A declarative fixture plan (`PrVerificationFixture`) is
+  supported for cases where the diff does not name the page.
+- **Real Playwright evidence, per flow.** `runPrVerification` serves the app over a
+  loopback-only static server and runs each flow in its own browser context, recording
+  a video and a screenshot into the task artifacts directory (slugged file names).
+- **Fail-closed.** A missing PR number, an empty local app root, or an app root that
+  escapes the workspace is refused before anything runs; an empty plan is refused
+  rather than running nothing. A failing flow reports `Verification failed` and does
+  not claim success.
+- **Idempotent PR body update.** `appendVerificationSection` is guarded by a marker
+  comment, so re-running replaces the previous `## Verification` section instead of
+  appending a second one, and preserves the original body.
+- **`noPost` for local-only runs.** With `noPost` the plan still runs but the PR body
+  is not written.
+- **Artifacts always linked or named missing.** A captured artifact is linked; a
+  missing one is reported as missing rather than silently dropped.
+
+## Files
+- `src/agent/prVerification.ts` - new, plan derivation + runner + renderer.
+- `src/tools/verifyAndRecordTools.ts` - new, tool schema + `run()` + `prDiff`.
+- `src/agent/__tests__/prVerification.test.ts` - new, 12 tests.
+- `src/tools/__tests__/verifyAndRecord.test.ts` - new, 7 tests (real git repo,
+  `LocalPrProvider`, real Playwright, mocked GitHub fetch).
+- `src/tools/__tests__/ciWatch.test.ts` - 3 `setPrBody` stubs added to the existing
+  fake providers (interface contract only; no assertion weakened).
+- `src/tools/gitPrProvider.ts` - `setPrBody` on the interface + both implementations.
+- `src/modes/catalog.ts`, `src/setup/runtime.ts` - registration/allowlisting.
+- `prompts/loam-master.md`, `src/agent/masterPromptText.ts`,
+  `src/agent/__tests__/__snapshots__/coding-prompt.snap.json` - prompt wiring.
+
+## Defects found and fixed while implementing
+**1. The tool test repo defaulted to `master`, not `main`.** `seedRepo()` used a plain
+`git init`, which on this machine creates `master`, while the tool's default diff base
+is `main`, so the first version of the test had no diff to derive a plan from. The
+seeding now runs `git init -q -b main` and the tests pass.
+
+**2. The D5 prompt wiring was missing.** The previous handoff recorded that
+`masterPromptText.ts` and `prompts/loam-master.md` had been edited, but both were
+byte-identical to HEAD and `verify_and_record` was absent from both. The §6.3 row and
+the §8.5 rule were added (following the D2 `ci_watch` pattern), the master prompt
+asset was regenerated, and the snapshot hash updated.
+
+## Gates (all run from the worktree root, on commit e3f0af9)
+- `npx tsc --noEmit`                                -> exit 0
+- `npm run build:server`                            -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`             -> exit 0 (compiled, 25/25 static pages)
+- `(cd packages/web && npx vitest run)`             -> 72 files / 472 tests, all pass
+- `npm run verify`                                  -> exit 0 (typecheck, encoding, eval, orchestrator, recovery, modes)
+- `npm run check:encoding`                          -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                             -> PASS
+- `npm run check:promptwire`                        -> PASS (every promptwire tool ok:true)
+- touched suites (ciWatch, verifyAndRecord, prVerification, codingPrompt)
+  -> tests 48, pass 48, fail 0
+- full node suite `node --import tsx --test "src/**/__tests__/*.test.ts"`
+  -> tests 2182, pass 2180, fail 2 (both pre-existing; see below)
+
+The 2 node-suite failures are not caused by this task:
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither
+   registered nor listed in PENDING_CODING_TOOLS". The inherited D4 defect, documented
+   in the J3 section below; `src/agent/taskToolScope.ts` and `src/tools/planTools.ts`
+   are byte-identical to the base.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+   throwing". Environmental: the test asserts a fresh `os.tmpdir()` folder is not a
+   git repo, but `%TEMP%` on this machine sits inside the git repo `C:/Users/khamis`,
+   so `git -C <tmp> rev-parse` succeeds and `isGit` is true. Reproduced identically on
+   the untouched base commit `a8130cc`, and this task touches no file under
+   `src/server`.
+
+`git diff manus-parity HEAD --name-only` is the 11 files listed above, so no other
+module is affected. No secrets committed. No forbidden path touched
+(`docs/handoff/watchdog.ps1`, `qa/*.png`, `packages/tests/visual/baselines`, any
+ZCode/Codex file). No test weakened, deleted or skipped. No real GitHub PR was opened
+and no real external API was called in the tests (the scripted `LocalPrProvider` and a
+mocked `fetch` are used throughout). Working tree clean;
+`git merge-base --is-ancestor manus-parity HEAD` succeeds.
+
+Test command:
+  node --import tsx --test src/tools/__tests__/verifyAndRecord.test.ts
+
+---
+
 J3 complete: edit-tool miss hints + post-edit context.
 
 Extended Loam's existing `file_edit` tool in `src/tools/files.ts` (no parallel
