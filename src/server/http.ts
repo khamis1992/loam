@@ -23,7 +23,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import nodeChildProcess from "node:child_process";
-import { ROOT, UI_DIR, DATA_DIR, type Config } from "../config.js";
+import { ROOT, rootAsset, UI_DIR, DATA_DIR, type Config } from "../config.js";
 import type { OllamaClient } from "../ollama.js";
 import type { AgentEvent, Emit } from "../agent/events.js";
 import { log, redact } from "../log.js";
@@ -42,7 +42,7 @@ import { SECURITY_CAPABILITIES } from '../security/diagnostics.js';
 import { sarif } from "../security/findings.js";
 import {prepareRepair,changeRepair,listRepairs} from '../security/repairs.js';
 import { readBrowserArtifact } from "../security/browser.js";
-import { loadActiveMirofishSession, runConversationalMirofish } from "../tools/mirofish.js";
+import { loadActiveMirofishSession, runConversationalMirofish, runConversationalMirofishAsync } from "../tools/mirofish.js";
 import { detectFrontierMode, getFrontierBridgeStatus, getFrontierModesUi, switchFrontierMode } from "../tools/frontierBridge.js";
 import { installFromCatalog, searchCatalog } from "../tools/skillsRegistry.js";
 import type { ScreenLive } from "../screen/live.js";
@@ -84,6 +84,7 @@ import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAutomationsRoutes } from "./routes/automations.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
+import { handleGraphRoutes } from "./routes/graph.js";
 import { handleCraftRoutes } from "./routes/craft.js";
 import { handleInstructionsRoutes } from "./routes/instructions.js";
 import { handleAgentSpawnRoutes } from "./routes/agentSpawn.js";
@@ -97,6 +98,7 @@ import { handleDataControlsRoutes } from "./routes/dataControls.js";
 import { handleMemorySkillsRoutes } from "./routes/memorySkills.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
 import { handlePlanApprovalRoutes } from "./routes/planApproval.js";
+import { handleAskUserRoutes } from "./routes/askUser.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
 import { handleRetryLastRoutes } from "./routes/retryLast.js";
 import { handleSessionControlRoutes } from "./routes/sessionControl.js";
@@ -134,6 +136,7 @@ import { exportDatasets } from "../eval/export.js";
 import type { PreviewService } from "../preview/serve.js";
 import { getBrowserState } from "../tools/browser.js";
 import { getSavedRun } from "./db.js";
+import { isOutputType } from "../llm/router.js";
 import { requiresReplayConfirmation } from "./recovery.js";
 import { executionQueue } from "./executionQueue.js";
 import { SwarmService, SwarmError } from "../swarm/service.js";
@@ -150,6 +153,10 @@ export interface RunTaskOptions {
   projectId?: string | null;
   mode?: string;
   effort?: string;
+  /** Neo N10: output type selector (Auto/Text/Image/Video/Slides/Website). */
+  outputType?: string;
+  /** Neo N10: also run the same prompt on other models as sibling canvas nodes. */
+  abModels?: string[];
   agentId?: string;
   workMode?: string;
   resume?: boolean;
@@ -854,7 +861,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
 
         if (req.method === "GET" && p.startsWith("/vendor/three/")) {
           const addon = p.startsWith("/vendor/three/addons/");
-          const base = path.join(ROOT, "node_modules", "three", addon ? "examples/jsm" : "build");
+          const base = rootAsset("node_modules", "three", addon ? "examples/jsm" : "build");
           const relative = p.slice(addon ? "/vendor/three/addons/".length : "/vendor/three/".length);
           const file = path.resolve(base, relative);
           if (!file.startsWith(base + path.sep) || !relative.endsWith(".js") || (!addon && !["three.module.js", "three.core.js"].includes(relative)) || !fs.existsSync(file)) return sendJson(res, 404, { error: "Not found" });
@@ -1766,6 +1773,8 @@ loadAgents();
         // Design Studio (/api/design/*): brand kits, templates, generate, outputs.
         if (await handleDesignStudioRoutes(req, res, p)) return;
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        // Neo N2 canvas: the run graph built live by the agent (N1).
+        if (await handleGraphRoutes(req, res, p, { enabled: cfg.runGraph?.enabled !== false })) return;
         // Craft apps (/api/craft/status): which vendored dists are installed.
         if (await handleCraftRoutes(req, res, p)) return;
         if (await handleInstructionsRoutes(req, res, p)) return;
@@ -1797,6 +1806,8 @@ loadAgents();
         if (await handleApprovalRuleRoutes(req, res, p, url)) return;
         // Pending plan approvals (D4): the suggest_plan gate's approve/edit/reject.
         if (await handlePlanApprovalRoutes(req, res, p)) return;
+        // Pending ask-user requests (N9): list, read, answer or dismiss.
+        if (await handleAskUserRoutes(req, res, p)) return;
         if (await handleGrokbotBridgeRoutes(req, res, p, url)) return;
         // Public read-only task shares (option #11): create/revoke are authed,
         // GET /api/share/:token is the anonymous replay feed exempted above.
@@ -2613,6 +2624,8 @@ loadAgents();
             attachments?: unknown;
             mode?: unknown;
             effort?: unknown;
+            outputType?: unknown;
+            abModels?: unknown;
             agentId?: unknown;
             workMode?: unknown;
           };
@@ -2628,6 +2641,12 @@ loadAgents();
           try { mode = getLoamMode(typeof body.mode === "string" ? body.mode : (taskId ? getTask(taskId)?.mode : undefined)).id; }
           catch (error) { return sendJson(res, 400, { error: String(error) }); }
           const effort = typeof body.effort === "string" && body.effort ? body.effort : undefined;
+          // Neo N10: output type and A/B arm list come from the composer. Anything
+          // malformed is ignored rather than failing the whole run.
+          const outputType = isOutputType(body.outputType) ? body.outputType : undefined;
+          const abModels = Array.isArray(body.abModels)
+            ? [...new Set(body.abModels.filter((m): m is string => typeof m === "string" && m.trim().length > 0).map((m) => m.trim()))].slice(0, 4)
+            : undefined;
           const agentId = typeof body.agentId === "string" && body.agentId ? body.agentId : undefined;
           let workMode: string | undefined;
           try {
@@ -2669,6 +2688,8 @@ loadAgents();
               projectId,
               mode,
               effort,
+              ...(outputType ? { outputType } : {}),
+              ...(abModels && abModels.length > 0 ? { abModels } : {}),
               agentId,
               workMode,
             });
@@ -2732,11 +2753,15 @@ loadAgents();
           const rawName = url.searchParams.get("name") ?? "upload.bin";
           const safe = path.basename(rawName).replace(/[^\w.\u0600-\u06ff -]+/g, "_").slice(0, 120) || "upload.bin";
           const root = requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace);
-          const dir = taskPath(root, "uploads");
+          // N9: an ask-user card uploads into `<workspace>/uploads/<requestId>/` so
+          // the request's attachments stay together and the recorded path is stable.
+          const askUser = url.searchParams.get("askUser");
+          const sub = askUser ? path.join("uploads", path.basename(askUser).replace(/[^\w-]+/g, "_")) : "uploads";
+          const dir = taskPath(root, sub);
           fs.mkdirSync(dir, { recursive: true });
           const buf = await readRawBody(req);
           if (buf.length === 0) return sendJson(res, 400, { error: "empty upload" });
-          const abs = taskPath(root, path.join("uploads", `${Date.now()}-${safe}`));
+          const abs = taskPath(root, path.join(sub, `${Date.now()}-${safe}`));
           fs.writeFileSync(abs, buf);
           sendJson(res, 200, {
             name: safe,
@@ -2890,12 +2915,30 @@ loadAgents();
 
         if (req.method === "POST" && p === "/api/mirofish/chat") {
           const body = (await readBody(req)) as { message?: unknown; target?: unknown; maxRounds?: unknown; injectedVariable?: unknown };
-          const out = runConversationalMirofish(requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace), {
-            message: String(body.message ?? ""),
-            ...(typeof body.target === "string" && body.target ? { target: body.target } : {}),
-            ...(typeof body.maxRounds === "number" ? { maxRounds: body.maxRounds } : {}),
-            ...(typeof body.injectedVariable === "string" && body.injectedVariable ? { injectedVariable: body.injectedVariable } : {}),
-          });
+          const message = String(body.message ?? "");
+          const target = typeof body.target === "string" && body.target ? body.target : undefined;
+          const maxRounds = typeof body.maxRounds === "number" ? body.maxRounds : undefined;
+          const injectedVariable =
+            typeof body.injectedVariable === "string" && body.injectedVariable
+              ? body.injectedVariable
+              : undefined;
+          // M3: the full analysis runs through the model-aware swarm simulation.
+          // The synchronous `runConversationalMirofish` is kept as the fallback
+          // for callers that have no provider client.
+          const out = deps.ollama
+            ? await runConversationalMirofishAsync(requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace), {
+                message,
+                ...(target ? { target } : {}),
+                ...(maxRounds !== undefined ? { maxRounds } : {}),
+                ...(injectedVariable ? { injectedVariable } : {}),
+                runtime: { cfg, ollama: deps.ollama },
+              })
+            : runConversationalMirofish(requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace), {
+                message,
+                ...(target ? { target } : {}),
+                ...(maxRounds !== undefined ? { maxRounds } : {}),
+                ...(injectedVariable ? { injectedVariable } : {}),
+              });
           return sendJson(res, 200, out);
         }
 

@@ -22,8 +22,12 @@ export function setLocale(l: Locale) {
 }
 
 /** Keys are English source strings (matches the original catalog design). */
-export function t(key: string, vars: Record<string, string | number> = {}): string {
-  const template = catalogs[current][key] ?? key;
+export function t(
+  key: string,
+  vars: Record<string, string | number> = {},
+  locale: Locale = current,
+): string {
+  const template = catalogs[locale][key] ?? key;
   return template.replace(/\{(\w+)\}/g, (_, name) =>
     name === 'product' ? PRODUCT : String(vars[name] ?? `{${name}}`),
   );

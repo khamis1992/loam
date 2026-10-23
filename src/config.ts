@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { EffortLevel } from "./llm/router.js";
 
 function resolveRoot(): string {
   const candidates: string[] = [];
@@ -23,6 +24,22 @@ function resolveRoot(): string {
 
 export const ROOT = resolveRoot();
 
+/** Packaged builds keep ROOT inside resources/app.asar. Files that must exist on
+ *  real disk (ffmpeg binary, three.js jsm addons, native modules) are placed in
+ *  app.asar.unpacked by electron-builder (asarUnpack / extraResources). */
+export const UNPACKED_ROOT = process.env.LOAM_UNPACKED_ROOT
+  ? path.resolve(process.env.LOAM_UNPACKED_ROOT)
+  : ROOT.replace(/\.asar$/i, ".asar.unpacked");
+
+/** Resolve a bundled asset path, preferring the unpacked copy when it exists. */
+export function rootAsset(...parts: string[]): string {
+  if (UNPACKED_ROOT !== ROOT) {
+    const unpacked = path.join(UNPACKED_ROOT, ...parts);
+    if (fs.existsSync(unpacked)) return unpacked;
+  }
+  return path.join(ROOT, ...parts);
+}
+
 /** User data can live outside the app folder so updates never touch it.
  *  The packaged app sets these to %APPDATA%/manus-local (see electron/main.cjs). */
 function fromEnv(name: string, fallback: string): string {
@@ -32,6 +49,15 @@ function fromEnv(name: string, fallback: string): string {
 
 export function dataDir(): string {
   return fromEnv("MANUS_LOCAL_DATA_DIR", path.join(ROOT, "data"));
+}
+
+/** Fold a config effort key to `fast` / `max`, or "" when it is not one of them.
+ *  Kept local (see `loadConfig`) so config.ts never value-imports the router. */
+function normalizeEffortName(value: string): EffortLevel | "" {
+  const key = value.trim().toLowerCase();
+  if (key === "fast" || key === "quick" || key === "low" || key === "lite") return "fast";
+  if (key === "max" || key === "maximum" || key === "best") return "max";
+  return "";
 }
 
 export const DATA_DIR = dataDir();
@@ -216,9 +242,15 @@ export interface Config {
   };
   /** Optional per-edit diagnostics overrides (LOAM.md may override these). */
   diagnostics?: import("./agent/diagnostics.js").DiagnosticSettings;
+  /**
+   * Neo N10 routing: the model map behind the composer's output-type and
+   * effort selectors. Shares this key with C17/V14. Entries are model ids only,
+   * never API keys. `perTool` names a tool; `effort` names a Fast/Max level.
+   */
+  routing?: import("./llm/router.js").RoutingConfig;
 }
 
-const DEFAULTS: Config = {
+export const DEFAULTS: Config = {
   model: "glm-5.3-flash:cloud",
   fallbackModel: "qwen2.5:14b",
   ollamaUrl: "http://127.0.0.1:11434",
@@ -282,11 +314,25 @@ const DEFAULTS: Config = {
   failover: {
     providers: [
       { id: "ollama", kind: "ollama", baseUrl: "http://127.0.0.1:11434", model: "glm-5.3:cloud", apiKeyEnv: "", enabled: true },
-      { id: "opencode-go", kind: "openai-compatible", baseUrl: "https://api.opencode.ai/v1", model: "opencode-go", apiKeyEnv: "OPENCODE_API_KEY", enabled: true },
-      { id: "freellmapi", kind: "openai-compatible", baseUrl: "https://api.freellmapi.com/v1", model: "freellmapi/auto", apiKeyEnv: "FREELLM_API_KEY", enabled: true },
-      { id: "longcat", kind: "openai-compatible", baseUrl: "https://api.longcat.ai/v1", model: "LongCat-2.5-Preview", apiKeyEnv: "LONGCAT_API_KEY", enabled: true },
+      // OpenCode Go: the official OpenAI-compatible endpoint is
+      // https://opencode.ai/inference/go/openai/v1/chat/completions (OpenCode "Go" docs,
+      // Endpoints table). The old `https://api.opencode.ai/v1` host does not serve this API
+      // (GET /v1/models there returns 404).
+      { id: "opencode-go", kind: "openai-compatible", baseUrl: "https://opencode.ai/inference/go/openai/v1", model: "opencode-go", apiKeyEnv: "OPENCODE_API_KEY", enabled: true },
+      // freellmapi is a SELF-HOSTED OpenAI-compatible router, not a public host, and no
+      // public endpoint is documented. The repo's own evidence is a local router:
+      // docs/agents-state.json records `freellmapi/auto unreachable: localhost:31415 down`.
+      // TODO(C19): unverified endpoint - confirm the deployment before relying on failover.
+      { id: "freellmapi", kind: "openai-compatible", baseUrl: "http://127.0.0.1:31415/v1", model: "freellmapi/auto", apiKeyEnv: "FREELLM_API_KEY", enabled: true },
+      // LongCat: official OpenAI-format endpoint
+      // https://api.longcat.chat/openai/v1/chat/completions (LongCat API Platform Quick
+      // Start), model LongCat-2.5-Preview.
+      { id: "longcat", kind: "openai-compatible", baseUrl: "https://api.longcat.chat/openai/v1", model: "LongCat-2.5-Preview", apiKeyEnv: "LONGCAT_API_KEY", enabled: true },
       { id: "openrouter", kind: "openai-compatible", baseUrl: "https://openrouter.ai/api/v1", model: "openrouter/free", apiKeyEnv: "OPENROUTER_API_KEY", enabled: true },
-      { id: "ornith", kind: "openai-compatible", baseUrl: "https://api.ornith.ai/v1", model: "ornith", apiKeyEnv: "ORNITH_API_KEY", enabled: true },
+      // ornith is a LOCAL Ollama model (docs/handoff/oc-local.json and
+      // docs/handoff/watchdog.ps1 both define it under the ollama provider as
+      // ornith-1.5:9b); it is not a remote api.ornith.ai service.
+      { id: "ornith", kind: "ollama", baseUrl: "http://127.0.0.1:11434", model: "ornith-1.5:9b", apiKeyEnv: "", enabled: true },
     ],
   },
   compression: {
@@ -322,6 +368,9 @@ const DEFAULTS: Config = {
   sessionLog: { enabled: true },
   runGraph: { enabled: true },
   coding: { enabled: true, chain: [], logEdits: true },
+  // Neo N10: no map by default, so an unconfigured run keeps its current
+  // behaviour (the coding chain for coding turns, the configured model else).
+  routing: { perTool: {}, effort: {} },
 };
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -357,10 +406,28 @@ export function loadConfig(): Config {
       .filter((m) => m.length > 0);
   }
   if (process.env.LOAM_CODER_ROUTING === "0" || process.env.LOAM_CODER_ROUTING === "false") cfg.coding.enabled = false;
+  // Neo N10: normalize the routing map. Unknown effort levels are dropped and
+  // model ids are trimmed, so a stale config can never select a bogus entry.
+  const perTool: Record<string, string> = {};
+  for (const [tool, model] of Object.entries(cfg.routing?.perTool ?? {})) {
+    if (typeof model === "string" && model.trim()) perTool[tool] = model.trim().slice(0, 120);
+  }
+  const routingEffort: { fast?: string; max?: string } = {};
+  for (const [level, model] of Object.entries(cfg.routing?.effort ?? {})) {
+    // Normalized inline: importing the router here would create a load-time
+    // cycle (`router -> codingRouter -> config`), and `failover.ts` reads the
+    // module-level `DATA_DIR` from config at import time, so the cycle surfaces
+    // as "Cannot access 'DATA_DIR' before initialization" in unrelated tests.
+    const key = normalizeEffortName(level);
+    if (key && typeof model === "string" && model.trim()) routingEffort[key] = model.trim().slice(0, 120);
+  }
+  cfg.routing = { perTool, effort: routingEffort };
   if (process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT) cfg.server.port = Number(process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT);
   if (process.env.LOAM_HOST || process.env.MANUS_LOCAL_HOST) cfg.server.host = (process.env.LOAM_HOST || process.env.MANUS_LOCAL_HOST)!;
   const envRoot = process.env.LOAM_ROOT || process.env.MANUS_LOCAL_ROOT;
-  if (envRoot) {
+  // Packaged builds pass ROOT = resources/app.asar (read-only archive); the
+  // desktop shell already points config.workspace at the user-data folder.
+  if (envRoot && !/\.asar$/i.test(envRoot)) {
     const root = path.resolve(envRoot);
     // LOAM_ROOT is the install/user-data root: keep workspace and screenshots under it
     // rather than letting config.json silently override them back into the source tree.
