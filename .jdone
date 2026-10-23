@@ -1,5 +1,441 @@
-D2 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
+D15 — PR reviewer + bug catcher: DONE
 
+Summary
+-------
+Adds the `pr_review({repo, number, postComments?, maxFiles?, conventions?})` tool. It
+fetches the PR's diff through the D1 `PrProvider` (`pr_diff`, added to the interface and
+implemented by `GitHubPrProvider` via `GET /repos/{repo}/pulls/{n}/files?per_page=100` and
+by `LocalPrProvider` from a scripted `setPrDiff` seed), reviews each changed file on its
+own against the repo conventions (`AGENTS.md` / `CONTRIBUTING.md` when present), and
+returns deduplicated findings `{severity: bug|flag|nit, file, line, explanation,
+suggested_fix}`. With `postComments` the findings are filed as line review comments through
+the same provider.
+
+Implemented end to end:
+  - Reviewer:        src/agent/prReview.ts
+  - Tool + registry: src/tools/prReviewTools.ts, src/setup/runtime.ts
+  - Provider diff:   src/tools/gitPrProvider.ts (PrDiff/PrFileDiff, prDiff on both providers,
+                     LocalPrProvider.setPrDiff / setPrDiff helper)
+  - Mode allowlist:  src/modes/catalog.ts (`pr_review` in the GIT set)
+  - Prompt catalog:  prompts/loam-master.md §6.3 + §8.5, regenerated into
+                     src/agent/masterPromptText.ts (snapshot hash refreshed)
+
+Acceptance criteria (AC) met
+----------------------------
+  - seeded off-by-one bug reported as `bug` at the right file/line
+      fixture `src/counter.ts` with `for (let i = 0; i <= n; i++)` on new-file line 7;
+      the reviewer parses the hunk headers itself and clamps the model's line into the
+      touched range, so the finding lands on `src/counter.ts:7` ->
+      src/tools/__tests__/prReview.test.ts ("reports a bug finding at the seeded off-by-one line")
+  - duplicates merged (most severe wins, fuller explanation kept, loser's fix merged)
+      -> src/tools/__tests__/prReview.test.ts ("merges duplicate findings the model repeats")
+  - post-comments goes to LocalProvider only (GitHub posting is exercised through a
+    mocked fetch; the tool only ever calls the provider's `addComment`)
+      -> src/tools/__tests__/prReview.test.ts ("posts the findings as review comments only when asked")
+
+No network in tests: the diff comes from `LocalPrProvider` seeded with `setPrDiff`, the
+model is a fake client returning canned JSON, and the GitHub path is exercised with a
+mocked `fetch`.
+
+Merge with manus-parity: fast-forward (no conflicts)
+----------------------------------------------------
+`git merge manus-parity` updated a8130cc..35c8470 as a fast-forward, so the D15 working
+tree carried the parity tip (design_critique, editHints, files.ts triage, docs/re/*).
+Nothing conflicted. All gates were re-run on the merged tree.
+
+Gates (all run from the worktree root on the merged tree)
+------------------------------------------------------
+  1. npx tsc --noEmit                                 -> exit 0
+  2. npm run build:server                             -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+  3. (cd packages/web && npx next build)              -> exit 0 (compiled successfully, 25/25 static pages)
+  4. node --import tsx --test (D15 + touched suites)   -> 77 tests, 77 pass, 0 fail
+     (prReview.test.ts, ciWatch.test.ts, codingPrompt.test.ts, catalog.test.ts)
+  5. (cd packages/web && npx vitest run)              -> 72 files / 472 tests, all pass
+  6. npm run check:encoding / check:modes / check:orchestrator / check:promptwire -> PASS
+
+Full-suite validation (committed tree, `src/**/*.test.ts`)
+-------------------------------------------------------
+  node --import tsx --test "src/**/*.test.ts" -> tests 2245, pass 2243, fail 2
+
+Both failures are pre-existing and NOT caused by D15:
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither registered
+   nor listed in PENDING_CODING_TOOLS". The inherited D4 defect: D4 added `suggest_plan`
+   to `CODING_PROFILE.tools` and the mode catalog but never added it to the test's
+   `PENDING_CODING_TOOLS`, and the test's registry does not include `createPlanTools`.
+   `toolDescriptions.test.ts`, `taskToolScope.ts` and `planTools.ts` are byte-identical
+   to manus-parity (`git diff manus-parity HEAD` is empty for each).
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without throwing"
+   (`info.isGit` is true for a plain temp dir). Environment-dependent: the test assumes
+   `%TEMP%` is not itself inside a git worktree, which is false here (the worktree root is
+   under a git repo). `src/server/worktrees.ts` and the test are byte-identical to
+   manus-parity, and both failures reproduce identically when run inside the manus-parity
+   worktree itself (8 tests, 6 pass, 2 fail).
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+
+---
+
+## Preserved: manus-parity .jdone (V11 design_critique report)
+
+What shipped
+------------
+A new always-on agent tool, `design_critique`, that scores a built interface against
+the Loam UI Kit rubric by sending the captured screenshots to the vision model. It
+reuses the existing `visualReview` (Ollama vision) and the `preview_screenshot`
+capture machinery rather than duplicating either.
+
+- `src/design/critique.ts` (extended, +489):
+  - `CRITIQUE_DIMENSION_IDS` = hierarchy, spacing, contrast, alignment,
+    color-count, overflow, rtl. Blocking dimensions: contrast, overflow, rtl.
+    Per-dimension floor 60, pass threshold 80 on the mean, max 2 fix rounds,
+    max 2 model repair attempts.
+  - `normalizeCritiqueVerdict`: strict rubric contract. Every dimension exactly
+    once, numeric score, non-empty note. `accept` requires an empty issues list,
+    every dimension at or above the floor, and the mean at or above the
+    threshold; `revise` must name at least one visible defect; the `rtl` dimension
+    must be exactly 100 on an `ltr` page. The mean is always recomputed from the
+    dimensions and the declared `score` is ignored, so a model cannot inflate its
+    own verdict.
+  - `critiquePasses`: gates on the blocking dimensions independently of the mean.
+  - `runVisionCritique`: throws `VisualReviewUnavailable` when no client or no
+    readable screenshot, retries a malformed answer with the validation errors,
+    reads screenshots from disk as base64 images, reports `source: "model"`.
+  - `runCritiqueLoop`: rounds 0..maxRounds, `instruction = fixes[0] ?? issues[0] ?? ""`,
+    accumulates usage across rounds, always reports the best score it saw.
+- `src/tools/designCritique.ts` (new): `createDesignCritiqueTools(preview, { ollama })`,
+  `formatCritiqueReport` (reports round/maxRounds), `lintSiteDirectory`,
+  `captureForCritique`, and a deterministic `fallbackCritique` for the no-model path.
+  Params: `dir`, `url`, `screenshots`, `source`, `prompt`, `language`, `direction`,
+  `brief`, `threshold`, `maxAttempts`, `round`, `maxRounds`, `format`.
+  One critique call per invocation; the caller drives the edit/rebuild/capture loop.
+  At the last allowed round the report says the round budget is exhausted and tells
+  the caller to stop; otherwise it says to apply the first fix, rebuild, capture
+  again and call with `round=N+1`. Returns `{ ok: verdict === "accept" }`.
+- `src/design/tokenLint.ts`: `lintSiteSource()` lints one in-memory source with the
+  same rules as the filesystem linter (so an editor buffer and a directory on disk
+  are scored by one code path); `SiteRule` exported; `runCritiqueLoop`'s `options`
+  argument is now required.
+- Wiring: registered in `src/index.ts` and added to `ALWAYS_ON_TOOLS` in
+  `src/server/runTools.ts`; the build Implement phase now instructs
+  lint -> capture -> critique with `design_lint`, `preview_screenshot`,
+  `design_critique`; `DESIGN_CRITIQUE_PROMPT` in `src/modes/designRules.ts` is
+  pushed into the system prompt when the tool is present (`src/agent/prompt.ts`).
+
+All prompts, tool descriptions and rules are original Loam wording.
+
+Acceptance test (V11 spec)
+--------------------------
+"A mock vision model drives a fix round; the threshold logic is tested" — covered by
+`src/design/__tests__/critique.test.ts` (31 tests) and
+`src/tools/__tests__/designCritique.test.ts` (11 tests):
+- fake and sequence Ollama clients, no network, no real model;
+- `revise` -> `accept` drives exactly one fix round, with the second call receiving
+  the first round's fix instruction;
+- round budget exhaustion, custom threshold, floor/mean threshold logic;
+- safety gates: a high mean with a failing contrast/overflow/rtl still fails;
+- `rtl` must be exactly 100 on an `ltr` page, and an Arabic RTL page is gated on it;
+- an unusable model answer never becomes a pass;
+- deterministic fallback, JSON output, always-on + prompt wiring.
+
+Gates (all run from the worktree root on the committed tree, HEAD 27b42ed)
+-----------------------------------------------------------------------
+- `npx tsc --noEmit`                                  -> exit 0
+- `npm run build:server`                              -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`               -> exit 0 (compiled successfully)
+- `npm run verify`                                    -> exit 0 (typecheck, encoding, eval, orchestrator 114/114, recovery, modes)
+- `npm run check:encoding`                            -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:design-registry`                     -> OK (30 blocks, 8 RTL, all manifests valid, all built)
+- `npm run eval:design -- --self-check`               -> self-check fixture=landing lint=100 critique=94 build=100 total=98 verdict=pass
+
+Tests on the committed tree:
+- `node --import tsx --test "src/**/*.test.ts"`       -> tests 2205, pass 2203, fail 2
+- `(cd packages/web && npx vitest run)`               -> 72 files / 472 tests, all pass
+
+The two node failures are pre-existing on the manus-parity lineage and untouched by
+V11 — both files are byte-identical to manus-parity (`git diff manus-parity HEAD` is
+empty for each):
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither
+   registered nor listed in PENDING_CODING_TOOLS". The inherited D4 defect: D4 added
+   `suggest_plan` to `CODING_PROFILE.tools` but never to the test's pending list, and
+   the test's registry does not include `createPlanTools`.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+   throwing". Environmental: `readGitBranch` shells out to `git rev-parse`, which
+   walks up to the nearest enclosing repository. The host machine's `C:\` carries a
+   git repo marker, so a temp folder that is not a repo reports `isGit: true`. It
+   fails identically on manus-parity.
+
+No test was weakened, deleted or skipped. No secrets committed.
+
+Merge gate
+----------
+`git merge manus-parity` (parity tip 4fa0376, J3) merged cleanly with no conflicts;
+committed as 143f613 and now `git rev-list --left-right --count manus-parity...HEAD`
+is `0 2` and `git merge-base --is-ancestor manus-parity HEAD` exits 0.
+
+Test commands
+-------------
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run verify
+  npm run check:encoding
+  npm run check:design-registry
+  npm run eval:design -- --self-check
+  node --import tsx --test "src/**/*.test.ts"
+  (cd packages/web && npx vitest run)
+  node --import tsx --test src/design/__tests__/critique.test.ts src/tools/__tests__/designCritique.test.ts
+
+---
+
+J3 complete: edit-tool miss hints + post-edit context.
+
+Extended Loam's existing `file_edit` tool in `src/tools/files.ts` (no parallel
+tool was added) with the behaviour ported from jcode's `ref/edit.rs`
+(`apply_edits` ~L80-151, `flexible_match_hint` ~L401-430, the `EditTool` schema
+and result body ~L159-270). MIT notice extended in `THIRD_PARTY_NOTICES`;
+`flexibleMatchHint` carries an "Adapted from jcode (MIT) ... edit.rs" header.
+
+## Acceptance criteria
+- **Reject empty old_string** -> "old_string must not be empty" (single) /
+  "edit N: old_string must be non-empty" (batch); nothing written.
+- **Reject old_string == new_string** -> reported as a no-op, nothing written.
+- **Reject a non-unique match unless replace_all**, naming the count and both
+  options: "old_string found 2 times. Either:\n1. Provide more context to make it
+  unique, or\n2. Set replace_all: true to replace all occurrences".
+- **Legacy `count` is preserved.** An explicit `count` on the single-edit path
+  asserts the occurrence count in place of the uniqueness rule, and (as before
+  this task) every occurrence is replaced; the count is verified against what was
+  actually replaced before anything is written. Omitting `count` applies the spec
+  rule (unique unless replace_all). See "Defects found and fixed" below: the first
+  version of this port silently broke `count`, and that is now fixed and pinned
+  by tests.
+- **Miss hints** (`flexibleMatchHint`): trimming whitespace -> "found after
+  trimming whitespace"; same lines modulo indentation -> "found with different
+  indentation around line N" with the correct 1-based line; otherwise a plain
+  "old_string not found in <path>. Use file_read ...". A miss is never
+  fuzzy-applied: the original bytes are left untouched in every hint case.
+- **Batch `edits[]`** validated atomically: applied in order to an in-memory copy,
+  all-or-nothing, and every failure is reported ("No changes written to <path>.
+  N of M edits failed:" + one `x ...` line per failure). Mixing `edits` with the
+  single-edit shorthand is rejected; an empty or >50-item batch is rejected.
+- **Post-edit context**: a line-numbered snippet of the file around the change
+  (+/-3 lines, clamped to the file bounds), one per edit for a batch.
+
+## Defects found and fixed while porting
+**1. `new_string` was not substituted verbatim.** The first port used
+`String.prototype.replace(str, str)`, which still expands `$&`, `` $` ``, `$'` and
+`$$` in the replacement, whereas the spec substitutes new_string verbatim (Rust
+`replacen`). A new_string containing `$&` was silently rewritten to the matched
+text. Replaced with a slice-based literal substitution (the same approach the
+sibling tools `multiEdit.ts` and `findAndEdit.ts` already use), and the
+replacement's line count now follows Rust `str::lines` (a trailing newline starts
+no further line) so the context window ends on the right line. Six regression
+tests were added; the `$&` case was confirmed to fail against the previous
+implementation.
+
+**2. The legacy `count` parameter was silently broken by the port.** Routing the
+single-edit path through `applyEditOperations` applied the spec uniqueness rule
+unconditionally, so `count: 3` on a file with three occurrences was rejected as
+non-unique. At the base commit the same call replaced all three (verified by
+running the base and the port side by side). `count` is a documented parameter
+that the port kept in the schema, so this was a public-contract break. An explicit
+`count` now asserts the occurrence count in place of the uniqueness rule and
+replaces every occurrence, exactly as before; omitting it keeps the spec rule.
+Three regression tests were added and the `count: 3` case was confirmed to fail
+against the broken implementation and to match the base behaviour after the fix.
+
+## Files
+- `src/tools/files.ts` - helpers `findLineNumber`, `extractContext`,
+  `flexibleMatchHint`, `applyEditOperations`, `formatEditFailures`,
+  `resolveEditOperations`; constants `MAX_BATCH_EDITS` (50),
+  `EDIT_CONTEXT_LINES` (3); rewritten `file_edit` schema + `run()`.
+- `src/tools/__tests__/editHints.test.ts` - new, 23 tests.
+- `src/tools/__tests__/editSchemaAlias.test.ts` - 2 assertions updated from the
+  old wording to the ported messages (`/found 2 times/`, `/Provide more context/`,
+  `/old_string not found in/`, `/file_read/`); nothing weakened.
+- `THIRD_PARTY_NOTICES` - added the `src/tools/files.ts` adaptation entry.
+
+## Gates (all from the worktree root, committed HEAD)
+- `npx tsc --noEmit`                                -> exit 0
+- `npm run build:server`                            -> exit 0 (pdf worker copied)
+- `(cd packages/web && npx next build)`             -> exit 0 (compiled, 25/25 static pages)
+- touched tests (editHints, editSchemaAlias, multiEdit, readState, fileLock,
+  diagnostics, findAndEdit)                         -> tests 96, pass 96, fail 0
+- `node --import tsx --test "src/**/*.test.ts"`     -> tests 2163, pass 2161, fail 2
+  (a third, load-sensitive failure appears in some runs; see item 3)
+- `(cd packages/web && npx vitest run)`             -> 72 files / 472 tests, all pass
+- `check:encoding` / `check:modes` / `check:orchestrator` (114/114) /
+  `check:promptwire` / `check:recovery` / `check:design-registry` -> PASS
+
+None of the three node failures is caused by this task; the diff touches only
+`src/tools/files.ts`, `src/tools/__tests__/editHints.test.ts`,
+`src/tools/__tests__/editSchemaAlias.test.ts`, `THIRD_PARTY_NOTICES` and
+`.jdone` (`git diff a8130cc HEAD --name-only`), so no other module is affected.
+
+1. `src/agent/__tests__/toolDescriptions.test.ts` -> "suggest_plan is neither
+   registered nor listed in PENDING_CODING_TOOLS" (3 pass / 1 fail on its own).
+   That test file, `src/agent/taskToolScope.ts` and `src/tools/planTools.ts` are
+   byte-identical to the base (`git diff manus-parity HEAD -- <file>` is empty
+   for each); it is the inherited D4 defect already documented below.
+2. `src/server/__tests__/worktrees.test.ts` -> "reports non-git folders without
+   throwing". Environmental: the test asserts that a fresh `os.tmpdir()` folder
+   is not a git repo, but `%TEMP%` on this machine sits inside the git repo
+   `C:/Users/khamis`, so `git -C <tmp> rev-parse` succeeds and `isGit` is true.
+   Reproduced identically on the untouched base commit `a8130cc` in the `cc-c20`
+   worktree (3 pass / 1 fail), and this task touches no file under `src/server`.
+3. `src/tools/__tests__/search.test.ts` -> "greps and globs the repository in
+   under 1 second" (observed 1057ms against a 1000ms budget). Intermittent and
+   load-sensitive: it failed once under the parallel full-suite run and did not
+   recur in the final run (hence 2 failures rather than 3). The file passes 19/19
+   on its own and 3/3 across three consecutive isolated runs. Unrelated to this
+   task (nothing in the diff affects search).
+
+Also re-verified after merging the latest `manus-parity` (which brought H0 into
+`.jdone`): merge gate "Already up to date", tsc exit 0, touched tests 96/96,
+build:server exit 0, web build exit 0 (25/25), check:encoding / check:modes PASS.
+The `.jdone` conflict was resolved keeping both reports (J3 + H0 + O0).
+
+Test command:
+  node --import tsx --test src/tools/__tests__/editHints.test.ts
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or
+skipped. Working tree clean; `git merge-base --is-ancestor manus-parity HEAD`
+succeeds.
+
+---
+
+H0 complete: read-only recon for the Harness2 correction-learning workstream. No source file was touched; no agent instruction was changed (nothing to propose).
+
+## What was produced
+`docs/re/harness2-H0.md` (556 lines, committed as `ea8c597`). Every claim carries a
+`file:line` read from this worktree at baseline HEAD `a8130cc`. No source file was
+modified; `node_modules` was excluded from all searches.
+
+## Answers to the listed unknowns
+- **U1** `src/memory/embeddings.ts:12` `embed(texts: string[]): Promise<number[][]>` (batch)
+  and `:48` `embedOne(text)`; codec `toBase64`/`fromBase64`/`normalize`/`dot` at
+  `:55,60,68,79`; embedder built once at `src/setup/runtime.ts:89`.
+- **U2** `src/learning/critic.ts:76-84` `input.ollama.chat({ model, messages, temperature:
+  0.1, timeoutMs: 180_000 })` -> `ChatResult.content`; contract at `src/ollama.ts:42,54,168`;
+  model choice at `critic.ts:53`; `CritiqueResult.lessons` at `src/eval/types.ts:51`.
+- **U4** chat route `POST /api/chat` at `src/server/http.ts:2603`; append primitive
+  `src/server/db.ts:150`; chat-path append at `src/server/db.ts:320` inside
+  `queueTaskRun`; other appenders `src/server/routes/sessionControl.ts:157`,
+  `src/server/bridge/grokbot.ts:146`, `src/swarm/service.ts:232,468`;
+  retry helper `src/server/routes/retryLast.ts:34,52`.
+- **U5** system prompt built in `src/agent/loop.ts:220-235` from
+  `buildSystemPrompt` (`src/agent/prompt.ts:67`); injection slot `extraContext` at
+  `src/agent/prompt.ts:131`, or `systemSuffix` at `loop.ts:232-235`.
+- **U6** no `src/server/routes/learning.ts` exists; the only learning endpoint is
+  inline `GET /api/learning` at `src/server/http.ts:1058-1062`, backed by
+  `src/server/learning.ts:5-36`; route dispatch pattern at `src/server/http.ts:79-109`
+  and `:1760-1807`.
+- **U7** yes: `src/memory/redact.ts:26,33,38` `findSecret`/`containsSecret`/`assertNoSecret`
+  for the pre-store guard, and `src/log.ts:14` `redact()` for log/output scrubbing.
+- **U8** no root `build:web`; the web build is `packages/web/package.json:8`
+  `"build": "next build"`, so the gate is `(cd packages/web && npx next build)`.
+
+## Spec assumptions corrected (15, listed in the report)
+W1 `embed` takes an array not a single text; W2 `ollama.chatText` does not exist
+(`ollama.chat` is the shape); W3 `appendMessage` is NOT called by the chat route (the
+user message is pushed by `queueTaskRun` at `db.ts:320`); W4 the system prompt is
+built in `loop.ts`, not `planner.ts` (U5 decision A); W5 there is no learning router
+(U6 decision B, create `src/server/routes/learning.ts`); W6 an existing redaction
+helper is reused (decision A); W7 the gate form for the web build; W8 `proposeInstructions`
+returns an `InstructionProposal` with `id`; W9 the proposal UI already exists
+(`packages/web/src/components/agents/InstructionHistory.tsx:43,67,148-179` +
+`AgentThreadView.tsx:203,505-510`); W10-W15 as listed in the report table.
+
+## Merge with manus-parity (this gate fix)
+`.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity. `git merge manus-parity`
+(tip `63e6f70`, the O0 merge) applied cleanly with the `ort` strategy and no conflicts:
+it only brought in `docs/re/omnara-O0.md` and the O0 section of the tracked rollup
+`.jdone`, both of which are parity's own files and were kept as-is. Nothing from the
+H0 report was altered, no test was weakened or deleted, and no source file changed.
+Committed as the merge commit `1778cad`.
+
+## Gate condition verified
+`git merge manus-parity` reports "Already up to date." and
+`git merge-base --is-ancestor manus-parity HEAD` exits 0
+(rev-list --left-right --count manus-parity...HEAD = 0 2), so parity is fully merged
+and the tree is clean.
+
+## Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`       -> exit 0 (compiled, 25/25 static pages)
+- `npm run check:encoding`                    -> OK (no BOM, no mojibake, all JSON valid)
+- H0 Verify column `file exists`              -> satisfied by `docs/re/harness2-H0.md`
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added.
+
+---
+
+## Preserved: manus-parity O0 report (merged in from parity)
+
+O0 complete: read-only recon for the Omnara durable event log. No source file touched.
+
+## What was produced
+`docs/re/omnara-O0.md` (359 lines, committed as `4c6be22`). Every claim carries a
+`file:line` taken from this worktree at HEAD `a8130cc`. `node_modules` excluded from
+all searches.
+
+## Answers (U1-U6)
+- **U1** `transaction` exists at `src/server/sqliteStore.ts:48-53`, signature
+  `transaction<T>(fn: () => T): T`, uses `BEGIN IMMEDIATE`, and is **NOT re-entrant**
+  (a nested call throws `cannot start a transaction within a transaction`). BUILD_SPEC
+  U2 is answered "no nesting" (decision B). The `metadata` table exists at
+  `src/server/sqliteStore.ts:18` but **`getMeta`/`setMeta` are NOT exported**; only
+  private copies exist (`src/server/credits.ts:98-105`, `src/server/assets.ts:52-58`),
+  so O2 must add them.
+- **U2** replay is driven by `join_session`, not a `resume` event:
+  `src/protocol/socket.ts:343-389`, replay call at `:345`
+  (`store.eventsAfter(m.sessionId, m.lastMessageId)`). **No `lastSeq` anywhere.**
+  `JoinSession` is `src/protocol/types.ts:29-34` (`lastMessageId` at `:32`);
+  `ServerEnvelope` is `:115-122` and has **no `seq`** field.
+- **U3** web reconnect file is `packages/web/src/services/chatSocket.ts` (rejoin hook at
+  `:62`, `join`/`emitJoin` at `:99-122`). All six call sites pass no cursor; the main
+  one is `packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx:205`. Wire type must
+  be extended in both `packages/shared/src/socket.ts:22-27` and
+  `src/protocol/types.ts:29-34`.
+- **U4** **no boolean sensitive-tool flag exists.** Reuse risk tiers:
+  `classifyToolCall` at `src/policy/riskTier.ts:385-418`, `SECRET_TOOL_NAMES` at
+  `:248-258`, gate callers at `src/policy/permissionModes.ts:471`,
+  `src/policy/permissionRules.ts:281`, `src/tools/planApprovalGate.ts:120`.
+  BUILD_SPEC §10 U6 decision A is correct.
+- **U5** tool start/finish emit sites in `src/agent/loop.ts`: `tool_call` at `:488`/`:534`,
+  `tool_result` at `:519-525`/`:548`. **The loop never captures `call.id`**, so O5 must
+  synthesize a stable `toolCallId`. `ExecutionCheckpoint` is built and saved in the
+  orchestrator (`src/agent/orchestrator.ts:246-249`, `:250`, `:261`, `:281`, `:296`) and
+  persisted through `src/index.ts:502-505` -> `saveRun` (`src/server/db.ts:305-308`).
+  Resume gate `requiresReplayConfirmation` is `src/server/recovery.ts:21-23`.
+- **U6** web build script is `packages/web/package.json:8` = `"build": "next build"`.
+
+## Spec assumptions corrected (12 listed in the report)
+Replay line (~325 -> `:345`), `requiresReplayConfirmation` (:19 -> `:21-23`),
+`recoverInterruptedTasks` (:104 -> `:123-137`), `newId` (:101 -> `:120`), missing
+`getMeta`/`setMeta`, missing `toolCallId` in the loop, `BEGIN IMMEDIATE` + non-reentrant
+`transaction`, no `seq`/`lastSeq` on the wire, no sensitive flag, `metadata` table is
+compatible with the purge trigger, `requiresReplayConfirmation` must be extended, and
+the O0 Verify column.
+
+## Gates (all run from the worktree root)
+- `npx tsc --noEmit`                                  -> exit 0
+- `npm run build:server`                              -> exit 0 (dist/server.cjs 19.3mb)
+- `(cd packages/web && npx next build)`               -> exit 0 (25/25 static pages)
+- `npm run check:encoding`                            -> OK (no BOM, no mojibake)
+- O0 Verify column `file exists`                      -> satisfied by `docs/re/omnara-O0.md`
+
+Read-only: no source file modified; the commit contains only the report. No mojibake
+placeholder text was added. No instruction-related change (nothing to propose).
+Working tree clean.
+
+---
+
+## Preserved: D2 gate-fix report (previous .jdone content)
+
+D2 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
 ## The failure that was fixed
 `.jgatefail.txt` reported: MERGE CONFLICT with latest manus-parity: run git merge
 manus-parity, resolve all conflicts keeping both sides, commit.

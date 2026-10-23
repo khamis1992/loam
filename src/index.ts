@@ -47,6 +47,7 @@ import { createDesignLintTools } from "./tools/designLint.js";
 import { createDesignAssetsTools } from "./tools/designAssets.js";
 import { createDesignBriefTools } from "./tools/designBrief.js";
 import { createDesignAutofixTools } from "./tools/designAutofix.js";
+import { createDesignCritiqueTools } from "./tools/designCritique.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
 import { createWorkflowTools } from "./tools/workflow.js";
 import { applyPlanApprovalGate, applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
@@ -156,6 +157,7 @@ async function main(): Promise<void> {
   rt.registry.registerAll(createDesignAssetsTools());
   rt.registry.registerAll(createDesignBriefTools({ ollama: rt.ollama }));
   rt.registry.registerAll(createDesignAutofixTools());
+  rt.registry.registerAll(createDesignCritiqueTools(rt.preview, { ollama: rt.ollama }));
   rt.registry.registerAll(createConnectorTools());
   rt.registry.registerAll(createWorkflowTools({ ollama: rt.ollama, registry: rt.registry }));
   rt.registry.registerAll(createPlanTools());
