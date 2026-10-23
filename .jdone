@@ -1,3 +1,82 @@
+# N19 gate fix (third pass): manus-parity re-merged, .jdone add/add resolved as a union
+
+`.jgatefail.txt` reported: `MERGE CONFLICT with latest manus-parity: run git merge
+manus-parity, resolve all conflicts keeping both sides, commit.`
+
+## Root cause
+No code defect. The gate asks for `manus-parity` to be a live ancestor of this branch.
+The previous pass had merged parity tip `109617a` and verified
+`git merge-base --is-ancestor manus-parity HEAD` -> exit 0. `manus-parity` then advanced
+26 further commits during this session, so the ancestor condition went false again and the
+gate correctly re-failed. This pass merged the new tip and re-verified.
+
+The merge itself was clean everywhere except the tracked rollup `.jdone`:
+
+- **Every source file auto-merged with `ort`.** No `src/` or `packages/` file needed a
+  decision.
+- **`.jdone` conflicted add/add.** Parity now carries its own 8384-line rollup (it tracks
+  `.jdone` again after re-adding it), and this branch carries the N19 report set
+  (7897 lines). The two sides share the N19/H3/O4/M3 headings at different offsets, so git
+  could not auto-merge.
+
+## Resolution
+Resolved as a **strict union of both sides**, the convention this branch has used for every
+earlier `.jdone` conflict on the sibling branches:
+
+- Parity's whole 8384-line rollup is preserved verbatim (it includes the N10 / N7 / fc-09 /
+  H3 / O4 / M3 / D2 / D10 / D19 / D17 / D4 / N20 / N2 / N9 / C19 / O3 / O6 / O2 / D5 / O1 /
+  V11 / fc-05 / H0 / O0 report sets).
+- This branch's N19 report (`# N19 - Master-prompt section for Recipe mode: DONE`) is
+  preserved verbatim immediately after parity's rollup.
+- Only the six conflict-marker lines were removed. No report text was rewritten, dropped or
+  summarised.
+
+Verified mechanically against the blobs in play, comparing non-empty trimmed lines:
+
+- ours blob (`bf17239^1:.jdone`, 7897 lines / 6703 non-empty) -> **0 lines missing** from the resolved file
+- theirs blob (`bf17239^2:.jdone`, 8384 lines / 7086 non-empty) -> **0 lines missing** from the resolved file
+- conflict markers remaining in the resolved file -> **0**
+
+The resolved file is 8569 lines (7245 non-empty), a strict superset of both parents.
+
+No test was weakened, deleted or skipped. No assertion was relaxed. No source file was
+edited by this session beyond the automatic merge result.
+
+## Gate condition verified (commit bf17239)
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
+- `git rev-list --left-right --count manus-parity...HEAD` -> `0 5`
+- `git status --porcelain` -> empty
+
+## Gates (all run from the worktree root on the merged tree)
+- `npx tsc --noEmit`                                            -> exit 0
+- `npm run build:server`                                        -> exit 0 (dist/server.cjs)
+- `(cd packages/web && npx next build)`                          -> exit 0
+- `npm run check:encoding`                                       -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:orchestrator`                                   -> PASS (114/114)
+- `node --import tsx --test src/agent/__tests__/codingPrompt.test.ts src/agent/__tests__/orchestratorRecipe.test.ts`
+                                                               -> tests 20, pass 20, fail 0
+  (N19 suite: `codingPrompt` 11/11 and `orchestratorRecipe` 9/9)
+- `node --import tsx --test src/tools/__tests__/promptwire.test.ts` -> tests 17, pass 17, fail 0
+- `node --import tsx --test src/agent/__tests__/*.test.ts`        -> exit 0 (all pass)
+
+## Files
+- the merge commit `bf17239` only: `.jdone` (union of both sides) plus the auto-merged
+  parity files. No N19 deliverable was changed.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run check:encoding
+  npm run check:orchestrator
+  node --import tsx --test src/agent/__tests__/codingPrompt.test.ts src/agent/__tests__/orchestratorRecipe.test.ts
+  node --import tsx --test src/tools/__tests__/promptwire.test.ts
+  node --import tsx --test src/agent/__tests__/*.test.ts
+
+No secrets committed. No forbidden path touched. Nothing pushed. Working tree clean.
+
+---
+
 # N10 final merge gate: parity advanced 3x again, all re-merged, .jdone kept, full suites green
 
 This pass started from the previous `.jdone` merge report. Parity's local ref had advanced again
