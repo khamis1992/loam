@@ -1,0 +1,43 @@
+J1 - Shared agent server spike: DONE
+
+Measured RAM (win32, scripted fake model, offline, all 30/30 sessions fixed):
+
+  BEFORE per-process (one heavyweight process per session)
+    N=1  peak 409.5 MB   N=10 peak 1523.0 MB (marginal 123.7 MB/session)
+                             N=30 peak 2476.7 MB (marginal  71.3 MB/session)
+
+  AFTER  shared (one long-lived server hosting every session)
+    N=1  peak 421.7 MB   N=10 peak  471.8 MB (marginal   5.6 MB/session)
+                             N=30 peak  512.3 MB (marginal   3.1 MB/session)
+
+Acceptance: bench/results/J1-before.json + J1-after.json committed (N=1/10/30);
+shared marginal 3.1 MB/session at N=30 (< 10 MB target); all sessions fix the task;
+launcher tests pass. The AFTER shape is landed as a selectable `code_session`
+launcher (`launcher: "shared"`, default unchanged, opt-in via
+LOAM_CODE_SESSION_LAUNCHER=shared).
+
+Two measurement bugs were found and fixed, which is why these numbers supersede
+the first committed run:
+  1. Both shapes were measured in one process, so V8 grew the shared server's heap
+     in response to the per-process run's ~2.5 GB pressure (shared N=30 read
+     ~1500 MB instead of ~515 MB). Every measurement now runs in its own child
+     process (runIsolatedMeasurement / --isolate <kind>, default on).
+  2. --sample-ms (default 4000) capped the sampler, truncating the N=30 peak at
+     1493 MB instead of the real 2477 MB. The window is now a backstop and sampling
+     stops when the run's work is done.
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  npm run test:bench
+  node --import tsx --test src/server/__tests__/sharedCodeSession.test.ts src/tools/__tests__/codeSession.test.ts
+  (cd packages/web && npx vitest run)
+  npm run check:encoding && npm run check:modes && npm run check:orchestrator && npm run check:promptwire
+
+Gates: tsc clean; build:server (dist/server.cjs 19.3mb); next build (25/25 pages);
+test:bench 37/37; code-session suites 24 (23 pass, 1 skip); vitest 72 files / 472 tests;
+src suite 2154 tests / 2151 pass / 2 fail (both pre-existing, files byte-identical to
+the base commit: src/agent/__tests__/toolDescriptions.test.ts and
+src/server/__tests__/worktrees.test.ts); check:encoding OK; check:modes PASS;
+check:orchestrator PASS (114/114); check:promptwire PASS.

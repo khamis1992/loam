@@ -1,3 +1,127 @@
+# J1 - Shared agent server spike: DONE
+
+Summary
+-------
+Loam's coding launcher paid one heavyweight `node --import tsx` process per coding
+task. J1 measures that BEFORE shape against the AFTER shape (one long-lived agent
+server hosting N concurrent sessions over a control socket), lands the AFTER shape
+as a selectable `code_session` launcher, and commits the numbers.
+
+The AFTER shape is production code (`src/server/sharedCodeSession.ts`) and is
+exposed as `launcher: "shared"` on the `code_session` tool
+(`src/tools/codeSession.ts`). The default is unchanged (`per-process`), because
+the task spec allows the default to stay unless sharing is clearly better, and
+sharing is opt-in via `LOAM_CODE_SESSION_LAUNCHER=shared`.
+
+Files
+-----
+- `src/server/sharedCodeSession.ts`  - the AFTER launcher: one long-lived server, control socket, N sessions.
+- `src/tools/codeSession.ts`         - `launcher` option + `SharedCodeSessionServer` (one server, many sessions).
+- `bench/launchers.ts`               - measures both shapes against the same fixture and fake model.
+- `bench/perProcess.ts`              - the BEFORE launcher (one process per session).
+- `bench/rssSampler.ts`              - process-tree working-set / PSS sampler.
+- `bench/results/J1-before.json`, `bench/results/J1-after.json`, `bench/results/J1.json`.
+- `THIRD_PARTY_NOTICES`              - jcode MIT notice entries for the ported bench code.
+
+Measured RAM numbers (win32, scripted fake model, offline, all sessions fixed)
+-----------------------------------------------------------------------------
+BEFORE, one heavyweight process per session (`bench/results/J1-before.json`):
+
+| N  | idle MB | peak MB | final MB | perSession MB | marginal MB/session |
+|----|---------|---------|----------|---------------|---------------------|
+| 1  | 249.1   | 409.5   | 253.1    | 160.4         | n/a (baseline)      |
+| 10 | 248.8   | 1523.0  | 273.3    | 127.4         | 123.7               |
+| 30 | 249.1   | 2476.7  | 292.2    | 74.3          | 71.3                |
+
+AFTER, one shared server hosting every session (`bench/results/J1-after.json`):
+
+| N  | idle MB | peak MB | final MB | perSession MB | marginal MB/session |
+|----|---------|---------|----------|---------------|---------------------|
+| 1  | 248.5   | 421.7   | 421.7    | 173.2         | n/a (baseline)      |
+| 10 | 248.8   | 471.8   | 471.8    | 22.3          | 5.6                 |
+| 30 | 248.6   | 512.3   | 512.3    | 8.8           | 3.1                 |
+
+`marginal MB/session` is `(peakMB - baselineMB) / (N - 1)`, i.e. what each
+*additional* session costs once the launcher is already running. At N=30 the
+shared launcher costs **3.1 MB per additional session**, against **71.3 MB** for
+the per-process shape: a ~23x reduction, and the peak is nearly flat
+(512.3 MB at N=30 vs 421.7 MB at N=1, for 30x the work).
+
+Acceptance criteria (all met)
+-----------------------------
+- `bench/results/J1-before.json` and `J1-after.json` committed, N=1/10/30. DONE.
+- Marginal session cost < 10 MB in shared mode: **3.1 MB at N=30, 5.6 MB at
+  N=10**. DONE.
+- All sessions fix the task: **30/30** in both shapes at every N. DONE.
+- Tests for the launcher: `bench/__tests__/launchers.test.ts` (14 tests),
+  `src/server/__tests__/sharedCodeSession.test.ts`,
+  `src/tools/__tests__/codeSession.test.ts` (shared-launcher cases). DONE.
+- Gates pass (below). DONE.
+
+Two measurement bugs found and fixed (the numbers above are the corrected ones)
+-----------------------------------------------------------------------------
+The first committed run measured the two shapes in one process, and the AFTER
+numbers described the measurement order rather than the launcher:
+
+1. **Process sharing.** Interleaving both shapes lets V8 grow the shared server's
+   heap in response to the per-process run's ~2.5 GB pressure: a standalone shared
+   N=30 peaks ~515 MB, but ~1500 MB when measured in the same process as the
+   per-process runs. Every measurement now runs in its own child process
+   (`runIsolatedMeasurement`, `--isolate <kind>` + `--report-out`), on by default
+   via `runJ1Bench({ isolateEach: true })`. A child that crashes still writes a
+   failure report instead of hanging.
+
+2. **Truncated sampling window.** `--sample-ms` (default 4000) *capped* the
+   sampler, but N=30 spends ~9s settling its 30 sessions one by one and peaks part
+   way through, so its peak was cut off at 1493 MB instead of the real 2477 MB. The
+   window is now a backstop (`MAX_SAMPLE_WINDOW_MS`) and sampling stops as soon as
+   the run's work is done.
+
+Both guards are covered by tests, and `bench/README.md` documents them as the
+primary way to keep the AFTER number a property of the launcher.
+
+Test commands
+-------------
+    npx tsc --noEmit
+    npm run build:server
+    (cd packages/web && npx next build)
+    npm run test:bench
+    node --import tsx --test src/server/__tests__/sharedCodeSession.test.ts src/tools/__tests__/codeSession.test.ts
+    (cd packages/web && npx vitest run)
+    npm run check:encoding && npm run check:modes && npm run check:orchestrator && npm run check:promptwire
+    npm run bench:j1 -- --n 1,10,30 --before-out bench/results/J1-before.json --after-out bench/results/J1-after.json
+
+Gates (all run from the worktree root)
+-------------------------------------
+- `npx tsc --noEmit`                                  -> exit 0
+- `npm run build:server`                              -> exit 0 (dist/server.cjs 19.3mb, pdf worker copied)
+- `(cd packages/web && npx next build)`               -> exit 0 (25/25 static pages)
+- `npm run test:bench`                                -> tests 37, pass 37, fail 0
+- `node --import tsx --test` code-session suites      -> tests 24, pass 23, fail 0, skip 1
+- `(cd packages/web && npx vitest run)`               -> 72 files / 472 tests, all pass
+- `node --import tsx --test "src/**/*.test.ts" "src/**/*.test.mjs"`
+                                                      -> tests 2154, pass 2151, fail 2
+- `npm run check:encoding`                            -> OK (no BOM, no mojibake, all JSON valid)
+- `npm run check:modes`                               -> PASS
+- `npm run check:orchestrator`                        -> PASS (114/114)
+- `npm run check:promptwire`                          -> PASS
+
+The two node failures are pre-existing and NOT caused by J1. Both files are
+byte-identical to the base commit (`git diff f9bdb6a -- <files>` is empty), and
+each fails identically when run on its own:
+1. `src/agent/__tests__/toolDescriptions.test.ts` - "suggest_plan is neither
+   registered nor listed in PENDING_CODING_TOOLS". The inherited D4 defect
+   documented in the preserved reports below.
+2. `src/server/__tests__/worktrees.test.ts` - "reports non-git folders without
+   throwing": `readGitBranch` on a plain temp dir reports `isGit: true` because
+   that dir is inside a git working tree, so `git rev-parse` succeeds. The test
+   assumes a temp dir is never under a repo, which does not hold on this machine.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or
+skipped. Working tree clean after the commit.
+
+---
+
 D2 gate fix complete: merge with manus-parity resolved keeping both sides, all gates green.
 
 ## The failure that was fixed
