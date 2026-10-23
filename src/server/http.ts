@@ -85,6 +85,9 @@ import { handleAutomationsRoutes } from "./routes/automations.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
 import { handleGraphRoutes } from "./routes/graph.js";
+// Neo N17 external-agent canvas bridge: local HTTP/WS API for OpenCode/Claude Code/Orca.
+import { createCanvasBridgeUpgrade, handleCanvasBridgeParentRoutes, handleCanvasBridgeRoutes } from "./routes/canvasBridge.js";
+import { getLiveRunGraph, subscribeRunGraph } from "../agent/runGraphAdapter.js";
 import { handleCraftRoutes } from "./routes/craft.js";
 import { handleInstructionsRoutes } from "./routes/instructions.js";
 import { handleAgentSpawnRoutes } from "./routes/agentSpawn.js";
@@ -1775,6 +1778,11 @@ loadAgents();
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;
         // Neo N2 canvas: the run graph built live by the agent (N1).
         if (await handleGraphRoutes(req, res, p, { enabled: cfg.runGraph?.enabled !== false })) return;
+        // Neo N17 external-agent canvas bridge: same graph, driven from outside.
+        // The route reaches the live graph through the adapter itself.
+        const canvasCtx = { enabled: cfg.runGraph?.enabled !== false };
+        if (await handleCanvasBridgeRoutes(req, res, p, canvasCtx)) return;
+        if (await handleCanvasBridgeParentRoutes(req, res, p, canvasCtx)) return;
         // Craft apps (/api/craft/status): which vendored dists are installed.
         if (await handleCraftRoutes(req, res, p)) return;
         if (await handleInstructionsRoutes(req, res, p)) return;
@@ -2954,6 +2962,36 @@ loadAgents();
       }
     })();
   });
+
+  // Neo N17 external-agent canvas bridge: the live channel is a WebSocket upgrade
+  // on the loopback server, so an external agent session holds one socket per
+  // canvas and receives node changes as they are written. The upgrade carries the
+  // same install token as every /api route (header or `?token=`, since a bare agent
+  // cannot set headers on an upgrade).
+  if (cfg.runGraph?.enabled !== false) {
+    const bridgeAuthDir = process.env.LOAM_LOCAL_TOKEN_DIR || DATA_DIR;
+    setLocalAuthUserDataDir(bridgeAuthDir);
+    const bridgeUpgrade = createCanvasBridgeUpgrade({
+      authenticate: (request) => {
+        if (process.env.LOAM_AUTH_DISABLED === "true") return true;
+        const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
+        const token = typeof request.headers["x-loam-local-token"] === "string"
+          ? request.headers["x-loam-local-token"]
+          : url.searchParams.get("token") ?? undefined;
+        return validateLocalToken(bridgeAuthDir, token);
+      },
+      subscribe: (canvasId, listener) => subscribeRunGraph(canvasId, listener),
+    });
+    server.on("upgrade", (req, socket, head) => {
+      try {
+        if (bridgeUpgrade(req, socket as import("node:net").Socket, head)) return;
+        socket.destroy();
+      } catch (err) {
+        log.warn(`canvas bridge upgrade failed: ${String(err)}`);
+        socket.destroy();
+      }
+    });
+  }
 
   return new Promise((resolve) => {
     server.once("close", () => { swarm?.close(); void timeline.close(); });

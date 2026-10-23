@@ -294,6 +294,55 @@ export class RunGraph {
     return created;
   }
 
+  /**
+   * Neo N17 external-agent canvas bridge: a node an external agent session
+   * (OpenCode / Claude Code / Orca) placed on a Loam canvas.
+   *
+   * Unlike every other node, this one is authored by the caller rather than
+   * derived from an agent event, so it carries the session's own id
+   * (`spec.id`), its own parents and its own payload. The id is caller-chosen
+   * on purpose: the bridge derives it from the session's cursor id, so the same
+   * cursor re-submitting produces the same node instead of a duplicate.
+   */
+  addExternalNode(
+    runId: string,
+    spec: {
+      id: string;
+      parentIds: string[];
+      type?: RunNodeType;
+      status?: RunNodeStatus;
+      data?: unknown;
+    },
+  ): RunNode {
+    const state = this.stateFor(runId);
+    const id = spec.id.trim();
+    if (!id) throw new Error("external node requires an id");
+    const now = Date.now();
+    const position = state.seq;
+    const node: RunNode = {
+      id,
+      run_id: runId,
+      parent_ids: [...new Set(spec.parentIds)].filter((parent) => parent && parent !== id),
+      type: spec.type ?? "canvas_bridge",
+      status: spec.status ?? "init",
+      ...(spec.data !== undefined ? { data: spec.data } : {}),
+      position,
+      version: 1,
+      created: now,
+      updated: now,
+    };
+    const existing = this.store.getRow(id);
+    state.seq = this.nextSeq(state);
+    // A cursor that submits twice updates its own node; it never forks a second
+    // one, which is what keeps a live canvas stable across retries.
+    const stored = existing
+      ? this.store.update(id, { status: node.status, ...(spec.data !== undefined ? { data: spec.data } : {}), parent_ids: node.parent_ids })
+      : this.store.upsert(node, position);
+    state.lastId = id;
+    this.invalidate(runId);
+    return stored ?? node;
+  }
+
   /** Layered layout plus aggregate stats. Deterministic, no dependencies. */
   getGraphLayout(runId: string): RunGraphLayout {
     const nodes = this.store.list({ runId });
