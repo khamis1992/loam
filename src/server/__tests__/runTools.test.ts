@@ -111,6 +111,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     createGroupTools = (await import("../../tools/groupTools.js")).createGroupTools;
     const { createBackendScaffoldTools } = await import("../../tools/backendScaffold.js");
     const { createWebScaffoldTools } = await import("../../tools/webScaffold.js");
+    const { createEnvSnapshotTools } = await import("../../tools/envSnapshot.js");
     createDesignStudioTools = designStudioToolsMod.createDesignStudioTools;
     const { ToolRegistry: Registry } = registryMod;
     registry = new Registry();
@@ -129,6 +130,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll(createGroupTools());
     registry.registerAll(createBackendScaffoldTools());
     registry.registerAll(createWebScaffoldTools());
+    registry.registerAll(createEnvSnapshotTools());
     registry.registerAll(createDesignStudioTools());
     // D9: playbook_create_from_session ships as an always-on tool.
     const { createPlaybookTools } = await import("../../tools/playbookTools.js");
@@ -160,6 +162,8 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     // D13: resumable workflow tools ship as always-on, so register the real set.
     const workflowToolsMod = await import("../../tools/workflow.js");
     registry.registerAll(workflowToolsMod.createWorkflowTools({ ollama: {} as never, registry }));
+    // N16: cross-run recall ships as always-on, so register the real set.
+    registry.registerAll((await import("../../tools/memory.js")).createRecallTools());
   });
 
   after(() => {

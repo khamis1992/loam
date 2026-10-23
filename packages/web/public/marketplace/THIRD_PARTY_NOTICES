@@ -59,6 +59,8 @@ Fonts
 The marketplace UI uses the app's system font stack. It does not bundle Aeonik
 (commercial) or Geist. Geist and Geist Mono are licensed under the SIL Open
 Font License 1.1 when supplied separately.
+
+
 jcode (MIT)
 ===========
 The Codemode sandbox tool (src/codemode/) is adapted from jcode, an open-source
@@ -69,14 +71,22 @@ operator on tools), the session store and the risk-gated host are ported from
 ref/codemode/{engine,lib,tests}.rs onto Loam's own policy and tool-registry
 modules; the sandbox runtime itself is quickjs-emscripten, not jcode's code.
 
+The cross-session file-touch notification feature in src/tools/fileTouch.ts,
+src/tools/readState.ts, src/agent/reminders.ts and src/agent/loop.ts was
+adapted from jcode (https://github.com/1jehuang/jcode), Copyright (c) 2025
+Jeremy Huang, and is distributed under the MIT License below. The port was
+re-implemented in TypeScript for Loam; the idea and the notice semantics (a
+session is told when another session writes a file it already read, with a
+short line-diff summary) come from jcode.
+
 The Loam benchmark harness under bench/ and the local memory-budget primitives
 under src/memory/ are adapted from jcode, a Rust coding agent
 (https://github.com/1jehuang/jcode). Copyright (c) 2025 Jeremy Huang. MIT License.
 
-  bench/fakeModel.ts    - ref/fake_model.py
-  bench/rssSampler.ts   - ref/bench_memory_cli.py
-  bench/memBench.ts     - ref/jcode_daemon_bench.py
-  bench/appRamBench.ts  - ref/bench_memory_cli.py
+  bench/fakeModel.ts    — ref/fake_model.py
+  bench/rssSampler.ts   — ref/bench_memory_cli.py
+  bench/memBench.ts     — ref/jcode_daemon_bench.py
+  bench/appRamBench.ts  — ref/bench_memory_cli.py
 
 The prompt-cache (KV) miss detection ported in `src/agent/kvCacheMonitor.ts`
 adapts jcode's daemon-side `src/kv_cache_monitor.rs` design (provider usage
@@ -87,6 +97,8 @@ The TypeScript files under `bench/` were adapted from jcode, a coding agent
 copyright (c) 2025 Jeremy Huang. Only bench/fakeModel.ts, bench/rssSampler.ts
 and bench/memBench.ts are adapted from jcode; the rest of the app is original
 Loam code.
+
+jcode is published under the MIT License below.
 
 MIT License
 

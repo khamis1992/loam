@@ -108,6 +108,25 @@ export class ToolRegistry {
     return sub;
   }
 
+  /**
+   * Bind extra run-scoped instances, *replacing* an already-present tool of the
+   * same name.
+   *
+   * Some tools are registered process-wide for discovery (e.g. `recall`) but
+   * need a per-run binding (the run id and the callback that files a hit into
+   * that run). Adding such an instance with `withTools` would collide, because
+   * `register` rejects a duplicate name, so this replaces it instead. The name
+   * is already in the caller's allowlist, so reachability is unchanged.
+   */
+  withBound(extra: Tool[]): ToolRegistry {
+    const sub = this.cloneFiltered({});
+    for (const t of extra) {
+      if (sub.get(t.name)) sub.replaceTool(t);
+      else sub.register(t);
+    }
+    return sub;
+  }
+
   /** Replace an existing tool in place (approval wrapping at run start). */
   replaceTool(tool: Tool): void {
     if (!this.tools.has(tool.name)) throw new Error(`unknown tool: ${tool.name}`);
