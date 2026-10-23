@@ -37,6 +37,7 @@ const CODING_TOOLS_SORTED = [
   "shell_read",
   "shell_run",
   "shell_start",
+  "suggest_plan",
   "todo_write",
   "web_fetch",
   "web_search",

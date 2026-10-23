@@ -16,6 +16,7 @@ import type { RunTaskOptions } from "../server/http.js";
 import { log } from "../log.js";
 import { mapAgentEvent, shortUid, baseId, createEventMapperState, makeBrief, mapToolName } from "./events.js";
 import { getApproval, decideApproval } from "../server/approvals.js";
+import { decidePlanApproval } from "../tools/planApprovalStore.js";
 import { setTaskApprovalAuto, setTaskPermissionMode, createApprovalRule } from "../server/approvalRules.js";
 import { isLocalPermissionMode } from "../policy/permissionModes.js";
 import { resolveLoamMode, modeEventInfo } from "../modes/detect.js";
@@ -29,6 +30,7 @@ import type {
   ChatMessageEvent,
   SubmitWorkspaceDirectoryAccess,
   ResolveLocalExecutionApproval,
+  ResolvePlanApproval,
   TaskMode,
   ChatEvent,
   ServerAttachment,
@@ -234,6 +236,18 @@ function stepToAgentEvent(step: StepRecord): AgentEvent | undefined {
   if (type === "mode") {
     return { type: "mode", mode: String(data.mode ?? ""), label: String(data.label ?? ""), labelAr: String(data.labelAr ?? ""), reason: typeof data.reason === "string" ? data.reason : undefined };
   }
+  if (type === "plan_approval_required") {
+    return {
+      type: "plan_approval_required",
+      planApprovalId: String(data.planApprovalId ?? ""),
+      taskId: String(data.taskId ?? ""),
+      tool: String(data.tool ?? ""),
+      summary: String(data.summary ?? ""),
+      steps: Array.isArray(data.steps) ? data.steps.map(String) : [],
+      filesToEdit: Array.isArray(data.filesToEdit) ? data.filesToEdit.map(String) : [],
+      trivial: Boolean(data.trivial),
+    };
+  }
   return undefined;
 }
 
@@ -437,6 +451,45 @@ export function createChatSocket(deps: SocketDeps): Server {
               requestId: resolve.requestId,
               reviewer: "user",
               result: approve ? "approve" : "deny",
+            },
+          };
+          store.appendEvent(resolve.sessionId, resolved);
+          io.to(resolve.sessionId).emit("message", resolved);
+          return;
+        }
+
+        if (m.type === "resolve_plan_approval") {
+          const resolve = m as ResolvePlanApproval;
+          const ts = Date.now();
+          // D4: wire the plan-approval card decision to the pending-plan store.
+          // "edit" stores the revised plan so the agent can re-present it.
+          const record = decidePlanApproval(resolve.requestId, {
+            decision: resolve.decision,
+            ...(resolve.decision === "edit" && resolve.plan
+              ? {
+                  plan: {
+                    ...(typeof resolve.plan.summary === "string" ? { summary: resolve.plan.summary } : {}),
+                    ...(Array.isArray(resolve.plan.steps) ? { steps: resolve.plan.steps } : {}),
+                    ...(Array.isArray(resolve.plan.files_to_edit) ? { files_to_edit: resolve.plan.files_to_edit } : {}),
+                    ...(typeof resolve.plan.trivial === "boolean" ? { trivial: resolve.plan.trivial } : {}),
+                  },
+                }
+              : {}),
+          });
+          const resolved: ServerEnvelope = {
+            id: baseId(),
+            type: "event",
+            sessionId: resolve.sessionId,
+            timestamp: ts,
+            event: {
+              id: baseId(),
+              type: "planApprovalResolved",
+              timestamp: ts,
+              requestId: resolve.requestId,
+              taskId: record?.taskId ?? "",
+              reviewer: "user",
+              result: resolve.decision,
+              ...(resolve.decision === "edit" && resolve.plan ? { plan: resolve.plan } : {}),
             },
           };
           store.appendEvent(resolve.sessionId, resolved);

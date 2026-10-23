@@ -8,12 +8,12 @@ import { CopyMessageButton } from './CopyMessageButton';
 import { ToolUsedRow } from './ToolUsedRow';
 import { StatusUpdateRow } from './StatusUpdateRow';
 import { PlanStepRow, PlanUpdateRow, TodoListRow } from './PlanStep';
-import { ApprovalCard, FolderAccessApprovalCard, type LocalExecutionApprovalRequested } from '@/components/approval';
+import { ApprovalCard, FolderAccessApprovalCard, PlanApprovalCard, type LocalExecutionApprovalRequested, type PlanApprovalRequested } from '@/components/approval';
 import { AttachmentCard } from './AttachmentCard';
 import { summarizeTools } from './toolLabels';
 import type { ChatSocket } from '@/services/chatSocket';
 
-export type RenderableEvent = ChatEvent | LocalExecutionApprovalRequested;
+export type RenderableEvent = ChatEvent | LocalExecutionApprovalRequested | PlanApprovalRequested;
 
 interface EventListProps {
   events: ChatEvent[];
@@ -101,6 +101,22 @@ export function ChatEventRow({ e, sessionId, socket, renderChat }: ChatEventRowP
               sessionId,
               e.requestId,
               decision === 'deny' ? 'deny' : decision === 'always' ? 'always' : 'approve',
+            );
+          }}
+        />
+      );
+    case 'planApprovalRequested':
+      return (
+        <PlanApprovalCard
+          request={e}
+          onRespond={(decision, plan) => {
+            socket?.resolvePlanApproval(
+              sessionId,
+              e.requestId,
+              decision,
+              decision === 'edit' && plan
+                ? { summary: plan.summary, steps: plan.steps, files_to_edit: plan.files_to_edit }
+                : undefined,
             );
           }}
         />

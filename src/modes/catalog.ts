@@ -12,9 +12,10 @@ const WRITE = ["file_write", "file_edit", "file_mkdir", "file_move", "file_delet
 const BROWSER = ["browser_open", "browser_goto", "browser_snapshot", "browser_click", "browser_type", "browser_press", "browser_screenshot", "browser_table", "browser_act", "browser_pages", "browser_close", "browser_eval"];
 const PREVIEW = ["preview_serve", "preview_status", "preview_stop"];
 /** Control/communication tools shared by every mode (§6.1). `plan_exit` is the
- *  escape hatch from the read-only plan permission mode (C13), so it is exposed
- *  in every mode the way `finish` is. */
-const CONTROL = ["think", "finish", "plan", "phase_set", "message", "plan_exit"];
+ *  escape hatch from the read-only plan permission mode (C13) and `suggest_plan`
+ *  (D4) presents a plan for approval without changing the permission mode, so
+ *  both are exposed in every mode the way `finish` is. */
+const CONTROL = ["think", "finish", "plan", "phase_set", "message", "plan_exit", "suggest_plan"];
 /** Tools added to modes that can edit files. */
 const EDIT_EXTRA = ["file_multi_edit"];
 /** Build-only tools: secrets vault and the OpenCode coding sessions. */

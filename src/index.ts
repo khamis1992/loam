@@ -38,7 +38,7 @@ import { createVideoEditTools } from "./tools/videoEditAgent.js";
 import { createDeployTools } from "./tools/deploy.js";
 import { createDesignExploreTools } from "./tools/designExplore.js";
 import { createConnectorTools } from "./tools/connectorTools.js";
-import { applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
+import { applyPlanApprovalGate, applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
@@ -383,6 +383,12 @@ async function main(): Promise<void> {
       if (isPlanMode(taskPermissionMode(task) ?? DEFAULT_PERMISSION_MODE)) {
         applyPlanModeGate(agentTools, { taskId: task, workspaceRoot: effectiveCfg.workspace });
       }
+      // Pending plan approval (D4): while `suggest_plan` has a plan awaiting the
+      // user's decision, every mutating tool call is refused. `suggest_plan`
+      // itself stays available so the model can re-present a plan after an edit.
+      // The wrapper re-checks the pending store on each call, so once the plan
+      // is approved later edits in the same run proceed.
+      applyPlanApprovalGate(agentTools, { taskId: task, workspaceRoot: effectiveCfg.workspace });
       // Sandbox gate (risk-tier approval): config default < per-task persisted
       // override < explicit approved override. The resolved mode is rendered into
       // the system prompt so the model knows what it may do without asking.

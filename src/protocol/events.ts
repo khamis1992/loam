@@ -16,6 +16,7 @@ import type {
   ToolStatus,
   LocalExecutionApprovalRequested,
   FolderAccessRequestEvent,
+  PlanApprovalRequestedEvent,
 } from "./types.js";
 
 const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -418,6 +419,22 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
         },
       };
       out.push(approval);
+      break;
+    }
+
+    case "plan_approval_required": {
+      const plan: PlanApprovalRequestedEvent = {
+        id: baseId(),
+        type: "planApprovalRequested",
+        timestamp: ts,
+        requestId: event.planApprovalId,
+        taskId: event.taskId,
+        summary: event.summary,
+        steps: event.steps,
+        filesToEdit: event.filesToEdit,
+        trivial: event.trivial,
+      };
+      out.push(plan);
       break;
     }
 
