@@ -1,5 +1,17 @@
 fc-07 complete: the Loam Video / Loam Effects router and a full "Video editing" prompt section. One product, one workflow, Arabic + English routing, FilmCraft-native fallback.
 
+## Extra validation pass (commit `c4aa207`)
+Beyond the first gates, the router tables were probed directly with ad-hoc bilingual
+inputs. That surfaced one real defect: `FALLBACK_TRANSITION_PHRASES` carried a bare
+`"slide"`, so "slide in the text" (text/motion animation) was degraded to the timeline
+engine's *transition* command instead of its *effect* command. The marker was removed
+(the same treatment already applied to bare `"zoom"`, `"glitch"`, `"morph"`), the
+doc comment explains why, and a regression test now pins both sides: "slide in the
+text" -> `effect_basic`, while an explicit "slide transition" still -> `transition_basic`.
+Also verified directly: the generated `masterPromptText.ts` contains §6.12 in Appendix B
+order (§6.11 < §6.12 < §7), carries no upstream engine name, and `videoPrompt.ts`'s
+`VIDEO_STUDIO_ACTIONS` list is byte-identical to the tool's `action` enum.
+
 ## What was produced (commit `2f5c69c`, branch `khamis1992/fc-07` on base `manus-parity`)
 1. **Router module** `src/tools/videoStudioRouter.ts` (new). Classifies each requested
    operation into `film` (cut, trim, arrange, speed, audio, music, volume, basic text,
@@ -43,7 +55,7 @@ fc-07 complete: the Loam Video / Loam Effects router and a full "Video editing" 
 - `npm run check:loam-agents`               -> PASS (seven modes accepted, unknown rejected)
 - node --import tsx --test (videoStudio, videoStudioRouter, videoPrompt, craftPrompt,
   codingPrompt, videoStudioE2E, videoStudioRelay, autoVideo, runTools, riskTier)
-  -> tests 235, pass 235, fail 0
+  -> tests 236, pass 236, fail 0
 
 Branding: one product ("Loam Video" / "Loam Effects"); upstream names (FilmCraft /
 EffectCraft / ArtCraft) never appear in the UI or in user-facing prompt text. No secrets
