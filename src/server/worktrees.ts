@@ -19,9 +19,39 @@ export interface GitBranchInfo {
   reason?: string;
 }
 
+/**
+ * Resolve the worktree root git reports for `folder`. `git rev-parse` walks up the
+ * parent chain, so a folder that merely lives inside some ancestor repository
+ * (e.g. `%TEMP%` under a user home that is itself a git repo) would still resolve a
+ * branch. Callers asking "is *this* folder a project repo" need the discovered root to
+ * be the folder itself, so anything resolving outside it is reported as not a git folder.
+ */
+async function gitWorktreeRoot(folder: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", folder, "rev-parse", "--show-toplevel"], execOpts);
+    return stdout.trim().replace(/\/+$/, "").toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function isSamePath(a: string, b: string): boolean {
+  const norm = (p: string) => path.resolve(p).replace(/[\\/]+$/, "").toLowerCase();
+  try {
+    return norm(a) === norm(b);
+  } catch {
+    return a.replace(/\/+$/, "").toLowerCase() === b.replace(/\/+$/, "").toLowerCase();
+  }
+}
+
 export async function readGitBranch(folder: string): Promise<GitBranchInfo> {
   if (!folder || !fs.existsSync(folder) || !fs.statSync(folder).isDirectory()) {
     return { isGit: false, branch: null, reason: "folder is not a directory" };
+  }
+  const root = await gitWorktreeRoot(folder);
+  if (!root) return { isGit: false, branch: null, reason: "not a git worktree" };
+  if (!isSamePath(root, folder)) {
+    return { isGit: false, branch: null, reason: `folder is inside another repository: ${root}` };
   }
   try {
     const { stdout } = await execFileAsync("git", ["-C", folder, "rev-parse", "--abbrev-ref", "HEAD"], execOpts);

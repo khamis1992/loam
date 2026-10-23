@@ -263,6 +263,45 @@ same unit bug one layer up, in the estimate the threshold comparison consumes.
   agent suite 117 tests with only the pre-existing promptwire snapshot failure
   (`codingPrompt.test.ts`). `check:encoding` reports one pre-existing mojibake in
   `scripts/repair-mojibake.cjs` (untouched, from `092d1b3`).
+# N5 (per-step context selector) is complete and its parity merge is resolved.
+
+## Status
+- N5 deliverables are in the working tree and pass their acceptance suites:
+  - `src/agent/contextSelector.ts` (the per-step selector)
+  - `src/agent/__tests__/contextSelector.test.ts`
+  - `src/agent/__tests__/contextSelectorLongHorizon.test.ts`
+  These were untracked when this session began, because the worktree's earlier session never
+  committed them (its `wip: auto-commit before gate` commit captured the merge-conflicted
+  merge parents instead). They are now committed, in `64a3ea8`.
+- The gate failure that started this session was a **merge conflict**, not a code defect:
+  `MERGE CONFLICT with latest manus-parity in: src/graph/runGraph.ts`.
+
+## Merge resolutions
+- `src/graph/runGraph.ts` at `c42bfc9`: both sides had added a `case` to `RunGraph.apply`'s
+  live-only run. Ours added `case "context_selected":` (N5); parity added
+  `case "workspace_command":` and `case "workspace_open_request":`. Kept both.
+- `src/agent/events.ts` at `fff7a7f`: ours added the `context_selected` event member;
+  parity added `video_studio_export`. Kept both.
+- Final parity tip `ca08d4c` merged clean at `7b96c28`;
+  `git merge-base --is-ancestor manus-parity HEAD` exits 0.
+
+## Gates on the final tree
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0
+- `(cd packages/web && npx next build)` -> exit 0 (25/25 static pages)
+- N5 selector + runGraph -> 57 tests, 57 pass, 0 fail
+- N5 selector + runGraph + loop combined -> 76 tests, 76 pass, 0 fail
+- full node suite -> 2971 tests, 2971 pass, 0 fail
+- web suite (`packages/web`) -> 91 files, 624 tests, 624 pass
+- `eval-neo` -> 10/10 PASS, verdict PASS, no regression
+- N19 suites brought in by the final merge -> 37 tests, 37 pass, 0 fail
+
+No test was weakened, deleted or skipped. No source file was edited except to remove
+conflict-marker lines. Full details are in the `.jdone` rollup under the heading
+"N5 merge gate: resolved the manus-parity conflict in src/graph/runGraph.ts".
+
+---
+
 # J11 done - Compaction constants spec note
 
 ## Summary
