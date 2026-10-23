@@ -1,3 +1,28 @@
+# J9 gate-fix session (round 4): manus-parity merge conflict resolved, all gates green
+
+Merged parity tip `6e17246` (which brought in J1 shared code-session server work).
+Merge conflict occurred in `THIRD_PARTY_NOTICES`; resolved by keeping both sides (including J9 Codemode notices).
+
+## Gates re-run on the merged tree (measured)
+
+- `npx tsc --noEmit`                          -> exit 0
+- `npm run build:server`                      -> exit 0 (dist/server.cjs)
+- `(cd packages/web && npx next build)`       -> exit 0 (25/25 static pages compiled)
+- `node --import tsx --test src/codemode/__tests__/*.test.ts` -> 46/46 pass
+- `node --import tsx --test src/server/__tests__/runTools.test.ts src/server/__tests__/dataControls.test.ts src/server/__tests__/sharedCodeSession.test.ts src/tools/__tests__/codeSession.test.ts` -> 44 pass, 1 skip (Unix socket on win32), 0 fail
+- `(cd packages/web && npx vitest run src/components/settings)` -> 50/50 pass
+- `npm run verify`                            -> exit 0 (typecheck, encoding, eval, orchestrator, recovery, modes)
+- `npm run check:eventlog`                    -> PASS (checks a-d)
+
+## J9 acceptance re-verified on the merged tree
+
+- The read+grep 20x fan-out test passes with transcript growth asserted < 2 KB (`src/codemode/__tests__/tool.test.ts`).
+- No fs/net/process/timers in the sandbox; timeout, memory limit and policy-denied-tool tests all pass (46 codemode tests, 0 fail).
+- Bundling: `quickjs-emscripten-core` and `@jitl/quickjs-singlefile-cjs-release-sync` are in package.json + package-lock.json and installed in node_modules; wasm inlines into `dist/server.cjs`.
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was written; no mojibake placeholder text was added.
+
 # J9 gate-fix session (round 3): manus-parity merge conflict resolved, all gates green
 
 `.jgatefail.txt` reported: `git merge manus-parity` -> `CONFLICT (content): Merge conflict in
