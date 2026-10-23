@@ -1,3 +1,73 @@
+## J11 gate-fix session (round 8): fifth merge round against parity tip `d57df77`, all gates green
+
+`.jgatefail.txt` again reported a conflict with the latest `manus-parity`. The ref had advanced
+past the round-7 tip: local `manus-parity` moved from `851b3fe` to `d57df77` (N15, "merge
+khamis1992/neo-n15 into manus-parity"), and `d57df77` was NOT an ancestor of the round-7 tree, so
+the harness merge step conflicted. A fifth merge round was required.
+
+### The fifth merge (parity tip `d57df77`, N15)
+
+`git merge --no-edit manus-parity` conflicted in exactly one file, the tracked rollup `.jdone`
+(ours 8406 lines, theirs 8405 lines, base 8169 lines). Every source file auto-merged cleanly and
+was staged unmodified. The resolution drops ONLY the three conflict-marker lines, keeping BOTH
+sides in full, so no report line from either side is lost.
+
+Integrity of the resolved rollup, verified mechanically against the two real merge parents
+(`c027fd1` ours, `d57df77` theirs):
+
+  - non-blank lines missing from ours   = 0
+  - non-blank lines missing from theirs = 0
+  - ours is a subsequence of the merged file   = true
+  - theirs is a subsequence of the merged file = true
+  - conflict markers = 0
+  - U+FFFD replacement characters = 0, NUL bytes = 0, BOM absent, strict UTF-8 valid
+  - line endings CRLF throughout (8640 CRLF, 0 lone LF, 0 lone CR)
+
+Merge commit: `89ee2af` (parents `c027fd1` ours + `d57df77` theirs).
+
+### Gate condition verified on the committed tree (HEAD `89ee2af`)
+
+  - `git merge-base --is-ancestor manus-parity HEAD` -> exit 0
+  - `git merge --no-edit manus-parity`               -> "Already up to date."
+  - `git rev-list --count manus-parity..HEAD`        -> 24
+
+Both the local tip `d57df77` and `origin/manus-parity` (`0a946d3`) are ancestors of HEAD.
+
+### Gates (all run from the worktree root on the committed merge tree `89ee2af`)
+
+  1. `npx tsc --noEmit --incremental`             -> exit 0
+  2. `npm run check:encoding`                     -> OK (no BOM, no mojibake, all JSON valid)
+  3. `npm run build:server`                       -> exit 0 (server bundle + pdf worker written to dist/)
+  4. `(cd packages/web && npx next build)`        -> exit 0 (compiled successfully, 25/25 static pages)
+  5. `node --import tsx --test "src/**/*.test.ts"`
+                                                  -> tests 2773, pass 2773, fail 0, suites 510,
+                                                     cancelled 0, skipped 0
+  6. `(cd packages/web && npx vitest run)`        -> 82 files / 554 tests, all pass, 0 fail
+  7. harness-exact node step on the four changed test files
+                                                  -> tests 49, pass 49, fail 0, skipped 0
+
+No test was weakened. The four changed test files only ADD J11 compression config constants
+(`criticalThresholdPercent`, `recentTurnsToKeep`, `minTurnsToKeep`, `emergencyToolResultMaxChars`)
+to their `makeConfig` factories; the `contextCompressor.test.ts` delta rewrites single-line
+compression overrides into multi-line objects carrying the SAME `thresholdPercent`/`protectLead`/
+`protectTail` values, and adds cases. A `.skip(` / `.only(` / `todo` sweep over every changed test
+file returns nothing. The suite grew from 2760 to 2773 node tests and 545 to 554 web tests; nothing
+was dropped.
+
+### Independent validation performed this session (no source file edited)
+
+  - Runtime differential oracle rebuilt from `compaction-core.rs`: ORACLE_ALL_PASS - 18 truncation
+    cases with 0 divergences, 1260 emergency-grid combinations with 0 mismatches.
+  - Fresh-clone reproducibility: a clone of HEAD in a temp dir passes the merge gate with
+    "Already up to date." exit 0, a clean tree, and a byte-identical `.jdone` blob.
+  - No secrets committed, no forbidden path touched, no Arabic text written.
+
+Final state of this session: HEAD is the rollup commit on top of the merge `89ee2af`;
+`manus-parity` tip `d57df77` is an ancestor of HEAD; `git merge --no-edit manus-parity` reports
+"Already up to date."; the working tree is clean; `.jcode-done` is present. The round-7 header and
+every earlier report below are retained verbatim for rollup fidelity; the figures above are the
+current ones.
+
 ## J11 gate-fix session (round 7): re-merged the real manus-parity tips, all gates green
 
 `.jgatefail.txt` reported `MERGE CONFLICT with latest manus-parity`. The in-progress merge was
