@@ -110,6 +110,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     createGroupTools = (await import("../../tools/groupTools.js")).createGroupTools;
     const { createBackendScaffoldTools } = await import("../../tools/backendScaffold.js");
     const { createWebScaffoldTools } = await import("../../tools/webScaffold.js");
+    const { createEnvSnapshotTools } = await import("../../tools/envSnapshot.js");
     createDesignStudioTools = designStudioToolsMod.createDesignStudioTools;
     const { ToolRegistry: Registry } = registryMod;
     registry = new Registry();
@@ -128,6 +129,7 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     registry.registerAll(createGroupTools());
     registry.registerAll(createBackendScaffoldTools());
     registry.registerAll(createWebScaffoldTools());
+    registry.registerAll(createEnvSnapshotTools());
     registry.registerAll(createDesignStudioTools());
     // D9: playbook_create_from_session ships as an always-on tool.
     const { createPlaybookTools } = await import("../../tools/playbookTools.js");
