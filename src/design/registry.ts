@@ -103,7 +103,9 @@ export interface BuildResult {
 }
 
 const ID_RE = /^[a-z0-9][a-z0-9-]*$/;
-const TAG_RE = /^[a-z0-9][a-z0-9-]*$/;
+/** Tags are single words: Latin kebab-case, or Arabic letters/digits. */
+const TAG_RE = /^[a-z0-9][a-z0-9-]*$|^[\u0600-\u06FF0-9][\u0600-\u06FF0-9-]*$/;
+const ARABIC_WORD_RE = /^[\u0600-\u06FF0-9][\u0600-\u06FF0-9-]*$/;
 const ARABIC_RE = /[\u0600-\u06FF]/g;
 
 const CATEGORY_SET = new Set<string>(BLOCK_CATEGORIES);
@@ -196,7 +198,7 @@ export function validateManifest(
     at("tags", "must contain at least one tag");
   } else {
     for (const tag of tags) {
-      if (!TAG_RE.test(tag)) at("tags", `tag "${tag}" must match ${TAG_RE.source}`);
+      if (!TAG_RE.test(tag)) at("tags", `tag "${tag}" must be kebab-case Latin or Arabic letters`);
     }
   }
 
@@ -262,6 +264,13 @@ export function validateManifest(
       if (!/dir=["']rtl["']/.test(source)) {
         at("entry", 'RTL block must set dir="rtl" on its root element');
       }
+    }
+    // Arabic keywords make the block findable in the user's own language; a
+    // block that only carries Latin keywords is effectively invisible to an
+    // Arabic query, so require at least one Arabic tag on every RTL block.
+    const hasArabicTag = strs(m["tags"]).some((tag) => ARABIC_WORD_RE.test(tag));
+    if (!hasArabicTag) {
+      at("tags", "an RTL block must carry at least one Arabic tag (e.g. تسعير)");
     }
   }
 
@@ -361,6 +370,9 @@ export async function buildRegistry(blocksRoot = BLOCKS_DIR): Promise<BuildResul
 const STOPWORDS = new Set([
   "a", "an", "the", "for", "and", "or", "to", "of", "with", "in", "on", "at", "ui", "page",
   "block", "component", "section", "layout", "design",
+  // Arabic particles and prepositions carry no retrieval signal.
+  "من", "في", "على", "إلى", "عن", "أن", "إن", "هذا", "هذه", "ذلك", "التي", "الذي",
+  "مع", "أو", "لا", "ما", "هو", "هي", "كان", "كل", "بعد", "قبل", "عند", "غير",
 ]);
 
 function tokenize(text: string): string[] {
@@ -376,13 +388,42 @@ export interface ScoredBlock {
   manifest: BlockManifest;
 }
 
+/** Block hit returned to the model by `ui_examples_search`. */
+export interface BlockHit {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  tags: string[];
+  intent: string;
+  deps: string[];
+  rtl: boolean;
+  lang: string;
+  /** Entry file path relative to the block directory. */
+  entry: string;
+  /** Screenshot path relative to the block directory, or null when pending. */
+  screenshot: string | null;
+  license: string;
+  source: string;
+  /** Short representative source snippet from the entry component. */
+  code?: string;
+  score: number;
+}
+
+export interface SearchBlockOptions {
+  /** Restrict results to one category (e.g. "pricing"). */
+  category?: string;
+  /** Restrict results to LTR (false) or RTL (true) blocks. */
+  rtl?: boolean;
+}
+
 /**
  * Rank blocks for a free-text query. Weights favour the block's name and tags,
  * then category/intent, then the long description; every term is IDF-weighted
  * so common words ("dashboard") matter less than distinctive ones ("bento").
  * This is the scoring primitive `ui_examples_search` is expected to call.
  */
-export function searchBlocks(query: string, k = 3, blocksRoot = BLOCKS_DIR): ScoredBlock[] {
+export function searchBlocks(query: string, k = 3, blocksRoot = BLOCKS_DIR, options: SearchBlockOptions = {}): ScoredBlock[] {
   const { records, issues } = validateRegistry(blocksRoot);
   if (issues.length > 0) {
     throw new Error(`registry is invalid: ${issues.map((i) => `${i.block}.${i.field}: ${i.message}`).join("; ")}`);
@@ -414,6 +455,8 @@ export function searchBlocks(query: string, k = 3, blocksRoot = BLOCKS_DIR): Sco
   const n = docs.length;
   const scored: ScoredBlock[] = [];
   for (const doc of docs) {
+    if (options.category && doc.record.manifest.category !== options.category) continue;
+    if (options.rtl !== undefined && doc.record.manifest.rtl !== options.rtl) continue;
     let score = 0;
     for (const term of terms) {
       const tf = doc.counts.get(term);
@@ -427,4 +470,49 @@ export function searchBlocks(query: string, k = 3, blocksRoot = BLOCKS_DIR): Sco
 
   scored.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
   return scored.slice(0, k);
+}
+
+/** Read the block entry component, returning null when it is missing/unreadable. */
+function readEntry(blockDir: string, entry: string): string | null {
+  try {
+    const file = path.join(blockDir, entry);
+    if (!fs.existsSync(file)) return null;
+    return fs.readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/** Trim a component source to a bounded snippet the model can adapt. */
+function snippet(source: string, maxChars: number): string {
+  const compact = source.replace(/[ \t]+/g, " ").replace(/\n{2,}/g, "\n").trim();
+  if (compact.length <= maxChars) return compact;
+  return `${compact.slice(0, maxChars).trimEnd()}\n// …`;
+}
+
+/**
+ * Convert a scored record into the model-facing hit shape, attaching the entry
+ * file path, screenshot path and a short code snippet.
+ */
+export function toBlockHit(scored: ScoredBlock, blockRoot = BLOCKS_DIR, maxSnippet = 1200): BlockHit {
+  const m = scored.manifest;
+  const blockDir = path.join(blockRoot, scored.id);
+  const source = readEntry(blockDir, m.entry);
+  return {
+    id: m.id,
+    name: m.name,
+    category: m.category,
+    description: m.description,
+    tags: m.tags,
+    intent: m.intent,
+    deps: m.deps,
+    rtl: m.rtl,
+    lang: m.lang,
+    entry: m.entry,
+    screenshot: m.screenshot === "pending" ? null : m.screenshot,
+    license: m.license,
+    source: m.source,
+    ...(source ? { code: snippet(source, maxSnippet) } : {}),
+    score: Number(scored.score.toFixed(4)),
+  };
 }
