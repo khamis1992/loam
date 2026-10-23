@@ -72,7 +72,8 @@ import { OllamaClient } from "./ollama.js";
 import { flexCredentials } from "./server/modelTiers.js";
 import { startServer, type RunTaskOptions } from "./server/http.js";
 import { logMissingCraftDists } from "./server/craftStatus.js";
-import { appendMessage, appendStep, createTask, getProject, getTask, loadDb, setTaskStatus, listSchedules, setTaskDelegator } from "./server/db.js";
+import { appendMessage, appendStep, createTask, getProject, getTask, loadDb, setTaskStatus, listSchedules, setTaskDelegator, getSchedule } from "./server/db.js";
+import { sendRoundEmailWithApproval } from "./server/roundNotifications.js";
 import { conversationHistory } from "./agent/history.js";
 import { startScheduler } from "./server/scheduler.js";
 import { startChannelRouter } from "./server/channels/router.js";
@@ -279,6 +280,7 @@ async function main(): Promise<void> {
     // swallows and logs any failure instead of throwing into the run.
     const recordGraph = cfg.runGraph?.enabled !== false;
     if (recordGraph) beginRun(task, effectivePrompt || "");
+    const scheduleRecord = opts.scheduleId ? getSchedule(opts.scheduleId) : undefined;
     const wrappedEmit: Emit = (event) => {
       if (recordGraph) applyRunEvent(task, event);
       if (sessionLog) {
@@ -305,6 +307,15 @@ async function main(): Promise<void> {
         appendStep(task, { at: new Date().toISOString(), type: event.type, data: event });
       }
     };
+
+    if (scheduleRecord && typeof scheduleRecord.round === "number") {
+      wrappedEmit({
+        type: "round_start",
+        round: scheduleRecord.round,
+        scheduleId: scheduleRecord.id,
+        prompt: effectivePrompt,
+      });
+    }
 
     // Agent (multi-agent) resolution: agent model overrides the default; instructions inject into the system prompt.
     const agentId = opts.agentId ?? previous?.agentId;
@@ -641,6 +652,23 @@ async function main(): Promise<void> {
         appendStep(task, { at: new Date().toISOString(), type: doneEvent.type, data: doneEvent });
         emit(doneEvent);
         publishTaskEvent(task, doneEvent);
+      }
+      if (scheduleRecord && typeof scheduleRecord.round === "number") {
+        wrappedEmit({
+          type: "round_done",
+          round: scheduleRecord.round,
+          scheduleId: scheduleRecord.id,
+          summary: result.text.slice(0, 400),
+        });
+        // Outgoing email notification for recurring round behind approval gate
+        void sendRoundEmailWithApproval({
+          taskId: task,
+          round: scheduleRecord.round,
+          scheduleId: scheduleRecord.id,
+          agentId: opts.agentId,
+          summary: result.text,
+          signal: runSignal,
+        }).catch((err) => log.warn(`round email failed: ${String(err)}`));
       }
       // Turn boundary: drain pending appends and fsync the session log.
       await sessionLog?.flush();

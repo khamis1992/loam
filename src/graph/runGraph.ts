@@ -669,6 +669,77 @@ export class RunGraph {
         );
       case "fanout_merge":
         return this.onFanoutMerge(runId, state, event.fanoutId, event.branchNodeIds, event.summary);
+      case "wakeup_scheduled":
+        return [this.addNode(runId, state, {
+          type: "note",
+          seed: `wakeup:${event.scheduleId}`,
+          status: "finished",
+          data: {
+            title: `Wake-up scheduled (${event.cron ?? `${event.intervalSeconds}s`})`,
+            scheduleId: event.scheduleId,
+            nextRunAt: event.nextRunAt,
+            intervalSeconds: event.intervalSeconds,
+            ...(event.cron ? { cron: event.cron } : {}),
+            ...(event.until ? { until: event.until } : {}),
+            ...(event.instruction ? { instruction: oneLine(event.instruction, 300) } : {}),
+          },
+          parent: state.lastId,
+        }).id];
+      case "wakeup_cancelled":
+        return [this.addNode(runId, state, {
+          type: "note",
+          seed: `cancel-wakeup:${event.scheduleId}`,
+          status: "finished",
+          data: {
+            title: `Wake-up cancelled (${event.scheduleId})`,
+            scheduleId: event.scheduleId,
+          },
+          parent: state.lastId,
+        }).id];
+      case "round_start": {
+        // Starts a new round subtree hanging off the run's last node or root
+        const node = this.addNode(runId, state, {
+          type: "round",
+          seed: `round:${event.round}`,
+          status: "running",
+          data: {
+            title: `Round ${event.round}`,
+            round: event.round,
+            ...(event.scheduleId ? { scheduleId: event.scheduleId } : {}),
+            ...(event.prompt ? { prompt: oneLine(event.prompt, 400) } : {}),
+          },
+          parent: state.lastId || state.rootId,
+        });
+        state.stepId = node.id;
+        return [node.id];
+      }
+      case "round_done": {
+        // Completes the round subtree node
+        const seed = `round:${event.round}`;
+        const existing = this.store.list({ runId }).find((n) => (n.data as { round?: number })?.round === event.round && n.type === "round");
+        if (existing) {
+          const updated = this.store.update(existing.id, {
+            status: "finished",
+            data: {
+              ...(existing.data as Record<string, unknown>),
+              ...(event.summary ? { summary: oneLine(event.summary, 400) } : {}),
+            },
+          });
+          return updated ? [updated.id] : [existing.id];
+        }
+        return [this.addNode(runId, state, {
+          type: "round",
+          seed,
+          status: "finished",
+          data: {
+            title: `Round ${event.round} completed`,
+            round: event.round,
+            ...(event.scheduleId ? { scheduleId: event.scheduleId } : {}),
+            ...(event.summary ? { summary: oneLine(event.summary, 400) } : {}),
+          },
+          parent: state.lastId,
+        }).id];
+      }
       default: {
         const _exhaustive: never = event;
         return _exhaustive;

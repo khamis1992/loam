@@ -32,6 +32,8 @@ export const RUN_NODE_TYPES = [
   "note",
   "failed",
   "kb_seed",
+  /** Neo N8: Recurring round root node for round subtrees. */
+  "round",
 ] as const;
 export type RunNodeType = (typeof RUN_NODE_TYPES)[number];
 

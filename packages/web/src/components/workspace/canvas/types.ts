@@ -22,6 +22,7 @@ export const CANVAS_NODE_TYPES = [
   'merge',
   'note',
   'failed',
+  'round',
 ] as const;
 export type CanvasNodeType = (typeof CANVAS_NODE_TYPES)[number];
 

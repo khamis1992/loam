@@ -279,6 +279,35 @@ export type AgentEvent =
       branchNodeIds: string[];
       /** The merged result. */
       summary: string;
+    }
+  /** Neo N8: a wake-up was scheduled for this run. */
+  | {
+      type: "wakeup_scheduled";
+      scheduleId: string;
+      nextRunAt: string;
+      intervalSeconds: number;
+      cron?: string;
+      until?: string;
+      instruction?: string;
+    }
+  /** Neo N8: a wake-up was cancelled. */
+  | {
+      type: "wakeup_cancelled";
+      scheduleId: string;
+    }
+  /** Neo N8: a new recurring round started on the mission. */
+  | {
+      type: "round_start";
+      round: number;
+      scheduleId?: string;
+      prompt?: string;
+    }
+  /** Neo N8: a recurring round finished on the mission. */
+  | {
+      type: "round_done";
+      round: number;
+      scheduleId?: string;
+      summary?: string;
     };
 
 export type Emit = (event: AgentEvent) => void;

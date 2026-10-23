@@ -118,6 +118,7 @@ const NODE_TYPE_KEYS: Record<string, string> = {
   merge: 'Merged',
   note: 'Note',
   failed: 'Failed',
+  round: 'Round',
 };
 
 const NODE_STATUS_KEYS: Record<string, string> = {
