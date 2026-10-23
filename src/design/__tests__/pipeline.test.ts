@@ -35,6 +35,17 @@ import {
 import type { BlockHit } from "../retrieval.js";
 import type { DesignBrief } from "../brief.js";
 import type { LintResult } from "../tokenLint.js";
+import type { FailoverProvider } from "../../llm/failover.js";
+
+/** A local provider, which needs no credential. */
+function provider(id: string, model: string): FailoverProvider {
+  return { id, kind: "ollama", baseUrl: "http://local", model, apiKeyEnv: "", enabled: true };
+}
+
+/** A cloud provider, which is only usable when its key is present in the env. */
+function cloud(id: string, model: string, keyEnv: string): FailoverProvider {
+  return { id, kind: "openai-compatible", baseUrl: `https://${id}.example/v1`, model, apiKeyEnv: keyEnv, enabled: true };
+}
 
 /** A design brief the generator can consume without touching a model. */
 function brief(overrides: Partial<DesignBrief> = {}): DesignBrief {
@@ -147,7 +158,7 @@ describe("pipeline: stage order and routing", () => {
     const result = await runDesignPipeline({
       workspace: workspace(),
       fixture: fixture(),
-      cfg: { model: "configured", workspace: os.tmpdir(), coding: { enabled: true, chain: ["strong"] }, failover: { providers: [{ id: "p1", model: "strong", enabled: true }] } },
+      cfg: { model: "configured", workspace: os.tmpdir(), coding: { enabled: true, chain: ["strong"] }, failover: { providers: [provider("p1", "strong")] } },
       model: fakeModel() as never,
       generateSite: stubGenerator,
       linter: fakeLinter(90),
@@ -168,7 +179,7 @@ describe("pipeline: stage order and routing", () => {
         model: "configured",
         workspace: os.tmpdir(),
         coding: { enabled: true, chain: ["ghost", "strong"] },
-        failover: { providers: [{ id: "p1", model: "strong", enabled: true, strength: 9 }] },
+        failover: { providers: [provider("p1", "strong")] },
       },
       model: fakeModel() as never,
       generateSite: stubGenerator,
@@ -194,6 +205,30 @@ describe("pipeline: stage order and routing", () => {
     });
     assert.equal(result.route.model, "configured");
     assert.equal(result.route.source, "default");
+  });
+
+  it("does not route to a cloud provider whose key is missing", async () => {
+    // The real credential rule, exercised through the pipeline: a keyless cloud
+    // provider is not available, so the run must not be routed to it.
+    const result = await runDesignPipeline({
+      workspace: workspace(),
+      fixture: fixture(),
+      cfg: {
+        model: "configured",
+        workspace: os.tmpdir(),
+        coding: { enabled: true, chain: ["strong"] },
+        failover: { providers: [cloud("p1", "strong", "MISSING_KEY")] },
+        env: {},
+      },
+      model: fakeModel() as never,
+      generateSite: stubGenerator,
+      linter: fakeLinter(90),
+      skipBuild: true,
+      score: async () => score(90),
+    });
+    assert.equal(result.route.model, "configured");
+    assert.equal(result.route.source, "default");
+    assert.equal(result.route.provider, "");
   });
 
   it("reports a passed route summary naming the model", async () => {
@@ -445,7 +480,7 @@ describe("pipeline: helpers", () => {
       model: "configured",
       workspace: os.tmpdir(),
       coding: { enabled: false, chain: [] },
-      failover: { providers: [{ id: "p1", model: "strong", enabled: true, strength: 5 }] },
+      failover: { providers: [provider("p1", "strong")] },
     });
     assert.equal(route.model, "strong");
     assert.equal(route.source, "strongest");

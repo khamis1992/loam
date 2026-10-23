@@ -46,10 +46,11 @@ import { mockDesignCritique, type CritiqueResult, type DesignCritique } from "./
 import { searchDesignBlocks, type BlockHit } from "./retrieval.js";
 import {
   routeUiModel as routeUiTaskModel,
-  type UiModelProvider,
+  type FailoverProvider,
   type UiModelRoute,
   type UiRouteConfig,
 } from "../models/route.js";
+import type { CooldownStore } from "../llm/failover.js";
 import { isRtl, minimalDesignLinter, resolveDirection, type DesignLinter, type LintResult } from "./tokenLint.js";
 
 /** Build loop bound: an attempt plus two repairs, then report the best state. */
@@ -177,22 +178,23 @@ export interface PipelineConfig {
   fallbackModel?: string;
   workspace: string;
   coding?: { enabled: boolean; chain: string[] };
-  failover?: { providers: PipelineFailoverProvider[] };
+  /** The real failover providers, in strength order. */
+  failover?: { providers: FailoverProvider[] };
+  /** Environment the credential lookup reads; defaults to `process.env`. */
+  env?: Record<string, string | undefined>;
+  /** Cooldown store, so a provider that is backing off is not chosen. */
+  store?: CooldownStore;
   /** Injectable clock for routing decisions; defaults to `Date.now`. */
   now?: () => number;
 }
 
-export interface PipelineFailoverProvider {
-  id: string;
-  model: string;
-  enabled: boolean;
-  /** Whether the provider currently holds a usable credential. */
-  hasKey?: boolean;
-  /** Cooldown timestamp in ms; undefined means healthy. */
-  cooldownUntil?: number;
-  /** Relative strength; higher is stronger. Unset means unknown. */
-  strength?: number;
-}
+/**
+ * A failover provider, re-exported so a caller that only imports the pipeline
+ * sees the same type the router and the failover walk use. It is the real
+ * `FailoverProvider`, not a pipeline-local shape: a second definition is what
+ * would let the pipeline and the coding router disagree about usability.
+ */
+export type PipelineFailoverProvider = FailoverProvider;
 
 /** Minimal chat surface the brief stage needs. */
 export interface PipelineChatClient {
@@ -533,18 +535,12 @@ export function clearBuildArtifacts(siteDir: string): void {
  * place so the router and the pipeline can never disagree.
  */
 export function routeUiModel(cfg: PipelineConfig | undefined): PipelineRoute {
-  const providers: UiModelProvider[] = (cfg?.failover?.providers ?? []).map((provider) => ({
-    id: provider.id,
-    model: provider.model,
-    enabled: provider.enabled,
-    ...(provider.hasKey !== undefined ? { hasKey: provider.hasKey } : {}),
-    ...(provider.cooldownUntil !== undefined ? { cooldownUntil: provider.cooldownUntil } : {}),
-    ...(provider.strength !== undefined ? { strength: provider.strength } : {}),
-  }));
   const routerConfig: UiRouteConfig = {
     model: cfg?.model ?? "local",
     chain: cfg?.coding?.enabled === false ? [] : cfg?.coding?.chain,
-    ...(providers.length > 0 ? { providers } : {}),
+    providers: cfg?.failover?.providers ?? [],
+    ...(cfg?.env ? { env: cfg.env } : {}),
+    ...(cfg?.store ? { store: cfg.store } : {}),
     ...(cfg?.now ? { now: cfg.now } : {}),
   };
   return routeUiTaskModel(routerConfig);

@@ -267,7 +267,7 @@ export async function runPipelineFixture(
       model: "mock-ui-coder",
       workspace,
       coding: { enabled: true, chain: ["mock-ui-coder"] },
-      failover: { providers: [{ id: "mock", model: "mock-ui-coder", enabled: true }] },
+      failover: { providers: [{ id: "mock", kind: "ollama", baseUrl: "http://mock", model: "mock-ui-coder", apiKeyEnv: "", enabled: true }] },
     },
     model: model.client,
     // A real build: the scaffold writes a `build.mjs` entrypoint and the build
