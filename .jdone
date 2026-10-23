@@ -62,22 +62,24 @@ was run and resolved by keeping both sides.
   adds the `inspectProject` override and the "reports a manual edit" test), so it
   was kept. No test was weakened, deleted or skipped.
 
-Four merges were required because `manus-parity` advanced during the session
-(`d05e4b1` -> `cf45585` -> `0a946d3` -> `ed26550`). The second (C19 command-risk
-gate work), the third (N4 recipe engine + main packaging, `0a946d3`) and the
-fourth (N2 Canvas view, `ed26550`) auto-resolved their source; only the tracked
-`.jdone` rollup conflicted, and that was resolved by keeping both reports (fc-06
-on top, parity's N2 report below, and the preserved C19 / parity rollups after
-that). After all four, no conflict markers remain and
-`git merge-base --is-ancestor manus-parity HEAD` exits 0.
+Five merges were required because `manus-parity` advanced during the session
+(`d05e4b1` -> `cf45585` -> `0a946d3` -> `ed26550` -> `26befe6`). The second (C19
+command-risk gate work), the third (N4 recipe engine + main packaging, `0a946d3`),
+the fourth (N2 Canvas view, `ed26550`) and the fifth (N10 output-type routing,
+`26befe6`) auto-resolved their source; only the tracked `.jdone` rollup conflicted.
+For the fourth merge it was resolved by keeping both reports (fc-06 on top,
+parity's N2 report below, and the preserved C19 / parity rollups after that). For
+the fifth, parity had **deleted** `.jdone` (it is no longer tracked there), so the
+HEAD version was kept, which already contains the whole rollup. After all five, no
+conflict markers remain and `git merge-base --is-ancestor manus-parity HEAD` exits 0.
 
 ## Gate condition verified
 
-- `git merge manus-parity` -> `Already up to date.` (the merge commit `0b8d498`
-  already contains parity tip `ed26550`).
+- `git merge manus-parity` -> `Already up to date.` (the merge commit `1c83d1c`
+  already contains parity tip `26befe6`).
 - `git merge-base --is-ancestor manus-parity HEAD` -> exit 0 (parity tip
-  `ed26550` is an ancestor of the merge commit `0b8d498`).
-- `git rev-list --left-right --count manus-parity...HEAD` -> `6  10` (the left
+  `26befe6` is an ancestor of the merge commit `1c83d1c`).
+- `git rev-list --left-right --count manus-parity...HEAD` -> `0  12` (the left
   count, parity commits still missing, is 0).
 - `git grep -E "^(<{7}|={7}|>{7})( |$)"` over `*.ts`, `*.tsx`, `*.json`, `*.md`,
   `*.mjs`, `*.js` -> no matches (no leftover conflict markers).
@@ -92,26 +94,25 @@ that). After all four, no conflict markers remain and
   + `src/server/routes/graph.ts`, the canvas modules, the canvas i18n keys
   (`Canvas`, `Organize`, `Recipe`, ...), and `src/server/__tests__/graphRoutes.test.ts`.
 
-## Gates (all run from the worktree root on the committed tree `0b8d498`)
+## Gates (all run from the worktree root on the final committed tree `1c83d1c`)
 
 - `npx tsc --noEmit` -> exit 0
 - `npm run build:server` -> exit 0 (dist/server.cjs 19.5mb, pdf worker copied)
-- `(cd packages/web && npx next build)` -> exit 0 (compiled successfully)
+- `(cd packages/web && npx next build)` -> exit 0 (compiled successfully in 4.9s)
 - `node --import tsx --test src/tools/__tests__/videoStudio.test.ts
   src/tools/__tests__/videoStudioState.test.ts
   src/server/__tests__/videoStudioE2E.test.ts
   src/server/__tests__/videoStudioExport.test.ts
-  src/server/__tests__/videoStudioRelay.test.ts`
-  -> tests 94, pass 94, fail 0
+  src/server/__tests__/videoStudioRelay.test.ts
+  src/server/__tests__/graphRoutes.test.ts
+  src/agent/__tests__/toolDescriptions.test.ts`
+  -> tests 104, pass 104, fail 0
 - `(cd packages/web && npx vitest run src/lib/videoStudioExport.test.ts
   src/components/workspace/loamVideo/__tests__/LoamVideoPanel.export.test.tsx)`
   -> 2 files / 10 tests, all pass
-- `node --import tsx --test src/server/__tests__/graphRoutes.test.ts
-  src/agent/__tests__/toolDescriptions.test.ts` -> tests 10, pass 10, fail 0
-  (the parity N2 + the D4 fix both survive the merge)
 - `npm run check:encoding` -> OK (no BOM, no mojibake, all JSON valid)
-- `(cd packages/web && npx vitest run)` -> 79 files / 531 tests, all pass
-- `node --import tsx --test "src/**/*.test.ts"` -> tests 2552, pass 2551, fail 1
+- `(cd packages/web && npx vitest run)` -> 80 files / 538 tests, all pass
+- `node --import tsx --test "src/**/*.test.ts"` -> tests 2592, pass 2591, fail 1
 
 The one node failure is pre-existing on the manus-parity lineage and untouched by
 fc-06; the file is byte-identical to manus-parity (`git diff manus-parity HEAD` is
