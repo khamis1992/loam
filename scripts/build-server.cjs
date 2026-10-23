@@ -81,7 +81,7 @@ async function main() {
   console.log("server bundle + pdf worker written to dist/");
 }
 
-/** Exported for reuse (see scripts/probe-full.cjs). */
+/** Exported for reuse by other scripts. */
 module.exports = { inlineFlows };
 
 /**
