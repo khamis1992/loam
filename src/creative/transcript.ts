@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { ROOT } from "../config.js";
+import { ROOT, rootAsset } from "../config.js";
 
 export interface TimedWord {
   word: string;
@@ -104,7 +104,7 @@ export function checkExtractionBudget(bytes: number, limit: number = MAX_EXTRACT
 
 function ffmpegStaticPath(): string {
   const win = process.platform === "win32";
-  return path.join(ROOT, "node_modules", "ffmpeg-static", win ? "ffmpeg.exe" : "ffmpeg");
+  return rootAsset("node_modules", "ffmpeg-static", win ? "ffmpeg.exe" : "ffmpeg");
 }
 
 /** Default STT path reused from existing server wiring: POST /transcribe with raw audio bytes. */
