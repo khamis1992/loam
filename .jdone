@@ -8166,3 +8166,66 @@ Gates (all run from the worktree root on the merged tree):
 
 No test was weakened, deleted or skipped. No secrets committed. No forbidden path
 touched. No Arabic text was written; no mojibake placeholder text was added.
+
+# M3 gap-closure pass: `sharedWith[]` share provenance (spec line 14)
+
+## Why this pass existed
+The branch was already at parity: `git rev-list manus-parity..HEAD` was empty and
+`411df5e` ("merge khamis1992/mf2-m3 (M3 via loam-jcode-run) into manus-parity")
+was an ancestor of `HEAD`. The M3 implementation, its tests and its wiring were
+all present and green, so the pass was not "implement M3" but "audit M3 against
+the spec and close anything real".
+
+## The gap found (spec, not assumption)
+`.cc-ref/MIROFISH_RE.md` line 14 defines the M3 output schema as
+`{action, text, stance -1..1, purchaseIntent 0..1, sharedWith[]}`. The code
+implemented every field except `sharedWith[]`: `AgentTurnOutput` had
+`action, text, stance, purchaseIntent, reasons`. A `share` turn therefore
+recorded no provenance at all, so downstream report/interview code could not say
+*whose* post was amplified. That is a real schema gap, not a style preference.
+
+## What changed
+- `src/tools/mirofish/types.ts`: `AgentTurnOutput` gained `sharedWith: string[]`.
+- `src/tools/mirofish/simulate.ts`:
+  - new `MAX_SHARED_WITH = 8` bound;
+  - `validateAgentTurn` reads `sharedWith` / `shared_with` / `sharedAgents` and
+    defaults it to `[]`, so a model that omits the field is not rejected;
+  - the agent prompt's JSON shape and rules now name `sharedWith` (required for
+    `share`, optional for `comment`, empty for `post`/`ignore`/`buy`/`cancel`);
+  - both failure paths (model call failed, no caller) set `sharedWith: []` so a
+    skipped turn is never fabricated with invented provenance.
+- `src/tools/mirofish/__tests__/simulate.test.ts`: the `turn()` helper and the
+  exact-shape assertion updated, plus a new test covering the field, its
+  default, and the alternate field name.
+
+## Acceptance criteria (M3)
+All verified on the committed tree:
+- N agents x R rounds, one real `ModelCaller` call per agent-turn (default
+  12x3, cap 20 unless `allowMoreAgents`, hard cap 100) - existing tests.
+- persona + locale + brief + variable value + own memory + seeded feed of
+  followed agents - existing tests (`sends persona, brief and variable value`).
+- output schema `{action, text, stance, purchaseIntent, reasons, sharedWith[]}` -
+  now complete; `sharedWith[]` added in this pass.
+- per-round opinion aggregates computed from outputs, not invented - existing
+  `computeRoundMetrics` tests.
+- JSONL event log + `metrics.json` in the task dir, plus progress events on the
+  existing event bus - existing tests.
+- concurrency 2, per-call timeout, failed call logged and agent skipped, never
+  fabricated - existing tests.
+- deterministic seed; baseline vs scenario arms - existing tests.
+
+## Gates (all run from the worktree root)
+- `npx tsc --noEmit`                            -> exit 0
+- `npm run build:server`                        -> exit 0 (dist/server.cjs 19.6mb)
+- `(cd packages/web && npx next build)`         -> exit 0 (25/25 static pages)
+- `node --import tsx --test` on every mirofish suite
+  (simulate, asyncRunner, seed, mirofishIntent, mirofishLoop, mirofishHttp,
+  simulationProgressEvents)                    -> tests 148, pass 148, fail 0
+
+## Rules honoured
+Edited only with file tools. No shell writes to any file. No real model API was
+called by tests (all use an injected fake `ModelCaller`). No secrets. No push, no
+`git reset --hard`, no force-push, no `cd /d`. No Arabic text written, so no
+mojibake risk. The tracked `.jdone` rollup was restored rather than deleted:
+it is preserved by convention on every sibling branch and already contains the
+M3 merge reports. Only this branch's own files were staged.
