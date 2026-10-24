@@ -100,6 +100,18 @@ Adapted files
   bench/__tests__/appRamBench.test.ts       — adapted from
                                               ref/bench_memory_cli.py's
                                               app-level tests.
+  bench/rendererHibernationBench.ts         - adapted from ref/SESSION_HIBERNATION.md
+                                              and ref/bench_memory_cli.py (renderer-side RSS
+                                              hibernation benchmark).
+  bench/__tests__/rendererHibernationBench.test.ts - adapted from
+                                              ref/SESSION_HIBERNATION.md.
+  src/memory/hibernation.ts                 - adapted from ref/SESSION_HIBERNATION.md
+                                              (daemon idle monitor, releasing derived in-memory
+                                              caches after an idle threshold).
+  src/memory/sessionCaches.ts               - adapted from ref/SESSION_HIBERNATION.md
+                                              (session-scoped reconstructible cache registry).
+  src/server/routes/hibernation.ts          - adapted from ref/SESSION_HIBERNATION.md
+                                              (debug/test hibernation HTTP endpoints).
 
   src/policy/commandRisk/{index,lib,paths,tokenize,gate}.ts
                                adapted from crates/command-risk/src/{lib,paths,tokenize,gate}.rs
@@ -110,3 +122,6 @@ Adapted files
                                flexibleMatchHint, extractContext) and the all-or-
                                nothing batch semantics are adapted from
                                crates/jcode-app-core/src/tool/edit.rs.
+  src/codemode/          - the Codemode sandbox tool (QuickJS sandbox,
+                          script prelude, tool discovery, session store)
+                          adapted from ref/codemode/{engine,lib,tests}.rs.

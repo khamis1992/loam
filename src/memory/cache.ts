@@ -112,6 +112,17 @@ export class LruCache<V> {
     return this.map.delete(key);
   }
 
+  /** Remove a key and return its value (undefined when absent). Unlike
+   *  `delete`, this gives the caller the dropped entry so it can account for
+   *  the bytes it released (J7 hibernation counters). */
+  take(key: string): V | undefined {
+    const value = this.map.get(key);
+    if (value === undefined && !this.map.has(key)) return undefined;
+    if (this.options.sizeOf) this.bytes -= this.options.sizeOf(value as V);
+    this.map.delete(key);
+    return value as V;
+  }
+
   clear(): void {
     this.map.clear();
     this.bytes = 0;

@@ -52,7 +52,7 @@ registered through `registerCacheStats()` and therefore shows up as a counter
 row on the `debug:memory` surface, so a violated cap is observable rather than
 theoretical.
 
-The tables list 43 caps. A process does not register all 43 at once: five are
+The tables list 45 caps. A process does not register all 45 at once: five are
 lazy, bound to the first object that owns them. `browser-operator-snapshots` is
 created per `browser_operator` call; `policy-glob` and
 `workspace-directory-requests` register when their module is first imported; and
@@ -62,8 +62,8 @@ at boot, and the bench's chat scenario adds those two stall-guard caps, which is
 the `cacheCount` of 40 in `bench/results/J6-after.json`. Every cap, lazy or
 eager, is enforced in code.
 
-Enforcement is exercised two ways. `src/memory/__tests__/caps.test.ts` drives 32
-of the 43 caps past their bound through their own public API and asserts
+Enforcement is exercised two ways. `src/memory/__tests__/caps.test.ts` drives 34
+of the 45 caps past their bound through their own public API and asserts
 occupancy never exceeds the configured bound (the ones a test can reach without a
 live browser, PTY, ffmpeg child or video sidecar). The doc↔code parity test then
 asserts every cap's documented bound matches the code. The remaining 11 caps
@@ -95,6 +95,8 @@ this table, and the parity test fails if the number drifts.
 | `task-phases` | 512 | `src/tools/phaseTools.ts` | Per-task work-phase records; enough for a busy multi-agent run, small enough to bound a runaway spawner. |
 | `timeline-jobs` | 64 | `src/creative/timeline.ts` | One export job per request; a long-running export never outlives the task that started it. |
 | `timeline-proxy-jobs` | 64 | `src/creative/timeline.ts` | Preview proxy transcodes; a burst of preview requests must not retain every job. A dropped job falls back to the on-disk project. |
+| `session-task-projection` | 64 | `src/memory/sessionCaches.ts` | One folded transcript projection per session (J7); the incremental fold mirrors the whole event log, so it is the largest derived object a chat view holds. Dropping it is free: the next read re-folds from the append-only log. |
+| `session-task-caches` | 64 | `src/memory/sessionCaches.ts` | One slot per task holding its named derived caches; released together by the J7 hibernation sweep, never authoritative content. |
 
 ### Policy and protocol caches
 

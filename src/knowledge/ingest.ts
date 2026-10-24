@@ -75,7 +75,9 @@ export async function ingestContent(
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     smartSplit: chunk.smart ?? false,
-    ...(provenance ?? {}),
+    // Provenance is nested, not flattened: the seed row keeps one `provenance`
+    // object so a reader never has to know which fields belong to it.
+    ...(provenance ? { provenance } : {}),
   }));
 
   const added = upsertSeeds(base.id, seeds);

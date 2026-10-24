@@ -23,6 +23,7 @@ import {
 } from "./store.js";
 import { assertTransition, canTransition } from "./status.js";
 import { transaction } from "../server/sqliteStore.js";
+import { captureNodeVersions, captureRunNodes, nodeCurrentText, canVersionNode } from "./nodeVersions.js";
 import { RecallIndex, type RecallResolver, type RecallSource } from "./recall.js";
 import type { OllamaEmbedder } from "../memory/embeddings.js";
 
@@ -51,6 +52,15 @@ const DOCUMENT_TOOLS = new Set([
 /** Tools that produce a media node on the canvas. */
 const MEDIA_TOOLS = new Set(["loam_creative", "loam_canvas", "gen_image", "gen_video", "video_export", "auto_video"]);
 
+/**
+ * N13: how much of a tool's raw output is kept on the node row itself.
+ *
+ * The full text lives in the version store; the node row only needs enough to
+ * show a readable preview and to be re-captured if the version store is empty.
+ * 40k chars is several pages of text, far past anything the canvas renders.
+ */
+const MAX_NODE_TEXT_CHARS = 40_000;
+
 function artifactNodeType(kind: string): RunNodeType {
   if (kind === "page") return "webpage";
   if (kind === "image" || kind === "video") return "media";
@@ -68,6 +78,19 @@ function toolNodeType(name: string): RunNodeType | undefined {
 function oneLine(text: string, max = 200): string {
   const clean = text.trim().replace(/\s+/g, " ");
   return clean.length > max ? `${clean.slice(0, max)}...` : clean;
+}
+
+/**
+ * N13: cap a document's raw text without flattening its whitespace.
+ *
+ * `oneLine` collapses every run of whitespace, which is right for a summary but
+ * destroys an HTML page, a Markdown file or a code file the user will diff and
+ * hand to the Knowledge Base. This only trims the edges and truncates with an
+ * explicit marker, so the stored version is still real text.
+ */
+function capText(text: string, max: number): string {
+  const trimmed = text.trim();
+  return trimmed.length > max ? `${trimmed.slice(0, max)}\n…[truncated]` : trimmed;
 }
 
 interface RunState {
@@ -253,7 +276,17 @@ export class RunGraph {
     const state = this.stateFor(runId);
     if (!state.rootId) this.ensureRoot(runId, event.type === "plan" ? event.goal : "");
     // One journal commit per event, so a live run does not fsync per node.
-    return transaction(() => this.apply(runId, state, event));
+    const ids = transaction(() => this.apply(runId, state, event));
+    // N13: the event may have produced a document node. Snapshot it now that the
+    // row is committed; a no-op run (no document) captures nothing. Only the
+    // touched nodes are read, so a long run stays cheap.
+    //
+    // A `tool_call` event is excluded on purpose: it returns the id of a node
+    // that holds only its call metadata (`{ tool, path }`), and the real text
+    // arrives with the matching `tool_result`. Snapshotting the call would store
+    // the tool name as version 1 and shift every later version by one.
+    if (event.type !== "tool_call") this.captureRunDocuments(runId, ids);
+    return ids;
   }
 
   /** Replay a recorded event log into a run, rebuilding the graph. */
@@ -267,6 +300,9 @@ export class RunGraph {
     transaction(() => {
       for (const event of events) created.push(...this.apply(runId, state, event));
     });
+    // N13: a replay rebuilds the whole graph in one pass, so snapshot every
+    // document node once at the end rather than once per event.
+    this.captureRunDocuments(runId);
     return created;
   }
 
@@ -313,12 +349,19 @@ export class RunGraph {
     return updated;
   }
 
-  /** Edit a node's payload in place (canvas "edit the AI's memory"). */
+  /**
+   * Edit a node's payload in place (canvas "edit the AI's memory").
+   *
+   * N13: when the node is a document and its text changed, the previous text is
+   * kept as a new version, so the canvas can show what the user changed instead
+   * of discarding it. Capture is best effort: a failure must not fail the edit.
+   */
   setData(nodeId: string, data: unknown, runId?: string): RunNode {
     const node = this.store.getNode(nodeId, runId);
     if (!node) throw new Error(`run node not found: ${nodeId}`);
     const updated = this.store.update(nodeId, { data });
     if (!updated) throw new Error(`run node disappeared: ${nodeId}`);
+    this.captureRunDocuments(updated.run_id, [updated.id], "user");
     this.scheduleRecallSync(updated.run_id);
     return updated;
   }
@@ -553,6 +596,29 @@ export class RunGraph {
     recall.scheduleSync(runId, (id) => this.store.list({ runId: id }));
   }
 
+  /**
+   * N13: snapshot the document nodes of a run into the version store.
+   *
+   * Best effort: a capture failure must never fail the run event that triggered
+   * it, so errors are logged and swallowed. When `nodeIds` is given only those
+   * nodes are read (the live path passes the ids the event just created or
+   * touched); otherwise the whole run is walked, which is what a replay wants.
+   */
+  captureRunDocuments(
+    runId: string,
+    nodeIds?: readonly string[],
+    source: "agent" | "user" = "agent",
+  ): number {
+    try {
+      return nodeIds && nodeIds.length > 0
+        ? captureNodeVersions(runId, nodeIds, source)
+        : captureRunNodes(runId, source);
+    } catch (err) {
+      console.warn(`[runGraph] failed to capture documents of run ${runId}: ${String(err)}`);
+      return 0;
+    }
+  }
+
   private apply(runId: string, state: RunState, event: AgentEvent): string[] {
     switch (event.type) {
       case "plan":
@@ -664,7 +730,7 @@ export class RunGraph {
       case "tool_call":
         return this.onToolCall(runId, state, event.name, event.args);
       case "tool_result":
-        return this.onToolResult(runId, state, event.name, event.ok, event.summary, event.kbSeedIds, event.kbSeeds);
+        return this.onToolResult(runId, state, event.name, event.ok, event.summary, event.kbSeedIds, event.kbSeeds, event.content);
       case "error":
         return [this.addNode(runId, state, {
           type: "failed",
@@ -679,6 +745,31 @@ export class RunGraph {
           seed: `cancelled:${state.seq}`,
           status: "finished",
           data: { stopped: true },
+          parent: state.lastId,
+        }).id];
+      case "budget_exhausted":
+        // Neo N6: the mission reached its budget ceiling and stopped cleanly. It
+        // is a summary node, not a failure: the canvas reports where the mission
+        // got to and what it consumed, so the user can raise the budget and
+        // resume from the checkpoint instead of re-reading an error banner.
+        return [this.addNode(runId, state, {
+          type: "note",
+          seed: `budget:${state.seq}`,
+          status: "finished",
+          data: {
+            budgetStopped: true,
+            reason: oneLine(event.reason, 400),
+            lastStep: event.checkpoint.lastStep,
+            steps: event.checkpoint.budget.steps,
+            tokens: event.checkpoint.budget.promptTokens + event.checkpoint.budget.completionTokens,
+            // Only the dimensions the mission was actually bounded by. The
+            // counters themselves are always present (a fresh budget zeroes
+            // them), so testing the counter would report "0m wall-clock,
+            // $0.0000" for a mission that never had a clock or a cost ceiling.
+            ...(event.checkpoint.budget.wallClockLimitMs !== undefined ? { wallClockMs: event.checkpoint.budget.wallClockMs } : {}),
+            ...(event.checkpoint.budget.costLimitUsd !== undefined ? { costUsd: event.checkpoint.budget.costUsd } : {}),
+            resumable: !event.checkpoint.inFlight,
+          },
           parent: state.lastId,
         }).id];
       case "done":
@@ -714,6 +805,10 @@ export class RunGraph {
       // per-step diagnostic like cache_usage rather than a canvas node (a node
       // per step would bury the run graph's real structure).
       case "context_selected":
+      // Neo N11: a canvas edit is already recorded in the graph by the operation
+      // that made it (the new version, the re-pointed edge, the branch or the
+      // merged node), so the event itself carries no node of its own.
+      case "canvas_edit":
       case "workspace_command":
       case "video_studio_command":
       case "video_studio_export":
@@ -911,6 +1006,7 @@ export class RunGraph {
     summary: string,
     kbSeedIds?: string[],
     kbSeeds?: Array<{ id: string; title: string; tags: string[]; preview: string }>,
+    content?: string,
   ): string[] {
     const index = state.pending.findIndex((entry) => entry.name === name);
     if (index === -1) return [];
@@ -919,10 +1015,34 @@ export class RunGraph {
     const node = this.store.getNode(entry.nodeId, runId);
     if (!node) return [];
     const status: RunNodeStatus = ok ? "finished" : "failed";
+    // N13: keep the page/document text on the node itself, capped so a huge fetch
+    // (or an HTML dump) cannot bloat the graph row. The full text belongs in the
+    // version store, which reads this payload back.
+    const fullText = capText(content ?? "", MAX_NODE_TEXT_CHARS);
     if (canTransition(node.status, status)) {
-      this.store.update(node.id, { status, data: { ...(node.data as Record<string, unknown>), summary: oneLine(summary, 600), ok } });
+      this.store.update(node.id, {
+        status,
+        data: {
+          ...(node.data as Record<string, unknown>),
+          summary: oneLine(summary, 600),
+          ok,
+          ...(fullText ? { content: fullText } : {}),
+        },
+      });
     }
+    // Re-read what was actually stored: a second `tool_result` for the same
+    // pending call would otherwise capture the previous payload. `update` bumps
+    // the node revision, so the re-read is also what tells the version store
+    // this is a new revision rather than a repeat of the last snapshot.
+    const stored = this.store.getNode(node.id, runId) ?? node;
     state.lastId = node.id;
+    // N13: a document/webpage node whose payload now carries real text (a fetched
+    // page, a written file) is versioned here, so the canvas can diff it and the
+    // "Add to Knowledge Base" action has something honest to ingest. Capture is
+    // best effort and never fails the event.
+    if (canVersionNode(stored.type) && nodeCurrentText(stored).trim().length > 0) {
+      this.captureRunDocuments(runId, [node.id]);
+    }
     // N3 Knowledge Garden: a `kb_search` result carries the seeds it actually read
     // (`kbSeedIds` + `kbSeeds`). Each becomes a child node hanging off the tool
     // node, so "where did this answer come from?" is a real edge on the run graph
