@@ -6,7 +6,7 @@
  * run without a server, and every failure surfaces as a rejected promise the
  * panel turns into a notice rather than a crash.
  */
-import type { CanvasGraphResponse, CanvasNode, CanvasNodePatch } from './types';
+import type { CanvasGraphResponse, CanvasGraphSearch, CanvasNode, CanvasNodePatch } from './types';
 import { coerceCanvasGraphResponse } from './types';
 import type { CanvasOpRequest, CanvasOpResult } from './types';
 import { coerceCanvasOpResult } from './types';
@@ -43,6 +43,24 @@ export class CanvasClient {
     const parsed = coerceCanvasGraphResponse(data);
     if (!parsed) throw new Error('malformed canvas graph payload');
     return parsed;
+  }
+
+  /**
+   * Neo N18: search the *whole* run, not just the nodes this client holds.
+   *
+   * The panel keeps one snapshot, so a collapsed branch or a node the layout
+   * dropped is invisible to a local search. The server scans every node it owns
+   * and replies with the hits, which the panel highlights in one round. An
+   * unreachable server is not an error: the caller falls back to its own nodes.
+   */
+  async searchGraph(runId: string, term: string): Promise<CanvasGraphSearch | null> {
+    const query = encodeURIComponent(term.trim());
+    if (!query) return null;
+    const res = await this.request(`/api/graph/${encodeURIComponent(runId)}?q=${query}`);
+    const data = (await res.json().catch(() => null)) as unknown;
+    if (!res.ok) return null;
+    const parsed = coerceCanvasGraphResponse(data);
+    return parsed?.search ?? null;
   }
 
   /**

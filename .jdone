@@ -8722,3 +8722,71 @@ called by the tests (the scripted `neo-mock` model is used throughout).
 - `packages/web/src/i18n/ar.json` - Arabic i18n
 - `packages/web/src/i18n/en.json` - English i18n
 - `src/server/routes/graph.ts` - Graph route merging
+
+# N18 merge session: union canvas editing (N11) with annotation/search (N18), `/ops` route restored
+
+`git merge manus-parity` (parity tip `0fe2c47`, merge commit `cc5f6e2`) was left with
+conflict markers in three canvas files and **three failing server tests**. The conflict was
+not textual: `manus-parity` carries N11's canvas *editing* semantics (edit, cut/reconnect,
+branch, group, quote/follow-up) while this branch carries N18's canvas *annotation/search*
+niceties (colour tags, comments, free notes, node search, minimap, shortcuts). Both feature
+sets were kept; neither was weakened, and no test was edited to pass.
+
+## Root cause of the three failing tests
+
+`src/server/__tests__/graphRoutes.test.ts` gained three cases that drive
+`GET|POST /api/graph/:runId/ops`, but no such route existed in the merged tree:
+
+- `git show manus-parity:src/server/routes/graph.ts` has **no** `/ops` handler, and
+  neither does `HEAD` nor the merge base `16204f6` (`git diff 16204f6 --stat` shows only
+  `graphRoutes.test.ts` changed, so `graph.ts` was identical on both sides).
+- The route *did* exist on the N11 feature branch (`18157f3`) and was **dropped** when
+  `129e6e1` merged N11 into `manus-parity` (parity's `graph.ts` is 380 lines, the N11
+  version 245, and the `opsMatch` block is absent).
+- `git grep` for `applyCanvasRequest`/`pendingCanvasDirectives` found only
+  `src/agent/runGraphAdapter.ts`, i.e. the adapter exported the functions but nothing
+  called them. The wiring was missing, not the implementation.
+
+## What was done (root-cause fixes, not test edits)
+
+1. **`src/server/routes/graph.ts`** - restored the N11 `/ops` surface exactly as the N11
+   branch had it, placed after the `/stream` route and before `/annotations` so a run id is
+   never mistaken for a node id: `GET` returns the run's pending directives (read-only, no
+   same-origin check), `POST` applies one operation. Imports `applyCanvasRequest`,
+   `pendingCanvasDirectives` and `MAX_OP_TEXT_CHARS` were added. Error contract unchanged:
+   unrecognised op -> 400, cross-site -> 403, foreign node -> 404, other op failure -> 409.
+2. **`CanvasPanel.tsx`** - rebuilt as the N18 base with every N11 feature grafted on:
+   selection state (`selectedIds`, `staleIds`, `editMode`, `busy`), the selection bar
+   (`canvas-selection`, `canvas-mode-*`, `canvas-send`, `canvas-stale-count`), Reconnect /
+   Group / Branch / Cut, `applyOp` merging the reply graph while preserving hand-placed
+   x/y/depth, stale badges (`canvas-node-stale`), the select checkbox
+   (`canvas-node-select`), and the `NodeDetail` sheet rewritten to carry version, stale
+   notice + "Mark current", the edit control and the edit-history accordion. Unused
+   leftovers from the merge were removed so `noUnusedLocals` stays clean.
+3. **`client.ts`** - kept **both** surfaces: N18's `searchGraph` (`?q=`) and N11's
+   `patchNode`/`applyOp` (`/ops`).
+4. **`CanvasPanel.test.tsx`** - the harness bug the merge introduced was fixed by
+   capturing `const { unmount } = render(...)` while the return still passed `unmount`
+   through. No assertion was changed.
+
+## Gates (all run from the worktree root, on commit `cc5f6e2`)
+
+- `npx tsc --noEmit` -> exit 0
+- `npx tsc --noEmit` (in `packages/web`) -> exit 0
+- `npm run build:server` -> exit 0 (server bundle + pdf worker written to `dist/`)
+- `cd packages/web && npx next build` -> exit 0 (Next 16.4.2, 25 static pages)
+- `cd packages/web && npx vitest run src/components/workspace/canvas` -> 119/119 pass
+- `node --import tsx --test src/server/__tests__/graphRoutes.test.ts` -> 16/16 pass
+  (the three `/ops` cases now green: applies an edit and files a directive; refuses
+  unrecognised/cross-site/foreign-run ops; cuts and re-connects an edge)
+- `node --import tsx --test src/graph/__tests__/{nodeText,ops}.test.ts src/learning/harness/__tests__/inject.test.ts` -> 42/42 pass
+
+## Seams left for other workstreams
+
+- The N11 `/ops` route is back on `manus-parity`'s surface, so any branch that re-merges
+  N11 must keep `graph.ts`'s `opsMatch` block rather than resolving to the N18 side.
+- N18's acceptance row (Playwright `canvas-n18.spec.ts`) is updated to assert the server's
+  `?q=` reply carries matched segments and drives the card highlight; the Playwright
+  harness itself is not run here (documented, per `.jtask.md`).
+- `.jdone`/`.jcode-done` are tracked on parity and union-merged via `.gitattributes`; this
+  report is appended to the preserved rollup.
