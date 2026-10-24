@@ -151,9 +151,9 @@ export function recoverInterruptedTasks(): number {
   expireAllRunLeases();
   return count;
 }
-export function createTask(prompt: string, title?: string, projectId?: string | null, agentId?: string | null): Task {
+export function createTask(prompt: string, title?: string, projectId?: string | null, agentId?: string | null, id?: string): Task {
   const now = new Date().toISOString();
-  const task: Task = { id: newId("task"), title: (title ?? prompt).slice(0, 80), prompt, status: "queued", projectId: projectId ?? null, agentId: agentId ?? null, createdAt: now, updatedAt: now, messages: [], steps: [] };
+  const task: Task = { id: id ?? newId("task"), title: (title ?? prompt).slice(0, 80), prompt, status: "queued", projectId: projectId ?? null, agentId: agentId ?? null, createdAt: now, updatedAt: now, messages: [], steps: [] };
   put("tasks", task); return task;
 }
 export function setTaskDelegator(id: string, delegatedByAgentId: string): void { editTask(id, t => { t.delegatedByAgentId = delegatedByAgentId; }); }

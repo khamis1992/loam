@@ -59,6 +59,7 @@ import { mergeAlwaysOnTools } from "./server/runTools.js";
 import { applyKnowledgeGate } from "./server/knowledgeTools.js";
 import { planQuickEditRoute } from "./agent/quickEdit.js";
 import { SIDE_CHAT_READ_ONLY_TOOLS } from "./agent/sideChat.js";
+import { CODEMODE_TOOL, createCodemodeTool } from "./codemode/index.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
 import { publishTaskEvent } from "./server/streams.js";
 import { videoStudioRelay } from "./server/videoStudioRelay.js";
@@ -614,6 +615,22 @@ async function main(): Promise<void> {
         },
         workspaceRoot: effectiveCfg.workspace,
       });
+      // Codemode is bound to THIS run's registry: a script may only call tools
+      // this run was already granted, under the same approval/policy path (the
+      // tool registered globally is an inert stub until it is rebound here).
+      if (agentTools.get(CODEMODE_TOOL)) {
+        agentTools.replaceTool(
+          createCodemodeTool({
+            registry: agentTools,
+            taskId: task,
+            agentId: agentId ?? null,
+            workspaceRoot: effectiveCfg.workspace,
+            emit: wrappedEmit,
+            signal: runSignal,
+            sandboxMode: sandboxPolicy.mode,
+          }),
+        );
+      }
       // Neo N6 mission run: an unbounded run type bounded by a durable budget.
       // The mission flag survives the queue (`SavedRun.mission`) and, on a
       // resume, the stored checkpoint is authoritative. A checkpoint taken
