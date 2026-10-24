@@ -499,6 +499,7 @@ describe("nutrio e2e gate", () => {
       '"- **نسبة تأييد السرب**: قفزت من **75%** إلى **100%**.",',
       '"- Retained Market Share **87%** (PowerUsers: **94%**).",',
       'const interviews = [{ agent_name: "Acme Security Auditor", stance: "opposing" }];',
+      'const files = fs.readdirSync(".");',
     ].join("\n");
 
     const hits = new Set<string>();
@@ -531,6 +532,7 @@ describe("nutrio e2e gate", () => {
       hits.has("hard-coded percentage in bold result text"),
       "must catch a literal bolded percentage in report text",
     );
+    assert.ok(hits.has("folder scanning"), "must catch folder scanning");
 
     // The `/api/mirofish/*` scope marker must actually cover the router's
     // MiroFish routes. A refactor that moved or renamed the routes would shrink

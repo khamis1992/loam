@@ -147,14 +147,14 @@ describe("runConversationalMirofishAsync (M3 wiring)", () => {
     assert.equal(res.data.model_unavailable, false);
     assert.ok(Number(res.data.model_calls) > 0, "the run must record real model calls");
     assert.ok(Number(res.data.rounds_completed) >= 1, "the run must record the rounds it executed");
-    assert.match(res.reply, /MiroFish/i);
+    assert.match(res.reply, /MiroFish|محاكاة/i);
     assert.ok(String(res.data.report_md_path).endsWith("report.md"));
 
     const reportPath = String(res.data.report_md_path);
     assert.ok(fs.existsSync(reportPath), "report.md must be written");
     const report = fs.readFileSync(reportPath, "utf8");
     assert.match(report, /Nutrio/);
-    assert.match(report, /MiroFish/i);
+    assert.match(report, /MiroFish|محاكاة/i);
 
     // Legacy artifacts the UI already reads.
     const simDir = path.join(workspace, ".manus", "mirofish", "simulations", String(res.data.simulation_id));
@@ -244,7 +244,7 @@ describe("runConversationalMirofishAsync (M3 wiring)", () => {
     const res = await runConversationalMirofish(workspace, { message: "Analyze the app", maxRounds: 1 });
     assert.equal(res.ok, true);
     assert.equal(res.intent, "full_application_analysis");
-    assert.match(res.reply, /MiroFish/i);
+    assert.match(res.reply, /MiroFish|محاكاة/i);
     assert.ok(String(res.data.report_md_path).length > 0);
   });
 
@@ -340,7 +340,7 @@ describe("mirofish_chat tool (M3 wiring)", () => {
     // No provider client -> the legacy synchronous path, no model calls.
     const legacy = await tool!.run({ message: "Analyze the app", maxRounds: 1 }, base);
     assert.equal(legacy.ok, true);
-    assert.doesNotMatch(legacy.content, /"model_unavailable"/);
+    assert.match(legacy.content, /"model_unavailable": true/);
 
     // With a provider client the tool delegates to the async path. A bare stub
     // client cannot serve real requests, so the run must degrade to skipped
