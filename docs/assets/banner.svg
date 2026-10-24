@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a1612;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1a2d24;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="1200" height="300" fill="url(#bgGrad)"/>
+  
+  <!-- Grid pattern -->
+  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#426853" stroke-width="0.5" opacity="0.3"/>
+  </pattern>
+  <rect width="1200" height="300" fill="url(#grid)"/>
+  
+  <!-- Logo (scaled and positioned) -->
+  <g transform="translate(80, 75) scale(2.5)">
+    <path d="M12 2h40l10 10v40L52 62H12L2 52V12z" fill="#101d19" stroke="#426853" stroke-width="1.5"/>
+    <g transform="translate(10 9) scale(1.4)" color="#99d6b5">
+      <path fill="currentColor" stroke="none" d="M5 5h6v16h16v6H9l-4-4zM15 5h5v11h7v5H15z"/>
+      <path fill="#cda77a" stroke="none" d="M24 5h4v7h-4z"/>
+    </g>
+  </g>
+  
+  <!-- Title -->
+  <text x="260" y="155" font-family="system-ui, -apple-system, sans-serif" font-size="72" font-weight="700" fill="#99d6b5" letter-spacing="-1">
+    Loam
+  </text>
+  
+  <!-- Tagline -->
+  <text x="260" y="200" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="400" fill="#7ba896" opacity="0.9">
+    Local AI workspaces with focused tools and isolated tasks
+  </text>
+  
+  <!-- Accent line -->
+  <line x1="260" y1="220" x2="500" y2="220" stroke="#426853" stroke-width="2"/>
+</svg>
