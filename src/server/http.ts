@@ -35,6 +35,7 @@ import { applySkill, buildSkillFile, listSkillRecords, readSkillFile } from "../
 import { acceptSkillSuggestion } from "../tools/skillSuggest.js";
 import { extractOfficeText, OFFICE_EXT, prepareParser as buildPdfParser } from "../tools/attachments.js";
 import { loadHooksConfig, saveWorkspaceHooks, type HooksConfig } from "../policy/hooks.js";
+import { applyAppRun } from "../tools/appBridgeTools.js";
 import { outlineWorkspacePath, queryWorkspaceSymbols } from "../tools/symbols.js";
 import { buildPentestMarkdownReport, PENTEST_CHECKS, runPentestCheck, scanWorkspaceRoutesAndRisks } from "../tools/pentest.js";
 import { AssessmentError, startAssessment, listAssessments, readAssessment, cancelAssessment, assessmentReport, updateFinding, retestAssessment } from "../security/assessments.js";
@@ -110,6 +111,7 @@ import { registerCacheStats } from "../memory/stats.js";
 import { handleMemorySkillsRoutes } from "./routes/memorySkills.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
 import { handleProjectWikiRoutes } from "./routes/projectWiki.js";
+import { handleBridgesRoutes } from "./routes/bridges.js";
 import { handlePlanApprovalRoutes } from "./routes/planApproval.js";
 import { handleAskUserRoutes } from "./routes/askUser.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
@@ -419,7 +421,11 @@ async function buildAttachmentsBlock(raw: unknown, workspace: string): Promise<s
   return `【المرفقات — تحليلها جزء من المهمة， وتابع عملك عليها】\n${parts.join("\n")}`;
 }
 
-async function applyPendingItem(item: PendingItem, memory?: MemoryStore): Promise<string> {
+async function applyPendingItem(item: PendingItem, memory?: MemoryStore, cfg?: Config): Promise<string> {
+  if (item.kind === "app_run") {
+    if (!cfg) throw new Error("config unavailable");
+    return applyAppRun(cfg, item.payload);
+  }
   if (item.kind === "memory_store") {
     if (!memory) throw new Error("memory disabled in config");
     const text = String(item.payload["text"] ?? "").trim();
@@ -1076,7 +1082,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           if (!item) return sendJson(res, 404, { error: "pending item not found" });
           if (action === "approve") {
             try {
-              const label = await applyPendingItem(item, memory);
+              const label = await applyPendingItem(item, memory, cfg);
               removePending(id);
               appendLearning({ at: new Date().toISOString(), task: "(approved)", applied: [label] });
               sendJson(res, 200, { applied: label });
@@ -1864,6 +1870,7 @@ loadAgents();
         if (await handleMemorySkillsRoutes(req, res, p, { call: memorySkillsCall })) return;
         if (await handleApprovalRuleRoutes(req, res, p, url)) return;
         if (await handleProjectWikiRoutes(req, res, p, url, cfg)) return;
+        if (await handleBridgesRoutes(req, res, p, cfg)) return;
         // Pending plan approvals (D4): the suggest_plan gate's approve/edit/reject.
         if (await handlePlanApprovalRoutes(req, res, p)) return;
         // Pending ask-user requests (N9): list, read, answer or dismiss.

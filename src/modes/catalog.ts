@@ -19,7 +19,8 @@ const PREVIEW = ["preview_serve", "preview_status", "preview_stop", "preview_scr
  *  (D4) presents a plan for approval without changing the permission mode, so
  *  both are exposed in every mode the way `finish` is. */
 const CONTROL = ["think", "finish", "plan", "phase_set", "message", "plan_exit", "suggest_plan", "ask_user", "context_recall",
-  "wiki_search", "wiki_read", "wiki_list", "wiki_write", "handoff_create", "handoff_list", "handoff_resolve"];
+  "wiki_search", "wiki_read", "wiki_list", "wiki_write", "handoff_create", "handoff_list", "handoff_resolve",
+  "app_list", "app_describe"];
 /** Tools added to modes that can edit files. */
 const EDIT_EXTRA = ["file_multi_edit"];
 /** Build-only tools: secrets vault and the OpenCode coding sessions. */
@@ -44,7 +45,7 @@ export const LOAM_MODES: LoamMode[] = [
     starters: [{ label: "قارن مصادر", prompt: "قارن المصادر التي سأرفقها، وافصل الحقائق عن الاستنتاجات مع روابط الأدلة." }, { label: "راجع موضوعًا", prompt: "أعد تقرير بحث حول الموضوع التالي، مع توضيح الثغرات وحدود المصادر المتاحة." }] },
   { id: "build", label: "Loam Build", labelAr: "ابنِ", icon: "⌘", hue: 100, hue2: 140,
     tagline: "من الفكرة إلى تجربة تعمل", description: "طوّر ملفات التطبيق وشغّل الاختبارات ومعاينة المشروع في مساحة المهمة.", outputHint: "ملفات مشروع ومعاينة ونتائج اختبارات", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, ...WRITE, ...EDIT_EXTRA, "memory_add", "artifact_publish", ...DOCS_LOOKUP, ...BUILD_EXTRA, ...GIT, "loam_mobile", "code_symbols", "code_outline", "semantic_search", "wiki_generate", "ask_codebase", "shell_run", "web_fetch", ...BROWSER, ...PREVIEW, ...CONTROL, ...MANAGED_SESSIONS], panels: ["files", "browser", "preview"],
+    tools: ["integration_list", "integration_call", ...READ, ...WRITE, ...EDIT_EXTRA, "memory_add", "artifact_publish", ...DOCS_LOOKUP, ...BUILD_EXTRA, ...GIT, "loam_mobile", "code_symbols", "code_outline", "semantic_search", "wiki_generate", "ask_codebase", "shell_run", "app_run", "web_fetch", ...BROWSER, ...PREVIEW, ...CONTROL, ...MANAGED_SESSIONS], panels: ["files", "browser", "preview"],
     fields: [{ id: "brief", label: "ماذا سنبني؟", placeholder: "المستخدمون والوظائف المطلوبة", multiline: true }, { id: "acceptance", label: "معايير الإنجاز", placeholder: "ما السلوك الذي يجب اختباره قبل التسليم؟", multiline: true }],
     starters: [{ label: "صفحة تعريفية", prompt: "ابنِ صفحة تعريفية عربية متجاوبة مع معاينة محلية واختبر عرض الهاتف." }, { label: "أصلح مشروعًا", prompt: "افحص ملفات المشروع المرفقة، حدد العطل وأصلحه ثم شغّل الاختبارات المناسبة." }] },
   { id: "write", label: "Loam Write", labelAr: "اكتب", icon: "✎", hue: 55, hue2: 75,
