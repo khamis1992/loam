@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Check, Download, Loader2, Sparkles, Video } from 'lucide-react';
+import { Check, Download, Loader2, Video, Wand2 } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { FilmcraftBridge, FILMCRAFT_FRAME_URL, type FilmcraftMethod } from '@/lib/filmcraft';
 import { setLoamVideoTarget } from '@/lib/filmcraftClient';
@@ -384,7 +384,7 @@ export function LoamVideoPanel({
         </span>
         <span className="text-text-tertiary">·</span>
         <span className="flex items-center gap-1.5 text-xs font-medium text-text-primary">
-          <Sparkles className="size-3.5" /> {t('Loam Effects')}
+          <Wand2 className="size-3.5" /> {t('Loam Effects')}
         </span>
         <span
           className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
@@ -436,7 +436,7 @@ export function LoamVideoPanel({
             disabled={status !== 'ready' || effectsAvailability !== 'available' || busy}
             className="flex h-row-sm items-center gap-1.5 rounded-control bg-fill-tsp px-2.5 text-xs text-text-primary hover:bg-fill-hover disabled:opacity-50"
           >
-            <Sparkles className="size-3.5" /> {t('Open in effects')}
+            <Wand2 className="size-3.5" /> {t('Open in effects')}
           </button>
         ) : (
           <button

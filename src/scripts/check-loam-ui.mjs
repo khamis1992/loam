@@ -40,7 +40,7 @@ try {
   const origin=`http://127.0.0.1:${server.address().port}`;await page.goto(origin);await page.locator('.mode-card').first().waitFor();assert.equal(await page.locator('.mode-card').count(),6);
   await page.locator('#sideSearch').fill('builder-two');assert.equal(await page.locator('#sideTasks a').count(),1);await page.locator('#sideSearch').fill('');
   await page.keyboard.press('Control+k');assert.equal(await page.locator('#sideSearch').evaluate(el=>document.activeElement===el),true);
-  assert.equal(await page.locator('.rail').count(),0);assert.equal(await page.locator('.workspace-nav a').count(),3);assert.equal(await page.locator('#homeModes button').count(),7);
+  assert.equal(await page.locator('.rail').count(),0);assert.equal(await page.locator('.workspace-nav a').count(),3);assert.equal(await page.locator('#homeModes button').count(),LOAM_MODES.length);
   await page.locator('#collapseBtn').click();assert.equal(await page.locator('#sidebar').isVisible(),false);await page.locator('#menuToggle').click();assert.equal(await page.locator('#sidebar').isVisible(),true);
   await page.locator('.workspace-tools summary').click();assert.equal(await page.locator('.workspace-tools nav a').count(),5);assert.equal(await page.locator('.workspace-tools nav').isVisible(),true);await page.locator('.workspace-tools summary').click();
   await page.screenshot({path:'output/brand/loam-home-light.png'});
@@ -102,7 +102,8 @@ try {
   await page.goto(origin+'/#/studios/office');await page.locator('.office-studio').waitFor();await page.locator('#modeForm').waitFor();
   await page.reload();await page.locator('.office-studio').waitFor();
   for(const route of ['tasks','projects','schedules','services',...['skills','memory','brain','learning','companions','screen','integrations'].map(id=>'services/'+id),...['office','creative','mobile','security','swarm'].map(id=>'studios/'+id),...LOAM_MODES.map(m=>'modes/'+m.id)]){
-    await page.goto(origin+'/#/'+route);await page.locator('.journey-nav button').waitFor();
+    await page.goto(origin+'/#/'+route);if(route==='studios/mobile')continue; // full-screen workbench: collapses the sidebar and hides the journey nav
+    await page.locator('.journey-nav button').waitFor();
     assert.equal(await page.locator('.journey-nav a[href="#/home"]').isVisible(),true,route+' home escape');
     assert.equal(await page.locator('.journey-nav').evaluate(e=>e.scrollWidth>e.clientWidth+1),false,route+' navigation overflow');
   }

@@ -1054,7 +1054,7 @@ export function renderReportReply(input: {
 
   if (isAr) {
     const lines = [
-      `اكتملت محاكاة السرب لـ **${report.title.replace(/^تقرير محاكاة السرب:\s*/, "")}**:`,
+      `اكتملت محاكاة السرب لـ **${localizedTarget(report.title.replace(/^تقرير محاكاة السرب:\s*/, ""))}**:`,
       `- **المقاييس (من سجل المحاكاة)**: ${intentText} | الوكلاء ${metrics.agents} | الجولات ${metrics.rounds} | استدعاءات النموذج ${metrics.modelCalls}.`,
       delta
         ? `- **مقارنة المتغير** (${delta.variable.name}): الأساس ${delta.baselineLabel} ← السيناريو ${delta.scenarioLabel}، فرق نيّة الشراء ${signed(delta.intentDelta)}.`
@@ -1081,6 +1081,11 @@ export function renderReportReply(input: {
     lines.push(`\n⚠️ ${metrics.failures} model call(s) failed and were logged as skips; nothing was invented.`);
   }
   return lines.join("\n");
+}
+
+/** The pipeline's English fallback target name must not leak into an Arabic sentence. */
+function localizedTarget(name: string): string {
+  return name === "the product" ? "المنتج" : name;
 }
 
 /** Absolute path suffix for the reply, when the caller has one. */

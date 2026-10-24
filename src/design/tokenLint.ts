@@ -987,7 +987,7 @@ function computeScore(issues: LintIssue[]): number {
 export function lintSiteSource(source: string, options: LintOptions = {}): LintResult {
   const text = source ?? "";
   const issues: LintIssue[] = [];
-  const scanned: ScannedFile[] = [{ relative: "inline", text }];
+  const scanned: ScannedFile[] = [{ relative: "inline.html", text }];
   lintScannedFile(scanned[0]!, options, issues);
   foldRtlIssues(scanned, options, issues);
   const rtlRequested = requestedDirection(options) === "rtl";

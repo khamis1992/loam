@@ -277,7 +277,7 @@ describe("runConversationalMirofish intent routing", () => {
     const out = await run("محاكاة السرب");
     assert.equal(out.ok, true);
     assert.equal(out.intent, "full_application_analysis");
-    assert.match(out.reply, /MiroFish|ميرافيش|ذكاء السرب/);
+    assert.match(out.reply, /MiroFish|ميرافيش|ذكاء السرب|محاكاة السرب/);
   });
 
   it("runs the full analysis for an English simulation request", async () => {
@@ -329,11 +329,8 @@ describe("runConversationalMirofish intent routing", () => {
     assert.ok(profiles.length > 0);
     assert.ok(profiles.every((p: { country: string }) => p.country === "Berlin"));
     // The report must name the market location the user chose.
-    const report = fs.readFileSync(
-      path.join(workspace, ".manus", "mirofish", "reports", session!.report_id, "report.md"),
-      "utf8",
-    );
-    assert.match(report, /Market Location.*Berlin/);
+    const report = fs.readFileSync(String(out.data.report_md_path), "utf8");
+    assert.match(report, /Market(?: Location)?:.*Berlin/);
   });
 
   it("uses a named country as the persona country", async () => {

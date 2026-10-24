@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle, BookMarked, Check, ChevronDown, ChevronRight, Loader2, Plus,
-  Search, Sparkles, Tag, Trash2,
+  Search, Tag, Trash2,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { t } from '@/i18n/t';
@@ -506,7 +506,7 @@ export function KnowledgeGardenPane() {
             {bases.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
           <Button variant="primary" size="sm" loading={searchBusy} onClick={() => void runSearch()}>
-            <Sparkles className="size-4" /> {t('Search')}
+            <Search className="size-4" /> {t('Search')}
           </Button>
         </div>
 

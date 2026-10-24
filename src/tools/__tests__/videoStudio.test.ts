@@ -69,6 +69,8 @@ const { createVideoStudioTools, isFilmcraftDistInstalled, closeMatches, resolveC
   "../../tools/videoStudio.js"
 );
 
+const { VideoStudioRouter } = await import("../../tools/videoStudioRouter.js");
+
 function ctx(): ToolContext {
   return { cfg: {} as never, workspace: ws, emit: () => undefined, taskId: "task_1" } as never;
 }
@@ -173,8 +175,15 @@ describe("video_studio availability + fallback", () => {
     // And a degraded effects request must say so on the failure envelope too.
     relay = new MockRelay();
     relay.failWith = { code: "PANEL_NOT_OPEN", message: "no panel" };
+    // Inject the router so the result does not depend on whether the effects
+    // engine happens to be installed on the machine running the test.
+    const noEffects = createVideoStudioTools({
+      relay,
+      root,
+      router: new VideoStudioRouter({ root, effectsAvailable: false }),
+    })[0]!;
     const degraded = JSON.parse(
-      (await tool().run({ action: "effect_basic", name: "glitch" }, ctx())).content,
+      (await noEffects.run({ action: "effect_basic", name: "glitch" }, ctx())).content,
     ) as { routing?: { route: string; target: string; degraded: boolean; reason?: string } };
     assert.ok(degraded.routing, "a degraded request must report its routing even when it fails");
     assert.equal(degraded.routing!.route, "effects");
