@@ -41,6 +41,8 @@ import { addUsage } from "./usageAccounting.js";
 import { recordToolCall, recordToolResult } from "./checkpointLog.js";
 import { log } from "../log.js";
 import { addRunSiblings, getRunNodes, setRunNodeData, setRunNodeStatus } from "./runGraphAdapter.js";
+import { takeCanvasDirectives } from "./runGraphAdapter.js";
+import { canvasEditsMessage, directiveBody, directiveTitle, CANVAS_EDIT_ARTEFACT_KIND } from "./canvasContext.js";
 import { eventNodeId, type RunNode } from "../graph/store.js";
 import { admitPending, hasPending, type QueuedInput } from "../server/inputQueue.js";
 
@@ -134,7 +136,8 @@ export interface RunOptions {
   sessionId?: string;
   /** When set, replaces the default system prompt (used by the background reviewer). */
   systemOverride?: string;
-  /** Appended after the built (or overridden) system prompt. Used by orchestrator workers. */
+  /** Appended after the built (or overridden) system prompt. Used by orchestrator workers.
+   *  H5: the correction-learning lesson block joins this suffix (src/index.ts, BUILD_SPEC §6.5). */
   systemSuffix?: string;
   /** Overrides cfg.agent.maxSteps for this run (orchestrator workers get a tighter budget). */
   maxSteps?: number;
@@ -554,6 +557,26 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
     if (touch) for (const notice of touch.drainNotices(sessionId)) reminders.fileTouched(notice);
     if (opts.taskId) reminders.setPlanMode(getTaskPhase(opts.taskId) === "plan");
     for (const message of reminders.drainMessages(step)) messages.push(message);
+
+    // Neo N11: an edit the user made on the canvas while the run was busy (or
+    // before it resumed) is a fact about the run the model has not seen. The
+    // directives are pulled once per step: the batch becomes one hidden reminder
+    // so the very next model call sees it, and each edit also enters the N5
+    // artefact store, so a later step can re-attach it on relevance instead of
+    // the correction having to stay pinned in the prompt for the whole run.
+    if (opts.taskId) {
+      const edits = takeCanvasDirectives(opts.taskId);
+      if (edits.length > 0) {
+        const message = canvasEditsMessage(edits);
+        if (message) messages.push(message);
+        for (const directive of edits) {
+          selector.captureExternal(CANVAS_EDIT_ARTEFACT_KIND, directiveTitle(directive), directiveBody(directive), {
+            path: directive.nodeId,
+          });
+        }
+        opts.emit({ type: "canvas_edit", step, count: edits.length, nodeIds: edits.map((directive) => directive.nodeId) });
+      }
+    }
 
     let providerCompaction = false;
     if (opts.cfg.compression.enabled) {

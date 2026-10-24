@@ -197,6 +197,18 @@ export interface Config {
     /** Maximum number of concurrently running child subagents. */
     maxConcurrentChildren: number;
   };
+  /** H5 correction-learning injection (BUILD_SPEC .h2-ref/BUILD_SPEC.md §6.5/§10).
+   *  Env overrides: LOAM_LESSONS_ENABLED, LOAM_LESSONS_MAX_CHARS, LOAM_LESSON_MIN_SCORE.
+   *  Optional so test configs and older config.json files keep working;
+   *  `loadConfig` fills it from DEFAULTS (and the env) via merge. */
+  lessons?: {
+    /** Append relevant learned lessons to the task's system prompt (default: on). */
+    enabled: boolean;
+    /** Hard cap on the injected lesson block in characters (default: 1200). */
+    maxChars: number;
+    /** Minimum relevance score for a lesson to be injected (default: 0.35). */
+    minScore: number;
+  };
   mcpServers: Record<string, McpServerConfig>;
   failover?: {
     providers: Array<{
@@ -340,6 +352,7 @@ export const DEFAULTS: Config = {
     verifyFinal: true,
   },
   subagent: { maxDepth: 2, maxConcurrentChildren: 4 },
+  lessons: { enabled: true, maxChars: 1200, minScore: 0.35 },
   mcpServers: {},
   failover: {
     providers: [
@@ -460,6 +473,16 @@ export function loadConfig(): Config {
       .filter((m) => m.length > 0);
   }
   if (process.env.LOAM_CODER_ROUTING === "0" || process.env.LOAM_CODER_ROUTING === "false") cfg.coding.enabled = false;
+  // H5 lesson-injection env overrides (BUILD_SPEC §10); invalid values keep the defaults.
+  const lessonsCfg = cfg.lessons ?? { enabled: true, maxChars: 1200, minScore: 0.35 };
+  const lessonsEnabledEnv = process.env.LOAM_LESSONS_ENABLED;
+  if (lessonsEnabledEnv === "0" || lessonsEnabledEnv === "false") lessonsCfg.enabled = false;
+  else if (lessonsEnabledEnv === "1" || lessonsEnabledEnv === "true") lessonsCfg.enabled = true;
+  const lessonsMaxCharsEnv = Number(process.env.LOAM_LESSONS_MAX_CHARS);
+  if (Number.isFinite(lessonsMaxCharsEnv) && lessonsMaxCharsEnv > 0) lessonsCfg.maxChars = Math.floor(lessonsMaxCharsEnv);
+  const lessonMinScoreEnv = Number(process.env.LOAM_LESSON_MIN_SCORE);
+  if (Number.isFinite(lessonMinScoreEnv) && lessonMinScoreEnv >= 0 && lessonMinScoreEnv <= 1) lessonsCfg.minScore = lessonMinScoreEnv;
+  cfg.lessons = lessonsCfg;
   // Neo N10: normalize the routing map. Unknown effort levels are dropped and
   // model ids are trimmed, so a stale config can never select a bogus entry.
   const perTool: Record<string, string> = {};
