@@ -1030,5 +1030,12 @@
   "Paste the text to store": "الصق النص المراد تخزينه",
   "Workspace-relative path": "مسار نسبي من مساحة العمل",
   "e.g. Product docs": "مثال: وثائق المنتج",
-  "Optional": "اختياري"
+  "Optional": "اختياري",
+  "Help center": "مركز المساعدة",
+  "Choose a page on the left.": "اختر صفحة من القائمة على اليسار.",
+  "No guide is available in this install.": "لا يوجد دليل متاح في هذا التثبيت.",
+  "Some guide pages are missing from this install: {pages}": "بعض صفحات الدليل غير موجودة في هذا التثبيت: {pages}",
+  "This page has no Arabic edition yet, so it is shown in English.": "لا توجد نسخة عربية من هذه الصفحة بعد، لذلك تُعرض بالإنجليزية.",
+  "Open the guide": "فتح الدليل",
+  "Long-horizon guide": "دليل المهام الطويلة"
 }
