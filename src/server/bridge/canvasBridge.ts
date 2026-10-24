@@ -26,7 +26,7 @@
 import { isRunNodeStatus, type RunNode, type RunNodeStatus } from "../../graph/store.js";
 import { log } from "../../log.js";
 import { createAgent, getAgent, listAgents } from "../agents.js";
-import { createTask, getTask, newId } from "../db.js";
+import { createTask, getTask, newId, setTaskStatus } from "../db.js";
 import { executionQueue } from "../executionQueue.js";
 import { publishRunGraph } from "../../agent/runGraphAdapter.js";
 import { publishTaskEvent } from "../streams.js";
@@ -173,9 +173,12 @@ export function ensureCanvas(canvasId?: string): { canvasId: string; created: bo
   const existing = text(canvasId);
   if (existing) {
     if (getTask(existing)) return { canvasId: existing, created: false };
-    throw new Error(`canvas not found: ${existing}`);
+    createTask("External agent canvas", "External agent canvas", null, null, existing);
+    setTaskStatus(existing, "done");
+    return { canvasId: existing, created: true };
   }
   const task = createTask("External agent canvas", "External agent canvas");
+  setTaskStatus(task.id, "done");
   return { canvasId: task.id, created: true };
 }
 
@@ -287,9 +290,7 @@ function emit(canvasId: string, cursorId: string, status: RunNodeStatus, extra: 
   } else {
     publishTaskEvent(canvasId, { type: "done", text: String(extra.text ?? ""), steps: 1, model: "" });
   }
-  // Bridge listeners (the WS/SSE bridge surface) get their own change on the
-  // graph bus, which is the channel the external agent actually reads.
-  publishRunGraph(canvasId, [cursorId]);
+
 }
 
 /** True while the canvas (a Loam task) has a run in flight. */
@@ -317,6 +318,8 @@ export function submitCanvasBridgeRequest(
   const canvasId = ensureCanvas(text(body.canvasId)).canvasId;
   const resolved = resolveBridgeAgent(firstText(body.agentId, body.agentRef), { parallel: body.parallel as number | undefined });
   const cursorId = firstText(body.cursorId) || bridgeCursorId(canvasId, resolved.agentId ?? "agent", body.parallel as number | undefined);
+  const existingNode = firstText(body.cursorId) ? undefined : graph.list(canvasId).find((candidate) => candidate.id === cursorId);
+  const nodeId = existingNode ? newBridgeNodeId("canvas") : cursorId;
   const task = getTask(canvasId);
   if (!task) throw new Error(`canvas not found: ${canvasId}`);
   if (canvasBusy(canvasId, task.status)) throw new Error(`canvas ${canvasId} is already running`);
@@ -329,11 +332,11 @@ export function submitCanvasBridgeRequest(
     prompt: input.prompt,
     status: "running",
   });
-  const node = graph.addExternalNode(canvasId, { id: cursorId, parentIds: parents, type: CANVAS_BRIDGE_NODE_TYPE, status: "running", data: payload });
+  const node = graph.addExternalNode(canvasId, { id: nodeId, parentIds: parents, type: CANVAS_BRIDGE_NODE_TYPE, status: "running", data: payload });
   options.onNode?.(canvasId, node);
-  emit(canvasId, cursorId, "running");
+  emit(canvasId, nodeId, "running");
 
-  void (async (): Promise<void> => {
+  const execute = async (): Promise<void> => {
     if (!runTask) return;
     try {
       const result = await runTask({
@@ -347,26 +350,32 @@ export function submitCanvasBridgeRequest(
         emit: () => {},
       });
       const text = result.text ?? "";
-      graph.setStatus(cursorId, "finished", canvasId);
-      graph.setData(cursorId, nodePayload(cursorId, resolved.agentId, { ...payload, text, status: "finished" }), canvasId);
-      emit(canvasId, cursorId, "finished");
+      graph.setStatus(nodeId, "finished", canvasId);
+      graph.setData(nodeId, nodePayload(cursorId, resolved.agentId, { ...payload, text, status: "finished" }), canvasId);
+      emit(canvasId, nodeId, "finished");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       try {
-        graph.setStatus(cursorId, "failed", canvasId);
+        graph.setStatus(nodeId, "failed", canvasId);
       } catch {
         // The node may already be terminal; the canvas keeps whatever it has.
       }
-      graph.setData(cursorId, nodePayload(cursorId, resolved.agentId, { ...payload, error: message, status: "failed" }), canvasId);
-      emit(canvasId, cursorId, "failed", { error: message });
+      graph.setData(nodeId, nodePayload(cursorId, resolved.agentId, { ...payload, error: message, status: "failed" }), canvasId);
+      emit(canvasId, nodeId, "failed", { error: message });
     } finally {
-      const current = graph.list(canvasId).find((candidate) => candidate.id === cursorId);
+      const current = graph.list(canvasId).find((candidate) => candidate.id === nodeId);
       if (current) options.onNode?.(canvasId, current);
       graph.invalidate(canvasId);
     }
-  })();
+  };
 
-  return { canvasId, cursorId, taskId: canvasId, status: "running", nodeId: cursorId };
+  if (body.follow === true) {
+    void execute();
+  } else {
+    setTimeout(() => { void execute(); }, 20);
+  }
+
+  return { canvasId, cursorId, taskId: canvasId, status: "running", nodeId };
 }
 
 /**

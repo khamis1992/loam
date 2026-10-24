@@ -164,6 +164,7 @@ function openStream(req: http.IncomingMessage, res: http.ServerResponse, runId: 
     "content-type": "text/event-stream; charset=utf-8",
     "cache-control": "no-cache, no-transform",
     connection: "keep-alive",
+    "x-accel-buffering": "no",
   });
   // A proxy must not buffer this stream, or the canvas would refresh in bursts
   // instead of node by node.
@@ -181,6 +182,7 @@ function openStream(req: http.IncomingMessage, res: http.ServerResponse, runId: 
     if (res.destroyed || res.writableEnded) return clearInterval(keepAlive);
     res.write(`: keep-alive ${Date.now()}\n\n`);
   }, 25_000);
+  keepAlive.unref?.();
   const close = (): void => {
     clearInterval(keepAlive);
     unsubscribe();
@@ -200,7 +202,8 @@ export async function handleCanvasBridgeRoutes(
   rawPath: string,
   ctx: RouteContext | undefined = undefined,
 ): Promise<boolean> {
-  if (!rawPath.startsWith("/api/bridge/canvas")) return false;
+  const path = rawPath.split("?")[0] ?? rawPath;
+  if (!path.startsWith("/api/bridge/canvas")) return false;
   if (ctx?.enabled === false) {
     return (sendJson(res, 503, { error: "canvas bridge is disabled" }), true);
   }
@@ -208,26 +211,26 @@ export async function handleCanvasBridgeRoutes(
   // route modules cannot receive it through `startServer` deps.
   const graph: CanvasBridgeGraph = ctx?.graph ?? bridgeGraph();
 
-  const streamMatch = rawPath.match(/^\/api\/bridge\/canvas\/([^/]+)\/stream$/);
+  const streamMatch = path.match(/^\/api\/bridge\/canvas\/([^/]+)\/stream$/);
   if (streamMatch) {
     if (req.method !== "GET") return (sendJson(res, 405, { error: "method not allowed" }), true);
     return openStream(req, res, decode(streamMatch[1]!));
   }
 
-  const canvasMatch = rawPath.match(
-    /^\/api\/bridge\/canvas\/([\w.:-]+)(?:\/(status|nodes|result(?:\/([\w.:-]+))?|follow(?:\/([\w.:-]+))?))?$/,
+  const canvasMatch = path.match(
+    /^\/api\/bridge\/canvas\/([\w.:-]+)(?:\/(status|nodes|result|follow)(?:\/([\w.:-]+))?)?$/,
   );
   const action = canvasMatch?.[2];
 
   try {
-    if (req.method === "POST" && rawPath === "/api/bridge/canvas/identity") {
+    if (req.method === "POST" && path === "/api/bridge/canvas/identity") {
       if (isCrossSite(req)) return (sendJson(res, 403, { error: "same-origin requests required" }), true);
       const body = await readJson(req);
       sendJson(res, 200, registerCanvasBridgeIdentity(graph, body));
       return true;
     }
 
-    if (req.method === "POST" && rawPath === "/api/bridge/canvas/submit") {
+    if (req.method === "POST" && path === "/api/bridge/canvas/submit") {
       if (isCrossSite(req)) return (sendJson(res, 403, { error: "same-origin requests required" }), true);
       const body = await readJson(req);
       const result = submitCanvasBridgeRequest(graph, runTaskRef(), body);
@@ -236,14 +239,15 @@ export async function handleCanvasBridgeRoutes(
       // any agent) gets the finished node in one round trip.
       if (body.follow === true && result.nodeId) {
         const settled = await waitForNode(result.canvasId, result.nodeId, MAX_FOLLOW_MS);
-        sendJson(res, 200, { ...result, ...(payload ?? {}), status: settled?.status ?? result.status });
+        const settledPayload = nodeResult(result.canvasId, result.nodeId);
+        sendJson(res, 200, { ...result, ...(settledPayload ?? payload ?? {}), status: settled?.status ?? result.status });
         return true;
       }
       sendJson(res, 202, { ...result, ...(payload ?? {}) });
       return true;
     }
 
-    if (req.method === "POST" && rawPath === "/api/bridge/canvas/batch") {
+    if (req.method === "POST" && path === "/api/bridge/canvas/batch") {
       if (isCrossSite(req)) return (sendJson(res, 403, { error: "same-origin requests required" }), true);
       const body = await readJson(req);
       if (!isBatchPayload(body)) return (sendJson(res, 400, { error: "batch needs a nodes or tasks array" }), true);
@@ -286,7 +290,7 @@ export async function handleCanvasBridgeRoutes(
     }
 
     if (req.method === "GET" && action === "follow") {
-      const nodeId = canvasMatch[4] ? decode(canvasMatch[4]) : undefined;
+      const nodeId = canvasMatch[3] ? decode(canvasMatch[3]) : undefined;
       if (!nodeId) return (sendJson(res, 400, { error: "follow needs a node id" }), true);
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "127.0.0.1"}`);
       const requested = Number(url.searchParams.get("timeoutMs") ?? MAX_FOLLOW_MS);
@@ -336,9 +340,10 @@ export async function handleCanvasBridgeParentRoutes(
   rawPath: string,
   ctx: RouteContext | undefined = undefined,
 ): Promise<boolean> {
-  const match = rawPath.match(/^\/api\/bridge\/canvas\/([^/]+)\/nodes\/([^/]+)$/);
+  const path = rawPath.split("?")[0] ?? rawPath;
+  const match = path.match(/^\/api\/bridge\/canvas\/([^/]+)\/nodes\/([^/]+)$/);
   if (!match || req.method !== "PATCH") return false;
-  if (!ctx?.graph) return (sendJson(res, 503, { error: "run graph is not available" }), true);
+  const graph: CanvasBridgeGraph = ctx?.graph ?? bridgeGraph();
   if (isCrossSite(req)) return (sendJson(res, 403, { error: "same-origin requests required" }), true);
   const runId = decode(match[1]!);
   const nodeId = decode(match[2]!);

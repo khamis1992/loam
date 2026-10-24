@@ -30,7 +30,7 @@ import { after, before, beforeEach, describe, it } from "node:test";
 import type { IncomingMessage } from "node:http";
 
 import { closeDb } from "../sqliteStore.js";
-import { resetRunGraph, subscribeRunGraph } from "../../agent/runGraphAdapter.js";
+import { clearRun, resetRunGraph, subscribeRunGraph } from "../../agent/runGraphAdapter.js";
 
 const TOKEN = "test-token";
 
@@ -153,6 +153,7 @@ describe("canvas bridge (neo n17)", () => {
     const db = await import("../db.js");
     db.loadDb();
     resetRunGraph();
+    clearRun(CANVAS);
   });
 
   it("ignores paths that are not bridge routes", async () => {
@@ -402,11 +403,11 @@ describe("canvas bridge (neo n17)", () => {
     // RFC 6455 section 1.3 example, the one value every client checks.
     assert.equal(socket.acceptKey("dGhlIHNhbXBsZSBub25jZQ=="), "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
   });
-});
 
-describe("canvas bridge upgrade", () => {
+  describe("canvas bridge upgrade", () => {
   let server: http.Server;
   let base = "";
+  const openSockets = new Set<import("node:net").Socket>();
 
   before(async () => {
     const routes = (await import("../routes/canvasBridge.js")) as unknown as {
@@ -415,8 +416,15 @@ describe("canvas bridge upgrade", () => {
         subscribe: (canvasId: string, listener: (change: { runId: string; nodeIds: string[]; seq: number }) => void) => () => void;
       }) => (req: IncomingMessage, socket: import("node:net").Socket, head: Buffer) => boolean;
     };
+    handler = (await import("../routes/canvasBridge.js")).handleCanvasBridgeRoutes as unknown as Handler;
+    const db = await import("../db.js");
+    db.loadDb();
     server = http.createServer((req, res) => {
       res.writeHead(404).end();
+    });
+    server.on("connection", (socket) => {
+      openSockets.add(socket);
+      socket.on("close", () => openSockets.delete(socket));
     });
     const upgrade = routes.createCanvasBridgeUpgrade({
       authenticate: (req) => {
@@ -440,11 +448,17 @@ describe("canvas bridge upgrade", () => {
   });
 
   after(async () => {
+    for (const socket of openSockets) {
+      try {
+        socket.destroy();
+      } catch {}
+    }
+    openSockets.clear();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
   /** Handshake, read one text frame, then close. */
-  function readOneFrame(path: string): Promise<Json> {
+  function readOneFrame(path: string, onConnect?: () => void): Promise<Json> {
     const key = crypto.randomBytes(16).toString("base64");
     const url = new URL(base + path);
     return new Promise((resolve, reject) => {
@@ -459,12 +473,19 @@ describe("canvas bridge upgrade", () => {
           "sec-websocket-version": "13",
         },
       });
-      request.on("upgrade", (_res, socket: import("node:net").Socket) => {
+      request.on("upgrade", (_res, socket: import("node:net").Socket, head: Buffer) => {
+        if (head && head.length > 0) socket.unshift(head);
         const reader = new BridgeSocketReader(socket, (text) => {
-          socket.destroy();
           try {
-            resolve(JSON.parse(text) as Json);
+            const parsed = JSON.parse(text) as Json;
+            if (parsed.type === "connected") {
+              onConnect?.();
+              return;
+            }
+            socket.destroy();
+            resolve(parsed);
           } catch {
+            socket.destroy();
             resolve({ raw: text } as Json);
           }
         });
@@ -477,7 +498,12 @@ describe("canvas bridge upgrade", () => {
   }
 
   it("pushes a live node change to a connected socket", async () => {
-    const frame = readOneFrame(`/api/bridge/canvas/${CANVAS}/ws?token=good-token`);
+    let onConnect!: () => void;
+    const connected = new Promise<void>((resolve) => {
+      onConnect = resolve;
+    });
+    const frame = readOneFrame(`/api/bridge/canvas/${CANVAS}/ws?token=good-token`, onConnect);
+    await connected;
     // The bridge writes a node; the socket must receive it without being asked.
     const submit = new FakeResponse();
     await handler(
@@ -516,13 +542,16 @@ describe("canvas bridge upgrade", () => {
     });
     assert.equal(status, 401, "a missing token is refused like every other /api route");
   });
+  });
 });
 
 /** Reads WebSocket text frames off a raw socket (enough for one push). */
 class BridgeSocketReader {
   private buffer = Buffer.alloc(0);
+  private readonly onText: (text: string) => void;
 
-  constructor(socket: import("node:net").Socket, private readonly onText: (text: string) => void) {
+  constructor(socket: import("node:net").Socket, onText: (text: string) => void) {
+    this.onText = onText;
     socket.on("data", (chunk: Buffer) => {
       this.buffer = Buffer.concat([this.buffer, chunk]);
       for (;;) {
