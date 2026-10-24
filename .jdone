@@ -1,3 +1,129 @@
+# M7 - e2e test gate for the swarm simulation (DONE)
+
+## Final merge resolution (manus-parity 8270c75 -> khamis1992/mf2-m7)
+The gate failed on the mandatory pre-step: `MERGE CONFLICT with latest manus-parity`.
+`manus-parity` had advanced (tip `8270c75`, carrying the M2 seed and M5 intent work)
+past the earlier merge (`a32783a`), so `git merge manus-parity` re-conflicted.
+
+Topology (verified, not assumed):
+- `merge-base HEAD MERGE_HEAD` = `74d0d09` (the manus-parity tip the earlier merge used).
+- `8270c75` is NOT an ancestor of `a32783a`: it is the newer manus-parity tip and
+  brings `src/tools/mirofish/intent.ts`, `locale.ts`, `model.ts`, `seed.ts` and the
+  `settings.ts` location setting.
+- `74d0d09` has only `src/tools/mirofish.ts`; HEAD (`a45e8ba`) has the M7 files
+  (`pipeline.ts`, `types.ts`, `__tests__/`).
+
+Conflicts resolved keeping BOTH sides:
+- `src/tools/mirofish/types.ts` - the M2 seed/locale/persona types and the M7
+  pipeline/report types describe the same domain objects. Merged into one supertype
+  file: `LocaleProfile`, `IncomeBand`, `Persona` and `SimulationSettings` are defined
+  once and satisfy both consumers. `Persona` keeps every seed field (`bio`,
+  `nationality`, `incomeAmount`, `household`, `channel`, `attitude`, `habits`,
+  `occupation`, `diet`) alongside the M7 aliases (`profession`, `interestedTopics`,
+  `mbti`), with the M2-only fields optional so neither stage is weakened.
+  `MirofishPipelineUnavailableError`, `SeedResult` and the `SeedModelCaller` re-export
+  are all retained.
+- `src/tools/mirofish.ts` - kept the M5 intent routing (`classifyWithSession`,
+  `extractMirofishSettings`, the `location` session field) and the M7 tool contract.
+- `src/server/settings.ts` - kept the new `location` setting (validate on load and on
+  update, drop malformed values) that M2/M5 introduced.
+
+Also restored: `.jdone` had been staged as deleted by the earlier resolution even
+though all three merge parents (`74d0d09`, `8270c75`, `a32783a`) carry the same blob
+`b2a9e94`. Restored to HEAD so the marker is no longer dropped.
+
+## Static gate defect found and fixed
+The static check was DEAD CODE: it sat behind the same `{ skip: !ready }` capability
+guard as the pipeline scenarios, so it never ran while the stages were un-built, and it
+only scanned the new pipeline modules - which do not import the legacy fake code.
+Fix:
+- `staticGateTargets()` now also scans `src/tools/mirofish.ts` (the `mirofish_chat`
+  tool) and the `/api/mirofish/*` region of `src/server/http.ts`, so the scan can
+  actually see the fake implementation.
+- Added an always-runs self-check, "static gate detects the legacy fake
+  implementation", which replays a snippet of the original fake implementation
+  through the same patterns and asserts every pattern is caught. It also asserts the
+  self-check fixture exercises every pattern, so a real detection cannot regress
+  silently.
+- The scan itself stays capability-guarded (`skip: !ready`): the legacy fake tool
+  still emits fake personas and hard-coded result numbers today, so the assertion is
+  EXPECTED to fail there. It turns on automatically when a stage task flips the flag,
+  where failing on the leftover fake code is the intended signal.
+
+False-positive scoping: the earlier `readdirSync` and bare-percentage patterns were
+too broad - they matched legitimate filesystem reads (`src/server/http.ts` 1279/2139/
+2214) and legitimate prose percentages (SLA uptime, "10x", coverage notes). Replaced
+with patterns anchored on shapes a real simulation cannot produce: a persona named
+after a job title, a literal `75%` inside a result template, and `approval_rate_*`
+keys. `http.ts` is scanned only within the `/api/mirofish/*` routes.
+
+### Router scope (second pass, commit 8701d2f)
+The shared router is a single ~2800-line file that also serves hundreds of unrelated
+routes, so scanning it wholesale would make the gate report noise (or hide real hits
+behind it). The first version used a fixed 90-line window, which was arbitrary and
+could drift away from the routes. Replaced with `inScopeLines()`, which marks a
+route's own line plus its handler body and ends at the next blank line (the router
+separates every handler with one). Brace counting was tried first and rejected: the
+route's own `if (...)` line contains the route string inside quotes, and template
+literals inside a handler distort the depth, so the region closed early and
+excluded the very handler it was meant to cover.
+
+The always-on self-check now asserts the scope invariant directly: every
+`/api/mirofish/*` route line is in scope, and the scoped region stays small relative
+to the whole router. A refactor that moved or renamed the routes would otherwise
+shrink the scanned region to nothing while the gate still reported green. This
+assertion caught two real bugs in the first attempt (an indentation-only terminator
+that closed on the handler's object argument, and a `path.join` comparison that
+never matched an absolute path on Windows).
+
+## What M7 ships (commit ca4411f)
+- `src/tools/mirofish/types.ts` - public pipeline contract: `ModelCaller` (injectable,
+  the only model boundary), `LocaleProfile`, `Persona`, `SimulationEvent`,
+  `RoundMetrics`, `SwarmReport`, `PipelineResult`, `MirofishChatRequest`,
+  `MirofishPipelineUnavailableError`.
+- `src/tools/mirofish/pipeline.ts` - `runMirofishPipeline` (seed -> simulate ->
+  report) and `runMirofishChat` (the entry point shared with the `mirofish_chat`
+  tool), plus the per-stage capability check `mirofishPipelineReady()`.
+- `src/tools/mirofish/__tests__/nutrio-e2e.test.ts` - the e2e gate. A deterministic
+  fake `ModelCaller` whose replies depend on prompt content (locale keywords drive
+  currency/dialect; the active price drives purchase intent), so price and location
+  genuinely change outcomes. Four scenarios:
+  1. Doha/QAR/Arabic-Gulf: report mentions Nutrio, keto and both prices; personas use QAR.
+  2. Price sensitivity 1200 / 1450 / 99999 -> three distinct purchase-intent metrics.
+  3. Location: London -> GBP/English and a report that differs from Doha; unset
+     location -> inferred from the brief.
+  4. Static gate: scans the MiroFish sources for hard-coded result numbers, fake
+     personas (`Developer`/`SecurityAuditor`/...), fake agent roles and
+     `approval_rate_*` keys, and fails if any are found.
+- `src/tools/mirofish/__tests__/fixtures/nutrio-briefs.ts` - Nutrio / نتريو meal
+  subscription brief (price QAR 1200 -> 1450, new keto plan) with Doha, London and
+  unset-location variants plus `withPrice`.
+- `package.json` - added `"test:mirofish"`.
+
+## Capability guard (per the task spec)
+The pipeline stages (seed/simulate/report) are not implemented on manus-parity, so
+`mirofishPipelineReady()` returns false and every scenario skips via `skip: !ready`
+(no `test.todo`). The suite prints which checks are pending and stays green. A later
+stage task flips its own capability flag in `pipeline.ts` and the matching assertions
+turn on automatically. The static scanner itself is covered by the always-on
+self-check, so the gate is never dead code while skipped.
+
+## Gates (all pass on the merged branch)
+- `npx tsc --noEmit` -> exit 0
+- `npm run build:server` -> exit 0 (dist/server.cjs 19.0mb, pdf worker copied)
+- `(cd packages/web && npx next build)` -> exit 0 (compiled, TypeScript passed, 25 pages)
+- `npm run test:mirofish` -> exit 0 (4 scenarios SKIP via capability guard, prints pending list;
+  the always-on self-check passes)
+- `node --import tsx --test src/tools/__tests__/mirofishIntent.test.ts
+  src/tools/mirofish/__tests__/seed.test.ts src/server/__tests__/settingsLocation.test.ts`
+  -> 109 pass, 0 fail
+
+## Notes
+- The legacy fake `src/tools/mirofish.ts` (mirofish_chat tool + /api/mirofish routes)
+  is intentionally left in place for now; the static gate will start failing on it once
+  the capability flag flips, which is the intended signal for the stage tasks.
+- No files outside the worktree were touched; no secrets; no pushes; no reset --hard.
+# Gate Fix Complete - 2026-10-23
 # fc-10 complete: scripted end-to-end check of the Video Studio flow
 
 Committed as `c1e6736` on `khamis1992/fc-10` (parent `839e7cc`, the fc-06 merge into
@@ -3584,7 +3710,7 @@ Merge fidelity, verified mechanically against the real merge parents:
 - `.jdone` auto-merged by the union driver: **0 lines under-present from either side**
   (ours 5212 distinct, theirs 5241 distinct), no conflict markers, no BOM, no U+FFFD, and the
   encoding gate passes on the merged file.
-- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0; `git rev-list --left-right --count
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0, `git rev-list --left-right --count
   manus-parity...HEAD` -> `0  14`; working tree clean.
 - All five N9 files byte-identical to the N9 commit `3136f14` (`askUserStore.ts` 668daff2,
   `askUserGate.ts` 339ccd31, `askUserTools.ts` c935f8b2, `src/server/routes/askUser.ts` 7f743ed1,
@@ -3677,10 +3803,14 @@ build side-effect; it was restored with `git checkout --` before committing.
   confidence signal can replace it behind the `src/tools/askUserGate.ts` seam.
 - `resolve_ask_user` plus the `askUserRequested`/`askUserResolved` pair is the extension point for
   attaching answers to the run graph as a first-class node rather than a prompt prefix.
-- **Operational seam:** `.jdone` is tracked on parity and the union driver is now configured in
-  `.gitattributes`. After any parity merge, check `git ls-files -u` for unresolved paths and
-  confirm this report's heading is still present in `.jdone`, because a gitignore entry does not
-  protect an untracked working-tree copy from being overwritten by a merge.
+- N3's knowledge garden (`src/knowledge/*`, `src/tools/knowledge.ts`,
+  `src/server/routes/knowledge.ts`, `KnowledgeGardenPane.tsx`) is in the tree and can consume those
+  answers as knowledge material.
+- **Operational seam:** `.jdone` is tracked again on parity, so the marker must be edited with the
+  file tools and committed rather than left untracked. Any future parity merge that re-adds or
+  deletes `.jdone` must be checked with `git ls-tree HEAD -- .jdone` and by searching for this
+  report's heading, because a gitignore entry does not protect an untracked working-tree copy
+  from being silently overwritten by a merge.
 - Parity is still advancing under a live runner; if `manus-parity` moves again, merge it and
   re-run the gates rather than editing source to satisfy a conflict.
 
@@ -3910,6 +4040,8 @@ git merge manus-parity, resolve those files keeping both sides, commit.`
 
 ### Root cause (this round)
 No source file conflicted. The only conflict path was the tracked rollup `.jdone`, because both
+sides append their own completion report at the s
+... (truncated)
 sides append their own completion report at the same anchor.
 
 The `.jdone` tracking state had churned across earlier rounds (parity untracked it, then
