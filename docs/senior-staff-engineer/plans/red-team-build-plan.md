@@ -1,5 +1,7 @@
 # Implementation Plan — Loam Unified Red-Team Capability
 
+> **STATUS: COMPLETE (2026-10-24).** All phases RP0–RP7 + final integration are built, tested and committed on branch `red-team-capability` (commits 75ebd8d..4f7a152). Evidence: `npm run test:red` 76/76 pass; `npm run check:red` PASS (planted SSRF found with EV evidence + PoC + SARIF; §9 negative safety tests hold); `npm run check:modes`, `npm run check:bridges`, `npm run check:encoding`, `npm run check:loam-ui` PASS; `npx tsc --noEmit` clean. Documented follow-ups (not blockers): KEV live lookup in `mapKnownVulns` (static fingerprint table ships), vulnx-style CMS signatures, O-3 on-demand engine download, renderer UI panel for the gate/kill-switch. Note: `check:loam-ancillary` fails identically with the redteam mode reverted — pre-existing nav-overlay flake from the parallel UI work, not caused by this build.
+
 - **Source spec:** `docs/senior-staff-engineer/specs/RED_TEAM_BUILD_SPEC.md` (the contract; §refs below point into it).
 - **Repo state verified against:** branch `red-team-capability` (base `667834f`, includes the audit/native security work past `5227df4`).
 - **Authorized-use frame (binding):** every target-touching action passes the §0.4 gate; default posture is localhost-only; all tests run offline against self-hosted lab fixtures; destructive actions require human approval. No third-party hosts, no internet egress in CI.
