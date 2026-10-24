@@ -12,6 +12,7 @@ import {
   CANVAS_NODE_TYPES,
   coerceCanvasGraphResponse,
   coerceCanvasLayout,
+  coerceCanvasLayoutNode,
   coerceCanvasNode,
   coerceCanvasStats,
   isCanvasNodeStatus,
@@ -45,6 +46,22 @@ describe('canvas payload coercion', () => {
     expect(isCanvasNodeType('nonsense')).toBe(false);
     expect(isCanvasNodeStatus('finished')).toBe(true);
     expect(isCanvasNodeStatus('done')).toBe(false);
+  });
+
+  it('keeps the server placement of a laid-out node', () => {
+    // The server lays a run out (`getGraphLayout`), so a card is only drawable if
+    // `x`, `y` and `depth` survive coercion; without them the panel renders
+    // `translate(NaNpx, NaNpx)`, which a browser drops as invalid.
+    const parsed = coerceCanvasLayoutNode(node({ x: 280, y: 240, depth: 1 }));
+    expect(parsed).toMatchObject({ id: 'n1', x: 280, y: 240, depth: 1 });
+    // An unplaced node lands at the origin rather than at NaN.
+    expect(coerceCanvasLayoutNode(node())).toMatchObject({ x: 0, y: 0, depth: 0 });
+    expect(coerceCanvasLayoutNode(node({ x: 'nope', y: null, depth: Number.NaN }))).toMatchObject({
+      x: 0,
+      y: 0,
+      depth: 0,
+    });
+    expect(coerceCanvasLayoutNode({ id: 'bad' })).toBeUndefined();
   });
 
   it('keeps a well-formed node and its payload', () => {
@@ -120,6 +137,53 @@ describe('canvas payload coercion', () => {
     expect(parsed!.nodes).toHaveLength(1);
     // The cursor reply is the only place new nodes arrive, so it must be kept.
     expect(parsed!.fresh.map((n) => n.id)).toEqual(['n2']);
+  });
+
+  it('keeps the server `search` block, which is the only way a partial client learns the hits', () => {
+    const parsed = coerceCanvasGraphResponse({
+      runId: RUN,
+      enabled: true,
+      nodes: [node({ x: 40, y: 40, depth: 0 })],
+      edges: [],
+      stats: { totalNodes: 1 },
+      fresh: [],
+      search: {
+        query: 'quarterly',
+        hits: [
+          {
+            nodeId: 'n2',
+            nodeType: 'webpage',
+            nodeStatus: 'finished',
+            title: 'Draft the quarterly report',
+            // The server omits the per-match node id; coercion fills it in, so the
+            // panel can highlight the card that owns the span.
+            matches: [{ field: 'title', start: 10, length: 9, snippet: 'quarterly' }],
+          },
+        ],
+      },
+    });
+    expect(parsed!.search).toEqual({
+      query: 'quarterly',
+      hits: [
+        {
+          nodeId: 'n2',
+          nodeType: 'webpage',
+          nodeStatus: 'finished',
+          title: 'Draft the quarterly report',
+          matches: [{ field: 'title', start: 10, length: 9, snippet: 'quarterly', nodeId: 'n2' }],
+        },
+      ],
+    });
+  });
+
+  it('leaves a reply without a search block without one', () => {
+    // Absent is not "found nothing": a caller must be able to tell the two apart.
+    expect(coerceCanvasGraphResponse({ runId: RUN, nodes: [], edges: [] })!.search).toBeUndefined();
+    expect(
+      coerceCanvasGraphResponse({ runId: RUN, nodes: [], edges: [], search: { query: 'x', hits: [] } })!.search,
+    ).toEqual({ query: 'x', hits: [] });
+    // A malformed block is dropped rather than kept as junk.
+    expect(coerceCanvasGraphResponse({ runId: RUN, nodes: [], edges: [], search: { hits: [] } })!.search).toBeUndefined();
   });
 
   it('treats a missing `enabled` flag as enabled, like the route does', () => {

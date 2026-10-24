@@ -39,6 +39,7 @@ import type {
   SimulationVariable,
   SocialGraph,
 } from "./types.js";
+import { normalizeDemographics } from "./types.js";
 
 /** Default agent count (RAM light). */
 export const DEFAULT_AGENTS = 12;
@@ -213,6 +214,7 @@ function agentSystemPrompt(persona: Persona, locale: SeedResult["locale"], langu
   const bands = locale.incomeBands
     .map((b) => `${b.label} (${b.min}${b.max ? `-${b.max}` : "+"}) ${b.currency}`)
     .join(", ");
+  const demographics = normalizeDemographics(locale.demographics);
   return [
     "You are role-playing ONE specific, real-feeling customer inside a market simulation.",
     "Stay in character for the whole turn. You are not an assistant and you must not mention the simulation, the brief, a model or a prompt.",
@@ -234,7 +236,7 @@ function agentSystemPrompt(persona: Persona, locale: SeedResult["locale"], langu
     `- Country: ${locale.country}${locale.city ? ` | City: ${locale.city}` : ""}${locale.region ? ` | Region: ${locale.region}` : ""}`,
     `- Currency: ${locale.currency} | Languages: ${locale.languages.join(", ")}${locale.dialect ? ` | Dialect: ${locale.dialect}` : ""}`,
     bands ? `- Local income bands (monthly): ${bands}` : "",
-    locale.demographics.length > 0 ? `- Demographics: ${locale.demographics.join("; ")}` : "",
+    demographics.length > 0 ? `- Demographics: ${demographics.join("; ")}` : "",
     "",
     languageInstruction(persona, locale.languages, language),
   ]
@@ -402,6 +404,7 @@ async function runAgentTurn(input: {
   const modelRef: { model?: string } = {};
   try {
     const output = await callWithModel<AgentTurnOutput>(caller, {
+      role: "simulate",
       system: agentSystemPrompt(persona, ctx.seed.locale, ctx.language),
       prompt: agentUserPrompt({
         persona,

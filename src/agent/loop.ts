@@ -25,7 +25,8 @@ import { isEditTool, recordEditModel } from "../llm/modelAudit.js";
 import type { CooldownStore, FailoverProvider, ProviderClient } from "../llm/failover.js";
 import { createStallGuard } from "./stallGuard.js";
 import { ciWatchEscalationNotice } from "./ciWatchLoop.js";
-import { compressContext } from "./contextCompressor.js";
+import { compressContext, getContextWindow } from "./contextCompressor.js";
+import { ContextSelector } from "./contextSelector.js";
 import { runLifecycleHooks, wrapHookContext } from "../policy/hooks.js";
 import { throwIfCancelled, isCancelled, isCancelledError } from "../server/runControl.js";
 import { openSession, closeSession } from "./sessionHooks.js";
@@ -40,6 +41,8 @@ import { addUsage } from "./usageAccounting.js";
 import { recordToolCall, recordToolResult } from "./checkpointLog.js";
 import { log } from "../log.js";
 import { addRunSiblings, getRunNodes, setRunNodeData, setRunNodeStatus } from "./runGraphAdapter.js";
+import { takeCanvasDirectives } from "./runGraphAdapter.js";
+import { canvasEditsMessage, directiveBody, directiveTitle, CANVAS_EDIT_ARTEFACT_KIND } from "./canvasContext.js";
 import { eventNodeId, type RunNode } from "../graph/store.js";
 import { admitPending, hasPending, type QueuedInput } from "../server/inputQueue.js";
 
@@ -133,7 +136,8 @@ export interface RunOptions {
   sessionId?: string;
   /** When set, replaces the default system prompt (used by the background reviewer). */
   systemOverride?: string;
-  /** Appended after the built (or overridden) system prompt. Used by orchestrator workers. */
+  /** Appended after the built (or overridden) system prompt. Used by orchestrator workers.
+   *  H5: the correction-learning lesson block joins this suffix (src/index.ts, BUILD_SPEC §6.5). */
   systemSuffix?: string;
   /** Overrides cfg.agent.maxSteps for this run (orchestrator workers get a tighter budget). */
   maxSteps?: number;
@@ -203,6 +207,12 @@ export interface RunOptions {
   onAdmitPending?: (sessionId: string) => QueuedInput[];
   /** Session id whose queued messages this run should admit (defaults to taskId). */
   inputSessionId?: string;
+  /**
+   * Neo N5: the per-step context selector. When omitted the loop builds one
+   * from `cfg.contextSelector`; a disabled config keeps the pre-N5 behaviour.
+   * A caller may inject its own instance to share a store across a fan-out.
+   */
+  contextSelector?: ContextSelector;
 }
 
 export interface RunResult {
@@ -248,6 +258,20 @@ function requestSignature(
 function normalizeArgs(v: unknown): Record<string, unknown> {
   if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
   return {};
+}
+
+/**
+ * The model's context window for this run, or `undefined` when the config does
+ * not declare one.
+ *
+ * The selector uses it to cap its own selection. A config that omits the
+ * per-model window map (a minimal test config, or a caller that only needs the
+ * selector) must not make the loop throw, so the lookup is guarded: without a
+ * window the selector falls back to its configured cap.
+ */
+function selectorWindowTokens(cfg: Config, model: string): number | undefined {
+  if (!cfg.compression?.contextWindow || typeof cfg.compression.contextWindow !== "object") return undefined;
+  return getContextWindow(cfg, model);
 }
 
 /** Best-effort target path for an edit tool call (never the full arguments). */
@@ -489,6 +513,15 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
   // as a hidden reminder after the conversation is folded away.
   let currentTodos: TodoItem[] = [];
   const workspace = opts.cfg.workspace;
+  // Neo N5: the per-step context selector. It accumulates one artefact per tool
+  // result and re-shapes the transcript once a step exceeds its activation
+  // threshold, so a long run keeps a bounded context without waiting for the
+  // compressor. A caller may inject its own instance to share one store.
+  const selector = opts.contextSelector ?? new ContextSelector({ config: opts.cfg.contextSelector });
+  // Maps each tool message to its artefact id, so the selector can tell which
+  // transcript entries it may fold away. Object identity survives a re-shape,
+  // because the selector carries the surviving messages over unchanged.
+  const toolMessageIds = new Map<ChatMessage, string>();
 
   try {
     // SessionStart and UserPromptSubmit fire once per run, before any model call.
@@ -525,6 +558,26 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
     if (opts.taskId) reminders.setPlanMode(getTaskPhase(opts.taskId) === "plan");
     for (const message of reminders.drainMessages(step)) messages.push(message);
 
+    // Neo N11: an edit the user made on the canvas while the run was busy (or
+    // before it resumed) is a fact about the run the model has not seen. The
+    // directives are pulled once per step: the batch becomes one hidden reminder
+    // so the very next model call sees it, and each edit also enters the N5
+    // artefact store, so a later step can re-attach it on relevance instead of
+    // the correction having to stay pinned in the prompt for the whole run.
+    if (opts.taskId) {
+      const edits = takeCanvasDirectives(opts.taskId);
+      if (edits.length > 0) {
+        const message = canvasEditsMessage(edits);
+        if (message) messages.push(message);
+        for (const directive of edits) {
+          selector.captureExternal(CANVAS_EDIT_ARTEFACT_KIND, directiveTitle(directive), directiveBody(directive), {
+            path: directive.nodeId,
+          });
+        }
+        opts.emit({ type: "canvas_edit", step, count: edits.length, nodeIds: edits.map((directive) => directive.nodeId) });
+      }
+    }
+
     let providerCompaction = false;
     if (opts.cfg.compression.enabled) {
       const compressed = await compressContext(opts.cfg, opts.ollama, messages, opts.emit, opts.signal, { readState, todos: currentTodos, model: usedModel });
@@ -537,6 +590,33 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       }
       // Re-attach recent file reads and the live task list as hidden reminders.
       for (const reminder of compressed.reminders) messages.push(reminder);
+    }
+
+    // Neo N5: the per-step selector runs before the model is called. From the
+    // activation step onwards it selects the artefacts this step needs and folds
+    // the rest into elision markers, so the prompt stays bounded for the whole
+    // run instead of growing until the compressor fires. A selector failure is
+    // invisible: the run keeps the raw transcript.
+    if (selector.enabled && step > selector.activationStep) {
+      const selected = await selector.apply(messages, {
+        task: opts.prompt,
+        todos: currentTodos,
+        step,
+        toolMessageIds,
+        // The selector's selection is capped by the model's real window, so a
+        // long run cannot re-attach more than the model can hold. Only the
+        // selector's own active path needs this; a disabled selector (or a run
+        // that never reaches its activation step) must not touch the config.
+        windowTokens: selectorWindowTokens(opts.cfg, usedModel),
+      });
+      if (selected.applied) {
+        messages = selected.messages;
+        // Re-index the surviving tool messages; dropped ones lose their entry.
+        for (const [message, id] of [...toolMessageIds]) {
+          if (!messages.includes(message)) toolMessageIds.delete(message);
+        }
+        opts.emit({ type: "context_selected", step, tokens: selected.tokens, artefacts: selected.artefactCount, reason: selected.reason });
+      }
     }
 
     const requestTools = opts.tools.toOllama();
@@ -765,7 +845,12 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
           ...(toolResult.kbSeedIds && toolResult.kbSeedIds.length > 0 ? { kbSeedIds: toolResult.kbSeedIds } : {}),
           ...(toolResult.kbSeeds && toolResult.kbSeeds.length > 0 ? { kbSeeds: toolResult.kbSeeds } : {}),
         });
-        messages.push({ role: "tool", tool_name: item.name, content: toolMessageContent(item.name, toolResult.content) });
+        const toolMessage = { role: "tool", tool_name: item.name, content: toolMessageContent(item.name, toolResult.content) } as ChatMessage;
+        // Neo N5: capture the result as a selectable artefact and remember which
+        // transcript message it belongs to, so the selector can fold it away
+        // later without losing the pairing.
+        toolMessageIds.set(toolMessage, selector.capture(item.name, toolResult.content, { path: editTargetPath(item.args) }).id);
+        messages.push(toolMessage);
         // Stop right after the first tool when cancelled — don't even queue the rest of the batch.
         throwIfCancelled(opts.signal, opts.taskId);
       }
@@ -816,7 +901,9 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
           currentTodos = parseTaskList(name, args);
         }
         if (MEMORY_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.memoryUpdated();
-        messages.push({ role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) });
+        const toolMessage = { role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) } as ChatMessage;
+        toolMessageIds.set(toolMessage, selector.capture(name, toolResult.content, { path: editTargetPath(args) }).id);
+        messages.push(toolMessage);
         // Cancel pressed while the tool ran? Stop before the next tool/step.
         throwIfCancelled(opts.signal, opts.taskId);
 

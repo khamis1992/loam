@@ -24,12 +24,14 @@ import { resolveLocale } from "./locale.js";
 import type {
   EntitySet,
   EntityRef,
+  LocaleProfile,
   Persona,
   PricePoint,
   SeedResult,
   SimulationSettings,
   SimulationVariable,
 } from "./types.js";
+import { normalizeDemographics } from "./types.js";
 
 /** Personas requested per model call. */
 export const PERSONA_BATCH_SIZE = 4;
@@ -335,10 +337,11 @@ function entitiesPrompt(context: string, language?: string): string {
     .join("\n");
 }
 
-function personasPrompt(count: number, locale: { country: string; city?: string; currency: string; languages: string[]; dialect?: string; incomeBands: Array<{ label: string; min: number; max?: number; currency: string }>; demographics: string[] }, entities: EntitySet, seed: number): string {
+function personasPrompt(count: number, locale: { country: string; city?: string; currency: string; languages: string[]; dialect?: string; incomeBands: Array<{ label: string; min: number; max?: number; currency: string }>; demographics: LocaleProfile["demographics"] }, entities: EntitySet, seed: number): string {
   const bands = locale.incomeBands
     .map((b) => `${b.label}: ${b.min}${b.max ? `-${b.max}` : "+"} ${b.currency}`)
     .join("; ");
+  const demographics = normalizeDemographics(locale.demographics);
   return [
     "You are a customer-persona designer for a realistic market simulation.",
     `Create EXACTLY ${count} diverse, believable customer personas for the target market below. Return a JSON array of ${count} objects.`,
@@ -370,7 +373,7 @@ function personasPrompt(count: number, locale: { country: string; city?: string;
     `- Currency: ${locale.currency}`,
     `- Languages: ${locale.languages.join(", ")}${locale.dialect ? ` | Dialect: ${locale.dialect}` : ""}`,
     `- Income bands (monthly, local currency): ${bands || "unspecified"}`,
-    locale.demographics.length > 0 ? `- Demographics: ${locale.demographics.join("; ")}` : "",
+    demographics.length > 0 ? `- Demographics: ${demographics.join("; ")}` : "",
     "",
     "Target context:",
     `- Products: ${entities.products.map((p) => p.name).join(", ") || "unspecified"}`,
@@ -418,6 +421,7 @@ export async function extractEntities(
   if (opts.caller) {
     try {
       const entities = await askJson<EntitySet>(opts.caller, {
+        role: "locale",
         system: "You are a precise market-analysis engine. Return strictly valid JSON matching the requested shape.",
         prompt: entitiesPrompt(context, opts.language),
         temperature: 0.2,
@@ -453,6 +457,7 @@ export async function generatePersonas(
   try {
     const batchResults = await mapWithConcurrency(batches, limit, async (batchSize, index) => {
       return askJson<Persona[]>(opts.caller!, {
+        role: "persona",
         system: "You are a customer-persona designer. Return strictly valid JSON matching the requested array shape.",
         prompt: personasPrompt(batchSize, locale, entities, (opts.language ? hashString(opts.language) : 0) + index * 7919 + batchSize),
         temperature: 0.7,

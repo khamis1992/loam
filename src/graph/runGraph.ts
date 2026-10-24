@@ -710,6 +710,14 @@ export class RunGraph {
       case "verification_progress":
       case "permission_mode_changed":
       case "cache_usage":
+      // Neo N5: the selector re-shapes the transcript every step, so it is a
+      // per-step diagnostic like cache_usage rather than a canvas node (a node
+      // per step would bury the run graph's real structure).
+      case "context_selected":
+      // Neo N11: a canvas edit is already recorded in the graph by the operation
+      // that made it (the new version, the re-pointed edge, the branch or the
+      // merged node), so the event itself carries no node of its own.
+      case "canvas_edit":
       case "workspace_command":
       case "video_studio_command":
       case "video_studio_export":
