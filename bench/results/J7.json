@@ -1,0 +1,95 @@
+{
+  "kind": "renderer-hibernation",
+  "fixtureMessages": 2000,
+  "beforeMB": 236.4,
+  "afterMB": 206,
+  "deltaMB": -30.4,
+  "released": true,
+  "unavailable": false,
+  "rendered": true,
+  "domReleased": true,
+  "draftPreserved": "draft preserved across hibernation",
+  "hibernatedEventCount": 2000,
+  "countedPids": [
+    72232
+  ],
+  "sampleSource": "debug:memory",
+  "gcAvailable": true,
+  "forcedGc": true,
+  "withAttachments": true,
+  "beforeSamplesMB": [
+    241.8,
+    236.4,
+    236.4
+  ],
+  "afterSamplesMB": [
+    208.7,
+    206,
+    204.3
+  ],
+  "attribution": "J6 debug:memory refresh (app.getAppMetrics Tab rows matched to owned webContents)",
+  "sourceCommit": "cde859f436a4b8dc77182cdc5ba5d62d51048c43-dirty",
+  "platform": "win32",
+  "notes": [
+    "garbage collected before each reading (--expose-gc)",
+    "fixture includes image attachments",
+    "view reports 2000 canonical events while hibernated"
+  ],
+  "durationMs": 20575,
+  "samples": [
+    {
+      "at": 1792804271971,
+      "totalMB": 241.78,
+      "processCount": 1,
+      "pids": [
+        72232
+      ],
+      "source": "debug:memory"
+    },
+    {
+      "at": 1792804272770,
+      "totalMB": 236.39,
+      "processCount": 1,
+      "pids": [
+        72232
+      ],
+      "source": "debug:memory"
+    },
+    {
+      "at": 1792804273587,
+      "totalMB": 236.42,
+      "processCount": 1,
+      "pids": [
+        72232
+      ],
+      "source": "debug:memory"
+    },
+    {
+      "at": 1792804278999,
+      "totalMB": 208.65,
+      "processCount": 1,
+      "pids": [
+        72232
+      ],
+      "source": "debug:memory"
+    },
+    {
+      "at": 1792804279718,
+      "totalMB": 206.02,
+      "processCount": 1,
+      "pids": [
+        72232
+      ],
+      "source": "debug:memory"
+    },
+    {
+      "at": 1792804280445,
+      "totalMB": 204.32,
+      "processCount": 1,
+      "pids": [
+        72232
+      ],
+      "source": "debug:memory"
+    }
+  ]
+}

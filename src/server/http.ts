@@ -96,6 +96,8 @@ import { handlePersonalizationRoutes } from "./routes/personalization.js";
 import { handleApiKeysRoutes } from "./routes/apiKeys.js";
 import { handleDataControlsRoutes } from "./routes/dataControls.js";
 import { handleDebugMemoryRoutes } from "./routes/debugMemory.js";
+// J7 idle session hibernation (derived-cache release + debug surface).
+import { handleHibernationRoutes, handleHibernationProcessRoutes } from "./routes/hibernation.js";
 import { LruCache } from "../memory/cache.js";
 import { registerCacheStats } from "../memory/stats.js";
 import { handleMemorySkillsRoutes } from "./routes/memorySkills.js";
@@ -1780,6 +1782,10 @@ loadAgents();
         if (await handleScratchpadRoutes(req, res, p)) return;
         // Session sleep/wake + compute budget (D19).
         if (await handleSessionRuntimeRoutes(req, res, p)) return;
+        // J7 idle session hibernation: per-session state plus the test hook that
+        // requests an immediate release. Dispatched before the generic
+        // `/api/sessions/` handlers below so the action suffix wins.
+        if (await handleHibernationRoutes(req, res, p)) return;
         // Design Studio (/api/design/*): brand kits, templates, generate, outputs.
         if (await handleDesignStudioRoutes(req, res, p)) return;
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;
@@ -1811,6 +1817,8 @@ loadAgents();
         if (await handleDataControlsRoutes(req, res, p)) return;
         // Local-only memory profile (J6): loopback + install token, GET only.
         if (await handleDebugMemoryRoutes(req, res, p)) return;
+        // J7: process-wide hibernation counters (the daemon's own before/after).
+        if (await handleHibernationProcessRoutes(req, res, p)) return;
         // Settings › Connectors (UNIMPLEMENTED_OPTIONS #3): list/connect/callback/disconnect.
         if (await handleConnectorsRoutes(req, res, p)) return;
         // Settings › Skills (UNIMPLEMENTED_OPTIONS #4): proxy the memory-skills MCP.

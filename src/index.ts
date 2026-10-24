@@ -100,6 +100,10 @@ import { recordTaskUsage } from "./server/credits.js";
 import { SessionRuntime, DEFAULT_IDLE_MINUTES, DEFAULT_STEP_LIMIT, DEFAULT_TOKEN_LIMIT } from "./server/sessionRuntime.js";
 import { browserSessionFor } from "./tools/browser.js";
 import { killAllSessions } from "./tools/pty.js";
+// J7 idle session hibernation: release a session's derived caches after a
+// sustained idle period, without touching its authoritative state or draft.
+import { sessionHibernation } from "./memory/hibernation.js";
+import { sessionCacheOwners, sessionHibernationGuard } from "./memory/hibernationWiring.js";
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
@@ -190,6 +194,13 @@ async function main(): Promise<void> {
   });
   sessionRuntime.start();
 
+  // J7 idle session hibernation: one manager per process. The threshold comes
+  // from the same setting as the renderer (`session.hibernationIdleMinutes`,
+  // 0 = off), so the daemon and the UI agree on when a session is idle.
+  sessionHibernation.reset();
+  sessionHibernation.configure({ idleMinutes: cfg.session?.hibernationIdleMinutes });
+  sessionHibernation.start();
+
   const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal; lease?: RunLease }): Promise<{ taskId: string; text: string }> => {
     const { prompt, emit } = opts;
     const settings = getSettings();
@@ -218,6 +229,11 @@ async function main(): Promise<void> {
     // budget is live. Hooks release this task's browser context and pty
     // terminals when it later sleeps, after the state has been persisted.
     void sessionRuntime.markActive(task);
+    // J7: the run is in flight, so its derived caches must stay resident. The
+    // guards read the run signal and the execution queue, both set below.
+    sessionHibernation.setOwners(task, sessionCacheOwners(task));
+    sessionHibernation.setGuards(task, sessionHibernationGuard(task));
+    sessionHibernation.markActive(task);
     sessionRuntime.setHooks(task, {
       persist: () => { saveRun(task, opts.savedRun, opts.lease); },
       release: () => {
@@ -556,6 +572,9 @@ async function main(): Promise<void> {
       // D19: the run stopped working and is now waiting on the user. The
       // session may sleep after the idle threshold and be woken by a message.
       sessionRuntime.markIdle(task);
+      // J7: the turn ended, so the session may hibernate after the idle
+      // threshold. Guards still protect a run that resumed during shutdown.
+      sessionHibernation.markIdle(task);
       completeTaskRun(task, result.text, result.model, opts.lease);
       recordTaskUsage(task, result.usage); // OPD #9: one mock usage entry per completed task
       if (doneEvent) {

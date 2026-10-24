@@ -22,6 +22,13 @@ interface EventListProps {
   sessionId: string;
   socket?: ChatSocket | null;
   onOpenComputer?: (e: ToolUsedEvent) => void;
+  /**
+   * J7 hibernation: while true the rendered message DOM (every markdown,
+   * highlight, diff and image node) is unmounted. Only a compact status frame
+   * stays, so the renderer can return its working set; the canonical events are
+   * untouched in the store and are re-rendered on wake.
+   */
+  hibernated?: boolean;
 }
 
 export interface ChatEventRowProps {
@@ -157,7 +164,7 @@ const Row = memo(function Row({ e, sessionId, socket }: { e: RenderableEvent; se
   return <ChatEventRow e={e} sessionId={sessionId} socket={socket} />;
 });
 
-export function EventList({ events, sessionId, socket, onOpenComputer }: EventListProps) {
+export function EventList({ events, sessionId, socket, onOpenComputer, hibernated }: EventListProps) {
   const collapsed = useMemo(() => collapseEvents(events as unknown as RenderableEvent[]), [events]);
   const summary = useMemo(() => {
     const tools = collapsed.filter((e): e is ToolUsedEvent => e.type === 'toolUsed');
@@ -165,8 +172,32 @@ export function EventList({ events, sessionId, socket, onOpenComputer }: EventLi
   }, [collapsed]);
   const firstToolIndex = useMemo(() => collapsed.findIndex((e) => e.type === 'toolUsed'), [collapsed]);
 
+  // J7: hibernated views keep the canonical events but drop the rendered DOM
+  // entirely. The status frame is deliberately tiny (one line plus the row
+   // count) so the renderer can actually return memory; nothing here reads the
+   // event payloads again, so the fold is rebuilt from the store on wake.
+  if (hibernated) {
+    return (
+      <ol
+        data-testid="event-list"
+        data-hibernated="true"
+        data-event-count={events.length}
+        className="mx-auto flex w-full max-w-[768px] flex-col gap-2 px-[var(--ui-content-padding-x,24px)] py-6"
+      >
+        <li className="text-sm text-text-tertiary">
+          {t('Hibernated')} - {t('{count} messages hidden', { count: String(events.length) })}
+        </li>
+      </ol>
+    );
+  }
+
   return (
-    <ol className="mx-auto flex w-full max-w-[768px] flex-col gap-2 px-[var(--ui-content-padding-x,24px)] py-6">
+    <ol
+      data-testid="event-list"
+      data-hibernated="false"
+      data-event-count={events.length}
+      className="mx-auto flex w-full max-w-[768px] flex-col gap-2 px-[var(--ui-content-padding-x,24px)] py-6"
+    >
       {collapsed.map((e, i) => {
         const isTool = e.type === 'toolUsed';
         const row = (

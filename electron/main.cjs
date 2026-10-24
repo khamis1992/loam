@@ -8,6 +8,7 @@ const inAppBrowser = require("./inAppBrowser.cjs");
 const mcpBridge = require("./mcp-bridge.cjs");
 const vendorProtocol = require("./vendorProtocol.cjs");
 const { IPC_INVOKE, IPC_EVENT_PREFIX, IPC_META, IPC_SYNC, NAMESPACES } = require("./ipc-constants.cjs");
+const { sampleRendererRssMB, selectRendererMetrics } = require("./memorySampler.cjs");
 
 // ---------------------------------------------------------------------------
 // Local-only memory sampling (J6). The desktop main process is the only place
@@ -17,6 +18,7 @@ const { IPC_INVOKE, IPC_EVENT_PREFIX, IPC_META, IPC_SYNC, NAMESPACES } = require
 // renderer process that asked for them.
 // ---------------------------------------------------------------------------
 let lastMemorySample = { at: null, main: null, renderers: [], server: null };
+let lastRendererSample = { mb: 0, matched: 0, pids: [] };
 
 function mb(bytes) {
   return Math.round((Number(bytes) / (1024 * 1024)) * 100) / 100;
@@ -27,20 +29,21 @@ function sampleMainProcess() {
   return { pid: process.pid, rssBytes: m.rss, heapUsedBytes: m.heapUsed, heapTotalBytes: m.heapTotal, externalBytes: m.external };
 }
 
-function sampleRenderers() {
-  const out = [];
-  for (const contents of require("electron").webContents.getAllWebContents()) {
-    let metrics = null;
-    try { metrics = contents.getProcessMemoryInfo(); } catch { continue; }
-    if (!metrics) continue;
-    out.push({
-      pid: metrics.pid ?? 0,
-      rssBytes: metrics.residentSetSize ?? 0,
-      workingSetBytes: metrics.workingSetSize ?? 0,
-      type: String(contents.getType ? contents.getType() : "window"),
-    });
-  }
-  return out;
+// J7: `webContents.getProcessMemoryInfo()` does not exist in Electron 44. The
+// renderer's own working set comes from `app.getAppMetrics()`, matched to the
+// webContents we own by OS pid (see memorySampler.cjs). Attributing rows this
+// way means a missing API can no longer silently report 0 MB.
+function sampleRendererProcesses() {
+  const sample = sampleRendererRssMB(app, BrowserWindow.getAllWindows());
+  lastRendererSample = sample;
+  return [{ pid: 0, rssBytes: Math.round(sample.mb * 1024 * 1024), workingSetBytes: Math.round(sample.mb * 1024 * 1024), type: "window", matched: sample.matched }];
+}
+
+// Exposed for the J7 benchmark so the main process can re-derive the renderer
+// total on demand instead of waiting for the 15 s timer.
+function refreshRendererSample() {
+  const renderers = sampleRendererProcesses();
+  return { renderers, sample: lastRendererSample };
 }
 
 function sampleServerProcess() {
@@ -61,12 +64,12 @@ function startMemorySampler() {
     lastMemorySample = {
       at: new Date().toISOString(),
       main: sampleMainProcess(),
-      renderers: sampleRenderers(),
+      renderers: sampleRendererProcesses(),
       server: sampleServerProcess(),
     };
   }, 15_000);
   if (timer.unref) timer.unref();
-  lastMemorySample = { at: new Date().toISOString(), main: sampleMainProcess(), renderers: sampleRenderers(), server: sampleServerProcess() };
+  lastMemorySample = { at: new Date().toISOString(), main: sampleMainProcess(), renderers: sampleRendererProcesses(), server: sampleServerProcess() };
 }
 
 // App root: the repo folder in dev, resources/app.asar when packaged. Electron's
@@ -565,9 +568,23 @@ const ipcHandlers = {
         mainRssMb: sample.main ? mb(sample.main.rssBytes) : 0,
         rendererRssMb: mb(rendererRss),
         rendererCount: (sample.renderers || []).length,
+        // J7: the raw `app.getAppMetrics()` match used for the number above, so
+        // a zero here always means "no renderer row matched", not "no memory".
+        rendererMatched: lastRendererSample.matched ?? 0,
+        rendererPids: lastRendererSample.pids ?? [],
         serverRssMb: sample.server ? mb(sample.server.rssBytes) : 0,
         serverPid: sample.server?.pid ?? null,
       };
+    },
+    // J7 benchmark hook: re-derive the renderer total now instead of waiting
+    // for the 15 s sampler tick, so a before/after measurement is exact. The
+    // returned number must come from the sample taken *now*: reading
+    // `lastMemorySample` here would report the previous tick (up to 15 s old)
+    // and make a before/after pair look identical.
+    refresh: () => {
+      const { renderers, sample } = refreshRendererSample();
+      const rendererBytes = renderers.reduce((a, r) => a + (r.rssBytes || 0), 0);
+      return { rendererRssMb: mb(rendererBytes), matched: sample.matched, pids: sample.pids };
     },
   },
   storage: {

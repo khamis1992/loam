@@ -100,7 +100,13 @@ export interface Config {
   /** D19 session runtime: idle-to-sleep threshold and the per-session compute
    *  budget. Optional so test configs and older config.json files keep working;
    *  `loadConfig` fills it from DEFAULTS. */
-  session?: { idleMinutes: number; stepLimit: number; tokenLimit: number };
+  session?: {
+    idleMinutes: number;
+    stepLimit: number;
+    tokenLimit: number;
+    /** J7: idle minutes before derived caches are released (0 = off). */
+    hibernationIdleMinutes: number;
+  };
   workspace: string;
   policy: PolicyConfig;
   browser: { channel: string; headless: boolean; viewport: { width: number; height: number } };
@@ -271,7 +277,7 @@ export const DEFAULTS: Config = {
   agent: { maxSteps: 40, temperature: 0.2, requestTimeoutMs: 600000 },
   // D19: sessions idle 30 minutes before their resources are reclaimed; the
   // per-session compute budget warns at 80% and stops at 100% (both raisable).
-  session: { idleMinutes: 30, stepLimit: 40, tokenLimit: 500000 },
+  session: { idleMinutes: 30, stepLimit: 40, tokenLimit: 500000, hibernationIdleMinutes: 30 },
   workspace: path.join(ROOT, "workspace"),
   policy: {
     networkEnabled: true,
@@ -394,6 +400,12 @@ function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+export function normalizeHibernationMinutes(value: unknown): number {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes < 0) return 0;
+  return Math.floor(minutes);
+}
+
 function merge<T>(base: T, over: unknown): T {
   if (!isObj(over)) return base;
   if (!isObj(base)) return over as T;
@@ -415,6 +427,14 @@ export function loadConfig(): Config {
   }
   const cfg = merge(DEFAULTS, raw);
   cfg.coding = { enabled: cfg.coding?.enabled ?? true, chain: cfg.coding?.chain ?? [], logEdits: cfg.coding?.logEdits ?? true };
+  // J7: normalize the hibernation setting. A negative or non-numeric value means
+  // "off" (0), so a stale config.json can never arm a bogus timer. `merge` can
+  // leave `session` undefined for a config that omits it, so fill it here.
+  cfg.session = { ...DEFAULTS.session!, ...(cfg.session ?? {}) };
+  cfg.session.hibernationIdleMinutes = normalizeHibernationMinutes(cfg.session.hibernationIdleMinutes);
+  if (process.env.LOAM_HIBERNATION_IDLE_MINUTES) {
+    cfg.session.hibernationIdleMinutes = normalizeHibernationMinutes(Number(process.env.LOAM_HIBERNATION_IDLE_MINUTES));
+  }
   const coderChainEnv = process.env.LOAM_CODER_CHAIN ?? process.env.MANUS_LOCAL_CODER_CHAIN;
   if (coderChainEnv && coderChainEnv.trim()) {
     cfg.coding.chain = coderChainEnv
