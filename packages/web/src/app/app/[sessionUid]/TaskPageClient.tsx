@@ -273,6 +273,8 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
         const attachmentsParam = searchParams.get('attachments');
         const draftAttachments = attachmentsParam ? parseAttachments(attachmentsParam) : [];
         socket.sendText(sessionUid, draft, mode, draftAttachments, makeExtData(cwd, draftExtData));
+        // Show Stop right away; the server's status event may lag behind the first send.
+        dispatch(setStatus({ sessionId: sessionUid, status: 'running' }));
         dispatch(addSession({
           uid: sessionUid,
           title: existingSession?.title ?? draft.slice(0, 60),

@@ -601,7 +601,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           </div>
         )}
 
-        <div className="hidden items-center -space-x-1 rounded-full border border-border-main bg-bg-menu px-2 py-1 sm:flex">
+        <button
+          type="button"
+          onClick={() => setMenuOpen(true)}
+          aria-label={t('Connectors')}
+          title={t('Connectors')}
+          className="hidden items-center -space-x-1 rounded-full border border-border-main bg-bg-menu px-2 py-1 transition-colors hover:bg-fill-hover sm:flex"
+        >
           <span
             className={clsx(
               'z-30 flex size-5 items-center justify-center rounded-full border border-white bg-black text-white dark:border-[#1f1f1f]',
@@ -630,7 +636,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             <Calendar className="size-3" />
           </span>
           <span className="ms-1 text-[11px] font-medium text-text-secondary">+4</span>
-        </div>
+        </button>
 
         <button
           type="button"

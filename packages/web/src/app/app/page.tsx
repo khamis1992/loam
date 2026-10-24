@@ -354,8 +354,8 @@ export default function HomePage() {
           </div>
 
           {/* Starter cards */}
-          <div className="mb-3 grid grid-cols-1 gap-[10px] md:grid-cols-[390px_215px]">
-            <div className="flex w-[390px] flex-col gap-[10px]">
+          <div className="mb-3 grid grid-cols-1 gap-[10px] md:grid-cols-[390px_minmax(0,1fr)]">
+            <div className="flex w-full max-w-[390px] flex-col gap-[10px]">
               <StarterMenu items={buildItems} onSelect={onStarterSelect}>
                 <HomeCard
                   className="w-full"
@@ -421,16 +421,16 @@ export default function HomePage() {
           <button
             type="button"
             onClick={() => setPlaybookOpen(true)}
-            className="mb-3 flex items-center gap-3 rounded-card border border-border-main px-4 py-3 text-start transition-colors hover:bg-fill-hover"
+            className="mb-3 flex w-full items-center gap-3 rounded-card border border-border-main px-4 py-3 text-start transition-colors hover:bg-fill-hover"
           >
-            <BookOpenText className="size-5 text-text-tertiary" />
-            <span>
+            <BookOpenText className="size-5 shrink-0 text-text-tertiary" />
+            <span className="min-w-0 flex-1">
               <span className="block text-[13px] font-medium text-text-primary">{t('Case Playbook')}</span>
               <span className="block text-[11px] text-text-tertiary">
                 {t('Twelve ready Loam flows. Pick one to start from a proven prompt.')}
               </span>
             </span>
-            <Play className="size-4 text-text-tertiary" />
+            <Play className="size-4 shrink-0 text-text-tertiary rtl:rotate-180" />
           </button>
 
           {/* Composer */}
