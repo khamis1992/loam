@@ -223,6 +223,7 @@ export interface ScheduleTiming {
   runAt?: string;
   intervalSeconds?: number;
   timezone?: string;
+  until?: string;
 }
 
 function effectiveTimezone(tz: string | undefined): string {
@@ -239,14 +240,27 @@ function effectiveTimezone(tz: string | undefined): string {
  */
 export function nextOccurrenceAfter(timing: ScheduleTiming, from: Date): string | null {
   const tz = effectiveTimezone(timing.timezone);
-  if (timing.cron) return nextCronRun(timing.cron, from, tz).toISOString();
-  if (timing.runAt) {
+  let nextIso: string | null = null;
+  if (timing.cron) {
+    nextIso = nextCronRun(timing.cron, from, tz).toISOString();
+  } else if (timing.runAt) {
     const atMs = atToUtcMs(timing.runAt, tz);
-    if (atMs > from.getTime()) return new Date(atMs).toISOString();
-    return null;
+    if (atMs > from.getTime()) nextIso = new Date(atMs).toISOString();
+  } else {
+    const interval = Math.max(30, Math.floor(timing.intervalSeconds ?? 3600));
+    nextIso = new Date(from.getTime() + interval * 1000).toISOString();
   }
-  const interval = Math.max(30, Math.floor(timing.intervalSeconds ?? 3600));
-  return new Date(from.getTime() + interval * 1000).toISOString();
+  if (!nextIso) return null;
+  if (timing.until) {
+    try {
+      const untilMs = atToUtcMs(timing.until, tz);
+      if (Date.parse(nextIso) > untilMs) return null;
+    } catch {
+      const untilMs = Date.parse(timing.until);
+      if (Number.isFinite(untilMs) && Date.parse(nextIso) > untilMs) return null;
+    }
+  }
+  return nextIso;
 }
 
 /** First nextRunAt for a freshly created schedule (past one-shots are due now). */

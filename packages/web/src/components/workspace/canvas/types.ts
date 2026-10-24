@@ -23,6 +23,7 @@ export const CANVAS_NODE_TYPES = [
   'merge',
   'note',
   'failed',
+  'round',
   // N3: a Knowledge Garden seed the agent cited, drawn as a document node.
   'kb_seed',
 ] as const;

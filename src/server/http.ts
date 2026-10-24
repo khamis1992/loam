@@ -87,6 +87,9 @@ import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
 import { handleGraphRoutes } from "./routes/graph.js";
 import { handleGraphNodeRoutes } from "./routes/graphNodes.js";
+// Neo N17 external-agent canvas bridge: local HTTP/WS API for OpenCode/Claude Code/Orca.
+import { createCanvasBridgeUpgrade, handleCanvasBridgeParentRoutes, handleCanvasBridgeRoutes } from "./routes/canvasBridge.js";
+import { getLiveRunGraph, subscribeRunGraph } from "../agent/runGraphAdapter.js";
 import { handleCraftRoutes } from "./routes/craft.js";
 import { handleInstructionsRoutes } from "./routes/instructions.js";
 import { handleAgentSpawnRoutes } from "./routes/agentSpawn.js";
@@ -119,6 +122,10 @@ import { handleConnectorsRoutes } from "./routes/connectors.js";
 import { handleEnvBuildRoutes } from "./routes/envBuilds.js";
 import { handleKnowledgeRoutes } from "./routes/knowledge.js";
 import { handleWikiRoutes } from "./routes/wiki.js";
+import { handleDocsRoutes } from "./routes/docs.js";
+// H8/H9: learned-lesson REST surface. Dispatched before the generic
+// /api/learning (audit log) handler below, which only matches the exact path.
+import { handleLearningRoutes } from "./routes/learning.js";
 import { importGrokbotBundle, sanitizeGrokbotBundle } from "./grokbotImport.js";
 import { isValidTimezone } from "./scheduleTime.js";
 import { getWorkModesUi, normalizeWorkMode, resolveCompanionCapabilities } from "./companionGateway.js";
@@ -1086,6 +1093,10 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           }
         }
 
+        // Learned lessons (H8/H9): /api/learning/lessons and /corrections.
+        // Must precede the generic /api/learning audit-log handler below.
+        if (await handleLearningRoutes(req, res, p)) return;
+
         if (req.method === "GET" && p === "/api/learning") {
           const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 50), 1), 500);
           sendJson(res, 200, { entries: readLearning(limit) });
@@ -1281,8 +1292,8 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (req.method === "POST" && p === "/api/settings") {
-          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; codemode?: unknown; planApprovalSkipTrivial?: unknown };
-          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; codemode?: boolean; planApprovalSkipTrivial?: boolean } = {};
+          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; codemode?: unknown; planApprovalSkipTrivial?: unknown; lessonsAutoApply?: unknown };
+          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; codemode?: boolean; planApprovalSkipTrivial?: boolean; lessonsAutoApply?: boolean } = {};
           if (body.theme === "dark" || body.theme === "light" || body.theme === "system") patch.theme = body.theme;
           if (typeof body.model === "string") patch.model = body.model;
           if (body.projectId === null || typeof body.projectId === "string") patch.projectId = body.projectId;
@@ -1291,6 +1302,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           // Codemode master switch (opt-in): only an explicit boolean is stored.
           if (typeof body.codemode === "boolean") patch.codemode = body.codemode;
           if (typeof body.planApprovalSkipTrivial === "boolean") patch.planApprovalSkipTrivial = body.planApprovalSkipTrivial;
+          if (typeof body.lessonsAutoApply === "boolean") patch.lessonsAutoApply = body.lessonsAutoApply;
           sendJson(res, 200, updateSettings(patch));
           return;
         }
@@ -1804,6 +1816,13 @@ loadAgents();
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;
         // Neo N2 canvas: the run graph built live by the agent (N1).
         if (await handleGraphRoutes(req, res, p, { enabled: cfg.runGraph?.enabled !== false })) return;
+        // Neo N17 external-agent canvas bridge: same graph, driven from outside.
+        // The route reaches the live graph through the adapter itself. Mounted
+        // before the N13 node routes below so the bridge's own `/nodes/:id/...`
+        // paths are not swallowed.
+        const canvasCtx = { enabled: cfg.runGraph?.enabled !== false };
+        if (await handleCanvasBridgeRoutes(req, res, p, canvasCtx)) return;
+        if (await handleCanvasBridgeParentRoutes(req, res, p, canvasCtx)) return;
         // Neo N13: node-level actions on that graph (versions/diff, Add to KB,
         // webpage artifact). Mounted right after the graph so `/nodes/:id/...`
         // paths are not swallowed by the graph's own `/nodes/:id` route.
@@ -1863,6 +1882,11 @@ loadAgents();
         if (await handleEnvBuildRoutes(req, res, p)) return;
         // Repo wiki (D8): list/generate/read DeepWiki-style pages.
         if (await handleWikiRoutes(req, res, p, { workspace: cfg.workspace, ollama, model: cfg.model })) return;
+
+        // User guide (N22): the `docs/neo` guide, served to the in-app help page.
+        // The manifest is the allow-list, so `/api/docs/:file` can only ever name
+        // a page of the guide; it is never treated as a filesystem path.
+        if (await handleDocsRoutes(req, res, p)) return;
 
         // Knowledge Garden (N3): bases, seeds, import and hybrid search.
         if (await handleKnowledgeRoutes(req, res, p, {
@@ -3062,6 +3086,36 @@ loadAgents();
       }
     })();
   });
+
+  // Neo N17 external-agent canvas bridge: the live channel is a WebSocket upgrade
+  // on the loopback server, so an external agent session holds one socket per
+  // canvas and receives node changes as they are written. The upgrade carries the
+  // same install token as every /api route (header or `?token=`, since a bare agent
+  // cannot set headers on an upgrade).
+  if (cfg.runGraph?.enabled !== false) {
+    const bridgeAuthDir = process.env.LOAM_LOCAL_TOKEN_DIR || DATA_DIR;
+    setLocalAuthUserDataDir(bridgeAuthDir);
+    const bridgeUpgrade = createCanvasBridgeUpgrade({
+      authenticate: (request) => {
+        if (process.env.LOAM_AUTH_DISABLED === "true") return true;
+        const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
+        const token = typeof request.headers["x-loam-local-token"] === "string"
+          ? request.headers["x-loam-local-token"]
+          : url.searchParams.get("token") ?? undefined;
+        return validateLocalToken(bridgeAuthDir, token);
+      },
+      subscribe: (canvasId, listener) => subscribeRunGraph(canvasId, listener),
+    });
+    server.on("upgrade", (req, socket, head) => {
+      try {
+        if (bridgeUpgrade(req, socket as import("node:net").Socket, head)) return;
+        socket.destroy();
+      } catch (err) {
+        log.warn(`canvas bridge upgrade failed: ${String(err)}`);
+        socket.destroy();
+      }
+    });
+  }
 
   return new Promise((resolve) => {
     server.once("close", () => { swarm?.close(); void timeline.close(); });

@@ -1,6 +1,7 @@
 import { createLoamTools } from "../tools/loam.js";
 import { createEnvSnapshotTools } from "../tools/envSnapshot.js";
 import { createLoamServiceTools } from "../tools/loamServices.js";
+import { createWakeupTools } from "../tools/wakeupTools.js";
 import { createCreativeTools } from "../tools/creative.js";
 import { createCreativeStudioTools } from "../tools/creativeStudio.js";
 import { createOfficeTools } from "../tools/officeTools.js";
@@ -138,6 +139,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createLoamTools());
   registry.registerAll(createEnvSnapshotTools());
   registry.registerAll(createLoamServiceTools());
+  registry.registerAll(createWakeupTools());
   registry.registerAll(createCreativeTools());
   registry.registerAll(createCreativeStudioTools());
   registry.registerAll(createOfficeTools());

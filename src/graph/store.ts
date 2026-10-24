@@ -32,6 +32,16 @@ export const RUN_NODE_TYPES = [
   "note",
   "failed",
   "kb_seed",
+  /** Neo N8: Recurring round root node for round subtrees. */
+  "round",
+  /**
+   * External-agent canvas bridge (N17): a node an external agent session
+   * (OpenCode / Claude Code / Orca) placed on a Loam canvas. Unlike the other
+   * kinds, this one is written directly by the bridge rather than derived from an
+   * agent event, so the external session's own cursor and payload survive on the
+   * canvas as authored.
+   */
+  "canvas_bridge",
 ] as const;
 export type RunNodeType = (typeof RUN_NODE_TYPES)[number];
 

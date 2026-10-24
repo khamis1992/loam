@@ -50,7 +50,7 @@ export const COMPANION_SERVICES: CompanionService[] = [
   { id: "team", labelAr: "تعاون المساعدين", description: "تفويض جزء من العمل إلى رفيق آخر يعمل بهويته ومتابعة نتيجته (يتطلب وضعه ضمن فريق/تنفيذ)", tools: ["companion_delegate", "companion_delegations"], dynamic: true },
   { id: "learning", labelAr: "التعلم من طريقة العمل", description: "تحويل سير العمل المتكرر إلى مهارة مرقّمة الإصدارات مع توثيق سبب نجاحها", tools: ["companion_learn_skill"], dynamic: true },
   { id: "tasks", labelAr: "المهام والمشاريع", description: "إنشاء مهام Loam ومتابعتها وإلغاؤها وقراءة نتائجها", tools: ["task_create", "task_list", "task_get", "task_cancel"] },
-  { id: "automation", labelAr: "الأتمتة", description: "روتينات مجدولة تُشغّل دوريًا (إنشاء/عرض/حذف)", tools: ["schedule_create", "schedule_list", "schedule_delete", "watch_create", "watch_list"] },
+  { id: "automation", labelAr: "الأتمتة", description: "روتينات مجدولة تُشغّل دوريًا (إنشاء/عرض/حذف)", tools: ["schedule_create", "schedule_list", "schedule_delete", "watch_create", "watch_list", "schedule_wakeup", "cancel_wakeup"] },
 ];
 
 export interface WorkModeDef {
