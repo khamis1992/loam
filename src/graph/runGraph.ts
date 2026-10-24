@@ -747,6 +747,31 @@ export class RunGraph {
           data: { stopped: true },
           parent: state.lastId,
         }).id];
+      case "budget_exhausted":
+        // Neo N6: the mission reached its budget ceiling and stopped cleanly. It
+        // is a summary node, not a failure: the canvas reports where the mission
+        // got to and what it consumed, so the user can raise the budget and
+        // resume from the checkpoint instead of re-reading an error banner.
+        return [this.addNode(runId, state, {
+          type: "note",
+          seed: `budget:${state.seq}`,
+          status: "finished",
+          data: {
+            budgetStopped: true,
+            reason: oneLine(event.reason, 400),
+            lastStep: event.checkpoint.lastStep,
+            steps: event.checkpoint.budget.steps,
+            tokens: event.checkpoint.budget.promptTokens + event.checkpoint.budget.completionTokens,
+            // Only the dimensions the mission was actually bounded by. The
+            // counters themselves are always present (a fresh budget zeroes
+            // them), so testing the counter would report "0m wall-clock,
+            // $0.0000" for a mission that never had a clock or a cost ceiling.
+            ...(event.checkpoint.budget.wallClockLimitMs !== undefined ? { wallClockMs: event.checkpoint.budget.wallClockMs } : {}),
+            ...(event.checkpoint.budget.costLimitUsd !== undefined ? { costUsd: event.checkpoint.budget.costUsd } : {}),
+            resumable: !event.checkpoint.inFlight,
+          },
+          parent: state.lastId,
+        }).id];
       case "done":
         return [this.addNode(runId, state, {
           type: "complete",
@@ -780,6 +805,10 @@ export class RunGraph {
       // per-step diagnostic like cache_usage rather than a canvas node (a node
       // per step would bury the run graph's real structure).
       case "context_selected":
+      // Neo N11: a canvas edit is already recorded in the graph by the operation
+      // that made it (the new version, the re-pointed edge, the branch or the
+      // merged node), so the event itself carries no node of its own.
+      case "canvas_edit":
       case "workspace_command":
       case "video_studio_command":
       case "video_studio_export":

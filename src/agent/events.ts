@@ -200,6 +200,28 @@ export type AgentEvent =
    */
   | { type: "context_selected"; step: number; tokens: number; artefacts: number; reason: string }
   /**
+   * Neo N6: a mission reached its budget ceiling and stopped *cleanly*.
+   *
+   * This is not a failure: the mission ran until the limit the user set. The
+   * canvas renders it as a summary node so the run shows where it got to and
+   * what it consumed instead of an error banner.
+   */
+  | {
+      type: "budget_exhausted";
+      taskId: string;
+      /** Why the budget stopped the mission (steps/tokens/wall-clock/cost). */
+      reason: string;
+      /** The checkpoint at the stop, carried so the summary is truthful. */
+      checkpoint: import("./mission.js").MissionCheckpoint;
+    }
+  /**
+   * Neo N11: the run picked up edits the user made on the canvas (corrected node
+   * output, a cut/re-connected edge, a duplicated branch, a merged group, or a
+   * quote/follow-up instruction). `count` is how many edits entered this step's
+   * prompt and `nodeIds` names the nodes they acted on.
+   */
+  | { type: "canvas_edit"; step: number; count: number; nodeIds: string[] }
+  /**
    * fc-06: a Loam Video export is in flight. Live-only (no canvas node): the
    * rendered file lands in the task workspace when the stage reaches "saving".
    */

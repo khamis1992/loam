@@ -67,7 +67,7 @@ import { runAgent } from "./agent/loop.js";
 import { isOutputType, modelAbChain, normalizeEffort, type EffortLevel } from "./llm/router.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
 import { writeCheckpoint } from "./agent/checkpointLog.js";
-import type { Emit } from "./agent/events.js";
+import type { AgentEvent, Emit } from "./agent/events.js";
 import { applyRunEvent, beginRun, recallGraphHandle } from "./agent/runGraphAdapter.js";
 import { createRecallTools } from "./tools/memory.js";
 import { OllamaClient } from "./ollama.js";
@@ -102,10 +102,39 @@ import {
 } from "./server/inputQueue.js";
 import { claimRunLease, releaseRunLease, startLeaseHeartbeat, type LeaseHeartbeat, type RunLease } from "./server/runLease.js";
 import { recordTaskUsage } from "./server/credits.js";
+// H5: inject relevant learned lessons into the task's system prompt (BUILD_SPEC §6.5).
+import { lessonsForTask } from "./learning/harness/inject.js";
+import { domainOf } from "./learning/harness/types.js";
 // D19 session runtime: sleep/wake lifecycle + per-session compute budget.
 import { SessionRuntime, DEFAULT_IDLE_MINUTES, DEFAULT_STEP_LIMIT, DEFAULT_TOKEN_LIMIT } from "./server/sessionRuntime.js";
+// Neo N6: mission runs — an unbounded run type bounded by a durable budget.
+import {
+  canResumeMission,
+  missionBudgetFrom,
+  missionCheckpoints,
+  missionResumableFrom,
+  type MissionCheckpoint,
+} from "./agent/mission.js";
+import { isMissionBudgetError } from "./agent/loop.js";
 import { browserSessionFor } from "./tools/browser.js";
 import { killAllSessions } from "./tools/pty.js";
+// J7 idle session hibernation: release a session's derived caches after a
+// sustained idle period, without touching its authoritative state or draft.
+import { sessionHibernation } from "./memory/hibernation.js";
+import { sessionCacheOwners, sessionHibernationGuard } from "./memory/hibernationWiring.js";
+
+/**
+ * Neo N6: the budget a mission runs under, from this config. `missionBudgetFrom`
+ * in `mission.ts` owns the rule (configured ceilings + the counters a resume
+ * already charged); this is only the config-to-limits adapter, kept so the run
+ * path and the budget-stop path build the budget exactly one way.
+ */
+function missionBudgetFor(cfg: ReturnType<typeof loadConfig>, carried?: MissionCheckpoint["budget"]) {
+  return missionBudgetFrom(
+    { steps: cfg.mission?.steps, tokens: cfg.mission?.tokens, minutes: cfg.mission?.minutes, costUsd: cfg.mission?.costUsd },
+    carried,
+  );
+}
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
@@ -196,6 +225,13 @@ async function main(): Promise<void> {
   });
   sessionRuntime.start();
 
+  // J7 idle session hibernation: one manager per process. The threshold comes
+  // from the same setting as the renderer (`session.hibernationIdleMinutes`,
+  // 0 = off), so the daemon and the UI agree on when a session is idle.
+  sessionHibernation.reset();
+  sessionHibernation.configure({ idleMinutes: cfg.session?.hibernationIdleMinutes });
+  sessionHibernation.start();
+
   const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal; lease?: RunLease }): Promise<{ taskId: string; text: string }> => {
     const { prompt, emit } = opts;
     const settings = getSettings();
@@ -224,6 +260,11 @@ async function main(): Promise<void> {
     // budget is live. Hooks release this task's browser context and pty
     // terminals when it later sleeps, after the state has been persisted.
     void sessionRuntime.markActive(task);
+    // J7: the run is in flight, so its derived caches must stay resident. The
+    // guards read the run signal and the execution queue, both set below.
+    sessionHibernation.setOwners(task, sessionCacheOwners(task));
+    sessionHibernation.setGuards(task, sessionHibernationGuard(task));
+    sessionHibernation.markActive(task);
     sessionRuntime.setHooks(task, {
       persist: () => { saveRun(task, opts.savedRun, opts.lease); },
       release: () => {
@@ -439,12 +480,34 @@ async function main(): Promise<void> {
       // Provenance-aware index summary: a bounded digest of long-term memory so
       // the agent knows what it already knows without a tool call.
       const memoryIndexSummary = memory && memory.count > 0 ? memory.indexSummary(8) : undefined;
+      // H5 lesson injection (BUILD_SPEC .h2-ref/BUILD_SPEC.md §6.5): relevant lessons from
+      // past corrections join the system suffix. Wrapped in try/catch so a store or ranking
+      // failure can never block the task; the block is capped (cfg.lessons.maxChars) and
+      // every injected lesson's `uses` counter grows (LOAM_LESSONS_ENABLED can disable it).
+      // The fallbacks mirror loadConfig for test configs built without the lessons key.
+      let lessonBlock = "";
+      const lessonsCfg = effectiveCfg.lessons ?? { enabled: true, maxChars: 1200, minScore: 0.35 };
+      if (lessonsCfg.enabled) {
+        try {
+          lessonBlock = lessonsForTask({
+            agentId: agentId ?? null,
+            domain: domainOf(effectivePrompt.slice(0, 400)),
+            prompt: effectivePrompt,
+            enabled: true,
+            maxChars: lessonsCfg.maxChars,
+            minScore: lessonsCfg.minScore,
+          }).block;
+        } catch (err) {
+          log.warn(`lesson injection skipped: ${String(err)}`);
+        }
+      }
       const suffix = [
         `You are Loam. Active mode: ${modeDefinition.labelAr}. ${modeDefinition.description} Only use the provided tool capabilities.`,
         modeDefinition.outputHint,
         workModeDefinition.policy,
         memoryContextSuffix,
         memoryIndexSummary,
+        ...(lessonBlock ? [lessonBlock] : []),
         agentSuffix, askModeSuffix, sideChatSuffix,
         quickEditRoute.suffix,
       ].filter(Boolean).join("\n\n");
@@ -540,6 +603,31 @@ async function main(): Promise<void> {
         },
         workspaceRoot: effectiveCfg.workspace,
       });
+      // Neo N6 mission run: an unbounded run type bounded by a durable budget.
+      // The mission flag survives the queue (`SavedRun.mission`) and, on a
+      // resume, the stored checkpoint is authoritative. A checkpoint taken
+      // between steps resumes automatically; one taken mid-step needs the user's
+      // explicit confirmation, the same gate a replayed orchestrator step uses.
+      const missionRun = opts.savedRun.mission === true;
+      const storedMissionCheckpoint = missionRun ? (opts.savedRun.missionCheckpoint ?? missionCheckpoints.load(task)) : undefined;
+      // Neo N6: a budget stop is a clean end and resumes automatically once the
+      // user has raised the ceiling; a checkpoint written mid-step is not a safe
+      // boundary and still needs the explicit confirmation below.
+      const missionResume = missionRun && storedMissionCheckpoint && missionResumableFrom(storedMissionCheckpoint)
+        ? storedMissionCheckpoint
+        : undefined;
+      if (missionRun && storedMissionCheckpoint && !missionResume && !opts.retryInterruptedStep) {
+        throw new Error("Mission was interrupted mid-step; confirm the retry to resume from the last checkpoint");
+      }
+      // The mission budget carries the checkpoint's counters so a resumed
+      // mission keeps its clock and spend instead of restarting both.
+      const missionBudget = missionRun
+        ? missionBudgetFor(cfg, missionResume?.budget)
+        : undefined;
+      // D19 sleep + budget: the mission's own ceilings are the session's ceilings
+      // for the duration of the run, so the badge, the raise endpoint and the
+      // run all consult one object and a raise takes effect on the next resume.
+      if (missionBudget) sessionRuntime.adoptBudget(task, missionBudget);
       const agentOpts = {
         cfg: effectiveCfg,
         ollama: runOllama,
@@ -564,15 +652,29 @@ async function main(): Promise<void> {
         ...(opts.inputSessionId
           ? { inputSessionId: opts.inputSessionId, onAdmitPending: (sessionId: string) => admitPendingInputs(sessionId) }
           : {}),
-        // D19 compute budget: shared with the UI badge so the counters and the
-        // badge always agree, and the run stops when the ceiling is hit.
-        budget: sessionRuntime.getBudget(task),
-        // O5: the durable event log is keyed by the task id (the protocol store
-        // binds a session to its task, and `session_events` outlives the JSON
-        // session cache). Setting this makes every tool call in this run append a
-        // `started` row before it runs and a terminal row after.
-        eventLogSession: task,
-      };
+      // D19 compute budget: shared with the UI badge so the counters and the
+      // badge always agree, and the run stops when the ceiling is hit.
+      budget: sessionRuntime.getBudget(task),
+      // Neo N6: a mission lifts the fixed step cap. Its budget comes from
+      // `cfg.mission`, carries over from the durable checkpoint on a resume so
+      // the clock and counters never restart, and is bounded by the steps the
+      // checkpoint already recorded.
+      ...(missionRun ? {
+        mission: true,
+        budget: missionBudget,
+        ...(missionResume ? { resumeMission: missionResume } : {}),
+        saveMissionCheckpoint: (checkpoint: MissionCheckpoint) => {
+          missionCheckpoints.save(checkpoint);
+          opts.savedRun.missionCheckpoint = checkpoint;
+          saveRun(task, opts.savedRun, opts.lease);
+        },
+      } : {}),
+      // O5: the durable event log is keyed by the task id (the protocol store
+      // binds a session to its task, and `session_events` outlives the JSON
+      // session cache). Setting this makes every tool call in this run append a
+      // `started` row before it runs and a terminal row after.
+      eventLogSession: task,
+    };
       const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
         ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint, lifecycleHooks: true,
         saveCheckpoint: (checkpoint) => {
@@ -593,6 +695,12 @@ async function main(): Promise<void> {
       // D19: the run stopped working and is now waiting on the user. The
       // session may sleep after the idle threshold and be woken by a message.
       sessionRuntime.markIdle(task);
+      // Neo N6: the mission charged wall-clock/cost inside the run, so the store
+      // has to keep the same budget object or the badge would show a stale one.
+      if (missionBudget) sessionRuntime.adoptBudgetAfterRun(task, missionBudget);
+      // J7: the turn ended, so the session may hibernate after the idle
+      // threshold. Guards still protect a run that resumed during shutdown.
+      sessionHibernation.markIdle(task);
       completeTaskRun(task, result.text, result.model, opts.lease);
       recordTaskUsage(task, result.usage); // OPD #9: one mock usage entry per completed task
       if (doneEvent) {
@@ -640,6 +748,36 @@ async function main(): Promise<void> {
       }
       const message = err instanceof Error ? err.message : String(err);
       const cancelled = runSignal.aborted || isCancelledError(err);
+      // Neo N6: a mission that reached its budget ceiling ended cleanly, not
+      // with a failure. The checkpoint already carries the summary node, so the
+      // task is closed as done and the run stays resumable from that boundary.
+      if (isMissionBudgetError(err)) {
+        const checkpoint = err.checkpoint;
+        // The stop happened inside the run, so the budget it used was the one
+        // adopted for this mission; the checkpoint carries that same object.
+        const stoppedBudget = opts.savedRun.mission === true ? missionBudgetFor(cfg, checkpoint.budget) : undefined;
+        missionCheckpoints.save(checkpoint);
+        opts.savedRun.missionCheckpoint = checkpoint;
+        saveRun(task, opts.savedRun, opts.lease);
+        sessionRuntime.markIdle(task);
+        // Neo N6: the stop is the mission's terminal state for now. The store
+        // must keep the exhausted budget (and its `stopped` flag) so the badge
+        // shows the ceiling and a raise is what resumes the mission.
+        if (stoppedBudget) sessionRuntime.adoptBudgetAfterRun(task, stoppedBudget);
+        const summary = `انتهت المهمة عند حد الميزانية في الخطوة ${checkpoint.lastStep}. يمكنك رفع الميزانية للمتابعة من نفس النقطة.`;
+        // Deliberately NOT `completeTaskRun`: that clears the saved run, and a
+        // budget stop must keep the checkpoint so the user can raise the budget
+        // and resume from the same boundary. The task is closed as done here.
+        setTaskStatus(task, "done", { model: effectiveCfg.model }, opts.lease);
+        appendMessage(task, "assistant", summary);
+        const budgetEvent: AgentEvent = { type: "budget_exhausted", taskId: task, reason: "budget", checkpoint };
+        appendStep(task, { at: new Date().toISOString(), type: budgetEvent.type, data: budgetEvent });
+        emit(budgetEvent);
+        recordTaskUsage(task, { promptTokens: checkpoint.budget.promptTokens, completionTokens: checkpoint.budget.completionTokens });
+        publishTaskEvent(task, budgetEvent);
+        await sessionLog?.flush();
+        return { taskId: task, text: summary };
+      }
       let statusWritten = true;
       try {
         setTaskStatus(task, cancelled ? "cancelled" : "error", { error: cancelled ? "cancelled by user" : message }, opts.lease);
@@ -669,7 +807,16 @@ async function main(): Promise<void> {
     let saved: SavedRun;
     if (opts.resume) {
       const pending = previous ? getSavedRun(previous.id) : undefined;
-      if (!pending || previous?.status === "done") throw new Error("no saved execution to resume");
+      // Neo N6: a mission stopped by its budget is closed as `done` but is still
+      // resumable from its checkpoint once the user raises the budget.
+      if (!pending) throw new Error("no saved execution to resume");
+      if (previous?.status === "done" && !canResumeMission(pending)) throw new Error("no saved execution to resume");
+      // Neo N6: a budget-stopped mission resumed on a raised ceiling is the one
+      // case where replaying from the checkpoint boundary is authorized: the
+      // checkpoint was written *between* steps, so nothing is half-applied.
+      if (previous?.status === "done" && canResumeMission(pending)) {
+        opts.retryInterruptedStep = true;
+      }
       if (requiresReplayConfirmation(pending) && !opts.retryInterruptedStep) {
         throw new Error("Interrupted step may already have performed actions; explicit retryInterruptedStep confirmation required");
       }
@@ -695,6 +842,9 @@ async function main(): Promise<void> {
         workMode: normalizeWorkMode(opts.workMode ?? agent?.workMode),
         orchestrated: cfg.orchestrator.enabled, started: false,
         sideChat: opts.sideChat === true,
+        // Neo N6: the run type must survive the queue so a queued mission runs
+        // as a mission and a resumed run keeps its checkpoint.
+        mission: opts.mission === true,
         knowledge: opts.knowledge === true,
       };
     }

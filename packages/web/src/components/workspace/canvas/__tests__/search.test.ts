@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { highlightSegments, normaliseText, searchCanvasNodes, searchMatches } from '../search';
+import { highlightField, highlightSegments, normaliseText, searchCanvasNodes, searchMatches } from '../search';
 
 interface Node {
   id: string;
@@ -106,5 +106,19 @@ describe('search highlighting', () => {
 
   it('returns the whole value unmatched when nothing hit it', () => {
     expect(highlightSegments('Draft the report', [])).toEqual([{ text: 'Draft the report', match: false }]);
+  });
+
+  it('applies a hit to the field it named, not to the card line that shows it', () => {
+    // A card shows two lines, so the same offsets must not be applied to both:
+    // the subtitle's spans belong to the subtitle.
+    const [hit] = searchCanvasNodes([node('1', { title: 'Gather quarterly sources', url: 'https://example.com/report' })], 'example');
+    expect(highlightField('Gather quarterly sources', 'title', hit!.matches)).toEqual([
+      { text: 'Gather quarterly sources', match: false },
+    ]);
+    expect(highlightField('https://example.com/report', 'url', hit!.matches)).toEqual([
+      { text: 'https://', match: false },
+      { text: 'example', match: true },
+      { text: '.com/report', match: false },
+    ]);
   });
 });

@@ -15,6 +15,8 @@ import type { RunGraphExport, RunNode, RunNodeStatus, RunNodeType } from "../gra
 import type { NodeIndex } from "../graph/nodeVersions.js";
 import { setNodeIndex } from "../graph/nodeVersions.js";
 import { recallIndex, resetRecallIndex } from "../graph/recall.js";
+import { applyCanvasOp, parseCanvasOpRequest, type CanvasOpResult, type CanvasOpRequest } from "../graph/ops.js";
+import { clearDirectives, consumeDirectives, readDirectives, type CanvasDirective } from "../graph/directives.js";
 
 /** One graph change the live canvas cares about. */
 export interface RunGraphChange {
@@ -237,6 +239,59 @@ export function clearRun(runId: string): void {
   // The shelf is derived, so a deleted run must leave the shelf too.
   const shelf = instance.getRecall();
   if (shelf) for (const nodeId of removed) void shelf.forget(nodeId);
+  // Directives describe edits to nodes that no longer exist.
+  clearDirectives(runId);
+}
+
+/* ------------------------ Neo N11: canvas editing ------------------------ */
+
+/**
+ * Run one canvas editing operation (N11) against the live graph.
+ *
+ * Returns `undefined` for a malformed request so the route can answer 400. An
+ * operation that fails to apply throws: the route turns that into a status the
+ * panel can show, and nothing is half-written because the ops own their writes.
+ * The touched nodes are published to the canvas bus, so the panel re-renders the
+ * moment an edit lands rather than on the next poll.
+ */
+export function applyCanvasRequest(runId: string, payload: unknown): CanvasOpResult | undefined {
+  const request = parseCanvasOpRequest(payload);
+  if (!request) return undefined;
+  return applyCanvasOpRequest(runId, request);
+}
+
+/** Apply an already-parsed canvas operation (the loop and tests use this). */
+export function applyCanvasOpRequest(runId: string, request: CanvasOpRequest): CanvasOpResult {
+  try {
+    const result = applyCanvasOp({ graph: liveGraph(), runId }, request);
+    publish(runId, result.touched);
+    return result;
+  } catch (err) {
+    console.warn(`[runGraph] canvas op ${request.op} failed for run ${runId}: ${String(err)}`);
+    throw err;
+  }
+}
+
+/** The canvas edits this run has not yet shown the model. */
+export function pendingCanvasDirectives(runId: string): CanvasDirective[] {
+  return readDirectives(runId);
+}
+
+/**
+ * Take the pending canvas edits for a run (the loop's once-per-step pull).
+ *
+ * Read-and-clear in one call, so an edit is handed to the model exactly once and
+ * then lives in the run's artefact store like any other context. A storage
+ * failure returns an empty list: an unreadable directive log must not stop the
+ * run it belongs to.
+ */
+export function takeCanvasDirectives(runId: string): CanvasDirective[] {
+  try {
+    return consumeDirectives(runId);
+  } catch (err) {
+    console.warn(`[runGraph] failed to consume canvas directives for ${runId}: ${String(err)}`);
+    return [];
+  }
 }
 
 /**

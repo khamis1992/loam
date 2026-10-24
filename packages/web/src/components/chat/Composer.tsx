@@ -44,6 +44,12 @@ export interface ComposerHandle {
 interface ComposerProps {
   onSend: (text: string, mode: TaskMode, files: File[], extData?: Record<string, unknown>) => void | Promise<void>;
   onStop?: () => void;
+  /**
+   * J7 hibernation: called with the draft *after* the first character is
+   * applied, so waking a hibernated session never drops the keystroke. The
+   * draft the composer already holds is passed in; nothing is re-rendered here.
+   */
+  onFirstInput?: (draft: string) => void | Promise<void>;
   running?: boolean;
   home?: boolean;
   onAddFolder?: (path: string) => void;
@@ -75,7 +81,7 @@ interface ComposerProps {
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { onSend, onStop, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode, placeholder, approveForMe, onToggleApproveForMe, knowledgeOn, onToggleKnowledge, modelTier, outputType, effort, compareModels: initialCompareModels, abModels, projectId, worktreeEnabled, assistantReply }: ComposerProps,
+  { onSend, onStop, onFirstInput, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode, placeholder, approveForMe, onToggleApproveForMe, knowledgeOn, onToggleKnowledge, modelTier, outputType, effort, compareModels: initialCompareModels, abModels, projectId, worktreeEnabled, assistantReply }: ComposerProps,
   ref: Ref<ComposerHandle>,
 ) {
   const router = useRouter();
@@ -246,6 +252,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     }
   };
 
+  /**
+   * J7 hibernation: the first character typed into an empty draft wakes the
+   * session. The draft is read *after* React applies the keystroke, so the
+   * character the user sees is exactly the one that is preserved.
+   */
+  const handleFirstInput = (next: string) => {
+    setText(next);
+    if (next.length > 0) void onFirstInput?.(next);
+  };
+
   const addFiles = (incoming: FileList | null) => {
     if (!incoming) return;
     setFiles((prev) => [...prev, ...Array.from(incoming)]);
@@ -310,7 +326,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       <textarea
         ref={textareaRef}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => handleFirstInput(e.target.value)}
         onKeyDown={onKey}
         rows={home ? 1 : 1}
         placeholder={placeholder ?? t(files.length ? 'Tell {product} what to do with the file'

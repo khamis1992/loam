@@ -77,6 +77,54 @@ describe('canvas client', () => {
     expect(urls[1]).toContain('afterSeq=7');
   });
 
+  it('asks the server for a whole-run search with the term encoded', async () => {
+    const urls: string[] = [];
+    const client = new CanvasClient({
+      apiBase: 'http://127.0.0.1:3939',
+      fetchFn: vi.fn(async (url: string) => {
+        urls.push(String(url));
+        return jsonResponse({
+          ...GRAPH,
+          search: {
+            query: 'quarterly',
+            hits: [
+              {
+                nodeId: 'n2',
+                nodeType: 'webpage',
+                nodeStatus: 'finished',
+                title: 'Draft the quarterly report',
+                matches: [{ field: 'title', start: 10, length: 9, snippet: 'quarterly' }],
+              },
+            ],
+          },
+        });
+      }) as unknown as typeof fetch,
+    });
+    const search = await client.searchGraph('task canvas/1', 'quarterly');
+    expect(urls[0]).toBe(`http://127.0.0.1:3939/api/graph/${encodeURIComponent(RUN)}?q=quarterly`);
+    expect(search!.query).toBe('quarterly');
+    expect(search!.hits.map((hit) => hit.nodeId)).toEqual(['n2']);
+    // The hit carries the node id on each match, so the panel can highlight it.
+    expect(search!.hits[0]!.matches[0]!.nodeId).toBe('n2');
+  });
+
+  it('reports no search for a blank term and for a server that cannot answer', async () => {
+    const client = new CanvasClient({
+      apiBase: 'http://127.0.0.1:3939',
+      fetchFn: vi.fn(async () => jsonResponse({ ...GRAPH })) as unknown as typeof fetch,
+    });
+    // A blank term is not a question worth asking.
+    expect(await client.searchGraph(RUN, '   ')).toBeNull();
+    // A reply with no `search` block (a server without the N18 route) is not an error.
+    expect(await client.searchGraph(RUN, 'quarterly')).toBeNull();
+    // Neither is a non-2xx reply.
+    const failing = new CanvasClient({
+      apiBase: 'http://127.0.0.1:3939',
+      fetchFn: vi.fn(async () => jsonResponse({ error: 'nope' }, 500)) as unknown as typeof fetch,
+    });
+    expect(await failing.searchGraph(RUN, 'quarterly')).toBeNull();
+  });
+
   it('sends a PATCH with the node id encoded and reads the returned node', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const client = new CanvasClient({
