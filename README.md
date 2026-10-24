@@ -2,11 +2,11 @@
 
 ![Loam Banner](docs/assets/banner.svg)
 
-[![Version](https://img.shields.io/badge/version-0.5.31-blue.svg)](https://github.com/yourusername/loam)
+[![Version](https://img.shields.io/badge/version-0.5.31-blue.svg)](https://github.com/khamis1992/loam)
 [![Electron](https://img.shields.io/badge/Electron-44.7.2-47848f.svg)](https://www.electronjs.org/)
 [![Node](https://img.shields.io/badge/node-%3E%3D22.13.0-brightgreen.svg)](https://nodejs.org/)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)]()
-[![License](https://img.shields.io/badge/license-Not%20Yet%20Specified-red.svg)]()
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
+![License](https://img.shields.io/badge/license-Not%20Yet%20Specified-red.svg)
 
 **Loam** is a local AI agent desktop application built with Electron. It provides specialized workspaces (modes) with focused tool sets and isolated task environments, enabling AI agents to work effectively on different types of projects without mixing contexts.
 
@@ -15,18 +15,18 @@
 
 ## Features
 
-### 🎯 Specialized Modes
+### Specialized Modes
 
 Loam organizes work into **8 distinct modes**, each with its own tools and interface optimized for specific tasks:
 
-- **🔍 Explore** (`ask`) - Read-only workspace for understanding code, asking questions, and planning without making changes
-- **📚 Research** (`research`) - Web search, source gathering, and documentation with browser automation tools
-- **🔨 Build** (`build`) - Full development environment with file editing, shell commands, git operations, testing, and local preview
-- **✍️ Write** (`write`) - Document creation and editing with integrated office tools (Word, Excel, PowerPoint via Craft editors)
-- **📊 Data** (`data`) - Data analysis, spreadsheet manipulation, and visualization with live spreadsheet editing
-- **🎨 Studio** (`media`) - Creative work including 3D scene composition, image/video generation, and design tools
-- **🔐 Security** (`security`) - Security assessment tools with limited, authorized penetration testing capabilities
-- **⚡ Flow** (`automate`) - Browser automation, workflow recording, and task scheduling
+- **Explore** (`ask`) - Read-only workspace for understanding code, asking questions, and planning without making changes
+- **Research** (`research`) - Web search, source gathering, and documentation with browser automation tools
+- **Build** (`build`) - Full development environment with file editing, shell commands, git operations, testing, and local preview
+- **Write** (`write`) - Document creation and editing with integrated office tools (Word, Excel, PowerPoint via Craft editors)
+- **Data** (`data`) - Data analysis, spreadsheet manipulation, and visualization with live spreadsheet editing
+- **Studio** (`media`) - Creative work including 3D scene composition, image/video generation, and design tools
+- **Security** (`security`) - Security assessment tools with limited, authorized penetration testing capabilities
+- **Flow** (`automate`) - Browser automation, workflow recording, and task scheduling
 
 Each mode enforces its own tool permissions at the server level, ensuring agents can't accidentally use inappropriate tools for the task.
 
@@ -44,15 +44,16 @@ Each mode enforces its own tool permissions at the server level, ensuring agents
 
 </details>
 
-### 🗂️ Task Isolation
+### Task Isolation
 
 Every conversation creates an isolated task workspace at `<workspace>/.loam-tasks/<taskId>/`:
+
 - Separate file storage per task
 - Attachments stay within their task folder
 - Resume and continue conversations without mixing contexts
 - Task metadata stored in SQLite for persistence
 
-### 🛠️ Comprehensive Tool System
+### Comprehensive Tool System
 
 Loam provides specialized tools organized by capability:
 
@@ -67,9 +68,10 @@ Loam provides specialized tools organized by capability:
 - **Design & Media**: 3D scene composition, image generation, video editing capabilities
 - **Security Tools**: Authorized penetration testing and security assessment capabilities
 
-### 🧠 MiroFish Swarm Intelligence
+### MiroFish Swarm Intelligence
 
 A model-backed market simulation and research system for testing ideas with simulated user personas:
+
 - **Seed Stage**: Extracts locale, entities, and personas from natural language briefs using model inference
 - **Simulation Stage**: Runs N agents over R rounds, each agent turn is a real model call with persona context, memory, and social feed
 - **Report Stage**: Computes metrics from recorded simulation logs (no hard-coded numbers)
@@ -78,14 +80,14 @@ A model-backed market simulation and research system for testing ideas with simu
 
 Code: `src/tools/mirofish/pipeline.ts`, `src/tools/mirofish/seed.ts`, `src/tools/mirofish/simulate.ts`
 
-### 🔗 Integration Support
+### Integration Support
 
 - **MCP Servers**: Filesystem, memory, sequential-thinking, and custom integrations
 - **External Services**: Configurable integration system for third-party APIs
 - **Model Providers**: Local Ollama models with cloud model fallback
 - **Mobile Bridge**: Local service bridge for mobile app development workflows
 
-## 📦 Installation & Setup
+## Installation & Setup
 
 ### Prerequisites
 
@@ -97,7 +99,7 @@ Code: `src/tools/mirofish/pipeline.ts`, `src/tools/mirofish/seed.ts`, `src/tools
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/loam.git
+   git clone https://github.com/khamis1992/loam.git
    cd loam
    ```
 
@@ -134,7 +136,7 @@ npm run dist
 
 The packaged app will be created in the `dist/` directory.
 
-## 🏗️ Architecture
+## Architecture
 
 Loam follows the Electron multi-process architecture with several key components:
 
@@ -223,7 +225,7 @@ loam/
 - **Agent Engine** (`src/agent/`): Execution loop, planning, tool calling, and result handling
 - **UI Layer** (`ui/`): Renderer process interface with task views, editors, and panels
 
-## 🧪 Development & Testing
+## Development & Testing
 
 ### Run Tests
 
@@ -266,7 +268,7 @@ Loam uses `config.json` for runtime configuration. Key settings:
 
 See `config.example.json` for all available options and defaults.
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Here's how you can help:
 
@@ -286,17 +288,17 @@ Contributions are welcome! Here's how you can help:
 - Respect the mode-based tool permission system
 - Don't break task isolation boundaries
 
-## 📄 License
+## License
 
 **License not yet specified.** Please contact the project maintainers for licensing information before using this software in production or redistributing it.
 
-## 🔗 Related Projects
+## Related Projects
 
 - [Manus](https://github.com/cursor/manus) - Related AI agent system
 - [Electron](https://www.electronjs.org/) - Desktop application framework
 - [Model Context Protocol](https://modelcontextprotocol.io/) - MCP specification
 
-## 📚 Documentation
+## Documentation
 
 Additional documentation can be found in the `docs/` directory:
 
