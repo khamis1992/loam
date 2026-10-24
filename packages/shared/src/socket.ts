@@ -288,6 +288,22 @@ export interface ExplanationEvent extends ChatEventBase {
   content: string;
 }
 
+/** Verbatim context pruning ran before any summary; pruned bodies stay recallable. */
+export interface ContextPrunedEvent extends ChatEventBase {
+  type: 'context_pruned';
+  strategy: 'prune' | 'prune_then_summary';
+  scorer: string;
+  fallback: boolean;
+  kept: number;
+  truncated: number;
+  dropped: number;
+  pinned: number;
+  charsBefore: number;
+  charsAfter: number;
+  tokensBefore: number;
+  tokensAfter: number;
+}
+
 /** Prompt-cache (KV cache) accounting for one completed provider request. */
 export interface CacheUsageEvent extends ChatEventBase {
   type: 'cache_usage';
@@ -459,6 +475,7 @@ export type ChatEvent =
   | EventsNotifyEventsAfterEvent
   | ExplanationEvent
   | CacheUsageEvent
+  | ContextPrunedEvent
   | FolderAccessRequestEvent
   | BrowserFrameEvent
   | LocalExecutionApprovalRequestedEvent

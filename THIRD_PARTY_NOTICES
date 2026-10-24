@@ -133,3 +133,9 @@ Adapted files
   src/codemode/          - the Codemode sandbox tool (QuickJS sandbox,
                           script prelude, tool discovery, session store)
                           adapted from ref/codemode/{engine,lib,tests}.rs.
+
+Context pruning (clean-room)
+----------------------------
+Loam's verbatim context pruning (src/agent/prune/, src/tools/contextRecallTool.ts)
+is an independent implementation of the publicly described idea of dropping
+low-value whole messages instead of paraphrasing them. No upstream code was copied.

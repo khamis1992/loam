@@ -21,6 +21,7 @@ import type {
   AskUserRequestedEvent,
   AskUserResolvedEvent,
   CacheUsageEvent,
+  ContextPrunedEvent,
   SimulationProgressEvent,
   RecipeUpdateEvent,
   RecipeRestartEvent,
@@ -543,6 +544,27 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
         ...(event.miss ? { miss: { ...event.miss } } : {}),
       };
       out.push(cacheUsage);
+      break;
+    }
+
+    case "context_pruned": {
+      const pruned: ContextPrunedEvent = {
+        id: baseId(),
+        type: "context_pruned",
+        timestamp: ts,
+        strategy: event.strategy,
+        scorer: event.scorer,
+        fallback: event.fallback,
+        kept: event.kept,
+        truncated: event.truncated,
+        dropped: event.dropped,
+        pinned: event.pinned,
+        charsBefore: event.charsBefore,
+        charsAfter: event.charsAfter,
+        tokensBefore: event.tokensBefore,
+        tokensAfter: event.tokensAfter,
+      };
+      out.push(pruned);
       break;
     }
 
