@@ -1,5 +1,6 @@
 import type { ChatMessage } from "../ollama.js";
 import type { ExecutionCheckpoint } from "../agent/checkpoint.js";
+import { hasUnfinishedToolCall } from "../agent/checkpointLog.js";
 import type { EffortLevel, OutputType } from "../llm/router.js";
 
 export interface SavedRun {
@@ -25,5 +26,11 @@ export interface SavedRun {
   knowledge?: boolean;
 }
 export function requiresReplayConfirmation(run: SavedRun): boolean {
-  return run.checkpoint ? run.checkpoint.inFlight : run.started;
+  if (!run.checkpoint) return run.started;
+  // O5: a checkpoint that is not in flight can still be unsafe to resume when
+  // the durable event log shows a tool call that started without a terminal
+  // event. Such a call may already have produced its side effect, so resume
+  // needs explicit confirmation instead of silently re-running it.
+  if (run.checkpoint.inFlight) return true;
+  return hasUnfinishedToolCall(run.checkpoint.logSessionId);
 }

@@ -28,6 +28,14 @@ export interface LayoutOptions {
   originX?: number;
   /** Top offset of the first layer. */
   originY?: number;
+  /**
+   * Reading direction of the sibling order. Layers always stack top to bottom,
+   * but in `rtl` the first sibling of a layer sits at the start edge, which is
+   * the right-hand side. The row is therefore mirrored around its own width, so
+   * every coordinate stays non-negative and the scroll surface still begins at
+   * (originX, originY).
+   */
+  direction?: 'ltr' | 'rtl';
 }
 
 export const DEFAULT_LAYOUT: Required<LayoutOptions> = {
@@ -35,7 +43,24 @@ export const DEFAULT_LAYOUT: Required<LayoutOptions> = {
   rowHeight: 200,
   originX: 40,
   originY: 40,
+  direction: 'ltr',
 };
+
+/**
+ * The x of a sibling, honouring the reading direction. A layer is always read
+ * start-to-end, so in RTL the first sibling is the right-most one. Mirroring the
+ * index (rather than negating x) keeps the row in the same span as LTR, so the
+ * scroll surface, the bounds and the pan/zoom transform need no RTL branch.
+ */
+export function siblingX(
+  index: number,
+  layerCount: number,
+  direction: 'ltr' | 'rtl',
+  options: Pick<Required<LayoutOptions>, 'originX' | 'columnWidth'> = DEFAULT_LAYOUT,
+): number {
+  const slot = direction === 'rtl' ? layerCount - 1 - index : index;
+  return options.originX + slot * options.columnWidth;
+}
 
 /** Depth of each node: roots at 0, a child one deeper than its deepest parent. */
 export function depthMap(
@@ -78,6 +103,15 @@ export function applyLayout<T extends { id: string; parent_ids: string[]; positi
   for (const node of nodes) if (!unique.has(node.id)) unique.set(node.id, node);
 
   const depth = depthMap([...unique.values()]);
+
+  // How many siblings share each layer. RTL needs the count up front: the first
+  // sibling is the right-most, so its column depends on how wide the row is.
+  const layerSize = new Map<number, number>();
+  for (const node of unique.values()) {
+    const layer = depth.get(node.id) ?? 0;
+    layerSize.set(layer, (layerSize.get(layer) ?? 0) + 1);
+  }
+
   const perLayer = new Map<number, number>();
   const placed: Array<PlacedNode & { order: number }> = [];
 
@@ -87,7 +121,7 @@ export function applyLayout<T extends { id: string; parent_ids: string[]; positi
     perLayer.set(layer, index + 1);
     placed.push({
       id: node.id,
-      x: opts.originX + index * opts.columnWidth,
+      x: siblingX(index, layerSize.get(layer) ?? 1, opts.direction, opts),
       y: opts.originY + layer * opts.rowHeight,
       depth: layer,
       order: node.position ?? 0,

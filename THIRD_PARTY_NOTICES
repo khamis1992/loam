@@ -43,6 +43,24 @@ SOFTWARE.
 
 Adapted files
 -------------
+  src/tools/fileLock.ts        adapted from crates/jcode-app-core/src/tool/file_lock.rs
+                               (per-path async mutex for file-editing tools).
+  src/agent/kvCacheMonitor.ts  adapted from src/kv_cache_monitor.rs
+                               (prompt-cache hit/miss accounting per provider).
+  src/server/sharedCodeSession.ts
+                               adapted from ref/jcode_daemon_bench.py and
+                               ref/SESSION_HIBERNATION.md (one long-lived agent server
+                               hosting N concurrent sessions over a control socket).
+  bench/fakeModel.ts           adapted from ref/fake_model.py (scripted offline model
+                               used by the memory benchmarks).
+  bench/memBench.ts            adapted from ref/jcode_daemon_bench.py and
+                               ref/bench_memory_cli.py (process-tree memory harness).
+  bench/rssSampler.ts          adapted from ref/bench_memory_cli.py (process-tree PSS
+                               summing).
+  bench/perProcess.ts          adapted from ref/bench_memory_cli.py (per-session tool
+                               spawn).
+  bench/launchers.ts           adapted from ref/jcode_daemon_bench.py (shared daemon
+                               control socket).
   src/tools/fileLock.ts  — adapted from crates/jcode-app-core/src/tool/file_lock.rs
                           (per-path async mutex for file-editing tools).
 
@@ -96,11 +114,11 @@ Adapted files
                                               (debug/test hibernation HTTP endpoints).
 
   src/policy/commandRisk/{index,lib,paths,tokenize,gate}.ts
-                         — adapted from crates/command-risk/src/{lib,paths,tokenize,gate}.rs
-                           (blast-radius shell command risk classifier; stage 1 of the
-                           shell approval gate, wired into src/policy/riskTier.ts and
-                           src/tools/shell.ts).
-  src/tools/files.ts     — the file_edit miss hints (findLineNumber,
-                          flexibleMatchHint, extractContext) and the all-or-
-                          nothing batch semantics are adapted from
-                          crates/jcode-app-core/src/tool/edit.rs.
+                               adapted from crates/command-risk/src/{lib,paths,tokenize,gate}.rs
+                               (blast-radius shell command risk classifier; stage 1 of the
+                               shell approval gate, wired into src/policy/riskTier.ts and
+                               src/tools/shell.ts).
+  src/tools/files.ts           the file_edit miss hints (findLineNumber,
+                               flexibleMatchHint, extractContext) and the all-or-
+                               nothing batch semantics are adapted from
+                               crates/jcode-app-core/src/tool/edit.rs.

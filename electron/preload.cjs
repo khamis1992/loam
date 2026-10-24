@@ -15,6 +15,7 @@ function invoke(ns, method, args) {
 const apis = {
   auth: {
     getToken: (...args) => invoke("auth", "getToken", args),
+    localSignIn: (...args) => invoke("auth", "localSignIn", args),
     setToken: (...args) => invoke("auth", "setToken", args),
     removeToken: (...args) => invoke("auth", "removeToken", args),
     notifyLoginSuccess: (...args) => invoke("auth", "notifyLoginSuccess", args),

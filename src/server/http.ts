@@ -79,6 +79,7 @@ import { createAgent, deleteAgent, getAgent, listAgents, listAgentsWithChatMeta,
 import { handleScratchpadRoutes } from "./routes/scratchpad.js";
 // Session sleep/wake + compute budget (D19): dispatched before generic handlers.
 import { handleSessionRuntimeRoutes } from "./routes/sessionRuntime.js";
+import { handleEventsRoutes } from "./routes/events.js";
 import { handleDesignStudioRoutes } from "./routes/designStudio.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAutomationsRoutes } from "./routes/automations.js";
@@ -114,6 +115,7 @@ import { handlePlaybookRoutes } from "./routes/playbooks.js";
 import { handleFlowTemplateRoutes } from "./routes/flowTemplates.js";
 import { handleVoiceRoutes } from "./routes/voice.js";
 import { handleConnectorsRoutes } from "./routes/connectors.js";
+import { handleEnvBuildRoutes } from "./routes/envBuilds.js";
 import { handleKnowledgeRoutes } from "./routes/knowledge.js";
 import { handleWikiRoutes } from "./routes/wiki.js";
 import { importGrokbotBundle, sanitizeGrokbotBundle } from "./grokbotImport.js";
@@ -130,7 +132,8 @@ import { setSecret, listSecrets, deleteSecret } from "./secretsVault.js";
 import { createApproval, decideApproval, getApproval, listApprovals } from "./approvals.js";
 import { setTaskAgent } from "./db.js";
 import { subscribeTask } from "./streams.js";
-import { videoStudioRelay, type VideoStudioResult } from "./videoStudioRelay.js";
+import { workspaceRelay, workspaceRelay as videoStudioRelay, type WorkspaceRelayResult } from "./workspaceRelay.js";
+import { runVideoStudioExport, type VideoStudioExportOptions } from "./videoStudioExport.js";
 import { appendLearning, readLearning } from "./learning.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { installDraft, listSuites, loadSuite } from "../eval/suites.js";
@@ -1786,6 +1789,8 @@ loadAgents();
         // requests an immediate release. Dispatched before the generic
         // `/api/sessions/` handlers below so the action suffix wins.
         if (await handleHibernationRoutes(req, res, p)) return;
+        // Durable event log (O8): GET /api/sessions/:id/events and /events/stream.
+        if (await handleEventsRoutes(req, res, p)) return;
         // Design Studio (/api/design/*): brand kits, templates, generate, outputs.
         if (await handleDesignStudioRoutes(req, res, p)) return;
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;
@@ -1839,6 +1844,8 @@ loadAgents();
         if (await handlePlaybookRoutes(req, res, p)) return;
 
         if (await handleFlowTemplateRoutes(req, res, p)) return;
+        // Environment snapshots (D3): read-only build status + redacted log.
+        if (await handleEnvBuildRoutes(req, res, p)) return;
         // Repo wiki (D8): list/generate/read DeepWiki-style pages.
         if (await handleWikiRoutes(req, res, p, { workspace: cfg.workspace, ollama, model: cfg.model })) return;
 
@@ -2486,24 +2493,69 @@ loadAgents();
           return;
         }
 
-        // Loam Video Studio relay: the panel attached to this task posts the
+        // Workspace relay: the editor panel attached to this task posts the
         // result of a command that was dispatched over the task's event stream.
-        if (req.method === "POST" && /^\/api\/tasks\/[^/]+\/video-studio\/result$/.test(p)) {
+        // The /video-studio/result path stays as the fc-02 (Video Studio) alias.
+        if (req.method === "POST" && /^\/api\/tasks\/[^/]+\/(?:workspace|video-studio)\/result$/.test(p)) {
           const origin = req.headers.origin;
           if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") {
             return sendJson(res, 403, { error: "same-origin requests required" });
           }
-          const taskId = decodeURIComponent(p.slice("/api/tasks/".length, -"/video-studio/result".length));
+          const route = p.includes("/video-studio/result") ? "/video-studio/result" : "/workspace/result";
+          const taskId = decodeURIComponent(p.slice("/api/tasks/".length, -route.length));
           if (!getTask(taskId)) return sendJson(res, 404, { error: "task not found" });
           let raw: unknown;
           try { raw = await readBody(req, 64_000); } catch { return sendJson(res, 400, { error: "invalid JSON body" }); }
-          const result = raw as VideoStudioResult;
+          const result = raw as WorkspaceRelayResult;
           if (!result || typeof result !== "object" || typeof result.id !== "string" || typeof result.taskId !== "string") {
             return sendJson(res, 400, { error: "id and taskId are required" });
           }
           if (result.taskId !== taskId) return sendJson(res, 400, { error: "taskId mismatch" });
-          const handled = videoStudioRelay.resolve(result);
+          const handled = workspaceRelay.resolve(result);
           return sendJson(res, 200, { ok: handled, ...(handled ? {} : { ignored: true }) });
+        }
+
+        // fc-06: the Loam Video panel's Export button. Same flow as the
+        // `video_studio` export action (one implementation, two entry points): the
+        // editor renders, the bytes come back through the relay and the file is
+        // written into this task's workspace under exports/.
+        if (req.method === "POST" && /^\/api\/tasks\/[^/]+\/video-studio\/export$/.test(p)) {
+          const origin = req.headers.origin;
+          if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") {
+            return sendJson(res, 403, { error: "same-origin requests required" });
+          }
+          const taskId = decodeURIComponent(p.slice("/api/tasks/".length, -"/video-studio/export".length));
+          if (!getTask(taskId)) return sendJson(res, 404, { error: "task not found" });
+          let raw: unknown;
+          try { raw = await readBody(req, 16_000); } catch { return sendJson(res, 400, { error: "invalid JSON body" }); }
+          const body = (raw ?? {}) as { options?: Record<string, unknown> };
+          const options = (body.options ?? {}) as VideoStudioExportOptions;
+          if (options.quality && !["low", "medium", "high", "best"].includes(options.quality)) {
+            return sendJson(res, 400, { error: "options.quality must be one of low, medium, high, best" });
+          }
+          if (options.range && !["entire", "inOut", "workArea", "custom"].includes(options.range)) {
+            return sendJson(res, 400, { error: "options.range must be one of entire, inOut, workArea, custom" });
+          }
+          let taskRoot: string;
+          try {
+            taskRoot = requireTaskWorkspace(taskId, cfg.workspace);
+          } catch (error) {
+            return sendJson(res, 400, { error: (error as Error).message });
+          }
+          try {
+            const result = await runVideoStudioExport({ taskId, relay: videoStudioRelay, taskRoot, options });
+            return sendJson(res, 200, result);
+          } catch (error) {
+            const err = error as { code?: string; message?: string };
+            if (err.code === "PANEL_NOT_OPEN") {
+              return sendJson(res, 409, { ok: false, reason: "panel_not_open", retry: true, message: err.message });
+            }
+            if (err.code === "CANCELLED") {
+              return sendJson(res, 499, { ok: false, reason: "cancelled", message: err.message });
+            }
+            const timedOut = /did not finish within/.test(err.message ?? "");
+            return sendJson(res, timedOut ? 504 : 502, { ok: false, reason: "export_failed", message: err.message });
+          }
         }
 
         if (req.method === "GET" && p.startsWith("/api/tasks/") && p.endsWith("/stream")) {

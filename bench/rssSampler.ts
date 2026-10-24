@@ -26,6 +26,12 @@ export interface SampleOptions {
   memoryFor?: (pid: number) => Promise<number | null>;
   /** Called after each sample. */
   onSample?: (sample: MemorySample) => void;
+  /**
+   * Optional stop signal. When its promise settles the sampler stops early and
+   * returns the samples taken so far, so a caller can keep sampling until its
+   * work actually finishes instead of sampling for a fixed window.
+   */
+  stop?: Promise<unknown>;
 }
 
 export interface MemorySample {
@@ -64,6 +70,13 @@ export interface ProcessTreeReader {
 }
 
 const win32 = process.platform === "win32";
+
+/**
+ * Backstop delay when a `stop` promise is supplied: if that promise never
+ * settles the sampler must still eventually return instead of waiting forever.
+ * Long enough that a real stop signal always wins.
+ */
+const MAX_SAFE_DELAY_MS = 10 * 60_000;
 
 /** Strip the quoting CSV writers add around every field. */
 function unquote(value: string): string {
@@ -265,7 +278,28 @@ export async function sampleProcessTree(rootPids: number[], options: SampleOptio
   samples.push(idle);
   options.onSample?.(idle);
 
-  while (Date.now() < deadline) {
+  // The stop signal is always observed so a caller can stop sampling as soon as
+  // its work finishes, even when that happens before the timeout window ends.
+  let stopped = false;
+  if (options.stop) {
+    // The backstop must be cleared once the stop signal settles: an armed timer
+    // keeps the event loop alive, so a measurement process would linger for the
+    // full ten minutes after its report was written.
+    const backstop = setTimeout(() => {
+      /* no-op: the stop signal never settled, so keep sampling */
+    }, MAX_SAFE_DELAY_MS);
+    // A rejected stop signal means the caller's work failed. Treat that as
+    // "stop sampling" too: the rejection is already observed by the caller, and
+    // leaving it unhandled would crash the measurement process with an
+    // unhandled-rejection instead of reporting the run.
+    const settle = (): void => {
+      stopped = true;
+      clearTimeout(backstop);
+    };
+    void options.stop.then(settle, settle);
+  }
+
+  while (!stopped && Date.now() < deadline) {
     await delay(Math.min(intervalMs, Math.max(1, deadline - Date.now())));
     const sample = await takeSample();
     samples.push(sample);

@@ -440,6 +440,11 @@ let currentTheme = "system";
 const ipcHandlers = {
   auth: {
     getToken: () => sessionToken,
+    localSignIn: async () => {
+      const ok = await ensureLocalSession();
+      if (ok && win) win.webContents.send("desktop-ipc-event:auth:onLoginSuccess", {});
+      return ok;
+    },
     setToken: (_sender, token) => {
       pendingLoginNonce = String(token ?? "");
       if (pendingLoginNonce) {
@@ -703,6 +708,43 @@ async function exchangeAgentStudioSession(loginToken) {
   const exchData = await exch.json();
   if (!exchData.token) throw new Error("no session token returned");
   return exchData.token;
+}
+
+// Loam is local and single-user: unless LOAM_REQUIRE_LOGIN=1, mint a session
+// from the local protocol adapter so the app opens straight into /app.
+function localLoginEnabled() {
+  return process.env.LOAM_REQUIRE_LOGIN !== "1";
+}
+
+async function ensureLocalSession() {
+  if (!localLoginEnabled()) return false;
+  try {
+    if (sessionToken) {
+      const check = await fetch(AGENT_STUDIO_BACKEND + "/user.v1.UserService/UserInfo", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${sessionToken}`, "Content-Type": "application/json", "Connect-Protocol-Version": "1" },
+        body: "{}",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (check.ok) return true;
+      if (check.status !== 401 && check.status !== 403) return false;
+    }
+    const nonce = "local-" + Date.now();
+    const res = await fetch(AGENT_STUDIO_BACKEND + "/login?from=desktop&type=signIn&nonce=" + nonce, { redirect: "manual", signal: AbortSignal.timeout(5000) });
+    const location = res.headers.get("location") || "";
+    const loginToken = location ? new URL(location).searchParams.get("token") : "";
+    if (!loginToken) throw new Error("no local login token (status " + res.status + ")");
+    sessionToken = await exchangeAgentStudioSession(loginToken);
+    const data = readLocalStorage();
+    data["session_token"] = sessionToken;
+    delete data["login_nonce"];
+    writeLocalStorage(data);
+    console.log("[electron] local session ready");
+    return true;
+  } catch (err) {
+    console.warn("[electron] local sign-in failed: " + err.message);
+    return false;
+  }
 }
 
 async function handleDeepLinkCallback(url) {
@@ -993,6 +1035,7 @@ app.whenReady().then(async () => {
       return;
     }
   }
+  if (loamServerReady) await ensureLocalSession();
   createWindow();
   if (loamServerReady && win) {
     // Inject the install token into all renderer requests to the local API.
