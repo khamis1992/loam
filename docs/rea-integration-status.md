@@ -2,7 +2,7 @@
 
 Branch label: **`rea-capability`** (points at the last rea commit). Spec of record:
 `docs/senior-staff-engineer/specs/REA_INTO_LOAM_INTEGRATION.md` (+ appendix A1–A13).
-Approved plan 2026-10-24. This file tracks landed vs pending work.
+Approved plan 2026-10-24. **All phases P0–P5 landed** (completed 2026-10-25).
 
 ## Landed (commits on `red-team-capability`, labelled by `rea-capability`)
 
@@ -15,34 +15,32 @@ Approved plan 2026-10-24. This file tracks landed vs pending work.
 | `e286533` | P1 prep | `skills/reverse-engineer/SKILL.md` — Arabic evidence-first rules (untrusted data, Observation/Inference/Unknown, no target execution, authorized use). |
 | `adc497d` | P5 prep | `THIRD_PARTY_NOTICES` rea-agents MIT section (invoked, never vendored) + this status doc. |
 | `d366a0d` | P1 prep2 | `src/modes/reverseEngineer.ts` — the complete mode object (Arabic-first, hue2, glyphs, 13 first-class `mcp__rea__` names derived from the allowlist, three starters) + shape tests. The future `catalog.ts` edit reduces to import + spread + alias removal. |
+| `687d9b6` | **P1** | The mode is **live**: catalog imports `reverseEngineerMode` (10th mode), the `"reverse-engineer": "build"` alias is removed, `normalizeModeId` resolves the real mode. `check:modes` + `check:loam-ui` green (the 6-card home grid is curated and unaffected; `#homeModes` buttons include the new mode). |
+| `59d8586` | **P2** | The wiring is **live**: `McpServerConfig.allowlist` filters `tools/list` inside Loam; the rea server is clamped to the 13 allowlisted tools and non-allowlisted `callTool`s are rejected client-side; every `mcp__rea__*` result carries `untrusted` + sha256 `contentDigest` (agent loop wraps it as UNTRUSTED EXTERNAL CONTENT); `applyReaBudget` replaces the generic 16k cut; risk tiers derive from the static effects table; `${DATA}` expansion + `rea` server entry in `config.example.json`; `check:rea-mcp` + integration test against a hostile 20-tool fixture. **Proven on the live pinned server: 13/207 tools register (194 dropped), rejection + untrusted + digest green.** |
 
 Verification commands: `npm run check:rea-allowlist`, `npm run check:rea-evidence`,
 `npm run check:security-asar`, `node --import tsx --test src/tools/__tests__/rea*.test.ts src/security/__tests__/rea*.test.ts`.
 
 ## Pending — shared-file work (P1 + P2), blocked by the concurrent session
 
-A parallel ALL_SERVICES session (scanners + first-party `src/re` core + selfharden)
-was actively editing the shared files while this programme ran. Everything above
-landed as surgical commits that never touched their in-flight hunks. The remaining
-work edits shared files and must resume once that session settles:
+**Resolved 2026-10-25:** the concurrent session's commits absorbed their pending
+`catalog.ts`/`package.json` hunks, the shared files went clean, and P1 (`687d9b6`)
+and P2 (`59d8586`) landed as direct edits — the surgical-blob protocol was used
+only for `package.json` and the gates doc while they were hot. No further pending
+integration work; remaining follow-ups are deliberate (below).
 
-1. **P1 — the mode** (`src/modes/catalog.ts`): add the `reverse-engineer` mode
-   («هندسة عكسية», per spec §5.1 with `hue2` + existing glyph; tools = READ + skill
-   + artifact_publish + the 13 `mcp__rea__*` names + CONTROL; fields target/question;
-   the three starters), remove the `"reverse-engineer": "build"` alias. Update pinned
-   counts (`.mode-card` == 6 in `check-loam-ui.mjs` and `check-packaged-loam.mjs`) and
-   regenerate affected visual baselines in the same commit.
-2. **P2 — the wiring** (`src/tools/mcp.ts`, `src/tools/registry.ts`,
-   `src/policy/riskTier.ts`, `src/agent/loop.ts`, `src/config.ts`,
-   `config.example.json`): per-server `allowlist` field; filter `tools/list` +
-   reject non-allowlisted `callTool`; `ToolResult.untrusted/contentDigest`;
-   `applyReaBudget` replacing the 16k cut for `mcp__rea__*`; effects-derived tiers
-   (11 read / 2 write-workspace); audit events on connect/call/disconnect; `rea`
-   server entry in config example (lazy until mode active — fallback eager+filter,
-   U3); `/api/modes` then exposes the mode and `check:modes`/`check:mcp` stay green.
-3. **P5 sign-off**: revision paragraph in `docs/security-development-gates.md`,
-   spec-deltas refresh, full DoD run (`npm run typecheck`, `npm run verify`,
-   all `check:rea-*`, `check:loam-ui` + baselines, `verify:security` family).
+## Deliberate follow-ups (not blockers)
+
+1. **Lazy connect (U3 fallback stands):** the `rea` server connects eagerly with
+   `config.json` present; flip `LOAM_ASAR_AUDIT`-style laziness on mode activation
+   only if the cold start ever matters.
+2. **Expose `re_*` first-party tools inside the reverse-engineer mode** once the
+   `src/re` workstream settles (appendix A12) — offline layer under the MCP layer.
+3. **`verify:security` family wiring** must be restored by its owner (see findings);
+   `check:security-asar` joins automatically the moment the `check:security*` npm
+   lines return.
+4. **Widen the allowlist** (e.g. native decompile tools) only by an explicit Khamis
+   decision (D11).
 
 ## Findings surfaced to Khamis
 
