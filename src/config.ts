@@ -281,6 +281,8 @@ export interface Config {
   sessionLog: { enabled: boolean };
   /** Project wiki and handoff (src/wiki). Off unless the config file sets `wiki.enabled: true`. */
   wiki?: { enabled: boolean };
+  /** App bridges (src/bridges). Every bridge is off unless listed `true` in `bridges.enabled`. */
+  bridges?: { enabled: Record<string, boolean> };
   /** Neo run graph: record every agent event as a node of the task's run graph. */
   runGraph?: { enabled: boolean };
   /**
@@ -452,6 +454,14 @@ function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+/** Keep only explicit `true` flags keyed by a plain bridge id; anything else stays off. */
+function readBridgeFlags(v: unknown): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  if (!isObj(v)) return out;
+  for (const [id, on] of Object.entries(v)) if (on === true && /^[a-z][a-z0-9_-]{0,39}$/.test(id)) out[id] = true;
+  return out;
+}
+
 export function normalizeHibernationMinutes(value: unknown): number {
   const minutes = Number(value);
   if (!Number.isFinite(minutes) || minutes < 0) return 0;
@@ -498,6 +508,7 @@ export function loadConfig(): Config {
     isObj(raw) && isObj(raw.compression) ? raw.compression.prune : undefined,
   );
   cfg.wiki = { enabled: isObj(raw) && isObj(raw.wiki) && raw.wiki.enabled === true };
+  cfg.bridges = { enabled: readBridgeFlags(isObj(raw) && isObj(raw.bridges) ? raw.bridges.enabled : undefined) };
   cfg.coding = { enabled: cfg.coding?.enabled ?? true, chain: cfg.coding?.chain ?? [], logEdits: cfg.coding?.logEdits ?? true };
   // J7: normalize the hibernation setting. A negative or non-numeric value means
   // "off" (0), so a stale config.json can never arm a bogus timer. `merge` can
