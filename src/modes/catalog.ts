@@ -1,4 +1,6 @@
 /** Loam's first-party modes. Tool access is enforced by ToolRegistry.forMode. */
+import { reverseEngineerMode } from "./reverseEngineer.js";
+
 export interface LoamMode {
   id: string; label: string; labelAr: string; icon: string; hue: number; hue2: number;
   tagline: string; description: string; outputHint: string; readOnly: boolean;
@@ -18,6 +20,7 @@ const PREVIEW = ["preview_serve", "preview_status", "preview_stop", "preview_scr
  *  escape hatch from the read-only plan permission mode (C13) and `suggest_plan`
  *  (D4) presents a plan for approval without changing the permission mode, so
  *  both are exposed in every mode the way `finish` is. */
+const RE = ["re_analyze", "re_decompile", "re_rebuild_verify", "fuzz_run", "aixcc_patch_propose"];
 const CONTROL = ["think", "finish", "plan", "phase_set", "message", "plan_exit", "suggest_plan", "ask_user", "context_recall",
   "wiki_search", "wiki_read", "wiki_list", "wiki_write", "handoff_create", "handoff_list", "handoff_resolve",
   "app_list", "app_describe"];
@@ -45,7 +48,7 @@ export const LOAM_MODES: LoamMode[] = [
     starters: [{ label: "قارن مصادر", prompt: "قارن المصادر التي سأرفقها، وافصل الحقائق عن الاستنتاجات مع روابط الأدلة." }, { label: "راجع موضوعًا", prompt: "أعد تقرير بحث حول الموضوع التالي، مع توضيح الثغرات وحدود المصادر المتاحة." }] },
   { id: "build", label: "Loam Build", labelAr: "ابنِ", icon: "⌘", hue: 100, hue2: 140,
     tagline: "من الفكرة إلى تجربة تعمل", description: "طوّر ملفات التطبيق وشغّل الاختبارات ومعاينة المشروع في مساحة المهمة.", outputHint: "ملفات مشروع ومعاينة ونتائج اختبارات", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, ...WRITE, ...EDIT_EXTRA, "memory_add", "artifact_publish", ...DOCS_LOOKUP, ...BUILD_EXTRA, ...GIT, "loam_mobile", "code_symbols", "code_outline", "semantic_search", "wiki_generate", "ask_codebase", "shell_run", "app_run", "web_fetch", ...BROWSER, ...PREVIEW, ...CONTROL, ...MANAGED_SESSIONS], panels: ["files", "browser", "preview"],
+    tools: ["integration_list", "integration_call", ...READ, ...WRITE, ...EDIT_EXTRA, "memory_add", "artifact_publish", ...DOCS_LOOKUP, ...BUILD_EXTRA, ...GIT, "loam_mobile", "code_symbols", "code_outline", "semantic_search", "wiki_generate", "ask_codebase", "shell_run", "app_run", "web_fetch", ...RE, ...BROWSER, ...PREVIEW, ...CONTROL, ...MANAGED_SESSIONS], panels: ["files", "browser", "preview"],
     fields: [{ id: "brief", label: "ماذا سنبني؟", placeholder: "المستخدمون والوظائف المطلوبة", multiline: true }, { id: "acceptance", label: "معايير الإنجاز", placeholder: "ما السلوك الذي يجب اختباره قبل التسليم؟", multiline: true }],
     starters: [{ label: "صفحة تعريفية", prompt: "ابنِ صفحة تعريفية عربية متجاوبة مع معاينة محلية واختبر عرض الهاتف." }, { label: "أصلح مشروعًا", prompt: "افحص ملفات المشروع المرفقة، حدد العطل وأصلحه ثم شغّل الاختبارات المناسبة." }] },
   { id: "write", label: "Loam Write", labelAr: "اكتب", icon: "✎", hue: 55, hue2: 75,
@@ -65,7 +68,7 @@ export const LOAM_MODES: LoamMode[] = [
     starters: [{ label: "مشهد منتج", prompt: "أنشئ مشهد منتج من المجسّمات الأساسية مع قاعدة وخامات معدنية وإضاءة مناسبة باستخدام loam_creative." }, { label: "تكوين متحرك", prompt: "أنشئ تكوينًا من حلقات وكرات متناسقة الألوان مع حركة دوران باستخدام loam_creative." }] },
   { id: "security", label: "Loam Security", labelAr: "افحص", icon: "🛡", hue: 0, hue2: 30,
     tagline: "تقييم أمني موجّه", description: "شغّل فحوصات أمنية محدودة وقراءة فقط ضد أهداف مصرّح بها، واجمع النتائج في تقرير Security/SARIF داخل المهمة.", outputHint: "تقرير ثغرات وتوصيات تصحيح. Use pentest_*/security_* tools; do not use generic shell scripts for security scans unless a dedicated tool is missing.", readOnly: false,
-    tools: ["pentest_check", "pentest_routes", "pentest_report", "security_assess", "security_status", "security_audit_start", "security_audit_status", "security_audit_report", "secrets_scan", "sca_scan", "sbom_generate", "sast_scan", "sast_diff", "config_scan", "supplychain_scan", "shell_run", ...READ, ...CONTROL], panels: ["files"],
+    tools: ["pentest_check", "pentest_routes", "pentest_report", "security_assess", "security_status", "security_audit_start", "security_audit_status", "security_audit_report", "secrets_scan", "sca_scan", "sbom_generate", "sast_scan", "sast_diff", "config_scan", "supplychain_scan", "recon_scan", "llm_scan", "mcp_scan", "shell_run", ...READ, ...CONTROL], panels: ["files"],
     fields: [{ id: "target", label: "الهدف المصرّح به", placeholder: "رابط أو مسار يمكن فحصه (مثلاً http://127.0.0.1:3000)", multiline: false }, { id: "checks", label: "نطاق الفحص", placeholder: "all، headers، tls، exposed_files، أو قائمة محددة" }],
     starters: [{ label: "فحص ترويسات", prompt: "افحص ترويسات الأمان لـ http://127.0.0.1:3000 باستخدام pentest_check واحفظ النتائج." }, { label: "تقرير ثغرات", prompt: "شغّل فحص pentest_check شامل ثم أنشئ تقرير pentest_report داخل مساحة المهمة." }] },
   { id: "redteam", label: "Loam Red Team", labelAr: "الفريق الأحمر", icon: "🔴", hue: 350, hue2: 15,
@@ -73,6 +76,7 @@ export const LOAM_MODES: LoamMode[] = [
     tools: ["pentest_check", "pentest_routes", "pentest_report", "red_campaign", "red_report", "shell_run", ...READ, ...CONTROL], panels: ["files"],
     fields: [{ id: "target", label: "الهدف المُصرَّح به", placeholder: "مثال: http://127.0.0.1:3000", multiline: false }, { id: "authzId", label: "معرّف التفويض (اختياري)", placeholder: "AUTHZ-0001 — يلزم للأهداف غير المحلية" }],
     starters: [{ label: "حملة على هدف مخبري", prompt: "شغّل red_campaign على http://127.0.0.1:3000 واعرض النتائج المثبتة مع الأدلة والتقرير." }, { label: "تقرير حملة سابقة", prompt: "افتح أحدث تقرير حملة حمراء محفوظ في مجلد red/ داخل مساحة العمل." }] },
+  reverseEngineerMode,
   { id: "automate", label: "Loam Flow", labelAr: "أنجز", icon: "↗", hue: 220, hue2: 195,
     tagline: "خطوات متكررة، عمل أوضح", description: "نفّذ خطوات تفاعل المتصفح وسجّل الأدلة. راجع تفاصيل الإجراءات الخارجية قبل طلبها.", outputHint: "سجل إجراءات ولقطات توثيق", readOnly: false,
     tools: ["integration_list", "integration_call", ...READ, "file_write", "file_mkdir", "artifact_publish", ...BROWSER, "task_create", "task_list", "task_get", "task_cancel", "schedule_create", "schedule_list", "schedule_delete", ...CONTROL, ...MANAGED_SESSIONS], panels: ["files", "browser"],
@@ -83,7 +87,7 @@ export const LOAM_MODES: LoamMode[] = [
 const aliases: Record<string, string> = {
   full: "build", general: "build", discuss: "ask", plan: "ask", agent: "build",
   "app-build": "build", "mobile-dev": "build", "game-dev": "build", "testing-qa": "build",
-  "security-pentest": "build", "reverse-engineer": "build", "devops-cloud": "build",
+  "security-pentest": "build", "devops-cloud": "build",
   "ecommerce-fintech": "build", "i18n-localization": "write", "performance-load": "build",
   "iot-embedded": "build", "web3-blockchain": "build", "ai-rag-studio": "research",
   "document-editor": "write", presentation: "write", "presentation-editor": "write",
