@@ -16,6 +16,21 @@ export interface MemoryDebugSnapshot {
   rendererCount: number;
   serverRssMb: number;
   serverPid: number | null;
+  /**
+   * J7: how many `app.getAppMetrics()` rows matched a renderer window, and their
+   * pids. A zero `rendererRssMb` with `rendererMatched > 0` means the renderer
+   * genuinely uses no measurable memory; `rendererMatched === 0` means no row
+   * matched at all, which is a sampler problem rather than a saving.
+   */
+  rendererMatched?: number;
+  rendererPids?: number[];
+}
+
+/** J7: the on-demand renderer re-sample `debugMemory.refresh` returns. */
+export interface MemoryDebugRefresh {
+  rendererRssMb: number;
+  matched: number;
+  pids: number[];
 }
 
 export interface MemoryDebugPayload extends Partial<MemoryDebugSnapshot> {
@@ -47,6 +62,23 @@ export async function getDesktopMemorySnapshot(): Promise<MemoryDebugSnapshot | 
   if (!apis?.debugMemory?.snapshot) return null;
   try {
     return (await apis.debugMemory.snapshot()) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * J7: force the main process to re-derive the renderer total right now. The
+ * regular sampler ticks every 15 s, which is far too coarse to bracket a
+ * hibernate/wake, so a before/after measurement calls this on both sides.
+ */
+export async function refreshDesktopMemory(): Promise<MemoryDebugRefresh | null> {
+  const apis = (typeof window !== 'undefined'
+    ? (window as unknown as { __apis?: { debugMemory?: { refresh?: () => Promise<MemoryDebugRefresh> } } }).__apis
+    : undefined);
+  if (!apis?.debugMemory?.refresh) return null;
+  try {
+    return (await apis.debugMemory.refresh()) ?? null;
   } catch {
     return null;
   }

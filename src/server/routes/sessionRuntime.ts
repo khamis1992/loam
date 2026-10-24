@@ -81,20 +81,29 @@ export async function handleSessionRuntimeRoutes(
   }
 
   if (req.method === "POST" && action === "budget") {
-    let body: { steps?: unknown; tokens?: unknown };
+    let body: { steps?: unknown; tokens?: unknown; minutes?: unknown; costUsd?: unknown };
     try {
-      body = (await readJson(req)) as { steps?: unknown; tokens?: unknown };
+      body = (await readJson(req)) as { steps?: unknown; tokens?: unknown; minutes?: unknown; costUsd?: unknown };
     } catch {
       sendJson(res, 400, { error: "invalid JSON body" });
       return true;
     }
     const steps = typeof body.steps === "number" && Number.isFinite(body.steps) ? Math.floor(body.steps) : undefined;
     const tokens = typeof body.tokens === "number" && Number.isFinite(body.tokens) ? Math.floor(body.tokens) : undefined;
-    if (steps === undefined && tokens === undefined) {
-      sendJson(res, 400, { error: "steps or tokens increase is required" });
+    // Neo N6: a mission is also bounded by elapsed wall-clock and estimated cost,
+    // so raising the ceiling can extend either dimension.
+    const minutes = typeof body.minutes === "number" && Number.isFinite(body.minutes) ? Math.floor(body.minutes) : undefined;
+    const costUsd = typeof body.costUsd === "number" && Number.isFinite(body.costUsd) ? body.costUsd : undefined;
+    if (steps === undefined && tokens === undefined && minutes === undefined && costUsd === undefined) {
+      sendJson(res, 400, { error: "steps, tokens, minutes or costUsd increase is required" });
       return true;
     }
-    const result = sessionRuntime.raise(sessionId, { ...(steps !== undefined ? { steps } : {}), ...(tokens !== undefined ? { tokens } : {}) });
+    const result = sessionRuntime.raise(sessionId, {
+      ...(steps !== undefined ? { steps } : {}),
+      ...(tokens !== undefined ? { tokens } : {}),
+      ...(minutes !== undefined ? { wallClockMs: Math.floor(minutes * 60_000) } : {}),
+      ...(costUsd !== undefined ? { costUsd } : {}),
+    });
     if (!result.ok) {
       sendJson(res, 400, { error: result.reason ?? "invalid increase", session: sessionRuntime.snapshot(sessionId) });
       return true;

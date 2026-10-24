@@ -328,6 +328,24 @@ function normalizeToolName(toolName: string): string {
   return toolName.trim().toLowerCase();
 }
 
+/** office_craft actions that only READ the live Craft document (cr-05). */
+const OFFICE_CRAFT_READ_ACTIONS = new Set(["state", "commands"]);
+
+/**
+ * True when an `office_craft` call only reads the open Craft editor.
+ *
+ * `office_craft` is one tool with two faces (cr-05): `state` and `commands`
+ * inspect the live document and change nothing, while `execute`, `batch`,
+ * `export`, `undo`, `redo`, the legacy `studio` generator and `war_room` all
+ * write. Only an explicit read action is treated as read-only; a missing action
+ * stays on the write tier so an under-specified call is never under-restricted.
+ */
+function isOfficeCraftReadOnly(args?: Record<string, unknown> | null): boolean {
+  const action =
+    args && typeof args["action"] === "string" ? (args["action"] as string).trim().toLowerCase() : "";
+  return OFFICE_CRAFT_READ_ACTIONS.has(action);
+}
+
 function firstString(args: Record<string, unknown> | undefined, keys: readonly string[]): string | undefined {
   if (!args) return undefined;
   for (const key of keys) {
@@ -422,6 +440,10 @@ export function classifyToolCall(
 
   // Exact names are authoritative; heuristics only cover unregistered tools.
   if (SECRET_TOOL_NAMES.has(name)) return "secret";
+  // cr-05: office_craft drives the live Craft editors. Its read actions change
+  // nothing; every other action edits the open document (and the war_room /
+  // studio engines write their own files).
+  if (name === "office_craft" && isOfficeCraftReadOnly(args)) return "read";
   if (WRITE_TOOL_NAMES.has(name)) {
     const target = firstString(args ?? undefined, WRITE_PATH_KEYS);
     return target ? resolveTierPath(root, target) : "write-workspace";

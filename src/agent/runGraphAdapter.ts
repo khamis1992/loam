@@ -12,6 +12,8 @@
 import type { AgentEvent } from "./events.js";
 import { RunGraph, type RunGraphLayout, type RunGraphStats } from "../graph/runGraph.js";
 import type { RunGraphExport, RunNode, RunNodeStatus, RunNodeType } from "../graph/store.js";
+import type { NodeIndex } from "../graph/nodeVersions.js";
+import { setNodeIndex } from "../graph/nodeVersions.js";
 import { recallIndex, resetRecallIndex } from "../graph/recall.js";
 import { applyCanvasOp, parseCanvasOpRequest, type CanvasOpResult, type CanvasOpRequest } from "../graph/ops.js";
 import { clearDirectives, consumeDirectives, readDirectives, type CanvasDirective } from "../graph/directives.js";
@@ -52,6 +54,14 @@ function publish(runId: string, nodeIds: string[]): void {
   }
 }
 
+/**
+ * Neo N17: let a module outside this file push a canvas change. The bridge writes
+ * nodes through the raw graph, so it has to announce them itself.
+ */
+export function publishRunGraph(runId: string, nodeIds: string[]): void {
+  publish(runId, nodeIds);
+}
+
 /** Subscribe to graph changes of one run. Returns an unsubscribe function. */
 export function subscribeRunGraph(runId: string, listener: RunGraphListener): () => void {
   let subscribers = listeners.get(runId);
@@ -72,6 +82,23 @@ export function subscribeRunGraph(runId: string, listener: RunGraphListener): ()
 let graph: RunGraph | undefined;
 
 /**
+ * N13: the row index the live graph writes through.
+ *
+ * Version capture (`src/graph/nodeVersions.ts`) reads run nodes to snapshot their
+ * text. It must read the *same* store instance, not a second `RunGraphStore`:
+ * a store snapshots its rows on first read, so a separate instance created
+ * before the run existed would never see the nodes this graph writes, and every
+ * capture would miss. Handing the graph's own store over keeps the two in step.
+ */
+export function liveNodeIndex(): NodeIndex | undefined {
+  const store = liveGraph().getStore();
+  return {
+    getRow: (id) => store.getRow(id),
+    listRows: (query) => store.listRows(query),
+  };
+}
+
+/**
  * Forget the process-wide graph. A test that swaps the data directory must also
  * drop the in-memory `runs` cursors, or the next `applyRunEvent` resumes a stale
  * cursor and writes into the old database file.
@@ -85,6 +112,14 @@ export function resetRunGraph(): void {
 function liveGraph(): RunGraph {
   if (!graph) graph = new RunGraph();
   return graph;
+}
+
+/**
+ * Neo N17: the process-wide live graph, for route modules that cannot receive it
+ * through `startServer` deps (the same reason `__loamRunTask` is a global).
+ */
+export function getLiveRunGraph(): RunGraph {
+  return liveGraph();
 }
 
 /**
@@ -109,7 +144,11 @@ export function beginRun(runId: string, goal = ""): RunNode | undefined {
 /** Feed one agent event into the run graph. Returns the ids of the nodes it touched. */
 export function applyRunEvent(runId: string, event: AgentEvent): string[] {
   try {
-    const ids = liveGraph().applyEvent(runId, event);
+    const instance = liveGraph();
+    // The row index must be the graph's own store, or capture reads a snapshot
+    // taken before this run existed and silently snapshots nothing.
+    setNodeIndex(liveNodeIndex());
+    const ids = instance.applyEvent(runId, event);
     // The canvas listens for this: a node appears on the graph as the agent
     // emits the event that created it, without a polling round-trip.
     if (ids.length > 0) publish(runId, ids);
@@ -122,7 +161,9 @@ export function applyRunEvent(runId: string, event: AgentEvent): string[] {
 
 /** Rebuild a run from a recorded event log (the "replay" entry point). */
 export function replayRun(runId: string, events: AgentEvent[]): string[] {
-  return liveGraph().replay(runId, events);
+  const instance = liveGraph();
+  setNodeIndex(liveNodeIndex());
+  return instance.replay(runId, events);
 }
 
 export function getRunGraphLayout(runId: string): RunGraphLayout {
@@ -182,6 +223,22 @@ export function setRunNodeParents(nodeId: string, parentIds: string[], runId?: s
 /** Neo N10 multi-model A/B: create one sibling arm per model off a parent node. */
 export function addRunSiblings(runId: string, parentNodeId: string, models: string[]): RunNode[] {
   return liveGraph().addSiblings(runId, parentNodeId, models);
+}
+
+/**
+ * Neo N17 external-agent canvas bridge: place a caller-authored node on a Loam
+ * canvas. The external agent session (OpenCode / Claude Code / Orca) owns the
+ * id, so its own cursor survives as a stable node instead of being derived from
+ * an agent event. Re-submitting the same id updates that node in place.
+ */
+export function addCanvasBridgeNode(
+  runId: string,
+  spec: { id: string; parentIds: string[]; type?: RunNodeType; status?: RunNodeStatus; data?: unknown },
+): RunNode {
+  if (!runId || !runId.trim()) throw new Error("runId required");
+  const node = liveGraph().addExternalNode(runId.trim(), spec);
+  publish(node.run_id, [node.id]);
+  return node;
 }
 
 /** N7 branch fan-out: open one branch of a fan-out as its own canvas subtree. */

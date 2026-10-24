@@ -41,7 +41,7 @@ describe('tool humanizer', () => {
   });
 
   it('maps office tools to document labels', () => {
-    expect(humanizeToolName('office_craft')).toBe('Edited document');
+    expect(humanizeToolName('office_craft')).toBe('Edited file');
     expect(humanizeToolName('office_import')).toBe('Imported document');
     expect(humanizeToolName('office_export')).toBe('Exported document');
     expect(humanizeToolName('office_status')).toBe('Checked document');

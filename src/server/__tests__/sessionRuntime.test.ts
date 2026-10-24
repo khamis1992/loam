@@ -3,6 +3,8 @@ import http from "node:http";
 import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 
 import { SessionRuntime, DEFAULT_IDLE_MINUTES } from "../sessionRuntime.js";
+import { createMissionBudget } from "../../agent/mission.js";
+import { consumeCost, consumeSteps, consumeTokens, consumeWallClock } from "../../agent/computeBudget.js";
 
 class FakeClock {
   nowMs = 5_000_000;
@@ -253,6 +255,82 @@ describe("session runtime (budget + sleep together)", () => {
     it("does not handle unrelated paths", async () => {
       const res = await rawRequest(server, "GET", "/api/tasks");
       assert.equal(res.status, 404);
+    });
+
+    it("raises a mission's wall-clock and cost ceilings over HTTP", async () => {
+      // Neo N6: the raise endpoint accepts the mission's own dimensions. The
+      // singleton has no ceilings, so each dimension starts at zero and a raise
+      // sets it, exactly as a resumed mission would.
+      const raised = await request(server, "POST", "/api/sessions/s-mission/budget", { minutes: 90, costUsd: 1.5 });
+      assert.equal(raised.status, 200);
+      const budget = (raised.json.session as { budget: { wallClockLimitMs?: number; costLimitUsd?: number; stopped: boolean } }).budget;
+      assert.equal(budget.wallClockLimitMs, 90 * 60_000);
+      assert.equal(budget.costLimitUsd, 1.5);
+      assert.equal(budget.stopped, false, "a raise clears the stop flag");
+    });
+  });
+
+  describe("mission budget (Neo N6)", () => {
+    it("adopts a mission budget so the badge shows the mission's own ceilings", () => {
+      const rt = new SessionRuntime({ stepLimit: 10, tokenLimit: 1000, now: clock.now });
+      try {
+        const missionBudget = createMissionBudget({ steps: 500, tokens: 5_000_000, minutes: 120, costUsd: 4 });
+        rt.adoptBudget("m1", missionBudget);
+        const snap = rt.snapshot("m1");
+        assert.equal(snap.budget.stepLimit, 500, "the mission ceiling, not the session default");
+        assert.equal(snap.budget.tokenLimit, 5_000_000);
+        assert.equal(snap.budget.wallClockLimitMs, 120 * 60_000);
+        assert.equal(snap.budget.costLimitUsd, 4);
+        assert.equal(snap.budget.percent, 0);
+      } finally {
+        rt.close();
+      }
+    });
+
+    it("reports the exhausted counters and the stop flag after a budget stop", () => {
+      const rt = new SessionRuntime({ now: clock.now });
+      try {
+        const missionBudget = createMissionBudget({ steps: 3, tokens: 100, minutes: 5, costUsd: 0.5 });
+        rt.adoptBudget("m2", missionBudget);
+        consumeSteps(missionBudget, 3);
+        consumeTokens(missionBudget, 80, 20);
+        consumeWallClock(missionBudget, 5 * 60_000);
+        consumeCost(missionBudget, 0.5);
+        rt.adoptBudgetAfterRun("m2", missionBudget);
+        const snap = rt.snapshot("m2");
+        assert.equal(snap.budget.steps, 3);
+        assert.equal(snap.budget.tokens, 100);
+        assert.equal(snap.budget.wallClockMs, 5 * 60_000);
+        assert.equal(snap.budget.costUsd, 0.5);
+        assert.equal(snap.budget.percent, 100);
+        assert.equal(snap.budget.stopped, true, "the ceiling is reached, so the run stopped");
+      } finally {
+        rt.close();
+      }
+    });
+
+    it("a raise lets the mission continue from the same counters", () => {
+      const rt = new SessionRuntime({ now: clock.now });
+      try {
+        const missionBudget = createMissionBudget({ steps: 3, minutes: 5 });
+        rt.adoptBudget("m3", missionBudget);
+        consumeSteps(missionBudget, 3);
+        consumeWallClock(missionBudget, 5 * 60_000);
+        rt.adoptBudgetAfterRun("m3", missionBudget);
+        assert.equal(rt.snapshot("m3").budget.stopped, true);
+
+        const raised = rt.raise("m3", { steps: 10, wallClockMs: 60 * 60_000 });
+        assert.equal(raised.ok, true);
+        rt.resumeAfterRaise("m3");
+        const snap = rt.snapshot("m3");
+        assert.equal(snap.budget.steps, 3, "work already done still counts");
+        assert.equal(snap.budget.stepLimit, 13);
+        assert.equal(snap.budget.wallClockLimitMs, 65 * 60_000);
+        assert.equal(snap.budget.stopped, false);
+        assert.equal(snap.raised, true);
+      } finally {
+        rt.close();
+      }
     });
   });
 });
