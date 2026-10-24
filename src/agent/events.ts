@@ -215,6 +215,13 @@ export type AgentEvent =
    */
   | { type: "context_selected"; step: number; tokens: number; artefacts: number; reason: string }
   /**
+   * Neo N11: the run picked up edits the user made on the canvas (corrected node
+   * output, a cut/re-connected edge, a duplicated branch, a merged group, or a
+   * quote/follow-up instruction). `count` is how many edits entered this step's
+   * prompt and `nodeIds` names the nodes they acted on.
+   */
+  | { type: "canvas_edit"; step: number; count: number; nodeIds: string[] }
+  /**
    * fc-06: a Loam Video export is in flight. Live-only (no canvas node): the
    * rendered file lands in the task workspace when the stage reaches "saving".
    */

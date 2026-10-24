@@ -11,7 +11,13 @@
  *    its reply is unusable, `smartSplit` degrades to the fixed strategy and
  *    reports `usedFallback: true`, so a caller can tell the user the LLM path
  *    was skipped without failing the import.
+ *
+ * N21: the fixed splitter is script-aware. Arabic sentences are closed by `.` `!`
+ * `?` `؟` and the Asian full stop `۔`, and are separated by the Arabic comma
+ * `،`, which must never become a cut point. A short Arabic sentence is not a
+ * heading, so a paragraph of them stays one block and is cut on its own marks.
  */
+import { SPLIT_RUN, isHeadingLine } from "./text.js";
 
 export interface SeedChunk {
   title: string;
@@ -39,8 +45,6 @@ export interface SplitOptions {
 
 const DEFAULT_MAX_CHARS = 2400;
 const MIN_CHUNK_CHARS = 80;
-
-const HEADING_RE = /^\s{0,3}(#{1,6}\s+\S|[\u0600-\u06FF\w][^\n]{0,80}$)/;
 
 /** Extract the first JSON array of {title, body, tags} from a model reply. */
 export function parseSeedChunks(raw: string): SeedChunk[] | null {
@@ -80,7 +84,8 @@ function firstLineTitle(body: string): string {
  * Fixed, model-free splitting. Cuts on blank-line paragraphs, keeps markdown
  * headings attached to the block that follows them, then packs blocks into
  * chunks of at most `maxChars`. A block longer than the cap is split on
- * sentence boundaries so no seed is ever unbounded.
+ * sentence boundaries so no seed is ever unbounded, and every seed closes on a
+ * sentence mark rather than mid-phrase.
  */
 export function fixedSplit(text: string, opts: SplitOptions = {}): SeedChunk[] {
   const maxChars = Math.max(MIN_CHUNK_CHARS, opts.maxChars ?? DEFAULT_MAX_CHARS);
@@ -97,7 +102,7 @@ export function fixedSplit(text: string, opts: SplitOptions = {}): SeedChunk[] {
       current = "";
       continue;
     }
-    const heading = line.match(HEADING_RE) && line.trim().length <= (opts.headingLines ?? 90);
+    const heading = isHeadingLine(line, opts.headingLines ?? 90);
     if (heading && current.trim()) {
       blocks.set(`b${blocks.size}`, current.trim());
       current = "";
@@ -128,34 +133,62 @@ export function fixedSplit(text: string, opts: SplitOptions = {}): SeedChunk[] {
   return chunks.length > 0 ? chunks : [{ title: firstLineTitle(source), body: source, tags: [] }];
 }
 
-/** Split one oversized block on sentence boundaries into pieces <= maxChars. */
+/**
+ * Split one oversized block into pieces <= maxChars, always on sentence marks.
+ *
+ * A block below the chunk floor is kept whole: shredding a 43-character Arabic
+ * paragraph into two 20-character seeds would make each seed meaningless. The
+ * run-based splitter prefers whole sentences and only cuts mid-phrase as a last
+ * resort, when a single sentence is itself longer than the cap.
+ */
 function splitOversized(body: string, maxChars: number): string[] {
   if (body.length <= maxChars) return [body];
-  const parts = body.match(/[^.!?\n]+[.!?]*\s*/g) ?? [body];
+
+  const runs = body.match(SPLIT_RUN) ?? [body];
   const pieces: string[] = [];
   let current = "";
-  for (const part of parts) {
-    const trimmed = part.trim();
-    if (!trimmed) continue;
+
+  const pushRun = (run: string): void => {
+    const trimmed = run.trim();
+    if (!trimmed) return;
+    // A single run longer than the cap has no sentence boundary to cut on.
+    if (trimmed.length > maxChars) {
+      if (current.trim()) {
+        pieces.push(current.trim());
+        current = "";
+      }
+      pieces.push(...hardCut(trimmed, maxChars));
+      return;
+    }
     if (current && current.length + trimmed.length + 1 > maxChars) {
-      if (current.trim()) pieces.push(current.trim());
+      pieces.push(current.trim());
       current = trimmed;
     } else {
       current = current ? `${current} ${trimmed}` : trimmed;
     }
-    while (current.length > maxChars) {
-      const cut = current.lastIndexOf(" ", maxChars);
-      if (cut < MIN_CHUNK_CHARS) {
-        pieces.push(current.slice(0, maxChars));
-        current = current.slice(maxChars).trim();
-      } else {
-        pieces.push(current.slice(0, cut));
-        current = current.slice(cut).trim();
-      }
-    }
-  }
+  };
+
+  for (const run of runs) pushRun(run);
   if (current.trim()) pieces.push(current.trim());
   return pieces.length > 0 ? pieces : [body.slice(0, maxChars)];
+}
+
+/** Cut a single long run on spaces, only after the minimum chunk length. */
+function hardCut(run: string, maxChars: number): string[] {
+  const out: string[] = [];
+  let rest = run;
+  while (rest.length > maxChars) {
+    const cut = rest.lastIndexOf(" ", maxChars);
+    if (cut < MIN_CHUNK_CHARS) {
+      out.push(rest.slice(0, maxChars));
+      rest = rest.slice(maxChars).trim();
+    } else {
+      out.push(rest.slice(0, cut));
+      rest = rest.slice(cut).trim();
+    }
+  }
+  if (rest) out.push(rest);
+  return out;
 }
 
 /**

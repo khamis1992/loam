@@ -117,6 +117,38 @@ describe("J6 hard caps (eviction through the real public APIs)", () => {
     });
   });
 
+  it("session-task-projection", async () => {
+    // J7's own incremental fold (src/memory/sessionCaches.ts): one folded state
+    // per session, keyed by task id, reused while the log grows.
+    const { getTaskProjection, resetSessionCaches } = await import("../../memory/sessionCaches.js");
+    try {
+      await expectCap("session-task-projection", 64, (i) => {
+        getTaskProjection(`proj_${i}`, 2, () => 0, (state: unknown, seq: number) => Number(state) + seq);
+      });
+    } finally {
+      resetSessionCaches();
+    }
+  });
+
+  it("session-task-caches", async () => {
+    // One slot per task; a slot holds the task's named derived caches, so the
+    // enforced bound is the number of slots, not the owners inside them.
+    const { registerTaskCache, releaseTaskCaches, resetSessionCaches, taskCacheBytes } = await import("../../memory/sessionCaches.js");
+    try {
+      await expectCap("session-task-caches", 64, (i) => {
+        const taskId = `owner_${i}`;
+        registerTaskCache(taskId, { name: `owner_${i}`, size: () => 1, bytes: () => 8, clear: () => undefined });
+      });
+      // Saturation dropped the first slot (LRU by insertion), and the hibernation
+      // sweep is what drops a slot's owners: prove the oldest is gone and a live
+      // one is released by `releaseTaskCaches`.
+      assert.equal(taskCacheBytes("owner_0").entries, 0, "the oldest task slot was evicted at saturation");
+      assert.ok(releaseTaskCaches("owner_63").owners.length > 0, "a live task's caches are released");
+    } finally {
+      resetSessionCaches();
+    }
+  });
+
   it("task-event-subs", async () => {
     const { subscribeTask } = await import("../../server/streams.js");
     // Abandoned listeners (a client that vanished without closing its stream)
@@ -467,6 +499,7 @@ describe("docs/MEMORY_BUDGET.md stays in sync with the code", () => {
     await import("../../server/connectors/oauth.js");
     await import("../../server/bridge/grokbot.js");
     await import("../../session/eventLog.js");
+    await import("../../memory/sessionCaches.js");
     await import("../../server/videoStudioRelay.js");
     await import("../../server/workspace/videoRender.js");
     await import("../../studio/slide-preview.js");
