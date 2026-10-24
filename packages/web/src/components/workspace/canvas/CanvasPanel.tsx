@@ -31,6 +31,7 @@ import {
 import { applyLayout, layoutBounds, screenToGraph, type LayoutOptions } from './layout';
 import { CanvasClient, type CanvasClientOptions } from './client';
 import { CanvasStream, type CanvasStreamChange, type CanvasStreamHandlers } from './stream';
+import { CanvasAnnotationsClient } from './annotationsClient';
 import {
   editableFields,
   excerpt,
@@ -70,6 +71,8 @@ export interface CanvasPanelProps {
   layoutOptions?: LayoutOptions;
   /** Injectable locale provider (tests). */
   getLocale?: () => typeof getLocale extends () => infer L ? L : never;
+  /** Injectable annotation client (N18; tests). */
+  annotationsClient?: CanvasAnnotationsClient;
 }
 
 interface ViewTransform {
