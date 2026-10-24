@@ -52,6 +52,7 @@
     "check:recovery": "tsx src/scripts/check-recovery.ts",
     "check:recovery:http": "tsx src/scripts/check-recovery-http.ts",
     "check:scanners": "tsx src/scripts/check-scanners.ts",
+    "check:security-asar": "tsx src/scripts/check-security-asar.ts",
     "check:selfimprove": "tsx src/scripts/check-selfimprove.ts",
     "check:studio": "tsx src/scripts/check-studio.ts",
     "check:studio-e2e": "tsx src/scripts/check-studio-e2e.ts",
