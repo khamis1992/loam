@@ -3,6 +3,7 @@
  *  the stable, reviewable surface of the packaged app (IPC channels, contextBridge
  *  keys, preload entrypoints, hard-coded endpoints) plus the analyzer's summary
  *  counts. Best-effort static (U4): a human reviews allowlist deltas. */
+import { createHash } from "node:crypto";
 import type { ReaEvidenceRecord } from "./reaEvidence.js";
 
 export interface AsarSurface {
@@ -94,4 +95,27 @@ export function unexplainedAdditions(delta: AsarSurfaceDelta, allowlist: { ipcCh
 export function hasSurfaceAdditions(delta: AsarSurfaceDelta): boolean {
   return delta.addedIpcChannels.length > 0 || delta.addedContextBridgeKeys.length > 0 ||
     delta.addedPreloadEntryPoints.length > 0 || delta.addedHardcodedEndpoints.length > 0;
+}
+
+/** Merge per-subtree surfaces into one (release gate analyzes first-party subtrees
+ *  of the extracted asar, not the 377 MB blob — appendix A13). Lists union and
+ *  re-sort; the merged digest commits to the ordered child digests. */
+export function mergeAsarSurfaces(surfaces: AsarSurface[]): AsarSurface {
+  if (surfaces.length === 0) {
+    return { contentDigest: "", ipcChannels: [], ipcRendererTransmissions: [], contextBridgeKeys: [], preloadEntryPoints: [], hardcodedEndpoints: [], browserWindows: 0, summary: {} };
+  }
+  if (surfaces.length === 1) return surfaces[0]!;
+  const union = (lists: string[][]): string[] => [...new Set(lists.flat())].sort();
+  const digests = surfaces.map((s) => s.contentDigest).sort();
+  return {
+    contentDigest: `merged_${createHash("sha256").update(digests.join("\n")).digest("hex")}`,
+    artifactDigest: surfaces.map((s) => s.artifactDigest).filter(Boolean).join(",") || undefined,
+    ipcChannels: union(surfaces.map((s) => s.ipcChannels)),
+    ipcRendererTransmissions: union(surfaces.map((s) => s.ipcRendererTransmissions)),
+    contextBridgeKeys: union(surfaces.map((s) => s.contextBridgeKeys)),
+    preloadEntryPoints: union(surfaces.map((s) => s.preloadEntryPoints)),
+    hardcodedEndpoints: union(surfaces.map((s) => s.hardcodedEndpoints)),
+    browserWindows: surfaces.reduce((n, s) => n + s.browserWindows, 0),
+    summary: surfaces.reduce((acc, s) => ({ ...acc, ...s.summary }), {} as Record<string, unknown>),
+  };
 }

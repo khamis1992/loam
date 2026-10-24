@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import type { ReaEvidenceRecord } from "../reaEvidence.js";
-import { diffAsarSurface, extractAsarSurface, hasSurfaceAdditions, unexplainedAdditions } from "../reaAsarSurface.js";
+import { diffAsarSurface, extractAsarSurface, hasSurfaceAdditions, mergeAsarSurfaces, unexplainedAdditions } from "../reaAsarSurface.js";
 
 const fixturePath = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "rea-goldens.json");
 const goldens = JSON.parse(fs.readFileSync(fixturePath, "utf8")) as { records: ReaEvidenceRecord[] };
@@ -62,4 +62,19 @@ test("identical surfaces produce an empty delta", () => {
   const delta = diffAsarSurface(surface, { ...surface });
   assert.equal(hasSurfaceAdditions(delta), false);
   assert.deepEqual(delta.addedIpcChannels, []);
+});
+
+test("mergeAsarSurfaces unions subtree surfaces and digests deterministically (A13)", () => {
+  const base = extractAsarSurface(analyzeRecord);
+  const a: typeof base = { ...base, ipcChannels: ["ch-1", "shared"], contextBridgeKeys: ["api1"] };
+  const b: typeof base = { ...base, ipcChannels: ["shared", "ch-2"], browserWindows: 1, summary: { browser_windows: 1 } };
+  const merged = mergeAsarSurfaces([a, b]);
+  assert.deepEqual(merged.ipcChannels, ["ch-1", "ch-2", "shared"]);
+  assert.deepEqual(merged.contextBridgeKeys, ["api1"]);
+  assert.equal(merged.browserWindows, 1);
+  assert.match(merged.contentDigest, /^merged_[a-f0-9]{64}$/);
+  // Order-independent: same children in any order produce the same merged digest.
+  assert.equal(mergeAsarSurfaces([b, a]).contentDigest, merged.contentDigest);
+  // A single surface passes through without a merged- prefix.
+  assert.equal(mergeAsarSurfaces([a]).contentDigest, a.contentDigest);
 });

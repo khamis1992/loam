@@ -16,7 +16,7 @@ import { registerMcpTools } from "../tools/mcp.js";
 import { REA_VERSION_PIN } from "../tools/reaAllowlist.js";
 import { ReaAuditLog, reaAuditPath } from "../tools/reaAudit.js";
 import type { ReaEvidenceRecord } from "../security/reaEvidence.js";
-import { diffAsarSurface, extractAsarSurface, hasSurfaceAdditions, unexplainedAdditions, type AsarSurface } from "../security/reaAsarSurface.js";
+import { diffAsarSurface, extractAsarSurface, hasSurfaceAdditions, mergeAsarSurfaces, unexplainedAdditions, type AsarSurface } from "../security/reaAsarSurface.js";
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const target = process.env.LOAM_ASAR_TARGET ?? path.join(ROOT_DIR, "release", "win-unpacked", "resources", "app.asar");
@@ -60,23 +60,35 @@ async function main(): Promise<number> {
     }
     audit.append({ name: "rea.mcp.connect", outcome: "completed", tool: "server" });
 
+    // A13: the real app.asar is ~377 MB of mostly node_modules; the gate extracts it
+    // with the first-party @electron/asar and analyzes the first-party subtrees where
+    // the IPC/bridge/preload surface actually lives. The subject is never executed.
+    const { createRequire } = await import("node:module");
+    const require = createRequire(import.meta.url);
+    const asarLib = require("@electron/asar") as { extractAll: (archive: string, dest: string) => Promise<void> };
+    const extractDir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "rea-asar-x-")), "app");
     const started = Date.now();
-    const analyze = await toolset.callTool("rea", "analyze_javascript_application", { input_path: target, detail: "summary" }, 120_000);
-    if (!analyze.ok) {
-      audit.append({ name: "rea.asar.audit", outcome: "failed", target, durationMs: Date.now() - started, detail: analyze.content.slice(0, 200) });
-      if (mode === "fail") { console.error(`FAIL: analysis failed: ${analyze.content.slice(0, 300)}`); return 1; }
-      console.log(`WARN: analysis failed (${analyze.content.slice(0, 200)}); gate stays green in warn mode`);
-      return 0;
-    }
+    await asarLib.extractAll(target, extractDir);
+    const subtrees = ["electron", "dist", "ui"].map((d) => path.join(extractDir, d)).filter((d) => fs.existsSync(d));
+    if (subtrees.length === 0) throw new Error(`no first-party subtrees found in ${extractDir}`);
 
-    const bundlePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "rea-asar-")), "bundle.json");
-    const exported = await toolset.callTool("rea", "export_evidence_bundle", { path: bundlePath, overwrite: true }, 30_000);
+    const bundlePath = path.join(path.dirname(extractDir), "bundle.json");
+    const surfaces: AsarSurface[] = [];
+    for (const subtree of subtrees) {
+      const analyze = await toolset.callTool("rea", "analyze_javascript_application", { input_path: subtree, detail: "summary" }, 300_000);
+      if (!analyze.ok) throw new Error(`analysis failed for ${subtree}: ${analyze.content.slice(0, 200)}`);
+    }
+    const exported = await toolset.callTool("rea", "export_evidence_bundle", { path: bundlePath, overwrite: true }, 60_000);
     if (!exported.ok) throw new Error(`export failed: ${exported.content.slice(0, 200)}`);
     const bundle = JSON.parse(fs.readFileSync(bundlePath, "utf8")) as { records?: ReaEvidenceRecord[] };
-    const record = (bundle.records ?? []).find((r) => r.operation === "analyze_javascript_application");
-    if (!record) throw new Error("analyze record missing from exported bundle");
-    const surface = extractAsarSurface(record);
-    audit.append({ name: "rea.asar.audit", outcome: "completed", target, contentDigest: surface.contentDigest, durationMs: Date.now() - started, detail: `mode=${mode}` });
+    const norm = (p: string): string => p.replace(/\\/g, "/").toLowerCase();
+    for (const subtree of subtrees) {
+      const record = (bundle.records ?? []).find((r) => r.operation === "analyze_javascript_application" && norm(String(r.subject?.local_path ?? "")) === norm(subtree));
+      if (!record) throw new Error(`analyze record missing for ${subtree}`);
+      surfaces.push(extractAsarSurface(record));
+    }
+    const surface = mergeAsarSurfaces(surfaces);
+    audit.append({ name: "rea.asar.audit", outcome: "completed", target, contentDigest: surface.contentDigest, durationMs: Date.now() - started, detail: `mode=${mode} subtrees=${subtrees.length}` });
 
     if (!fs.existsSync(baselineFile)) {
       const { version } = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, "package.json"), "utf8")) as { version: string };
