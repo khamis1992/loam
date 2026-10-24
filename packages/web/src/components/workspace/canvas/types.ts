@@ -6,6 +6,7 @@
  * panel, the client and the tests, so a layout produced by the server and the
  * one rendered by the canvas cannot drift apart.
  */
+import type { CanvasSearchHit as SearchCanvasHit } from './search';
 
 /** Every node kind the graph can render (mirrors RUN_NODE_TYPES). */
 export const CANVAS_NODE_TYPES = [
@@ -83,6 +84,35 @@ function countBy<T>(items: T[], key: (item: T) => string): Record<string, number
   }, {});
 }
 
+/** One hit inside one field of one node, as the server reports it. */
+export interface CanvasNodeMatch {
+  field: string;
+  /** Character offset of the hit inside the field's original value. */
+  start: number;
+  /** Length of the hit in the original value (a folded hit can be longer). */
+  length: number;
+  /** The matched text, verbatim from the node. */
+  snippet: string;
+}
+
+/**
+ * One node plus the hits that matched it, as the server reports them. The shape
+ * is `./search`'s `CanvasSearchHit` (the two sides mirror each other), so a
+ * server reply and a locally computed result are interchangeable to the panel.
+ */
+export type CanvasSearchHit = SearchCanvasHit;
+
+/**
+ * The `search` block of the server's GET reply. `GET /api/graph/:runId?q=…`
+ * scans the *whole* run, including nodes this client has not fetched yet, so a
+ * client that does not hold the entire graph can still highlight every match.
+ * Absent when the caller did not ask for a search.
+ */
+export interface CanvasGraphSearch {
+  query: string;
+  hits: CanvasSearchHit[];
+}
+
 /** The server's GET /api/graph/:runId reply. */
 export interface CanvasGraphResponse {
   runId: string;
@@ -92,6 +122,8 @@ export interface CanvasGraphResponse {
   stats: CanvasStats;
   /** Nodes appended after the `afterSeq` cursor the caller already rendered. */
   fresh: CanvasNode[];
+  /** Present only when the caller sent `?q=`; see `CanvasGraphSearch`. */
+  search?: CanvasGraphSearch;
 }
 
 /** A canvas edit, sent as PATCH /api/graph/:runId/nodes/:nodeId. */
@@ -99,6 +131,74 @@ export interface CanvasNodePatch {
   status?: CanvasNodeStatus;
   data?: unknown;
   parentIds?: string[];
+}
+
+/**
+ * Neo N11: one canvas *editing operation*.
+ *
+ * A raw PATCH can only write a field. These are the intents the canvas can
+ * express -- correct an output, cut or re-connect an edge, branch a node, group
+ * a selection -- and each one is applied together with the directive that tells
+ * the agent about it, so the graph and the model never disagree about a run.
+ */
+export const CANVAS_OP_NAMES = ['edit', 'cut', 'reconnect', 'duplicate', 'group', 'quote', 'follow-up'] as const;
+export type CanvasOpName = (typeof CANVAS_OP_NAMES)[number];
+
+/** The two ways a node's content can be handed to the model. */
+export const CANVAS_EDIT_MODES = ['follow-up', 'quote'] as const;
+export type CanvasEditMode = (typeof CANVAS_EDIT_MODES)[number];
+
+export type CanvasOpRequest =
+  | { op: 'edit'; nodeId: string; text: string; mode?: CanvasEditMode }
+  | { op: 'cut' | 'reconnect'; nodeId: string; parentIds: string[]; mode?: CanvasEditMode }
+  | { op: 'duplicate'; nodeId: string; label?: string }
+  | { op: 'group'; nodeIds: string[]; title?: string }
+  | { op: 'quote' | 'follow-up'; nodeId: string; note?: string };
+
+/** The outcome of one operation, as the server reports it. */
+export interface CanvasOpResult {
+  op: CanvasOpName;
+  nodeId: string;
+  touched: string[];
+  /** Nodes superseded by the edit: the panel flags these as stale. */
+  stale: string[];
+  /** Every node of the run after the operation, already laid out. */
+  nodes: CanvasLayoutNode[];
+  edges: CanvasEdge[];
+  stats: CanvasStats;
+}
+
+export const isCanvasOpName = (value: unknown): value is CanvasOpName =>
+  typeof value === 'string' && (CANVAS_OP_NAMES as readonly string[]).includes(value);
+
+/**
+ * Coerce a server reply into an operation result.
+ *
+ * The `stale` list is what lets the canvas mark a corrected node's downstream
+ * work without guessing at dependencies itself, so a missing list is not fatal
+ * (the panel simply flags nothing) while a missing `op` means the reply is not an
+ * operation result at all.
+ */
+export function coerceCanvasOpResult(value: unknown): CanvasOpResult | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const raw = value as Record<string, unknown>;
+  if (!isCanvasOpName(raw.op) || typeof raw.nodeId !== 'string') return undefined;
+  const layout = coerceCanvasLayout(raw);
+  return {
+    op: raw.op,
+    nodeId: raw.nodeId,
+    touched: Array.isArray(raw.touched) ? raw.touched.filter((id): id is string => typeof id === 'string') : [],
+    stale: Array.isArray(raw.stale) ? raw.stale.filter((id): id is string => typeof id === 'string') : [],
+    nodes: layout?.nodes ?? [],
+    edges: layout?.edges ?? [],
+    stats: layout?.stats ?? {
+      totalNodes: layout?.nodes.length ?? 0,
+      nodesByType: layout ? countBy(layout.nodes, (node) => node.type) : {},
+      nodesByStatus: layout ? countBy(layout.nodes, (node) => node.status) : {},
+      depth: layout?.nodes.reduce((max, node) => Math.max(max, node.depth), 0) ?? 0,
+      edges: layout?.edges.length ?? 0,
+    },
+  };
 }
 
 export const isCanvasNodeType = (value: unknown): value is CanvasNodeType =>
@@ -179,6 +279,53 @@ export function coerceCanvasStats(value: unknown): CanvasStats | undefined {
   };
 }
 
+/** Coerce one hit of a server search reply; undefined when unusable. */
+function coerceCanvasSearchHit(value: unknown): CanvasSearchHit | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.nodeId !== 'string') return undefined;
+  const matches = Array.isArray(raw.matches)
+    ? raw.matches
+        .map((entry) => {
+          if (typeof entry !== 'object' || entry === null) return undefined;
+          const match = entry as Record<string, unknown>;
+          if (typeof match.field !== 'string' || typeof match.snippet !== 'string') return undefined;
+          return {
+            field: match.field,
+            start: typeof match.start === 'number' && Number.isFinite(match.start) ? match.start : 0,
+            length: typeof match.length === 'number' && Number.isFinite(match.length) ? match.length : 0,
+            snippet: match.snippet,
+          };
+        })
+        .filter((match): match is CanvasNodeMatch => match !== undefined)
+        .map((match) => ({ ...match, nodeId: raw.nodeId as string }))
+    : [];
+  return {
+    nodeId: raw.nodeId,
+    nodeType: typeof raw.nodeType === 'string' ? raw.nodeType : '',
+    nodeStatus: typeof raw.nodeStatus === 'string' ? raw.nodeStatus : '',
+    title: typeof raw.title === 'string' ? raw.title : '',
+    matches,
+  };
+}
+
+/**
+ * Coerce the optional `search` block. A reply that carries no `search` key (every
+ * unfiltered GET) stays without one, so a caller can tell "no search was run"
+ * apart from "the search found nothing".
+ */
+export function coerceCanvasGraphSearch(value: unknown): CanvasGraphSearch | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.query !== 'string') return undefined;
+  return {
+    query: raw.query,
+    hits: Array.isArray(raw.hits)
+      ? raw.hits.map(coerceCanvasSearchHit).filter((hit): hit is CanvasSearchHit => hit !== undefined)
+      : [],
+  };
+}
+
 /** Coerce the server's GET reply; undefined when the payload cannot be used. */
 export function coerceCanvasGraphResponse(value: unknown): CanvasGraphResponse | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
@@ -198,6 +345,9 @@ export function coerceCanvasGraphResponse(value: unknown): CanvasGraphResponse |
   const fresh = Array.isArray(raw.fresh)
     ? raw.fresh.map(coerceCanvasNode).filter((n): n is CanvasNode => n !== undefined)
     : [];
+  // The search block is optional and must survive coercion: it is the only way a
+  // client that holds a partial graph learns which nodes matched a `?q=` scan.
+  const search = coerceCanvasGraphSearch((raw as { search?: unknown }).search);
   return {
     runId: raw.runId,
     enabled: raw.enabled !== false,
@@ -205,5 +355,6 @@ export function coerceCanvasGraphResponse(value: unknown): CanvasGraphResponse |
     edges: layout.edges,
     stats,
     fresh,
+    ...(search ? { search } : {}),
   };
 }

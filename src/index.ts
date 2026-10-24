@@ -102,6 +102,9 @@ import {
 } from "./server/inputQueue.js";
 import { claimRunLease, releaseRunLease, startLeaseHeartbeat, type LeaseHeartbeat, type RunLease } from "./server/runLease.js";
 import { recordTaskUsage } from "./server/credits.js";
+// H5: inject relevant learned lessons into the task's system prompt (BUILD_SPEC §6.5).
+import { lessonsForTask } from "./learning/harness/inject.js";
+import { domainOf } from "./learning/harness/types.js";
 // D19 session runtime: sleep/wake lifecycle + per-session compute budget.
 import { SessionRuntime, DEFAULT_IDLE_MINUTES, DEFAULT_STEP_LIMIT, DEFAULT_TOKEN_LIMIT } from "./server/sessionRuntime.js";
 // Neo N6: mission runs — an unbounded run type bounded by a durable budget.
@@ -115,6 +118,10 @@ import {
 import { isMissionBudgetError } from "./agent/loop.js";
 import { browserSessionFor } from "./tools/browser.js";
 import { killAllSessions } from "./tools/pty.js";
+// J7 idle session hibernation: release a session's derived caches after a
+// sustained idle period, without touching its authoritative state or draft.
+import { sessionHibernation } from "./memory/hibernation.js";
+import { sessionCacheOwners, sessionHibernationGuard } from "./memory/hibernationWiring.js";
 
 /**
  * Neo N6: the budget a mission runs under, from this config. `missionBudgetFrom`
@@ -218,6 +225,13 @@ async function main(): Promise<void> {
   });
   sessionRuntime.start();
 
+  // J7 idle session hibernation: one manager per process. The threshold comes
+  // from the same setting as the renderer (`session.hibernationIdleMinutes`,
+  // 0 = off), so the daemon and the UI agree on when a session is idle.
+  sessionHibernation.reset();
+  sessionHibernation.configure({ idleMinutes: cfg.session?.hibernationIdleMinutes });
+  sessionHibernation.start();
+
   const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal; lease?: RunLease }): Promise<{ taskId: string; text: string }> => {
     const { prompt, emit } = opts;
     const settings = getSettings();
@@ -246,6 +260,11 @@ async function main(): Promise<void> {
     // budget is live. Hooks release this task's browser context and pty
     // terminals when it later sleeps, after the state has been persisted.
     void sessionRuntime.markActive(task);
+    // J7: the run is in flight, so its derived caches must stay resident. The
+    // guards read the run signal and the execution queue, both set below.
+    sessionHibernation.setOwners(task, sessionCacheOwners(task));
+    sessionHibernation.setGuards(task, sessionHibernationGuard(task));
+    sessionHibernation.markActive(task);
     sessionRuntime.setHooks(task, {
       persist: () => { saveRun(task, opts.savedRun, opts.lease); },
       release: () => {
@@ -461,12 +480,34 @@ async function main(): Promise<void> {
       // Provenance-aware index summary: a bounded digest of long-term memory so
       // the agent knows what it already knows without a tool call.
       const memoryIndexSummary = memory && memory.count > 0 ? memory.indexSummary(8) : undefined;
+      // H5 lesson injection (BUILD_SPEC .h2-ref/BUILD_SPEC.md §6.5): relevant lessons from
+      // past corrections join the system suffix. Wrapped in try/catch so a store or ranking
+      // failure can never block the task; the block is capped (cfg.lessons.maxChars) and
+      // every injected lesson's `uses` counter grows (LOAM_LESSONS_ENABLED can disable it).
+      // The fallbacks mirror loadConfig for test configs built without the lessons key.
+      let lessonBlock = "";
+      const lessonsCfg = effectiveCfg.lessons ?? { enabled: true, maxChars: 1200, minScore: 0.35 };
+      if (lessonsCfg.enabled) {
+        try {
+          lessonBlock = lessonsForTask({
+            agentId: agentId ?? null,
+            domain: domainOf(effectivePrompt.slice(0, 400)),
+            prompt: effectivePrompt,
+            enabled: true,
+            maxChars: lessonsCfg.maxChars,
+            minScore: lessonsCfg.minScore,
+          }).block;
+        } catch (err) {
+          log.warn(`lesson injection skipped: ${String(err)}`);
+        }
+      }
       const suffix = [
         `You are Loam. Active mode: ${modeDefinition.labelAr}. ${modeDefinition.description} Only use the provided tool capabilities.`,
         modeDefinition.outputHint,
         workModeDefinition.policy,
         memoryContextSuffix,
         memoryIndexSummary,
+        ...(lessonBlock ? [lessonBlock] : []),
         agentSuffix, askModeSuffix, sideChatSuffix,
         quickEditRoute.suffix,
       ].filter(Boolean).join("\n\n");
@@ -657,6 +698,9 @@ async function main(): Promise<void> {
       // Neo N6: the mission charged wall-clock/cost inside the run, so the store
       // has to keep the same budget object or the badge would show a stale one.
       if (missionBudget) sessionRuntime.adoptBudgetAfterRun(task, missionBudget);
+      // J7: the turn ended, so the session may hibernate after the idle
+      // threshold. Guards still protect a run that resumed during shutdown.
+      sessionHibernation.markIdle(task);
       completeTaskRun(task, result.text, result.model, opts.lease);
       recordTaskUsage(task, result.usage); // OPD #9: one mock usage entry per completed task
       if (doneEvent) {

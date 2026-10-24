@@ -110,6 +110,38 @@ function graphPayload(nodes: CanvasNodeSeed[]) {
   };
 }
 
+/**
+ * The hits `GET /api/graph/:runId?q=` returns. The panel asks the server for the
+ * whole run rather than searching the nodes it holds, so this is the shape that
+ * makes the acceptance test prove the reply survives the client's coercion and
+ * still drives the highlight.
+ */
+function searchPayload(nodes: CanvasNodeSeed[], term: string) {
+  const folded = (value: string) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const needle = folded(term.trim());
+  const hits = nodes.flatMap((node) => {
+    const fields = ['title', 'url', 'stepId'] as const;
+    const matches = fields.flatMap((field) => {
+      const value = node.data[field];
+      if (typeof value !== 'string') return [];
+      const index = folded(value).indexOf(needle);
+      if (index === -1 || !needle) return [];
+      return [{ nodeId: node.id, field, start: index, length: needle.length, snippet: value.slice(index, index + needle.length) }];
+    });
+    if (matches.length === 0) return [];
+    return [
+      {
+        nodeId: node.id,
+        nodeType: node.type,
+        nodeStatus: node.status,
+        title: typeof node.data.title === 'string' ? node.data.title : node.type,
+        matches,
+      },
+    ];
+  });
+  return { ...graphPayload(nodes), search: { query: term, hits } };
+}
+
 // Returns `true` so the `return json(...)` lines in `CanvasServer.handle` also
 // resolve to "handled": a bare void return would make the caller fulfill again.
 async function json(route: Route, body: unknown, status = 200): Promise<boolean> {
@@ -262,7 +294,11 @@ class CanvasServer {
     const graphMatch = /^\/api\/graph\/([^/]+)(?:\/nodes(?:\/([^/]+))?)?$/.exec(path);
     if (!graphMatch) return false;
     const nodeId = graphMatch[2];
-    if (method === 'GET' && !nodeId) return json(route, graphPayload(this.nodes));
+    if (method === 'GET' && !nodeId) {
+      // `q` searches the whole run, exactly as `src/server/routes/graph.ts` does.
+      const term = new URL(route.request().url()).searchParams.get('q') ?? '';
+      return json(route, term.trim() ? searchPayload(this.nodes, term) : graphPayload(this.nodes));
+    }
     if (method === 'PATCH' && nodeId) return json(route, { node: { id: nodeId, run_id: TASK_ID } });
     if (method === 'POST' && nodeId) return json(route, { node: { id: nodeId, run_id: TASK_ID } });
     return json(route, { error: 'method not allowed' }, 405);
@@ -515,6 +551,12 @@ test.describe('N18 canvas controls', () => {
     await expect(page.getByTestId('canvas-search-hit')).toHaveCount(2);
     await expect(page.getByTestId('canvas-node').filter({ hasText: 'Gather quarterly sources' })).toHaveAttribute('data-node-match', 'true');
     await expect(page.getByTestId('canvas-node').filter({ hasText: 'Draft the quarterly report' })).toHaveAttribute('data-node-match', 'true');
+    // The server's reply carries the matched characters, so the card underlines the
+    // term itself rather than only ringing the card: one segment is the hit and the
+    // rest of the title is not. This is the acceptance row's "highlights matches".
+    const hitCard = page.getByTestId('canvas-node').filter({ hasText: 'Gather quarterly sources' });
+    await expect(hitCard.locator('[data-node-segment="true"]')).toHaveText('quarterly');
+    await expect(hitCard.locator('[data-node-segment="false"]').first()).toHaveText('Gather ');
     // The minimap marks the same nodes, so the thumbnail and the cards agree.
     await expect(page.getByTestId('canvas-minimap-node').first()).toHaveAttribute('data-node-match', 'true');
 
