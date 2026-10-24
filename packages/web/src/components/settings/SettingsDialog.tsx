@@ -19,6 +19,7 @@ import { ShortcutsPane } from './ShortcutsPane';
 import { KnowledgeGardenPane } from './KnowledgeGardenPane';
 import { LessonsPanel } from './LessonsPanel';
 import { MemoryPane } from './MemoryPane';
+import { BridgesPane } from './BridgesPane';
 import { InAppBrowserPane } from './InAppBrowserPane';
 import { PersonalizationPane } from './PersonalizationPane';
 import { AssetsPane } from './AssetsPane';
@@ -39,6 +40,7 @@ const TABS = [
   { id: 'Memory', group: 'Capabilities', icon: 'Database' },
   { id: 'Knowledge Garden', group: 'Capabilities', icon: 'Leaf' },
   { id: 'Learned lessons', group: 'Capabilities', icon: 'GraduationCap' },
+  { id: 'App bridges', group: 'Capabilities', icon: 'Blocks' },
   { id: 'Integrations', group: 'Data', icon: 'Unplug' },
   { id: 'Developers', group: 'Data', icon: 'Blocks' },
   { id: 'My Computer', group: 'Computers', icon: 'Monitor' },
@@ -49,7 +51,7 @@ const TABS = [
   { id: 'About', group: 'About', icon: 'Info' },
 ];
 
-const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'Personalization', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Playbooks', 'Memory', 'Knowledge Garden', 'Learned lessons', 'In-App Browser', 'Email', 'Phone', 'Wallet', 'Integrations', 'Developers']);
+const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'Personalization', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Playbooks', 'Memory', 'Knowledge Garden', 'Learned lessons', 'App bridges', 'In-App Browser', 'Email', 'Phone', 'Wallet', 'Integrations', 'Developers']);
 
 const GROUP_ORDER = ['Account', 'Settings', 'Capabilities', 'Computers', 'Data', 'Assets', 'About'];
 
@@ -150,6 +152,7 @@ function SettingsContent({ tab }: { tab: string }) {
     case 'Memory': return <MemoryPane />;
     case 'Knowledge Garden': return <KnowledgeGardenPane />;
     case 'Learned lessons': return <LessonsPanel />;
+    case 'App bridges': return <BridgesPane />;
     case 'In-App Browser': return <InAppBrowserPane />;
     case 'Email': return <AssetsPane kind="Email" />;
     case 'Phone': return <AssetsPane kind="Phone" />;

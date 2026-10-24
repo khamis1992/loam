@@ -1084,5 +1084,9 @@
   "Accept": "Accept",
   "Wiki on": "Wiki on",
   "Wiki off": "Wiki off",
-  "Wiki state": "Wiki state"
+  "Wiki state": "Wiki state",
+  "App bridges": "App bridges",
+  "Let the agent drive installed apps from the command line instead of clicking. Every bridge stays off until you enable it.": "Let the agent drive installed apps from the command line instead of clicking. Every bridge stays off until you enable it.",
+  "The switch lasts until the app restarts.": "The switch lasts until the app restarts.",
+  "Not installed": "Not installed"
 }

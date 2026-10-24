@@ -146,3 +146,10 @@ Loam's per-project wiki (src/wiki/, src/tools/wikiTools.ts) is an independent
 implementation of the publicly described idea of a git-friendly markdown
 knowledge base with session summaries and handoffs between sessions. No
 upstream code was copied.
+
+App bridges (clean-room)
+------------------------
+Loam's app bridges (src/bridges/, src/tools/appBridgeTools.ts) are an independent
+implementation of the publicly described idea of driving desktop applications
+through their command-line interfaces with declarative manifests. No upstream
+code was copied.

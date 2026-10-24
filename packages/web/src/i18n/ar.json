@@ -1084,5 +1084,9 @@
   "Accept": "قبول",
   "Wiki on": "الويكي مفعّل",
   "Wiki off": "الويكي معطّل",
-  "Wiki state": "حالة الويكي"
+  "Wiki state": "حالة الويكي",
+  "App bridges": "جسور التطبيقات",
+  "Let the agent drive installed apps from the command line instead of clicking. Every bridge stays off until you enable it.": "اسمح للوكيل بتشغيل التطبيقات المثبّتة من سطر الأوامر بدل النقر. يبقى كل جسر معطّلًا حتى تفعّله.",
+  "The switch lasts until the app restarts.": "يبقى المفتاح قائمًا حتى إعادة تشغيل التطبيق.",
+  "Not installed": "غير مثبّت"
 }
