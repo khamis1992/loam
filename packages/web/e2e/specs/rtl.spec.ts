@@ -80,4 +80,62 @@ test.describe("RTL / Arabic §12.3", () => {
     const dir = await page.locator("html").getAttribute("dir");
     expect(dir).toBe("ltr");
   });
+
+  // N21: the run-graph canvas lays a row out start-to-end, so an Arabic run
+  // must read right-to-left. The panel already mirrored with logical CSS; this
+  // pins the *order*, which no CSS property can express, by comparing which node
+  // card sits in which column after Organize.
+  test.describe("canvas run graph direction (N21)", () => {
+    async function openCanvas(page: Page, locale: "en" | "ar") {
+      await mockAuth(page);
+      await page.goto("/app");
+      await setThemeAndLocale(page, "light", locale);
+      const surface = page.getByTestId("canvas-surface");
+      await expect(surface).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId("canvas-node").first()).toBeVisible();
+      return surface;
+    }
+
+    /** The left edge of each node card, keyed by its node id. */
+    async function columns(page: Page): Promise<Map<string, number>> {
+      const cards = page.getByTestId("canvas-node");
+      const count = await cards.count();
+      const map = new Map<string, number>();
+      for (let i = 0; i < count; i += 1) {
+        const card = cards.nth(i);
+        const box = await card.boundingBox();
+        map.set((await card.getAttribute("data-node-id")) ?? `node-${i}`, box?.x ?? -1);
+      }
+      return map;
+    }
+
+    test("an Arabic run graph mirrors the row from the right after Organize", async ({ page }) => {
+      await openCanvas(page, "ar");
+      await page.getByRole("button", { name: /تنظيم|Organize/ }).click();
+      const rtl = await columns(page);
+
+      // Re-run the same graph in English: identical nodes, mirrored columns.
+      await openCanvas(page, "en");
+      await page.getByRole("button", { name: /تنظيم|Organize/ }).click();
+      const ltr = await columns(page);
+
+      const rtlIds = [...rtl.keys()].sort();
+      expect(rtlIds).toEqual([...ltr.keys()].sort());
+      // The first sibling of the layer takes the last sibling's column, i.e. the
+      // row is mirrored rather than merely re-flowed.
+      const first = rtlIds[1];
+      const last = rtlIds[rtlIds.length - 1];
+      expect(rtl.get(first)).toBeCloseTo(ltr.get(last)!, -1);
+      expect(rtl.get(last)).toBeCloseTo(ltr.get(first)!, -1);
+      // A single-node layer is not mirrored: the root keeps its own column.
+      expect(rtl.get(rtlIds[0])).toBeCloseTo(ltr.get(ltr.keys().next().value!)!, -1);
+    });
+
+    test("the canvas surface itself stays ltr while the chrome follows the locale", async ({ page }) => {
+      await openCanvas(page, "ar");
+      // Graph space is ltr by definition; only the chrome around it mirrors.
+      await expect(page.getByTestId("canvas-surface")).toHaveAttribute("dir", "ltr");
+      await expect(page.getByTestId("canvas-panel")).toBeVisible();
+    });
+  });
 });
