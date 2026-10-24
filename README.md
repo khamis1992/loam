@@ -10,8 +10,8 @@
 
 **Loam** is a local AI agent desktop application built with Electron. It provides specialized workspaces (modes) with focused tool sets and isolated task environments, enabling AI agents to work effectively on different types of projects without mixing contexts.
 
-![Main Interface](docs/assets/screenshots/main-interface.png)
-*Loam's main interface with task management and workspace navigation*
+![Home Interface](docs/assets/screenshots/home-interface.png)
+*Loam's home screen with mode selector and new task interface*
 
 ## Features
 
@@ -36,11 +36,11 @@ Each mode enforces its own tool permissions at the server level, ensuring agents
 ![Companions Panel](docs/assets/screenshots/companions-panel.png)
 *Agent companions and team management interface*
 
-![Security Mode](docs/assets/screenshots/security-mode.png)
-*Security assessment tools and vulnerability scanning*
+![Security Workspace](docs/assets/screenshots/security-workspace.png)
+*Security assessment and penetration testing workspace*
 
-![Mobile Development](docs/assets/screenshots/mobile-dev.png)
-*Mobile app development workspace with live preview*
+![Mobile Workspace](docs/assets/screenshots/mobile-workspace.png)
+*Mobile app development with live preview and component editor*
 
 </details>
 
