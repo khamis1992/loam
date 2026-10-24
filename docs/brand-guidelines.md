@@ -1,31 +1,123 @@
-# Loam Strata — الهوية البصرية
+# Loam Brand Guidelines
 
-هوية خاصة بتطبيق Loam، مشتقة من الطبقات المتدرجة: فكرة تتحول إلى عمل ثم معرفة محفوظة. الشعار يجمع حرف L مع درجات صاعدة وبذرة نحاسية. لا يستخدم شعارًا أو مكتبة أيقونات خارجية.
+## Brand Identity
 
-## الأصول
+**Name**: Loam  
+**Tagline**: Local AI workspaces with focused tools and isolated tasks
 
-- المصدر القابل للتحرير: `ui/icons.js` — 47 رمزًا مرسومًا على شبكة 32×32.
-- ملفات مستقلة: `ui/assets/icons/*.svg`.
-- علامة التطبيق: `ui/assets/loam-symbol.svg`.
-- ويندوز: `electron/assets/loam.ico` بسبعة أحجام 16، 24، 32، 48، 64، 128، 256؛ ونسخة PNG.
-- لوحة العائلة المنفذة: `output/brand/loam-strata-icon-sheet.png` ونسخة SVG.
-- استكشاف مولّد بالصور: `output/brand/loam-strata-direction.png`. هذا مرجع اتجاه بصري؛ أصول الواجهة النهائية SVG أصلية قابلة للتحرير وليست قصاصات من الصورة.
+## Visual Identity
 
-## القواعد
+### Logo
+- **Symbol**: Layered geometric L-shape design
+- **Style**: Angular, technical, modular
+- **Colors**: See color palette below
 
-شبكة 32 وحدة، خط 1.7 وحدة، زوايا مشطوفة، نهايات مربعة، ولمسة صغيرة بلون النحاس. حجم التنقل 22–24 بكسل، بطاقات الاستديو 34 بكسل، والعمليات الصغيرة 18–20 بكسل. الأيقونات زخرفية `aria-hidden`، ويحمل الزر اسم الوظيفة أو `aria-label` مستقلًا. لا تعكس إلا الرموز الاتجاهية عند الحاجة؛ رموز الهاتف والكتابة والشعار تبقى ثابتة.
+### Color Palette
 
-| اللون | داكن | فاتح | الوظيفة |
-|---|---|---|---|
-| الغابة | #101914 | #F1F4ED | خلفية التطبيق |
-| اليشم | #99D6B5 | #286248 | العلامة والأفعال |
-| النحاس | #CDA77A | #926334 | تفاصيل الهوية |
-| الحبر | #E7EEE8 | #173323 | النص |
+**Primary Colors:**
+- **Dark Green Base**: `#101d19` - Background, primary surfaces
+- **Forest Green**: `#0a1612` to `#1a2d24` - Gradients, depth
+- **Sage Green**: `#99d6b5` - Primary accent, text highlights
+- **Muted Green**: `#426853` - Borders, secondary elements
+- **Warm Accent**: `#cda77a` - Tertiary accent, special highlights
 
-تبقى إشارات الخطأ والتحذير والنجاح دلالية. لا يستبدل اللون تسمية الحالة. الخطوط العربية الموجودة محفوظة؛ لا يُغيّر شكل محتوى المستخدم أو الأيقونات الشخصية التي اختارها لوكلائه.
+**Usage:**
+- Dark greens for backgrounds and containers
+- Sage green for primary interactive elements and headings  
+- Muted green for borders and dividers
+- Warm accent sparingly for emphasis
 
-## الاستخدام والصيانة
+### Typography
 
-استخدم `icon(name)` داخل قوالب JavaScript أو `<loam-icon name="mobile"></loam-icon>` في HTML، مع تحميل `icons.js` و`icons.css`. الأسماء ثابتة في `iconPaths`؛ لا تُمرر SVG أو أسماء غير موثوقة من المستخدم. يعيد `npm run build:icon` إنشاء ملفات SVG ولوحة العائلة وملفات ويندوز من المصدر نفسه.
+**Headings**: System fonts (system-ui, -apple-system, sans-serif)
+- Bold weight (700) for primary headings
+- Medium weight (600) for subheadings
 
-مولّد الصورة: أداة image_gen المدمجة. موجز التوليد: هوية LOAM STRATA، أخضر غابة ويشم ونحاس، علامة L من طبقات متدرجة، وعائلة رموز هندسية للجوال والأوفيس والأسراب والتصميم والأمن والبحث والكتابة والبيانات والذاكرة والتكاملات، دون شعارات جاهزة أو ظلال زخرفية. جرى تبسيط الاتجاه وإعادة رسمه متجهيًا لملاءمة الأحجام الصغيرة.
+**Body**: System fonts
+- Regular weight (400) for body text
+- Monospace for code: `'Fira Code', 'Consolas', monospace`
+
+### Icons & Symbols
+
+**Mode Icons:**
+- Explore (ask): ◌
+- Research: ⌕
+- Build: ⌘
+- Write: ✎
+- Data: ▥
+- Studio (media): ◇
+- Security: 🛡
+- Flow (automate): ↗
+
+**Style**: Simple, geometric, unicode-based
+
+## Voice & Tone
+
+### Principles
+- **Technical but accessible**: Explain complex features clearly
+- **Honest and direct**: No marketing fluff, state capabilities accurately
+- **Professional**: Respectful, clear, well-organized
+- **Local-first**: Emphasize privacy and local execution
+
+### Language
+- Use "workspace" instead of "environment" or "context"
+- Use "mode" instead of "profile" or "configuration"  
+- Use "task" instead of "session" or "conversation"
+- Use "agent" for AI actors, "user" for humans
+
+### Writing Style
+- Start with what, then how, then why
+- Use active voice
+- Keep sentences clear and direct
+- Include code examples where helpful
+- Document limitations honestly
+
+## Applications
+
+### Documentation
+- README should lead with banner and clear value proposition
+- Feature documentation must verify claims against source code
+- Architecture sections should include diagrams
+- Installation steps should be tested and complete
+
+### UI/UX
+- Dark theme by default (follows brand colors)
+- Green accent for interactive elements
+- Clear mode separation with distinct color hints
+- File/task isolation visible in UI
+- Progress and status always visible
+
+### Badges & Shields
+- Version badge: blue (#0080ff)
+- License badge: red when unspecified, green when open
+- Platform badge: light grey (#lightgrey)
+- Tech badges: Use official brand colors (Electron, Node.js, etc.)
+
+## Don'ts
+
+❌ **Never use:**
+- Sparkles emoji (✨) or sparkle/star icons
+- Generic AI marketing language ("revolutionary", "cutting-edge")
+- Claims about features that don't exist in the code
+- Screenshots or demos with real API keys/secrets
+- Hard-coded examples without noting they are examples
+
+❌ **Avoid:**
+- Mixing modes within a single task
+- Exposing tools outside their intended mode
+- Showing internal verification docs as user-facing
+- Ambiguous version numbers or "latest"
+
+## Brand Assets
+
+- Logo SVG: `ui/assets/loam-symbol.svg`
+- Banner: `docs/assets/banner.svg`
+- Screenshots: `docs/assets/screenshots/`
+
+## Notes
+
+This is a technical tool brand, not a consumer brand. Prioritize:
+1. Accuracy over excitement
+2. Clarity over brevity
+3. Honesty over perfection
+4. Documentation over marketing
