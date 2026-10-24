@@ -103,6 +103,13 @@ export interface Config {
    *  budget. Optional so test configs and older config.json files keep working;
    *  `loadConfig` fills it from DEFAULTS. */
   session?: { idleMinutes: number; stepLimit: number; tokenLimit: number };
+  /**
+   * O6b startup recovery: `autoResume` resumes an interrupted task on boot
+   * without human review, but only when its latest checkpoint is not in flight
+   * (`inFlight === false`). Anything else keeps "Resume requires review".
+   * Default off.
+   */
+  recovery?: { autoResume: boolean };
   workspace: string;
   policy: PolicyConfig;
   browser: { channel: string; headless: boolean; viewport: { width: number; height: number } };
@@ -293,6 +300,7 @@ export const DEFAULTS: Config = {
   // D19: sessions idle 30 minutes before their resources are reclaimed; the
   // per-session compute budget warns at 80% and stops at 100% (both raisable).
   session: { idleMinutes: 30, stepLimit: 40, tokenLimit: 500000 },
+  recovery: { autoResume: false },
   workspace: path.join(ROOT, "workspace"),
   policy: {
     networkEnabled: true,
@@ -430,6 +438,20 @@ function merge<T>(base: T, over: unknown): T {
   return out as T;
 }
 
+/**
+ * O6b: parse an opt-in flag. Only `1` and `true` (as a JSON boolean or an
+ * untrimmed string) enable it; every other value — including `"0"`, `1` as a
+ * number, `"yes"`, `null` and a missing key — keeps it off.
+ *
+ * Shared by the `config.json` value and the environment variables, so the two
+ * paths cannot drift apart. `config.json` is user-editable, and a stray `"0"`
+ * there is truthy, so without this an interrupted task would resume without
+ * review on the next boot.
+ */
+function parseOptInFlag(value: unknown): boolean {
+  return value === true || value === "1" || value === "true";
+}
+
 export function loadConfig(): Config {
   const p = process.env.LOAM_CONFIG ?? process.env.MANUS_LOCAL_CONFIG ?? path.join(ROOT, "config.json");
   let raw: unknown = {};
@@ -440,6 +462,9 @@ export function loadConfig(): Config {
   }
   const cfg = merge(DEFAULTS, raw);
   cfg.coding = { enabled: cfg.coding?.enabled ?? true, chain: cfg.coding?.chain ?? [], logEdits: cfg.coding?.logEdits ?? true };
+  // O6b: normalized inline so every caller sees a definite value (a test config
+  // built as a partial literal must not have to spell this out).
+  cfg.recovery = { autoResume: parseOptInFlag(cfg.recovery?.autoResume) };
   const coderChainEnv = process.env.LOAM_CODER_CHAIN ?? process.env.MANUS_LOCAL_CODER_CHAIN;
   if (coderChainEnv && coderChainEnv.trim()) {
     cfg.coding.chain = coderChainEnv
@@ -475,6 +500,13 @@ export function loadConfig(): Config {
   }
   cfg.routing = { perTool, effort: routingEffort };
   if (process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT) cfg.server.port = Number(process.env.LOAM_PORT || process.env.MANUS_LOCAL_PORT);
+  // O6b: auto-resume is opt-in. An explicit `0`/`false` turns the flag off even
+  // when `config.json` asked for it; anything unrecognised leaves the file's
+  // (already fail-closed) value alone, so a typo in the launch script cannot open
+  // the gate.
+  const autoResumeEnv = process.env.LOAM_AUTO_RESUME ?? process.env.MANUS_LOCAL_AUTO_RESUME;
+  if (autoResumeEnv === "0" || autoResumeEnv === "false") cfg.recovery.autoResume = false;
+  else if (parseOptInFlag(autoResumeEnv)) cfg.recovery.autoResume = true;
   if (process.env.LOAM_HOST || process.env.MANUS_LOCAL_HOST) cfg.server.host = (process.env.LOAM_HOST || process.env.MANUS_LOCAL_HOST)!;
   const envRoot = process.env.LOAM_ROOT || process.env.MANUS_LOCAL_ROOT;
   // Packaged builds pass ROOT = resources/app.asar (read-only archive); the

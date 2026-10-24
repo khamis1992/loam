@@ -91,6 +91,9 @@ import { recoverInterruptedTasks, getSavedRun, saveRun, queueTaskRun, completeTa
 import { startProtocolAdapter } from "./protocol/adapter.js";
 import { executionQueue } from "./server/executionQueue.js";
 import { requiresReplayConfirmation, type SavedRun } from "./server/recovery.js";
+// O6b: opt-in startup auto-resume (LOAM_AUTO_RESUME=1). Off by default, and
+// still refuses any checkpoint that is in flight.
+import { autoResumeInterruptedTasks } from "./server/autoResume.js";
 import { acquireRuntimeLease, releaseRuntimeLease, backupDatabase } from "./server/sqliteStore.js";
 import {
   admitAllPending,
@@ -859,6 +862,17 @@ async function main(): Promise<void> {
     preview: rt.preview,
     mcp,
   });
+
+  // O6b: opt-in startup auto-resume. `recoverInterruptedTasks` above already
+  // marked every interrupted task `interrupted` and wrote the
+  // "Resume requires review" error; only a checkpoint whose latest durable
+  // state is idle is continued here, and only when the user opted in with
+  // `LOAM_AUTO_RESUME=1`. Dispatch happens after `startServer` so the resumed
+  // run is visible on the UI's task stream immediately.
+  if (cfg.recovery?.autoResume) {
+    const resumed = autoResumeInterruptedTasks(cfg.workspace, runTask);
+    if (resumed) log.info(`auto-resume (O6b): ${resumed} interrupted task(s) continued at their checkpoint`);
+  }
 
   // Non-failing startup check: log how to install any missing Craft dists.
   // Never downloads; a missing dist just means the app falls back to Loam's
