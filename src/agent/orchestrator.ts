@@ -568,20 +568,25 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
     const workerLimit = restored && resumeWorker && resumeWorker.steps >= oc.maxStepsPerWorker
       ? resumeWorker.steps + oc.maxStepsPerWorker
       : oc.maxStepsPerWorker;
-    const w = await runWorker({
-      ...o,
-      resumeWorker,
-      saveWorker: value => { worker = value; checkpoint(true); },
-      // Neo N6: a mission worker is itself a mission: the per-worker step cap is
-      // lifted (the budget is the ceiling) and a checkpoint is written after each
-      // step so a restart resumes the mission instead of losing it.
-      ...(o.mission === true ? {
-        mission: true,
-        ...(o.resumeMission ? { resumeMission: o.resumeMission } : {}),
-        maxSteps: undefined,
-        ...(o.saveMissionCheckpoint ? { saveMissionCheckpoint: o.saveMissionCheckpoint } : {}),
-      } : {}),
-    }, prompt, recipeMode ? `${suffix}\n\n${missionSuffix(o.cfg)}` : suffix, workerLimit);
+    const w = await runWorker(
+      {
+        ...o,
+        resumeWorker,
+        saveWorker: value => { worker = value; checkpoint(true); },
+        // Neo N6: a mission worker is itself a mission: the per-worker step cap is
+        // lifted (the budget is the ceiling) and a checkpoint is written after each
+        // step so a restart resumes the mission instead of losing it.
+        ...(o.mission === true ? {
+          mission: true,
+          ...(o.resumeMission ? { resumeMission: o.resumeMission } : {}),
+          maxSteps: undefined,
+          ...(o.saveMissionCheckpoint ? { saveMissionCheckpoint: o.saveMissionCheckpoint } : {}),
+        } : {}),
+      },
+      prompt,
+      recipeMode ? `${suffix}\n\n${missionSuffix(o.cfg)}` : suffix,
+      workerLimit,
+    );
     worker = undefined;
     totalSteps += w.steps;
     addUsage(usage, w.usage);

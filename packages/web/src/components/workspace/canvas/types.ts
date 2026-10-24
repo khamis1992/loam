@@ -24,6 +24,8 @@ export const CANVAS_NODE_TYPES = [
   'note',
   'failed',
   'round',
+  // N3: a Knowledge Garden seed the agent cited, drawn as a document node.
+  'kb_seed',
 ] as const;
 export type CanvasNodeType = (typeof CANVAS_NODE_TYPES)[number];
 

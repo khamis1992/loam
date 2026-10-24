@@ -52,10 +52,13 @@ const modelPort = (model.address() as import("node:net").AddressInfo).port;
 const probe = http.createServer(); probe.listen(0, "127.0.0.1"); await once(probe, "listening");
 const port = (probe.address() as import("node:net").AddressInfo).port;
 await new Promise<void>((resolve) => probe.close(() => resolve()));
+const protoProbe = http.createServer(); protoProbe.listen(0, "127.0.0.1"); await once(protoProbe, "listening");
+const protoPort = (protoProbe.address() as import("node:net").AddressInfo).port;
+await new Promise<void>((resolve) => protoProbe.close(() => resolve()));
 const base = `http://127.0.0.1:${port}`;
 const config = path.join(tmp, "config.json");
 fs.writeFileSync(config, JSON.stringify({ model: "test-model", fallbackModel: "test-model", ollamaUrl: `http://127.0.0.1:${modelPort}`,
-  workspace, computerUse: { enabled: false, screenshotDir: path.join(tmp, "screenshots") }, memory: { enabled: false }, screen: { enabled: false }, selfImprove: { enabled: false }, mcpServers: {},
+  workspace, computerUse: { enabled: false, screenshotDir: path.join(tmp, "screenshots") }, memory: { enabled: false }, screen: { enabled: false }, selfImprove: { enabled: false }, mcpServers: {}, coding: { enabled: false }, failover: { providers: [] },
 }));
 let child: ChildProcess | undefined;
 let logs = "";
@@ -68,7 +71,7 @@ const start = async (): Promise<void> => {
   logs = "";
   const serverArgs = process.argv.includes("--bundle") ? ["dist/server.cjs"] : ["--import", "tsx", "src/index.ts"];
   child = spawn(process.execPath, serverArgs, { cwd: root, windowsHide: true, env: {
-    ...process.env, MANUS_LOCAL_CONFIG: config, MANUS_LOCAL_DATA_DIR: path.join(tmp, "data"), MANUS_LOCAL_PORT: String(port),
+    ...process.env, MANUS_LOCAL_CONFIG: config, MANUS_LOCAL_DATA_DIR: path.join(tmp, "data"), MANUS_LOCAL_PORT: String(port), AS_PROTOCOL_PORT: String(protoPort), LOAM_AUTH_DISABLED: "true",
     MANUS_LOCAL_EVALS_DIR: path.join(tmp, "evals"), MANUS_LOCAL_SKILLS_DIR: path.join(tmp, "skills"),
   }, stdio: ["ignore", "pipe", "pipe"] });
   child.stdout?.on("data", (chunk) => { logs += chunk; }); child.stderr?.on("data", (chunk) => { logs += chunk; });

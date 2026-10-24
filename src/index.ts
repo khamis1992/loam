@@ -712,6 +712,7 @@ async function main(): Promise<void> {
       // Neo N6: the mission charged wall-clock/cost inside the run, so the store
       // has to keep the same budget object or the badge would show a stale one.
       if (missionBudget) sessionRuntime.adoptBudgetAfterRun(task, missionBudget);
+
       completeTaskRun(task, result.text, result.model, opts.lease);
       recordTaskUsage(task, result.usage); // OPD #9: one mock usage entry per completed task
       if (doneEvent) {

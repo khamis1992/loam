@@ -16,7 +16,7 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-neo-n8-test-"));
 process.env.MANUS_LOCAL_DATA_DIR = tmpDir;
 
 import { nextOccurrenceAfter, initialNextRunAt } from "../scheduleTime.js";
-import { addSchedule, getSchedule, listSchedules, recordScheduleOutcome } from "../db.js";
+import { addSchedule, dueSchedules, getSchedule, listSchedules, recordScheduleOutcome } from "../db.js";
 import { createWakeupTools } from "../../tools/wakeupTools.js";
 import { RunGraph } from "../../graph/runGraph.js";
 import { createApproval, decideApproval, getApproval } from "../approvals.js";
@@ -196,5 +196,117 @@ describe("Neo N8: agent-initiated recurring wakeups", () => {
     assert.ok(outbox[0]);
     assert.equal(outbox[0].to, "ops@example.com");
     assert.ok(outbox[0].text.includes("Mission Round 1 Completed"));
+  });
+
+  /**
+   * Acceptance: a mock clock drives an hourly wake-up three times. Each firing
+   * starts a new round (a fresh subtree on the run graph), the round completion
+   * queues one email notification that waits for the user's approval, and cancelling
+   * the wake-up stops any further rounds.
+   */
+  it("mock clock: hourly wake x3 produces 3 round subtrees and 3 queued emails; cancel stops", async () => {
+    const provider = new MockEmailProvider();
+    const emailChannel = new EmailChannel(provider);
+    const stopRouter = startChannelRouter({ channels: [emailChannel] });
+    const agent = createAgent({ name: "Hourly Agent" } as any);
+    createBinding("email", "ops-hourly@example.com", agent.id);
+
+    // The mock clock: each round's completion hands the next firing a later instant.
+    let clock = new Date("2026-10-20T10:00:00.000Z");
+    const schedule = addSchedule(
+      "hourly deployment check",
+      3600,
+      agent.id,
+      "loam",
+      "cron",
+      undefined,
+      true,
+      {
+        cron: "0 * * * *",
+        timezone: "Asia/Qatar",
+        missionId: "task-hourly",
+        round: 1,
+      },
+    );
+    const runId = "run-hourly-mock-clock";
+    const graph = new RunGraph();
+    graph.beginRun(runId, "hourly deployment check");
+
+    const roundStarts: Array<{ round: number; scheduleId: string; prompt: string }> = [];
+    const roundDones: Array<{ round: number; scheduleId: string; summary: string }> = [];
+    const emit = (event: any) => {
+      if (event.type === "round_start") {
+        roundStarts.push(event);
+        graph.applyEvent(runId, event as any);
+      } else if (event.type === "round_done") {
+        roundDones.push(event);
+        graph.applyEvent(runId, event as any);
+      }
+    };
+
+    // Three hourly firings: the scheduler's cadence advances by the cron hour and
+    // the round counter increments with each completed round.
+    for (let i = 1; i <= 3; i++) {
+      assert.equal(schedule.round, i, `schedule should be on round ${i}`);
+      assert.ok(schedule.nextRunAt, "schedule should have a next run time");
+      // The firing starts the round subtree...
+      emit({ type: "round_start", round: schedule.round, scheduleId: schedule.id, prompt: schedule.prompt });
+      // ...and the round completion queues its email behind the approval gate.
+      emit({ type: "round_done", round: schedule.round, scheduleId: schedule.id, summary: `Round ${schedule.round} finished` });
+      const email = await sendRoundEmailWithApproval({
+        taskId: "task-hourly",
+        round: schedule.round,
+        scheduleId: schedule.id,
+        agentId: agent.id,
+        summary: `Round ${schedule.round} finished`,
+      });
+      // Nobody has approved yet: the email stays queued, never dispatched.
+      assert.equal(email.sent, false);
+      assert.equal(email.status, "pending");
+      assert.equal(provider.getOutbox().length, 0, "no email may leave before approval");
+
+      // The clock advances past the firing and the round is recorded as done.
+      clock = new Date(clock.getTime() + 3600_000);
+      recordScheduleOutcome(schedule.id, { ok: true, taskId: `task-round-${i}`, now: clock });
+    }
+
+    assert.equal(roundStarts.length, 3);
+    assert.equal(roundDones.length, 3);
+    assert.deepEqual(
+      roundStarts.map((e) => e.round),
+      [1, 2, 3],
+      "each hourly firing starts the next round",
+    );
+    assert.deepEqual(
+      roundDones.map((e) => e.round),
+      [1, 2, 3],
+      "each round completes with its own summary",
+    );
+
+    // Three round subtrees on the run graph, all finished.
+    const roundNodes = graph.getStore().list({ runId }).filter((n) => n.type === "round");
+    assert.equal(roundNodes.length, 3, "one subtree per round");
+    assert.deepEqual(
+      roundNodes.map((n) => (n.data as any).round).sort((a, b) => a - b),
+      [1, 2, 3],
+    );
+    assert.ok(roundNodes.every((n) => n.status === "finished"));
+
+    // Three emails are queued awaiting the user's approval.
+    const approvals = (await import("../approvals.js")).listApprovals();
+    const roundApprovals = approvals.filter((a) => a.tool === "round_email_notification" && a.taskId === "task-hourly");
+    assert.equal(roundApprovals.length, 3, "one queued email per round");
+
+    // Cancelling the wake-up stops further rounds.
+    const tools = createWakeupTools();
+    const cancelTool = tools.find((t) => t.name === "cancel_wakeup")!;
+    const cancelled = await cancelTool.run({ scheduleId: schedule.id }, { taskId: "task-hourly", agentId: agent.id } as any);
+    assert.ok(cancelled.ok);
+    assert.equal(getSchedule(schedule.id), undefined, "cancelled schedule is gone");
+    assert.equal(listSchedules().filter((s) => s.id === schedule.id).length, 0);
+    // A schedule that no longer exists can never fire another round.
+    assert.equal(dueSchedules().some((s) => s.id === schedule.id), false);
+
+    stopRouter();
   });
 });

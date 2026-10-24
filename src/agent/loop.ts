@@ -44,7 +44,7 @@ import {
   type ComputeBudget,
 } from "./computeBudget.js";
 import { estimateCostUsd } from "./insights.js";
-import { budgetStoppedCheckpoint, resumeStep, type MissionCheckpoint } from "./mission.js";
+import { budgetStoppedCheckpoint, budgetSummary, resumeStep, type MissionCheckpoint } from "./mission.js";
 import { fileTouchRegistry, forgetFileTouchSession } from "../tools/fileTouch.js";
 import { KvCacheMonitor, missMessage, type RequestRoute, type RequestSignature } from "./kvCacheMonitor.js";
 import { addUsage } from "./usageAccounting.js";
@@ -930,6 +930,9 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
           ok: toolResult.ok,
           summary: summarize(toolResult.content),
           ms: Date.now() - item.t0,
+          // N13: keep the raw output so the run graph can version it. Capped
+          // (40k chars) so a large fetch cannot bloat the event payload.
+          ...(toolResult.content ? { content: toolResult.content.slice(0, 40_000) } : {}),
           ...(toolResult.kbSeedIds && toolResult.kbSeedIds.length > 0 ? { kbSeedIds: toolResult.kbSeedIds } : {}),
           ...(toolResult.kbSeeds && toolResult.kbSeeds.length > 0 ? { kbSeeds: toolResult.kbSeeds } : {}),
         });
@@ -973,6 +976,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
           ok: toolResult.ok,
           summary: summarize(toolResult.content),
           ms: Date.now() - t0,
+          ...(toolResult.content ? { content: toolResult.content.slice(0, 40_000) } : {}),
           ...(toolResult.kbSeedIds && toolResult.kbSeedIds.length > 0 ? { kbSeedIds: toolResult.kbSeedIds } : {}),
           ...(toolResult.kbSeeds && toolResult.kbSeeds.length > 0 ? { kbSeeds: toolResult.kbSeeds } : {}),
         });
@@ -1032,11 +1036,14 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
     }
   }
 
+  // Both sides converge on settling every arm here: an N10 A/B sibling must not
+  // stay `running` once the run ends, and a mission is unreachable here anyway
+  // (its ceiling is the budget, checked per step), so an ordinary run reports the
+  // step cap it actually hit. Awaiting the arms never fails the run: each arm
+  // records its own failure on its own node.
   // The step budget ran out: stop recording arms as pending so a later replay
   // cannot resurrect a node the run abandoned.
   await Promise.all(armPromises);
-  // Unreachable for a mission (its ceiling is the budget, checked per step); the
-  // ordinary run reports the step cap it actually hit.
   const msg = `stopped after ${maxSteps} steps without finishing`;
   opts.emit({ type: "error", message: msg });
   throw new Error(msg);

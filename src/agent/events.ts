@@ -93,7 +93,7 @@ export type AgentEvent =
   | { type: "assistant_token"; text: string }
   | { type: "assistant_message"; text: string }
   | { type: "tool_call"; name: string; args: unknown }
-  | { type: "tool_result"; name: string; ok: boolean; summary: string; ms?: number; kbSeedIds?: string[]; kbSeeds?: Array<{ id: string; title: string; tags: string[]; preview: string }> }
+  | { type: "tool_result"; name: string; ok: boolean; summary: string; ms?: number; content?: string; kbSeedIds?: string[]; kbSeeds?: Array<{ id: string; title: string; tags: string[]; preview: string }> }
   | { type: "done"; text: string; steps: number; model: string }
   | { type: "cancelled" }
   | { type: "error"; message: string }
@@ -193,6 +193,13 @@ export type AgentEvent =
   /** A workspace file was published as a task artifact via artifact_publish. */
   | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string }
   /**
+   * Neo N5: the per-step context selector re-shaped the transcript for this
+   * step. `tokens` is the estimated size of the selected blocks, `artefacts`
+   * the number of artefacts in the run's store, and `reason` why the selector
+   * applied (or why it declined).
+   */
+  | { type: "context_selected"; step: number; tokens: number; artefacts: number; reason: string }
+  /**
    * Neo N6: a mission reached its budget ceiling and stopped *cleanly*.
    *
    * This is not a failure: the mission ran until the limit the user set. The
@@ -207,13 +214,6 @@ export type AgentEvent =
       /** The checkpoint at the stop, carried so the summary is truthful. */
       checkpoint: import("./mission.js").MissionCheckpoint;
     }
-  /**
-   * Neo N5: the per-step context selector re-shaped the transcript for this
-   * step. `tokens` is the estimated size of the selected blocks, `artefacts`
-   * the number of artefacts in the run's store, and `reason` why the selector
-   * applied (or why it declined).
-   */
-  | { type: "context_selected"; step: number; tokens: number; artefacts: number; reason: string }
   /**
    * Neo N11: the run picked up edits the user made on the canvas (corrected node
    * output, a cut/re-connected edge, a duplicated branch, a merged group, or a
