@@ -18,7 +18,8 @@ const PREVIEW = ["preview_serve", "preview_status", "preview_stop", "preview_scr
  *  escape hatch from the read-only plan permission mode (C13) and `suggest_plan`
  *  (D4) presents a plan for approval without changing the permission mode, so
  *  both are exposed in every mode the way `finish` is. */
-const CONTROL = ["think", "finish", "plan", "phase_set", "message", "plan_exit", "suggest_plan", "ask_user", "context_recall"];
+const CONTROL = ["think", "finish", "plan", "phase_set", "message", "plan_exit", "suggest_plan", "ask_user", "context_recall",
+  "wiki_search", "wiki_read", "wiki_list", "wiki_write", "handoff_create", "handoff_list", "handoff_resolve"];
 /** Tools added to modes that can edit files. */
 const EDIT_EXTRA = ["file_multi_edit"];
 /** Build-only tools: secrets vault and the OpenCode coding sessions. */
