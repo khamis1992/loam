@@ -177,6 +177,11 @@ export interface RunTaskOptions {
   knowledge?: boolean;
   /** O6: protocol session whose durable inbound queue this run should drain. */
   inputSessionId?: string;
+  /**
+   * Neo N6: run type `mission`. The fixed step cap is lifted and the mission
+   * budget (steps/tokens/wall-clock/cost) governs the run instead.
+   */
+  mission?: boolean;
 }
 
 export interface ServerDeps {
@@ -1802,8 +1807,6 @@ loadAgents();
         if (await handleAgentSpawnRoutes(req, res, p)) return;
         if (await handleAgentThreadRoutes(req, res, p)) return;
         if (await handleRetryLastRoutes(req, res, p)) return;
-        // Session timeline UX (D16): side-chat questions + pause/take-over.
-        if (await handleSessionControlRoutes(req, res, p)) return;
         // Session insights (D18): post-mortem metrics, issue timeline, feedback.
         if (await handleInsightsRoutes(req, res, p, { ollama, model: cfg.model })) return;
         if (await handleSchedulesRoutes(req, res, p)) return;
@@ -2709,6 +2712,7 @@ loadAgents();
             abModels?: unknown;
             agentId?: unknown;
             workMode?: unknown;
+            mission?: unknown;
             knowledge?: unknown;
           };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
@@ -2736,6 +2740,9 @@ loadAgents();
           } catch (error) {
             return sendJson(res, 400, { error: String(error) });
           }
+          // Neo N6: run type `mission` is a request flag. Anything malformed is
+          // ignored rather than failing the run.
+          const mission = body.mission === true;
           // N3 Knowledge Garden: the run only reaches the kb_* tools when the
           // caller switched the garden on for THIS run (default off).
           const knowledge = body.knowledge === true;
@@ -2777,6 +2784,7 @@ loadAgents();
               ...(abModels && abModels.length > 0 ? { abModels } : {}),
               agentId,
               workMode,
+              ...(mission ? { mission: true } : {}),
               knowledge,
             });
             if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify({ type: "task", taskId: result.taskId })}\n\n`);
@@ -2824,6 +2832,8 @@ loadAgents();
             .catch((error) => log.warn(`resume ${id}: ${String(error)}`));
           return sendJson(res, 202, { taskId: id, status: getTask(id)?.status });
         }
+        // Session timeline UX (D16): side-chat questions + pause/take-over.
+        if (await handleSessionControlRoutes(req, res, p)) return;
         if (req.method === "POST" && p.startsWith("/api/tasks/") && p.endsWith("/cancel")) {
           const id = decodeURIComponent(p.slice("/api/tasks/".length, -"/cancel".length));
           const task = getTask(id);

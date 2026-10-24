@@ -110,6 +110,13 @@ export interface Config {
     hibernationIdleMinutes: number;
   };
   /**
+   * Neo N6 mission budget: the ceiling a `mission` run type is bounded by.
+   * Unlike `session`, which gates an ordinary run, these limits lift the fixed
+   * step cap. `steps: 0` (or omitted) means unbounded steps, so a mission runs
+   * until the model answers, the user stops it, or another dimension runs out.
+   */
+  mission?: { steps: number; tokens: number; minutes: number; costUsd: number };
+  /**
    * O6b startup recovery: `autoResume` resumes an interrupted task on boot
    * without human review, but only when its latest checkpoint is not in flight
    * (`inFlight === false`). Anything else keeps "Resume requires review".
@@ -306,6 +313,9 @@ export const DEFAULTS: Config = {
   // D19: sessions idle 30 minutes before their resources are reclaimed; the
   // per-session compute budget warns at 80% and stops at 100% (both raisable).
   session: { idleMinutes: 30, stepLimit: 40, tokenLimit: 500000, hibernationIdleMinutes: 30 },
+  // Neo N6: a mission is unbounded in steps (0 = no cap) and bounded only by the
+  // generous defaults below. Each dimension is raisable through the budget route.
+  mission: { steps: 0, tokens: 5_000_000, minutes: 0, costUsd: 0 },
   recovery: { autoResume: false },
   workspace: path.join(ROOT, "workspace"),
   policy: {
