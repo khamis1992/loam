@@ -10,8 +10,17 @@
  * The retrieval contract is explicit and stable: {@link KnowledgeStore.search}
  * returns seeds ranked by term overlap, and every hit carries the seed id that
  * the citation scorer expects to see in the agent's answer.
+ *
+ * N21: term extraction is shared with the Knowledge Garden, so a fixture written
+ * in Arabic retrieves exactly the way the shipped feature does: spelling
+ * variants are folded (ta marbuta to ha, hamza carriers to bare alef), Arabic
+ * diacritics and the tatweel are dropped, and both languages' stop terms are
+ * removed before a match is attempted.
  */
+import { normalizeText, queryTerms } from "../knowledge/text.js";
 import type { NeoSeed } from "./types.js";
+
+export { queryTerms };
 
 export interface KnowledgeHit {
   id: string;
@@ -27,34 +36,15 @@ export interface KnowledgeResult {
   empty: boolean;
 }
 
-function normalize(text: string): string {
-  return text.normalize("NFKC").toLowerCase();
-}
-
-/** Terms that carry no retrieval signal in either supported language. */
-const STOP_TERMS = new Set([
-  "the", "a", "an", "of", "and", "or", "to", "in", "on", "for", "with", "is",
-  "are", "was", "were", "be", "this", "that", "these", "those", "it", "as",
-  "at", "by", "from", "ما", "في", "على", "من", "إلى", "عن", "that", "هذا",
-  "هذه", "ذلك", "التي", "الذي", "هو", "هي", "كان", "كانت", "لا", "لم", "لن",
-]);
-
-/** Extract the meaningful terms of a query, deduplicated, length >= 2. */
-export function queryTerms(query: string): string[] {
-  const terms = new Set<string>();
-  for (const raw of normalize(query).split(/[^\p{L}\p{N}]+/u)) {
-    if (raw.length < 2 || STOP_TERMS.has(raw)) continue;
-    terms.add(raw);
-  }
-  return [...terms];
-}
-
 /**
  * A small deterministic knowledge base.
  *
  * Scoring is term overlap with a tag bonus. It is intentionally not semantic:
  * the gate measures citation accuracy, not retrieval quality, and a stable
- * score keeps the baseline reproducible.
+ * score keeps the baseline reproducible. Retrieval is bilingual: the query and
+ * the seed are both normalized through the shared `normalizeText`, so the
+ * script of a fixture does not have to match the script of the query beyond
+ * folding.
  */
 export class KnowledgeStore {
   private readonly seeds = new Map<string, NeoSeed>();
@@ -85,11 +75,11 @@ export class KnowledgeStore {
     if (terms.length === 0) return { query, hits: [], empty: true };
     const scored: KnowledgeHit[] = [];
     for (const seed of this.seeds.values()) {
-      const haystack = normalize(`${seed.title} ${seed.body} ${(seed.tags ?? []).join(" ")}`);
-      const matched = terms.filter((term) => haystack.includes(term));
+      const haystack = normalizeText(`${seed.title} ${seed.body} ${(seed.tags ?? []).join(" ")}`);
+      const matched = terms.filter((term) => haystack.includes(normalizeText(term)));
       if (matched.length === 0) continue;
       // Tag matches weigh more: a seed tagged with the term is the obvious source.
-      const tagBonus = (seed.tags ?? []).filter((tag) => terms.includes(normalize(tag))).length * 2;
+      const tagBonus = (seed.tags ?? []).filter((tag) => terms.includes(normalizeText(tag))).length * 2;
       scored.push({ id: seed.id, score: matched.length + tagBonus, matched });
     }
     scored.sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1));
@@ -108,7 +98,7 @@ export class KnowledgeStore {
  *
  * The convention the fixtures use is an explicit marker so citation accuracy is
  * measurable without guessing: `[seed:ID]`. A bare id in prose does not count,
- * which is the point — an unmarked assertion is not a citation.
+ * which is the point: an unmarked assertion is not a citation.
  */
 const CITATION_PATTERN = /\[seed:([A-Za-z0-9._-]+)\]/g;
 

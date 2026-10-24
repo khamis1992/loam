@@ -127,12 +127,31 @@ export function coerceCanvasNode(value: unknown): CanvasNode | undefined {
   };
 }
 
+/** A finite number from an unknown payload, else `fallback`. */
+function finiteOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+/**
+ * Coerce an unknown payload into a placed node. The server lays a run out
+ * (`RunGraph.getGraphLayout`), so `x`, `y` and `depth` are part of the reply and
+ * must survive coercion: dropping them draws every card at `translate(NaNpx)`,
+ * which the browser discards, leaving an empty canvas. A node the server did not
+ * place still lands at the origin rather than at NaN.
+ */
+export function coerceCanvasLayoutNode(value: unknown): CanvasLayoutNode | undefined {
+  const node = coerceCanvasNode(value);
+  if (!node) return undefined;
+  const raw = value as Record<string, unknown>;
+  return { ...node, x: finiteOr(raw.x, 0), y: finiteOr(raw.y, 0), depth: finiteOr(raw.depth, 0) };
+}
+
 /** Coerce an unknown payload into a CanvasLayout; undefined when unusable. */
 export function coerceCanvasLayout(value: unknown): CanvasLayout | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
   const raw = value as Record<string, unknown>;
   if (!Array.isArray(raw.nodes) || !Array.isArray(raw.edges)) return undefined;
-  const nodes = raw.nodes.map(coerceCanvasNode).filter((n): n is CanvasLayoutNode => n !== undefined);
+  const nodes = raw.nodes.map(coerceCanvasLayoutNode).filter((n): n is CanvasLayoutNode => n !== undefined);
   const edges: CanvasEdge[] = [];
   for (const edge of raw.edges) {
     if (typeof edge !== 'object' || edge === null) continue;

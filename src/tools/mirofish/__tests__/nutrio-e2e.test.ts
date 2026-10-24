@@ -6,11 +6,8 @@
  * fake {@link ModelCaller} whose replies depend on prompt content, so price and
  * location genuinely change the outcome.
  *
- * The pipeline stages are not implemented yet on manus-parity. Rather than
- * failing (or using test.todo), each scenario is guarded by the single
- * {@link mirofishPipelineReady} capability check: when false the scenarios skip
- * and the suite prints which checks are pending. A later stage task flips its
- * capability flag and the matching assertions turn on automatically.
+ * The pipeline stages are implemented on manus-parity. The capability flags are
+ * true so the e2e assertions run against the real pipeline.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -44,9 +41,6 @@ after(() => {
   if (ready) return;
   console.log(`\n[mirofish-e2e] ${SCENARIO_NAMES.length} scenario(s) pending until the swarm pipeline stages land:`);
   for (const name of SCENARIO_NAMES) console.log(`  - ${name}`);
-  console.log(
-    "[mirofish-e2e] the static scanner is verified by the always-on self-check below, so it is not dead code while skipped.",
-  );
 });
 
 // ---------------------------------------------------------------------------
@@ -72,21 +66,20 @@ function intentForPrice(price: number): number {
 class DeterministicFakeCaller implements ModelCaller {
   readonly calls: ModelCallInput[] = [];
 
-  async call(input: ModelCallInput): Promise<ModelCallOutput> {
+  async chat(input: ModelCallInput): Promise<ModelCallOutput> {
     this.calls.push(input);
     const haystack = `${input.system}\n${input.prompt}`;
-    switch (input.role) {
-      case "locale":
-        return { text: this.localeJson(haystack) };
-      case "persona":
-        return { text: this.personaJson(haystack) };
-      case "simulate":
-        return { text: this.simulateJson(haystack) };
-      case "report":
-        return { text: this.reportJson(haystack) };
-      default:
-        return { text: "{}" };
-    }
+    return { content: this.respond(haystack, input.role), model: "deterministic-fake" };
+  }
+
+  /** Dispatch on prompt content, the way the other stage fakes do. */
+  private respond(haystack: string, role?: ModelCallInput["role"]): string {
+    if (/market-research analyst/.test(haystack)) return this.localeJson(haystack);
+    if (/customer-persona designer/.test(haystack)) return this.personaJson(haystack);
+    if (/swarm-simulation report writer/.test(haystack)) return this.reportJson(haystack);
+    if (/role-playing ONE specific/.test(haystack)) return this.simulateJson(haystack);
+    if (role === "report") return this.reportJson(haystack);
+    return "{}";
   }
 
   private localeJson(prompt: string): string {
@@ -94,7 +87,7 @@ class DeterministicFakeCaller implements ModelCaller {
     const profile: LocaleProfile = uk
       ? {
           country: "United Kingdom",
-          city: /london/i.test(prompt) ? "London" : undefined,
+          ...(/london/i.test(prompt) ? { city: "London" } : {}),
           region: "England",
           currency: "GBP",
           languages: ["en-GB"],
@@ -108,7 +101,7 @@ class DeterministicFakeCaller implements ModelCaller {
         }
       : {
           country: "Qatar",
-          city: /doha/i.test(prompt) ? "Doha" : undefined,
+          ...(/doha/i.test(prompt) ? { city: "Doha" } : {}),
           region: "Doha Governorate",
           currency: "QAR",
           languages: ["ar", "en"],
@@ -142,9 +135,16 @@ class DeterministicFakeCaller implements ModelCaller {
       persona: gbp ? "pragmatic subscriber" : "مشترك عملي",
       age: 24 + index * 5,
       gender: index % 2 === 0 ? "female" : "male",
+      nationality: gbp ? "British" : "Qatari",
+      household: index % 2 === 0 ? "single" : "family with young children",
+      incomeAmount: gbp ? 42000 : 18000,
       mbti: ["INTJ", "ENFP", "ISTJ", "ENTP", "ISFJ", "ESTP"][index] ?? "INTJ",
       country,
       city,
+      occupation: gbp ? "Nutrition consultant" : "أخصائي تغذية",
+      channel: gbp ? "Instagram" : "TikTok",
+      attitude: gbp ? "pragmatic" : "مهتم",
+      habits: gbp ? ["meal preps on Sundays"] : ["يحضر وجبات الأسبوع أحد"],
       profession: gbp ? "Nutrition consultant" : "أخصائي تغذية",
       interestedTopics: gbp ? ["keto meals", "subscriptions", "health"] : ["وجبات كيتو", "اشتراكات", "صحة"],
       currency,
@@ -262,6 +262,10 @@ const STATIC_PATTERNS: Array<{ id: string; re: RegExp }> = [
   {
     id: "hard-coded percentage in bold result text",
     re: /\*\*["'`]?\d+(?:\.\d+)?%\*\*/,
+  },
+  {
+    id: "folder scanning",
+    re: /readdirSync\s*\(/,
   },
 ];
 

@@ -28,14 +28,18 @@ import {
   DEFAULT_RUN_AGENTS,
   DEFAULT_RUN_CALL_TIMEOUT_MS,
   DEFAULT_RUN_CONCURRENCY,
-  renderSwarmReport,
-  renderSwarmReply,
   runSeedValue,
   writeSeedArtifact,
   type SwarmRun,
 } from "./runner.js";
 import { runSeed } from "./seed.js";
-import type { SimulationProgressEvent } from "./types.js";
+import {
+  buildReport,
+  renderReportReply,
+  resolveReportLanguage,
+  type BuildReportInput,
+} from "./report.js";
+import type { SimulationProgressEvent, SimulationResult, SwarmReport } from "./types.js";
 
 /** One allocated set of artifact ids for a run. */
 export interface MirofishIds {
@@ -174,7 +178,7 @@ export async function runConversationalMirofishAsync(
     targetName,
   );
 
-  const { reportPath, reply } = renderRun(
+  const { reportPath, reply } = await renderRun(
     run,
     { message: text, location },
     root,
@@ -342,37 +346,68 @@ export function writeLegacyProfiles(
   return { redditProfilesPath, twitterProfilesPath };
 }
 
-/** Render the report and reply for a completed run. */
-export function renderRun(
+/**
+ * Render the report and reply for a completed run.
+ *
+ * The report is built by the M4 report stage (`report.ts`), which computes every
+ * number from the recorded simulation log; this function only places the file
+ * and composes the chat reply from it. The legacy `renderSwarmReport` /
+ * `renderSwarmReply` pair in `runner.ts` remains for callers that only have a
+ * run summary, but the conversational surfaces no longer use it.
+ */
+export async function renderRun(
   run: SwarmRun,
   request: MirofishRunRequest,
   root: string,
   ids: { simulationId: string; reportId: string; graphId: string; targetName: string },
   isAr: boolean,
-): { reportPath: string; reply: string } {
+): Promise<{ reportPath: string; reply: string; report: SwarmReport }> {
   const reportPath = path.join(root, "reports", ids.reportId, "report.md");
   fs.mkdirSync(path.dirname(reportPath), { recursive: true });
-  const report = renderSwarmReport({
-    run,
-    message: request.message,
-    isAr,
-    location: request.location ?? { city: null, country: null, region: null },
-    targetName: ids.targetName,
-    graphId: ids.graphId,
-    reportId: ids.reportId,
-  });
-  fs.writeFileSync(reportPath, report, "utf8");
 
-  const reply = renderSwarmReply({
-    run,
-    message: request.message,
-    isAr,
-    location: request.location ?? { city: null, country: null, region: null },
+  const { report } = await buildReport({
+    brief: request.message,
     targetName: ids.targetName,
-    reportPath,
-    reportId: ids.reportId,
-    graphId: ids.graphId,
+    locale: run.seedResult.locale,
+    entities: run.seedResult.entities,
+    personas: run.seedResult.personas,
+    // A run with no personas produced no simulation; the report stage still
+    // needs a value, so it gets the empty result rather than `undefined`.
+    simulation: run.simulation ?? emptySimulation(ids.simulationId),
+    ...(run.comparison ? { comparison: run.comparison } : {}),
+    ...(request.language ? { language: request.language } : {}),
+    modelUnavailable: run.modelUnavailable,
+    model: answeringModel(run),
   });
+  fs.writeFileSync(reportPath, report.markdown, "utf8");
 
-  return { reportPath, reply };
+  const language = resolveReportLanguage(request.message, run.seedResult.locale, request.language);
+  const reply = renderReportReply({ report, language, reportPath });
+
+  return { reportPath, reply, report };
+}
+
+/** The empty simulation a run without personas reports against. */
+function emptySimulation(sessionId: string): SimulationResult {
+  return {
+    sessionId,
+    seed: 0,
+    agents: 0,
+    rounds: 0,
+    arms: [],
+    logPath: "",
+    metricsPath: "",
+    modelCalls: 0,
+    failures: 0,
+  };
+}
+
+/** The model that answered this run, for honest report attribution. */
+function answeringModel(run: SwarmRun): string | null {
+  const turns = (run.simulation?.arms ?? []).flatMap((arm) => arm.turns);
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const model = turns[i]?.model;
+    if (model) return model;
+  }
+  return null;
 }
