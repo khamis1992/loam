@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EffortLevel } from "./llm/router.js";
+import { resolvePruneConfig } from "./agent/prune/config.js";
 
 function resolveRoot(): string {
   const candidates: string[] = [];
@@ -274,6 +275,8 @@ export interface Config {
     model: string;
     /** Context window size per model prefix (longest-prefix match). Defaults cover common models. */
     contextWindow: Record<string, number>;
+    /** Verbatim context pruning (always set by loadConfig; a missing file block means strategy "summary"). */
+    prune?: import("./agent/prune/types.js").PruneConfig;
   };
   sessionLog: { enabled: boolean };
   /** Neo run graph: record every agent event as a node of the task's run graph. */
@@ -487,6 +490,11 @@ export function loadConfig(): Config {
     console.warn(`[config] failed to parse ${p}: ${String(err)}`);
   }
   const cfg = merge(DEFAULTS, raw);
+  // Verbatim pruning: resolved from the file's own block (not from DEFAULTS), so a
+  // stale config without one keeps the summary-only behaviour.
+  cfg.compression.prune = resolvePruneConfig(
+    isObj(raw) && isObj(raw.compression) ? raw.compression.prune : undefined,
+  );
   cfg.coding = { enabled: cfg.coding?.enabled ?? true, chain: cfg.coding?.chain ?? [], logEdits: cfg.coding?.logEdits ?? true };
   // J7: normalize the hibernation setting. A negative or non-numeric value means
   // "off" (0), so a stale config.json can never arm a bogus timer. `merge` can
