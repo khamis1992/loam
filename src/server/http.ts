@@ -109,6 +109,7 @@ import { LruCache } from "../memory/cache.js";
 import { registerCacheStats } from "../memory/stats.js";
 import { handleMemorySkillsRoutes } from "./routes/memorySkills.js";
 import { handleApprovalRuleRoutes } from "./routes/approvalRules.js";
+import { handleProjectWikiRoutes } from "./routes/projectWiki.js";
 import { handlePlanApprovalRoutes } from "./routes/planApproval.js";
 import { handleAskUserRoutes } from "./routes/askUser.js";
 import { handleGrokbotBridgeRoutes } from "./routes/grokbotBridge.js";
@@ -1862,6 +1863,7 @@ loadAgents();
         // Settings › Skills (UNIMPLEMENTED_OPTIONS #4): proxy the memory-skills MCP.
         if (await handleMemorySkillsRoutes(req, res, p, { call: memorySkillsCall })) return;
         if (await handleApprovalRuleRoutes(req, res, p, url)) return;
+        if (await handleProjectWikiRoutes(req, res, p, url, cfg)) return;
         // Pending plan approvals (D4): the suggest_plan gate's approve/edit/reject.
         if (await handlePlanApprovalRoutes(req, res, p)) return;
         // Pending ask-user requests (N9): list, read, answer or dismiss.
