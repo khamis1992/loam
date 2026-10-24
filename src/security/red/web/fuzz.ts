@@ -3,6 +3,8 @@
  * with wordlists sourced from the clean-rebuilt payload corpus (§6.7). Discovery
  * results are low-severity findings plus recon enrichment for the campaign.
  */
+import fs from "node:fs";
+import path from "node:path";
 import type { PentestFinding } from "../../../tools/pentest.js";
 import type { Evidence } from "../../orchestrator.js";
 import { nextEvidenceId } from "../../orchestrator.js";
@@ -46,18 +48,29 @@ export function fuzzCapability(opts: { wordlistFile?: string } = {}): RedCapabil
     validate: async (hyp: RedHypothesis, ctx: RedCapabilityContext): Promise<RedValidation> => {
       const wordlistFile = opts.wordlistFile ?? "red-ffuf-wordlist.txt";
       const base = hyp.target.replace(/\/+$/, "");
+      const out = "red-ffuf-out.json";
       const envelope = await ctx.bridge("red-ffuf", "fuzz", {
         url: `${base}/FUZZ`,
         wordlist: wordlistFile,
         threads: 10,
         rate: 10,
-        out: "red-ffuf-out.json",
+        out,
       });
       if (!envelope.ok) {
         return { hypothesisId: hyp.id, status: "inconclusive", claim: hyp.claim, detail: `ffuf unavailable: ${envelope.error?.message ?? "no output"}`, evidence: [] };
       }
-      // ffuf writes the JSON to the out file; the envelope text may carry it.
-      const raw = typeof envelope.data === "string" ? envelope.data : `${envelope.text ?? ""}`;
+      // ffuf writes the JSON results to the -o file (stdout carries only the
+      // progress summary), so read the out file from the bridge workspace and
+      // fall back to stdout for callers without a workspace.
+      let raw = typeof envelope.data === "string" ? envelope.data : `${envelope.text ?? ""}`;
+      if (ctx.workspace) {
+        try {
+          const file = path.join(ctx.workspace, out);
+          if (fs.existsSync(file)) raw = fs.readFileSync(file, "utf8");
+        } catch {
+          /* fall back to stdout text */
+        }
+      }
       const hits = parseFfuf(raw).filter((h) => [200, 301, 302, 401, 403].includes(h.status));
       const interesting = hits.filter((h) => !["/", ""].includes(h.input));
       if (!interesting.length) {

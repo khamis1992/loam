@@ -41,6 +41,8 @@ export interface RedCapabilityContext {
   bridge: BridgeCaller;
   audit: RedAuditLog;
   signal?: AbortSignal;
+  /** Bridge workspace: engines resolve their read/write paths under it. */
+  workspace?: string;
 }
 
 export interface RedHypothesis {
@@ -107,6 +109,8 @@ export interface RunCampaignDeps {
   dataRoot?: string;
   /** Bridge caller; defaults to a caller that reports every engine as missing. */
   bridge?: BridgeCaller;
+  /** Bridge workspace for engines that write/read result files (ffuf, ZAP). */
+  workspace?: string;
   capabilities?: RedCapability[];
   /** Optional planner (model-driven §6.1). Proposals are additive and still evidence-gated. */
   planner?: RedPlanner;
@@ -150,7 +154,7 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
   if (input.auth?.cookie) authHeaders["cookie"] = input.auth.cookie;
   const transport = redTransport(authz, { signal: deps.signal, limiter, gateDeps: deps.gateDeps, approval: deps.approval, actionTag: "red.http", ...(Object.keys(authHeaders).length ? { authHeaders } : {}) });
   const bridge = deps.bridge ?? noBridge;
-  const ctx: RedCapabilityContext = { authz, transport, bridge, audit, signal: deps.signal };
+  const ctx: RedCapabilityContext = { authz, transport, bridge, audit, signal: deps.signal, ...(deps.workspace ? { workspace: deps.workspace } : {}) };
 
   let ptt = createPtt(input.goal || "red campaign", input.targets.map((t) => ({ goal: t })));
   const findings: SecurityFinding[] = [];

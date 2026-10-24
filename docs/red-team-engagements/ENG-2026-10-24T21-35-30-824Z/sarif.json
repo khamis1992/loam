@@ -1,0 +1,103 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Loam Security",
+          "rules": [
+            {
+              "id": "red_fuzz_discovery",
+              "shortDescription": {
+                "text": "red_fuzz_discovery"
+              }
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "red_fuzz_discovery",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "Hidden content discovered by fuzzing (60 path(s))\n/admin -> HTTP 401; /administrator -> HTTP 401; /api -> HTTP 401; /assets -> HTTP 401; /auth -> HTTP 401; /backup -> HTTP 401; /bin -> HTTP 401; /cgi-bin -> HTTP 401; /config -> HTTP 401; /console -> HTTP 401; /dashboard -> HTTP 401; /db -> HTTP 401; /debug -> HTTP 401; /dev -> HTTP 401; /docs -> HTTP 401; /downloads -> HTTP 401; /env -> HTTP 401; /etc -> HTTP 401; /git -> HTTP 401; /health -> HTTP 401\nRemove or protect content that should not be reachable; deny-list common backup/hidden paths."
+          },
+          "partialFingerprints": {
+            "loamFingerprint": "c7be981a060f53b127bc7594"
+          },
+          "properties": {
+            "target": "http://127.0.0.1:3939",
+            "severity": "low",
+            "confidence": "observed",
+            "workflow": {
+              "state": "open",
+              "owner": "",
+              "note": ""
+            },
+            "evidence": [
+              "EV0001",
+              "EV0002",
+              "EV0003",
+              "EV0004",
+              "EV0005",
+              "EV0006",
+              "EV0007",
+              "EV0008",
+              "EV0009",
+              "EV0010",
+              "EV0011",
+              "EV0012",
+              "EV0013",
+              "EV0014",
+              "EV0015",
+              "EV0016",
+              "EV0017",
+              "EV0018",
+              "EV0019",
+              "EV0020",
+              "EV0021",
+              "EV0022",
+              "EV0023",
+              "EV0024",
+              "EV0025",
+              "EV0026",
+              "EV0027",
+              "EV0028",
+              "EV0029",
+              "EV0030",
+              "EV0031",
+              "EV0032",
+              "EV0033",
+              "EV0034",
+              "EV0035",
+              "EV0036",
+              "EV0037",
+              "EV0038",
+              "EV0039",
+              "EV0040",
+              "EV0041",
+              "EV0042",
+              "EV0043",
+              "EV0044",
+              "EV0045",
+              "EV0046",
+              "EV0047",
+              "EV0048",
+              "EV0049",
+              "EV0050"
+            ],
+            "browserEvidence": []
+          }
+        }
+      ]
+    }
+  ]
+}

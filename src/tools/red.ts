@@ -60,7 +60,7 @@ export function redTools(): Tool[] {
         const capabilities = await defaultRedCapabilities(ctx.cfg, { ssrf: { probeTemplate: undefined } });
         const result = await runCampaign(
           { goal: `Red campaign on ${target}`, authzId, targets: [target], profile },
-          { dataRoot: defaultDataRoot(), bridge: bridgeCallerFor(ctx), capabilities, planner: plannerFor(ctx, plan) },
+          { dataRoot: defaultDataRoot(), bridge: bridgeCallerFor(ctx), capabilities, planner: plannerFor(ctx, plan), workspace: ctx.workspace },
         );
         const outDir = path.join(ctx.workspace, "red", result.campaignId);
         const report = buildRedReport(result, outDir);

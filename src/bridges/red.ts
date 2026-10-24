@@ -153,9 +153,14 @@ export const RED_MANIFESTS: unknown[] = [
     commands: [
       {
         id: "gen",
-        description: "Generate one serialized gadget-chain payload on stdout. URLDNS is the benign DNS-only proof gadget; command gadgets are for approved destructive runs.",
+        description: "Generate one serialized gadget-chain payload on stdout. URLDNS is the benign DNS-only proof gadget; command gadgets are for approved destructive runs. The --add-opens flags unblock JPMS reflection on Java 9+.",
         effect: "exec_script",
-        argv: ["-jar", "{jar}", "{gadget}", "{cmd}"],
+        argv: [
+          "--add-opens", "java.base/java.net=ALL-UNNAMED",
+          "--add-opens", "java.base/java.util=ALL-UNNAMED",
+          "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+          "-jar", "{jar}", "{gadget}", "{cmd}",
+        ],
         params: {
           jar: { type: "path", access: "read", required: true, description: "Path to ysoserial.jar." },
           gadget: { type: "enum", required: true, values: ["URLDNS", "CommonsCollections1", "CommonsCollections6", "Spring1"], description: "Gadget chain." },

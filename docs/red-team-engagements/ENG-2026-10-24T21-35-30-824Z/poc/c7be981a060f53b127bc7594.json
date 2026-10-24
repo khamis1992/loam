@@ -1,0 +1,361 @@
+{
+  "findingId": "c7be981a060f53b127bc7594",
+  "check": "red_fuzz_discovery",
+  "target": "http://127.0.0.1:3939",
+  "severity": "low",
+  "claim": "Hidden content discovered by fuzzing (60 path(s))",
+  "detail": "/admin -> HTTP 401; /administrator -> HTTP 401; /api -> HTTP 401; /assets -> HTTP 401; /auth -> HTTP 401; /backup -> HTTP 401; /bin -> HTTP 401; /cgi-bin -> HTTP 401; /config -> HTTP 401; /console -> HTTP 401; /dashboard -> HTTP 401; /db -> HTTP 401; /debug -> HTTP 401; /dev -> HTTP 401; /docs -> HTTP 401; /downloads -> HTTP 401; /env -> HTTP 401; /etc -> HTTP 401; /git -> HTTP 401; /health -> HTTP 401",
+  "remediation": "Remove or protect content that should not be reachable; deny-list common backup/hidden paths.",
+  "evidence": [
+    {
+      "id": "EV0001",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: admin -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /admin responded HTTP 401"
+    },
+    {
+      "id": "EV0002",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: administrator -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /administrator responded HTTP 401"
+    },
+    {
+      "id": "EV0003",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: api -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /api responded HTTP 401"
+    },
+    {
+      "id": "EV0004",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: assets -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /assets responded HTTP 401"
+    },
+    {
+      "id": "EV0005",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: auth -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /auth responded HTTP 401"
+    },
+    {
+      "id": "EV0006",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: backup -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /backup responded HTTP 401"
+    },
+    {
+      "id": "EV0007",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: bin -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /bin responded HTTP 401"
+    },
+    {
+      "id": "EV0008",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: cgi-bin -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /cgi-bin responded HTTP 401"
+    },
+    {
+      "id": "EV0009",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: config -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /config responded HTTP 401"
+    },
+    {
+      "id": "EV0010",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: console -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /console responded HTTP 401"
+    },
+    {
+      "id": "EV0011",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: dashboard -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /dashboard responded HTTP 401"
+    },
+    {
+      "id": "EV0012",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: db -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /db responded HTTP 401"
+    },
+    {
+      "id": "EV0013",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: debug -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /debug responded HTTP 401"
+    },
+    {
+      "id": "EV0014",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: dev -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /dev responded HTTP 401"
+    },
+    {
+      "id": "EV0015",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: docs -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /docs responded HTTP 401"
+    },
+    {
+      "id": "EV0016",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: downloads -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /downloads responded HTTP 401"
+    },
+    {
+      "id": "EV0017",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: env -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /env responded HTTP 401"
+    },
+    {
+      "id": "EV0018",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: etc -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /etc responded HTTP 401"
+    },
+    {
+      "id": "EV0019",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: git -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /git responded HTTP 401"
+    },
+    {
+      "id": "EV0020",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: health -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /health responded HTTP 401"
+    },
+    {
+      "id": "EV0021",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: home -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /home responded HTTP 401"
+    },
+    {
+      "id": "EV0022",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: include -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /include responded HTTP 401"
+    },
+    {
+      "id": "EV0023",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: includes -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /includes responded HTTP 401"
+    },
+    {
+      "id": "EV0024",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: internal -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /internal responded HTTP 401"
+    },
+    {
+      "id": "EV0025",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: js -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /js responded HTTP 401"
+    },
+    {
+      "id": "EV0026",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: lib -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /lib responded HTTP 401"
+    },
+    {
+      "id": "EV0027",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: login -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /login responded HTTP 401"
+    },
+    {
+      "id": "EV0028",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: logout -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /logout responded HTTP 401"
+    },
+    {
+      "id": "EV0029",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: logs -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /logs responded HTTP 401"
+    },
+    {
+      "id": "EV0030",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: old -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /old responded HTTP 401"
+    },
+    {
+      "id": "EV0031",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: phpmyadmin -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /phpmyadmin responded HTTP 401"
+    },
+    {
+      "id": "EV0032",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: private -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /private responded HTTP 401"
+    },
+    {
+      "id": "EV0033",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: public -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /public responded HTTP 401"
+    },
+    {
+      "id": "EV0034",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: register -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /register responded HTTP 401"
+    },
+    {
+      "id": "EV0035",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: rest -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /rest responded HTTP 401"
+    },
+    {
+      "id": "EV0036",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: secret -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /secret responded HTTP 401"
+    },
+    {
+      "id": "EV0037",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: server-status -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /server-status responded HTTP 401"
+    },
+    {
+      "id": "EV0038",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: setup -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /setup responded HTTP 401"
+    },
+    {
+      "id": "EV0039",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: site -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /site responded HTTP 401"
+    },
+    {
+      "id": "EV0040",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: sql -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /sql responded HTTP 401"
+    },
+    {
+      "id": "EV0041",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: static -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /static responded HTTP 401"
+    },
+    {
+      "id": "EV0042",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: status -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /status responded HTTP 401"
+    },
+    {
+      "id": "EV0043",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: temp -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /temp responded HTTP 401"
+    },
+    {
+      "id": "EV0044",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: test -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /test responded HTTP 401"
+    },
+    {
+      "id": "EV0045",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: tmp -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /tmp responded HTTP 401"
+    },
+    {
+      "id": "EV0046",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: tools -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /tools responded HTTP 401"
+    },
+    {
+      "id": "EV0047",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: upload -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /upload responded HTTP 401"
+    },
+    {
+      "id": "EV0048",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: uploads -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /uploads responded HTTP 401"
+    },
+    {
+      "id": "EV0049",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: user -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /user responded HTTP 401"
+    },
+    {
+      "id": "EV0050",
+      "kind": "poc",
+      "at": "2026-10-24T21:32:28.601Z",
+      "poc": "ffuf -u http://127.0.0.1:3939/FUZZ (match: usr -> HTTP 401, 75 bytes)",
+      "observed": "Hidden path /usr responded HTTP 401"
+    }
+  ]
+}

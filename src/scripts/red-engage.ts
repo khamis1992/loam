@@ -39,7 +39,7 @@ const targets = process.argv
   .reduce<string[]>((acc, cur, i, all) => (cur === "--target" && all[i + 1] ? [...acc, all[i + 1]!] : acc), []);
 if (!targets.length) targets.push("http://127.0.0.1:3000");
 
-const OUT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..", "docs", "red-team-engagements");
+const OUT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..", "docs", "red-team-engagements");
 const WORKSPACE = path.join(os.tmpdir(), `loam-red-engage-${Date.now()}`);
 
 interface EngagementRecord {
@@ -76,6 +76,21 @@ async function main(): Promise<void> {
   for (const id of ["red-nuclei", "red-ffuf", "red-sqlmap", "red-ysoserial", "red-zap", "red-caldera", "red-freeway"]) {
     setBridgeEnabled(cfg, id, true);
   }
+  // Engine scans legitimately run longer than interactive commands; give the
+  // bridges the full manifest ceiling (still capped at 900s per §4.4).
+  cfg.policy.maxCommandSeconds = Math.max(cfg.policy.maxCommandSeconds ?? 0, 600);
+
+  // nuclei needs its template library downloaded once (cached in AppData).
+  const { loadEngines } = await import("../security/red/engines.js");
+  const nucleiPath = loadEngines()?.paths.nuclei;
+  if (nucleiPath && fs.existsSync(nucleiPath)) {
+    console.log("nuclei: updating template library (first run downloads it)…");
+    await new Promise<void>((resolve) => {
+      import("node:child_process").then(({ execFile }) =>
+        execFile(nucleiPath, ["-update-templates"], { timeout: 300_000, windowsHide: true }, () => resolve()),
+      );
+    });
+  }
 
   // ffuf needs a wordlist file inside the workspace.
   const wordlistFile = "red-ffuf-wordlist.txt";
@@ -102,7 +117,7 @@ async function main(): Promise<void> {
 
   const result = await runCampaign(
     { goal: `Engagement ${new Date().toISOString()} on ${targets.join(", ")}`, authzId, targets, auth },
-    { dataRoot: defaultDataRoot(), bridge, capabilities, ...(planner ? { planner } : {}) },
+    { dataRoot: defaultDataRoot(), bridge, capabilities, workspace: WORKSPACE, ...(planner ? { planner } : {}) },
   );
 
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");

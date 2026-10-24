@@ -42,7 +42,8 @@ export function deserCapability(opts: DeserCapabilityOptions = {}): RedCapabilit
         return { hypothesisId: hyp.id, status: "inconclusive", claim: hyp.claim, detail: "ysoserial not installed (run npm run red:engines)", evidence: [] };
       }
       // URLDNS is the benign gadget: a DNS lookup only, no code execution.
-      const gen = await ctx.bridge("red-ysoserial", "gen", { jar, gadget: "URLDNS", cmd: `red-lab-oob.example` });
+      // It needs a well-formed URL (a bare hostname throws inside the gadget).
+      const gen = await ctx.bridge("red-ysoserial", "gen", { jar, gadget: "URLDNS", cmd: "http://oob.red-lab.invalid/" });
       if (!gen.ok || !gen.text) {
         return { hypothesisId: hyp.id, status: "inconclusive", claim: hyp.claim, detail: `ysoserial unavailable: ${gen.error?.message ?? "no payload"}`, evidence: [] };
       }
