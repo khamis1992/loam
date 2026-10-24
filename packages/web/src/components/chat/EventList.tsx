@@ -11,17 +11,50 @@ import { CacheUsageRow } from './CacheUsageRow';
 import { PlanStepRow, PlanUpdateRow, TodoListRow } from './PlanStep';
 import { ApprovalCard, AskUserCard, FolderAccessApprovalCard, PlanApprovalCard, type LocalExecutionApprovalRequested, type PlanApprovalRequested } from '@/components/approval';
 import { AttachmentCard } from './AttachmentCard';
+import { craftAppForExtension, craftExtOf, editorKindForExtension } from '@/components/workspace/craft';
 import { EnvironmentIssueCard } from './EnvironmentIssueCard';
 import { summarizeTools } from './toolLabels';
 import type { ChatSocket } from '@/services/chatSocket';
 
 export type RenderableEvent = ChatEvent | LocalExecutionApprovalRequested | PlanApprovalRequested;
 
+/** The exact user-facing Loam name of each Craft app, for the open-in-app label. */
+const CRAFT_APP_LABEL: Record<string, string> = {
+  docs: 'Open in Loam Docs',
+  sheets: 'Open in Loam Sheets',
+  slides: 'Open in Loam Slides',
+  photo: 'Open in Loam Photo',
+  design: 'Open in Loam Design',
+};
+
+/**
+ * The action label for opening an attachment in its Loam app. Craft files name the
+ * app that owns them (`Open in Loam Docs`); the built-in editors keep a neutral
+ * label so the button never lies about where the file opens.
+ */
+function openInEditorLabel(kind: string, path: string): string {
+  if (kind !== 'craft') return t('Open in editor');
+  const app = craftAppForExtension(craftExtOf(path));
+  return app ? CRAFT_APP_LABEL[app] : t('Open in editor');
+}
+
 interface EventListProps {
   events: ChatEvent[];
   sessionId: string;
   socket?: ChatSocket | null;
   onOpenComputer?: (e: ToolUsedEvent) => void;
+  /**
+   * J7 hibernation: while true the rendered message DOM (every markdown,
+   * highlight, diff and image node) is unmounted. Only a compact status frame
+   * stays, so the renderer can return its working set; the canonical events are
+   * untouched in the store and are re-rendered on wake.
+   */
+  hibernated?: boolean;
+  /**
+   * Open an attachment in its registered editor on the Workspace tab. Only files an
+   * editor can actually open are offered, so a `.txt` keeps its download behaviour.
+   */
+  onOpenFile?: (file: { taskId: string; path: string; name: string; mime?: string }) => void;
 }
 
 export interface ChatEventRowProps {
@@ -30,6 +63,7 @@ export interface ChatEventRowProps {
   socket?: ChatSocket | null;
   /** Optional override for chat rows (e.g. Grok-style bubbles in the agent thread). */
   renderChat?: (e: ChatEvent) => ReactNode;
+  onOpenFile?: (file: { taskId: string; path: string; name: string; mime?: string }) => void;
 }
 
 /**
@@ -37,7 +71,7 @@ export interface ChatEventRowProps {
  * a `renderChat` override is supplied, which lets the agent thread restyle
  * messages without duplicating the non-chat event handling.
  */
-export function ChatEventRow({ e, sessionId, socket, renderChat }: ChatEventRowProps) {
+export function ChatEventRow({ e, sessionId, socket, renderChat, onOpenFile }: ChatEventRowProps) {
   if (e.type === 'chat') {
     if (renderChat) return renderChat(e);
     if (e.sender === 'user' && isGrokBotNote(e.content)) {
@@ -74,7 +108,25 @@ export function ChatEventRow({ e, sessionId, socket, renderChat }: ChatEventRowP
     }
     case 'attachment': {
       const a = e as AttachmentEvent;
-      return <AttachmentCard name={a.name} mime={a.mime} size={a.sizeBytes} taskId={a.taskId} path={a.path} />;
+      // Only files a workspace editor owns (Craft apps, doc/sheet/slides) get the
+      // open-in-editor action; everything else keeps its media download behaviour.
+      const kind = a.path ? editorKindForExtension(craftExtOf(a.path)) : null;
+      const canOpen = Boolean(kind) && Boolean(a.taskId) && Boolean(a.path) && Boolean(onOpenFile);
+      return (
+        <AttachmentCard
+          name={a.name}
+          mime={a.mime}
+          size={a.sizeBytes}
+          taskId={a.taskId}
+          path={a.path}
+          openLabel={kind ? openInEditorLabel(kind, a.path ?? '') : undefined}
+          onOpen={
+            canOpen && onOpenFile && a.taskId && a.path
+              ? () => onOpenFile({ taskId: a.taskId, path: a.path, name: a.name, mime: a.mime })
+              : undefined
+          }
+        />
+      );
     }
     case 'environmentIssue': {
       return <EnvironmentIssueCard issue={e as EnvironmentIssueEvent} />;
@@ -153,11 +205,21 @@ export function ChatEventRow({ e, sessionId, socket, renderChat }: ChatEventRowP
   }
 }
 
-const Row = memo(function Row({ e, sessionId, socket }: { e: RenderableEvent; sessionId: string; socket?: ChatSocket | null }) {
-  return <ChatEventRow e={e} sessionId={sessionId} socket={socket} />;
+const Row = memo(function Row({
+  e,
+  sessionId,
+  socket,
+  onOpenFile,
+}: {
+  e: RenderableEvent;
+  sessionId: string;
+  socket?: ChatSocket | null;
+  onOpenFile?: (file: { taskId: string; path: string; name: string; mime?: string }) => void;
+}) {
+  return <ChatEventRow e={e} sessionId={sessionId} socket={socket} onOpenFile={onOpenFile} />;
 });
 
-export function EventList({ events, sessionId, socket, onOpenComputer }: EventListProps) {
+export function EventList({ events, sessionId, socket, onOpenComputer, hibernated, onOpenFile }: EventListProps) {
   const collapsed = useMemo(() => collapseEvents(events as unknown as RenderableEvent[]), [events]);
   const summary = useMemo(() => {
     const tools = collapsed.filter((e): e is ToolUsedEvent => e.type === 'toolUsed');
@@ -165,8 +227,32 @@ export function EventList({ events, sessionId, socket, onOpenComputer }: EventLi
   }, [collapsed]);
   const firstToolIndex = useMemo(() => collapsed.findIndex((e) => e.type === 'toolUsed'), [collapsed]);
 
+  // J7: hibernated views keep the canonical events but drop the rendered DOM
+  // entirely. The status frame is deliberately tiny (one line plus the row
+   // count) so the renderer can actually return memory; nothing here reads the
+   // event payloads again, so the fold is rebuilt from the store on wake.
+  if (hibernated) {
+    return (
+      <ol
+        data-testid="event-list"
+        data-hibernated="true"
+        data-event-count={events.length}
+        className="mx-auto flex w-full max-w-[768px] flex-col gap-2 px-[var(--ui-content-padding-x,24px)] py-6"
+      >
+        <li className="text-sm text-text-tertiary">
+          {t('Hibernated')} - {t('{count} messages hidden', { count: String(events.length) })}
+        </li>
+      </ol>
+    );
+  }
+
   return (
-    <ol className="mx-auto flex w-full max-w-[768px] flex-col gap-2 px-[var(--ui-content-padding-x,24px)] py-6">
+    <ol
+      data-testid="event-list"
+      data-hibernated="false"
+      data-event-count={events.length}
+      className="mx-auto flex w-full max-w-[768px] flex-col gap-2 px-[var(--ui-content-padding-x,24px)] py-6"
+    >
       {collapsed.map((e, i) => {
         const isTool = e.type === 'toolUsed';
         const row = (
@@ -175,7 +261,7 @@ export function EventList({ events, sessionId, socket, onOpenComputer }: EventLi
             className={isTool ? 'ms-5 cursor-pointer' : undefined}
             onClick={isTool ? () => onOpenComputer?.(e as ToolUsedEvent) : undefined}
           >
-            <Row e={e} sessionId={sessionId} socket={socket} />
+            <Row e={e} sessionId={sessionId} socket={socket} onOpenFile={onOpenFile} />
           </li>
         );
         if (i === firstToolIndex && summary) {

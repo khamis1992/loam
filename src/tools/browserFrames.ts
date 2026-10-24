@@ -1,6 +1,9 @@
 /** Browser live-frame hub: the browser tool captures JPEG frames after every
  *  navigation/action; this hub keeps the latest frame per task and throttles
  *  emissions (default ~1 fps) to registered sinks (the protocol socket). */
+import { BoundedMap } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
+import type { CacheOwner } from "../memory/hibernation.js";
 
 export interface BrowserFrame {
   url: string;
@@ -19,11 +22,24 @@ interface TaskFrameState {
   lastEmitAt: number;
 }
 
-const frames = new Map<string, TaskFrameState>();
-const sinks = new Map<string, Set<BrowserFrameSink>>();
+/**
+ * Latest frame per task (J6). A frame holds a JPEG, so this map is the biggest
+ * thing the hub retains; the oldest task's frame is dropped when a new task
+ * would exceed the cap. Sinks stay separate because a dropped frame must not
+ * detach a live subscriber.
+ */
+const frames = new BoundedMap<string, TaskFrameState>(64, "browser-frames");
+/** Per-task subscriber sets (J6). A task that stops unsubscribing (a dropped
+ *  renderer socket, a task that ended without a close) left a Set behind for
+ *  every task id it ever had. Bounded LRU; eviction drops the set, which drops
+ *  the subscribers with it (they are then free to re-register). */
+const sinks = new BoundedMap<string, Set<BrowserFrameSink>>(128, "browser-frame-sinks");
+registerCacheStats("browser-frame-sinks", () => sinks.stats());
 /** Web session id -> Loam task id, set by the protocol socket so HTTP lookups
  *  (which only know the web session id) can find the task's latest frame. */
-const aliases = new Map<string, string>();
+const aliases = new BoundedMap<string, string>(256, "browser-frame-aliases");
+registerCacheStats("browser-frames", () => frames.stats());
+registerCacheStats("browser-frame-aliases", () => aliases.stats());
 
 export function setTaskFrameAlias(aliasKey: string, taskId: string): void {
   if (aliasKey && taskId) aliases.set(aliasKey, taskId);
@@ -121,4 +137,17 @@ export function resetBrowserFrames(): void {
   sinks.clear();
   aliases.clear();
   throttleMs = 1_000;
+}
+
+/** J7 hibernation: the latest captured frame is derived, reconstructible state
+ *  (the browser re-captures it on the next navigation/action), so it is one of
+ *  the derived caches a session may release when it goes idle. A frame holds a
+ *  JPEG, so it is the largest derived object the hub retains for a task. */
+export function browserFrameOwner(taskId: string): CacheOwner {
+  return {
+    name: "browser-frames",
+    size: () => (frames.has(taskId) ? 1 : 0),
+    bytes: () => frames.get(taskId)?.latest?.jpegBase64?.length ?? 0,
+    clear: () => { frames.delete(taskId); },
+  };
 }

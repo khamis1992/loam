@@ -31,6 +31,7 @@ export const RUN_NODE_TYPES = [
   "merge",
   "note",
   "failed",
+  "kb_seed",
   /**
    * External-agent canvas bridge (N17): a node an external agent session
    * (OpenCode / Claude Code / Orca) placed on a Loam canvas. Unlike the other

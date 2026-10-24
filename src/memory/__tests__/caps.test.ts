@@ -1,0 +1,614 @@
+/**
+ * J6 acceptance: eviction tests for the hard caps a test can reach offline.
+ *
+ * docs/MEMORY_BUDGET.md lists a bound for every in-memory hot-path cache and
+ * says each one is enforced by a real `LruCache`/`BoundedMap`. This file is the
+ * executable half of that claim for the 32 caps reachable without a live
+ * browser, PTY, ffmpeg child or video sidecar: for each of those it drives the
+ * cache through its own public API past the cap and asserts the live size never
+ * exceeds the configured bound and that the oldest entry is the one dropped. The
+ * remaining 11 caps are covered by the doc↔code parity check at the bottom.
+ *
+ * Everything is in-process and offline: no model calls, no network, no
+ * telemetry. The data dir is redirected to a throwaway temp folder so the run
+ * never reads or writes the developer's real vault/task store.
+ */
+import assert from "node:assert";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+// Isolate every module that reads the data dir BEFORE importing it.
+const tmpData = fs.mkdtempSync(path.join(os.tmpdir(), "j6-caps-"));
+process.env.MANUS_LOCAL_DATA_DIR = tmpData;
+process.env.LOAM_AUTH_DISABLED = "true";
+
+import { describe, it } from "node:test";
+
+import { collectCacheStats } from "../stats.js";
+
+/** One registered cache row, read fresh from the shared registry. */
+function cache(name: string) {
+  const row = collectCacheStats().find((c) => c.name === name);
+  assert.ok(row, `cache "${name}" is not registered`);
+  return row!;
+}
+
+/**
+ * Drive a cache past its cap and assert the invariant docs/MEMORY_BUDGET.md
+ * promises: occupancy never exceeds the bound, and the entry dropped first is
+ * the one inserted first (LRU by insertion order).
+ */
+async function expectCap(name: string, cap: number, drive: (i: number) => Promise<void> | void): Promise<void> {
+  const times = cap + 8;
+  let peak = 0;
+  for (let i = 0; i < times; i++) {
+    await drive(i);
+    const row = cache(name);
+    peak = Math.max(peak, row.size);
+    assert.ok(row.size <= row.capacity, `${name}: ${row.size} entries exceed capacity ${row.capacity}`);
+  }
+  const row = cache(name);
+  assert.equal(row.capacity, cap, `${name}: registered capacity changed`);
+  assert.equal(row.size, cap, `${name}: expected ${cap} live entries at saturation, got ${row.size}`);
+  assert.equal(peak, cap, `${name}: occupancy ${peak} exceeded the cap ${cap}`);
+}
+
+/** Cheap fake tool context for the handful of caches reached through tools. */
+function ctx(workspace: string, taskId: string) {
+  return { cfg: { workspace, policy: { networkEnabled: false }, model: "test" }, workspace, taskId, emit: () => {} } as never;
+}
+
+const W = fs.mkdtempSync(path.join(os.tmpdir(), "j6-caps-ws-"));
+
+describe("J6 hard caps (eviction through the real public APIs)", () => {
+  it("protocol-blobs", async () => {
+    const { storeBlob, hasBlob, clearBlobs, getBlob, BLOB_STORE_MAX_BYTES, BLOB_STORE_MAX_ENTRIES } =
+      await import("../../protocol/blobStore.js");
+    try {
+      await expectCap("protocol-blobs", 64, (i) => { storeBlob(`blob_${i}`, Buffer.alloc(8, i)); });
+      assert.equal(hasBlob("blob_0"), false, "the oldest blob was evicted");
+      assert.equal(hasBlob("blob_71"), true, "the newest blob survived");
+      // The byte ceiling must hold even for a single upload larger than it: the
+      // eviction hook refuses to drop the last entry, so `storeBlob` has to
+      // reject it rather than leave `bytes > maxBytes`.
+      const row = cache("protocol-blobs");
+      assert.equal(row.maxBytes, BLOB_STORE_MAX_BYTES, "byte ceiling registered");
+      assert.equal(row.capacity, BLOB_STORE_MAX_ENTRIES, "entry cap registered");
+      assert.equal(storeBlob("oversize", Buffer.alloc(BLOB_STORE_MAX_BYTES + 1)), "rejected", "an over-ceiling blob is rejected");
+      assert.equal(hasBlob("oversize"), false, "the rejected blob was not retained");
+      assert.equal(getBlob("oversize"), undefined);
+      const after = cache("protocol-blobs");
+      assert.ok(after.bytes <= after.maxBytes, `protocol-blobs: ${after.bytes} bytes exceed the ${after.maxBytes} ceiling`);
+    } finally {
+      clearBlobs();
+    }
+  });
+
+  it("policy-glob", async () => {
+    const { globToRegExp } = await import("../../policy/permissionRules.js");
+    await expectCap("policy-glob", 256, (i) => { globToRegExp(`src/*/file_${i}.ts`); });
+  });
+
+  it("workspace-directory-requests", async () => {
+    const mod = await import("../../protocol/approvals.js");
+    // `waitForWorkspaceDirectoryAccess` is the only public path that inserts a
+    // pending row (each holds a 15-minute timer), so the drive uses it and keeps
+    // an AbortController per request: aborting in `finally` clears the timers
+    // the surviving entries would otherwise leave behind.
+    const signals: AbortController[] = [];
+    try {
+      await expectCap("workspace-directory-requests", 128, (i) => {
+        const request = mod.createWorkspaceDirectoryAccessRequest({ actionId: `dir_${i}`, requestedPath: W, purpose: "access" });
+        const signal = new AbortController();
+        signals.push(signal);
+        void mod.waitForWorkspaceDirectoryAccess(request, signal.signal);
+      });
+    } finally {
+      for (const signal of signals) signal.abort();
+    }
+  });
+
+  it("eventlog-projection", async () => {
+    const { registerProjection, getProjection } = await import("../../session/eventLog.js");
+    await expectCap("eventlog-projection", 64, (i) => {
+      registerProjection({ key: `proj_${i}`, init: () => 0, apply: (s: number) => s + 1 });
+      getProjection(`proj_${i}`, []);
+    });
+  });
+
+  it("session-task-projection", async () => {
+    // J7's own incremental fold (src/memory/sessionCaches.ts): one folded state
+    // per session, keyed by task id, reused while the log grows.
+    const { getTaskProjection, resetSessionCaches } = await import("../../memory/sessionCaches.js");
+    try {
+      await expectCap("session-task-projection", 64, (i) => {
+        getTaskProjection(`proj_${i}`, 2, () => 0, (state: unknown, seq: number) => Number(state) + seq);
+      });
+    } finally {
+      resetSessionCaches();
+    }
+  });
+
+  it("session-task-caches", async () => {
+    // One slot per task; a slot holds the task's named derived caches, so the
+    // enforced bound is the number of slots, not the owners inside them.
+    const { registerTaskCache, releaseTaskCaches, resetSessionCaches, taskCacheBytes } = await import("../../memory/sessionCaches.js");
+    try {
+      await expectCap("session-task-caches", 64, (i) => {
+        const taskId = `owner_${i}`;
+        registerTaskCache(taskId, { name: `owner_${i}`, size: () => 1, bytes: () => 8, clear: () => undefined });
+      });
+      // Saturation dropped the first slot (LRU by insertion), and the hibernation
+      // sweep is what drops a slot's owners: prove the oldest is gone and a live
+      // one is released by `releaseTaskCaches`.
+      assert.equal(taskCacheBytes("owner_0").entries, 0, "the oldest task slot was evicted at saturation");
+      assert.ok(releaseTaskCaches("owner_63").owners.length > 0, "a live task's caches are released");
+    } finally {
+      resetSessionCaches();
+    }
+  });
+
+  it("task-event-subs", async () => {
+    const { subscribeTask } = await import("../../server/streams.js");
+    // Abandoned listeners (a client that vanished without closing its stream)
+    // are exactly what the cap exists for, so this driver deliberately never
+    // unsubscribes.
+    await expectCap("task-event-subs", 512, (i) => { subscribeTask(`sub_${i}`, () => {}); });
+  });
+
+  it("server-approvals", async () => {
+    const { createApproval } = await import("../../server/approvals.js");
+    await expectCap("server-approvals", 256, (i) => {
+      createApproval({ taskId: `t_${i}`, tool: "shell_run", summary: `s_${i}`, argsPreview: "{}" });
+    });
+  });
+
+  it("url-watch-connectors", async () => {
+    const { watchConnector } = await import("../../server/urlWatch.js");
+    await expectCap("url-watch-connectors", 64, (i) => {
+      watchConnector(`kind_${i}`, async () => "x");
+    });
+  });
+
+  it("schedule-time-formatters", async () => {
+    const { nextCronRun } = await import("../../server/scheduleTime.js");
+    const zones = Intl.supportedValuesOf("timeZone");
+    assert.ok(zones.length >= 32, "need at least 32 IANA zones to reach the formatter cap");
+    await expectCap("schedule-time-formatters", 32, (i) => {
+      nextCronRun("* * * * *", new Date(), zones[i % zones.length]!);
+    });
+  });
+
+  it("run-controllers / run-cancelled-flags / run-active-flags", async () => {
+    const mod = await import("../../server/runControl.js");
+    try {
+      await expectCap("run-controllers", 512, (i) => { mod.createRunSignal(`run_${i}`, false); });
+      await expectCap("run-active-flags", 512, (i) => { mod.activateRunSignal(`active_${i}`); });
+      await expectCap("run-cancelled-flags", 512, (i) => { mod.cancelRunSignal(`run_${i}`); });
+    } finally {
+      for (const id of mod.listRunningSignals()) mod.clearRunSignal(id);
+    }
+  });
+
+  it("browser-frames", async () => {
+    const { publishBrowserFrame, latestBrowserFrame, resetBrowserFrames } = await import("../../tools/browserFrames.js");
+    try {
+      await expectCap("browser-frames", 64, (i) => { publishBrowserFrame(`task_${i}`, { url: `https://example.test/${i}` }); });
+      assert.equal(latestBrowserFrame("task_0"), null, "the oldest frame was evicted");
+      assert.equal(latestBrowserFrame("task_71")?.url, "https://example.test/71");
+    } finally {
+      resetBrowserFrames();
+    }
+  });
+
+  it("browser-frame-sinks", async () => {
+    const { registerBrowserFrameSink } = await import("../../tools/browserFrames.js");
+    // As with task-event-subs: the cap exists for subscribers nobody closed.
+    await expectCap("browser-frame-sinks", 128, (i) => { registerBrowserFrameSink(`sink_${i}`, () => {}); });
+  });
+
+  it("browser-frame-aliases", async () => {
+    const { setTaskFrameAlias } = await import("../../tools/browserFrames.js");
+    await expectCap("browser-frame-aliases", 256, (i) => { setTaskFrameAlias(`alias_${i}`, `task_${i}`); });
+  });
+
+  it("stall-guard-failures", async () => {
+    const { createStallGuard } = await import("../../agent/stallGuard.js");
+    const guard = createStallGuard();
+    // Only "dedicated" tools (office_/pentest_/security_/browser_ prefix, or the
+    // exact list) populate the failure counters; a generic name only bumps the
+    // run-scoped stall counter.
+    await expectCap("stall-guard-failures", 64, (i) => { guard(`office_doc_${i}`, {}, false); });
+  });
+
+  it("vault-value-names", async () => {
+    const { setSecret } = await import("../../server/secretsVault.js");
+    const { resolveVaultRefs } = await import("../../tools/vaultTools.js");
+    // setSecret logs one INFO line per call; keep the run readable.
+    const origLog = console.log;
+    console.log = () => {};
+    try {
+      await expectCap("vault-value-names", 256, (i) => {
+        setSecret("global", `cap_${i}`, `value_${i}`);
+        resolveVaultRefs(`{{vault:cap_${i}}}`, "global");
+      });
+    } finally {
+      console.log = origLog;
+    }
+  });
+
+  it("grokbot-rate and grokbot-recent", async () => {
+    const mod = await import("../../server/bridge/grokbot.js");
+    try {
+      await expectCap("grokbot-rate", 256, (i) => { mod.checkExecuteRate(`agent_${i}`); });
+      await expectCap("grokbot-recent", 128, (i) => {
+        mod.storeMirror({ agentId: `agent_${i}`, from: "Grok Bot", text: `m_${i}`, threadAppended: false });
+      });
+    } finally {
+      mod.resetGrokbotBridgeForTests();
+    }
+  });
+
+  it("task-phases", async () => {
+    const { createPhaseTools } = await import("../../tools/phaseTools.js");
+    const phaseSet = createPhaseTools()[0]!;
+    await expectCap("task-phases", 512, async (i) => {
+      await phaseSet.run({ phase: "build", reason: `r_${i}` }, ctx(W, `phase_${i}`));
+    });
+  });
+
+  it("protocol-temp-codes", async () => {
+    const rpc = await import("../../protocol/rpc.js");
+    const store = {
+      getSession: () => undefined,
+      getSessionByTaskId: () => undefined,
+      isDeleted: () => false,
+      ensureSession: () => ({ sessionId: "s" }),
+      setTaskId: () => {},
+      setTitle: () => {},
+      deleteTask: () => {},
+    } as never;
+    const handlers = rpc.makeRpcHandlers(store);
+    const gen = handlers["user.v1.UserAuthService/GenerateTempAuthCode"];
+    assert.equal(typeof gen, "function");
+    await expectCap("protocol-temp-codes", 128, () => { gen!({}, { userUid: null, isPublic: true }); });
+  });
+
+  it("protocol-login-tokens", async () => {
+    const { issueLoginToken, consumeLoginToken } = await import("../../protocol/rpc.js");
+    await expectCap("protocol-login-tokens", 256, (i) => { issueLoginToken(`nonce_${i}`); });
+    assert.equal(typeof consumeLoginToken("missing"), "undefined");
+  });
+
+  it("shell-sessions", async () => {
+    const { shellTools, disposeShellSessions } = await import("../../tools/shell.js");
+    const start = shellTools.find((t) => t.name === "shell_start");
+    assert.ok(start, "shell_start tool is exported");
+    try {
+      await expectCap("shell-sessions", 32, async (i) => {
+        await start!.run({ shell: "cmd" }, ctx(W, `shell_${i}`));
+      });
+    } finally {
+      disposeShellSessions();
+    }
+  });
+
+  it("spec-terminal-aliases and spec-browser-aliases", async () => {
+    const { createSpecAliasTools } = await import("../../tools/specAliases.js");
+    // A fake registry that reports a started shell/browser without spawning one.
+    // `terminal execute` records its alias before the (deliberately failing)
+    // write returns, and `browser open` records its tab id on success, so the
+    // driver reaches both alias maps with no real PTY or Playwright tab.
+    const fakeRegistry = {
+      exec: async (name: string) => {
+        if (name === "shell_start") return { ok: true, content: "session shell_deadbeef" };
+        if (name === "browser_open") return { ok: true, content: "pageId=page_123" };
+        return { ok: false, content: `no native tool ${name}` };
+      },
+    } as never;
+    const tools = createSpecAliasTools({ registry: fakeRegistry, ollama: {} as never });
+    const terminal = tools.find((t) => t.name === "terminal");
+    const browser = tools.find((t) => t.name === "browser");
+    assert.ok(terminal && browser, `spec alias tools exported: ${tools.map((t) => t.name).join(",")}`);
+    await expectCap("spec-terminal-aliases", 64, async (i) => {
+      await terminal!.run({ action: "execute", shellId: `sh_${i}`, command: "echo hi", timeoutSec: 1 }, ctx(W, "spec"));
+    });
+    await expectCap("spec-browser-aliases", 64, async (i) => {
+      await browser!.run({ action: "open", tabId: `tab_${i}`, url: "https://example.test" }, ctx(W, "spec"));
+    });
+  });
+
+  it("server-file-watchers", async () => {
+    const { startWatcher, stopAllWatchers } = await import("../../server/fileWatchers.js");
+    try {
+      await expectCap("server-file-watchers", 128, (i) => {
+        startWatcher(`watch_${i}`, W, `prompt_${i}`, undefined, undefined, async () => "t");
+      });
+    } finally {
+      stopAllWatchers();
+    }
+  });
+
+  it("video-studio-pending and video-studio-tasks", async () => {
+    const { VideoStudioRelay } = await import("../../server/videoStudioRelay.js");
+    const { subscribeTask } = await import("../../server/streams.js");
+    // A long, unref'd timeout keeps the in-flight commands unsettled (the relay
+    // is what the cap exists to bound); the attached subscriber is what lets
+    // `enqueue` accept each command.
+    const relay = new VideoStudioRelay({ timeoutMs: 60_000 });
+    let n = 0;
+    const attach = (prefix: string): void => {
+      const taskId = `${prefix}_${n++}`;
+      subscribeTask(taskId, () => {});
+      void relay.enqueue(taskId, "film", "probe", {});
+    };
+    for (let i = 0; i < 200; i++) attach(`vs_${i}`);
+    await expectCap("video-studio-tasks", 128, () => { attach("vs_more"); });
+    await expectCap("video-studio-pending", 64, () => { attach("vs_pend"); });
+  });
+
+  it("stall-guard-warned", async () => {
+    // A single run can call the whole tool list; the "already nudged" flags are
+    // per tool name, so 64+ distinct dedicated tools saturate the map. Failing a
+    // dedicated tool twice is what sets the flag.
+    const { createStallGuard } = await import("../../agent/stallGuard.js");
+    const guard = createStallGuard();
+    for (let i = 0; i < 72; i++) {
+      guard(`office_tool_${i}`, { i }, false);
+      guard(`office_tool_${i}`, { i }, false);
+    }
+    const row = cache("stall-guard-warned");
+    assert.equal(row.capacity, 64, "stall-guard-warned: registered capacity changed");
+    assert.equal(row.size, 64, `expected 64 live flags at saturation, got ${row.size}`);
+  });
+
+  it("protocol-session-tokens", async () => {
+    // One row per active Connect-RPC session. `GenerateTempAuthCode` is public
+    // and needs no credentials; `ExchangeTokenByCode` consumes the code and
+    // issues a session token, which is the only public path that inserts one.
+    const { makeRpcHandlers } = await import("../../protocol/rpc.js");
+    const handlers = makeRpcHandlers({} as never);
+    const generate = handlers["user.v1.UserAuthService/GenerateTempAuthCode"] as (
+      body: Record<string, unknown>,
+      ctx: unknown,
+    ) => Record<string, unknown>;
+    const exchange = handlers["user.v1.UserAuthPublicService/ExchangeTokenByCode"] as (
+      body: Record<string, unknown>,
+    ) => Record<string, unknown>;
+    assert.ok(
+      "user.v1.UserAuthService/GenerateTempAuthCode" in handlers
+      && "user.v1.UserAuthPublicService/ExchangeTokenByCode" in handlers,
+      "the Connect-RPC auth handlers are exported",
+    );
+    await expectCap("protocol-session-tokens", 512, (i) => {
+      // Each exchange consumes one freshly issued temp code and stores a new
+      // session token, so `i` distinct round-trips add `i` tokens to the map.
+      const issued = generate({}, { isPublic: true, userUid: null });
+      exchange({ token: issued["token"] as string });
+    });
+  });
+
+  it("oauth-pending-flows", async () => {
+    // An abandoned authorization keeps its PKCE verifier until the TTL prune.
+    // `buildAuthUrl` is the only public path that inserts a pending flow, and it
+    // needs no network round-trip.
+    const { buildAuthUrl } = await import("../../server/connectors/oauth.js");
+    // `buildAuthUrl` refuses to start a flow for an unconfigured connector, so
+    // give the probe credentials for the duration of the test.
+    process.env.J6_CAPS_TEST_CLIENT_ID = "probe-client";
+    process.env.J6_CAPS_TEST_CLIENT_SECRET = "probe-secret";
+    const def = {
+      id: "probe",
+      name: "Probe",
+      oauth: {
+        authorizeUrl: "https://example.test/auth",
+        tokenUrl: "https://example.test/token",
+        scopes: ["read"],
+        envVars: { clientId: "J6_CAPS_TEST_CLIENT_ID", clientSecret: "J6_CAPS_TEST_CLIENT_SECRET" },
+      },
+      fetchAccount: async () => "acct",
+    } as never;
+    try {
+      await expectCap("oauth-pending-flows", 64, () => { buildAuthUrl(def, "https://app.test/cb"); });
+    } finally {
+      delete process.env.J6_CAPS_TEST_CLIENT_ID;
+      delete process.env.J6_CAPS_TEST_CLIENT_SECRET;
+    }
+  });
+
+  it("pty-sessions", async () => {
+    // The backend is injected via `setPtyModule` (the same seam the pty suite
+    // uses), so no real terminal is spawned. The eviction hook must kill the
+    // dropped session's process, which is the resource the cap exists to bound.
+    const { ptyTools, setPtyModule, disposePty } = await import("../../tools/pty.js");
+    let killed = 0;
+    const fakeProc = {
+      pid: 1234,
+      write: () => {},
+      resize: () => {},
+      kill: () => { killed += 1; },
+      onData: () => {},
+      onExit: () => {},
+    };
+    setPtyModule({ spawn: () => fakeProc } as never);
+    const start = ptyTools.find((t) => t.name === "pty_start");
+    assert.ok(start, "pty_start tool is exported");
+    try {
+      await expectCap("pty-sessions", 16, () => {
+        start!.run({ shell: "cmd", cwd: W }, ctx(W, "pty"));
+      });
+      assert.ok(killed > 0, `expected the eviction hook to kill dropped pty sessions, killed ${killed}`);
+    } finally {
+      disposePty();
+      setPtyModule(null);
+    }
+  });
+
+  it("browser-operator-snapshots", async () => {
+    // The operator's per-call surface owns this counter; `observe` records the
+    // page's snapshot id after each observation. The inner browser_* dispatch is
+    // replaced with a stub (`setBrowserOperatorToolSource`), so 64+ distinct page
+    // ids saturate the map without a browser binary.
+    const { BrowserToolSurface, setBrowserOperatorToolSource } = await import("../../tools/browserOperator.js");
+    const calls: string[] = [];
+    const stub: Record<string, { ok: boolean; content: string }> = {
+      browser_table: { ok: true, content: "snapshot #1  page\nurl: about:blank\nscrollY=0" },
+      browser_eval: { ok: true, content: JSON.stringify({ text: "page", scrollY: 0, canScrollDown: false }) },
+    };
+    setBrowserOperatorToolSource((name) => ({
+      name,
+      description: "stub",
+      parameters: { type: "object", properties: {} },
+      run: async () => {
+        calls.push(name);
+        return stub[name] ?? { ok: false, content: `no stub for ${name}` };
+      },
+    }));
+    const surface = new BrowserToolSurface(ctx(W, "operator"));
+    try {
+      await expectCap("browser-operator-snapshots", 64, async (i) => {
+        await surface.observe(`page_${i}`);
+      });
+      assert.ok(calls.includes("browser_table"), "the driver observed real pages through the stub");
+    } finally {
+      setBrowserOperatorToolSource(null);
+    }
+  });
+});
+
+describe("docs/MEMORY_BUDGET.md stays in sync with the code", () => {
+  it("lists a cap for every registered cache", async () => {
+    // Import every module that owns a documented cap, so the parity check covers
+    // all of them in one run instead of skipping whichever module this process
+    // happened not to load. A cap whose source module fails to import would
+    // otherwise be silently unchecked.
+    await import("../../memory/cache.js");
+    const { createStallGuard } = await import("../../agent/stallGuard.js");
+    await import("../../protocol/rpc.js");
+    await import("../../protocol/blobStore.js");
+    await import("../../protocol/approvals.js");
+    await import("../../policy/permissionRules.js");
+    await import("../../server/approvals.js");
+    await import("../../server/runControl.js");
+    await import("../../server/fileWatchers.js");
+    await import("../../server/streams.js");
+    await import("../../server/urlWatch.js");
+    await import("../../server/scheduleTime.js");
+    await import("../../server/http.js");
+    await import("../../server/connectors/oauth.js");
+    await import("../../server/bridge/grokbot.js");
+    await import("../../session/eventLog.js");
+    await import("../../memory/sessionCaches.js");
+    await import("../../server/videoStudioRelay.js");
+    await import("../../server/workspace/videoRender.js");
+    await import("../../studio/slide-preview.js");
+    await import("../../studio/word-preview.js");
+    await import("../../tools/skillsRegistry.js");
+    await import("../../tools/vaultTools.js");
+    await import("../../tools/browser.js");
+    await import("../../tools/browserFrames.js");
+    await import("../../tools/pty.js");
+    await import("../../tools/shell.js");
+    await import("../../tools/specAliases.js");
+    // Three caps register per owning instance rather than at import time, so the
+    // check builds one owner of each: a stall guard, a TimelineService, and a
+    // BrowserToolSurface (the operator's per-call page-snapshot counter).
+    createStallGuard();
+    new (await import("../../creative/timeline.js")).TimelineService(W);
+    new (await import("../../tools/browserOperator.js")).BrowserToolSurface(ctx(W, "parity"));
+    const doc = fs.readFileSync(new URL("../../../docs/MEMORY_BUDGET.md", import.meta.url), "utf8");
+    // Match every cap-table row: a plain numeric cap, or "<n> entries / <n> MiB"
+    // for the byte-capped rows (the MiB value is captured and asserted too, so a
+    // drifted byte ceiling fails the same way a drifted entry cap does). The
+    // unbackticked "Renderer sample bound" row and the unbounded-by-design table
+    // have no backticked counter name and are skipped, as are the baseline metrics
+    // (their names contain uppercase).
+    const rows = [...doc.matchAll(/^\|\s*`([a-z0-9-]+)`\s*\|\s*(\d+)(?:\s*entries\s*\/\s*(\d+)\s*MiB)?\s*\|/gm)];
+    assert.ok(rows.length >= 30, `expected the budget table to list many caps, found ${rows.length}`);
+    const registered = collectCacheStats();
+    const registeredNames = new Set(registered.map((c) => c.name));
+    const documentedNames = new Set<string>();
+    for (const match of rows) {
+      const name = match[1];
+      const capText = match[2];
+      const mibText = match[3];
+      if (!name || !capText) continue;
+      documentedNames.add(name);
+      const row = registered.find((c) => c.name === name);
+      if (!row) {
+        // A cap documented here but absent from the registry means its module
+        // registers lazily (per-instance) or its import failed. Fail loudly so
+        // the doc cannot claim coverage it does not have.
+        assert.ok(
+          registeredNames.has(name),
+          `docs/MEMORY_BUDGET.md lists "${name}" but no cache registered that counter in this process`,
+        );
+        continue;
+      }
+      assert.equal(
+        row.capacity,
+        Number(capText),
+        `docs/MEMORY_BUDGET.md lists ${name} at ${capText} but the code enforces ${row.capacity}`,
+      );
+      // Byte-capped rows must match too. Without this the doc could advertise a
+      // 96 MiB ceiling while the code enforces something else.
+      if (mibText) {
+        assert.equal(
+          row.maxBytes,
+          Number(mibText) * 1024 * 1024,
+          `docs/MEMORY_BUDGET.md lists ${name} at ${mibText} MiB but the code enforces ${row.maxBytes} bytes`,
+        );
+      } else {
+        assert.equal(
+          row.maxBytes,
+          0,
+          `docs/MEMORY_BUDGET.md lists ${name} with no byte ceiling but the code enforces ${row.maxBytes} bytes`,
+        );
+      }
+    }
+    // Reverse direction: every cap registered in code must have a doc row. Without
+    // this a cache added to the code passes while the doc silently goes stale.
+    const undocumented = [...registeredNames].filter((n) => !documentedNames.has(n)).sort();
+    assert.deepEqual(
+      undocumented,
+      [],
+      `registered but missing from docs/MEMORY_BUDGET.md: ${undocumented.join(", ") || "(none)"}`,
+    );
+    // The prose must match what this file actually exercises. A stale count is how
+    // the doc previously claimed an eviction test for caps that had none.
+    const source = fs.readFileSync(new URL(import.meta.url), "utf8");
+    const evictionCases = new Set([
+      // Caps driven generically through expectCap.
+      ...[...source.matchAll(/expectCap\(\s*"([^"]+)"/g)].map((m) => m[1]),
+      // Caps with a bespoke eviction case whose `it()` title is the cap name.
+      ...[...source.matchAll(/\bit\(\s*"([a-z0-9-]+)"/g)].map((m) => m[1]).filter((n): n is string => !!n && documentedNames.has(n)),
+    ]);
+    const claim = /drives\s+(\d+)\s+of\s+the\s+(\d+)\s+caps/.exec(doc);
+    assert.ok(claim, "docs/MEMORY_BUDGET.md must state how many caps have an eviction case");
+    assert.equal(Number(claim[2]), documentedNames.size, "the doc's cap total must match its own tables");
+    assert.equal(Number(claim[1]), evictionCases.size, "the doc's eviction-case count must match this file");
+    const remainingClaim = /The remaining\s+(\d+)\s+caps\s+\(([^)]+)\)/.exec(doc);
+    assert.ok(remainingClaim, "docs/MEMORY_BUDGET.md must list the caps without an eviction case");
+    const listed = new Set([...(remainingClaim[2] ?? "").matchAll(/`([a-z0-9-]+)`/g)].map((m) => m[1]));
+    const actuallyRemaining = [...documentedNames].filter((n) => !evictionCases.has(n)).sort();
+    assert.equal(
+      Number(remainingClaim[1]),
+      actuallyRemaining.length,
+      "the doc's count of caps without an eviction case is wrong",
+    );
+    assert.deepEqual(
+      [...listed].sort(),
+      actuallyRemaining,
+      "docs/MEMORY_BUDGET.md names the wrong caps as lacking an eviction case",
+    );
+    // The doc must not claim blanket eviction coverage anywhere else. This is the
+    // exact phrasing that previously overstated the suite ("drives every
+    // registered cache") while 11 caps had no eviction case.
+    assert.doesNotMatch(
+      doc,
+      /drives every registered cache|eviction test for every|one eviction case per cap|for each cap/i,
+      "docs/MEMORY_BUDGET.md claims eviction coverage for every cap, which is false",
+    );
+  });
+});

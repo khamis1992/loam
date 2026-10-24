@@ -25,21 +25,33 @@ import { isEditTool, recordEditModel } from "../llm/modelAudit.js";
 import type { CooldownStore, FailoverProvider, ProviderClient } from "../llm/failover.js";
 import { createStallGuard } from "./stallGuard.js";
 import { ciWatchEscalationNotice } from "./ciWatchLoop.js";
-import { compressContext } from "./contextCompressor.js";
+import { compressContext, getContextWindow } from "./contextCompressor.js";
+import { ContextSelector } from "./contextSelector.js";
 import { runLifecycleHooks, wrapHookContext } from "../policy/hooks.js";
-import { throwIfCancelled, isCancelled } from "../server/runControl.js";
+import { throwIfCancelled, isCancelled, isCancelledError } from "../server/runControl.js";
 import { openSession, closeSession } from "./sessionHooks.js";
 import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/riskTier.js";
 import { ReminderChannel, TODO_UPDATE_TOOLS, MEMORY_UPDATE_TOOLS, type ReminderChannelOptions } from "./reminders.js";
 import { getTaskPhase } from "../tools/phaseTools.js";
 import { ReadState } from "../tools/readState.js";
+import { fileTouchRegistry, forgetFileTouchSession } from "../tools/fileTouch.js";
 import { checkBudget, consumeSteps, consumeTokens, type ComputeBudget } from "./computeBudget.js";
 import { KvCacheMonitor, missMessage, type RequestRoute, type RequestSignature } from "./kvCacheMonitor.js";
 import { addUsage } from "./usageAccounting.js";
+import { recordToolCall, recordToolResult } from "./checkpointLog.js";
 import { log } from "../log.js";
-import { addRunSiblings, getRunNodes } from "./runGraphAdapter.js";
-import { eventNodeId } from "../graph/store.js";
+import { addRunSiblings, getRunNodes, setRunNodeData, setRunNodeStatus } from "./runGraphAdapter.js";
+import { takeCanvasDirectives } from "./runGraphAdapter.js";
+import { canvasEditsMessage, directiveBody, directiveTitle, CANVAS_EDIT_ARTEFACT_KIND } from "./canvasContext.js";
+import { eventNodeId, type RunNode } from "../graph/store.js";
 import { admitPending, hasPending, type QueuedInput } from "../server/inputQueue.js";
+
+/** Stable per-tool-call id: the model's own id when it supplies one, otherwise
+ *  a synthetic id derived from the turn and call index. */
+function toolCallIdOf(call: { function?: { name?: string; arguments?: unknown }; id?: string }, turn: number, index: number): string {
+  const id = typeof call.id === "string" && call.id.trim() ? call.id.trim() : "";
+  return id || `call_${turn}_${index}`;
+}
 
 /** Neo N10 A/B: the run's root node is the natural parent of its sibling arms. */
 function siblingParentFor(opts: RunOptions): string {
@@ -48,6 +60,64 @@ function siblingParentFor(opts: RunOptions): string {
   if (root) return root.id;
   return eventNodeId("run", taskId);
 }
+/** Collapse whitespace so a stored arm answer stays one readable line. */
+function oneLine(text: string, max = 400): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+/**
+ * Neo N10 A/B: run one sibling arm.
+ *
+ * Recording an arm is not the same as answering it: this hands the run's own
+ * system prompt and prompt to the arm's model, moves the node through the real
+ * lifecycle (`init` -> `running` -> `finished`/`failed`/`skipped`) and stores the
+ * answer on the node so the canvas shows what that model produced. An arm is a
+ * comparison, never a dependency: its failure is recorded on its own node and
+ * never fails the run that owns it.
+ */
+async function runAbArm(
+  opts: RunOptions,
+  system: string,
+  arm: RunNode,
+  model: string,
+): Promise<void> {
+  const runId = opts.taskId ?? "";
+  try {
+    setRunNodeStatus(arm.id, "running", runId);
+    const result = await chatWithFallback({
+      cfg: opts.cfg,
+      ollama: opts.ollama,
+      model,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: opts.prompt },
+      ],
+      temperature: opts.cfg.agent.temperature,
+      timeoutMs: opts.cfg.agent.requestTimeoutMs,
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      notify: (message) => opts.emit({ type: "error", message }),
+    });
+    const answer = result.content.trim();
+    const existing = (arm.data ?? {}) as Record<string, unknown>;
+    setRunNodeData(arm.id, { ...existing, model: result.model, answer: oneLine(answer) }, runId);
+    setRunNodeStatus(arm.id, "finished", runId);
+    opts.emit({ type: "assistant_message", text: `A/B arm finished on ${result.model}.` });
+  } catch (err) {
+    // A cancelled arm is "skipped", not "failed": the user stopped the run, so the
+    // arm never had a chance to answer.
+    if (isCancelledError(err) || opts.signal?.aborted || isCancelled(runId)) {
+      setRunNodeStatus(arm.id, "skipped", runId);
+      return;
+    }
+    const reason = err instanceof Error ? err.message : String(err);
+    const existing = (arm.data ?? {}) as Record<string, unknown>;
+    setRunNodeData(arm.id, { ...existing, model, error: oneLine(reason) }, runId);
+    setRunNodeStatus(arm.id, "failed", runId);
+    opts.emit({ type: "error", message: `A/B arm ${model} failed: ${reason}` });
+  }
+}
+
 export interface RunOptions {
   cfg: Config;
   ollama: OllamaClient;
@@ -59,9 +129,15 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** Active task id — lets long-running tools poll for cancellation. */
   taskId?: string;
+  /** Stable id of THIS agent session inside its workspace. Distinct sessions
+   *  (orchestrator workers, sub-agents, map-reduce children) get distinct ids so
+   *  a write by one notifies the others (jcode J8 file-touch notifications).
+   *  Defaults to the task id, so a single run still tracks its own reads. */
+  sessionId?: string;
   /** When set, replaces the default system prompt (used by the background reviewer). */
   systemOverride?: string;
-  /** Appended after the built (or overridden) system prompt. Used by orchestrator workers. */
+  /** Appended after the built (or overridden) system prompt. Used by orchestrator workers.
+   *  H5: the correction-learning lesson block joins this suffix (src/index.ts, BUILD_SPEC §6.5). */
   systemSuffix?: string;
   /** Overrides cfg.agent.maxSteps for this run (orchestrator workers get a tighter budget). */
   maxSteps?: number;
@@ -110,6 +186,10 @@ export interface RunOptions {
   cacheTtlIsEstimate?: boolean;
   /** OAuth account label bound to every request of this run; caches are per account. */
   account?: string;
+  /** Event-log session for this run. When set, every tool call is recorded in the
+   *  durable log with a `started` row before it runs and a terminal row after, so
+   *  a call that began without finishing is visible after a crash. */
+  eventLogSession?: string;
   /** Neo N10: the composer's output type (Auto/Text/Image/Video/Slides/Website). */
   outputType?: OutputType | "";
   /** Neo N10: the composer's effort level (Fast/Max). */
@@ -127,6 +207,12 @@ export interface RunOptions {
   onAdmitPending?: (sessionId: string) => QueuedInput[];
   /** Session id whose queued messages this run should admit (defaults to taskId). */
   inputSessionId?: string;
+  /**
+   * Neo N5: the per-step context selector. When omitted the loop builds one
+   * from `cfg.contextSelector`; a disabled config keeps the pre-N5 behaviour.
+   * A caller may inject its own instance to share a store across a fan-out.
+   */
+  contextSelector?: ContextSelector;
 }
 
 export interface RunResult {
@@ -172,6 +258,20 @@ function requestSignature(
 function normalizeArgs(v: unknown): Record<string, unknown> {
   if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
   return {};
+}
+
+/**
+ * The model's context window for this run, or `undefined` when the config does
+ * not declare one.
+ *
+ * The selector uses it to cap its own selection. A config that omits the
+ * per-model window map (a minimal test config, or a caller that only needs the
+ * selector) must not make the loop throw, so the lookup is guarded: without a
+ * window the selector falls back to its configured cap.
+ */
+function selectorWindowTokens(cfg: Config, model: string): number | undefined {
+  if (!cfg.compression?.contextWindow || typeof cfg.compression.contextWindow !== "object") return undefined;
+  return getContextWindow(cfg, model);
 }
 
 /** Best-effort target path for an edit tool call (never the full arguments). */
@@ -251,6 +351,17 @@ async function mapWithConcurrency<T, R>(
 }
 
 export async function runAgent(opts: RunOptions): Promise<RunResult> {
+  // A session's file-touch reader marks are worthless once it is gone; forget
+  // them on every exit path so finished sessions are never notified.
+  const sessionId = opts.sessionId ?? opts.taskId ?? `session-${process.pid}-${Date.now()}`;
+  try {
+    return await runAgentInner(opts, sessionId);
+  } finally {
+    forgetFileTouchSession(sessionId);
+  }
+}
+
+async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunResult> {
   if (!opts.suppressFinal) opts = { ...opts, tools: taskScopedTools(opts.tools, opts.prompt, opts.history) };
   // Neo N10: resolve the composer's selectors once, before anything is built.
   // An unrecognized value degrades to the pre-N10 behaviour (auto / unset).
@@ -316,18 +427,27 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // after the run's root node exists, so the canvas shows the same prompt fanned
   // out to several models before any of them answers.
   const siblingArms = opts.abModels ?? [];
+  // Each arm answers the same prompt under its own model in parallel with the
+  // main run, and every one is awaited before this run returns so the canvas
+  // never shows an arm that is still pending.
+  const armPromises: Promise<void>[] = [];
   let verificationAttempts = 0;
   let emptyAnswerRecoveries = 0;
   const stallGuard = createStallGuard();
   // Neo N10 A/B: one sibling node per model, hanging off the parent node (the
   // run's root unless the caller named another). Recording must never break the
-  // task, so a graph failure is logged and the run continues without arms.
+  // task, so a graph failure is logged and the run continues without arms; an arm
+  // that fails to answer fails only its own node.
   if (siblingArms.length > 0 && !opts.suppressFinal) {
     try {
       const created = addRunSiblings(opts.taskId ?? "", opts.abParentNodeId ?? siblingParentFor(opts), siblingArms);
       for (const arm of created) {
         const model = (arm.data as { model?: string } | undefined)?.model ?? "";
+        // An arm with no model label cannot be dispatched; leave it `init` rather
+        // than silently sending it to the config default model.
+        if (!model) continue;
         opts.emit({ type: "assistant_message", text: `A/B arm started on ${model}.` });
+        armPromises.push(runAbArm(opts, routingSystem, arm, model));
       }
     } catch (err) {
       log.warn(`A/B siblings not recorded: ${String(err)}`);
@@ -358,6 +478,22 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // so the model cannot blind-edit content it never saw or clobber a file that
   // changed since it was read. A fresh instance per run matches Claude Code.
   const readState = new ReadState();
+  // Cross-session file-touch tracking (jcode J8): one registry per workspace
+  // root, shared by every live session against that repository. Reads and
+  // writes are published to it, and at each turn this session's queued notices
+  // are drained into the reminder channel as hidden system-reminder blocks.
+  const touch = opts.cfg.workspace ? fileTouchRegistry(opts.cfg.workspace) : undefined;
+  readState.hooks = touch
+    ? {
+        read: (abs, content) => touch.noteRead(sessionId, abs, content),
+        write: (abs, content) => touch.noteWrite(sessionId, abs, content),
+        remove: (abs) => touch.noteDelete(sessionId, abs),
+      }
+    : undefined;
+  // O5 durable event log: when the caller supplies a session, every tool call is
+  // bracketed by a `started` and a terminal event so a crash mid-call is visible.
+  const logSession = opts.eventLogSession;
+  let index = 0;
   // O6: the session whose inbound queue this run drains at step boundaries.
   const inputSessionId = opts.inputSessionId ?? opts.taskId;
   /**
@@ -377,6 +513,15 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   // as a hidden reminder after the conversation is folded away.
   let currentTodos: TodoItem[] = [];
   const workspace = opts.cfg.workspace;
+  // Neo N5: the per-step context selector. It accumulates one artefact per tool
+  // result and re-shapes the transcript once a step exceeds its activation
+  // threshold, so a long run keeps a bounded context without waiting for the
+  // compressor. A caller may inject its own instance to share one store.
+  const selector = opts.contextSelector ?? new ContextSelector({ config: opts.cfg.contextSelector });
+  // Maps each tool message to its artefact id, so the selector can tell which
+  // transcript entries it may fold away. Object identity survives a re-shape,
+  // because the selector carries the surviving messages over unchanged.
+  const toolMessageIds = new Map<ChatMessage, string>();
 
   try {
     // SessionStart and UserPromptSubmit fire once per run, before any model call.
@@ -407,8 +552,31 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     opts.onProgress?.({ steps: step, model: usedModel, usage: { ...usage } });
 
     // Plan mode is a read-only work phase; announce it once when it is active.
+    // A file another session in this workspace wrote since we last read it is
+    // stale context: surface it now, before the model acts on the old content.
+    if (touch) for (const notice of touch.drainNotices(sessionId)) reminders.fileTouched(notice);
     if (opts.taskId) reminders.setPlanMode(getTaskPhase(opts.taskId) === "plan");
     for (const message of reminders.drainMessages(step)) messages.push(message);
+
+    // Neo N11: an edit the user made on the canvas while the run was busy (or
+    // before it resumed) is a fact about the run the model has not seen. The
+    // directives are pulled once per step: the batch becomes one hidden reminder
+    // so the very next model call sees it, and each edit also enters the N5
+    // artefact store, so a later step can re-attach it on relevance instead of
+    // the correction having to stay pinned in the prompt for the whole run.
+    if (opts.taskId) {
+      const edits = takeCanvasDirectives(opts.taskId);
+      if (edits.length > 0) {
+        const message = canvasEditsMessage(edits);
+        if (message) messages.push(message);
+        for (const directive of edits) {
+          selector.captureExternal(CANVAS_EDIT_ARTEFACT_KIND, directiveTitle(directive), directiveBody(directive), {
+            path: directive.nodeId,
+          });
+        }
+        opts.emit({ type: "canvas_edit", step, count: edits.length, nodeIds: edits.map((directive) => directive.nodeId) });
+      }
+    }
 
     let providerCompaction = false;
     if (opts.cfg.compression.enabled) {
@@ -422,6 +590,33 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
       }
       // Re-attach recent file reads and the live task list as hidden reminders.
       for (const reminder of compressed.reminders) messages.push(reminder);
+    }
+
+    // Neo N5: the per-step selector runs before the model is called. From the
+    // activation step onwards it selects the artefacts this step needs and folds
+    // the rest into elision markers, so the prompt stays bounded for the whole
+    // run instead of growing until the compressor fires. A selector failure is
+    // invisible: the run keeps the raw transcript.
+    if (selector.enabled && step > selector.activationStep) {
+      const selected = await selector.apply(messages, {
+        task: opts.prompt,
+        todos: currentTodos,
+        step,
+        toolMessageIds,
+        // The selector's selection is capped by the model's real window, so a
+        // long run cannot re-attach more than the model can hold. Only the
+        // selector's own active path needs this; a disabled selector (or a run
+        // that never reaches its activation step) must not touch the config.
+        windowTokens: selectorWindowTokens(opts.cfg, usedModel),
+      });
+      if (selected.applied) {
+        messages = selected.messages;
+        // Re-index the surviving tool messages; dropped ones lose their entry.
+        for (const [message, id] of [...toolMessageIds]) {
+          if (!messages.includes(message)) toolMessageIds.delete(message);
+        }
+        opts.emit({ type: "context_selected", step, tokens: selected.tokens, artefacts: selected.artefactCount, reason: selected.reason });
+      }
     }
 
     const requestTools = opts.tools.toOllama();
@@ -565,6 +760,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.emit({ type: "done", text: finalText, steps: step, model: usedModel });
         endedReason = "completed";
       }
+      // Every A/B arm finishes before the run reports completion, so the canvas
+      // never leaves a sibling node in `running` once the run is done.
+      await Promise.all(armPromises);
       return { text: finalText, messages, steps: step, model: usedModel, usage, verified: opts.suppressFinal !== true };
     }
 
@@ -578,6 +776,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
       "file_list",
       "file_search",
       "file_stat",
+      "kb_search",
       "memory_search",
       "memory_list",
       "skill_list",
@@ -597,8 +796,11 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         const name = call.function?.name ?? "";
         const args = normalizeArgs(call.function?.arguments);
         opts.emit({ type: "tool_call", name, args });
-        return { name, args, t0: Date.now() };
+        return { name, args, t0: Date.now(), callId: toolCallIdOf(call, step, index++) };
       });
+      if (logSession) {
+        for (const item of prepared) recordToolCall(logSession, item.callId, item.name, opts.taskId);
+      }
       // Neo N10: remember the batch's tool so the next request can honour a
       // per-tool routing entry. Parallel reads share one tool, so this is exact.
       lastToolCallName = prepared.length === 1 ? prepared[0]!.name : null;
@@ -618,6 +820,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
       for (let i = 0; i < prepared.length; i++) {
         const item = prepared[i]!;
         const toolResult = batchResults[i]!;
+        if (logSession) {
+          recordToolResult(logSession, item.callId, item.name, toolResult.ok ? "succeeded" : "failed", toolResult.content, opts.taskId, opts.cfg.workspace);
+        }
         const evidence = { name: item.name, args: item.args, ok: toolResult.ok, summary: toolResult.content };
         trace.push(evidence);
         opts.onToolEvidence?.(evidence);
@@ -637,8 +842,15 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           ok: toolResult.ok,
           summary: summarize(toolResult.content),
           ms: Date.now() - item.t0,
+          ...(toolResult.kbSeedIds && toolResult.kbSeedIds.length > 0 ? { kbSeedIds: toolResult.kbSeedIds } : {}),
+          ...(toolResult.kbSeeds && toolResult.kbSeeds.length > 0 ? { kbSeeds: toolResult.kbSeeds } : {}),
         });
-        messages.push({ role: "tool", tool_name: item.name, content: toolMessageContent(item.name, toolResult.content) });
+        const toolMessage = { role: "tool", tool_name: item.name, content: toolMessageContent(item.name, toolResult.content) } as ChatMessage;
+        // Neo N5: capture the result as a selectable artefact and remember which
+        // transcript message it belongs to, so the selector can fold it away
+        // later without losing the pairing.
+        toolMessageIds.set(toolMessage, selector.capture(item.name, toolResult.content, { path: editTargetPath(item.args) }).id);
+        messages.push(toolMessage);
         // Stop right after the first tool when cancelled — don't even queue the rest of the batch.
         throwIfCancelled(opts.signal, opts.taskId);
       }
@@ -649,6 +861,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
         opts.emit({ type: "tool_call", name, args });
         lastToolCallName = name;
 
+        const callId = toolCallIdOf(call, step, index++);
+        if (logSession) recordToolCall(logSession, callId, name, opts.taskId);
         const t0 = Date.now();
         const toolResult = await opts.tools.exec(name, args, {
           cfg: opts.cfg,
@@ -662,7 +876,18 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           ...(opts.taskId ? { taskId: opts.taskId } : {}),
         });
 
-        opts.emit({ type: "tool_result", name, ok: toolResult.ok, summary: summarize(toolResult.content), ms: Date.now() - t0 });
+        if (logSession) {
+          recordToolResult(logSession, callId, name, toolResult.ok ? "succeeded" : "failed", toolResult.content, opts.taskId, opts.cfg.workspace);
+        }
+        opts.emit({
+          type: "tool_result",
+          name,
+          ok: toolResult.ok,
+          summary: summarize(toolResult.content),
+          ms: Date.now() - t0,
+          ...(toolResult.kbSeedIds && toolResult.kbSeedIds.length > 0 ? { kbSeedIds: toolResult.kbSeedIds } : {}),
+          ...(toolResult.kbSeeds && toolResult.kbSeeds.length > 0 ? { kbSeeds: toolResult.kbSeeds } : {}),
+        });
         const evidence = { name, args, ok: toolResult.ok, summary: toolResult.content };
         trace.push(evidence);
         opts.onToolEvidence?.(evidence);
@@ -676,7 +901,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
           currentTodos = parseTaskList(name, args);
         }
         if (MEMORY_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.memoryUpdated();
-        messages.push({ role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) });
+        const toolMessage = { role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) } as ChatMessage;
+        toolMessageIds.set(toolMessage, selector.capture(name, toolResult.content, { path: editTargetPath(args) }).id);
+        messages.push(toolMessage);
         // Cancel pressed while the tool ran? Stop before the next tool/step.
         throwIfCancelled(opts.signal, opts.taskId);
 
@@ -702,10 +929,16 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     opts.saveWorker?.(structuredClone({ prompt: opts.prompt, messages, trace, steps: step, model: usedModel, usage }));
   }
 
+  // The step budget ran out: stop recording arms as pending so a later replay
+  // cannot resurrect a node the run abandoned.
+  await Promise.all(armPromises);
   const msg = `stopped after ${maxSteps} steps without finishing`;
   opts.emit({ type: "error", message: msg });
   throw new Error(msg);
   } finally {
+    // A run that throws (model failure, cancellation, step budget) must still let
+    // every arm settle, so no sibling node is left in `running` or `init`.
+    await Promise.all(armPromises);
     // SessionEnd fires once the run reaches any terminal state (completed,
     // cancelled or failed) for a top-level run. The reason is the real
     // outcome, so a hook can tell a cancelled or failed session apart from a

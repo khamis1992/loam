@@ -16,6 +16,9 @@
     "requestTimeoutMs": 600000
   },
   "workspace": "./workspace",
+  "recovery": {
+    "autoResume": false
+  },
   "policy": {
     "networkEnabled": true,
     "allowOutsideWorkspaceRead": true,
