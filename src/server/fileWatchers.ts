@@ -8,6 +8,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { listSchedules, markScheduleRun, deleteSchedule, addSchedule } from "./db.js";
 import { log } from "../log.js";
+import { BoundedMap } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 export interface WatcherHandle {
   scheduleId: string;
@@ -15,7 +17,16 @@ export interface WatcherHandle {
   close(): void;
 }
 
-const active = new Map<string, WatcherHandle>();
+/**
+ * Live watchers (J6). Each `fs.FSWatcher` is an OS handle, so an unbounded map
+ * was a slow leak of file descriptors as routines were created and deleted.
+ * Bounded LRU with a closing eviction hook: the oldest watcher is closed before
+ * a new one is registered, which releases its handle.
+ */
+const active = new BoundedMap<string, WatcherHandle>(128, "server-file-watchers", (_id, handle) => {
+  handle.close();
+});
+registerCacheStats("server-file-watchers", () => active.stats());
 const DEBOUNCE_MS = 2_500;
 
 export function watchSchedules(): Array<{ id: string; dir: string }> {

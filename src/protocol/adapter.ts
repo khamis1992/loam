@@ -9,7 +9,7 @@ import { createChatSocket } from "./socket.js";
 import { makeRpcHandlers, rpcError, tokenToUserUid, consumeLoginToken, issueLoginToken } from "./rpc.js";
 import { getCurrentLocalToken } from "../security/localAuth.js";
 import { shortUid } from "./events.js";
-import { storeBlob, getBlob, hasBlob } from "./blobStore.js";
+import { storeBlob, getBlob, hasBlob, BLOB_STORE_MAX_BYTES } from "./blobStore.js";
 
 export interface ProtocolAdapterDeps {
   cfg: Config;
@@ -101,9 +101,23 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
         // Upload 3-step contract (§8.1).
         if (req.method === "PUT" && p.startsWith("/blob/")) {
           const id = p.slice(6);
+          // Bound the read: the blob store's ceiling is the per-upload limit, so
+          // reject an oversized body with 413 instead of buffering it in RAM
+          // first (which would both exceed the ceiling and hold the bytes twice).
           const chunks: Buffer[] = [];
-          for await (const chunk of req) chunks.push(chunk as Buffer);
-          storeBlob(id, Buffer.concat(chunks));
+          let received = 0;
+          for await (const chunk of req) {
+            received += (chunk as Buffer).byteLength;
+            if (received > BLOB_STORE_MAX_BYTES) {
+              sendJson(res, 413, { code: "payload_too_large", message: "upload exceeds the blob ceiling" });
+              return;
+            }
+            chunks.push(chunk as Buffer);
+          }
+          if (storeBlob(id, Buffer.concat(chunks)) === "rejected") {
+            sendJson(res, 413, { code: "payload_too_large", message: "upload exceeds the blob ceiling" });
+            return;
+          }
           res.writeHead(200).end();
           return;
         }

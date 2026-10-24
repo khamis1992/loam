@@ -3,6 +3,8 @@ import { bool, num, str, strFirst, strs } from "./registry.js";
 import { createMapReduceTool } from "./mapReduce.js";
 import type { OllamaClient } from "../ollama.js";
 import type { PlanStepStatus } from "../agent/events.js";
+import { BoundedMap } from "../memory/cache.js";
+import { registerCacheStats } from "../memory/stats.js";
 
 const PLAN_STEP_STATUSES: readonly PlanStepStatus[] = ["pending", "doing", "done", "blocked", "cancelled"];
 
@@ -120,7 +122,10 @@ export function planTool(): Tool {
 // idle) and dispatch them to the matching Loam native tools.
 // ---------------------------------------------------------------------------
 
-const terminalSessions = new Map<string, string>(); // spec shellId -> Loam shell session id
+/** spec shellId -> Loam shell session id (J6: bounded; entries are also removed
+ *  when the mapped session is killed). */
+const terminalSessions = new BoundedMap<string, string>(64, "spec-terminal-aliases");
+registerCacheStats("spec-terminal-aliases", () => terminalSessions.stats());
 
 async function execNative(registry: ToolRegistry, name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
   return registry.exec(name, args, ctx);
@@ -333,7 +338,9 @@ function webpageExtractTool(registry: ToolRegistry): Tool {
   };
 }
 
-const browserTabs = new Map<string, string>(); // spec tabId -> Loam pageId
+/** spec tabId -> Loam pageId (J6: bounded; entries are also removed on close). */
+const browserTabs = new BoundedMap<string, string>(64, "spec-browser-aliases");
+registerCacheStats("spec-browser-aliases", () => browserTabs.stats());
 let tabCounter = 0;
 
 function browserTool(registry: ToolRegistry): Tool {
