@@ -3,6 +3,7 @@ import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { str } from "./registry.js";
 import { BoundedMap } from "../memory/cache.js";
 import { registerCacheStats } from "../memory/stats.js";
+import type { CacheOwner } from "../memory/hibernation.js";
 
 const WORK_PHASES: readonly WorkPhase[] = ["chat", "plan", "build", "verify"];
 
@@ -15,6 +16,18 @@ registerCacheStats("task-phases", () => taskPhases.stats());
 /** Read the stored work phase for a task, or undefined when it was never set. */
 export function getTaskPhase(taskId: string): WorkPhase | undefined {
   return taskPhases.get(taskId);
+}
+
+/** J7 hibernation: the task's phase is derived, reconstructible state, so it is
+ *  one of the derived caches a session may release when it goes idle. Dropping
+ *  it costs nothing authoritative — the next `phase_set` simply starts from the
+ *  default `chat` phase, exactly as a fresh session would. */
+export function taskPhaseOwner(taskId: string): CacheOwner {
+  return {
+    name: "task-phases",
+    size: () => (taskPhases.has(taskId) ? 1 : 0),
+    clear: () => { taskPhases.delete(taskId); },
+  };
 }
 
 export function createPhaseTools(): Tool[] {

@@ -53,6 +53,25 @@ async function main(): Promise<void> {
     results.frontier_modes_count = fStatus.modesCount;
     const fTools = createFrontierBridgeTools();
     const officeTool = fTools.find((t) => t.name === "office_craft");
+    // cr-05: office_craft is the Craft-apps driver, so its schema must expose the
+    // app and action surface (while still carrying the untouched war_room engine).
+    const officeProps =
+      (officeTool?.parameters as { properties?: Record<string, unknown> } | undefined)?.properties ?? {};
+    const appEnum = (officeProps["app"] as { enum?: string[] } | undefined)?.enum ?? [];
+    const actionEnum = (officeProps["action"] as { enum?: string[] } | undefined)?.enum ?? [];
+    results.frontier_office_apps = ["docs", "sheets", "slides", "photo", "design"].every(
+      (app) => appEnum.includes(app),
+    );
+    results.frontier_office_actions = [
+      "open",
+      "state",
+      "commands",
+      "execute",
+      "batch",
+      "export",
+      "undo",
+      "redo",
+    ].every((action) => actionEnum.includes(action));
     const warRes = officeTool
       ? await officeTool.run(
           { engine: "war_room", title: "خطة التحول إلى Frontier", outDir: "war-out" },
@@ -73,6 +92,8 @@ async function main(): Promise<void> {
     results.duplicate_rejected === true &&
     results.traversal_neutralized === true &&
     results.frontier_bridge_available === true &&
+    results.frontier_office_apps === true &&
+    results.frontier_office_actions === true &&
     results.frontier_war_room === true;
   results.PASS = pass;
   fs.rmSync(path.join(SKILLS_DIR, "test-skill"), { recursive: true, force: true });

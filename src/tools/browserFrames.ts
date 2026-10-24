@@ -3,6 +3,7 @@
  *  emissions (default ~1 fps) to registered sinks (the protocol socket). */
 import { BoundedMap } from "../memory/cache.js";
 import { registerCacheStats } from "../memory/stats.js";
+import type { CacheOwner } from "../memory/hibernation.js";
 
 export interface BrowserFrame {
   url: string;
@@ -136,4 +137,17 @@ export function resetBrowserFrames(): void {
   sinks.clear();
   aliases.clear();
   throttleMs = 1_000;
+}
+
+/** J7 hibernation: the latest captured frame is derived, reconstructible state
+ *  (the browser re-captures it on the next navigation/action), so it is one of
+ *  the derived caches a session may release when it goes idle. A frame holds a
+ *  JPEG, so it is the largest derived object the hub retains for a task. */
+export function browserFrameOwner(taskId: string): CacheOwner {
+  return {
+    name: "browser-frames",
+    size: () => (frames.has(taskId) ? 1 : 0),
+    bytes: () => frames.get(taskId)?.latest?.jpegBase64?.length ?? 0,
+    clear: () => { frames.delete(taskId); },
+  };
 }
