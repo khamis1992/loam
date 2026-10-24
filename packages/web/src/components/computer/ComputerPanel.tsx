@@ -80,17 +80,64 @@ const STUDIO_TAB = { id: 'studio' as const, label: 'Open in studio', icon: Palet
 // Remember inferred studio mode per session so the tab stays visible after the first studio tool.
 const studioModeBySession = new Map<string, StudioMode>();
 
+// Last tool event seen per tab family, per session, so each tab shows its own latest activity
+// instead of whatever event happened to arrive last.
+const DEFAULT_WIDTH = 520;
+const MIN_WIDTH = 360;
+const MAX_WIDTH = 1000;
+const WIDTH_KEY = 'loam.computerPanel.width';
+const clampWidth = (w: number) => Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(w)));
+
+const eventsBySession =new Map<string, Partial<Record<TabId, ToolUsedEvent>>>();
+
 export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusWorkspace, taskId }: ComputerPanelProps) {
   const derivedTab = useMemo(() => getToolFamily(event.tool), [event.tool]);
   const [userTab, setUserTab] = useState<TabId | null>(null);
+  const [width, setWidth] = useState(DEFAULT_WIDTH);
+  const expanded = width > DEFAULT_WIDTH;
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem(WIDTH_KEY));
+      if (saved) setWidth(clampWidth(saved));
+    } catch {}
+  }, []);
+  const commitWidth = (w: number) => {
+    const next = clampWidth(w);
+    setWidth(next);
+    try {
+      localStorage.setItem(WIDTH_KEY, String(next));
+    } catch {}
+  };
+  const onDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const target = e.currentTarget;
+    target.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const startW = width;
+    const rtl = getComputedStyle(target).direction === 'rtl';
+    const move = (ev: PointerEvent) => {
+      const delta = rtl ? ev.clientX - startX : startX - ev.clientX;
+      setWidth(clampWidth(startW + delta));
+    };
+    const up = (ev: PointerEvent) => {
+      target.releasePointerCapture(ev.pointerId);
+      target.removeEventListener('pointermove', move);
+      target.removeEventListener('pointerup', up);
+      const delta = rtl ? ev.clientX - startX : startX - ev.clientX;
+      commitWidth(startW + delta);
+    };
+    target.addEventListener('pointermove', move);
+    target.addEventListener('pointerup', up);
+  };
   useEffect(() => {
     setUserTab(null);
   }, [event]);
-  const activeTab = useMemo<TabId>(() => {
-    if (userTab) return userTab;
-    if (workspaceSlot && focusWorkspace) return 'workspace';
-    return derivedTab;
-  }, [userTab, workspaceSlot, focusWorkspace, derivedTab]);
+  const seen = useMemo(() => {
+    const store = eventsBySession.get(sessionId) ?? {};
+    store[derivedTab] = event;
+    eventsBySession.set(sessionId, store);
+    return store;
+  }, [sessionId, derivedTab, event]);
   const studioMode = useMemo(() => {
     const fromTool = getStudioMode(event.tool);
     if (fromTool) {
@@ -99,27 +146,50 @@ export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusW
     }
     return studioModeBySession.get(sessionId) ?? null;
   }, [event.tool, sessionId]);
+  // Only offer tabs that have (or can have) something to show for this task.
   const visibleTabs = useMemo(() => {
-    const tabs = [...TABS];
+    const tabs: { id: TabId; label: string; icon: typeof Terminal }[] = TABS.filter(
+      (tab) => tab.id === 'live' || tab.id === 'files' || tab.id === derivedTab || seen[tab.id] !== undefined,
+    );
     if (workspaceSlot) tabs.push({ id: 'workspace' as const, label: 'Workspace', icon: FolderOpen });
     if (studioMode) tabs.push(STUDIO_TAB);
     return tabs;
-  }, [studioMode, workspaceSlot]);
+  }, [studioMode, workspaceSlot, derivedTab, seen]);
+  const activeTab = useMemo<TabId>(() => {
+    const pick = userTab ?? (workspaceSlot && focusWorkspace ? 'workspace' : derivedTab);
+    return visibleTabs.some((tab) => tab.id === pick) ? pick : 'files';
+  }, [userTab, workspaceSlot, focusWorkspace, derivedTab, visibleTabs]);
+  const tabEvent = seen[activeTab] ?? (activeTab === derivedTab ? event : undefined);
   const isDriving = !isFinalStatus(event.status) && activeTab === 'browser';
 
   return (
     <div
+      style={{ width }}
       className={[
-        'flex h-full w-[520px] shrink-0 flex-col border-s bg-bg-menu',
+        'relative flex h-full max-w-[85vw] shrink-0 flex-col border-s bg-bg-menu',
         isDriving ? 'border-s-4 border-s-[var(--icon-blue)]' : 'border-border-main',
       ].join(' ')}
     >
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t('Resize')}
+        onPointerDown={onDragStart}
+        onDoubleClick={() => commitWidth(DEFAULT_WIDTH)}
+        className="absolute inset-y-0 -start-1 z-10 w-2 cursor-col-resize touch-none hover:bg-[var(--icon-blue)]/30"
+      />
       <div className="flex h-[40px] shrink-0 items-center justify-between border-b border-border-main px-2">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-text-primary">{t("Loam's computer")}</span>
         </div>
         <div className="flex items-center gap-1">
-          <button aria-label={t('Expand')} className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover">
+          <button
+            type="button"
+            aria-label={t('Expand')}
+            aria-pressed={expanded}
+            onClick={() => commitWidth(expanded ? DEFAULT_WIDTH : MAX_WIDTH)}
+            className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"
+          >
             <Maximize2 className="size-4" />
           </button>
           <button aria-label={t('Close')} onClick={onClose} className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover">
@@ -128,31 +198,42 @@ export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusW
         </div>
       </div>
 
-      <div className="flex h-[40px] shrink-0 items-center border-b border-border-main">
+      <div role="tablist" className="flex h-[40px] shrink-0 items-stretch border-b border-border-main px-1">
         {visibleTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
+          const label = t(tab.label);
           return (
             <button
               key={tab.id}
               type="button"
+              role="tab"
+              aria-selected={isActive}
+              aria-label={label}
+              title={label}
               onClick={() => setUserTab(tab.id)}
               className={[
-                'flex h-full flex-1 items-center justify-center gap-1.5 border-b-2 px-2 text-xs font-medium',
-                isActive
-                  ? 'border-[var(--icon-blue)] text-text-primary'
-                  : 'border-transparent text-text-tertiary hover:bg-fill-hover hover:text-text-secondary',
+                'flex min-w-0 items-center justify-center gap-1.5 border-b-2 px-2.5 text-xs font-medium transition-colors',
+                isActive ? 'flex-[2_1_0%] border-[var(--icon-blue)] text-text-primary' : 'flex-1 border-transparent text-text-tertiary hover:bg-fill-hover hover:text-text-secondary',
               ].join(' ')}
             >
-              <Icon className="size-3.5" />
-              {tab.label}
+              <Icon className="size-3.5 shrink-0" />
+              {isActive && <span className="truncate">{label}</span>}
             </button>
           );
         })}
       </div>
 
       <div className="flex-1 overflow-hidden">
-        <TabContent event={event} sessionId={sessionId} tab={activeTab} studioMode={studioMode} workspaceSlot={workspaceSlot} taskId={taskId} />
+        <TabContent
+          event={tabEvent}
+          sessionId={sessionId}
+          tab={activeTab}
+          studioMode={studioMode}
+          workspaceSlot={workspaceSlot}
+          taskId={taskId}
+          fallbackEvent={event}
+        />
       </div>
     </div>
   );
@@ -165,14 +246,31 @@ function TabContent({
   studioMode,
   workspaceSlot,
   taskId,
+  fallbackEvent,
 }: {
-  event: ToolUsedEvent;
+  event?: ToolUsedEvent;
+  fallbackEvent: ToolUsedEvent;
   sessionId: string;
   tab: TabId;
   studioMode: StudioMode | null;
   workspaceSlot?: ReactNode;
   taskId?: string;
 }) {
+  switch (tab) {
+    case 'live':
+      return <LiveView sessionId={sessionId} taskId={taskId} />;
+    case 'workspace':
+      if (!workspaceSlot) return <FilesContent event={event ?? fallbackEvent} sessionId={sessionId} />;
+      return <>{workspaceSlot}</>;
+    case 'studio':
+      if (!studioMode) return <FilesContent event={event ?? fallbackEvent} sessionId={sessionId} />;
+      return <StudioContent sessionId={sessionId} mode={studioMode} />;
+    case 'files':
+      return <FilesContent event={event ?? fallbackEvent} sessionId={sessionId} />;
+    default:
+      break;
+  }
+  if (!event) return <EmptyTab tab={tab} />;
   switch (tab) {
     case 'terminal':
       return <TerminalContent event={event} />;
@@ -182,18 +280,21 @@ function TabContent({
       return <BrowserContent event={event} sessionId={sessionId} />;
     case 'preview':
       return <PreviewContent event={event} sessionId={sessionId} />;
-    case 'live':
-      return <LiveView sessionId={sessionId} taskId={taskId} />;
-    case 'workspace':
-      if (!workspaceSlot) return <FilesContent event={event} sessionId={sessionId} />;
-      return <>{workspaceSlot}</>;
-    case 'studio':
-      if (!studioMode) return <FilesContent event={event} sessionId={sessionId} />;
-      return <StudioContent sessionId={sessionId} mode={studioMode} />;
-    case 'files':
     default:
       return <FilesContent event={event} sessionId={sessionId} />;
   }
+}
+
+function EmptyTab({ tab }: { tab: TabId }) {
+  const meta = TABS.find((x) => x.id === tab);
+  const Icon = meta?.icon ?? Folder;
+  const message = tab === 'terminal' ? t('No output') : tab === 'editor' ? t('No file content') : tab === 'preview' ? t('No preview running') : t('No browser state available');
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-text-tertiary">
+      <Icon className="size-8 opacity-60" />
+      <p className="text-sm">{message}</p>
+    </div>
+  );
 }
 
 function StudioContent({ sessionId, mode }: { sessionId: string; mode: StudioMode }) {
@@ -321,10 +422,10 @@ function BrowserContent({ event, sessionId }: { event: ToolUsedEvent; sessionId:
         <button onClick={load} disabled={loading} className="rounded-control p-1 text-text-tertiary hover:bg-fill-hover disabled:opacity-50">
           <RotateCcw className="size-3.5" />
         </button>
-        <button className="rounded-control p-1 text-text-tertiary hover:bg-fill-hover">
+        <button type="button" disabled aria-label={t('Back')} className="rounded-control p-1 text-text-tertiary opacity-40 rtl:rotate-180">
           <ArrowLeft className="size-3.5" />
         </button>
-        <button className="rounded-control p-1 text-text-tertiary hover:bg-fill-hover">
+        <button type="button" disabled aria-label={t('Forward')} className="rounded-control p-1 text-text-tertiary opacity-40 rtl:rotate-180">
           <ArrowRight className="size-3.5" />
         </button>
         <div className="flex flex-1 items-center rounded-control border border-border-main bg-fill-tsp px-2 py-1 text-xs text-text-secondary">
@@ -563,7 +664,7 @@ function extractEditorDetail(event: ToolUsedEvent): EditorDetail {
     };
   }
   return {
-    path: String(args?.path ?? event.brief ?? ''),
+    path: typeof args?.path === 'string' ? args.path : event.brief && event.brief.trim() !== '.' ? event.brief : '',
     content: typeof args?.content === 'string' ? args.content : event.description,
     oldContent: typeof args?.find === 'string' ? args.find : undefined,
     action: String(args?.action ?? ''),
