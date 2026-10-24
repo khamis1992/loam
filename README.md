@@ -10,11 +10,14 @@
 
 **Loam** is a local AI agent desktop application built with Electron. It provides specialized workspaces (modes) with focused tool sets and isolated task environments, enabling AI agents to work effectively on different types of projects without mixing contexts.
 
+![Main Interface](docs/assets/screenshots/main-ui.png)
+*Loam's main interface with task management and file workspace*
+
 ## Features
 
 ### 🎯 Specialized Modes
 
-Loam organizes work into **7 distinct modes**, each with its own tools and interface optimized for specific tasks:
+Loam organizes work into **8 distinct modes**, each with its own tools and interface optimized for specific tasks:
 
 - **🔍 Explore** (`ask`) - Read-only workspace for understanding code, asking questions, and planning without making changes
 - **📚 Research** (`research`) - Web search, source gathering, and documentation with browser automation tools
@@ -26,6 +29,23 @@ Loam organizes work into **7 distinct modes**, each with its own tools and inter
 - **⚡ Flow** (`automate`) - Browser automation, workflow recording, and task scheduling
 
 Each mode enforces its own tool permissions at the server level, ensuring agents can't accidentally use inappropriate tools for the task.
+
+<details>
+<summary>View Mode Screenshots</summary>
+
+![Companions View](docs/assets/screenshots/companions-view.png)
+*Agent companions and team management*
+
+![Security Assessment](docs/assets/screenshots/security-view.png)
+*Security mode with penetration testing tools*
+
+![Terminal Interface](docs/assets/screenshots/terminal-view.png)
+*Integrated terminal for build and shell commands*
+
+![Mobile Development](docs/assets/screenshots/mobile.png)
+*Mobile app development workspace*
+
+</details>
 
 ### 🗂️ Task Isolation
 
@@ -52,12 +72,14 @@ Loam provides specialized tools organized by capability:
 
 ### 🧠 MiroFish Swarm Intelligence
 
-A real, model-backed market simulation system (not a template):
-- Locale and persona extraction from natural language briefs
-- Agent-driven simulation with multiple rounds of interactions
-- Model-backed decision making with fallback to rule-based paths when models unavailable
-- Detailed reporting with metrics computed from simulation logs
-- No hard-coded results or invented data
+A model-backed market simulation and research system for testing ideas with simulated user personas:
+- **Seed Stage**: Extracts locale, entities, and personas from natural language briefs using model inference
+- **Simulation Stage**: Runs N agents over R rounds, each agent turn is a real model call with persona context, memory, and social feed
+- **Report Stage**: Computes metrics from recorded simulation logs (no hard-coded numbers)
+- **Deterministic Fallback**: Rule-based paths available when model is unavailable
+- **Full Pipeline**: Three-stage pipeline (seed → simulate → report) with honest reporting of what was model-backed vs rule-based
+
+Code: `src/tools/mirofish/pipeline.ts`, `src/tools/mirofish/seed.ts`, `src/tools/mirofish/simulate.ts`
 
 ### 🔗 Integration Support
 
