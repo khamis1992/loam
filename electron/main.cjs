@@ -739,7 +739,6 @@ async function ensureLocalSession() {
     data["session_token"] = sessionToken;
     delete data["login_nonce"];
     writeLocalStorage(data);
-    console.log("[electron] local session ready");
     return true;
   } catch (err) {
     console.warn("[electron] local sign-in failed: " + err.message);

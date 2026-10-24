@@ -14,7 +14,16 @@ Blockers F1-F8 are fixed on `manus-parity`. After the fixes: root and web typech
 - F7: the test injects a router with the effects backend unavailable, so it no longer depends on the machine.
 - F8: Sparkles replaced with `Search` and `Wand2`.
 
-F9-F17 are unchanged. Sections 1-3 below describe the state before these fixes.
+F9, F10, F12, F13 are also fixed (Sparkles icons replaced everywhere, duplicate imports in `http.ts` merged, freellmapi disabled by default, `console.log` removed). F11 and F14-F17 are unchanged.
+
+Customer-experience pass (installer 0.5.30 built and installed, sandbox smoke test, button crawl of `/app`):
+- Composer toolbar now wraps at about 1280px instead of clipping.
+- Home-screen "Approve for me" and "Knowledge Garden" chips did nothing; they now toggle and are sent with the task.
+- Title bar Back/Forward are disabled when there is no history; the mic shows its error instead of failing silently.
+- After these changes: web vitest 786/786, root and web typecheck clean, `check:loam-ui` passes. One run showed a timing flake in the 2000-message hibernation test; it passed on rerun.
+- Not covered: crawl of routes other than `/app`, Arabic/RTL crawl, and the installed build does not include the Composer/TitleBar changes (rebuild needed).
+
+Sections 1-3 below describe the state before these fixes.
 
 ## 1. Verdict
 

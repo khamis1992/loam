@@ -272,7 +272,7 @@ export function NewAgentDialog({ open, onClose, onCreated }: NewAgentDialogProps
   const starterOptions = [
     {
       id: BLANK_TEMPLATE_ID,
-      emoji: '✨',
+      emoji: '🤖',
       labelAr: agentLabel('blankAgent'),
       description: agentLabel('blankAgentDescription'),
       mode: '',

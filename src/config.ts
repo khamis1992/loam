@@ -385,8 +385,8 @@ export const DEFAULTS: Config = {
       // freellmapi is a SELF-HOSTED OpenAI-compatible router, not a public host, and no
       // public endpoint is documented. The repo's own evidence is a local router:
       // docs/agents-state.json records `freellmapi/auto unreachable: localhost:31415 down`.
-      // TODO(C19): unverified endpoint - confirm the deployment before relying on failover.
-      { id: "freellmapi", kind: "openai-compatible", baseUrl: "http://127.0.0.1:31415/v1", model: "freellmapi/auto", apiKeyEnv: "FREELLM_API_KEY", enabled: true },
+      // Disabled by default: the endpoint is unverified (C19). Enable it once the deployment is confirmed.
+      { id: "freellmapi", kind: "openai-compatible", baseUrl: "http://127.0.0.1:31415/v1", model: "freellmapi/auto", apiKeyEnv: "FREELLM_API_KEY", enabled: false },
       // LongCat: official OpenAI-format endpoint
       // https://api.longcat.chat/openai/v1/chat/completions (LongCat API Platform Quick
       // Start), model LongCat-2.5-Preview.

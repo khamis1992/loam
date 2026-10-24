@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, AlertCircle, Palette, Sparkles } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertCircle, Palette, Wand2 } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
 
@@ -299,7 +299,7 @@ export default function DesignStudioPage() {
                   className="flex items-center gap-2 rounded-control px-3 py-2 text-sm text-text-primary disabled:opacity-50"
                   style={{ backgroundColor: colors.primary }}
                 >
-                  {generating ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                  {generating ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
                   {t('Generate')}
                 </button>
               </div>

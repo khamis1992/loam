@@ -5,7 +5,7 @@
  * Selecting persists immediately via the caller's `onSelect`.
  */
 import { useState, useRef, useEffect } from "react";
-import { Check, ChevronDown, Sparkles, Zap, Feather, SlidersHorizontal } from "lucide-react";
+import { Check, ChevronDown, Gem, Zap, Feather, SlidersHorizontal } from "lucide-react";
 import type { AgentMode, ModelMenuItem, FlexModel } from "./types";
 
 const ITEMS: ModelMenuItem[] = [
@@ -155,5 +155,5 @@ function ModelIcon({ mode }: { mode: AgentMode }) {
   if (mode === "max") return <Zap className={cn} aria-hidden />;
   if (mode === "lite") return <Feather className={cn} aria-hidden />;
   if (mode === "flex") return <SlidersHorizontal className={cn} aria-hidden />;
-  return <Sparkles className={cn} aria-hidden />;
+  return <Gem className={cn} aria-hidden />;
 }

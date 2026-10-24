@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Zap } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from './Dialog';
@@ -76,7 +76,7 @@ export function PlanDialog({ open, onClose }: { open: boolean; onClose: () => vo
   return (
     <Dialog open={open} onClose={onClose} title={t('Plans and credits')} width={520}>
       <div className="mb-3 flex items-center gap-2 rounded-control bg-fill-tsp px-3 py-2 text-xs text-text-secondary">
-        <Sparkles className="size-3.5 shrink-0 text-icon-blue" aria-hidden />
+        <Zap className="size-3.5 shrink-0 text-icon-blue" aria-hidden />
         <span>{t('Test mode - no charge')}</span>
       </div>
 

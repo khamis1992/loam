@@ -28,7 +28,7 @@ import { EmptyState } from './EmptyState';
 const TABS = [
   { id: 'General', group: 'Settings', icon: 'SlidersHorizontal' },
   { id: 'Account', group: 'Account', icon: 'User' },
-  { id: 'Usage', group: 'Account', icon: 'Sparkles' },
+  { id: 'Usage', group: 'Account', icon: 'Zap' },
   { id: 'Appearance', group: 'Settings', icon: 'Palette' },
   { id: 'Shortcuts', group: 'Settings', icon: 'Keyboard' },
   { id: 'Data controls', group: 'Data', icon: 'Blocks' },
@@ -163,7 +163,7 @@ function SettingsContent({ tab }: { tab: string }) {
 
 function glyphFor(icon: string) {
   const map: Record<string, string> = {
-    SlidersHorizontal: '⚙', User: '👤', Sparkles: '✨', Palette: '🎨', Keyboard: '⌨',
+    SlidersHorizontal: '⚙', User: '👤', Zap: '⚡', Palette: '🎨', Keyboard: '⌨',
     Blocks: '▦', Unplug: '🔌', Database: '🗄', BookMarked: '📖', Leaf: '🌱', Monitor: '🖥', Globe: '🌐', Mail: '✉', Phone: '📞',
     Wallet: '👛', Info: 'ℹ', GraduationCap: '🎓',
   };

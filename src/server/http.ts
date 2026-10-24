@@ -72,6 +72,8 @@ import {
   listTasks,
   publicSchedule,
   updateProject,
+  setTaskAgent,
+  getSavedRun,
 } from "./db.js";
 import { getSettings, updateSettings } from "./settings.js";
 import { cancelRunSignal } from "./runControl.js";
@@ -135,10 +137,9 @@ import { appendVoiceTurn, listVoiceTurns, clearVoiceTranscript, transcribeAudio 
 import { createWatchRoutine, watchSchedules, stopWatcher } from "./fileWatchers.js";
 import { AGENT_TEMPLATES, getAgentTemplate, sanitizeBundle, writeBundleFile, type CompanionBundle } from "./agentTemplates.js";
 import { agentIntegrationGrants, saveAgentIntegrationGrants } from "../tools/integrations.js";
-import { readTelemetry } from "../telemetry/store.js";
+import { readTelemetry, telemetrySummary } from "../telemetry/store.js";
 import { setSecret, listSecrets, deleteSecret } from "./secretsVault.js";
 import { createApproval, decideApproval, getApproval, listApprovals } from "./approvals.js";
-import { setTaskAgent } from "./db.js";
 import { subscribeTask } from "./streams.js";
 import { workspaceRelay, workspaceRelay as videoStudioRelay, type WorkspaceRelayResult } from "./workspaceRelay.js";
 import { runVideoStudioExport, type VideoStudioExportOptions } from "./videoStudioExport.js";
@@ -148,12 +149,10 @@ import { installDraft, listSuites, loadSuite } from "../eval/suites.js";
 import { activeSummary, getRun, lastRunForSuite, listRuns } from "../eval/store.js";
 import { evalBusy, runSuiteBackground } from "../eval/service.js";
 import type { EvalDeps } from "../eval/runner.js";
-import { telemetrySummary } from "../telemetry/store.js";
 import { generateSelfPlayDraft } from "../learning/selfplay.js";
 import { exportDatasets } from "../eval/export.js";
 import type { PreviewService } from "../preview/serve.js";
 import { getBrowserState } from "../tools/browser.js";
-import { getSavedRun } from "./db.js";
 import { isOutputType } from "../llm/router.js";
 import { requiresReplayConfirmation } from "./recovery.js";
 import { executionQueue } from "./executionQueue.js";

@@ -105,6 +105,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   );
   const [selectedEffort, setSelectedEffort] = useState<'fast' | 'max' | ''>(normalizeEffort(effort));
   const [compareModels, setCompareModels] = useState<boolean>(initialCompareModels === true);
+  // On the home screen there is no session yet, so the chips keep their own state
+  // and ride the first message's extData instead of the per-task handlers.
+  const [homeApprove, setHomeApprove] = useState(false);
+  const [homeKnowledge, setHomeKnowledge] = useState(false);
+  const approveChipOn = onToggleApproveForMe ? approveForMe === true : homeApprove;
+  const knowledgeChipOn = onToggleKnowledge ? knowledgeOn === true : homeKnowledge;
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -228,6 +234,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     if (modelTier) extData.modelTier = modelTier;
     if (projectId) extData.projectId = projectId;
     if (worktreeEnabled) extData.worktreeEnabled = true;
+    if (!onToggleApproveForMe && homeApprove) extData.approveForMe = true;
+    if (!onToggleKnowledge && homeKnowledge) extData.knowledge = true;
     Object.assign(extData, routingExtData({
       outputType: selectedOutputType,
       effort: selectedEffort,
@@ -389,7 +397,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ))}
         </ul>
       )}
-      <div className="mt-1 flex items-center gap-1.5">
+      <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
         {home ? (
           <div className="relative flex items-center gap-1" ref={menuRef}>
             <button
@@ -626,11 +634,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
         <button
           type="button"
-          onClick={onToggleApproveForMe}
-          aria-pressed={approveForMe === true}
+          onClick={onToggleApproveForMe ?? (() => setHomeApprove((v) => !v))}
+          aria-pressed={approveChipOn}
           className={clsx(
             'hidden items-center gap-1 rounded-full border px-2 py-1 text-xs sm:flex',
-            approveForMe ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
+            approveChipOn ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
           )}
         >
           <ShieldCheck className="size-3.5" /> {t('Approve for me')}
@@ -638,12 +646,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
         <button
           type="button"
-          onClick={onToggleKnowledge}
-          aria-pressed={knowledgeOn === true}
+          onClick={onToggleKnowledge ?? (() => setHomeKnowledge((v) => !v))}
+          aria-pressed={knowledgeChipOn}
           title={t('Let this run read your Knowledge Garden sources')}
           className={clsx(
             'hidden items-center gap-1 rounded-full border px-2 py-1 text-xs sm:flex',
-            knowledgeOn ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
+            knowledgeChipOn ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
           )}
         >
           <Leaf className="size-3.5" /> {t('Knowledge Garden')}
@@ -751,6 +759,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         >
           {voice.state === 'transcribing' ? <Loader2 className="size-4 animate-spin" /> : <Mic className="size-4" />}
         </button>
+        {voice.error && (
+          <span role="alert" title={voice.error} className="hidden max-w-[10rem] truncate text-xs text-function-error sm:inline">
+            {voice.error}
+          </span>
+        )}
 
         {running
           ? (

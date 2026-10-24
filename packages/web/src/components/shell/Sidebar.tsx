@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect, useRef, type ComponentType } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import {
-  SquarePen, Monitor, Search, BookOpen, Sparkles, Workflow, LayoutGrid, MoreHorizontal,
+  SquarePen, Monitor, Search, BookOpen, Layers, Workflow, LayoutGrid, MoreHorizontal,
   ChevronRight, Share2, MonitorSmartphone, Clapperboard, Palette,
 } from 'lucide-react';
 import { useAppSelector, useAppDispatch, toggleSidebar } from '@/store';
@@ -47,7 +47,7 @@ export function Sidebar() {
     { id: 'agent-loam', label: t('Agent Loam'), icon: AgentLoamIcon, href: '/app/agents' },
     { id: 'search', label: t('Search'), icon: Search, shortcut: t('Ctrl+K'), onClick: 'search' },
     { id: 'library', label: t('Library'), icon: BookOpen, href: '/app/library' },
-    { id: 'creations', label: t('Creations'), icon: Sparkles, href: '/app/creations' },
+    { id: 'creations', label: t('Creations'), icon: Layers, href: '/app/creations' },
     { id: 'wiki', label: t('Wiki'), icon: BookOpen, href: '/app/wiki' },
     { id: 'studio', label: t('Studio'), icon: Palette, href: '/app/studio' },
     { id: 'automations', label: t('Automations'), icon: Workflow, href: '/app/automations' },

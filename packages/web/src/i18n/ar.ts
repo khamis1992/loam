@@ -194,7 +194,6 @@ export const ar = {
   "Terms of Service": "شروط الخدمة",
   "Privacy Policy": "سياسة الخصوصية",
   "User": "المستخدم",
-  "Sparkles": "Sparkles",
   "SlidersHorizontal": "SlidersHorizontal",
   "Palette": "Palette",
   "Keyboard": "Keyboard",

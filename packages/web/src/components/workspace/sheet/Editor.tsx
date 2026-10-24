@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FileSpreadsheet, RefreshCw, Save, Sparkles, Table2 } from 'lucide-react';
+import { FileSpreadsheet, RefreshCw, Save, Wand2, Table2 } from 'lucide-react';
 import clsx from 'clsx';
 import { t } from '@/i18n/t';
 import type { WorkspaceEditorProps } from '../types';
@@ -552,7 +552,7 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
           </div>
         ) : null}
         <div className="ml-auto flex min-w-56 flex-1 items-center gap-1.5">
-          <Sparkles className="size-4 shrink-0 text-text-tertiary" aria-hidden />
+          <Wand2 className="size-4 shrink-0 text-text-tertiary" aria-hidden />
           <input
             type="text"
             dir="auto"

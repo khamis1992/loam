@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Sparkles, Rocket, ExternalLink } from 'lucide-react';
+import { Gem, Rocket, ExternalLink } from 'lucide-react';
 import { useAppDispatch } from '@/store';
 import { openSettings } from '@/store';
 import { t } from '@/i18n/t';
@@ -43,7 +43,7 @@ export function CreditsPopover({ total }: { total: number }) {
         aria-haspopup="dialog"
         className="flex h-7 items-center gap-1 rounded-control border border-border-main px-2 text-xs font-medium text-text-secondary hover:bg-fill-hover"
       >
-        <Sparkles className="size-3.5" /> {compact}
+        <Gem className="size-3.5" /> {compact}
       </button>
       {open && (
         <div
@@ -53,7 +53,7 @@ export function CreditsPopover({ total }: { total: number }) {
         >
           <div className="mb-3 flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-fill-tsp">
-              <Sparkles className="size-4 text-icon-blue" />
+              <Gem className="size-4 text-icon-blue" />
             </div>
             <div>
               <div className="text-headline-sm text-text-primary">{full}</div>

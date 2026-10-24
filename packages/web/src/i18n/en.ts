@@ -194,7 +194,6 @@ export const en = {
   "Terms of Service": "Terms of Service",
   "Privacy Policy": "Privacy Policy",
   "User": "User",
-  "Sparkles": "Sparkles",
   "SlidersHorizontal": "SlidersHorizontal",
   "Palette": "Palette",
   "Keyboard": "Keyboard",
