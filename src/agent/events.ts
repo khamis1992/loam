@@ -193,6 +193,20 @@ export type AgentEvent =
   /** A workspace file was published as a task artifact via artifact_publish. */
   | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string }
   /**
+   * Neo N5: the per-step context selector re-shaped the transcript for this
+   * step. `tokens` is the estimated size of the selected blocks, `artefacts`
+   * the number of artefacts in the run's store, and `reason` why the selector
+   * applied (or why it declined).
+   */
+  | { type: "context_selected"; step: number; tokens: number; artefacts: number; reason: string }
+  /**
+   * Neo N11: the run picked up edits the user made on the canvas (corrected node
+   * output, a cut/re-connected edge, a duplicated branch, a merged group, or a
+   * quote/follow-up instruction). `count` is how many edits entered this step's
+   * prompt and `nodeIds` names the nodes they acted on.
+   */
+  | { type: "canvas_edit"; step: number; count: number; nodeIds: string[] }
+  /**
    * fc-06: a Loam Video export is in flight. Live-only (no canvas node): the
    * rendered file lands in the task workspace when the stage reaches "saving".
    */

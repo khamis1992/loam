@@ -63,6 +63,14 @@ Font License 1.1 when supplied separately.
 
 jcode (MIT)
 ===========
+The cross-session file-touch notification feature in src/tools/fileTouch.ts,
+src/tools/readState.ts, src/agent/reminders.ts and src/agent/loop.ts was
+adapted from jcode (https://github.com/1jehuang/jcode), Copyright (c) 2025
+Jeremy Huang, and is distributed under the MIT License below. The port was
+re-implemented in TypeScript for Loam; the idea and the notice semantics (a
+session is told when another session writes a file it already read, with a
+short line-diff summary) come from jcode.
+
 The Loam benchmark harness under bench/ and the local memory-budget primitives
 under src/memory/ are adapted from jcode, a Rust coding agent
 (https://github.com/1jehuang/jcode). Copyright (c) 2025 Jeremy Huang. MIT License.

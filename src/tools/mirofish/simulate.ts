@@ -39,6 +39,7 @@ import type {
   SimulationVariable,
   SocialGraph,
 } from "./types.js";
+import { normalizeDemographics } from "./types.js";
 
 /** Default agent count (RAM light). */
 export const DEFAULT_AGENTS = 12;
@@ -58,6 +59,8 @@ export const MEMORY_WINDOW = 4;
 export const FEED_WINDOW = 6;
 /** Maximum characters of a single post kept in the feed/memory. */
 export const SNIPPET_MAX = 400;
+/** Maximum entries kept in one turn's `sharedWith` list. */
+export const MAX_SHARED_WITH = 8;
 /** Maximum `reasons` entries kept per turn. */
 export const MAX_REASONS = 8;
 
@@ -113,6 +116,8 @@ export function validateAgentTurn(value: unknown): AgentTurnOutput {
     stance: clamp(stanceRaw, -1, 1),
     purchaseIntent: clamp(intentRaw, 0, 1),
     reasons: asStringArray(rec.reasons ?? rec.reason, MAX_REASONS),
+    // Share provenance, per the output schema: who the agent amplified or answered.
+    sharedWith: asStringArray(rec.sharedWith ?? rec.shared_with ?? rec.sharedAgents, MAX_SHARED_WITH),
   };
 }
 
@@ -209,6 +214,7 @@ function agentSystemPrompt(persona: Persona, locale: SeedResult["locale"], langu
   const bands = locale.incomeBands
     .map((b) => `${b.label} (${b.min}${b.max ? `-${b.max}` : "+"}) ${b.currency}`)
     .join(", ");
+  const demographics = normalizeDemographics(locale.demographics);
   return [
     "You are role-playing ONE specific, real-feeling customer inside a market simulation.",
     "Stay in character for the whole turn. You are not an assistant and you must not mention the simulation, the brief, a model or a prompt.",
@@ -230,7 +236,7 @@ function agentSystemPrompt(persona: Persona, locale: SeedResult["locale"], langu
     `- Country: ${locale.country}${locale.city ? ` | City: ${locale.city}` : ""}${locale.region ? ` | Region: ${locale.region}` : ""}`,
     `- Currency: ${locale.currency} | Languages: ${locale.languages.join(", ")}${locale.dialect ? ` | Dialect: ${locale.dialect}` : ""}`,
     bands ? `- Local income bands (monthly): ${bands}` : "",
-    locale.demographics.length > 0 ? `- Demographics: ${locale.demographics.join("; ")}` : "",
+    demographics.length > 0 ? `- Demographics: ${demographics.join("; ")}` : "",
     "",
     languageInstruction(persona, locale.languages, language),
   ]
@@ -308,10 +314,12 @@ function agentUserPrompt(input: {
     '  "stance": -1.0,',
     '  "purchaseIntent": 0.0,',
     '  "reasons": ["why you did this, from your persona\'s point of view"]',
+    '  "sharedWith": []',
     "}",
     "",
     "Rules:",
     "- `action`: post = start a new topic; comment = reply to something in your feed; share = amplify someone else's post; ignore = do nothing online this round; buy = you purchase now; cancel = you cancel/leave.",
+    "- `sharedWith`: the ids or names of the people whose post you are amplifying or answering. Fill it for `share` (required) and for `comment` when you are replying to someone specific; leave it empty for `post`, `ignore`, `buy` and `cancel`. Only name people you actually saw in the feed.",
     "- `stance`: -1 hostile/negative about the product, 0 neutral, 1 enthusiastic. A price or fee increase usually moves this negative for price-sensitive personas.",
     "- `purchaseIntent`: 0 you will never buy, 1 you buy immediately. It must be consistent with your action (buy implies 1, cancel implies 0).",
     "- `text` must be written by the persona, in the persona's own language and dialect, and must reflect the variable value for this arm.",
@@ -396,6 +404,7 @@ async function runAgentTurn(input: {
   const modelRef: { model?: string } = {};
   try {
     const output = await callWithModel<AgentTurnOutput>(caller, {
+      role: "simulate",
       system: agentSystemPrompt(persona, ctx.seed.locale, ctx.language),
       prompt: agentUserPrompt({
         persona,
@@ -432,6 +441,7 @@ async function runAgentTurn(input: {
       stance: 0,
       purchaseIntent: 0,
       reasons: [],
+      sharedWith: [],
       ok: false,
       latencyMs: Date.now() - started,
       error: err instanceof Error ? err.message : String(err),
@@ -707,6 +717,7 @@ async function runArm(input: {
           stance: 0,
           purchaseIntent: 0,
           reasons: [],
+          sharedWith: [],
           ok: false,
           error: "no model caller available",
         };
