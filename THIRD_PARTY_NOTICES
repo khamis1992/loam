@@ -167,3 +167,19 @@ user's machine and are not bundled or redistributed by Loam:
   - OSV-Scanner (Apache License 2.0)
   - GuardDog (Apache License 2.0)
   - Opengrep (LGPL 2.1), run as a separate process with Loam's own rules
+
+Native security scanners (src/security/native/)
+-----------------------------------------------
+Clean-room implementations; no upstream source was copied.
+  secrets/  design follows Gitleaks (MIT): keyword prefilter, regex + entropy,
+            allowlists, redaction, SARIF output.
+  sca/      matches against the OSV database (osv.dev, Apache-2.0 / CC-BY-4.0 data)
+            and follows OSV-Scanner's lockfile coverage (Apache-2.0).
+  pkgintel/ heuristics follow the ideas in DataDog GuardDog (Apache-2.0):
+            typosquatting, install scripts, bundled binaries, risk scoring.
+  lleval/   prompt-evaluation core follows promptfoo's design (MIT):
+            deterministic assertion handlers returning {pass, score, reason},
+            a model-graded rubric and vars expansion. No upstream code was copied.
+  fuzz/     planning and triage follow Jazzer.js (Apache-2.0): CLI flags, exit
+            codes and bug-detector report titles. The fuzzer itself runs as an
+            external process and is not bundled or redistributed by Loam.

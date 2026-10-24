@@ -7,12 +7,16 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { BudgetMeter, runAgentJson } from "./agentIO.js";
-import type { AgentDeps } from "./agentIO.js";
+import { BudgetMeter, createLimiter, runAgentJson } from "./agentIO.js";
+import type { AgentDeps, ModelCallResult } from "./agentIO.js";
 import { CLASSES } from "./blocks/classes.js";
 import { DOMAINS } from "./blocks/domains.js";
+import { findPriorRun, knownFindingsFor, priorStatusFor, SOURCE_HASHES_FILE } from "./carry.js";
+import type { PriorRun, SourceHashes } from "./carry.js";
 import { finalizeConfirmed } from "./confirm.js";
 import { deriveCoverageId } from "./coverageId.js";
+import { dedupeDeterministic, judgeDuplicates } from "./dedupe.js";
+import type { InferiorDupeMap } from "./dedupe.js";
 import { evidenceGate } from "./evidenceGate.js";
 import { fastPath } from "./fastPath.js";
 import { tierA } from "./fpFilter.js";
@@ -30,7 +34,7 @@ import type { SchemaObject } from "./schema.js";
 import { readCapability } from "./safeRead.js";
 import { envFor } from "./repoPath.js";
 import type {
-  AuditOptions, Confirmed, EvidenceItem, FindingRecord, LedgerUnit, NeedsValidation, ReconHit, RunResult, Score, TraceStep,
+  AuditOptions, Confirmed, EvidenceItem, FindingRecord, LedgerUnit, NeedsValidation, PriorStatus, ReconHit, RunResult, Score, TraceStep,
 } from "./types.js";
 import { expectedAssurance, validateFindings } from "./validateFindings.js";
 import { validateLedger } from "./validateLedger.js";
@@ -42,7 +46,7 @@ export interface AuditSettings {
   verifierModel?: string;
 }
 export const DEFAULT_SETTINGS: AuditSettings = {
-  fpFloor: 0.7, scanners: ["gitleaks", "osv", "guarddog", "opengrep"], severityModel: "impact",
+  fpFloor: 0.7, scanners: ["loam-secrets", "loam-pkg", "gitleaks", "osv", "guarddog", "opengrep"], severityModel: "impact",
 };
 
 export interface OrchestratorDeps extends Omit<AgentDeps, "budget" | "signal"> {
@@ -161,7 +165,7 @@ function mkTrace(t: { kind: TraceStep["kind"]; file: string; line: number; descr
   return fixed;
 }
 
-function emptyUnit(refs: { surface: string; boundary: string; subsystem: string; attack_class: string }, paths: string[], cls: string, companions: string[], prior: "new" | "none"): LedgerUnit {
+function emptyUnit(refs: { surface: string; boundary: string; subsystem: string; attack_class: string }, paths: string[], cls: string, companions: string[], prior: PriorStatus): LedgerUnit {
   return {
     coverage_id: deriveCoverageId(refs), canonical_refs: { ...refs }, ...refs,
     starting_paths: paths, ordinary_attack_class_block: cls, selected_companion_blocks: companions, excluded_blocks: [],
@@ -176,8 +180,18 @@ export async function orchestrate(opts: AuditOptions, deps: OrchestratorDeps, pr
   const profile = opts.profile ?? "standard";
   const prof = PROFILE[profile];
   const budget = new BudgetMeter(opts.budget ?? null);
-  const agentDeps: AgentDeps = { ...deps, budget, signal: deps.signal, verifierModel: settings.verifierModel ?? deps.verifierModel };
+  const outcomes: ModelCallResult[] = [];
+  const agentDeps: AgentDeps = {
+    ...deps, budget, signal: deps.signal, verifierModel: settings.verifierModel ?? deps.verifierModel,
+    limiter: deps.limiter ?? createLimiter(4),
+    onOutcome: (e) => { outcomes.push(e); deps.onOutcome?.(e); },
+  };
   const store = preStore ?? RunStore.create(path.basename(target), opts.output_dir);
+  const dupeMap: InferiorDupeMap = {};
+  let judgeFailures = 0;
+  let prior: PriorRun | null = null;
+  let hashes: SourceHashes = {};
+  const priorRejected = new Set<string>();
   const scanLines: ScannerLine[] = [];
   let findings: FindingRecord[] = [];
   let units: LedgerUnit[] = [];
@@ -191,6 +205,7 @@ export async function orchestrate(opts: AuditOptions, deps: OrchestratorDeps, pr
   };
   const finish = (): RunResult => {
     sync();
+    try { store.writeJson("model-failures.json", { ...summarizeOutcomes(outcomes), failures: outcomes.filter((o) => !o.ok) }); } catch { /* best effort */ }
     store.stageStart("DONE");
     store.stageEnd("DONE", "done", incomplete);
     store.close();
@@ -254,14 +269,21 @@ export async function orchestrate(opts: AuditOptions, deps: OrchestratorDeps, pr
         for (const f of [...candidates].sort()) { const s = subsystemOf(f); (bySub.get(s) ?? bySub.set(s, []).get(s)!).push(f); }
         const reserve = 2; // critic + at least one verifier
         const cap = Math.min(prof.units, budget.limit === null ? prof.units : Math.max(0, budget.remaining - reserve));
-        const prior = opts.prior_runs === "none" ? "none" : "new";
+        hashes = {};
+        for (const f of candidates) {
+          try { hashes[f] = crypto.createHash("sha1").update(fs.readFileSync(path.join(target, f))).digest("hex"); } catch { /* unreadable file: no hash */ }
+        }
+        store.writeJson(SOURCE_HASHES_FILE, hashes);
+        prior = opts.prior_runs === "none" ? null : findPriorRun(store.dir);
+        for (const f of prior?.findings ?? []) if (f.verdict === "rejected") priorRejected.add(f.fingerprint);
         const seen = new Set<string>();
         outer: for (const cls of prof.classes) {
           for (const [sub, files] of bySub) {
             if (units.length >= cap) break outer;
             const refs = { surface: sub === "root" ? "repository root" : sub, boundary: "repository", subsystem: sub, attack_class: cls };
-            const u = emptyUnit(refs, files.slice(0, 12), cls, companionsFor(files), prior);
+            const u = emptyUnit(refs, files.slice(0, 12), cls, companionsFor(files), "new");
             if (seen.has(u.coverage_id)) continue;
+            u.prior_status = opts.prior_runs === "none" ? "none" : priorStatusFor(u, prior, hashes);
             seen.add(u.coverage_id);
             units.push(u);
           }
@@ -283,7 +305,7 @@ export async function orchestrate(opts: AuditOptions, deps: OrchestratorDeps, pr
           }
           const unitHints = hints.filter((h) => u.starting_paths.includes(norm(h.file)));
           const o = await runAgentJson<{ candidates: { title: string; description: string; root_cause: string; trace: { kind: TraceStep["kind"]; file: string; line: number; description: string }[]; evidence: { file: string; line: number; description: string }[]; impact: Score; likelihood: Score; remediation: string }[]; coverage: "covered" | "blocked"; checks: { description: string; paths: string[] }[]; unresolved: string[] }>(
-            agentDeps, { role: "audit-hunter", prompt: hunterPrompt({ coverage_id: u.coverage_id, paths: u.starting_paths, classId: u.ordinary_attack_class_block ?? "wildcard" }, u.selected_companion_blocks, unitHints), schema: HUNT_SCHEMA });
+            agentDeps, { role: "audit-hunter", prompt: hunterPrompt({ coverage_id: u.coverage_id, paths: u.starting_paths, classId: u.ordinary_attack_class_block ?? "wildcard" }, u.selected_companion_blocks, unitHints, knownFindingsFor(u, prior, hashes)), schema: HUNT_SCHEMA });
           const agent_id = `hunter-${idx + 1}`;
           store.agentRecord({ agent_id, role: "audit-hunter", wave: 1, coverage_ids: [u.coverage_id], status: o.ok ? "done" : "failed" });
           if (!o.ok) {
@@ -300,6 +322,8 @@ export async function orchestrate(opts: AuditOptions, deps: OrchestratorDeps, pr
             if (trace.length === 0 || evidence.length === 0) continue;
             const fingerprint = `hunt:${u.ordinary_attack_class_block ?? "x"}:${sha16(`${trace[0]!.file}|${c.title}`)}`;
             if (fps.includes(fingerprint) || hunted.some((h) => h.fingerprint === fingerprint)) continue;
+            // A claim rejected before, on source that has not changed, is not raised again.
+            if (u.prior_status === "prior_covered_same_source" && priorRejected.has(fingerprint)) continue;
             fps.push(fingerprint);
             hunted.push({
               verdict: "confirmed", fingerprint, title: c.title, description: c.description, root_cause: c.root_cause,
@@ -333,24 +357,39 @@ export async function orchestrate(opts: AuditOptions, deps: OrchestratorDeps, pr
     let survivors: Candidate[] = [];
     if (planned && !incomplete) {
       await stage("TIER_A", () => {
-        const r = tierA(hunted, { fpFloor: settings.fpFloor, keepTop: prof.keepTop });
+        const d = dedupeDeterministic(hunted, dupeMap);
+        const r = tierA(d.kept, { fpFloor: settings.fpFloor, keepTop: prof.keepTop });
         survivors = r.kept;
         store.writeJson("tier-a-dropped.json", r.dropped);
       });
     }
 
     // CRITIC
+    let criticMerge: string[][] = [];
     if (planned && !incomplete) {
       await stage("CRITIC", async () => {
         if (!budget.canLaunch()) { incomplete = "critic_budget_exhausted"; return; }
         const summary = JSON.stringify({ units: units.map((u) => ({ id: u.coverage_id, status: u.status, n: u.result_fingerprints.length })), candidates: survivors.map((s) => ({ fp: s.fingerprint, title: s.title })) }).slice(0, 12000);
-        const o = await runAgentJson<{ gaps: { coverage_id: string; reason: string }[] }>(agentDeps, { role: "audit-research", prompt: criticPrompt(summary), schema: CRITIC_SCHEMA });
+        const o = await runAgentJson<{ gaps: { coverage_id: string; reason: string }[]; merge: string[][] }>(agentDeps, { role: "audit-research", prompt: criticPrompt(summary), schema: CRITIC_SCHEMA });
         sync();
-        if (o.ok) store.writeJson("critic.json", o.value);
+        if (o.ok) { store.writeJson("critic.json", o.value); criticMerge = o.value.merge; }
         else if (o.reason === "budget_exhausted") incomplete = "critic_budget_exhausted";
         else if (o.reason === "cancelled") incomplete = "cancelled";
       });
     }
+
+    // DEDUPE: a model judge confirms same-file pairs and the critic's merge proposals. It fails open.
+    if (planned && !incomplete) {
+      await stage("DEDUPE", async () => {
+        if (survivors.length < 2 || !budget.canLaunch(2)) return; // keep one for a verifier
+        const r = await judgeDuplicates(agentDeps, survivors, criticMerge, dupeMap);
+        sync();
+        survivors = r.kept;
+        judgeFailures = r.judgeFailures.length;
+        if (r.judgeFailures.length) store.writeJson("dedupe-judge-failures.json", r.judgeFailures);
+      });
+    }
+    try { store.writeJson("inferior-dupe-map.json", dupeMap); } catch { /* best effort */ }
 
     // VALIDATE
     const final: FindingRecord[] = [...records];
@@ -404,7 +443,12 @@ export async function orchestrate(opts: AuditOptions, deps: OrchestratorDeps, pr
 
     // REPORT
     await stage("REPORT", () => {
-      const input = reportInput(store, { target, profile, findings, units, scanLines, budget, incomplete });
+      const entries = Object.values(dupeMap);
+      const input = reportInput(store, {
+        target, profile, findings, units, scanLines, budget, incomplete,
+        modelFailures: summarizeOutcomes(outcomes),
+        dupes: { total: entries.length, deterministic: entries.filter((e) => e.by === "deterministic").length, judge: entries.filter((e) => e.by === "judge").length, judgeFailures },
+      });
       store.writeText("REPORT.md", renderReport(input));
       store.writeText("FINDINGS-DETAIL.md", renderDetail(input));
       store.writeText("NEEDS-VALIDATION.md", renderNeedsValidation(input));
@@ -443,8 +487,22 @@ function countPromotions(store: RunStore): { full: number; reduced_win32: number
   return out;
 }
 
+/** Counts per call result; reasons are collapsed to their first words so the report stays short. */
+function summarizeOutcomes(list: ModelCallResult[]): { calls: number; failed: number; reasons: Record<string, number> } {
+  const reasons: Record<string, number> = {};
+  let failed = 0;
+  for (const o of list) {
+    if (o.ok) continue;
+    failed++;
+    const key = o.reason.replace(/\s+/g, " ").slice(0, 60);
+    reasons[key] = (reasons[key] ?? 0) + 1;
+  }
+  return { calls: list.length, failed, reasons };
+}
+
 function reportInput(store: RunStore, x: {
   target: string; profile: string; findings: FindingRecord[]; units: LedgerUnit[]; scanLines: ScannerLine[]; budget: BudgetMeter; incomplete?: string;
+  modelFailures?: ReportInput["modelFailures"]; dupes?: ReportInput["dupes"];
 }): ReportInput {
   const cap = readCapability(envFor(undefined));
   return {
@@ -453,6 +511,8 @@ function reportInput(store: RunStore, x: {
     findings: x.findings, units: x.units, scanners: x.scanLines, promotions: countPromotions(store),
     hostPlatform: process.platform, readAssurance: cap.assurance,
     budget: { spent: x.budget.spent, limit: x.budget.limit },
+    ...(x.modelFailures ? { modelFailures: x.modelFailures } : {}),
+    ...(x.dupes ? { dupes: x.dupes } : {}),
   };
 }
 

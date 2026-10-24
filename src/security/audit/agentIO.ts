@@ -73,7 +73,39 @@ export interface AgentDeps {
   run?: AgentRunFn;
   /** Test hook: skip the child-slot semaphore. */
   acquire?: () => Promise<() => void>;
+  /** Run-wide cap on concurrent audit agents; created once per run and shared by every stage. */
+  limiter?: Limiter;
+  /** Receives one typed result per call: ok, or failed with a reason. */
+  onOutcome?: (e: ModelCallResult) => void;
+  /** Rate-limit retries per call (default 2). */
+  rateLimitRetries?: number;
+  /** Test hook: replaces the real delay used for start jitter and backoff. */
+  sleep?: (ms: number) => Promise<void>;
 }
+
+export type ModelCallResult = { role: AuditRole; ok: true } | { role: AuditRole; ok: false; reason: string };
+
+export type Limiter = <T>(fn: () => Promise<T>) => Promise<T>;
+
+/** A counting semaphore: at most `max` callbacks run at once, the rest wait in order. */
+export function createLimiter(max: number): Limiter {
+  const cap = Math.max(1, Math.floor(max) || 1);
+  let active = 0;
+  const waiting: Array<() => void> = [];
+  return async (fn) => {
+    if (active >= cap) await new Promise<void>((resolve) => waiting.push(resolve));
+    active++;
+    try {
+      return await fn();
+    } finally {
+      active--;
+      waiting.shift()?.();
+    }
+  };
+}
+
+const RATE_LIMITED = /\b429\b|rate.?limit|too many requests|overloaded|quota/i;
+const realSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 export type AgentOutcome<T> = { ok: true; value: T; steps: number } | { ok: false; reason: string };
 
@@ -110,6 +142,23 @@ export function parseStrictJsonObject(text: string): { ok: true; value: unknown 
 }
 
 export async function runAgentJson<T>(deps: AgentDeps, call: AgentCall): Promise<AgentOutcome<T>> {
+  const attempt = async (): Promise<AgentOutcome<T>> => {
+    const sleep = deps.sleep ?? realSleep;
+    const retries = deps.rateLimitRetries ?? 2;
+    for (let n = 0; ; n++) {
+      const o = await runOnce<T>(deps, call);
+      if (o.ok || n >= retries || !o.reason.startsWith("agent_error") || !RATE_LIMITED.test(o.reason)) return o;
+      // Exponential backoff with jitter so parallel callers do not retry in lockstep.
+      await sleep(500 * 2 ** n + Math.floor(Math.random() * 250));
+      if (deps.signal?.aborted) return { ok: false, reason: "cancelled" };
+    }
+  };
+  const out = deps.limiter ? await deps.limiter(attempt) : await attempt();
+  deps.onOutcome?.(out.ok ? { role: call.role, ok: true } : { role: call.role, ok: false, reason: out.reason });
+  return out;
+}
+
+async function runOnce<T>(deps: AgentDeps, call: AgentCall): Promise<AgentOutcome<T>> {
   if (deps.signal?.aborted) return { ok: false, reason: "cancelled" };
   if (!deps.budget.canLaunch()) return { ok: false, reason: "budget_exhausted" };
   const profile = AUDIT_PROFILES[call.role];

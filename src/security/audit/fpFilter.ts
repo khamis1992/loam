@@ -20,6 +20,11 @@ const SSRF = /\bssrf\b|server[- ]side request forgery/i;
 const SECRET = /\b(hard[- ]?coded|leaked|exposed)\b.*\b(secret|api[- ]?key|token|password|credential)s?\b|\bsecret\b.*\b(in (source|code|repo))\b/i;
 const FUZZ_ARTIFACT = /\b(fuzz(er|ing)? (harness|driver)|harness (bug|crash)|libfuzzer|assertion in (the )?harness)\b/i;
 
+/** True when text describes a fuzzing-harness defect rather than a target vulnerability. Shared with native/fuzz triage. */
+export function isFuzzHarnessArtifact(text: string): boolean {
+  return FUZZ_ARTIFACT.test(text);
+}
+
 const CONFIDENCE = { low: 0.4, medium: 0.7, high: 0.9 } as const;
 
 export function confidenceOf(c: Candidate): number {
@@ -38,7 +43,7 @@ export function hardExclusion(c: Candidate, handledBySecretScanner = true): stri
   if (MEMORY.test(text) && !MEMORY_SAFE_OK.test(file)) return "memory-safety finding outside C/C++/Rust";
   if (SSRF.test(text) && HTML_ONLY.test(file)) return "SSRF in an HTML-only file";
   if (handledBySecretScanner && (c.cls === "secret" || SECRET.test(text))) return "secret already handled by the scanner";
-  if (FUZZ_ARTIFACT.test(text)) return "fuzz-harness artifact";
+  if (isFuzzHarnessArtifact(text)) return "fuzz-harness artifact";
   return null;
 }
 

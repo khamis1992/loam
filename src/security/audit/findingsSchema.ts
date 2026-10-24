@@ -41,6 +41,19 @@ const cvss = (): SchemaObject =>
 
 const scored = (): SchemaObject => obj({ score: score(), reason: text() }, ["score", "reason"]);
 
+/** Optional real-world enrichment (KEV/EPSS/composite risk) on deterministic scanner findings. */
+const intel = (): SchemaObject =>
+  obj({
+    cve: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9-]*$" },
+    risk: obj({
+      risk_score: { type: "number", minimum: 0 },
+      risk_label: { type: "string", enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+      urgency: text(), recommendation: text(), scoring_version: text(), boosters_applied: strArr(0),
+    }, ["risk_score", "risk_label", "urgency", "recommendation", "scoring_version", "boosters_applied"]),
+    kev: obj({ dateAdded: text(), dueDate: text(), ransomware: { type: "boolean" } }, ["dateAdded", "dueDate", "ransomware"]),
+    epss: obj({ epss: { type: "number", minimum: 0 }, percentile: { type: "number", minimum: 0 } }, ["epss", "percentile"]),
+  }, []);
+
 const confirmed = (): SchemaObject =>
   obj({
     verdict: { const: "confirmed" }, fingerprint: fingerprint(), title: text(), description: text(),
@@ -61,6 +74,7 @@ const confirmed = (): SchemaObject =>
     proof: proof(),
     production_viable: { type: ["boolean", "string"], enum: [true, false, "unknown"] },
     cvss: cvss(),
+    intel: intel(),
   }, [
     "verdict", "fingerprint", "title", "description", "root_cause", "intended_behavior", "trace", "evidence",
     "conditions", "execution", "remediation", "severity", "confidence", "evidence_vector", "evidence_assurance",

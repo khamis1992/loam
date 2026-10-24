@@ -3,6 +3,11 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { dedupeHits, sarifToHits } from "./sarif.js";
+import { runPkgIntel } from "../native/pkgintel/index.js";
+import { runScaScan, toSarif } from "../native/sca/osvClient.js";
+import type { FetchFn } from "../native/sca/osvClient.js";
+import { runSecretsScan } from "../native/secrets/index.js";
+import { runJazzerScan } from "../native/fuzz/run.js";
 import type { ReconHit, ScannerTool } from "./types.js";
 
 export type ScannerStatus = "ok" | "unavailable" | "tool_error" | "timeout" | "skipped";
@@ -72,6 +77,20 @@ export const ADAPTERS: Record<string, Adapter> = {
   },
 };
 
+/** In-process scanners: no executable to install, so they are always available. */
+type NativeRun = (target: string, fetchFn?: FetchFn) => Promise<{ hits: ReconHit[]; sarif?: unknown; error?: string; notes?: string[] }>;
+export const NATIVE: Record<string, NativeRun> = {
+  "loam-secrets": async (t) => runSecretsScan(t),
+  "loam-sca": async (t, fetchFn) => {
+    const r = await runScaScan(t, fetchFn ? { fetchFn } : {});
+    return {
+      hits: r.hits, sarif: toSarif(r.hits),
+      ...(r.error ? { error: r.error } : {}), ...(r.notes?.length ? { notes: r.notes } : {}),
+    };
+  },
+  "loam-pkg": async (t) => ({ hits: runPkgIntel(t) }),
+};
+
 /** Directory holding `loam/*.yml` rules. Overridable for tests and packaging. */
 let rulesRoot = path.resolve(process.cwd(), "rules");
 export const ruleDir = (): string => rulesRoot;
@@ -125,6 +144,8 @@ export interface ScanContext {
   maxBytes?: number;
   signal?: AbortSignal;
   exec?: Exec;
+  /** Network seam for the native SCA scanner (tests inject a fake). */
+  fetchFn?: FetchFn;
 }
 export interface ScanOutcome {
   hits: ReconHit[];
@@ -140,6 +161,40 @@ export async function runScanners(ctx: ScanContext): Promise<ScanOutcome> {
   const sarif: ScanOutcome["sarif"] = [];
   fs.mkdirSync(ctx.scratch, { recursive: true });
   for (const name of ctx.tools) {
+    const native = NATIVE[name];
+    if (native) {
+      if (ctx.signal?.aborted) {
+        reports.push({ tool: name as ScannerTool, status: "skipped", hitCount: 0, detail: "cancelled" });
+        continue;
+      }
+      try {
+        const r = await native(ctx.target, ctx.fetchFn);
+        const deduped = dedupeHits(r.hits);
+        hits.push(...deduped);
+        if (r.sarif) sarif.push({ tool: name as ScannerTool, doc: r.sarif });
+        const detail = [r.error, ...(r.notes ?? [])].filter(Boolean).join("; ") || undefined;
+        reports.push({ tool: name as ScannerTool, status: r.error ? "tool_error" : "ok", hitCount: deduped.length, ...(detail ? { detail } : {}) });
+      } catch (e) {
+        reports.push({ tool: name as ScannerTool, status: "tool_error", hitCount: 0, detail: String(e).slice(0, 200) });
+      }
+      continue;
+    }
+    if (name === "jazzer") {
+      if (ctx.signal?.aborted) {
+        reports.push({ tool: "jazzer", status: "skipped", hitCount: 0, detail: "cancelled" });
+        continue;
+      }
+      try {
+        // Dynamic proof stays gated on the sandbox ([U2]); jazzer only runs when explicitly listed in tools.
+        const r = await runJazzerScan({ target: ctx.target, scratch: ctx.scratch, timeoutMs: ctx.timeoutMs, signal: ctx.signal, exec });
+        hits.push(...r.hits);
+        reports.push(...r.reports);
+        if (r.sarif) sarif.push(r.sarif);
+      } catch (e) {
+        reports.push({ tool: "jazzer", status: "tool_error", hitCount: 0, detail: String(e).slice(0, 200) });
+      }
+      continue;
+    }
     const adapter = ADAPTERS[name];
     if (!adapter) {
       reports.push({ tool: name as ScannerTool, status: "skipped", hitCount: 0, detail: "no adapter in this build" });

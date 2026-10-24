@@ -3,10 +3,11 @@ import { checkRepoPath } from "./repoPath.js";
 import type { ReconHit, ScannerTool, Score } from "./types.js";
 
 const TOOL_NAMES: [RegExp, ScannerTool][] = [
+  [/loam-secrets/i, "loam-secrets"], [/loam-sca/i, "loam-sca"], [/loam-pkg/i, "loam-pkg"],
   [/gitleaks/i, "gitleaks"], [/osv/i, "osv"], [/guarddog/i, "guarddog"], [/trivy/i, "trivy"],
   [/opengrep|semgrep/i, "opengrep"], [/nuclei/i, "nuclei"], [/zap/i, "zap"], [/jazzer/i, "jazzer"],
 ];
-const DETERMINISTIC: ReadonlySet<ScannerTool> = new Set<ScannerTool>(["gitleaks", "osv", "guarddog", "trivy"]);
+const DETERMINISTIC: ReadonlySet<ScannerTool> = new Set<ScannerTool>(["gitleaks", "osv", "guarddog", "trivy", "loam-secrets", "loam-sca", "loam-pkg"]);
 
 /** Fixed CWE/tag -> class table. First match wins; anything else is "other". */
 const CLASS_TABLE: [RegExp, string][] = [

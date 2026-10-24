@@ -25,6 +25,14 @@ export interface EvidenceItem { source: EvidenceSource; state: EvidenceState; re
 export interface ProofArtifact { kind: "poc" | "crash" | "render" | "diff"; artifact_rel: string; sha256: string; observed: string }
 export interface Cvss { vector: string; score: number; severity: Score }
 
+/** Real-world enrichment attached to deterministic scanner findings (KEV/EPSS/composite risk). */
+export interface FindingIntel {
+  cve?: string;
+  risk?: { risk_score: number; risk_label: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"; urgency: string; recommendation: string; scoring_version: string; boosters_applied: string[] };
+  kev?: { dateAdded: string; dueDate: string; ransomware: boolean };
+  epss?: { epss: number; percentile: number };
+}
+
 export interface Confirmed {
   verdict: "confirmed"; fingerprint: string; title: string; description: string;
   root_cause: string; intended_behavior: string;
@@ -39,6 +47,7 @@ export interface Confirmed {
   proof?: ProofArtifact;
   production_viable?: boolean | "unknown";
   cvss?: Cvss;
+  intel?: FindingIntel;
 }
 export interface NeedsValidation {
   verdict: "needs_validation"; fingerprint: string; title: string; description: string;
@@ -53,7 +62,7 @@ export interface Rejected {
 }
 export type FindingRecord = Confirmed | NeedsValidation | Rejected;
 
-export type ScannerTool = "gitleaks" | "osv" | "guarddog" | "trivy" | "opengrep" | "nuclei" | "zap" | "jazzer";
+export type ScannerTool = "gitleaks" | "osv" | "guarddog" | "trivy" | "opengrep" | "nuclei" | "zap" | "jazzer" | "loam-secrets" | "loam-sca" | "loam-pkg";
 export interface ReconHit {
   tool: ScannerTool;
   ruleId: string; message: string; file: string; line: number;

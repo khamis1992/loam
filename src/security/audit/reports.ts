@@ -19,6 +19,10 @@ export interface ReportInput {
   hostPlatform: string;
   readAssurance: "full" | "reduced-win32";
   budget: { spent: number; limit: number | null };
+  /** Typed per-call model results for the run. */
+  modelFailures?: { calls: number; failed: number; reasons: Record<string, number> };
+  /** Candidates folded into a better one: never deleted, listed in inferior-dupe-map.json. */
+  dupes?: { total: number; deterministic: number; judge: number; judgeFailures: number };
 }
 
 export const assuranceLabel = (a: EvidenceAssurance): string =>
@@ -26,6 +30,19 @@ export const assuranceLabel = (a: EvidenceAssurance): string =>
 
 const SEV_ORDER = ["critical", "high", "medium", "low", "info"];
 const sevRank = (s: string): number => { const i = SEV_ORDER.indexOf(s); return i < 0 ? SEV_ORDER.length : i; };
+/** Representative 0-10 number for GitHub code-scanning's security-severity (cve-intel scan::severity_score pattern). */
+const severityScore = (s: string): number => (s === "critical" ? 9.5 : s === "high" ? 8 : s === "medium" ? 5.5 : s === "low" ? 3.4 : 0);
+/** One line summarising the real-world signals behind a finding, or null. */
+export const intelLine = (f: FindingRecord): string | null => {
+  if (f.verdict !== "confirmed" || !f.intel) return null;
+  const parts = [
+    f.intel.risk ? `composite risk ${f.intel.risk.risk_score} ${f.intel.risk.risk_label}` : null,
+    f.intel.kev ? `CISA KEV${f.intel.kev.ransomware ? " (ransomware use)" : ""}` : null,
+    f.intel.epss ? `EPSS ${(f.intel.epss.epss * 100).toFixed(1)}%` : null,
+  ].filter(Boolean);
+  if (!parts.length) return null;
+  return `${parts.join("; ")}${f.intel.risk ? ` — ${f.intel.risk.urgency}` : ""}`;
+};
 
 const cell = (s: string): string => s.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 const loc = (r: FindingRecord): string => {
@@ -67,11 +84,26 @@ export function renderReport(i: ReportInput): string {
   const notice = reducedNotice(i);
   if (notice) out.push("", notice);
   if (i.runStatus === "incomplete") out.push("", "> This run is incomplete. Absence of a finding is not evidence of absence.");
+  if (i.modelFailures) {
+    const m = i.modelFailures;
+    out.push(`- Model calls: ${m.calls}, failed: ${m.failed}`);
+    for (const [r, n] of Object.entries(m.reasons).sort(([a], [b]) => a.localeCompare(b))) out.push(`  - ${cell(r)}: ${n}`);
+  }
+  if (i.dupes && (i.dupes.total > 0 || i.dupes.judgeFailures > 0)) {
+    const d = i.dupes;
+    out.push(`- Duplicates folded: ${d.total} (deterministic ${d.deterministic}, judge ${d.judge}); judge failures: ${d.judgeFailures}`);
+  }
   out.push("", "## 2. Confirmed findings", "");
   if (c.length === 0) out.push("None.");
   else {
-    out.push("| Severity | Title | Location | Fingerprint | Evidence |", "|---|---|---|---|---|");
-    for (const f of c) out.push(`| ${f.severity.overall_severity} | ${cell(f.title)} | ${cell(loc(f))} | \`${f.fingerprint}\` | ${assuranceLabel(f.evidence_assurance)} |`);
+    const anyIntel = c.some((f) => intelLine(f) !== null);
+    if (anyIntel) {
+      out.push("| Severity | Title | Real-world risk | Location | Fingerprint | Evidence |", "|---|---|---|---|---|---|");
+      for (const f of c) out.push(`| ${f.severity.overall_severity} | ${cell(f.title)} | ${cell(intelLine(f) ?? "-")} | ${cell(loc(f))} | \`${f.fingerprint}\` | ${assuranceLabel(f.evidence_assurance)} |`);
+    } else {
+      out.push("| Severity | Title | Location | Fingerprint | Evidence |", "|---|---|---|---|---|");
+      for (const f of c) out.push(`| ${f.severity.overall_severity} | ${cell(f.title)} | ${cell(loc(f))} | \`${f.fingerprint}\` | ${assuranceLabel(f.evidence_assurance)} |`);
+    }
   }
   out.push("", "## 3. Needs validation", "");
   if (n.length === 0) out.push("None.");
@@ -104,6 +136,9 @@ export function renderDetail(i: ReportInput): string {
     out.push(`- Fingerprint: \`${f.fingerprint}\``);
     out.push(`- Location: ${loc(f)}`);
     out.push(`- Evidence assurance: ${assuranceLabel(f.evidence_assurance)}`);
+    const intel = intelLine(f);
+    if (intel) out.push(`- Real-world risk: ${intel}`);
+    if (f.intel?.risk?.recommendation) out.push(`- Advisory: ${f.intel.risk.recommendation}`);
     out.push("", f.description, "", `Root cause: ${f.root_cause}`, "", `Intended behavior: ${f.intended_behavior}`, "", "Trace:");
     for (const t of f.trace) out.push(`- ${t.kind} ${t.file}:${t.line} (${t.scope}): ${t.description}`);
     out.push("", "Remediation:", f.remediation.strategy, "");
@@ -140,15 +175,23 @@ export function toSarif(i: ReportInput): Record<string, unknown> {
       const e = f.evidence[0];
       const file = t?.file ?? e?.file ?? "unknown";
       const line = Math.max(1, t?.line ?? e?.line ?? 1);
+      const intel = f.verdict === "confirmed" ? f.intel : undefined;
+      // Level policy (cve-intel sarif.rs): KEV or HIGH+ composite risk is an error regardless of the advisory's own severity.
+      const riskHigh = intel?.risk?.risk_label === "CRITICAL" || intel?.risk?.risk_label === "HIGH";
       const level = f.verdict === "needs_validation" ? "note"
-        : (f as Confirmed).severity.overall_severity === "critical" || (f as Confirmed).severity.overall_severity === "high" ? "error" : "warning";
+        : f.verdict === "confirmed" && (intel?.kev || riskHigh || f.severity.overall_severity === "critical" || f.severity.overall_severity === "high") ? "error"
+        : "warning";
       return {
         ruleId: f.fingerprint,
         level,
         message: { text: f.title },
         locations: [{ physicalLocation: { artifactLocation: { uri: file }, region: { startLine: line } } }],
         partialFingerprints: { "loam/v1": f.fingerprint },
-        properties: { verdict: f.verdict, evidenceAssurance: f.evidence_assurance },
+        properties: {
+          verdict: f.verdict, evidenceAssurance: f.evidence_assurance,
+          ...(f.verdict === "confirmed" && f.cvss ? { "security-severity": String(f.cvss.score) } : f.verdict === "confirmed" ? { "security-severity": String(severityScore(f.severity.overall_severity)) } : {}),
+          ...(intel ? { intel } : {}),
+        },
       };
     });
   return {
@@ -170,6 +213,8 @@ export function runMetadata(i: ReportInput, extra: Record<string, unknown> = {})
     read_assurance: i.readAssurance,
     promotions: i.promotions,
     scanners: i.scanners,
+    ...(i.modelFailures ? { model_calls: i.modelFailures } : {}),
+    ...(i.dupes ? { duplicates: i.dupes } : {}),
     counts: {
       confirmed: confirmed(i.findings).length,
       needs_validation: pending(i.findings).length,
