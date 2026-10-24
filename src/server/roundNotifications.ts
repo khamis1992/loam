@@ -17,6 +17,8 @@ export interface RoundEmailNotificationInput {
   agentId?: string;
   summary: string;
   signal?: AbortSignal;
+  /** When false, queues the approval record without blocking and returns status "pending". Default true. */
+  wait?: boolean;
 }
 
 export interface RoundEmailNotificationResult {
@@ -74,19 +76,26 @@ export async function sendRoundEmailWithApproval(
     argsPreview: JSON.stringify({ recipient, subject, preview: input.summary.slice(0, 200) }),
   });
 
-  const decision = await waitForDecision(approval.id, input.signal);
-  if (decision !== "approved") {
-    log.info(`round email for task ${input.taskId} round ${input.round} was ${decision}`);
-    return { sent: false, approvalId: approval.id, status: decision, recipient };
+  const deliverWhenApproved = async (): Promise<RoundEmailNotificationResult> => {
+    const decision = await waitForDecision(approval.id, input.signal);
+    if (decision !== "approved") {
+      log.info(`round email for task ${input.taskId} round ${input.round} was ${decision}`);
+      return { sent: false, approvalId: approval.id, status: decision, recipient };
+    }
+
+    try {
+      await emailChannel.send(recipient, `${subject}\n\n${emailBody}`);
+      log.info(`round email for task ${input.taskId} round ${input.round} sent to ${recipient}`);
+      return { sent: true, approvalId: approval.id, status: "approved", recipient };
+    } catch (err) {
+      log.warn(`failed to send round email: ${String(err)}`);
+      return { sent: false, approvalId: approval.id, status: "approved", recipient };
+    }
+  };
+
+  if (input.wait === false) {
+    return { sent: false, approvalId: approval.id, status: "pending", recipient };
   }
 
-  // Approved: send through the channel
-  try {
-    await emailChannel.send(recipient, `${subject}\n\n${emailBody}`);
-    log.info(`round email for task ${input.taskId} round ${input.round} sent to ${recipient}`);
-    return { sent: true, approvalId: approval.id, status: "approved", recipient };
-  } catch (err) {
-    log.warn(`failed to send round email: ${String(err)}`);
-    return { sent: false, approvalId: approval.id, status: "approved", recipient };
-  }
+  return deliverWhenApproved();
 }

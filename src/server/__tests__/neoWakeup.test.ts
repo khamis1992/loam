@@ -16,7 +16,7 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "loam-neo-n8-test-"));
 process.env.MANUS_LOCAL_DATA_DIR = tmpDir;
 
 import { nextOccurrenceAfter, initialNextRunAt } from "../scheduleTime.js";
-import { addSchedule, dueSchedules, getSchedule, listSchedules, recordScheduleOutcome } from "../db.js";
+import { addSchedule, dueSchedules, getSchedule, listSchedules, recordScheduleOutcome, closeDb } from "../db.js";
 import { createWakeupTools } from "../../tools/wakeupTools.js";
 import { RunGraph } from "../../graph/runGraph.js";
 import { createApproval, decideApproval, getApproval } from "../approvals.js";
@@ -24,6 +24,9 @@ import { sendRoundEmailWithApproval } from "../roundNotifications.js";
 import { createBinding, startChannelRouter } from "../channels/router.js";
 import { createAgent } from "../agents.js";
 import { EmailChannel, MockEmailProvider } from "../channels/email.js";
+
+// Ensure DB is freshly opened in the isolated tmpDir
+closeDb();
 
 describe("Neo N8: agent-initiated recurring wakeups", () => {
   it("stops recurring runs once 'until' boundary is exceeded", () => {
@@ -196,6 +199,7 @@ describe("Neo N8: agent-initiated recurring wakeups", () => {
     assert.ok(outbox[0]);
     assert.equal(outbox[0].to, "ops@example.com");
     assert.ok(outbox[0].text.includes("Mission Round 1 Completed"));
+    stopRouter();
   });
 
   /**
@@ -213,7 +217,7 @@ describe("Neo N8: agent-initiated recurring wakeups", () => {
 
     // The mock clock: each round's completion hands the next firing a later instant.
     let clock = new Date("2026-10-20T10:00:00.000Z");
-    const schedule = addSchedule(
+    let schedule = addSchedule(
       "hourly deployment check",
       3600,
       agent.id,
@@ -255,10 +259,11 @@ describe("Neo N8: agent-initiated recurring wakeups", () => {
       emit({ type: "round_done", round: schedule.round, scheduleId: schedule.id, summary: `Round ${schedule.round} finished` });
       const email = await sendRoundEmailWithApproval({
         taskId: "task-hourly",
-        round: schedule.round,
+        round: schedule.round ?? i,
         scheduleId: schedule.id,
         agentId: agent.id,
         summary: `Round ${schedule.round} finished`,
+        wait: false,
       });
       // Nobody has approved yet: the email stays queued, never dispatched.
       assert.equal(email.sent, false);
@@ -267,7 +272,7 @@ describe("Neo N8: agent-initiated recurring wakeups", () => {
 
       // The clock advances past the firing and the round is recorded as done.
       clock = new Date(clock.getTime() + 3600_000);
-      recordScheduleOutcome(schedule.id, { ok: true, taskId: `task-round-${i}`, now: clock });
+      schedule = recordScheduleOutcome(schedule.id, { ok: true, taskId: `task-round-${i}`, now: clock })!;
     }
 
     assert.equal(roundStarts.length, 3);

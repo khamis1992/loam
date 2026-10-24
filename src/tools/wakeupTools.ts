@@ -118,7 +118,7 @@ export function createWakeupTools(): Tool[] {
           );
 
           // Emit event to inform run graph and listeners
-          ctx.emit({
+          ctx.emit?.({
             type: "wakeup_scheduled",
             scheduleId: schedule.id,
             nextRunAt: schedule.nextRunAt,
@@ -165,7 +165,7 @@ export function createWakeupTools(): Tool[] {
             };
           }
           const deleted = deleteSchedule(scheduleId);
-          ctx.emit({
+          ctx.emit?.({
             type: "wakeup_cancelled",
             scheduleId,
           });
@@ -182,7 +182,7 @@ export function createWakeupTools(): Tool[] {
           for (const s of matching) {
             if (deleteSchedule(s.id)) {
               count++;
-              ctx.emit({
+              ctx.emit?.({
                 type: "wakeup_cancelled",
                 scheduleId: s.id,
               });
