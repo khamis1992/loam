@@ -79,8 +79,12 @@ const apis = {
     collect: (...args) => invoke("diagnosticLogs", "collect", args),
   },
   // J6 local debug surface: per-process RSS only (main + renderers + server).
+  // J7 adds `refresh`, which re-samples the renderer processes on demand so a
+  // measurement can be taken immediately before and after a release instead of
+  // waiting for the next sampler tick.
   debugMemory: {
     snapshot: (...args) => invoke("debugMemory", "snapshot", args),
+    refresh: (...args) => invoke("debugMemory", "refresh", args),
   },
   desktopActivityIndicator: {
     getState: (...args) => invoke("desktopActivityIndicator", "getState", args),

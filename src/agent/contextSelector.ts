@@ -173,8 +173,15 @@ export function normalizeSelectorConfig(raw: Partial<ContextSelectorConfig> | un
 
 /* ------------------------------- artefacts ------------------------------- */
 
-/** The kind of artefact a selector candidate came from. */
-export type ArtefactKind = "tool_result" | "kb_seed" | "memory" | "task_list" | "plan";
+/**
+ * The kind of artefact a selector candidate came from.
+ *
+ * `canvas_edit` (Neo N11) is an edit the user made on the run-graph canvas. It is
+ * a durable artefact of the run rather than a tool result, so it ranks and is
+ * bounded like every other entry: a corrected node can be re-attached on a later
+ * step instead of having to stay pinned in the prompt.
+ */
+export type ArtefactKind = "tool_result" | "kb_seed" | "memory" | "task_list" | "plan" | "canvas_edit";
 
 /** One selectable unit of the run's artefact store. */
 export interface Artefact {

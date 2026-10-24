@@ -15,27 +15,18 @@ import type { ChatMessage, OllamaClient } from "../../ollama.js";
 import { chatWithFallback } from "../../agent/model.js";
 import { chatWithFailover } from "../../llm/failover.js";
 
-/** Minimal contract the seed pipeline needs from a model. */
-export interface ModelCaller {
-  chat(request: ModelRequest): Promise<ModelResponse>;
-}
+import type { ModelCaller, ModelRequest, ModelResponse, ModelRole } from "./types.js";
 
-export interface ModelRequest {
-  /** System prompt (optional). */
-  system?: string;
-  /** User prompt. */
-  prompt: string;
-  temperature?: number;
-  timeoutMs?: number;
-  signal?: AbortSignal;
-  /** Optional JSON schema to constrain the response when the provider supports
-   *  constrained output (passed through as the provider `format`). */
-  jsonSchema?: Record<string, unknown>;
-}
+/**
+ * The model boundary contract lives in `types.ts` so the seed / simulate / report
+ * stages and their tests share one definition. Re-exported here for the callers
+ * that historically imported it from this module.
+ */
+export type { ModelCaller, ModelRequest, ModelResponse, ModelCallInput, ModelCallOutput } from "./types.js";
 
-export interface ModelResponse {
-  content: string;
-  model?: string;
+/** Role attached to each call when the caller did not name one. */
+export function roleOf(request: ModelRequest): ModelRole {
+  return request.role ?? "simulate";
 }
 
 function toMessages(request: ModelRequest): ChatMessage[] {
@@ -304,6 +295,9 @@ export interface AskJsonOptions<T> {
   timeoutMs?: number;
   signal?: AbortSignal;
   jsonSchema?: Record<string, unknown>;
+  /** The pipeline stage making this call. Recorded on every request so the
+   *  audit trail and the report's model attribution stay honest. */
+  role?: ModelRole;
   /** Additional repair attempts after the first (default 2). */
   retries?: number;
   /** Validate + normalize the parsed JSON. Throw to trigger a retry. */
@@ -311,9 +305,37 @@ export interface AskJsonOptions<T> {
 }
 
 /**
+ * Ask the model for free text, with no JSON extraction or repair. Used by the
+ * report stage, whose job is prose written from facts the pipeline computed; it
+ * returns the raw {@link ModelResponse} so the caller can keep the provider's
+ * model name for attribution.
+ */
+export async function askText(
+  caller: ModelCaller,
+  opts: {
+    system?: string;
+    prompt: string;
+    role?: ModelRole;
+    temperature?: number;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+  },
+): Promise<ModelResponse> {
+  return caller.chat({
+    ...(opts.role ? { role: opts.role } : {}),
+    ...(opts.system ? { system: opts.system } : {}),
+    prompt: opts.prompt,
+    ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+    ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+    ...(opts.signal ? { signal: opts.signal } : {}),
+  });
+}
+
+/**
  * Ask the model for JSON, then extract, repair, validate and (on failure)
  * retry with an explicit correction instruction. Throws only when every
- * attempt fails.
+ * attempt fails. The call carries `role` so every model call in the pipeline is
+ * attributable to the stage that made it.
  */
 export async function askJson<T>(caller: ModelCaller, opts: AskJsonOptions<T>): Promise<T> {
   const retries = Math.max(0, opts.retries ?? 2);
@@ -324,6 +346,7 @@ export async function askJson<T>(caller: ModelCaller, opts: AskJsonOptions<T>): 
         ? opts.prompt
         : `${opts.prompt}\n\nYour previous reply was not valid JSON: ${lastError}. Reply with only the corrected JSON object, no prose and no code fence.`;
     const response = await caller.chat({
+      ...(opts.role ? { role: opts.role } : {}),
       ...(opts.system ? { system: opts.system } : {}),
       prompt,
       ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),

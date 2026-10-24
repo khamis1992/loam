@@ -16,6 +16,18 @@ import { Composer } from '@/components/chat/Composer';
 import { EventList } from '@/components/chat/EventList';
 import { SessionStatusBadge } from '@/components/chat/SessionStatusBadge';
 import { useSessionRuntime } from '@/components/chat/useSessionRuntime';
+// J7 idle session hibernation: release the derived render caches after a
+// sustained idle period; the first keystroke wakes without losing the draft.
+import { useSessionHibernation } from '@/components/chat/useSessionHibernation';
+import { HibernationNotice } from '@/components/chat/HibernationNotice';
+// J7: the observable hibernate/wake surface used by the e2e suite and the
+// renderer-RSS bench. It is a renderer-local controller, so a release here can
+// never touch the canonical store, the draft or the daemon's own caches.
+import {
+  createHibernationTestHook,
+  resolveHibernationReady,
+} from '@/components/chat/hibernationTestHook';
+import { requestHibernation, wakeHibernatedSessionWithAuth } from '@/services/sessionHibernationApi';
 import { StepTimeline, type TimelineStep } from '@/components/chat/StepTimeline';
 import { SideChatPanel } from '@/components/chat/SideChatPanel';
 import { AttachmentCard, kindFromName, type AttachmentKind } from '@/components/chat/AttachmentCard';
@@ -151,6 +163,31 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const [knowledgeOn, setKnowledgeOn] = useState(false);
   // D19 session runtime: sleep state + compute budget, shown by the badge.
   const runtime = useSessionRuntime(sessionUid);
+  // J7: hibernation state for this chat view (derived-cache release + wake).
+  const hibernation = useSessionHibernation(sessionUid, events);
+  // J7: expose the hibernate/wake surface for the e2e suite and the RSS bench.
+  // The controller dispatches into the store and flips this view-local flag, so
+  // it cannot disagree with what is on screen and it never re-releases state the
+  // idle timer already released.
+  const [hookHibernated, setHookHibernated] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const hook = createHibernationTestHook({
+      dispatch: (action) => dispatch(action as Parameters<typeof dispatch>[0]),
+      isHibernated: (id) => id === sessionUid && (hookHibernated || hibernation.hibernated),
+      setHibernated: (id, value) => {
+        if (id !== sessionUid) return;
+        setHookHibernated(value);
+      },
+      hibernateDaemon: (id) => requestHibernation(id, undefined).then(() => undefined),
+      wakeDaemon: (id) => wakeHibernatedSessionWithAuth(id).then(() => undefined),
+    });
+    window.__loamHibernation = hook;
+    resolveHibernationReady();
+    return () => {
+      delete window.__loamHibernation;
+    };
+  }, [dispatch, hibernation.hibernated, hookHibernated, sessionUid]);
   const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
   const [takeoverNote, setTakeoverNote] = useState('');
@@ -551,6 +588,8 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                   onWake={() => void runtime.wake()}
                 />
               </div>
+              {/* J7: local status only — never a message to the model. */}
+              <HibernationNotice hibernated={hibernation.hibernated} />
               {running && <div className="mb-2 text-sm text-text-tertiary">{t('{name} is thinking', { name: PRODUCT })}…</div>}
               {clockEvent && !running && (
                 <div className="mb-2 text-sm text-text-tertiary">
@@ -572,6 +611,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                 events={events}
                 sessionId={sessionUid}
                 socket={socketRef.current}
+                hibernated={hookHibernated || hibernation.hibernated}
                 onOpenFile={handleOpenFileInEditor}
                 onOpenComputer={(e) => {
                   setSelectedTool(e);
@@ -659,6 +699,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               onSend={handleSend}
               onStop={handleStop}
               running={running}
+              onFirstInput={(draft) => void hibernation.onFirstInput(draft)}
               defaultLoamMode={draftLoamMode}
               resolvedLoamMode={resolvedLoamMode}
               assistantReply={assistantText}

@@ -27,7 +27,7 @@ export const COMPANION_SERVICES: CompanionService[] = [
   { id: "files", labelAr: "الملفات", description: "قراءة وإنشاء وتعديل وتنظيم ملفات مساحة المهمة", tools: ["file_read", "file_write", "file_edit", "file_list", "file_search", "file_stat", "file_mkdir", "file_move", "file_delete", "file_extract_text", "file_view_image"] },
   { id: "search", labelAr: "البحث", description: "البحث في الويب وقراءة المصادر", tools: ["web_search", "web_fetch"] },
   { id: "browser", labelAr: "المتصفح", description: "أتمتة متصفح بجلسة المهمة مع أدلة", tools: ["browser_open", "browser_goto", "browser_snapshot", "browser_click", "browser_type", "browser_press", "browser_eval", "browser_screenshot", "browser_table", "browser_act", "browser_pages", "browser_close", "browser_trace_start", "browser_trace_stop", "browser_trace_status", "browser_som"] },
-  { id: "office", labelAr: "الأوفيس", description: "مستندات وجداول وعروض حية + استيراد وتصدير DOCX/XLSX/PPTX", tools: ["loam_document", "loam_studio", "office_craft", "office_import", "office_export", "office_status"] },
+  { id: "office", labelAr: "الأوفيس", description: "مستندات وجداول وعروض وصور وتصاميم حية في لوحة العمل (Loam Docs/Sheets/Slides/Photo/Design) + استيراد وتصدير DOCX/XLSX/PPTX", tools: ["loam_document", "loam_studio", "office_craft", "office_import", "office_export", "office_status"] },
   { id: "data", labelAr: "تحليل البيانات", description: "جداول ومؤشرات داخل المهمة", tools: ["loam_dataset"] },
   { id: "creative", labelAr: "استديو صمّم", description: "تحرير الصور والفيديو والمجسمات + التصدير الخلفي", tools: ["loam_creative", "loam_canvas", "creative_export", "creative_export_status", "creative_export_result", "creative_timeline", "creative_image"] },
   { id: "mobile", labelAr: "تطوير التطبيقات", description: "مشاريع تطبيقات ويب وجوال وبناء APK محلي", tools: ["loam_mobile", "rork_build", "rork_from_web"] },
@@ -50,7 +50,7 @@ export const COMPANION_SERVICES: CompanionService[] = [
   { id: "team", labelAr: "تعاون المساعدين", description: "تفويض جزء من العمل إلى رفيق آخر يعمل بهويته ومتابعة نتيجته (يتطلب وضعه ضمن فريق/تنفيذ)", tools: ["companion_delegate", "companion_delegations"], dynamic: true },
   { id: "learning", labelAr: "التعلم من طريقة العمل", description: "تحويل سير العمل المتكرر إلى مهارة مرقّمة الإصدارات مع توثيق سبب نجاحها", tools: ["companion_learn_skill"], dynamic: true },
   { id: "tasks", labelAr: "المهام والمشاريع", description: "إنشاء مهام Loam ومتابعتها وإلغاؤها وقراءة نتائجها", tools: ["task_create", "task_list", "task_get", "task_cancel"] },
-  { id: "automation", labelAr: "الأتمتة", description: "روتينات مجدولة تُشغّل دوريًا (إنشاء/عرض/حذف)", tools: ["schedule_create", "schedule_list", "schedule_delete", "watch_create", "watch_list"] },
+  { id: "automation", labelAr: "الأتمتة", description: "روتينات مجدولة تُشغّل دوريًا (إنشاء/عرض/حذف)", tools: ["schedule_create", "schedule_list", "schedule_delete", "watch_create", "watch_list", "schedule_wakeup", "cancel_wakeup"] },
 ];
 
 export interface WorkModeDef {

@@ -45,6 +45,10 @@ export async function handleSchedulesRoutes(
       githubEvents: s.githubEvents ?? null,
       projectId: s.projectId ?? null,
       playbook: s.playbook ?? null,
+      until: s.until ?? null,
+      missionId: s.missionId ?? null,
+      instruction: s.instruction ?? null,
+      round: s.round ?? null,
     }));
     sendJson(res, 200, { schedules });
     return true;
