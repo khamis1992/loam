@@ -2,11 +2,9 @@
 
 ![Loam Studio Banner](docs/assets/banner.svg)
 
-[![Version](https://img.shields.io/badge/version-0.5.31-blue.svg)](https://github.com/khamis1992/loam)
-[![Electron](https://img.shields.io/badge/Electron-44.7.2-47848f.svg)](https://www.electronjs.org/)
-[![Node](https://img.shields.io/badge/node-%3E%3D22.13.0-brightgreen.svg)](https://nodejs.org/)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
-![License](https://img.shields.io/badge/license-Not%20Yet%20Specified-red.svg)
+<p align="center">
+<img src="https://img.shields.io/badge/version-0.5.31-blue.svg" alt="Version"> <img src="https://img.shields.io/badge/Electron-44.7.2-47848f.svg" alt="Electron"> <img src="https://img.shields.io/badge/node-%3E%3D22.13.0-brightgreen.svg" alt="Node"> <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg" alt="Platform"> <img src="https://img.shields.io/badge/license-Not%20Yet%20Specified-red.svg" alt="License">
+</p>
 
 **Loam Studio** is a local AI agent desktop application built with Electron. It provides a unified creative workspace with four specialized categories, project templates, and ready-to-use workflows, enabling AI agents to work effectively on different types of projects.
 
