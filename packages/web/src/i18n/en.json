@@ -1074,5 +1074,15 @@
   "Some guide pages are missing from this install: {pages}": "Some guide pages are missing from this install: {pages}",
   "This page has no Arabic edition yet, so it is shown in English.": "This page has no Arabic edition yet, so it is shown in English.",
   "Open the guide": "Open the guide",
-  "Long-horizon guide": "Long-horizon guide"
+  "Long-horizon guide": "Long-horizon guide",
+  "Project wiki": "Project wiki",
+  "Keeps session summaries, notes and handoffs for this project on this device.": "Keeps session summaries, notes and handoffs for this project on this device.",
+  "Wiki pages": "Wiki pages",
+  "Pages stored for this project.": "Pages stored for this project.",
+  "Open handoffs": "Open handoffs",
+  "No open handoffs.": "No open handoffs.",
+  "Accept": "Accept",
+  "Wiki on": "Wiki on",
+  "Wiki off": "Wiki off",
+  "Wiki state": "Wiki state"
 }

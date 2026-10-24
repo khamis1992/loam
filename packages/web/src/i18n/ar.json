@@ -1074,5 +1074,15 @@
   "Some guide pages are missing from this install: {pages}": "بعض صفحات الدليل غير موجودة في هذا التثبيت: {pages}",
   "This page has no Arabic edition yet, so it is shown in English.": "لا توجد نسخة عربية من هذه الصفحة بعد، لذلك تُعرض بالإنجليزية.",
   "Open the guide": "فتح الدليل",
-  "Long-horizon guide": "دليل المهام الطويلة"
+  "Long-horizon guide": "دليل المهام الطويلة",
+  "Project wiki": "ويكي المشروع",
+  "Keeps session summaries, notes and handoffs for this project on this device.": "يحفظ ملخصات الجلسات والملاحظات والتسليمات لهذا المشروع على هذا الجهاز.",
+  "Wiki pages": "صفحات الويكي",
+  "Pages stored for this project.": "الصفحات المخزّنة لهذا المشروع.",
+  "Open handoffs": "تسليمات مفتوحة",
+  "No open handoffs.": "لا توجد تسليمات مفتوحة.",
+  "Accept": "قبول",
+  "Wiki on": "الويكي مفعّل",
+  "Wiki off": "الويكي معطّل",
+  "Wiki state": "حالة الويكي"
 }
