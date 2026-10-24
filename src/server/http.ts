@@ -1801,8 +1801,6 @@ loadAgents();
         if (await handleAgentSpawnRoutes(req, res, p)) return;
         if (await handleAgentThreadRoutes(req, res, p)) return;
         if (await handleRetryLastRoutes(req, res, p)) return;
-        // Session timeline UX (D16): side-chat questions + pause/take-over.
-        if (await handleSessionControlRoutes(req, res, p)) return;
         // Session insights (D18): post-mortem metrics, issue timeline, feedback.
         if (await handleInsightsRoutes(req, res, p, { ollama, model: cfg.model })) return;
         if (await handleSchedulesRoutes(req, res, p)) return;
@@ -2826,6 +2824,8 @@ loadAgents();
             .catch((error) => log.warn(`resume ${id}: ${String(error)}`));
           return sendJson(res, 202, { taskId: id, status: getTask(id)?.status });
         }
+        // Session timeline UX (D16): side-chat questions + pause/take-over.
+        if (await handleSessionControlRoutes(req, res, p)) return;
         if (req.method === "POST" && p.startsWith("/api/tasks/") && p.endsWith("/cancel")) {
           const id = decodeURIComponent(p.slice("/api/tasks/".length, -"/cancel".length));
           const task = getTask(id);

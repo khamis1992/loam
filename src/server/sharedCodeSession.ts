@@ -516,9 +516,14 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 }
 
 // Run only when invoked directly (node --import tsx src/server/sharedCodeSession.ts ...).
-const invokedDirectly = process.argv[1]
-  ? path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))
-  : false;
+const invokedDirectly = (() => {
+  try {
+    return process.argv[1] ? path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url)) : false;
+  } catch {
+    return false;
+  }
+})();
+
 if (invokedDirectly) {
   main().then(
     (code) => {
