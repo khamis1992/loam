@@ -47,6 +47,7 @@
     "check:promo-carousel": "node src/scripts/check-promo-carousel.mjs",
     "check:promptwire": "tsx src/scripts/check-promptwire.ts",
     "check:prune": "tsx src/scripts/check-prune.ts",
+    "check:rea-allowlist": "tsx src/scripts/check-rea-allowlist.ts",
     "check:recovery": "tsx src/scripts/check-recovery.ts",
     "check:recovery:http": "tsx src/scripts/check-recovery-http.ts",
     "check:scanners": "tsx src/scripts/check-scanners.ts",
