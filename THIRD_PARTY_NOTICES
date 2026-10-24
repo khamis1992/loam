@@ -122,3 +122,6 @@ Adapted files
                                flexibleMatchHint, extractContext) and the all-or-
                                nothing batch semantics are adapted from
                                crates/jcode-app-core/src/tool/edit.rs.
+  src/codemode/          - the Codemode sandbox tool (QuickJS sandbox,
+                          script prelude, tool discovery, session store)
+                          adapted from ref/codemode/{engine,lib,tests}.rs.

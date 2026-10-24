@@ -31,6 +31,12 @@
  *    ffmpeg path that needs no editor). A command the editor itself refuses is
  *    reported with `reason: "command_rejected"` and the editor's own error, so
  *    a bad command is never confused with an unreachable editor.
+ *  - Every call is routed by `VideoStudioRouter` (fc-07): a timeline operation
+ *    stays on the timeline engine, an effects operation goes to the effects
+ *    engine when it is installed, and when it cannot the call is degraded to the
+ *    timeline engine's own `transition_basic` / `effect_basic` with a note in the
+ *    result saying so. The route is reported in every result under `routing`, so
+ *    the model never has to guess which engine ran the edit.
  *
  * The mapping table and the fallback contract are documented in
  * docs/filmcraft-integration.md.
@@ -57,6 +63,7 @@ import {
   type EffectsAskKind,
 } from "../../packages/shared/src/effectsRoundTrip.js";
 import { parseTimeToken } from "./videoEditAgent.js";
+import { VideoStudioRouter, videoStudioRouter } from "./videoStudioRouter.js";
 import {
   VideoStudioProjectStore,
   VideoStudioStateTracker,
@@ -109,7 +116,7 @@ export interface VideoStudioRelayLike {
 export const VIDEO_STUDIO_FALLBACK_TOOL = "video_edit";
 
 export type VideoStudioFallbackReason =
-  | "filmcraft_dist_missing"
+  | "loam_video_dist_missing"
   | "panel_not_open"
   | "bridge_unavailable"
   | "command_rejected"
@@ -613,44 +620,23 @@ function buildAction(
 // Result envelopes
 // ---------------------------------------------------------------------------
 
-/**
- * Read the live timeline state from the editor (fc-05). Best-effort: a state
- * read must never break the command it precedes, so a relay failure here
- * returns undefined and the action proceeds without a summary.
- *
- * The read also (a) updates the per-task tracker, which reports a manual-edit
- * notice when the timeline differs from the state the agent last saw, and
- * (b) schedules a debounced persist of the raw project into the task files.
- */
-async function readStudioState(
-  taskId: string,
-  relay: VideoStudioRelayLike,
-  tracker: VideoStudioStateTracker,
-  store: VideoStudioProjectStore,
-  workspace: string,
-): Promise<{ raw: unknown; summary: VideoStudioStateSummary; notice: string | null } | undefined> {
-  let raw: unknown;
-  try {
-    raw = await relay.enqueue(taskId, "film", "inspect", {});
-  } catch {
-    return undefined;
-  }
-  const observation = tracker.observe(taskId, raw);
-  try {
-    store.schedule(taskId, workspace, raw, observation.summary);
-  } catch {
-    /* persistence is best-effort */
-  }
-  return { raw, summary: observation.summary, notice: observation.notice };
+/** The routing decision attached to every `video_studio` result (fc-07). */
+export interface VideoStudioRouting {
+  route: "film" | "effects";
+  target: "film" | "effects";
+  degraded: boolean;
+  reason?: "effects_backend_unavailable" | "effects_engine_unsupported";
+  note: string;
 }
 
-function fallbackResult(reason: VideoStudioFallbackReason, message: string, hint?: string): ToolResult {
+function fallbackResult(reason: VideoStudioFallbackReason, message: string, routing: VideoStudioRouting, hint?: string): ToolResult {
   return {
     ok: false,
     content: JSON.stringify({
       ok: false,
       fallback: VIDEO_STUDIO_FALLBACK_TOOL,
       reason,
+      routing,
       message,
       hint: hint ?? `Use the ${VIDEO_STUDIO_FALLBACK_TOOL} tool instead: it compiles an edit-decision-list and renders via ffmpeg, so it needs neither the Loam Video dist nor the editor bridge.`,
     }),
@@ -658,7 +644,7 @@ function fallbackResult(reason: VideoStudioFallbackReason, message: string, hint
 }
 
 /** Map a relay failure to a retry hint (panel not open) or a video_edit fallback. */
-function relayErrorResult(err: unknown): ToolResult {
+function relayErrorResult(err: unknown, routing: VideoStudioRouting): ToolResult {
   const code = (err as { code?: unknown } | null)?.code;
   const detail = err instanceof Error ? err.message : String(err);
   if (code === "PANEL_NOT_OPEN") {
@@ -668,13 +654,14 @@ function relayErrorResult(err: unknown): ToolResult {
         ok: false,
         reason: "panel_not_open",
         retry: true,
+        routing,
         message:
           "No Loam Video panel is attached to this task yet. The Workspace panel opens automatically when video_studio runs; retry this action once it is open.",
       }),
     };
   }
   if (code === "CANCELLED") {
-    return fallbackResult("cancelled", `The task stopped before the Loam Video command finished (${detail}).`);
+    return fallbackResult("cancelled", `The task stopped before the Loam Video command finished (${detail}).`, routing);
   }
   // The panel reported a failed command. It uses the same ok:false channel both
   // when the editor refused a command (bad url, missing clip, unsupported
@@ -687,12 +674,14 @@ function relayErrorResult(err: unknown): ToolResult {
     return fallbackResult(
       "command_rejected",
       `The Loam Video editor refused the command (${detail}).`,
+      routing,
       `The panel executed the command but the editor rejected it, so retrying the same command will fail again: read the state action for the current clips/tracks, fix the command and retry video_studio. If the editor API itself did not load, use the ${VIDEO_STUDIO_FALLBACK_TOOL} tool instead (it compiles an edit-decision-list and renders via ffmpeg, so it needs no editor).`,
     );
   }
   return fallbackResult(
     "bridge_unavailable",
     `The Loam Video editor did not answer (${code ?? "error"}: ${detail}).`,
+    routing,
   );
 }
 
@@ -703,15 +692,16 @@ function relayErrorResult(err: unknown): ToolResult {
  * failure, an unsupported format, an unreadable file) is an export failure that
  * still points at the video_edit fallback.
  */
-function exportErrorResult(err: unknown): ToolResult {
+function exportErrorResult(err: unknown, routing: VideoStudioRouting): ToolResult {
   const code = (err as { code?: unknown } | null)?.code;
   const detail = err instanceof Error ? err.message : String(err);
   if (code === "PANEL_NOT_OPEN" || code === "TIMEOUT" || code === "CANCELLED" || code === "COMMAND_REJECTED") {
-    return relayErrorResult(err);
+    return relayErrorResult(err, routing);
   }
   return fallbackResult(
     "export_failed",
     `The Loam Video export did not produce a file (${detail}).`,
+    routing,
     `The editor could not render this timeline (${detail}). Use the ${VIDEO_STUDIO_FALLBACK_TOOL} tool instead: it compiles an edit-decision-list and renders via ffmpeg, so it needs no editor.`,
   );
 }
@@ -765,6 +755,7 @@ async function runEffectsAction(
   workspace: string,
   relay: VideoStudioRelayLike,
   root: string,
+  routing: VideoStudioRouting,
 ): Promise<ToolResult> {
   if (!isEffectcraftDistInstalled(root)) {
     return {
@@ -772,6 +763,7 @@ async function runEffectsAction(
       content: JSON.stringify({
         ok: false,
         reason: "effects_dist_missing",
+        routing,
         message: `The Loam Effects engine is not installed (${effectcraftDistDir(root)}).`,
         hint:
           "Use the FilmCraft-native video_studio actions instead: transition_basic (sequence.applyVideoTransition / applyAudioTransition) " +
@@ -787,13 +779,14 @@ async function runEffectsAction(
         ok: true,
         content: JSON.stringify({
           action,
+          routing,
           available: effectsCatalog.length > 0,
           commands: effectsCatalog,
           supportedAsks: EFFECTS_ASKS.map((ask) => ({ ask, command: resolveAskId(effectsCatalog, ask) })),
         }),
       };
     } catch (err) {
-      return relayErrorResult(err);
+      return relayErrorResult(err, routing);
     }
   }
 
@@ -811,15 +804,23 @@ async function runEffectsAction(
         results.push({ method: step.method, ok: true, result: value });
       }
       const project = readEffectsProjectPath(results[0]?.result) ?? projectPath;
-      return { ok: true, content: JSON.stringify({ action, projectPath: project, steps: results }) };
+      return { ok: true, content: JSON.stringify({ action, routing, projectPath: project, steps: results }) };
     } catch (err) {
-      return relayErrorResult(err);
+      return relayErrorResult(err, routing);
     }
   }
 
   const ask = actionToAsk(action);
   if (!ask) {
-    return { ok: false, content: `unsupported effects action: ${action}` };
+    return {
+      ok: false,
+      content: JSON.stringify({
+        ok: false,
+        reason: "unsupported_action",
+        routing,
+        message: `unsupported effects action: ${action}`,
+      }),
+    };
   }
 
   // The round trip needs both catalogs and the live timeline state, so read
@@ -833,7 +834,7 @@ async function runEffectsAction(
     effectsCatalog = toCommandIdList(await relay.enqueue(taskId, "effects", "commands", {}));
     state = await relay.enqueue(taskId, "film", "inspect", {});
   } catch (err) {
-    return relayErrorResult(err);
+    return relayErrorResult(err, routing);
   }
 
   const parsed = parseFilmState(state);
@@ -926,6 +927,8 @@ export interface VideoStudioToolOptions {
   relay?: VideoStudioRelayLike;
   /** Repo root used for the dist check; defaults to ROOT. */
   root?: string;
+  /** Engine router (fc-07); defaults to the shared server router. */
+  router?: VideoStudioRouter;
   /** fc-05: per-task state tracker (manual-edit detection). Injectable for tests. */
   stateTracker?: VideoStudioStateTracker;
   /** fc-05: debounced project persistence into the task files. Injectable for tests. */
@@ -938,12 +941,63 @@ const TIME_SCHEMA = {
 } as const;
 
 /**
+ * The operation text the router classifies (fc-07).
+ *
+ * The router only needs a bag of words to match its bilingual tables, so this
+ * joins the action's own discriminating arguments — `type` on a transition,
+ * `name` on an effect, `command` on raw — with any free-form instruction the
+ * caller supplied. `buildAction` still owns argument *validation*; this is
+ * routing input only, and the router ignores it for actions whose engine is
+ * already determined by the action name.
+ */
+function routingHint(args: Record<string, unknown>): string {
+  const parts: string[] = [];
+  for (const key of ["type", "name", "command", "instruction", "prompt"]) {
+    const value = args[key];
+    if (typeof value === "string" && value.trim()) parts.push(value.trim());
+  }
+  return parts.join(" ");
+}
+
+/**
+ * Read the live timeline state from the editor (fc-05). Best-effort: a state
+ * read must never break the command it precedes, so a relay failure here
+ * returns undefined and the action proceeds without a summary.
+ *
+ * The read also (a) updates the per-task tracker, which reports a manual-edit
+ * notice when the timeline differs from the state the agent last saw, and
+ * (b) schedules a debounced persist of the raw project into the task files.
+ */
+async function readStudioState(
+  taskId: string,
+  relay: VideoStudioRelayLike,
+  tracker: VideoStudioStateTracker,
+  store: VideoStudioProjectStore,
+  workspace: string,
+): Promise<{ raw: unknown; summary: VideoStudioStateSummary; notice: string | null } | undefined> {
+  let raw: unknown;
+  try {
+    raw = await relay.enqueue(taskId, "film", "inspect", {});
+  } catch {
+    return undefined;
+  }
+  const observation = tracker.observe(taskId, raw);
+  try {
+    store.schedule(taskId, workspace, raw, observation.summary);
+  } catch {
+    /* persistence is best-effort */
+  }
+  return { raw, summary: observation.summary, notice: observation.notice };
+}
+
+/**
  * Create the `video_studio` tool. The description is intentionally complete: it
  * is the model's only guide for driving the editor.
  */
 export function createVideoStudioTools(options: VideoStudioToolOptions = {}): Tool[] {
   const relay = options.relay ?? videoStudioRelay;
   const root = options.root ?? ROOT;
+  const router = options.router ?? videoStudioRouter;
   // fc-05: one tracker/store per tool instance, so change detection survives
   // across commands within a run. Tests inject their own to control the hash.
   const stateTracker = options.stateTracker ?? new VideoStudioStateTracker();
@@ -964,7 +1018,10 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
         "Always call state first to read the current project (sequences, tracks, clips, playhead) so manual edits made in the panel are never lost, then apply the edit. " +
         "Every result carries a compact timeline summary (tracks, clips with track/start/end and source in-out, text layers, audio clips, transitions, effects, duration, playhead, selection); when the timeline changed since your last action, a notice describing that change is prepended so you can adapt instead of repeating an edit the user already made. " +
         "Timestamps accept seconds (90) or timecode (1:30, 00:01:30.500). " +
-        "Mutating actions resolve their real engine command ids from the editor's own command list at runtime; raw executes any command id you name, but only after validating it against that list. " +
+        "One tool, two engines: the router (src/tools/videoStudioRouter.ts) sends timeline work (cut, trim, arrange, speed, audio, music, volume, static text, a plain dissolve/fade, export) to the Loam Video timeline engine and richer work (wipes/zooms/glitches and other transitions beyond a basic dissolve, visual effects, colour looks, text/motion animation, keyframed motion, animated titles) to the Loam Effects engine. " +
+        "Every result carries a `routing` object: `route` is the engine the operation belongs to, `target` is the engine that actually ran it, `degraded` says whether the operation was downgraded, and `note` explains the decision in one line. Read it before telling the user what was applied. " +
+        "When the Loam Effects engine is unavailable (or this build cannot apply the operation), an effects request does NOT fail: it is degraded to the timeline engine's own transition_basic / effect_basic with `routing.degraded: true` and `routing.reason`, and the note says so. Never present a degraded edit as the full effect the user asked for; say plainly which engine applied it. " +
+        "Mutating actions resolve their real engine command ids from the owning engine's own command list at runtime; raw executes any command id you name, but only after validating it against that list. " +
         "When the Loam Video dist is missing or the editor bridge fails, the tool returns a structured fallback telling you to use video_edit instead (an edit-decision-list rendered by ffmpeg, which needs no editor). " +
         "A command the editor refuses is reported with `reason: command_rejected` and the editor's own error, so a bad command is never confused with an unreachable editor.",
       parameters: {
@@ -979,7 +1036,8 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
               "open (confirm the editor is reachable and list its commands), state (read project/sequence/tracks/clips/playhead), " +
               "import (bring a task file or URL onto the timeline), cut (razor at one or more times), trim, delete (ripple optional), " +
               "move / reorder, split, speed, add_text (title/graphics layer), add_audio / music (audio file onto an audio track with gain/fade), " +
-              "transition_basic (editor-native video/audio transition), effect_basic (editor effects.apply), " +
+              "transition_basic (a basic dissolve/fade on the timeline engine; a `type` naming a wipe/zoom/glitch and similar asks for the Loam Effects engine; editor-native video/audio transition otherwise), " +
+              "effect_basic (an effect, applied by the Loam Effects engine; `name` plus optional `params`; editor effects.apply), " +
               "export (render the timeline to a task file: format, name, width, height, quality, bitrateKbps, range, startSec/endSec; the rendered file is saved into the task's files under exports/ and its path is returned), " +
               "transition / effect / animate_text (round-trip the selected clip through the Loam Effects engine and replace the range in place), " +
               "effects_status (Loam Effects availability and commands), open_effects (reopen a saved .ecproj project), undo, raw (any validated command id).",
@@ -1007,7 +1065,7 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
           gain: { type: "number", description: "add_audio: clip gain (1 = unchanged)." },
           fadeInSec: { ...TIME_SCHEMA, description: "add_audio: fade-in length." },
           fadeOutSec: { ...TIME_SCHEMA, description: "add_audio: fade-out length." },
-          type: { type: "string", description: "transition_basic / transition: transition type id." },
+          type: { type: "string", description: "transition_basic: transition type id (a plain dissolve stays on the timeline engine; a wipe/zoom/glitch and similar route to the Loam Effects engine); transition: transition type id." },
           name: { type: "string", description: "effect_basic / effect: effect id; export: output file name (sanitised, extension forced to format)." },
           params: { type: "object", description: "effect_basic / raw / transition / effect / animate_text: extra engine parameters." },
           command: { type: "string", description: "raw: the engine command id to execute." },
@@ -1043,10 +1101,26 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
         const taskId = str(args, "taskId", ctx.taskId ?? "").trim();
         if (!taskId) return { ok: false, content: "video_studio requires a taskId (or a running task context)" };
 
+        // The router owns the engine decision (fc-07). A timeline operation stays
+        // on the timeline engine; an effects operation goes to the effects engine
+        // when it is installed, and is otherwise degraded to the timeline engine's
+        // own basic command with a note saying so. `routing` is echoed in every
+        // result so the model never has to guess which engine ran the edit.
+        const plan = router.plan(action, routingHint(args));
+        const target = plan.target;
+        const routing = {
+          route: plan.route,
+          target: plan.target,
+          degraded: plan.degraded,
+          ...(plan.reason ? { reason: plan.reason } : {}),
+          note: plan.note,
+        };
+
         if (!isFilmcraftDistInstalled(root)) {
           return fallbackResult(
-            "filmcraft_dist_missing",
+            "loam_video_dist_missing",
             `The Loam Video dist is not installed (${filmcraftDistDir(root)}). Install it with the vendor script, then retry.`,
+            routing,
           );
         }
 
@@ -1057,18 +1131,19 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
         // happens before the film catalog read below, which the round trip does
         // not use.
         if (isEffectsAction(action)) {
-          return await runEffectsAction(action, args, taskId, ctx.workspace, relay, root);
+          return await runEffectsAction(action, args, taskId, ctx.workspace, relay, root, routing);
         }
 
-        // Only actions that issue engine commands need the live catalog. The
-        // export service reads its own catalog, so it does not need one here.
+        // Only actions that issue engine commands need the live catalog, and it
+        // must come from the engine the steps will actually run on. The export
+        // service reads its own catalog, so it does not need one here.
         const needsCatalog = action !== "open" && action !== "state" && action !== "import" && action !== "export";
         let catalog: string[] = [];
         if (needsCatalog) {
           try {
-            catalog = toCommandIdList(await relay.enqueue(taskId, "film", "commands", {}));
+            catalog = toCommandIdList(await relay.enqueue(taskId, target, "commands", {}));
           } catch (err) {
-            return relayErrorResult(err);
+            return relayErrorResult(err, routing);
           }
         }
 
@@ -1093,7 +1168,7 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
             });
             return { ok: true, content: JSON.stringify({ action, ...result }) };
           } catch (err) {
-            return exportErrorResult(err);
+            return exportErrorResult(err, routing);
           }
         }
 
@@ -1106,10 +1181,10 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
         } else {
           for (const step of built.steps) {
             try {
-              const value = await relay.enqueue(taskId, "film", step.method, step.params);
+              const value = await relay.enqueue(taskId, target, step.method, step.params);
               results.push({ method: step.method, ok: true, result: value });
             } catch (err) {
-              return relayErrorResult(err);
+              return relayErrorResult(err, routing);
             }
           }
         }
@@ -1125,8 +1200,8 @@ export function createVideoStudioTools(options: VideoStudioToolOptions = {}): To
         // reports its steps; `open` additionally reports the reachable catalog.
         const body =
           action === "open"
-            ? { action, available: true, commands: results[0]?.result ?? [], summary, notice }
-            : { action, steps: results, summary, notice };
+            ? { action, available: true, routing, commands: results[0]?.result ?? [], summary, notice }
+            : { action, routing, steps: results, summary, notice };
         const json = JSON.stringify(body);
         return { ok: true, content: notice ? `${notice}\n${json}` : json };
       },

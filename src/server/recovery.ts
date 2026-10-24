@@ -23,6 +23,17 @@ export interface SavedRun {
   checkpoint?: ExecutionCheckpoint;
   /** Side-chat ("/btw") run: restricted to read-only inspection tools. */
   sideChat?: boolean;
+  /**
+   * Neo N6: a mission checkpoint is durable and independent of the orchestrator
+   * checkpoint, so a mission survives a server restart even when no execution
+   * checkpoint was written yet.
+   */
+  missionCheckpoint?: import("../agent/mission.js").MissionCheckpoint;
+  /**
+   * Neo N6: the mission run type lifts the fixed step cap; this records that the
+   * queued/resumed run is a mission so a resume keeps the same run type.
+   */
+  mission?: boolean;
   knowledge?: boolean;
 }
 export function requiresReplayConfirmation(run: SavedRun): boolean {
