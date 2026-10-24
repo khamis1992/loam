@@ -121,6 +121,7 @@
     "pptxgenjs": "^4.0.1",
     "quickjs-emscripten-core": "^0.32.0",
     "sharp": "^0.35.5",
+    "smol-toml": "^1.9.1",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {

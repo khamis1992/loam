@@ -12,7 +12,14 @@ export interface SecretRule {
   severity: "critical" | "high" | "medium";
   /** Generic rules lose to a specific rule that hit the same line. */
   generic?: boolean;
-  allow?: { paths?: string[]; regexes?: string[]; stopwords?: string[] };
+  /** Positive filter: the rule only runs on files matching this regex. */
+  path?: string;
+  allow?: {
+    paths?: string[];
+    /** Allowlist regexes; each applies to its target (default: the secret). */
+    regexes?: Array<string | { re: string; target?: "secret" | "match" | "line" }>;
+    stopwords?: string[];
+  };
 }
 
 export const DEFAULT_RULES: SecretRule[] = [

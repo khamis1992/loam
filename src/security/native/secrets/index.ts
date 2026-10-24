@@ -2,12 +2,16 @@
 import { SecretScanner } from "./engine.js";
 import type { SecretFinding } from "./engine.js";
 import { loadIgnoreFile, scanDirectory } from "./sources.js";
+import { DEFAULT_RULES } from "./rules.js";
+import { rulesWithGitleaks } from "./gitleaks.js";
+import path from "node:path";
 import type { ReconHit } from "../../audit/types.js";
 
 export { SecretScanner, redact, shannonEntropy } from "./engine.js";
 export type { SecretFinding } from "./engine.js";
 export { scanDirectory, scanGitHistory, parseGitLog, loadIgnoreFile } from "./sources.js";
 export { DEFAULT_RULES } from "./rules.js";
+export { loadGitleaksRules, rulesWithGitleaks } from "./gitleaks.js";
 
 const LEVEL = { critical: "error", high: "error", medium: "warning" } as const;
 
@@ -34,8 +38,14 @@ export function toHits(findings: SecretFinding[]): ReconHit[] {
   }));
 }
 
-export function runSecretsScan(root: string): { hits: ReconHit[]; sarif: Record<string, unknown> } {
-  const scanner = new SecretScanner({ ignore: loadIgnoreFile(root), redactPercent: 100 });
+export function runSecretsScan(root: string, opts: { rulesDir?: string } = {}): { hits: ReconHit[]; sarif: Record<string, unknown> } {
+  const rulesDir = opts.rulesDir ?? path.resolve(process.cwd(), "rules");
+  const merged = rulesWithGitleaks(rulesDir, DEFAULT_RULES);
+  const scanner = new SecretScanner({
+    ignore: loadIgnoreFile(root),
+    redactPercent: 100,
+    ...(merged ? { rules: merged.rules, globalAllow: merged.globalAllow } : {}),
+  });
   const findings = scanDirectory(root, scanner);
   return { hits: toHits(findings), sarif: toSarif(findings) };
 }

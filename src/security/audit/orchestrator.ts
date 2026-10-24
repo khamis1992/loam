@@ -44,9 +44,11 @@ export interface AuditSettings {
   scanners: string[];
   severityModel: "impact" | "cvss";
   verifierModel?: string;
+  /** Opt-in dynamic mode: enables the bounded fuzz executor and crash proofs. Default off. */
+  dynamic?: boolean;
 }
 export const DEFAULT_SETTINGS: AuditSettings = {
-  fpFloor: 0.7, scanners: ["loam-secrets", "loam-pkg", "gitleaks", "osv", "guarddog", "opengrep"], severityModel: "impact",
+  fpFloor: 0.7, scanners: ["loam-secrets", "loam-pkg", "gitleaks", "osv", "guarddog", "opengrep"], severityModel: "impact", dynamic: false,
 };
 
 export interface OrchestratorDeps extends Omit<AgentDeps, "budget" | "signal"> {
@@ -221,7 +223,7 @@ export async function orchestrate(opts: AuditOptions, deps: OrchestratorDeps, pr
     await stage("SCAN", async () => {
       const scratch = store.path("scratch");
       fs.mkdirSync(scratch, { recursive: true });
-      const out = await runScanners({ target, scratch, tools: settings.scanners, signal: deps.signal, exec: deps.exec });
+      const out = await runScanners({ target, scratch, tools: settings.scanners, signal: deps.signal, exec: deps.exec, dynamic: settings.dynamic });
       for (const r of out.reports) scanLines.push({ tool: r.tool, status: r.status, hitCount: r.hitCount, detail: r.detail });
       store.writeJson("scanners.sarif", out.sarif);
       const fp = fastPath(out.hits);

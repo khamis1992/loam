@@ -142,6 +142,22 @@ export function fastPath(hits: ReconHit[]): { records: (Confirmed | NeedsValidat
       records.push(confirmed(h, "Dependency with a known vulnerability", `${h.message}`.slice(0, 500), "Upgrade to a fixed version."));
     } else if (h.tool === "guarddog") {
       records.push(confirmed(h, "Package flagged as malicious", `${h.message}`.slice(0, 500), "Remove the package and audit what it touched."));
+    } else if (h.tool === "jazzer") {
+      const raw = (h.raw ?? {}) as { crashHash?: string | null; artifactSha256?: string; artifactRel?: string };
+      const title = "Fuzzing reached a weakness with a reproducing input";
+      const desc = `${h.message} (${h.ruleId} in ${h.file}).`.slice(0, 500);
+      if (raw.crashHash) {
+        const rec = confirmed(h, title, desc, "Fix the reachable weakness; the retained crash input serves as the regression case.");
+        rec.proof = {
+          kind: "crash",
+          artifact_rel: raw.artifactRel ?? `jazzer/crash-${raw.crashHash}`,
+          sha256: raw.artifactSha256 ?? raw.crashHash,
+          observed: h.message.slice(0, 200),
+        };
+        records.push(rec);
+      } else {
+        records.push(needsValidation(h, title, desc, "the fuzz run reported the finding without a crash artifact"));
+      }
     } else {
       hints.push(h);
     }

@@ -50,16 +50,18 @@ test("parseGitLog attributes added lines to commit, file and line", () => {
   assert.deepEqual(parseGitLog(log), [{ commit: "abcdef1234567", file: "x", text: "one\ntwo", firstLine: 5 }]);
 });
 
-test("runSecretsScan walks a directory and reads .loamignore", () => {
+test("runSecretsScan walks a directory, merges the vendored gitleaks set and reads .loamignore", () => {
   const d = tmp();
   try {
     fs.writeFileSync(path.join(d, "a.env"), `KEY=${AWS}\n`);
     const r = runSecretsScan(d);
-    assert.equal(r.hits.length, 1);
-    assert.equal(r.hits[0]!.tool, "loam-secrets");
+    assert.ok(r.hits.length >= 1);
+    assert.ok(r.hits.some((h) => h.ruleId === "aws-access-key-id"));
+    assert.ok(r.hits.every((h) => h.tool === "loam-secrets"));
     assert.ok(r.sarif);
-    fs.writeFileSync(path.join(d, ".loamignore"), `# baseline\n${new SecretScanner().scan(`KEY=${AWS}\n`, "a.env")[0]!.fingerprint}\n`);
-    assert.ok(loadIgnoreFile(d).size === 1);
+    const fingerprints = r.hits.map((h) => (h.raw as { fingerprint: string }).fingerprint);
+    fs.writeFileSync(path.join(d, ".loamignore"), `# baseline\n${fingerprints.join("\n")}\n`);
+    assert.ok(loadIgnoreFile(d).size === fingerprints.length);
     assert.equal(runSecretsScan(d).hits.length, 0);
   } finally { fs.rmSync(d, { recursive: true, force: true }); }
 });

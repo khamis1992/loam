@@ -104,7 +104,7 @@ export const ADAPTERS: Record<string, Adapter> = {
 /** In-process scanners: no executable to install, so they are always available. */
 type NativeRun = (target: string, fetchFn?: FetchFn) => Promise<{ hits: ReconHit[]; sarif?: unknown; error?: string; notes?: string[] }>;
 export const NATIVE: Record<string, NativeRun> = {
-  "loam-secrets": async (t) => runSecretsScan(t),
+  "loam-secrets": async (t) => runSecretsScan(t, { rulesDir: ruleDir() }),
   "loam-sca": async (t, fetchFn) => {
     const r = await runScaScan(t, fetchFn ? { fetchFn } : {});
     return {
@@ -170,6 +170,8 @@ export interface ScanContext {
   exec?: Exec;
   /** Network seam for the native SCA scanner (tests inject a fake). */
   fetchFn?: FetchFn;
+  /** Opt-in dynamic mode: opens the bounded fuzz executor ([U2]). */
+  dynamic?: boolean;
 }
 export interface ScanOutcome {
   hits: ReconHit[];
@@ -210,7 +212,7 @@ export async function runScanners(ctx: ScanContext): Promise<ScanOutcome> {
       }
       try {
         // Dynamic proof stays gated on the sandbox ([U2]); jazzer only runs when explicitly listed in tools.
-        const r = await runJazzerScan({ target: ctx.target, scratch: ctx.scratch, timeoutMs: ctx.timeoutMs, signal: ctx.signal, exec });
+        const r = await runJazzerScan({ target: ctx.target, scratch: ctx.scratch, timeoutMs: ctx.timeoutMs, signal: ctx.signal, exec, dynamic: ctx.dynamic });
         hits.push(...r.hits);
         reports.push(...r.reports);
         if (r.sarif) sarif.push(r.sarif);

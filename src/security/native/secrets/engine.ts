@@ -25,6 +25,8 @@ export interface ScanOptions {
   ignore?: ReadonlySet<string>;
   rules?: SecretRule[];
   commit?: string;
+  /** Global allowlist (the vendored gitleaks [allowlist]): files, secret regexes, stopwords. */
+  globalAllow?: { paths?: string[]; regexes?: string[]; stopwords?: string[] };
 }
 
 export function shannonEntropy(s: string): number {
@@ -102,7 +104,8 @@ interface Compiled {
   rule: SecretRule;
   re: RegExp;
   pathAllow: RegExp[];
-  reAllow: RegExp[];
+  reAllow: { re: RegExp; target: "secret" | "match" | "line" }[];
+  pathRe: RegExp | null;
   stop: string[];
   kwIds: number[];
 }
@@ -112,26 +115,48 @@ const compileRe = (src: string): RegExp => {
   return new RegExp(ci ? src.slice(4) : src, ci ? "gi" : "g");
 };
 
+/** Rule regexes are pre-validated; auxiliary regexes (allowlists, paths) compile best-effort and skip on failure. */
+const tryRe = (src: string): RegExp | null => {
+  try { return compileRe(src); } catch {
+    try { return new RegExp(src); } catch { return null; }
+  }
+};
+
 export class SecretScanner {
   private compiled: Compiled[] = [];
   private ac: AhoCorasick;
+  private gPaths: RegExp[] = [];
+  private gRegexes: RegExp[] = [];
+  private gStop: string[] = [];
   constructor(private readonly opts: ScanOptions = {}) {
     const words: string[] = [];
     for (const rule of opts.rules ?? DEFAULT_RULES) {
+      const allowRegexes = rule.allow?.regexes ?? [];
       const c: Compiled = {
         rule, re: compileRe(rule.regex),
-        pathAllow: (rule.allow?.paths ?? []).map((p) => new RegExp(p)),
-        reAllow: (rule.allow?.regexes ?? []).map((p) => new RegExp(p)),
+        pathAllow: (rule.allow?.paths ?? []).map(tryRe).filter((r): r is RegExp => r !== null),
+        reAllow: allowRegexes
+          .map((r) => {
+            const entry = typeof r === "string" ? { re: r } : r;
+            const re = tryRe(entry.re);
+            return re ? { re, target: (entry.target ?? "secret") as "secret" | "match" | "line" } : null;
+          })
+          .filter((x): x is { re: RegExp; target: "secret" | "match" | "line" } => x !== null),
+        pathRe: rule.path ? tryRe(rule.path) : null,
         stop: (rule.allow?.stopwords ?? []).map((s) => s.toLowerCase()),
         kwIds: rule.keywords.map((k) => { words.push(k.toLowerCase()); return words.length - 1; }),
       };
       this.compiled.push(c);
     }
     this.ac = new AhoCorasick(words);
+    this.gPaths = (opts.globalAllow?.paths ?? []).map(tryRe).filter((r): r is RegExp => r !== null);
+    this.gRegexes = (opts.globalAllow?.regexes ?? []).map(tryRe).filter((r): r is RegExp => r !== null);
+    this.gStop = (opts.globalAllow?.stopwords ?? []).map((s) => s.toLowerCase());
   }
 
   scan(text: string, file: string): SecretFinding[] {
     if (!text) return [];
+    if (this.gPaths.some((p) => p.test(file))) return [];
     const present = this.ac.find(text.toLowerCase());
     const lineStarts = [0];
     for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) lineStarts.push(i + 1);
@@ -146,6 +171,7 @@ export class SecretScanner {
     for (const c of this.compiled) {
       if (c.kwIds.length && !c.kwIds.some((id) => present.has(id))) continue;
       if (c.pathAllow.some((p) => p.test(file))) continue;
+      if (c.pathRe && !c.pathRe.test(file)) continue;
       c.re.lastIndex = 0;
       for (let m = c.re.exec(text); m; m = c.re.exec(text)) {
         if (m[0].length === 0) { c.re.lastIndex++; continue; }
@@ -156,7 +182,9 @@ export class SecretScanner {
         if (c.rule.entropy !== undefined && ent <= c.rule.entropy) continue;
         const low = secret.toLowerCase();
         if (c.stop.some((w) => low.includes(w))) continue;
-        if (c.reAllow.some((r) => r.test(secret))) continue;
+        if (this.gStop.some((w) => low.includes(w))) continue;
+        if (this.gRegexes.some((r) => r.test(secret))) continue;
+        if (c.reAllow.some((a) => a.re.test(a.target === "line" ? (lines[line - 1] ?? "") : a.target === "match" ? m[0] : secret))) continue;
         const fingerprint = `${this.opts.commit ?? ""}:${file}:${c.rule.id}:${line}`;
         found.push({
           ruleId: c.rule.id, description: c.rule.description, severity: c.rule.severity, file, line,

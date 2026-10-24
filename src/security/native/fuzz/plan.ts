@@ -47,7 +47,8 @@ export function jazzerPlan(o: JazzerPlanOptions): JazzerPlan {
   const argv = ["--no-install", "jazzer", o.entry, o.corpusDir];
   if (o.sync) argv.push("--sync");
   if (o.regression) argv.push("--mode", "regression");
-  argv.push("--timeout", String(timeoutMs), "--", `-runs=${runs}`, `-rss_limit_mb=${rss}`, `-max_len=${maxLen}`);
+  // Per-input timeout goes to libFuzzer (single dash, seconds); jazzer 4.0 has no own timeout flag.
+  argv.push("--", `-timeout=${Math.max(1, Math.round(timeoutMs / 1000))}`, `-runs=${runs}`, `-rss_limit_mb=${rss}`, `-max_len=${maxLen}`);
   if (o.artifactDir) argv.push(`-artifact_prefix=${o.artifactDir}${o.artifactDir.endsWith("/") || o.artifactDir.endsWith("\\") ? "" : "/"}`);
   return { argv, okCodes: [0, FINDING_EXIT] };
 }

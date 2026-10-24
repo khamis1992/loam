@@ -5,6 +5,8 @@
  * tool reports skipped and nothing is executed.
  */
 import fs from "node:fs";
+import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { probeSandbox } from "../../audit/sandbox.js";
 import type { ReconHit } from "../../audit/types.js";
@@ -54,8 +56,10 @@ export interface JazzerScanContext {
   timeoutMs?: number;
   signal?: AbortSignal;
   exec?: Exec;
-  /** Test seam for the dynamic-confirmation gate; defaults to the real (static-only) probe. */
+  /** Test seam for the dynamic-confirmation gate; defaults to the real probe. */
   sandboxProbe?: () => { available: boolean; blocker: string };
+  /** Opt-in dynamic mode: probeSandbox(this) opens the gate. */
+  dynamic?: boolean;
 }
 
 export interface JazzerScanOutcome {
@@ -65,7 +69,7 @@ export interface JazzerScanOutcome {
 }
 
 export async function runJazzerScan(ctx: JazzerScanContext): Promise<JazzerScanOutcome> {
-  const sandbox = (ctx.sandboxProbe ?? probeSandbox)();
+  const sandbox = (ctx.sandboxProbe ?? (() => probeSandbox(ctx.dynamic)))();
   if (!sandbox.available) {
     return { hits: [], reports: [{ tool: "jazzer", status: "skipped", hitCount: 0, detail: sandbox.blocker }] };
   }
@@ -74,6 +78,16 @@ export async function runJazzerScan(ctx: JazzerScanContext): Promise<JazzerScanO
     return { hits: [], reports: [{ tool: "jazzer", status: "skipped", hitCount: 0, detail: "no fuzz targets (*.fuzz.ts) found" }] };
   }
   const exec = ctx.exec ?? (await import("../../audit/scanners.js")).defaultExec;
+  // Spawn the jazzer CLI through node directly: `npx` is a .cmd shim on Windows and
+  // cannot run without a shell. Falls back to npx when the package is absent.
+  let jazzerCli: string | null = null;
+  try {
+    jazzerCli = createRequire(import.meta.url).resolve("@jazzer.js/core/dist/cli.js");
+  } catch { jazzerCli = null; }
+  // Crash artifacts are discovered on disk: jazzer does not print the libFuzzer
+  // "Test unit written" line, it just drops `crash-<sha1>` files in -artifact_prefix.
+  const artifactDir = path.join(ctx.scratch, "jazzer-artifacts");
+  fs.mkdirSync(artifactDir, { recursive: true });
   const corpus = path.join(ctx.scratch, "jazzer-corpus");
   fs.mkdirSync(corpus, { recursive: true });
   const hits: ReconHit[] = [];
@@ -82,10 +96,13 @@ export async function runJazzerScan(ctx: JazzerScanContext): Promise<JazzerScanO
   let ran = 0;
   for (const entry of targets.slice(0, MAX_TARGETS)) {
     if (ctx.signal?.aborted) { status = "skipped"; detail = "cancelled"; break; }
-    const plan = jazzerPlan({ entry, corpusDir: corpus });
+    const plan = jazzerPlan({ entry, corpusDir: corpus, artifactDir });
+    const launcher: { exe: string; argv: string[] } = jazzerCli
+      ? { exe: "node", argv: [jazzerCli, ...plan.argv.slice(2)] }
+      : { exe: "npx", argv: plan.argv };
     ran++;
     const opts: ExecOptions = { cwd: ctx.target, timeoutMs: ctx.timeoutMs ?? 300_000, maxBytes: 5_000_000, signal: ctx.signal };
-    const r = await exec("npx", plan.argv, opts);
+    const r = await exec(launcher.exe, launcher.argv, opts);
     if (r.spawnError) { status = "unavailable"; detail = `jazzer not runnable: ${r.spawnError.slice(0, 160)}`; break; }
     if (r.timedOut) { status = "timeout"; detail = "wall-clock limit"; break; }
     if (r.code === null || !plan.okCodes.includes(r.code)) {
@@ -94,6 +111,20 @@ export async function runJazzerScan(ctx: JazzerScanContext): Promise<JazzerScanO
       break;
     }
     const triaged = triageJazzerRun({ entry: path.relative(ctx.target, entry).replace(/\\/g, "/"), stdout: r.stdout, stderr: r.stderr });
+    let crashHash: string | undefined;
+    let artifactSha256: string | undefined;
+    let artifactRel: string | undefined;
+    const written = fs.readdirSync(artifactDir).filter((f) => /^crash-[0-9a-f]{16,64}$/.test(f)).sort();
+    const stdoutHash = triaged.crashHashes[0];
+    const picked = written[written.length - 1] ?? (stdoutHash ? `crash-${stdoutHash}` : undefined);
+    if (picked) {
+      crashHash = picked.slice("crash-".length);
+      artifactRel = `jazzer/${picked}`;
+      try { artifactSha256 = createHash("sha256").update(fs.readFileSync(path.join(artifactDir, picked!))).digest("hex"); } catch { /* unreadable */ }
+    }
+    for (const hit of triaged.hits) {
+      hit.raw = { ...(hit.raw as Record<string, unknown>), ...(crashHash ? { crashHash, artifactRel } : {}), ...(artifactSha256 ? { artifactSha256 } : {}) };
+    }
     hits.push(...triaged.hits);
   }
   if (targets.length > MAX_TARGETS) {

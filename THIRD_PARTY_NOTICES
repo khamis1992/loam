@@ -176,7 +176,10 @@ Native security scanners (src/security/native/)
 -----------------------------------------------
 Clean-room implementations; no upstream source was copied.
   secrets/  design follows Gitleaks (MIT): keyword prefilter, regex + entropy,
-            allowlists, redaction, SARIF output.
+            allowlists, redaction, SARIF output. The default rule set is
+            Gitleaks' config/gitleaks.toml (MIT), vendored verbatim at
+            rules/loam/secrets/gitleaks.toml and translated for JS RegExp at
+            load time; Loam-authored rules win on id collisions.
   sca/      matches against the OSV database (osv.dev, Apache-2.0 / CC-BY-4.0 data)
             and follows OSV-Scanner's lockfile coverage (Apache-2.0).
   pkgintel/ heuristics follow the ideas in DataDog GuardDog (Apache-2.0):
