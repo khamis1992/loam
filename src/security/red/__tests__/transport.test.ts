@@ -89,6 +89,26 @@ describe("red transport", () => {
     }
   });
 
+  it("§5.5a: engaging the kill-switch aborts an in-flight request (slow lab)", async () => {
+    let released: (() => void) | undefined;
+    const { server, url } = await startServer((_req, res) => {
+      released = () => res.end("late");
+    });
+    try {
+      const port = (server.address() as import("node:net").AddressInfo).port;
+      const t = redTransport(authzFor(port), { timeoutMs: 5000 });
+      const pending = t.request(url);
+      await new Promise((resolve) => setTimeout(resolve, 50)); // request is now in-flight
+      engageKillSwitch();
+      await assert.rejects(() => pending, /This operation was aborted|abort/i);
+      released?.();
+      resetKillSwitch();
+    } finally {
+      server.close();
+      resetKillSwitch();
+    }
+  });
+
   it("the campaign request budget is enforced (BudgetError semantics)", async () => {
     const { server, url } = await startServer((_req, res) => res.end("ok"));
     try {

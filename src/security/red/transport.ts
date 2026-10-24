@@ -12,7 +12,7 @@
  * default and requires the approval callback. The blue path is untouched.
  */
 import type { BridgeEnvelope } from "../../bridges/types.js";
-import { gate, RateLimiter, type AuthorizationRecord, type GateDeps } from "./gate.js";
+import { gate, killSwitchSignal, RateLimiter, type AuthorizationRecord, type GateDeps } from "./gate.js";
 import type { GateDecision, RedAction } from "./types.js";
 
 /** Red request evidence (shape-compatible with the blue RequestEvidence core). */
@@ -131,6 +131,9 @@ export function redTransport(authz: AuthorizationRecord | null, deps: RedTranspo
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       const onAbort = (): void => controller.abort();
       deps.signal?.addEventListener("abort", onAbort, { once: true });
+      // §5.5a: engaging the kill-switch aborts in-flight red requests too.
+      const kill = killSwitchSignal();
+      kill.addEventListener("abort", onAbort, { once: true });
       try {
         const res = await fetch(input, {
           method,
@@ -182,6 +185,7 @@ export function redTransport(authz: AuthorizationRecord | null, deps: RedTranspo
       } finally {
         clearTimeout(timer);
         deps.signal?.removeEventListener("abort", onAbort);
+        kill.removeEventListener("abort", onAbort);
         limiter.release();
       }
     },

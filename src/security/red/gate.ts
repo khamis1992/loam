@@ -267,14 +267,38 @@ export interface GateState {
 /** Process-wide kill-switch state; UI controls flip this. */
 const globalGateState: GateState = { killSwitch: false };
 
-/** Engage the kill-switch: every new gate consultation denies. */
+/** Abort signals fired when the kill-switch engages (§5.5a: abort in-flight). */
+const killSwitchListeners = new Set<() => void>();
+
+/** Engage the kill-switch: every new gate consultation denies and in-flight red work aborts. */
 export function engageKillSwitch(): void {
+  if (globalGateState.killSwitch) return;
   globalGateState.killSwitch = true;
+  for (const listener of killSwitchListeners) {
+    try {
+      listener();
+    } catch {
+      /* a faulty listener never blocks the switch */
+    }
+  }
 }
 
 /** Reset the kill-switch (tests, manual recovery). */
 export function resetKillSwitch(): void {
   globalGateState.killSwitch = false;
+}
+
+/**
+ * An AbortSignal that fires when the kill-switch engages, so in-flight red
+ * requests and bridge executions abort immediately (spec §5.5a).
+ */
+export function killSwitchSignal(): AbortSignal {
+  const controller = new AbortController();
+  if (globalGateState.killSwitch) controller.abort();
+  const listener = (): void => controller.abort();
+  killSwitchListeners.add(listener);
+  controller.signal.addEventListener("abort", () => killSwitchListeners.delete(listener), { once: true });
+  return controller.signal;
 }
 
 export interface GateDeps {
