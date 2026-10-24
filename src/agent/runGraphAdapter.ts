@@ -54,6 +54,14 @@ function publish(runId: string, nodeIds: string[]): void {
   }
 }
 
+/**
+ * Neo N17: let a module outside this file push a canvas change. The bridge writes
+ * nodes through the raw graph, so it has to announce them itself.
+ */
+export function publishRunGraph(runId: string, nodeIds: string[]): void {
+  publish(runId, nodeIds);
+}
+
 /** Subscribe to graph changes of one run. Returns an unsubscribe function. */
 export function subscribeRunGraph(runId: string, listener: RunGraphListener): () => void {
   let subscribers = listeners.get(runId);
@@ -104,6 +112,14 @@ export function resetRunGraph(): void {
 function liveGraph(): RunGraph {
   if (!graph) graph = new RunGraph();
   return graph;
+}
+
+/**
+ * Neo N17: the process-wide live graph, for route modules that cannot receive it
+ * through `startServer` deps (the same reason `__loamRunTask` is a global).
+ */
+export function getLiveRunGraph(): RunGraph {
+  return liveGraph();
 }
 
 /**
@@ -207,6 +223,22 @@ export function setRunNodeParents(nodeId: string, parentIds: string[], runId?: s
 /** Neo N10 multi-model A/B: create one sibling arm per model off a parent node. */
 export function addRunSiblings(runId: string, parentNodeId: string, models: string[]): RunNode[] {
   return liveGraph().addSiblings(runId, parentNodeId, models);
+}
+
+/**
+ * Neo N17 external-agent canvas bridge: place a caller-authored node on a Loam
+ * canvas. The external agent session (OpenCode / Claude Code / Orca) owns the
+ * id, so its own cursor survives as a stable node instead of being derived from
+ * an agent event. Re-submitting the same id updates that node in place.
+ */
+export function addCanvasBridgeNode(
+  runId: string,
+  spec: { id: string; parentIds: string[]; type?: RunNodeType; status?: RunNodeStatus; data?: unknown },
+): RunNode {
+  if (!runId || !runId.trim()) throw new Error("runId required");
+  const node = liveGraph().addExternalNode(runId.trim(), spec);
+  publish(node.run_id, [node.id]);
+  return node;
 }
 
 /** N7 branch fan-out: open one branch of a fan-out as its own canvas subtree. */

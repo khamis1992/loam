@@ -407,6 +407,7 @@ describe("run graph: status transitions", () => {
       "note",
       "failed",
       "kb_seed",
+      "canvas_bridge",
     ]);
   });
 });
