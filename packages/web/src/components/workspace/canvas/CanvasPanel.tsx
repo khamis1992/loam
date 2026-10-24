@@ -107,6 +107,7 @@ export interface CanvasPanelProps {
   /** Injectable fetch, so the export button can be tested without a server. */
   fetchFn?: typeof fetch;
   /** Injectable API base; defaults to the Loam server base. */
+  apiBase?: string;
 }
 
 interface ViewTransform {
