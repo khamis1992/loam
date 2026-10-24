@@ -210,6 +210,9 @@ export interface Config {
     /** Maximum number of concurrently running child subagents. */
     maxConcurrentChildren: number;
   };
+  /** Codemode sandbox (opt-in, off by default): master switch plus per-run limits.
+   *  Optional so a hand-written config.json need not repeat it. */
+  codemode?: { enabled: boolean; timeoutMs: number; memoryBytes: number; maxToolCalls: number };
   /** H5 correction-learning injection (BUILD_SPEC .h2-ref/BUILD_SPEC.md §6.5/§10).
    *  Env overrides: LOAM_LESSONS_ENABLED, LOAM_LESSONS_MAX_CHARS, LOAM_LESSON_MIN_SCORE.
    *  Optional so test configs and older config.json files keep working;
@@ -370,6 +373,7 @@ export const DEFAULTS: Config = {
   subagent: { maxDepth: 2, maxConcurrentChildren: 4 },
   lessons: { enabled: true, maxChars: 1200, minScore: 0.35 },
   mcpServers: {},
+  codemode: { enabled: false, timeoutMs: 300_000, memoryBytes: 64 * 1024 * 1024, maxToolCalls: 2_000 },
   failover: {
     providers: [
       { id: "ollama", kind: "ollama", baseUrl: "http://127.0.0.1:11434", model: "glm-5.3:cloud", apiKeyEnv: "", enabled: true },
