@@ -259,7 +259,7 @@ describe("canvas graph routes", () => {
     res.destroy();
   });
 
- it("stops forwarding changes once the client disconnects", async () => {
+  it("stops forwarding changes once the client disconnects", async () => {
     const res = new FakeResponse();
     await handler(fakeRequest("GET", `/api/graph/${RUN}/stream`), res, `/api/graph/${RUN}/stream`, {});
     const unsubscribe = subscribeRunGraph(RUN, () => undefined);
@@ -267,7 +267,6 @@ describe("canvas graph routes", () => {
     unsubscribe();
     assert.equal(res.frames().length, 1, "no change is written after the client is gone");
   });
-
   it("applies a canvas edit and files a directive the agent will pick up", async () => {
     const searchId = applyRunEvent(RUN, { type: "tool_call", name: "web_search", args: { query: "revenue" } })[0]!;
 

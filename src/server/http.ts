@@ -123,6 +123,9 @@ import { handleEnvBuildRoutes } from "./routes/envBuilds.js";
 import { handleKnowledgeRoutes } from "./routes/knowledge.js";
 import { handleWikiRoutes } from "./routes/wiki.js";
 import { handleDocsRoutes } from "./routes/docs.js";
+// H8/H9: learned-lesson REST surface. Dispatched before the generic
+// /api/learning (audit log) handler below, which only matches the exact path.
+import { handleLearningRoutes } from "./routes/learning.js";
 import { importGrokbotBundle, sanitizeGrokbotBundle } from "./grokbotImport.js";
 import { isValidTimezone } from "./scheduleTime.js";
 import { getWorkModesUi, normalizeWorkMode, resolveCompanionCapabilities } from "./companionGateway.js";
@@ -1090,6 +1093,10 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           }
         }
 
+        // Learned lessons (H8/H9): /api/learning/lessons and /corrections.
+        // Must precede the generic /api/learning audit-log handler below.
+        if (await handleLearningRoutes(req, res, p)) return;
+
         if (req.method === "GET" && p === "/api/learning") {
           const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 50), 1), 500);
           sendJson(res, 200, { entries: readLearning(limit) });
@@ -1285,8 +1292,8 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (req.method === "POST" && p === "/api/settings") {
-          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; codemode?: unknown; planApprovalSkipTrivial?: unknown };
-          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; codemode?: boolean; planApprovalSkipTrivial?: boolean } = {};
+          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; codemode?: unknown; planApprovalSkipTrivial?: unknown; lessonsAutoApply?: unknown };
+          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; codemode?: boolean; planApprovalSkipTrivial?: boolean; lessonsAutoApply?: boolean } = {};
           if (body.theme === "dark" || body.theme === "light" || body.theme === "system") patch.theme = body.theme;
           if (typeof body.model === "string") patch.model = body.model;
           if (body.projectId === null || typeof body.projectId === "string") patch.projectId = body.projectId;
@@ -1295,6 +1302,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           // Codemode master switch (opt-in): only an explicit boolean is stored.
           if (typeof body.codemode === "boolean") patch.codemode = body.codemode;
           if (typeof body.planApprovalSkipTrivial === "boolean") patch.planApprovalSkipTrivial = body.planApprovalSkipTrivial;
+          if (typeof body.lessonsAutoApply === "boolean") patch.lessonsAutoApply = body.lessonsAutoApply;
           sendJson(res, 200, updateSettings(patch));
           return;
         }
