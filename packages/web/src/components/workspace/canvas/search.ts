@@ -226,3 +226,22 @@ export function highlightSegments(
   if (cursor < value.length) segments.push({ text: value.slice(cursor), match: false });
   return segments;
 }
+
+/**
+ * Highlight a node's card with one hit's spans.
+ *
+ * A card shows two fields (its title and its subtitle), but one hit names the
+ * field it matched, so the offsets of that hit have to be applied to the right
+ * line: applying a subtitle's offsets to the title would wrap the wrong
+ * characters in a highlight. Hits from any other field are ignored, because the
+ * card does not render them.
+ */
+export function highlightField(
+  value: string,
+  field: string,
+  matches: NodeMatch[],
+): Array<{ text: string; match: boolean }> {
+  const fieldMatches = matches.filter((match) => match.field === field);
+  if (fieldMatches.length === 0) return [{ text: value, match: false }];
+  return highlightSegments(value, fieldMatches);
+}

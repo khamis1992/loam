@@ -101,11 +101,19 @@ function toolEvent(name: string, actionId: string): ToolUsedEvent {
 interface Harness {
   client: CanvasClient;
   getGraph: ReturnType<typeof vi.fn>;
+  searchGraph: ReturnType<typeof vi.fn>;
   patchNode: ReturnType<typeof vi.fn>;
 }
 
-function harness(graph: () => CanvasGraphResponse, patches: Record<string, unknown> = {}): Harness {
+function harness(
+  graph: () => CanvasGraphResponse,
+  patches: Record<string, unknown> = {},
+  search?: Awaited<ReturnType<CanvasClient['searchGraph']>>,
+): Harness {
   const getGraph = vi.fn(async () => graph());
+  // A client that answers no search stands in for a server without the N18
+  // route, so the panel falls back to searching the nodes it already holds.
+  const searchGraph = vi.fn(async () => search ?? null);
   const patchNode = vi.fn(async (_runId: string, nodeId: string, patch: unknown) => ({
     id: nodeId,
     run_id: RUN,
@@ -118,12 +126,16 @@ function harness(graph: () => CanvasGraphResponse, patches: Record<string, unkno
     ...(patch as object),
     ...(patches[nodeId] ?? {}),
   }));
-  const client = { getGraph, patchNode } as unknown as CanvasClient;
-  return { client, getGraph, patchNode };
+  const client = { getGraph, searchGraph, patchNode } as unknown as CanvasClient;
+  return { client, getGraph, searchGraph, patchNode };
 }
 
-function renderPanel(overrides: Partial<CanvasPanelProps> = {}, graph = sixStepGraph) {
-  const { client, getGraph, patchNode } = harness(graph);
+function renderPanel(
+  overrides: Partial<CanvasPanelProps> = {},
+  graph = sixStepGraph,
+  search?: Awaited<ReturnType<CanvasClient['searchGraph']>>,
+) {
+  const { client, getGraph, searchGraph, patchNode } = harness(graph, {}, search);
   const stream = idleStream();
   const { unmount } = render(
     <CanvasPanel
@@ -135,7 +147,7 @@ function renderPanel(overrides: Partial<CanvasPanelProps> = {}, graph = sixStepG
       {...overrides}
     />,
   );
-  return { client, getGraph, patchNode, stream, unmount };
+  return { client, getGraph, searchGraph, patchNode, stream, unmount };
 }
 
 /** The laid-out transform of each node card, keyed by its node id. */
@@ -394,5 +406,54 @@ describe('canvas panel', () => {
 
     expect(rtl.get('step-one')).toBe(ltr.get('step-six'));
     expect(ltr.get('step-one')).toBe(rtl.get('step-six'));
+  });
+
+  it('highlights the server search reply, including a node the panel does not hold', async () => {
+    // The server owns the whole run, so it can report a match on a node the
+    // panel's snapshot never fetched: the card is not there to search locally,
+    // which is exactly why the panel asks the server instead.
+    const { searchGraph } = renderPanel({}, sixStepGraph, {
+      query: 'quarterly',
+      hits: [
+        {
+          nodeId: 'step-one',
+          nodeType: 'recipe_step',
+          nodeStatus: 'finished',
+          title: 'Step 1',
+          matches: [{ field: 'title', start: 5, length: 3, snippet: '1', nodeId: 'step-one' }],
+        },
+        {
+          nodeId: 'not-on-the-canvas',
+          nodeType: 'webpage',
+          nodeStatus: 'finished',
+          title: 'Draft the quarterly report',
+          matches: [{ field: 'title', start: 10, length: 9, snippet: 'quarterly', nodeId: 'not-on-the-canvas' }],
+        },
+      ],
+    });
+    await screen.findAllByTestId('canvas-node');
+    fireEvent.change(screen.getByTestId('canvas-search'), { target: { value: 'quarterly' } });
+
+    await waitFor(() => expect(searchGraph).toHaveBeenCalledWith(RUN, 'quarterly'));
+    // The rail lists every hit the server reported, held node or not.
+    await waitFor(() => expect(screen.getAllByTestId('canvas-search-hit')).toHaveLength(2));
+    expect(screen.getByTestId('canvas-search-results')).toHaveTextContent('2 matches');
+    // The held card is marked, and the matched characters carry the highlight.
+    const card = document.querySelector<HTMLElement>('[data-testid="canvas-node"][data-node-id="step-one"]')!;
+    expect(card.getAttribute('data-node-match')).toBe('true');
+    expect(card.querySelector('[data-node-segment="true"]')).toHaveTextContent('1');
+  });
+
+  it('falls back to the nodes it holds when the server cannot answer the search', async () => {
+    const { searchGraph } = renderPanel({}, sixStepGraph);
+    // The stub answers no search, which is what a server without the N18 route
+    // looks like: the local search still works, and no notice is raised.
+    searchGraph.mockRejectedValue(new Error('connection refused'));
+    await screen.findAllByTestId('canvas-node');
+    fireEvent.change(screen.getByTestId('canvas-search'), { target: { value: 'Step 1' } });
+
+    await waitFor(() => expect(searchGraph).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getAllByTestId('canvas-search-hit')).toHaveLength(1));
+    expect(screen.queryByTestId('canvas-error')).not.toBeInTheDocument();
   });
 });

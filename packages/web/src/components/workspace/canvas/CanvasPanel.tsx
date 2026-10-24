@@ -17,8 +17,10 @@
  *
  * Search runs over the nodes the panel already holds, through the same pure
  * function the server uses for `?q=` (`./search` mirrors `src/graph/search.ts`).
- * That is one render instead of a round trip; the server route serves clients
- * that do not keep the whole run.
+ * The panel asks the server first (`GET /api/graph/:runId?q=`), because the
+ * server owns every node of the run while the panel holds one snapshot, so a
+ * collapsed branch would otherwise hide a match. A server that cannot be
+ * reached, or one that does not answer the search, falls back to the held nodes.
  *
  * Everything user-visible goes through `t()`, and every container uses logical
  * CSS (`border-s`, `ms-`/`me-`, `ps-`/`pe-`) so the panel reads correctly under
@@ -62,7 +64,12 @@ import {
   type CanvasTagColour,
 } from './types.annotations';
 import { CanvasAnnotationsClient } from './annotationsClient';
-import { searchCanvasNodes, searchMatches } from './search';
+import {
+  highlightField,
+  searchCanvasNodes,
+  searchMatches,
+  type CanvasSearchHit,
+} from './search';
 import { Minimap } from './Minimap';
 
 /** Panel geometry. Graph space, not direction-aware: the canvas is transform-based. */
@@ -709,10 +716,43 @@ export function CanvasPanel({
 
   /**
    * The search results. The panel searches the nodes it holds, so a match is
-   * available on the next render; `searchMatches` then drives the highlight ring
-   * on the cards, the minimap dots and the result list.
+   * available on the next render; the server is asked first, because it owns
+   * every node of the run while the panel holds one snapshot. The server's hits
+   * are the same shape as the local ones, so `searchMatches` drives the highlight
+   * ring on the cards, the minimap dots and the result list either way.
    */
-  const searchHits = useMemo(() => searchCanvasNodes(nodes, searchTerm), [nodes, searchTerm]);
+  const localHits = useMemo(() => searchCanvasNodes(nodes, searchTerm), [nodes, searchTerm]);
+  const [serverHits, setServerHits] = useState<CanvasSearchHit[] | null>(null);
+  // The cursor of the request being answered, so a slower earlier term cannot
+  // overwrite the results of a later one the user typed.
+  const searchRequestRef = useRef(0);
+
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (!term) {
+      searchRequestRef.current += 1;
+      setServerHits(null);
+      return;
+    }
+    const api = apiRef.current;
+    if (!api) return;
+    const request = searchRequestRef.current + 1;
+    searchRequestRef.current = request;
+    void (async () => {
+      try {
+        const reply = await api.searchGraph(taskId, term);
+        // A reply with a `search` block is the server's answer; an undefined one
+        // means the server does not search, so the local result stands.
+        if (reply && searchRequestRef.current === request) setServerHits(reply.hits);
+      } catch {
+        // An unreachable server is not the user's problem: the nodes the panel
+        // already holds are still searched locally.
+        if (searchRequestRef.current === request) setServerHits(null);
+      }
+    })();
+  }, [searchTerm, taskId]);
+
+  const searchHits = serverHits ?? localHits;
   const matchedIds = useMemo(() => searchMatches(searchHits), [searchHits]);
   const searching = searchTerm.trim().length > 0;
 
@@ -914,6 +954,12 @@ export function CanvasPanel({
           </svg>
 
           {nodes.map((node) => (
+            // The card's two lines are highlighted with the spans of the hit that
+            // named each field, so the characters the user actually sees carry the
+            // match rather than only a ring around the whole card.
+            (() => {
+              const hit = searchHits.find((entry) => entry.nodeId === node.id);
+              return (
             // The card is a `div`, not a `button`: its tag swatches and comment
             // count are controls, and a button may not contain another button.
             <div
@@ -958,7 +1004,17 @@ export function CanvasPanel({
               }}
             >
               <span className="flex items-center gap-1">
-                <span className="truncate text-[11px] text-text-secondary" dir="auto">{nodeTitle(node, tr)}</span>
+                <span className="truncate text-[11px] text-text-secondary" dir="auto">
+                  {highlightField(nodeTitle(node, tr), 'title', hit?.matches ?? []).map((segment, index) => (
+                    <span
+                      key={index}
+                      data-node-segment={segment.match ? 'true' : 'false'}
+                      className={segment.match ? 'rounded-sm bg-fill-hover text-icon-blue' : undefined}
+                    >
+                      {segment.text}
+                    </span>
+                  ))}
+                </span>
                 {(annotations.comments[node.id] ?? []).length > 0 ? (
                   <span
                     className="ms-auto flex shrink-0 items-center gap-0.5 text-[10px] text-text-tertiary"
@@ -970,7 +1026,25 @@ export function CanvasPanel({
                 ) : null}
               </span>
               <span dir="auto" className="truncate text-[10px] text-text-tertiary">
-                {nodeSubtitle(node, tr)}
+                {((): Array<{ text: string; match: boolean }> => {
+                  // The subtitle can come from any of `SUBTITLE_KEYS`, and each
+                  // carries its own offsets, so the first field whose spans match
+                  // is the one the value came from.
+                  const subtitle = nodeSubtitle(node, tr);
+                  for (const field of SUBTITLE_KEYS) {
+                    const segments = highlightField(subtitle, field, hit?.matches ?? []);
+                    if (segments.some((segment) => segment.match)) return segments;
+                  }
+                  return [{ text: subtitle, match: false }];
+                })().map((segment, index) => (
+                  <span
+                    key={index}
+                    data-node-segment={segment.match ? 'true' : 'false'}
+                    className={segment.match ? 'rounded-sm bg-fill-hover text-icon-blue' : undefined}
+                  >
+                    {segment.text}
+                  </span>
+                ))}
               </span>
               <span className="mt-auto text-[10px] text-text-quaternary">
                 {tr(NODE_TYPE_KEYS[node.type] ?? node.type)} · {tr(NODE_STATUS_KEYS[node.status] ?? node.status)}
@@ -981,6 +1055,8 @@ export function CanvasPanel({
                 onPick={(colour) => setColour(node.id, colour)}
               />
             </div>
+              );
+            })()
           ))}
 
           {annotations.notes.map((note) => (
