@@ -15,20 +15,10 @@
  * (`CanvasAnnotationsClient`), never inside the graph, so the agent's run record
  * stays exactly what the agent wrote.
  *
- * Neo N11 adds *editing* on top of that surface: a tick that selects nodes for a
- * group, a re-connect or a branch, a mode switch that decides whether the agent is
- * handed a node as a follow-up or as a quote, a cut-edge action, and a versioned
- * edit that keeps the node's history and flags whatever the edit superseded as
- * stale. Each of those is a single *operation* (`applyOp`): a bare field PATCH
- * would change a node without versioning it or telling the agent, so the graph
- * and the model would disagree about the run.
- *
  * Search runs over the nodes the panel already holds, through the same pure
  * function the server uses for `?q=` (`./search` mirrors `src/graph/search.ts`).
- * The panel asks the server first (`GET /api/graph/:runId?q=`), because the
- * server owns every node of the run while the panel holds one snapshot, so a
- * collapsed branch would otherwise hide a match. A server that cannot be
- * reached, or one that does not answer the search, falls back to the held nodes.
+ * That is one render instead of a round trip; the server route serves clients
+ * that do not keep the whole run.
  *
  * Everything user-visible goes through `t()`, and every container uses logical
  * CSS (`border-s`, `ms-`/`me-`, `ps-`/`pe-`) so the panel reads correctly under
@@ -36,40 +26,36 @@
  * graph space, not text flow.
  */
 import {
-  Check,
-  Copy,
   HelpCircle,
   Keyboard,
-  Link2,
   Loader2,
   Maximize2,
   MessageSquare,
   Minus,
   Plus,
-  Quote,
-  Scissors,
   Search,
   StickyNote,
   Trash2,
   Waypoints,
   X,
-  XCircle,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getLocale, setLocale as syncDocumentLocale, t } from '@/i18n/t';
+import { getLocale, setLocale as syncDocumentLocale, t, type Locale } from '@/i18n/t';
 import type { ChatEvent } from '@shared/socket';
 import {
   type CanvasEdge,
-  type CanvasEditMode,
   type CanvasLayoutNode,
   type CanvasNode,
-  type CanvasOpRequest,
-  type CanvasOpResult,
+  type CanvasNodePatch,
   type CanvasStats,
 } from './types';
 import { applyLayout, layoutBounds, screenToGraph, type LayoutOptions } from './layout';
 import { CanvasClient, type CanvasClientOptions } from './client';
 import { CanvasStream, type CanvasStreamChange, type CanvasStreamHandlers } from './stream';
+import { VersionPanel } from './VersionPanel';
+import { KnowledgePanel } from './KnowledgePanel';
+import { WebpageActions } from './WebpageActions';
+import { getLoamBase } from '@/services/rpc';
 import {
   CANVAS_TAG_COLOUR_CSS,
   CANVAS_TAG_COLOURS,
@@ -80,21 +66,8 @@ import {
   type CanvasTagColour,
 } from './types.annotations';
 import { CanvasAnnotationsClient } from './annotationsClient';
-import {
-  highlightField,
-  searchCanvasNodes,
-  searchMatches,
-  type CanvasSearchHit,
-} from './search';
+import { searchCanvasNodes, searchMatches } from './search';
 import { Minimap } from './Minimap';
-import {
-  editableFields,
-  excerpt,
-  hasNodeText,
-  isStale,
-  nodeText,
-  readEditHistory,
-} from './nodeText';
 
 /** Panel geometry. Graph space, not direction-aware: the canvas is transform-based. */
 const NODE_WIDTH = 220;
@@ -106,10 +79,6 @@ const SCALE_STEP = 1.2;
 const POLL_INTERVAL_MS = 5_000;
 /** How often the panel mirrors an injected stream's running state. */
 const LIVE_POLL_MS = 200;
-/** A node id is a local run-graph id, so this is only a sanity bound on a selection. */
-const MAX_SELECTION = 64;
-/** A node card is too narrow for the whole edit history; the sheet shows the tail. */
-const EDIT_HISTORY_ROWS = 6;
 /** Free-note card footprint in graph space. */
 const NOTE_WIDTH = 200;
 const NOTE_MIN_HEIGHT = 72;
@@ -133,7 +102,7 @@ export interface CanvasPanelProps {
   /** Injectable layout options (tests). */
   layoutOptions?: LayoutOptions;
   /** Injectable locale provider (tests). */
-  getLocale?: () => typeof getLocale extends () => infer L ? L : never;
+  getLocale?: () => Locale;
 }
 
 interface ViewTransform {
@@ -198,6 +167,8 @@ const NODE_TYPE_KEYS: Record<string, string> = {
   merge: 'Merged',
   note: 'Note',
   failed: 'Failed',
+  // N3: a cited Knowledge Garden seed, drawn as a document node.
+  kb_seed: 'Knowledge seed',
 };
 
 const NODE_STATUS_KEYS: Record<string, string> = {
@@ -263,15 +234,12 @@ export function CanvasPanel({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [view, setView] = useState<ViewTransform>({ panX: 0, panY: 0, scale: 1 });
   const [liveConnected, setLiveConnected] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [staleIds, setStaleIds] = useState<string[]>([]);
-  const [editMode, setEditMode] = useState<CanvasEditMode>('follow-up');
-  const [busy, setBusy] = useState(false);
   const [annotations, setAnnotations] = useState<CanvasAnnotations>(() => emptyCanvasAnnotations(taskId));
   const [searchTerm, setSearchTerm] = useState('');
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [surfaceSize, setSurfaceSize] = useState(FALLBACK_SURFACE);
+
   const apiRef = useRef<CanvasClient | null>(null);
   const annotationsApiRef = useRef<CanvasAnnotationsClient | null>(null);
   const streamRef = useRef<CanvasStream | null>(null);
@@ -294,8 +262,16 @@ export function CanvasPanel({
   const locale = localeProvider ? localeProvider() : getLocale();
   const isRtl = locale === 'ar';
 
-  /** Translate with this panel's locale, so a locale change needs no global state. */
-  const tr = useCallback((key: string) => t(key, {}, locale), [locale]);
+  /**
+   * Translate with this panel's locale, so a locale change needs no global
+   * state. `vars` is threaded through because the node-action panels interpolate
+   * counts and names ("{count} versions"), and a translator that dropped them
+   * would print the placeholder instead of the number.
+   */
+  const tr = useCallback(
+    (key: string, vars?: Record<string, string | number>) => t(key, vars ?? {}, locale),
+    [locale],
+  );
 
   // A layer is read start-to-end, so Arabic lays a row out from the right. An
   // explicit `layoutOptions.direction` wins, so a test can pin either direction
@@ -469,6 +445,7 @@ export function CanvasPanel({
     },
     [effectiveLayout],
   );
+
   const loadInitial = useCallback(async () => {
     const api = apiRef.current;
     if (!api) return;
@@ -746,43 +723,10 @@ export function CanvasPanel({
 
   /**
    * The search results. The panel searches the nodes it holds, so a match is
-   * available on the next render; the server is asked first, because it owns
-   * every node of the run while the panel holds one snapshot. The server's hits
-   * are the same shape as the local ones, so `searchMatches` drives the highlight
-   * ring on the cards, the minimap dots and the result list either way.
+   * available on the next render; `searchMatches` then drives the highlight ring
+   * on the cards, the minimap dots and the result list.
    */
-  const localHits = useMemo(() => searchCanvasNodes(nodes, searchTerm), [nodes, searchTerm]);
-  const [serverHits, setServerHits] = useState<CanvasSearchHit[] | null>(null);
-  // The cursor of the request being answered, so a slower earlier term cannot
-  // overwrite the results of a later one the user typed.
-  const searchRequestRef = useRef(0);
-
-  useEffect(() => {
-    const term = searchTerm.trim();
-    if (!term) {
-      searchRequestRef.current += 1;
-      setServerHits(null);
-      return;
-    }
-    const api = apiRef.current;
-    if (!api) return;
-    const request = searchRequestRef.current + 1;
-    searchRequestRef.current = request;
-    void (async () => {
-      try {
-        const reply = await api.searchGraph(taskId, term);
-        // A reply with a `search` block is the server's answer; an undefined one
-        // means the server does not search, so the local result stands.
-        if (reply && searchRequestRef.current === request) setServerHits(reply.hits);
-      } catch {
-        // An unreachable server is not the user's problem: the nodes the panel
-        // already holds are still searched locally.
-        if (searchRequestRef.current === request) setServerHits(null);
-      }
-    })();
-  }, [searchTerm, taskId]);
-
-  const searchHits = serverHits ?? localHits;
+  const searchHits = useMemo(() => searchCanvasNodes(nodes, searchTerm), [nodes, searchTerm]);
   const matchedIds = useMemo(() => searchMatches(searchHits), [searchHits]);
   const searching = searchTerm.trim().length > 0;
 
@@ -806,122 +750,19 @@ export function CanvasPanel({
     setView((prev) => ({ ...prev, panX: -offset.offsetX * prev.scale, panY: -offset.offsetY * prev.scale }));
   }, []);
 
-  /**
-   * Apply one N11 editing operation and fold the reply into the panel.
-   *
-   * The server returns the whole graph because a duplicate, a group and a
-   * re-connect all change structure, not just one field. Hand-placed positions are
-   * preserved by merging on id, and the stale marks are *kept* even when a reply
-   * carries no node for them: the agent only re-runs a node on the live path, so a
-   * mark that vanished with its node would silently clear the "re-check this" flag
-   * the user was shown.
-   */
-  const applyOp = useCallback(
-    async (op: CanvasOpRequest) => {
+  const savePatch = useCallback(
+    async (nodeId: string, patch: CanvasNodePatch) => {
       const api = apiRef.current;
-      if (!api || busy) return;
-      setBusy(true);
+      if (!api) return;
       try {
-        const result: CanvasOpResult = await api.applyOp(taskId, op);
-        setNodes((prev) => {
-          const placed = applyLayout(result.nodes, effectiveLayout);
-          const byId = new Map(prev.map((node) => [node.id, node]));
-          for (const node of result.nodes) {
-            const previous = byId.get(node.id);
-            const match = placed.find((entry) => entry.id === node.id);
-            byId.set(node.id, {
-              ...node,
-              x: previous ? previous.x : (match?.x ?? 0),
-              y: previous ? previous.y : (match?.y ?? 0),
-              depth: previous ? previous.depth : (match?.depth ?? 0),
-            });
-          }
-          return [...byId.values()];
-        });
-        setEdges(result.edges);
-        setStats(result.stats);
-        if (result.stale.length > 0) setStaleIds((prev) => [...new Set([...prev, ...result.stale])]);
-        cursorRef.current = Math.max(cursorRef.current, maxPosition(result.nodes));
-        if (op.op === 'group') setSelectedIds([]);
-        if (op.op === 'duplicate') setExpandedId(result.nodeId);
+        const updated = await api.patchNode(taskId, nodeId, patch);
+        setNodes((prev) => prev.map((node) => (node.id === updated.id ? { ...node, ...updated } : node)));
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setBusy(false);
       }
     },
-    [busy, effectiveLayout, taskId],
+    [taskId],
   );
-
-  /** Tick a node for a multi-select action. */
-  const toggleSelect = useCallback((nodeId: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(nodeId) ? prev.filter((id) => id !== nodeId) : prev.length >= MAX_SELECTION ? prev : [...prev, nodeId],
-    );
-  }, []);
-
-  /** Replace a stale mark: the re-run that superseded the node is acknowledged. */
-  const clearStale = useCallback((nodeId: string) => {
-    setStaleIds((prev) => prev.filter((id) => id !== nodeId));
-  }, []);
-
-  // A node that reappears with no `stale` payload is current again, so the flag is
-  // cleared on the live path rather than only by hand. A mark with no node at all is
-  // kept: see `applyOp`.
-  useEffect(() => {
-    setStaleIds((prev) =>
-      prev.filter((id) => {
-        const node = nodes.find((candidate) => candidate.id === id);
-        return node ? isStale(node.data) : true;
-      }),
-    );
-  }, [nodes]);
-
-  // Editing operations act on the selected nodes, so they are disabled until there
-  // is something to act on. This is what makes the empty-canvas state honest.
-  const selection = useMemo(() => nodes.filter((node) => selectedIds.includes(node.id)), [nodes, selectedIds]);
-  const primary = selection[0] ?? null;
-  const canGroup = selection.length >= 2;
-
-  /** Cut every edge into `node` (detach it from its parents). */
-  const cutEdges = useCallback(
-    (node: CanvasLayoutNode) => void applyOp({ op: 'cut', nodeId: node.id, parentIds: [] }),
-    [applyOp],
-  );
-
-  /**
-   * Connect `node` to the nodes the user has selected.
-   *
-   * A re-connect replaces the parent set, which is what "change the next step's
-   * context" means: the node keeps its own content and its own history, and only
-   * which nodes feed it changes.
-   */
-  const reconnectToSelection = useCallback(() => {
-    if (!primary) return;
-    // The node being re-pointed is not its own new parent; the server refuses a
-    // self-parent, and "connect this node to the selected nodes" means the others.
-    const parents = selection.filter((node) => node.id !== primary.id).map((node) => node.id);
-    void applyOp({ op: 'reconnect', nodeId: primary.id, parentIds: parents });
-    setSelectedIds([]);
-  }, [applyOp, primary, selection]);
-
-  /** Duplicate the node as an independent branch. */
-  const branch = useCallback(
-    (node: CanvasLayoutNode) => void applyOp({ op: 'duplicate', nodeId: node.id }),
-    [applyOp],
-  );
-
-  /** Merge the selection into one context block. */
-  const group = useCallback(() => {
-    if (!canGroup) return;
-    void applyOp({ op: 'group', nodeIds: selection.map((node) => node.id) });
-  }, [applyOp, canGroup, selection]);
-
-  /** Hand the node to the model as something to build on, or to reproduce. */
-  const send = useCallback(() => {
-    if (!primary) return;
-    void applyOp({ op: editMode === 'quote' ? 'quote' : 'follow-up', nodeId: primary.id });
-  }, [applyOp, editMode, primary]);
 
   if (loading) {
     return (
@@ -1029,99 +870,6 @@ export function CanvasPanel({
         </span>
       </div>
 
-      {/*
-        The editing actions. They are only meaningful while the run has nodes, so
-        an empty canvas shows none of them: there is nothing to group, branch or
-        quote, and the bar would be a row of disabled controls.
-      */}
-      {nodes.length > 0 ? (
-        <div
-          className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border-main px-2 py-1"
-          data-testid="canvas-selection"
-        >
-          <span className="text-[11px] text-text-tertiary" data-testid="canvas-selection-count">
-            {t('{count} selected', { count: selectedIds.length }, locale)}
-          </span>
-          <button
-            type="button"
-            onClick={reconnectToSelection}
-            disabled={busy || !primary}
-            title={tr('Reconnect this node to the selected nodes')}
-            className="flex items-center gap-1 rounded-control px-2 py-1 text-[11px] text-text-secondary hover:bg-fill-hover hover:text-text-primary disabled:opacity-40"
-          >
-            <Link2 className="size-3" />
-            {tr('Reconnect')}
-          </button>
-          <button
-            type="button"
-            onClick={group}
-            disabled={busy || !canGroup}
-            title={tr('Group the selected nodes')}
-            className="flex items-center gap-1 rounded-control px-2 py-1 text-[11px] text-text-secondary hover:bg-fill-hover hover:text-text-primary disabled:opacity-40"
-          >
-            <Check className="size-3" />
-            {tr('Group')}
-          </button>
-          <button
-            type="button"
-            onClick={() => primary && branch(primary)}
-            disabled={busy || !primary}
-            title={tr('Branch this node')}
-            className="flex items-center gap-1 rounded-control px-2 py-1 text-[11px] text-text-secondary hover:bg-fill-hover hover:text-text-primary disabled:opacity-40"
-          >
-            <Copy className="size-3" />
-            {tr('Branch')}
-          </button>
-          <div className="flex items-center gap-1 rounded-control border border-border-main px-1">
-            {(['follow-up', 'quote'] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setEditMode(value)}
-                aria-pressed={editMode === value}
-                data-testid={`canvas-mode-${value}`}
-                className={[
-                  'rounded px-1.5 py-0.5 text-[11px]',
-                  editMode === value ? 'bg-fill-tsp text-text-primary' : 'text-text-tertiary hover:text-text-secondary',
-                ].join(' ')}
-              >
-                {value === 'quote' ? tr('Quote') : tr('Follow up')}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={send}
-            disabled={busy || !primary}
-            data-testid="canvas-send"
-            title={tr('Ask the agent to continue from this node')}
-            className="flex items-center gap-1 rounded-control px-2 py-1 text-[11px] text-text-secondary hover:bg-fill-hover hover:text-text-primary disabled:opacity-40"
-          >
-            <Quote className="size-3" />
-            {editMode === 'quote' ? tr('Quote') : tr('Follow up')}
-          </button>
-          <button
-            type="button"
-            onClick={() => primary && cutEdges(primary)}
-            disabled={busy || !primary}
-            title={tr('Cut edge from this node')}
-            className="flex items-center gap-1 rounded-control px-2 py-1 text-[11px] text-text-secondary hover:bg-fill-hover hover:text-text-primary disabled:opacity-40"
-          >
-            <Scissors className="size-3" />
-            {tr('Cut edge')}
-          </button>
-          {staleIds.length > 0 ? (
-            <span
-              className="ms-auto flex items-center gap-1 text-[11px] text-function-warning"
-              data-testid="canvas-stale-count"
-            >
-              <XCircle className="size-3" />
-              {t('{count} stale', { count: staleIds.length }, locale)}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-
       <div className="flex min-h-0 flex-1">
         <div
           ref={surfaceRef}
@@ -1179,14 +927,9 @@ export function CanvasPanel({
             })}
           </svg>
 
-          {nodes.map((node) => {
-            // The card's two lines are highlighted with the spans of the hit that
-            // named each field, so the characters the user actually sees carry the
-            // match rather than only a ring around the whole card.
-            const hit = searchHits.find((entry) => entry.nodeId === node.id);
+          {nodes.map((node) => (
             // The card is a `div`, not a `button`: its tag swatches and comment
             // count are controls, and a button may not contain another button.
-            return (
             <div
               key={node.id}
               role="button"
@@ -1206,17 +949,11 @@ export function CanvasPanel({
               data-node-tag={annotations.tags[node.id] ?? 'none'}
               data-node-match={searching && matchedIds.has(node.id) ? 'true' : 'false'}
               data-node-comments={(annotations.comments[node.id] ?? []).length}
-              data-selected={selectedIds.includes(node.id) ? 'true' : 'false'}
-              data-stale={isStale(node.data) ? 'true' : 'false'}
               aria-label={nodeTitle(node, tr)}
               className={[
-                // A selection is drawn as a border ring, exactly like a colour tag
-                // or a search hit: none of the three changes the card's size.
                 'absolute flex cursor-pointer flex-col gap-1 rounded-card border p-2 text-start',
-                selectedIds.includes(node.id)
-                  ? 'border-icon-blue bg-fill-tsp text-text-primary shadow-sm'
-                  : 'border-border-main bg-bg-menu text-text-primary shadow-sm',
-                node.id !== expandedId ? 'hover:border-border-dark' : '',
+                'border-border-main bg-bg-menu text-text-primary shadow-sm',
+                node.id === expandedId ? 'border-icon-blue' : 'hover:border-border-dark',
               ].join(' ')}
               style={{
                 width: NODE_WIDTH,
@@ -1234,34 +971,8 @@ export function CanvasPanel({
                 transform: `translate(${view.panX + node.x * view.scale}px, ${view.panY + node.y * view.scale}px)`,
               }}
             >
-              {/*
-                The tick selects the node for a group, a re-connect or a branch.
-                It stops the click so ticking never opens the detail sheet, which is
-                the opposite of what a user means by "select this node".
-              */}
-              <input
-                type="checkbox"
-                checked={selectedIds.includes(node.id)}
-                onChange={() => toggleSelect(node.id)}
-                onClick={(event) => event.stopPropagation()}
-                onKeyDown={(event) => event.stopPropagation()}
-                onPointerDown={(event) => event.stopPropagation()}
-                data-testid="canvas-node-select"
-                aria-label={tr('Select')}
-                className="size-3 shrink-0 accent-icon-blue"
-              />
               <span className="flex items-center gap-1">
-                <span className="truncate text-[11px] text-text-secondary" dir="auto">
-                  {highlightField(nodeTitle(node, tr), 'title', hit?.matches ?? []).map((segment, index) => (
-                    <span
-                      key={index}
-                      data-node-segment={segment.match ? 'true' : 'false'}
-                      className={segment.match ? 'rounded-sm bg-fill-hover text-icon-blue' : undefined}
-                    >
-                      {segment.text}
-                    </span>
-                  ))}
-                </span>
+                <span className="truncate text-[11px] text-text-secondary" dir="auto">{nodeTitle(node, tr)}</span>
                 {(annotations.comments[node.id] ?? []).length > 0 ? (
                   <span
                     className="ms-auto flex shrink-0 items-center gap-0.5 text-[10px] text-text-tertiary"
@@ -1273,46 +984,18 @@ export function CanvasPanel({
                 ) : null}
               </span>
               <span dir="auto" className="truncate text-[10px] text-text-tertiary">
-                {((): Array<{ text: string; match: boolean }> => {
-                  // The subtitle can come from any of `SUBTITLE_KEYS`, and each
-                  // carries its own offsets, so the first field whose spans match
-                  // is the one the value came from.
-                  const subtitle = nodeSubtitle(node, tr);
-                  for (const field of SUBTITLE_KEYS) {
-                    const segments = highlightField(subtitle, field, hit?.matches ?? []);
-                    if (segments.some((segment) => segment.match)) return segments;
-                  }
-                  return [{ text: subtitle, match: false }];
-                })().map((segment, index) => (
-                  <span
-                    key={index}
-                    data-node-segment={segment.match ? 'true' : 'false'}
-                    className={segment.match ? 'rounded-sm bg-fill-hover text-icon-blue' : undefined}
-                  >
-                    {segment.text}
-                  </span>
-                ))}
+                {nodeSubtitle(node, tr)}
               </span>
               <span className="mt-auto text-[10px] text-text-quaternary">
                 {tr(NODE_TYPE_KEYS[node.type] ?? node.type)} · {tr(NODE_STATUS_KEYS[node.status] ?? node.status)}
               </span>
-              {isStale(node.data) ? (
-                <span
-                  className="mt-auto text-[10px] text-function-warning"
-                  data-testid="canvas-node-stale"
-                  data-node-id={node.id}
-                >
-                  {tr('Stale')}
-                </span>
-              ) : null}
               <NodeTagPicker
                 value={annotations.tags[node.id] ?? 'none'}
                 tr={tr}
                 onPick={(colour) => setColour(node.id, colour)}
               />
             </div>
-          );
-          })}
+          ))}
 
           {annotations.notes.map((note) => (
             <div
@@ -1527,13 +1210,10 @@ export function CanvasPanel({
           events={events}
           isRtl={isRtl}
           tr={tr}
+          client={apiRef.current}
+          runId={taskId}
           onClose={() => setExpandedId(null)}
-          onEdit={(text) => void applyOp({ op: 'edit', nodeId: expanded.id, text, mode: editMode })}
-          onCut={() => cutEdges(expanded)}
-          onBranch={() => branch(expanded)}
-          stale={staleIds.includes(expanded.id) || isStale(expanded.data)}
-          canEdit={hasNodeText(expanded)}
-          onClearStale={() => clearStale(expanded.id)}
+          onPatch={(patch) => void savePatch(expanded.id, patch)}
         />
       ) : null}
 
@@ -1752,46 +1432,24 @@ function NodeDetail({
   isRtl,
   tr,
   onClose,
-  onEdit,
-  onCut,
-  onBranch,
-  stale,
-  canEdit,
-  onClearStale,
+  onPatch,
+  client,
+  runId,
 }: {
   node: CanvasLayoutNode;
   events: ChatEvent[];
   isRtl: boolean;
-  tr: (key: string) => string;
+  tr: (key: string, vars?: Record<string, string | number>) => string;
   onClose: () => void;
-  /** The N11 edit: version the node, keep its history, mark what it supersedes. */
-  onEdit: (text: string) => void;
-  /** Cut every edge into this node. */
-  onCut: () => void;
-  /** Duplicate this node as a branch. */
-  onBranch: () => void;
-  /** True when the node was superseded by an edit to an earlier node. */
-  stale: boolean;
-  /** False when the node carries no prose worth editing. */
-  canEdit: boolean;
-  /** Clear a stale mark by hand: the re-run that superseded it is acknowledged. */
-  onClearStale: () => void;
+  onPatch: (patch: CanvasNodePatch) => void;
+  /** Absent when the panel has no client yet (first render); panels wait for it. */
+  client?: CanvasClient | null;
+  /** The run this node belongs to, needed for every node action. */
+  runId?: string;
 }) {
   const [draft, setDraft] = useState<string>(() => readString(node.data, TITLE_KEYS));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
-
-  const editable = editableFields(node.data);
-  const editKey = Object.keys(editable)[0];
-  const history = readEditHistory(node.data);
-  const edits = history.slice(-EDIT_HISTORY_ROWS);
-
-  // The sheet is opened per node, so the draft follows whichever node it shows.
-  useEffect(() => {
-    setDraft(nodeText(node));
-    setSaveError(null);
-  }, [node]);
 
   const related = useMemo(
     () => events.filter((event) => event.type === 'toolUsed').slice(-5),
@@ -1799,30 +1457,33 @@ function NodeDetail({
   );
 
   /**
-   * Saving here is an N11 *edit*: the node gets a new version, its old text is
-   * kept in the history, and everything that depended on it is marked stale. It
-   * goes through `applyOp` on purpose: a bare field PATCH would change the node
-   * without versioning it or telling the agent, so the graph and the model would
-   * disagree about the run.
+   * The node-action panels (N13: versions, knowledge, webpage) each decide for
+   * themselves whether a node kind supports them, so the sheet only has to hand
+   * them the client and the run. Without a client there is nothing to render:
+   * the panel's own guard skips it rather than making the sheet special-case a
+   * moment that only exists on the first render.
    */
-  const save = (): void => {
-    const text = draft.trim();
-    if (!text || text === nodeText(node)) return;
-    setSaving(true);
-    onEdit(text);
-    setSaving(false);
-  };
+  const canAct = Boolean(client && runId);
 
-  /** The previous text of the latest edit, so the diff is visible without a modal. */
-  const lastEdit = history.length > 0 ? history[history.length - 1]! : null;
+  const save = async (): Promise<void> => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const data = typeof node.data === 'object' && node.data !== null ? (node.data as Record<string, unknown>) : {};
+      const key = typeof data.title === 'string' ? 'title' : typeof data.query === 'string' ? 'query' : 'title';
+      onPatch({ data: { ...data, [key]: draft } });
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <aside
       className="flex max-h-[45%] w-full shrink-0 flex-col gap-2 border-t border-border-main bg-bg-menu p-3"
       data-testid="canvas-node-detail"
       data-node-id={node.id}
-      data-version={node.version}
-      data-stale={stale ? 'true' : 'false'}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -1830,23 +1491,8 @@ function NodeDetail({
             {nodeTitle(node, tr)}
           </p>
           <p className="text-[11px] text-text-tertiary">
-            {tr(NODE_TYPE_KEYS[node.type] ?? node.type)} · {tr(NODE_STATUS_KEYS[node.status] ?? node.status)} · v
-            {node.version}
+            {tr(NODE_TYPE_KEYS[node.type] ?? node.type)} · {tr(NODE_STATUS_KEYS[node.status] ?? node.status)}
           </p>
-          {stale ? (
-            <div className="flex flex-wrap items-center gap-1 text-[11px] text-function-warning">
-              <p data-testid="canvas-node-stale">
-                {tr('Stale: superseded by an edit to an earlier node')}
-              </p>
-              <button
-                type="button"
-                onClick={onClearStale}
-                className="rounded-control px-1.5 py-0.5 underline decoration-dotted hover:text-text-secondary"
-              >
-                {tr('Mark current')}
-              </button>
-            </div>
-          ) : null}
         </div>
         <button
           type="button"
@@ -1858,85 +1504,27 @@ function NodeDetail({
         </button>
       </div>
 
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={onCut}
-          data-testid="canvas-sheet-cut"
-          title={tr('Cut edge from this node')}
-          className="flex items-center gap-1 rounded-control px-2 py-1 text-[11px] text-text-secondary hover:bg-fill-hover hover:text-text-primary"
-        >
-          <Scissors className="size-3" />
-          {tr('Cut edge')}
-        </button>
-        <button
-          type="button"
-          onClick={onBranch}
-          title={tr('Branch this node')}
-          className="flex items-center gap-1 rounded-control px-2 py-1 text-[11px] text-text-secondary hover:bg-fill-hover hover:text-text-primary"
-        >
-          <Copy className="size-3" />
-          {tr('Branch')}
-        </button>
-        {isRtl ? <span className="ms-auto text-[11px] text-text-tertiary">{tr('RTL')}</span> : null}
-      </div>
-
-      <label className="text-[11px] text-text-tertiary" htmlFor="canvas-node-edit">
-        {tr('Edit this node')}
-        {editKey ? ` (${editKey})` : ''}
-      </label>
       <textarea
-        id="canvas-node-edit"
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         rows={3}
         dir="auto"
-        disabled={!canEdit}
-        placeholder={tr('No text to edit on this node.')}
-        className="w-full resize-y rounded-control border border-border-main bg-bg-main p-2 text-xs text-text-primary outline-none focus:border-icon-blue disabled:opacity-50"
+        className="w-full resize-y rounded-control border border-border-main bg-bg-main p-2 text-xs text-text-primary outline-none focus:border-icon-blue"
         aria-label={tr('Edit this node')}
       />
 
       <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={save}
-          disabled={saving || !canEdit || draft.trim() === nodeText(node)}
+          onClick={() => void save()}
+          disabled={saving}
           className="rounded-control bg-fill-tsp px-2 py-1 text-xs font-medium text-text-primary hover:bg-fill-hover disabled:opacity-50"
         >
           {saving ? tr('Saving') : tr('Save')}
         </button>
+        {isRtl ? <span className="text-[11px] text-text-tertiary">{tr('RTL')}</span> : null}
         {saveError ? <span className="text-[11px] text-func-error">{saveError}</span> : null}
       </div>
-
-      {history.length > 0 ? (
-        <div className="min-h-0 overflow-y-auto">
-          <button
-            type="button"
-            onClick={() => setHistoryOpen((open) => !open)}
-            aria-expanded={historyOpen}
-            className="text-[11px] text-text-tertiary underline decoration-dotted"
-          >
-            {tr('Edit history')} ({history.length})
-          </button>
-          {historyOpen ? (
-            <ol className="mt-1 flex flex-col gap-1" data-testid="canvas-edit-history">
-              {edits.map((entry, index) => (
-                <li key={`${entry.at}-${index}`} className="text-[11px] text-text-secondary">
-                  <span className="text-text-tertiary">{tr('Previous text')}:</span>{' '}
-                  <span dir="auto">{entry.previous || '—'}</span>
-                </li>
-              ))}
-            </ol>
-          ) : null}
-        </div>
-      ) : null}
-
-      {lastEdit && !historyOpen ? (
-        <p className="truncate text-[11px] text-text-tertiary" dir="auto">
-          <span className="text-text-quaternary">{tr('Previous text')}:</span> {excerpt(lastEdit.previous, 80)}
-        </p>
-      ) : null}
 
       {related.length > 0 ? (
         <div className="min-h-0 overflow-y-auto">
@@ -1948,6 +1536,24 @@ function NodeDetail({
               </li>
             ))}
           </ul>
+        </div>
+      ) : null}
+
+      {canAct && client && runId ? (
+        <div
+          className="flex shrink-0 flex-col gap-3 border-t border-border-main pt-2"
+          data-testid="canvas-node-actions"
+        >
+          <VersionPanel client={client} runId={runId} nodeId={node.id} nodeType={node.type} tr={tr} />
+          <KnowledgePanel client={client} runId={runId} nodeId={node.id} nodeType={node.type} tr={tr} />
+          <WebpageActions
+            client={client}
+            runId={runId}
+            nodeId={node.id}
+            nodeType={node.type}
+            tr={tr}
+            apiBase={getLoamBase()}
+          />
         </div>
       ) : null}
     </aside>

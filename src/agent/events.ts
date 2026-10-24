@@ -93,7 +93,7 @@ export type AgentEvent =
   | { type: "assistant_token"; text: string }
   | { type: "assistant_message"; text: string }
   | { type: "tool_call"; name: string; args: unknown }
-  | { type: "tool_result"; name: string; ok: boolean; summary: string; ms?: number; kbSeedIds?: string[]; kbSeeds?: Array<{ id: string; title: string; tags: string[]; preview: string }> }
+  | { type: "tool_result"; name: string; ok: boolean; summary: string; ms?: number; content?: string; kbSeedIds?: string[]; kbSeeds?: Array<{ id: string; title: string; tags: string[]; preview: string }> }
   | { type: "done"; text: string; steps: number; model: string }
   | { type: "cancelled" }
   | { type: "error"; message: string }
