@@ -17,6 +17,18 @@ import type { CanvasGraphResponse, CanvasLayoutNode } from '../types';
 
 const RUN = 'task_canvas_panel_1';
 
+/**
+ * jsdom has no blob URL support, so the download step is stubbed. The anchor
+ * created by the panel is still the real one, so the file name is still
+ * asserted from the DOM rather than from this stub.
+ */
+if (typeof URL.createObjectURL !== 'function') {
+  URL.createObjectURL = vi.fn(() => 'blob:stub');
+}
+if (typeof URL.revokeObjectURL !== 'function') {
+  URL.revokeObjectURL = vi.fn();
+}
+
 /** A six-step run plus its root question, the shape the acceptance test describes. */
 function sixStepGraph(): CanvasGraphResponse {
   const nodes: CanvasLayoutNode[] = [
@@ -454,6 +466,51 @@ describe('canvas panel', () => {
     fireEvent.keyDown(window, { key: 'e' });
     expect(await screen.findByText('Recent tools')).toBeInTheDocument();
     expect(screen.getByText('web_search')).toBeInTheDocument();
+  });
+
+  it('exports the run as a self-contained replay file', async () => {
+    // The panel downloads the server-rendered page; the server is what strips
+    // credentials, so the panel only ever has to pick the right endpoint and file name.
+    const fetcher = vi.fn(
+      async () =>
+        new Response('<!doctype html><html><body>replay</body></html>', {
+          status: 200,
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+        }),
+    ) as unknown as typeof fetch;
+    // The panel removes the anchor right after clicking it, so capture it at click time.
+    const clicked: HTMLAnchorElement[] = [];
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function click(this: HTMLAnchorElement) {
+        clicked.push(this);
+      });
+    renderPanel({ fetchFn: fetcher, apiBase: 'http://127.0.0.1:3939' });
+    await screen.findAllByTestId('canvas-node');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export replay' }));
+    await waitFor(() => expect(screen.getByTestId('canvas-replay-notice')).toHaveTextContent('Replay exported'));
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const url = String((fetcher as unknown as { mock: { calls: string[][] } }).mock.calls[0]![0]);
+    expect(url).toBe(`http://127.0.0.1:3939/api/graph/${RUN}/replay/html`);
+
+    // The downloaded file name follows the same convention as the JSON variant.
+    expect(clicked).toHaveLength(1);
+    expect(clicked[0]!.getAttribute('download')).toBe(`loam-replay-${RUN}.html`);
+    clickSpy.mockRestore();
+  });
+
+  it('reports a failed replay export without breaking the canvas', async () => {
+    const fetcher = vi.fn(async () => new Response('nope', { status: 500 })) as unknown as typeof fetch;
+    renderPanel({ fetchFn: fetcher, apiBase: 'http://127.0.0.1:3939' });
+    await screen.findAllByTestId('canvas-node');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export replay' }));
+    expect(await screen.findByTestId('canvas-replay-notice')).toHaveTextContent('Replay export failed');
+    // The canvas itself is untouched.
+    expect(screen.getByTestId('canvas-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('canvas-error')).toBeNull();
   });
 
   it('selects nodes for a group and merges them into one context', async () => {

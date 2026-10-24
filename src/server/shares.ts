@@ -3,6 +3,8 @@ import path from "node:path";
 import { putEntity as put, getEntity as get, allEntities as all, transaction } from "./sqliteStore.js";
 import { getTask, type Task, type TaskMessage } from "./db.js";
 import { redact } from "../log.js";
+import { assertReplayClean, buildRunReplay, type RunReplay } from "../graph/export.js";
+import { getRunNodes } from "../agent/runGraphAdapter.js";
 
 /**
  * Public read-only task shares (option #11).
@@ -37,6 +39,12 @@ export interface SharedTranscript {
   messages: SharedMessage[];
   /** Basenames of files the run produced (uploads/attachments); no paths, no tool args. */
   artifacts: string[];
+  /**
+   * Neo N14: the run graph as a self-contained replay, when the run produced
+   * nodes. Omitted when there is no graph to show, so a task that never reached
+   * the run-graph agent keeps the same shape it had before.
+   */
+  replay?: RunReplay;
 }
 
 const SHARE_KIND = "share_tokens";
@@ -115,6 +123,23 @@ function artifactNames(task: Task): string[] {
 
 /** Read-only, sanitized transcript: messages + artifact names, nothing else. */
 export function sanitizeTranscript(task: Task): SharedTranscript {
+  // Neo N14: a public share is also where a static replay belongs, so the graph
+  // travels with the transcript. A task with no graph nodes (or a run that failed
+  // before the agent emitted anything) keeps its previous shape.
+  let replay: RunReplay | undefined;
+  try {
+    const nodes = getRunNodes(task.id);
+    if (nodes.length > 0) {
+      replay = buildRunReplay({ runId: task.id, title: task.title, nodes });
+      // Fail closed: a share is published by definition, so a bundle that still
+      // carries a credential must not leave this function at all.
+      assertReplayClean(replay);
+    }
+  } catch {
+    // Never let the replay break the share feed: a broken export degrades to a
+    // transcript-only share rather than a 500 on a public page.
+    replay = undefined;
+  }
   return {
     title: redact(String(task.title ?? "")),
     status: task.status,
@@ -122,5 +147,6 @@ export function sanitizeTranscript(task: Task): SharedTranscript {
     updatedAt: task.updatedAt,
     messages: (task.messages ?? []).map((m) => ({ role: m.role, content: redact(String(m.content ?? "")), at: m.at })),
     artifacts: artifactNames(task),
+    ...(replay !== undefined ? { replay } : {}),
   };
 }

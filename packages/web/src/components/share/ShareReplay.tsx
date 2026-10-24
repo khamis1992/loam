@@ -15,13 +15,44 @@ interface SharedMessage {
   at: string;
 }
 
-interface SharedTranscript {
+export interface SharedTranscript {
   title: string;
   status: string;
   createdAt: string;
   updatedAt: string;
   messages: SharedMessage[];
   artifacts: string[];
+  /** Neo N14: the sanitized run graph, so a shared task can be replayed as a
+   *  read-only timeline. Built and scrubbed by the server, which is also where
+   *  credentials are stripped; a share with no graph nodes carries no replay. */
+  replay?: SharedReplay;
+}
+
+/** Mirrors `RunReplay` in `src/graph/export.ts`; only the fields the share page
+ *  renders are repeated, because the web package cannot import the server module. */
+export interface SharedReplay {
+  runId: string;
+  title: string;
+  nodes: Array<{ id: string; parent_ids: string[]; type: string; status: string; data?: Record<string, unknown> }>;
+  edges: Array<{ from: string; to: string }>;
+  frames: Array<{ index: number; nodeId: string; type: string; status: string; label: string }>;
+  outputs: Array<{ path: string; kind: string; mime: string; sizeBytes: number }>;
+  stats: { totalNodes: number; nodesByType: Record<string, number>; nodesByStatus: Record<string, number>; edges: number; depth: number; durationMs: number };
+  redactions: number;
+  partial: boolean;
+}
+
+/** The fields a frame label may be read from, in order of specificity. */
+const LABEL_KEYS = ['title', 'query', 'url', 'path', 'summary', 'reason', 'message', 'verdict', 'tool', 'stepId'] as const;
+
+function labelFor(data: Record<string, unknown> | undefined): string {
+  if (data) {
+    for (const key of LABEL_KEYS) {
+      const value = data[key];
+      if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+  }
+  return '';
 }
 
 /**
@@ -45,6 +76,72 @@ function resolveToken(searchParams: URLSearchParams, pathname: string): string {
  * Data comes from GET /api/share/:token. Shared by both `/share` and
  * `/share/[token]` so a copied link works however it was opened.
  */
+/**
+ * Neo N14: the shared run graph.
+ *
+ * Read-only by construction: no inputs that change anything, no composer, no
+ * actions. The scrubber only reveals nodes the agent had already produced, and
+ * the bundle it reveals was sanitized by the server before it was published.
+ */
+export function ReplaySection({ replay }: { replay: SharedReplay }) {
+  const [upTo, setUpTo] = useState(replay.frames.length - 1);
+  const revealed = new Set(replay.frames.slice(0, upTo + 1).map((frame) => frame.nodeId));
+  const shownEdges = replay.edges.filter((edge) => revealed.has(edge.from) && revealed.has(edge.to)).length;
+
+  return (
+    <section className="mb-6 rounded-card border border-border-main bg-bg-menu p-3" data-testid="share-replay">
+      <h2 className="mb-2 text-sm font-semibold text-text-primary">{t('Replay viewer')}</h2>
+      {replay.partial && (
+        <p className="mb-2 text-xs text-text-secondary">
+          {t('This run was still in progress when it was exported.')}
+        </p>
+      )}
+      <ol className="mb-3 flex flex-col gap-1" data-testid="share-replay-timeline">
+        {replay.frames.map((frame) => (
+          <li
+            key={frame.nodeId}
+            className={`flex items-baseline gap-2 rounded-control border px-2 py-1.5 text-xs ${
+              revealed.has(frame.nodeId)
+                ? 'border-border-main bg-bg-menu'
+                : 'border-border-main bg-fill-tsp opacity-40'
+            }`}
+          >
+            <span className="shrink-0 text-text-tertiary">{frame.type}</span>
+            <span className="min-w-0 break-words" dir="auto">
+              {frame.label || labelFor(replay.nodes.find((node) => node.id === frame.nodeId)?.data)}
+            </span>
+          </li>
+        ))}
+      </ol>
+      {replay.outputs.length > 0 && (
+        <ul className="mb-2 flex flex-col gap-1">
+          {replay.outputs.map((output) => (
+            <li key={output.path} className="flex items-baseline gap-2 text-xs text-text-tertiary">
+              <span className="shrink-0">{output.kind}</span>
+              <span className="min-w-0 break-words font-mono" dir="auto">{output.path}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <input
+        type="range"
+        min={0}
+        max={Math.max(0, replay.frames.length - 1)}
+        step={1}
+        value={Math.max(0, Math.min(upTo, replay.frames.length - 1))}
+        onChange={(event) => setUpTo(Number(event.target.value))}
+        className="w-full accent-function-primary"
+        aria-label={t('Timeline')}
+        data-testid="share-replay-scrubber"
+      />
+      <p className="mt-1 text-[11px] text-text-quaternary">
+        {revealed.size} / {replay.stats.totalNodes} · {shownEdges} / {replay.stats.edges}
+        {replay.redactions > 0 ? ` · ${replay.redactions} ${t('credentials removed')}` : ''}
+      </p>
+    </section>
+  );
+}
+
 export function ShareReplay() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -118,6 +215,9 @@ export function ShareReplay() {
             <p className="mb-4 text-sm text-text-tertiary">
               {t('Files produced: {names}', { names: transcript.artifacts.join(', ') })}
             </p>
+          )}
+          {transcript.replay && (
+            <ReplaySection replay={transcript.replay} />
           )}
           <EventList events={events} sessionId="share" />
         </>

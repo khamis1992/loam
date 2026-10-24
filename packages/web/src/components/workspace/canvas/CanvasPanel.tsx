@@ -26,6 +26,7 @@
  * graph space, not text flow.
  */
 import {
+  Download,
   HelpCircle,
   Keyboard,
   Loader2,
@@ -103,6 +104,10 @@ export interface CanvasPanelProps {
   layoutOptions?: LayoutOptions;
   /** Injectable locale provider (tests). */
   getLocale?: () => Locale;
+  /** Injectable fetch, so the export button can be tested without a server. */
+  fetchFn?: typeof fetch;
+  /** Injectable API base; defaults to the Loam server base. */
+  apiBase?: string;
 }
 
 interface ViewTransform {
@@ -217,6 +222,12 @@ function maxPosition(nodes: CanvasLayoutNode[]): number {
   return nodes.reduce((max, node) => Math.max(max, node.position ?? 0), 0);
 }
 
+/** File name for the exported replay, matching the server's convention. */
+function replayFileName(runId: string): string {
+  const safe = runId.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'run';
+  return `loam-replay-${safe}.html`;
+}
+
 export function CanvasPanel({
   taskId,
   live,
@@ -226,6 +237,8 @@ export function CanvasPanel({
   annotationsClient,
   layoutOptions,
   getLocale: localeProvider,
+  fetchFn,
+  apiBase,
 }: CanvasPanelProps) {
   const [nodes, setNodes] = useState<CanvasLayoutNode[]>([]);
   const [edges, setEdges] = useState<CanvasEdge[]>([]);
@@ -235,6 +248,8 @@ export function CanvasPanel({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [view, setView] = useState<ViewTransform>({ panX: 0, panY: 0, scale: 1 });
   const [liveConnected, setLiveConnected] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [replayNotice, setReplayNotice] = useState<string | null>(null);
   const [annotations, setAnnotations] = useState<CanvasAnnotations>(() => emptyCanvasAnnotations(taskId));
   const [searchTerm, setSearchTerm] = useState('');
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -765,6 +780,39 @@ export function CanvasPanel({
     [taskId],
   );
 
+  /**
+   * Export the run as a self-contained replay. The server strips credentials
+   * before it renders, so the artifact that lands on disk is safe to forward;
+   * the canvas itself never gets to decide what is included. The response is
+   * `inline` HTML, so this is a plain navigation and the user can save it with
+   * the browser's own save action.
+   */
+  const exportReplay = useCallback(async () => {
+    setExporting(true);
+    setReplayNotice(null);
+    try {
+      const base = apiBase ?? getLoamBase();
+      const res = await (fetchFn ?? fetch)(
+        `${base}/api/graph/${encodeURIComponent(taskId)}/replay/html`,
+      );
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = replayFileName(taskId);
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setReplayNotice(tr('Replay exported'));
+    } catch {
+      setReplayNotice(tr('Replay export failed'));
+    } finally {
+      setExporting(false);
+    }
+  }, [apiBase, fetchFn, taskId, tr]);
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center gap-2 text-sm text-text-secondary" data-testid="canvas-loading">
@@ -822,6 +870,16 @@ export function CanvasPanel({
           className="rounded-control p-1 text-text-secondary hover:bg-fill-hover hover:text-text-primary"
         >
           <Maximize2 className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => void exportReplay()}
+          disabled={exporting || nodes.length === 0}
+          title={tr('Export replay')}
+          className="flex items-center gap-1 rounded-control px-2 py-1 text-xs text-text-secondary hover:bg-fill-hover hover:text-text-primary disabled:opacity-40"
+        >
+          <Download className="size-3.5" />
+          {exporting ? tr('Exporting') : tr('Export replay')}
         </button>
         <button
           type="button"
@@ -1202,6 +1260,14 @@ export function CanvasPanel({
           data-testid="canvas-error"
         >
           {tr('The canvas could not reach the task.')} {error}
+        </div>
+      ) : null}
+      {replayNotice ? (
+        <div
+          className="shrink-0 border-t border-border-main bg-fill-tsp px-2 py-1 text-[11px] text-text-secondary"
+          data-testid="canvas-replay-notice"
+        >
+          {replayNotice}
         </div>
       ) : null}
 
