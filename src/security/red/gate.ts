@@ -283,7 +283,7 @@ export interface GateDeps {
   state?: GateState;
   limiter?: RateLimiter;
   /** Human approval for destructive actions. Default: deny. */
-  approval?: (action: RedAction, authz: AuthorizationRecord) => boolean;
+  approval?: (action: RedAction, authz: AuthorizationRecord | null) => boolean;
   /** Requests consumed so far in the campaign, for the total budget. */
   requestCount?: () => number;
 }
@@ -301,9 +301,13 @@ export function gate(target: string, action: RedAction, authz: AuthorizationReco
   if (state.killSwitch) return DENY("kill-switch engaged", authz?.id ?? null);
 
   if (!authz) {
-    // Zero-config default posture (spec O-1): loopback read-only only.
-    if (isLocalhostTarget(target) && !action.destructive) return ALLOW("localhost default posture", null);
-    if (isLocalhostTarget(target) && action.destructive) return DENY("destructive action requires approval", null);
+    // Zero-config default posture (spec O-1): loopback read-only only, and
+    // destructive actions still need the human approval callback.
+    if (isLocalhostTarget(target)) {
+      if (!action.destructive) return ALLOW("localhost default posture", null);
+      if (deps.approval?.(action, null) ?? false) return ALLOW("destructive action approved", null);
+      return DENY("destructive action requires approval", null);
+    }
     return DENY("no authorization record", null);
   }
 
