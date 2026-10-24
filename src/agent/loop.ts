@@ -610,7 +610,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
     // tagged user message (never rendered by the UI as user input). They run here
     // so a hook that stops the run still produces a SessionEnd notification.
     if (!opts.suppressFinal) {
-      const session = await openSession({ workspace, prompt: opts.prompt, signal: opts.signal, taskId: opts.taskId, enabled: true });
+      const session = await openSession({ workspace, prompt: opts.prompt, signal: opts.signal, taskId: opts.taskId, enabled: true, wikiCfg: opts.cfg });
       if (session.injected) messages.push({ role: "user", content: session.injected });
     }
 

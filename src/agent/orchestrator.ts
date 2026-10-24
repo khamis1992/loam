@@ -962,7 +962,7 @@ export async function runOrchestratedAgent(o: OrchestratorOptions): Promise<RunR
   const workspace = o.cfg.workspace;
   let reason: SessionEndReason = "failed";
   try {
-    const session = await openSession({ workspace, prompt: o.prompt, signal: o.signal, taskId: o.taskId, enabled });
+    const session = await openSession({ workspace, prompt: o.prompt, signal: o.signal, taskId: o.taskId, enabled, wikiCfg: o.cfg });
     if (session.injected) o = { ...o, prompt: o.prompt + "\n\n" + session.injected };
     const result = await runOrchestratedAgentImpl(o);
     reason = "completed";

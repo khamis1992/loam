@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { EventLog } from "./session/eventLog.js";
+import { recordWikiSession } from "./wiki/hooks.js";
 import { ensureTaskWorkspace, isManagedTaskWorkspace } from "./server/taskWorkspace.js";
 import { BLUEPRINT_FILE, bootTaskFromSnapshot } from "./tools/envSnapshot.js";
 import path from "node:path";
@@ -731,6 +732,7 @@ async function main(): Promise<void> {
       if (missionBudget) sessionRuntime.adoptBudgetAfterRun(task, missionBudget);
 
       completeTaskRun(task, result.text, result.model, opts.lease);
+      recordWikiSession(effectiveCfg, task);
       recordTaskUsage(task, result.usage); // OPD #9: one mock usage entry per completed task
       if (doneEvent) {
         appendStep(task, { at: new Date().toISOString(), type: doneEvent.type, data: doneEvent });
@@ -832,6 +834,7 @@ async function main(): Promise<void> {
         log.warn(`lease-fenced status write rejected for ${task}: ${String(writeError)}`);
       }
       if (statusWritten) {
+        recordWikiSession(effectiveCfg, task);
         publishTaskEvent(task, cancelled ? { type: "cancelled" } : { type: "error", message });
         wrappedEmit({ type: "error", message: cancelled ? "⏹ أُوقفت المهمة بناءً على طلبك" : message });
       }

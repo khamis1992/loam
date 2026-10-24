@@ -139,3 +139,10 @@ Context pruning (clean-room)
 Loam's verbatim context pruning (src/agent/prune/, src/tools/contextRecallTool.ts)
 is an independent implementation of the publicly described idea of dropping
 low-value whole messages instead of paraphrasing them. No upstream code was copied.
+
+Project wiki and handoff (clean-room)
+-------------------------------------
+Loam's per-project wiki (src/wiki/, src/tools/wikiTools.ts) is an independent
+implementation of the publicly described idea of a git-friendly markdown
+knowledge base with session summaries and handoffs between sessions. No
+upstream code was copied.

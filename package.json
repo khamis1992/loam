@@ -40,6 +40,7 @@
     "check:eval": "tsx src/scripts/check-eval.ts",
     "check:orchestrator": "tsx src/scripts/check-orchestrator.ts",
     "check:prune": "tsx src/scripts/check-prune.ts",
+    "check:wiki": "tsx src/scripts/check-wiki.ts",
     "eval": "tsx src/scripts/eval-run.ts",
     "eval:coding-bench": "tsx src/scripts/eval-coding-bench.ts",
     "eval:design": "tsx src/scripts/eval-design.ts",

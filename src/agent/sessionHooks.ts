@@ -1,5 +1,8 @@
 import { runLifecycleHooks, wrapHookContext } from "../policy/hooks.js";
 import { isCancelled, throwIfCancelled } from "../server/runControl.js";
+import { wikiStartNotice } from "../wiki/hooks.js";
+
+type WikiCfg = Parameters<typeof wikiStartNotice>[0];
 
 /** Why a top-level run reached its terminal state. */
 export type SessionEndReason = "completed" | "cancelled" | "failed";
@@ -26,6 +29,8 @@ export async function openSession(options: {
   taskId?: string;
   /** Top-level runs pass true; nested runs pass false/omit. */
   enabled: boolean;
+  /** Project wiki config; when enabled, open handoffs are announced (metadata only). */
+  wikiCfg?: WikiCfg;
 }): Promise<SessionHookContext> {
   if (!options.enabled) return { injected: "", end: async () => {} };
 
@@ -35,7 +40,8 @@ export async function openSession(options: {
   const promptSubmit = await runLifecycleHooks("UserPromptSubmit", "", { prompt: options.prompt }, options.workspace);
   if (promptSubmit.blocked) throw new Error("UserPromptSubmit hook blocked the prompt: " + promptSubmit.message);
 
-  const injected = [sessionStart.additionalContext, promptSubmit.additionalContext]
+  const wikiNotice = options.wikiCfg ? wikiStartNotice(options.wikiCfg) : "";
+  const injected = [sessionStart.additionalContext, promptSubmit.additionalContext, wikiNotice]
     .map((s) => s.trim())
     .filter((s) => s.length > 0)
     .join("\n");
