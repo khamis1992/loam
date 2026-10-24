@@ -279,6 +279,8 @@ export interface Config {
     prune?: import("./agent/prune/types.js").PruneConfig;
   };
   sessionLog: { enabled: boolean };
+  /** Project wiki and handoff (src/wiki). Off unless the config file sets `wiki.enabled: true`. */
+  wiki?: { enabled: boolean };
   /** Neo run graph: record every agent event as a node of the task's run graph. */
   runGraph?: { enabled: boolean };
   /**
@@ -495,6 +497,7 @@ export function loadConfig(): Config {
   cfg.compression.prune = resolvePruneConfig(
     isObj(raw) && isObj(raw.compression) ? raw.compression.prune : undefined,
   );
+  cfg.wiki = { enabled: isObj(raw) && isObj(raw.wiki) && raw.wiki.enabled === true };
   cfg.coding = { enabled: cfg.coding?.enabled ?? true, chain: cfg.coding?.chain ?? [], logEdits: cfg.coding?.logEdits ?? true };
   // J7: normalize the hibernation setting. A negative or non-numeric value means
   // "off" (0), so a stale config.json can never arm a bogus timer. `merge` can
