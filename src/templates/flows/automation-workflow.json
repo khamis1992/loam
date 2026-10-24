@@ -1,0 +1,11 @@
+{
+  "id": "automation-workflow",
+  "title": "Automation Workflow",
+  "description": "Automate a multi-step browser workflow and record evidence for each step.",
+  "prompt": "Automate the following browser workflow: navigate to https://example.com/login, fill in the login form with the provided credentials, navigate to the dashboard, download the monthly report, and save it to the task workspace. Record a screenshot and evidence for each step. Verify that the report was downloaded successfully before completing.",
+  "mode": "automate",
+  "effort": "fast",
+  "outputType": "auto",
+  "icon": "⚙️",
+  "category": "Automation"
+}
