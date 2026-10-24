@@ -32,6 +32,8 @@ export const RUN_NODE_TYPES = [
   "note",
   "failed",
   "kb_seed",
+  /** Neo N8: Recurring round root node for round subtrees. */
+  "round",
   /**
    * External-agent canvas bridge (N17): a node an external agent session
    * (OpenCode / Claude Code / Orca) placed on a Loam canvas. Unlike the other

@@ -167,6 +167,7 @@ const NODE_TYPE_KEYS: Record<string, string> = {
   merge: 'Merged',
   note: 'Note',
   failed: 'Failed',
+  round: 'Round',
   // N3: a cited Knowledge Garden seed, drawn as a document node.
   kb_seed: 'Knowledge seed',
 };

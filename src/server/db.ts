@@ -95,6 +95,14 @@ export interface Schedule {
   projectId?: string;
   /** D14: optional playbook text; prompt is used when absent. */
   playbook?: string;
+  /** Neo N8: ISO timestamp after which recurring wakeups must stop. */
+  until?: string;
+  /** Neo N8: Mission / Task ID to resume or execute under. */
+  missionId?: string;
+  /** Neo N8: Specific prompt/instruction for recurring rounds. */
+  instruction?: string;
+  /** Neo N8: Round index for tracking recurring wakeup iterations. */
+  round?: number;
 }
 
 /** D14: automation trigger kinds. */
@@ -111,6 +119,14 @@ export interface ScheduleSpec {
   githubEvents?: string[];
   projectId?: string;
   playbook?: string;
+  /** Neo N8: ISO timestamp after which recurring wakeups must stop. */
+  until?: string;
+  /** Neo N8: Mission / Task ID to resume or execute under. */
+  missionId?: string;
+  /** Neo N8: Specific prompt/instruction for recurring rounds. */
+  instruction?: string;
+  /** Neo N8: Round index for tracking recurring wakeup iterations. */
+  round?: number;
 }
 
 
@@ -201,8 +217,28 @@ export function addSchedule(prompt: string, intervalSeconds: number, agentId?: s
   if (spec?.cron) parseCron(spec.cron);
   if (spec?.timezone?.trim() && !isValidTimezone(spec.timezone.trim())) throw new Error(`منطقة زمنية غير معروفة: ${spec.timezone}`);
   const triggerFields = normalizeTriggerSpec(spec);
-  const timing = { intervalSeconds: interval, ...(spec?.cron ? { cron: spec.cron } : {}), ...(spec?.runAt && !spec?.cron ? { runAt: spec.runAt } : {}), ...(spec?.timezone?.trim() ? { timezone: spec.timezone.trim() } : {}) };
-  const s: Schedule = {id:newId("sched"),prompt,intervalSeconds:interval,enabled,nextRunAt:initialNextRunAt(timing,new Date()),...(agentId?{agentId}:{}),...(workMode?{workMode}:{}),...(kind?{kind}:{}),...(watchPath?{watchPath}:{}),...(timing.cron?{cron:timing.cron}:{}),...(timing.runAt?{runAt:timing.runAt}:{}),...(timing.timezone?{timezone:timing.timezone}:{}),...triggerFields}; put("schedules",s); return s;
+  const timing = { intervalSeconds: interval, ...(spec?.cron ? { cron: spec.cron } : {}), ...(spec?.runAt && !spec?.cron ? { runAt: spec.runAt } : {}), ...(spec?.timezone?.trim() ? { timezone: spec.timezone.trim() } : {}), ...(spec?.until?.trim() ? { until: spec.until.trim() } : {}) };
+  const s: Schedule = {
+    id: newId("sched"),
+    prompt,
+    intervalSeconds: interval,
+    enabled,
+    nextRunAt: initialNextRunAt(timing, new Date()),
+    ...(agentId ? { agentId } : {}),
+    ...(workMode ? { workMode } : {}),
+    ...(kind ? { kind } : {}),
+    ...(watchPath ? { watchPath } : {}),
+    ...(timing.cron ? { cron: timing.cron } : {}),
+    ...(timing.runAt ? { runAt: timing.runAt } : {}),
+    ...(timing.timezone ? { timezone: timing.timezone } : {}),
+    ...(timing.until ? { until: timing.until } : {}),
+    ...(spec?.missionId ? { missionId: spec.missionId } : {}),
+    ...(spec?.instruction ? { instruction: spec.instruction } : {}),
+    ...(typeof spec?.round === "number" ? { round: spec.round } : {}),
+    ...triggerFields,
+  };
+  put("schedules", s);
+  return s;
 }
 /** D14: list/create payload projection that never leaks a webhook secret. */
 export function publicSchedule(s: Schedule): Schedule {
@@ -271,11 +307,13 @@ export function recordScheduleOutcome(id: string, outcome: ScheduleOutcome): Sch
     const now = outcome.now ?? new Date();
     s.lastRunAt = now.toISOString();
     if (outcome.taskId) s.lastTaskId = outcome.taskId;
-    const advance = (): string | null => nextOccurrenceAfter({ cron: s.cron, runAt: s.runAt, intervalSeconds: s.intervalSeconds, timezone: s.timezone }, now);
+    const advance = (): string | null => nextOccurrenceAfter({ cron: s.cron, runAt: s.runAt, intervalSeconds: s.intervalSeconds, timezone: s.timezone, until: s.until }, now);
     if (outcome.ok) {
       s.attempts = 0;
       delete s.lastError;
       s.lastStatus = "ok";
+      // Neo N8: a completed recurring round advances the wakeup's round counter.
+      if (typeof s.round === "number") s.round = s.round + 1;
       const next = advance();
       if (next) s.nextRunAt = next; else s.enabled = false; // spent one-shot
     } else {
