@@ -64,6 +64,7 @@ import { createTodoTools } from "../tools/todoTools.js";
 import { createContextRecallTools } from "../tools/contextRecallTool.js";
 import { createProjectWikiTools } from "../tools/wikiTools.js";
 import { createAppBridgeTools } from "../tools/appBridgeTools.js";
+import { createSecurityAuditTools } from "../tools/securityAuditTools.js";
 import { createUnboundCodemodeTool } from "../codemode/tool.js";
 
 export interface Runtime {
@@ -107,6 +108,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createContextRecallTools());
   registry.registerAll(createProjectWikiTools());
   registry.registerAll(createAppBridgeTools({ gate: writeGate }));
+  registry.registerAll(createSecurityAuditTools({ cfg, ollama, tools: registry }));
   // Codemode ships in every mode but stays inert until the user opts in: the
   // instance registered here is unbound, and index.ts swaps in a per-run
   // instance bound to that run's allowlisted registry before execution.

@@ -153,3 +153,17 @@ Loam's app bridges (src/bridges/, src/tools/appBridgeTools.ts) are an independen
 implementation of the publicly described idea of driving desktop applications
 through their command-line interfaces with declarative manifests. No upstream
 code was copied.
+
+Security audit (src/security/audit/)
+------------------------------------
+Loam's source-code security audit is a clean-room rewrite of the publicly described
+approach of the Cloudflare security-audit-skill (MIT License, Copyright Cloudflare, Inc.):
+a coverage-led, multi-phase audit with an independent verification pass. No upstream
+code was copied; the rule files in rules/loam/ are Loam's own.
+
+External scanners are invoked as separate command-line processes if installed on the
+user's machine and are not bundled or redistributed by Loam:
+  - Gitleaks (MIT License)
+  - OSV-Scanner (Apache License 2.0)
+  - GuardDog (Apache License 2.0)
+  - Opengrep (LGPL 2.1), run as a separate process with Loam's own rules

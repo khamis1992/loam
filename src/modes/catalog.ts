@@ -65,7 +65,7 @@ export const LOAM_MODES: LoamMode[] = [
     starters: [{ label: "مشهد منتج", prompt: "أنشئ مشهد منتج من المجسّمات الأساسية مع قاعدة وخامات معدنية وإضاءة مناسبة باستخدام loam_creative." }, { label: "تكوين متحرك", prompt: "أنشئ تكوينًا من حلقات وكرات متناسقة الألوان مع حركة دوران باستخدام loam_creative." }] },
   { id: "security", label: "Loam Security", labelAr: "افحص", icon: "🛡", hue: 0, hue2: 30,
     tagline: "تقييم أمني موجّه", description: "شغّل فحوصات أمنية محدودة وقراءة فقط ضد أهداف مصرّح بها، واجمع النتائج في تقرير Security/SARIF داخل المهمة.", outputHint: "تقرير ثغرات وتوصيات تصحيح. Use pentest_*/security_* tools; do not use generic shell scripts for security scans unless a dedicated tool is missing.", readOnly: false,
-    tools: ["pentest_check", "pentest_routes", "pentest_report", "security_assess", "security_status", "shell_run", ...READ, ...CONTROL], panels: ["files"],
+    tools: ["pentest_check", "pentest_routes", "pentest_report", "security_assess", "security_status", "security_audit_start", "security_audit_status", "security_audit_report", "shell_run", ...READ, ...CONTROL], panels: ["files"],
     fields: [{ id: "target", label: "الهدف المصرّح به", placeholder: "رابط أو مسار يمكن فحصه (مثلاً http://127.0.0.1:3000)", multiline: false }, { id: "checks", label: "نطاق الفحص", placeholder: "all، headers، tls، exposed_files، أو قائمة محددة" }],
     starters: [{ label: "فحص ترويسات", prompt: "افحص ترويسات الأمان لـ http://127.0.0.1:3000 باستخدام pentest_check واحفظ النتائج." }, { label: "تقرير ثغرات", prompt: "شغّل فحص pentest_check شامل ثم أنشئ تقرير pentest_report داخل مساحة المهمة." }] },
   { id: "automate", label: "Loam Flow", labelAr: "أنجز", icon: "↗", hue: 220, hue2: 195,
