@@ -1,6 +1,6 @@
 {
   "name": "loam",
-  "version": "0.5.30",
+  "version": "0.5.31",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -26,7 +26,7 @@
     "test:memory": "node --import tsx --test src/memory/__tests__/cache.test.ts src/memory/__tests__/caps.test.ts src/server/__tests__/debugMemory.test.ts src/protocol/__tests__/blobRoute.test.ts",
     "test:wiki": "node --import tsx --test src/wiki/__tests__/*.test.ts",
     "test:bridges": "node --import tsx --test src/bridges/__tests__/*.test.ts",
-    "test:prune":"node --import tsx --test src/agent/prune/__tests__/*.test.ts src/tools/__tests__/contextRecallTool.test.ts",
+    "test:prune": "node --import tsx --test src/agent/prune/__tests__/*.test.ts src/tools/__tests__/contextRecallTool.test.ts",
     "bench:mem": "node --import tsx bench/memBench.ts",
     "bench:ram:app": "node --import tsx bench/appRamBench.ts --spawn",
     "bench:ram:renderer": "node --import tsx bench/rendererHibernationBench.ts",
