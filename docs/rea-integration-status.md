@@ -13,6 +13,8 @@ Approved plan 2026-10-24. This file tracks landed vs pending work.
 | `87eac1c` + `ef2734f` | P4 | `check:security-asar` release gate: extracts the real 377 MB `app.asar` via `@electron/asar`, analyzes the first-party subtrees (`electron/`, `dist/`, `ui/`) on the pinned server, merges surfaces (deterministic digest), diffs vs committed `qa/asar-baseline.json`; warn by default, `LOAM_ASAR_AUDIT=fail` blocks. **Proven on the packaged 0.5.31 app** (desktop-ipc-api, loom-updates, 6 contextBridge keys, preload.cjs, 309 endpoints) and on planted-channel fixtures (WARN → fail-mode exit 1 → allowlist coverage PASS → restore PASS). |
 | `2a0e01a` | P2 prep | `src/tools/reaBudget.ts` — §9 summary-first budget (soft 256 KiB, paging tools to 2 MiB, preview+next swap). Pure module; `mcp.ts` wires it in P2. |
 | `e286533` | P1 prep | `skills/reverse-engineer/SKILL.md` — Arabic evidence-first rules (untrusted data, Observation/Inference/Unknown, no target execution, authorized use). |
+| `adc497d` | P5 prep | `THIRD_PARTY_NOTICES` rea-agents MIT section (invoked, never vendored) + this status doc. |
+| `d366a0d` | P1 prep2 | `src/modes/reverseEngineer.ts` — the complete mode object (Arabic-first, hue2, glyphs, 13 first-class `mcp__rea__` names derived from the allowlist, three starters) + shape tests. The future `catalog.ts` edit reduces to import + spread + alias removal. |
 
 Verification commands: `npm run check:rea-allowlist`, `npm run check:rea-evidence`,
 `npm run check:security-asar`, `node --import tsx --test src/tools/__tests__/rea*.test.ts src/security/__tests__/rea*.test.ts`.
