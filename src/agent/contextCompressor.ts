@@ -35,6 +35,10 @@ import type { Emit, Usage, TodoItem } from "./events.js";
 import { reminderMessage } from "./reminders.js";
 import { runPreCompactHooks, type PreCompactHookInput } from "../policy/hooks.js";
 import { ReadState } from "../tools/readState.js";
+import { pruneTranscript } from "./prune/index.js";
+import { DEFAULT_SIDE_EFFECT_TOOLS, HeuristicScorer } from "./prune/heuristicScorer.js";
+import type { PruneConfig, PruneResult, ToolMeta } from "./prune/types.js";
+import type { PrunedStore } from "./prune/prunedStore.js";
 
 /** Marker inserted where a pruned tool output used to be. */
 export const ELISION_MARKER = (chars: number) => `[... ${chars} chars elided ...]`;
@@ -435,6 +439,34 @@ export interface CompressOptions {
   todos?: TodoItem[];
   /** Model name for context-window lookup (defaults to cfg.model). */
   model?: string;
+  /** Verbatim pruning inputs: per tool message metadata, the run's store and the task goal. */
+  toolMeta?: ReadonlyMap<ChatMessage, ToolMeta>;
+  prunedStore?: PrunedStore;
+  goal?: string;
+}
+
+/** Run the verbatim pruner over the middle slice; null when it is off, fails, or changes nothing. */
+async function pruneVerbatim(options: CompressOptions, middle: ChatMessage[]): Promise<{ prune: PruneConfig; result: PruneResult } | null> {
+  const prune = options.cfg.compression.prune;
+  if (!prune || prune.strategy === "summary" || !options.toolMeta || !options.prunedStore) return null;
+  const scorer = new HeuristicScorer(prune.sideEffectTools.length ? prune.sideEffectTools : DEFAULT_SIDE_EFFECT_TOOLS);
+  try {
+    const result = await pruneTranscript(middle, {
+      cfg: prune,
+      goal: options.goal ?? "",
+      todos: (options.todos ?? []).map((t) => t.content),
+      meta: options.toolMeta,
+      scorer,
+      fallback: scorer,
+      store: options.prunedStore,
+      protectLead: 0,
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+    return result.applied ? { prune, result } : null;
+  } catch (err) {
+    if (isCancelledError(err) || options.signal?.aborted) throw err;
+    return null;
+  }
 }
 
 /**
@@ -504,7 +536,7 @@ export async function compressContext(
   messages: ChatMessage[],
   emit: Emit,
   signal?: AbortSignal,
-  extra?: Pick<CompressOptions, "readState" | "todos" | "model">,
+  extra?: Pick<CompressOptions, "readState" | "todos" | "model" | "toolMeta" | "prunedStore" | "goal">,
 ): Promise<CompressionResult> {
   const options: CompressOptions = { cfg, ollama, messages, emit, todos: [], ...(signal ? { signal } : {}), ...(extra ?? {}) };
   const model = options.model ?? cfg.model;
@@ -592,6 +624,34 @@ export async function compressContext(
 
   if (middle.length === 0) {
     return { messages, compressed: false, step: 0, usage: zeroUsage(), reminders: [], hookBlocked: false };
+  }
+
+  // Verbatim pruning (compression.prune): drop or truncate whole tool results first.
+  // Strategy "summary" or no prune block skips this and behaves as before.
+  const verbatim = await pruneVerbatim(options, middle);
+  if (verbatim) {
+    const { prune, result } = verbatim;
+    const pruned = [...lead, ...result.messages, ...tail];
+    const prunedTokens = totalTokens(pruned);
+    emit({
+      type: "context_pruned",
+      strategy: prune.strategy === "prune" ? "prune" : "prune_then_summary",
+      scorer: result.stats.scorer,
+      fallback: result.stats.fallback,
+      kept: result.stats.kept,
+      truncated: result.stats.truncated,
+      dropped: result.stats.dropped,
+      pinned: result.stats.pinned,
+      charsBefore: result.stats.charsBefore,
+      charsAfter: result.stats.charsAfter,
+      tokensBefore: originalTokens,
+      tokensAfter: prunedTokens,
+    });
+    if (prune.strategy === "prune" || prunedTokens <= threshold) {
+      emit({ type: "compaction", step: 1, originalTokens, afterPruneTokens: prunedTokens, finalTokens: prunedTokens });
+      return { messages: pruned, compressed: true, step: 1, usage: zeroUsage(), reminders: buildCompactionReminders(options), hookBlocked: false };
+    }
+    middle = result.messages;
   }
 
   const { messages: prunedMiddle } = pruneMiddle(middle);

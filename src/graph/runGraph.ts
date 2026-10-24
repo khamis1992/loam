@@ -850,6 +850,8 @@ export class RunGraph {
       case "verification_progress":
       case "permission_mode_changed":
       case "cache_usage":
+      // Verbatim pruning is a per-compaction diagnostic, not a canvas node.
+      case "context_pruned":
       // Neo N5: the selector re-shapes the transcript every step, so it is a
       // per-step diagnostic like cache_usage rather than a canvas node (a node
       // per step would bury the run graph's real structure).

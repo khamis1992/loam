@@ -169,6 +169,8 @@ export type AgentEvent =
    *  (no summarizer call); `blocked` marks the case where a PreCompact hook vetoed
    *  the compaction and nothing was compressed. */
   | { type: "compaction"; step: 1 | 2 | 3; originalTokens: number; afterPruneTokens: number; finalTokens: number; summaryChars?: number; fallback?: boolean; emergency?: boolean; droppedTurns?: number; blocked?: boolean }
+  /** Verbatim pruning removed or truncated whole tool results before any summary. Bodies stay recallable. */
+  | { type: "context_pruned"; strategy: "prune" | "prune_then_summary"; scorer: string; fallback: boolean; kept: number; truncated: number; dropped: number; pinned: number; charsBefore: number; charsAfter: number; tokensBefore: number; tokensAfter: number }
   /**
    * Prompt-cache (KV cache) accounting. Emitted on every completed provider
    * request that reported cache telemetry, so clients can show reusable-token

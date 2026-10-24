@@ -26,6 +26,8 @@ import type { CooldownStore, FailoverProvider, ProviderClient } from "../llm/fai
 import { createStallGuard } from "./stallGuard.js";
 import { ciWatchEscalationNotice } from "./ciWatchLoop.js";
 import { compressContext, getContextWindow } from "./contextCompressor.js";
+import { PrunedStore } from "./prune/prunedStore.js";
+import type { ToolMeta } from "./prune/types.js";
 import { ContextSelector } from "./contextSelector.js";
 import { runLifecycleHooks, wrapHookContext } from "../policy/hooks.js";
 import { throwIfCancelled, isCancelled, isCancelledError } from "../server/runControl.js";
@@ -326,6 +328,11 @@ function editTargetPath(args: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
+function toolMetaOf(callId: string, ok: boolean, args: Record<string, unknown>): ToolMeta {
+  const path = editTargetPath(args);
+  return { callId, ok, args, ...(path ? { path } : {}) };
+}
+
 /** Attribute a workspace edit to the model that produced it. No-op when the
  *  operator disabled edit auditing through `coding.logEdits`. */
 function auditEdit(name: string, args: Record<string, unknown>, model: string, ok: boolean, step: number, enabled: boolean, taskId?: string): void {
@@ -592,6 +599,10 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
   // transcript entries it may fold away. Object identity survives a re-shape,
   // because the selector carries the surviving messages over unchanged.
   const toolMessageIds = new Map<ChatMessage, string>();
+  // Verbatim pruning (compression.prune): per tool message call id / outcome /
+  // args, plus the run's store holding the bodies of removed results.
+  const toolMessageMeta = new Map<ChatMessage, ToolMeta>();
+  const prunedStore = new PrunedStore();
 
   try {
     // SessionStart and UserPromptSubmit fire once per run, before any model call.
@@ -661,9 +672,14 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
 
     let providerCompaction = false;
     if (opts.cfg.compression.enabled) {
-      const compressed = await compressContext(opts.cfg, opts.ollama, messages, opts.emit, opts.signal, { readState, todos: currentTodos, model: usedModel });
+      const compressed = await compressContext(opts.cfg, opts.ollama, messages, opts.emit, opts.signal, {
+        readState, todos: currentTodos, model: usedModel, goal: opts.prompt, toolMeta: toolMessageMeta, prunedStore,
+      });
       if (compressed.compressed) {
         messages = compressed.messages;
+        for (const message of [...toolMessageMeta.keys()]) {
+          if (!messages.includes(message)) toolMessageMeta.delete(message);
+        }
         providerCompaction = true;
         usage.promptTokens += compressed.usage.promptTokens;
         usage.completionTokens += compressed.usage.completionTokens;
@@ -941,6 +957,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
         // transcript message it belongs to, so the selector can fold it away
         // later without losing the pairing.
         toolMessageIds.set(toolMessage, selector.capture(item.name, toolResult.content, { path: editTargetPath(item.args) }).id);
+        toolMessageMeta.set(toolMessage, toolMetaOf(item.callId, toolResult.ok, item.args));
         messages.push(toolMessage);
         // Stop right after the first tool when cancelled — don't even queue the rest of the batch.
         throwIfCancelled(opts.signal, opts.taskId);
@@ -995,6 +1012,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
         if (MEMORY_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.memoryUpdated();
         const toolMessage = { role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) } as ChatMessage;
         toolMessageIds.set(toolMessage, selector.capture(name, toolResult.content, { path: editTargetPath(args) }).id);
+        toolMessageMeta.set(toolMessage, toolMetaOf(callId, toolResult.ok, args));
         messages.push(toolMessage);
         // Cancel pressed while the tool ran? Stop before the next tool/step.
         throwIfCancelled(opts.signal, opts.taskId);
