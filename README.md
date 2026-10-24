@@ -1,6 +1,6 @@
-# Loam
+# Loam Studio
 
-![Loam Banner](docs/assets/banner.svg)
+![Loam Studio Banner](docs/assets/banner.svg)
 
 [![Version](https://img.shields.io/badge/version-0.5.31-blue.svg)](https://github.com/khamis1992/loam)
 [![Electron](https://img.shields.io/badge/Electron-44.7.2-47848f.svg)](https://www.electronjs.org/)
@@ -8,39 +8,51 @@
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-Not%20Yet%20Specified-red.svg)
 
-**Loam** is a local AI agent desktop application built with Electron. It provides specialized workspaces (modes) with focused tool sets and isolated task environments, enabling AI agents to work effectively on different types of projects without mixing contexts.
+**Loam Studio** is a local AI agent desktop application built with Electron. It provides a unified creative workspace with four specialized categories, project templates, and ready-to-use workflows, enabling AI agents to work effectively on different types of projects.
 
-![Home Interface](docs/assets/screenshots/home-interface.png)
-*Loam's home screen with mode selector and new task interface*
+![Home Screen](docs/assets/screenshots/home.png)
+*Loam Studio home screen with Build, Create, Data, and Secure cards*
 
 ## Features
 
-### Specialized Modes
+### Four Specialized Categories
 
-Loam organizes work into **8 distinct modes**, each with its own tools and interface optimized for specific tasks:
+Loam Studio organizes work into **four main categories**, each with dedicated tools and workflows:
 
-- **Explore** (`ask`) - Read-only workspace for understanding code, asking questions, and planning without making changes
-- **Research** (`research`) - Web search, source gathering, and documentation with browser automation tools
-- **Build** (`build`) - Full development environment with file editing, shell commands, git operations, testing, and local preview
-- **Write** (`write`) - Document creation and editing with integrated office tools (Word, Excel, PowerPoint via Craft editors)
-- **Data** (`data`) - Data analysis, spreadsheet manipulation, and visualization with live spreadsheet editing
-- **Studio** (`media`) - Creative work including 3D scene composition, image/video generation, and design tools
-- **Security** (`security`) - Security assessment tools with limited, authorized penetration testing capabilities
-- **Flow** (`automate`) - Browser automation, workflow recording, and task scheduling
+- **Build** - Websites, apps, and games development
+- **Create** - Slides, documents, images, and videos
+- **Data** - Sheets and research
+- **Secure** - Security scans and automations
 
-Each mode enforces its own tool permissions at the server level, ensuring agents can't accidentally use inappropriate tools for the task.
+### Project Templates
+
+Quick-start templates for common workflows:
+- Create an anime short
+- Build a personal budget app
+- Turn a résumé into a personal website
+
+### Case Playbook
+
+Twelve ready-to-use Loam flows to start from a proven prompt, including options for specific project types and automation workflows.
+
+### Computers & Companions
+
+Create AI companions with customizable attributes:
+- **Name** - Unique identifier for the companion
+- **Emoji** - Visual representation
+- **Description** - Purpose and capabilities
+- **Mode** - Specialized workflow category
+- **Effort** - Resource allocation level
+- **Memory** - Memory-enabled execution for context retention
 
 <details>
 <summary>View More Screenshots</summary>
 
-![Companions Panel](docs/assets/screenshots/companions-panel.png)
-*Agent companions and team management interface*
+![Create Companion Dialog](docs/assets/screenshots/companions.png)
+*Create companion dialog with customizable attributes*
 
-![Security Workspace](docs/assets/screenshots/security-workspace.png)
-*Security assessment and penetration testing workspace*
-
-![Mobile Workspace](docs/assets/screenshots/mobile-workspace.png)
-*Mobile app development with live preview and component editor*
+![Secure Card Menu](docs/assets/screenshots/security.png)
+*Secure card menu showing Security scan and Automation options*
 
 </details>
 
@@ -85,7 +97,6 @@ Code: `src/tools/mirofish/pipeline.ts`, `src/tools/mirofish/seed.ts`, `src/tools
 - **MCP Servers**: Filesystem, memory, sequential-thinking, and custom integrations
 - **External Services**: Configurable integration system for third-party APIs
 - **Model Providers**: Local Ollama models with cloud model fallback
-- **Mobile Bridge**: Local service bridge for mobile app development workflows
 
 ## Installation & Setup
 

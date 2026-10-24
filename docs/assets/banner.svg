@@ -1,39 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300">
+<svg width="1200" height="200" viewBox="0 0 1200 200" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#0a1612;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#1a2d24;stop-opacity:1" />
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f8f9fa;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e9ecef;stop-opacity:1" />
     </linearGradient>
   </defs>
   
   <!-- Background -->
-  <rect width="1200" height="300" fill="url(#bgGrad)"/>
+  <rect width="1200" height="200" fill="url(#bgGradient)"/>
   
-  <!-- Grid pattern -->
-  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#426853" stroke-width="0.5" opacity="0.3"/>
-  </pattern>
-  <rect width="1200" height="300" fill="url(#grid)"/>
+  <!-- Logo mark (dark rounded square) -->
+  <rect x="440" y="60" width="80" height="80" rx="16" fill="#2b2d30"/>
   
-  <!-- Logo (scaled and positioned) -->
-  <g transform="translate(80, 75) scale(2.5)">
-    <path d="M12 2h40l10 10v40L52 62H12L2 52V12z" fill="#101d19" stroke="#426853" stroke-width="1.5"/>
-    <g transform="translate(10 9) scale(1.4)" color="#99d6b5">
-      <path fill="currentColor" stroke="none" d="M5 5h6v16h16v6H9l-4-4zM15 5h5v11h7v5H15z"/>
-      <path fill="#cda77a" stroke="none" d="M24 5h4v7h-4z"/>
-    </g>
-  </g>
+  <!-- Inner logo design -->
+  <circle cx="480" cy="100" r="20" fill="#ffffff" opacity="0.3"/>
+  <rect x="470" y="90" width="20" height="20" rx="4" fill="#ffffff"/>
   
-  <!-- Title -->
-  <text x="260" y="155" font-family="system-ui, -apple-system, sans-serif" font-size="72" font-weight="700" fill="#99d6b5" letter-spacing="-1">
-    Loam
-  </text>
+  <!-- Wordmark -->
+  <text x="540" y="120" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="48" font-weight="700" fill="#2b2d30">loam</text>
+  <text x="680" y="120" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="48" font-weight="300" fill="#6c757d">studio</text>
   
   <!-- Tagline -->
-  <text x="260" y="200" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="400" fill="#7ba896" opacity="0.9">
-    Local AI workspaces with focused tools and isolated tasks
-  </text>
-  
-  <!-- Accent line -->
-  <line x1="260" y1="220" x2="500" y2="220" stroke="#426853" stroke-width="2"/>
+  <text x="540" y="145" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="400" fill="#6c757d">Local AI Agent Workspace</text>
 </svg>
