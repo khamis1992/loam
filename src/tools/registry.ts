@@ -5,6 +5,7 @@ import { runLifecycleHooks } from "../policy/hooks.js";
 import { getLoamMode } from "../modes/catalog.js";
 import { getToolProfile } from "../agent/taskToolScope.js";
 import type { ReadState } from "./readState.js";
+import type { PrunedStore } from "../agent/prune/prunedStore.js";
 
 export interface ToolContext {
   cfg: Config;
@@ -29,6 +30,9 @@ export interface ToolContext {
   /** Per-session read tracking. Edit/write tools reject unread or stale
    *  existing files while it is present. */
   readState?: ReadState;
+  /** Bodies the context pruner dropped from the transcript this run, so
+   *  `context_recall` can hand one back by id. Absent when pruning is off. */
+  prunedStore?: PrunedStore;
 }
 
 export interface ToolResult {

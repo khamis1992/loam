@@ -917,6 +917,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
           signal: opts.signal,
           allowedTools: runAllowedTools,
           readState,
+          prunedStore,
           ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
           ...(opts.taskId ? { taskId: opts.taskId } : {}),
         }),
@@ -980,6 +981,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
           signal: opts.signal,
           allowedTools: runAllowedTools,
           readState,
+          prunedStore,
           ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
           ...(opts.taskId ? { taskId: opts.taskId } : {}),
         });
