@@ -64,9 +64,10 @@ export const PAYLOAD_CORPUS: Payload[] = [
   { id: "redirect-01", class: "redirect", template: "https://example.org/", tags: ["absolute"] },
   { id: "redirect-02", class: "redirect", template: "//example.org/", tags: ["protocol-relative"] },
   { id: "redirect-03", class: "redirect", template: "https://example.org@127.0.0.1/", tags: ["userinfo-bypass"] },
-  // Deserialization markers (Java)
+  // Deserialization markers (Java, PHP, .NET)
   { id: "deser-01", class: "deser", template: "rO0ABXQ=", tags: ["java", "base64-header"] },
   { id: "deser-02", class: "deser", template: "\xac\xed\x00\x05", tags: ["java", "magic"] },
+  { id: "deser-03", class: "deser", template: "O:8:\"stdClass\":0:{}", tags: ["php"] },
   // Upload
   { id: "upload-01", class: "upload", template: "shell.jsp%00.png", tags: ["null-byte"] },
   { id: "upload-02", class: "upload", template: "shell.phtml", tags: ["extension"] },
