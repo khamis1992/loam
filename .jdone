@@ -1,3 +1,116 @@
+# J7 - idle hibernation of chat views (DONE)
+
+## Gate fix: merge with latest manus-parity, all gates green
+
+`.jgatefail.txt` reported `MERGE CONFLICT with latest manus-parity in: package.json,
+packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx,
+packages/web/src/components/chat/EventList.tsx, src/config.ts, src/server/http.ts`.
+
+`manus-parity` had advanced past the J7 branch base (`cde859f`) to `0fe2c47`
+("merge khamis1992/mf2-m7 (M7 via loam-jcode-run) into manus-parity"), so `git merge
+manus-parity` re-conflicted.
+
+## Root cause of the merge conflict
+`0fe2c47` brings the M7 seed/pipeline work and the O6b startup-recovery work. J7 and
+parity both touched the same five files at the same anchors:
+
+| File | J7 side | parity side |
+| --- | --- | --- |
+| `package.json` | `bench:ram:renderer` + `test:bench` lists `rendererHibernationBench.test.ts` | `test:bench` lists `launchers.test.ts` |
+| `TaskPageClient.tsx` | `hibernated={hookHibernated \|\| hibernation.hibernated}` | `onOpenFile={handleOpenFileInEditor}` |
+| `EventList.tsx` | `hibernated?: boolean` prop | `onOpenFile?: ...` prop |
+| `src/config.ts` | `session.hibernationIdleMinutes` | `recovery?: { autoResume: boolean }` |
+| `src/server/http.ts` | `handleHibernationRoutes(...)` dispatch | `handleEventsRoutes(...)` dispatch |
+
+## Resolution: kept BOTH sides in all five files
+- `package.json` - kept J7's `bench:ram:renderer` script and merged `test:bench` to run
+  BOTH `launchers.test.ts` and `rendererHibernationBench.test.ts`.
+- `TaskPageClient.tsx` - kept `hibernated={hookHibernated || hibernation.hibernated}`
+  AND `onOpenFile={handleOpenFileInEditor}`.
+- `EventList.tsx` - kept BOTH `hibernated?: boolean` and `onOpenFile?:` props, and the
+  `EventList` / `ChatEventRow` signatures and bodies accept both.
+- `src/config.ts` - kept J7's `session.hibernationIdleMinutes` (type, DEFAULTS,
+  `normalizeHibernationMinutes` in `loadConfig`, env `LOAM_HIBERNATION_IDLE_MINUTES`)
+  AND parity's `recovery?: { autoResume: boolean }` (type, DEFAULTS, `loadConfig`
+  normalization, env `LOAM_AUTO_RESUME` / `MANUS_LOCAL_AUTO_RESUME`).
+- `src/server/http.ts` - kept BOTH `handleHibernationRoutes(...)` and
+  `handleEventsRoutes(...)` dispatch calls, and both imports.
+
+## Second root cause: two corrupted slide scripts from a parity wip commit
+After the first `tsc` run, `src/scripts/check-slide-layouts.ts` and
+`src/scripts/check-slide-text-import.ts` failed to typecheck (duplicate `import ExcelJS`,
+redeclared `frame`/`handle`/`resize`, duplicate `import {renderSlidePreview}`). These
+two files were auto-merged (not conflicts), so the corruption was not visible as a
+conflict.
+
+Root cause: `manus-parity` commit `75e2694` ("wip: auto-commit before gate") committed
+duplicated lines into those two files (a bad-merge artifact from another session's
+working tree). The clean blobs are `eac43a29` / `43fe1e29` (HEAD side); the corrupted
+parity blobs are `c37fb904` / `08b63ef9`. The pre-wip snapshot `fbf8afd` and the wip's
+parent `70f74e7` both match HEAD (no duplicates), confirming the duplication came from
+the parity wip commit and not from J7.
+
+Fix: restored both files to the clean HEAD blobs with `git checkout HEAD --`. No test
+was weakened, no assertion removed, and no J7 code was dropped.
+
+## Gates (run from the worktree root on the merged tree, commit `f029ffa`)
+- `npx tsc --noEmit` -> exit 0 (0 errors)
+- `npm run build:server` -> exit 0
+- `(cd packages/web && npx next build)` -> exit 0
+- `node --import tsx --test src/memory/__tests__/hibernation.test.ts
+  src/server/__tests__/hibernation.test.ts
+  packages/web/src/services/__tests__/sessionHibernationApi.test.ts
+  bench/__tests__/rendererHibernationBench.test.ts` -> exit 0
+- `node --import tsx --test packages/web/src/components/chat/__tests__/hibernationStore.test.ts
+  packages/web/src/components/chat/__tests__/hibernationTestHook.test.tsx
+  packages/web/src/components/chat/__tests__/useSessionHibernation.test.tsx` -> exit 0
+- `git merge-base --is-ancestor manus-parity HEAD` -> exit 0 (parity fully merged)
+- `git rev-list --left-right --count manus-parity...HEAD` -> `0  2` (0 parity commits
+  missing); working tree clean.
+
+## J7 deliverable (unchanged from commit `8d2b2ac`)
+- `src/memory/hibernation.ts`, `hibernationWiring.ts`, `sessionCaches.ts` (cache.ts
+  hooks) - derived-cache release + wake.
+- `src/server/routes/hibernation.ts` + `src/server/__tests__/hibernation.test.ts`.
+- `src/memory/__tests__/hibernation.test.ts`, `caps.test.ts`.
+- `packages/web/src/components/chat/hibernationStore.ts`, `useSessionHibernation.ts`,
+  `hibernationTestHook.ts`, `HibernationNotice.tsx`, `Composer.tsx` wake-on-keystroke,
+  and the three colocated vitest files.
+- `packages/web/src/services/sessionHibernationApi.ts` + `memoryDebugApi.ts`.
+- `electron/main.cjs`, `preload.cjs`, `memorySampler.cjs` + `electron/__tests__/memorySampler.test.cjs`.
+- `src/config.ts` (`session.hibernationIdleMinutes`, default 30, 0=off), `src/index.ts`,
+  `src/tools/browserFrames.ts`, `phaseTools.ts`.
+- `packages/web/e2e/specs/hibernation.spec.ts`.
+- `bench/rendererHibernationBench.ts` + `bench/__tests__/rendererHibernationBench.test.ts`
+  and `bench/results/J7.json` (measured, not assumed).
+
+## Acceptance: measured renderer RSS before/after hibernation
+`bench/results/J7.json` (2000-message fixture, image attachments, `debug:memory`
+refresh, `--expose-gc`, forced GC):
+- `beforeMB` 236.4 -> `afterMB` 206.0, `deltaMB` -30.4 (released), `released: true`.
+- `domReleased: true`, `draftPreserved: "draft preserved across hibernation"`.
+- `hibernatedEventCount: 2000` (canonical state kept while DOM dropped).
+
+## Files changed by this session
+- `package.json`, `packages/web/src/app/app/[sessionUid]/TaskPageClient.tsx`,
+  `packages/web/src/components/chat/EventList.tsx`, `src/config.ts`, `src/server/http.ts`
+  (the five conflicted files, resolved keeping both sides),
+- `src/scripts/check-slide-layouts.ts`, `src/scripts/check-slide-text-import.ts`
+  (restored to clean HEAD blobs),
+- `.jdone` (this report).
+
+Test commands:
+  npx tsc --noEmit
+  npm run build:server
+  (cd packages/web && npx next build)
+  node --import tsx --test src/memory/__tests__/hibernation.test.ts src/server/__tests__/hibernation.test.ts packages/web/src/services/__tests__/sessionHibernationApi.test.ts bench/__tests__/rendererHibernationBench.test.ts
+  node --import tsx --test packages/web/src/components/chat/__tests__/hibernationStore.test.ts packages/web/src/components/chat/__tests__/hibernationTestHook.test.tsx packages/web/src/components/chat/__tests__/useSessionHibernation.test.tsx
+
+No secrets committed. No forbidden path touched. No test weakened, deleted or skipped.
+No Arabic text was added or corrupted.
+
+---
+
 # M7 - e2e test gate for the swarm simulation (DONE)
 
 ## Final merge resolution (manus-parity 8270c75 -> khamis1992/mf2-m7)
