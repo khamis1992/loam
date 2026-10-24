@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { DATA_DIR } from "../config.js";
+import { DATA_DIR, ROOT } from "../config.js";
 import {
   SharedControlClient,
   defaultCodeSessionSocketPath,
@@ -25,7 +25,13 @@ const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 export type CodeSessionLauncher = "per-process" | "shared";
 
 /** Project root of the Loam app (src/tools -> ../..). */
-const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const APP_ROOT = (() => {
+  try {
+    return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+  } catch {
+    return ROOT;
+  }
+})();
 const SHARED_SERVER_ENTRY = path.join(APP_ROOT, "src", "server", "sharedCodeSession.ts");
 
 export interface CodeSessionSpawnOptions {

@@ -86,6 +86,19 @@ describe("data controls", () => {
     assert.equal(settings.getSettings().trainingOptOut, false);
   });
 
+  it("round-trips the codemode opt-in flag in settings", () => {
+    settings.updateSettings({ codemode: true });
+    assert.equal(settings.getSettings().codemode, true);
+
+    settings.updateSettings({ codemode: false });
+    assert.equal(settings.getSettings().codemode, false);
+
+    // A non-boolean patch leaves the stored value untouched, and the stored
+    // value is what the codemode tool's opt-in check reads.
+    settings.updateSettings({ codemode: undefined as unknown as boolean });
+    assert.equal(settings.getSettings().codemode, false);
+  });
+
   it("deletes all user data with the typed confirmation", () => {
     db.createTask("doomed task", "Doomed");
     db.createProject("doomed project");

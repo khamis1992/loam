@@ -10,6 +10,7 @@ import {
   createUnlimitedBudget,
   formatBudgetUsage,
   normalizeLimit,
+  normalizeExactLimit,
   raiseBudget,
   resetBudgetUsage,
   totalTokens,
@@ -25,6 +26,19 @@ describe("compute budget limits", () => {
     assert.equal(normalizeLimit(Infinity), undefined);
     assert.equal(normalizeLimit("10"), undefined);
     assert.equal(normalizeLimit(undefined), undefined);
+  });
+
+  // Neo N6: the cost dimension is USD, not a count, so it is the one limit that
+  // must survive being fractional. `$0.01` floored to `0` would mean "no ceiling".
+  it("keeps a fractional cost ceiling, unlike the count limits", () => {
+    assert.equal(normalizeExactLimit(0.01), 0.01);
+    assert.equal(normalizeExactLimit(1), 1);
+    assert.equal(normalizeExactLimit(0), undefined);
+    assert.equal(normalizeExactLimit(-0.5), undefined);
+    assert.equal(normalizeExactLimit(NaN), undefined);
+    assert.equal(normalizeExactLimit(Infinity), undefined);
+    const budget = createComputeBudget({ costUsd: 0.01 });
+    assert.equal(budget.costLimitUsd, 0.01);
   });
 
   it("creates a budget with no limits by default", () => {

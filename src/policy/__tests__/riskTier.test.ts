@@ -49,6 +49,17 @@ const CLASSIFICATION_CASES: Array<{ tool: string; args?: Record<string, unknown>
   // keys, so a timecode like "1:30" is read as a relative path (write-workspace,
   // harmless). Documented here so the coupling is visible if WRITE_PATH_KEYS changes.
   { tool: "video_studio", args: { action: "trim", from: "0:00", to: "1:30" }, ws: WS, expected: "write-workspace", note: "video_studio from/to time aliases resolve as workspace paths" },
+  // cr-05: office_craft drives the live Craft editors. Its read actions are
+  // read-only; every other action edits the open document. A missing action
+  // stays on the write tier so an under-specified call is never under-restricted.
+  { tool: "office_craft", args: { app: "docs", action: "state" }, ws: WS, expected: "read", note: "office_craft state is a live read" },
+  { tool: "office_craft", args: { app: "sheets", action: "commands" }, ws: WS, expected: "read", note: "office_craft commands lists ids only" },
+  { tool: "office_craft", args: { app: "docs", action: "execute", command: "text.insert" }, ws: WS, expected: "write-workspace", note: "office_craft execute edits the document" },
+  { tool: "office_craft", args: { app: "docs", action: "batch", steps: [] }, ws: WS, expected: "write-workspace", note: "office_craft batch edits the document" },
+  { tool: "office_craft", args: { app: "docs", action: "export", file: "out/a.docx" }, ws: WS, expected: "write-workspace", note: "office_craft export writes a task file" },
+  { tool: "office_craft", args: { app: "docs", action: "undo" }, ws: WS, expected: "write-workspace", note: "office_craft undo changes the document" },
+  { tool: "office_craft", args: { app: "docs" }, ws: WS, expected: "write-workspace", note: "office_craft without an action is not assumed read-only" },
+  { tool: "office_craft", args: { engine: "war_room", title: "x" }, ws: WS, expected: "write-workspace", note: "office_craft war_room writes its own files" },
   // write-outside
   { tool: "file_write", args: { path: "../outside.txt" }, ws: WS, expected: "write-outside", note: "parent escape" },
   { tool: "file_edit", args: { path: "/etc/passwd" }, ws: WS, expected: "write-outside", note: "absolute outside" },
@@ -102,6 +113,35 @@ for (const c of CLASSIFICATION_CASES) {
     assert.strictEqual(classifyToolCall(c.tool, c.args, c.ws ?? WS), c.expected);
   });
 }
+
+// ---------------------------------------------------------------------------
+// office_craft (cr-05): one tool, two faces
+// ---------------------------------------------------------------------------
+
+test("classify: office_craft read actions are read-only, any other action is a write", () => {
+  // Explicit read actions never touch the document.
+  assert.strictEqual(classifyToolCall("office_craft", { app: "docs", action: "state" }, WS), "read");
+  assert.strictEqual(classifyToolCall("office_craft", { app: "photo", action: "commands" }, WS), "read");
+  // Action name is matched case-insensitively after trimming.
+  assert.strictEqual(classifyToolCall("OFFICE_CRAFT", { app: "docs", action: " STATE " }, WS), "read");
+  // Every other action (and a missing action) edits the open document.
+  for (const args of [
+    { app: "docs", action: "open" },
+    { app: "docs", action: "execute", command: "file.save" },
+    { app: "docs", action: "batch" },
+    { app: "docs", action: "export" },
+    { app: "docs", action: "undo" },
+    { app: "docs", action: "redo" },
+    { app: "docs" },
+    { engine: "war_room" },
+  ]) {
+    assert.strictEqual(
+      classifyToolCall("office_craft", args, WS),
+      "write-workspace",
+      JSON.stringify(args),
+    );
+  }
+});
 
 // Windows-specific paths (only meaningful on a Windows host; the repo's path
 // helpers are Windows-aware there).

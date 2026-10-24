@@ -63,6 +63,14 @@ Font License 1.1 when supplied separately.
 
 jcode (MIT)
 ===========
+The Codemode sandbox tool (src/codemode/) is adapted from jcode, an open-source
+Rust coding agent by Jeremy Huang (https://github.com/1jehuang/jcode),
+distributed under the MIT License below. The QuickJS sandbox contract, the
+script prelude, the tool-discovery surface (listTools / describeTool / the in
+operator on tools), the session store and the risk-gated host are ported from
+ref/codemode/{engine,lib,tests}.rs onto Loam's own policy and tool-registry
+modules; the sandbox runtime itself is quickjs-emscripten, not jcode's code.
+
 The cross-session file-touch notification feature in src/tools/fileTouch.ts,
 src/tools/readState.ts, src/agent/reminders.ts and src/agent/loop.ts was
 adapted from jcode (https://github.com/1jehuang/jcode), Copyright (c) 2025
