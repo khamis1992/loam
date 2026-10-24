@@ -2,12 +2,14 @@
  * Neo N2: the Canvas HTTP client.
  *
  * The graph is owned by the server (N1). This client only reads it and sends the
- * three edits the panel can make. Every call is injectable so the component tests
- * can run without a server, and every failure surfaces as a rejected promise the
+ * edits the panel can make. Every call is injectable so the component tests can
+ * run without a server, and every failure surfaces as a rejected promise the
  * panel turns into a notice rather than a crash.
  */
 import type { CanvasGraphResponse, CanvasGraphSearch, CanvasNode, CanvasNodePatch } from './types';
 import { coerceCanvasGraphResponse } from './types';
+import type { CanvasOpRequest, CanvasOpResult } from './types';
+import { coerceCanvasOpResult } from './types';
 
 export interface CanvasClientOptions {
   /** Loam server base; defaults to getLoamBase() (http://127.0.0.1:<port>). */
@@ -61,7 +63,14 @@ export class CanvasClient {
     return parsed?.search ?? null;
   }
 
-  /** Send one canvas edit (status, payload or parents) and return the new node. */
+  /**
+   * Write one node field directly.
+   *
+   * This is the N2 escape hatch for a write that changes no content and therefore
+   * supersedes nothing, such as a status flip or a parent re-point. Anything that
+   * edits what a node *says* must go through `applyOp` instead, so the node gets a
+   * version and the agent is told; the panel uses `applyOp` for every edit.
+   */
   async patchNode(runId: string, nodeId: string, patch: CanvasNodePatch): Promise<CanvasNode> {
     const res = await this.request(`/api/graph/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}`, {
       method: 'PATCH',
@@ -73,6 +82,35 @@ export class CanvasClient {
     const node = data.node;
     if (!node || typeof node !== 'object') throw new Error('the server returned no node');
     return node as CanvasNode;
+  }
+
+  /**
+   * Apply one N11 editing operation (edit, cut/re-connect, duplicate, group,
+   * quote/follow-up) and return the run's whole graph plus what the op superseded.
+   *
+   * The whole graph comes back because several of these operations create or
+   * re-point nodes, and the panel must not have to guess which ids appeared.
+   */
+  async applyOp(runId: string, op: CanvasOpRequest): Promise<CanvasOpResult> {
+    const res = await this.request(`/api/graph/${encodeURIComponent(runId)}/ops`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(op),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) throw new Error(data.error ?? `canvas operation failed (${res.status})`);
+    const parsed = coerceCanvasOpResult(data);
+    if (!parsed) throw new Error('malformed canvas operation reply');
+    return parsed;
+  }
+
+  /** The canvas edits this run has queued for the model but not consumed yet. */
+  async getDirectives(runId: string): Promise<unknown[]> {
+    const res = await this.request(`/api/graph/${encodeURIComponent(runId)}/ops`);
+    const data = (await res.json().catch(() => ({}))) as { directives?: unknown };
+    if (!res.ok) throw new Error('could not read the canvas edits for this run');
+    const list = data.directives;
+    return Array.isArray(list) ? list : [];
   }
 
   private async request(path: string, init: RequestInit = {}): Promise<Response> {

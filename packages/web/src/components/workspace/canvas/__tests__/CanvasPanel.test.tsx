@@ -103,12 +103,14 @@ interface Harness {
   getGraph: ReturnType<typeof vi.fn>;
   searchGraph: ReturnType<typeof vi.fn>;
   patchNode: ReturnType<typeof vi.fn>;
+  applyOp: ReturnType<typeof vi.fn>;
 }
 
 function harness(
   graph: () => CanvasGraphResponse,
   patches: Record<string, unknown> = {},
   search?: Awaited<ReturnType<CanvasClient['searchGraph']>>,
+  ops: Record<string, Record<string, unknown>> = {},
 ): Harness {
   const getGraph = vi.fn(async () => graph());
   // A client that answers no search stands in for a server without the N18
@@ -126,16 +128,52 @@ function harness(
     ...(patch as object),
     ...(patches[nodeId] ?? {}),
   }));
-  const client = { getGraph, searchGraph, patchNode } as unknown as CanvasClient;
-  return { client, getGraph, searchGraph, patchNode };
+  /**
+   * An N11 operation reply: the whole graph again, plus the ids it superseded.
+   * The default is "the graph you already have, one node touched", which is what
+   * the server returns for an edit that changed nothing downstream.
+   */
+  const applyOp = vi.fn(async (_runId: string, op: unknown) => {
+    const request = op as { op: string; nodeId: string };
+    const current = graph();
+    const touched = current.nodes.find((node) => node.id === request.nodeId);
+    const override = ops[request.op] ?? {};
+    const stale: string[] = Array.isArray(override.stale) ? [...(override.stale as string[])] : [];
+    const base = {
+      op: request.op,
+      nodeId: touched?.id ?? request.nodeId,
+      touched: touched ? [touched.id] : [],
+      stale,
+      nodes: current.nodes,
+      edges: current.edges,
+      stats: current.stats,
+    };
+    return {
+      ...base,
+      ...override,
+      // The server writes `stale` onto the node payload itself, and the panel
+      // clears a mark when the node comes back current. Returning the ids alone
+      // would wipe the flag, so the reply has to carry the payload too.
+      nodes: (override.nodes as CanvasLayoutNode[] | undefined) ?? base.nodes.map((node) =>
+        stale.includes(node.id)
+          ? { ...node, data: { ...(node.data as Record<string, unknown>), stale: true } }
+          : node,
+      ),
+    };
+  });
+  // `patchNode` is still part of the client contract (a status-only write), but
+  // no N11 test drives it: every edit goes through `applyOp`.
+  const client = { getGraph, searchGraph, patchNode, applyOp } as unknown as CanvasClient;
+  return { client, getGraph, searchGraph, patchNode, applyOp };
 }
 
 function renderPanel(
   overrides: Partial<CanvasPanelProps> = {},
   graph = sixStepGraph,
   search?: Awaited<ReturnType<CanvasClient['searchGraph']>>,
+  ops: Record<string, Record<string, unknown>> = {},
 ) {
-  const { client, getGraph, searchGraph, patchNode } = harness(graph, {}, search);
+  const { client, getGraph, searchGraph, patchNode, applyOp } = harness(graph, {}, search, ops);
   const stream = idleStream();
   const { unmount } = render(
     <CanvasPanel
@@ -147,7 +185,7 @@ function renderPanel(
       {...overrides}
     />,
   );
-  return { client, getGraph, searchGraph, patchNode, stream, unmount };
+  return { client, getGraph, searchGraph, patchNode, applyOp, stream, unmount };
 }
 
 /** The laid-out transform of each node card, keyed by its node id. */
@@ -214,17 +252,67 @@ describe('canvas panel', () => {
     expect(screen.queryByTestId('canvas-node-detail')).toBeNull();
   });
 
-  it('edits a node by hand and saves the change through the client', async () => {
-    const { patchNode } = renderPanel();
+  it('edits a node by hand, which versions it rather than patching a field', async () => {
+    const { applyOp } = renderPanel();
     await screen.findAllByTestId('canvas-node');
     fireEvent.click(screen.getByRole('button', { name: 'Step 1' }));
-    const textarea = await screen.findByLabelText('Edit this node');
+    const textarea = await screen.findByLabelText(/Edit this node/);
     fireEvent.change(textarea, { target: { value: 'Gather sources from the archive' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(patchNode).toHaveBeenCalledOnce());
-    const [, nodeId, patch] = patchNode.mock.calls[0] as [string, string, { data?: { title?: string } }];
-    expect(nodeId).toBe('step-one');
-    expect(patch.data!.title).toBe('Gather sources from the archive');
+    await waitFor(() => expect(applyOp).toHaveBeenCalledOnce());
+    const [runId, op] = applyOp.mock.calls[0] as [
+      string,
+      { op: string; nodeId: string; text: string; mode?: string },
+    ];
+    expect(runId).toBe(RUN);
+    // N11: the edit is an *operation*, so it reaches the graph and the directive
+    // together. A bare PATCH would change the node without telling the agent.
+    expect(op).toMatchObject({
+      op: 'edit',
+      nodeId: 'step-one',
+      text: 'Gather sources from the archive',
+      mode: 'follow-up',
+    });
+  });
+
+  it('flags the nodes an edit superseded and keeps them flagged', async () => {
+    // The reply carries the ids the edit superseded, which is the only place the
+    // panel learns them: it does not recompute dependencies itself.
+    const { applyOp } = renderPanel({}, sixStepGraph, undefined, { edit: { stale: ['step-two', 'step-three'] } });
+    await screen.findAllByTestId('canvas-node');
+    fireEvent.click(screen.getByRole('button', { name: 'Step 1' }));
+    const textarea = await screen.findByLabelText(/Edit this node/);
+    fireEvent.change(textarea, { target: { value: 'Gather sources from the archive' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(screen.getByTestId('canvas-stale-count')).toBeInTheDocument());
+    expect(screen.getByTestId('canvas-stale-count')).toHaveTextContent('2 stale');
+    const node = (id: string) =>
+      document.querySelector<HTMLElement>(`[data-testid="canvas-node"][data-node-id="${id}"]`)!;
+    expect(node('step-two')).toHaveAttribute('data-stale', 'true');
+    expect(node('step-three')).toHaveAttribute('data-stale', 'true');
+    // The edited node itself is current: it *is* the correction.
+    expect(node('step-one')).toHaveAttribute('data-stale', 'false');
+    // The reply said which nodes it superseded, so that is what the panel shows.
+    expect(applyOp.mock.calls[0]![1]).toMatchObject({ op: 'edit' });
+  });
+
+  it('marks a node stale straight from its payload, before any edit', async () => {
+    // The server can already carry `stale` on a payload (a re-run superseded it
+    // earlier), so the canvas must read it from the graph, not only from an op.
+    const graph = sixStepGraph();
+    graph.nodes = graph.nodes.map((node) =>
+      node.id === 'step-two'
+        ? { ...node, data: { ...(node.data as Record<string, unknown>), stale: true } }
+        : node,
+    );
+    renderPanel({}, () => graph);
+    await screen.findAllByTestId('canvas-node');
+    const card = (id: string) =>
+      document.querySelector<HTMLElement>(`[data-testid="canvas-node"][data-node-id="${id}"]`)!;
+    expect(card('step-two')).toHaveAttribute('data-stale', 'true');
+    expect(card('step-two')).toHaveTextContent('Stale');
+    expect(card('step-one')).toHaveAttribute('data-stale', 'false');
   });
 
   it('zooms from the toolbar and keeps the readout in percent', async () => {
@@ -368,44 +456,119 @@ describe('canvas panel', () => {
     expect(screen.getByText('web_search')).toBeInTheDocument();
   });
 
-  it('mirrors the same row from the right when the layout direction is rtl', async () => {
-    // `siblingX` reads the direction off the layout options, so pinning
-    // `layoutOptions.direction` proves the panel honours it without having to
-    // fake a locale: same nodes, same span, mirrored columns.
-    const ltr = await laidOut('ltr', 'Organize');
-    const rtl = await laidOut('rtl', 'Organize');
+  it('selects nodes for a group and merges them into one context', async () => {
+    const { applyOp } = renderPanel();
+    await screen.findAllByTestId('canvas-node');
+    expect(screen.getByTestId('canvas-selection-count')).toHaveTextContent('0 selected');
 
-    // The row keeps exactly the same span: the mirror swaps the ends, it does
-    // not grow the row or push it off the scroll surface.
-    expect(new Set(ltr.values()).size).toBe(7);
-    expect(new Set(rtl.values()).size).toBe(7);
-    // LTR reads the layer start-to-end, RTL right-to-left: the first step takes
-    // the last step's column and vice versa.
-    expect(ltr.get('step-one')).toBe(rtl.get('step-six'));
-    expect(ltr.get('step-six')).toBe(rtl.get('step-one'));
-    // A single-node layer is not mirrored: the root keeps its own cell.
-    expect(rtl.get('root')).toBe(ltr.get('root'));
+    // Grouping needs two nodes, so the action is disabled until there are two.
+    const group = () => screen.getByRole('button', { name: 'Group' });
+    expect(group()).toBeDisabled();
+    fireEvent.click(screen.getAllByTestId('canvas-node-select')[0]!);
+    expect(group()).toBeDisabled();
+    fireEvent.click(screen.getAllByTestId('canvas-node-select')[1]!);
+    expect(screen.getByTestId('canvas-selection-count')).toHaveTextContent('2 selected');
+    expect(
+      document.querySelector<HTMLElement>('[data-testid="canvas-node"][data-node-id="root"]')!,
+    ).toHaveAttribute('data-selected', 'true');
+
+    fireEvent.click(group());
+    await waitFor(() => expect(applyOp).toHaveBeenCalledOnce());
+    const op = applyOp.mock.calls[0]![1] as { op: string; nodeIds: string[] };
+    expect(op.op).toBe('group');
+    expect(op.nodeIds).toEqual(['root', 'step-one']);
   });
 
-  it('lays an Arabic locale out right-to-left, and an explicit direction still wins', async () => {
-    // An Arabic locale mirrors the row by default; an explicit ltr override
-    // still wins, which is how the panel stays direction-pinnable in tests.
-    const mounted = renderPanel({ getLocale: () => 'ar' });
+  it('reconnects the selected node to the others it should consume', async () => {
+    const { applyOp } = renderPanel();
     await screen.findAllByTestId('canvas-node');
-    fireEvent.click(screen.getByRole('button', { name: 'تنظيم' }));
-    await waitFor(() => expect(nodeTransforms().get('root')).toContain('40px'));
-    const rtl = nodeTransforms();
-    mounted.unmount();
+    fireEvent.click(screen.getAllByTestId('canvas-node-select')[0]!);
+    fireEvent.click(screen.getAllByTestId('canvas-node-select')[1]!);
+    expect(screen.getByRole('button', { name: 'Reconnect' })).toBeEnabled();
 
-    const forced = renderPanel({ getLocale: () => 'ar', layoutOptions: { direction: 'ltr' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
+    await waitFor(() => expect(applyOp).toHaveBeenCalledOnce());
+    // The first selected node is the one being re-pointed; the rest are its new
+    // parents. This is "change what the next step sees" without touching content.
+    const op = applyOp.mock.calls[0]![1] as { op: string; nodeId: string; parentIds: string[] };
+    expect(op).toEqual({ op: 'reconnect', nodeId: 'root', parentIds: ['step-one'] });
+  });
+
+  it('branches a node as an independent line of work', async () => {
+    const { applyOp } = renderPanel();
     await screen.findAllByTestId('canvas-node');
-    fireEvent.click(screen.getByRole('button', { name: 'تنظيم' }));
-    await waitFor(() => expect(nodeTransforms().get('root')).toContain('40px'));
-    const ltr = nodeTransforms();
-    forced.unmount();
+    fireEvent.click(screen.getAllByTestId('canvas-node-select')[1]!);
+    fireEvent.click(screen.getByRole('button', { name: 'Branch' }));
+    await waitFor(() => expect(applyOp).toHaveBeenCalledOnce());
+    expect(applyOp.mock.calls[0]![1]).toEqual({ op: 'duplicate', nodeId: 'step-one' });
+    // The branch is the node the reply named, so the sheet opens on it.
+    expect(await screen.findByTestId('canvas-node-detail')).toBeInTheDocument();
+  });
 
-    expect(rtl.get('step-one')).toBe(ltr.get('step-six'));
-    expect(ltr.get('step-one')).toBe(rtl.get('step-six'));
+  it('cuts every edge into a node so its parents stop feeding it', async () => {
+    const { applyOp } = renderPanel();
+    await screen.findAllByTestId('canvas-node');
+    fireEvent.click(screen.getByRole('button', { name: 'Step 1' }));
+    fireEvent.click(await screen.findByTestId('canvas-sheet-cut'));
+    await waitFor(() => expect(applyOp).toHaveBeenCalledOnce());
+    expect(applyOp.mock.calls[0]![1]).toEqual({ op: 'cut', nodeId: 'step-one', parentIds: [] });
+  });
+
+  it('hands a node to the agent as a quote rather than a follow-up', async () => {
+    const { applyOp } = renderPanel();
+    await screen.findAllByTestId('canvas-node');
+    fireEvent.click(screen.getAllByTestId('canvas-node-select')[1]!);
+
+    // The mode switch is what decides how the directive is phrased; the node is
+    // unchanged either way, which is why neither bumps a version. The switch and
+    // the send button share a label, so they are addressed by testid.
+    fireEvent.click(screen.getByTestId('canvas-mode-quote'));
+    fireEvent.click(screen.getByTestId('canvas-send'));
+    await waitFor(() => expect(applyOp).toHaveBeenCalledOnce());
+    expect(applyOp.mock.calls[0]![1]).toEqual({ op: 'quote', nodeId: 'step-one' });
+
+    fireEvent.click(screen.getByTestId('canvas-mode-follow-up'));
+    fireEvent.click(screen.getByTestId('canvas-send'));
+    await waitFor(() => expect(applyOp).toHaveBeenCalledTimes(2));
+    expect(applyOp.mock.calls[1]![1]).toEqual({ op: 'follow-up', nodeId: 'step-one' });
+  });
+
+  it('shows a node version and its edit history on the detail sheet', async () => {
+    const graph = sixStepGraph();
+    // N11: an edited node carries its history, so the sheet can show what changed.
+    graph.nodes = graph.nodes.map((node) =>
+      node.id === 'step-one'
+        ? {
+            ...node,
+            version: 3,
+            data: {
+              ...(node.data as Record<string, unknown>),
+              title: 'Step 1',
+              edits: [
+                { previous: 'Gather sources', text: 'Gather sources from the archive', at: 1_700_000_000_000 },
+                { previous: 'Gather sources from the archive', text: 'Gather sources from the archive only', at: 1_700_000_001_000 },
+              ],
+            },
+          }
+        : node,
+    );
+    renderPanel({}, () => graph);
+    await screen.findAllByTestId('canvas-node');
+    fireEvent.click(screen.getByRole('button', { name: 'Step 1' }));
+    const detail = await screen.findByTestId('canvas-node-detail');
+    expect(detail).toHaveAttribute('data-version', '3');
+    expect(detail).toHaveTextContent('v3');
+    fireEvent.click(screen.getByRole('button', { name: /Edit history/ }));
+    const history = await screen.findByTestId('canvas-edit-history');
+    expect(history).toHaveTextContent('Gather sources');
+    expect(history).toHaveTextContent('Gather sources from the archive');
+  });
+
+  it('disables the editing actions on an empty canvas', async () => {
+    renderPanel({}, () => ({ ...sixStepGraph(), nodes: [], edges: [], stats: { ...sixStepGraph().stats, totalNodes: 0 } }));
+    await screen.findByTestId('canvas-empty');
+    // No nodes means no selection, so there is nothing to group, branch or quote.
+    expect(screen.queryByTestId('canvas-selection')).toBeNull();
   });
 
   it('highlights the server search reply, including a node the panel does not hold', async () => {

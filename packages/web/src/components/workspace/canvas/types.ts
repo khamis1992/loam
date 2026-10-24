@@ -133,6 +133,74 @@ export interface CanvasNodePatch {
   parentIds?: string[];
 }
 
+/**
+ * Neo N11: one canvas *editing operation*.
+ *
+ * A raw PATCH can only write a field. These are the intents the canvas can
+ * express -- correct an output, cut or re-connect an edge, branch a node, group
+ * a selection -- and each one is applied together with the directive that tells
+ * the agent about it, so the graph and the model never disagree about a run.
+ */
+export const CANVAS_OP_NAMES = ['edit', 'cut', 'reconnect', 'duplicate', 'group', 'quote', 'follow-up'] as const;
+export type CanvasOpName = (typeof CANVAS_OP_NAMES)[number];
+
+/** The two ways a node's content can be handed to the model. */
+export const CANVAS_EDIT_MODES = ['follow-up', 'quote'] as const;
+export type CanvasEditMode = (typeof CANVAS_EDIT_MODES)[number];
+
+export type CanvasOpRequest =
+  | { op: 'edit'; nodeId: string; text: string; mode?: CanvasEditMode }
+  | { op: 'cut' | 'reconnect'; nodeId: string; parentIds: string[]; mode?: CanvasEditMode }
+  | { op: 'duplicate'; nodeId: string; label?: string }
+  | { op: 'group'; nodeIds: string[]; title?: string }
+  | { op: 'quote' | 'follow-up'; nodeId: string; note?: string };
+
+/** The outcome of one operation, as the server reports it. */
+export interface CanvasOpResult {
+  op: CanvasOpName;
+  nodeId: string;
+  touched: string[];
+  /** Nodes superseded by the edit: the panel flags these as stale. */
+  stale: string[];
+  /** Every node of the run after the operation, already laid out. */
+  nodes: CanvasLayoutNode[];
+  edges: CanvasEdge[];
+  stats: CanvasStats;
+}
+
+export const isCanvasOpName = (value: unknown): value is CanvasOpName =>
+  typeof value === 'string' && (CANVAS_OP_NAMES as readonly string[]).includes(value);
+
+/**
+ * Coerce a server reply into an operation result.
+ *
+ * The `stale` list is what lets the canvas mark a corrected node's downstream
+ * work without guessing at dependencies itself, so a missing list is not fatal
+ * (the panel simply flags nothing) while a missing `op` means the reply is not an
+ * operation result at all.
+ */
+export function coerceCanvasOpResult(value: unknown): CanvasOpResult | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const raw = value as Record<string, unknown>;
+  if (!isCanvasOpName(raw.op) || typeof raw.nodeId !== 'string') return undefined;
+  const layout = coerceCanvasLayout(raw);
+  return {
+    op: raw.op,
+    nodeId: raw.nodeId,
+    touched: Array.isArray(raw.touched) ? raw.touched.filter((id): id is string => typeof id === 'string') : [],
+    stale: Array.isArray(raw.stale) ? raw.stale.filter((id): id is string => typeof id === 'string') : [],
+    nodes: layout?.nodes ?? [],
+    edges: layout?.edges ?? [],
+    stats: layout?.stats ?? {
+      totalNodes: layout?.nodes.length ?? 0,
+      nodesByType: layout ? countBy(layout.nodes, (node) => node.type) : {},
+      nodesByStatus: layout ? countBy(layout.nodes, (node) => node.status) : {},
+      depth: layout?.nodes.reduce((max, node) => Math.max(max, node.depth), 0) ?? 0,
+      edges: layout?.edges.length ?? 0,
+    },
+  };
+}
+
 export const isCanvasNodeType = (value: unknown): value is CanvasNodeType =>
   typeof value === 'string' && (CANVAS_NODE_TYPES as readonly string[]).includes(value);
 
