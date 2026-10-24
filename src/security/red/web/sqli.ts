@@ -7,6 +7,7 @@
 import type { PentestFinding } from "../../../tools/pentest.js";
 import type { Evidence } from "../../orchestrator.js";
 import { nextEvidenceId } from "../../orchestrator.js";
+import { loadEngines } from "../engines.js";
 import type { RedCapability, RedCapabilityContext, RedHypothesis, RedValidation } from "../orchestrator/redOrchestrator.js";
 
 export interface SqlmapProof {
@@ -28,7 +29,7 @@ export function parseSqlmap(text: string): SqlmapProof {
   return { injectable, parameters, dbms: dbmsMatch?.[1]?.trim(), excerpt };
 }
 
-export function sqliCapability(opts: { level?: number; risk?: number } = {}): RedCapability {
+export function sqliCapability(opts: { level?: number; risk?: number; scriptPath?: string | null } = {}): RedCapability {
   const level = opts.level ?? 1;
   const risk = opts.risk ?? 1;
   return {
@@ -38,7 +39,13 @@ export function sqliCapability(opts: { level?: number; risk?: number } = {}): Re
       { id: `HYP-SQLI-${hashOf(target)}`, capability: "red.sqli", target, claim: "SQL injection in target parameters", rationale: "sqlmap detection pass" },
     ],
     validate: async (hyp: RedHypothesis, ctx: RedCapabilityContext): Promise<RedValidation> => {
+      // Explicit null disables the registry lookup (hermetic tests / no engines).
+      const script = opts.scriptPath !== undefined ? opts.scriptPath ?? null : loadEngines()?.paths.sqlmapScript ?? null;
+      if (!script) {
+        return { hypothesisId: hyp.id, status: "inconclusive", claim: hyp.claim, detail: "sqlmap not installed (run npm run red:engines)", evidence: [] };
+      }
       const envelope = await ctx.bridge("red-sqlmap", "test", {
+        script,
         url: hyp.target,
         level,
         risk,

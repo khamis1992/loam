@@ -87,12 +87,13 @@ describe("sqli capability", () => {
       seen = { cmd, ...args };
       return envelope(true, "Parameter: 'id'\nback-end DBMS: MySQL\nis vulnerable: true");
     });
-    const cap = sqliCapability();
+    const cap = sqliCapability({ scriptPath: "sqlmap.py" });
     const hyps = await cap.hunt(TARGET, { target: TARGET, techFingerprint: [], webPaths: [] }, ctx);
     assert.equal(hyps.length, 1);
     const v = await cap.validate(hyps[0]!, ctx);
     assert.equal(seen.cmd, "test");
     assert.equal((seen as { url?: string }).url, TARGET);
+    assert.equal((seen as { script?: string }).script, "sqlmap.py");
     assert.equal(v.status, "confirmed");
     assert.equal(v.finding!.check, "red_sqli");
     assert.equal(v.finding!.severity, "high");
@@ -101,11 +102,13 @@ describe("sqli capability", () => {
 
   it("a missing engine is inconclusive, never a finding; a clean run is refuted", async () => {
     const ctx = ctxWith(async () => envelope(false, "engine not found"));
-    const cap = sqliCapability();
+    const cap = sqliCapability({ scriptPath: "sqlmap.py" });
     const hyp = (await cap.hunt(TARGET, { target: TARGET, techFingerprint: [], webPaths: [] }, ctx))[0]!;
     assert.equal((await cap.validate(hyp, ctx)).status, "inconclusive");
     const clean = ctxWith(async () => envelope(true, "no injectable parameter found"));
     assert.equal((await cap.validate(hyp, clean)).status, "refuted");
+    const noScript = ctxWith(async () => { throw new Error("must not call the bridge without a script"); });
+    assert.equal((await sqliCapability({ scriptPath: null }).validate(hyp, noScript)).status, "inconclusive");
   });
 });
 

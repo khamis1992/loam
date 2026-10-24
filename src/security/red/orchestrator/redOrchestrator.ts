@@ -26,6 +26,7 @@ import { redTransport, type RedRequestEvidence, type RedTransport } from "../tra
 import type { RedReconAsset } from "../recon/recon.js";
 import { reconTarget } from "../recon/recon.js";
 import { createPtt, updateNode, type PttNode } from "./ptt.js";
+import type { RedPlanner } from "./planner.js";
 
 // ---------------------------------------------------------------------------
 // Capability contracts (§6.x modules implement these)
@@ -77,6 +78,8 @@ export interface RedCampaignInput {
   authzId: string | null;
   targets: string[];
   profile?: "quick" | "campaign";
+  /** Campaign-level authentication (bearer/cookie), applied to every red request. */
+  auth?: { bearer?: string; cookie?: string };
 }
 
 export interface RedCampaignResult {
@@ -105,6 +108,8 @@ export interface RunCampaignDeps {
   /** Bridge caller; defaults to a caller that reports every engine as missing. */
   bridge?: BridgeCaller;
   capabilities?: RedCapability[];
+  /** Optional planner (model-driven §6.1). Proposals are additive and still evidence-gated. */
+  planner?: RedPlanner;
   /** Capability ids whose validate() mutates target state; gate approval applies. */
   destructiveCapabilities?: string[];
   /** Human approval callback for destructive actions (default: deny). */
@@ -140,7 +145,10 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
 
   const audit = new RedAuditLog(deps.dataRoot);
   const limiter = new RateLimiter(authz?.limits.maxReqPerSec ?? 10, authz?.limits.maxConcurrent ?? 4);
-  const transport = redTransport(authz, { signal: deps.signal, limiter, gateDeps: deps.gateDeps, approval: deps.approval, actionTag: "red.http" });
+  const authHeaders: Record<string, string> = {};
+  if (input.auth?.bearer) authHeaders["authorization"] = `Bearer ${input.auth.bearer}`;
+  if (input.auth?.cookie) authHeaders["cookie"] = input.auth.cookie;
+  const transport = redTransport(authz, { signal: deps.signal, limiter, gateDeps: deps.gateDeps, approval: deps.approval, actionTag: "red.http", ...(Object.keys(authHeaders).length ? { authHeaders } : {}) });
   const bridge = deps.bridge ?? noBridge;
   const ctx: RedCapabilityContext = { authz, transport, bridge, audit, signal: deps.signal };
 
@@ -220,6 +228,28 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
       }
     });
 
+    // Model-driven planning (§6.1 PentestGPT graft): the planner only PROPOSES;
+    // every proposal still passes the capability validation and the evidence gate.
+    const planned = new Map<string, RedHypothesis[]>();
+    if (deps.planner) {
+      try {
+        const proposals = await deps.planner(input.goal, [recon], capabilities.map((c) => c.id));
+        let n = 0;
+        for (const p of proposals) {
+          const cap = p.capabilityHint ? capabilities.find((c) => c.id === p.capabilityHint) : undefined;
+          if (!cap) continue;
+          const list = planned.get(cap.id) ?? [];
+          list.push({ id: `HYP-PLAN-${++n}`, capability: cap.id, target: p.target, claim: p.claim, ...(p.rationale ? { rationale: p.rationale } : {}) });
+          planned.set(cap.id, list);
+        }
+        if (proposals.length) {
+          audit.append({ authzId: authz?.id ?? null, capability: "red.planner", action: "plan", target, params: { proposals: proposals.length, accepted: [...planned.values()].reduce((a, b) => a + b.length, 0) }, outcome: "completed" });
+        }
+      } catch (err) {
+        audit.append({ authzId: authz?.id ?? null, capability: "red.planner", action: "plan", target, params: {}, outcome: "failed", reason: (err as Error).message });
+      }
+    }
+
     if (capabilities.length === 0) {
       // Blue fallback (strix reuse): plain localhost targets run the existing
       // evidence-gated recon→hypothesis→validate loop unchanged.
@@ -270,7 +300,7 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
 
       let hypotheses: RedHypothesis[];
       try {
-        hypotheses = await cap.hunt(target, recon, ctx);
+        hypotheses = [...(await cap.hunt(target, recon, ctx)), ...(planned.get(cap.id) ?? [])];
       } catch (err) {
         audit.append({ authzId: authz?.id ?? null, capability: cap.id, action: "hunt", target, params: {}, outcome: "failed", reason: (err as Error).message });
         continue;

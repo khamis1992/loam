@@ -62,6 +62,8 @@ export interface RedTransportDeps {
   gateDeps?: Omit<GateDeps, "approval" | "limiter" | "requestCount">;
   /** Human approval for destructive requests (default: deny). */
   approval?: GateDeps["approval"];
+  /** Campaign-level authentication headers (bearer/cookie) applied to every request. */
+  authHeaders?: Record<string, string>;
   evidence?: RedRequestEvidence[];
   maxBodyBytes?: number;
   timeoutMs?: number;
@@ -137,7 +139,7 @@ export function redTransport(authz: AuthorizationRecord | null, deps: RedTranspo
       try {
         const res = await fetch(input, {
           method,
-          headers: opts.headers,
+          headers: { ...(deps.authHeaders ?? {}), ...(opts.headers ?? {}) },
           body: opts.body,
           redirect: "manual",
           signal: controller.signal,

@@ -65,4 +65,54 @@ describe("mapKnownVulns", () => {
     assert.ok(leads.every((l) => l.reason.length > 0));
     assert.deepEqual(mapKnownVulns({ target: "http://t/", techFingerprint: ["unknown-tech"], webPaths: [] }), []);
   });
+
+  it("covers the CMS grafts (joomla/spring/wordpress body markers)", () => {
+    const joomla = mapKnownVulns({ target: "http://t/", techFingerprint: ["joomla"], webPaths: [] });
+    assert.ok(joomla.some((l) => l.cveId === "CVE-2023-23752"));
+    const spring = mapKnownVulns({ target: "http://t/", techFingerprint: ["spring"], webPaths: [] });
+    assert.ok(spring.some((l) => l.cveId === "CVE-2022-22965"));
+  });
+});
+
+describe("mapKnownVulnsWithKev", () => {
+  it("escalates KEV-listed CVEs and degrades gracefully when the catalog is unreachable", async () => {
+    const { mapKnownVulnsWithKev } = await import("../recon/recon.js");
+    const { resetKevMemo } = await import("../../native/intel/kev.js");
+    resetKevMemo();
+    const leads = await mapKnownVulnsWithKev({ target: "http://t/", techFingerprint: ["php"], webPaths: [] });
+    // Online: the PHP lead is either kept as fingerprint or escalated to kev.
+    // Offline: the catalog is unreachable and the static lead survives either way.
+    assert.ok(leads.length >= 1);
+    assert.ok(leads.every((l) => l.source === "fingerprint" || l.source === "kev"));
+    resetKevMemo();
+  });
+});
+
+/** Authenticated campaigns: the auth headers ride every gated request. */
+describe("campaign auth", () => {
+  it("bearer/cookie headers are applied to every red request", async () => {
+    const server = http.createServer((req, res) => {
+      if (req.headers["authorization"] === "Bearer t0k3n" && String(req.headers["cookie"]).includes("session=1")) {
+        res.end("<html><title>Authed Lab</title></html>");
+      } else {
+        res.statusCode = 401;
+        res.end("anon");
+      }
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const port = (server.address() as import("node:net").AddressInfo).port;
+    try {
+      const { runCampaign } = await import("../orchestrator/redOrchestrator.js");
+      const result = await runCampaign(
+        { goal: "auth", authzId: null, targets: [`http://127.0.0.1:${port}/`], auth: { bearer: "t0k3n", cookie: "session=1" } },
+        { bridge: async (): Promise<import("../../../bridges/types.js").BridgeEnvelope> => ({ ok: false, exitCode: null, timedOut: false, error: { type: "x", message: "x" } }) },
+      );
+      // The campaign recon went through the authenticated red transport.
+      assert.ok(result.requestEvidence.length >= 1, "recon used the red transport");
+      assert.equal(result.requestEvidence[0]!.status, 200, "auth headers got the authed response");
+    } finally {
+      server.close();
+    }
+  });
 });

@@ -43,7 +43,7 @@ const toSeverity = (s: string): PentestFinding["severity"] =>
     ? (s.toLowerCase() as PentestFinding["severity"])
     : "medium";
 
-export function templatesCapability(opts: { severity?: string } = {}): RedCapability {
+export function templatesCapability(opts: { severity?: string; tags?: string } = {}): RedCapability {
   const severity = opts.severity ?? "medium";
   return {
     id: "red.templates",
@@ -52,7 +52,7 @@ export function templatesCapability(opts: { severity?: string } = {}): RedCapabi
       { id: `HYP-NUCLEI-${target.length}`, capability: "red.templates", target, claim: "Known-CVE/misconfig template matches", rationale: `nuclei template scan (>= ${severity})` },
     ],
     validate: async (hyp: RedHypothesis, ctx: RedCapabilityContext): Promise<RedValidation> => {
-      const envelope = await ctx.bridge("red-nuclei", "scan", { target: hyp.target, severity, rate: 10 });
+      const envelope = await ctx.bridge("red-nuclei", "scan", { target: hyp.target, severity, rate: 10, ...(opts.tags ? { tags: opts.tags } : {}) });
       if (!envelope.ok) {
         return { hypothesisId: hyp.id, status: "inconclusive", claim: hyp.claim, detail: `nuclei unavailable: ${envelope.error?.message ?? "no output"}`, evidence: [] };
       }

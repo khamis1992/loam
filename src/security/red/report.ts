@@ -121,6 +121,10 @@ export function buildRedReport(result: RedCampaignResult, outDir: string, opts: 
 }
 
 /** Retest diff between two campaigns (thin, semantics-preserving wrapper). */
-export function retestRed(baselineId: string, baseline: RedCampaignResult, current: RedCampaignResult) {
+export function retestRed(
+  baselineId: string,
+  baseline: { findings: SecurityFinding[]; coverage?: string[] },
+  current: { findings: SecurityFinding[]; coverage: string[] },
+) {
   return compareFindings(baselineId, baseline.findings, current.findings, current.coverage);
 }

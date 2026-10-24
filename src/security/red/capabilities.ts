@@ -22,6 +22,7 @@ export interface DefaultCapabilityOptions {
   ysoserialJar?: string;
   fuzzWordlistFile?: string;
   nucleiSeverity?: string;
+  nucleiTags?: string;
 }
 
 async function bridgeReady(cfg: Pick<Config, "bridges">, id: string): Promise<boolean> {
@@ -40,7 +41,7 @@ export async function defaultRedCapabilities(cfg: Pick<Config, "bridges">, opts:
   if (await bridgeReady(cfg, "red-sqlmap")) caps.push(sqliCapability());
   if (await bridgeReady(cfg, "red-zap")) caps.push(dastCapability());
   if (await bridgeReady(cfg, "red-ffuf")) caps.push(fuzzCapability({ wordlistFile: opts.fuzzWordlistFile }));
-  if (await bridgeReady(cfg, "red-nuclei")) caps.push(templatesCapability({ severity: opts.nucleiSeverity }));
+  if (await bridgeReady(cfg, "red-nuclei")) caps.push(templatesCapability({ severity: opts.nucleiSeverity, ...(opts.nucleiTags ? { tags: opts.nucleiTags } : {}) }));
   if (await bridgeReady(cfg, "red-ysoserial")) caps.push(deserCapability({ jar: opts.ysoserialJar }));
   return caps;
 }

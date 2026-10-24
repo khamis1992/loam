@@ -9,6 +9,7 @@
 import type { PentestFinding } from "../../tools/pentest.js";
 import type { Evidence } from "../orchestrator.js";
 import { nextEvidenceId } from "../orchestrator.js";
+import { loadEngines } from "./engines.js";
 import type { RedCapability, RedCapabilityContext, RedHypothesis, RedValidation } from "./orchestrator/redOrchestrator.js";
 
 /** Response markers that indicate the server deserialized our bytes. */
@@ -18,8 +19,8 @@ const DESER_MARKERS = [
 ];
 
 export interface DeserCapabilityOptions {
-  /** Path to ysoserial.jar passed through to the bridge. */
-  jar?: string;
+  /** Path to ysoserial.jar; explicit null disables the registry lookup. */
+  jar?: string | null;
   /** Delivery endpoint path (default /deserialize). */
   path?: string;
   /** Marker strings proving deser handling (tests / custom labs). */
@@ -35,7 +36,11 @@ export function deserCapability(opts: DeserCapabilityOptions = {}): RedCapabilit
       { id: `HYP-DESER-${target.length}`, capability: "red.deser", target, claim: "Endpoint deserializes attacker-controlled bytes", rationale: "ysoserial URLDNS gadget probe" },
     ],
     validate: async (hyp: RedHypothesis, ctx: RedCapabilityContext): Promise<RedValidation> => {
-      const jar = opts.jar ?? "ysoserial.jar";
+      // Explicit null disables the registry lookup (hermetic tests / no engines).
+      const jar = opts.jar !== undefined ? opts.jar : (loadEngines()?.paths.ysoserialJar ?? null);
+      if (!jar) {
+        return { hypothesisId: hyp.id, status: "inconclusive", claim: hyp.claim, detail: "ysoserial not installed (run npm run red:engines)", evidence: [] };
+      }
       // URLDNS is the benign gadget: a DNS lookup only, no code execution.
       const gen = await ctx.bridge("red-ysoserial", "gen", { jar, gadget: "URLDNS", cmd: `red-lab-oob.example` });
       if (!gen.ok || !gen.text) {

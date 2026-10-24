@@ -13,12 +13,22 @@ import { runBridge } from "../bridges/exec.js";
 import { defaultRedCapabilities } from "../security/red/capabilities.js";
 import { gate, defaultDataRoot } from "../security/red/gate.js";
 import { runCampaign, type BridgeCaller } from "../security/red/orchestrator/redOrchestrator.js";
+import { llmPlanner, type RedPlanner } from "../security/red/orchestrator/planner.js";
 import { buildRedReport } from "../security/red/report.js";
 
 const str = (args: Record<string, unknown>, key: string): string => (typeof args[key] === "string" ? (args[key] as string) : "");
 
 const bridgeCallerFor = (ctx: ToolContext): BridgeCaller => (bridgeId, commandId, args) =>
   runBridge(ctx, bridgeId, commandId, args);
+
+/** Model-driven planner wired to the local model (§6.1); proposals stay evidence-gated. */
+const plannerFor = (ctx: ToolContext, plan: string): RedPlanner | undefined => {
+  if (plan !== "auto" || !ctx.ollama) return undefined;
+  return llmPlanner(async (prompt) => {
+    const r = await ctx.ollama!.chat({ model: "loam", messages: [{ role: "user", content: prompt }], temperature: 0.2, timeoutMs: 120_000, signal: ctx.signal });
+    return r.content;
+  });
+};
 
 export function redTools(): Tool[] {
   return [
@@ -32,6 +42,7 @@ export function redTools(): Tool[] {
           target: { type: "string", description: "Authorized target URL (e.g. http://127.0.0.1:3000)" },
           authzId: { type: "string", description: "AuthorizationRecord id (AUTHZ-####) for non-localhost targets; omit for the localhost default posture" },
           profile: { type: "string", description: "'quick' (default) or 'campaign'" },
+          plan: { type: "string", description: "'auto' uses model-driven planning (proposals still pass the evidence gate); default 'off'" },
         },
         required: ["target"],
       },
@@ -39,6 +50,7 @@ export function redTools(): Tool[] {
         const target = str(args, "target");
         const authzId = str(args, "authzId") || null;
         const profile = str(args, "profile") === "campaign" ? "campaign" : "quick";
+        const plan = str(args, "plan") === "auto" ? "auto" : "off";
         if (!target) return { ok: false, content: "red_campaign requires a target URL" };
         // Fail fast with a clear message when the gate would deny the whole campaign.
         const decision = gate(target, { capability: "red.campaign", verb: "read" }, null);
@@ -48,7 +60,7 @@ export function redTools(): Tool[] {
         const capabilities = await defaultRedCapabilities(ctx.cfg, { ssrf: { probeTemplate: undefined } });
         const result = await runCampaign(
           { goal: `Red campaign on ${target}`, authzId, targets: [target], profile },
-          { dataRoot: defaultDataRoot(), bridge: bridgeCallerFor(ctx), capabilities },
+          { dataRoot: defaultDataRoot(), bridge: bridgeCallerFor(ctx), capabilities, planner: plannerFor(ctx, plan) },
         );
         const outDir = path.join(ctx.workspace, "red", result.campaignId);
         const report = buildRedReport(result, outDir);

@@ -114,7 +114,7 @@ describe("deser capability", () => {
       audit: new RedAuditLog(),
     };
     try {
-      const cap = deserCapability();
+      const cap = deserCapability({ jar: "ysoserial.jar" });
       const target = `http://127.0.0.1:${port}`;
       const hyp = (await cap.hunt(target, { target, techFingerprint: [], webPaths: [] }, ctx))[0]!;
       const v = await cap.validate(hyp, ctx);
@@ -123,7 +123,7 @@ describe("deser capability", () => {
       assert.equal(v.finding!.severity, "critical");
       // Bridge missing -> inconclusive (never a finding without proof).
       const ctxNoJar: RedCapabilityContext = { ...ctx, bridge: async () => ({ ok: false, exitCode: 1, timedOut: false, error: { type: "x", message: "jar missing" } }) };
-      const v2 = await deserCapability().validate(hyp, ctxNoJar);
+      const v2 = await deserCapability({ jar: "ysoserial.jar" }).validate(hyp, ctxNoJar);
       assert.equal(v2.status, "inconclusive");
     } finally {
       server.close();

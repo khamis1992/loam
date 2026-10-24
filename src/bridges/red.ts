@@ -16,7 +16,7 @@ export const RED_MANIFESTS: unknown[] = [
     id: "red-ffuf",
     name: "ffuf (web fuzzer)",
     description: "Path/param/content fuzzing against an in-scope target (RED_TEAM_BUILD_SPEC 6.5).",
-    probe: { names: ["ffuf.exe", "ffuf"] },
+    probe: { names: ["ffuf.exe", "ffuf"], paths: ["%USERPROFILE%\\.loam\\tools\\ffuf.exe"] },
     versionArgs: ["-V"],
     commands: [
       {
@@ -47,7 +47,7 @@ export const RED_MANIFESTS: unknown[] = [
     id: "red-nuclei",
     name: "nuclei (template scanner)",
     description: "Fast template-based vulnerability checks against an in-scope target (RED_TEAM_BUILD_SPEC 6.6).",
-    probe: { names: ["nuclei.exe", "nuclei"] },
+    probe: { names: ["nuclei.exe", "nuclei"], paths: ["%USERPROFILE%\\.loam\\tools\\nuclei.exe"] },
     versionArgs: ["-version"],
     commands: [
       {
@@ -59,11 +59,13 @@ export const RED_MANIFESTS: unknown[] = [
           "-severity", "{severity}",
           "-jsonl", "-silent", "-nc",
           { when: "rate", args: ["-rl", "{rate}"] },
+          { when: "tags", args: ["-tags", "{tags}"] },
         ],
         params: {
           target: { type: "string", required: true, description: "In-scope target URL." },
           severity: { type: "enum", required: true, values: ["info", "low", "medium", "high", "critical"], description: "Minimum severity to report." },
           rate: { type: "number", description: "Requests per second cap (recommended 10)." },
+          tags: { type: "string", description: "Comma-separated template tags to restrict the run (e.g. cve,fuzz)." },
         },
         output: "text",
         timeoutSeconds: 600,
@@ -73,8 +75,8 @@ export const RED_MANIFESTS: unknown[] = [
   {
     id: "red-sqlmap",
     name: "sqlmap (SQL injection)",
-    description: "Automated SQL injection testing against an in-scope target (RED_TEAM_BUILD_SPEC 6.3). GPL-2.0: external process only, no code copied.",
-    probe: { names: ["sqlmap.py", "sqlmap.exe", "sqlmap"] },
+    description: "Automated SQL injection testing against an in-scope target (RED_TEAM_BUILD_SPEC 6.3). GPL-2.0: external process only, no code copied; runs through the local Python launcher.",
+    probe: { names: ["py.exe", "py"] },
     versionArgs: ["--version"],
     commands: [
       {
@@ -82,6 +84,7 @@ export const RED_MANIFESTS: unknown[] = [
         description: "Non-destructive SQLi detection: enumerate injectable parameters and fingerprint the DBMS. Never dumps data or opens a shell.",
         effect: "external",
         argv: [
+          "{script}",
           "-u", "{url}",
           "--batch", "--level", "{level}", "--risk", "{risk}",
           "--technique", "BEUSTQ",
@@ -89,6 +92,7 @@ export const RED_MANIFESTS: unknown[] = [
           { when: "data", args: ["--data", "{data}"] },
         ],
         params: {
+          script: { type: "path", access: "read", required: true, description: "Path to sqlmap.py (from the red engine installer)." },
           url: { type: "string", required: true, description: "Target URL with the parameter under test." },
           level: { type: "number", description: "Test level 1-5 (default 1)." },
           risk: { type: "number", description: "Test risk 1-3 (default 1)." },
@@ -103,6 +107,7 @@ export const RED_MANIFESTS: unknown[] = [
         description: "DESTRUCTIVE: dump table rows from a confirmed injection. Requires the gate's destructive approval before invocation.",
         effect: "external",
         argv: [
+          "{script}",
           "-u", "{url}",
           "--batch", "--technique", "BEUSTQ",
           "--dump",
@@ -110,6 +115,7 @@ export const RED_MANIFESTS: unknown[] = [
           { when: "data", args: ["--data", "{data}"] },
         ],
         params: {
+          script: { type: "path", access: "read", required: true, description: "Path to sqlmap.py (from the red engine installer)." },
           url: { type: "string", required: true },
           workdir: { type: "path", access: "write", required: true },
           data: { type: "string" },
