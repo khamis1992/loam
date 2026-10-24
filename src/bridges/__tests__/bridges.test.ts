@@ -14,7 +14,10 @@ test("every built-in manifest validates", () => {
   assert.deepEqual(manifestLoadErrors(), []);
   assert.deepEqual(
     loadManifests().map((m) => m.id).sort(),
-    ["blender", "ffmpeg", "inkscape", "libreoffice", "obsidian"],
+    [
+      "blender", "ffmpeg", "inkscape", "libreoffice", "obsidian",
+      "red-caldera", "red-ffuf", "red-freeway", "red-nuclei", "red-sqlmap", "red-ysoserial", "red-zap",
+    ],
   );
 });
 

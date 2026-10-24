@@ -2,6 +2,7 @@ import type { Config } from "../config.js";
 import { BUILTIN_MANIFESTS } from "./builtin.js";
 import { discover } from "./discover.js";
 import { parseManifest } from "./manifestSchema.js";
+import { RED_MANIFESTS } from "./red.js";
 import type { BridgeInfo, BridgeManifest } from "./types.js";
 
 let cached: BridgeManifest[] | null = null;
@@ -12,7 +13,7 @@ export function loadManifests(): BridgeManifest[] {
   if (cached) return cached;
   const out: BridgeManifest[] = [];
   loadErrors = [];
-  for (const raw of BUILTIN_MANIFESTS) {
+  for (const raw of [...BUILTIN_MANIFESTS, ...RED_MANIFESTS]) {
     const r = parseManifest(raw);
     if (r.ok) out.push(r.manifest);
     else loadErrors.push(r.error);
