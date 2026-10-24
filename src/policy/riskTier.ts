@@ -16,6 +16,7 @@ import { isDestructiveCommand } from "./commands.js";
 import { isInside } from "./paths.js";
 import { assessCommand } from "./commandRisk/index.js";
 import type { ApprovalRule } from "../server/approvalRules.js";
+import { reaToolTier } from "../tools/reaAllowlist.js";
 
 // ----------------------------------------------------------------------------
 // Tiers
@@ -443,6 +444,10 @@ export function classifyToolCall(
 
   // Exact names are authoritative; heuristics only cover unregistered tools.
   if (SECRET_TOOL_NAMES.has(name)) return "secret";
+  // REA allowlisted tools (mcp__rea__*): the static effects table decides the tier
+  // (11 read / 2 write-workspace — REA_INTO_LOAM §7). An untabled name can only
+  // mean the allowlist was bypassed; fail safe to the review tier.
+  if (name.startsWith("mcp__rea__")) return reaToolTier(name.slice("mcp__rea__".length)) ?? "exec";
   // cr-05: office_craft drives the live Craft editors. Its read actions change
   // nothing; every other action edits the open document (and the war_room /
   // studio engines write their own files).

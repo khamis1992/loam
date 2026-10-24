@@ -1,0 +1,15 @@
+[
+ "analyze_javascript_application",
+ "inspect_artifact",
+ "inspect_web_network_capture",
+ "inspect_analysis_view",
+ "compare_application_versions",
+ "record_unknown",
+ "update_unknown",
+ "list_unknowns",
+ "verify_unknown_resolution",
+ "get_evidence_bundle",
+ "export_evidence_bundle",
+ "import_evidence_bundle",
+ "recover_javascript_sources"
+]

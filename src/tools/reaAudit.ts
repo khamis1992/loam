@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export type ReaAuditOutcome = "allowed" | "started" | "completed" | "failed" | "skipped" | "warned";
+export type ReaAuditOutcome = "allowed" | "denied" | "started" | "completed" | "failed" | "skipped" | "warned";
 
 export interface ReaAuditEntry {
   seq: number;

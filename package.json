@@ -49,6 +49,7 @@
     "check:re": "tsx src/scripts/check-re.ts",
     "check:rea-allowlist": "tsx src/scripts/check-rea-allowlist.ts",
     "check:rea-evidence": "tsx src/scripts/check-rea-evidence.ts",
+    "check:rea-mcp": "tsx src/scripts/check-rea-mcp.ts",
     "check:recovery": "tsx src/scripts/check-recovery.ts",
     "check:recovery:http": "tsx src/scripts/check-recovery-http.ts",
     "check:red": "tsx src/scripts/check-red-lab.ts",

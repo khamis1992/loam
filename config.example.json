@@ -138,6 +138,16 @@
     "loam-bridge": {
       "transport": "http",
       "url": "http://127.0.0.1:3002/mcp"
+    },
+    "rea": {
+      "command": "node",
+      "args": [
+        "${DATA}/bin/rea-agents/6.7.0/node_modules/rea-agents/scripts/rea.mjs",
+        "mcp"
+      ],
+      "env": {
+        "REA_MCP_INPUT_SCHEMA_PROFILE": "compact"
+      }
     }
   }
 }

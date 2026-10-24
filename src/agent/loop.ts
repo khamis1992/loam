@@ -367,6 +367,8 @@ function summarize(text: string, lines = 10): string {
 
 /** Web/email/browser output is external data; wrap it so the model never follows it as instructions. */
 function toolMessageContent(name: string, content: string): string {
+  // Every mcp__rea__* result is target-originated untrusted data (REA_INTO_LOAM §8).
+  if (name.startsWith("mcp__rea__")) return markUntrusted(content, "rea");
   return isUntrustedTool(name) ? markUntrusted(content, name) : content;
 }
 

@@ -88,6 +88,9 @@ export interface McpServerConfig {
   headers?: Record<string, string>;
   args?: string[];
   env?: Record<string, string>;
+  /** Optional tool-name allowlist: only listed tools from `tools/list` register
+   *  (REA_INTO_LOAM §5.4). Enforced inside Loam — the server cannot widen it. */
+  allowlist?: string[];
 }
 
 export interface Config {

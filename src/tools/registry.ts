@@ -50,6 +50,11 @@ export interface ToolResult {
   /** Human-readable shape of those seeds, so the canvas can render the nodes
    *  without the graph layer reaching into the knowledge store. */
   kbSeeds?: Array<{ id: string; title: string; tags: string[]; preview: string }>;
+  /** True when content may contain target- or network-originated text
+   *  (e.g. every mcp__rea__* result — REA_INTO_LOAM §8). */
+  untrusted?: boolean;
+  /** Content digest (sha256) of the untrimmed result for provenance. */
+  contentDigest?: string;
 }
 
 export interface Tool {
@@ -196,12 +201,17 @@ export class ToolRegistry {
       const result = await tool.run(args, ctx);
       const post = this.readOnly ? { message: "" } : await runLifecycleHooks("PostToolUse", name, args, ctx.workspace);
       const combined = [pre.message, result.content, post.message].filter((s) => s && s.trim().length > 0).join("\n\n");
+      // REA results are sized by their own summary-first budget (§9); the generic
+      // 16k cut would destroy their structured preview + next pointer (appendix A2).
+      const rea = name.startsWith("mcp__rea__");
       return {
         ok: result.ok,
-        content: truncate(combined),
+        content: rea ? combined : truncate(combined),
         ...(result.images && result.images.length > 0 ? { images: result.images } : {}),
         ...(result.kbSeedIds && result.kbSeedIds.length > 0 ? { kbSeedIds: result.kbSeedIds } : {}),
         ...(result.kbSeeds && result.kbSeeds.length > 0 ? { kbSeeds: result.kbSeeds } : {}),
+        ...(result.untrusted ? { untrusted: true } : {}),
+        ...(result.contentDigest ? { contentDigest: result.contentDigest } : {}),
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
