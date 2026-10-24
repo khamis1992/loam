@@ -1,3 +1,107 @@
+# fc-10 complete: scripted end-to-end check of the Video Studio flow
+
+Committed as `c1e6736` on `khamis1992/fc-10` (parent `839e7cc`, the fc-06 merge into
+`manus-parity`). Implements fc-10 of the Loam "Video Studio" (FilmCraft + EffectCraft)
+integration plan, depending on fc-04 (auto-open), fc-05 (state contract) and fc-06
+(export).
+
+## Deliverable
+
+`src/scripts/check-studio-e2e.ts` (new, 686 lines), wired as `npm run check:studio-e2e`.
+
+It is the acceptance check for the whole user flow, in two phases:
+
+| Phase | Runs when | What it proves |
+| --- | --- | --- |
+| A. Flow | always | The real server, real relay, real `video_studio` tool and real export service against a stand-in editor panel. This is the "unit parts pass always" half of the acceptance test. |
+| B. Real dist | `electron/filmcraft/dist` present | The tool can see the vendored editor build. The real wasm editor is driven by the browser panel, so its rendering is covered by the web e2e tests; the phase reports a clear `SKIP` instead of pretending to render. |
+
+What is real in phase A: the real agent loop (`src/agent/loop.ts`) with the real system
+prompt and the real `video_studio` tool (`src/tools/videoStudio.ts`), the real command
+relay (`src/server/videoStudioRelay.ts`) with its SSE `video_studio_command` frames and
+the real result route, the real HTTP server (`src/server/http.ts`) including the task
+stream and the `/api/files` listing the UI reads, and the real export service
+(`src/server/videoStudioExport.ts`), which resolves the export command from the live
+catalog, reads the rendered bytes back through the relay and writes them into the task
+workspace.
+
+## Assertions (all PASS on the last run)
+
+1. A video attachment plus an Arabic edit instruction auto-opens the Video Studio panel
+   (`loam-video` target, `path=media/clip.mp4`, `import=media/clip.mp4`).
+2. The agent read the live timeline (`inspect`) before every mutating command. The relay
+   sequence is asserted exactly:
+   `importFiles, inspect, commands, inspect, execute, inspect, commands, inspect,
+   importFiles, execute, inspect, inspect, commands, execute, readFile` — the export
+   returns before the post-read state read, matching `runVideoStudioExport`.
+3. A manual edit made in the panel is preserved: the user trims the clip to 14s while the
+   agent's first state read is in flight, and the agent's cut at 2s lands on top of it,
+   yielding clips `[clip_1 0->2, clip_1_b 2->14]`. A rebuild would have produced a single
+   clip ending at 20s and no split at 2s.
+4. The tool surfaced the manual-edit notice to the agent (`User edited the timeline
+   manually since your last action: ...`), found in the `tool_result` events.
+5. The rendered export was saved into the task's files (`exports/رحلة-مقصوصة.mp4`, 4161
+   bytes) and is listed by `/api/files?taskId=...` — the route the UI reads — as the UI
+   sees it.
+6. The agent completed with an evidence-grounded final answer in Arabic, not a repair
+   loop.
+7. Phase B skipped clearly: `electron/filmcraft/dist/index.html` is not vendored in this
+   checkout (`npm run vendor` needs network), and the stand-in panel above proves the
+   flow.
+
+## Fixtures and model
+
+The clip is a tiny hex mp4 fixture (`CLIP_BYTES`), so no `ffmpeg` and no fixture file in
+the repo. The music is 8 KB of filler. The model is an in-script Ollama-shaped scripted
+server emitting newline-JSON `/api/chat` responses (`bench/fakeModel.ts` speaks OpenAI
+SSE + `[DONE]`, which `OllamaClient.chatLocal` cannot parse), driven by the number of
+`tool`-role messages in the request. No network and no model download.
+
+## Docs
+
+`docs/filmcraft-integration.md` gained a `## User flow (fc-10)` section: the four-step
+flow (attach + instruct -> panel opens by itself -> agent drives the live timeline with
+manual edits preserved -> export lands in the task's files), the two-phase check table,
+and the note that phase A needs no network or model download.
+
+## Gates (all run from the worktree root, all green)
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| new check | `npm run check:studio-e2e` | OK (7 PASS, 1 SKIP for the missing dist) |
+| touched server tests | `node --import tsx --test src/server/__tests__/videoStudioE2E.test.ts src/tools/__tests__/videoStudio.test.ts` | 62 tests, 62 pass, 0 fail |
+| touched web test | `(cd packages/web && npx vitest run src/components/workspace/__tests__/autoOpen.test.ts)` | 18 tests, 18 pass, 0 fail |
+| root types | `npx tsc --noEmit` | exit 0 for this task's files (see note) |
+| server build | `npm run build:server` | exit 0 (`server bundle + pdf worker written to dist/`) |
+| web build | `(cd packages/web && npx next build)` | exit 0 (compiled successfully, 25/25 static pages) |
+
+Note on `npx tsc --noEmit`: the only errors reported are pre-existing ones in
+`src/scripts/check-slide-layouts.ts` and `src/scripts/check-slide-text-import.ts`, which
+are uncommitted working-tree changes from another session that this task was instructed
+to leave intact. `src/scripts/check-studio-e2e.ts` typechecks clean (verified by
+filtering `tsc` output for the file).
+
+## Rules honoured
+
+- Only this task's files were changed: `src/scripts/check-studio-e2e.ts`,
+  `docs/filmcraft-integration.md`, `package.json` (one script line), plus this `.jdone`.
+  No pre-existing uncommitted work was reverted or "fixed" (the deleted `.jdone`/`.jcode-done`,
+  `src/agent/masterPromptText.ts`, `src/scripts/check-slide-layouts.ts`,
+  `src/scripts/check-slide-text-import.ts` and untracked `tmp_plain.out` are untouched).
+- No `.cc-*` marker committed. No forbidden path touched. Nothing pushed, no
+  `git reset --hard`, no discarded work, no secrets.
+- All Arabic text was written with file tools only; no shell redirection wrote file
+  content, so no mojibake. No `???` placeholder.
+- No real external model API was called in the check: the scripted local fake model is
+  in-process.
+
+## Test commands
+
+  npm run check:studio-e2e
+  node --import tsx --test src/server/__tests__/videoStudioE2E.test.ts src/tools/__tests__/videoStudio.test.ts
+  (cd packages/web && npx vitest run src/components/workspace/__tests__/autoOpen.test.ts)
+
+---
 H2 gate-fix session: encoding-marker false positive in the tracked rollup, fixed
 
 `.jgatefail.txt` reported that an added line contained the three-question-mark mojibake
