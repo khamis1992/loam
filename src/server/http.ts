@@ -79,12 +79,17 @@ import { createAgent, deleteAgent, getAgent, listAgents, listAgentsWithChatMeta,
 import { handleScratchpadRoutes } from "./routes/scratchpad.js";
 // Session sleep/wake + compute budget (D19): dispatched before generic handlers.
 import { handleSessionRuntimeRoutes } from "./routes/sessionRuntime.js";
+import { handleEventsRoutes } from "./routes/events.js";
 import { handleDesignStudioRoutes } from "./routes/designStudio.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAutomationsRoutes } from "./routes/automations.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
 import { handleGraphRoutes } from "./routes/graph.js";
+import { handleGraphNodeRoutes } from "./routes/graphNodes.js";
+// Neo N17 external-agent canvas bridge: local HTTP/WS API for OpenCode/Claude Code/Orca.
+import { createCanvasBridgeUpgrade, handleCanvasBridgeParentRoutes, handleCanvasBridgeRoutes } from "./routes/canvasBridge.js";
+import { getLiveRunGraph, subscribeRunGraph } from "../agent/runGraphAdapter.js";
 import { handleCraftRoutes } from "./routes/craft.js";
 import { handleInstructionsRoutes } from "./routes/instructions.js";
 import { handleAgentSpawnRoutes } from "./routes/agentSpawn.js";
@@ -96,6 +101,8 @@ import { handlePersonalizationRoutes } from "./routes/personalization.js";
 import { handleApiKeysRoutes } from "./routes/apiKeys.js";
 import { handleDataControlsRoutes } from "./routes/dataControls.js";
 import { handleDebugMemoryRoutes } from "./routes/debugMemory.js";
+// J7 idle session hibernation (derived-cache release + debug surface).
+import { handleHibernationRoutes, handleHibernationProcessRoutes } from "./routes/hibernation.js";
 import { LruCache } from "../memory/cache.js";
 import { registerCacheStats } from "../memory/stats.js";
 import { handleMemorySkillsRoutes } from "./routes/memorySkills.js";
@@ -174,6 +181,11 @@ export interface RunTaskOptions {
   knowledge?: boolean;
   /** O6: protocol session whose durable inbound queue this run should drain. */
   inputSessionId?: string;
+  /**
+   * Neo N6: run type `mission`. The fixed step cap is lifted and the mission
+   * budget (steps/tokens/wall-clock/cost) governs the run instead.
+   */
+  mission?: boolean;
 }
 
 export interface ServerDeps {
@@ -1272,13 +1284,15 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (req.method === "POST" && p === "/api/settings") {
-          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; planApprovalSkipTrivial?: unknown };
-          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; planApprovalSkipTrivial?: boolean } = {};
+          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; codemode?: unknown; planApprovalSkipTrivial?: unknown };
+          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; codemode?: boolean; planApprovalSkipTrivial?: boolean } = {};
           if (body.theme === "dark" || body.theme === "light" || body.theme === "system") patch.theme = body.theme;
           if (typeof body.model === "string") patch.model = body.model;
           if (body.projectId === null || typeof body.projectId === "string") patch.projectId = body.projectId;
           if (typeof body.autoApprove === "boolean") patch.autoApprove = body.autoApprove;
           if (typeof body.trainingOptOut === "boolean") patch.trainingOptOut = body.trainingOptOut;
+          // Codemode master switch (opt-in): only an explicit boolean is stored.
+          if (typeof body.codemode === "boolean") patch.codemode = body.codemode;
           if (typeof body.planApprovalSkipTrivial === "boolean") patch.planApprovalSkipTrivial = body.planApprovalSkipTrivial;
           sendJson(res, 200, updateSettings(patch));
           return;
@@ -1782,19 +1796,39 @@ loadAgents();
         if (await handleScratchpadRoutes(req, res, p)) return;
         // Session sleep/wake + compute budget (D19).
         if (await handleSessionRuntimeRoutes(req, res, p)) return;
+        // J7 idle session hibernation: per-session state plus the test hook that
+        // requests an immediate release. Dispatched before the generic
+        // `/api/sessions/` handlers below so the action suffix wins.
+        if (await handleHibernationRoutes(req, res, p)) return;
+        // Durable event log (O8): GET /api/sessions/:id/events and /events/stream.
+        if (await handleEventsRoutes(req, res, p)) return;
         // Design Studio (/api/design/*): brand kits, templates, generate, outputs.
         if (await handleDesignStudioRoutes(req, res, p)) return;
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;
         // Neo N2 canvas: the run graph built live by the agent (N1).
         if (await handleGraphRoutes(req, res, p, { enabled: cfg.runGraph?.enabled !== false })) return;
+        // Neo N17 external-agent canvas bridge: same graph, driven from outside.
+        // The route reaches the live graph through the adapter itself. Mounted
+        // before the N13 node routes below so the bridge's own `/nodes/:id/...`
+        // paths are not swallowed.
+        const canvasCtx = { enabled: cfg.runGraph?.enabled !== false };
+        if (await handleCanvasBridgeRoutes(req, res, p, canvasCtx)) return;
+        if (await handleCanvasBridgeParentRoutes(req, res, p, canvasCtx)) return;
+        // Neo N13: node-level actions on that graph (versions/diff, Add to KB,
+        // webpage artifact). Mounted right after the graph so `/nodes/:id/...`
+        // paths are not swallowed by the graph's own `/nodes/:id` route.
+        if (await handleGraphNodeRoutes(req, res, p, {
+          workspace: cfg.workspace,
+          ...(preview ? { preview } : {}),
+          ...(deps.embedder ? { embedder: deps.embedder } : {}),
+          model: cfg.memory.model || cfg.model,
+        })) return;
         // Craft apps (/api/craft/status): which vendored dists are installed.
         if (await handleCraftRoutes(req, res, p)) return;
         if (await handleInstructionsRoutes(req, res, p)) return;
         if (await handleAgentSpawnRoutes(req, res, p)) return;
         if (await handleAgentThreadRoutes(req, res, p)) return;
         if (await handleRetryLastRoutes(req, res, p)) return;
-        // Session timeline UX (D16): side-chat questions + pause/take-over.
-        if (await handleSessionControlRoutes(req, res, p)) return;
         // Session insights (D18): post-mortem metrics, issue timeline, feedback.
         if (await handleInsightsRoutes(req, res, p, { ollama, model: cfg.model })) return;
         if (await handleSchedulesRoutes(req, res, p)) return;
@@ -1813,6 +1847,8 @@ loadAgents();
         if (await handleDataControlsRoutes(req, res, p)) return;
         // Local-only memory profile (J6): loopback + install token, GET only.
         if (await handleDebugMemoryRoutes(req, res, p)) return;
+        // J7: process-wide hibernation counters (the daemon's own before/after).
+        if (await handleHibernationProcessRoutes(req, res, p)) return;
         // Settings › Connectors (UNIMPLEMENTED_OPTIONS #3): list/connect/callback/disconnect.
         if (await handleConnectorsRoutes(req, res, p)) return;
         // Settings › Skills (UNIMPLEMENTED_OPTIONS #4): proxy the memory-skills MCP.
@@ -2698,6 +2734,7 @@ loadAgents();
             abModels?: unknown;
             agentId?: unknown;
             workMode?: unknown;
+            mission?: unknown;
             knowledge?: unknown;
           };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
@@ -2725,6 +2762,9 @@ loadAgents();
           } catch (error) {
             return sendJson(res, 400, { error: String(error) });
           }
+          // Neo N6: run type `mission` is a request flag. Anything malformed is
+          // ignored rather than failing the run.
+          const mission = body.mission === true;
           // N3 Knowledge Garden: the run only reaches the kb_* tools when the
           // caller switched the garden on for THIS run (default off).
           const knowledge = body.knowledge === true;
@@ -2766,6 +2806,7 @@ loadAgents();
               ...(abModels && abModels.length > 0 ? { abModels } : {}),
               agentId,
               workMode,
+              ...(mission ? { mission: true } : {}),
               knowledge,
             });
             if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify({ type: "task", taskId: result.taskId })}\n\n`);
@@ -2813,6 +2854,8 @@ loadAgents();
             .catch((error) => log.warn(`resume ${id}: ${String(error)}`));
           return sendJson(res, 202, { taskId: id, status: getTask(id)?.status });
         }
+        // Session timeline UX (D16): side-chat questions + pause/take-over.
+        if (await handleSessionControlRoutes(req, res, p)) return;
         if (req.method === "POST" && p.startsWith("/api/tasks/") && p.endsWith("/cancel")) {
           const id = decodeURIComponent(p.slice("/api/tasks/".length, -"/cancel".length));
           const task = getTask(id);
@@ -3029,6 +3072,36 @@ loadAgents();
       }
     })();
   });
+
+  // Neo N17 external-agent canvas bridge: the live channel is a WebSocket upgrade
+  // on the loopback server, so an external agent session holds one socket per
+  // canvas and receives node changes as they are written. The upgrade carries the
+  // same install token as every /api route (header or `?token=`, since a bare agent
+  // cannot set headers on an upgrade).
+  if (cfg.runGraph?.enabled !== false) {
+    const bridgeAuthDir = process.env.LOAM_LOCAL_TOKEN_DIR || DATA_DIR;
+    setLocalAuthUserDataDir(bridgeAuthDir);
+    const bridgeUpgrade = createCanvasBridgeUpgrade({
+      authenticate: (request) => {
+        if (process.env.LOAM_AUTH_DISABLED === "true") return true;
+        const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
+        const token = typeof request.headers["x-loam-local-token"] === "string"
+          ? request.headers["x-loam-local-token"]
+          : url.searchParams.get("token") ?? undefined;
+        return validateLocalToken(bridgeAuthDir, token);
+      },
+      subscribe: (canvasId, listener) => subscribeRunGraph(canvasId, listener),
+    });
+    server.on("upgrade", (req, socket, head) => {
+      try {
+        if (bridgeUpgrade(req, socket as import("node:net").Socket, head)) return;
+        socket.destroy();
+      } catch (err) {
+        log.warn(`canvas bridge upgrade failed: ${String(err)}`);
+        socket.destroy();
+      }
+    });
+  }
 
   return new Promise((resolve) => {
     server.once("close", () => { swarm?.close(); void timeline.close(); });

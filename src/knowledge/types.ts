@@ -29,6 +29,10 @@ export interface KnowledgeProvenance {
   runId?: string;
   /** How the seed was produced ("llm_smart" or "fixed"). */
   split?: "llm_smart" | "fixed";
+  /** N13: node kind the seed was captured from (`document`, `webpage`, `kb_seed`). */
+  nodeType?: string;
+  /** N13: which captured node version the seed was taken from. */
+  nodeVersion?: number;
 }
 
 /** One retrievable unit of knowledge. */

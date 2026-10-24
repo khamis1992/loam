@@ -57,3 +57,12 @@ electron/filmcraft/dist/
 tmp-*.mjs
 tmp-*.mts
 
+
+# loam-jcode runner markers (never commit)
+.jdone.*.tmp
+.cr-done
+.cc-done
+.neo-done
+.devin-done
+.jgatefail.txt
+.jtask.md

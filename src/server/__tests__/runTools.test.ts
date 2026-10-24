@@ -43,6 +43,7 @@ let createDesignStudioTools: () => Tool[];
 let createDesignAssetsTools: () => Tool[];
 let createLoamServiceTools: () => Tool[];
 let createTodoTools: () => Tool[];
+let createUnboundCodemodeTool: () => Tool;
 
 function dummy(name: string): Tool {
   return {
@@ -146,6 +147,10 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     const deployToolsMod = await import("../../tools/deploy.js");
     registry.registerAll(deployToolsMod.createDeployTools({ workspace: tmpDir }));
     registry.register(dummy("loam_design")); // W3 build-phase design tool (always-on grant)
+    const codemodeToolMod = await import("../../codemode/tool.js");
+    createUnboundCodemodeTool = codemodeToolMod.createUnboundCodemodeTool;
+    // J9: codemode ships as an always-on core tool, so the fixture registers it too.
+    registry.register(createUnboundCodemodeTool());
     registry.registerAll((await import("../../tools/designLint.js")).createDesignLintTools()); // V4 token linter
     registry.register(dummy("design_brief")); // V7 LLM-authored design brief (always-on grant)
     registry.register(dummy("design_autofix")); // V5 deterministic design repair pass (always-on grant)
@@ -157,6 +162,8 @@ describe("agent run tool list (gateway + always-on core tools)", () => {
     // D13: resumable workflow tools ship as always-on, so register the real set.
     const workflowToolsMod = await import("../../tools/workflow.js");
     registry.registerAll(workflowToolsMod.createWorkflowTools({ ollama: {} as never, registry }));
+    // N16: cross-run recall ships as always-on, so register the real set.
+    registry.registerAll((await import("../../tools/memory.js")).createRecallTools());
   });
 
   after(() => {

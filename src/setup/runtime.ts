@@ -1,6 +1,7 @@
 import { createLoamTools } from "../tools/loam.js";
 import { createEnvSnapshotTools } from "../tools/envSnapshot.js";
 import { createLoamServiceTools } from "../tools/loamServices.js";
+import { createWakeupTools } from "../tools/wakeupTools.js";
 import { createCreativeTools } from "../tools/creative.js";
 import { createCreativeStudioTools } from "../tools/creativeStudio.js";
 import { createOfficeTools } from "../tools/officeTools.js";
@@ -30,7 +31,8 @@ import { initPty, disposePty, ptyStatus, ptyTools } from "../tools/pty.js";
 import { registerMcpTools, type McpToolset } from "../tools/mcp.js";
 import { OllamaEmbedder } from "../memory/embeddings.js";
 import { MemoryStore, startMemoryDreamJob } from "../memory/store.js";
-import { createMemoryTools } from "../tools/memory.js";
+import { createMemoryTools, createRecallTools } from "../tools/memory.js";
+import { recallIndex } from "../graph/recall.js";
 import { createSkillTools } from "../tools/skills.js";
 import { sessionTools } from "../tools/sessions.js";
 import { createScreenTools } from "../tools/screen.js";
@@ -59,6 +61,7 @@ import { defaultGenProviders } from "../creative/genProviders.js";
 import { createArtifactTools } from "../tools/artifactTools.js";
 import { planTool, messageTool } from "../tools/specAliases.js";
 import { createTodoTools } from "../tools/todoTools.js";
+import { createUnboundCodemodeTool } from "../codemode/tool.js";
 
 export interface Runtime {
   cfg: Config;
@@ -76,6 +79,11 @@ export interface Runtime {
   mcpServers: string[];
   /** Direct handle on the running MCP servers (null when they are disabled). */
   mcp: McpToolset | null;
+  /**
+   * N16 cross-run recall: the shelf of finished nodes from past runs, or null
+   * when memory embeddings are off and no embedder is available.
+   */
+  recall: import("../graph/recall.js").RecallIndex | null;
   dispose: () => Promise<void>;
 }
 
@@ -93,6 +101,10 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createArtifactTools());
   registry.registerAll([planTool(), messageTool()]);
   registry.registerAll(createTodoTools());
+  // Codemode ships in every mode but stays inert until the user opts in: the
+  // instance registered here is unbound, and index.ts swaps in a per-run
+  // instance bound to that run's allowlisted registry before execution.
+  registry.registerAll([createUnboundCodemodeTool()]);
   // Repo wiki (D8): wiki_generate + ask_codebase. file_search is already registered above.
   registry.registerAll(createWikiTools(ollama, cfg.model, registry));
   registry.registerAll(mirofishTools().map(tool => ({ ...tool, integration: true })));
@@ -115,11 +127,19 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   // Always hand tools a WriteGate object; per-write gateActive() decides staging vs. direct apply.
   const gate = writeGate;
   if (memory) registry.registerAll(createMemoryTools(memory, { gate }));
+  // N16 cross-run recall: the shelf shares the memory embedder, and without it
+  // the shelf still answers lexically, so the tools are always registered and a
+  // node is vectorized exactly when memory embeddings are on. Reachability is
+  // decided by the run's tool allowlist (modes/catalog.ts), not by registration:
+  // an unregistered tool can never reach a run at all.
+  const recall = recallIndex({ embedder: cfg.memory.enabled && cfg.memory.model ? embedder : null });
+  registry.registerAll(createRecallTools({ index: recall }));
   registry.registerAll(createSkillTools({ gate, ollama, projectRoot: cfg.workspace }));
   registry.registerAll(sessionTools);
   registry.registerAll(createLoamTools());
   registry.registerAll(createEnvSnapshotTools());
   registry.registerAll(createLoamServiceTools());
+  registry.registerAll(createWakeupTools());
   registry.registerAll(createCreativeTools());
   registry.registerAll(createCreativeStudioTools());
   registry.registerAll(createOfficeTools());
@@ -173,6 +193,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
     embedder: cfg.memory.enabled && cfg.memory.model ? embedder : null,
     screenLive,
     preview,
+    recall,
     mcpServers: mcp?.servers ?? [],
     mcp,
     dispose: async (): Promise<void> => {

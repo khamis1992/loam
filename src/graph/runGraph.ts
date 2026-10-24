@@ -23,6 +23,15 @@ import {
 } from "./store.js";
 import { assertTransition, canTransition } from "./status.js";
 import { transaction } from "../server/sqliteStore.js";
+import { captureNodeVersions, captureRunNodes, nodeCurrentText, canVersionNode } from "./nodeVersions.js";
+import { RecallIndex, type RecallResolver, type RecallSource } from "./recall.js";
+import type { OllamaEmbedder } from "../memory/embeddings.js";
+
+/** The embedder's model name, for the shelf's `model` column. */
+function embedderModel(embedder?: OllamaEmbedder | null): string {
+  if (!embedder) return "";
+  return (embedder as unknown as { model?: string }).model ?? "";
+}
 
 /** Tools that produce a search node on the canvas. */
 const SEARCH_TOOLS = new Set(["web_search", "kb_search"]);
@@ -43,6 +52,15 @@ const DOCUMENT_TOOLS = new Set([
 /** Tools that produce a media node on the canvas. */
 const MEDIA_TOOLS = new Set(["loam_creative", "loam_canvas", "gen_image", "gen_video", "video_export", "auto_video"]);
 
+/**
+ * N13: how much of a tool's raw output is kept on the node row itself.
+ *
+ * The full text lives in the version store; the node row only needs enough to
+ * show a readable preview and to be re-captured if the version store is empty.
+ * 40k chars is several pages of text, far past anything the canvas renders.
+ */
+const MAX_NODE_TEXT_CHARS = 40_000;
+
 function artifactNodeType(kind: string): RunNodeType {
   if (kind === "page") return "webpage";
   if (kind === "image" || kind === "video") return "media";
@@ -60,6 +78,19 @@ function toolNodeType(name: string): RunNodeType | undefined {
 function oneLine(text: string, max = 200): string {
   const clean = text.trim().replace(/\s+/g, " ");
   return clean.length > max ? `${clean.slice(0, max)}...` : clean;
+}
+
+/**
+ * N13: cap a document's raw text without flattening its whitespace.
+ *
+ * `oneLine` collapses every run of whitespace, which is right for a summary but
+ * destroys an HTML page, a Markdown file or a code file the user will diff and
+ * hand to the Knowledge Base. This only trims the edges and truncates with an
+ * explicit marker, so the stored version is still real text.
+ */
+function capText(text: string, max: number): string {
+  const trimmed = text.trim();
+  return trimmed.length > max ? `${trimmed.slice(0, max)}\n…[truncated]` : trimmed;
 }
 
 interface RunState {
@@ -102,6 +133,8 @@ export interface RunGraphOptions {
 export class RunGraph {
   private readonly store: RunGraphStore;
   private readonly runs = new Map<string, RunState>();
+  /** Neo N16: the derived cross-run shelf for this graph (optional by design). */
+  private recall?: RecallIndex;
 
   constructor(options: RunGraphOptions = {}) {
     this.store = options.store ?? new RunGraphStore();
@@ -109,6 +142,67 @@ export class RunGraph {
 
   getStore(): RunGraphStore {
     return this.store;
+  }
+
+  /** Neo N16: the cross-run shelf this graph indexes into (if attached). */
+  getRecall(): RecallIndex | undefined {
+    return this.recall;
+  }
+
+  /**
+   * Neo N16: give this graph a cross-run recall shelf.
+   *
+   * Attaching is optional so the graph stays usable on its own (and in tests);
+   * without it the graph simply does not maintain a shelf.
+   */
+  attachRecall(index?: RecallIndex, embedder?: OllamaEmbedder | null): void {
+    this.recall = index ?? new RecallIndex({ embedder, model: embedderModel(embedder) });
+  }
+
+  /** True when a cross-run shelf is attached to this graph. */
+  get recallAttached(): boolean {
+    return this.recall !== undefined;
+  }
+
+  /**
+   * Neo N16: file a recalled node into the current run as a linked node.
+   *
+   * The recalled node is *not* copied: a `note` node is created whose payload names
+   * the original node id, run id, type and the query that surfaced it, so the
+   * canvas shows a real edge back to the run the asset came from. When the origin
+   * still exists, its text/path/url are carried over too, so the current run can
+   * reopen the artifact instead of only hearing about it.
+   */
+  attachRecallNode(runId: string, source: RecallSource, query: string, resolve?: RecallResolver): RunNode | undefined {
+    const state = this.stateFor(runId);
+    const parent = state.lastId || state.rootId;
+    if (!parent) return undefined;
+    const origin = resolve?.(source);
+    const node = this.addNode(runId, state, {
+      type: "note",
+      // Deterministic: attaching the same hit twice must not create two nodes.
+      seed: `recall:${source.nodeId}:${source.runId}`,
+      status: "finished",
+      data: {
+        recalled: true,
+        query: oneLine(query, 200),
+        sourceNodeId: source.nodeId,
+        sourceRunId: source.runId,
+        sourceType: source.type,
+        // Provenance: the origin's own text and location when it still exists.
+        ...(origin
+          ? {
+              text: recallTextOf(origin),
+              title: dataTitleOf(origin),
+              path: dataPathOf(origin),
+              url: dataUrlOf(origin),
+              mime: dataMimeOf(origin),
+            }
+          : {}),
+      },
+      parent,
+    });
+    return node;
   }
 
   /** Prepare a run so events can be applied without a `task` event first.
@@ -182,7 +276,17 @@ export class RunGraph {
     const state = this.stateFor(runId);
     if (!state.rootId) this.ensureRoot(runId, event.type === "plan" ? event.goal : "");
     // One journal commit per event, so a live run does not fsync per node.
-    return transaction(() => this.apply(runId, state, event));
+    const ids = transaction(() => this.apply(runId, state, event));
+    // N13: the event may have produced a document node. Snapshot it now that the
+    // row is committed; a no-op run (no document) captures nothing. Only the
+    // touched nodes are read, so a long run stays cheap.
+    //
+    // A `tool_call` event is excluded on purpose: it returns the id of a node
+    // that holds only its call metadata (`{ tool, path }`), and the real text
+    // arrives with the matching `tool_result`. Snapshotting the call would store
+    // the tool name as version 1 and shift every later version by one.
+    if (event.type !== "tool_call") this.captureRunDocuments(runId, ids);
+    return ids;
   }
 
   /** Replay a recorded event log into a run, rebuilding the graph. */
@@ -196,6 +300,9 @@ export class RunGraph {
     transaction(() => {
       for (const event of events) created.push(...this.apply(runId, state, event));
     });
+    // N13: a replay rebuilds the whole graph in one pass, so snapshot every
+    // document node once at the end rather than once per event.
+    this.captureRunDocuments(runId);
     return created;
   }
 
@@ -238,15 +345,24 @@ export class RunGraph {
     }
     const updated = this.store.update(nodeId, { status });
     if (!updated) throw new Error(`run node disappeared: ${nodeId}`);
+    this.scheduleRecallSync(updated.run_id);
     return updated;
   }
 
-  /** Edit a node's payload in place (canvas "edit the AI's memory"). */
+  /**
+   * Edit a node's payload in place (canvas "edit the AI's memory").
+   *
+   * N13: when the node is a document and its text changed, the previous text is
+   * kept as a new version, so the canvas can show what the user changed instead
+   * of discarding it. Capture is best effort: a failure must not fail the edit.
+   */
   setData(nodeId: string, data: unknown, runId?: string): RunNode {
     const node = this.store.getNode(nodeId, runId);
     if (!node) throw new Error(`run node not found: ${nodeId}`);
     const updated = this.store.update(nodeId, { data });
     if (!updated) throw new Error(`run node disappeared: ${nodeId}`);
+    this.captureRunDocuments(updated.run_id, [updated.id], "user");
+    this.scheduleRecallSync(updated.run_id);
     return updated;
   }
 
@@ -257,6 +373,7 @@ export class RunGraph {
     const unique = [...new Set(parentIds)].filter((id) => id !== nodeId);
     const updated = this.store.update(nodeId, { parent_ids: unique });
     if (!updated) throw new Error(`run node disappeared: ${nodeId}`);
+    this.scheduleRecallSync(updated.run_id);
     return updated;
   }
 
@@ -296,6 +413,55 @@ export class RunGraph {
     });
     this.invalidate(runId);
     return created;
+  }
+
+  /**
+   * Neo N17 external-agent canvas bridge: a node an external agent session
+   * (OpenCode / Claude Code / Orca) placed on a Loam canvas.
+   *
+   * Unlike every other node, this one is authored by the caller rather than
+   * derived from an agent event, so it carries the session's own id
+   * (`spec.id`), its own parents and its own payload. The id is caller-chosen
+   * on purpose: the bridge derives it from the session's cursor id, so the same
+   * cursor re-submitting produces the same node instead of a duplicate.
+   */
+  addExternalNode(
+    runId: string,
+    spec: {
+      id: string;
+      parentIds: string[];
+      type?: RunNodeType;
+      status?: RunNodeStatus;
+      data?: unknown;
+    },
+  ): RunNode {
+    const state = this.stateFor(runId);
+    const id = spec.id.trim();
+    if (!id) throw new Error("external node requires an id");
+    const now = Date.now();
+    const position = state.seq;
+    const node: RunNode = {
+      id,
+      run_id: runId,
+      parent_ids: [...new Set(spec.parentIds)].filter((parent) => parent && parent !== id),
+      type: spec.type ?? "canvas_bridge",
+      status: spec.status ?? "init",
+      ...(spec.data !== undefined ? { data: spec.data } : {}),
+      position,
+      version: 1,
+      created: now,
+      updated: now,
+    };
+    const existing = this.store.getRow(id);
+    state.seq = this.nextSeq(state);
+    // A cursor that submits twice updates its own node; it never forks a second
+    // one, which is what keeps a live canvas stable across retries.
+    const stored = existing
+      ? this.store.update(id, { status: node.status, ...(spec.data !== undefined ? { data: spec.data } : {}), parent_ids: node.parent_ids })
+      : this.store.upsert(node, position);
+    state.lastId = id;
+    this.invalidate(runId);
+    return stored ?? node;
   }
 
   /**
@@ -464,6 +630,42 @@ export class RunGraph {
   invalidate(runId: string): void {
     this.depthCache.delete(runId);
     this.statsCache.delete(runId);
+    this.scheduleRecallSync(runId);
+  }
+
+  /**
+   * Neo N16: queue a shelf refresh after a write.
+   *
+   * The refresh is coalesced and never throws, because a recall miss must not
+   * break the task that produced the node.
+   */
+  private scheduleRecallSync(runId: string): void {
+    const recall = this.recall;
+    if (!recall) return;
+    recall.scheduleSync(runId, (id) => this.store.list({ runId: id }));
+  }
+
+  /**
+   * N13: snapshot the document nodes of a run into the version store.
+   *
+   * Best effort: a capture failure must never fail the run event that triggered
+   * it, so errors are logged and swallowed. When `nodeIds` is given only those
+   * nodes are read (the live path passes the ids the event just created or
+   * touched); otherwise the whole run is walked, which is what a replay wants.
+   */
+  captureRunDocuments(
+    runId: string,
+    nodeIds?: readonly string[],
+    source: "agent" | "user" = "agent",
+  ): number {
+    try {
+      return nodeIds && nodeIds.length > 0
+        ? captureNodeVersions(runId, nodeIds, source)
+        : captureRunNodes(runId, source);
+    } catch (err) {
+      console.warn(`[runGraph] failed to capture documents of run ${runId}: ${String(err)}`);
+      return 0;
+    }
   }
 
   private apply(runId: string, state: RunState, event: AgentEvent): string[] {
@@ -577,7 +779,7 @@ export class RunGraph {
       case "tool_call":
         return this.onToolCall(runId, state, event.name, event.args);
       case "tool_result":
-        return this.onToolResult(runId, state, event.name, event.ok, event.summary, event.kbSeedIds, event.kbSeeds);
+        return this.onToolResult(runId, state, event.name, event.ok, event.summary, event.kbSeedIds, event.kbSeeds, event.content);
       case "error":
         return [this.addNode(runId, state, {
           type: "failed",
@@ -592,6 +794,31 @@ export class RunGraph {
           seed: `cancelled:${state.seq}`,
           status: "finished",
           data: { stopped: true },
+          parent: state.lastId,
+        }).id];
+      case "budget_exhausted":
+        // Neo N6: the mission reached its budget ceiling and stopped cleanly. It
+        // is a summary node, not a failure: the canvas reports where the mission
+        // got to and what it consumed, so the user can raise the budget and
+        // resume from the checkpoint instead of re-reading an error banner.
+        return [this.addNode(runId, state, {
+          type: "note",
+          seed: `budget:${state.seq}`,
+          status: "finished",
+          data: {
+            budgetStopped: true,
+            reason: oneLine(event.reason, 400),
+            lastStep: event.checkpoint.lastStep,
+            steps: event.checkpoint.budget.steps,
+            tokens: event.checkpoint.budget.promptTokens + event.checkpoint.budget.completionTokens,
+            // Only the dimensions the mission was actually bounded by. The
+            // counters themselves are always present (a fresh budget zeroes
+            // them), so testing the counter would report "0m wall-clock,
+            // $0.0000" for a mission that never had a clock or a cost ceiling.
+            ...(event.checkpoint.budget.wallClockLimitMs !== undefined ? { wallClockMs: event.checkpoint.budget.wallClockMs } : {}),
+            ...(event.checkpoint.budget.costLimitUsd !== undefined ? { costUsd: event.checkpoint.budget.costUsd } : {}),
+            resumable: !event.checkpoint.inFlight,
+          },
           parent: state.lastId,
         }).id];
       case "done":
@@ -623,6 +850,14 @@ export class RunGraph {
       case "verification_progress":
       case "permission_mode_changed":
       case "cache_usage":
+      // Neo N5: the selector re-shapes the transcript every step, so it is a
+      // per-step diagnostic like cache_usage rather than a canvas node (a node
+      // per step would bury the run graph's real structure).
+      case "context_selected":
+      // Neo N11: a canvas edit is already recorded in the graph by the operation
+      // that made it (the new version, the re-pointed edge, the branch or the
+      // merged node), so the event itself carries no node of its own.
+      case "canvas_edit":
       case "workspace_command":
       case "video_studio_command":
       case "video_studio_export":
@@ -644,6 +879,77 @@ export class RunGraph {
         );
       case "fanout_merge":
         return this.onFanoutMerge(runId, state, event.fanoutId, event.branchNodeIds, event.summary);
+      case "wakeup_scheduled":
+        return [this.addNode(runId, state, {
+          type: "note",
+          seed: `wakeup:${event.scheduleId}`,
+          status: "finished",
+          data: {
+            title: `Wake-up scheduled (${event.cron ?? `${event.intervalSeconds}s`})`,
+            scheduleId: event.scheduleId,
+            nextRunAt: event.nextRunAt,
+            intervalSeconds: event.intervalSeconds,
+            ...(event.cron ? { cron: event.cron } : {}),
+            ...(event.until ? { until: event.until } : {}),
+            ...(event.instruction ? { instruction: oneLine(event.instruction, 300) } : {}),
+          },
+          parent: state.lastId,
+        }).id];
+      case "wakeup_cancelled":
+        return [this.addNode(runId, state, {
+          type: "note",
+          seed: `cancel-wakeup:${event.scheduleId}`,
+          status: "finished",
+          data: {
+            title: `Wake-up cancelled (${event.scheduleId})`,
+            scheduleId: event.scheduleId,
+          },
+          parent: state.lastId,
+        }).id];
+      case "round_start": {
+        // Starts a new round subtree hanging off the run's last node or root
+        const node = this.addNode(runId, state, {
+          type: "round",
+          seed: `round:${event.round}`,
+          status: "running",
+          data: {
+            title: `Round ${event.round}`,
+            round: event.round,
+            ...(event.scheduleId ? { scheduleId: event.scheduleId } : {}),
+            ...(event.prompt ? { prompt: oneLine(event.prompt, 400) } : {}),
+          },
+          parent: state.lastId || state.rootId,
+        });
+        state.stepId = node.id;
+        return [node.id];
+      }
+      case "round_done": {
+        // Completes the round subtree node
+        const seed = `round:${event.round}`;
+        const existing = this.store.list({ runId }).find((n) => (n.data as { round?: number })?.round === event.round && n.type === "round");
+        if (existing) {
+          const updated = this.store.update(existing.id, {
+            status: "finished",
+            data: {
+              ...(existing.data as Record<string, unknown>),
+              ...(event.summary ? { summary: oneLine(event.summary, 400) } : {}),
+            },
+          });
+          return updated ? [updated.id] : [existing.id];
+        }
+        return [this.addNode(runId, state, {
+          type: "round",
+          seed,
+          status: "finished",
+          data: {
+            title: `Round ${event.round} completed`,
+            round: event.round,
+            ...(event.scheduleId ? { scheduleId: event.scheduleId } : {}),
+            ...(event.summary ? { summary: oneLine(event.summary, 400) } : {}),
+          },
+          parent: state.lastId,
+        }).id];
+      }
       default: {
         const _exhaustive: never = event;
         return _exhaustive;
@@ -820,6 +1126,7 @@ export class RunGraph {
     summary: string,
     kbSeedIds?: string[],
     kbSeeds?: Array<{ id: string; title: string; tags: string[]; preview: string }>,
+    content?: string,
   ): string[] {
     const index = state.pending.findIndex((entry) => entry.name === name);
     if (index === -1) return [];
@@ -828,10 +1135,34 @@ export class RunGraph {
     const node = this.store.getNode(entry.nodeId, runId);
     if (!node) return [];
     const status: RunNodeStatus = ok ? "finished" : "failed";
+    // N13: keep the page/document text on the node itself, capped so a huge fetch
+    // (or an HTML dump) cannot bloat the graph row. The full text belongs in the
+    // version store, which reads this payload back.
+    const fullText = capText(content ?? "", MAX_NODE_TEXT_CHARS);
     if (canTransition(node.status, status)) {
-      this.store.update(node.id, { status, data: { ...(node.data as Record<string, unknown>), summary: oneLine(summary, 600), ok } });
+      this.store.update(node.id, {
+        status,
+        data: {
+          ...(node.data as Record<string, unknown>),
+          summary: oneLine(summary, 600),
+          ok,
+          ...(fullText ? { content: fullText } : {}),
+        },
+      });
     }
+    // Re-read what was actually stored: a second `tool_result` for the same
+    // pending call would otherwise capture the previous payload. `update` bumps
+    // the node revision, so the re-read is also what tells the version store
+    // this is a new revision rather than a repeat of the last snapshot.
+    const stored = this.store.getNode(node.id, runId) ?? node;
     state.lastId = node.id;
+    // N13: a document/webpage node whose payload now carries real text (a fetched
+    // page, a written file) is versioned here, so the canvas can diff it and the
+    // "Add to Knowledge Base" action has something honest to ingest. Capture is
+    // best effort and never fails the event.
+    if (canVersionNode(stored.type) && nodeCurrentText(stored).trim().length > 0) {
+      this.captureRunDocuments(runId, [node.id]);
+    }
     // N3 Knowledge Garden: a `kb_search` result carries the seeds it actually read
     // (`kbSeedIds` + `kbSeeds`). Each becomes a child node hanging off the tool
     // node, so "where did this answer come from?" is a real edge on the run graph
@@ -931,6 +1262,46 @@ function toolCallData(name: string, args: Record<string, unknown>): Record<strin
   if (typeof args.title === "string") data.title = args.title;
   if (typeof args.kind === "string") data.kind = args.kind;
   return data;
+}
+
+/* --------------------------- Neo N16 recall metadata --------------------------- */
+
+/** Read one string field off a node payload without assuming its shape. */
+function dataField(node: RunNode, key: string): string | undefined {
+  if (typeof node.data !== "object" || node.data === null) return undefined;
+  const value = (node.data as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function dataTitleOf(node: RunNode): string | undefined {
+  return dataField(node, "title") ?? dataField(node, "label");
+}
+
+function dataPathOf(node: RunNode): string | undefined {
+  return dataField(node, "path");
+}
+
+function dataUrlOf(node: RunNode): string | undefined {
+  return dataField(node, "url");
+}
+
+function dataMimeOf(node: RunNode): string | undefined {
+  return dataField(node, "mime");
+}
+
+/**
+ * The text a recalled node carries into its new run.
+ *
+ * Reuses the same field order as the recall index, so what the shelf matched on
+ * is exactly what the attached node shows.
+ */
+function recallTextOf(node: RunNode): string {
+  const parts: string[] = [];
+  for (const key of ["title", "label", "query", "url", "path", "summary", "text", "reason", "message", "verdict", "tool"]) {
+    const value = dataField(node, key);
+    if (value && !parts.includes(value)) parts.push(value);
+  }
+  return parts.length === 0 ? `${node.type} ${node.run_id}` : oneLine(parts.join(" — "), 8000);
 }
 
 export { assertTransition, canTransition, RUN_NODE_ENTITY };

@@ -93,7 +93,7 @@ export type AgentEvent =
   | { type: "assistant_token"; text: string }
   | { type: "assistant_message"; text: string }
   | { type: "tool_call"; name: string; args: unknown }
-  | { type: "tool_result"; name: string; ok: boolean; summary: string; ms?: number; kbSeedIds?: string[]; kbSeeds?: Array<{ id: string; title: string; tags: string[]; preview: string }> }
+  | { type: "tool_result"; name: string; ok: boolean; summary: string; ms?: number; content?: string; kbSeedIds?: string[]; kbSeeds?: Array<{ id: string; title: string; tags: string[]; preview: string }> }
   | { type: "done"; text: string; steps: number; model: string }
   | { type: "cancelled" }
   | { type: "error"; message: string }
@@ -193,6 +193,35 @@ export type AgentEvent =
   /** A workspace file was published as a task artifact via artifact_publish. */
   | { type: "artifact_published"; path: string; kind: string; title: string; mime: string; sizeBytes: number; sha256: string }
   /**
+   * Neo N5: the per-step context selector re-shaped the transcript for this
+   * step. `tokens` is the estimated size of the selected blocks, `artefacts`
+   * the number of artefacts in the run's store, and `reason` why the selector
+   * applied (or why it declined).
+   */
+  | { type: "context_selected"; step: number; tokens: number; artefacts: number; reason: string }
+  /**
+   * Neo N6: a mission reached its budget ceiling and stopped *cleanly*.
+   *
+   * This is not a failure: the mission ran until the limit the user set. The
+   * canvas renders it as a summary node so the run shows where it got to and
+   * what it consumed instead of an error banner.
+   */
+  | {
+      type: "budget_exhausted";
+      taskId: string;
+      /** Why the budget stopped the mission (steps/tokens/wall-clock/cost). */
+      reason: string;
+      /** The checkpoint at the stop, carried so the summary is truthful. */
+      checkpoint: import("./mission.js").MissionCheckpoint;
+    }
+  /**
+   * Neo N11: the run picked up edits the user made on the canvas (corrected node
+   * output, a cut/re-connected edge, a duplicated branch, a merged group, or a
+   * quote/follow-up instruction). `count` is how many edits entered this step's
+   * prompt and `nodeIds` names the nodes they acted on.
+   */
+  | { type: "canvas_edit"; step: number; count: number; nodeIds: string[] }
+  /**
    * fc-06: a Loam Video export is in flight. Live-only (no canvas node): the
    * rendered file lands in the task workspace when the stage reaches "saving".
    */
@@ -264,6 +293,35 @@ export type AgentEvent =
       branchNodeIds: string[];
       /** The merged result. */
       summary: string;
+    }
+  /** Neo N8: a wake-up was scheduled for this run. */
+  | {
+      type: "wakeup_scheduled";
+      scheduleId: string;
+      nextRunAt: string;
+      intervalSeconds: number;
+      cron?: string;
+      until?: string;
+      instruction?: string;
+    }
+  /** Neo N8: a wake-up was cancelled. */
+  | {
+      type: "wakeup_cancelled";
+      scheduleId: string;
+    }
+  /** Neo N8: a new recurring round started on the mission. */
+  | {
+      type: "round_start";
+      round: number;
+      scheduleId?: string;
+      prompt?: string;
+    }
+  /** Neo N8: a recurring round finished on the mission. */
+  | {
+      type: "round_done";
+      round: number;
+      scheduleId?: string;
+      summary?: string;
     };
 
 export type Emit = (event: AgentEvent) => void;

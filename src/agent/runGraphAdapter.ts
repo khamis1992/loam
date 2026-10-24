@@ -12,6 +12,11 @@
 import type { AgentEvent } from "./events.js";
 import { RunGraph, type RunGraphLayout, type RunGraphStats } from "../graph/runGraph.js";
 import type { RunGraphExport, RunNode, RunNodeStatus, RunNodeType } from "../graph/store.js";
+import type { NodeIndex } from "../graph/nodeVersions.js";
+import { setNodeIndex } from "../graph/nodeVersions.js";
+import { recallIndex, resetRecallIndex } from "../graph/recall.js";
+import { applyCanvasOp, parseCanvasOpRequest, type CanvasOpResult, type CanvasOpRequest } from "../graph/ops.js";
+import { clearDirectives, consumeDirectives, readDirectives, type CanvasDirective } from "../graph/directives.js";
 
 /** One graph change the live canvas cares about. */
 export interface RunGraphChange {
@@ -49,6 +54,14 @@ function publish(runId: string, nodeIds: string[]): void {
   }
 }
 
+/**
+ * Neo N17: let a module outside this file push a canvas change. The bridge writes
+ * nodes through the raw graph, so it has to announce them itself.
+ */
+export function publishRunGraph(runId: string, nodeIds: string[]): void {
+  publish(runId, nodeIds);
+}
+
 /** Subscribe to graph changes of one run. Returns an unsubscribe function. */
 export function subscribeRunGraph(runId: string, listener: RunGraphListener): () => void {
   let subscribers = listeners.get(runId);
@@ -69,6 +82,23 @@ export function subscribeRunGraph(runId: string, listener: RunGraphListener): ()
 let graph: RunGraph | undefined;
 
 /**
+ * N13: the row index the live graph writes through.
+ *
+ * Version capture (`src/graph/nodeVersions.ts`) reads run nodes to snapshot their
+ * text. It must read the *same* store instance, not a second `RunGraphStore`:
+ * a store snapshots its rows on first read, so a separate instance created
+ * before the run existed would never see the nodes this graph writes, and every
+ * capture would miss. Handing the graph's own store over keeps the two in step.
+ */
+export function liveNodeIndex(): NodeIndex | undefined {
+  const store = liveGraph().getStore();
+  return {
+    getRow: (id) => store.getRow(id),
+    listRows: (query) => store.listRows(query),
+  };
+}
+
+/**
  * Forget the process-wide graph. A test that swaps the data directory must also
  * drop the in-memory `runs` cursors, or the next `applyRunEvent` resumes a stale
  * cursor and writes into the old database file.
@@ -76,11 +106,20 @@ let graph: RunGraph | undefined;
 export function resetRunGraph(): void {
   graph = undefined;
   listeners.clear();
+  resetRecallIndex();
 }
 
 function liveGraph(): RunGraph {
   if (!graph) graph = new RunGraph();
   return graph;
+}
+
+/**
+ * Neo N17: the process-wide live graph, for route modules that cannot receive it
+ * through `startServer` deps (the same reason `__loamRunTask` is a global).
+ */
+export function getLiveRunGraph(): RunGraph {
+  return liveGraph();
 }
 
 /**
@@ -91,6 +130,10 @@ export function beginRun(runId: string, goal = ""): RunNode | undefined {
   try {
     const instance = liveGraph();
     instance.resume(runId);
+    // Neo N16: keep a cross-run shelf of this graph's finished nodes. Attaching
+    // is idempotent per instance and never throws, so a recall failure cannot
+    // take down the run it is recording.
+    if (!instance.recallAttached) instance.attachRecall(recallIndex());
     return instance.beginRun(runId, goal);
   } catch (err) {
     console.warn(`[runGraph] failed to begin run ${runId}: ${String(err)}`);
@@ -101,7 +144,11 @@ export function beginRun(runId: string, goal = ""): RunNode | undefined {
 /** Feed one agent event into the run graph. Returns the ids of the nodes it touched. */
 export function applyRunEvent(runId: string, event: AgentEvent): string[] {
   try {
-    const ids = liveGraph().applyEvent(runId, event);
+    const instance = liveGraph();
+    // The row index must be the graph's own store, or capture reads a snapshot
+    // taken before this run existed and silently snapshots nothing.
+    setNodeIndex(liveNodeIndex());
+    const ids = instance.applyEvent(runId, event);
     // The canvas listens for this: a node appears on the graph as the agent
     // emits the event that created it, without a polling round-trip.
     if (ids.length > 0) publish(runId, ids);
@@ -114,7 +161,9 @@ export function applyRunEvent(runId: string, event: AgentEvent): string[] {
 
 /** Rebuild a run from a recorded event log (the "replay" entry point). */
 export function replayRun(runId: string, events: AgentEvent[]): string[] {
-  return liveGraph().replay(runId, events);
+  const instance = liveGraph();
+  setNodeIndex(liveNodeIndex());
+  return instance.replay(runId, events);
 }
 
 export function getRunGraphLayout(runId: string): RunGraphLayout {
@@ -176,6 +225,22 @@ export function addRunSiblings(runId: string, parentNodeId: string, models: stri
   return liveGraph().addSiblings(runId, parentNodeId, models);
 }
 
+/**
+ * Neo N17 external-agent canvas bridge: place a caller-authored node on a Loam
+ * canvas. The external agent session (OpenCode / Claude Code / Orca) owns the
+ * id, so its own cursor survives as a stable node instead of being derived from
+ * an agent event. Re-submitting the same id updates that node in place.
+ */
+export function addCanvasBridgeNode(
+  runId: string,
+  spec: { id: string; parentIds: string[]; type?: RunNodeType; status?: RunNodeStatus; data?: unknown },
+): RunNode {
+  if (!runId || !runId.trim()) throw new Error("runId required");
+  const node = liveGraph().addExternalNode(runId.trim(), spec);
+  publish(node.run_id, [node.id]);
+  return node;
+}
+
 /** N7 branch fan-out: open one branch of a fan-out as its own canvas subtree. */
 export function createFanoutBranch(
   runId: string,
@@ -200,5 +265,72 @@ export function createFanoutMerge(
 
 /** Drop every node of a run (used when a task is deleted). */
 export function clearRun(runId: string): void {
-  liveGraph().getStore().clearRun(runId);
+  const instance = liveGraph();
+  const removed = instance.getRunNodes(runId).map((node) => node.id);
+  instance.getStore().clearRun(runId);
+  // The shelf is derived, so a deleted run must leave the shelf too.
+  const shelf = instance.getRecall();
+  if (shelf) for (const nodeId of removed) void shelf.forget(nodeId);
+  // Directives describe edits to nodes that no longer exist.
+  clearDirectives(runId);
+}
+
+/* ------------------------ Neo N11: canvas editing ------------------------ */
+
+/**
+ * Run one canvas editing operation (N11) against the live graph.
+ *
+ * Returns `undefined` for a malformed request so the route can answer 400. An
+ * operation that fails to apply throws: the route turns that into a status the
+ * panel can show, and nothing is half-written because the ops own their writes.
+ * The touched nodes are published to the canvas bus, so the panel re-renders the
+ * moment an edit lands rather than on the next poll.
+ */
+export function applyCanvasRequest(runId: string, payload: unknown): CanvasOpResult | undefined {
+  const request = parseCanvasOpRequest(payload);
+  if (!request) return undefined;
+  return applyCanvasOpRequest(runId, request);
+}
+
+/** Apply an already-parsed canvas operation (the loop and tests use this). */
+export function applyCanvasOpRequest(runId: string, request: CanvasOpRequest): CanvasOpResult {
+  try {
+    const result = applyCanvasOp({ graph: liveGraph(), runId }, request);
+    publish(runId, result.touched);
+    return result;
+  } catch (err) {
+    console.warn(`[runGraph] canvas op ${request.op} failed for run ${runId}: ${String(err)}`);
+    throw err;
+  }
+}
+
+/** The canvas edits this run has not yet shown the model. */
+export function pendingCanvasDirectives(runId: string): CanvasDirective[] {
+  return readDirectives(runId);
+}
+
+/**
+ * Take the pending canvas edits for a run (the loop's once-per-step pull).
+ *
+ * Read-and-clear in one call, so an edit is handed to the model exactly once and
+ * then lives in the run's artefact store like any other context. A storage
+ * failure returns an empty list: an unreadable directive log must not stop the
+ * run it belongs to.
+ */
+export function takeCanvasDirectives(runId: string): CanvasDirective[] {
+  try {
+    return consumeDirectives(runId);
+  } catch (err) {
+    console.warn(`[runGraph] failed to consume canvas directives for ${runId}: ${String(err)}`);
+    return [];
+  }
+}
+
+/**
+ * The live graph handle, for callers that need run-scoped recall behaviour
+ * (attaching a recalled hit into the current run). It is the same instance
+ * `beginRun` attaches the shelf to, so the shelf and the graph never diverge.
+ */
+export function recallGraphHandle(): RunGraph {
+  return liveGraph();
 }

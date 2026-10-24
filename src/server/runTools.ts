@@ -17,6 +17,7 @@
 
 /** Low-risk tools exposed to every agent run in every mode. */
 export const ALWAYS_ON_TOOLS: readonly string[] = [
+  "codemode",
   "scratchpad_add",
   "scratchpad_list",
   "scratchpad_complete",
@@ -57,6 +58,11 @@ export const ALWAYS_ON_TOOLS: readonly string[] = [
   "workflow_run",
   "workflow_resume",
   "workflow_status",
+  // N16 cross-run recall: read past runs' finished nodes and pull one back in.
+  // It is a read over the user's own past work plus one node write, so it ships
+  // in every mode rather than being gated behind a service the user must enable.
+  "recall",
+  "recall_status",
 ];
 
 export interface AlwaysOnMergeInput {

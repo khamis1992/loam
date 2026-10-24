@@ -195,7 +195,7 @@ telling the agent what to do next:
 
 | `reason` | When | Body |
 | --- | --- | --- |
-| `filmcraft_dist_missing` | `electron/filmcraft/dist/index.html` is absent | `fallback: "video_edit"` |
+| `loam_video_dist_missing` | `electron/filmcraft/dist/index.html` is absent | `fallback: "video_edit"` |
 | `bridge_unavailable` | The panel never answered (`TIMEOUT`) or the transport failed | `fallback: "video_edit"` |
 | `command_rejected` | The panel ran the command and the editor refused it (`COMMAND_REJECTED`) | `fallback: "video_edit"`, the editor's own error in `message` and a hint to fix the command first |
 | `cancelled` | The task stopped mid-command (`CANCELLED`) | `fallback: "video_edit"` |
@@ -204,3 +204,39 @@ telling the agent what to do next:
 `video_edit` (`src/tools/videoEditAgent.ts`) is the fallback path: it compiles an
 edit-decision-list and renders with ffmpeg, so it needs neither the vendored dist
 nor the editor bridge.
+
+## User flow (fc-10)
+
+The end-to-end flow, as scripted by `src/scripts/check-studio-e2e.ts`
+(`npm run check:studio-e2e`):
+
+1. **Attach + instruct.** The user drops a video into the chat and writes an
+   instruction in Arabic (the check uses `قصّص المقدمة وأضف الموسيقى ثم صدّر
+الفيديو`). The attachment is copied into the task workspace (`media/clip.mp4`).
+2. **Panel opens by itself.** The Workspace panel's auto-open decision sees the
+   media attachment and the edit intent, and opens the Video Studio panel
+   without the user clicking anything. `latestWorkspaceDecision` resolves to a
+   `loam-video` target.
+3. **Agent drives the live timeline.** The agent calls `video_studio`, which
+   imports the task file into the editor (`importFiles`), reads the real project
+   state (`inspect`) before every mutating command, and issues each edit as an
+   `execute` against the live catalog. Manual edits made in the panel in between
+   are never lost: the pre-read diff is prepended to the tool result as
+   `User edited the timeline manually since your last action: ...`, so the agent
+   sees the hand edit and works on top of it instead of rebuilding the timeline.
+4. **Export.** The rendered file is written into the task workspace at
+   `exports/<name>.mp4` (fc-06 `src/server/videoStudioExport.ts`: resolve the real
+   export command from the live catalog → `execute` with `wait` → `readFile`
+   the bytes → atomic write). It is then listed by `/api/files?taskId=...`, which
+   is the route the Workspace panel reads, so the user sees the export in the
+   task's files.
+
+The check runs in two phases:
+
+| Phase | Runs when | What it proves |
+| --- | --- | --- |
+| A. Flow | always | The real server, real relay, real `video_studio` tool and real export service against a stand-in editor panel. This is the "unit parts pass always" half of the acceptance test. |
+| B. Real dist | `electron/filmcraft/dist` present | The tool can see the vendored editor build. The real wasm editor is driven by the browser panel, so its rendering is covered by the web e2e tests; the phase reports a clear `SKIP` instead of pretending to render. |
+
+Phase A uses a tiny hex mp4 fixture (no `ffmpeg` needed) and the scripted local
+fake model, so it needs no network and no model download.

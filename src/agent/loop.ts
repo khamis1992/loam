@@ -25,7 +25,8 @@ import { isEditTool, recordEditModel } from "../llm/modelAudit.js";
 import type { CooldownStore, FailoverProvider, ProviderClient } from "../llm/failover.js";
 import { createStallGuard } from "./stallGuard.js";
 import { ciWatchEscalationNotice } from "./ciWatchLoop.js";
-import { compressContext } from "./contextCompressor.js";
+import { compressContext, getContextWindow } from "./contextCompressor.js";
+import { ContextSelector } from "./contextSelector.js";
 import { runLifecycleHooks, wrapHookContext } from "../policy/hooks.js";
 import { throwIfCancelled, isCancelled, isCancelledError } from "../server/runControl.js";
 import { openSession, closeSession } from "./sessionHooks.js";
@@ -33,13 +34,25 @@ import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/risk
 import { ReminderChannel, TODO_UPDATE_TOOLS, MEMORY_UPDATE_TOOLS, type ReminderChannelOptions } from "./reminders.js";
 import { getTaskPhase } from "../tools/phaseTools.js";
 import { ReadState } from "../tools/readState.js";
+import {
+  checkBudget,
+  consumeCost,
+  consumeSteps,
+  consumeTokens,
+  consumeWallClock,
+  createUnlimitedBudget,
+  type ComputeBudget,
+} from "./computeBudget.js";
+import { estimateCostUsd } from "./insights.js";
+import { budgetStoppedCheckpoint, budgetSummary, resumeStep, type MissionCheckpoint } from "./mission.js";
 import { fileTouchRegistry, forgetFileTouchSession } from "../tools/fileTouch.js";
-import { checkBudget, consumeSteps, consumeTokens, type ComputeBudget } from "./computeBudget.js";
 import { KvCacheMonitor, missMessage, type RequestRoute, type RequestSignature } from "./kvCacheMonitor.js";
 import { addUsage } from "./usageAccounting.js";
 import { recordToolCall, recordToolResult } from "./checkpointLog.js";
 import { log } from "../log.js";
 import { addRunSiblings, getRunNodes, setRunNodeData, setRunNodeStatus } from "./runGraphAdapter.js";
+import { takeCanvasDirectives } from "./runGraphAdapter.js";
+import { canvasEditsMessage, directiveBody, directiveTitle, CANVAS_EDIT_ARTEFACT_KIND } from "./canvasContext.js";
 import { eventNodeId, type RunNode } from "../graph/store.js";
 import { admitPending, hasPending, type QueuedInput } from "../server/inputQueue.js";
 
@@ -133,7 +146,8 @@ export interface RunOptions {
   sessionId?: string;
   /** When set, replaces the default system prompt (used by the background reviewer). */
   systemOverride?: string;
-  /** Appended after the built (or overridden) system prompt. Used by orchestrator workers. */
+  /** Appended after the built (or overridden) system prompt. Used by orchestrator workers.
+   *  H5: the correction-learning lesson block joins this suffix (src/index.ts, BUILD_SPEC §6.5). */
   systemSuffix?: string;
   /** Overrides cfg.agent.maxSteps for this run (orchestrator workers get a tighter budget). */
   maxSteps?: number;
@@ -155,6 +169,17 @@ export interface RunOptions {
   /** D19: per-session compute budget (steps/tokens) enforced inside this run.
    *  The runtime store owns the counters; the loop only consults it. */
   budget?: ComputeBudget;
+  /** Neo N6: this run is a mission (no fixed step cap). The step ceiling is
+   *  lifted and the extended budget (steps/tokens/wall-clock/cost) governs it.
+   *  A checkpoint is written after every completed step so a server restart
+   *  resumes the mission instead of losing it. */
+  mission?: boolean;
+  /** Neo N6: persist a mission checkpoint after each step. Omitted for a
+   *  non-mission run; failures are swallowed so persistence never fails a run. */
+  saveMissionCheckpoint?: (checkpoint: import("./mission.js").MissionCheckpoint) => void;
+  /** Neo N6: resume a mission from this durable checkpoint (step index and
+   *  budget counters), instead of starting from step 1. */
+  resumeMission?: import("./mission.js").MissionCheckpoint;
   /** Internal seam for the coding-model router: builds the client for one
    *  failover provider. Defaults to the real provider client (network). Tests
    *  inject a fake so routing can be verified without contacting a model. */
@@ -203,6 +228,12 @@ export interface RunOptions {
   onAdmitPending?: (sessionId: string) => QueuedInput[];
   /** Session id whose queued messages this run should admit (defaults to taskId). */
   inputSessionId?: string;
+  /**
+   * Neo N5: the per-step context selector. When omitted the loop builds one
+   * from `cfg.contextSelector`; a disabled config keeps the pre-N5 behaviour.
+   * A caller may inject its own instance to share a store across a fan-out.
+   */
+  contextSelector?: ContextSelector;
 }
 
 export interface RunResult {
@@ -213,6 +244,28 @@ export interface RunResult {
   steps: number;
   model: string;
   usage: Usage;
+}
+
+/**
+ * Neo N6: the mission stopped because it reached its budget ceiling.
+ *
+ * It carries the checkpoint at the stop so the caller can persist it and the
+ * canvas can render a summary node, and it is distinguished from a real failure
+ * (`isMissionBudgetError`) so a caller never reports a clean budget stop as an
+ * error.
+ */
+export class MissionBudgetError extends Error {
+  readonly checkpoint: MissionCheckpoint;
+  constructor(message: string, checkpoint: MissionCheckpoint) {
+    super(message);
+    this.name = "MissionBudgetError";
+    this.checkpoint = checkpoint;
+  }
+}
+
+/** True when the error is a clean budget stop rather than a failed run. */
+export function isMissionBudgetError(err: unknown): err is MissionBudgetError {
+  return err instanceof MissionBudgetError;
 }
 
 /** Deterministic 32-bit FNV-1a hash; stable across processes for the same input. */
@@ -248,6 +301,20 @@ function requestSignature(
 function normalizeArgs(v: unknown): Record<string, unknown> {
   if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
   return {};
+}
+
+/**
+ * The model's context window for this run, or `undefined` when the config does
+ * not declare one.
+ *
+ * The selector uses it to cap its own selection. A config that omits the
+ * per-model window map (a minimal test config, or a caller that only needs the
+ * selector) must not make the loop throw, so the lookup is guarded: without a
+ * window the selector falls back to its configured cap.
+ */
+function selectorWindowTokens(cfg: Config, model: string): number | undefined {
+  if (!cfg.compression?.contextWindow || typeof cfg.compression.contextWindow !== "object") return undefined;
+  return getContextWindow(cfg, model);
 }
 
 /** Best-effort target path for an edit tool call (never the full arguments). */
@@ -438,7 +505,34 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
     Object.assign(usage, restored.usage);
     usedModel = restored.model;
   }
+  const mission = opts.mission === true;
   const maxSteps = opts.maxSteps !== undefined && opts.maxSteps > 0 ? opts.maxSteps : opts.cfg.agent.maxSteps;
+  // Neo N6: a mission is unbounded, so it only stops when the model answers or
+  // the budget does. `Number.MAX_SAFE_INTEGER` keeps the existing loop shape
+  // (a `for` over a finite ceiling) while removing the 40-step cap.
+  const stepCeiling = mission ? Number.MAX_SAFE_INTEGER : maxSteps;
+  // Wall-clock accounting for a mission: the elapsed time of every step is
+  // charged to the budget, so a mission that idles on slow tools still ends.
+  // A resumed mission's checkpoint budget already carries the elapsed time, so
+  // each step here is charged only for the milliseconds it took; the clock
+  // never restarts.
+  /** Persist a mission checkpoint. Never throws: persistence must not fail a run. */
+  const saveCheckpoint = (lastStep: number, inFlight = false): void => {
+    if (!mission || !opts.saveMissionCheckpoint) return;
+    try {
+      opts.saveMissionCheckpoint({
+        version: 1,
+        taskId: opts.taskId ?? "",
+        prompt: opts.prompt,
+        lastStep,
+        budget: { ...(opts.budget ?? { steps: 0, promptTokens: 0, completionTokens: 0, wallClockMs: 0, costUsd: 0 }) },
+        checkpointedAt: new Date().toISOString(),
+        ...(inFlight ? { inFlight: true } : {}),
+      });
+    } catch (err) {
+      log.warn(`mission checkpoint not persisted: ${String(err)}`);
+    }
+  };
   // The tool names this run may use. Tools that fan out to child agents read
   // it from the tool context so a child never exceeds the parent's reach.
   const runAllowedTools = opts.tools.names();
@@ -489,6 +583,15 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
   // as a hidden reminder after the conversation is folded away.
   let currentTodos: TodoItem[] = [];
   const workspace = opts.cfg.workspace;
+  // Neo N5: the per-step context selector. It accumulates one artefact per tool
+  // result and re-shapes the transcript once a step exceeds its activation
+  // threshold, so a long run keeps a bounded context without waiting for the
+  // compressor. A caller may inject its own instance to share one store.
+  const selector = opts.contextSelector ?? new ContextSelector({ config: opts.cfg.contextSelector });
+  // Maps each tool message to its artefact id, so the selector can tell which
+  // transcript entries it may fold away. Object identity survives a re-shape,
+  // because the selector carries the surviving messages over unchanged.
+  const toolMessageIds = new Map<ChatMessage, string>();
 
   try {
     // SessionStart and UserPromptSubmit fire once per run, before any model call.
@@ -500,13 +603,24 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       if (session.injected) messages.push({ role: "user", content: session.injected });
     }
 
-  for (step = (restored?.steps ?? 0) + 1; step <= maxSteps; step++) {
+  for (step = (restored?.steps ?? (mission && opts.resumeMission ? resumeStep(opts.resumeMission) - 1 : 0)) + 1; step <= stepCeiling; step++) {
+    // Neo N6: a mission checkpoints BEFORE its step runs, marking the step as
+    // in flight, so a server killed mid-step resumes from a known boundary.
+    if (mission && step > 1) saveCheckpoint(step - 1, true);
     // Stop immediately when the user pressed the cancel button (checked between every step).
     throwIfCancelled(opts.signal, opts.taskId);
     // D19 compute budget: consult BEFORE the step runs so the first crossing
     // of the ceiling stops the run instead of burning one more step.
     const budgetDecision = opts.budget ? checkBudget(opts.budget) : { action: "allow" as const };
     if (budgetDecision.action === "stop") {
+      // Neo N6: a mission's budget stop is a clean end (the checkpoint is the
+      // resume point), but an ordinary run has no checkpoint to resume from, so
+      // its stop stays the plain failure it always was.
+      if (mission) {
+        const summary = budgetStoppedCheckpoint({ taskId: opts.taskId, prompt: opts.prompt, lastStep: step - 1, budget: opts.budget ?? createUnlimitedBudget() });
+        opts.emit({ type: "budget_exhausted", taskId: opts.taskId ?? "", reason: budgetDecision.reason, checkpoint: summary });
+        throw new MissionBudgetError(`${budgetDecision.reason}. Raise the session budget to continue.`, summary);
+      }
       const msg = `${budgetDecision.reason}. Raise the session budget to continue.`;
       opts.emit({ type: "error", message: msg });
       throw new Error(msg);
@@ -525,6 +639,26 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
     if (opts.taskId) reminders.setPlanMode(getTaskPhase(opts.taskId) === "plan");
     for (const message of reminders.drainMessages(step)) messages.push(message);
 
+    // Neo N11: an edit the user made on the canvas while the run was busy (or
+    // before it resumed) is a fact about the run the model has not seen. The
+    // directives are pulled once per step: the batch becomes one hidden reminder
+    // so the very next model call sees it, and each edit also enters the N5
+    // artefact store, so a later step can re-attach it on relevance instead of
+    // the correction having to stay pinned in the prompt for the whole run.
+    if (opts.taskId) {
+      const edits = takeCanvasDirectives(opts.taskId);
+      if (edits.length > 0) {
+        const message = canvasEditsMessage(edits);
+        if (message) messages.push(message);
+        for (const directive of edits) {
+          selector.captureExternal(CANVAS_EDIT_ARTEFACT_KIND, directiveTitle(directive), directiveBody(directive), {
+            path: directive.nodeId,
+          });
+        }
+        opts.emit({ type: "canvas_edit", step, count: edits.length, nodeIds: edits.map((directive) => directive.nodeId) });
+      }
+    }
+
     let providerCompaction = false;
     if (opts.cfg.compression.enabled) {
       const compressed = await compressContext(opts.cfg, opts.ollama, messages, opts.emit, opts.signal, { readState, todos: currentTodos, model: usedModel });
@@ -537,6 +671,33 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       }
       // Re-attach recent file reads and the live task list as hidden reminders.
       for (const reminder of compressed.reminders) messages.push(reminder);
+    }
+
+    // Neo N5: the per-step selector runs before the model is called. From the
+    // activation step onwards it selects the artefacts this step needs and folds
+    // the rest into elision markers, so the prompt stays bounded for the whole
+    // run instead of growing until the compressor fires. A selector failure is
+    // invisible: the run keeps the raw transcript.
+    if (selector.enabled && step > selector.activationStep) {
+      const selected = await selector.apply(messages, {
+        task: opts.prompt,
+        todos: currentTodos,
+        step,
+        toolMessageIds,
+        // The selector's selection is capped by the model's real window, so a
+        // long run cannot re-attach more than the model can hold. Only the
+        // selector's own active path needs this; a disabled selector (or a run
+        // that never reaches its activation step) must not touch the config.
+        windowTokens: selectorWindowTokens(opts.cfg, usedModel),
+      });
+      if (selected.applied) {
+        messages = selected.messages;
+        // Re-index the surviving tool messages; dropped ones lose their entry.
+        for (const [message, id] of [...toolMessageIds]) {
+          if (!messages.includes(message)) toolMessageIds.delete(message);
+        }
+        opts.emit({ type: "context_selected", step, tokens: selected.tokens, artefacts: selected.artefactCount, reason: selected.reason });
+      }
     }
 
     const requestTools = opts.tools.toOllama();
@@ -565,6 +726,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
     // Neo N10: one dispatch point. A mapped route (per-tool, then effort) takes
     // precedence; otherwise the existing coding-turn routing applies, and a run
     // with no map at all keeps the plain fallback chain it had before N10.
+    const stepStartedAt = mission ? Date.now() : 0;
     const result: ChatResult = routeCoding
       ? await chatWithCodingRouter({
           cfg: opts.cfg,
@@ -605,6 +767,12 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
     // D19 compute budget: model tokens are real work, so they count against the
     // session ceiling too (addUsage already tallied the same numbers above).
     if (opts.budget) consumeTokens(opts.budget, result.usage.promptTokens, result.usage.completionTokens);
+    // Neo N6: a mission charges wall-clock and estimated cost too, so the budget
+    // is the real ceiling and not just a step counter.
+    if (opts.budget && mission) {
+      consumeWallClock(opts.budget, Date.now() - stepStartedAt);
+      consumeCost(opts.budget, estimateCostUsd(usedModel, result.usage.promptTokens, result.usage.completionTokens));
+    }
     if (opts.budget && checkBudget(opts.budget).action === "warn") {
       opts.emit({ type: "error", message: "Compute budget is close to its ceiling; consider raising it." });
     }
@@ -762,10 +930,18 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
           ok: toolResult.ok,
           summary: summarize(toolResult.content),
           ms: Date.now() - item.t0,
+          // N13: keep the raw output so the run graph can version it. Capped
+          // (40k chars) so a large fetch cannot bloat the event payload.
+          ...(toolResult.content ? { content: toolResult.content.slice(0, 40_000) } : {}),
           ...(toolResult.kbSeedIds && toolResult.kbSeedIds.length > 0 ? { kbSeedIds: toolResult.kbSeedIds } : {}),
           ...(toolResult.kbSeeds && toolResult.kbSeeds.length > 0 ? { kbSeeds: toolResult.kbSeeds } : {}),
         });
-        messages.push({ role: "tool", tool_name: item.name, content: toolMessageContent(item.name, toolResult.content) });
+        const toolMessage = { role: "tool", tool_name: item.name, content: toolMessageContent(item.name, toolResult.content) } as ChatMessage;
+        // Neo N5: capture the result as a selectable artefact and remember which
+        // transcript message it belongs to, so the selector can fold it away
+        // later without losing the pairing.
+        toolMessageIds.set(toolMessage, selector.capture(item.name, toolResult.content, { path: editTargetPath(item.args) }).id);
+        messages.push(toolMessage);
         // Stop right after the first tool when cancelled — don't even queue the rest of the batch.
         throwIfCancelled(opts.signal, opts.taskId);
       }
@@ -800,6 +976,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
           ok: toolResult.ok,
           summary: summarize(toolResult.content),
           ms: Date.now() - t0,
+          ...(toolResult.content ? { content: toolResult.content.slice(0, 40_000) } : {}),
           ...(toolResult.kbSeedIds && toolResult.kbSeedIds.length > 0 ? { kbSeedIds: toolResult.kbSeedIds } : {}),
           ...(toolResult.kbSeeds && toolResult.kbSeeds.length > 0 ? { kbSeeds: toolResult.kbSeeds } : {}),
         });
@@ -816,7 +993,9 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
           currentTodos = parseTaskList(name, args);
         }
         if (MEMORY_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.memoryUpdated();
-        messages.push({ role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) });
+        const toolMessage = { role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) } as ChatMessage;
+        toolMessageIds.set(toolMessage, selector.capture(name, toolResult.content, { path: editTargetPath(args) }).id);
+        messages.push(toolMessage);
         // Cancel pressed while the tool ran? Stop before the next tool/step.
         throwIfCancelled(opts.signal, opts.taskId);
 
@@ -840,8 +1019,28 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       });
     }
     opts.saveWorker?.(structuredClone({ prompt: opts.prompt, messages, trace, steps: step, model: usedModel, usage }));
+    // Neo N6: the step completed, so the checkpoint is a safe boundary again
+    // (nothing in flight). This is the resume point a server restart uses.
+    if (mission) saveCheckpoint(step);
+    // Neo N6: check the budget again now that the step is fully accounted for.
+    // A mission's clock is charged per step, so this is where a step that
+    // crossed the wall-clock ceiling ends the mission; the next iteration's
+    // pre-step check would otherwise be the only other place it can stop.
+    if (opts.budget && mission) {
+      const after = checkBudget(opts.budget);
+      if (after.action === "stop") {
+        const stopped = budgetStoppedCheckpoint({ taskId: opts.taskId, prompt: opts.prompt, lastStep: step, budget: opts.budget });
+        opts.emit({ type: "budget_exhausted", taskId: opts.taskId ?? "", reason: after.reason, checkpoint: stopped });
+        throw new MissionBudgetError(`${after.reason}. Raise the session budget to continue.`, stopped);
+      }
+    }
   }
 
+  // Both sides converge on settling every arm here: an N10 A/B sibling must not
+  // stay `running` once the run ends, and a mission is unreachable here anyway
+  // (its ceiling is the budget, checked per step), so an ordinary run reports the
+  // step cap it actually hit. Awaiting the arms never fails the run: each arm
+  // records its own failure on its own node.
   // The step budget ran out: stop recording arms as pending so a later replay
   // cannot resurrect a node the run abandoned.
   await Promise.all(armPromises);

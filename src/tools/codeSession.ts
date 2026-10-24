@@ -1,8 +1,15 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { DATA_DIR } from "../config.js";
+import { DATA_DIR, ROOT } from "../config.js";
+import {
+  SharedControlClient,
+  defaultCodeSessionSocketPath,
+  isNamedPipePath,
+  waitForSharedSocket,
+} from "../server/sharedCodeSession.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { str, strs } from "./registry.js";
 
@@ -13,6 +20,19 @@ const DEFAULT_MAX_CONCURRENT = 4;
 const MAX_LOG_LINES = 30;
 const MAX_DIFF_CHARS = 20_000;
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+
+/** How a code_session runs: one process per task, or a shared long-lived server. */
+export type CodeSessionLauncher = "per-process" | "shared";
+
+/** Project root of the Loam app (src/tools -> ../..). */
+const APP_ROOT = (() => {
+  try {
+    return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+  } catch {
+    return ROOT;
+  }
+})();
+const SHARED_SERVER_ENTRY = path.join(APP_ROOT, "src", "server", "sharedCodeSession.ts");
 
 export interface CodeSessionSpawnOptions {
   cwd: string;
@@ -27,6 +47,19 @@ export type CodeSessionSpawnImpl = (
   options: CodeSessionSpawnOptions,
 ) => ChildProcess;
 
+export interface SharedServerSpawnOptions {
+  cwd: string;
+  stdio: ["ignore", "pipe", "pipe"];
+  windowsHide: boolean;
+  env: NodeJS.ProcessEnv;
+}
+
+export type SharedServerSpawnImpl = (
+  file: string,
+  args: string[],
+  options: SharedServerSpawnOptions,
+) => ChildProcess;
+
 export interface CreateCodeSessionToolsOptions {
   /** opencode binary to run. Defaults to LOAM_OPENCODE_BIN then "opencode". */
   opencodeBin?: string;
@@ -38,6 +71,24 @@ export interface CreateCodeSessionToolsOptions {
   dataDir?: string;
   /** Hard cap on simultaneously running sessions. */
   maxConcurrent?: number;
+  /** Which launcher shape to use. Defaults to LOAM_CODE_SESSION_LAUNCHER then "per-process". */
+  launcher?: CodeSessionLauncher;
+  /** Injection point for the shared launcher's server spawn (tests). */
+  sharedServerSpawnImpl?: SharedServerSpawnImpl;
+  /** Base URL the shared server's model client talks to. */
+  sharedModelUrl?: string;
+  /** Shared-server entry path override (tests). */
+  sharedServerEntry?: string;
+  /**
+   * Pin the shared server to `sharedModelUrl` only: no coding-router or
+   * failover-chain re-routing. Defaults to `LOAM_CODE_SESSION_PIN_LOCAL === "1"`.
+   */
+  sharedPinToLocalModel?: boolean;
+  /**
+   * Environment the shared server's per-session agent loops see when they
+   * resolve the coding router. Defaults to `process.env`.
+   */
+  sharedRunEnv?: Record<string, string | undefined>;
 }
 
 type CodeSessionStatus = "running" | "done" | "failed";
@@ -50,11 +101,15 @@ interface CodeSession {
   base: string;
   model: string;
   logPath: string;
+  launcher: CodeSessionLauncher;
   startedAt: number;
   endedAt: number | null;
   status: CodeSessionStatus;
   exitCode: number | null;
   error: string | null;
+  /** Session id inside the shared server (shared launcher only). */
+  sharedId?: string;
+  steps?: number;
 }
 
 function errorMessage(err: unknown): string {
@@ -155,6 +210,96 @@ function buildBrief(task: string, acceptance: string, filesHint: string[]): stri
   return `${lines.join("\n")}\n`;
 }
 
+// ---------------------------------------------------------------------------
+// Shared launcher: one long-lived server hosting many sessions (J1).
+// ---------------------------------------------------------------------------
+
+/** True when a path is a usable control socket on this platform. */
+export function isSharedSocketPath(socketPath: string): boolean {
+  return process.platform === "win32" ? isNamedPipePath(socketPath) : !isNamedPipePath(socketPath);
+}
+
+/**
+ * Keep one long-lived shared agent server for the launcher. The first session
+ * spawns it; later sessions reuse it, so N tasks cost one process instead of N
+ * (the J1 win). Each control connection is independent and concurrency-safe.
+ */
+export class SharedCodeSessionServer {
+  private child: ChildProcess | null = null;
+  private socketPath = "";
+  private readonly clients = new Set<SharedControlClient>();
+
+  constructor(
+    private readonly spawnImpl?: SharedServerSpawnImpl,
+    private readonly entryPath?: string,
+    private readonly runEnv?: Record<string, string | undefined>,
+    private readonly pinToLocalModel?: boolean,
+  ) {}
+
+  /** Entry point of the shared server; defaults to src/server/sharedCodeSession.ts. */
+  entry(): string {
+    return this.entryPath ?? SHARED_SERVER_ENTRY;
+  }
+
+  /** Spawn (or reuse) the server. Resolves once its control socket accepts. */
+  async start(modelUrl: string, model: string): Promise<string> {
+    if (this.child) return this.socketPath;
+    const socketPath = defaultCodeSessionSocketPath();
+    const entry = this.entry();
+    const impl =
+      this.spawnImpl ??
+      ((file: string, args: string[], options: SharedServerSpawnOptions) =>
+        spawn(process.execPath, ["--import", "tsx", file, ...args], options));
+    const child = impl(entry, [socketPath, modelUrl, model, "1", this.pinToLocalModel ? "1" : "0"], {
+      cwd: APP_ROOT,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+      env: {
+        ...(this.runEnv ?? process.env),
+        LOAM_CODE_SESSION_LAUNCHER: "shared",
+      },
+    });
+    this.child = child;
+    this.socketPath = socketPath;
+    await waitForSharedSocket(socketPath);
+    return socketPath;
+  }
+
+  /** Open a control connection; safe to call concurrently. */
+  async connect(): Promise<SharedControlClient> {
+    const client = new SharedControlClient(this.socketPath);
+    await client.connect();
+    this.clients.add(client);
+    return client;
+  }
+
+  /** Stop the shared server (idempotent). */
+  stop(): void {
+    const child = this.child;
+    this.child = null;
+    for (const client of this.clients) void client.close().catch(() => undefined);
+    this.clients.clear();
+    if (!child) return;
+    try {
+      child.kill();
+    } catch {
+      /* already gone */
+    }
+  }
+
+  get pid(): number | null {
+    return this.child?.pid ?? null;
+  }
+
+  get running(): boolean {
+    return this.child !== null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tool factory
+// ---------------------------------------------------------------------------
+
 export function createCodeSessionTools(options: CreateCodeSessionToolsOptions = {}): Tool[] {
   const opencodeBin = options.opencodeBin ?? process.env.LOAM_OPENCODE_BIN ?? "opencode";
   // A JS fixture/bin is not directly executable on every platform (Windows
@@ -167,6 +312,15 @@ export function createCodeSessionTools(options: CreateCodeSessionToolsOptions = 
       isScriptBin ? spawn(process.execPath, [file, ...args], spawnOptions) : spawn(file, args, spawnOptions));
   const dataDir = options.dataDir ?? DATA_DIR;
   const maxConcurrent = Math.max(1, options.maxConcurrent ?? DEFAULT_MAX_CONCURRENT);
+  const launcher: CodeSessionLauncher =
+    options.launcher ??
+    (process.env.LOAM_CODE_SESSION_LAUNCHER === "shared" ? "shared" : "per-process");
+  const sharedServer = new SharedCodeSessionServer(
+    options.sharedServerSpawnImpl,
+    options.sharedServerEntry,
+    options.sharedRunEnv,
+    options.sharedPinToLocalModel ?? process.env.LOAM_CODE_SESSION_PIN_LOCAL === "1",
+  );
   const sessions = new Map<string, CodeSession>();
 
   function sessionDir(): string {
@@ -243,6 +397,7 @@ export function createCodeSessionTools(options: CreateCodeSessionToolsOptions = 
       base,
       model,
       logPath,
+      launcher,
       startedAt: Date.now(),
       endedAt: null,
       status: "running",
@@ -251,11 +406,24 @@ export function createCodeSessionTools(options: CreateCodeSessionToolsOptions = 
     };
     sessions.set(id, session);
 
+    if (launcher === "shared") {
+      return startShared(session, task, acceptance, filesHint, briefPath, logPath);
+    }
+    return startPerProcess(session, briefPath, model, logPath);
+  }
+
+  /** Per-process (BEFORE) shape: one child process for this task alone. */
+  function startPerProcess(
+    session: CodeSession,
+    briefPath: string,
+    model: string,
+    logPath: string,
+  ): ToolResult {
     const briefArgs = ["run", "-m", model, "-f", briefPath, "Execute the attached task"];
     let child: ChildProcess;
     try {
       child = spawnImpl(opencodeBin, briefArgs, {
-        cwd: worktree,
+        cwd: session.worktree,
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
         env: { ...process.env },
@@ -283,7 +451,104 @@ export function createCodeSessionTools(options: CreateCodeSessionToolsOptions = 
 
     return {
       ok: true,
-      content: JSON.stringify({ id, branch, worktree, base, model, status: "running", log: logPath }),
+      content: JSON.stringify({
+        id: session.id,
+        branch: session.branch,
+        worktree: session.worktree,
+        base: session.base,
+        model,
+        launcher: session.launcher,
+        status: "running",
+        log: logPath,
+      }),
+    };
+  }
+
+  /**
+   * Shared (AFTER) shape: reuse one server process. The brief text is written to
+   * the log so status/collect stay identical to the per-process launcher, and the
+   * session is recorded as soon as the server accepts it (not when it finishes),
+   * because the tool is asynchronous by design.
+   */
+  async function startShared(
+    session: CodeSession,
+    task: string,
+    acceptance: string,
+    filesHint: string[],
+    briefPath: string,
+    logPath: string,
+  ): Promise<ToolResult> {
+    const modelUrl = options.sharedModelUrl ?? process.env.LOAM_CODE_MODEL_URL ?? "http://127.0.0.1:11434";
+    let socketPath: string;
+    try {
+      socketPath = await sharedServer.start(modelUrl, session.model);
+    } catch (err) {
+      session.status = "failed";
+      session.error = errorMessage(err);
+      session.endedAt = Date.now();
+      return fail(`failed to start the shared code-session server: ${errorMessage(err)}`);
+    }
+
+    const brief = buildBrief(task, acceptance, filesHint);
+    try {
+      fs.appendFileSync(logPath, `${brief}\n`, "utf8");
+    } catch {
+      /* logging is best effort */
+    }
+
+    // Fire-and-track: create the session, then run its prompt. The tool returns
+    // immediately so the caller can poll with code_session_status, exactly like
+    // the per-process launcher.
+    void (async () => {
+      try {
+        const control = await sharedServer.connect();
+        const created = await control.send("create_session", session.worktree);
+        const sharedId = typeof created.session === "string" ? created.session : "";
+        if (!sharedId) throw new Error(`create_session returned ${JSON.stringify(created)}`);
+        session.sharedId = sharedId;
+        const reply = await control.send(
+          "message",
+          JSON.stringify({ session: sharedId, text: brief }),
+        );
+        const status = typeof reply.status === "string" ? reply.status : "failed";
+        session.status = status === "done" ? "done" : "failed";
+        session.steps = typeof reply.steps === "number" ? reply.steps : undefined;
+        if (session.status === "failed") {
+          session.error = redactSecrets(String(reply.error ?? "shared session failed"));
+          fs.appendFileSync(logPath, `shared session failed: ${session.error}\n`, "utf8");
+        } else {
+          fs.appendFileSync(
+            logPath,
+            `shared session done (steps=${String(reply.steps ?? 0)})\n`,
+            "utf8",
+          );
+        }
+      } catch (err) {
+        session.status = "failed";
+        session.error = redactSecrets(errorMessage(err));
+        try {
+          fs.appendFileSync(logPath, `shared session error: ${session.error}\n`, "utf8");
+        } catch {
+          /* logging is best effort */
+        }
+      } finally {
+        session.endedAt = Date.now();
+      }
+    })();
+
+    return {
+      ok: true,
+      content: JSON.stringify({
+        id: session.id,
+        branch: session.branch,
+        worktree: session.worktree,
+        base: session.base,
+        model: session.model,
+        launcher: session.launcher,
+        status: "running",
+        sharedServerPid: sharedServer.pid,
+        log: logPath,
+      }),
     };
   }
 
@@ -305,6 +570,9 @@ export function createCodeSessionTools(options: CreateCodeSessionToolsOptions = 
         elapsed: humanElapsed(elapsedMs),
         branch: session.branch,
         base: session.base,
+        launcher: session.launcher,
+        ...(session.launcher === "shared" && session.sharedId ? { sharedId: session.sharedId } : {}),
+        ...(session.steps !== undefined ? { steps: session.steps } : {}),
         error: session.error ? redactSecrets(session.error) : null,
         log,
       }),
@@ -337,16 +605,22 @@ export function createCodeSessionTools(options: CreateCodeSessionToolsOptions = 
     {
       name: "code_session",
       description:
-        "Run a coding task in an isolated git worktree using opencode. Creates a branch loam/cs-<id> under <repo>/.loam/code-sessions/<id>, launches opencode with a brief, and returns immediately. Use code_session_status to poll and code_session_collect to read the resulting commits and diff.",
+        "Run a coding task in an isolated git worktree. Creates a branch loam/cs-<id> under <repo>/.loam/code-sessions/<id> and returns immediately. The default launcher spawns one opencode process per task (launcher \"per-process\"); pass launcher \"shared\" to host all sessions in a single long-lived agent server so N tasks cost one process instead of N. Use code_session_status to poll and code_session_collect to read the resulting commits and diff.",
       parameters: {
         type: "object",
         properties: {
           task: { type: "string", description: "Self-contained coding task for the child session." },
           acceptance: { type: "string", description: "Concrete acceptance criteria the work must satisfy." },
           files_hint: { type: "array", items: { type: "string" }, description: "Optional files or areas to focus on." },
-          model: { type: "string", description: "Model id for opencode (defaults to LOAM_CODE_MODEL)." },
+          model: { type: "string", description: "Model id for the session (defaults to LOAM_CODE_MODEL)." },
           base: { type: "string", description: "Commit or branch to branch from (default current HEAD)." },
           name: { type: "string", description: "Optional stable name folded into the session id and branch." },
+          launcher: {
+            type: "string",
+            enum: ["per-process", "shared"],
+            description:
+              "\"per-process\" (default) runs one heavyweight process per task; \"shared\" reuses one long-lived agent server for every session, which is far cheaper in RAM per session.",
+          },
         },
         required: ["task", "acceptance"],
       },
