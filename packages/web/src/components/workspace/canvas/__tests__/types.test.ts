@@ -12,6 +12,7 @@ import {
   CANVAS_NODE_TYPES,
   coerceCanvasGraphResponse,
   coerceCanvasLayout,
+  coerceCanvasLayoutNode,
   coerceCanvasNode,
   coerceCanvasStats,
   isCanvasNodeStatus,
@@ -45,6 +46,22 @@ describe('canvas payload coercion', () => {
     expect(isCanvasNodeType('nonsense')).toBe(false);
     expect(isCanvasNodeStatus('finished')).toBe(true);
     expect(isCanvasNodeStatus('done')).toBe(false);
+  });
+
+  it('keeps the server placement of a laid-out node', () => {
+    // The server lays a run out (`getGraphLayout`), so a card is only drawable if
+    // `x`, `y` and `depth` survive coercion; without them the panel renders
+    // `translate(NaNpx, NaNpx)`, which a browser drops as invalid.
+    const parsed = coerceCanvasLayoutNode(node({ x: 280, y: 240, depth: 1 }));
+    expect(parsed).toMatchObject({ id: 'n1', x: 280, y: 240, depth: 1 });
+    // An unplaced node lands at the origin rather than at NaN.
+    expect(coerceCanvasLayoutNode(node())).toMatchObject({ x: 0, y: 0, depth: 0 });
+    expect(coerceCanvasLayoutNode(node({ x: 'nope', y: null, depth: Number.NaN }))).toMatchObject({
+      x: 0,
+      y: 0,
+      depth: 0,
+    });
+    expect(coerceCanvasLayoutNode({ id: 'bad' })).toBeUndefined();
   });
 
   it('keeps a well-formed node and its payload', () => {

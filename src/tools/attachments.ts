@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import sharp from "sharp";
 import { ROOT } from "../config.js";
 import { resolveRead } from "../policy/paths.js";
+import { normalizeText } from "../knowledge/text.js";
 import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { num, str } from "./registry.js";
 
@@ -41,12 +42,34 @@ export function prepareParser(): Promise<{ PDFParse: (new (opts: { data?: Uint8A
   })();
 }
 
+/**
+ * N21: tidy pdf-parse output before it is stored or split.
+ *
+ * pdf-parse paints each page, then appends a page footer (`-- 1 of 1 --`) and
+ * separator rules. Those are page furniture, not document text: left in place
+ * they would surface inside a seed's body and pollute retrieval. They are
+ * stripped here, and the remaining text is normalized with the same
+ * `normalizeText` the Knowledge Garden uses, so an Arabic PDF is stored in the
+ * folded form a query will be written in (ta marbuta to ha, diacritics and
+ * tatweel dropped) and the two sides agree.
+ */
+export function tidyPdfText(raw: string): string {
+  return raw
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*--\s*\d+\s+of\s+\d+\s*--\s*$/.test(line))
+    .filter((line) => !/^\s*-{3,}\s*$/.test(line))
+    .join("\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 async function pdfText(abs: string): Promise<string> {
   const mod = await prepareParser();
   const parser = new mod.PDFParse({ data: new Uint8Array(fs.readFileSync(abs)) });
   try {
     const result = await parser.getText();
-    return String(result?.text ?? "");
+    return normalizeText(tidyPdfText(String(result?.text ?? "")));
   } finally {
     try { await parser.destroy?.(); } catch { /* ignore */ }
   }

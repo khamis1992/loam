@@ -91,6 +91,9 @@ import { recoverInterruptedTasks, getSavedRun, saveRun, queueTaskRun, completeTa
 import { startProtocolAdapter } from "./protocol/adapter.js";
 import { executionQueue } from "./server/executionQueue.js";
 import { requiresReplayConfirmation, type SavedRun } from "./server/recovery.js";
+// O6b: opt-in startup auto-resume (LOAM_AUTO_RESUME=1). Off by default, and
+// still refuses any checkpoint that is in flight.
+import { autoResumeInterruptedTasks } from "./server/autoResume.js";
 import { acquireRuntimeLease, releaseRuntimeLease, backupDatabase } from "./server/sqliteStore.js";
 import {
   admitAllPending,
@@ -99,6 +102,9 @@ import {
 } from "./server/inputQueue.js";
 import { claimRunLease, releaseRunLease, startLeaseHeartbeat, type LeaseHeartbeat, type RunLease } from "./server/runLease.js";
 import { recordTaskUsage } from "./server/credits.js";
+// H5: inject relevant learned lessons into the task's system prompt (BUILD_SPEC §6.5).
+import { lessonsForTask } from "./learning/harness/inject.js";
+import { domainOf } from "./learning/harness/types.js";
 // D19 session runtime: sleep/wake lifecycle + per-session compute budget.
 import { SessionRuntime, DEFAULT_IDLE_MINUTES, DEFAULT_STEP_LIMIT, DEFAULT_TOKEN_LIMIT } from "./server/sessionRuntime.js";
 import { browserSessionFor } from "./tools/browser.js";
@@ -436,12 +442,34 @@ async function main(): Promise<void> {
       // Provenance-aware index summary: a bounded digest of long-term memory so
       // the agent knows what it already knows without a tool call.
       const memoryIndexSummary = memory && memory.count > 0 ? memory.indexSummary(8) : undefined;
+      // H5 lesson injection (BUILD_SPEC .h2-ref/BUILD_SPEC.md §6.5): relevant lessons from
+      // past corrections join the system suffix. Wrapped in try/catch so a store or ranking
+      // failure can never block the task; the block is capped (cfg.lessons.maxChars) and
+      // every injected lesson's `uses` counter grows (LOAM_LESSONS_ENABLED can disable it).
+      // The fallbacks mirror loadConfig for test configs built without the lessons key.
+      let lessonBlock = "";
+      const lessonsCfg = effectiveCfg.lessons ?? { enabled: true, maxChars: 1200, minScore: 0.35 };
+      if (lessonsCfg.enabled) {
+        try {
+          lessonBlock = lessonsForTask({
+            agentId: agentId ?? null,
+            domain: domainOf(effectivePrompt.slice(0, 400)),
+            prompt: effectivePrompt,
+            enabled: true,
+            maxChars: lessonsCfg.maxChars,
+            minScore: lessonsCfg.minScore,
+          }).block;
+        } catch (err) {
+          log.warn(`lesson injection skipped: ${String(err)}`);
+        }
+      }
       const suffix = [
         `You are Loam. Active mode: ${modeDefinition.labelAr}. ${modeDefinition.description} Only use the provided tool capabilities.`,
         modeDefinition.outputHint,
         workModeDefinition.policy,
         memoryContextSuffix,
         memoryIndexSummary,
+        ...(lessonBlock ? [lessonBlock] : []),
         agentSuffix, askModeSuffix, sideChatSuffix,
         quickEditRoute.suffix,
       ].filter(Boolean).join("\n\n");
@@ -834,6 +862,17 @@ async function main(): Promise<void> {
     preview: rt.preview,
     mcp,
   });
+
+  // O6b: opt-in startup auto-resume. `recoverInterruptedTasks` above already
+  // marked every interrupted task `interrupted` and wrote the
+  // "Resume requires review" error; only a checkpoint whose latest durable
+  // state is idle is continued here, and only when the user opted in with
+  // `LOAM_AUTO_RESUME=1`. Dispatch happens after `startServer` so the resumed
+  // run is visible on the UI's task stream immediately.
+  if (cfg.recovery?.autoResume) {
+    const resumed = autoResumeInterruptedTasks(cfg.workspace, runTask);
+    if (resumed) log.info(`auto-resume (O6b): ${resumed} interrupted task(s) continued at their checkpoint`);
+  }
 
   // Non-failing startup check: log how to install any missing Craft dists.
   // Never downloads; a missing dist just means the app falls back to Loam's
