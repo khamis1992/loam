@@ -14,8 +14,8 @@ export default function MorePage() {
     { label: t('Settings'), icon: Settings, action: 'settings' },
     { label: t('Keyboard shortcuts'), icon: Keyboard, href: '/app/shortcuts' },
     { label: t('Usage & Billing'), icon: CreditCard, href: '/app/usage' },
-    { label: t('Docs'), icon: FileText, href: '/docs' },
-    { label: t('Get help'), icon: HelpCircle, href: '/help' },
+    { label: t('Docs'), icon: FileText, href: '/app/help' },
+    { label: t('Get help'), icon: HelpCircle, href: '/app/help' },
   ];
 
   return (

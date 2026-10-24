@@ -1044,5 +1044,12 @@
   "Paste the text to store": "Paste the text to store",
   "Workspace-relative path": "Workspace-relative path",
   "e.g. Product docs": "e.g. Product docs",
-  "Optional": "Optional"
+  "Optional": "Optional",
+  "Help center": "Help center",
+  "Choose a page on the left.": "Choose a page on the left.",
+  "No guide is available in this install.": "No guide is available in this install.",
+  "Some guide pages are missing from this install: {pages}": "Some guide pages are missing from this install: {pages}",
+  "This page has no Arabic edition yet, so it is shown in English.": "This page has no Arabic edition yet, so it is shown in English.",
+  "Open the guide": "Open the guide",
+  "Long-horizon guide": "Long-horizon guide"
 }

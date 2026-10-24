@@ -122,6 +122,7 @@ import { handleConnectorsRoutes } from "./routes/connectors.js";
 import { handleEnvBuildRoutes } from "./routes/envBuilds.js";
 import { handleKnowledgeRoutes } from "./routes/knowledge.js";
 import { handleWikiRoutes } from "./routes/wiki.js";
+import { handleDocsRoutes } from "./routes/docs.js";
 // H8/H9: learned-lesson REST surface. Dispatched before the generic
 // /api/learning (audit log) handler below, which only matches the exact path.
 import { handleLearningRoutes } from "./routes/learning.js";
@@ -1881,6 +1882,11 @@ loadAgents();
         if (await handleEnvBuildRoutes(req, res, p)) return;
         // Repo wiki (D8): list/generate/read DeepWiki-style pages.
         if (await handleWikiRoutes(req, res, p, { workspace: cfg.workspace, ollama, model: cfg.model })) return;
+
+        // User guide (N22): the `docs/neo` guide, served to the in-app help page.
+        // The manifest is the allow-list, so `/api/docs/:file` can only ever name
+        // a page of the guide; it is never treated as a filesystem path.
+        if (await handleDocsRoutes(req, res, p)) return;
 
         // Knowledge Garden (N3): bases, seeds, import and hybrid search.
         if (await handleKnowledgeRoutes(req, res, p, {
