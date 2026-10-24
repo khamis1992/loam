@@ -97,8 +97,10 @@ const TOOL_LABEL: Record<string, ToolLabel> = {
   scratchpad_complete: { verb: 'Completed', noun: 'to-do' },
   scratchpad_list: { verb: 'Listed', noun: 'to-dos' },
 
-  // Documents & data studio
-  office_craft: doc,
+  // Craft editors: office_craft drives Loam Docs / Loam Sheets / Loam Slides /
+  // Loam Photo / Loam Design live in the Workspace panel, so the label names the
+  // file rather than one document type.
+  office_craft: { verb: 'Edited', noun: 'file' },
   office_import: { verb: 'Imported', noun: 'document' },
   office_export: { verb: 'Exported', noun: 'document' },
   office_status: { verb: 'Checked', noun: 'document' },
