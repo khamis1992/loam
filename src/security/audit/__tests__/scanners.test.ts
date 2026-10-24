@@ -74,6 +74,11 @@ test("runScanners: ok, unavailable, tool_error, timeout and malformed output nev
       fs.writeFileSync(out, JSON.stringify(sarif("gitleaks", [result("k", "a.ts")])));
       return { code: 0, stdout: "", stderr: "", timedOut: false };
     }
+    if (exe === "trivy") {
+      const out = argv[argv.indexOf("--output") + 1]!;
+      fs.writeFileSync(out, JSON.stringify(sarif("Trivy", [result("CVE-1", "pkg/lock.json")])));
+      return { code: 0, stdout: "", stderr: "", timedOut: false };
+    }
     if (exe === "osv-scanner") return { code: null, stdout: "", stderr: "", timedOut: false, spawnError: "ENOENT" };
     if (exe === "guarddog") return { code: 0, stdout: "not json", stderr: "", timedOut: false };
     return { code: null, stdout: "", stderr: "", timedOut: true };
@@ -84,9 +89,37 @@ test("runScanners: ok, unavailable, tool_error, timeout and malformed output nev
   assert.equal(by.osv, "unavailable");
   assert.equal(by.guarddog, "tool_error");
   assert.equal(by.opengrep, "timeout");
-  assert.equal(by.trivy, "skipped");
-  assert.equal(r.hits.length, 1);
-  assert.equal(r.sarif.length, 1);
+  assert.equal(by.trivy, "ok");
+  assert.equal(r.hits.length, 2);
+  assert.equal(r.sarif.length, 2);
+});
+
+test("nuclei stays skipped without a live target and runs against a configured one", async () => {
+  const target = tmp();
+  const scratch = path.join(tmp(), "s2");
+  const prev = process.env.LOAM_AUDIT_LIVE_TARGET;
+  try {
+    delete process.env.LOAM_AUDIT_LIVE_TARGET;
+    const idle = await runScanners({ target, scratch, tools: ["nuclei"], exec: async () => { throw new Error("must not run"); } });
+    assert.equal(idle.reports[0]?.status, "skipped");
+    assert.match(idle.reports[0]?.detail ?? "", /LOAM_AUDIT_LIVE_TARGET/);
+
+    process.env.LOAM_AUDIT_LIVE_TARGET = "https://staging.example.test";
+    let sawUrl = "";
+    const exec: Exec = async (_exe, argv) => {
+      sawUrl = argv[argv.indexOf("-u") + 1]!;
+      const out = argv[argv.indexOf("-sarif-export") + 1]!;
+      fs.writeFileSync(out, JSON.stringify(sarif("nuclei", [result("cve-1", "app.py")])));
+      return { code: 0, stdout: "", stderr: "", timedOut: false };
+    };
+    const live = await runScanners({ target, scratch, tools: ["nuclei"], exec });
+    assert.equal(live.reports[0]?.status, "ok");
+    assert.equal(sawUrl, "https://staging.example.test");
+    assert.equal(live.reports[0]?.hitCount, 1);
+  } finally {
+    if (prev === undefined) delete process.env.LOAM_AUDIT_LIVE_TARGET;
+    else process.env.LOAM_AUDIT_LIVE_TARGET = prev;
+  }
 });
 
 test("runScanners honours a pre-aborted signal", async () => {

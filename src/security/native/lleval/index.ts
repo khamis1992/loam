@@ -7,3 +7,5 @@ export { gradeWithRubric } from "./rubric.js";
 export type { ChatFn } from "./rubric.js";
 export { evaluateSuite, toJsonl, strictJsonAsserts } from "./evaluate.js";
 export type { TestCase, EvalSuite, CallFn, CaseResult, SuiteResult } from "./evaluate.js";
+export { garakPlan, parseGarakReport } from "./garak.js";
+export type { GarakPlanOptions, GarakHit, GarakProbeSummary, GarakReport } from "./garak.js";

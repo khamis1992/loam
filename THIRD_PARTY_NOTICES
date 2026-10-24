@@ -167,6 +167,10 @@ user's machine and are not bundled or redistributed by Loam:
   - OSV-Scanner (Apache License 2.0)
   - GuardDog (Apache License 2.0)
   - Opengrep (LGPL 2.1), run as a separate process with Loam's own rules
+  - Trivy (Apache License 2.0), filesystem scans only
+  - Nuclei (MIT License), only against an explicitly configured live target
+  - garak (Apache License 2.0, NVIDIA), external Python process for agent
+    self-audit (Phase G) only, never against customer code
 
 Native security scanners (src/security/native/)
 -----------------------------------------------

@@ -40,9 +40,17 @@ export interface Adapter {
   plan(target: string, scratch: string): { argv: string[]; outFile?: string; guard?: () => boolean }[];
   /** Exit codes that still carry results. */
   okCodes: number[];
+  /** Why the adapter skipped everything (all guards false); default "no applicable manifest". */
+  skipDetail?: () => string;
 }
 
 const has = (target: string, rel: string): boolean => fs.existsSync(path.join(target, rel));
+
+/** Live scan target for DAST tools (nuclei). Opt-in: only an explicit http(s) URL counts. */
+export function liveScanTarget(src: NodeJS.ProcessEnv = process.env): string | null {
+  const v = src.LOAM_AUDIT_LIVE_TARGET;
+  return typeof v === "string" && /^https?:\/\//i.test(v) ? v : null;
+}
 
 export const ADAPTERS: Record<string, Adapter> = {
   gitleaks: {
@@ -74,6 +82,22 @@ export const ADAPTERS: Record<string, Adapter> = {
       argv: ["scan", "--config", path.join(ruleDir(), "loam"), "--sarif", "--output", path.join(s, "opengrep.sarif"), "--error=false", t],
       outFile: path.join(s, "opengrep.sarif"),
     }],
+  },
+  trivy: {
+    tool: "trivy", exe: "trivy", okCodes: [0],
+    plan: (t, s) => [{
+      argv: ["fs", "--format", "sarif", "--output", path.join(s, "trivy.sarif"), "--exit-code", "0", "--scanners", "vuln,misconfig,secret", t],
+      outFile: path.join(s, "trivy.sarif"),
+    }],
+  },
+  nuclei: {
+    tool: "nuclei", exe: "nuclei", okCodes: [0],
+    plan: (t, s) => [{
+      argv: ["-u", liveScanTarget()!, "-sarif-export", path.join(s, "nuclei.sarif"), "-silent", "-nc"],
+      outFile: path.join(s, "nuclei.sarif"),
+      guard: () => liveScanTarget() !== null,
+    }],
+    skipDetail: () => "no live target configured (set LOAM_AUDIT_LIVE_TARGET to an http(s) URL)",
   },
 };
 
@@ -233,7 +257,7 @@ export async function runScanners(ctx: ScanContext): Promise<ScanOutcome> {
       toolHits.push(...parsed.hits);
       sarif.push({ tool: adapter.tool, doc });
     }
-    if (ran === 0 && status === "ok") { status = "skipped"; detail = "no applicable manifest"; }
+    if (ran === 0 && status === "ok") { status = "skipped"; detail = adapter.skipDetail?.() ?? "no applicable manifest"; }
     const deduped = dedupeHits(toolHits);
     hits.push(...deduped);
     reports.push({ tool: adapter.tool, status, hitCount: deduped.length, ...(detail ? { detail } : {}) });

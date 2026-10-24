@@ -125,6 +125,7 @@
   },
   "devDependencies": {
     "@electron/fuses": "^1.8.0",
+    "@jazzer.js/core": "^4.0.0",
     "@playwright/test": "^1.64.1",
     "@types/node": "^22.10.0",
     "electron": "^44.7.2",
