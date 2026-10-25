@@ -1,0 +1,29 @@
+{
+  "reviewedAt": "2026-10-25T14:51:33.394Z",
+  "packs": [
+    {
+      "id": "node-2026-10-21",
+      "file": "node-2026-10-21.json",
+      "sha256": "1b4e8df1cd153d122068d94b2005df60976137c45991d95b7e435e7c9da3e813",
+      "enabled": true
+    },
+    {
+      "id": "php-2026-10-21",
+      "file": "php-2026-10-21.json",
+      "sha256": "d3f7eb1925c947824bb843db1e4d962a1408ab75a2c5c5770a7dba725b269499",
+      "enabled": false
+    },
+    {
+      "id": "gitlab-2026-10-21",
+      "file": "gitlab-2026-10-21.json",
+      "sha256": "b7625313386a3105f36ced95b15eea601c588b498e4ec0131e96bb0f912b1271",
+      "enabled": false
+    },
+    {
+      "id": "electron-bundled-node",
+      "file": "electron-bundled-node.json",
+      "sha256": "e9308019850baae0b185f9fca38ffc3c3e422f44f274abdaae0cfaa3f8782660",
+      "enabled": true
+    }
+  ]
+}
