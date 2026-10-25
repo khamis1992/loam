@@ -129,9 +129,12 @@ export function updateSettings(patch: Partial<Settings>): Settings {
       : undefined;
   }
   // Sandbox keys (appendix C2): mode must be a known value (unknown → off),
-  // domains ride the policy normalizer (dedupe/lowercase/junk-filter).
+  // domains ride the policy normalizer (dedupe/lowercase/junk-filter). OD-10:
+  // a non-off mode is only honoured once the supply-chain acknowledgement is set.
   if (patch.sandboxMode !== undefined) {
-    settings.sandboxMode = patch.sandboxMode === "untrusted_only" || patch.sandboxMode === "all_shell" ? patch.sandboxMode : "off";
+    const requested = patch.sandboxMode === "untrusted_only" || patch.sandboxMode === "all_shell" ? patch.sandboxMode : "off";
+    const acked = settings.sandboxSupplyChainAck === true || patch.sandboxSupplyChainAck === true;
+    settings.sandboxMode = requested !== "off" && !acked ? "off" : requested;
   }
   if (patch.sandboxAllowedDomains !== undefined) {
     settings.sandboxAllowedDomains = Array.isArray(patch.sandboxAllowedDomains)
