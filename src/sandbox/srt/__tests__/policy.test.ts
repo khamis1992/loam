@@ -8,6 +8,7 @@ import {
   SRT_TARBALL_SHA256,
   SRT_WIN_X64_SHA256,
   SRT_WIN_ARM64_SHA256,
+  isPinInsideWorkspace,
   normalizeDomains,
   normalizeSrtMode,
   resolveSrtPolicy,
@@ -110,4 +111,12 @@ test("verifySrtPin: green against the REAL installed pin (live, this PC)", () =>
   } else {
     assert.ok(["pin-entry-missing", "srt-win-missing"].includes(result.reason ?? ""), `unexpected reason: ${result.reason}`);
   }
+});
+
+test("isPinInsideWorkspace refuses a pin the sandbox can rewrite (section 6.5)", () => {
+  assert.equal(isPinInsideWorkspace("D:/projects/ws", "D:/loam-data"), false); // disjoint
+  assert.equal(isPinInsideWorkspace("D:/loam-data", "D:/loam-data"), true); // workspace == data dir
+  // The real-world hazard: the workspace root contains DATA_DIR (e.g. repo/data
+  // inside the project) - the sandbox can write the workspace so it can rewrite ASRT.
+  assert.equal(isPinInsideWorkspace("D:/projects", "D:/projects/data"), true);
 });

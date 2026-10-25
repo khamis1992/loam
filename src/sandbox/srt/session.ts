@@ -11,6 +11,7 @@ import {
   DEFAULT_WINDOWS_PROXY_PORT_RANGE_FALLBACK,
   type LoamSrtPolicy,
   type SrtSessionStatus,
+  isPinInsideWorkspace,
   srtPackageEntry,
   srtSettingsFile,
   srtWinExePath,
@@ -130,8 +131,14 @@ export async function probeSrtStatus(): Promise<SrtSessionStatus> {
   }
 }
 
-/** Open (or replace) the process session. Returns the manager for exec use. */
+/** Open (or replace) the process session. Returns the manager for exec use.
+ *  Hardening (§6.5/§6.6): refuses when the pin sits inside the sandboxed
+ *  workspace; surfaces dependency warnings (residuals) as Arabic warnings. */
 export async function openSrtSession(policy: LoamSrtPolicy, workspace: string): Promise<SrtModule> {
+  if (isPinInsideWorkspace(workspace)) {
+    srtAudit().append({ name: "srt_session_open", outcome: "denied", mode: policy.mode, detail: "pin-inside-workspace" });
+    throw new Error("رفض تشغيل العزل: مثبّت srt يقع داخل مساحة العمل نفسها — انقل DATA_DIR خارج مساحة العمل (§6.5)");
+  }
   if (session && session.workspace === workspace && JSON.stringify(session.policy) === JSON.stringify(policy)) {
     return session.mod;
   }
@@ -143,6 +150,18 @@ export async function openSrtSession(policy: LoamSrtPolicy, workspace: string): 
   writeSrtSettingsFile(policy, workspace, srtWin);
   session = { mod, workspace, policy, config };
   srtAudit().append({ name: "srt_session_open", outcome: "completed", mode: policy.mode, allowedDomainsCount: policy.allowedDomains.length, detail: workspace });
+  // Dependency/residual warnings (anonymous-token, deny-only SID, Dnscache…) are
+  // surfaced as warnings, never hard failures — matches the library's behaviour.
+  if (process.platform === "win32") {
+    try {
+      const deps = await (mod as unknown as { checkWindowsDependenciesAsync?: (o: unknown) => Promise<{ errors?: unknown[]; warnings?: unknown[]; reinstallRequired?: boolean }> }).checkWindowsDependenciesAsync?.({ srtWin: mod.resolveSrtWin({ path: srtWin }) });
+      if (deps?.errors?.length || deps?.reinstallRequired) {
+        srtAudit().append({ name: "srt_session_open", outcome: "warned", mode: policy.mode, detail: `deps: ${(deps.errors ?? []).length} error(s), reinstallRequired=${!!deps.reinstallRequired}` });
+      } else if (deps?.warnings?.length) {
+        srtAudit().append({ name: "srt_session_open", outcome: "warned", mode: policy.mode, detail: `residuals: ${deps.warnings.length}` });
+      }
+    } catch { /* status probe is advisory */ }
+  }
   log.info(`srt session open (mode=${policy.mode}, domains=${policy.allowedDomains.length})`);
   return mod;
 }

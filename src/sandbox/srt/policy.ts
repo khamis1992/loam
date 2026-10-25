@@ -17,6 +17,8 @@ export const SRT_WIN_X64_SHA256 = "a8e22bc098ac1146ec9b9151d5f1770c05b897cd1ac58
 export const SRT_WIN_ARM64_SHA256 = "c7b204c8fab94059dbf7a6a805b844abad3deb82614e07e4b8d4b5bb5c4374f7";
 export const SRT_WIN_X64_BYTES = 4_020_736;
 export const SRT_WIN_ARM64_BYTES = 3_598_336;
+/** ASRT's loopback proxy port range (§2.2); kept as a fallback for defensive probes. */
+export const DEFAULT_WINDOWS_PROXY_PORT_RANGE_FALLBACK: readonly [number, number] = [60080, 60089];
 
 /** Where the verified pin lives — outside every workspace allowWrite root (§6.5). */
 export function srtPinRoot(dataDir: string = DATA_DIR): string {
@@ -57,6 +59,13 @@ export function verifySrtPin(dataDir: string = DATA_DIR, arch: string = process.
     return { ok: false, reason: "srt-win-missing", srtWin };
   }
   return { ok: true, srtWin };
+}
+
+/** §6.5: the pin must never live inside a workspace the sandbox itself can write —
+ *  a sandboxed process could otherwise rewrite ASRT. Refuse when contained. */
+export function isPinInsideWorkspace(workspace: string, dataDir: string = DATA_DIR): boolean {
+  const rel = path.relative(path.resolve(workspace), path.resolve(srtPinRoot(dataDir)));
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 }
 /** Loam's own ASRT settings file (NOT ~/.srt-settings.json — §7.5, no Claude Code clash). */
 export function srtSettingsFile(dataDir: string = DATA_DIR): string {
