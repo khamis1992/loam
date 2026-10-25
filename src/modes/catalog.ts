@@ -1,5 +1,6 @@
 /** Loam's first-party modes. Tool access is enforced by ToolRegistry.forMode. */
 import { reverseEngineerMode } from "./reverseEngineer.js";
+import { CUA_DRIVER_TOOL_ALLOWLIST } from "../tools/cuaDriverAllowlist.js";
 
 export interface LoamMode {
   id: string; label: string; labelAr: string; icon: string; hue: number; hue2: number;
@@ -34,6 +35,9 @@ const DOCS_LOOKUP = ["docs_lookup"];
 const GEN_MEDIA = ["gen_3d_from_image", "gen_music", "generate_storyboard", "search_images"];
 /** N12 research-facing generator tools. */
 const GEN_RESEARCH = ["search_images", "search_x", "solve_logic"];
+/** Desktop-driver MCP tools (CUA_INTO_LOAM §7.6, OD-8a): the 14 contract tools,
+ *  first-class inside `automate` when the pinned cua-driver server is configured. */
+const CUA_DRIVER = CUA_DRIVER_TOOL_ALLOWLIST.map((tool) => `mcp__cua-driver__${tool}`);
 
 export const LOAM_MODES: LoamMode[] = [
   { id: "ask", label: "Loam Explore", labelAr: "استكشف", icon: "◌", hue: 155, hue2: 135,
@@ -78,10 +82,10 @@ export const LOAM_MODES: LoamMode[] = [
     starters: [{ label: "حملة على هدف مخبري", prompt: "شغّل red_campaign على http://127.0.0.1:3000 واعرض النتائج المثبتة مع الأدلة والتقرير." }, { label: "تقرير حملة سابقة", prompt: "افتح أحدث تقرير حملة حمراء محفوظ في مجلد red/ داخل مساحة العمل." }] },
   reverseEngineerMode,
   { id: "automate", label: "Loam Flow", labelAr: "أنجز", icon: "↗", hue: 220, hue2: 195,
-    tagline: "خطوات متكررة، عمل أوضح", description: "نفّذ خطوات تفاعل المتصفح وسجّل الأدلة. راجع تفاصيل الإجراءات الخارجية قبل طلبها.", outputHint: "سجل إجراءات ولقطات توثيق", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_mkdir", "artifact_publish", ...BROWSER, "task_create", "task_list", "task_get", "task_cancel", "schedule_create", "schedule_list", "schedule_delete", ...CONTROL, ...MANAGED_SESSIONS], panels: ["files", "browser"],
+    tagline: "خطوات متكررة، عمل أوضح", description: "نفّذ خطوات تفاعل المتصفح وسجّل الأدلة، وعند تفعيل سائق سطح المكتب قُد تطبيقاتك في الخلفية دون سرقة التركيز. راجع تفاصيل الإجراءات الخارجية قبل طلبها.", outputHint: "سجل إجراءات ولقطات توثيق. Browser flows use browser_* (Playwright); background desktop driving uses the mcp__cua-driver__* tools per the desktop-driver skill (fresh element tokens, verify_state checkpoints).", readOnly: false,
+    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_mkdir", "artifact_publish", ...BROWSER, ...CUA_DRIVER, "task_create", "task_list", "task_get", "task_cancel", "schedule_create", "schedule_list", "schedule_delete", ...CONTROL, ...MANAGED_SESSIONS], panels: ["files", "browser"],
     fields: [{ id: "workflow", label: "خطوات العمل", placeholder: "الرابط والخطوات المطلوبة والنتيجة المتوقعة", multiline: true }, { id: "limits", label: "حدود التنفيذ", placeholder: "الإجراءات المسموحة وما يتطلب الرجوع إليك" }],
-    starters: [{ label: "تحقق من صفحة", prompt: "افتح الرابط الذي سأقدمه وافحص العناصر المرئية وسجّل لقطة ودليلًا على النتيجة." }, { label: "نفّذ إجراء متكرر", prompt: "ساعدني في تنفيذ خطوات المتصفح التالية، وتحقق من نتيجة كل خطوة قبل المتابعة." }] },
+    starters: [{ label: "تحقق من صفحة", prompt: "افتح الرابط الذي سأقدمه وافحص العناصر المرئية وسجّل لقطة ودليلًا على النتيجة." }, { label: "نفّذ إجراء متكرر", prompt: "ساعدني في تنفيذ خطوات المتصفح التالية، وتحقق من نتيجة كل خطوة قبل المتابعة." }, { label: "شغّل في الخلفية", prompt: "شغّل الآلة الحاسبة واحسب 6×7 عبر أدوات mcp__cua-driver__ بالخلفية دون سرقة تركيزي، وتحقق من النتيجة بـ verify_state." }] },
 ];
 
 const aliases: Record<string, string> = {
