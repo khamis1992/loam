@@ -29,7 +29,7 @@ One integrated red capability — not 28 bolted-on tools — living under `src/s
 
 ## How to use
 
-- **Agent tools**: `red_campaign` (target URL, optional `authzId`, `plan: "auto"` for model-driven planning) runs one gated campaign and writes `red/<campaignId>/{report.md, sarif.json, poc/*.json}` into the workspace. `red_report` re-opens a stored report. The `redteam` mode exposes them in the UI.
+- **Agent tools**: `red_campaign` (target URL, optional `authzId`, `plan: "auto"` for model-driven planning) runs one gated campaign and writes `red/<campaignId>/{report.md, sarif.json, poc/*.json}` into the workspace. `red_report` re-opens a stored report. The `redteam` mode exposes them in the UI. **Prompt-level guidance for agents** lives in `skills/red-team/SKILL.md` (authorized-use doctrine, gate, workflow, examples) — discovered automatically from the skills directory.
 - **Default posture (O-1)**: without a signed authorization record only `http://127.0.0.1` targets are reachable, and destructive actions are denied. The zero-config lab is safe by construction.
 - **Wider campaigns**: create an `AuthorizationRecord` (`createAuthorizationRecord` + `saveAuthorization` — persisted under `~/.loam/security/authz/`), then pass its id as `authzId`. Scope is allow-list only (exact hosts/CIDRs/ports/URL prefixes); the deny-list always wins.
 - **Engines (O-3, download-on-first-use)**: `npm run red:engines` installs nuclei, ffuf, ysoserial and sqlmap from their official releases into `~/.loam/tools/` with SHA256 recorded in `~/.loam/tools/engines.json`; bridges discover them there. ZAP stays optional (install separately and enable the `red-zap` bridge). GPL engines (sqlmap) stay external processes; no upstream code is copied anywhere (§5.9).
