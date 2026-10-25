@@ -58,6 +58,7 @@
     "red:engines": "tsx src/scripts/red-install-engines.ts",
     "red:engage": "tsx src/scripts/red-engage.ts",
     "check:scanners": "tsx src/scripts/check-scanners.ts",
+    "check:srt-policy": "tsx src/scripts/check-srt-policy.ts",
     "check:security-asar": "tsx src/scripts/check-security-asar.ts",
     "check:selfimprove": "tsx src/scripts/check-selfimprove.ts",
     "check:selfscan": "tsx src/scripts/check-selfscan.ts",
@@ -144,6 +145,7 @@
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
+    "@anthropic-ai/sandbox-runtime": "0.0.81",
     "@electron/fuses": "^1.8.0",
     "@jazzer.js/core": "^4.0.0",
     "@playwright/test": "^1.64.1",
