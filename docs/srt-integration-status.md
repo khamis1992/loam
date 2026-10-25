@@ -27,11 +27,16 @@ concurrent session's in-flight `masterPromptText.ts` + `runtime.ts` edits.
 - Everything is wired: flipping the mode on (after the UAC install + W-checklist)
   immediately contains `shell_run` and any `"sandbox": true` MCP server.
 
-## SP5 — remaining
+## SP5 — executed 2026-10-25 (result: code complete, OS-level W blocked, mode stays off)
 
-1. **User gesture:** click «تثبيت عزل النظام» in Settings (UAC dialog), or run
-   the printed command from `docs/srt-pin.md`.
-2. **W-checklist** (spec §4.2) driven by the agent right after; gate = W2/W4/W5/
-   W7/W12/W13 before recommending `untrusted_only`.
-3. Docs: THIRD_PARTY_NOTICES (Apache-2.0 + NOTICE + transitive CVEs), Revision 52
-   in the gates doc, this file refreshed, memory updated.
+**Done:**
+- THIRD_PARTY_NOTICES (Apache-2.0 + CVE posture) and gates doc **Revision 52** — commits `961b5f6`/`c7c1839`.
+- **One-time OS install EXECUTED** (UAC approved by Khamis): `srt-sandbox` user provisioned (SID recorded), WFP installed, profile grant skipped (OD-4).
+- **W-checklist result:** W1 ✓, W2 ✓ (install), W11 ✓ (live status probe through the real srt-win spawn). **W4–W13 BLOCKED at the OS level on this machine**: the first sandboxed child spawn hangs silently — even the minimal direct `srt --settings <min> -- cmd /c echo` exits 124 with ZERO output while seclogon is Running, grants are clean, and the (scoped) persistent ACL grant lands in seconds. Suspected local policy on logon rights for the fresh `srt-sandbox` account (domain/GPO). Needs Khamis's admin eyes or upstream guidance; repro in the `0b6f1d7` commit message.
+
+**Two real bugs the W-run caught and fixed:**
+1. `buildSrtConfig` expanded the literal `.` to the bridge cwd = the REPO root, so the first persistent ACL grant walked the whole tree (600s timeout) and landed a repo-wide kept grant. Fixed: `.` maps to the workspace root only (`0b6f1d7`). All accidental grants were forgotten — **final state: 0 roots, verified**.
+2. The §6.5 refusal proved itself live: the first checklist attempt was REFUSED because the pin sits inside the repo workspace — exactly the hazard it exists for.
+
+**State:** `sandboxMode` stays `off` (the OD-1 gate held by design). Everything is wired: once the OS-level spawn issue is resolved on this machine, flip the mode in Settings (after the OD-10 ack) and re-run the W probes — no code changes needed. Minimal retry probe:
+`node data/bin/srt/0.0.81/node_modules/@anthropic-ai/sandbox-runtime/dist/cli.js --settings <min-settings> -- cmd /c echo X`.
