@@ -11,6 +11,7 @@ import { applyReaBudget } from "./reaBudget.js";
 import { ReaAuditLog, reaAuditPath } from "./reaAudit.js";
 import { CUA_DRIVER_MCP_SERVER, isCuaDriverAllowedTool, cuaDriverTimeoutMs } from "./cuaDriverAllowlist.js";
 import { CuaAuditLog, cuaAuditPath, cuaAuditScopes } from "./cuaAudit.js";
+import { wrapMcpCommandForSandbox } from "../sandbox/srt/mcpWrap.js";
 
 interface McpHandle {
   name: string;
@@ -145,7 +146,13 @@ export async function registerMcpTools(
         transport = new StreamableHTTPClientTransport(url, { requestInit: { headers: cfg.headers } });
       } else {
         if (!cfg.command) throw new Error("stdio MCP requires command");
-        transport = new StdioClientTransport({ command: cfg.command === "node" ? process.execPath : expand(cfg.command, workspace), args, env, stderr: "pipe" });
+        // Opt-in OS sandbox (SANDBOX_RUNTIME §7.2, appendix C4): servers configured
+        // with `"sandbox": true` spawn as `node srt --settings … -- <original>` while
+        // the command sandbox mode is on. Loopback-dependent servers stay unwrapped.
+        const wrapped = wrapMcpCommandForSandbox({ command: cfg.command, args, sandbox: cfg.sandbox }, workspace);
+        const stdioCommand = wrapped ? wrapped.command : (cfg.command === "node" ? process.execPath : expand(cfg.command, workspace));
+        const stdioArgs = wrapped ? wrapped.args : args;
+        transport = new StdioClientTransport({ command: stdioCommand, args: stdioArgs, env, stderr: "pipe" });
         // Drain piped diagnostics: an unread stderr pipe can block a busy child.
         (transport as StdioClientTransport).stderr?.on("data", () => {});
       }

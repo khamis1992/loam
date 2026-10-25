@@ -106,7 +106,7 @@
     "verifyFinal": true
   },
   "mcpServers": {
-    "filesystem": {
+    "filesystem": { "sandbox": true,
       "command": "node",
       "args": [
         "${ROOT}/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js",

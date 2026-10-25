@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EffortLevel } from "./llm/router.js";
+import type { CodeGraphConfig } from "./codegraph/config.js";
 import { resolvePruneConfig } from "./agent/prune/config.js";
 
 function resolveRoot(): string {
@@ -91,6 +92,9 @@ export interface McpServerConfig {
   /** Optional tool-name allowlist: only listed tools from `tools/list` register
    *  (REA_INTO_LOAM §5.4). Enforced inside Loam — the server cannot widen it. */
   allowlist?: string[];
+  /** Opt-in OS sandbox for stdio servers (SANDBOX_RUNTIME appendix C4): spawn as
+   *  `srt --settings … -- <command>` while the command sandbox mode is on. */
+  sandbox?: boolean;
 }
 
 export interface Config {
@@ -230,6 +234,9 @@ export interface Config {
     minScore: number;
   };
   mcpServers: Record<string, McpServerConfig>;
+
+  /** Code map (graphify engine). Absent = all defaults from src/codegraph/config.ts (disabled). */
+  codeGraph?: Partial<CodeGraphConfig>;
   failover?: {
     providers: Array<{
       id: string;
