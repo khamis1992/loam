@@ -48,6 +48,7 @@ function draw(){
   $('history').innerHTML=runs.length?runs.map(r=>`<button data-run="${esc(r.id)}" aria-pressed="${run?.id===r.id}">${esc(r.target||'مصدر مساحة المهمة')}<br>${esc(labels[r.status])} · ${esc(new Date(r.createdAt).toLocaleString('ar-SA'))}</button>`).join(''):'<p class="hint">لا توجد تقييمات محفوظة بعد.</p>';
   document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tab===tab)));
   $('filter').hidden=tab!=='findings';
+  if(tab==='remediation'){$('results').innerHTML=remediationHtml();if(remRuns===null)safely(refreshRemediation)();return;}
   const empty=text=>`<div class="empty">${text}</div>`;
   if(!run){$('results').innerHTML=empty('حدّد مساحة المهمة وعنوان النظام، ثم شغّل التقييم.');return;}
   const error=run.error?`<p role="status">${esc(run.error)}</p>`:'';
@@ -149,4 +150,78 @@ $('results').addEventListener('click',safely(async event=>{
   let suffix='/'+runId+'/repairs',body={fingerprint};
   if(change){const draft=repairDrafts.get(key);if(!$('results').querySelector('[data-repair-review="'+draft.id+'"]').checked)throw Error('راجع التغيير وحدد الموافقة أولًا.');suffix+='/'+draft.id+'/'+change.dataset.repairAction;body={reviewed:true};}
   const data=await api(endpoint(suffix),body);repairDrafts.set(key,data.repair);if(run?.id===runId)draw();
+}));
+
+// ---------------------------------------------------------------------------
+// الإصلاح المُتحقَّق — Remediate runs (REMEDIATE_INTO_LOAM E3/E5). The three
+// gates are decided HERE by the user; the model can only start/read runs.
+let remRuns=null, remRun=null, remReview=null;
+const remLabels={inventory:'جرد',awaiting_scope_approval:'بانتظار موافقة النطاق',scope_approved:'نطاق مُوافق',working:'تنفيذ',awaiting_commit_approval:'بانتظار موافقة الالتزام',awaiting_pr_approval:'بانتظار موافقة الدفع',complete:'اكتمل',cancelled:'أُلغي'};
+const remVerdicts={verified_fixed:'إصلاح مُتحقَّق',patched_unverified:'مرقّع غير مُتحقَّق — بلا Docker',regression:'انحدار',blocked:'محجوب',vendor_update_required:'يتطلب تحديث المورّد'};
+const remEndpoint=(suffix='')=>'/api/security/remediations'+suffix;
+async function refreshRemediation(){
+  const list=await api(remEndpoint());remRuns=list.runs;
+  if(remRun&&!remRuns.some(r=>r.id===remRun.id))remRun=null;
+  if(remRun){const data=await api(remEndpoint('/'+remRun.id));remRun=data.run;remReview=data.review;}
+  draw();
+}
+function remediationHtml(){
+  if(remRuns===null)return '<div class="empty">جارٍ تحميل عمليات الإصلاح…</div>';
+  if(remRuns.length===0)return '<div class="empty">لا توجد عمليات إصلاح بعد. ابدأ واحدة من وضع الأمان بالأداة remediation_start (بادئ «أصلح ثغرة Node»)، ثم وافق على البوابات هنا.</div>';
+  const list=remRuns.map(r=>`<button data-rem-run="${esc(r.id)}" aria-pressed="${remRun?.id===r.id}">${esc(remLabels[r.state]??r.state)}<br><span class="mono">${esc(r.id.slice(0,8))}</span> · ${esc(new Date(r.createdAt).toLocaleString('ar-SA'))}</button>`).join('');
+  if(!remRun)return `<section><h2>عمليات الإصلاح</h2><div class="history-list">${list}</div></section>`;
+  const rows=remRun.inventory.map(r=>`<tr><td dir="ltr">${esc(r.hit.file)}:${r.hit.line}</td><td dir="ltr">${esc(r.hit.currentVersion??'—')}</td><td dir="ltr">${esc(r.proposedTarget??'—')}</td><td>${esc(r.status)}</td></tr>`).join('');
+  let gates='';
+  if(remRun.state==='awaiting_scope_approval'){
+    gates+=`<section class="finding"><h3>البوابة ١ — موافقة النطاق</h3><p>بصمة الجرد المعروض: <span class="mono">${esc(remReview?.scopePlanHash??'')}</span></p><p class="coverage-note">لا يوجد أي فرع أو تعديل قبل موافقتك. الموافقة تعني أنك راجعت الصفوف أعلاه وأن الأهداف من حزم مراجَعة فقط.</p><label><input type="checkbox" data-rem-scope-ok>راجعت الجرد وأوافق على نطاق الإصلاح</label><button type="button" data-rem-scope>اعتماد النطاق وتنفيذ الترقيع داخل مخزن التشغيل</button></section>`;
+  }
+  for(const p of remRun.plans){
+    const rv=remReview?.plans?.find(x=>x.repoId===p.repoId);
+    if(p.phase==='awaiting_commit'&&rv){
+      gates+=`<section class="finding"><h3>البوابة ٢ — الالتزام · ${esc(p.repoId)}</h3><p>الحكم: <strong>${esc(remVerdicts[rv.verdict]??String(rv.verdict))}</strong></p><details open><summary>الفرق (diff.patch)</summary><pre>${esc(rv.diff||'— فارغ —')}</pre><p class="mono">SHA256(diff): ${esc(rv.diffHash)}</p></details><details><summary>نص طلب السحب (PR_BODY.md)</summary><pre>${esc(rv.prBody)}</pre><p class="mono">SHA256(body): ${esc(rv.prBodyHash)}</p></details>${rv.verdict==='patched_unverified'?'<label><input type="checkbox" data-rem-unverified>أوافق على الحفظ غير المُتحقَّق (بلا Docker) مع بادئة [unverified]</label>':''}<label><input type="checkbox" data-rem-commit-ok="${esc(p.repoId)}">راجعت الفرق ونص PR وأوافق على الالتزام</label><button type="button" data-rem-commit="${esc(p.repoId)}">التزام على فرع الإصلاح فقط</button><button type="button" data-rem-discard="${esc(p.repoId)}">استبعاد المستودع</button></section>`;
+    } else if(p.phase==='awaiting_pr'&&p.commitSha){
+      gates+=`<section class="finding"><h3>البوابة ٣ — الدفع وطلب السحب · ${esc(p.repoId)}</h3><p class="mono">${esc(p.commitSha.slice(0,12))} على ${esc(p.branch)}</p>${p.prApproval?`<p>الرفع مُوافق إلى <span class="mono">${esc(p.prApproval.remote)}</span>. أنشئ PR مسودة عبر مسار PR المعتاد ثم سجّل رقمه:</p><label>رقم PR<input data-rem-pr-num="${esc(p.repoId)}" type="number" min="1"></label><label>الرابط<input data-rem-pr-url="${esc(p.repoId)}" type="url" dir="ltr" placeholder="https://github.com/khamis1992/repo/pull/1"></label><button type="button" data-rem-record="${esc(p.repoId)}">تسجيل PR وإعادة المسح</button>`:`<label>المستودع البعيد<input data-rem-pr-remote="${esc(p.repoId)}" dir="ltr" placeholder="github.com/khamis1992/repo"></label><label>الفرع الأساس<input data-rem-pr-base="${esc(p.repoId)}" dir="ltr" value="main"></label><label><input type="checkbox" checked data-rem-pr-draft="${esc(p.repoId)}">PR مسودة</label><label><input type="checkbox" data-rem-pr-ok="${esc(p.repoId)}">راجعت الرفع وأوافق</label><button type="button" data-rem-pr="${esc(p.repoId)}">اعتماد الدفع</button>`}</section>`;
+    } else if(p.phase==='blocked'){
+      gates+=`<section class="finding"><h3>محجوب · ${esc(p.repoId)}</h3><p>${esc(p.blockedReason??'')}</p></section>`;
+    }
+  }
+  let closures='';
+  if(remRun.closures.length){
+    const items=remRun.closures.map(c=>c.deployEvidence
+      ?`<p>${esc(c.vulnId)}: ${esc(c.state)} · دليل نشر ${esc(c.deployEvidence.observedVersion)} بتاريخ ${esc(c.deployEvidence.observedAt)}</p>`
+      :`<p>${esc(c.vulnId)}: ${esc(c.state)}</p><label>الإصدار المرصود<input data-rem-close-ver="${esc(c.vulnId)}" dir="ltr"></label><label>ملاحظة<input data-rem-close-note="${esc(c.vulnId)}"></label><label>معرّف الدليل<input data-rem-close-ev="${esc(c.vulnId)}" dir="ltr"></label><button type="button" data-rem-close="${esc(c.vulnId)}">إغلاق بدليل مطابق</button>`).join('');
+    closures=`<section><h2>الإغلاق بدليل نشر</h2>${items}</section>`;
+  }
+  return `<section><h2>عمليات الإصلاح</h2><div class="history-list">${list}</div></section><section><h2>${esc(remLabels[remRun.state]??remRun.state)} · <span class="mono">${esc(remRun.id)}</span></h2><p>${remRun.advisoryIds.map(esc).join('، ')} · Docker: ${remRun.host.docker.available?'متاح':'غير متاح'}</p><div class="table-scroll"><table><thead><tr><th>الموقع</th><th>الحالي</th><th>الهدف</th><th>التصنيف</th></tr></thead><tbody>${rows||'<tr><td colspan="4">لا صفوف.</td></tr>'}</tbody></table></div>${gates}${closures}<p><a href="${esc(remEndpoint('/'+remRun.id+'/report'))}" target="_blank" rel="noopener">تنزيل تقرير Markdown</a>${remRun.state!=='complete'&&remRun.state!=='cancelled'?' · <button type="button" data-rem-cancel>إلغاء العملية</button>':''}</p></section>`;
+}
+$('results').addEventListener('click',safely(async event=>{
+  const t=event.target;
+  const runBtn=t.closest('[data-rem-run]');
+  if(runBtn){remRun=remRuns.find(r=>r.id===runBtn.dataset.remRun)||null;remReview=null;if(remRun){const data=await api(remEndpoint('/'+remRun.id));remRun=data.run;remReview=data.review;}draw();return;}
+  if(t.closest('[data-rem-scope]')){
+    if(!$('[data-rem-scope-ok]')?.checked)throw Error('راجع الجرد وحدد الموافقة أولًا.');
+    await api(remEndpoint('/'+remRun.id+'/approve-scope'),{plan_hash:remReview.scopePlanHash,repos:remRun.repos,rows:remRun.inventory.map(r=>r.id)});await refreshRemediation();return;
+  }
+  const commitBtn=t.closest('[data-rem-commit]');
+  if(commitBtn){const repo=commitBtn.dataset.remCommit,rv=remReview.plans.find(x=>x.repoId===repo);
+    if(!$(`[data-rem-commit-ok="${CSS.escape(repo)}"]`)?.checked)throw Error('راجع الفرق ونص PR وحدد الموافقة أولًا.');
+    const unverified=rv.verdict==='patched_unverified';
+    if(unverified&&!$('[data-rem-unverified]')?.checked)throw Error('الحفظ غير المُتحقَّق يتطلب تحديد القبول الصريح.');
+    await api(remEndpoint('/'+remRun.id+'/approve-commit'),{repo_id:repo,diff_hash:rv.diffHash,pr_body_hash:rv.prBodyHash,accept_unverified:!unverified||$('[data-rem-unverified]').checked});await refreshRemediation();return;}
+  const discardBtn=t.closest('[data-rem-discard]');
+  if(discardBtn){await api(remEndpoint('/'+remRun.id+'/discard'),{repo_id:discardBtn.dataset.remDiscard});await refreshRemediation();return;}
+  const prBtn=t.closest('[data-rem-pr]');
+  if(prBtn){const repo=prBtn.dataset.remPr;
+    if(!$(`[data-rem-pr-ok="${CSS.escape(repo)}"]`)?.checked)throw Error('راجع الرفع وحدد الموافقة أولًا.');
+    const remote=$(`[data-rem-pr-remote="${CSS.escape(repo)}"]`).value.trim();
+    if(!remote)throw Error('أدخل المستودع البعيد.');
+    await api(remEndpoint('/'+remRun.id+'/approve-pr'),{repo_id:repo,remote,base:$(`[data-rem-pr-base="${CSS.escape(repo)}"]`).value.trim()||'main',draft:$(`[data-rem-pr-draft="${CSS.escape(repo)}"]`)?.checked!==false});await refreshRemediation();return;}
+  const recBtn=t.closest('[data-rem-record]');
+  if(recBtn){const repo=recBtn.dataset.remRecord,number=Number($(`[data-rem-pr-num="${CSS.escape(repo)}"]`).value),url=$(`[data-rem-pr-url="${CSS.escape(repo)}"]`).value.trim();
+    if(!Number.isInteger(number)||number<1||!url)throw Error('أدخل رقم PR ورابطه.');
+    await api(remEndpoint('/'+remRun.id+'/record-pr'),{repo_id:repo,number,url,draft:true,provider:'local'});await refreshRemediation();return;}
+  const closeBtn=t.closest('[data-rem-close]');
+  if(closeBtn){const vuln=closeBtn.dataset.remClose;
+    await api(remEndpoint('/'+remRun.id+'/close'),{vuln_id:vuln,observed_version:$(`[data-rem-close-ver="${CSS.escape(vuln)}"]`).value.trim(),note:$(`[data-rem-close-note="${CSS.escape(vuln)}"]`).value.trim(),evidence_id:$(`[data-rem-close-ev="${CSS.escape(vuln)}"]`).value.trim()});await refreshRemediation();return;}
+  if(t.closest('[data-rem-cancel]')){await api(remEndpoint('/'+remRun.id+'/cancel'),{});await refreshRemediation();return;}
 }));

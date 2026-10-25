@@ -56,6 +56,9 @@ extraResources:
     to: app.asar.unpacked/node_modules/three/examples/jsm
     filter:
       - "**/*.js"
+  # Remediate advisory packs (E9): hash-pinned data shipped read-only with the app.
+  - from: security/advisories
+    to: app/security/advisories
 npmRebuild: false
 
 # Update feed (generic): overridable at runtime via MANUS_LOCAL_UPDATE_URL,
