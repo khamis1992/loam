@@ -294,3 +294,19 @@ Copyright (c) 2025 Astral Software Inc. — full text in
 resources/codegraph/LICENSE-uv). Used once, with a pinned sha256, to
 provision the hash-locked graphify runtime; its cache is deleted after
 installation.
+
+@anthropic-ai/sandbox-runtime 0.0.81 — Apache-2.0, Copyright 2025 Anthropic PBC
+---------------------------------------------------------------------
+Invoked — never bundled — as a pinned exact-version install under the Loam data
+dir (see docs/srt-pin.md): installed with --ignore-scripts after the npm tarball
+sha256 and BOTH vendored srt-win.exe hashes were verified against the recorded
+pins. The package is intentionally NOT a production dependency: its transitive
+node-forge/zod advisories (GHSA-86w9-cpqp-85rv, GHSA-mrhx-c7xc-m3w5) stay out of
+the shipped tree; the exact pin ships only in devDependencies for typechecking,
+and the runtime loads the library from the data-dir pin. The bridge modules under
+src/sandbox/srt/ are first-party clean-room implementations.
+
+Licensed under the Apache License, Version 2.0. You may obtain a copy at
+http://www.apache.org/licenses/LICENSE-2.0. Unless required by applicable law or
+agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND.
