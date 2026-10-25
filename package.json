@@ -60,6 +60,7 @@
     "check:scanners": "tsx src/scripts/check-scanners.ts",
     "check:srt-policy": "tsx src/scripts/check-srt-policy.ts",
     "check:srt-session": "tsx src/scripts/check-srt-session.ts",
+    "check:srt-bridge": "tsx src/scripts/check-srt-bridge.ts",
     "check:security-asar": "tsx src/scripts/check-security-asar.ts",
     "check:selfimprove": "tsx src/scripts/check-selfimprove.ts",
     "check:selfscan": "tsx src/scripts/check-selfscan.ts",

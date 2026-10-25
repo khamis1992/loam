@@ -2,6 +2,12 @@ import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:chil
 import crypto from "node:crypto";
 import { checkCommand, headOutput, tailOutput } from "../policy/commands.js";
 import { checkCommandRisk } from "../policy/commandRisk/index.js";
+import { resolveSrtPolicy, shouldSandboxCommand } from "../sandbox/srt/policy.js";
+import { execInSandbox } from "../sandbox/srt/exec.js";
+import { srtAudit } from "../sandbox/srt/audit.js";
+import { taskPermissionMode } from "../server/approvalRules.js";
+import { DEFAULT_PERMISSION_MODE } from "../policy/permissionModes.js";
+import { getSettings } from "../server/settings.js";
 import { resolveWrite } from "../policy/paths.js";
 import { currentCancelEpoch, isCancelled } from "../server/runControl.js";
 import { planVaultEnv, redactVaultValues, vaultScope } from "./vaultTools.js";
@@ -227,6 +233,27 @@ export const shellTools: Tool[] = [
         }
       }
 
+      // L3 containment (sandbox-runtime): after L0–L2 gates pass, the command may
+      // still execute inside the OS sandbox when the mode says so (C6: untrusted_only
+      // exempts a run whose task permission mode is the user's explicit full trust).
+      const srtSettings = getSettings();
+      const srtMode = srtSettings.sandboxMode ?? "off";
+      if (shouldSandboxCommand(srtMode, taskPermissionMode(ctx.taskId ?? "") ?? DEFAULT_PERMISSION_MODE)) {
+        const policy = resolveSrtPolicy({ sandboxMode: srtMode, sandboxAllowedDomains: srtSettings.sandboxAllowedDomains });
+        const res = await execInSandbox({ command: execCommand, cwd, timeoutMs: Math.max(timeoutMs, policy.timeoutMs), signal: ctx.signal }, policy, ctx.workspace);
+        const stdout = redactVaultValues(res.stdout, secrets);
+        const stderr = redactVaultValues(res.annotatedStderr || res.stderr, secrets);
+        const parts = [
+          `exit=${res.code ?? "null"}${res.timedOut ? " (timeout, killed)" : ""}`,
+          `cwd=${cwd}`,
+          "sandboxed=true (عزل الأوامر مفعّل — لا شبكة خارج النطاقات المسموحة ولا قراءة لمسارات المفاتيح)",
+        ];
+        if (stdout.trim()) parts.push(`stdout:\n${tailOutput(stdout, 6000)}`);
+        if (stderr.trim()) parts.push(`stderr:\n${tailOutput(stderr, 4000)}`);
+        if (!stdout.trim() && !stderr.trim()) parts.push("(no output)");
+        return { ok: res.code === 0, content: parts.join("\n") };
+      }
+
       const res = await runOnce(execCommand, cwd, timeoutMs, ctx.signal, ctx.taskId, { ...process.env, ...injected, ...childEnv });
       const stdout = redactVaultValues(res.stdout, secrets);
       const stderr = redactVaultValues(res.stderr, secrets);
@@ -252,6 +279,17 @@ export const shellTools: Tool[] = [
       },
     },
     async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+      // OD-6: long-lived interactive shells stay UNSANDBOXED in v1, so they are
+      // refused outright while the command sandbox is enabled — an interactive
+      // session inside the srt-sandbox user is a v2 concern (SANDBOX_RUNTIME §9).
+      const srtMode = getSettings().sandboxMode ?? "off";
+      if (srtMode !== "off") {
+        srtAudit().append({ name: "srt_blocked_tool", outcome: "denied", toolName: "shell_start", mode: srtMode });
+        return {
+          ok: false,
+          content: "shell_start غير متاح أثناء تفعيل «عزل الأوامر» (الجلسات التفاعلية تبقى خارج العزل في هذه الإصدارة). استخدم shell_run — يُنفَّذ معزولًا تلقائيًا، أو أوقف العزل من الإعدادات.",
+        };
+      }
       const shell = str(args, "shell", "powershell").toLowerCase();
       const cwd = resolveWrite(ctx.workspace, str(args, "cwd") || undefined);
       const child = spawnShell(shell, cwd);
