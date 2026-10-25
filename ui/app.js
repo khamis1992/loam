@@ -275,6 +275,14 @@ async function showServices(){
   $('serviceCards').innerHTML=results.map((result,index)=>{let success=result.status==='fulfilled';const data=success?result.value:null;let detail=success?'استجاب مسار الخدمة للفحص.':result.reason.message;if(index===1&&success)detail=`${data.models?.length||0} نماذج متاحة. لم يُختبر توليد الإجابات بهذا الفحص.`;if(index===2&&success)detail=`${data.queued?.length||0} في الانتظار · ${data.active?'تنفيذ جارٍ':'لا تنفيذ جارٍ'}`;if(index===6&&success)detail=(data.servers||[]).map(s=>s.name+': '+(s.connected?'متصل · '+s.toolCount+' أدوات':'غير متصل')).join(' · ');if(index===6&&success&&(!data.servers?.length||data.servers.some(s=>!s.connected)))success=false;if(index===0&&success)detail=`${data.mcpServers?.length||0} اتصالات إضافية مهيأة؛ يلزم اختبار اتصال كل منها.`;return `<div class="service-card"><span class="pill ${success?'done':'error'}">${success?'استجاب للفحص':'غير متاح'}</span><h3>${checks[index][0]}</h3><p>${esc(detail)}</p></div>`;}).join('');
   const models=results[1];if(models.status==='fulfilled'){const selected=$('model').value;$('model').innerHTML=(models.value.models||[]).map(m=>`<option>${esc(typeof m==='string'?m:m.name)}</option>`).join('');if(selected)$('model').value=selected;}
 }
+
+async function refreshSandboxPanel(){const d=await api('/api/sandbox');const st=d.status||{};
+$('sandboxState').textContent=!st.pinVerified?'تعذّر التحقق من ملف العزل — أعد تشغيل مثبّت Loam (node scripts/install-srt.mjs)':st.windowsInstalled===true?'العزل جاهز':st.windowsInstalled==='n/a'?'غير مدعوم على هذا النظام':'يلزم التثبيت مرة واحدة (زر «تثبيت عزل النظام»)'+(st.windowsMessage?' — '+esc(st.windowsMessage):'');
+$('sandboxInstall').hidden=st.windowsInstalled===true;
+$('sandboxMode').value=d.mode||'off';$('sandboxDomains').value=(d.allowedDomains||[]).join(', ');if($('sandboxAck'))$('sandboxAck').checked=!!d.supplyChainAck;}
+$('sandboxInstall').onclick=run(async()=>{notice('ستظهر نافذة صلاحية المدير (UAC) للموافقة مرة واحدة…');const r=await post('/api/sandbox/install',{});notice(r.message||'تم');await refreshSandboxPanel();});
+$('sandboxSave').onclick=run(async()=>{const domains=($('sandboxDomains').value||'').split(',').map(x=>x.trim()).filter(Boolean);await post('/api/settings',{sandboxMode:$('sandboxMode').value,sandboxAllowedDomains:domains,sandboxSupplyChainAck:$('sandboxAck').checked});notice('تم حفظ إعدادات العزل.');await refreshSandboxPanel();});
+
 $('refreshServices').onclick=run(showServices);$('saveModel').onclick=run(async()=>{if(!$('model').value)throw new Error('لا يوجد نموذج متاح.');await post('/api/settings',{model:$('model').value});$('sidebarModel').value=$('model').value;notice('تم حفظ نموذج التنفيذ.');});
 async function showCollection(kind){
   show('list',kind==='projects'?'المشاريع':'المواعيد');$('listTitle').textContent=kind==='projects'?'المشاريع':'المواعيد';$('taskSearch').hidden=true;

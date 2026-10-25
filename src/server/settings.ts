@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DATA_DIR } from "../config.js";
+import { normalizeDomains } from "../sandbox/srt/policy.js";
 
 export interface Settings {
   theme: "dark" | "light" | "system";
@@ -35,6 +36,15 @@ export interface Settings {
    *  Missing/undefined is ON (the spec default), so an older settings file keeps
    *  the learning loop active. */
   lessonsAutoApply?: boolean;
+  /** Settings › عزل الأوامر (sandbox-runtime): containment mode for shell exec.
+   *  Off by default until the W-checklist passes (OD-1); flat keys per appendix C2. */
+  sandboxMode?: "off" | "untrusted_only" | "all_shell";
+  /** Egress allowlist for sandboxed commands — empty means NO network (OD-7). */
+  sandboxAllowedDomains?: string[];
+  /** Install posture: skip the machine-wide profile-read grant (OD-4, default true). */
+  sandboxSkipProfileGrant?: boolean;
+  /** User acknowledged the 0.0.81 transitive audit findings (OD-10 disclosure). */
+  sandboxSupplyChainAck?: boolean;
 }
 
 const FILE = path.join(DATA_DIR, "settings.json");
@@ -69,6 +79,10 @@ export function loadSettings(): Settings {
         ...(typeof parsed.autoApprove === "boolean" ? { autoApprove: parsed.autoApprove } : {}),
         ...(typeof parsed.planApprovalSkipTrivial === "boolean" ? { planApprovalSkipTrivial: parsed.planApprovalSkipTrivial } : {}),
         ...(isLocationSetting(parsed.location) ? { location: parsed.location } : {}),
+        ...(parsed.sandboxMode === "untrusted_only" || parsed.sandboxMode === "all_shell" ? { sandboxMode: parsed.sandboxMode } : {}),
+        ...(Array.isArray(parsed.sandboxAllowedDomains) ? { sandboxAllowedDomains: parsed.sandboxAllowedDomains.map(String) } : {}),
+        ...(typeof parsed.sandboxSkipProfileGrant === "boolean" ? { sandboxSkipProfileGrant: parsed.sandboxSkipProfileGrant } : {}),
+        ...(typeof parsed.sandboxSupplyChainAck === "boolean" ? { sandboxSupplyChainAck: parsed.sandboxSupplyChainAck } : {}),
       };
     }
   } catch {
@@ -114,6 +128,18 @@ export function updateSettings(patch: Partial<Settings>): Settings {
         }
       : undefined;
   }
+  // Sandbox keys (appendix C2): mode must be a known value (unknown → off),
+  // domains ride the policy normalizer (dedupe/lowercase/junk-filter).
+  if (patch.sandboxMode !== undefined) {
+    settings.sandboxMode = patch.sandboxMode === "untrusted_only" || patch.sandboxMode === "all_shell" ? patch.sandboxMode : "off";
+  }
+  if (patch.sandboxAllowedDomains !== undefined) {
+    settings.sandboxAllowedDomains = Array.isArray(patch.sandboxAllowedDomains)
+      ? normalizeDomains(patch.sandboxAllowedDomains)
+      : [];
+  }
+  if (typeof patch.sandboxSkipProfileGrant === "boolean") settings.sandboxSkipProfileGrant = patch.sandboxSkipProfileGrant;
+  if (typeof patch.sandboxSupplyChainAck === "boolean") settings.sandboxSupplyChainAck = patch.sandboxSupplyChainAck;
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     const tmp = `${FILE}.tmp`;

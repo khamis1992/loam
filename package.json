@@ -59,6 +59,7 @@
     "red:engage": "tsx src/scripts/red-engage.ts",
     "check:scanners": "tsx src/scripts/check-scanners.ts",
     "check:srt-policy": "tsx src/scripts/check-srt-policy.ts",
+    "check:srt-session": "tsx src/scripts/check-srt-session.ts",
     "check:security-asar": "tsx src/scripts/check-security-asar.ts",
     "check:selfimprove": "tsx src/scripts/check-selfimprove.ts",
     "check:selfscan": "tsx src/scripts/check-selfscan.ts",

@@ -77,6 +77,8 @@ import {
   getSavedRun,
 } from "./db.js";
 import { getSettings, updateSettings } from "./settings.js";
+import { probeSrtStatus } from "../sandbox/srt/session.js";
+import { runSrtWindowsInstall } from "../sandbox/srt/install.js";
 import { cancelRunSignal } from "./runControl.js";
 import { createAgent, deleteAgent, getAgent, listAgents, listAgentsWithChatMeta, reorderAgents, sanitizeAvatarFields, setAgentArchived, setAgentHidden, setAgentPinned, updateAgent } from "./agents.js";
 import { handleScratchpadRoutes } from "./routes/scratchpad.js";
@@ -1258,6 +1260,28 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             clearInterval(keepalive);
             unsub();
           });
+          return;
+        }
+
+        // Sandbox Runtime (srt) — read-only status + one-time user-gesture install
+        // (SANDBOX_RUNTIME_INTO_LOAM §7.4; appendix C2/C7). Mode/domain changes ride
+        // the existing POST /api/settings.
+        if (req.method === "GET" && p === "/api/sandbox") {
+          const st = getSettings();
+          sendJson(res, 200, {
+            status: await probeSrtStatus(),
+            mode: st.sandboxMode ?? "off",
+            allowedDomains: st.sandboxAllowedDomains ?? [],
+            skipProfileGrant: st.sandboxSkipProfileGrant ?? true,
+            supplyChainAck: st.sandboxSupplyChainAck === true,
+          });
+          return;
+        }
+
+        if (req.method === "POST" && p === "/api/sandbox/install") {
+          const st = getSettings();
+          const result = await runSrtWindowsInstall({ skipProfileGrant: st.sandboxSkipProfileGrant ?? true });
+          sendJson(res, result.ok ? 200 : result.cancelled ? 200 : 500, { ...result, status: await probeSrtStatus() });
           return;
         }
 
