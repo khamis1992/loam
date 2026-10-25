@@ -6,6 +6,7 @@ import type { Tool, ToolContext, ToolResult } from "./registry.js";
 import { startRemediation, readRun, listRuns, cancelRemediation } from "../security/remediate/index.js";
 import { RemediationError } from "../security/remediate/errors.js";
 import { planPaths } from "../security/remediate/store.js";
+import path from "node:path";
 import fs from "node:fs";
 
 export const REMEDIATE_TOOL_NAMES = ["remediation_start", "remediation_status", "remediation_report", "remediation_cancel"] as const;
@@ -22,7 +23,7 @@ export function createRemediateTools(): Tool[] {
         type: "object",
         properties: {
           advisory_ids: { type: "array", items: { type: "string" }, description: "Pack ids, e.g. ['node-2026-10-21']. Default: all enabled packs." },
-          repos: { type: "array", items: { type: "string" }, description: "Workspace-relative paths or owner/repo. Default: the active workspace only." },
+          repos: { type: "array", items: { type: "string" }, description: "Repos to scan, relative to the active task workspace. Default: the active task workspace itself." },
           allow_docker: { type: "boolean", description: "Permit Docker build/test. Default false (patched_unverified path)." },
         },
       },
@@ -30,9 +31,14 @@ export function createRemediateTools(): Tool[] {
         const model = (ctx.cfg as { model?: string } | undefined)?.model;
         if (isLocalModel(model)) return { ok: false, content: "remediation runs on a cloud model only — the local model is excluded from the remediation chain by design" };
         try {
+          // Default and relative targets anchor to the ACTIVE TASK WORKSPACE —
+          // never the server's cwd (which is the app repo, not the user's files).
+          const repos = Array.isArray(args["repos"]) && (args["repos"] as unknown[]).every((r) => typeof r === "string")
+            ? (args["repos"] as string[]).map((r) => path.resolve(ctx.workspace, r))
+            : [ctx.workspace];
           const run = await startRemediation({
             advisory_ids: Array.isArray(args["advisory_ids"]) ? (args["advisory_ids"] as string[]) : undefined,
-            repos: Array.isArray(args["repos"]) ? (args["repos"] as string[]) : undefined,
+            repos,
             allow_docker: args["allow_docker"] === true,
           }, model ?? "cloud");
           const rows = run.inventory.length;

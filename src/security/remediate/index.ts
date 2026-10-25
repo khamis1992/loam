@@ -217,9 +217,9 @@ export function recordPr(runId: string, repoId: string, pr: { number: number; ur
   const paths = planPaths(runId, repoId, RUN_DATA_DIR);
   fs.writeFileSync(paths.pr, JSON.stringify(pr, null, 1), "utf8");
 
-  // Phase 8a: re-scan on the fix branch.
+  // Phase 8a: re-scan on the fix branch (the worktree is intentionally inside the run store).
   const vulns = run.inventory.filter((r) => r.hit.repoId === repoId);
-  const files = scanFilesOf(plan.path);
+  const files = scanFilesOf(plan.path, true);
   const post = rescanRuntimeInventory({ repoId, files, lockfileContent: readLock(plan.path) }, run.advisoryIds);
   for (const vuln of vulns) {
     const postRow = post.records.find((r) => r.hit.file === vuln.hit.file && r.hit.line === vuln.hit.line);
@@ -265,14 +265,31 @@ function requireRun(runId: string): RemediationRun {
   return run;
 }
 
-function scanFilesOf(dir: string): ScanFile[] {
+/** Roots the inventory walk must never enter: the RUN STORE (<data>/security-
+ *  remediations) holds old worktrees that still contain the vulnerable pins they
+ *  patched — scanning them would count phantom rows into the approved plan. */
+function inventoryExcludeRoots(): string[] {
+  const roots = new Set<string>([RUN_DATA_DIR, DATA_DIR]);
+  const env = process.env.MANUS_LOCAL_DATA_DIR || process.env.LOAM_DATA_DIR;
+  if (env) roots.add(path.resolve(env));
+  return [...roots].map((r) => path.join(path.resolve(r), "security-remediations").toLowerCase());
+}
+
+function isInsideRoots(candidate: string, roots: string[]): boolean {
+  const c = path.resolve(candidate).toLowerCase();
+  return roots.some((r) => c === r || c.startsWith(r + path.sep));
+}
+
+function scanFilesOf(dir: string, allowInsideStore = false): ScanFile[] {
   const out: ScanFile[] = [];
+  const excludes = allowInsideStore ? [] : inventoryExcludeRoots();
   const walk = (d: string, prefix: string) => {
     let entries: fs.Dirent[] = [];
     try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
-      if (e.name === ".git" || e.name === "node_modules" || e.name === ".loam") continue;
+      if (e.name === ".git" || e.name === "node_modules" || e.name === ".loam" || e.name === "security-remediations") continue;
       const p = path.join(d, e.name);
+      if (isInsideRoots(p, excludes)) continue; // the data dir / run store — never inventory ourselves
       const rel = prefix ? `${prefix}/${e.name}` : e.name;
       if (e.isDirectory()) walk(p, rel);
       else if (/(^|\/)(Dockerfile|dockerfile.*|\.nvmrc|\.node-version|\.tool-versions|package\.json|package-lock\.json|composer\.json|.*\.ya?ml)$/i.test(rel) || /ansible|playbook|site\.yml|main\.yml/i.test(rel)) {
