@@ -19,6 +19,7 @@
     "build:server": "node -e \"require('./scripts/build-server.cjs')\"",
     "check:audit": "tsx src/scripts/check-audit.ts",
     "check:bridges": "tsx src/scripts/check-bridges.ts",
+    "check:cua-allowlist": "tsx src/scripts/check-cua-allowlist.ts",
     "check:design-pipeline": "tsx src/scripts/check-design-pipeline.ts",
     "check:design-registry": "tsx src/scripts/check-design-registry.ts",
     "check:docs": "tsx src/scripts/check-docs-links.ts",
