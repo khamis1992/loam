@@ -271,3 +271,26 @@ furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software.
+
+graphify (graphifyy) 0.9.95 — https://github.com/Graphify-Labs/graphify
+---------------------------------------------------------------------
+Downloaded from PyPI onto the user's machine at the user's request
+(Services -> «خريطة الكود» -> «تثبيت المحرك»); NOT redistributed in the
+Loam installer. Driven as an external engine per the integration spec
+(Option c Hybrid): hash-locked install (--require-hashes --no-deps
+--only-binary :all:), LLM backends off (GRAPHIFY_BACKEND=none), query
+log off, graph stores outside the user's repositories.
+Licensed under the Apache License, Version 2.0
+(https://www.apache.org/licenses/LICENSE-2.0). Portions contributed
+before relicensing are under the MIT License.
+NOTICE: Copyright 2026 Safi Shamsi and the Graphify contributors.
+Full dependency licence census: docs/codegraph/dependency-licences.md
+(generated with pip-licenses in the locked venv; zero copyleft).
+
+uv 0.13.5 — https://github.com/astral-sh/uv
+---------------------------------------------------------------------
+Redistributed as resources/codegraph/uv.exe (MIT License,
+Copyright (c) 2025 Astral Software Inc. — full text in
+resources/codegraph/LICENSE-uv). Used once, with a pinned sha256, to
+provision the hash-locked graphify runtime; its cache is deleted after
+installation.
