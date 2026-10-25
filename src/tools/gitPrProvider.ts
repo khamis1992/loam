@@ -35,6 +35,8 @@ export interface PrInfo {
   head: string;
   base: string;
   body?: string;
+  /** True while the PR is a draft (Remediate opens drafts by default — OD-4). */
+  draft?: boolean;
 }
 
 export interface CreatePrInput {
@@ -43,6 +45,8 @@ export interface CreatePrInput {
   head: string;
   base: string;
   body?: string;
+  /** Open as a draft PR when the provider supports it (Remediate OD-4 default). */
+  draft?: boolean;
   /**
    * Optional explicit PR number. The local provider otherwise numbers PRs
    * itself; tests pin it so a scripted diff can be seeded under the number the
@@ -135,6 +139,7 @@ function normalizePr(data: Record<string, unknown>): PrInfo {
     head: String(head.ref ?? ""),
     base: String(base.ref ?? ""),
     ...(typeof data.body === "string" ? { body: data.body } : {}),
+    ...(data.draft === true ? { draft: true } : {}),
   };
 }
 
@@ -201,6 +206,7 @@ export class GitHubPrProvider implements PrProvider {
       head: input.head,
       base: input.base,
       body: input.body ?? "",
+      ...(input.draft === true ? { draft: true } : {}),
     });
     return normalizePr(data);
   }
@@ -340,6 +346,7 @@ export class LocalPrProvider implements PrProvider {
       head: input.head,
       base: input.base,
       ...(input.body ? { body: input.body } : {}),
+      ...(input.draft === true ? { draft: true } : {}),
     };
     this.write(input.repo, { pr, comments: [] });
     return pr;

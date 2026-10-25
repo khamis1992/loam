@@ -39,6 +39,17 @@ import { applyAppRun } from "../tools/appBridgeTools.js";
 import { outlineWorkspacePath, queryWorkspaceSymbols } from "../tools/symbols.js";
 import { buildPentestMarkdownReport, PENTEST_CHECKS, runPentestCheck, scanWorkspaceRoutesAndRisks } from "../tools/pentest.js";
 import { AssessmentError, startAssessment, listAssessments, readAssessment, cancelAssessment, assessmentReport, updateFinding, retestAssessment } from "../security/assessments.js";
+import { RemediationError } from "../security/remediate/errors.js";
+import {
+  listRuns as listRemediations, readRun as readRemediation, approveScopeForRun as approveRemediationScope,
+  workApprovedRepos as workRemediation, commitApproved as commitRemediation, recordPr as recordRemediationPr,
+  discardRepo as discardRemediationRepo, cancelRemediation as cancelRemediationRun,
+} from "../security/remediate/index.js";
+import { approveCommit as approveRemediationCommit, approvePr as approveRemediationPr, expectedPlanHash } from "../security/remediate/gate/index.js";
+import { closeWithDeployEvidence as closeRemediationWithEvidence } from "../security/remediate/rescan/index.js";
+import { remediationRollup } from "../security/remediate/report/rollup.js";
+import { planPaths } from "../security/remediate/store.js";
+import { canonicalSha256 as canonicalHash } from "../security/remediate/types.js";
 import { SECURITY_CAPABILITIES } from '../security/diagnostics.js';
 import { sarif } from "../security/findings.js";
 import {prepareRepair,changeRepair,listRepairs} from '../security/repairs.js';
@@ -826,6 +837,102 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             return sendJson(res, 404, { error: "Unknown assessment route" });
           } catch (error) {
             if (error instanceof AssessmentError) return sendJson(res, error.status, { error: error.message });
+            throw error;
+          }
+        }
+
+        // Remediate runs — REMEDIATE_INTO_LOAM §5.2/E5: the three GATES are decided
+        // HERE (HTTP/UI only, same-origin); model tools can only start/read runs.
+        if (p === "/api/security/remediations" || p.startsWith("/api/security/remediations/")) {
+          res.setHeader("cache-control", "no-store");
+          if (req.method !== "GET") {
+            const origin = req.headers.origin;
+            if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") return sendJson(res, 403, { error: "Same-origin requests required" });
+            if (!req.headers["content-type"]?.startsWith("application/json")) return sendJson(res, 415, { error: "application/json required" });
+          }
+          try {
+            const parts = p.split("/").slice(4);
+            const id = parts[0];
+            const action = parts[1];
+            const body = req.method === "POST" ? await readBody(req, 100000) as Record<string, unknown> : {};
+            const str = (k: string): string | undefined => (typeof body[k] === "string" ? body[k] as string : undefined);
+            if (!id && req.method === "GET") return sendJson(res, 200, { runs: listRemediations() });
+            if (!id) return sendJson(res, 404, { error: "Unknown remediation route" });
+            if (!action && req.method === "GET") {
+              const run = readRemediation(id);
+              if (!run) return sendJson(res, 404, { error: "Run not found" });
+              // Review materials for the NEXT gate decision: what the user must see
+              // is what the hash binds (GATE 1 inventory hash; GATE 2 diff + PR body).
+              const review = {
+                scopePlanHash: run.state === "awaiting_scope_approval" ? expectedPlanHash(run) : null,
+                plans: run.plans.filter((p) => p.phase === "awaiting_commit").map((p) => {
+                  const paths = planPaths(run.id, p.repoId);
+                  const diff = fs.existsSync(paths.diff) ? fs.readFileSync(paths.diff, "utf8") : "";
+                  const body = fs.existsSync(paths.prBody) ? fs.readFileSync(paths.prBody, "utf8") : "";
+                  return { repoId: p.repoId, verdict: p.fixGate?.verdict ?? null, diff, prBody: body, diffHash: canonicalHash({ diff }), prBodyHash: canonicalHash({ body }) };
+                }),
+              };
+              return sendJson(res, 200, { run, review });
+            }
+            if (action === "report" && req.method === "GET") {
+              const run = readRemediation(id);
+              if (!run) return sendJson(res, 404, { error: "Run not found" });
+              const report = remediationRollup(run);
+              res.writeHead(200, { "content-type": "text/markdown; charset=utf-8", "content-disposition": `attachment; filename="remediation-${id}.md"`, "cache-control": "no-store" });
+              res.end(report); return;
+            }
+            if (req.method !== "POST") return sendJson(res, 405, { error: "Method not allowed" });
+            if (!action) return sendJson(res, 404, { error: "Unknown remediation route" });
+            const run = readRemediation(id);
+            if (!run) return sendJson(res, 404, { error: "Run not found" });
+            if (action === "approve-scope") {
+              const planHash = str("plan_hash");
+              const repos = Array.isArray(body["repos"]) ? body["repos"] as unknown[] : [];
+              const rows = Array.isArray(body["rows"]) ? body["rows"] as unknown[] : [];
+              if (!planHash || !repos.every((r) => typeof r === "string") || !rows.every((r) => typeof r === "string")) return sendJson(res, 400, { error: "plan_hash, repos[] and rows[] are required" });
+              const approved = approveRemediationScope(run, { planHash, repos: repos as string[], rows: rows as string[] });
+              const worked = await workRemediation(approved.id); // resolve → edit → fix gate; no commit before GATE 2
+              return sendJson(res, 200, { run: worked });
+            }
+            if (action === "approve-commit") {
+              const repoId = str("repo_id");
+              const diffHash = str("diff_hash");
+              const prBodyHash = str("pr_body_hash");
+              if (!repoId || !diffHash || !prBodyHash) return sendJson(res, 400, { error: "repo_id, diff_hash and pr_body_hash are required" });
+              approveRemediationCommit(run, repoId, { diffHash, prBodyHash, acceptUnverified: body["accept_unverified"] === true });
+              return sendJson(res, 200, { run: commitRemediation(id, repoId) });
+            }
+            if (action === "approve-pr") {
+              const repoId = str("repo_id");
+              const remote = str("remote");
+              const base = str("base");
+              if (!repoId || !remote || !base) return sendJson(res, 400, { error: "repo_id, remote and base are required" });
+              return sendJson(res, 200, { run: approveRemediationPr(run, repoId, { remote, base, draft: body["draft"] !== false }) });
+            }
+            if (action === "record-pr") {
+              const repoId = str("repo_id");
+              const number = typeof body["number"] === "number" ? body["number"] : Number(str("number"));
+              const url2 = str("url");
+              if (!repoId || !Number.isFinite(number) || !url2) return sendJson(res, 400, { error: "repo_id, number and url are required" });
+              return sendJson(res, 200, { run: recordRemediationPr(id, repoId, { number, url: url2, draft: body["draft"] !== false, provider: str("provider") ?? "local" }) });
+            }
+            if (action === "discard") {
+              const repoId = str("repo_id");
+              if (!repoId) return sendJson(res, 400, { error: "repo_id is required" });
+              return sendJson(res, 200, { run: discardRemediationRepo(id, repoId) });
+            }
+            if (action === "cancel") return sendJson(res, 200, { run: cancelRemediationRun(id) });
+            if (action === "close") {
+              const vulnId = str("vuln_id");
+              const observedVersion = str("observed_version");
+              const note = str("note");
+              const evidenceId = str("evidence_id");
+              if (!vulnId || !observedVersion || !note || !evidenceId) return sendJson(res, 400, { error: "vuln_id, observed_version, note and evidence_id are required" });
+              return sendJson(res, 200, { run: closeRemediationWithEvidence(run, vulnId, { observedVersion, note, evidenceId }) });
+            }
+            return sendJson(res, 404, { error: "Unknown remediation route" });
+          } catch (error) {
+            if (error instanceof RemediationError) return sendJson(res, error.status, { error: error.message });
             throw error;
           }
         }
