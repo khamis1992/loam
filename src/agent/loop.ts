@@ -367,8 +367,10 @@ function summarize(text: string, lines = 10): string {
 
 /** Web/email/browser output is external data; wrap it so the model never follows it as instructions. */
 function toolMessageContent(name: string, content: string): string {
-  // Every mcp__rea__* result is target-originated untrusted data (REA_INTO_LOAM §8).
-  if (name.startsWith("mcp__rea__")) return markUntrusted(content, "rea");
+  // Every guarded-MCP result is target-originated untrusted data: REA tool text
+  // (REA_INTO_LOAM §8) and Cua Driver GUI text/screenshots (CUA_INTO_LOAM §6.2 —
+  // UI labels are a prompt-injection surface).
+  if (name.startsWith("mcp__rea__") || name.startsWith("mcp__cua-driver__")) return markUntrusted(content, name.startsWith("mcp__rea__") ? "rea" : "cua-driver");
   return isUntrustedTool(name) ? markUntrusted(content, name) : content;
 }
 

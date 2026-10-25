@@ -148,6 +148,13 @@
       "env": {
         "REA_MCP_INPUT_SCHEMA_PROFILE": "compact"
       }
+    },
+    "cua-driver": {
+      "command": "${DATA}/bin/cua-driver/0.38.0/cua-driver.exe",
+      "args": ["mcp"],
+      "env": {
+        "CUA_DRIVER_PERMISSION_MODE": "standard"
+      }
     }
   }
 }

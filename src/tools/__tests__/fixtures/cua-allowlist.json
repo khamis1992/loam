@@ -1,0 +1,16 @@
+[
+ "list_apps",
+ "list_windows",
+ "get_window_state",
+ "get_desktop_state",
+ "get_screen_size",
+ "click",
+ "type_text",
+ "press_key",
+ "hotkey",
+ "scroll",
+ "invoke_menu",
+ "verify_state",
+ "start_session",
+ "end_session"
+]

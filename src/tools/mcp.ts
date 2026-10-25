@@ -9,6 +9,8 @@ import type { ToolRegistry, ToolResult } from "./registry.js";
 import { REA_MCP_SERVER, isReaAllowedTool, reaToolTimeoutMs } from "./reaAllowlist.js";
 import { applyReaBudget } from "./reaBudget.js";
 import { ReaAuditLog, reaAuditPath } from "./reaAudit.js";
+import { CUA_DRIVER_MCP_SERVER, isCuaDriverAllowedTool, cuaDriverTimeoutMs } from "./cuaDriverAllowlist.js";
+import { CuaAuditLog, cuaAuditPath, cuaAuditScopes } from "./cuaAudit.js";
 
 interface McpHandle {
   name: string;
@@ -66,6 +68,30 @@ function reaPostProcess(server: string, tool: string, args: Record<string, unkno
   return { ...result, content: budgeted.content, untrusted: true, contentDigest };
 }
 
+/** Cua Driver post-processing (CUA_INTO_LOAM §6.2–§6.4): the 63-tool live catalogue
+ *  (incl. kill_app / run_script / browser_*) is clamped to the 14 contract tools,
+ *  every result is untrusted GUI-originated data (prompt-injection surface), and
+ *  calls land in the audit log with ids only — never typed text or screenshots. */
+const isCuaDriverServer = (server: string): boolean => server === CUA_DRIVER_MCP_SERVER;
+
+function cuaPostProcess(server: string, tool: string, args: Record<string, unknown>, result: ToolResult, audit: CuaAuditLog | undefined, durationMs: number): ToolResult {
+  if (!isCuaDriverServer(server)) return result;
+  const scopes = cuaAuditScopes(args);
+  if (!isCuaDriverAllowedTool(tool)) {
+    audit?.append({ name: "cua.driver.allowlist.reject", outcome: "denied", tool, ...scopes });
+    return { ok: false, content: `mcp ${server}/${tool} is not in the Loam Cua Driver allowlist` };
+  }
+  const contentDigest = `sha256_${createHash("sha256").update(result.content, "utf8").digest("hex").slice(0, 32)}`;
+  audit?.append({
+    name: "cua.driver.call",
+    outcome: result.ok ? "completed" : "failed",
+    tool,
+    ...scopes,
+    durationMs,
+  });
+  return { ...result, untrusted: true, contentDigest };
+}
+
 /** Connect configured MCP services and register their namespaced tools. */
 export async function registerMcpTools(
   registry: ToolRegistry,
@@ -76,6 +102,7 @@ export async function registerMcpTools(
   const names = Object.keys(servers);
   const counts = new Map<string, number>();
   const audit = names.some(isReaServer) ? new ReaAuditLog(reaAuditPath(DATA_DIR)) : undefined;
+  const cuaAudit = names.some(isCuaDriverServer) ? new CuaAuditLog(cuaAuditPath(DATA_DIR)) : undefined;
 
   const callToolOn = async (
     client: Client,
@@ -86,14 +113,17 @@ export async function registerMcpTools(
   ): Promise<ToolResult> => {
     const startedAt = Date.now();
     try {
-      const effectiveTimeout = isReaServer(server) ? reaToolTimeoutMs(tool) : timeoutMs;
+      const effectiveTimeout = isReaServer(server) ? reaToolTimeoutMs(tool)
+        : isCuaDriverServer(server) ? cuaDriverTimeoutMs(tool)
+        : timeoutMs;
       const res = (await client.callTool({ name: tool, arguments: args }, undefined, { timeout: effectiveTimeout })) as {
         content?: Array<{ type?: string; text?: string }>;
         isError?: boolean;
       };
-      return reaPostProcess(server, tool, args, toResult(res), audit, Date.now() - startedAt);
+      return cuaPostProcess(server, tool, args, reaPostProcess(server, tool, args, toResult(res), audit, Date.now() - startedAt), cuaAudit, Date.now() - startedAt);
     } catch (err) {
       audit?.append({ name: "rea.mcp.call", outcome: "failed", tool, durationMs: Date.now() - startedAt, detail: err instanceof Error ? err.message.slice(0, 160) : undefined });
+      cuaAudit?.append({ name: "cua.driver.call", outcome: "failed", tool, ...cuaAuditScopes(args), durationMs: Date.now() - startedAt, detail: err instanceof Error ? err.message.slice(0, 160) : undefined });
       return { ok: false, content: `mcp ${server}/${tool} failed: ${err instanceof Error ? err.message : String(err)}` };
     }
   };
@@ -134,10 +164,14 @@ export async function registerMcpTools(
       } while (cursor);
       // The catalogue is never trusted: an optional per-server allowlist filters it,
       // and the rea server is additionally clamped to the Loam REA allowlist so a
-      // compromised catalogue cannot widen the surface (REA_INTO_LOAM §5.4).
+      // compromised catalogue cannot widen the surface (REA_INTO_LOAM §5.4). The
+      // cua-driver server gets the same treatment against its 14-tool contract list
+      // (CUA_INTO_LOAM §7.4) — the live catalogue advertises 63 tools including
+      // kill_app / run_script / browser_* which must never register.
       let visible = tools;
       if (cfg.allowlist) visible = visible.filter((t) => new Set(cfg.allowlist).has(t.name));
       if (isReaServer(name)) visible = visible.filter((t) => isReaAllowedTool(t.name));
+      if (isCuaDriverServer(name)) visible = visible.filter((t) => isCuaDriverAllowedTool(t.name));
       const toolNames = visible.map((tool) => `mcp__${name}__${tool.name}`);
       if (new Set(toolNames).size !== toolNames.length || toolNames.some((toolName) => registry.get(toolName))) {
         throw new Error("MCP returned duplicate tool names");
@@ -158,6 +192,7 @@ export async function registerMcpTools(
       handles.push({ name, client, transport });
       counts.set(name, visible.length);
       if (isReaServer(name)) audit?.append({ name: "rea.mcp.connect", outcome: "completed", tool: "server", detail: `${visible.length}/${tools.length} catalogue tools registered` });
+      if (isCuaDriverServer(name)) cuaAudit?.append({ name: "cua.driver.connect", outcome: "completed", detail: `${visible.length}/${tools.length} catalogue tools registered` });
       log.info(`MCP server "${name}": ${visible.length} tools registered${visible.length < tools.length ? ` (${tools.length - visible.length} dropped by allowlist)` : ""}`);
     } catch (err) {
       try { await client?.close(); await transport?.close(); } catch { /* failed startup cleanup */ }
@@ -198,6 +233,7 @@ export async function registerMcpTools(
     async close(): Promise<void> {
       for (const h of handles) {
         if (isReaServer(h.name)) audit?.append({ name: "rea.mcp.disconnect", outcome: "completed" });
+        if (isCuaDriverServer(h.name)) cuaAudit?.append({ name: "cua.driver.disconnect", outcome: "completed" });
         try {
           await h.client.close();
         } catch {

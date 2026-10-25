@@ -17,6 +17,7 @@ import { isInside } from "./paths.js";
 import { assessCommand } from "./commandRisk/index.js";
 import type { ApprovalRule } from "../server/approvalRules.js";
 import { reaToolTier } from "../tools/reaAllowlist.js";
+import { cuaDriverTier } from "../tools/cuaDriverAllowlist.js";
 
 // ----------------------------------------------------------------------------
 // Tiers
@@ -448,6 +449,10 @@ export function classifyToolCall(
   // (11 read / 2 write-workspace — REA_INTO_LOAM §7). An untabled name can only
   // mean the allowlist was bypassed; fail safe to the review tier.
   if (name.startsWith("mcp__rea__")) return reaToolTier(name.slice("mcp__rea__".length)) ?? "exec";
+  // Cua Driver tools (mcp__cua-driver__*): host input tools are `destructive`
+  // (never auto-approved — §6.2 "input tools always ask"); reads and session start
+  // are `read` (CUA_INTO_LOAM §7.4, appendix B5). Untabled names fail safe.
+  if (name.startsWith("mcp__cua-driver__")) return cuaDriverTier(name.slice("mcp__cua-driver__".length)) ?? "exec";
   // cr-05: office_craft drives the live Craft editors. Its read actions change
   // nothing; every other action edits the open document (and the war_room /
   // studio engines write their own files).
