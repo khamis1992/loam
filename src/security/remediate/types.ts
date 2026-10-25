@@ -295,6 +295,8 @@ export interface RemediationRun {
   advisoryIds: string[];
   packHashes: Record<string, string>;
   repos: string[];
+  /** repoId -> directory the inventory actually scanned; worktrees are cut from here, never from cwd. */
+  repoDirs?: Record<string, string>;
   inventory: VulnRecord[];
   unsearchable: { repoId: string; reason: string }[];
   scopeApproval: ScopeApproval | null;

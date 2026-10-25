@@ -8,8 +8,10 @@ import { RemediationError } from "../errors.js";
 import type { AdvisoryPack, AdvisoryPackIndex } from "./schema.js";
 
 export function advisoriesDir(): string {
-  // Repo-relative data (packs ship inside the app; §6.1/E9).
-  return path.resolve(import.meta.dirname ?? ".", "../../../../..", "security", "advisories");
+  const here = import.meta.dirname ?? ".";
+  const beside = path.resolve(here, "../../../../security/advisories"); // <repo>/src/security/remediate/packs -> <repo>/security/advisories
+  if (fs.existsSync(path.join(beside, "index.json"))) return beside;
+  return path.resolve(process.cwd(), "security", "advisories");
 }
 
 const sha256 = (file: string) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");

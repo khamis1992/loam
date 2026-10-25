@@ -12,13 +12,20 @@ import { planPaths, writeRun } from "../store.js";
 // ---------------------------------------------------------------------------
 // GATE 1 — scope
 
-export function approveScope(run: RemediationRun, input: { planHash: string; repos: string[]; rows: string[]; allowMajorUpgrade?: Record<string, boolean>; allowMinorUpgrade?: Record<string, boolean>; allowBaseOsChange?: Record<string, boolean>; allowAppCodeChange?: Record<string, boolean> }): RemediationRun {
+/** The hash of the inventory as it must be shown for GATE 1 — identical bytes to
+ *  what approveScope verifies, so a UI that echoes this back binds the user's
+ *  decision to exactly the rows the server rendered. */
+export function expectedPlanHash(run: RemediationRun): string {
+  return canonicalSha256({
+    rows: run.inventory.map((r) => ({ id: r.id, repoId: r.hit.repoId, file: r.hit.file, line: r.hit.line, signal: r.hit.signal, current: r.hit.currentVersion, status: r.status, target: r.proposedTarget, upgradeClass: r.upgradeClass })).sort((a, b) => a.id.localeCompare(b.id)),
+  });
+}
+
+export function approveScope(run: RemediationRun, input: { planHash: string; repos: string[]; rows: string[]; allowMajorUpgrade?: Record<string, boolean>; allowMinorUpgrade?: Record<string, boolean>; allowBaseOsChange?: Record<string, boolean>; allowAppCodeChange?: Record<string, boolean> }, dataDir?: string): RemediationRun {
   if (run.state !== "awaiting_scope_approval") throw new RemediationError(409, "wrong_state", `state is ${run.state}`);
   const targets: Record<string, string | null> = {};
   for (const r of run.inventory) targets[r.id] = r.proposedTarget;
-  const expected = canonicalSha256({
-    rows: run.inventory.map((r) => ({ id: r.id, repoId: r.hit.repoId, file: r.hit.file, line: r.hit.line, signal: r.hit.signal, current: r.hit.currentVersion, status: r.status, target: r.proposedTarget, upgradeClass: r.upgradeClass })).sort((a, b) => a.id.localeCompare(b.id)),
-  });
+  const expected = expectedPlanHash(run);
   if (input.planHash !== expected) throw new RemediationError(409, "plan_hash_mismatch", "the inventory changed since it was shown — review again");
   const known = new Set(run.inventory.map((r) => r.id));
   for (const row of input.rows) if (!known.has(row)) throw new RemediationError(400, "invalid_input", `unknown row ${row}`);
@@ -35,7 +42,7 @@ export function approveScope(run: RemediationRun, input: { planHash: string; rep
   };
   run.scopeApproval = approval;
   run.state = "scope_approved";
-  writeRun(run);
+  writeRun(run, dataDir);
   return run;
 }
 
@@ -63,7 +70,7 @@ export function approveCommit(run: RemediationRun, repoId: string, input: { diff
     throw new RemediationError(400, "invalid_input", "fix is patched_unverified (Docker unavailable) — acceptUnverified checkbox required");
   }
   plan.commitApproval = { repoId, diffHash: input.diffHash, prBodyHash: input.prBodyHash, acceptUnverified: input.acceptUnverified === true, decidedAt: new Date().toISOString(), decidedBy: "user" };
-  writeRun(run);
+  writeRun(run, dataDir);
   return run;
 }
 
@@ -80,7 +87,7 @@ export function approvePr(run: RemediationRun, repoId: string, input: { remote: 
   const owner = remoteOwner(input.remote);
   if (owner && !ALLOWED_PR_OWNERS.includes(owner)) throw new RemediationError(403, "owner_not_allowed", `remote owner ${owner} is not in the allowed list`);
   plan.prApproval = { repoId, remote: input.remote, base: input.base, draft: input.draft !== false, decidedAt: new Date().toISOString(), decidedBy: "user" };
-  writeRun(run);
+  writeRun(run, dataDir);
   return run;
 }
 
