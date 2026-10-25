@@ -45,8 +45,15 @@ async function loadPinnedModule(): Promise<SrtModule> {
 }
 
 /** Map the flat Loam policy onto the ASRT config (§6.3), adding the workspace
- *  roots to allowRead/allowWrite. Pure — exported for tests. */
+ *  roots to allowRead/allowWrite. The literal "." from the flat policy maps to
+ *  the workspace root itself — never the bridge process's cwd: a persistent ACL
+ *  grant walks the whole write-root tree on first grant, and the repo (with
+ *  node_modules) would blow the 600s timeout. Pure — exported for tests. */
 export function buildSrtConfig(policy: LoamSrtPolicy, workspace: string, srtWinPath: string): SandboxRuntimeConfig {
+  const scope = (paths: string[]): string[] => {
+    const out = paths.filter((p) => p !== ".").map((p) => (p.startsWith("~/") ? p : p));
+    return [...new Set([...out, workspace])];
+  };
   return {
     network: {
       allowedDomains: [...policy.allowedDomains],
@@ -56,8 +63,8 @@ export function buildSrtConfig(policy: LoamSrtPolicy, workspace: string, srtWinP
     },
     filesystem: {
       denyRead: [...policy.denyRead],
-      allowRead: [...policy.allowRead, workspace],
-      allowWrite: [...policy.allowWrite, workspace],
+      allowRead: scope(policy.allowRead),
+      allowWrite: scope(policy.allowWrite),
       denyWrite: [...policy.denyWrite],
     },
     windows: {
