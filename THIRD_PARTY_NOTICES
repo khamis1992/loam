@@ -310,3 +310,19 @@ Licensed under the Apache License, Version 2.0. You may obtain a copy at
 http://www.apache.org/licenses/LICENSE-2.0. Unless required by applicable law or
 agreed to in writing, software distributed under the License is distributed on an
 "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND.
+
+CognitionAI/devin-vuln-fixes (MIT)
+----------------------------------
+Vulnerability-fix skill procedures (Node, PHP, self-managed GitLab) and the
+five-step remediation shape (inventory -> approval gate -> verified target ->
+before/after tests -> one PR per repo) inform Loam's Remediate engine and
+playbooks.
+
+  https://github.com/CognitionAI/devin-vuln-fixes
+  commit 39a04007a1cb19aafd3c487d615c524479963ebf
+
+Copyright (c) 2026 Cognition AI, Inc.
+
+MIT License — see the full MIT text in the jcode notice above. The engine
+contains no upstream code and no upstream prose; advisory facts are reproduced
+from vendor-corroborated tables; playbook text is rewritten fresh.
