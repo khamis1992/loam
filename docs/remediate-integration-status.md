@@ -15,23 +15,32 @@ Approved 2026-10-25.
 | `45576d3` | MPD+E+F | evaluateFixGate (ordered rules; no-Docker → patched_unverified with the recorded blocker); deterministic compareTestRuns; the §7.4 PR template (no model prose; `[unverified]` prefix); re-scan → fixed_pending_deploy / still_vulnerable; closure ONLY with matching deploy evidence (409 on mismatch); 11/11 tests. |
 | `5c85441` | MPG (G) | 5 playbooks (umbrella Arabic-first + 4 ecosystems, MIT footer); **D-7 dogfood LIVE on Loam itself**: electron 44.7.2 → vendor_update_required, no bump proposed; THIRD_PARTY Cognition entry; skills test. |
 
-**Suite: 32/32** (packs 5, inventory 3, resolve 6, gates 5, fixGate 5, pr 3, rescan 3, skills 2). `npm run typecheck` clean on all remediate files. Gates: `check:remediate`, `test:remediate*`.
+**Suite: 36/36** (packs 5, inventory 3, resolve 6, gates 5, fixGate 5, pr 3, rescan 3, skills 2, orchestrator 3, rollup 1). `npm run typecheck` clean on all remediate files. Gates: `check:remediate`, `test:remediate*`.
+
+## Linking increment (MPH-1..4, 2026-10-25 — Revision 53)
+
+The four gaps below are now landed; the capability is wired end-to-end into the app:
+
+| Commit | Phase | What |
+|---|---|---|
+| `6bcecf0` | MPH-1 | Orchestrator (`src/security/remediate/index.ts`): one persisted run inventory → GATE 1 (zero branches before it, D-2) → run-store worktree cut from the scanned repo (`repoDirs`, never cwd) → honest no-Docker fix gate → hash-bound GATE 2 with acceptUnverified → `[unverified]` commit on the remediate branch → owner-scoped GATE 3 → recordPr re-scan closure `fixed_pending_deploy` → discard/cancel. Windows-safe `slug()`; run dataDir threaded through every gate write. 3 lifecycle E2E tests over real fixture git repos. |
+| `e3b31a4` | MPH-2 | `remediation_start/status/report/cancel` model tools (start/read only — no tool can approve a gate; local model refused); Security mode card + `skill_list/skill_view` + Arabic starter «أصلح ثغرة Node»; risk tiers (status/report read, start/cancel exec); missed gitlab playbook. |
+| `71d1cc7` | MPH-3 | `/api/security/remediations*` under the assessments same-origin guard: list/get/approve-scope (work runs synchronously; nothing commits before GATE 2)/approve-commit/approve-pr (owner allowlist)/record-pr/discard/cancel/close/report. GET serves the exact review materials the hashes bind (`expectedPlanHash`; diff + PR body + hashes). `CreatePrInput/PrInfo.draft` (verified additive; both providers). Live-proven over HTTP on a fixture repo. |
+| `435a572` | MPH-4 | Security-panel tab «الإصلاح المُتحقَّق» (E3): the three gates as review-then-tick forms («راجعت وأوافق» pattern) with hashes shown, explicit unverified-accept tick, owner-checked remote, PR recording that triggers the re-scan closure, and deploy-evidence close inputs. Deterministic markdown rollup (`report/rollup.ts` + `/report` + tests). electron-builder ships `security/advisories` read-only (E9). |
+
+Live verification this round: `test:remediate` 36/36 · `check:remediate` PASS (D-1/D-7/anti-hallucination) · `check:modes` PASS · `check:encoding` PASS · full HTTP gate loop against a booted server (409 stale hash → approve → patched_unverified with the bump inside the run-store worktree, user tree clean → cancel) · scoped `typecheck` clean.
 
 ## Verification
 
 ```bash
 npm run check:remediate
-npm run test:remediate          # all 32
+npm run test:remediate          # all 36
 npm run typecheck
 ```
 
-## Not yet wired (deliberate, per plan scope)
+## Remaining external condition
 
-- HTTP `/api/security/remediations*` endpoints + the Security-panel «الإصلاح المُتحقَّق» tab (spec §6.6) — the gates exist as callable functions with hash-bound tests; the HTTP/UI layer is the next increment.
-- `remediation_*` tools in the Security mode card (§6.2) + the raw-upstream-skill guard (§6.7).
-- The Docker build/test runner path (fully designed in fixGate; runs behind REMEDIATE_DOCKER=1 when Docker exists on this machine — E10).
-- electron-builder packaging of `security/advisories/**` (E9).
-- The orchestrator (`orchestrator.ts` §6.1) that strings inventory → gate → resolve → edit → fix-gate → PR → rescan into one run document via the store.
+- The Docker build/test runner path (fully designed in fixGate; runs behind `REMEDIATE_DOCKER=1` when Docker exists on this machine — E10). Until then the primary path is the honest `patched_unverified` verdict + `[unverified]` PR prefix + explicit accept tick.
 
 ## Dogfood finding (D-7, live)
 
