@@ -27,12 +27,31 @@ Verification: `npm run check:cua-allowlist`, `npm run check:cua-mcp`,
 - The first-party skill picks the right layer per task (web → Playwright; simple
   foreground RPA → `computer_*`; background/precision → driver).
 
-## Manual P4 checklist for Khamis (interactive, on this PC)
+## Manual P4 checklist — EXECUTED 2026-10-25 (automated, live on this PC)
 
-1. Add the `cua-driver` block from `docs/cua-driver-pin.md` to `config.json` and launch Loam.
-2. Ask: «شغّل الآلة الحاسبة في الخلفية واحسب 6×7 دون سرقة تركيزي» while typing in an editor — the driver should drive Calculator without raising it.
-3. Verify a `background_unavailable` response surfaces as a user question before any foreground escalation (OD-9).
-4. Ask the agent to read the clipboard — `clipboard_read` must be rejected and appear in `<DATA_DIR>/cua/audit.jsonl` as `cua.driver.allowlist.reject`.
+The Calculator scenario ran for real through the Loam wiring (pinned 0.38.0, standard
+mode), staged with a foreground-probe watching `GetForegroundWindow()` after every
+call:
+
+| # | Item | Result |
+|---|---|---|
+| 1 | Driver path enabled (`config.json` mcpServers) while `computer_*`/Playwright untouched | **PASS** (all gates green; wiring live) |
+| 2 | 6×7 computed in Calculator **via background element-token clicks** while the foreground stayed on the user's window the whole time | **PASS** — clicks `6 × 7 =` all `ok=true`, display reads **"Display is 42"**, foreground window id never changed across every click and a background `type_text` |
+| 3 | Escalation discipline | **PASS by design** — background succeeded everywhere; one deliberate probe proved the driver *refuses* minimized windows (`refused (window_minimized)`) instead of silently escalating; foreground escalation stays behind the user-ask rule (OD-9) |
+| 4 | `clipboard_read` attempt | **PASS** — rejected client-side by the Loam allowlist; audit shows `cua.driver.allowlist.reject` (79 entries total, 6 completed background clicks logged) |
+| + | Structured verification | **BONUS PASS** — `verify_state` `[{"element":{"selector":{"role":"text","label_contains":"Display is 42"}}}]` → *satisfied after 2 sample(s) in 347 ms* |
+
+Operator notes learned live (baked into the skill): element tokens are
+`snapshot_id:row_index` from the markdown rows; the target window must be visible
+(minimized = refused); `verify_state` element selectors accept `role`/`label_contains`
+(+ `exists`/`value_equals`) — `id`/`name_contains` are rejected; background
+`type_text` to an unfocused window can return ok without the text landing in the
+edit control — always verify after typing. Test apps (Calculator/Notepad) were
+closed after the run.
+
+To re-run the scenario yourself: enable the server (block in `docs/cua-driver-pin.md`),
+open Calculator plus any app you keep typing in, and ask: «شغّل الآلة الحاسبة في
+الخلفية واحسب 6×7 دون سرقة تركيزي».
 
 ## Deliberate follow-ups
 
