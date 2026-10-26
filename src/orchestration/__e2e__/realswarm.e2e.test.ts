@@ -18,7 +18,7 @@ import { RealSwarmService } from "../swarm/service.js";
 import { loamSwarmCoreFactory } from "../swarm/corePort.js";
 import { spansForTask } from "../tracing/tracer.js";
 import { SPAN } from "../tracing/genai.js";
-import { baseTools, swarmConfig, testHost, tmpDir } from "../__tests__/swarmHelpers.js";
+import { baseTools, testHost, tmpDir } from "../__tests__/swarmHelpers.js";
 
 const model = (() => {
   for (let i = 2; i < process.argv.length; i++) {
@@ -28,10 +28,12 @@ const model = (() => {
   return process.env.LOAM_E2E_MODEL;
 })();
 
-test("E2E-6 live: two workers, two merges, quiescent, counters match git, trace nests", { skip: !model && "needs --e2e-model=<cloud model> (live run)" }, async () => {
+test("E2E-6 live: two workers, two merges, quiescent, counters match git, trace nests", { skip: !model && "needs LOAM_E2E_MODEL=<cloud model> (live run)" }, async () => {
   const root = tmpDir("c11-e2e-");
-  const cfg = swarmConfig();
-  cfg.model = model as string;
+  // Live run: the real config carries the cloud provider that actually serves
+  // the model; the test fixture's fake providers cannot.
+  const { loadConfig } = await import("../../config.js");
+  const cfg = { ...loadConfig(), model: model as string };
   const svc = new RealSwarmService({
     cfg,
     ollama: new OllamaClient("http://127.0.0.1:11434"),
@@ -47,9 +49,16 @@ test("E2E-6 live: two workers, two merges, quiescent, counters match git, trace 
       goal: "Write two independent files: hello.txt containing the single word hello, and notes.txt containing the single word notes. Claim one file each, verify with cat, then merge.",
       maxWorkers: 2,
       model,
-      deadlineMs: 900_000,
+      deadlineMs: 1_800_000,
     });
     const s = await svc.settled(created.id);
+    // Evidence first: the final snapshot and workspace survive even when an assertion fails.
+    console.log("[E2E-6] workspace:", s.workspace);
+    console.log("[E2E-6] status:", s.status, "reason:", s.completionReason, "error:", s.error ?? "(none)");
+    console.log("[E2E-6] metrics:", JSON.stringify(s.metrics));
+    console.log("[E2E-6] workers:", s.workers.map((w) => w.id + ":" + w.status + ":turns=" + w.turns + ":claim=" + (w.currentClaimLabel ?? "-")).join(" | "));
+    console.log("[E2E-6] merges:", JSON.stringify(s.merges));
+    console.log("[E2E-6] usage:", JSON.stringify(s.usage));
     assert.equal(s.status, "completed", s.error);
     assert.equal(s.completionReason, "quiescent");
     assert.equal(s.metrics.mergesLanded, 2);
