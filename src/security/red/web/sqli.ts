@@ -20,10 +20,10 @@ export interface SqlmapProof {
 /** Parse sqlmap console output into a structural proof. */
 export function parseSqlmap(text: string): SqlmapProof {
   const excerpt = text.slice(0, 4000);
-  // sqlmap's confirmation line is "Parameter '<name>' is vulnerable" / "is vulnerable".
-  // Bare "injectable" also appears in negative summaries ("does not seem to be injectable"),
-  // so it alone is never proof.
-  const injectable = /is vulnerable/i.test(text);
+  // sqlmap's confirmation lines are "Parameter '<name>' is vulnerable" and
+  // "sqlmap identified the following injection point(s)". Bare "injectable"
+  // also appears in negative summaries and is never proof on its own.
+  const injectable = /is vulnerable/i.test(text) || /identified the following injection point/i.test(text);
   const parameters = [...new Set([...text.matchAll(/Parameter: (.+?)$/gm)].map((m) => m[1]!.trim()))].slice(0, 10);
   const dbmsMatch = /back-end DBMS: (.+)$/m.exec(text);
   return { injectable, parameters, dbms: dbmsMatch?.[1]?.trim(), excerpt };

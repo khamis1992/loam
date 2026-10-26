@@ -8,7 +8,7 @@ import type { PentestFinding } from "../../tools/pentest.js";
 import type { Evidence } from "../orchestrator.js";
 import { nextEvidenceId } from "../orchestrator.js";
 import type { RedCapability, RedCapabilityContext, RedHypothesis, RedValidation } from "./orchestrator/redOrchestrator.js";
-import type { CveLead } from "./recon/recon.js";
+import { mapKnownVulnsWithKev, type CveLead } from "./recon/recon.js";
 
 export interface NucleiHit {
   templateId: string;
@@ -18,6 +18,11 @@ export interface NucleiHit {
 }
 
 const SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"];
+/** Unknown severities are conservatively treated as medium, never as a free pass. */
+const severityRank = (value: string): number => {
+  const rank = SEVERITY_ORDER.indexOf(value.toLowerCase());
+  return rank === -1 ? SEVERITY_ORDER.indexOf("medium") : rank;
+};
 
 /** Parse nuclei -jsonl output: one JSON object per line. */
 export function parseNuclei(raw: string): NucleiHit[] {
@@ -28,9 +33,11 @@ export function parseNuclei(raw: string): NucleiHit[] {
       const o = JSON.parse(line) as Record<string, unknown>;
       const templateId = typeof o["template-id"] === "string" ? o["template-id"] : typeof o.templateId === "string" ? o.templateId : "";
       const matchedAt = typeof o["matched-at"] === "string" ? o["matched-at"] : typeof o.matchedAt === "string" ? o.matchedAt : "";
-      const severity = typeof o.severity === "string" ? o.severity : "unknown";
+      const info = o.info && typeof o.info === "object" ? o.info as Record<string, unknown> : {};
+      const severity = typeof o.severity === "string" ? o.severity : typeof info.severity === "string" ? info.severity : "unknown";
       if (!templateId || !matchedAt) continue;
-      hits.push({ templateId, matchedAt, severity, ...(typeof o.name === "string" ? { name: o.name } : {}) });
+      const name = typeof o.name === "string" ? o.name : typeof info.name === "string" ? info.name : undefined;
+      hits.push({ templateId, matchedAt, severity, ...(name ? { name } : {}) });
     } catch {
       /* skip malformed line */
     }
@@ -43,23 +50,55 @@ const toSeverity = (s: string): PentestFinding["severity"] =>
     ? (s.toLowerCase() as PentestFinding["severity"])
     : "medium";
 
-export function templatesCapability(opts: { severity?: string; tags?: string } = {}): RedCapability {
+/** Normalize one nuclei JSON object from the jsonl bridge envelope. */
+function hitFromObject(o: Record<string, unknown>): NucleiHit | null {
+  const templateId = typeof o["template-id"] === "string" ? o["template-id"] : typeof o.templateId === "string" ? o.templateId : "";
+  const matchedAt = typeof o["matched-at"] === "string" ? o["matched-at"] : typeof o.matchedAt === "string" ? o.matchedAt : "";
+  const info = o.info && typeof o.info === "object" ? o.info as Record<string, unknown> : {};
+  const severity = typeof o.severity === "string" ? o.severity : typeof info.severity === "string" ? info.severity : "unknown";
+  if (!templateId || !matchedAt) return null;
+  const name = typeof o.name === "string" ? o.name : typeof info.name === "string" ? info.name : undefined;
+  return { templateId, matchedAt, severity, ...(name ? { name } : {}) };
+}
+
+export function templatesCapability(opts: { severity?: string; tags?: string; templatesPath?: string } = {}): RedCapability {
   const severity = opts.severity ?? "medium";
   return {
     id: "red.templates",
     applicable: (target) => /^https?:/i.test(target),
-    hunt: async (target, _recon): Promise<RedHypothesis[]> => [
-      { id: `HYP-NUCLEI-${target.length}`, capability: "red.templates", target, claim: "Known-CVE/misconfig template matches", rationale: `nuclei template scan (>= ${severity})` },
-    ],
+    hunt: async (target, recon): Promise<RedHypothesis[]> => {
+      const leads = await mapKnownVulnsWithKev(recon);
+      const ids = selectTemplateIds(leads).join(",");
+      return [
+        {
+          id: `HYP-NUCLEI-${target.length}`,
+          capability: "red.templates",
+          target,
+          claim: "Known-CVE/misconfig template matches",
+          rationale: `nuclei template scan (>= ${severity})`,
+          ...(ids ? { params: { ids } } : {}),
+        },
+      ];
+    },
     validate: async (hyp: RedHypothesis, ctx: RedCapabilityContext): Promise<RedValidation> => {
-      const envelope = await ctx.bridge("red-nuclei", "scan", { target: hyp.target, severity, rate: 10, ...(opts.tags ? { tags: opts.tags } : {}) });
+      const envelope = await ctx.bridge("red-nuclei", "scan", {
+        target: hyp.target,
+        severity,
+        rate: 10,
+        ...(opts.tags ? { tags: opts.tags } : {}),
+        ...(opts.templatesPath ? { templates: opts.templatesPath } : {}),
+        ...(hyp.params?.ids ? { ids: hyp.params.ids } : {}),
+      });
       if (!envelope.ok) {
         return { hypothesisId: hyp.id, status: "inconclusive", claim: hyp.claim, detail: `nuclei unavailable: ${envelope.error?.message ?? "no output"}`, evidence: [] };
       }
       const raw = typeof envelope.data === "string" ? envelope.data : `${envelope.text ?? ""}`;
-      const hits = parseNuclei(raw).filter((h) => SEVERITY_ORDER.indexOf(h.severity.toLowerCase()) <= SEVERITY_ORDER.indexOf(severity));
+      const hits = (Array.isArray(envelope.data)
+        ? envelope.data.map((item) => hitFromObject(item as Record<string, unknown>)).filter((h): h is NucleiHit => h !== null)
+        : parseNuclei(raw)
+      ).filter((h) => severityRank(h.severity) <= severityRank(severity));
       if (!hits.length) {
-        return { hypothesisId: hyp.id, status: "refuted", claim: hyp.claim, detail: `no template matched at >= ${severity}`, evidence: [] };
+        return { hypothesisId: hyp.id, status: "refuted", claim: hyp.claim, detail: `no template matched at >= ${severity}: ${raw.slice(0, 500) || "(no engine output)"}`, evidence: [] };
       }
       const evidence: Evidence[] = hits.map((h) => ({
         id: nextEvidenceId(),
@@ -68,7 +107,7 @@ export function templatesCapability(opts: { severity?: string; tags?: string } =
         poc: `nuclei -u ${hyp.target} (template ${h.templateId})`,
         observed: `${h.name ?? h.templateId} matched at ${h.matchedAt} (${h.severity})`,
       }));
-      const top = [...hits].sort((a, b) => SEVERITY_ORDER.indexOf(a.severity.toLowerCase()) - SEVERITY_ORDER.indexOf(b.severity.toLowerCase()))[0]!;
+      const top = [...hits].sort((a, b) => severityRank(a.severity) - severityRank(b.severity))[0]!;
       const finding: Omit<PentestFinding, "id"> = {
         check: "red_nuclei_template",
         verdict: "finding",
@@ -83,7 +122,12 @@ export function templatesCapability(opts: { severity?: string; tags?: string } =
   };
 }
 
-/** Narrow a nuclei run to templates suggested by recon CVE leads (data-only). */
-export function selectTemplateTags(leads: CveLead[]): string[] {
+/** Exact nuclei template ids suggested by recon CVE leads (uses -id). */
+export function selectTemplateIds(leads: CveLead[]): string[] {
   return [...new Set(leads.map((l) => l.cveId.toLowerCase()))].slice(0, 10);
+}
+
+/** Backward-compatible alias; new callers should use selectTemplateIds. */
+export function selectTemplateTags(leads: CveLead[]): string[] {
+  return selectTemplateIds(leads);
 }

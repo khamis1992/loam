@@ -1,4 +1,4 @@
-
+import { handleCodeGraphRoute, type CodeGraphRouteDeps } from "./routes/codegraph.js";
 import { handleRealSwarmRoutes } from "./routes/realswarm.js";
 import { handleApiAnythingRoute } from "./apiAnythingRoutes.js";
 import { handleWorkflowRoutes, handleWorkflowRunRoutes, type WorkflowRouteDeps } from "./routes/workflows.js";
@@ -9,7 +9,7 @@ import { rehydrateAskUsers } from "../tools/askUserStore.js";
 import { rehydratePlanApprovals } from "../tools/planApprovalStore.js";
 import { rehydrateApprovals } from "./approvals.js";
 import { expireDue } from "../orchestration/durable/interrupts.js";
-
+import { GRAPHIFY_PIN } from "../codegraph/config.js";
 import http from "node:http";
 import { startSseHeartbeat } from './sseHeartbeat.js';
 import { TimelineService } from '../creative/timeline.js';
@@ -64,6 +64,8 @@ import { planPaths } from "../security/remediate/store.js";
 import { canonicalSha256 as canonicalHash } from "../security/remediate/types.js";
 import { SECURITY_CAPABILITIES } from '../security/diagnostics.js';
 import { sarif } from "../security/findings.js";
+import { setRedKillSwitch } from "../security/red/control.js";
+import { isKillSwitchEngaged } from "../security/red/gate.js";
 import {prepareRepair,changeRepair,listRepairs} from '../security/repairs.js';
 import { readBrowserArtifact } from "../security/browser.js";
 import { loadActiveMirofishSession, runConversationalMirofish, runConversationalMirofishAsync } from "../tools/mirofish.js";
@@ -229,7 +231,7 @@ export interface ServerDeps {
   preview?: PreviewService;
   registry?: ToolRegistry;
   mcp?: McpToolset | null;
-
+  codeGraph?: import("../codegraph/service.js").CodeGraphService | null;
   runTask: (opts: RunTaskOptions) => Promise<{ taskId: string; text: string }>;
   /** N3 Knowledge Garden vector channel; absent => lexical-only search. */
   embedder?: { embed(texts: string[]): Promise<number[][]> };
@@ -504,6 +506,23 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
     allowWrites: (cfg.apiAnything ?? { allowWrites: false }).allowWrites,
     allowWriteLearning: (cfg.apiAnything ?? { allowWriteLearning: false }).allowWriteLearning,
   };
+    const codeGraphUvSha256 = (): string => {
+      try {
+        const j = JSON.parse(fs.readFileSync(rootAsset("resources", "codegraph", "uv.json"), "utf8")) as { sha256?: Record<string, string> };
+        return j.sha256?.[process.platform === "win32" ? "win32-x64" : `${process.platform}-${process.arch}`] ?? "";
+      } catch { return ""; }
+    };
+    const codeGraphRouteDeps: CodeGraphRouteDeps = {
+      svc: () => deps.codeGraph ?? null,
+      cfg: () => cfg.codeGraph,
+      sendJson,
+      readBody,
+      resolveWorkspace: (taskId) => requireTaskWorkspace(taskId, cfg.workspace),
+      uvExe: rootAsset("resources", "codegraph", process.platform === "win32" ? "uv.exe" : "uv"),
+      uvSha256: codeGraphUvSha256(),
+      lockFile: rootAsset("resources", "codegraph", GRAPHIFY_PIN.lockFile),
+      lockSha256: GRAPHIFY_PIN.lockFileSha256,
+    };
   void createTask;
 
   const memorySkillsCall = async (
@@ -785,6 +804,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           return;
         }
 
+        if (p.startsWith("/api/codegraph/") && await handleCodeGraphRoute(req, res, p, url, codeGraphRouteDeps)) return;
         if (await handleRealSwarmRoutes(req, res, p, realSwarm)) return;
         if (await handleWorkflowRoutes(req, res, p, workflowRouteDeps)) return;
         if (await handleWorkflowRunRoutes(req, res, p)) return;
@@ -826,6 +846,20 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           const refresh = url.searchParams.get("refresh") === "1";
           sendJson(res, 200, queryWorkspaceSymbols(requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace), { query: q, kind, limit, refresh }));
           return;
+        }
+
+        if (p === "/api/security/red/kill-switch") {
+          res.setHeader("cache-control", "no-store");
+          if (req.method === "GET") return sendJson(res, 200, { engaged: isKillSwitchEngaged() });
+          if (req.method !== "POST") return sendJson(res, 405, { error: "method not allowed" });
+          const origin = req.headers.origin;
+          if ((origin && origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") return sendJson(res, 403, { error: "Same-origin requests required" });
+          if (!req.headers["content-type"]?.startsWith("application/json")) return sendJson(res, 415, { error: "application/json required" });
+          const input = await readBody(req, 4000);
+          if (!input || typeof input !== "object" || Array.isArray(input) || typeof (input as { engage?: unknown }).engage !== "boolean") {
+            return sendJson(res, 400, { error: "engage must be a boolean" });
+          }
+          return sendJson(res, 200, setRedKillSwitch((input as { engage: boolean }).engage));
         }
 
         if (p === "/api/security/assessments" || p.startsWith("/api/security/assessments/")) {

@@ -71,12 +71,22 @@ export function fuzzCapability(opts: { wordlistFile?: string } = {}): RedCapabil
           /* fall back to stdout text */
         }
       }
-      const hits = parseFfuf(raw).filter((h) => [200, 301, 302, 401, 403].includes(h.status));
-      const interesting = hits.filter((h) => !["/", ""].includes(h.input));
-      if (!interesting.length) {
+      const results = parseFfuf(raw);
+      const discovered = results.filter((h) => [200, 301, 302].includes(h.status) && !["/", ""].includes(h.input));
+      const authWalls = results.filter((h) => [401, 403].includes(h.status) && !["/", ""].includes(h.input));
+      if (!discovered.length) {
+        if (authWalls.length) {
+          return {
+            hypothesisId: hyp.id,
+            status: "inconclusive",
+            claim: hyp.claim,
+            detail: `${authWalls.length} path(s) returned HTTP 401/403; authentication/authorization walls are reachability signals, not proof of hidden content`,
+            evidence: [],
+          };
+        }
         return { hypothesisId: hyp.id, status: "refuted", claim: hyp.claim, detail: "ffuf found no responding hidden paths", evidence: [] };
       }
-      const evidence: Evidence[] = interesting.slice(0, 50).map((h) => ({
+      const evidence: Evidence[] = discovered.slice(0, 50).map((h) => ({
         id: nextEvidenceId(),
         kind: "poc",
         at: new Date().toISOString(),
@@ -87,9 +97,9 @@ export function fuzzCapability(opts: { wordlistFile?: string } = {}): RedCapabil
         check: "red_fuzz_discovery",
         verdict: "finding",
         severity: "low",
-        title: `Hidden content discovered by fuzzing (${interesting.length} path(s))`,
+        title: `Hidden content discovered by fuzzing (${discovered.length} path(s))`,
         target: hyp.target,
-        detail: interesting.slice(0, 20).map((h) => `/${h.input} -> HTTP ${h.status}`).join("; "),
+        detail: discovered.slice(0, 20).map((h) => `/${h.input} -> HTTP ${h.status}`).join("; "),
         remediation: "Remove or protect content that should not be reachable; deny-list common backup/hidden paths.",
       };
       return { hypothesisId: hyp.id, status: "confirmed", claim: hyp.claim, detail: finding.detail, evidence, finding };

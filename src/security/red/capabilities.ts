@@ -10,6 +10,7 @@
 import { bridgeInfo, getManifest } from "../../bridges/registry.js";
 import type { Config } from "../../config.js";
 import { deserCapability } from "./deser.js";
+import { adversaryCapability } from "./advsim/capability.js";
 import { ssrfCapability, type SsrfCapabilityOptions } from "./ssrf.js";
 import { dastCapability } from "./web/dast.js";
 import { fuzzCapability } from "./web/fuzz.js";
@@ -23,6 +24,7 @@ export interface DefaultCapabilityOptions {
   fuzzWordlistFile?: string;
   nucleiSeverity?: string;
   nucleiTags?: string;
+  nucleiTemplatesPath?: string;
 }
 
 async function bridgeReady(cfg: Pick<Config, "bridges">, id: string): Promise<boolean> {
@@ -37,11 +39,12 @@ async function bridgeReady(cfg: Pick<Config, "bridges">, id: string): Promise<bo
  * fuzz/templates when their engine bridge is ready; deser when ysoserial is.
  */
 export async function defaultRedCapabilities(cfg: Pick<Config, "bridges">, opts: DefaultCapabilityOptions = {}): Promise<RedCapability[]> {
-  const caps: RedCapability[] = [ssrfCapability(opts.ssrf)];
+  const caps: RedCapability[] = [ssrfCapability({ mode: opts.ssrf?.probeTemplate ? "modules" : "oob", ...opts.ssrf }), deserCapability({ mode: "node" })];
   if (await bridgeReady(cfg, "red-sqlmap")) caps.push(sqliCapability());
-  if (await bridgeReady(cfg, "red-zap")) caps.push(dastCapability());
+  if (await bridgeReady(cfg, "red-zap")) caps.push(dastCapability({ daemon: true }));
   if (await bridgeReady(cfg, "red-ffuf")) caps.push(fuzzCapability({ wordlistFile: opts.fuzzWordlistFile }));
-  if (await bridgeReady(cfg, "red-nuclei")) caps.push(templatesCapability({ severity: opts.nucleiSeverity, ...(opts.nucleiTags ? { tags: opts.nucleiTags } : {}) }));
+  if (await bridgeReady(cfg, "red-nuclei")) caps.push(templatesCapability({ severity: opts.nucleiSeverity, ...(opts.nucleiTags ? { tags: opts.nucleiTags } : {}), ...(opts.nucleiTemplatesPath ? { templatesPath: opts.nucleiTemplatesPath } : {}) }));
   if (await bridgeReady(cfg, "red-ysoserial")) caps.push(deserCapability({ jar: opts.ysoserialJar }));
+  if (await bridgeReady(cfg, "red-caldera")) caps.push(adversaryCapability());
   return caps;
 }

@@ -17,6 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { setBridgeEnabled } from "../bridges/registry.js";
+import { runBridgeDetached } from "../bridges/exec.js";
 import type { BridgeEnvelope } from "../bridges/types.js";
 import { loadConfig } from "../config.js";
 import { defaultRedCapabilities } from "../security/red/capabilities.js";
@@ -117,7 +118,17 @@ async function main(): Promise<void> {
 
   const result = await runCampaign(
     { goal: `Engagement ${new Date().toISOString()} on ${targets.join(", ")}`, authzId, targets, auth },
-    { dataRoot: defaultDataRoot(), bridge, capabilities, workspace: WORKSPACE, ...(planner ? { planner } : {}) },
+    {
+      dataRoot: defaultDataRoot(),
+      bridge,
+      capabilities,
+      workspace: WORKSPACE,
+      bridgeDaemon: (bridgeId, commandId, args) => runBridgeDetached({ cfg, workspace: WORKSPACE }, bridgeId, commandId, args),
+      // Direct interactive CLI invocation is the operator's approval for
+      // external/exec_script bridge effects in this engagement.
+      bridgeApproval: () => true,
+      ...(planner ? { planner } : {}),
+    },
   );
 
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");

@@ -15,7 +15,7 @@ import path from "node:path";
 export interface EngineRegistry {
   installedAt: string;
   versions: Record<string, string>;
-  paths: { nuclei?: string; ffuf?: string; sqlmapScript?: string; ysoserialJar?: string };
+  paths: { nuclei?: string; ffuf?: string; sqlmapScript?: string; ysoserialJar?: string; zapHome?: string };
   sha256: Record<string, string>;
 }
 
@@ -43,4 +43,16 @@ export function engineAvailable(key: keyof EngineRegistry["paths"]): boolean {
   const registry = loadEngines();
   const p = registry?.paths[key];
   return !!p && fs.existsSync(p);
+}
+
+/** Absolute path to the installed ZAP jar, or null when ZAP is not installed. */
+export function zapJarPath(): string | null {
+  const home = loadEngines()?.paths.zapHome;
+  if (!home) return null;
+  try {
+    const jar = fs.readdirSync(home).find((name) => /^zap-.*\.jar$/i.test(name));
+    return jar ? path.join(home, jar) : null;
+  } catch {
+    return null;
+  }
 }

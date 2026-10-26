@@ -58,9 +58,13 @@
     "check:remediate": "tsx src/scripts/check-remediate.ts",
     "check:recovery:http": "tsx src/scripts/check-recovery-http.ts",
     "check:red": "tsx src/scripts/check-red-lab.ts",
+    "check:red:capabilities": "tsx src/scripts/check-red-capabilities-lab.ts",
+    "check:red:kill-switch": "tsx src/scripts/check-red-kill-switch.ts",
     "red:engines": "tsx src/scripts/red-install-engines.ts",
     "red:engage": "tsx src/scripts/red-engage.ts",
     "check:scanners": "tsx src/scripts/check-scanners.ts",
+    "check:codegraph": "tsx src/scripts/check-codegraph.ts && node --import tsx --test src/codegraph/__tests__/codegraph.unit.test.ts",
+    "check:codegraph-live": "node --import tsx --test src/codegraph/__tests__/codegraph.live.test.ts",
     "check:srt-policy": "tsx src/scripts/check-srt-policy.ts",
     "check:srt-session": "tsx src/scripts/check-srt-session.ts",
     "check:srt-bridge": "tsx src/scripts/check-srt-bridge.ts",
@@ -148,7 +152,7 @@
     "test:api-anything": "node --import tsx --test src/tools/apiAnything/__tests__/*.test.ts src/policy/__tests__/apiAnythingTier.test.ts",
     "check:skill-ab": "node --import tsx --test src/eval/skillAb/__tests__/skillAb.test.ts",
     "test:skill-ab": "node --import tsx --test src/eval/skillAb/__tests__/skillAb.test.ts",
-    "verify": "npm run typecheck && npm run check:encoding && npm run check:docs && npm run check:eval && npm run check:orchestrator && npm run check:recovery && npm run check:modes && npm run check:orchestration",
+    "verify": "npm run typecheck && npm run check:encoding && npm run check:docs && npm run check:eval && npm run check:orchestrator && npm run check:recovery && npm run check:modes && npm run check:codegraph && npm run check:orchestration",
     "verify:loam": "npm run verify && npm run check:isolation && npm run check:loam-agents && npm run check:loam-ui && npm run check:loam-ancillary && npm run check:loam-e2e"
   },
   "dependencies": {

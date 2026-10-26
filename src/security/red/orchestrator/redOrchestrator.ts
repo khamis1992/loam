@@ -12,6 +12,9 @@
 import type { BridgeEnvelope } from "../../../bridges/types.js";
 import type { PentestFinding } from "../../../tools/pentest.js";
 import { coverageKey, enrichFinding, type SecurityFinding } from "../../findings.js";
+import { getManifest } from "../../../bridges/registry.js";
+import type { BridgeEffect } from "../../../bridges/types.js";
+import { runBridgeDetached, type BridgeDaemon } from "../../../bridges/exec.js";
 import {
   evaluateEvidenceGate,
   isLocalhostTarget,
@@ -22,6 +25,7 @@ import {
 import { RedAuditLog, type AuditEntry } from "../audit.js";
 import { gate, loadAuthorization, RateLimiter, type AuthorizationRecord, type GateDeps } from "../gate.js";
 import type { GateDecision } from "../types.js";
+import type { AttckCoverage } from "../advsim/caldera.js";
 import { redTransport, type RedRequestEvidence, type RedTransport } from "../transport.js";
 import type { RedReconAsset } from "../recon/recon.js";
 import { reconTarget } from "../recon/recon.js";
@@ -39,11 +43,17 @@ export interface RedCapabilityContext {
   authz: AuthorizationRecord | null;
   transport: RedTransport;
   bridge: BridgeCaller;
+  /** Lifecycle-managed daemon launcher for ZAP (runBridgeDetached). */
+  bridgeDaemon?: BridgeDaemonCaller;
   audit: RedAuditLog;
   signal?: AbortSignal;
   /** Bridge workspace: engines resolve their read/write paths under it. */
   workspace?: string;
+  /** Human approval callback for destructive capability actions. */
+  approval?: GateDeps["approval"];
 }
+
+export type BridgeDaemonCaller = (bridgeId: string, commandId: string, args: Record<string, unknown>) => Promise<BridgeDaemon>;
 
 export interface RedHypothesis {
   id: string;
@@ -51,6 +61,8 @@ export interface RedHypothesis {
   target: string;
   claim: string;
   rationale?: string;
+  /** Structured probe data; claims are display text, never a data channel. */
+  params?: Record<string, string>;
 }
 
 export interface RedValidation {
@@ -61,6 +73,8 @@ export interface RedValidation {
   evidence: Evidence[];
   /** Finding skeleton (without id) when confirmed; check names use the red_ prefix. */
   finding?: Omit<PentestFinding, "id">;
+  /** Optional ATT&CK operation coverage produced by adversary simulation. */
+  attckCoverage?: AttckCoverage;
 }
 
 export interface RedCapability {
@@ -94,6 +108,8 @@ export interface RedCampaignResult {
   audit: AuditEntry[];
   ptt: PttNode;
   coverage: string[];
+  /** ATT&CK coverage imported from adversary-simulation capabilities. */
+  attckCoverage?: AttckCoverage;
   stats: {
     startedAt: string;
     finishedAt: string;
@@ -109,11 +125,15 @@ export interface RunCampaignDeps {
   dataRoot?: string;
   /** Bridge caller; defaults to a caller that reports every engine as missing. */
   bridge?: BridgeCaller;
+  /** Lifecycle-managed daemon launcher for ZAP (optional). */
+  bridgeDaemon?: BridgeDaemonCaller;
   /** Bridge workspace for engines that write/read result files (ffuf, ZAP). */
   workspace?: string;
   capabilities?: RedCapability[];
   /** Optional planner (model-driven §6.1). Proposals are additive and still evidence-gated. */
   planner?: RedPlanner;
+  /** Approval for bridge commands whose effect is exec_script or external. */
+  bridgeApproval?: (bridgeId: string, commandId: string, effect: BridgeEffect) => boolean;
   /** Capability ids whose validate() mutates target state; gate approval applies. */
   destructiveCapabilities?: string[];
   /** Human approval callback for destructive actions (default: deny). */
@@ -141,6 +161,11 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
   const startedAt = new Date().toISOString();
   const campaignId = `RED-${Date.now().toString(36)}-${String(++campaignSeq)}`;
 
+  if (input.auth?.bearer || input.auth?.cookie) {
+    const origins = new Set(input.targets.map((target) => new URL(target).origin));
+    if (origins.size > 1) throw new Error("authenticated campaigns must use one origin to contain credentials");
+  }
+
   if (input.authzId != null) {
     const rec = loadAuthorization(input.authzId, deps.dataRoot);
     if (!rec) throw new Error(`authorization record ${input.authzId} not found`);
@@ -153,14 +178,35 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
   if (input.auth?.bearer) authHeaders["authorization"] = `Bearer ${input.auth.bearer}`;
   if (input.auth?.cookie) authHeaders["cookie"] = input.auth.cookie;
   const transport = redTransport(authz, { signal: deps.signal, limiter, gateDeps: deps.gateDeps, approval: deps.approval, actionTag: "red.http", ...(Object.keys(authHeaders).length ? { authHeaders } : {}) });
-  const bridge = deps.bridge ?? noBridge;
-  const ctx: RedCapabilityContext = { authz, transport, bridge, audit, signal: deps.signal, ...(deps.workspace ? { workspace: deps.workspace } : {}) };
+  const rawBridge = deps.bridge ?? noBridge;
+  const bridge: BridgeCaller = async (bridgeId, commandId, args) => {
+    const command = getManifest(bridgeId)?.commands.find((c) => c.id === commandId);
+    if (command && (command.effect === "external" || command.effect === "exec_script")) {
+      const approved = deps.bridgeApproval?.(bridgeId, commandId, command.effect) ?? false;
+      if (!approved) {
+        const reason = "bridge effect requires approval";
+        audit.append({
+          authzId: authz?.id ?? null,
+          capability: bridgeId,
+          action: commandId,
+          target: String(args.target ?? args.url ?? ""),
+          params: {},
+          outcome: "denied",
+          reason,
+        });
+        return { ok: false, exitCode: null, timedOut: false, error: { type: "approval_required", message: reason } };
+      }
+    }
+    return rawBridge(bridgeId, commandId, args);
+  };
+  const ctx: RedCapabilityContext = { authz, transport, bridge, audit, signal: deps.signal, ...(deps.workspace ? { workspace: deps.workspace } : {}), ...(deps.approval ? { approval: deps.approval } : {}), ...(deps.bridgeDaemon ? { bridgeDaemon: deps.bridgeDaemon } : {}) };
 
   let ptt = createPtt(input.goal || "red campaign", input.targets.map((t) => ({ goal: t })));
   const findings: SecurityFinding[] = [];
   const unverified: UnverifiedClaim[] = [];
   const coverage: string[] = [];
   const allEvidence: Evidence[] = [];
+  let attckCoverage: AttckCoverage | undefined;
   const collectEvidence = (items: Evidence[]): void => {
     const seen = new Set(allEvidence.map((e) => e.id));
     for (const e of items) if (!seen.has(e.id)) allEvidence.push(e);
@@ -218,6 +264,11 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
         aborted = "budget";
         break;
       }
+      if (decision.reason === "kill-switch engaged") {
+        killed = true;
+        audit.append({ authzId: authz?.id ?? null, capability: "red.recon", action: "kill", target, params: {}, outcome: "killswitch_engaged" });
+        break;
+      }
       if (node) ptt = updateNode(ptt, node.id, { status: "blocked", note: decision.reason });
       continue;
     }
@@ -254,30 +305,33 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
       }
     }
 
-    if (capabilities.length === 0) {
-      // Blue fallback (strix reuse): plain localhost targets run the existing
-      // evidence-gated recon→hypothesis→validate loop unchanged.
-      if (isLocalhostTarget(target)) {
-        try {
-          const blue = await orchestrate({ target, signal: deps.signal });
-          for (const f of blue.findings) {
-            findings.push(
-              enrichFinding(
-                { id: f.id, check: f.check, verdict: "finding", severity: f.severity, title: f.title, target: f.target, detail: f.detail },
-                f.evidence.map((e) => e.id),
-              ),
-            );
-            if (node) ptt = updateNode(ptt, node.id, { status: "proven", evidenceIds: f.evidence.map((e) => e.id) });
-          }
-          unverified.push(...blue.unverified);
-          for (const o of blue.observations) coverage.push(coverageKey(o.target, o.check));
-          collectEvidence(blue.evidence);
-          audit.append({ authzId: authz?.id ?? null, capability: "red.blue_fallback", action: "orchestrate", target, params: {}, outcome: "completed", evidenceIds: blue.findings.map((f) => f.id) });
-        } catch (err) {
-          audit.append({ authzId: authz?.id ?? null, capability: "red.blue_fallback", action: "orchestrate", target, params: {}, outcome: "failed", reason: (err as Error).message });
-          if (node) ptt = updateNode(ptt, node.id, { status: "unverified", note: "blue fallback failed" });
+    // Blue baseline is additive, not a fallback: localhost targets always run
+    // the existing evidence-gated recon→hypothesis→validate loop before the
+    // red capabilities, so installing engines never removes baseline coverage.
+    if (isLocalhostTarget(target)) {
+      try {
+        const blue = await orchestrate({ target, signal: deps.signal });
+        for (const f of blue.findings) {
+          findings.push(
+            enrichFinding(
+              { id: f.id, check: f.check, verdict: "finding", severity: f.severity, title: f.title, target: f.target, detail: f.detail },
+              f.evidence.map((e) => e.id),
+            ),
+          );
+          if (node) ptt = updateNode(ptt, node.id, { status: "proven", evidenceIds: f.evidence.map((e) => e.id) });
         }
-      } else if (node) {
+        unverified.push(...blue.unverified);
+        for (const o of blue.observations) coverage.push(coverageKey(o.target, o.check));
+        collectEvidence(blue.evidence);
+        audit.append({ authzId: authz?.id ?? null, capability: "red.blue_fallback", action: "orchestrate", target, params: {}, outcome: "completed", evidenceIds: blue.findings.map((f) => f.id) });
+      } catch (err) {
+        audit.append({ authzId: authz?.id ?? null, capability: "red.blue_fallback", action: "orchestrate", target, params: {}, outcome: "failed", reason: (err as Error).message });
+        if (node) ptt = updateNode(ptt, node.id, { status: "unverified", note: "blue fallback failed" });
+      }
+    }
+
+    if (capabilities.length === 0) {
+      if (!isLocalhostTarget(target) && node) {
         ptt = updateNode(ptt, node.id, { status: "unverified", note: "no red capability applicable" });
       }
       continue;
@@ -322,6 +376,8 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
           audit.append({ authzId: authz?.id ?? null, capability: cap.id, action: "kill", target, params: {}, outcome: "killswitch_engaged" });
           break outer;
         }
+        if (node) ptt = updateNode(ptt, node.id, { status: "unverified", note: post.reason });
+        continue;
       }
 
       for (const hyp of hypotheses) {
@@ -336,6 +392,8 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
             audit.append({ authzId: authz?.id ?? null, capability: cap.id, action: "kill", target, params: {}, outcome: "killswitch_engaged" });
             break outer;
           }
+          if (node) ptt = updateNode(ptt, node.id, { status: "unverified", note: hypDecision.reason });
+          continue;
         }
 
         let validation: RedValidation;
@@ -349,6 +407,10 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
 
         const gateResult = evaluateEvidenceGate({ id: hyp.id, claim: validation.claim, status: validation.status, evidence: validation.evidence });
         collectEvidence(gateResult.evidence);
+        if (validation.attckCoverage) {
+          if (!attckCoverage) attckCoverage = validation.attckCoverage;
+          else attckCoverage.executed.push(...validation.attckCoverage.executed);
+        }
         if (gateResult.reported && validation.finding) {
           findings.push(
             enrichFinding({ ...validation.finding, id: hyp.id }, gateResult.evidence.map((e) => e.id)),
@@ -391,6 +453,7 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
     audit: audit.read(),
     ptt,
     coverage: [...new Set(coverage)],
+    ...(attckCoverage ? { attckCoverage } : {}),
     stats: {
       startedAt,
       finishedAt: new Date().toISOString(),

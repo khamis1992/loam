@@ -78,7 +78,7 @@ function parseCommand(raw: unknown): BridgeCommand {
     throw new Error(`${id}: write_workspace needs a path param with access "write"`);
   }
   const output = raw.output ?? "text";
-  if (output !== "json" && output !== "text") throw new Error(`${id}: output must be json or text`);
+  if (output !== "json" && output !== "text" && output !== "base64" && output !== "jsonl") throw new Error(`${id}: output must be json, text, base64 or jsonl`);
   const cmd: BridgeCommand = {
     id,
     description: raw.description.trim().slice(0, 400),
@@ -92,6 +92,12 @@ function parseCommand(raw: unknown): BridgeCommand {
       throw new Error(`${id}: timeoutSeconds must be 1..900`);
     }
     cmd.timeoutSeconds = raw.timeoutSeconds;
+  }
+  if (raw.env !== undefined) {
+    if (!isObj(raw.env) || Object.entries(raw.env).some(([k, v]) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) || typeof v !== "string" || v.length > 400)) {
+      throw new Error(`${id}: env must be a string map with valid variable names`);
+    }
+    cmd.env = raw.env as Record<string, string>;
   }
   return cmd;
 }

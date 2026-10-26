@@ -89,7 +89,7 @@ describe("deser capability", () => {
       let body = "";
       req.on("data", (c) => (body += c));
       req.on("end", () => {
-        if (req.url === "/deserialize" && body.includes("rO0AB")) {
+        if (req.url === "/deserialize" && body.length > 0 && req.headers["content-type"] === "application/octet-stream") {
           res.statusCode = 500;
           res.end("java.io.ObjectInputStream: rejected payload");
         } else {

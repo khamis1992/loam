@@ -225,3 +225,18 @@ $('results').addEventListener('click',safely(async event=>{
     await api(remEndpoint('/'+remRun.id+'/close'),{vuln_id:vuln,observed_version:$(`[data-rem-close-ver="${CSS.escape(vuln)}"]`).value.trim(),note:$(`[data-rem-close-note="${CSS.escape(vuln)}"]`).value.trim(),evidence_id:$(`[data-rem-close-ev="${CSS.escape(vuln)}"]`).value.trim()});await refreshRemediation();return;}
   if(t.closest('[data-rem-cancel]')){await api(remEndpoint('/'+remRun.id+'/cancel'),{});await refreshRemediation();return;}
 }));
+
+// Red-team global kill-switch: same controller used by the agent tool and API.
+async function refreshRedKillSwitch(){
+  try{
+    const state=await api('/api/security/red/kill-switch');
+    $('redKillStatus').textContent=state.engaged?'مفتاح الإيقاف مفعّل — كل نشاط أحمر متوقف':'مفتاح الإيقاف غير مفعّل';
+    $('redKill').textContent=state.engaged?'إعادة تفعيل نشاط الفريق الأحمر':'إيقاف كل نشاط الفريق الأحمر';
+  }catch(e){$('redKillStatus').textContent='تعذر قراءة حالة مفتاح الإيقاف: '+e.message;}
+}
+$('redKill').onclick=safely(async()=>{
+  const state=await api('/api/security/red/kill-switch');
+  await api('/api/security/red/kill-switch',{engage:!state.engaged});
+  await refreshRedKillSwitch();
+});
+refreshRedKillSwitch();

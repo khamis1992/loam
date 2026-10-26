@@ -12,6 +12,8 @@
  * default and requires the approval callback. The blue path is untouched.
  */
 import type { BridgeEnvelope } from "../../bridges/types.js";
+import { redactEvidenceHeaders } from "../orchestrator.js";
+import { redactText } from "./audit.js";
 import { gate, killSwitchSignal, RateLimiter, type AuthorizationRecord, type GateDeps } from "./gate.js";
 import type { GateDecision, RedAction } from "./types.js";
 
@@ -74,7 +76,8 @@ export interface RedTransportDeps {
 export interface RedRequestOptions {
   method?: string;
   headers?: Record<string, string>;
-  body?: string;
+  /** Text or exact binary payload (deserialization proofs). */
+  body?: string | Uint8Array;
   /** Mark this request destructive (default: only DELETE). */
   destructive?: boolean;
 }
@@ -87,6 +90,12 @@ export interface RedTransport {
 
 const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const ALLOWED_METHODS = new Set(["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]);
+
+const toArrayBuffer = (body: Uint8Array): ArrayBuffer => {
+  const buffer = new ArrayBuffer(body.byteLength);
+  new Uint8Array(buffer).set(body);
+  return buffer;
+};
 
 /**
  * Build a gated transport bound to one authorization record (or the localhost
@@ -118,7 +127,6 @@ export function redTransport(authz: AuthorizationRecord | null, deps: RedTranspo
       const decision = gate(input, action, authz, {
         ...deps.gateDeps,
         ...(deps.approval ? { approval: deps.approval } : {}),
-        limiter,
         requestCount: () => count,
       });
       if (!decision.allow) {
@@ -135,12 +143,12 @@ export function redTransport(authz: AuthorizationRecord | null, deps: RedTranspo
       deps.signal?.addEventListener("abort", onAbort, { once: true });
       // §5.5a: engaging the kill-switch aborts in-flight red requests too.
       const kill = killSwitchSignal();
-      kill.addEventListener("abort", onAbort, { once: true });
+      kill.signal.addEventListener("abort", onAbort, { once: true });
       try {
         const res = await fetch(input, {
           method,
           headers: { ...(deps.authHeaders ?? {}), ...(opts.headers ?? {}) },
-          body: opts.body,
+          body: opts.body instanceof Uint8Array ? toArrayBuffer(opts.body) : opts.body,
           redirect: "manual",
           signal: controller.signal,
         });
@@ -157,37 +165,52 @@ export function redTransport(authz: AuthorizationRecord | null, deps: RedTranspo
         let body = "";
         let bodyTruncated = false;
         if (method !== "HEAD") {
-          const text = await res.text();
-          if (text.length > maxBodyBytes) {
-            body = text.slice(0, maxBodyBytes);
-            bodyTruncated = true;
-          } else {
-            body = text;
+          const chunks: Uint8Array[] = [];
+          let bytes = 0;
+          const reader = res.body?.getReader();
+          if (reader) {
+            try {
+              for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = value.subarray(0, Math.max(0, maxBodyBytes - bytes));
+                chunks.push(chunk);
+                bytes += chunk.length;
+                if (chunk.length < value.length || bytes >= maxBodyBytes) {
+                  bodyTruncated = true;
+                  break;
+                }
+              }
+            } finally {
+              await reader.cancel().catch(() => {});
+            }
           }
+          body = Buffer.concat(chunks).toString("utf8");
         }
         count++;
+        const safeBody = redactText(body);
         evidence.push({
           id: `R${count}`,
           at: new Date().toISOString(),
-          url: input,
+          url: redactText(input),
           method,
           status: res.status,
           durationMs: Date.now() - started,
           bytes: body.length,
-          ...(opts.body ? { requestBody: opts.body.slice(0, 2048) } : {}),
+          ...(typeof opts.body === "string" ? { requestBody: redactText(opts.body.slice(0, 2048)) } : {}),
         });
         return {
           ok: res.status >= 200 && res.status < 300,
           status: res.status,
-          headers,
-          setCookie,
-          body,
+          headers: redactEvidenceHeaders(headers),
+          setCookie: setCookie.map(redactText),
+          body: safeBody,
           ...(bodyTruncated ? { bodyTruncated: true } : {}),
         };
       } finally {
         clearTimeout(timer);
         deps.signal?.removeEventListener("abort", onAbort);
-        kill.removeEventListener("abort", onAbort);
+        kill.dispose();
         limiter.release();
       }
     },

@@ -10,16 +10,21 @@ import path from "node:path";
 import fs from "node:fs";
 import type { Tool, ToolContext } from "../tools/registry.js";
 import { runBridge } from "../bridges/exec.js";
+import { runBridgeDetached } from "../bridges/exec.js";
 import { defaultRedCapabilities } from "../security/red/capabilities.js";
 import { gate, defaultDataRoot } from "../security/red/gate.js";
 import { runCampaign, type BridgeCaller } from "../security/red/orchestrator/redOrchestrator.js";
 import { llmPlanner, type RedPlanner } from "../security/red/orchestrator/planner.js";
+import { setRedKillSwitch } from "../security/red/control.js";
 import { buildRedReport } from "../security/red/report.js";
 
 const str = (args: Record<string, unknown>, key: string): string => (typeof args[key] === "string" ? (args[key] as string) : "");
 
 const bridgeCallerFor = (ctx: ToolContext): BridgeCaller => (bridgeId, commandId, args) =>
   runBridge(ctx, bridgeId, commandId, args);
+
+const bridgeDaemonFor = (ctx: ToolContext) => (bridgeId: string, commandId: string, args: Record<string, unknown>) =>
+  runBridgeDetached(ctx, bridgeId, commandId, args);
 
 /** Model-driven planner wired to the local model (§6.1); proposals stay evidence-gated. */
 const plannerFor = (ctx: ToolContext, plan: string): RedPlanner | undefined => {
@@ -43,6 +48,7 @@ export function redTools(): Tool[] {
           authzId: { type: "string", description: "AuthorizationRecord id (AUTHZ-####) for non-localhost targets; omit for the localhost default posture" },
           profile: { type: "string", description: "'quick' (default) or 'campaign'" },
           plan: { type: "string", description: "'auto' uses model-driven planning (proposals still pass the evidence gate); default 'off'" },
+          approveExternal: { type: "boolean", description: "Explicit operator approval for external/exec_script bridge effects (required when installed engines are used)" },
         },
         required: ["target"],
       },
@@ -58,9 +64,15 @@ export function redTools(): Tool[] {
           return { ok: false, content: `Target ${target} is outside the localhost default posture (${decision.reason}); provide an authzId after signing an authorization record.` };
         }
         const capabilities = await defaultRedCapabilities(ctx.cfg, { ssrf: { probeTemplate: undefined } });
+        if (capabilities.some((cap) => cap.id !== "red.ssrf") && args["approveExternal"] !== true) {
+          return {
+            ok: false,
+            content: "External/exec_script engines are available for this campaign but were not approved. Rerun with approveExternal: true after reviewing the target, scope and engine effects.",
+          };
+        }
         const result = await runCampaign(
           { goal: `Red campaign on ${target}`, authzId, targets: [target], profile },
-          { dataRoot: defaultDataRoot(), bridge: bridgeCallerFor(ctx), capabilities, planner: plannerFor(ctx, plan), workspace: ctx.workspace },
+          { dataRoot: defaultDataRoot(), bridge: bridgeCallerFor(ctx), capabilities, planner: plannerFor(ctx, plan), workspace: ctx.workspace, bridgeApproval: () => true, bridgeDaemon: bridgeDaemonFor(ctx) },
         );
         const outDir = path.join(ctx.workspace, "red", result.campaignId);
         const report = buildRedReport(result, outDir);
@@ -78,6 +90,20 @@ export function redTools(): Tool[] {
           .filter(Boolean)
           .join("\n");
         return { ok: true, content: summary };
+      },
+    },
+    {
+      name: "red_kill_switch",
+      description: "Engage or reset the global red-team kill-switch. Engaging immediately blocks new red actions and aborts in-flight red requests; the action is audited.",
+      parameters: {
+        type: "object",
+        properties: { engage: { type: "boolean", description: "true to stop all red activity, false to reset" } },
+        required: ["engage"],
+      },
+      async run(args): Promise<{ ok: boolean; content: string }> {
+        if (typeof args["engage"] !== "boolean") return { ok: false, content: "red_kill_switch requires engage: boolean" };
+        const state = setRedKillSwitch(args["engage"] as boolean);
+        return { ok: true, content: state.engaged ? "Kill-switch ENGAGED: all red actions are blocked and in-flight requests abort." : "Kill-switch reset: red actions may run again." };
       },
     },
     {

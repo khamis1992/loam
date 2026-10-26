@@ -6,6 +6,9 @@
 import type { PentestFinding } from "../../tools/pentest.js";
 import type { Evidence } from "../orchestrator.js";
 import { nextEvidenceId } from "../orchestrator.js";
+import { normalizeScope, scopedTransport, type RequestEvidence } from "../scope.js";
+import { normalizeSsrfCases, normalizeSsrfValues, runSsrfCases, type SsrfCase, type SsrfProof } from "../ssrf.js";
+import { gate } from "./gate.js";
 import type { RedCapability, RedCapabilityContext, RedHypothesis, RedValidation } from "./orchestrator/redOrchestrator.js";
 
 export type SsrfModuleKind = "metadata" | "gopher" | "fileRead" | "dict" | "internalPortscan";
@@ -43,11 +46,19 @@ export interface SsrfCapabilityOptions {
   /** Response body markers that prove server-side fetch. */
   markers?: string[];
   kinds?: SsrfModuleKind[];
+  /** "oob" reuses Loam's callback-witness engine; "modules" uses differential probes. */
+  mode?: "modules" | "oob";
+  /** OOB case path and field (defaults: / and url). */
+  path?: string;
+  field?: string;
+  /** Fresh, non-URL baseline value for the negative control. */
+  benignValue?: string;
 }
 
 export function ssrfCapability(opts: SsrfCapabilityOptions = {}): RedCapability {
   const kinds = opts.kinds ?? ["metadata", "fileRead"];
   const markers = opts.markers ?? DEFAULT_MARKERS;
+  const mode = opts.mode ?? "modules";
   const buildProbeUrl = (target: string, value: string): string => {
     const template = opts.probeTemplate ?? `${target.replace(/\/+$/, "")}?url={SSRF}`;
     return template.replace("{SSRF}", encodeURIComponent(value));
@@ -56,6 +67,15 @@ export function ssrfCapability(opts: SsrfCapabilityOptions = {}): RedCapability 
     id: "red.ssrf",
     applicable: (target) => /^https?:/i.test(target),
     hunt: async (target): Promise<RedHypothesis[]> => {
+      if (mode === "oob") {
+        return [{
+          id: `HYP-SSRF-OOB-${target.length}`,
+          capability: "red.ssrf",
+          target,
+          claim: "Server-side request forgery confirmed by an OOB callback",
+          rationale: "Existing loopback witness with a negative baseline",
+        }];
+      }
       const hyps: RedHypothesis[] = [];
       for (const kind of kinds) {
         for (const value of ssrfModulePayloads(kind).slice(0, 3)) {
@@ -65,15 +85,17 @@ export function ssrfCapability(opts: SsrfCapabilityOptions = {}): RedCapability 
             target,
             claim: `SSRF via ${kind} probe (${value.slice(0, 60)})`,
             rationale: "SSRFmap-style module probe",
+            params: { value, kind },
           });
         }
       }
       return hyps.slice(0, 6);
     },
     validate: async (hyp: RedHypothesis, ctx: RedCapabilityContext): Promise<RedValidation> => {
-      // Re-derive the probe value from the claim's last parenthesised segment.
+      if (mode === "oob") return validateSsrfOob(hyp, ctx, opts);
+      // Probe data is carried structurally; the claim is only display text.
       const match = /\((.+?)\)\s*$/.exec(hyp.claim);
-      const value = match?.[1] ?? "http://127.0.0.1/";
+      const value = hyp.params?.value ?? match?.[1] ?? "http://127.0.0.1/";
       const probeUrl = buildProbeUrl(hyp.target, value);
       let result;
       try {
@@ -114,5 +136,78 @@ export function ssrfCapability(opts: SsrfCapabilityOptions = {}): RedCapability 
       };
       return { hypothesisId: hyp.id, status: "confirmed", claim: hyp.claim, detail: evidence[1]!.observed!, evidence, finding };
     },
+  };
+}
+
+/** Reuse Loam's existing OOB SSRF engine: negative baseline + loopback witness. */
+async function validateSsrfOob(hyp: RedHypothesis, ctx: RedCapabilityContext, opts: SsrfCapabilityOptions): Promise<RedValidation> {
+  const scope = normalizeScope(hyp.target, { maxPages: 1, maxRequests: 10, delayMs: 0, timeoutSeconds: 30 });
+  const ssrfCase = normalizeSsrfCases(
+    [{ id: "redSsrfOob", kind: "get", path: opts.path ?? "/", field: opts.field ?? "url", benignRef: "baseline" } as SsrfCase],
+    scope,
+    "campaign",
+    [],
+  )[0]!;
+  const secrets = normalizeSsrfValues({ baseline: opts.benignValue ?? "home" }, [ssrfCase]);
+  const controller = new AbortController();
+  ctx.signal?.addEventListener("abort", () => controller.abort(), { once: true });
+  const requestEvidence: RequestEvidence[] = [];
+  const transport = scopedTransport(scope, controller.signal, {}, requestEvidence);
+  const result: { proofs: SsrfProof[]; incomplete: boolean } = { proofs: [], incomplete: false };
+  const published: { proof: SsrfProof; findings: PentestFinding[] }[] = [];
+  const gateTarget = new URL(ssrfCase.path, scope.seeds[0]!).href;
+
+  try {
+    await runSsrfCases(
+      {
+        scope,
+        secrets,
+        auth: {},
+        signal: controller.signal,
+        evidence: requestEvidence,
+        reserve: async () => {
+          const decision = gate(gateTarget, { capability: "red.ssrf", verb: "read" }, ctx.authz, { requestCount: () => transport.count });
+          if (!decision.allow) throw new Error(decision.reason);
+          return transport.reserve();
+        },
+        redact: transport.redact,
+        result,
+        publish: (proof, findings) => published.push({ proof, findings }),
+      },
+      [ssrfCase],
+    );
+  } catch (err) {
+    return { hypothesisId: hyp.id, status: "inconclusive", claim: hyp.claim, detail: `OOB SSRF verification failed: ${(err as Error).message}`, evidence: [] };
+  }
+
+  const evidence: Evidence[] = [
+    ...result.proofs.map((proof) => ({
+      id: nextEvidenceId(),
+      kind: "poc" as const,
+      at: proof.at,
+      poc: `SSRF OOB case ${proof.caseId}`,
+      observed: proof.summary,
+    })),
+    ...requestEvidence.map((item) => ({
+      id: nextEvidenceId(),
+      kind: "request_response" as const,
+      at: item.at,
+      url: item.url,
+      method: item.method,
+      status: item.status,
+      response: `HTTP ${item.status}; ${item.bytes} bytes; sha256 ${item.bodyHash}`,
+    })),
+  ];
+  const first = published.flatMap((p) => p.findings)[0];
+  if (first) {
+    const { id: _engineId, ...finding } = first;
+    return { hypothesisId: hyp.id, status: "confirmed", claim: hyp.claim, detail: first.detail, evidence, finding };
+  }
+  return {
+    hypothesisId: hyp.id,
+    status: result.incomplete ? "inconclusive" : "refuted",
+    claim: hyp.claim,
+    detail: result.proofs.map((p) => p.summary).join("; ") || "No OOB callback observed",
+    evidence,
   };
 }

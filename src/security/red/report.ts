@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { compareFindings, sarif, type SecurityFinding } from "../findings.js";
 import type { UnverifiedClaim } from "../orchestrator.js";
+import { redactText } from "./audit.js";
 import type { AttckCoverage } from "./advsim/caldera.js";
 import type { RedCampaignResult } from "./orchestrator/redOrchestrator.js";
 
@@ -30,6 +31,7 @@ export function buildRedReport(result: RedCampaignResult, outDir: string, opts: 
   fs.mkdirSync(outDir, { recursive: true });
   const pocDir = path.join(outDir, "poc");
   fs.mkdirSync(pocDir, { recursive: true });
+  const attckCoverage = opts.attckCoverage ?? result.attckCoverage;
 
   const sorted = [...result.findings].sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity));
   const poc: RedReport["poc"] = [];
@@ -38,20 +40,20 @@ export function buildRedReport(result: RedCampaignResult, outDir: string, opts: 
     const artifact = {
       findingId: f.id,
       check: f.check,
-      target: f.target,
+      target: redactText(f.target),
       severity: f.severity,
       claim: f.title,
-      detail: f.detail,
-      remediation: f.remediation ?? null,
+      detail: redactText(f.detail),
+      remediation: f.remediation ? redactText(f.remediation) : null,
       // Exact reproduction bundle: every EV item with its request/response or PoC.
       evidence: evidence.map((e) => ({
         id: e.id,
         kind: e.kind,
         at: e.at,
-        ...(e.url ? { url: e.url, method: e.method ?? "GET", status: e.status } : {}),
-        ...(e.request ? { request: e.request } : {}),
-        ...(e.response ? { response: e.response } : {}),
-        ...(e.poc ? { poc: e.poc, observed: e.observed } : {}),
+        ...(e.url ? { url: redactText(e.url), method: e.method ?? "GET", status: e.status } : {}),
+        ...(e.request ? { request: redactText(e.request) } : {}),
+        ...(e.response ? { response: redactText(e.response) } : {}),
+        ...(e.poc ? { poc: redactText(e.poc), observed: e.observed ? redactText(e.observed) : e.observed } : {}),
       })),
     };
     const artifactPath = path.join(pocDir, `${f.id}.json`);
@@ -74,8 +76,8 @@ export function buildRedReport(result: RedCampaignResult, outDir: string, opts: 
   if (sorted.length === 0) lines.push("_No gate-passing findings._", "");
   sorted.forEach((f, i) => {
     lines.push(`## ${i + 1}. [${f.severity.toUpperCase()}] ${f.title}`, "");
-    lines.push(`- Check: \`${f.check}\``, `- Target: ${f.target}`, `- Detail: ${f.detail}`);
-    if (f.remediation) lines.push(`- Remediation: ${f.remediation}`);
+    lines.push(`- Check: \`${f.check}\``, `- Target: ${redactText(f.target)}`, `- Detail: ${redactText(f.detail)}`);
+    if (f.remediation) lines.push(`- Remediation: ${redactText(f.remediation)}`);
     const artifact = poc.find((p) => p.findingId === f.id);
     if (artifact) lines.push(`- PoC artifact: \`${path.relative(outDir, artifact.artifactPath).replace(/\\/g, "/")}\``);
     lines.push("");
@@ -83,13 +85,13 @@ export function buildRedReport(result: RedCampaignResult, outDir: string, opts: 
   if (result.unverified.length) {
     lines.push("## Unverified claims (withheld by the evidence gate)", "");
     for (const u of result.unverified) {
-      lines.push(`- **${u.title}** (\`${u.check}\` @ ${u.target}) — ${u.reason}: ${u.detail}`);
+      lines.push(`- **${u.title}** (\`${u.check}\` @ ${redactText(u.target)}) — ${u.reason}: ${redactText(u.detail)}`);
     }
     lines.push("");
   }
-  if (opts.attckCoverage) {
+  if (attckCoverage) {
     lines.push("## ATT&CK coverage (adversary simulation)", "");
-    for (const e of opts.attckCoverage.executed) lines.push(`- ${e.attackId} — ${e.name} (${e.result})`);
+    for (const e of attckCoverage.executed) lines.push(`- ${e.attackId} — ${e.name} (${e.result})`);
     lines.push("");
   }
   const markdownPath = path.join(outDir, "report.md");
@@ -114,7 +116,7 @@ export function buildRedReport(result: RedCampaignResult, outDir: string, opts: 
     findings: sorted,
     unverified: result.unverified,
     poc,
-    ...(opts.attckCoverage ? { attckCoverage: opts.attckCoverage } : {}),
+    ...(attckCoverage ? { attckCoverage } : {}),
     sarifPath,
     markdownPath,
   };

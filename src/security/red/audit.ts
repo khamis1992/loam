@@ -7,7 +7,9 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { defaultDataRoot } from "./gate.js";
+import { createHash } from "node:crypto";
+import { stripSecrets } from "../../memory/redact.js";
+import { canonicalJson, defaultDataRoot } from "./gate.js";
 
 export type AuditOutcome =
   | "allowed"
@@ -31,17 +33,41 @@ export interface AuditEntry {
   outcome: AuditOutcome;
   reason?: string;
   evidenceIds?: string[];
+  /** Previous entry hash and this entry's SHA256 (tamper-evident chain). */
+  prevHash?: string;
+  hash?: string;
 }
 
 const SECRET_KEY_RE = /cookie|authorization|bearer|token|secret|password|api[-_]?key|session/i;
+const USERINFO_RE = /(https?:\/\/)([^/\s:@]+):([^/\s@]+)@/g;
+const BEARER_RE = /\bBearer\s+[^\s,;]+/gi;
+const ASSIGNMENT_RE = /\b(cookie|authorization|session|token|secret|password|api[-_]?key)=([^&\s,;]+)/gi;
+
+/** Redact a free-form string before it can become evidence or an audit line. */
+export function redactText(value: string): string {
+  return stripSecrets(value)
+    .replace(USERINFO_RE, "$1[REDACTED]@")
+    .replace(BEARER_RE, "Bearer [REDACTED]")
+    .replace(ASSIGNMENT_RE, "$1=[REDACTED]");
+}
+
+/** Recursively redact objects/arrays; secret-like keys are masked at every depth. */
+export function redactValue(value: unknown): unknown {
+  if (typeof value === "string") return redactText(value);
+  if (Array.isArray(value)) return value.map(redactValue);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      out[key] = SECRET_KEY_RE.test(key) ? "[REDACTED]" : redactValue(nested);
+    }
+    return out;
+  }
+  return value;
+}
 
 /** Mask secret-ish parameter values before anything is persisted. */
 export function redactParams(params: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(params)) {
-    out[key] = SECRET_KEY_RE.test(key) ? "[REDACTED]" : value;
-  }
-  return out;
+  return redactValue(params) as Record<string, unknown>;
 }
 
 /**
@@ -52,6 +78,7 @@ export class RedAuditLog {
   private readonly file: string;
   private readonly dir: string;
   private seq = 0;
+  private lastHash = "";
 
   constructor(root: string = defaultDataRoot()) {
     this.dir = path.join(root, "audit");
@@ -60,17 +87,28 @@ export class RedAuditLog {
     if (fs.existsSync(this.file)) {
       const lines = fs.readFileSync(this.file, "utf8").split("\n").filter(Boolean);
       this.seq = lines.length;
+      if (lines.length) {
+        try {
+          this.lastHash = (JSON.parse(lines[lines.length - 1]!) as AuditEntry).hash ?? "";
+        } catch {
+          this.lastHash = "";
+        }
+      }
     }
   }
 
   /** Append one entry; assigns the monotonic sequence number and timestamp. */
-  append(entry: Omit<AuditEntry, "seq" | "at">): AuditEntry {
+  append(entry: Omit<AuditEntry, "seq" | "at" | "hash" | "prevHash">): AuditEntry {
     const full: AuditEntry = {
       ...entry,
+      target: redactText(entry.target),
       seq: ++this.seq,
       at: new Date().toISOString(),
       params: redactParams(entry.params ?? {}),
+      ...(this.lastHash ? { prevHash: this.lastHash } : {}),
     };
+    full.hash = createHash("sha256").update(canonicalJson(full)).digest("hex");
+    this.lastHash = full.hash;
     fs.appendFileSync(this.file, JSON.stringify(full) + "\n", { encoding: "utf8" });
     return full;
   }
@@ -88,6 +126,31 @@ export class RedAuditLog {
       }
     }
     return out;
+  }
+
+  /** Verify every hash and link in the current file; malformed history fails closed. */
+  verify(): boolean {
+    if (!fs.existsSync(this.file)) return true;
+    let previous: string | undefined;
+    for (const line of fs.readFileSync(this.file, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+      let entry: AuditEntry;
+      try {
+        entry = JSON.parse(line) as AuditEntry;
+      } catch {
+        return false;
+      }
+      if (!entry.hash) {
+        previous = undefined;
+        continue; // legacy unsigned entries remain readable
+      }
+      if (previous !== undefined && (entry.prevHash ?? "") !== previous) return false;
+      const { hash, ...unsigned } = entry;
+      const expected = createHash("sha256").update(canonicalJson(unsigned)).digest("hex");
+      if (expected !== hash) return false;
+      previous = hash;
+    }
+    return true;
   }
 
   /**

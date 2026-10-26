@@ -1,25 +1,17 @@
 /**
- * Red-team engine installer (RED_TEAM_BUILD_SPEC §5.8, open decision O-3:
- * heavy engines are downloaded on first use rather than bundled).
+ * Red-team engine installer (RED_TEAM_BUILD_SPEC §5.8 / O-3).
  *
- * Downloads official release artifacts from each engine's upstream project,
- * records their SHA256 and installs them under ~/.loam/tools:
- *   - nuclei  (projectdiscovery/nuclei, MIT)      -> nuclei.exe
- *   - ffuf    (ffuf/ffuf, MIT)                    -> ffuf.exe
- *   - ysoserial (frohoff/ysoserial, MIT)          -> ysoserial.jar (runs on the local JRE)
- *   - sqlmap  (sqlmapproject/sqlmap, GPL-2.0 —    -> sqlmap/sqlmap.py (runs via the local
- *              stays an external process, licence      `py` launcher; never vendored into Loam)
- *              discipline §5.9)
- *
- * The registry is written to ~/.loam/tools/engines.json and consumed by the
- * red capability layer (src/security/red/engines.ts). Idempotent: installed
- * engines are skipped unless --force.
+ * Downloads pinned official release artifacts and verifies their SHA256 before
+ * extraction or execution. A hash is never trusted merely because it was just
+ * downloaded: mismatch aborts installation. sqlmap stays an external process
+ * (GPL-2.0, licence discipline §5.9); nothing is vendored into Loam.
  */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 const execFileP = promisify(execFile);
@@ -28,10 +20,39 @@ const TOOLS_ROOT = path.join(os.homedir(), ".loam", "tools");
 const DOWNLOADS = path.join(TOOLS_ROOT, "downloads");
 const REGISTRY = path.join(TOOLS_ROOT, "engines.json");
 
+/** Trusted pins captured from the official upstream release artifacts. */
+export const ENGINE_PINS: Record<string, { version: string; url: string; sha256: string }> = {
+  nuclei: {
+    version: "v3.11.1",
+    url: "https://github.com/projectdiscovery/nuclei/releases/download/v3.11.1/nuclei_3.11.1_windows_amd64.zip",
+    sha256: "bb6cb9ff8939b753f6fcab06fd30a15f5bc61d8382a597871334c007a85ff9d2",
+  },
+  ffuf: {
+    version: "v2.3.0",
+    url: "https://github.com/ffuf/ffuf/releases/download/v2.3.0/ffuf_2.3.0_windows_amd64.zip",
+    sha256: "091c8a22d0c7fbe07d343b3ae2c213dbd37b38a8a2ed40631fcd3128ea1764fb",
+  },
+  ysoserial: {
+    version: "v0.0.6",
+    url: "https://github.com/frohoff/ysoserial/releases/download/v0.0.6/ysoserial-all.jar",
+    sha256: "2c9bddd6a1a4ec66c1078ea97dacb61eb66d1c41aec7b6d21e3c72214ce170f1",
+  },
+  sqlmap: {
+    version: "1.10",
+    url: "https://codeload.github.com/sqlmapproject/sqlmap/zip/refs/tags/1.10",
+    sha256: "97b8fe8e06ed8b6c75c234f111393bae79e2c3d3283c086351354716277dfff1",
+  },
+  zap: {
+    version: "v2.17.0",
+    url: "https://github.com/zaproxy/zaproxy/releases/download/v2.17.0/ZAP_2.17.0_Crossplatform.zip",
+    sha256: "94c8f767b1c2e94f0db66b3ae56514d5e3f5a728ee1b6c798e0c8fe2d61fbff0",
+  },
+};
+
 interface EngineRegistry {
   installedAt: string;
   versions: Record<string, string>;
-  paths: { nuclei?: string; ffuf?: string; sqlmapScript?: string; ysoserialJar?: string };
+  paths: { nuclei?: string; ffuf?: string; sqlmapScript?: string; ysoserialJar?: string; zapHome?: string };
   sha256: Record<string, string>;
 }
 
@@ -47,36 +68,34 @@ const saveRegistry = (r: EngineRegistry): void => {
   fs.writeFileSync(REGISTRY, JSON.stringify(r, null, 2), "utf8");
 };
 
-interface Release {
-  tag: string;
-  assets: { name: string; browser_download_url: string; size: number }[];
+/** Hard-fail unless the downloaded file matches the trusted pin exactly. */
+export function assertSha256(file: string, expectedSha256: string): void {
+  const actual = createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+  if (actual !== expectedSha256.toLowerCase()) {
+    throw new Error(`sha256 mismatch for ${path.basename(file)}: expected ${expectedSha256}, got ${actual}`);
+  }
 }
 
-async function latestRelease(repo: string): Promise<Release> {
-  const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
-    headers: { "user-agent": "loam-red-installer", accept: "application/vnd.github+json" },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!res.ok) throw new Error(`GitHub API ${repo}: HTTP ${res.status}`);
-  const doc = (await res.json()) as { tag_name?: string; assets?: { name: string; browser_download_url: string; size: number }[] };
-  if (!doc.tag_name || !Array.isArray(doc.assets)) throw new Error(`GitHub API ${repo}: unexpected shape`);
-  return { tag: doc.tag_name, assets: doc.assets };
-}
-
-async function download(url: string, to: string): Promise<string> {
+async function download(url: string, to: string, expectedSha256: string): Promise<void> {
   const res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(600_000) });
   if (!res.ok) throw new Error(`download ${url}: HTTP ${res.status}`);
   const bytes = Buffer.from(await res.arrayBuffer());
   fs.writeFileSync(to, bytes);
-  return createHash("sha256").update(bytes).digest("hex");
+  assertSha256(to, expectedSha256);
 }
 
 const extractZip = async (zip: string, into: string): Promise<void> => {
+  // Refuse traversal before extraction (defense-in-depth alongside the pin).
+  const { stdout } = await execFileP("tar", ["-tf", zip], { timeout: 30_000 });
+  for (const entry of stdout.split(/\r?\n/).filter(Boolean)) {
+    const normalized = entry.replace(/\\/g, "/");
+    if (normalized.startsWith("/") || /^[A-Za-z]:/.test(normalized) || normalized.split("/").includes("..")) {
+      throw new Error(`unsafe zip entry: ${entry}`);
+    }
+  }
   fs.mkdirSync(into, { recursive: true });
   await execFileP("tar", ["-xf", zip, "-C", into], { timeout: 120_000 });
 };
-
-const first = <T,>(xs: T[], pred: (x: T) => boolean): T | undefined => xs.find(pred);
 
 async function main(): Promise<void> {
   const force = process.argv.includes("--force");
@@ -84,86 +103,85 @@ async function main(): Promise<void> {
   const registry = loadRegistry();
   const results: string[] = [];
 
-  // --- nuclei ----------------------------------------------------------------
   if (force || !registry.paths.nuclei || !fs.existsSync(registry.paths.nuclei)) {
-    console.log("nuclei: resolving latest release…");
-    const rel = await latestRelease("projectdiscovery/nuclei");
-    const asset = first(rel.assets, (a) => /windows_amd64\.zip$/.test(a.name));
-    if (!asset) throw new Error("nuclei: no windows_amd64 asset");
-    const zip = path.join(DOWNLOADS, `nuclei-${rel.tag}.zip`);
-    console.log(`nuclei: downloading ${asset.name} (${(asset.size / 1e6).toFixed(1)} MB)…`);
-    const sha = await download(asset.browser_download_url, zip);
+    const pin = ENGINE_PINS.nuclei!;
+    const zip = path.join(DOWNLOADS, `nuclei-${pin.version}.zip`);
+    console.log(`nuclei: downloading pinned ${pin.version}…`);
+    await download(pin.url, zip, pin.sha256);
     await extractZip(zip, TOOLS_ROOT);
     const exe = path.join(TOOLS_ROOT, "nuclei.exe");
     if (!fs.existsSync(exe)) throw new Error("nuclei: nuclei.exe missing after extract");
-    registry.versions.nuclei = rel.tag;
+    registry.versions.nuclei = pin.version;
     registry.paths.nuclei = exe;
-    registry.sha256.nuclei = sha;
-    results.push(`nuclei ${rel.tag} -> ${exe}`);
+    registry.sha256.nuclei = pin.sha256;
+    results.push(`nuclei ${pin.version} -> ${exe}`);
   } else results.push(`nuclei ${registry.versions.nuclei} (cached)`);
 
-  // --- ffuf ------------------------------------------------------------------
   if (force || !registry.paths.ffuf || !fs.existsSync(registry.paths.ffuf)) {
-    console.log("ffuf: resolving latest release…");
-    const rel = await latestRelease("ffuf/ffuf");
-    const asset = first(rel.assets, (a) => /windows_amd64\.zip$/.test(a.name));
-    if (!asset) throw new Error("ffuf: no windows_amd64 asset");
-    const zip = path.join(DOWNLOADS, `ffuf-${rel.tag}.zip`);
-    console.log(`ffuf: downloading ${asset.name} (${(asset.size / 1e6).toFixed(1)} MB)…`);
-    const sha = await download(asset.browser_download_url, zip);
+    const pin = ENGINE_PINS.ffuf!;
+    const zip = path.join(DOWNLOADS, `ffuf-${pin.version}.zip`);
+    console.log(`ffuf: downloading pinned ${pin.version}…`);
+    await download(pin.url, zip, pin.sha256);
     await extractZip(zip, TOOLS_ROOT);
     const exe = path.join(TOOLS_ROOT, "ffuf.exe");
     if (!fs.existsSync(exe)) throw new Error("ffuf: ffuf.exe missing after extract");
-    registry.versions.ffuf = rel.tag;
+    registry.versions.ffuf = pin.version;
     registry.paths.ffuf = exe;
-    registry.sha256.ffuf = sha;
-    results.push(`ffuf ${rel.tag} -> ${exe}`);
+    registry.sha256.ffuf = pin.sha256;
+    results.push(`ffuf ${pin.version} -> ${exe}`);
   } else results.push(`ffuf ${registry.versions.ffuf} (cached)`);
 
-  // --- ysoserial ---------------------------------------------------------------
   if (force || !registry.paths.ysoserialJar || !fs.existsSync(registry.paths.ysoserialJar)) {
-    console.log("ysoserial: resolving latest release…");
-    const rel = await latestRelease("frohoff/ysoserial");
-    const asset = first(rel.assets, (a) => /\.jar$/.test(a.name) && !/sources|javadoc/.test(a.name));
-    if (!asset) throw new Error("ysoserial: no jar asset");
+    const pin = ENGINE_PINS.ysoserial!;
     const jar = path.join(TOOLS_ROOT, "ysoserial.jar");
-    console.log(`ysoserial: downloading ${asset.name} (${(asset.size / 1e6).toFixed(1)} MB)…`);
-    const sha = await download(asset.browser_download_url, jar);
-    registry.versions.ysoserial = rel.tag;
+    console.log(`ysoserial: downloading pinned ${pin.version}…`);
+    await download(pin.url, jar, pin.sha256);
+    registry.versions.ysoserial = pin.version;
     registry.paths.ysoserialJar = jar;
-    registry.sha256.ysoserial = sha;
-    results.push(`ysoserial ${rel.tag} -> ${jar}`);
+    registry.sha256.ysoserial = pin.sha256;
+    results.push(`ysoserial ${pin.version} -> ${jar}`);
   } else results.push(`ysoserial ${registry.versions.ysoserial} (cached)`);
 
-  // --- sqlmap (external process only; GPL-2.0 stays at arm's length) --------
   if (force || !registry.paths.sqlmapScript || !fs.existsSync(registry.paths.sqlmapScript)) {
-    console.log("sqlmap: resolving latest release…");
-    const rel = await latestRelease("sqlmapproject/sqlmap");
-    // sqlmap publishes tags without release assets; the codeload archive of the
-    // tag is the canonical zip.
-    const asset = first(rel.assets, (a) => /\.zip$/.test(a.name) && !/-rc\d/.test(a.name));
-    const url = asset?.browser_download_url ?? `https://codeload.github.com/sqlmapproject/sqlmap/zip/refs/tags/${rel.tag}`;
-    const zip = path.join(DOWNLOADS, `sqlmap-${rel.tag}.zip`);
-    console.log(`sqlmap: downloading ${url}…`);
-    const sha = await download(url, zip);
-    const extractInto = path.join(DOWNLOADS, `sqlmap-${rel.tag}`);
+    const pin = ENGINE_PINS.sqlmap!;
+    const zip = path.join(DOWNLOADS, `sqlmap-${pin.version}.zip`);
+    console.log(`sqlmap: downloading pinned ${pin.version}…`);
+    await download(pin.url, zip, pin.sha256);
+    const extractInto = path.join(DOWNLOADS, `sqlmap-${pin.version}`);
     await extractZip(zip, extractInto);
-    const script = path.join(extractInto, `sqlmap-${rel.tag.replace(/^v/, "")}`, "sqlmap.py");
-    if (!fs.existsSync(script)) throw new Error(`sqlmap: sqlmap.py missing after extract (looked at ${script})`);
-    registry.versions.sqlmap = rel.tag;
+    const script = path.join(extractInto, `sqlmap-${pin.version}`, "sqlmap.py");
+    if (!fs.existsSync(script)) throw new Error(`sqlmap: sqlmap.py missing after extract (${script})`);
+    registry.versions.sqlmap = pin.version;
     registry.paths.sqlmapScript = script;
-    registry.sha256.sqlmap = sha;
-    results.push(`sqlmap ${rel.tag} -> ${script} (via py launcher)`);
+    registry.sha256.sqlmap = pin.sha256;
+    results.push(`sqlmap ${pin.version} -> ${script} (via py launcher)`);
   } else results.push(`sqlmap ${registry.versions.sqlmap} (cached)`);
+
+  if (force || !registry.paths.zapHome || !fs.existsSync(path.join(registry.paths.zapHome, "zap-2.17.0.jar"))) {
+    const pin = ENGINE_PINS.zap!;
+    const zip = path.join(DOWNLOADS, `zap-${pin.version}.zip`);
+    console.log(`ZAP: downloading pinned ${pin.version} (~286 MB)…`);
+    await download(pin.url, zip, pin.sha256);
+    const zapHome = path.join(TOOLS_ROOT, "zap", "ZAP_2.17.0");
+    await extractZip(zip, path.join(TOOLS_ROOT, "zap"));
+    if (!fs.existsSync(path.join(zapHome, "zap-2.17.0.jar"))) throw new Error(`ZAP: jar missing after extract (${zapHome})`);
+    registry.versions.zap = pin.version;
+    registry.paths.zapHome = zapHome;
+    registry.sha256.zap = pin.sha256;
+    results.push(`ZAP ${pin.version} -> ${zapHome}`);
+  } else results.push(`ZAP ${registry.versions.zap} (cached)`);
 
   registry.installedAt = new Date().toISOString();
   saveRegistry(registry);
-  console.log("\nred engine installer: OK");
+  console.log("\nred engine installer: OK (all artifacts SHA256-verified)");
   for (const line of results) console.log(`  - ${line}`);
   console.log(`registry: ${REGISTRY}`);
 }
 
-main().catch((err: unknown) => {
-  console.error(`red engine installer FAILED: ${(err as Error).message}`);
-  process.exit(1);
-});
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
+if (invokedPath === fileURLToPath(import.meta.url)) {
+  main().catch((err: unknown) => {
+    console.error(`red engine installer FAILED: ${(err as Error).message}`);
+    process.exit(1);
+  });
+}

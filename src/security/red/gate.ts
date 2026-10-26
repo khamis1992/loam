@@ -18,6 +18,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { isLocalhostTarget } from "../orchestrator.js";
 import type { GateDecision, RedAction } from "./types.js";
 
@@ -50,6 +51,8 @@ export interface AuthorizationRecord {
   scope: AuthorizationScope;
   authorization: { statement: string; acknowledgedAt: string; expiresAt: string };
   limits: AuthorizationLimits;
+  /** HMAC-SHA256 over the canonical record, assigned at persistence. */
+  signature?: string;
 }
 
 export interface CreateAuthorizationInput {
@@ -65,9 +68,35 @@ export interface CreateAuthorizationInput {
   id?: string;
   /** Overrides the acknowledgement time (tests). */
   now?: Date;
+  /** Data root used for persistent id allocation and record signing. */
+  root?: string;
 }
 
-let authzSeq = 0;
+/** Canonical JSON with recursively sorted object keys (signing/audit hashes). */
+export function canonicalJson(value: unknown): string {
+  if (value === undefined) return "undefined";
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`);
+  return `{${entries.join(",")}}`;
+}
+
+/** Allocate the next id from the persisted authz directory, across restarts. */
+export function nextAuthorizationId(root: string = defaultDataRoot()): string {
+  let max = 0;
+  try {
+    for (const file of fs.readdirSync(authzDir(root))) {
+      const match = /^AUTHZ-(\d+)\.json$/.exec(file);
+      if (match) max = Math.max(max, Number(match[1]));
+    }
+  } catch {
+    /* no authz directory yet */
+  }
+  return `AUTHZ-${String(max + 1).padStart(4, "0")}`;
+}
 
 /** Create a signed, immutable authorization record with spec defaults. */
 export function createAuthorizationRecord(input: CreateAuthorizationInput): AuthorizationRecord {
@@ -82,9 +111,8 @@ export function createAuthorizationRecord(input: CreateAuthorizationInput): Auth
     destructiveAllowed: input.destructiveAllowed ?? input.limits?.destructiveAllowed ?? false,
   };
   if (limits.maxReqPerSec < 1 || limits.maxConcurrent < 1 || limits.maxTotalRequests < 1) throw new Error("limits must be >= 1");
-  const seq = ++authzSeq;
   return {
-    id: input.id ?? `AUTHZ-${String(seq).padStart(4, "0")}`,
+    id: input.id ?? nextAuthorizationId(input.root ?? defaultDataRoot()),
     owner: "khamis",
     scope: input.scope,
     authorization: {
@@ -104,11 +132,23 @@ function validateScope(scope: AuthorizationScope): void {
     }
   }
   if (scope.allowPorts.some((p) => !Number.isInteger(p) || p < 1 || p > 65535)) throw new Error("allowPorts must be valid ports");
-  for (const host of [...scope.allowHosts, ...scope.denyAlways]) {
+  for (const host of scope.allowHosts) {
+    if (typeof host !== "string" || !host.trim() || host.includes("*") || host.endsWith("/0")) {
+      throw new Error(`host entries must be exact and must not cover public space: ${host}`);
+    }
+  }
+  for (const host of scope.denyAlways) {
     if (typeof host !== "string" || !host.trim() || host.includes("*")) throw new Error(`host entries must be exact (no wildcards): ${host}`);
   }
   for (const prefix of scope.allowUrlPrefixes) {
     if (typeof prefix !== "string" || !/^https?:\/\//.test(prefix)) throw new Error(`allowUrlPrefixes must be absolute http(s) URLs: ${prefix}`);
+    let url: URL;
+    try {
+      url = new URL(prefix);
+    } catch {
+      throw new Error(`allowUrlPrefixes must be valid URLs: ${prefix}`);
+    }
+    if (url.username || url.password || url.search || url.hash) throw new Error(`allowUrlPrefixes must not contain credentials, query or fragment: ${prefix}`);
   }
 }
 
@@ -124,20 +164,44 @@ export function defaultDataRoot(): string {
 const authzDir = (root: string) => path.join(root, "authz");
 const authzFile = (root: string, id: string) => path.join(authzDir(root), `${id}.json`);
 
+function signingKey(root: string): string {
+  const file = path.join(root, "authz-signing.key");
+  fs.mkdirSync(root, { recursive: true });
+  if (fs.existsSync(file)) return fs.readFileSync(file, "utf8").trim();
+  const key = randomBytes(32).toString("hex");
+  fs.writeFileSync(file, key, { encoding: "utf8", mode: 0o600 });
+  return key;
+}
+
+function signAuthorization(rec: AuthorizationRecord, root: string): string {
+  const { signature: _ignored, ...unsigned } = rec;
+  return createHmac("sha256", signingKey(root)).update(canonicalJson(unsigned)).digest("hex");
+}
+
 /** Persist a record; refuses to overwrite an existing id (immutable once signed). */
 export function saveAuthorization(rec: AuthorizationRecord, root: string = defaultDataRoot()): void {
   fs.mkdirSync(authzDir(root), { recursive: true });
   const file = authzFile(root, rec.id);
   if (fs.existsSync(file)) throw new Error(`authorization ${rec.id} already exists; records are immutable once signed`);
-  fs.writeFileSync(file, JSON.stringify(rec, null, 2), { encoding: "utf8" });
+  const signed: AuthorizationRecord = { ...rec, signature: signAuthorization(rec, root) };
+  fs.writeFileSync(file, JSON.stringify(signed, null, 2), { encoding: "utf8" });
 }
 
-/** Load a record, or null when missing/unreadable. */
+/** Load a record, or null when missing/unreadable/tampered. */
 export function loadAuthorization(id: string, root: string = defaultDataRoot()): AuthorizationRecord | null {
   try {
     const raw = fs.readFileSync(authzFile(root, id), "utf8");
     const rec = JSON.parse(raw) as AuthorizationRecord;
-    return rec && rec.id === id && rec.scope && rec.authorization && rec.limits ? rec : null;
+    if (!rec || rec.id !== id || !rec.scope || !rec.authorization || !rec.limits) return null;
+    if (rec.signature) {
+      const expected = signAuthorization(rec, root);
+      const actualBuffer = Buffer.from(rec.signature, "hex");
+      const expectedBuffer = Buffer.from(expected, "hex");
+      if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) return null;
+    }
+    // Unsigned records written by older Loam versions remain readable as legacy;
+    // every new saveAuthorization call writes a signed record.
+    return rec;
   } catch {
     return null;
   }
@@ -194,15 +258,19 @@ interface ParsedTarget {
   host: string;
   port: number;
   href: string;
+  protocol: "http:" | "https:";
+  pathname: string;
 }
 
 const parseTarget = (target: string): ParsedTarget | null => {
   try {
     const url = new URL(target);
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    // Credentials never belong in scope decisions or persisted evidence.
+    if (url.username || url.password) return null;
     const host = url.hostname.toLowerCase().replace(/^\[(.*)\]$/, "$1");
     const port = url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
-    return { host, port, href: url.href };
+    return { host, port, href: url.href, protocol: url.protocol, pathname: url.pathname };
   } catch {
     return null;
   }
@@ -214,10 +282,15 @@ export function targetInScope(scope: AuthorizationScope, target: string): boolea
   if (!parsed) return false;
   const denied = scope.denyAlways.some((entry) => hostMatches(entry, parsed.host));
   if (denied) return false;
-  const hostAllowed = scope.allowHosts.some((entry) => hostMatches(entry, parsed.host));
+  const hostAllowed = scope.allowHosts.some((entry) => !entry.endsWith("/0") && hostMatches(entry, parsed.host));
   const portAllowed = scope.allowPorts.length === 0 || scope.allowPorts.includes(parsed.port);
   if (hostAllowed && portAllowed) return true;
-  return scope.allowUrlPrefixes.some((prefix) => parsed.href.startsWith(prefix));
+  return scope.allowUrlPrefixes.some((prefix) => {
+    const base = parseTarget(prefix);
+    if (!base || base.protocol !== parsed.protocol || base.host !== parsed.host || base.port !== parsed.port) return false;
+    const prefixPath = base.pathname.replace(/\/+$/, "");
+    return prefixPath === "" || parsed.pathname === prefixPath || parsed.pathname.startsWith(`${prefixPath}/`);
+  });
 }
 
 /** A record authorizes only until its expiry. */
@@ -288,17 +361,37 @@ export function resetKillSwitch(): void {
   globalGateState.killSwitch = false;
 }
 
+/** Whether the process-wide kill-switch is currently engaged. */
+export function isKillSwitchEngaged(): boolean {
+  return globalGateState.killSwitch;
+}
+
+export interface KillSwitchSubscription {
+  signal: AbortSignal;
+  /** Remove the listener when work completes normally (not only on abort). */
+  dispose: () => void;
+}
+
 /**
  * An AbortSignal that fires when the kill-switch engages, so in-flight red
- * requests and bridge executions abort immediately (spec §5.5a).
+ * requests and bridge executions abort immediately (spec §5.5a). The caller
+ * must dispose the subscription when the work finishes.
  */
-export function killSwitchSignal(): AbortSignal {
+export function killSwitchSignal(): KillSwitchSubscription {
   const controller = new AbortController();
   if (globalGateState.killSwitch) controller.abort();
   const listener = (): void => controller.abort();
   killSwitchListeners.add(listener);
-  controller.signal.addEventListener("abort", () => killSwitchListeners.delete(listener), { once: true });
-  return controller.signal;
+  const dispose = (): void => {
+    killSwitchListeners.delete(listener);
+  };
+  controller.signal.addEventListener("abort", dispose, { once: true });
+  return { signal: controller.signal, dispose };
+}
+
+/** Current live subscriptions (observability and leak regression tests). */
+export function killSwitchListenerCount(): number {
+  return killSwitchListeners.size;
 }
 
 export interface GateDeps {

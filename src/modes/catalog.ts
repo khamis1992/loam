@@ -32,6 +32,8 @@ const BUILD_EXTRA = ["vault_ref", "code_session", "code_session_status", "code_s
 /** Documentation lookup for read/research/build modes. */
 const DOCS_LOOKUP = ["docs_lookup"];
 
+/** Code map (graphify). Registered only when codeGraph.enabled; absent tools are listed as unavailable by getLoamModesUi. */
+const CODEGRAPH = ["codegraph_status", "codegraph_index", "codegraph_query", "codegraph_node", "codegraph_neighbors", "codegraph_path", "codegraph_affected", "codegraph_hubs", "codegraph_community"];
 /** N12 generator tools for the media (Studio) mode. */
 const GEN_MEDIA = ["gen_3d_from_image", "gen_music", "generate_storyboard", "search_images"];
 /** N12 research-facing generator tools. */
@@ -43,7 +45,7 @@ const CUA_DRIVER = CUA_DRIVER_TOOL_ALLOWLIST.map((tool) => `mcp__cua-driver__${t
 export const LOAM_MODES: LoamMode[] = [
   { id: "ask", label: "Loam Explore", labelAr: "استكشف", icon: "◌", hue: 155, hue2: 135,
     tagline: "وضوح قبل التنفيذ", description: "افهم أفكارك وملفات هذه المهمة واسأل دون تعديل الملفات أو تشغيل أوامر.", outputHint: "إجابة واضحة وخطوات مقترحة", readOnly: true,
-    tools: [...READ, "code_symbols", "code_outline", "semantic_search", ...DOCS_LOOKUP, ...CONTROL, "ask_codebase"], panels: ["files"],
+    tools: [...READ, "code_symbols", "code_outline", "semantic_search", ...CODEGRAPH, ...DOCS_LOOKUP, ...CONTROL, "ask_codebase"], panels: ["files"],
     fields: [{ id: "question", label: "ما الذي تريد فهمه؟", placeholder: "اشرح الفكرة أو أرفق ملفًا", multiline: true }, { id: "audience", label: "مستوى التفاصيل", placeholder: "مختصر، تفصيلي، أو مناسب للمبتدئين" }],
     starters: [{ label: "اشرح مستندًا", prompt: "اقرأ المستند المرفق واشرح أهم النقاط والمصطلحات." }, { label: "قارن فكرتين", prompt: "ساعدني في مقارنة خيارين وتحديد أسئلة القرار." }] },
   { id: "research", label: "Loam Research", labelAr: "ابحث", icon: "⌕", hue: 195, hue2: 170,
@@ -53,7 +55,7 @@ export const LOAM_MODES: LoamMode[] = [
     starters: [{ label: "قارن مصادر", prompt: "قارن المصادر التي سأرفقها، وافصل الحقائق عن الاستنتاجات مع روابط الأدلة." }, { label: "راجع موضوعًا", prompt: "أعد تقرير بحث حول الموضوع التالي، مع توضيح الثغرات وحدود المصادر المتاحة." }] },
   { id: "build", label: "Loam Build", labelAr: "ابنِ", icon: "⌘", hue: 100, hue2: 140,
     tagline: "من الفكرة إلى تجربة تعمل", description: "طوّر ملفات التطبيق وشغّل الاختبارات ومعاينة المشروع في مساحة المهمة.", outputHint: "ملفات مشروع ومعاينة ونتائج اختبارات", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, ...WRITE, ...EDIT_EXTRA, "memory_add", "artifact_publish", ...DOCS_LOOKUP, ...BUILD_EXTRA, ...GIT, "loam_mobile", "code_symbols", "code_outline", "semantic_search", "wiki_generate", "ask_codebase", "shell_run", "app_run", "web_fetch", ...RE, ...BROWSER, ...PREVIEW, ...CONTROL, ...MANAGED_SESSIONS], panels: ["files", "browser", "preview"],
+    tools: ["integration_list", "integration_call", ...READ, ...WRITE, ...EDIT_EXTRA, "memory_add", "artifact_publish", ...DOCS_LOOKUP, ...BUILD_EXTRA, ...GIT, "loam_mobile", "code_symbols", "code_outline", "semantic_search", ...CODEGRAPH, "wiki_generate", "ask_codebase", "shell_run", "app_run", "web_fetch", ...RE, ...BROWSER, ...PREVIEW, ...CONTROL, ...MANAGED_SESSIONS], panels: ["files", "browser", "preview"],
     fields: [{ id: "brief", label: "ماذا سنبني؟", placeholder: "المستخدمون والوظائف المطلوبة", multiline: true }, { id: "acceptance", label: "معايير الإنجاز", placeholder: "ما السلوك الذي يجب اختباره قبل التسليم؟", multiline: true }],
     starters: [{ label: "صفحة تعريفية", prompt: "ابنِ صفحة تعريفية عربية متجاوبة مع معاينة محلية واختبر عرض الهاتف." }, { label: "أصلح مشروعًا", prompt: "افحص ملفات المشروع المرفقة، حدد العطل وأصلحه ثم شغّل الاختبارات المناسبة." }] },
   { id: "write", label: "Loam Write", labelAr: "اكتب", icon: "✎", hue: 55, hue2: 75,
@@ -78,7 +80,7 @@ export const LOAM_MODES: LoamMode[] = [
     starters: [{ label: "فحص ترويسات", prompt: "افحص ترويسات الأمان لـ http://127.0.0.1:3000 باستخدام pentest_check واحفظ النتائج." }, { label: "تقرير ثغرات", prompt: "شغّل فحص pentest_check شامل ثم أنشئ تقرير pentest_report داخل مساحة المهمة." }, { label: "أصلح ثغرة Node", prompt: "ابدأ remediation_start لجرد ثغرات Node في مساحة العمل الحالية، ثم اعرض جدول الجرد وانتظر موافقتي على النطاق في لوحة الأمان قبل أي تعديل — البوابات قرارها للمستخدم فقط." }] },
   { id: "redteam", label: "Loam Red Team", labelAr: "الفريق الأحمر", icon: "🔴", hue: 350, hue2: 15,
     tagline: "اختبار اختراق مُصرَّح به لأنظمتنا", description: "حملة هجوم أحمر مقيَّدة ببوابة تفويض: اكتشف، أثبت بالدليل (EV)، وأصدر تقريرًا مع PoC قابل للإعادة — لأنظمة نملكها فقط.", outputHint: "نتائج مثبتة بالأدلة مع SARIF و PoC. Use red_campaign against an authorized target (default localhost); red_report re-opens a stored campaign report.", readOnly: false,
-    tools: ["pentest_check", "pentest_routes", "pentest_report", "red_campaign", "red_report", "shell_run", ...READ, ...CONTROL], panels: ["files"],
+    tools: ["pentest_check", "pentest_routes", "pentest_report", "red_campaign", "red_report", "red_kill_switch", "shell_run", ...READ, ...CONTROL], panels: ["files"],
     fields: [{ id: "target", label: "الهدف المُصرَّح به", placeholder: "مثال: http://127.0.0.1:3000", multiline: false }, { id: "authzId", label: "معرّف التفويض (اختياري)", placeholder: "AUTHZ-0001 — يلزم للأهداف غير المحلية" }],
     starters: [{ label: "حملة على هدف مخبري", prompt: "شغّل red_campaign على http://127.0.0.1:3000 واعرض النتائج المثبتة مع الأدلة والتقرير." }, { label: "تقرير حملة سابقة", prompt: "افتح أحدث تقرير حملة حمراء محفوظ في مجلد red/ داخل مساحة العمل." }] },
   reverseEngineerMode,

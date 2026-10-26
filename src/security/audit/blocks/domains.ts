@@ -9,6 +9,8 @@ export interface Domain {
   validationRules: string[];
 }
 
+import { TECHNIQUES, detectionSignatures } from "../../red/techniques/index.js";
+
 const d = (
   slug: string, priority: boolean, whenToUse: string, coreDiscipline: string,
   classes: [string, string][], universalMoves: string[], validationRules: string[],
@@ -69,5 +71,18 @@ export const DOMAINS: Domain[] = [
     ["Draw the login and refresh flow.", "Check every comparison of a token or state value."],
     ["State the missing proof and what an attacker gains."]),
 ];
+
+// §6.12 red tradecraft becomes a first-class blue detection block.
+DOMAINS.push(
+  d(
+    "redTeamTradecraft",
+    true,
+    "The exercise includes injection, evasion, EDR tampering or anti-forensics on owned lab hosts.",
+    "Detect tradecraft from host and network evidence, not from the tool's brand name.",
+    TECHNIQUES.map((t) => [t.name, t.concept] as [string, string]),
+    detectionSignatures().map((s) => `Check ${s.surface}: ${s.signature}`),
+    detectionSignatures().map((s) => `Require evidence for ${s.attackId}: ${s.signature}`),
+  ),
+);
 
 export const PRIORITY_DOMAINS = DOMAINS.filter((x) => x.priority).map((x) => x.id);
