@@ -66,7 +66,7 @@ import { createProjectWikiTools } from "../tools/wikiTools.js";
 import { createAppBridgeTools } from "../tools/appBridgeTools.js";
 import { createSecurityAuditTools } from "../tools/securityAuditTools.js";
 import { createSecurityScanTools } from "../tools/securityScanTools.js";
-
+import { createReTools } from "../tools/reTools.js";
 import { createFuzzTools } from "../tools/fuzzTools.js";
 import { createRemediateTools } from "../tools/remediateTools.js";
 

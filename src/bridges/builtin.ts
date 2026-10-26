@@ -152,4 +152,45 @@ export const BUILTIN_MANIFESTS: unknown[] = [
       },
     ],
   },
+  {
+    id: "imhex",
+    name: "ImHex",
+    description: "Pattern-language binary inspection in ImHex (user-installed; GPL-2.0, never bundled).",
+    probe: {
+      names: ["imhex.exe"],
+      paths: ["%ProgramFiles%\\ImHex\\imhex.exe", "%LOCALAPPDATA%\\Programs\\ImHex\\imhex.exe"],
+    },
+    versionArgs: ["--version"],
+    commands: [
+      {
+        id: "open",
+        description: "Open a binary in ImHex for interactive inspection (no automation, UI only).",
+        effect: "external",
+        argv: ["{file}"],
+        params: { file: { type: "path", access: "read", required: true, description: "Binary to open (owned/authorized only)." } },
+        output: "text",
+        timeoutSeconds: 30,
+      },
+    ],
+  },
+  {
+    id: "x64dbg",
+    name: "x64dbg",
+    description: "Open a binary in x64dbg for interactive debugging (user-installed; its own licence, never bundled).",
+    probe: {
+      names: ["x64dbg.exe", "x32dbg.exe"],
+      paths: ["%ProgramFiles%\\x64dbg\\release\\x64\\x64dbg.exe", "%LOCALAPPDATA%\\Programs\\x64dbg\\x64dbg.exe"],
+    },
+    commands: [
+      {
+        id: "debug",
+        description: "Start the binary under the debugger. Dynamic analysis of owned/authorized targets only; needs approval.",
+        effect: "exec_script",
+        argv: ["{file}"],
+        params: { file: { type: "path", access: "read", required: true, description: "Binary to debug (owned/authorized only)." } },
+        output: "text",
+        timeoutSeconds: 60,
+      },
+    ],
+  },
 ];
