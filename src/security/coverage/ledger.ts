@@ -54,3 +54,6 @@ export class CoverageLedger {
     return ledger;
   }
 }
+
+// A-DD1 (MISSING §4): the audit coverage ledger validator is the authority.
+export { validateLedger } from "../audit/validateLedger.js";
