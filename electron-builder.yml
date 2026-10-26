@@ -43,6 +43,9 @@ asarUnpack:
   - "**/node_modules/node-pty/**/*"
   - "**/node_modules/@img/**/*"
   - "**/node_modules/sharp/**/*"
+  # api-anything runs as a plain Node child (ELECTRON_RUN_AS_NODE) and launches Edge via
+  # playwright-core, which resolves its own files from disk; keep the whole payload real.
+  - "addons/api-anything/pkg/**/*"
 afterPack: ./electron/afterPack.cjs
 # electron-builder's dependency collector excludes directories named examples.
 # Three.js ships its runtime controls/loaders/exporters in examples/jsm.
@@ -56,6 +59,13 @@ extraResources:
     to: app.asar.unpacked/node_modules/three/examples/jsm
     filter:
       - "**/*.js"
+  - from: resources/codegraph
+    to: app.asar.unpacked/resources/codegraph
+    filter:
+      - "uv.exe"
+      - "uv.json"
+      - "requirements-0.9.95-mcp.txt"
+      - "LICENSE-uv"
   # Remediate advisory packs (E9): hash-pinned data shipped read-only with the app.
   - from: security/advisories
     to: app/security/advisories

@@ -1,0 +1,13 @@
+{
+  "name": "api-anything",
+  "repository": "https://github.com/goodnight000/api-anything.git",
+  "commit": "441e50905acea35f407127c2b8a4032e969288f7",
+  "commitDate": "2026-10-22T14:07:33-07:00",
+  "version": "0.1.0",
+  "license": "MIT",
+  "packageLockSha256": "6395f2d3a52ec0b7d0cfebcdee73795a0812d47775651a5d8c9872c8a9d0ac2e",
+  "nodeEngine": ">=22.13.0",
+  "reviewedBy": "Khamis Al Jabor",
+  "reviewedAt": "2026-10-24",
+  "keep": ["dist", "sites", "skills", "LICENSE", "README.md", "package.json", "node_modules"]
+}
