@@ -52,6 +52,8 @@
     "check:rea-allowlist": "tsx src/scripts/check-rea-allowlist.ts",
     "check:rea-evidence": "tsx src/scripts/check-rea-evidence.ts",
     "check:rea-mcp": "tsx src/scripts/check-rea-mcp.ts",
+    "check:asar-surface": "node --import tsx src/scripts/check-asar-surface.ts",
+    "check:bench": "node --import tsx src/scripts/check-bench.ts",
     "check:recovery": "tsx src/scripts/check-recovery.ts",
     "check:remediate": "tsx src/scripts/check-remediate.ts",
     "check:recovery:http": "tsx src/scripts/check-recovery-http.ts",

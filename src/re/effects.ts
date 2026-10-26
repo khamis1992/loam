@@ -18,3 +18,9 @@ export function classifyReToolCall(toolName: string): LoamRiskPath | "denied" {
   if (!effect) return "denied";
   return effectToRiskPath(effect);
 }
+
+/** REA's ten per-tool effect flags and the derived tier/annotation mapping live in
+ *  the REA_INTO_LOAM allowlist module (§7.2, already on main). Re-exported here so
+ *  the Cap B 15-name layer shares one implementation instead of duplicating it. */
+export type ToolEffects = import("../tools/reaAllowlist.js").ReaToolEffects;
+export { annotationsFromEffects, tierFromEffects } from "../tools/reaAllowlist.js";
