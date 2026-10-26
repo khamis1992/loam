@@ -447,6 +447,80 @@ function isSecretLikeName(name: string): boolean {
  *                   destructive patterns.
  * @param workspaceRoot workspace the task is confined to (default: process.cwd())
  */
+// ----------------------------------------------------------------------------
+// Pluggable tier resolvers (integrations whose tier depends on data, e.g. api-anything)
+// ----------------------------------------------------------------------------
+
+export type ToolTierResolver = (toolName: string, args: Record<string, unknown> | undefined) => RiskTier;
+
+interface TierResolverEntry {
+  prefix?: string;
+  names: ReadonlySet<string>;
+  resolve: ToolTierResolver;
+  untrusted: boolean;
+}
+
+const TIER_RESOLVERS: TierResolverEntry[] = [];
+const PROTECTED_PREFIXES: string[] = [];
+
+/**
+ * Register a resolver for tool names that start with `prefix` or are listed in `names`
+ * (both compared lower-case). A resolver that throws yields `destructive` (fail safe).
+ * Returns an unregister function (tests).
+ */
+export function registerToolTierResolver(entry: {
+  prefix?: string;
+  names?: Iterable<string>;
+  resolve: ToolTierResolver;
+  untrusted?: boolean;
+}): () => void {
+  const item: TierResolverEntry = {
+    prefix: entry.prefix?.toLowerCase(),
+    names: new Set([...(entry.names ?? [])].map((n) => n.toLowerCase())),
+    resolve: entry.resolve,
+    untrusted: entry.untrusted === true,
+  };
+  TIER_RESOLVERS.push(item);
+  return () => {
+    const i = TIER_RESOLVERS.indexOf(item);
+    if (i >= 0) TIER_RESOLVERS.splice(i, 1);
+  };
+}
+
+/** Cap H (OD-H-11): writes/commands touching Loam api-anything state ask first. */
+export function registerProtectedPath(absolutePath: string): void {
+  const p2 = path.resolve(absolutePath).toLowerCase();
+  if (!PROTECTED_PREFIXES.includes(p2)) PROTECTED_PREFIXES.push(p2);
+}
+
+function touchesProtected(candidate: string, root: string): boolean {
+  if (PROTECTED_PREFIXES.length === 0) return false;
+  const abs = (path.isAbsolute(candidate) ? path.resolve(candidate) : path.resolve(root, candidate)).toLowerCase();
+  return PROTECTED_PREFIXES.some((p2) => abs === p2 || abs.startsWith(p2 + path.sep));
+}
+
+function commandMentionsProtected(command: string): boolean {
+  const c = command.toLowerCase().split("/").join(path.sep);
+  return PROTECTED_PREFIXES.some((p2) => c.includes(p2) || c.includes(path.basename(p2)));
+}
+
+function findTierResolver(name: string): TierResolverEntry | undefined {
+  return TIER_RESOLVERS.find((r) => r.names.has(name) || (r.prefix !== undefined && name.startsWith(r.prefix)));
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function resolveCustomTier(name: string, args: Record<string, unknown> | undefined): RiskTier | undefined {
+  const entry = findTierResolver(name);
+  if (!entry) return undefined;
+  try {
+    return entry.resolve(name, args);
+  } catch {
+    return "destructive";
+  }
+}
 export function classifyToolCall(
   toolName: string,
   args?: Record<string, unknown> | null,
@@ -454,6 +528,15 @@ export function classifyToolCall(
 ): RiskTier {
   const name = normalizeToolName(toolName);
   const root = path.resolve(workspaceRoot);
+  // Resolver-owned tools, called directly or through integration_call (whose own
+  // NETWORK_TOOL_NAMES tier would otherwise hide a write or a login inside it).
+  const custom = resolveCustomTier(name, args ?? undefined);
+  if (custom) return custom;
+  if (name === "integration_call" && args && typeof args.name === "string") {
+    const inner = normalizeToolName(String(args.name));
+    const innerTier = resolveCustomTier(inner, isPlainRecord(args.arguments) ? (args.arguments as Record<string, unknown>) : undefined);
+    if (innerTier) return innerTier;
+  }
 
   // Exact names are authoritative; heuristics only cover unregistered tools.
   if (SECRET_TOOL_NAMES.has(name)) return "secret";
@@ -481,10 +564,14 @@ export function classifyToolCall(
   if (name === "office_craft" && isOfficeCraftReadOnly(args)) return "read";
   if (WRITE_TOOL_NAMES.has(name)) {
     const target = firstString(args ?? undefined, WRITE_PATH_KEYS);
+    // Cap H (OD-H-11): writes into Loam's api-anything state (sessions, cookie jars,
+    // captured pages) would let a task self-grant — treat them as destructive.
+    if (target && touchesProtected(target, root)) return "destructive";
     return target ? resolveTierPath(root, target) : "write-workspace";
   }
   if (EXEC_TOOL_NAMES.has(name)) {
     const command = firstString(args ?? undefined, SHELL_COMMAND_KEYS);
+    if (command && commandMentionsProtected(command)) return "destructive";
     return command && isDestructiveShell(command, root) ? "destructive" : "exec";
   }
   if (NETWORK_TOOL_NAMES.has(name)) return "network-external";
@@ -494,10 +581,12 @@ export function classifyToolCall(
   if (isSecretLikeName(name)) return "secret";
   if (isWriteLikeName(name)) {
     const target = firstString(args ?? undefined, WRITE_PATH_KEYS);
+    if (target && touchesProtected(target, root)) return "destructive";
     return target ? resolveTierPath(root, target) : "write-workspace";
   }
   if (isExecLikeName(name)) {
     const command = firstString(args ?? undefined, SHELL_COMMAND_KEYS);
+    if (command && commandMentionsProtected(command)) return "destructive";
     return command && isDestructiveShell(command, root) ? "destructive" : "exec";
   }
   if (isNetworkLikeName(name)) return "network-external";
@@ -669,6 +758,7 @@ export function renderPolicyContext(mode: SandboxMode, workspaceRoot?: string): 
 export function isUntrustedTool(toolName: string): boolean {
   const name = normalizeToolName(toolName);
   if (UNTRUSTED_TOOL_NAMES.has(name) || NETWORK_TOOL_NAMES.has(name)) return true;
+  if (findTierResolver(name)?.untrusted) return true;
   return /(web|browser|http|url|email|gmail|fetch|integration|search)/.test(name);
 }
 

@@ -5,7 +5,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { DATA_DIR, ROOT, type McpServerConfig } from "../config.js";
 import { log } from "../log.js";
-import type { ToolRegistry, ToolResult } from "./registry.js";
+import type { ToolContext, ToolRegistry, ToolResult } from "./registry.js";
 import { REA_MCP_SERVER, isReaAllowedTool, reaToolTimeoutMs } from "./reaAllowlist.js";
 import { isAllowedReTool } from "../re/allowlist.js";
 import { applyReaBudget } from "./reaBudget.js";
@@ -27,6 +27,51 @@ export interface McpToolset {
    *  used to wire persistent memory into the task loop. */
   callTool(server: string, tool: string, args: Record<string, unknown>, timeoutMs?: number): Promise<ToolResult>;
   close(): Promise<void>;
+}
+
+/** What a `before` hook decides: refuse with a result, replace the arguments, or let the call through. */
+export type McpBeforeDecision = { block: ToolResult } | { args: Record<string, unknown> } | undefined;
+
+/** Per-server policy hooks (api-anything §6.3). `before` may refuse or rewrite the
+ *  call; `after` may rewrite the result. Hooks run on the registry path only. */
+export interface McpServerHooks {
+  before?(tool: string, args: Record<string, unknown>, ctx: ToolContext): Promise<McpBeforeDecision> | McpBeforeDecision;
+  after?(tool: string, args: Record<string, unknown>, result: ToolResult, ctx: ToolContext, ms: number): Promise<ToolResult> | ToolResult;
+}
+
+/** Environment a "minimal" stdio server receives (names compared case-insensitively). */
+export const MINIMAL_ENV_KEYS: readonly string[] = [
+  // Windows
+  "SystemRoot", "windir", "SystemDrive", "PATH", "PATHEXT", "TEMP", "TMP", "USERPROFILE", "HOMEDRIVE",
+  "HOMEPATH", "APPDATA", "LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)", "ProgramW6432", "ProgramData",
+  "USERNAME", "USERDOMAIN", "COMPUTERNAME", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS", "ComSpec",
+  // POSIX development hosts
+  "HOME", "USER", "LANG", "LC_ALL", "TMPDIR", "XDG_RUNTIME_DIR", "DISPLAY", "WAYLAND_DISPLAY",
+  // Packaged Loam: process.execPath is Electron; this makes it behave as Node
+  // (set by electron/server-host.cjs).
+  "ELECTRON_RUN_AS_NODE",
+];
+
+/** Build the child environment: full inheritance by default, or the fixed allowlist
+ *  above when `envMode: "minimal"` (api-anything §6.3), then cfg.env layered on top. */
+function childEnv(cfg: McpServerConfig, workspace: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  if (cfg.envMode === "minimal") {
+    const allow = new Set(MINIMAL_ENV_KEYS.map((k) => k.toUpperCase()));
+    for (const [k, v] of Object.entries(process.env)) if (v !== undefined && allow.has(k.toUpperCase())) env[k] = v;
+  } else {
+    for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
+  }
+  for (const [k, v] of Object.entries(cfg.env ?? {})) env[k] = expand(v, workspace);
+  return env;
+}
+
+/** Per-tool timeout: toolTimeouts[tool] beats defaultTimeoutMs beats the 30s default. */
+function timeoutFor(cfg: McpServerConfig, tool: string): number {
+  const own = cfg.toolTimeouts?.[tool];
+  if (typeof own === "number" && Number.isFinite(own) && own > 0) return own;
+  const def = cfg.defaultTimeoutMs;
+  return typeof def === "number" && Number.isFinite(def) && def > 0 ? def : 30_000;
 }
 
 /** Expand ${ROOT}, ${WORKSPACE} and ${DATA} placeholders so config.json can point at
@@ -99,6 +144,7 @@ export async function registerMcpTools(
   registry: ToolRegistry,
   servers: Record<string, McpServerConfig>,
   workspace: string,
+  hooks: Record<string, McpServerHooks> = {},
 ): Promise<McpToolset> {
   const handles: McpHandle[] = [];
   const names = Object.keys(servers);
@@ -117,7 +163,7 @@ export async function registerMcpTools(
     try {
       const effectiveTimeout = isReaServer(server) ? reaToolTimeoutMs(tool)
         : isCuaDriverServer(server) ? cuaDriverTimeoutMs(tool)
-        : timeoutMs;
+        : servers[server] ? timeoutFor(servers[server], tool) : timeoutMs;
       const res = (await client.callTool({ name: tool, arguments: args }, undefined, { timeout: effectiveTimeout })) as {
         content?: Array<{ type?: string; text?: string }>;
         isError?: boolean;
@@ -137,8 +183,7 @@ export async function registerMcpTools(
     let transport: Transport | undefined;
     try {
       const args = (cfg.args ?? []).map((a) => expand(a, workspace));
-      const env: Record<string, string> = { ...process.env } as Record<string, string>;
-      for (const [k, v] of Object.entries(cfg.env ?? {})) env[k] = expand(v, workspace);
+      const env = childEnv(cfg, workspace);
 
       if (cfg.transport === "http" || cfg.url) {
         if (!cfg.url) throw new Error("HTTP MCP requires url");
@@ -187,16 +232,23 @@ export async function registerMcpTools(
       if (new Set(toolNames).size !== toolNames.length || toolNames.some((toolName) => registry.get(toolName))) {
         throw new Error("MCP returned duplicate tool names");
       }
+      const serverHooks = hooks[name];
       for (const tool of visible) {
         const toolName = `mcp__${name}__${tool.name}`;
         const inputSchema = (tool.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>;
+        const timeoutMs = timeoutFor(cfg, tool.name);
         registry.register({
           integration: true,
           name: toolName,
           description: `[MCP:${name}] ${tool.description ?? tool.name}`,
           parameters: inputSchema,
-          async run(args: Record<string, unknown>): Promise<ToolResult> {
-            return callToolOn(connectedClient, name, tool.name, args, 30_000);
+          async run(callArgs: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+            const decision = serverHooks?.before ? await serverHooks.before(tool.name, callArgs, ctx) : undefined;
+            if (decision && "block" in decision) return decision.block;
+            const sendArgs = decision && "args" in decision ? decision.args : callArgs;
+            const started = Date.now();
+            const result = await callToolOn(connectedClient, name, tool.name, sendArgs, timeoutMs);
+            return serverHooks?.after ? serverHooks.after(tool.name, sendArgs, result, ctx, Date.now() - started) : result;
           },
         });
       }

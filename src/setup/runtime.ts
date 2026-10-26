@@ -29,6 +29,7 @@ import { browserTools, closeBrowser } from "../tools/browser.js";
 import { computerUseTools } from "../tools/computerUse.js";
 import { initPty, disposePty, ptyStatus, ptyTools } from "../tools/pty.js";
 import { registerMcpTools, type McpToolset } from "../tools/mcp.js";
+import { prepareApiAnything } from "../tools/apiAnything/server.js";
 import { OllamaEmbedder } from "../memory/embeddings.js";
 import { MemoryStore, startMemoryDreamJob } from "../memory/store.js";
 import { createMemoryTools, createRecallTools } from "../tools/memory.js";
@@ -219,7 +220,11 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   // runtime model as the reasoning backend for solve_logic / generate_storyboard.
   registry.registerAll(createGenExtraTools({ providers: defaultGenProviders(cfg), reasoner: ollama }));
 
-  const mcp = opts.mcp === false ? null : await registerMcpTools(registry, cfg.mcpServers, cfg.workspace);
+  // Cap H: prepareApiAnything overlays panel settings, protects Loam's api-anything
+  // state, installs the tier resolver, and (when enabled + vendored) adds the
+  // Loam-managed server with its policy hooks. Disabled by default until H4 passes.
+  const apiAnything = prepareApiAnything(cfg, cfg.mcpServers);
+  const mcp = opts.mcp === false ? null : await registerMcpTools(registry, apiAnything.servers, cfg.workspace, apiAnything.hooks);
   registry.registerAll(createIntegrationTools(registry));
 
   return {

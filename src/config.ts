@@ -93,10 +93,18 @@ export interface McpServerConfig {
   /** Optional tool-name allowlist: only listed tools from `tools/list` register
    *  (REA_INTO_LOAM §5.4). Enforced inside Loam — the server cannot widen it. */
   allowlist?: string[];
+  /** "minimal" spawns the child with only a fixed OS-variable allowlist plus `env`
+   *  (api-anything §6.3); default "inherit" keeps the full process environment. */
+  envMode?: "inherit" | "minimal";
+  /** Per-tool call timeouts in ms (api-anything §6.3); unlisted tools use defaultTimeoutMs. */
+  toolTimeouts?: Record<string, number>;
+  defaultTimeoutMs?: number;
   /** Opt-in OS sandbox for stdio servers (SANDBOX_RUNTIME appendix C4): spawn as
    *  `srt --settings … -- <command>` while the command sandbox mode is on. */
   sandbox?: boolean;
 }
+
+import type { ApiAnythingConfig } from "./tools/apiAnything/types.js";
 
 export interface Config {
   model: string;
@@ -235,6 +243,11 @@ export interface Config {
     minScore: number;
   };
   mcpServers: Record<string, McpServerConfig>;
+  /** api-anything (Cap H): Loam-managed MCP server for public-site operations.
+   *  Optional on the interface so test fixtures keep compiling (same pattern as
+   *  `session`); `loadConfig` fills it from DEFAULTS. Disabled until the H4
+   *  Windows acceptance checklist passes. */
+  apiAnything?: ApiAnythingConfig;
 
 
 
@@ -394,6 +407,28 @@ export const DEFAULTS: Config = {
   subagent: { maxDepth: 2, maxConcurrentChildren: 4 },
   lessons: { enabled: true, maxChars: 1200, minScore: 0.35 },
   mcpServers: {},
+  // Cap H §12.2: off until the H4 Windows acceptance checklist passes.
+  apiAnything: {
+    enabled: false,
+    allowWrites: false,
+    allowWriteLearning: false,
+    browser: "edge",
+    sites: "all",
+    learnDomains: [],
+    peopleOps: [
+      "linkedin.getProfile",
+      "linkedin.searchPeople",
+      "instagram.getProfile",
+      "instagram.getPosts",
+      "x.getProfile",
+      "x.getUser",
+    ],
+    peopleOpsTasks: [],
+    peopleLimitPerTask: 20,
+    rateLimit: { calls: 30, windowMs: 600_000 },
+    outputBudgetChars: 15_000,
+    timeouts: { listMs: 15_000, callMs: 180_000, loginMs: 900_000, learnMs: 300_000 },
+  },
 
 
 
@@ -472,6 +507,49 @@ function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+/** Cap H §6.2: clamp every api-anything field to its bounds; anything malformed
+ *  falls back to the shipped default. outputBudgetChars caps at 15,500 so a
+ *  result plus lifecycle-hook text stays under the registry's 16,000 cut. */
+function normalizeApiAnything(raw: Record<string, unknown> | undefined): ApiAnythingConfig {
+  // DEFAULTS carries the full shipped block (see below); the interface keeps the
+  // field optional only for hand-written test fixtures.
+  const d = DEFAULTS.apiAnything!;
+  const r = raw ?? {};
+  const bool = (v: unknown, def: boolean): boolean => (typeof v === "boolean" ? v : def);
+  const int = (v: unknown, def: number, min: number, max: number): number =>
+    typeof v === "number" && Number.isFinite(v) ? Math.min(max, Math.max(min, Math.floor(v))) : def;
+  const strings = (v: unknown, def: string[], re: RegExp): string[] =>
+    Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === "string" && re.test(x)))] : def;
+  const SITE = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
+  const DOMAIN = /^(?!-)[a-z0-9-]{1,63}(\.[a-z0-9-]{1,63})+$/i;
+  const SITE_OP = /^[a-z0-9][a-z0-9._-]{0,63}\.[A-Za-z0-9_-]{1,64}$/;
+  const TASK = /^task_[a-zA-Z0-9_-]+$/;
+  const rate = isObj(r.rateLimit) ? r.rateLimit : {};
+  const t = isObj(r.timeouts) ? r.timeouts : {};
+  return {
+    enabled: bool(r.enabled, d.enabled),
+    allowWrites: bool(r.allowWrites, d.allowWrites),
+    allowWriteLearning: bool(r.allowWriteLearning, d.allowWriteLearning),
+    browser: typeof r.browser === "string" && r.browser.trim() ? r.browser.trim().slice(0, 260) : d.browser,
+    sites: r.sites === "all" || r.sites === undefined ? "all" : strings(r.sites, [], SITE),
+    learnDomains: strings(r.learnDomains, d.learnDomains, DOMAIN).map((x) => x.toLowerCase()),
+    peopleOps: strings(r.peopleOps, d.peopleOps, SITE_OP),
+    peopleOpsTasks: strings(r.peopleOpsTasks, d.peopleOpsTasks, TASK),
+    peopleLimitPerTask: int(r.peopleLimitPerTask, d.peopleLimitPerTask, 0, 200),
+    rateLimit: {
+      calls: int(rate.calls, d.rateLimit.calls, 1, 1_000),
+      windowMs: int(rate.windowMs, d.rateLimit.windowMs, 1_000, 86_400_000),
+    },
+    outputBudgetChars: int(r.outputBudgetChars, d.outputBudgetChars, 2_000, 15_500),
+    timeouts: {
+      listMs: int(t.listMs, d.timeouts.listMs, 1_000, 120_000),
+      callMs: int(t.callMs, d.timeouts.callMs, 5_000, 900_000),
+      loginMs: int(t.loginMs, d.timeouts.loginMs, 60_000, 3_600_000),
+      learnMs: int(t.learnMs, d.timeouts.learnMs, 30_000, 1_800_000),
+    },
+  };
+}
+
 /** Keep only explicit `true` flags keyed by a plain bridge id; anything else stays off. */
 function readBridgeFlags(v: unknown): Record<string, boolean> {
   const out: Record<string, boolean> = {};
@@ -544,6 +622,10 @@ export function loadConfig(): Config {
   );
   cfg.wiki = { enabled: isObj(raw) && isObj(raw.wiki) && raw.wiki.enabled === true };
   cfg.bridges = { enabled: readBridgeFlags(isObj(raw) && isObj(raw.bridges) ? raw.bridges.enabled : undefined) };
+  // Cap H §6.2: sanitize the whole block from the file (merge already layered DEFAULTS,
+  // but the normalizer revalidates every field against its bounds). loadConfig always
+  // leaves a full object here even though the interface keeps the field optional.
+  cfg.apiAnything = normalizeApiAnything(isObj(raw) && isObj(raw.apiAnything) ? raw.apiAnything : undefined);
   cfg.coding = { enabled: cfg.coding?.enabled ?? true, chain: cfg.coding?.chain ?? [], logEdits: cfg.coding?.logEdits ?? true };
   // J7: normalize the hibernation setting. A negative or non-numeric value means
   // "off" (0), so a stale config.json can never arm a bogus timer. `merge` can
