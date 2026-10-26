@@ -351,3 +351,14 @@ coordination model inspired by Agensh (Microsoft Research, MIT; arXiv:2609.26781
 the shared-context board idea traces to DeLM (arXiv:2606.10662). No Agensh,
 DeLM, LangChain, LangGraph, Mastra, VoltAgent, CrewAI or OpenHands code is
 copied or bundled.
+
+## MISSING programme pinned payloads (2026-10-26)
+
+- wakaru 1.14.0 (Apache License 2.0) — JavaScript module recovery. Pinned
+  triple-verified (npm SRI sha512 + tgz sha256 + Windows exe sha256) in
+  src/bridges/binaries.ts; fetched on demand to %DATA_DIR%\bin\wakaru.
+- api-anything @ commit 441e50905acea35f407127c2b8a4032e969288f7 (MIT) —
+  site-API learning/calling engine, vendored payload under
+  addons/api-anything/pkg (gitignored, fetched by
+  scripts/vendor/fetch-api-anything.mjs with hash verification). Loam-side
+  code is clean-room; only the pinned payload is MIT.
