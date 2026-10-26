@@ -1,5 +1,6 @@
 
 import { handleRealSwarmRoutes } from "./routes/realswarm.js";
+import { handleApiAnythingRoute } from "./apiAnythingRoutes.js";
 import { handleWorkflowRoutes, handleWorkflowRunRoutes, type WorkflowRouteDeps } from "./routes/workflows.js";
 import { handleTracesRoutes } from "./routes/traces.js";
 import { handleCheckpointRoutes, type StartForkedRun } from "./routes/checkpoints.js";
@@ -495,6 +496,13 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
     const checkpointRoutesResume: StartForkedRun = async () => undefined;
     const interruptRoutesResume: ResumeFromInterrupt = async () => false;
   const mcp = deps.mcp ?? null;
+  // Cap H §6.13: restart-only settings are compared against the flags this process
+  // actually started with (the panel may have saved new ones to disk since).
+  const apiAnythingStartedWith = {
+    enabled: (cfg.apiAnything ?? { enabled: false }).enabled,
+    allowWrites: (cfg.apiAnything ?? { allowWrites: false }).allowWrites,
+    allowWriteLearning: (cfg.apiAnything ?? { allowWriteLearning: false }).allowWriteLearning,
+  };
   void createTask;
 
   const memorySkillsCall = async (
@@ -559,6 +567,14 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             return sendJson(res, 200, { enabled: integrationGrants(body.taskId) });
           } catch (error) { return sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) }); }
         }
+        if (await handleApiAnythingRoute(req, res, url, {
+          cfg,
+          mcp,
+          registry,
+          sendJson,
+          readBody,
+          startedWith: apiAnythingStartedWith,
+        })) return;
         if (p === '/api/mobile' || p.startsWith('/api/mobile/')) {
           res.setHeader('cache-control', 'no-store');
           if (!['GET', 'POST'].includes(req.method ?? '')) return sendJson(res, 405, { error: 'Method not allowed' });

@@ -30,6 +30,7 @@ import { computerUseTools } from "../tools/computerUse.js";
 import { initPty, disposePty, ptyStatus, ptyTools } from "../tools/pty.js";
 import { registerMcpTools, type McpToolset } from "../tools/mcp.js";
 import { prepareApiAnything } from "../tools/apiAnything/server.js";
+import { createApiAnythingLearnTools } from "../tools/apiAnything/learnTools.js";
 import { OllamaEmbedder } from "../memory/embeddings.js";
 import { MemoryStore, startMemoryDreamJob } from "../memory/store.js";
 import { createMemoryTools, createRecallTools } from "../tools/memory.js";
@@ -225,6 +226,12 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   // Loam-managed server with its policy hooks. Disabled by default until H4 passes.
   const apiAnything = prepareApiAnything(cfg, cfg.mcpServers);
   const mcp = opts.mcp === false ? null : await registerMcpTools(registry, apiAnything.servers, cfg.workspace, apiAnything.hooks);
+  // Cap H §6.5: the nine api_* learn tools exist only while the Loam-managed
+  // server is running; they register integration:true (per-task grant), the
+  // policy envelope guards every call (§6.5 P3 acceptance 1).
+  if (apiAnything.policy && cfg.apiAnything && mcp?.servers.includes("api-anything")) {
+    registry.registerAll(createApiAnythingLearnTools(cfg.apiAnything, apiAnything.policy));
+  }
   registry.registerAll(createIntegrationTools(registry));
 
   return {

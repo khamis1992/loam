@@ -1,0 +1,16 @@
+main{max-width:980px;margin:0 auto;padding:24px;display:grid;gap:16px}
+.card{border:1px solid var(--line,#d9dde3);border-radius:12px;padding:16px;background:var(--panel,#fff)}
+.card h2{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:1.1rem}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:0 0 12px}
+dt{font-weight:600}dd{margin:0;overflow-wrap:anywhere}
+.switch{display:flex;align-items:center;gap:8px;margin:6px 0}
+.controls{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
+table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid var(--line,#e5e7eb);text-align:start;vertical-align:top}
+td button{margin:2px}
+.hint{color:var(--muted,#6b7280);font-size:.9rem}
+.warn{color:var(--warn,#b45309);font-weight:600}
+.scope{border-inline-start:3px solid var(--accent,#1bb897);padding-inline-start:10px}
+pre{white-space:pre-wrap;background:var(--code,#f6f8fa);padding:12px;border-radius:8px}
+#learnForm{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+#learnForm button{grid-column:1/-1;justify-self:start}
+#audit{max-height:320px;overflow:auto;font-size:.85rem}

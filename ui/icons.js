@@ -49,7 +49,7 @@ export const iconPaths={
   eye:'<path d="M3 16 10 7h12l7 9-7 9H10zM20 16a4 4 0 1 1-8 0 4 4 0 0 1 8 0"/><path class="li-accent" d="M26 5h3v3h-3z"/>',
   chevron:'<path d="m8 12 8 8 8-8"/>',
 };
-export const iconAliases={home:'brand',media:'creative',library:'projects',tools:'build',flow:'automate',agent:'companions',document:'write',spreadsheet:'data',presentation:'office'};
+export const iconAliases={home:'brand',media:'creative',library:'projects',tools:'build',flow:'automate',agent:'companions',document:'write',spreadsheet:'data',presentation:'office','site-apis':'automate'};
 export function icon(name, extra=''){
   const key=Object.hasOwn(iconPaths,name)?name:(iconAliases[name]||'brand');
   return `<svg class="loam-icon ${extra}" data-loam-icon="${key}" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true" focusable="false">${iconPaths[key]}</svg>`;
