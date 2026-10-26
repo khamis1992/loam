@@ -104,6 +104,54 @@ export const ALLEGATION_MATRIX_SCHEMA: JsonSchema = {
   },
 };
 
+export const DOCUMENT_ANALYSIS_SCHEMA: JsonSchema = {
+  type: "object", required: ["summary", "obligations", "risks", "missingInformation", "questions"], additionalProperties: false,
+  properties: {
+    summary: { type: "string", minLength: 1 },
+    obligations: {
+      type: "array", items: {
+        type: "object", required: ["id", "title", "details", "severity", "evidenceFactIds"], additionalProperties: false,
+        properties: {
+          id: { type: "string", minLength: 1 }, title: { type: "string", minLength: 1 }, details: { type: "string", minLength: 1 },
+          severity: { enum: ["high", "medium", "low", "info"] }, evidenceFactIds: { type: "array", items: { type: "string" } },
+        },
+      },
+    },
+    risks: {
+      type: "array", items: {
+        type: "object", required: ["id", "title", "details", "severity", "evidenceFactIds"], additionalProperties: false,
+        properties: {
+          id: { type: "string", minLength: 1 }, title: { type: "string", minLength: 1 }, details: { type: "string", minLength: 1 },
+          severity: { enum: ["high", "medium", "low", "info"] }, evidenceFactIds: { type: "array", items: { type: "string" } },
+        },
+      },
+    },
+    missingInformation: {
+      type: "array", items: {
+        type: "object", required: ["id", "title", "details", "severity", "evidenceFactIds"], additionalProperties: false,
+        properties: {
+          id: { type: "string", minLength: 1 }, title: { type: "string", minLength: 1 }, details: { type: "string", minLength: 1 },
+          severity: { enum: ["high", "medium", "low", "info"] }, evidenceFactIds: { type: "array", items: { type: "string" } },
+        },
+      },
+    },
+    questions: {
+      type: "array", items: {
+        type: "object", required: ["question", "material"], additionalProperties: false,
+        properties: { question: { type: "string", minLength: 1 }, material: { type: "boolean" } },
+      },
+    },
+  },
+};
+
+export const DOCUMENT_ANALYSIS_ITEM_SCHEMA: JsonSchema = {
+  type: "object", required: ["id", "title", "details", "severity", "evidenceFactIds"], additionalProperties: false,
+  properties: {
+    id: { type: "string", minLength: 1 }, title: { type: "string", minLength: 1 }, details: { type: "string", minLength: 1 },
+    severity: { enum: ["high", "medium", "low", "info"] }, evidenceFactIds: { type: "array", items: { type: "string" } },
+  },
+};
+
 export const ADVERSARIAL_SCHEMA: JsonSchema = {
   type: "object", required: ["findings"], additionalProperties: false,
   properties: {

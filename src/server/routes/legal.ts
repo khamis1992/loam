@@ -38,6 +38,7 @@ import { buildRedlineDocx } from "../../legal/contract/redline.js";
 import type { LegalModelPort } from "../../legal/model/types.js";
 import { buildDefensePackage } from "../../legal/defense/service.js";
 import { buildLegalResponse } from "../../legal/response/service.js";
+import { analyzeDocuments } from "../../legal/analysis/documentAnalysis.js";
 import type { LegalCorpus, LegalPack } from "../../legal/corpusStore.js";
 import type { CoverageEntry } from "../../legal/corpus/coverage.js";
 import { validatePack } from "../../legal/corpusStore.js";
@@ -64,6 +65,7 @@ export interface LegalRouteContext {
   model: { port: LegalModelPort };
   buildDefense(matterId: string): ReturnType<typeof buildDefensePackage>;
   buildResponse(input: { matterId: string; sourceText: string }): ReturnType<typeof buildLegalResponse>;
+  analyzeDocuments(matterId: string): ReturnType<typeof analyzeDocuments>;
   importDocument(matterId: string, absPath: string): Promise<EvidenceAnalysis>;
   now?: () => Date;
 }
@@ -235,6 +237,10 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
         return true;
       }
       if (seg.length === 2 && method === "DELETE") { sendJson(res, 200, { deleted: ctx.matters.deleteMatter(matter.id, "user") }); return true; }
+      if (seg.length === 3 && seg[2] === "analyze-documents" && method === "POST") {
+        sendJson(res, 200, await ctx.analyzeDocuments(matter.id));
+        return true;
+      }
       if (seg.length === 3 && seg[2] === "response" && method === "POST") {
         const body = await readJson(req, 10_000_000);
         if (!s(body.sourceText).trim()) throw new HttpError(400, "sourceText is required");

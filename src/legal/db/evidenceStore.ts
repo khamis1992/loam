@@ -65,10 +65,11 @@ export class EvidenceStore {
   private saveMany(table: "fact_assertions" | "timeline_events" | "contradictions", items: Array<{ id: string; matterId: string }>, kind: string): void {
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      this.db.prepare(`DELETE FROM ${table} WHERE matter_id=?`).run(items[0]?.matterId ?? "");
       const placeholders = table === "timeline_events" ? "?,?,?,?" : "?,?,?,?,?";
-      const insert = this.db.prepare(`INSERT INTO ${table}(id,matter_id,${table === "fact_assertions" ? "kind,status" : table === "timeline_events" ? "sort_date" : "kind,severity"},payload_enc) VALUES(${placeholders})`);
+      const insert = this.db.prepare(`INSERT INTO ${table}(id,matter_id,${table === "fact_assertions" ? "kind,status" : table === "timeline_events" ? "sort_date" : "kind,severity"},payload_enc) VALUES(${placeholders}) ON CONFLICT(id) DO UPDATE SET payload_enc=excluded.payload_enc WHERE matter_id=excluded.matter_id`);
       for (const item of items) {
+        const owner = this.db.prepare(`SELECT matter_id FROM ${table} WHERE id=?`).get(item.id) as { matter_id?: string } | undefined;
+        if (owner && owner.matter_id !== item.matterId) throw new Error(`${kind} ${item.id} belongs to another matter`);
         const extra = table === "timeline_events" ? [(item as TimelineEvent).sortDate] : table === "fact_assertions" ? [(item as FactAssertion).kind, (item as FactAssertion).status] : [(item as Contradiction).kind, (item as Contradiction).severity];
         insert.run(item.id, item.matterId, ...extra, this.cipher.sealJson(item, `${kind}:${item.id}`));
       }
