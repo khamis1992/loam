@@ -31,11 +31,14 @@ test("mock server: token, status, search, verify, matters, egress, review gate, 
     assert.equal(created.status, 201);
     const matter = created.json.matter as { id: string; egress: string };
     assert.equal(matter.egress, "local_only");
+    srv.ctx.corpus.db.prepare("UPDATE legislations SET source_json=json_set(source_json,'$.verifiedAt','2092-01-01')").run();
+    srv.ctx.corpus.setCoverageManifest([{ legKey: "law/2090/1", titleAr: "القانون المدني الاختباري", requiredFor: ["defense_memo"] }]);
     assert.equal((await call(srv, "PATCH", `/api/legal/matters/${matter.id}`, { egress: "cloud_full" })).status, 400, "confirmation required");
     const widened = await call(srv, "PATCH", `/api/legal/matters/${matter.id}`, { egress: "cloud_redacted", confirmEgress: true });
     assert.equal((widened.json.matter as { egress: string }).egress, "cloud_redacted");
 
-    const text = fillAvids("«يجب تنفيذ العقد طبقاً لما اشتمل عليه وبطريقة تتفق مع ما يوجبه حسن النية.» ⟦cite:{{law/2090/1:body:4@2090-04-01}}⟧");
+    const citation = fillAvids("«يجب تنفيذ العقد طبقاً لما اشتمل عليه وبطريقة تتفق مع ما يوجبه حسن النية.» ⟦cite:{{law/2090/1:body:4@2090-04-01}}⟧");
+    const text = `## بيانات الدعوى\nالدائرة المدنية — الدعوى 1/2092\n## الوقائع\nوقائع اختبارية موثقة.\n## الدفاع الموضوعي\n${citation}\n## الطلبات\nأصلياً: طلب اختباري محدد.`;
     const v = await call(srv, "POST", "/api/legal/verify", { text, matterId: matter.id, documentName: "memo.md" });
     assert.equal((v.json.report as { verdict: string }).verdict, "pass");
     assert.match(String(v.json.coverSheet), /ورقة غلاف داخلية/u);

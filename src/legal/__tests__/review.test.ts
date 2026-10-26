@@ -6,6 +6,7 @@ import type { Matter, VerificationReport } from "../types.js";
 
 const report = (over: Partial<VerificationReport> = {}): VerificationReport => ({
   verdict: "pass", asOf: "2092-01-01", checks: [], warnings: [], documentSha256: "a".repeat(64),
+  corpusSnapshotId: "CS-test", coverage: { status: "complete", matterKind: "research", asOf: "2092-01-01", entries: 0, issues: [], checkedAt: "2092-01-01T00:00:00Z" },
   counts: { cited: 1, verified: 1, failed: 0, freeMentions: 0, unverifiedMarkers: 0 }, ...over,
 });
 const at = "2092-01-01T08:00:00.000Z";

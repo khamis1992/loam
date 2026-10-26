@@ -15,6 +15,8 @@ import { normalizeText } from "../knowledge/text.js";
 import { legalTerms, parseLabel, termFrequencies } from "./normalize.js";
 import { CORPUS_SCHEMA, CORPUS_SCHEMA_VERSION } from "./schema.js";
 import { migrateLegalDatabase } from "./db/migrations.js";
+import { CORPUS_COVERAGE_SCHEMA, coverageReport, readCoverageManifest, writeCoverageManifest, type CoverageEntry, type CoverageReport } from "./corpus/coverage.js";
+import { createCorpusSnapshot, type CorpusSnapshot } from "./corpus/snapshots.js";
 import {
   CITABLE_PROVENANCE,
   LEGISLATION_TYPES,
@@ -228,8 +230,13 @@ export class LegalCorpus {
     if (dbPath !== ":memory:") fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     this.db = new DatabaseSync(dbPath);
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;");
-    migrateLegalDatabase(this.db, { schema: CORPUS_SCHEMA, version: CORPUS_SCHEMA_VERSION });
+    migrateLegalDatabase(this.db, { schema: CORPUS_SCHEMA, version: CORPUS_SCHEMA_VERSION, migrations: [{ version: 2, sql: CORPUS_COVERAGE_SCHEMA }] });
   }
+
+  setCoverageManifest(entries: CoverageEntry[]): void { writeCoverageManifest(this.db, entries); }
+  coverageManifest(): CoverageEntry[] { return readCoverageManifest(this.db); }
+  coverage(opts: { asOf: string; matterKind?: string; now?: Date }): CoverageReport { return coverageReport(this, opts); }
+  snapshot(opts: { persist: boolean; now?: () => Date }): CorpusSnapshot { return createCorpusSnapshot(this.db, opts); }
 
   close(): void { this.db.close(); }
 

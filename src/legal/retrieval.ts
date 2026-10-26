@@ -17,6 +17,7 @@ import { inForce, type LegalCorpus } from "./corpusStore.js";
 import { legalTerms, orthographicForm } from "./normalize.js";
 import { findArticleMentions, findLawMentions } from "./references.js";
 import { CITABLE_PROVENANCE, type ArticleVersion, type Legislation, type SourceProvenance } from "./types.js";
+import type { CoverageReport } from "./corpus/coverage.js";
 
 export interface Embedder { embed(texts: string[]): Promise<number[][]> }
 
@@ -36,6 +37,7 @@ export interface LegalSearchOptions {
   embedModel?: string;
   reranker?: Reranker;
   signal?: AbortSignal;
+  matterKind?: string;
 }
 
 export interface LegalHit {
@@ -67,6 +69,9 @@ export interface LegalSearchResult {
   direct: boolean;
   /** True when nothing relevant exists: the caller must not cite anything. */
   noAuthority: boolean;
+  authorityReason?: "COVERAGE_UNCONFIGURED" | "COVERAGE_INCOMPLETE" | "NO_MATCH";
+  coverage: CoverageReport;
+  corpusSnapshotId: string;
 }
 
 const RRF_K = 60;
@@ -226,5 +231,10 @@ export async function searchLaw(corpus: LegalCorpus, query: string, opts: LegalS
     }
   }
   top = top.slice(0, k);
-  return { query, asOf, hits: top, mode: hybrid ? "hybrid" : "lexical", direct: direct.size > 0, noAuthority: top.length === 0 };
+  const coverage = corpus.coverage({ asOf, ...(opts.matterKind ? { matterKind: opts.matterKind } : {}) });
+  const authorityReason = top.length > 0 ? undefined : coverage.status === "unconfigured" ? "COVERAGE_UNCONFIGURED" : coverage.status === "incomplete" ? "COVERAGE_INCOMPLETE" : "NO_MATCH";
+  return {
+    query, asOf, hits: top, mode: hybrid ? "hybrid" : "lexical", direct: direct.size > 0, noAuthority: top.length === 0,
+    ...(authorityReason ? { authorityReason } : {}), coverage, corpusSnapshotId: corpus.snapshot({ persist: false }).id,
+  };
 }

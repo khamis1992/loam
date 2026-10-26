@@ -28,6 +28,7 @@ import type http from "node:http";
 import { contractLanguage, segmentContract } from "../../legal/contract/clauses.js";
 import { DEFAULT_QATAR_PLAYBOOK, reviewContract, type ContractType } from "../../legal/contract/playbook.js";
 import type { LegalCorpus, LegalPack } from "../../legal/corpusStore.js";
+import type { CoverageEntry } from "../../legal/corpus/coverage.js";
 import { validatePack } from "../../legal/corpusStore.js";
 import { LegalKeyUnavailableError, type KeyProvider } from "../../legal/crypto.js";
 import type { EgressConfig } from "../../legal/egress.js";
@@ -37,7 +38,7 @@ import type { MattersStore, NewMatter } from "../../legal/mattersStore.js";
 import { qatarToday } from "../../legal/mattersStore.js";
 import { checkStructure, coverSheetAr, internalLeaks, type DocKind } from "../../legal/memo.js";
 import { searchLaw } from "../../legal/retrieval.js";
-import { approve, reject, ReviewError, submitForReview } from "../../legal/review.js";
+import { approve, markVerified, newReview, onContentChanged, reject, ReviewError, submitForReview } from "../../legal/review.js";
 import type { Matter } from "../../legal/types.js";
 import { verifyDocument } from "../../legal/verify.js";
 
@@ -109,6 +110,24 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
     if (!ctx.enabled) throw new HttpError(403, "legal mode is disabled in settings");
 
     // ---- corpus -----------------------------------------------------------
+    if (seg[0] === "coverage") {
+      if (seg.length === 1 && method === "GET") {
+        const matterKind = url.searchParams.get("matterKind") ?? "research";
+        sendJson(res, 200, { coverage: ctx.corpus.coverage({ asOf, matterKind, now: ctx.now?.() }), snapshot: ctx.corpus.snapshot({ persist: false }) });
+        return true;
+      }
+      if (seg.length === 2 && seg[1] === "manifest" && method === "GET") {
+        sendJson(res, 200, { entries: ctx.corpus.coverageManifest() });
+        return true;
+      }
+      if (seg.length === 2 && seg[1] === "manifest" && method === "PUT") {
+        const body = await readJson(req, 1_000_000);
+        if (!Array.isArray(body.entries)) throw new HttpError(400, "entries[] is required");
+        ctx.corpus.setCoverageManifest(body.entries as CoverageEntry[]);
+        sendJson(res, 200, { entries: ctx.corpus.coverageManifest() });
+        return true;
+      }
+    }
     if (seg[0] === "laws" && method === "GET") {
       if (seg.length === 1) { sendJson(res, 200, { laws: ctx.corpus.listLegislations() }); return true; }
       if (seg.length === 4) {
@@ -129,6 +148,7 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
       const result = await searchLaw(ctx.corpus, q, {
         asOf, k: Number(url.searchParams.get("k") ?? 10) || 10,
         includeHistorical: url.searchParams.get("historical") === "true",
+        matterKind: url.searchParams.get("matterKind") ?? "research",
         ...(lawKey ? { lawKey } : {}),
       });
       ctx.matters.audit.append("user", "search", null, "ui search", { hits: result.hits.length, asOf });
@@ -162,13 +182,21 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
       if (!text.trim()) throw new HttpError(400, "text is required");
       const matter = s(body.matterId) ? ctx.matters.getMatter(s(body.matterId)) : undefined;
       const at = isDate(s(body.asOf)) ? s(body.asOf) : matter?.asOf ?? today;
-      const report = verifyDocument(ctx.corpus, text, { asOf: at });
+      const report = verifyDocument(ctx.corpus, text, { asOf: at, ...(matter ? { matterKind: matter.kind } : {}) });
       const kind = s(body.kind) as DocKind;
       const structure = ["defense_memo", "opinion", "contract_report"].includes(kind)
         ? [...checkStructure(kind, text), ...(report.renderedDocument ? internalLeaks(report.renderedDocument) : [])] : [];
       ctx.matters.audit.append("user", "cite_check", matter?.id ?? null, "ui verify", { verdict: report.verdict, sha256: report.documentSha256 });
-      const review = matter ? ctx.matters.reviewsOf(matter.id).find((r) => r.documentName === s(body.documentName)) : undefined;
-      sendJson(res, 200, { report, structure, ...(matter ? { coverSheet: coverSheetAr(matter, s(body.documentName) || "document", report, review) } : {}) });
+      const documentName = s(body.documentName) || "document";
+      let review = matter ? ctx.matters.reviewsOf(matter.id).find((r) => r.documentName === documentName) : undefined;
+      if (matter && s(body.documentName) && report.verdict !== "fail" && structure.every((issue) => issue.level !== "error")) {
+        const at = (ctx.now?.() ?? new Date()).toISOString();
+        let next = onContentChanged(review ?? newReview(matter.id, documentName), report.documentSha256, "user", at);
+        if (next.state !== "in_review") next = markVerified(next, report, "user", at);
+        ctx.matters.saveReview(next);
+        review = next;
+      }
+      sendJson(res, 200, { report, structure, review, ...(matter ? { coverSheet: coverSheetAr(matter, documentName, report, review) } : {}) });
       return true;
     }
 
@@ -229,7 +257,11 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
       let next = rec;
       if (seg[2] === "submit") next = submitForReview(rec, "user", at);
       else if (seg[2] === "approve") {
-        const report = verifyDocument(ctx.corpus, s(body.text), { asOf: matter.asOf });
+        const text = s(body.text);
+        const report = verifyDocument(ctx.corpus, text, { asOf: matter.asOf, matterKind: matter.kind });
+        const kind: DocKind = matter.kind === "contract_review" ? "contract_report" : matter.kind === "defense_memo" ? "defense_memo" : "opinion";
+        const structure = [...checkStructure(kind, text), ...(report.renderedDocument ? internalLeaks(report.renderedDocument) : [])];
+        if (structure.some((issue) => issue.level === "error")) throw new ReviewError(`document structure failed: ${structure.filter((issue) => issue.level === "error").map((issue) => issue.code).join(",")}`);
         next = approve(rec, report, { name: s(body.reviewerName), licenseNo: s(body.licenseNo) }, at);
       } else if (seg[2] === "reject") next = reject(rec, "user", s(body.note), at);
       else throw new HttpError(404, "unknown review action");

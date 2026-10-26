@@ -12,6 +12,7 @@
  *  - An article version is one text of one article over one effective interval.
  *    Its id (`avid`) is a short stable hash so a model can copy it reliably.
  */
+import type { CoverageReport } from "./corpus/coverage.js";
 
 export type LegislationType =
   | "constitution"
@@ -268,6 +269,8 @@ export interface VerificationReport {
   documentSha256: string;
   /** Document with tokens replaced by formal citations (only when not "fail"). */
   renderedDocument?: string;
+  corpusSnapshotId: string;
+  coverage: CoverageReport;
   counts: { cited: number; verified: number; failed: number; freeMentions: number; unverifiedMarkers: number };
 }
 
@@ -284,6 +287,8 @@ export interface ReviewRecord {
   state: ReviewState;
   verifiedSha256?: string;
   approvedSha256?: string;
+  verifiedCorpusSnapshotId?: string;
+  approvedCorpusSnapshotId?: string;
   reviewer?: { name: string; licenseNo: string };
   decidedAt?: string;
   note?: string;

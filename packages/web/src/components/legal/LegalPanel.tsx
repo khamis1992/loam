@@ -6,6 +6,7 @@ import { activeLegalMatterId, legalApi, setActiveLegalMatterId, type LegalSearch
 import { CitationBadge } from './CitationBadge';
 import { MatterPrivacy } from './MatterPrivacy';
 import { VerificationReportView } from './VerificationReportView';
+import { CorpusCoverage } from './CorpusCoverage';
 
 type Tab = 'search' | 'verify' | 'matters';
 
@@ -62,6 +63,7 @@ function SearchTab({ today }: { today: string }) {
         <label className="flex items-center gap-1">{t('As of')}<input type="date" dir="ltr" value={asOf} onChange={(e) => setAsOf(e.target.value)} className="rounded-md border px-2 py-1" /></label>
         <button type="submit" disabled={busy} className="rounded-md border px-3 py-1">{t('Search')}</button>
       </form>
+      {result && <CorpusCoverage coverage={result.coverage} snapshotId={result.corpusSnapshotId} />}
       {result?.noAuthority && <p className="rounded-md bg-zinc-100 p-2 dark:bg-zinc-900">{t('No article in the verified corpus matches. Nothing may be cited for this point.')}</p>}
       <ul className="space-y-3">
         {result?.hits.map((h) => (

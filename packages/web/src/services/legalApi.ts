@@ -21,7 +21,14 @@ export interface LegalHit {
   text: string; truncated: boolean; effectiveFrom: string; effectiveTo: string | null;
   status: 'in_force' | 'historical' | 'not_yet_in_force'; provenance: string; citable: boolean; score: number; reasons: string[];
 }
-export interface LegalSearchResult { query: string; asOf: string; hits: LegalHit[]; mode: 'lexical' | 'hybrid'; direct: boolean; noAuthority: boolean }
+export interface CoverageIssue { legKey: string; titleAr: string; reason: 'missing' | 'unverified' | 'stale' | 'not_in_force' }
+export interface CoverageReport {
+  status: 'unconfigured' | 'complete' | 'incomplete'; matterKind: string; asOf: string; entries: number; issues: CoverageIssue[]; checkedAt: string;
+}
+export interface LegalSearchResult {
+  query: string; asOf: string; hits: LegalHit[]; mode: 'lexical' | 'hybrid'; direct: boolean; noAuthority: boolean;
+  authorityReason?: 'COVERAGE_UNCONFIGURED' | 'COVERAGE_INCOMPLETE' | 'NO_MATCH'; coverage: CoverageReport; corpusSnapshotId: string;
+}
 
 export interface CitationCheck {
   index: number; token: string; avid: string | null; kind: 'cite' | 'ref' | 'free_article' | 'free_law'; status: string;
@@ -30,6 +37,7 @@ export interface CitationCheck {
 export interface VerificationWarning { code: string; avid?: string; messageAr: string; messageEn: string }
 export interface VerificationReport {
   verdict: Verdict; asOf: string; checks: CitationCheck[]; warnings: VerificationWarning[]; documentSha256: string; renderedDocument?: string;
+  corpusSnapshotId: string; coverage: CoverageReport;
   counts: { cited: number; verified: number; failed: number; freeMentions: number; unverifiedMarkers: number };
 }
 export interface StructureIssue { level: 'error' | 'warning'; code: string; messageAr: string }
@@ -63,16 +71,21 @@ const enc = encodeURIComponent;
 
 export const legalApi = {
   status: () => request<LegalStatus>('/api/legal/status'),
-  search: (q: string, opts: { asOf?: string; lawKey?: string; k?: number; historical?: boolean } = {}) => {
+  coverage: (matterKind = 'research', asOf?: string) => request<{ coverage: CoverageReport; snapshot: { id: string; contentSha256: string; versions: number } }>(`/api/legal/coverage?matterKind=${enc(matterKind)}${asOf ? `&asOf=${enc(asOf)}` : ''}`),
+  getCoverageManifest: () => request<{ entries: Array<{ legKey: string; titleAr: string; requiredFor: string[]; maxReviewAgeDays?: number }> }>('/api/legal/coverage/manifest'),
+  setCoverageManifest: (entries: Array<{ legKey: string; titleAr: string; requiredFor: string[]; maxReviewAgeDays?: number }>) =>
+    request<{ entries: typeof entries }>('/api/legal/coverage/manifest', jsonInit('PUT', { entries })),
+  search: (q: string, opts: { asOf?: string; lawKey?: string; k?: number; historical?: boolean; matterKind?: string } = {}) => {
     const params = new URLSearchParams({ q });
     if (opts.asOf) params.set('asOf', opts.asOf);
     if (opts.lawKey) params.set('lawKey', opts.lawKey);
     if (opts.k) params.set('k', String(opts.k));
     if (opts.historical) params.set('historical', 'true');
+    if (opts.matterKind) params.set('matterKind', opts.matterKind);
     return request<LegalSearchResult>(`/api/legal/search?${params.toString()}`);
   },
   verify: (input: { text: string; asOf?: string; matterId?: string; kind?: 'defense_memo' | 'opinion' | 'contract_report'; documentName?: string }) =>
-    request<{ report: VerificationReport; structure: StructureIssue[]; coverSheet?: string }>('/api/legal/verify', jsonInit('POST', input)),
+    request<{ report: VerificationReport; structure: StructureIssue[]; coverSheet?: string; review?: ReviewRecord }>('/api/legal/verify', jsonInit('POST', input)),
   listMatters: () => request<{ matters: Matter[] }>('/api/legal/matters'),
   createMatter: (input: { title: string; kind: Matter['kind']; confidentiality?: Confidentiality; asOf?: string; parties?: MatterParty[]; court?: Matter['court'] }) =>
     request<{ matter: Matter }>('/api/legal/matters', jsonInit('POST', input)),

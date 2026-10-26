@@ -26,7 +26,10 @@ function move(rec: ReviewRecord, to: ReviewState, actor: string, at: string, pat
 export function markVerified(rec: ReviewRecord, report: VerificationReport, actor: string, at: string): ReviewRecord {
   if (report.verdict === "fail") throw new ReviewError("verification failed: fix every failing citation first");
   if (rec.state === "approved" && rec.approvedSha256 === report.documentSha256) return rec;
-  return move(rec, "verified", actor, at, { verifiedSha256: report.documentSha256, approvedSha256: undefined, reviewer: undefined });
+  return move(rec, "verified", actor, at, {
+    verifiedSha256: report.documentSha256, verifiedCorpusSnapshotId: report.corpusSnapshotId,
+    approvedSha256: undefined, approvedCorpusSnapshotId: undefined, reviewer: undefined,
+  });
 }
 
 export function submitForReview(rec: ReviewRecord, actor: string, at: string): ReviewRecord {
@@ -40,10 +43,13 @@ export function approve(
   if (rec.state !== "in_review") throw new ReviewError(`cannot approve from state ${rec.state}`);
   if (!reviewer.name.trim() || !reviewer.licenseNo.trim()) throw new ReviewError("reviewer name and licence number are required");
   if (report.verdict === "fail") throw new ReviewError("cannot approve a failing document");
+  if (report.coverage.status !== "complete") throw new ReviewError(`cannot approve with corpus coverage ${report.coverage.status}; resolve every required source first`);
   if (report.documentSha256 !== rec.verifiedSha256) throw new ReviewError("document changed since verification; verify again");
+  if (report.corpusSnapshotId !== rec.verifiedCorpusSnapshotId) throw new ReviewError("corpus changed since verification; verify again");
   if (report.counts.unverifiedMarkers > 0) throw new ReviewError("document still contains unverified markers");
   return move(rec, "approved", `${reviewer.name} (${reviewer.licenseNo})`, at, {
-    approvedSha256: report.documentSha256, reviewer: { name: reviewer.name.trim(), licenseNo: reviewer.licenseNo.trim() }, decidedAt: at,
+    approvedSha256: report.documentSha256, approvedCorpusSnapshotId: report.corpusSnapshotId,
+    reviewer: { name: reviewer.name.trim(), licenseNo: reviewer.licenseNo.trim() }, decidedAt: at,
   });
 }
 
@@ -56,7 +62,10 @@ export function reject(rec: ReviewRecord, actor: string, note: string, at: strin
 export function onContentChanged(rec: ReviewRecord, newSha256: string, actor: string, at: string): ReviewRecord {
   const anchor = rec.approvedSha256 ?? rec.verifiedSha256;
   if (!anchor || anchor === newSha256 || rec.state === "draft") return rec;
-  return move(rec, "draft", actor, at, { verifiedSha256: undefined, approvedSha256: undefined, reviewer: undefined });
+  return move(rec, "draft", actor, at, {
+    verifiedSha256: undefined, approvedSha256: undefined,
+    verifiedCorpusSnapshotId: undefined, approvedCorpusSnapshotId: undefined, reviewer: undefined,
+  });
 }
 
 export function canExportFinal(rec: ReviewRecord, currentSha256: string): boolean {

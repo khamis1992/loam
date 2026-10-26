@@ -41,6 +41,7 @@ export interface VerifyOptions {
   ledger?: ReadonlySet<string>;
   /** Minimum normalized quote length (default 15 characters). */
   minQuoteChars?: number;
+  matterKind?: string;
 }
 
 export const UNVERIFIED_MARKER = "[غير موثّق — يحتاج بحث محامٍ]";
@@ -257,6 +258,8 @@ export function verifyDocument(corpus: LegalCorpus, text: string, opts: VerifyOp
     checks,
     warnings,
     documentSha256: crypto.createHash("sha256").update(text, "utf8").digest("hex"),
+    corpusSnapshotId: corpus.snapshot({ persist: false }).id,
+    coverage: corpus.coverage({ asOf: opts.asOf, ...(opts.matterKind ? { matterKind: opts.matterKind } : {}) }),
     ...(renderedDocument !== undefined ? { renderedDocument } : {}),
     counts: {
       cited: toks.length,

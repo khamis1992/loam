@@ -1155,5 +1155,15 @@
   "{n} verified": "{n} verified",
   "Use in Legal chats": "Use in Legal chats",
   "Active in Legal chats": "Active in Legal chats",
-  "Legal": "Legal"
+  "Legal": "Legal",
+  "Corpus coverage": "Corpus coverage",
+  "Coverage complete": "Coverage complete",
+  "Coverage incomplete": "Coverage incomplete",
+  "Coverage not configured": "Coverage not configured",
+  "Required sources need review before final approval.": "Required sources need review before final approval.",
+  "Snapshot {id}": "Snapshot {id}",
+  "missing": "missing",
+  "unverified": "unverified",
+  "stale": "stale",
+  "not_in_force": "not_in_force"
 }

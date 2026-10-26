@@ -1155,5 +1155,15 @@
   "{n} verified": "{n} موثّق",
   "Use in Legal chats": "استخدمها في محادثات الوضع القانوني",
   "Active in Legal chats": "نشطة في محادثات الوضع القانوني",
-  "Legal": "قانوني"
+  "Legal": "قانوني",
+  "Corpus coverage": "تغطية المصادر",
+  "Coverage complete": "التغطية مكتملة",
+  "Coverage incomplete": "التغطية غير مكتملة",
+  "Coverage not configured": "التغطية غير مُعدّة",
+  "Required sources need review before final approval.": "المصادر المطلوبة تحتاج مراجعة قبل الاعتماد النهائي.",
+  "Snapshot {id}": "لقطة المصدر {id}",
+  "missing": "مفقود",
+  "unverified": "غير موثّق",
+  "stale": "يحتاج تحديثاً",
+  "not_in_force": "غير ساري"
 }
