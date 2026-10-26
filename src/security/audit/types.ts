@@ -62,7 +62,7 @@ export interface Rejected {
 }
 export type FindingRecord = Confirmed | NeedsValidation | Rejected;
 
-export type ScannerTool = "gitleaks" | "osv" | "guarddog" | "trivy" | "opengrep" | "nuclei" | "zap" | "jazzer" | "loam-secrets" | "loam-sca" | "loam-pkg";
+export type ScannerTool = "gitleaks" | "osv" | "guarddog" | "trivy" | "opengrep" | "checkov" | "nuclei" | "zap" | "jazzer" | "mobsf" | "loam-secrets" | "loam-sca" | "loam-pkg";
 export interface ReconHit {
   tool: ScannerTool;
   ruleId: string; message: string; file: string; line: number;

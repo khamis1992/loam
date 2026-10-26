@@ -38,7 +38,7 @@ export function toHits(findings: SecretFinding[]): ReconHit[] {
   }));
 }
 
-export function runSecretsScan(root: string, opts: { rulesDir?: string } = {}): { hits: ReconHit[]; sarif: Record<string, unknown> } {
+export function runSecretsScan(root: string, opts: { rulesDir?: string; skipTopDirs?: ReadonlySet<string> } = {}): { hits: ReconHit[]; sarif: Record<string, unknown> } {
   const rulesDir = opts.rulesDir ?? path.resolve(process.cwd(), "rules");
   const merged = rulesWithGitleaks(rulesDir, DEFAULT_RULES);
   const scanner = new SecretScanner({
@@ -46,6 +46,6 @@ export function runSecretsScan(root: string, opts: { rulesDir?: string } = {}): 
     redactPercent: 100,
     ...(merged ? { rules: merged.rules, globalAllow: merged.globalAllow } : {}),
   });
-  const findings = scanDirectory(root, scanner);
+  const findings = scanDirectory(root, scanner, opts.skipTopDirs);
   return { hits: toHits(findings), sarif: toSarif(findings) };
 }

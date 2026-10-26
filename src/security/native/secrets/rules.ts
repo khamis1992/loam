@@ -54,4 +54,18 @@ export const DEFAULT_RULES: SecretRule[] = [
       regexes: ["^\\$\\{", "^<[^>]+>$", "^(?:process\\.env|os\\.environ|getenv)"],
       stopwords: ["example", "placeholder", "changeme", "your_", "your-", "xxxxxxxx", "sample", "dummy", "undefined"],
     } },
+
+  // AI-platform keys and prompt/skill/config assets (Prompt-Recon graft, ALL_SERVICES §5).
+  { id: "groq-api-key", description: "Groq API key", keywords: ["gsk_"],
+    regex: "\\bgsk_[A-Za-z0-9]{20,}\\b", secretGroup: 1, severity: "critical" },
+  { id: "openrouter-api-key", description: "OpenRouter API key", keywords: ["sk-or-"],
+    regex: "\\bsk-or-[A-Za-z0-9-]{20,}\\b", secretGroup: 1, severity: "critical" },
+  { id: "huggingface-token", description: "Hugging Face access token", keywords: ["hf_"],
+    regex: "\\bhf_[A-Za-z0-9]{20,}\\b", secretGroup: 1, severity: "high" },
+  { id: "discord-webhook-url", description: "Discord webhook URL", keywords: ["discord.com/api/webhooks"],
+    regex: "https://discord(?:app)?\\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]{20,}", severity: "medium" },
+  { id: "ai-config-bearer", description: "Bearer credential in an AI prompt/skill/config asset",
+    keywords: ["bearer"], regex: "(?i)bearer[\\s'\"`=]{0,5}([A-Za-z0-9_\\-.+/=]{24,120})",
+    secretGroup: 1, entropy: 3.2, severity: "high",
+    path: "(\\.prompt|\\.mcp\\.json|(^|/)skills?/|prompt|agent|llm|model)" },
 ];

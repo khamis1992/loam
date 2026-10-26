@@ -26,17 +26,24 @@ function* chunks(text: string): Generator<{ text: string; lineBase: number }> {
   }
 }
 
-export function scanDirectory(root: string, scanner: SecretScanner): SecretFinding[] {
+export function scanDirectory(root: string, scanner: SecretScanner, skipTopDirs?: ReadonlySet<string>): SecretFinding[] {
   const out: SecretFinding[] = [];
   let files = 0;
-  const walk = (dir: string): void => {
+  const walk = (dir: string, depth: number): void => {
     let entries: fs.Dirent[] = [];
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
       if (files >= MAX_FILES) return;
       const full = path.join(dir, e.name);
       if (e.isSymbolicLink()) continue;
-      if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name)) walk(full); continue; }
+      if (e.isDirectory()) {
+        // Top-level caller-declared exclusions (e.g. a repo self-scan skipping its
+        // own runtime artifacts) — the walk never descends, so the MAX_FILES
+        // budget is not consumed by copied worktrees before real source is read.
+        if (depth === 0 && skipTopDirs?.has(e.name)) continue;
+        if (!SKIP_DIRS.has(e.name)) walk(full, depth + 1);
+        continue;
+      }
       if (!e.isFile()) continue;
       files++;
       let buf: Buffer;
@@ -51,7 +58,7 @@ export function scanDirectory(root: string, scanner: SecretScanner): SecretFindi
       }
     }
   };
-  walk(root);
+  walk(root, 0);
   return out;
 }
 

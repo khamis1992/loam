@@ -66,7 +66,12 @@ import { createProjectWikiTools } from "../tools/wikiTools.js";
 import { createAppBridgeTools } from "../tools/appBridgeTools.js";
 import { createSecurityAuditTools } from "../tools/securityAuditTools.js";
 import { createSecurityScanTools } from "../tools/securityScanTools.js";
+
+import { createFuzzTools } from "../tools/fuzzTools.js";
 import { createRemediateTools } from "../tools/remediateTools.js";
+
+
+
 import { createUnboundCodemodeTool } from "../codemode/tool.js";
 import { redTools } from "../tools/red.js";
 
@@ -91,6 +96,8 @@ export interface Runtime {
    * when memory embeddings are off and no embedder is available.
    */
   recall: import("../graph/recall.js").RecallIndex | null;
+
+
   dispose: () => Promise<void>;
 }
 
@@ -112,8 +119,17 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createProjectWikiTools());
   registry.registerAll(createAppBridgeTools({ gate: writeGate }));
   registry.registerAll(createSecurityAuditTools({ cfg, ollama, tools: registry }));
-  registry.registerAll(createSecurityScanTools());
+  registry.registerAll(createSecurityScanTools({ ollama }));
+
+  registry.registerAll(createFuzzTools());
   registry.registerAll(createRemediateTools());
+
+
+
+
+
+
+
   // Codemode ships in every mode but stays inert until the user opts in: the
   // instance registered here is unbound, and index.ts swaps in a per-run
   // instance bound to that run's allowlisted registry before execution.
@@ -144,7 +160,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
     fps: cfg.screen.fps,
     quality: cfg.screen.quality,
     maxWidth: cfg.screen.maxWidth,
-  });
+);
   // Always hand tools a WriteGate object; per-write gateActive() decides staging vs. direct apply.
   const gate = writeGate;
   if (memory) registry.registerAll(createMemoryTools(memory, { gate }));
@@ -191,14 +207,14 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createSemanticSearchTools({
     embedder: cfg.memory.enabled && cfg.memory.model ? embedder : undefined,
     model: cfg.memory.model,
-  }));
+));
   // N3 Knowledge Garden: user-built RAG store. The vector channel shares the
   // memory embedder; without it the garden still answers lexically, so the tools
   // are always registered and reachability is decided by the per-run toggle.
   registry.registerAll(createKnowledgeTools({
     embedder: cfg.memory.enabled && cfg.memory.model ? embedder : undefined,
     model: cfg.memory.model || cfg.model,
-  }));
+));
   // N12 generator tools: media/search providers from the environment plus the
   // runtime model as the reasoning backend for solve_logic / generate_storyboard.
   registry.registerAll(createGenExtraTools({ providers: defaultGenProviders(cfg), reasoner: ollama }));
@@ -216,6 +232,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
     preview,
     recall,
     mcpServers: mcp?.servers ?? [],
+
     mcp,
     dispose: async (): Promise<void> => {
       stopDream?.();
@@ -225,6 +242,8 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
       disposePty();
       await closeBrowser();
       if (mcp) await mcp.close();
-    },
-  };
+
+
+  ,
+;
 }

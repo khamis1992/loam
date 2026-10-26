@@ -46,6 +46,21 @@ export interface Adapter {
 
 const has = (target: string, rel: string): boolean => fs.existsSync(path.join(target, rel));
 
+/** Any Terraform/K8s/CloudFormation-looking file worth a checkov pass. */
+function hasIaC(target: string): boolean {
+  const walk = (dir: string, depth: number): boolean => {
+    if (depth > 6) return false;
+    let es: fs.Dirent[] = [];
+    try { es = fs.readdirSync(dir, { withFileTypes: true }); } catch { return false; }
+    for (const e of es) {
+      if (e.isFile() && (/\.tf(vars)?$/i.test(e.name) || /\.cf\.json$/i.test(e.name) || /^(k8s|kubernetes|helm)\.(ya?ml|json)$/i.test(e.name))) return true;
+      if (e.isDirectory() && !["node_modules", ".git", "dist", "build"].includes(e.name) && walk(path.join(dir, e.name), depth + 1)) return true;
+    }
+    return false;
+  };
+  return walk(target, 0);
+}
+
 /** Live scan target for DAST tools (nuclei). Opt-in: only an explicit http(s) URL counts. */
 export function liveScanTarget(src: NodeJS.ProcessEnv = process.env): string | null {
   const v = src.LOAM_AUDIT_LIVE_TARGET;
@@ -83,6 +98,14 @@ export const ADAPTERS: Record<string, Adapter> = {
       outFile: path.join(s, "opengrep.sarif"),
     }],
   },
+  checkov: {
+    tool: "checkov", exe: "checkov", okCodes: [0, 1],
+    plan: (t, s) => [{
+      argv: ["-d", t, "-o", "sarif", "--output-file", path.join(s, "checkov.sarif"), "--quiet"],
+      outFile: path.join(s, "checkov.sarif"),
+      guard: () => hasIaC(t),
+    }],
+  },
   trivy: {
     tool: "trivy", exe: "trivy", okCodes: [0],
     plan: (t, s) => [{
@@ -99,7 +122,33 @@ export const ADAPTERS: Record<string, Adapter> = {
     }],
     skipDetail: () => "no live target configured (set LOAM_AUDIT_LIVE_TARGET to an http(s) URL)",
   },
+  mobsf: {
+    // mobsfscan (MobSF's static CLI) — GPL MobSF itself stays a user-installed
+    // external process, never embedded; only its SARIF output enters Loam.
+    tool: "mobsf", exe: "mobsfscan", okCodes: [0, 1],
+    plan: (t, s) => [{
+      argv: [t, "--format", "sarif", "--output", path.join(s, "mobsf.sarif")],
+      outFile: path.join(s, "mobsf.sarif"),
+      guard: () => hasMobileArtifact(t),
+    }],
+    skipDetail: () => "no mobile artifact found (drop an .apk/.ipa/.aab in the target)",
+  },
 };
+
+/** Any Android/iOS package worth a mobsfscan pass. */
+function hasMobileArtifact(target: string): boolean {
+  const walk = (dir: string, depth: number): boolean => {
+    if (depth > 5) return false;
+    let es: fs.Dirent[] = [];
+    try { es = fs.readdirSync(dir, { withFileTypes: true }); } catch { return false; }
+    for (const e of es) {
+      if (e.isFile() && /\.(apk|ipa|aab)$/i.test(e.name)) return true;
+      if (e.isDirectory() && !["node_modules", ".git", "dist", "build"].includes(e.name) && walk(path.join(dir, e.name), depth + 1)) return true;
+    }
+    return false;
+  };
+  return walk(target, 0);
+}
 
 /** In-process scanners: no executable to install, so they are always available. */
 type NativeRun = (target: string, fetchFn?: FetchFn) => Promise<{ hits: ReconHit[]; sarif?: unknown; error?: string; notes?: string[] }>;
