@@ -143,6 +143,8 @@
     "test:appbuilder": "node --import tsx src/scripts/check-appbuilder.ts",
     "vendor:api-anything": "node scripts/vendor/fetch-api-anything.mjs",
     "check:api-anything": "tsx src/scripts/check-api-anything.ts",
+    "check:skill-ab": "node --import tsx --test src/eval/skillAb/__tests__/skillAb.test.ts",
+    "test:skill-ab": "node --import tsx --test src/eval/skillAb/__tests__/skillAb.test.ts",
     "verify": "npm run typecheck && npm run check:encoding && npm run check:docs && npm run check:eval && npm run check:orchestrator && npm run check:recovery && npm run check:modes && npm run check:orchestration",
     "verify:loam": "npm run verify && npm run check:isolation && npm run check:loam-agents && npm run check:loam-ui && npm run check:loam-ancillary && npm run check:loam-e2e"
   },
