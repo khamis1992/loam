@@ -7,7 +7,7 @@ const FORMAT = "loam-legal-backup/1";
 const AAD = "legal-backup/v1";
 
 interface BackupFile {
-  name: "matters.db" | "qatar-law.db";
+  name: string;
   data: string;
 }
 
@@ -15,6 +15,7 @@ interface BackupOptions {
   outputPath: string;
   mattersPath: string;
   corpusPath: string;
+  filesDir?: string;
   keys: KeyProvider;
   passphrase: string;
   now?: () => Date;
@@ -24,6 +25,7 @@ interface RestoreOptions {
   inputPath: string;
   mattersPath: string;
   corpusPath: string;
+  filesDir?: string;
   passphrase: string;
 }
 
@@ -47,7 +49,7 @@ function decodeBundle(raw: string, passphrase: string): { mattersKey: Buffer; fi
   const opened = cipher.openJson<{ mattersKeyHex: string; files: BackupFile[] }>(bundle.payload, AAD);
   if (!/^[0-9a-f]{64}$/.test(opened.mattersKeyHex) || !Array.isArray(opened.files)) throw new Error("invalid legal backup payload");
   for (const file of opened.files) {
-    if (file.name !== "matters.db" && file.name !== "qatar-law.db") throw new Error("unexpected file in legal backup");
+    if (file.name !== "matters.db" && file.name !== "qatar-law.db" && !/^files\/file-[0-9a-f]{20}\.json$/.test(file.name)) throw new Error("unexpected file in legal backup");
     if (typeof file.data !== "string") throw new Error("invalid legal backup file");
   }
   return { mattersKey: Buffer.from(opened.mattersKeyHex, "hex"), files: opened.files };
@@ -60,6 +62,11 @@ export function createLegalBackup(opts: BackupOptions): void {
     { name: "matters.db", data: fs.readFileSync(opts.mattersPath).toString("base64") },
     { name: "qatar-law.db", data: fs.readFileSync(opts.corpusPath).toString("base64") },
   ];
+  if (opts.filesDir && fs.existsSync(opts.filesDir)) {
+    for (const name of fs.readdirSync(opts.filesDir)) {
+      if (/^file-[0-9a-f]{20}\.json$/.test(name)) files.push({ name: `files/${name}`, data: fs.readFileSync(path.join(opts.filesDir, name)).toString("base64") });
+    }
+  }
   const payload = cipher.sealJson({ createdAt: (opts.now?.() ?? new Date()).toISOString(), mattersKeyHex: opts.keys.key().toString("hex"), files }, AAD);
   atomicWrite(opts.outputPath, `${JSON.stringify({ format: FORMAT, salt: salt.toString("base64"), payload }, null, 2)}\n`);
 }
@@ -68,7 +75,7 @@ export function restoreLegalBackup(opts: RestoreOptions): { mattersKey: Buffer; 
   const opened = decodeBundle(fs.readFileSync(opts.inputPath, "utf8"), opts.passphrase);
   const restored: string[] = [];
   for (const file of opened.files) {
-    const target = file.name === "matters.db" ? opts.mattersPath : opts.corpusPath;
+    const target = file.name === "matters.db" ? opts.mattersPath : file.name === "qatar-law.db" ? opts.corpusPath : path.join(opts.filesDir ?? "", path.basename(file.name));
     atomicWrite(target, Buffer.from(file.data, "base64"));
     restored.push(target);
   }

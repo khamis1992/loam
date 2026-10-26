@@ -56,6 +56,16 @@ extraResources:
     to: app.asar.unpacked/node_modules/three/examples/jsm
     filter:
       - "**/*.js"
+  - from: resources/legal/ocr
+    to: app.asar.unpacked/resources/legal/ocr
+  - from: node_modules/tesseract.js
+    to: app.asar.unpacked/node_modules/tesseract.js
+  - from: node_modules/tesseract.js-core
+    to: app.asar.unpacked/node_modules/tesseract.js-core
+  - from: node_modules/pdfjs-dist
+    to: app.asar.unpacked/node_modules/pdfjs-dist
+  - from: node_modules/@napi-rs/canvas
+    to: app.asar.unpacked/node_modules/@napi-rs/canvas
 npmRebuild: false
 
 # Update feed (generic): overridable at runtime via MANUS_LOCAL_UPDATE_URL,

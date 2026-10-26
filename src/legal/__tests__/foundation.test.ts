@@ -10,6 +10,7 @@ import { migrateLegalDatabase } from "../db/migrations.js";
 import { createLegalModelPort } from "../model/legalModelPort.js";
 import { createLegalBackup, restoreLegalBackup } from "../security/backup.js";
 import { openLegalPayload, sealLegalPayload } from "../security/transcriptSeal.js";
+import { LegalFileVault } from "../security/fileVault.js";
 import { MattersStore } from "../mattersStore.js";
 import type { ChatResult } from "../../ollama.js";
 
@@ -60,12 +61,17 @@ test("legal backup restores encrypted matters with the recovery passphrase", () 
   const matter = store.createMatter({ title: "شركة الاختبار", kind: "research" }, "user");
   store.close();
   fs.writeFileSync(corpusPath, "public corpus fixture");
-  createLegalBackup({ outputPath, mattersPath, corpusPath, keys: provider, passphrase: "correct horse battery" });
+  const filesDir = path.join(dir, "files");
+  const vault = new LegalFileVault(filesDir, provider);
+  const original = vault.put(Buffer.from("secret original", "utf8"));
+  createLegalBackup({ outputPath, mattersPath, corpusPath, filesDir, keys: provider, passphrase: "correct horse battery" });
   assert.equal(fs.readFileSync(outputPath, "utf8").includes("شركة الاختبار"), false);
   assert.throws(() => restoreLegalBackup({ inputPath: outputPath, mattersPath, corpusPath, passphrase: "wrong passphrase" }));
   const restoredMatters = path.join(dir, "restored-matters.db");
   const restoredCorpus = path.join(dir, "restored-corpus.db");
-  const restored = restoreLegalBackup({ inputPath: outputPath, mattersPath: restoredMatters, corpusPath: restoredCorpus, passphrase: "correct horse battery" });
+  const restoredFilesDir = path.join(dir, "restored-files");
+  const restored = restoreLegalBackup({ inputPath: outputPath, mattersPath: restoredMatters, corpusPath: restoredCorpus, filesDir: restoredFilesDir, passphrase: "correct horse battery" });
+  assert.equal(new LegalFileVault(restoredFilesDir, new StaticKeyProvider(restored.mattersKey)).get(original.id).toString("utf8"), "secret original");
   const reopened = new MattersStore(restoredMatters, new StaticKeyProvider(restored.mattersKey));
   assert.equal(reopened.getMatter(matter.id)?.title, "شركة الاختبار");
   reopened.close();

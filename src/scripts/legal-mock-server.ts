@@ -8,6 +8,13 @@
  */
 import crypto from "node:crypto";
 import http from "node:http";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { LegalFileVault } from "../legal/security/fileVault.js";
+import { importMatterDocument } from "../legal/evidence/service.js";
+import { localLegalOcr, closeLegalOcr } from "../legal/evidence/ocr.js";
+import { rasterizePdfPage } from "../legal/evidence/pdfRaster.js";
 import { StaticKeyProvider } from "../legal/crypto.js";
 import { MattersStore } from "../legal/mattersStore.js";
 import { loadFixtureCorpus } from "../legal/__tests__/helpers.js";
@@ -17,12 +24,15 @@ export interface MockServer { url: string; token: string; ctx: LegalRouteContext
 
 export async function startMockServer(port = 0, token = crypto.randomBytes(16).toString("hex"), now?: () => Date): Promise<MockServer> {
   const keys = new StaticKeyProvider(crypto.randomBytes(32));
+  const vaultDir = fs.mkdtempSync(path.join(os.tmpdir(), "legal-mock-vault-"));
   const ctx: LegalRouteContext = {
     corpus: loadFixtureCorpus(),
     matters: new MattersStore(":memory:", keys, now),
     egress: { localModel: "qwen3.6:35b-a3b", approvedLocalModels: ["qwen3.6:35b-a3b"], ollamaUrl: "http://127.0.0.1:11434" },
     enabled: true,
     keys,
+    vault: new LegalFileVault(vaultDir, keys),
+    importDocument: (matterId, absPath) => importMatterDocument(ctx.matters, matterId, absPath, { ocr: localLegalOcr, rasterize: rasterizePdfPage, ...(now ? { now } : {}) }),
     ...(now ? { now } : {}),
   };
   const server = http.createServer((req, res) => {
@@ -43,7 +53,9 @@ export async function startMockServer(port = 0, token = crypto.randomBytes(16).t
     url: `http://127.0.0.1:${actualPort}`,
     token,
     ctx,
-    close: () => new Promise<void>((resolve) => server.close(() => { ctx.matters.close(); ctx.corpus.close(); resolve(); })),
+    close: () => new Promise<void>((resolve) => server.close(() => {
+      ctx.matters.close(); ctx.corpus.close(); fs.rmSync(vaultDir, { recursive: true, force: true }); void closeLegalOcr(); resolve();
+    })),
   };
 }
 

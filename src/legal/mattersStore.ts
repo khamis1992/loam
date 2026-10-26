@@ -12,6 +12,7 @@ import { AuditLog } from "./audit.js";
 import { FieldCipher, type KeyProvider } from "./crypto.js";
 import { MATTERS_SCHEMA, MATTERS_SCHEMA_VERSION } from "./schema.js";
 import { migrateLegalDatabase } from "./db/migrations.js";
+import { EvidenceStore, EVIDENCE_SCHEMA } from "./db/evidenceStore.js";
 import type { Clause, ClauseCategory, Confidentiality, ContractDoc, EgressPolicy, Matter, MatterParty, ReviewRecord } from "./types.js";
 
 export interface NewMatter {
@@ -36,15 +37,17 @@ export function qatarToday(now: Date = new Date()): string {
 export class MattersStore {
   readonly db: DatabaseSync;
   readonly audit: AuditLog;
+  readonly evidence: EvidenceStore;
   private readonly cipher: FieldCipher;
 
   constructor(dbPath: string, keys: KeyProvider, private readonly now: () => Date = () => new Date()) {
     if (dbPath !== ":memory:") fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     this.db = new DatabaseSync(dbPath);
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;");
-    migrateLegalDatabase(this.db, { schema: MATTERS_SCHEMA, version: MATTERS_SCHEMA_VERSION });
+    migrateLegalDatabase(this.db, { schema: MATTERS_SCHEMA, version: MATTERS_SCHEMA_VERSION, migrations: [{ version: 2, sql: EVIDENCE_SCHEMA }] });
     this.cipher = new FieldCipher(keys);
     this.audit = new AuditLog(this.db, now);
+    this.evidence = new EvidenceStore(this.db, keys);
   }
 
   close(): void { this.db.close(); }

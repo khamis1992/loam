@@ -14,6 +14,10 @@ import { createLegalModelPort } from "./model/legalModelPort.js";
 import type { LegalModelPort } from "./model/types.js";
 import { createLegalBackup } from "./security/backup.js";
 import { exportAuditAnchor, type AuditAnchor } from "./security/auditAnchor.js";
+import { LegalFileVault } from "./security/fileVault.js";
+import { localLegalOcr, closeLegalOcr } from "./evidence/ocr.js";
+import { rasterizePdfPage } from "./evidence/pdfRaster.js";
+import { importMatterDocument, type EvidenceAnalysis } from "./evidence/service.js";
 import { openLegalPayload, sealLegalPayload, type SealedLegalPayload } from "./security/transcriptSeal.js";
 import type { Embedder, Reranker } from "./retrieval.js";
 
@@ -25,7 +29,9 @@ export interface LegalRuntime {
   matters: MattersStore;
   egress: EgressConfig;
   keys: KeyProvider;
+  vault: LegalFileVault;
   model: { port: LegalModelPort };
+  importDocument(matterId: string, absPath: string): Promise<EvidenceAnalysis>;
   runModels: Map<string, string>;
   toolDeps: LegalToolDeps;
   seal(value: unknown, aad: string): SealedLegalPayload;
@@ -54,6 +60,7 @@ export function createLegalRuntime(opts: LegalRuntimeOptions): LegalRuntime {
   const keys = opts.keys ?? processKeyProvider;
   const matters = new MattersStore(mattersPath, keys, opts.now);
   const cipher = new FieldCipher(keys);
+  const vault = new LegalFileVault(path.join(dir, "files"), keys);
   const egress: EgressConfig = { localModel: opts.config.localModel, approvedLocalModels: opts.config.approvedLocalModels, ollamaUrl: opts.ollamaUrl };
   const model = createLegalModelPort({ config: egress });
   const runModels = new Map<string, string>();
@@ -68,15 +75,16 @@ export function createLegalRuntime(opts: LegalRuntimeOptions): LegalRuntime {
     ...(opts.now ? { now: opts.now } : {}),
   };
   return {
-    config: opts.config, corpus, matters, egress, keys, model, runModels, toolDeps,
+    config: opts.config, corpus, matters, egress, keys, vault, model, runModels, toolDeps,
+    importDocument: (matterId, absPath) => importMatterDocument(matters, matterId, absPath, { ocr: localLegalOcr, rasterize: rasterizePdfPage, ...(opts.now ? { now: opts.now } : {}) }),
     seal: (value, aad) => sealLegalPayload(cipher, value, aad),
     open: <T>(payload: unknown): T => openLegalPayload<T>(cipher, payload),
     backup: (outputPath, passphrase) => {
       matters.db.exec("PRAGMA wal_checkpoint(FULL)");
       corpus.db.exec("PRAGMA wal_checkpoint(FULL)");
-      createLegalBackup({ outputPath, mattersPath, corpusPath, keys, passphrase, ...(opts.now ? { now: opts.now } : {}) });
+      createLegalBackup({ outputPath, mattersPath, corpusPath, filesDir: path.join(dir, "files"), keys, passphrase, ...(opts.now ? { now: opts.now } : {}) });
     },
     exportAuditAnchor: (outputPath) => exportAuditAnchor(matters.audit, outputPath, keys, opts.now),
-    close: () => { corpus.close(); matters.close(); },
+    close: () => { corpus.close(); matters.close(); void closeLegalOcr(); },
   };
 }

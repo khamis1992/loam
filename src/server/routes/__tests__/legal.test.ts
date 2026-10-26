@@ -67,6 +67,26 @@ test("mock server: token, status, search, verify, matters, egress, review gate, 
   }
 });
 
+test("matter document upload builds an evidence workspace", async () => {
+  const srv = await startMockServer(0, "t");
+  try {
+    const created = await call(srv, "POST", "/api/legal/matters", { title: "ملف قضية", kind: "defense_memo", asOf: "2024-01-15" });
+    const matter = created.json.matter as { id: string };
+    const uploaded = await call(srv, "POST", `/api/legal/matters/${matter.id}/documents`, {
+      fileName: "evidence.txt", dataBase64: Buffer.from("المبلغ 1000 ريال بتاريخ 2024/01/15.", "utf8").toString("base64"),
+    });
+    assert.equal(uploaded.status, 201);
+    assert.equal((uploaded.json.document as { text: string }).text.includes("1000"), true);
+    assert.ok(String(uploaded.json.vaultId).startsWith("file-"));
+    const workspace = await call(srv, "GET", `/api/legal/matters/${matter.id}/documents`);
+    assert.equal((workspace.json.facts as unknown[]).length, 1);
+    assert.equal((workspace.json.timeline as Array<{ sortDate: string }>)[0]?.sortDate, "2024-01-15");
+    assert.equal((workspace.json.documents as Array<{ id: string }>).length, 1);
+  } finally {
+    await srv.close();
+  }
+});
+
 test("import draft + import: refuses unsigned official packs, accepts a signed one", async () => {
   const srv = await startMockServer(0, "t");
   try {

@@ -1912,7 +1912,7 @@ loadAgents();
         // Legal mode (Qatar): corpus, matters, verification, review gate.
         if (p.startsWith("/api/legal")) {
           if (!deps.legal) return sendJson(res, p.split("?")[0] === "/api/legal/status" ? 200 : 404, { enabled: false });
-          if (await handleLegalRoutes(req, res, p, { corpus: deps.legal.corpus, matters: deps.legal.matters, egress: deps.legal.egress, keys: deps.legal.keys, enabled: true })) return;
+          if (await handleLegalRoutes(req, res, p, { corpus: deps.legal.corpus, matters: deps.legal.matters, egress: deps.legal.egress, keys: deps.legal.keys, vault: deps.legal.vault, importDocument: deps.legal.importDocument, enabled: true })) return;
         }
 
         // ---- avatar (Grok Bot-style): set shape/color/image on an existing agent ----

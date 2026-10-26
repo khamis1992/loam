@@ -25,6 +25,11 @@
  * Only this surface (a person at the UI) can change a matter's egress policy.
  */
 import type http from "node:http";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import type { LegalFileVault } from "../../legal/security/fileVault.js";
+import type { EvidenceAnalysis } from "../../legal/evidence/service.js";
 import { contractLanguage, segmentContract } from "../../legal/contract/clauses.js";
 import { DEFAULT_QATAR_PLAYBOOK, reviewContract, type ContractType } from "../../legal/contract/playbook.js";
 import type { LegalCorpus, LegalPack } from "../../legal/corpusStore.js";
@@ -49,6 +54,8 @@ export interface LegalRouteContext {
   enabled: boolean;
   /** Same provider the MattersStore uses; probed for /status. */
   keys: KeyProvider;
+  vault: LegalFileVault;
+  importDocument(matterId: string, absPath: string): Promise<EvidenceAnalysis>;
   now?: () => Date;
 }
 
@@ -219,6 +226,38 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
         return true;
       }
       if (seg.length === 2 && method === "DELETE") { sendJson(res, 200, { deleted: ctx.matters.deleteMatter(matter.id, "user") }); return true; }
+      if (seg[2] === "documents") {
+        if (seg.length === 3 && method === "GET") {
+          sendJson(res, 200, {
+            documents: ctx.matters.evidence.listDocuments(matter.id), facts: ctx.matters.evidence.listFacts(matter.id),
+            timeline: ctx.matters.evidence.listTimeline(matter.id), contradictions: ctx.matters.evidence.listContradictions(matter.id),
+          });
+          return true;
+        }
+        if (seg.length === 3 && method === "POST") {
+          const body = await readJson(req, 30_000_000);
+          const fileName = path.basename(s(body.fileName) || "document.txt");
+          const data = Buffer.from(s(body.dataBase64), "base64");
+          if (data.length === 0) throw new HttpError(400, "document is empty");
+          const stored = ctx.vault.put(data);
+          const temp = fs.mkdtempSync(path.join(os.tmpdir(), "legal-import-"));
+          try {
+            const source = path.join(temp, fileName);
+            fs.writeFileSync(source, data);
+            const analysis = await ctx.importDocument(matter.id, source);
+            sendJson(res, 201, { ...analysis, vaultId: stored.id });
+          } finally {
+            fs.rmSync(temp, { recursive: true, force: true });
+          }
+          return true;
+        }
+        if (seg.length === 4 && method === "GET") {
+          const document = ctx.matters.evidence.getDocument(seg[3]!);
+          if (!document || document.matterId !== matter.id) throw new HttpError(404, "document not found");
+          sendJson(res, 200, { document });
+          return true;
+        }
+      }
       if (seg[2] === "contracts") {
         if (seg.length === 3 && method === "GET") { sendJson(res, 200, { contracts: ctx.matters.listContracts(matter.id) }); return true; }
         if (seg.length === 3 && method === "POST") {

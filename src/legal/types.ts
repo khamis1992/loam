@@ -296,7 +296,7 @@ export interface ReviewRecord {
 }
 
 export type AuditAction =
-  | "corpus.import" | "corpus.amend" | "search" | "cite_check" | "contract.import"
+  | "corpus.import" | "corpus.amend" | "search" | "cite_check" | "contract.import" | "evidence.import"
   | "contract.review" | "matter.create" | "matter.update" | "matter.delete" | "egress.decision"
   | "review.transition" | "export.final" | "export.draft" | "purge";
 
