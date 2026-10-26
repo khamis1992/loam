@@ -78,10 +78,21 @@ interface ComposerProps {
   worktreeEnabled?: boolean;
   /** Latest assistant reply text; enables the voice-mode TTS toggle. */
   assistantReply?: string;
+  /** Cap G §4.13.2: the Race chip — present when this task has an App project.
+   *  Off by default and turns off again after every send, so a race never
+   *  starts by accident. The estimate line is shown in the chip popover. */
+  race?: {
+    active: boolean;
+    onToggle: () => void;
+    branches: 2 | 3 | 4;
+    onBranches: (n: 2 | 3 | 4) => void;
+    extraCredits?: number;
+    maxTotalCredits?: number;
+  } | null;
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { onSend, onStop, onFirstInput, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode, placeholder, approveForMe, onToggleApproveForMe, knowledgeOn, onToggleKnowledge, modelTier, outputType, effort, compareModels: initialCompareModels, abModels, projectId, worktreeEnabled, assistantReply }: ComposerProps,
+  { onSend, onStop, onFirstInput, running, home, onAddFolder, defaultLoamMode, resolvedLoamMode, placeholder, approveForMe, onToggleApproveForMe, knowledgeOn, onToggleKnowledge, modelTier, outputType, effort, compareModels: initialCompareModels, abModels, projectId, worktreeEnabled, assistantReply, race }: ComposerProps,
   ref: Ref<ComposerHandle>,
 ) {
   const router = useRouter();
@@ -236,6 +247,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     if (worktreeEnabled) extData.worktreeEnabled = true;
     if (!onToggleApproveForMe && homeApprove) extData.approveForMe = true;
     if (!onToggleKnowledge && homeKnowledge) extData.knowledge = true;
+    // Cap G §4.13.2: the chip turns off again after every send, so a race never
+    // starts by accident on the next message.
+    if (race?.active) extData.appRaceBranches = race.branches;
     Object.assign(extData, routingExtData({
       outputType: selectedOutputType,
       effort: selectedEffort,
@@ -663,6 +677,43 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           <Leaf className="size-3.5" /> {t('Knowledge Garden')}
         </button>
 
+        {race && (
+          <span className="relative hidden items-center gap-1 sm:flex">
+            <button
+              type="button"
+              onClick={race.onToggle}
+              aria-pressed={race.active}
+              data-testid="appbuilder-race-chip"
+              title={t('Run the same prompt on several branches, then pick the best one')}
+              className={clsx(
+                'flex items-center gap-1 rounded-full border px-2 py-1 text-xs',
+                race.active ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
+              )}
+            >
+              <GitBranch className="size-3.5" aria-hidden /> {t('Race')}
+            </button>
+            {race.active && (
+              <span className="absolute top-full z-20 mt-1 flex items-center gap-2 rounded-card border border-border-main bg-bg-menu p-2 text-[11px] shadow-lg" data-testid="appbuilder-race-popover">
+                <select
+                  value={race.branches}
+                  onChange={(e) => race.onBranches(Number(e.target.value) as 2 | 3 | 4)}
+                  aria-label={t('Branches')}
+                  className="rounded border border-border-main bg-transparent px-1 py-0.5"
+                >
+                  <option value={2}>2</option>
+                  <option value={3}>3</option>
+                  <option value={4}>4</option>
+                </select>
+                <span className="text-text-secondary" dir="rtl">
+                  {race.extraCredits !== undefined
+                    ? `السباق: نحو +${race.extraCredits} رصيد${race.maxTotalCredits !== undefined ? ` (بحد أقصى ${race.maxTotalCredits} إجمالًا)` : ''}`
+                    : 'جارٍ حساب التقدير…'}
+                </span>
+              </span>
+            )}
+          </span>
+        )}
+
         <select
           value={mode}
           onChange={(e) => setMode(e.target.value as TaskMode)}
@@ -783,9 +834,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           )
           : (
             <IconButton
-              label={t('Send')}
+              label={race?.active ? t('Send as race') : t('Send')}
               disabled={!canSend}
               onClick={submit}
+              data-testid={race?.active ? 'appbuilder-send-as-race' : undefined}
               className={clsx(
                 'rounded-full',
                 canSend ? 'bg-text-primary text-text-onblack hover:opacity-90' : 'bg-fill-tsp text-text-secondary',

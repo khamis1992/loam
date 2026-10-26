@@ -117,3 +117,34 @@ export const readFile = (id: string, path: string) =>
   request<{ content: string; sha1: string }>(`/api/app-projects/${id}/files/view?path=${encodeURIComponent(path)}`);
 export const writeFile = (id: string, path: string, content: string, baseSha1?: string) =>
   request<{ sha1: string }>(`/api/app-projects/${id}/files`, json({ path, content, baseSha1 }));
+
+// ---------- run engine surface (engine-bound; server answers engine_pending until it lands) ----------
+
+export interface RuntimeErrorRecordDto {
+  id: string;
+  projectId: string;
+  kind: string;
+  message: string;
+  stack: string | null;
+  source: { file: string; line: number; column: number } | null;
+  url: string | null;
+  count: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
+/** POST /runs — queues when a run is active; race carries the branch count. */
+export const startRun = (id: string, prompt: string, flavor: AppRunFlavor = 'quick', race?: { branches: 2 | 3 | 4 }) =>
+  request<{ runId?: string; queued?: PromptQueueItemDto }>(`/api/app-projects/${id}/runs`, json({ prompt, flavor, ...(race ? { race } : {}) }));
+
+export const findProjectByTask = async (taskId: string): Promise<AppProjectDto | null> => {
+  const { projects } = await listAppProjects(200);
+  return projects.find((p) => p.taskId === taskId) ?? null;
+};
+
+export const listRuntimeErrors = (id: string, limit = 50) =>
+  request<{ errors: RuntimeErrorRecordDto[] }>(`/api/app-projects/${id}/runtime-errors?limit=${limit}`);
+export const clearRuntimeErrors = (id: string) =>
+  request<{ ok: true }>(`/api/app-projects/${id}/runtime-errors`, { method: 'DELETE' });
+export const runtimeFixPrompt = (id: string, ids?: string[]) =>
+  request<{ prompt: string }>(`/api/app-projects/${id}/runtime-errors/fix-prompt`, json(ids ? { ids } : {}));

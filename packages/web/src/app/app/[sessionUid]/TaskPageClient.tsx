@@ -6,13 +6,17 @@ const sentDraftSessions = new Set<string>();
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import {
   Share, FileChartColumn, MoreHorizontal, PanelRight, CircleCheck, Copy, Repeat2,
-  Star, Loader2,
+  Star, Loader2, AppWindow,
 } from 'lucide-react';
 import { useAppDispatch, useAppSelector, type AppDispatch } from '@/store';
 import { appendEvent, applyDelta, setStatus, setError } from '@/store/chatSlice';
 import { addSession, selectSession } from '@/store/sessionsSlice';
 import { t, PRODUCT } from '@/i18n/t';
 import { Composer } from '@/components/chat/Composer';
+// Cap G §4.16: the Agent Studio App Builder workspace opens for tasks that own
+// an App project; the Race chip rides the composer (§4.13.2).
+import { AppBuilderWorkspace } from '@/components/appbuilder/AppBuilderWorkspace';
+import { findProjectByTask, startRun, raceEstimate as fetchRaceEstimate, type AppProjectDto, type RaceEstimateDto } from '@/services/appBuilderApi';
 import { EventList } from '@/components/chat/EventList';
 import { SessionStatusBadge } from '@/components/chat/SessionStatusBadge';
 import { useSessionRuntime } from '@/components/chat/useSessionRuntime';
@@ -334,6 +338,13 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const workspaceOpenActionRef = useRef<string>('');
   const editorsVersion = useSyncExternalStore(subscribeWorkspaceEditors, workspaceEditorsVersion, workspaceEditorsVersion);
   const [filesOpen, setFilesOpen] = useState(false);
+  // Cap G: the App project bound to this task (if any), its workspace drawer,
+  // and the composer Race chip state.
+  const [appProject, setAppProject] = useState<AppProjectDto | null>(null);
+  const [appBuilderOpen, setAppBuilderOpen] = useState(false);
+  const [raceActive, setRaceActive] = useState(false);
+  const [raceBranches, setRaceBranches] = useState<2 | 3 | 4>(2);
+  const [raceEstimate, setRaceEstimate] = useState<RaceEstimateDto | null>(null);
   const [taskFiles, setTaskFiles] = useState<Array<{ name: string; path: string; size: number; kind: AttachmentKind }>>([]);
   const [taskFilesLoading, setTaskFilesLoading] = useState(false);
   const autoOpenedRef = useRef<Set<string>>(new Set());
@@ -343,6 +354,23 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     const fromClock = events.find((e): e is CascadeTaskClockEvent => e.type === 'cascadeTaskClock');
     return fromAttachment?.taskId ?? fromClock?.clock.taskId;
   }, [events]);
+
+  // Cap G: resolve (and keep fresh) the App project bound to this task, and load
+  // the Race estimate for the selected branch count whenever a project exists.
+  useEffect(() => {
+    if (!taskId) { setAppProject(null); return; }
+    let alive = true;
+    const timer = setInterval(() => {
+      void findProjectByTask(taskId).then((p) => { if (alive) setAppProject(p); }).catch(() => {});
+    }, 15_000);
+    void findProjectByTask(taskId).then((p) => { if (alive) setAppProject(p); }).catch(() => {});
+    return () => { alive = false; clearInterval(timer); };
+  }, [taskId]);
+
+  useEffect(() => {
+    if (!appProject) { setRaceEstimate(null); return; }
+    void fetchRaceEstimate(appProject.id, raceBranches).then((r) => setRaceEstimate(r.estimate)).catch(() => setRaceEstimate(null));
+  }, [appProject, raceBranches]);
 
   const attachmentEvents = useMemo(() => events.filter((e): e is AttachmentEvent => e.type === 'attachment'), [events]);
 
@@ -399,6 +427,21 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   const handleSend = async (text: string, mode: TaskMode, files: File[], extData?: Record<string, unknown>) => {
     const socket = socketRef.current;
     if (!socket) return;
+    // Cap G §4.13.2: a raced send goes to the App project's run endpoint instead
+    // of the chat socket; the chip turns off again after every send. Until the
+    // multi-agent engine lands the server answers engine_pending, which we show
+    // verbatim instead of pretending a race started.
+    const raceBranchCount = extData?.appRaceBranches;
+    if (appProject && typeof raceBranchCount === 'number') {
+      setRaceActive(false);
+      try {
+        await startRun(appProject.id, text, 'quick', { branches: raceBranchCount as 2 | 3 | 4 });
+      } catch (err) {
+        dispatch(setError({ sessionId: sessionUid, error: err instanceof Error ? err.message : 'فشل إرسال السباق' }));
+      }
+      void runtime.refresh();
+      return;
+    }
     dispatch(setStatus({ sessionId: sessionUid, status: 'running' }));
     let attachments = draftAttachments;
     if (files.length > 0) {
@@ -549,6 +592,18 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
         </button>
         <button className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><FileChartColumn className="size-4" /></button>
         <button className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><MoreHorizontal className="size-4" /></button>
+        {appProject && (
+          <button
+            type="button"
+            onClick={() => setAppBuilderOpen((v) => !v)}
+            aria-pressed={appBuilderOpen}
+            data-testid="appbuilder-toggle"
+            title={t('App Builder workspace')}
+            className={`rounded-control p-1.5 hover:bg-fill-hover ${appBuilderOpen ? 'text-icon-blue' : 'text-text-secondary'}`}
+          >
+            <AppWindow className="size-4" />
+          </button>
+        )}
         <button className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"><PanelRight className="size-4" /></button>
       </div>
 
@@ -713,7 +768,15 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               effort={draftEffort}
               compareModels={draftCompare}
               abModels={draftAbModels}
-              />
+              race={appProject ? {
+                active: raceActive,
+                onToggle: () => setRaceActive((v) => !v),
+                branches: raceBranches,
+                onBranches: setRaceBranches,
+                extraCredits: raceEstimate?.extraCredits,
+                maxTotalCredits: raceEstimate?.maxTotalCredits,
+              } : null}
+            />
             <SideChatPanel taskId={taskId ?? null} />
           </div>
         </div>
@@ -743,6 +806,13 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
         )}
       </div>
       <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} taskId={taskId ?? null} />
+
+      {/* Cap G §4.16: the Agent Studio App Builder workspace drawer. */}
+      {appBuilderOpen && appProject && (
+        <div className="fixed inset-y-0 end-0 z-40 w-[min(560px,92vw)] border-s border-border-main bg-bg-panel shadow-xl" data-testid="appbuilder-workspace">
+          <AppBuilderWorkspace projectId={appProject.id} onClose={() => setAppBuilderOpen(false)} />
+        </div>
+      )}
 
       {filesOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
