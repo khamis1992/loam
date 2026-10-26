@@ -140,7 +140,7 @@
     "test:wakaru-bridge": "node --import tsx --test src/bridges/__tests__/binaries.test.ts",
     "check:skill-scan": "node --import tsx src/scripts/check-skill-scan.ts",
     "check:appbuilder": "node --import tsx src/scripts/check-appbuilder.ts",
-    "test:appbuilder": "node --import tsx src/scripts/check-appbuilder.ts",
+    "test:appbuilder": "node --import tsx --test src/appbuilder/__tests__/core.test.ts && node --import tsx src/scripts/check-appbuilder.ts",
     "vendor:api-anything": "node scripts/vendor/fetch-api-anything.mjs",
     "check:api-anything": "tsx src/scripts/check-api-anything.ts",
     "check:skill-ab": "node --import tsx --test src/eval/skillAb/__tests__/skillAb.test.ts",
