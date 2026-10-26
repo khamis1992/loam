@@ -4,6 +4,7 @@ import { log } from "../log.js";
 import { type OllamaEmbedder, dot, fromBase64, normalize, toBase64 } from "./embeddings.js";
 import { assertNoSecret } from "./redact.js";
 import { rerank, type RankWeights } from "../orchestration/memory/rank.js";
+import { Bm25Index, hybridRank } from "./hybrid.js";
 
 /** Where a memory came from: an explicit user statement or an agent inference. */
 export type MemorySource = "user" | "agent" | "system";
@@ -129,6 +130,8 @@ export class MemoryStore {
   private readonly dedupeThreshold: number;
 
   private ranking: { weights: RankWeights; candidateMultiplier: number } | null = null;
+  /** E1 hybrid retrieval (default on): BM25+RRF fusion replaces plain cosine ordering. */
+  private hybridEnabled = true;
 
   constructor(
     private readonly file: string,
@@ -136,8 +139,10 @@ export class MemoryStore {
     model: string,
     dedupeThreshold = 0.97,
     ranking?: { weights: RankWeights; candidateMultiplier: number },
+    hybridEnabled = true,
   ) {
     if (ranking) this.ranking = ranking;
+    this.hybridEnabled = hybridEnabled;
     this.model = model;
     this.dedupeThreshold = dedupeThreshold;
     this.load();
@@ -265,6 +270,23 @@ export class MemoryStore {
       .filter((h) => h.score >= minScore)
       .sort((a, b) => b.score - a.score)
       .slice(0, Math.max(1, this.ranking ? limit * this.ranking.candidateMultiplier : limit));
+    // E1 hybrid retrieval (default on): BM25 + cosine fused with weighted RRF,
+    // retention-decayed and diversified per session. The embedder being down
+    // degrades to BM25-only instead of failing the search.
+    if (this.hybridEnabled) {
+      const index = new Bm25Index();
+      index.build(this.entries);
+      const idToEntry = new Map(this.entries.map((e) => [e.id, e]));
+      const ranked = hybridRank(this.entries, index, query, { limit, vectorHits: pool.map((h) => ({ id: h.entry.id, score: h.score })) });
+      const now = new Date().toISOString();
+      const hits: MemoryHit[] = ranked.flatMap((r) => {
+        const entry = idToEntry.get(r.id);
+        return entry ? [{ entry, score: r.final }] : [];
+      });
+      for (const h of hits) { h.entry.lastUsedAt = now; h.entry.useCount = (h.entry.useCount ?? 0) + 1; }
+      if (hits.length > 0) this.save();
+      return hits;
+    }
     // C9 (default off): recency + importance re-ranking over a wider cosine pool.
     const hits = this.ranking
       ? rerank(pool.map((h) => ({ ...h, entry: { ...h.entry } })), limit, this.ranking.weights).map((r) => ({ entry: r.entry, score: r.composite }))
