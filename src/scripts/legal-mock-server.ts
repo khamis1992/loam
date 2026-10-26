@@ -17,6 +17,7 @@ import { localLegalOcr, closeLegalOcr } from "../legal/evidence/ocr.js";
 import { rasterizePdfPage } from "../legal/evidence/pdfRaster.js";
 import { createLegalModelPort } from "../legal/model/legalModelPort.js";
 import { buildDefensePackage } from "../legal/defense/service.js";
+import { buildLegalResponse } from "../legal/response/service.js";
 import { StaticKeyProvider } from "../legal/crypto.js";
 import { MattersStore } from "../legal/mattersStore.js";
 import { loadFixtureCorpus } from "../legal/__tests__/helpers.js";
@@ -36,6 +37,7 @@ export async function startMockServer(port = 0, token = crypto.randomBytes(16).t
     vault: new LegalFileVault(vaultDir, keys),
     model: createLegalModelPort({ config: { localModel: "qwen3.6:35b-a3b", approvedLocalModels: ["qwen3.6:35b-a3b"], ollamaUrl: "http://127.0.0.1:11434" } }),
     buildDefense: (matterId) => buildDefensePackage(ctx.matters, ctx.corpus, { port: ctx.model.port, config: ctx.egress }, matterId),
+    buildResponse: (input) => buildLegalResponse(ctx.matters, ctx.corpus, { port: ctx.model.port, config: ctx.egress }, input),
     importDocument: (matterId, absPath) => importMatterDocument(ctx.matters, matterId, absPath, { ocr: localLegalOcr, rasterize: rasterizePdfPage, ...(now ? { now } : {}) }),
     ...(now ? { now } : {}),
   };

@@ -19,6 +19,7 @@ import { localLegalOcr, closeLegalOcr } from "./evidence/ocr.js";
 import { rasterizePdfPage } from "./evidence/pdfRaster.js";
 import { importMatterDocument, type EvidenceAnalysis } from "./evidence/service.js";
 import { buildDefensePackage } from "./defense/service.js";
+import { buildLegalResponse } from "./response/service.js";
 import { openLegalPayload, sealLegalPayload, type SealedLegalPayload } from "./security/transcriptSeal.js";
 import type { Embedder, Reranker } from "./retrieval.js";
 
@@ -33,6 +34,7 @@ export interface LegalRuntime {
   vault: LegalFileVault;
   model: { port: LegalModelPort };
   buildDefense(matterId: string): ReturnType<typeof buildDefensePackage>;
+  buildResponse(input: { matterId: string; sourceText: string }): ReturnType<typeof buildLegalResponse>;
   importDocument(matterId: string, absPath: string): Promise<EvidenceAnalysis>;
   runModels: Map<string, string>;
   toolDeps: LegalToolDeps;
@@ -80,6 +82,7 @@ export function createLegalRuntime(opts: LegalRuntimeOptions): LegalRuntime {
     config: opts.config, corpus, matters, egress, keys, vault, model, runModels, toolDeps,
     importDocument: (matterId, absPath) => importMatterDocument(matters, matterId, absPath, { ocr: localLegalOcr, rasterize: rasterizePdfPage, ...(opts.now ? { now: opts.now } : {}) }),
     buildDefense: (matterId) => buildDefensePackage(matters, corpus, { port: model.port, config: egress }, matterId),
+    buildResponse: (input) => buildLegalResponse(matters, corpus, { port: model.port, config: egress }, input),
     seal: (value, aad) => sealLegalPayload(cipher, value, aad),
     open: <T>(payload: unknown): T => openLegalPayload<T>(cipher, payload),
     backup: (outputPath, passphrase) => {
