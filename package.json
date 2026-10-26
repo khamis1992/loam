@@ -139,6 +139,8 @@
     "check:wakaru-bridge": "node --import tsx src/scripts/check-wakaru-bridge.ts",
     "test:wakaru-bridge": "node --import tsx --test src/bridges/__tests__/binaries.test.ts",
     "check:skill-scan": "node --import tsx src/scripts/check-skill-scan.ts",
+    "check:appbuilder": "node --import tsx src/scripts/check-appbuilder.ts",
+    "test:appbuilder": "node --import tsx src/scripts/check-appbuilder.ts",
     "verify": "npm run typecheck && npm run check:encoding && npm run check:docs && npm run check:eval && npm run check:orchestrator && npm run check:recovery && npm run check:modes && npm run check:orchestration",
     "verify:loam": "npm run verify && npm run check:isolation && npm run check:loam-agents && npm run check:loam-ui && npm run check:loam-ancillary && npm run check:loam-e2e"
   },
