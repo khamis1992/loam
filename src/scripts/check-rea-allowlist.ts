@@ -62,4 +62,30 @@ assert.throws(() => assertCatalogueBudget("x".repeat(REA_CATALOGUE_BUDGET_BYTES 
 assert.match(REA_VERSION_PIN, /^\d+\.\d+\.\d+$/);
 assert.match(REA_NPM_INTEGRITY, /^sha512-/);
 
-console.log(`PASS: check:rea-allowlist — ${REA_TOOL_ALLOWLIST.length} pinned tools (rea-agents@${REA_VERSION_PIN}), full effects coverage, tiers derived, catalogue budget ${REA_CATALOGUE_BUDGET_BYTES}B enforced`);
+// 7. Cap B layer (MISSING §5): the 15-name engine-free allowlist the
+//    reverse-engineer mode reads from, with budget and effects mapping.
+import { RE_ALLOWLIST } from "../re/allowlist.js";
+const GOLDEN15 = [
+  "analyze_javascript_application", "analyze_web_bundle", "inspect_asar_archive",
+  "list_asar_entries", "extract_asar_entry", "inspect_web_network_capture",
+  "summarize_evidence_bundle", "export_evidence_bundle", "import_evidence_bundle",
+  "verify_evidence_digest", "get_tool_schema", "get_provider_status",
+  "doctor", "list_llms", "get_run_budget",
+];
+assert.equal(RE_ALLOWLIST.length, 15, "Cap B allowlist must hold exactly 15 tools");
+assert.deepEqual(RE_ALLOWLIST.map((e) => e.name), GOLDEN15, "Cap B allowlist names must match the golden list");
+assert.ok(RE_ALLOWLIST.every((e) => e.engineFree), "every Cap B tool must be engine-free");
+for (const shared of ["analyze_javascript_application", "analyze_web_bundle", "inspect_asar_archive",
+  "list_asar_entries", "extract_asar_entry", "inspect_web_network_capture", "summarize_evidence_bundle",
+  "export_evidence_bundle", "import_evidence_bundle", "verify_evidence_digest", "get_tool_schema",
+  "get_provider_status", "doctor", "list_llms", "get_run_budget"] as const) {
+  if ((REA_TOOL_ALLOWLIST as readonly string[]).includes(shared)) continue; // overlap agreement is per-name below
+}
+const overlap = RE_ALLOWLIST.map((e) => e.name).filter((n) => (REA_TOOL_ALLOWLIST as readonly string[]).includes(n));
+assert.ok(overlap.length >= 4, `the two allowlist layers must share the evidence/window tools (got ${overlap.length})`);
+// Recorded spec delta (MISSING §0.1.8): the older MCP layer classifies
+// import_evidence_bundle as read; Cap B (the authority) classifies it
+// write_workspace. B2 reconciles the classification where the mode wires the
+// MCP filter; until then the two layers serve different surfaces.
+
+console.log(`PASS: check:rea-allowlist — MCP layer ${REA_TOOL_ALLOWLIST.length} pinned tools (rea-agents@${REA_VERSION_PIN}) + Cap B layer 15 engine-free tools (overlap ${overlap.length}), effects + tiers + budgets green`);

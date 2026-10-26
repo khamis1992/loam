@@ -27,3 +27,40 @@ export const evidenceOf = (kind: ReEvidence["kind"], artifact: string, note: str
   id: `ev_${createHash("sha256").update(`${kind}\n${artifact}\n${note}`).digest("hex").slice(0, 32)}`,
   kind, artifact: artifact.slice(0, 200), note: note.slice(0, 300),
 });
+
+// ---- Cap B (MISSING §5) allowlist/budget types ----
+
+export type ReToolName =
+  | "analyze_javascript_application"
+  | "analyze_web_bundle"
+  | "inspect_asar_archive"
+  | "list_asar_entries"
+  | "extract_asar_entry"
+  | "inspect_web_network_capture"
+  | "summarize_evidence_bundle"
+  | "export_evidence_bundle"
+  | "import_evidence_bundle"
+  | "verify_evidence_digest"
+  | "get_tool_schema"
+  | "get_provider_status"
+  | "doctor"
+  | "list_llms"
+  | "get_run_budget";
+
+export interface ReAllowlistEntry {
+  name: ReToolName;
+  effect: "read" | "write_workspace" | "exec_script" | "external";
+  engineFree: boolean;
+}
+
+export interface ReBudget {
+  maxToolCalls: number;
+  maxBytesOut: number;
+  maxWallMs: number;
+}
+
+export const DEFAULT_RE_BUDGET: ReBudget = {
+  maxToolCalls: 40,
+  maxBytesOut: 15_000,
+  maxWallMs: 10 * 60_000,
+};
