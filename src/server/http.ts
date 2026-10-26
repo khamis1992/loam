@@ -111,6 +111,7 @@ import { handleEventsRoutes } from "./routes/events.js";
 import { handleDesignStudioRoutes } from "./routes/designStudio.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAutomationsRoutes } from "./routes/automations.js";
+import { handleAppBuilderRoutes } from "./routes/appBuilder.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
 import { handleGraphRoutes } from "./routes/graph.js";
@@ -2025,6 +2026,8 @@ loadAgents();
         if (await handleSchedulesRoutes(req, res, p)) return;
         // D14: event-trigger deliveries (HMAC-verified webhook / GitHub events).
         if (await handleAutomationsRoutes(req, res, p)) return;
+        // Cap G §4.15.2: /api/app-projects/* (Agent Studio App Builder).
+        if (await handleAppBuilderRoutes(req, res, p, url)) return;
         if (await handleAutoVideoRoutes(req, res, p)) return;
         if (await handleLiveViewRoutes(req, res, p, { screenLive: live })) return;
         if (await handleTranscriptRoutes(req, res, p, { workspace: cfg.workspace })) return;

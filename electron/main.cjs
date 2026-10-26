@@ -465,6 +465,39 @@ const ipcHandlers = {
     },
     notifyLoginSuccess: () => undefined,
   },
+  // Cap G §4.15.3 (MISSING): App Builder preview helpers. Only Loam's own local
+  // preview ports are allowed in openInBrowser; the renderer only ever passes a
+  // project id to revealProject and the server resolves the path. Handlers are
+  // discovered through desktop-ipc-meta, so the preload needs no change.
+  appPreview: {
+    /** Opens a preview URL in the user's default browser. Dev range 15173-15299, built range 4300-4799. */
+    openInBrowser: (_sender, url) => {
+      const u = new URL(String(url));
+      const port = Number(u.port);
+      const local = u.protocol === "http:" && u.hostname === "127.0.0.1";
+      const devPort = port >= 15173 && port <= 15299;
+      const builtPort = port >= 4300 && port <= 4799;
+      if (!local || !(devPort || builtPort)) throw new Error("disallowed preview URL");
+      return shell.openExternal(u.toString());
+    },
+    /** Shows the project folder in Explorer. The server resolves the path; the renderer only passes the id. */
+    revealProject: async (_sender, projectId) => {
+      if (!/^app_[a-z2-7]{12}$/.test(String(projectId))) throw new Error("bad project id");
+      const res = await fetch(`${BASE}/api/app-projects/${projectId}`, { headers: authHeader(localAuthToken) });
+      if (!res.ok) throw new Error(`project lookup failed: ${res.status}`);
+      const { project } = await res.json();
+      shell.showItemInFolder(require("node:path").join(project.workspaceDir, "app", "package.json"));
+    },
+    /** File picker for database import (NDJSON). Returns the file text, max 10 MB. */
+    pickImportFile: async () => {
+      const r = await dialog.showOpenDialog(currentWindow() ?? undefined, { properties: ["openFile"], filters: [{ name: "NDJSON", extensions: ["ndjson", "jsonl", "json"] }] });
+      if (r.canceled || r.filePaths.length === 0) return null;
+      const fs = require("node:fs");
+      const st = fs.statSync(r.filePaths[0]);
+      if (st.size > 10 * 1024 * 1024) throw new Error("file larger than 10 MB");
+      return fs.readFileSync(r.filePaths[0], "utf8");
+    },
+  },
   window: {
     minimize: () => { currentWindow()?.minimize(); },
     maximize: () => { currentWindow()?.maximize(); },
