@@ -17,7 +17,31 @@
 5. أنشئ مهمة بنمط automate وفعّل لها أدوات واجهات المواقع من زر
    «تفعيل أدوات واجهات المواقع لهذه المهمة» في اللوحة.
 
-## القائمة W1–W15
+## نتائج الجزء الآلي (نفّذه الوكيل بتاريخ 2026-10-26)
+
+قبل الجولة التفاعلية، جُرِّبت الصفوف القابلة للأتمتة على جهاز خالدس نفسه
+(الحزمة مجلوبة بالهاش، والمحرك اشتغل عبر بروتوكول MCP مباشرة ببيئة Loam):
+
+| ID | النتيجة | الدليل |
+|---|---|---|
+| تجهيز | ✅ | `vendor:api-anything` جلب 441e509 وتحقق (بعد إصلاح autocrlf في السكربت)؛ `check:api-anything` OK |
+| W1 | ✅ | Node 25.2.1 ≥ 22.13 |
+| W2 | ✅ | Microsoft Edge · `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe` (ببيئة Loam: `API_ANYTHING_BROWSER=edge`) |
+| W5 | ⚠️ راجع | المالك + SYSTEM موجودان ولا Users/Everyone؛ **لكن** توجد ACEs موروثة منها DENY لـ`srt-sandbox` (تحصين إضافي من قدرة SRT) — المواصفة اشترطت «لا وراثة»، قرّر إن كان ذلك مقبولًا |
+| W6 | ✅ | 10 مواقع عبر CLI وعبر MCP (airbnb, amazon, dominos-au, goodreads, google-flights, hacker-news, instagram, linkedin, x, youtube) بلا أعداد كتابة |
+| W7 | ✅ حيًا | `call_operation hacker-news search {query:"sqlite"}` → ok:true, tier:1, **30 نتيجة حقيقية في 365ms**؛ وتلميح الخطأ أعاد توجيهه لصيغة Loam عند وسيط خاطئ |
+| W13* | ✅ | صفر عمليات node تخص api-anything بعد التشغيل |
+| W14 | ✅ | 25 عملية قراءة عبر المواقع العشرة، **صفر** عملية كتابة ظاهرة بلا `--allow-writes` |
+
+**المتبقي عليك (تفاعلي بحت):** W3/W4 (نافذة دخول Edge وخلوّ السجلات من قيم
+الكوكيز)، W8 (سلسلة goodreads أو رفض auth/drift)، W9 (سلوك youtube/amazon
+وترتيب tier)، W10–W12 (تعلّم headless + قفل البروفايل بالتوازي + قتل شجرة
+Edge عند الإيقاف)، W15 (ملاحظة Defender). عند اجتيازها كلها يُترك
+`apiAnything.enabled: true` دائمًا.
+
+---
+
+## قائمة W1–W15
 
 | ID | الخطوة | المتوقع |
 |---|---|---|

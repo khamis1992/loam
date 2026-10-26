@@ -63,8 +63,10 @@ if (!force && fs.existsSync(MARKER) && fs.readFileSync(MARKER, "utf8").trim() ==
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "loam-api-anything-"));
 try {
   const src = path.join(tmp, "src");
-  run("git", ["clone", "--filter=blob:none", "--no-checkout", upstream.repository, src], tmp);
-  run("git", ["-c", "advice.detachedHead=false", "checkout", "--detach", upstream.commit], src);
+  // core.autocrlf=false at the command level: a machine-global autocrlf=true would
+  // CRLF-normalize the checkout and break the byte-exact package-lock.json pin.
+  run("git", ["-c", "core.autocrlf=false", "clone", "--filter=blob:none", "--no-checkout", upstream.repository, src], tmp);
+  run("git", ["-c", "core.autocrlf=false", "-c", "advice.detachedHead=false", "checkout", "--detach", upstream.commit], src);
   const head = capture("git", ["rev-parse", "HEAD"], src);
   if (head !== upstream.commit) throw new Error(`checked out ${head}, expected ${upstream.commit}`);
   const lockHash = sha256(path.join(src, "package-lock.json"));
