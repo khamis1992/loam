@@ -195,11 +195,17 @@ const APP_TABLES = [
 
 let schemaReady = false;
 
-/** Idempotent: CREATE … IF NOT EXISTS for the 13 app_ tables; stamps appbuilder.schema=1. */
+/** Idempotent: CREATE … IF NOT EXISTS for the 13 app_ tables; stamps appbuilder.schema=1.
+ *  Guarded ALTERs migrate tables created by earlier revisions (§4.13 race wiring). */
 export function ensureAppBuilderSchema(): void {
   const d = database();
   if (schemaReady) return;
   d.exec(SCHEMA_SQL);
+  try {
+    d.exec("ALTER TABLE app_runs ADD COLUMN race_id TEXT REFERENCES app_races(id) ON DELETE SET NULL");
+  } catch (err) {
+    if (!(err instanceof Error && err.message.includes("duplicate column name"))) throw err;
+  }
   d.prepare(`INSERT INTO metadata (key, value) VALUES ('appbuilder.schema', '1')
              ON CONFLICT(key) DO UPDATE SET value = '1'`).run();
   schemaReady = true;
