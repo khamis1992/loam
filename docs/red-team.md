@@ -32,17 +32,21 @@ One integrated red capability — not 28 bolted-on tools — living under `src/s
 - **Agent tools**: `red_campaign` (target URL, optional `authzId`, `plan: "auto"` for model-driven planning) runs one gated campaign and writes `red/<campaignId>/{report.md, sarif.json, poc/*.json}` into the workspace. `red_report` re-opens a stored report. The `redteam` mode exposes them in the UI. **Prompt-level guidance for agents** lives in `skills/red-team/SKILL.md` (authorized-use doctrine, gate, workflow, examples) — discovered automatically from the skills directory.
 - **Default posture (O-1)**: without a signed authorization record only `http://127.0.0.1` targets are reachable, and destructive actions are denied. The zero-config lab is safe by construction.
 - **Wider campaigns**: create an `AuthorizationRecord` (`createAuthorizationRecord` + `saveAuthorization` — persisted under `~/.loam/security/authz/`), then pass its id as `authzId`. Scope is allow-list only (exact hosts/CIDRs/ports/URL prefixes); the deny-list always wins.
-- **Engines (O-3, download-on-first-use)**: `npm run red:engines` installs nuclei, ffuf, ysoserial and sqlmap from their official releases into `~/.loam/tools/` with SHA256 recorded in `~/.loam/tools/engines.json`; bridges discover them there. ZAP stays optional (install separately and enable the `red-zap` bridge). GPL engines (sqlmap) stay external processes; no upstream code is copied anywhere (§5.9).
+- **Engines (O-3, download-on-first-use)**: `npm run red:engines` installs nuclei, ffuf, ysoserial, sqlmap and ZAP from their official releases into `~/.loam/tools/` with SHA256 **verified against trusted pins** in `~/.loam/tools/engines.json`; bridges discover them there. GPL engines (sqlmap) stay external processes; no upstream code is copied anywhere (§5.9).
 - **Engagements (documented record)**: `npm run red:engage -- --target http://127.0.0.1:3939 [--nuclei-tags cve] [--plan auto]` runs a real gated campaign with the installed engines, writes `docs/red-team-engagements/ENG-<stamp>/` (report + SARIF + PoC + `engagement.json`) and diffs against the previous engagement (`latest.json`, retest semantics). The first two runs against Loam's own server are committed as the opening record.
 - **Model-driven planning**: `--plan auto` / `red_campaign {plan:"auto"}` — the local model proposes test claims (§6.1 PentestGPT graft); every proposal still passes capability validation and the evidence gate, so hallucinations land in `unverified`, never in findings.
-- **Kill-switch**: `engageKillSwitch()` (plus the audit entry `killswitch_engaged`) blocks every new action and aborts in-flight requests and campaigns.
+- **ZAP (DAST)**: the supported headless path is ZAP daemon + REST API (`red-zap` `daemon` command via `runBridgeDetached`). quickscan's GUI path is not supported in headless environments. DAST validation is environment-gated and never silently upgrades an empty alert set into a finding.
+- **Kill-switch**: `engageKillSwitch()` (plus the audit entry `killswitch_engaged`) blocks every new action and aborts in-flight requests and campaigns. It is also exposed as `red_kill_switch`, `POST /api/security/red/kill-switch`, and the **الفريق الأحمر** button in `ui/security.html`.
+- **Evidence integrity**: recursive redaction for secrets, streaming response caps, signed authorization records with persistent ids, and a hash-chained audit log. All gate denials are terminal (no validation after denial), and rate limiting acquires/releases exactly once per request.
 
 ## Verify
 
 ```powershell
-npm run red:engines    # install/update nuclei, ffuf, ysoserial, sqlmap (SHA256-pinned)
+npm run red:engines    # install/update nuclei, ffuf, ysoserial, sqlmap, ZAP (SHA256-pinned)
 npm run test:red       # unit + integration suite (offline, local servers only)
 npm run check:red      # self-contained lab acceptance: planted SSRF found, PoC + SARIF written, negative safety tests
+npm run check:red:capabilities  # six capabilities proven on a planted live lab with real engines
+npm run check:red:kill-switch   # real HTTP engage/read/reset + cross-site denial
 npm run red:engage     # real gated engagement against an authorized own-systems target
 npm run typecheck
 ```
