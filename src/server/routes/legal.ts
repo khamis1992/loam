@@ -36,6 +36,7 @@ import { reviewContractDetailed } from "../../legal/contract/review.js";
 import { buildOriginalRedlineDocx } from "../../legal/contract/ooxmlRedline.js";
 import { buildRedlineDocx } from "../../legal/contract/redline.js";
 import type { LegalModelPort } from "../../legal/model/types.js";
+import { buildDefensePackage } from "../../legal/defense/service.js";
 import type { LegalCorpus, LegalPack } from "../../legal/corpusStore.js";
 import type { CoverageEntry } from "../../legal/corpus/coverage.js";
 import { validatePack } from "../../legal/corpusStore.js";
@@ -60,6 +61,7 @@ export interface LegalRouteContext {
   keys: KeyProvider;
   vault: LegalFileVault;
   model: { port: LegalModelPort };
+  buildDefense(matterId: string): ReturnType<typeof buildDefensePackage>;
   importDocument(matterId: string, absPath: string): Promise<EvidenceAnalysis>;
   now?: () => Date;
 }
@@ -231,6 +233,11 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
         return true;
       }
       if (seg.length === 2 && method === "DELETE") { sendJson(res, 200, { deleted: ctx.matters.deleteMatter(matter.id, "user") }); return true; }
+      if (seg.length === 3 && seg[2] === "defense" && method === "POST") {
+        const result = await ctx.buildDefense(matter.id);
+        sendJson(res, 200, result);
+        return true;
+      }
       if (seg[2] === "documents") {
         if (seg.length === 3 && method === "GET") {
           sendJson(res, 200, {

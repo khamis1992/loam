@@ -48,6 +48,38 @@ export const CONTRACT_ANALYSIS_SCHEMA: JsonSchema = {
   },
 };
 
+export const CASE_THEORY_SCHEMA: JsonSchema = {
+  type: "object", required: ["summary", "pleas", "primaryRequests", "alternativeRequests", "weaknesses", "unresolvedQuestions"], additionalProperties: false,
+  properties: {
+    summary: { type: "string", minLength: 1 },
+    pleas: {
+      type: "array", minItems: 0,
+      items: {
+        type: "object", required: ["id", "type", "title", "factIds", "researchQueries", "priority"], additionalProperties: false,
+        properties: {
+          id: { type: "string", minLength: 1 }, type: { enum: ["procedural", "substantive", "evidentiary"] },
+          title: { type: "string", minLength: 1 }, factIds: { type: "array", items: { type: "string" } },
+          researchQueries: { type: "array", items: { type: "string" } }, priority: { type: "integer" },
+        },
+      },
+    },
+    primaryRequests: { type: "array", items: { type: "string" } },
+    alternativeRequests: { type: "array", items: { type: "string" } },
+    weaknesses: { type: "array", items: { type: "string" } },
+    unresolvedQuestions: {
+      type: "array", items: {
+        type: "object", required: ["question", "material"], additionalProperties: false,
+        properties: { question: { type: "string", minLength: 1 }, material: { type: "boolean" } },
+      },
+    },
+  },
+};
+
+export const DEFENSE_DRAFT_SCHEMA: JsonSchema = {
+  type: "object", required: ["markdown"], additionalProperties: false,
+  properties: { markdown: { type: "string", minLength: 1 } },
+};
+
 export const ADVERSARIAL_SCHEMA: JsonSchema = {
   type: "object", required: ["findings"], additionalProperties: false,
   properties: {

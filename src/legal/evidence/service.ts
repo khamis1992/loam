@@ -13,7 +13,7 @@ export interface EvidenceAnalysis {
   contradictions: Contradiction[];
 }
 
-export async function importMatterDocument(store: MattersStore, matterId: string, absPath: string, options: ExtractLegalOptions & { now?: () => Date }): Promise<EvidenceAnalysis> {
+export async function importMatterDocument(store: MattersStore, matterId: string, absPath: string, options: ExtractLegalOptions & { now?: () => Date } = {}): Promise<EvidenceAnalysis> {
   if (!store.getMatter(matterId)) throw new Error(`matter ${matterId} not found`);
   const extracted = await extractLegalDocument(absPath, options);
   const now = options.now?.() ?? new Date();
