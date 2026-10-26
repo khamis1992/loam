@@ -69,3 +69,8 @@ export function roastDockerfile(text: string, file = "Dockerfile"): RawFinding[]
   }
   return out;
 }
+
+/** Cap A4 (MISSING §4) alias: the funnel calls this name. */
+export function scanDockerfile(text: string, file = "Dockerfile"): RawFinding[] {
+  return roastDockerfile(text, file);
+}
