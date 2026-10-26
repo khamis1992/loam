@@ -1,3 +1,4 @@
+import { WAKARU_MANIFEST } from "./wakaruManifest.js";
 /** Built-in manifests. Raw data on purpose: registry.ts validates every one at load. */
 export const BUILTIN_MANIFESTS: unknown[] = [
   {
@@ -193,4 +194,5 @@ export const BUILTIN_MANIFESTS: unknown[] = [
       },
     ],
   },
+  WAKARU_MANIFEST,
 ];

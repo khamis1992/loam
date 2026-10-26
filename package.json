@@ -136,6 +136,8 @@
     "check:selfharden": "node --import tsx src/scripts/check-self-audit.ts",
     "check:memory-hybrid": "node --import tsx src/scripts/check-memory-hybrid.ts",
     "test:memory-hybrid": "node --import tsx --test src/memory/__tests__/hybrid.test.ts",
+    "check:wakaru-bridge": "node --import tsx src/scripts/check-wakaru-bridge.ts",
+    "test:wakaru-bridge": "node --import tsx --test src/bridges/__tests__/binaries.test.ts",
     "verify": "npm run typecheck && npm run check:encoding && npm run check:docs && npm run check:eval && npm run check:orchestrator && npm run check:recovery && npm run check:modes && npm run check:orchestration",
     "verify:loam": "npm run verify && npm run check:isolation && npm run check:loam-agents && npm run check:loam-ui && npm run check:loam-ancillary && npm run check:loam-e2e"
   },
