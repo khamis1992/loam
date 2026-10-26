@@ -1,11 +1,14 @@
 import crypto from "node:crypto";
-import { database, transaction, putEntity as put, getEntity as get, allEntities as all, removeEntity as remove } from "./sqliteStore.js";
+import { database, transaction, putEntity, putEntity as put, getEntity as get, allEntities as all, removeEntity as remove } from "./sqliteStore.js";
 export { closeDb } from "./sqliteStore.js";
 import type { SavedRun } from "./recovery.js";
 import { notifyTaskStatus, notifyScheduleFailed } from "./notifications.js";
 import { initialNextRunAt, isValidTimezone, nextOccurrenceAfter, parseCron, DEFAULT_RETRY_DELAY_MS } from "./scheduleTime.js";
 export { DEFAULT_TIMEZONE, DEFAULT_RETRY_DELAY_MS } from "./scheduleTime.js";
 import { assertRunLease, expireAllRunLeases, type RunLease } from "./runLease.js";
+import { openSavedRun, openTask, protectSavedRun, protectTask } from "../legal/security/storageProtection.js";
+import { hasLegalProtection } from "../legal/security/protection.js";
+import type { SealedLegalPayload } from "../legal/security/transcriptSeal.js";
 
 export type TaskStatus = "queued" | "running" | "done" | "error" | "interrupted" | "cancelled";
 
@@ -13,6 +16,7 @@ export interface TaskMessage {
   role: "user" | "assistant" | "system";
   content: string;
   at: string;
+  sealedContent?: SealedLegalPayload;
 }
 
 export interface StepRecord {
@@ -49,6 +53,8 @@ export interface Task {
   updatedAt: string;
   messages: TaskMessage[];
   steps: StepRecord[];
+  sealedPrompt?: SealedLegalPayload;
+  sealedTitle?: SealedLegalPayload;
 }
 
 export interface Schedule {
@@ -130,8 +136,22 @@ export interface ScheduleSpec {
 }
 
 
+function putTask(task: Task): void {
+  if (task.mode === "legal" && !hasLegalProtection()) throw new Error("legal protection is unavailable");
+  putEntity("tasks", task.mode === "legal" ? protectTask(task) : task);
+}
+
+function readTask(task: Task | undefined): Task | undefined {
+  if (!task || task.mode !== "legal") return task;
+  if (!hasLegalProtection()) {
+    if (task.sealedPrompt || task.sealedTitle || task.messages.some((m) => m.sealedContent)) throw new Error("legal protection is unavailable");
+    return task;
+  }
+  return openTask(task);
+}
+
 function editTask(id: string, edit: (task: Task) => void): void {
-  transaction(() => { const task = getTask(id); if (!task) throw new Error("task not found"); edit(task); task.updatedAt = new Date().toISOString(); put("tasks", task); });
+  transaction(() => { const task = getTask(id); if (!task) throw new Error("task not found"); edit(task); task.updatedAt = new Date().toISOString(); putTask(task); });
 }
 export function newId(prefix: string): string { return prefix + "_" + Date.now().toString(36) + crypto.randomBytes(6).toString("hex"); }
 export function loadDb(): void { database(); }
@@ -144,7 +164,7 @@ export function recoverInterruptedTasks(): number {
       task.status = "interrupted";
       task.error = "Execution interrupted by application shutdown. Resume requires review.";
       task.updatedAt = new Date().toISOString();
-      put("tasks", task); count++;
+      putTask(task); count++;
     }
     return count;
   });
@@ -154,13 +174,13 @@ export function recoverInterruptedTasks(): number {
 export function createTask(prompt: string, title?: string, projectId?: string | null, agentId?: string | null, id?: string): Task {
   const now = new Date().toISOString();
   const task: Task = { id: id ?? newId("task"), title: (title ?? prompt).slice(0, 80), prompt, status: "queued", projectId: projectId ?? null, agentId: agentId ?? null, createdAt: now, updatedAt: now, messages: [], steps: [] };
-  put("tasks", task); return task;
+  putTask(task); return task;
 }
 export function setTaskDelegator(id: string, delegatedByAgentId: string): void { editTask(id, t => { t.delegatedByAgentId = delegatedByAgentId; }); }
-export function getTask(id: string): Task | undefined { return get<Task>("tasks", id); }
+export function getTask(id: string): Task | undefined { return readTask(get<Task>("tasks", id)); }
 export function setTaskMode(id: string, mode: string): void { editTask(id, t => { t.mode = mode; }); }
 export function setTaskWorkspace(id: string, workspace: string): void { editTask(id, t => { if (t.workspace && t.workspace !== workspace) throw new Error("task workspace is immutable"); t.workspace = workspace; }); }
-export function listTasks(projectId?: string | null): Task[] { return all<Task>("tasks").sort((a,b) => b.createdAt.localeCompare(a.createdAt)).filter((t) => projectId === undefined || (projectId === null ? !t.projectId : t.projectId === projectId)); }
+export function listTasks(projectId?: string | null): Task[] { return all<Task>("tasks").map((task) => readTask(task)!).sort((a,b) => b.createdAt.localeCompare(a.createdAt)).filter((t) => projectId === undefined || (projectId === null ? !t.projectId : t.projectId === projectId)); }
 export function setTaskProject(id: string, projectId: string | null): void { editTask(id, (t) => { t.projectId = projectId; }); }
 export function appendStep(id: string, step: StepRecord): void { editTask(id, (t) => { t.steps.push(step); }); }
 export function appendMessage(id: string, role: TaskMessage["role"], content: string): void { editTask(id, (t) => { t.messages.push({role, content, at: new Date().toISOString()}); }); }
@@ -341,10 +361,16 @@ export function markScheduleRun(id: string, taskId: string): void {
   recordScheduleOutcome(id, { ok: true, taskId });
 }
 export function saveRun(taskId: string, run: SavedRun, expectLease?: RunLease): void {
-  if (!expectLease) { put("runs", { ...run, id: taskId }); return; }
-  transaction(() => { assertRunLease(expectLease); put("runs", { ...run, id: taskId }); });
+  const protectedRun = run.mode === "legal" ? protectSavedRun(taskId, run) : run;
+  if (!expectLease) { put("runs", { ...protectedRun, id: taskId }); return; }
+  transaction(() => { assertRunLease(expectLease); put("runs", { ...protectedRun, id: taskId }); });
 }
-export function getSavedRun(taskId: string): SavedRun | undefined { return get<SavedRun>("runs",taskId); }
+export function getSavedRun(taskId: string): SavedRun | undefined {
+  const run = get<SavedRun>("runs",taskId);
+  if (!run) return undefined;
+  if (run.mode === "legal" && run.sealed && !hasLegalProtection()) throw new Error("legal protection is unavailable");
+  return run.mode === "legal" && hasLegalProtection() ? openSavedRun(run) : run;
+}
 export function clearSavedRun(taskId: string): void { remove("runs",taskId); }
 
 export function queueTaskRun(taskId: string, run: SavedRun, resume: boolean, scheduleId?: string, title?: string): void {
@@ -352,11 +378,14 @@ export function queueTaskRun(taskId: string, run: SavedRun, resume: boolean, sch
     const task = getTask(taskId);
     if (!task) throw new Error("task not found");
     task.status = "queued";
-    if (!task.prompt && !resume) { task.prompt = run.prompt; task.title = (title?.trim() || run.prompt).slice(0, 80); }
+    if (!task.prompt && !resume) {
+      task.prompt = run.mode === "legal" ? "" : run.prompt;
+      task.title = run.mode === "legal" ? "Legal matter" : (title?.trim() || run.prompt).slice(0, 80);
+    }
     delete task.error;
     task.updatedAt = new Date().toISOString();
     if (!resume) task.messages.push({ role: "user", content: run.prompt, at: task.updatedAt });
-    put("tasks", task);
+    putTask(task);
     saveRun(taskId, run);
     if (scheduleId) {
       const schedule = get<Schedule>("schedules", scheduleId);
@@ -381,7 +410,7 @@ export function completeTaskRun(taskId: string, text: string, model: string, exp
     delete task.error;
     task.updatedAt = new Date().toISOString();
     task.messages.push({ role: "assistant", content: text, at: task.updatedAt });
-    put("tasks", task);
+    putTask(task);
     clearSavedRun(taskId);
     // Notification feed hook (option #20): completed run. Kept inside the
     // existing transaction; the notification store shares the entities table.

@@ -46,6 +46,7 @@ import { ShareDialog } from '@/components/dialogs/ShareDialog';
 import { ChatSocket } from '@/services/chatSocket';
 import { RpcClient, getApiBase, getApiHeaders, getSessionToken, handleAuthFailure } from '@/services/rpc';
 import { uploadFile } from '@/services/upload';
+import { legalExtData } from '@/services/legalApi';
 import type {
   TaskMode,
   ChatEvent,
@@ -405,7 +406,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
       const uploaded = await Promise.all(files.map((f) => uploadFile(apiBase, f)));
       attachments = [...attachments, ...uploaded];
     }
-    socket.sendText(sessionUid, text, mode, attachments, makeExtData(cwd, { approveForMe, knowledge: knowledgeOn, ...extData }));
+    socket.sendText(sessionUid, text, mode, attachments, makeExtData(cwd, { approveForMe, knowledge: knowledgeOn, ...legalExtData(), ...extData }));
     // The badge should react immediately rather than waiting for the poll.
     void runtime.refresh();
   };

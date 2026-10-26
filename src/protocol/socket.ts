@@ -43,6 +43,7 @@ import type {
 import type { ProtocolStore } from "./store.js";
 import { tokenToUserUid } from "./rpc.js";
 import { enqueue, newInputId, type InputDelivery } from "../server/inputQueue.js";
+import { markLegalSession } from "../legal/security/protection.js";
 
 // Re-export for callers.
 export { Server } from "socket.io";
@@ -627,7 +628,9 @@ export function createChatSocket(deps: SocketDeps): Server {
         if (m.type === "user_message") {
           const um = m as UserMessage;
           const text = um.contents.map((c) => c.value).join("").trim();
-          const session = store.ensureSession(um.sessionId, "", text.slice(0, 80));
+          const legalMode = um.extData.loamMode === "legal";
+          if (legalMode) markLegalSession(um.sessionId);
+          const session = store.ensureSession(um.sessionId, "", legalMode ? "Legal matter" : text.slice(0, 80));
 
           // O6 durable input queue: the message is stored *before* it is admitted
           // to the run, so it survives a restart even if the run is busy or the
@@ -649,8 +652,9 @@ export function createChatSocket(deps: SocketDeps): Server {
             if (getTask(um.sessionId)) {
               taskId = um.sessionId;
             } else {
-              const task = createTask(text, text.slice(0, 80), um.extData.projectId ?? null, um.extData.agentId ?? null);
+              const task = createTask(legalMode ? "" : text, legalMode ? "Legal matter" : text.slice(0, 80), um.extData.projectId ?? null, um.extData.agentId ?? null);
               taskId = task.id;
+              if (legalMode) markLegalSession(taskId);
             }
             session.taskId = taskId;
             store.setTaskId(um.sessionId, taskId);
@@ -817,6 +821,8 @@ export function createChatSocket(deps: SocketDeps): Server {
               agentId: um.extData.agentId ?? undefined,
               workMode: um.extData.workMode ?? undefined,
               knowledge: um.extData.knowledge === true,
+              // Legal mode: the matter this run works on (ignored by every other mode).
+              ...(typeof um.extData.legalMatterId === "string" && um.extData.legalMatterId ? { legalMatterId: um.extData.legalMatterId } : {}),
               // O6: this run owns the session's durable inbound queue, so messages
               // arriving mid-run are admitted at the next step boundary.
               inputSessionId: um.sessionId,

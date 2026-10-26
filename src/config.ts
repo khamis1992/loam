@@ -312,6 +312,8 @@ export interface Config {
    * never API keys. `perTool` names a tool; `effort` names a Fast/Max level.
    */
   routing?: import("./llm/router.js").RoutingConfig;
+  /** Legal mode (Qatar). Absent = disabled; normalized by src/legal/config.ts. */
+  legal?: Partial<import("./legal/config.js").LegalConfig>;
 }
 
 export const DEFAULTS: Config = {

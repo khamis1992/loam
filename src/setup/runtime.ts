@@ -56,6 +56,13 @@ import { createCodeSessionTools } from "../tools/codeSession.js";
 import { createDocsLookupTools } from "../tools/docsLookup.js";
 import { createSemanticSearchTools } from "../tools/semanticSearch.js";
 import { createKnowledgeTools } from "../tools/knowledge.js";
+import { createLegalTools } from "../tools/legalTools.js";
+import { normalizeLegalConfig } from "../legal/config.js";
+import { requestMattersKey, parentPortOf } from "../legal/keyHandoff.js";
+import { createLegalRuntime, type LegalRuntime } from "../legal/runtime.js";
+import { configureLegalProtection } from "../legal/security/protection.js";
+import { fromFile } from "../knowledge/importers.js";
+import { DATA_DIR } from "../config.js";
 import { createGenExtraTools } from "../tools/genExtra.js";
 import { defaultGenProviders } from "../creative/genProviders.js";
 import { createArtifactTools } from "../tools/artifactTools.js";
@@ -82,6 +89,8 @@ export interface Runtime {
   mcpServers: string[];
   /** Direct handle on the running MCP servers (null when they are disabled). */
   mcp: McpToolset | null;
+  /** Legal mode runtime (corpus + encrypted matters); null when cfg.legal.enabled is false. */
+  legal: LegalRuntime | null;
   /**
    * N16 cross-run recall: the shelf of finished nodes from past runs, or null
    * when memory embeddings are off and no embedder is available.
@@ -184,6 +193,23 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
     embedder: cfg.memory.enabled && cfg.memory.model ? embedder : undefined,
     model: cfg.memory.model || cfg.model,
   }));
+  // Legal mode (Qatar): opt-in. The corpus is public law; matters are encrypted with a
+  // DPAPI-wrapped key handed over by Electron main (fail closed without it).
+  const legalConfig = normalizeLegalConfig(cfg.legal);
+  const legal = legalConfig.enabled
+    ? createLegalRuntime({
+        dataDir: DATA_DIR,
+        config: legalConfig,
+        ollamaUrl: cfg.ollamaUrl,
+        ...(legalConfig.embedModel ? { embedder: new OllamaEmbedder(cfg.ollamaUrl, legalConfig.embedModel) } : {}),
+        extractText: async (absPath: string) => (await fromFile(absPath)).text,
+      })
+    : null;
+  if (legal) {
+    configureLegalProtection({ seal: legal.seal, open: legal.open });
+    registry.registerAll(createLegalTools(legal.toolDeps));
+    if (!requestMattersKey(parentPortOf(process))) log.warn("legal: no Electron parent port; matters stay locked");
+  }
   // N12 generator tools: media/search providers from the environment plus the
   // runtime model as the reasoning backend for solve_logic / generate_storyboard.
   registry.registerAll(createGenExtraTools({ providers: defaultGenProviders(cfg), reasoner: ollama }));
@@ -195,6 +221,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
     cfg,
     ollama,
     registry,
+    legal,
     memory,
     embedder: cfg.memory.enabled && cfg.memory.model ? embedder : null,
     screenLive,

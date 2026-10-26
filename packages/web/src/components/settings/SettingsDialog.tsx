@@ -17,6 +17,7 @@ import { SkillsPane } from './SkillsPane';
 import { PlaybooksPane } from './PlaybooksPane';
 import { ShortcutsPane } from './ShortcutsPane';
 import { KnowledgeGardenPane } from './KnowledgeGardenPane';
+import { LegalPanel } from '@/components/legal/LegalPanel';
 import { LessonsPanel } from './LessonsPanel';
 import { MemoryPane } from './MemoryPane';
 import { BridgesPane } from './BridgesPane';
@@ -39,6 +40,7 @@ const TABS = [
   { id: 'Playbooks', group: 'Capabilities', icon: 'BookMarked' },
   { id: 'Memory', group: 'Capabilities', icon: 'Database' },
   { id: 'Knowledge Garden', group: 'Capabilities', icon: 'Leaf' },
+  { id: 'Legal', group: 'Capabilities', icon: 'BookMarked' },
   { id: 'Learned lessons', group: 'Capabilities', icon: 'GraduationCap' },
   { id: 'App bridges', group: 'Capabilities', icon: 'Blocks' },
   { id: 'Integrations', group: 'Data', icon: 'Unplug' },
@@ -51,7 +53,7 @@ const TABS = [
   { id: 'About', group: 'About', icon: 'Info' },
 ];
 
-const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'Personalization', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Playbooks', 'Memory', 'Knowledge Garden', 'Learned lessons', 'App bridges', 'In-App Browser', 'Email', 'Phone', 'Wallet', 'Integrations', 'Developers']);
+const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'Personalization', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Playbooks', 'Memory', 'Knowledge Garden', 'Legal', 'Learned lessons', 'App bridges', 'In-App Browser', 'Email', 'Phone', 'Wallet', 'Integrations', 'Developers']);
 
 const GROUP_ORDER = ['Account', 'Settings', 'Capabilities', 'Computers', 'Data', 'Assets', 'About'];
 
@@ -151,6 +153,7 @@ function SettingsContent({ tab }: { tab: string }) {
     case 'Playbooks': return <PlaybooksPane />;
     case 'Memory': return <MemoryPane />;
     case 'Knowledge Garden': return <KnowledgeGardenPane />;
+    case 'Legal': return <LegalPanel />;
     case 'Learned lessons': return <LessonsPanel />;
     case 'App bridges': return <BridgesPane />;
     case 'In-App Browser': return <InAppBrowserPane />;

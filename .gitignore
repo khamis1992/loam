@@ -62,6 +62,9 @@ electron/filmcraft/dist/
 .jdone
 .jblocked
 
+# Generated legal reference kit; extraction is reproducible with LAW_FILE.
+/integration/kit/
+
 # throwaway local probe scripts (never commit)
 tmp-*.mjs
 tmp-*.mts

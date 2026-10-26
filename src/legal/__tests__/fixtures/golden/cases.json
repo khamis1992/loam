@@ -1,0 +1,575 @@
+[
+ {
+  "id": "G01",
+  "title": "exact quote, in force",
+  "asOf": "2092-01-01",
+  "text": "تنص المادة (4) من القانون المدني الاختباري على أنه «يجب تنفيذ العقد طبقاً لما اشتمل عليه وبطريقة تتفق مع ما يوجبه حسن النية.» ⟦cite:{{law/2090/1:body:4@2090-04-01}}⟧.",
+  "expect": {
+   "verdict": "pass",
+   "statuses": [
+    "VERIFIED"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G02",
+  "title": "quote then ref",
+  "asOf": "2092-01-01",
+  "text": "«العقد شريعة المتعاقدين، فلا يجوز نقضه ولا تعديله إلا باتفاق الطرفين أو للأسباب التي يقررها القانون.» ⟦cite:{{law/2090/1:body:2@2090-04-01}}⟧. وبناءً على ذلك ⟦ref:{{law/2090/1:body:2@2090-04-01}}⟧ لا يجوز للمدعي تعديل العقد منفرداً.",
+  "expect": {
+   "verdict": "pass",
+   "statuses": [
+    "VERIFIED"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G03",
+  "title": "fabricated id",
+  "asOf": "2092-01-01",
+  "text": "«العقد شريعة المتعاقدين، فلا يجوز نقضه ولا تعديله إلا باتفاق الطرفين أو للأسباب التي يقررها القانون.» ⟦cite:QL-0000000000⟧.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "UNKNOWN_ID"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G04",
+  "title": "one word changed in quote",
+  "asOf": "2092-01-01",
+  "text": "«العقد شريعة المتعاقدين، فلا يجوز نقضه ولا تعديله إلا بحكم القاضي.» ⟦cite:{{law/2090/1:body:2@2090-04-01}}⟧.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "QUOTE_MISMATCH"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G05",
+  "title": "token without quote",
+  "asOf": "2092-01-01",
+  "text": "وهذا ما قرره المشرع ⟦cite:{{law/2090/1:body:2@2090-04-01}}⟧.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "MISSING_QUOTE"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G06",
+  "title": "quote too short",
+  "asOf": "2092-01-01",
+  "text": "«العقد شريعة» ⟦cite:{{law/2090/1:body:2@2090-04-01}}⟧.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "QUOTE_TOO_SHORT"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G07",
+  "title": "superseded version cited as current",
+  "asOf": "2092-01-01",
+  "text": "«يجوز للمتعاقدين أن يحددا مقدماً قيمة التعويض بالنص عليها في العقد، ولا يكون التعويض الاتفاقي مستحقاً إذا أثبت المدين أن الدائن لم يلحقه أي ضرر.» ⟦cite:{{law/2090/1:body:3@2090-04-01}}⟧.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "NOT_IN_FORCE_AT_DATE"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G08",
+  "title": "superseded version cited as historical",
+  "asOf": "2092-01-01",
+  "text": "وكان النص قبل تعديله: «يجوز للمتعاقدين أن يحددا مقدماً قيمة التعويض بالنص عليها في العقد، ولا يكون التعويض الاتفاقي مستحقاً إذا أثبت المدين أن الدائن لم يلحقه أي ضرر.» ⟦cite:{{law/2090/1:body:3@2090-04-01}}|historical⟧.",
+  "expect": {
+   "verdict": "pass_with_warnings",
+   "statuses": [
+    "VERIFIED"
+   ],
+   "warnings": [
+    "HISTORICAL_CITATION"
+   ],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G09",
+  "title": "version in force at an earlier as-of, amended later",
+  "asOf": "2091-01-01",
+  "text": "«يجوز للمتعاقدين أن يحددا مقدماً قيمة التعويض بالنص عليها في العقد، ولا يكون التعويض الاتفاقي مستحقاً إذا أثبت المدين أن الدائن لم يلحقه أي ضرر.» ⟦cite:{{law/2090/1:body:3@2090-04-01}}⟧.",
+  "expect": {
+   "verdict": "pass_with_warnings",
+   "statuses": [
+    "VERIFIED"
+   ],
+   "warnings": [
+    "AMENDED_AFTER_DATE"
+   ],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G10",
+  "title": "new text quoted with the old version id",
+  "asOf": "2092-01-01",
+  "text": "«يجوز للمتعاقدين أن يحددا مقدماً قيمة التعويض بالنص عليها في العقد، ويجوز للقاضي أن يخفض التعويض الاتفاقي إذا أثبت المدين أن التقدير كان مبالغاً فيه إلى درجة كبيرة.» ⟦cite:{{law/2090/1:body:3@2090-04-01}}⟧.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "QUOTE_MISMATCH"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G11",
+  "title": "repealed article cited after repeal",
+  "asOf": "2092-01-01",
+  "text": "«تتقادم الدعوى الناشئة عن العقد بانقضاء خمس عشرة سنة من تاريخ استحقاق الالتزام.» ⟦cite:{{law/2090/1:body:5@2090-04-01}}⟧.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "REPEALED"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G12",
+  "title": "repealed article cited before repeal",
+  "asOf": "2091-01-01",
+  "text": "«تتقادم الدعوى الناشئة عن العقد بانقضاء خمس عشرة سنة من تاريخ استحقاق الالتزام.» ⟦cite:{{law/2090/1:body:5@2090-04-01}}⟧.",
+  "expect": {
+   "verdict": "pass_with_warnings",
+   "statuses": [
+    "VERIFIED"
+   ],
+   "warnings": [
+    "AMENDED_AFTER_DATE"
+   ],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G13",
+  "title": "repealed decree-law cited after repeal",
+  "asOf": "2090-01-01",
+  "text": "«يُعاقب بالحبس مدة لا تجاوز سنتين كل من استولى بغير حق على مال عام.» ⟦cite:{{decree-law/2088/7:body:1@2088-01-01}}⟧.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "REPEALED"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G14",
+  "title": "decree-law cited while in force",
+  "asOf": "2088-06-01",
+  "text": "«يُعاقب بالحبس مدة لا تجاوز سنتين كل من استولى بغير حق على مال عام.» ⟦cite:{{decree-law/2088/7:body:1@2088-01-01}}⟧.",
+  "expect": {
+   "verdict": "pass_with_warnings",
+   "statuses": [
+    "VERIFIED"
+   ],
+   "warnings": [
+    "AMENDED_AFTER_DATE"
+   ],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G15",
+  "title": "research snapshot is not citable",
+  "asOf": "2096-01-01",
+  "text": "«يلتزم المستأجر بدفع الأجرة في المواعيد المتفق عليها في عقد الإيجار.» ⟦cite:{{law/2095/5:body:1@2095-01-01}}⟧.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "UNVERIFIED_SOURCE"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G16",
+  "title": "fabricated article mentioned without token",
+  "asOf": "2092-01-01",
+  "text": "وتقضي المادة (7) من القانون المدني الاختباري ببطلان الشرط.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "UNCITED_ARTICLE_REFERENCE"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G17",
+  "title": "Hindi-digit mention backed by token",
+  "asOf": "2092-01-01",
+  "text": "«يجب تنفيذ العقد طبقاً لما اشتمل عليه وبطريقة تتفق مع ما يوجبه حسن النية.» ⟦cite:{{law/2090/1:body:4@2090-04-01}}⟧، فالمادة ٤ توجب حسن النية.",
+  "expect": {
+   "verdict": "pass",
+   "statuses": [
+    "VERIFIED"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G18",
+  "title": "mention of another article than the cited one",
+  "asOf": "2092-01-01",
+  "text": "«العقد شريعة المتعاقدين، فلا يجوز نقضه ولا تعديله إلا باتفاق الطرفين أو للأسباب التي يقررها القانون.» ⟦cite:{{law/2090/1:body:2@2090-04-01}}⟧، وهذا ما تؤكده المادة (4) من القانون المدني الاختباري.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "VERIFIED",
+    "UNCITED_ARTICLE_REFERENCE"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G19",
+  "title": "fabricated law number",
+  "asOf": "2092-01-01",
+  "text": "وفقاً للقانون رقم (99) لسنة 2093 بشأن العقود الإلكترونية.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "UNKNOWN_LAW_REFERENCE"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G20",
+  "title": "ref without prior quote",
+  "asOf": "2092-01-01",
+  "text": "وهذا ثابت ⟦ref:{{law/2090/1:body:2@2090-04-01}}⟧.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "REF_WITHOUT_PRIOR_QUOTE"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G21",
+  "title": "orthographic variant quote",
+  "asOf": "2092-01-01",
+  "text": "«يجب تنفيذ العقد طبقا لما اشتمل عليه وبطريقه تتفق مع ما يوجبه حسن النيه.» ⟦cite:{{law/2090/1:body:4@2090-04-01}}⟧.",
+  "expect": {
+   "verdict": "pass_with_warnings",
+   "statuses": [
+    "VERIFIED_NORMALIZED"
+   ],
+   "warnings": [
+    "ORTHOGRAPHIC_MATCH"
+   ],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G22",
+  "title": "ellipsis quote of real segments",
+  "asOf": "2092-01-01",
+  "text": "«يجوز للمتعاقدين أن يحددا مقدماً قيمة التعويض … ويجوز للقاضي أن يخفض التعويض الاتفاقي» ⟦cite:{{law/2090/1:body:3@2091-07-01}}⟧.",
+  "expect": {
+   "verdict": "pass",
+   "statuses": [
+    "VERIFIED"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G23",
+  "title": "ellipsis quote with a fabricated segment",
+  "asOf": "2092-01-01",
+  "text": "«يجوز للمتعاقدين أن يحددا مقدماً قيمة التعويض … ولا يجوز للقاضي أن يزيد التعويض الاتفاقي أبداً» ⟦cite:{{law/2090/1:body:3@2091-07-01}}⟧.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "QUOTE_MISMATCH"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G24",
+  "title": "ASCII token form",
+  "asOf": "2092-01-01",
+  "text": "«يجب تنفيذ العقد طبقاً لما اشتمل عليه وبطريقة تتفق مع ما يوجبه حسن النية.» [[cite:{{law/2090/1:body:4@2090-04-01}}]].",
+  "expect": {
+   "verdict": "pass",
+   "statuses": [
+    "VERIFIED"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G25",
+  "title": "ordinal-word mention backed by token",
+  "asOf": "2092-01-01",
+  "text": "«يُحظر الاتفاق على الإعفاء من المسؤولية عن الغش أو الخطأ الجسيم.» ⟦cite:{{law/2090/1:body:50@2090-04-01}}⟧، فالمادة الخمسون صريحة.",
+  "expect": {
+   "verdict": "pass",
+   "statuses": [
+    "VERIFIED"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G26",
+  "title": "fabricated ordinal-word article",
+  "asOf": "2092-01-01",
+  "text": "وتنص المادة الحادية والخمسون من القانون المدني الاختباري على البطلان.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "UNCITED_ARTICLE_REFERENCE"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G27",
+  "title": "range mention without tokens",
+  "asOf": "2092-01-01",
+  "text": "وتحكم المواد من 1 إلى 3 من القانون المدني الاختباري هذه المسألة.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "UNCITED_ARTICLE_REFERENCE"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G28",
+  "title": "bis article in force",
+  "asOf": "2092-01-01",
+  "text": "«لا يستحق التعويض إلا بعد إعذار المدين، ما لم ينص القانون أو الاتفاق على غير ذلك.» ⟦cite:{{law/2090/1:body:3bis@2091-07-01}}⟧.",
+  "expect": {
+   "verdict": "pass",
+   "statuses": [
+    "VERIFIED"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G29",
+  "title": "bis article before it existed",
+  "asOf": "2091-01-01",
+  "text": "«لا يستحق التعويض إلا بعد إعذار المدين، ما لم ينص القانون أو الاتفاق على غير ذلك.» ⟦cite:{{law/2090/1:body:3bis@2091-07-01}}⟧.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "NOT_IN_FORCE_AT_DATE"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G30",
+  "title": "issuance article",
+  "asOf": "2092-01-01",
+  "text": "«يُعمل بأحكام القانون المدني الاختباري المرافق لهذا القانون.» ⟦cite:{{law/2090/1:issuance:1@2090-04-01}}⟧.",
+  "expect": {
+   "verdict": "pass",
+   "statuses": [
+    "VERIFIED"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G31",
+  "title": "unverified marker left in text",
+  "asOf": "2092-01-01",
+  "text": "ويُشترط الإعذار قبل المطالبة [غير موثّق — يحتاج بحث محامٍ].",
+  "expect": {
+   "verdict": "pass_with_warnings",
+   "statuses": [],
+   "warnings": [],
+   "unverifiedMarkers": 1
+  }
+ },
+ {
+  "id": "G32",
+  "title": "quote of one article under another article's id",
+  "asOf": "2092-01-01",
+  "text": "«يجب تنفيذ العقد طبقاً لما اشتمل عليه وبطريقة تتفق مع ما يوجبه حسن النية.» ⟦cite:{{law/2090/1:body:2@2090-04-01}}⟧.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "QUOTE_MISMATCH"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G33",
+  "title": "existing law mentioned without token",
+  "asOf": "2092-01-01",
+  "text": "وقد عدّل القانون رقم (2) لسنة 2091 أحكام الشرط الجزائي.",
+  "expect": {
+   "verdict": "pass_with_warnings",
+   "statuses": [],
+   "warnings": [
+    "UNCITED_LAW_REFERENCE"
+   ],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G34",
+  "title": "English mention backed by token",
+  "asOf": "2092-01-01",
+  "text": "«العقد شريعة المتعاقدين، فلا يجوز نقضه ولا تعديله إلا باتفاق الطرفين أو للأسباب التي يقررها القانون.» ⟦cite:{{law/2090/1:body:2@2090-04-01}}⟧. Article 2 therefore binds both parties.",
+  "expect": {
+   "verdict": "pass",
+   "statuses": [
+    "VERIFIED"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G35",
+  "title": "current amended version cited correctly",
+  "asOf": "2092-01-01",
+  "text": "«يجوز للمتعاقدين أن يحددا مقدماً قيمة التعويض بالنص عليها في العقد، ويجوز للقاضي أن يخفض التعويض الاتفاقي إذا أثبت المدين أن التقدير كان مبالغاً فيه إلى درجة كبيرة.» ⟦cite:{{law/2090/1:body:3@2091-07-01}}⟧.",
+  "expect": {
+   "verdict": "pass",
+   "statuses": [
+    "VERIFIED"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G36",
+  "title": "citation of article not retrieved in this run",
+  "asOf": "2092-01-01",
+  "text": "«يجب تنفيذ العقد طبقاً لما اشتمل عليه وبطريقة تتفق مع ما يوجبه حسن النية.» ⟦cite:{{law/2090/1:body:4@2090-04-01}}⟧.",
+  "ledger": [],
+  "expect": {
+   "verdict": "pass_with_warnings",
+   "statuses": [
+    "VERIFIED"
+   ],
+   "warnings": [
+    "NOT_RETRIEVED_IN_RUN"
+   ],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G37",
+  "title": "fabricated law number in Arabic-Indic digits",
+  "asOf": "2092-01-01",
+  "text": "استناداً إلى القانون رقم (٩٩) لسنة ٢٠٩٣.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "UNKNOWN_LAW_REFERENCE"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G38",
+  "title": "abbreviated mention 'م ٣' without token",
+  "asOf": "2092-01-01",
+  "text": "ويُستفاد ذلك من م ٣ من القانون المدني الاختباري.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "UNCITED_ARTICLE_REFERENCE"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G39",
+  "title": "same article number, different law",
+  "asOf": "2092-01-01",
+  "text": "«العقد شريعة المتعاقدين، فلا يجوز نقضه ولا تعديله إلا باتفاق الطرفين أو للأسباب التي يقررها القانون.» ⟦cite:{{law/2090/1:body:2@2090-04-01}}⟧، والمادة (2) من قانون الجرائم الاقتصادية الاختباري تؤكد ذلك.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "VERIFIED",
+    "UNCITED_ARTICLE_REFERENCE"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ },
+ {
+  "id": "G40",
+  "title": "quote spliced from two articles",
+  "asOf": "2092-01-01",
+  "text": "«العقد شريعة المتعاقدين، ويجب تنفيذه بطريقة تتفق مع ما يوجبه حسن النية.» ⟦cite:{{law/2090/1:body:2@2090-04-01}}⟧.",
+  "expect": {
+   "verdict": "fail",
+   "statuses": [
+    "QUOTE_MISMATCH"
+   ],
+   "warnings": [],
+   "unverifiedMarkers": 0
+  }
+ }
+]

@@ -1,0 +1,11 @@
+{
+  "format": "loam-legal-pack/1",
+  "legislation": {
+    "type": "law", "year": 2089, "number": 8,
+    "titleAr": "قانون اختباري رقم (8) لسنة 2089 بإلغاء المرسوم بقانون الاختباري رقم (7) لسنة 2088",
+    "effectiveDate": "2089-05-01"
+  },
+  "source": { "provenance": "official_gazette", "retrievedAt": "2026-10-26T00:00:00Z", "verifiedBy": "fixture-author" },
+  "articles": [ { "label": "1", "text": "يُلغى المرسوم بقانون رقم (7) لسنة 2088 المشار إليه." } ],
+  "repeals": [ { "legKey": "decree-law/2088/7" } ]
+}

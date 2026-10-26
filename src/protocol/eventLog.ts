@@ -1,4 +1,6 @@
 import { database, onDatabaseReset, transaction } from "../server/sqliteStore.js";
+import { hasLegalProtection, isLegalSession, legalProtection } from "../legal/security/protection.js";
+import { isSealedLegalPayload } from "../legal/security/transcriptSeal.js";
 
 /**
  * Durable, append-only event log (BUILD_SPEC §6.1).
@@ -97,7 +99,7 @@ export function append<P>(
       kind,
       turnId: opts.turnId ?? null,
       idempotencyKey: opts.idempotencyKey ?? null,
-      payload,
+      payload: (isLegalSession(sessionId) ? legalProtection().seal(payload, `event|${sessionId}|${last.s + 1}`) : payload) as P,
       createdAt: Date.now(),
     };
     db.prepare(
@@ -169,6 +171,8 @@ export function purgeSession(sessionId: string): number {
 }
 
 function fromRow<P = unknown>(r: Row): LogEvent<P> {
+  const payload = JSON.parse(r.payload) as unknown;
+  if (isSealedLegalPayload(payload) && !hasLegalProtection()) throw new Error("legal protection is unavailable");
   return {
     sessionId: r.session_id,
     seq: Number(r.seq),
@@ -176,7 +180,7 @@ function fromRow<P = unknown>(r: Row): LogEvent<P> {
     kind: r.kind,
     turnId: r.turn_id,
     idempotencyKey: r.idempotency_key,
-    payload: JSON.parse(r.payload) as P,
+    payload: (isSealedLegalPayload(payload) ? legalProtection().open(payload) : payload) as P,
     createdAt: Number(r.created_at),
   };
 }

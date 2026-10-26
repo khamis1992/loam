@@ -126,6 +126,8 @@ import { handleVoiceRoutes } from "./routes/voice.js";
 import { handleConnectorsRoutes } from "./routes/connectors.js";
 import { handleEnvBuildRoutes } from "./routes/envBuilds.js";
 import { handleKnowledgeRoutes } from "./routes/knowledge.js";
+import { handleLegalRoutes } from "./routes/legal.js";
+import type { LegalRuntime } from "../legal/runtime.js";
 import { handleWikiRoutes } from "./routes/wiki.js";
 import { handleDocsRoutes } from "./routes/docs.js";
 // H8/H9: learned-lesson REST surface. Dispatched before the generic
@@ -185,6 +187,8 @@ export interface RunTaskOptions {
   /** Side-chat ("/btw") run: restricted to read-only inspection tools. */
   sideChat?: boolean;
   knowledge?: boolean;
+  /** Legal mode: the matter this run works on. */
+  legalMatterId?: string;
   /** O6: protocol session whose durable inbound queue this run should drain. */
   inputSessionId?: string;
   /**
@@ -205,6 +209,8 @@ export interface ServerDeps {
   runTask: (opts: RunTaskOptions) => Promise<{ taskId: string; text: string }>;
   /** N3 Knowledge Garden vector channel; absent => lexical-only search. */
   embedder?: { embed(texts: string[]): Promise<number[][]> };
+  /** Legal mode runtime; absent when legal mode is disabled. */
+  legal?: LegalRuntime;
 }
 
 const MIME: Record<string, string> = {
@@ -1903,6 +1909,12 @@ loadAgents();
           model: cfg.memory.model || cfg.model,
         })) return;
 
+        // Legal mode (Qatar): corpus, matters, verification, review gate.
+        if (p.startsWith("/api/legal")) {
+          if (!deps.legal) return sendJson(res, p.split("?")[0] === "/api/legal/status" ? 200 : 404, { enabled: false });
+          if (await handleLegalRoutes(req, res, p, { corpus: deps.legal.corpus, matters: deps.legal.matters, egress: deps.legal.egress, keys: deps.legal.keys, enabled: true })) return;
+        }
+
         // ---- avatar (Grok Bot-style): set shape/color/image on an existing agent ----
         // Must run before the generic /api/agents/:id prefix block.
         if (req.method === "POST" && p.startsWith("/api/agents/") && p.endsWith("/avatar")) {
@@ -2758,6 +2770,7 @@ loadAgents();
             workMode?: unknown;
             mission?: unknown;
             knowledge?: unknown;
+            legalMatterId?: unknown;
           };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
           if (!prompt) return sendJson(res, 400, { error: "prompt required" });
@@ -2790,6 +2803,7 @@ loadAgents();
           // N3 Knowledge Garden: the run only reaches the kb_* tools when the
           // caller switched the garden on for THIS run (default off).
           const knowledge = body.knowledge === true;
+          const legalMatterId = typeof body.legalMatterId === "string" && body.legalMatterId.trim() ? body.legalMatterId.trim() : undefined;
 
           res.writeHead(200, {
             "content-type": "text/event-stream; charset=utf-8",
@@ -2811,7 +2825,7 @@ loadAgents();
           }
 
           try {
-            if (!taskId) taskId = createTask(prompt, title, projectId, agentId).id;
+            if (!taskId) taskId = createTask(mode === "legal" ? "" : prompt, mode === "legal" ? "Legal matter" : title, projectId, agentId).id;
             const root = requireTaskWorkspace(taskId, cfg.workspace);
             setTaskMode(taskId, mode);
             const attachmentsBlock = await buildAttachmentsBlock(body.attachments, root);
@@ -2830,6 +2844,7 @@ loadAgents();
               workMode,
               ...(mission ? { mission: true } : {}),
               knowledge,
+              ...(legalMatterId ? { legalMatterId } : {}),
             });
             if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify({ type: "task", taskId: result.taskId })}\n\n`);
           } catch (err) {

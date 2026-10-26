@@ -75,6 +75,8 @@ export interface UserMessage extends Base {
     modelTier?: string;
     /** Neo N3: opt this run into the user's Knowledge Garden (kb_* tools). */
     knowledge?: boolean;
+    /** Legal mode: id of the active matter (opaque; the server reloads it from the encrypted store). */
+    legalMatterId?: string;
     /** Neo N10: composer output type (Auto/Text/Image/Video/Slides/Website). */
     outputType?: string;
     /** Neo N10: composer effort level (Fast/Max). */

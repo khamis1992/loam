@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain, protocol, utilityProcess } = require("electron");
+const { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain, protocol, utilityProcess, safeStorage } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -260,6 +260,8 @@ async function ensureServer() {
     });
     let exited = false;
     serverChild.on("exit", () => { exited = true; });
+    // Legal mode: answer the server's key request with the DPAPI-unwrapped matters key.
+    require("./legal-key.cjs").attachLegalKey(serverChild, app, safeStorage);
     serverChild.on("error", error => { exited = true; console.error("[electron] server: " + error.message); });
     serverChild.stdout?.on("data", (d) => process.stdout.write("[server] " + d));
     serverChild.stderr?.on("data", (d) => process.stderr.write("[server] " + d));
