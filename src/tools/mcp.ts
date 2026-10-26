@@ -7,6 +7,7 @@ import { DATA_DIR, ROOT, type McpServerConfig } from "../config.js";
 import { log } from "../log.js";
 import type { ToolRegistry, ToolResult } from "./registry.js";
 import { REA_MCP_SERVER, isReaAllowedTool, reaToolTimeoutMs } from "./reaAllowlist.js";
+import { isAllowedReTool } from "../re/allowlist.js";
 import { applyReaBudget } from "./reaBudget.js";
 import { ReaAuditLog, reaAuditPath } from "./reaAudit.js";
 import { CUA_DRIVER_MCP_SERVER, isCuaDriverAllowedTool, cuaDriverTimeoutMs } from "./cuaDriverAllowlist.js";
@@ -178,6 +179,9 @@ export async function registerMcpTools(
       let visible = tools;
       if (cfg.allowlist) visible = visible.filter((t) => new Set(cfg.allowlist).has(t.name));
       if (isReaServer(name)) visible = visible.filter((t) => isReaAllowedTool(t.name));
+      // Cap B (MISSING §5): the rea server is also clamped to the 15 engine-free
+      // names the reverse-engineer mode reads from src/re/allowlist.ts.
+      if (isReaServer(name)) visible = visible.filter((t) => isAllowedReTool(t.name));
       if (isCuaDriverServer(name)) visible = visible.filter((t) => isCuaDriverAllowedTool(t.name));
       const toolNames = visible.map((tool) => `mcp__${name}__${tool.name}`);
       if (new Set(toolNames).size !== toolNames.length || toolNames.some((toolName) => registry.get(toolName))) {

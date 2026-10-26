@@ -17,6 +17,7 @@ import { isInside } from "./paths.js";
 import { assessCommand } from "./commandRisk/index.js";
 import type { ApprovalRule } from "../server/approvalRules.js";
 import { reaToolTier } from "../tools/reaAllowlist.js";
+import { classifyReToolCall } from "../re/effects.js";
 import { cuaDriverTier } from "../tools/cuaDriverAllowlist.js";
 
 // ----------------------------------------------------------------------------
@@ -87,6 +88,8 @@ const READ_TOOL_NAMES = new Set<string>([
   "search",
   "session_search",
   "code_outline",
+  "codegraph_status", "codegraph_index", "codegraph_query", "codegraph_node", "codegraph_neighbors",
+  "codegraph_path", "codegraph_affected", "codegraph_hubs", "codegraph_community",
   "code_symbols",
   "semantic_search",
   "explore",
@@ -298,7 +301,8 @@ function isDestructiveShell(command: string, workspaceRoot?: string): boolean {
 
 /** Tool results that come from outside the task workspace are untrusted data. */
 const UNTRUSTED_TOOL_NAMES = new Set<string>([
-
+  // Code-map results quote repository text (labels, comments, docstrings): data, not instructions.
+  "codegraph_status", "codegraph_index", "codegraph_query", "codegraph_node", "codegraph_neighbors", "codegraph_path", "codegraph_affected", "codegraph_hubs", "codegraph_community",
   // Real-swarm board results quote peer-worker notes and repository content the
   // peers pasted (FACT/OBSERVED/FAIL): another model's text, never instructions.
   "board_write", "board_read", "board_grep", "board_unfold", "swarm_message", "swarm_inbox", "merge_request",
@@ -457,6 +461,16 @@ export function classifyToolCall(
   // (11 read / 2 write-workspace — REA_INTO_LOAM §7). An untabled name can only
   // mean the allowlist was bypassed; fail safe to the review tier.
   if (name.startsWith("mcp__rea__")) return reaToolTier(name.slice("mcp__rea__".length)) ?? "exec";
+  // Cap B (MISSING §5): the rea-agents server classifies through the effects map
+  // (read / write-workspace-data); the import_evidence_bundle read-vs-write delta
+  // recorded in B1 reconciles HERE first.
+  if (name.startsWith("mcp__rea-agents__")) {
+    const path = classifyReToolCall(name.slice("mcp__rea-agents__".length));
+    if (path === "write-workspace-data" || path === "workspace-write") return "write-workspace";
+    if (path === "network-external") return "network-external";
+    if (path === "read") return "read";
+    return "exec";
+  }
   // Cua Driver tools (mcp__cua-driver__*): host input tools are `destructive`
   // (never auto-approved — §6.2 "input tools always ask"); reads and session start
   // are `read` (CUA_INTO_LOAM §7.4, appendix B5). Untabled names fail safe.
