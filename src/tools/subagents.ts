@@ -11,6 +11,7 @@ import type { SubagentRunHandle, SubagentStartOptions } from "../subagent/index.
 import { createInProcessProvider } from "../subagent/inProcessProvider.js";
 import { createAcpProvider } from "../subagent/acpProvider.js";
 import { runLifecycleHooks } from "../policy/hooks.js";
+import { RETURN_DIRECT_PARAM } from "../orchestration/handoff/returnDirect.js";
 
 export interface SubagentProfile {
   name: string;
@@ -20,6 +21,8 @@ export interface SubagentProfile {
   denyTools?: string[];
   model?: string;
   maxSteps?: number;
+  /** C10: this agent's reports are final answers (frontmatter `returnDirect: true`). */
+  returnDirect?: boolean;
   source: "builtin" | "file" | "custom";
 }
 
@@ -38,7 +41,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     description: "Code quality, bug, and security reviewer. Inspects files and diffs and reports concrete issues.",
     instructions:
       "You are the Reviewer subagent. Inspect the relevant code and return a concise, prioritized list of bugs, edge cases, type/lint issues, or security risks with exact file:line references.",
-    allowTools: ["code_symbols", "code_outline", "grep", "glob", "file_read", "file_list", "file_search", "file_stat", "shell_run"],
+    allowTools: ["code_symbols", "code_outline", "grep", "glob", "file_read", "file_list", "file_search", "file_stat", "file_extract_text"],
     maxSteps: 10,
     source: "builtin",
   },
@@ -120,6 +123,7 @@ function parseAgentMarkdown(file: string): SubagentProfile | null {
     const maxStepsRaw = frontmatterString(meta, "maxSteps") ?? frontmatterString(meta, "maxTurns");
     const maxSteps = maxStepsRaw ? Number(maxStepsRaw) : undefined;
     const model = frontmatterString(meta, "model");
+    const returnDirect = frontmatterString(meta, "returnDirect") === "true";
     return {
       name,
       description: frontmatterString(meta, "description") || "Custom markdown subagent.",
@@ -128,6 +132,7 @@ function parseAgentMarkdown(file: string): SubagentProfile | null {
       denyTools: frontmatterList(meta, "disallowedTools") ?? frontmatterList(meta, "denyTools"),
       ...(model ? { model } : {}),
       ...(maxSteps && Number.isFinite(maxSteps) ? { maxSteps } : {}),
+      ...(returnDirect ? { returnDirect } : {}),
       source: "file",
     };
   } catch {
@@ -200,6 +205,8 @@ interface ProfileSubagentOptions {
   maxSteps?: number;
   /** Delegation depth for the child's own tool context (prevents recursion). */
   depth?: number;
+  /** C10: caller asked for a direct return (OR-ed with the profile's own flag). */
+  returnDirect?: boolean;
 }
 
 /** Run a repo-defined profile in an isolated in-process context and return only
@@ -243,9 +250,11 @@ async function runProfileSubagent(opts: ProfileSubagentOptions): Promise<ToolRes
     const subStop = await runLifecycleHooks("SubagentStop", "", { subagent: profile.name, steps: res.steps, stopReason: "completed" }, ctx.workspace);
     stopFired = true;
     stopContext = subStop.additionalContext;
+    const wantsDirect = opts.returnDirect === true || profile.returnDirect === true;
     return {
       ok: true,
       content: `[Subagent "${profile.name}" finished in ${res.steps} step(s), ${toolCalls} tool call(s)]\n\n${res.text}${stopContext ? `\n\n${stopContext}` : ""}`,
+      ...(wantsDirect ? { returnDirect: true } : {}),
     };
   } finally {
     if (!stopFired) {
@@ -258,6 +267,19 @@ async function runProfileSubagent(opts: ProfileSubagentOptions): Promise<ToolRes
 let subSeq = 0;
 /** Distinguishes provider-launched child sessions of one task (same reason). */
 let providerSeq = 0;
+
+/** C4: the MCP servers the app granted via config, in ACP session/new shape. */
+function grantedMcpServers(cfg: ToolContext["cfg"]): NonNullable<SubagentStartOptions["mcpServers"]> {
+  const out: NonNullable<SubagentStartOptions["mcpServers"]> = [];
+  for (const [name, server] of Object.entries(cfg?.mcpServers ?? {})) {
+    if (server.transport === "http" && server.url) {
+      out.push({ type: "http", name, url: server.url, headers: Object.entries(server.headers ?? {}).map(([n, value]) => ({ name: n, value })) });
+    } else if (server.command) {
+      out.push({ name, command: server.command, args: server.args ?? [], env: Object.entries(server.env ?? {}).map(([n, value]) => ({ name: n, value })) });
+    }
+  }
+  return out;
+}
 
 export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRegistry): Tool[] {
   /** Register the built-in providers once so delegate_task can start them by name. */
@@ -291,6 +313,7 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
           subagent: { type: "string", description: "Subagent name (e.g. explore, reviewer, coder)." },
           task: { type: "string", description: "Complete, self-contained instructions for the subagent." },
           maxSteps: { type: "number", description: "Max tool steps for the subagent (default from profile or 12)." },
+          ...RETURN_DIRECT_PARAM,
         },
         required: ["subagent", "task"],
       },
@@ -315,6 +338,7 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
           ollama,
           parentRegistry,
           maxSteps: num(args, "maxSteps", profile.maxSteps ?? 12),
+          ...(args.return_direct === true ? { returnDirect: true } : {}),
         });
       },
     },
@@ -337,6 +361,7 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
           timeoutMs: { type: "number", description: "Timeout in ms (default 120000)." },
           acpCommand: { type: "string", description: "Command for ACP provider (e.g. 'node', 'npx')." },
           acpArgs: { type: "array", items: { type: "string" }, description: "Args for ACP command." },
+          ...RETURN_DIRECT_PARAM,
           permissionPolicy: { type: "string", enum: ["allow", "reject"], description: "ACP permission policy (default reject)." },
           maxSteps: { type: "number", description: "Max tool steps for a subagent_type run (default from the profile or 12)." },
         },
@@ -371,6 +396,7 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
             parentRegistry,
             maxSteps: num(args, "maxSteps", profile.maxSteps ?? 12),
             depth: depth + 1,
+            ...(args.return_direct === true ? { returnDirect: true } : {}),
           });
         }
 
@@ -408,6 +434,9 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
           permissionPolicy,
           command: acpCommand,
           args: acpArgs,
+          // C4: hand the ACP child the MCP servers the app already granted
+          // (config mcpServers); never vault credentials.
+          ...(provider === "acp" ? { mcpServers: grantedMcpServers(ctx.cfg) } : {}),
           depth: depth + 1,
           cfg: ctx.cfg,
           ollama,
@@ -450,7 +479,7 @@ export function createSubagentTools(ollama: OllamaClient, parentRegistry: ToolRe
           stopFired = true;
           const subStop = await runLifecycleHooks("SubagentStop", "", { subagent: provider, stopReason: result.stopReason }, ctx.workspace);
           const stopContext = subStop.additionalContext;
-          if (result.stopReason === "completed") return { ok: true, content: stopContext ? `${result.text}\n\n${stopContext}` : result.text };
+          if (result.stopReason === "completed") return { ok: true, content: stopContext ? `${result.text}\n\n${stopContext}` : result.text, ...(args.return_direct === true ? { returnDirect: true } : {}) };
           return { ok: false, content: `[subagent ${result.stopReason}] ${result.text}`.trim() };
         } catch (e) {
           stopFired = true;

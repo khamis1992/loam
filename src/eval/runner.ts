@@ -97,9 +97,16 @@ async function runCase(
     agent: { ...cfg.agent, maxSteps: c.budget?.maxSteps ?? cfg.agent.maxSteps },
   };
   const timeoutSec = c.budget?.timeoutSec ?? 300;
-  const trace: Array<{ name: string; ok: boolean; ms?: number }> = [];
+  const trace: Array<{ name: string; ok: boolean; ms?: number; args?: Record<string, unknown> }> = [];
+  // C8: the args of the call immediately preceding a result ride along, so a
+  // trajectory verifier can match on argument substrings.
+  let lastCallArgs: Record<string, unknown> | undefined;
   const emit: RunOptions["emit"] = (e) => {
-    if (e.type === "tool_result") trace.push({ name: e.name, ok: e.ok, ms: e.ms });
+    if (e.type === "tool_call") lastCallArgs = (e.args && typeof e.args === "object" ? e.args : undefined) as Record<string, unknown> | undefined;
+    if (e.type === "tool_result") {
+      trace.push({ name: e.name, ok: e.ok, ms: e.ms, ...(lastCallArgs ? { args: lastCallArgs } : {}) });
+      lastCallArgs = undefined;
+    }
   };
 
   const signals: AbortSignal[] = [];

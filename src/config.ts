@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EffortLevel } from "./llm/router.js";
-import type { CodeGraphConfig } from "./codegraph/config.js";
+
+import { ORCHESTRATION_DEFAULTS, clampOrchestration, type OrchestrationConfig } from "./orchestration/config.js";
 import { resolvePruneConfig } from "./agent/prune/config.js";
 
 function resolveRoot(): string {
@@ -235,8 +236,11 @@ export interface Config {
   };
   mcpServers: Record<string, McpServerConfig>;
 
-  /** Code map (graphify engine). Absent = all defaults from src/codegraph/config.ts (disabled). */
-  codeGraph?: Partial<CodeGraphConfig>;
+
+
+  /** Orchestration Core (C1-C11). Optional on the interface so hand-written test fixtures keep compiling;
+   * the loader always fills it (deep-merged over ORCHESTRATION_DEFAULTS, then clamped). */
+  orchestration?: OrchestrationConfig;
   failover?: {
     providers: Array<{
       id: string;
@@ -390,6 +394,10 @@ export const DEFAULTS: Config = {
   subagent: { maxDepth: 2, maxConcurrentChildren: 4 },
   lessons: { enabled: true, maxChars: 1200, minScore: 0.35 },
   mcpServers: {},
+
+
+
+  orchestration: structuredClone(ORCHESTRATION_DEFAULTS),
   codemode: { enabled: false, timeoutMs: 300_000, memoryBytes: 64 * 1024 * 1024, maxToolCalls: 2_000 },
   failover: {
     providers: [
@@ -512,6 +520,23 @@ export function loadConfig(): Config {
     console.warn(`[config] failed to parse ${p}: ${String(err)}`);
   }
   const cfg = merge(DEFAULTS, raw);
+  // Orchestration Core §4.0.1: deep-merge each section over the shipped defaults, then clamp.
+  cfg.orchestration = clampOrchestration({
+    ...ORCHESTRATION_DEFAULTS,
+    ...(cfg.orchestration ?? {}),
+    tracing: { ...ORCHESTRATION_DEFAULTS.tracing, ...(cfg.orchestration?.tracing ?? {}) },
+    durability: { ...ORCHESTRATION_DEFAULTS.durability, ...(cfg.orchestration?.durability ?? {}) },
+    interrupts: { ...ORCHESTRATION_DEFAULTS.interrupts, ...(cfg.orchestration?.interrupts ?? {}) },
+    contracts: { ...ORCHESTRATION_DEFAULTS.contracts, ...(cfg.orchestration?.contracts ?? {}) },
+    ledger: { ...ORCHESTRATION_DEFAULTS.ledger, ...(cfg.orchestration?.ledger ?? {}) },
+    selection: { ...ORCHESTRATION_DEFAULTS.selection, ...(cfg.orchestration?.selection ?? {}) },
+    acp: { ...ORCHESTRATION_DEFAULTS.acp, ...(cfg.orchestration?.acp ?? {}) },
+    returnDirect: { ...ORCHESTRATION_DEFAULTS.returnDirect, ...(cfg.orchestration?.returnDirect ?? {}) },
+    workflows: { ...ORCHESTRATION_DEFAULTS.workflows, ...(cfg.orchestration?.workflows ?? {}) },
+    evals: { ...ORCHESTRATION_DEFAULTS.evals, ...(cfg.orchestration?.evals ?? {}) },
+    memoryRanking: { ...ORCHESTRATION_DEFAULTS.memoryRanking, ...(cfg.orchestration?.memoryRanking ?? {}) },
+    swarm: { ...ORCHESTRATION_DEFAULTS.swarm, ...(cfg.orchestration?.swarm ?? {}) },
+  } as OrchestrationConfig);
   // Verbatim pruning: resolved from the file's own block (not from DEFAULTS), so a
   // stale config without one keeps the summary-only behaviour.
   cfg.compression.prune = resolvePruneConfig(

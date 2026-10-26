@@ -3,6 +3,7 @@ import path from "node:path";
 import { log } from "../log.js";
 import { type OllamaEmbedder, dot, fromBase64, normalize, toBase64 } from "./embeddings.js";
 import { assertNoSecret } from "./redact.js";
+import { rerank, type RankWeights } from "../orchestration/memory/rank.js";
 
 /** Where a memory came from: an explicit user statement or an agent inference. */
 export type MemorySource = "user" | "agent" | "system";
@@ -27,6 +28,10 @@ export interface MemoryEntry {
   lastUsedAt?: string;
   /** How many times this memory has been recalled/used. */
   useCount?: number;
+  /** Citation (loci graft, ALL_SERVICES §16): a recalled item can name its origin. */
+  citation?: { source: string; blobId?: string };
+  /** C9 (default off): stored importance 0..1; unset entries get the kind/source default. */
+  importance?: number;
 }
 
 export interface MemoryHit {
@@ -123,12 +128,16 @@ export class MemoryStore {
   private saveTimer: NodeJS.Timeout | null = null;
   private readonly dedupeThreshold: number;
 
+  private ranking: { weights: RankWeights; candidateMultiplier: number } | null = null;
+
   constructor(
     private readonly file: string,
     private readonly embedder: OllamaEmbedder,
     model: string,
     dedupeThreshold = 0.97,
+    ranking?: { weights: RankWeights; candidateMultiplier: number },
   ) {
+    if (ranking) this.ranking = ranking;
     this.model = model;
     this.dedupeThreshold = dedupeThreshold;
     this.load();
@@ -179,6 +188,8 @@ export class MemoryStore {
     // Memory is persisted and injected into prompts: never keep credentials.
     assertNoSecret(trimmed);
     const source: MemorySource = opts.source ?? inferSource(opts.kind);
+    // C9: no model call — importance defaults come from the kind/source.
+    const importance = opts.kind === "preference" ? 0.7 : source === "user" ? 0.6 : undefined;
     const now = new Date().toISOString();
     const provenance = { sessionId: opts.sessionId, source, tags: opts.tags };
     const existing = this.entries.find((e) => e.text === trimmed);
@@ -233,6 +244,7 @@ export class MemoryStore {
       ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
       source,
       ...(opts.sessionId ? { sourceSessionIds: [opts.sessionId] } : {}),
+      ...(importance !== undefined ? { importance } : {}),
       lastUsedAt: now,
       useCount: 0,
     };
@@ -249,10 +261,14 @@ export class MemoryStore {
       const v = this.vectors[i];
       return { entry, score: v ? dot(q, v) : -1 };
     });
-    const hits = scored
+    const pool = scored
       .filter((h) => h.score >= minScore)
       .sort((a, b) => b.score - a.score)
-      .slice(0, Math.max(1, limit));
+      .slice(0, Math.max(1, this.ranking ? limit * this.ranking.candidateMultiplier : limit));
+    // C9 (default off): recency + importance re-ranking over a wider cosine pool.
+    const hits = this.ranking
+      ? rerank(pool.map((h) => ({ ...h, entry: { ...h.entry } })), limit, this.ranking.weights).map((r) => ({ entry: r.entry, score: r.composite }))
+      : pool;
     // Track last_used: a recall is the signal that keeps an entry alive.
     const now = new Date().toISOString();
     for (const h of hits) {

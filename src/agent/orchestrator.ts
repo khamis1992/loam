@@ -23,6 +23,11 @@ import { openSession, closeSession, cancelled, type SessionEndReason } from "./s
 import { runLifecycleHooks } from "../policy/hooks.js";
 import { needsAskUser } from "../tools/askUserGate.js";
 import { createAskUser, getAskUser, waitForAskUser } from "../tools/askUserStore.js";
+import { createInterrupt, waitForInterrupt, RESPONSE_SCHEMAS } from "../orchestration/durable/interrupts.js";
+import { createLedgerController, type LedgerController, type LedgerOutcome } from "../orchestration/ledger/controller.js";
+import { createTurnRecorder, digestTurns } from "../orchestration/ledger/turnRecorder.js";
+import type { TurnRecord } from "../orchestration/ledger/stuckPatterns.js";
+import type { OrchestrationCore } from "../orchestration/core.js";
 import {
   applyProposal,
   beginStep,
@@ -53,6 +58,8 @@ export interface OrchestratorOptions extends RunOptions {
   /** Session lifecycle hooks run only for a top-level orchestrated task;
    *  nested runs (workers, subagent children) omit this so they stay silent. */
   lifecycleHooks?: boolean;
+  /** Orchestration Core facade for this run (one per run, built in src/index.ts). */
+  core?: OrchestrationCore;
   /**
    * Neo N4: incremental Recipe mode. The upfront plan is only the seed; after
    * every step the planner proposes what comes next from that step's results,
@@ -117,15 +124,55 @@ interface WorkerOutcome {
   error?: string;
   /** Set when the worker stopped on the session compute budget ceiling. */
   budgetStopped?: boolean;
+  /** C1: set when the progress ledger stopped the worker (finish/replan/escalate). */
+  ledgerStop?: LedgerOutcome;
+  /** C1: a continue-with-instruction hint the NEXT worker receives once. */
+  ledgerHint?: string;
 }
 
-async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: string, maxSteps: number): Promise<WorkerOutcome> {
+/** C1: thrown into the worker's abort signal; a ledger stop is not a cancellation. */
+class LedgerStop extends Error {
+  constructor(readonly outcome: LedgerOutcome) {
+    super(`ledger_${outcome.decision}`);
+    this.name = "LedgerStop";
+  }
+}
+
+async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: string, maxSteps: number, ledger?: LedgerController, onTurn?: (turn: TurnRecord) => void): Promise<WorkerOutcome> {
   const trace: ToolTraceItem[] = [];
   const preferredModel = o.model && o.model.trim() ? o.model.trim() : o.cfg.model;
   let progress = o.resumeWorker
     ? { steps: o.resumeWorker.steps, model: o.resumeWorker.model, usage: { ...o.resumeWorker.usage } }
     : { steps: 0, model: preferredModel, usage: { promptTokens: 0, completionTokens: 0, durationMs: 0 } };
+  // C1: the ledger may stop the worker mid-run through a child abort signal.
+  // The worker sees it as a hard stop, but the run treats it as a decision,
+  // never as the user's cancellation. Without a ledger the worker gets the
+  // caller's signal exactly as before.
+  const ledgerAbort = ledger ? new AbortController() : undefined;
+  const signal = ledgerAbort
+    ? o.signal ? AbortSignal.any([o.signal, ledgerAbort.signal]) : ledgerAbort.signal
+    : o.signal;
+  let ledgerStop: LedgerOutcome | undefined;
+  let ledgerHint: string | undefined;
+  let chain: Promise<void> = Promise.resolve();
+  const recorder = ledger && ledgerAbort
+    ? createTurnRecorder((turn: TurnRecord) => {
+        onTurn?.(turn);
+        // Serialize: observe() is not re-entrant.
+        chain = chain.then(async () => {
+          if (ledgerStop) return;
+          const out = await ledger.observe(turn);
+          if (out.decision !== "continue") {
+            ledgerStop = out;
+            ledgerAbort.abort(new LedgerStop(out));
+          } else if (out.instruction) {
+            ledgerHint = out.instruction;
+          }
+        });
+      })
+    : undefined;
   const emit: Emit = (event) => {
+    recorder?.push(event as never);
     o.emit(event);
   };
   const inherited = o.systemSuffix && o.systemSuffix.trim().length > 0 ? `${o.systemSuffix.trim()}\n\n` : "";
@@ -141,7 +188,7 @@ async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: s
       sessionId: `orch-${o.taskId ?? "task"}-w${++workerSeq}`,
       ...(o.history ? { history: o.history } : {}),
       ...(o.memories ? { memories: o.memories } : {}),
-      ...(o.signal ? { signal: o.signal } : {}),
+      ...(signal ? { signal } : {}),
     ...(o.taskId ? { taskId: o.taskId } : {}),
       systemSuffix: `${inherited}${systemSuffix}`,
       maxSteps,
@@ -165,8 +212,17 @@ async function runWorker(o: OrchestratorOptions, prompt: string, systemSuffix: s
       // is enforced on the default (orchestrated) path, not only the linear one.
       ...(o.budget ? { budget: o.budget } : {}),
     });
-    return { text: res.text, messages: res.messages, model: res.model, steps: res.steps, usage: res.usage, trace };
+    recorder?.end();
+    await chain;
+    return { text: res.text, messages: res.messages, model: res.model, steps: res.steps, usage: res.usage, trace, ...(ledgerStop ? { ledgerStop } : {}), ...(ledgerHint ? { ledgerHint } : {}) };
   } catch (err) {
+    // C1: a ledger stop aborted the worker. It is not a step failure and never
+    // a cancellation; the decision travels in the outcome.
+    if (ledgerStop && !o.signal?.aborted) {
+      recorder?.end();
+      await chain.catch(() => undefined);
+      return { text: "", messages: [], model: progress.model, steps: progress.steps, usage: progress.usage, trace, ledgerStop, ...(ledgerHint ? { ledgerHint } : {}) };
+    }
     // Cancellation is not a step failure — propagate it so the whole run stops now.
     if (o.signal?.aborted || isCancelled(o.taskId) || isCancelledError(err)) {
       throw err instanceof Error ? err : new CancelledError();
@@ -366,9 +422,36 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
   if (!Number.isInteger(finalRepairAttempts) || finalRepairAttempts < 0 || finalRepairAttempts > 2) throw new Error("Invalid final repair attempt checkpoint");
   let pendingFinalRepair = restored?.finalRepairPrompt;
   let worker: WorkerCheckpoint | undefined = restored?.worker;
+  // ---------------------------------------------------------------------
+  // C1 progress ledger: one controller per run, fed by every worker turn
+  // through a turn recorder (runWorker wires the emit wrapper). A missing
+  // Core or cloud model degrades it to syntactic loop detection; it never
+  // stops the run on its own failure.
+  // ---------------------------------------------------------------------
+  const occ = o.core?.cfg;
+  const ledgerTurns: TurnRecord[] = [];
+  const ledger = o.core && occ?.ledger.enabled
+    ? createLedgerController({
+        cfg: occ,
+        repairAttempts: occ.contracts.repairAttempts,
+        port: o.core.port,
+        model: o.core.modelFor("ledger"),
+        emit: o.emit,
+        restored: restored?.ledger,
+        ...(o.signal ? { signal: o.signal } : {}),
+        context: () => ({
+          goal: o.prompt,
+          planSteps: plan.steps.map((s, i) => ({ id: `s${i + 1}`, title: s.title, status: i < nextStep ? "done" : i === nextStep ? "doing" : "pending" })),
+          recentDigest: digestTurns(ledgerTurns.slice(-8), Math.max(1000, occ.ledger.maxLedgerChars - 2000)),
+        }),
+      })
+    : undefined;
+  let ledgerReplans = 0;
+  let ledgerReplanNote: string | undefined;
+  let auditorHint: string | undefined;
   const checkpoint = (inFlight: boolean, complete = false, pendingUsage?: Usage): void => {
     o.saveCheckpoint?.(structuredClone({ version: 1, plan, nextStep, completed, lastText,
-      trace: allTrace, round, usage: pendingUsage ? sumUsage(usage, pendingUsage) : usage, totalSteps, model: usedModel, inFlight, complete, finalRepairUsed, finalRepairAttempts, finalRepairPrompt: pendingFinalRepair, acceptanceContract: acceptanceGuard.snapshot(), independentAcceptance: independentGuard.snapshot(), independentRequirements: independentRequest, fileOnlyTools, worker }));
+      trace: allTrace, round, usage: pendingUsage ? sumUsage(usage, pendingUsage) : usage, totalSteps, model: usedModel, inFlight, complete, finalRepairUsed, finalRepairAttempts, finalRepairPrompt: pendingFinalRepair, acceptanceContract: acceptanceGuard.snapshot(), independentAcceptance: independentGuard.snapshot(), independentRequirements: independentRequest, fileOnlyTools, worker, ...(ledger ? { ledger: ledger.state() } : {}) }));
   };
   checkpoint(restored?.inFlight ?? false);
 
@@ -568,6 +651,13 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
     const workerLimit = restored && resumeWorker && resumeWorker.steps >= oc.maxStepsPerWorker
       ? resumeWorker.steps + oc.maxStepsPerWorker
       : oc.maxStepsPerWorker;
+    let workerSuffix = recipeMode ? `${suffix}\n\n${missionSuffix(o.cfg)}` : suffix;
+    // C1: the ledger's continue-with-instruction hint reaches exactly one next
+    // worker, then it is spent.
+    if (auditorHint) {
+      workerSuffix = `${workerSuffix}\n\nAUDITOR HINT (address it this turn): ${auditorHint}`;
+      auditorHint = undefined;
+    }
     const w = await runWorker(
       {
         ...o,
@@ -584,14 +674,17 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
         } : {}),
       },
       prompt,
-      recipeMode ? `${suffix}\n\n${missionSuffix(o.cfg)}` : suffix,
+      workerSuffix,
       workerLimit,
+      ledger,
+      turn => { ledgerTurns.push(turn); if (ledgerTurns.length > 40) ledgerTurns.shift(); },
     );
     worker = undefined;
     totalSteps += w.steps;
     addUsage(usage, w.usage);
     if (w.model) usedModel = w.model;
     if (w.messages.length > 0) lastMessages = w.messages;
+    if (w.ledgerHint) auditorHint = w.ledgerHint;
     return w;
   };
 
@@ -623,6 +716,8 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
   let failure: string | null = null;
   /** D19: set when a worker stopped on the compute-budget ceiling. */
   let budgetExhausted = false;
+  /** C1: the ledger declared the goal satisfied mid-step; skip to final verification. */
+  let ledgerFinish = false;
   /** Neo N6: the checkpoint of a clean mission budget stop, carried out of the
    *  loop so the terminal throw can report it the same way `runAgent` does. */
   let missionStopped: MissionCheckpoint | undefined;
@@ -706,6 +801,44 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
         outcome = await runStepWorker(stepPrompt(o, plan, step, i, completed, verdict), WORKER_SUFFIX);
         allTrace.push(...outcome.trace);
         stepEvidence.push(...outcome.trace);
+        // C1: the progress ledger stopped the worker. finish skips to final
+        // verification; replan enters the replan round with the root-cause
+        // note; anything else escalates to the user through a stalled_replan
+        // interrupt and waits for the answer.
+        if (outcome.ledgerStop) {
+          const stop = outcome.ledgerStop;
+          if (o.budget) consumeTokens(o.budget, 0, stop.tokens);
+          if (stop.decision === "finish") {
+            if (outcome.text.trim().length > 0) lastText = outcome.text;
+            ledgerFinish = true;
+            break;
+          }
+          if (stop.decision === "replan" && ledgerReplans < (occ?.ledger.maxResets ?? 0)) {
+            ledgerReplans++;
+            ledgerReplanNote = stop.replanNote ?? stop.reason;
+            failedStep = `progress ledger: ${stop.reason}`;
+            break;
+          }
+          const st = ledger?.state();
+          const interrupt = createInterrupt({
+            taskId: o.taskId ?? "task",
+            kind: "stalled_replan",
+            payload: { reason: stop.reason, facts: st?.facts ?? [], history: st?.history ?? [] },
+            responseSchema: RESPONSE_SCHEMAS.stalled_replan,
+            ttlMs: occ?.interrupts.defaultTtlMs ?? 30 * 60_000,
+            maxPendingPerTask: occ?.interrupts.maxPendingPerTask ?? 20,
+          });
+          o.emit({ type: "interrupt_requested", interruptId: interrupt.interruptId, kind: "stalled_replan", expiresAt: interrupt.expiresAt });
+          const answered = await waitForInterrupt<{ decision: "continue" | "stop" | "edit"; guidance?: string }>(interrupt.interruptId, o.signal);
+          if (!answered || answered.status !== "resolved" || answered.response?.decision === "stop") {
+            // Honest stop: no fake completion, the stalled reason is the report.
+            throw new Error(`orchestrator: task incomplete: stalled: ${stop.reason}`);
+          }
+          ledgerReplans++;
+          ledgerReplanNote = `${stop.replanNote ?? stop.reason}\nUser guidance: ${answered.response?.guidance ?? "continue"}`;
+          failedStep = `progress ledger: ${stop.reason}`;
+          break;
+        }
         if (outcome.budgetStopped) {
           // D19: the session ceiling is hit. Do NOT retry or replan — that would
           // only burn more of a budget that is already exhausted. The session
@@ -762,6 +895,12 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
         if (attempt < maxAttempts) o.emit({ type: "revise", id: step.id, attempt: attempt + 1, fixes: verdict.fixes });
       }
 
+      if (ledgerFinish) {
+        // The auditor declared the goal satisfied: skip the remaining steps;
+        // the mandatory final verification still judges the answer.
+        nextStep = plan.steps.length;
+        break;
+      }
       if (failedStep || verdict?.verdict !== "pass") {
         failedStep ??= `${step.title}: ${verdict?.reason ?? "verification missing"}`;
         if (recipeMode) {
@@ -838,7 +977,9 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
       failure = failedStep;
       break;
     }
-    if (round > oc.maxReplans) {
+    // C1: ledger-triggered replans get their own allowance on top of the
+    // critique replans so an auditor reset cannot starve the reflection loop.
+    if (round > oc.maxReplans + ledgerReplans) {
       failure = failedStep;
       break;
     }
@@ -849,7 +990,7 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
     const replanned = await planTask({
       cfg: o.cfg,
       ollama: o.ollama,
-      prompt: replanPrompt(o, completed, failedStep),
+      prompt: replanPrompt(o, completed, failedStep) + (ledgerReplanNote ? `\n\nROOT-CAUSE NOTE FROM THE PROGRESS AUDITOR (change the approach accordingly; do not repeat the failed one):\n${ledgerReplanNote}` : ""),
       history: o.history,
       maxPlanSteps: oc.maxPlanSteps,
       availableTools: o.tools.names(),
@@ -857,6 +998,8 @@ async function runOrchestratedAgentImpl(o: OrchestratorOptions): Promise<RunResu
       ...(o.signal ? { signal: o.signal } : {}),
     ...(o.taskId ? { taskId: o.taskId } : {}),
     });
+    // The root-cause note applies to this replan only.
+    ledgerReplanNote = undefined;
     plan = replanned.plan;
     usedModel = replanned.model || usedModel;
     addUsage(usage, replanned.usage);

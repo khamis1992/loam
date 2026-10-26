@@ -1,4 +1,5 @@
 import type { AskUserQuestion } from "../tools/askUserStore.js";
+import type { OrchestrationEvent } from "../orchestration/events.js";
 
 export type Verdict = "pass" | "revise" | "fail";
 
@@ -324,6 +325,9 @@ export type AgentEvent =
       round: number;
       scheduleId?: string;
       summary?: string;
-    };
+    }
+  /** Orchestration Core (BUILD_SPEC §4.0.4): ledger, checkpoints, interrupts,
+   * selection, guard, workflows, direct return. Additive union member. */
+  | OrchestrationEvent;
 
 export type Emit = (event: AgentEvent) => void;

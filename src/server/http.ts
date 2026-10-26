@@ -1,3 +1,14 @@
+
+import { handleRealSwarmRoutes } from "./routes/realswarm.js";
+import { handleWorkflowRoutes, handleWorkflowRunRoutes, type WorkflowRouteDeps } from "./routes/workflows.js";
+import { handleTracesRoutes } from "./routes/traces.js";
+import { handleCheckpointRoutes, type StartForkedRun } from "./routes/checkpoints.js";
+import { handleInterruptRoutes, type ResumeFromInterrupt } from "./routes/interrupts.js";
+import { rehydrateAskUsers } from "../tools/askUserStore.js";
+import { rehydratePlanApprovals } from "../tools/planApprovalStore.js";
+import { rehydrateApprovals } from "./approvals.js";
+import { expireDue } from "../orchestration/durable/interrupts.js";
+
 import http from "node:http";
 import { startSseHeartbeat } from './sseHeartbeat.js';
 import { TimelineService } from '../creative/timeline.js';
@@ -173,6 +184,7 @@ import { isOutputType } from "../llm/router.js";
 import { requiresReplayConfirmation } from "./recovery.js";
 import { executionQueue } from "./executionQueue.js";
 import { SwarmService, SwarmError } from "../swarm/service.js";
+import { RealSwarmService } from "../orchestration/swarm/service.js";
 import type { McpToolset } from "../tools/mcp.js";
 import { integrationCatalog, integrationGrants, saveIntegrationGrants } from '../tools/integrations.js';
 import { admitPending as admitPendingInputs, pending as pendingInputs } from './inputQueue.js';
@@ -215,6 +227,7 @@ export interface ServerDeps {
   preview?: PreviewService;
   registry?: ToolRegistry;
   mcp?: McpToolset | null;
+
   runTask: (opts: RunTaskOptions) => Promise<{ taskId: string; text: string }>;
   /** N3 Knowledge Garden vector channel; absent => lexical-only search. */
   embedder?: { embed(texts: string[]): Promise<number[][]> };
@@ -472,6 +485,15 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
   const preview = deps.preview;
   const registry = deps.registry;
   const swarm = registry ? new SwarmService({ cfg, ollama, tools: registry }) : null;
+  // C11 coding team (فريق البرمجة): always constructed so past runs list and
+  // read; when orchestration.swarm.enabled is false it refuses new runs with 409.
+  const realSwarm = registry ? new RealSwarmService({ cfg, ollama, tools: registry }) : null;
+  const workflowRouteDeps: WorkflowRouteDeps = { cfg, ollama, tools: registry ?? null };
+    const tracesRouteDeps = { sendJson, readBody, otlpEndpoint: () => cfg.orchestration?.tracing.otlpEndpoint ?? "" };
+    // C2: durable gates survive a restart; boot rehydrates the in-memory cards and settles expiry.
+    try { rehydrateAskUsers(); rehydratePlanApprovals(); rehydrateApprovals(); expireDue(); } catch { /* best effort */ }
+    const checkpointRoutesResume: StartForkedRun = async () => undefined;
+    const interruptRoutesResume: ResumeFromInterrupt = async () => false;
   const mcp = deps.mcp ?? null;
   void createTask;
 
@@ -745,6 +767,13 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           sendJson(res, 200, { application: "Loam", version: pkg.version, apiVersion: 1, profileId });
           return;
         }
+
+        if (await handleRealSwarmRoutes(req, res, p, realSwarm)) return;
+        if (await handleWorkflowRoutes(req, res, p, workflowRouteDeps)) return;
+        if (await handleWorkflowRunRoutes(req, res, p)) return;
+        if (p.startsWith("/api/traces/") && await handleTracesRoutes(req, res, p, url, tracesRouteDeps)) return;
+        if (await handleCheckpointRoutes(req, res, p, checkpointRoutesResume)) return;
+        if (await handleInterruptRoutes(req, res, p, url, interruptRoutesResume)) return;
 
         if (req.method === "GET" && p === "/api/mcp/status") {
           sendJson(res, 200, { servers: mcp?.status ? await mcp.status() : Object.keys(cfg.mcpServers).map(name => ({ name, connected: false, toolCount: 0 })) });
@@ -3257,7 +3286,7 @@ loadAgents();
   }
 
   return new Promise((resolve) => {
-    server.once("close", () => { swarm?.close(); void timeline.close(); });
+    server.once("close", () => { swarm?.close(); void realSwarm?.close(); void timeline.close(); });
     server.listen(cfg.server.port, cfg.server.host, () => { const address = server.address(); if (address && typeof address !== "string") timeline.start(`http://127.0.0.1:${address.port}`); resolve(server); });
   });
 }

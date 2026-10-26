@@ -55,6 +55,8 @@ export interface ToolResult {
   untrusted?: boolean;
   /** Content digest (sha256) of the untrimmed result for provenance. */
   contentDigest?: string;
+  /** C10: a delegate tool sets this when its report should reach the user as-is. */
+  returnDirect?: boolean;
 }
 
 export interface Tool {

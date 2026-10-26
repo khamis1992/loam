@@ -91,6 +91,7 @@ export function askUserUploadDir(requestId: string): string {
   return path.posix.join("uploads", requestId);
 }
 
+import { persistGate, settleGate, gatesToRehydrate } from "../orchestration/durable/gateBridge.js";
 const pending = new Map<string, AskUserRecord>();
 /** Per-task FIFO queue so a waiting tool resumes in creation order. */
 const waiters = new Map<string, Array<(status: AskUserStatus) => void>>();
@@ -145,6 +146,7 @@ export function createAskUser(input: {
     ...(input.reasonCode ? { reasonCode: input.reasonCode } : {}),
   };
   pending.set(record.id, record);
+  try { persistGate("ask_user", record.id, record.taskId, record, ASK_USER_TTL_MS); } catch { /* best effort */ }
   prune();
   return record;
 }
@@ -185,6 +187,7 @@ export function answerAskUser(id: string, answer: AskUserAnswer): AskUserRecord 
   record.status = "answered";
   record.answer = answer;
   record.decidedAt = new Date().toISOString();
+  try { settleGate(id, answer); } catch { /* best effort */ }
   resolveWaiters(record);
   return record;
 }
@@ -197,6 +200,7 @@ export function dismissAskUser(id: string): AskUserRecord | undefined {
   if (record.status !== "pending") return record;
   record.status = "dismissed";
   record.decidedAt = new Date().toISOString();
+  try { settleGate(id, undefined); } catch { /* best effort */ }
   resolveWaiters(record);
   return record;
 }
@@ -260,4 +264,12 @@ export function serializeAskUser(record: AskUserRecord): Record<string, unknown>
     ...(record.decidedAt ? { decidedAt: record.decidedAt } : {}),
     ...(record.answer ? { answer: record.answer } : {}),
   };
+}
+
+// C2: re-create cards pending before a restart so routes and the UI keep working.
+export function rehydrateAskUsers(): void {
+  for (const g of gatesToRehydrate("ask_user")) {
+    const r = g.payload as AskUserRecord;
+    if (r && typeof r === "object" && Array.isArray(r.questions)) pending.set(g.id, { ...r, status: "pending" });
+  }
 }

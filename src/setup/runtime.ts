@@ -123,8 +123,16 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(mirofishTools().map(tool => ({ ...tool, integration: true })));
 
   const embedder = new OllamaEmbedder(cfg.ollamaUrl, cfg.memory.model);
+  // C9 memory ranking (default off, OD-7): recency + importance re-ranking
+  // of cosine hits, enabled only by the orchestration switch.
+  const mr = cfg.orchestration?.memoryRanking;
   const memory = cfg.memory.enabled
-    ? new MemoryStore(cfg.memory.file, embedder, cfg.memory.model, cfg.memory.dedupeThreshold)
+    ? new MemoryStore(
+        cfg.memory.file, embedder, cfg.memory.model, cfg.memory.dedupeThreshold,
+        ...(mr?.enabled
+          ? [{ weights: { similarityWeight: mr.similarityWeight, recencyWeight: mr.recencyWeight, importanceWeight: mr.importanceWeight, recencyHalfLifeDays: mr.recencyHalfLifeDays }, candidateMultiplier: mr.candidateMultiplier }]
+          : []),
+      )
     : null;
   // Background consolidation ("dreaming"): merges duplicates and drops stale
   // unused entries while preserving user preferences. Idempotent; unref'd timer.

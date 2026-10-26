@@ -509,6 +509,24 @@ export interface AskUserRequestedEvent extends ChatEventBase {
   reasonCode?: "vague" | "missing_context" | "ambiguous_target";
 }
 
+/** C2: any durable interrupt opened (cards for kinds without their own event). */
+export interface InterruptRequestedEvent extends ChatEventBase {
+  type: "interruptRequested";
+  requestId: string;
+  taskId: string;
+  kind: "acp_permission" | "stalled_replan" | "workflow_human" | "custom";
+  payload: unknown;
+  expiresAt: number;
+}
+/** C2: an interrupt left "pending". */
+export interface InterruptResolvedEvent extends ChatEventBase {
+  type: "interruptResolved";
+  requestId: string;
+  taskId: string;
+  status: "resolved" | "dismissed" | "expired" | "cancelled";
+  reviewer: "user" | "auto" | "policy" | "timeout";
+}
+
 /** N9: the user answered or dismissed a pending ask-user card. */
 export interface AskUserResolvedEvent extends ChatEventBase {
   type: "askUserResolved";

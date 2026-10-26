@@ -68,6 +68,7 @@ import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { runAgent } from "./agent/loop.js";
 import { isOutputType, modelAbChain, normalizeEffort, type EffortLevel } from "./llm/router.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
+import { createOrchestrationCore } from "./orchestration/core.js";
 import { writeCheckpoint } from "./agent/checkpointLog.js";
 import type { AgentEvent, Emit } from "./agent/events.js";
 import { applyRunEvent, beginRun, recallGraphHandle } from "./agent/runGraphAdapter.js";
@@ -704,8 +705,14 @@ async function main(): Promise<void> {
           },
         } : {}),
       };
+      // Orchestration Core §4.0.3: one Core per run (root span loam.run) for
+      // orchestrated runs; plain runAgent runs keep today's behaviour untouched.
+      const core = opts.savedRun.orchestrated ? createOrchestrationCore(effectiveCfg, ollama, task, task) : undefined;
+      if (core) emit({ type: "trace_started", traceId: core.runSpan.context.traceId, traceparent: core.traceparentEnv().TRACEPARENT ?? "" });
+      try {
       const result = opts.savedRun.orchestrated ? await runOrchestratedAgent({
         ...agentOpts, verdicts: verdicts as VerdictRecord[], resume: opts.savedRun.checkpoint, lifecycleHooks: true,
+        ...(core ? { core } : {}),
         saveCheckpoint: (checkpoint) => {
           // O5: mirror the checkpoint into the durable append-only log and stamp it
           // with the sequence it received. The stamp is what ties a resumed run to
@@ -789,6 +796,7 @@ async function main(): Promise<void> {
         });
       }
       return { taskId: task, text: result.text };
+      } finally { core?.runSpan.end("ok"); }
     } catch (err) {
       if (getTask(task)?.status === "done") {
         log.warn(`post-completion bookkeeping failed for ${task}: ${String(err)}`);
@@ -1034,7 +1042,7 @@ async function main(): Promise<void> {
     embedder: rt.embedder ?? undefined,
     screenLive: rt.screenLive,
     preview: rt.preview,
-    mcp,
+  mcp,
   });
 
   // O6b: opt-in startup auto-resume. `recoverInterruptedTasks` above already

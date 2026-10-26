@@ -122,6 +122,7 @@ export const NEO_FIXTURES: NeoFixture[] = [
       { kind: "file_matches", path: "report.md", value: "seed:kb-004" },
       { kind: "trace_used", tool: "kb_search" },
       { kind: "count_min", tool: "kb_search", count: 3 },
+      { kind: "trajectory", expect: { steps: [{ tool: "kb_search" }, { tool: "file_write", args: { path: "report.md" } }], ordering: "relaxed", forbiddenTools: ["shell_run"] } },
     ],
   },
 
@@ -320,6 +321,7 @@ export const NEO_FIXTURES: NeoFixture[] = [
       { kind: "file_exists", path: "summary.md" },
       { kind: "file_matches", path: "summary.md", value: "recovered" },
       { kind: "count_min", tool: "file_write", count: 3 },
+      { kind: "trajectory", expect: { steps: [{ tool: "file_write", args: { path: "summary.md" } }, { tool: "file_read", args: { path: "summary.md" } }], ordering: "relaxed" }, minScore: 0.5 },
     ],
   },
 
@@ -370,6 +372,7 @@ export const NEO_FIXTURES: NeoFixture[] = [
       { kind: "file_exists", path: "findings.md" },
       { kind: "file_matches", path: "findings.md", value: "seed:kb-201" },
       { kind: "file_matches", path: "findings.md", value: "seed:kb-202" },
+      { kind: "trajectory", expect: { steps: [{ tool: "kb_search" }, { tool: "file_write", args: { path: "findings.md" } }], ordering: "relaxed" } },
       { kind: "resumed" },
     ],
   },

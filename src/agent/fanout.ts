@@ -27,6 +27,8 @@ import type { Emit } from "./events.js";
 import { createFanoutBranch, createFanoutMerge } from "./runGraphAdapter.js";
 import type { SubagentRegistry } from "../subagent/registry.js";
 import { registry as subagentRegistry } from "../subagent/registry.js";
+import { selectWithCore } from "../orchestration/public.js";
+import type { OrchestrationCore } from "../orchestration/core.js";
 
 /** Hard ceiling on branches per fan-out, so a runaway call cannot flood the run. */
 export const FANOUT_MAX_BRANCHES = 32;
@@ -181,6 +183,25 @@ export function deterministicMerge(input: FanoutMergeInput): string {
 }
 
 /**
+ * C3 selecting merger: when branches are alternatives that each produced a
+ * diff (coding-style branches), one branch is chosen by selectBest (prune,
+ * dedup, cloud judge) and presented as the answer; the free-text merger still
+ * serves research-style branches with no diff and every degraded mode
+ * (selection disabled, no cloud model, no winner). `runFanout` itself is
+ * unchanged: a caller opts in by injecting this factory.
+ */
+export function selectingMerger(core: OrchestrationCore, textMerger: FanoutMerger, diffOf: (r: FanoutBranchResult) => Promise<string | undefined>): FanoutMerger {
+  return async (input, ctx) => {
+    const diffs = await Promise.all(input.branches.map(diffOf));
+    if (!core.cfg.selection.enabled || diffs.every((d) => !d)) return textMerger(input, ctx);
+    const sel = await selectWithCore(core, input.goal, input.branches.map((b, i) => ({ id: `b${b.index}`, ok: b.ok, text: b.text, ...(diffs[i] ? { diff: diffs[i] } : {}) })), undefined, ctx.signal);
+    ctx.emit?.({ type: "selection", selectionId: input.branches.map((b) => b.nodeId).join(","), candidates: input.branches.length, pruned: sel.pruned.length, groups: sel.groups.length, winnerId: sel.winnerId, method: sel.method } as never);
+    const win = input.branches.find((b) => `b${b.index}` === sel.winnerId);
+    return win ? `Selected branch ${win.index} (${sel.method}): ${sel.reason}\n\n${win.text}` : textMerger(input, ctx);
+  };
+}
+
+/**
  * Run a fan-out: open one branch subtree per spec, run them in parallel under
  * the child semaphore, then merge the results into one answer.
  *
@@ -188,6 +209,7 @@ export function deterministicMerge(input: FanoutMergeInput): string {
  * before the first child even starts, and each branch's node id is carried
  * through to the merge node so the merge cites every branch it consumed.
  */
+
 export async function runFanout(options: FanoutRunOptions): Promise<FanoutReport> {
   const branches = options.branches.slice(0, clampBranches(options.branches.length));
   if (branches.length === 0) throw new Error("fanout requires at least one branch");

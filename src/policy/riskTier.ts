@@ -298,6 +298,10 @@ function isDestructiveShell(command: string, workspaceRoot?: string): boolean {
 
 /** Tool results that come from outside the task workspace are untrusted data. */
 const UNTRUSTED_TOOL_NAMES = new Set<string>([
+
+  // Real-swarm board results quote peer-worker notes and repository content the
+  // peers pasted (FACT/OBSERVED/FAIL): another model's text, never instructions.
+  "board_write", "board_read", "board_grep", "board_unfold", "swarm_message", "swarm_inbox", "merge_request",
   "web_fetch",
   "web_search",
   "webpage_extract",

@@ -1,6 +1,7 @@
 import type { Plan } from "./planner.js";
 import type { ToolTraceItem, Usage } from "./events.js";
 import type { ChatMessage } from "../ollama.js";
+import type { LedgerState } from "../orchestration/ledger/progressLedger.js";
 
 /** A completed tool batch, never a promise that an in-flight effect is atomic. */
 export interface WorkerCheckpoint {
@@ -35,6 +36,8 @@ export interface ExecutionCheckpoint {
   independentRequirements?: string;
   fileOnlyTools?: boolean;
   worker?: WorkerCheckpoint;
+  /** C1: ledger state, restored on resume and fork. */
+  ledger?: LedgerState;
   /** Sequence the durable event log assigned to this checkpoint when it was
    *  written (BUILD_SPEC §6.5). Undefined for a checkpoint that was never logged. */
   logSeq?: number;

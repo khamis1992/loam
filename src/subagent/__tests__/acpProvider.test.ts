@@ -51,7 +51,9 @@ test("ACP provider performs initialize -> session/new -> session/prompt and retu
 test("ACP provider answers session/request_permission with the reject policy", async () => {
   const { result } = await run({ mode: "permission", permissionPolicy: "reject" });
   assert.equal(result.stopReason, "completed");
-  assert.match(result.text, /"outcome":"cancelled"/);
+  // C4: an explicit reject policy selects the reject-once option (never *_always),
+  // so the child learns the call was denied instead of mistaking it for a cancel.
+  assert.match(result.text, /"outcome":\{"outcome":"selected","optionId":"reject-once"\}/);
 });
 
 test("ACP provider answers session/request_permission with the allow policy", async () => {

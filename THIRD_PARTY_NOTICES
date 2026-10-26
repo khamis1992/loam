@@ -326,3 +326,28 @@ Copyright (c) 2026 Cognition AI, Inc.
 MIT License — see the full MIT text in the jcode notice above. The engine
 contains no upstream code and no upstream prose; advisory facts are reproduced
 from vendor-corroborated tables; playbook text is rewritten fresh.
+
+---------------------------------------------------------------------------
+Agensh / DeLM (design attribution — no code bundled)
+---------------------------------------------------------------------------
+Loam's coding team (فريق البرمجة / نتريو, src/orchestration/swarm/, capability C11 of the Orchestration Core) implements a
+clean-room coordination model inspired by Agensh (Microsoft Research, MIT;
+arXiv:2609.26781); the shared-context board idea traces to DeLM
+(arXiv:2606.10662). Reimplemented independently for Loam: no Agensh or DeLM
+source code or prose is bundled or copied. Constants reproduced are
+uncopyrightable facts (note caps, claim TTL, retry backoff schedule).
+
+---------------------------------------------------------------------------
+Orchestration Core (C1-C11)
+---------------------------------------------------------------------------
+Design influences, all reimplemented independently for Loam (no third-party
+agent code is bundled): progress ledger and durable checkpoints are Loam's own;
+trajectory scoring weights follow CrewAI (MIT); workflow superstep semantics
+follow LangGraph.js (MIT) concepts; workflow graph shape ideas from ChatDev 2.0
+(Apache-2.0) and Mastra step DSL (Apache-2.0, non-ee parts); the direct-return
+idea from VoltAgent's subagent "bail" (MIT); ACP wire shapes follow the public
+Agent Client Protocol v1 pages. The coding team (C11) is a clean-room
+coordination model inspired by Agensh (Microsoft Research, MIT; arXiv:2609.26781);
+the shared-context board idea traces to DeLM (arXiv:2606.10662). No Agensh,
+DeLM, LangChain, LangGraph, Mastra, VoltAgent, CrewAI or OpenHands code is
+copied or bundled.

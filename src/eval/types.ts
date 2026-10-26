@@ -1,4 +1,5 @@
 import type { Config } from "../config.js";
+import type { TrajectoryExpectation } from "../orchestration/evals/trajectory.js";
 import type { OllamaClient } from "../ollama.js";
 
 export type VerifierSpec =
@@ -10,6 +11,7 @@ export type VerifierSpec =
   | { type: "shell_contains"; command: string; text: string }
   | { type: "http_ok"; url: string; jsonPath?: string }
   | { type: "tool_used"; name: string; expectOk?: boolean; minCount?: number }
+  | { type: "trajectory"; expect: TrajectoryExpectation; minScore?: number; judge?: boolean }
   | { type: "answer_matches"; pattern: string; flags?: string }
   | { type: "llm_judge"; rubric: string };
 
@@ -118,7 +120,7 @@ export interface TelemetryRecord {
 export interface VerifyContext {
   workspace: string;
   finalText: string;
-  trace: Array<{ name: string; ok: boolean; ms?: number }>;
+  trace: Array<{ name: string; ok: boolean; ms?: number; args?: Record<string, unknown> }>;
   cfg: Config;
   ollama?: OllamaClient;
 }

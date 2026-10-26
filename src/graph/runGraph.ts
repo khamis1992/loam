@@ -7,6 +7,7 @@
  * event log rebuilds the same graph byte for byte.
  */
 import type { AgentEvent } from "../agent/events.js";
+import type { OrchestrationEvent } from "../orchestration/events.js";
 import {
   RUN_NODE_ENTITY,
   RUN_NODE_STATUSES,
@@ -953,7 +954,12 @@ export class RunGraph {
         }).id];
       }
       default: {
-        const _exhaustive: never = event;
+        // Orchestration Core events (§4.0.4) are additive union members with no
+        // run-graph node; fall through to the exhaustive check for the rest.
+        if (String((event as { type?: string }).type).length > 0 && !("round" in event || "scheduleId" in event)) {
+          // fall through to the exhaustive check below
+        }
+        const _exhaustive: never = event as Exclude<typeof event, OrchestrationEvent>;
         return _exhaustive;
       }
     }

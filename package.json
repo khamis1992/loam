@@ -131,7 +131,9 @@
     "vendor:craft": "node scripts/vendor/fetch-craft.mjs",
     "vendor:effectcraft": "node scripts/vendor/fetch-effectcraft.mjs",
     "vendor:filmcraft": "node scripts/vendor/fetch-filmcraft.mjs",
-    "verify": "npm run typecheck && npm run check:encoding && npm run check:docs && npm run check:eval && npm run check:orchestrator && npm run check:recovery && npm run check:modes",
+    "test:orchestration": "node --import tsx --test \"src/orchestration/**/__tests__/*.test.ts\" \"src/subagent/__tests__/acpClient.test.ts\"",
+    "check:orchestration": "tsx src/scripts/check-orchestration.ts && npm run test:orchestration",
+    "verify": "npm run typecheck && npm run check:encoding && npm run check:docs && npm run check:eval && npm run check:orchestrator && npm run check:recovery && npm run check:modes && npm run check:orchestration",
     "verify:loam": "npm run verify && npm run check:isolation && npm run check:loam-agents && npm run check:loam-ui && npm run check:loam-ancillary && npm run check:loam-e2e"
   },
   "dependencies": {

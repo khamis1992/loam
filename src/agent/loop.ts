@@ -33,6 +33,8 @@ import { runLifecycleHooks, wrapHookContext } from "../policy/hooks.js";
 import { throwIfCancelled, isCancelled, isCancelledError } from "../server/runControl.js";
 import { openSession, closeSession } from "./sessionHooks.js";
 import { isUntrustedTool, markUntrusted, type SandboxMode } from "../policy/riskTier.js";
+import { guardUntrusted } from "../orchestration/contracts/injectionGuard.js";
+import { directReturnText, type BatchResult } from "../orchestration/handoff/returnDirect.js";
 import { ReminderChannel, TODO_UPDATE_TOOLS, MEMORY_UPDATE_TOOLS, type ReminderChannelOptions } from "./reminders.js";
 import { getTaskPhase } from "../tools/phaseTools.js";
 import { ReadState } from "../tools/readState.js";
@@ -366,12 +368,18 @@ function summarize(text: string, lines = 10): string {
 }
 
 /** Web/email/browser output is external data; wrap it so the model never follows it as instructions. */
-function toolMessageContent(name: string, content: string): string {
+function toolMessageContent(name: string, content: string, opts?: RunOptions): string {
   // Every guarded-MCP result is target-originated untrusted data: REA tool text
   // (REA_INTO_LOAM §8) and Cua Driver GUI text/screenshots (CUA_INTO_LOAM §6.2 —
   // UI labels are a prompt-injection surface).
   if (name.startsWith("mcp__rea__") || name.startsWith("mcp__cua-driver__")) return markUntrusted(content, name.startsWith("mcp__rea__") ? "rea" : "cua-driver");
-  return isUntrustedTool(name) ? markUntrusted(content, name) : content;
+  if (!isUntrustedTool(name)) return content;
+  // Orchestration Core §4.6.2: score and neutralize before the wrap (forged
+  // closing markers never survive any strategy; guard "off" only skips scoring).
+  const g = opts?.cfg.orchestration?.contracts;
+  const v = guardUntrusted(content, g?.injectionGuard ?? "warn", g?.injectionThreshold ?? 0.6);
+  if (v.action !== "pass") opts?.emit?.({ type: "guard_flagged", tool: name, score: v.score, signals: v.signals, action: v.action });
+  return markUntrusted(v.content, name);
 }
 
 /** Maximum number of independent read-only tool calls executed concurrently from
@@ -464,6 +472,8 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
   messages.push({ role: "user", content: opts.prompt });
 
   let finalText = "";
+  /** C10: set when a direct return ended the loop with the answer in hand. */
+  let directEnd = false;
   let usedModel = opts.model && opts.model.trim() ? opts.model.trim() : opts.cfg.model;
   let step = 0;
   // How this run actually ended, so SessionEnd can report a truthful reason
@@ -895,6 +905,8 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
 
     const pendingImages: string[] = [];
     const stallNotices: string[] = [];
+    /** C10: this step's tool outcomes, for the single-call direct-return rule. */
+    const stepToolOutcomes: BatchResult[] = [];
     const canBatchParallel =
       result.toolCalls.length > 1 &&
       result.toolCalls.every((c) => PARALLEL_READ_TOOLS.has(c.function?.name ?? ""));
@@ -957,7 +969,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
           ...(toolResult.kbSeedIds && toolResult.kbSeedIds.length > 0 ? { kbSeedIds: toolResult.kbSeedIds } : {}),
           ...(toolResult.kbSeeds && toolResult.kbSeeds.length > 0 ? { kbSeeds: toolResult.kbSeeds } : {}),
         });
-        const toolMessage = { role: "tool", tool_name: item.name, content: toolMessageContent(item.name, toolResult.content) } as ChatMessage;
+        const toolMessage = { role: "tool", tool_name: item.name, content: toolMessageContent(item.name, toolResult.content, opts) } as ChatMessage;
         // Neo N5: capture the result as a selectable artefact and remember which
         // transcript message it belongs to, so the selector can fold it away
         // later without losing the pairing.
@@ -1016,12 +1028,13 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
           currentTodos = parseTaskList(name, args);
         }
         if (MEMORY_UPDATE_TOOLS.has(name) && toolResult.ok) reminders.memoryUpdated();
-        const toolMessage = { role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content) } as ChatMessage;
+        const toolMessage = { role: "tool", tool_name: name, content: toolMessageContent(name, toolResult.content, opts) } as ChatMessage;
         toolMessageIds.set(toolMessage, selector.capture(name, toolResult.content, { path: editTargetPath(args) }).id);
         toolMessageMeta.set(toolMessage, toolMetaOf(callId, toolResult.ok, args));
         messages.push(toolMessage);
         // Cancel pressed while the tool ran? Stop before the next tool/step.
         throwIfCancelled(opts.signal, opts.taskId);
+        stepToolOutcomes.push({ tool: name, ok: toolResult.ok, content: toolResult.content, ...(toolResult.returnDirect ? { returnDirect: true } : {}) });
 
         if (opts.cfg.vision.enabled && toolResult.images && toolResult.images.length > 0) {
           for (const img of toolResult.images) {
@@ -1029,6 +1042,17 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
           }
         }
       }
+    }
+
+    // C10: a single-call step whose delegate flagged return_direct already
+    // holds the answer; skip the rewording model call. Final verification
+    // still runs below before the run may report completion.
+    const direct = directReturnText(stepToolOutcomes, opts.cfg.orchestration?.returnDirect.enabled === true);
+    if (direct) {
+      opts.emit({ type: "return_direct", tool: stepToolOutcomes[0]!.tool, chars: direct.length });
+      finalText = direct;
+      directEnd = true;
+      break;
     }
 
     if (stallNotices.length > 0) {
@@ -1058,6 +1082,25 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
         throw new MissionBudgetError(`${after.reason}. Raise the session budget to continue.`, stopped);
       }
     }
+  }
+
+  // C10: the direct return ended the loop with the answer in hand; the
+  // verifier still judges it before the run may report completion.
+  if (directEnd) {
+    if (opts.suppressFinal !== true) {
+      const checked = await verifyFinal({ acceptanceGuard, independentGuard, independentRequest, cfg: opts.cfg, ollama: opts.ollama, request: opts.prompt, goal: opts.prompt, finalText, completedSteps: [], trace,
+        history: opts.history, tools: opts.tools, emit: opts.emit, signal: opts.signal, taskId: opts.taskId });
+      addUsage(usage, checked.usage);
+      throwIfCancelled(opts.signal, opts.taskId);
+      opts.emit({ type: "verify", verdict: checked.verdict, reason: checked.reason });
+      if (checked.verdict !== "pass") throw new Error(`task incomplete: final verification ${checked.verdict}: ${checked.reason}`);
+      finalText = checked.finalAnswer ?? finalText;
+      opts.emit({ type: "assistant_message", text: finalText });
+      opts.emit({ type: "done", text: finalText, steps: step, model: usedModel });
+      endedReason = "completed";
+    }
+    await Promise.all(armPromises);
+    return { text: finalText, messages, steps: step, model: usedModel, usage, verified: opts.suppressFinal !== true };
   }
 
   // Both sides converge on settling every arm here: an N10 A/B sibling must not
