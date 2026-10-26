@@ -18,6 +18,7 @@ export function createLegalModelPort(opts: LegalModelPortOptions): { port: Legal
       temperature: req.temperature,
       timeoutMs: req.timeoutMs,
       signal: req.signal,
+      format: req.format,
     });
     if (!isApprovedLocal(result.model, opts.config)) throw new Error(`legal provider returned an unapproved model: ${result.model}`);
     return result;

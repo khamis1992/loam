@@ -18,8 +18,8 @@
 | 1. النواة والأمن والتخزين | مكتملة تقنياً | typecheck و125/125؛ تشفير tasks/runs/inputs/events، نسخ واستعادة، migrations، audit anchor، إغلاق memory/learning |
 | 2. المصادر القانونية والبحث والتحقق | مكتملة تقنياً | 129/129؛ coverage/snapshots وربطها بالاعتماد، `/verify` والبنية، Recall@5=1 على 3 حالات اصطناعية؛ المصادر الحقيقية شرط خارجي |
 | 3. المستندات والأدلة | مكتملة تقنياً | 133/133؛ vault وevidence anchors وtimeline/contradictions وOCR عربي/إنجليزي وPDF raster ونسخ الملفات الأصلية |
-| 4. الاستدلال المشترك | جارية | ClaimSupport والبحث الموجه والمراجعة الخصمية |
-| 5. العقود | لم تبدأ | — |
+| 4. الاستدلال المشترك | مكتملة تقنياً | 137/137؛ structured outputs وClaimSupport وadversarial review وpipeline checkpoints |
+| 5. العقود | جارية | التحليل حسب موقف العميل والتفاوض وredline الأصلي |
 | 6. الدفاع | لم تبدأ | — |
 | 7. الردود | لم تبدأ | — |
 | 8. تحليل المستندات | لم تبدأ | — |
@@ -42,6 +42,7 @@
 | `npm run check:legal` بعد المرحلة 2 | نجح؛ 129/129 وtypecheck للواجهة |
 | `npm run eval:legal` | Recall@5=1 وMRR=0.8333 على 3 حالات اصطناعية؛ ليس تقييماً لمصادر قانونية حقيقية |
 | `npm run check:legal` بعد المرحلة 3 | نجح؛ 133/133، بما فيها رفع المستند عبر API وOCR لجملة عربية ونص إنجليزي وأرقام |
+| `npm run check:legal` بعد المرحلة 4 | نجح؛ 137/137، بما فيها structured output والاستدلال والـpipeline |
 | بيئة الفرع الأول | npm أبلغ 14 ثغرة (9 متوسطة و5 عالية) وتحذير engine لـ`nanoid` على Node 25؛ تسجل كbaseline ولا يطبق `audit fix --force` |
 
 ## قرارات خارجية مطلوبة قبل الاعتماد النهائي

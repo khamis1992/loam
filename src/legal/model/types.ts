@@ -6,6 +6,7 @@ export interface LegalModelRequest {
   temperature?: number;
   timeoutMs?: number;
   signal?: AbortSignal;
+  format?: Record<string, unknown>;
 }
 
 export type LegalModelPort = (req: LegalModelRequest) => Promise<ChatResult>;
