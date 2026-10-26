@@ -30,6 +30,24 @@ export const CLAIM_SUPPORT_SCHEMA: JsonSchema = {
   },
 };
 
+export const CONTRACT_ANALYSIS_SCHEMA: JsonSchema = {
+  type: "object", required: ["findings"], additionalProperties: false,
+  properties: {
+    findings: {
+      type: "array", minItems: 0,
+      items: {
+        type: "object", required: ["id", "severity", "titleAr", "explanationAr"], additionalProperties: false,
+        properties: {
+          id: { type: "string", minLength: 1 }, clauseId: { type: "string" },
+          ruleId: { type: "string", minLength: 1 }, severity: { enum: ["high", "medium", "low", "info"] },
+          titleAr: { type: "string", minLength: 1 }, explanationAr: { type: "string", minLength: 1 },
+          suggestionAr: { type: "string" },
+        },
+      },
+    },
+  },
+};
+
 export const ADVERSARIAL_SCHEMA: JsonSchema = {
   type: "object", required: ["findings"], additionalProperties: false,
   properties: {

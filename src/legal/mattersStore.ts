@@ -131,7 +131,7 @@ export class MattersStore {
 
   // ---- contracts & clauses ------------------------------------------------------
 
-  addContract(matterId: string, input: { fileName: string; mime: string; text: string; language: ContractDoc["language"] }, actor: string): ContractDoc {
+  addContract(matterId: string, input: { fileName: string; mime: string; text: string; language: ContractDoc["language"]; original?: Buffer }, actor: string): ContractDoc {
     if (!this.getMatter(matterId)) throw new Error(`matter ${matterId} not found`);
     if (!input.text.trim()) throw new Error("contract text is empty");
     const doc: ContractDoc = {
@@ -142,6 +142,7 @@ export class MattersStore {
       sha256: crypto.createHash("sha256").update(input.text, "utf8").digest("hex"),
       language: input.language,
       text: input.text,
+      ...(input.original ? { originalBase64: input.original.toString("base64") } : {}),
       importedAt: this.iso(),
     };
     this.db.prepare("INSERT INTO contracts(id,matter_id,sha256,imported_at,payload_enc) VALUES(?,?,?,?,?)")

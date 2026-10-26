@@ -31,7 +31,11 @@ import path from "node:path";
 import type { LegalFileVault } from "../../legal/security/fileVault.js";
 import type { EvidenceAnalysis } from "../../legal/evidence/service.js";
 import { contractLanguage, segmentContract } from "../../legal/contract/clauses.js";
-import { DEFAULT_QATAR_PLAYBOOK, reviewContract, type ContractType } from "../../legal/contract/playbook.js";
+import { DEFAULT_QATAR_PLAYBOOK, type ContractType } from "../../legal/contract/playbook.js";
+import { reviewContractDetailed } from "../../legal/contract/review.js";
+import { buildOriginalRedlineDocx } from "../../legal/contract/ooxmlRedline.js";
+import { buildRedlineDocx } from "../../legal/contract/redline.js";
+import type { LegalModelPort } from "../../legal/model/types.js";
 import type { LegalCorpus, LegalPack } from "../../legal/corpusStore.js";
 import type { CoverageEntry } from "../../legal/corpus/coverage.js";
 import { validatePack } from "../../legal/corpusStore.js";
@@ -55,6 +59,7 @@ export interface LegalRouteContext {
   /** Same provider the MattersStore uses; probed for /status. */
   keys: KeyProvider;
   vault: LegalFileVault;
+  model: { port: LegalModelPort };
   importDocument(matterId: string, absPath: string): Promise<EvidenceAnalysis>;
   now?: () => Date;
 }
@@ -263,7 +268,8 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
         if (seg.length === 3 && method === "POST") {
           const body = await readJson(req, 20_000_000);
           const text = s(body.text);
-          const c = ctx.matters.addContract(matter.id, { fileName: s(body.fileName) || "contract.txt", mime: s(body.mime) || "text/plain", text, language: contractLanguage(text) }, "user");
+          const original = s(body.originalBase64) ? Buffer.from(s(body.originalBase64), "base64") : undefined;
+          const c = ctx.matters.addContract(matter.id, { fileName: s(body.fileName) || "contract.txt", mime: s(body.mime) || "text/plain", text, language: contractLanguage(text), ...(original ? { original } : {}) }, "user");
           const clauses = segmentContract(c.id, c.text);
           ctx.matters.saveClauses(c.id, clauses);
           sendJson(res, 201, { contract: { id: c.id, fileName: c.fileName, sha256: c.sha256, language: c.language }, clauses: clauses.length });
@@ -274,11 +280,30 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
         if (seg.length === 5 && seg[4] === "clauses" && method === "GET") { sendJson(res, 200, { clauses: ctx.matters.clauses(contract.id) }); return true; }
         if (seg.length === 5 && seg[4] === "review" && method === "POST") {
           const body = await readJson(req);
-          const findings = await reviewContract(ctx.matters.clauses(contract.id), DEFAULT_QATAR_PLAYBOOK, {
+          const report = await reviewContractDetailed(ctx.matters.clauses(contract.id), DEFAULT_QATAR_PLAYBOOK, {
             corpus: ctx.corpus, asOf: matter.asOf, contractType: (s(body.contractType) || "any") as ContractType, fullText: contract.text,
+            clientPosition: (s(body.clientPosition) || "other") as "other",
+            riskTolerance: (s(body.riskTolerance) || "balanced") as "balanced",
+          }, { port: ctx.model.port, config: ctx.egress });
+          ctx.matters.audit.append("user", "contract.review", matter.id, contract.id, { findings: report.findings.length });
+          sendJson(res, 200, { ...report, playbook: { id: DEFAULT_QATAR_PLAYBOOK.id, version: DEFAULT_QATAR_PLAYBOOK.version } });
+          return true;
+        }
+        if (seg.length === 5 && seg[4] === "redline" && method === "POST") {
+          const body = await readJson(req, 10_000_000);
+          const rawEdits = Array.isArray(body.edits) ? body.edits : [];
+          const clauses = ctx.matters.clauses(contract.id);
+          const ids = new Set(clauses.map((clause) => clause.id));
+          const edits = rawEdits.flatMap((value) => {
+            const edit = value as Record<string, unknown>;
+            return typeof edit.clauseId === "string" && typeof edit.newText === "string" && ids.has(edit.clauseId) ? [{ clauseId: edit.clauseId, newText: edit.newText }] : [];
           });
-          ctx.matters.audit.append("user", "contract.review", matter.id, contract.id, { findings: findings.length });
-          sendJson(res, 200, { findings, playbook: { id: DEFAULT_QATAR_PLAYBOOK.id, version: DEFAULT_QATAR_PLAYBOOK.version } });
+          if (edits.length !== rawEdits.length) throw new HttpError(400, "every edit needs a valid clauseId and newText");
+          const buffer = contract.originalBase64
+            ? await buildOriginalRedlineDocx(Buffer.from(contract.originalBase64, "base64"), clauses, edits, { author: "Loam Legal", date: (ctx.now?.() ?? new Date()).toISOString(), rtl: contract.language !== "en", draft: true })
+            : await buildRedlineDocx(clauses, edits, { title: contract.fileName, author: "Loam Legal", date: (ctx.now?.() ?? new Date()).toISOString(), rtl: contract.language !== "en", draft: true });
+          ctx.matters.audit.append("user", "export.draft", matter.id, `redline:${contract.id}`, { edits: edits.length, bytes: buffer.length });
+          sendJson(res, 200, { fileName: `${contract.fileName.replace(/\.docx$/i, "")}-redline.docx`, dataBase64: buffer.toString("base64"), draft: true });
           return true;
         }
       }

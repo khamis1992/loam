@@ -175,6 +175,7 @@ export interface ContractDoc {
   language: "ar" | "en" | "mixed";
   /** Plain text extracted locally. Encrypted at rest. */
   text: string;
+  originalBase64?: string;
   importedAt: string;
 }
 

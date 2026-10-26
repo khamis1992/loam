@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { startMockServer, type MockServer } from "../../../scripts/legal-mock-server.js";
 import { fillAvids } from "../../../legal/__tests__/helpers.js";
+import JSZip from "jszip";
+import { Document, Packer, Paragraph } from "docx";
 
 async function call(srv: MockServer, method: string, p: string, body?: unknown, token = srv.token): Promise<{ status: number; json: Record<string, unknown> }> {
   const res = await fetch(`${srv.url}${p}`, {
@@ -101,6 +103,25 @@ test("import draft + import: refuses unsigned official packs, accepts a signed o
     const imp = await call(srv, "POST", "/api/legal/import", { pack: signed });
     assert.equal(imp.status, 200);
     assert.equal(imp.json.articles, 2);
+  } finally {
+    await srv.close();
+  }
+});
+
+test("original DOCX redline is produced through the API", async () => {
+  const srv = await startMockServer(0, "t");
+  try {
+    const matter = (await call(srv, "POST", "/api/legal/matters", { title: "عقد", kind: "contract_review" })).json.matter as { id: string };
+    const original = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph("البند 1\nالثمن 1000 ريال")] }] }));
+    const added = await call(srv, "POST", `/api/legal/matters/${matter.id}/contracts`, { fileName: "contract.docx", text: "البند 1\nالثمن 1000 ريال", originalBase64: original.toString("base64") });
+    const contract = added.json.contract as { id: string };
+    const clause = srv.ctx.matters.clauses(contract.id)[0]!;
+    const redline = await call(srv, "POST", `/api/legal/matters/${matter.id}/contracts/${contract.id}/redline`, { edits: [{ clauseId: clause.id, newText: clause.text.replace("1000", "2000") }] });
+    assert.equal(redline.status, 200);
+    const zip = await JSZip.loadAsync(Buffer.from(String(redline.json.dataBase64), "base64"));
+    const xml = await zip.file("word/document.xml")!.async("string");
+    assert.match(xml, /2000/);
+    assert.match(xml, /w:ins/);
   } finally {
     await srv.close();
   }

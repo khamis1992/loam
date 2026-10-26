@@ -58,6 +58,14 @@ export interface ReviewFinding {
   id: string; ruleId: string; clauseId: string | null; severity: 'high' | 'medium' | 'low' | 'info'; titleAr: string; explanationAr: string;
   suggestionAr?: string; authorities: string[]; suggestedAuthorities: string[]; unresolvedAuthorityQueries: string[];
 }
+export type ClientPosition = 'buyer' | 'seller' | 'employer' | 'employee' | 'landlord' | 'tenant' | 'contractor' | 'client' | 'principal' | 'agent' | 'other';
+export type RiskTolerance = 'conservative' | 'balanced' | 'aggressive';
+export interface ContractReviewReport {
+  clientPosition: ClientPosition; riskTolerance: RiskTolerance; findings: ReviewFinding[];
+  bilingualFindings: Array<{ id: string; severity: 'info' | 'warning' | 'high'; title: string; details: string }>;
+  negotiation: Array<{ findingId: string; priority: 'must_change' | 'negotiate' | 'acceptable' | 'escalate'; rationale: string; fallback?: string }>;
+  coverage: CoverageReport; corpusSnapshotId: string;
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = { ...(await getApiHeaders()), ...(init?.headers as Record<string, string> | undefined) };
@@ -93,10 +101,12 @@ export const legalApi = {
   updateMatter: (id: string, patch: Partial<Matter>, confirmEgress = false) =>
     request<{ matter: Matter }>(`/api/legal/matters/${enc(id)}`, jsonInit('PATCH', { ...patch, ...(confirmEgress ? { confirmEgress: true } : {}) })),
   deleteMatter: (id: string) => request<{ deleted: boolean }>(`/api/legal/matters/${enc(id)}`, { method: 'DELETE' }),
-  addContract: (matterId: string, fileName: string, text: string) =>
-    request<{ contract: { id: string; fileName: string; sha256: string; language: string }; clauses: number }>(`/api/legal/matters/${enc(matterId)}/contracts`, jsonInit('POST', { fileName, text })),
-  reviewContract: (matterId: string, contractId: string, contractType = 'any') =>
-    request<{ findings: ReviewFinding[] }>(`/api/legal/matters/${enc(matterId)}/contracts/${enc(contractId)}/review`, jsonInit('POST', { contractType })),
+  addContract: (matterId: string, fileName: string, text: string, originalBase64?: string) =>
+    request<{ contract: { id: string; fileName: string; sha256: string; language: string }; clauses: number }>(`/api/legal/matters/${enc(matterId)}/contracts`, jsonInit('POST', { fileName, text, ...(originalBase64 ? { originalBase64 } : {}) })),
+  reviewContract: (matterId: string, contractId: string, contractType = 'any', opts: { clientPosition?: ClientPosition; riskTolerance?: RiskTolerance } = {}) =>
+    request<ContractReviewReport>(`/api/legal/matters/${enc(matterId)}/contracts/${enc(contractId)}/review`, jsonInit('POST', { contractType, ...opts })),
+  redlineContract: (matterId: string, contractId: string, edits: Array<{ clauseId: string; newText: string }>) =>
+    request<{ fileName: string; dataBase64: string; draft: boolean }>(`/api/legal/matters/${enc(matterId)}/contracts/${enc(contractId)}/redline`, jsonInit('POST', { edits })),
   submitReview: (id: string) => request<{ review: ReviewRecord }>(`/api/legal/reviews/${enc(id)}/submit`, jsonInit('POST', {})),
   approveReview: (id: string, text: string, reviewerName: string, licenseNo: string) =>
     request<{ review: ReviewRecord }>(`/api/legal/reviews/${enc(id)}/approve`, jsonInit('POST', { text, reviewerName, licenseNo })),

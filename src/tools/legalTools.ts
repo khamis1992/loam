@@ -15,6 +15,7 @@ import { renderCitationAr } from "../legal/citation.js";
 import { contractLanguage, segmentContract } from "../legal/contract/clauses.js";
 import { DEFAULT_QATAR_PLAYBOOK, reviewContract, type ContractType } from "../legal/contract/playbook.js";
 import { buildRedlineDocx } from "../legal/contract/redline.js";
+import { buildOriginalRedlineDocx } from "../legal/contract/ooxmlRedline.js";
 import type { LegalCorpus } from "../legal/corpusStore.js";
 import { sha256 } from "../legal/corpusStore.js";
 import { decideEgress, type EgressConfig } from "../legal/egress.js";
@@ -343,7 +344,9 @@ export function createLegalTools(deps: LegalToolDeps): Tool[] {
       const review = deps.matters.reviewsOf(matter.id).find((r) => r.documentName === docName);
       const final = review ? canExportFinal(review, fingerprint) : false;
       const at = (deps.now?.() ?? new Date()).toISOString();
-      const buf = await buildRedlineDocx(clauses, edits, { title: contract.fileName, author: "Loam", date: at, rtl: contract.language !== "en", draft: !final });
+      const buf = contract.originalBase64
+        ? await buildOriginalRedlineDocx(Buffer.from(contract.originalBase64, "base64"), clauses, edits, { author: "Loam Legal", date: at, rtl: contract.language !== "en", draft: !final })
+        : await buildRedlineDocx(clauses, edits, { title: contract.fileName, author: "Loam", date: at, rtl: contract.language !== "en", draft: !final });
       fs.mkdirSync(path.dirname(out), { recursive: true });
       fs.writeFileSync(out, buf);
       deps.matters.audit.append(actor, final ? "export.final" : "export.draft", matter.id, docName, { edits: edits.length, sha256: fingerprint, bytes: buf.length });
