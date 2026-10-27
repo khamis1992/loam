@@ -1,5 +1,4 @@
 import type { JSX, ReactNode } from "react";
-
 export interface SlideBoxLike {
   id?: string;
   text?: string;
@@ -29,6 +28,38 @@ export interface SlideLike {
 
 const isRtl = (text: string) => /[\u0590-\u08ff]/u.test(text);
 
+/** Wraps case-insensitive occurrences of `query` inside `text` with <mark>.
+ * Returns the plain text when the query is empty or absent. */
+export function highlightText(text: string, query: string): ReactNode {
+  const q = query.trim();
+  if (!q) return text;
+  const haystack = text.toLowerCase();
+  const needle = q.toLowerCase();
+  const parts: ReactNode[] = [];
+  let last = 0;
+  let at = haystack.indexOf(needle);
+  let seq = 0;
+  while (at !== -1) {
+    if (at > last) parts.push(text.slice(last, at));
+    parts.push(
+      <mark key={`hl-${seq++}`} className="bg-func-warning px-0.5 text-inherit">
+        {text.slice(at, at + q.length)}
+      </mark>,
+    );
+    last = at + q.length;
+    at = haystack.indexOf(needle, last);
+  }
+  if (!parts.length) return text;
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
+/** Whitespace-delimited word count used by the deck footer. */
+export function countWords(text: string): number {
+  const trimmed = text.trim();
+  return trimmed ? trimmed.split(/\s+/u).length : 0;
+}
+
 const systemBoxes = (slide: SlideLike): SlideBoxLike[] => [
   { id: "sys-title", text: slide.title, x: 7.1, y: 6.5, w: 85.8, h: 11.5, fontSize: 30, color: slide.accent ?? "#386bca", bold: true },
   { id: "sys-body", text: slide.body, x: 7.1, y: 15.5, w: 85.8, h: 44.5, fontSize: 22, color: "#18202B" },
@@ -43,8 +74,9 @@ function displayBoxes(slide: SlideLike): SlideBoxLike[] {
 }
 
 /** Structured-JSON slide renderer: absolute boxes inside a 16:9 canvas.
- * Works without Microsoft PowerPoint; the PNG preview endpoint upgrades it when available. */
-export function renderSlide(slide: SlideLike, width: number): JSX.Element {
+ * Works without Microsoft PowerPoint; the PNG preview endpoint upgrades it when available.
+ * `highlight` (a find-in-deck query) wraps matches in <mark>. */
+export function renderSlide(slide: SlideLike, width: number, highlight?: string): JSX.Element {
   const scale = width / 960;
   return (
     <div
@@ -74,7 +106,7 @@ export function renderSlide(slide: SlideLike, width: number): JSX.Element {
               background: box.background ? "#" + String(box.background).replace("#", "") : "transparent",
             }}
           >
-            {text}
+            {highlightText(text, highlight ?? "")}
           </div>
         );
       })}

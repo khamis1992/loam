@@ -5,7 +5,7 @@ import { t } from "@/i18n/t";
 import { getApiBase } from "@/services/rpc";
 import { Button } from "@/components/ui/Button";
 import type { WorkspaceEditorProps } from "../types";
-import { SlideThumb, renderSlide, type SlideLike } from "./SlideView";
+import { SlideThumb, countWords, renderSlide, type SlideLike } from "./SlideView";
 import IntelligencePanel from "../intelligence/IntelligencePanel";
 
 interface SlideTextBox { [key: string]: unknown }
@@ -26,9 +26,42 @@ type State =
   | { phase: "error"; message: string }
   | { phase: "ready"; artifact: SlidesArtifact };
 
+type PutResult =
+  | { ok: true; artifact: SlidesArtifact }
+  | { ok: false; status: number; artifact?: SlidesArtifact; error: string };
+
 const POLL_MS = 8000;
 
-export default function Editor({ file, live, onSave, onChatEdit }: WorkspaceEditorProps) {
+/** Clears a slide's editable text while keeping its layout and text boxes. */
+const blankTextBoxes = (boxes: SlideTextBox[]): SlideTextBox[] => {
+  const copy = boxes.map((box) => ({ ...box }));
+  if (copy[0]) copy[0] = { ...copy[0], text: "" };
+  if (copy[1]) copy[1] = { ...copy[1], text: "" };
+  return copy;
+};
+
+/** Returns the deck with the slide at `index` reduced to an empty shell (layout preserved). */
+const withBlankSlide = (artifact: SlidesArtifact, index: number): SlidesArtifact => ({
+  ...artifact,
+  content: {
+    slides: artifact.content.slides.map((slide, i) =>
+      i === index ? { ...slide, title: "", body: "", notes: "", textBoxes: blankTextBoxes(slide.textBoxes ?? []) } : slide,
+    ),
+  },
+});
+
+/** One slide per printed page; the interactive chrome is hidden while printing. */
+const PRINT_CSS = `
+.slides-print-pages { display: none; }
+@media print {
+  .slides-no-print { display: none !important; }
+  .slides-deck-root { display: block !important; height: auto !important; overflow: visible !important; }
+  .slides-print-pages { display: block !important; }
+  .slides-print-page { break-after: page; page-break-after: always; }
+  .slides-print-page:last-child { break-after: auto; page-break-after: auto; }
+}`;
+
+export default function Editor({ file, live, onChatEdit }: WorkspaceEditorProps) {
   const [state, setState] = useState<State>({ phase: "loading" });
   const [edits, setEdits] = useState<Map<string, SlideEdit>>(new Map());
   const [order, setOrder] = useState<string[] | null>(null);
@@ -39,7 +72,14 @@ export default function Editor({ file, live, onSave, onChatEdit }: WorkspaceEdit
   const [notice, setNotice] = useState<string | null>(null);
   const [selected, setSelected] = useState(0);
   const [chat, setChat] = useState("");
+  const [realPreview, setRealPreview] = useState(false);
+  const [pngUrls, setPngUrls] = useState<Map<string, string>>(new Map());
+  const [pngFailed, setPngFailed] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
+  const [printing, setPrinting] = useState(false);
   const busyRef = useRef(false);
+  const pngPendingRef = useRef<Set<string>>(new Set());
+  const pngUrlsRef = useRef<Set<string>>(new Set());
   const fileUrl = useMemo(
     () => `${getApiBase()}/api/workspace/slides/file?taskId=${encodeURIComponent(file.taskId)}&path=${encodeURIComponent(file.path)}`,
     [file.taskId, file.path],
@@ -117,6 +157,59 @@ export default function Editor({ file, live, onSave, onChatEdit }: WorkspaceEdit
     return () => clearInterval(timer);
   }, [live, fileUrl, state, dirty, ]);
 
+  // High-fidelity PNG preview (Windows + PowerPoint only): fetched per (slide, revision),
+  // cached in state, cancelled on unmount, with a graceful HTML fallback.
+  const revision = artifact?.revision ?? 0;
+  const previewKey = `${selected}:${revision}`;
+  useEffect(() => {
+    if (!realPreview || !artifact) return;
+    if (pngUrls.has(previewKey) || pngFailed.has(previewKey) || pngPendingRef.current.has(previewKey)) return;
+    const controller = new AbortController();
+    pngPendingRef.current.add(previewKey);
+    (async () => {
+      try {
+        const url = `${getApiBase()}/api/workspace/slides/preview?taskId=${encodeURIComponent(file.taskId)}&path=${encodeURIComponent(file.path)}&revision=${revision}&slide=${selected}`;
+        const res = await fetch(url, { signal: controller.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        if (controller.signal.aborted) return;
+        const objectUrl = URL.createObjectURL(blob);
+        pngUrlsRef.current.add(objectUrl);
+        setPngUrls((prev) => new Map(prev).set(previewKey, objectUrl));
+      } catch {
+        if (!controller.signal.aborted) setPngFailed((prev) => new Set(prev).add(previewKey));
+      } finally {
+        pngPendingRef.current.delete(previewKey);
+      }
+    })();
+    return () => { controller.abort(); pngPendingRef.current.delete(previewKey); };
+  }, [realPreview, previewKey, artifact, revision, selected, file.taskId, file.path, pngUrls, pngFailed]);
+  useEffect(() => () => {
+    if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
+      for (const url of pngUrlsRef.current) URL.revokeObjectURL(url);
+    }
+  }, []);
+
+  // Find in deck: match indices for the current query (title/body/notes, case-insensitive).
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [] as number[];
+    return slides
+      .map((slide, index) => (`${slide.title}\n${slide.body}\n${slide.notes ?? ""}`.toLowerCase().includes(q) ? index : -1))
+      .filter((index) => index >= 0);
+  }, [slides, query]);
+  const matchPosition = matches.indexOf(selected) + 1;
+  const findNext = (): void => {
+    if (!matches.length) return;
+    setSelected(matches.find((m) => m > selected) ?? matches[0]!);
+  };
+
+  const slideWords = current ? countWords(`${current.title} ${current.body} ${current.notes ?? ""}`) : 0;
+  const deckWords = useMemo(
+    () => slides.reduce((sum, s) => sum + countWords(`${s.title} ${s.body} ${s.notes ?? ""}`), 0),
+    [slides],
+  );
+
   const editSlide = (index: number, patch: SlideEdit): void => {
     const slide = slides[index];
     if (!slide) return;
@@ -164,6 +257,72 @@ export default function Editor({ file, live, onSave, onChatEdit }: WorkspaceEdit
     finally { setSaving(false); busyRef.current = false; }
   };
 
+  /** Add-slide: duplicate the current slide server-side, then persist the copy with its text cleared. */
+  const addSlide = async (): Promise<void> => {
+    if (!artifact || !current || busyRef.current) return;
+    busyRef.current = true;
+    setSaving(true);
+    const knownIds = new Set(artifact.content.slides.map((s) => s.id));
+    try {
+      const res = await fetch(`${getApiBase()}/api/workspace/slides/duplicate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ taskId: file.taskId, path: file.path, index: selected, artifact: buildArtifact(), expectedRevision: artifact.revision }),
+      });
+      const data = (await res.json()) as { artifact?: SlidesArtifact; error?: string };
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const duplicated = data.artifact;
+      if (!duplicated) throw new Error(t("Could not add slide"));
+      // The copy is the first slide the server gave a fresh id; fall back to the slot after the source.
+      const dupIndex = duplicated.content.slides.findIndex((s) => !knownIds.has(s.id));
+      const copyIndex = dupIndex >= 0 ? dupIndex : Math.min(selected + 1, duplicated.content.slides.length - 1);
+      const copySlide = duplicated.content.slides[copyIndex]!;
+
+      let working = duplicated;
+      let targetIndex = copyIndex;
+      for (let attempt = 0; ; attempt++) {
+        const put = await putArtifact(withBlankSlide(working, targetIndex), working.revision);
+        if (put.ok) {
+          setState({ phase: "ready", artifact: put.artifact });
+          setEdits(new Map()); setOrder(null); setDirty(false); setStale(false);
+          setSavedAt(new Date().toLocaleTimeString());
+          setSelected(targetIndex);
+          return;
+        }
+        if (put.status !== 409 || !put.artifact || attempt > 0) throw new Error(put.error);
+        // Revision drift: adopt the server's artifact, keep our blank copy, retry once.
+        const server = put.artifact;
+        const at = server.content.slides.findIndex((s) => s.id === copySlide.id);
+        if (at >= 0) {
+          working = server;
+          targetIndex = at;
+        } else {
+          const insertAt = Math.min(selected + 1, server.content.slides.length);
+          const blanked = { ...copySlide, title: "", body: "", notes: "", textBoxes: blankTextBoxes(copySlide.textBoxes ?? []) };
+          working = { ...server, content: { slides: [...server.content.slides.slice(0, insertAt), blanked, ...server.content.slides.slice(insertAt)] } };
+          targetIndex = insertAt;
+        }
+      }
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err));
+    } finally { setSaving(false); busyRef.current = false; }
+  };
+
+  const putArtifact = async (payload: SlidesArtifact, expectedRevision: number): Promise<PutResult> => {
+    try {
+      const res = await fetch(`${getApiBase()}/api/workspace/slides/file`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ taskId: file.taskId, path: file.path, artifact: payload, expectedRevision }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { artifact?: SlidesArtifact; error?: string };
+      if (!res.ok) return { ok: false, status: res.status, artifact: data.artifact, error: data.error ?? `HTTP ${res.status}` };
+      return { ok: true, artifact: data.artifact ?? payload };
+    } catch (err) {
+      return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err) };
+    }
+  };
+
   const buildArtifact = (): SlidesArtifact | null => {
     if (!artifact) return null;
     const derived = slides.map((slide) => {
@@ -185,17 +344,9 @@ export default function Editor({ file, live, onSave, onChatEdit }: WorkspaceEdit
     busyRef.current = true;
     setSaving(true);
     try {
-      const res = await fetch(`${getApiBase()}/api/workspace/slides/file`, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ taskId: file.taskId, path: file.path, artifact: payload, expectedRevision: artifact.revision }),
-      });
-      const data = (await res.json()) as { artifact?: SlidesArtifact; error?: string };
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      const raw = await fetch(`${fileUrl}&raw=1`);
-      const blob = await raw.blob();
-      await onSave(blob);
-      if (data.artifact) setState({ phase: "ready", artifact: data.artifact });
+      const put = await putArtifact(payload, artifact.revision);
+      if (!put.ok) throw new Error(put.error);
+      setState({ phase: "ready", artifact: put.artifact });
       setEdits(new Map()); setOrder(null); setDirty(false); setStale(false); setNotice(null);
       setSavedAt(new Date().toLocaleTimeString());
     } catch (err) {
@@ -203,6 +354,26 @@ export default function Editor({ file, live, onSave, onChatEdit }: WorkspaceEdit
     } finally {
       setSaving(false);
       busyRef.current = false;
+    }
+  };
+
+  const print = (): void => {
+    setPrinting(true);
+    try { window.print(); } finally { setPrinting(false); }
+  };
+
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const exportPdf = async (): Promise<void> => {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      const { exportWorkspacePdf } = await import("../pdfExport");
+      const result = await exportWorkspacePdf("slides", file.taskId, file.path);
+      if (!result.ok) setNotice(result.error);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPdfBusy(false);
     }
   };
 
@@ -224,39 +395,80 @@ export default function Editor({ file, live, onSave, onChatEdit }: WorkspaceEdit
     );
   }
 
+  const pngUrl = realPreview ? pngUrls.get(previewKey) : undefined;
+  const pngError = realPreview && pngFailed.has(previewKey);
+  const highlight = query.trim() || undefined;
+
   return (
-    <div className="flex h-full w-full flex-col">
-      <div className="flex items-center gap-2 border-b border-border-main px-3 py-2">
+    <div className={`slides-deck-root flex h-full w-full flex-col${printing ? " slides-printing" : ""}`}>
+      <style>{PRINT_CSS}</style>
+      <div className="slides-no-print flex items-center gap-2 border-b border-border-main px-3 py-2">
         <div className="truncate text-sm text-text-primary">{file.name}</div>
         {dirty ? <span className="rounded bg-func-warning px-1.5 py-0.5 text-xs text-text-onblack">{t("Unsaved")}</span> : null}
         {savedAt && !dirty ? <span className="text-xs text-text-tertiary">{t("Saved at {time}", { time: savedAt })}</span> : null}
         {notice ? <span className="min-w-0 flex-1 truncate text-xs text-func-error" title={notice}>{notice}</span> : <div className="flex-1" />}
+        <input
+          className="w-36 rounded border border-border-light bg-bg-menu px-2 py-1 text-xs text-text-primary"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); findNext(); } }}
+          placeholder={t("Find in deck")}
+          data-testid="slides-find"
+        />
+        {query.trim() ? (
+          <span className="whitespace-nowrap text-xs text-text-tertiary" data-testid="slides-find-count">
+            {matches.length ? `${matchPosition}/${matches.length}` : t("No matches")}
+          </span>
+        ) : null}
+        <Button variant={realPreview ? "primary" : "ghost"} onClick={() => setRealPreview((v) => !v)}>{t("Real preview")}</Button>
+        <Button variant="ghost" onClick={print}>{t("Print")}</Button>
+        <Button variant="ghost" disabled={pdfBusy} onClick={() => { void exportPdf(); }}>{pdfBusy ? t("Exporting…") : t("Export PDF")}</Button>
         <Button variant="primary" disabled={!dirty || saving} onClick={save}>{saving ? t("Saving…") : t("Save")}</Button>
       </div>
       {stale ? (
-        <div className="flex items-center gap-2 bg-fill-hover px-3 py-1.5 text-xs text-text-secondary">
+        <div className="slides-no-print flex items-center gap-2 bg-fill-hover px-3 py-1.5 text-xs text-text-secondary">
           {t("The presentation changed while you were editing")}
           <Button variant="ghost" onClick={() => reload(false)}>{t("Discard my edits and reload")}</Button>
         </div>
       ) : null}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="flex w-44 shrink-0 flex-col gap-2 overflow-y-auto p-2" data-testid="slides-rail">
-          {slides.map((slide, index) => (
-            <div key={slide.id} className="flex flex-col gap-1">
-              <SlideThumb slide={slide} width={152} selected={selected === index} onSelect={() => setSelected(index)} />
-              {selected === index ? (
-                <div className="flex gap-1">
-                  <Button variant="ghost" disabled={index === 0} onClick={() => move(index, -1)}>↑</Button>
-                  <Button variant="ghost" disabled={index === slides.length - 1} onClick={() => move(index, 1)}>↓</Button>
-                  <Button variant="ghost" disabled={saving} onClick={duplicate}>{t("Duplicate")}</Button>
-                  <Button variant="ghost" onClick={() => remove(index)}>{t("Delete")}</Button>
-                </div>
-              ) : null}
-            </div>
-          ))}
+      <div className="slides-no-print flex min-h-0 flex-1 overflow-hidden">
+        <div className="flex w-44 shrink-0 flex-col gap-2 p-2" data-testid="slides-rail">
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+            {slides.map((slide, index) => (
+              <div key={slide.id} className="flex flex-col gap-1">
+                <SlideThumb slide={slide} width={152} selected={selected === index} onSelect={() => setSelected(index)} />
+                {selected === index ? (
+                  <div className="flex gap-1">
+                    <Button variant="ghost" disabled={index === 0} onClick={() => move(index, -1)}>↑</Button>
+                    <Button variant="ghost" disabled={index === slides.length - 1} onClick={() => move(index, 1)}>↓</Button>
+                    <Button variant="ghost" disabled={saving} onClick={duplicate}>{t("Duplicate")}</Button>
+                    <Button variant="ghost" onClick={() => remove(index)}>{t("Delete")}</Button>
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+          <Button variant="secondary" disabled={saving} onClick={addSlide}>{t("Add slide")}</Button>
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
-          <div className="mx-auto w-full max-w-3xl shadow-card">{current ? renderSlide(current, 720) : null}</div>
+          <div className="mx-auto w-full max-w-3xl shadow-card">
+            {current ? (
+              realPreview && pngUrl ? (
+                <div className="relative w-full" style={{ aspectRatio: "16 / 9", background: current.background || "#FFFFFF" }}>
+                  {/* Raw PNG from the preview endpoint; the next/image optimizer has nothing to add here. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={pngUrl} alt={current.title || t("Slide preview")} className="h-full w-full object-contain" data-testid="slides-png" />
+                </div>
+              ) : (
+                renderSlide(current, 720, highlight)
+              )
+            ) : null}
+          </div>
+          {pngError ? (
+            <div className="mx-auto w-full max-w-3xl text-xs text-text-tertiary" data-testid="slides-png-note">
+              {t("Real PNG preview requires Windows with Microsoft PowerPoint; showing the built-in render.")}
+            </div>
+          ) : null}
           {current ? (
             <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
               <input
@@ -281,8 +493,13 @@ export default function Editor({ file, live, onSave, onChatEdit }: WorkspaceEdit
           ) : null}
         </div>
       </div>
-      <IntelligencePanel file={file} applyDisabled={dirty} onApplied={() => { void reload(false); }} />
-      <div className="flex items-center gap-2 border-t border-border-main px-3 py-2">
+      <div className="slides-no-print">
+        <IntelligencePanel file={file} applyDisabled={dirty} onApplied={() => { void reload(false); }} />
+      </div>
+      <div className="slides-no-print flex items-center gap-2 border-t border-border-main px-3 py-2">
+        <span className="whitespace-nowrap text-xs text-text-tertiary" data-testid="slides-word-count">
+          {t("Slide words: {count}", { count: slideWords })} · {t("Deck words: {count}", { count: deckWords })}
+        </span>
         <input
           className="min-w-0 flex-1 rounded border border-border-light bg-bg-menu px-2 py-1.5 text-sm text-text-primary"
           value={chat}
@@ -291,6 +508,11 @@ export default function Editor({ file, live, onSave, onChatEdit }: WorkspaceEdit
           placeholder={t("Describe a change and the agent will apply it in chat")}
         />
         <Button variant="secondary" onClick={sendChat}>{t("Ask in chat")}</Button>
+      </div>
+      <div className="slides-print-pages" aria-hidden="true">
+        {slides.map((slide) => (
+          <div key={slide.id} className="slides-print-page">{renderSlide(slide, 960)}</div>
+        ))}
       </div>
     </div>
   );
