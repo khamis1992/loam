@@ -54,14 +54,14 @@
 | `npm --prefix packages/web run build` | نجح بناء واجهة الإنتاج |
 | `npm run dist` ثم `check:packaged` و`check:packaged:legal` | نجحت؛ `release/Loam-Setup-0.5.31.exe`، Electron/DPAPI وMCP وPTY وOCR العربي |
 | `scripts/check-legal-word.ps1` على DOCX مولد من redline النهائي | نجح؛ revisions=2 قبل القرار، وصفر بعد Accept All وReject All مع تحقق النص العربي |
-| `git fetch origin main` | `origin/main` بقي على خط الأساس؛ الفرع ahead 10 / behind 0، ولا يوجد ما يدمج حالياً |
+| `git fetch origin main` | `origin/main` بقي على خط الأساس؛ behind 0 ولا يوجد ما يدمج حالياً |
 | بيئة الفرع الأول | npm أبلغ 14 ثغرة (9 متوسطة و5 عالية) وتحذير engine لـ`nanoid` على Node 25؛ تسجل كbaseline ولا يطبق `audit fix --force` |
 
 ## قرارات خارجية مطلوبة قبل الاعتماد النهائي
 
 - اعتماد محامٍ قطري للقوالب والـplaybooks ومجموعة التقييم.
 - توفير مصادر رسمية موثقة وحقوق استخدامها وتحديثها.
-- اختبار نهائي على Windows/Electron/Word/OCR وبيانات منزوعة الهوية.
+- توفير بيانات تقييم واقعية منزوعة الهوية واختبارها بعد اعتماد المحامي؛ فحوص Windows/Electron/Word/OCR الآلية ناجحة.
 
 ## قواعد التنفيذ
 
