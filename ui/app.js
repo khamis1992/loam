@@ -67,7 +67,10 @@ function renderTaskState() {
   $('attachChat').disabled=busy(task)||state.uploading;
   $('promptChat').placeholder=busy(task)?'يمكنك كتابة توجيه وإرساله بعد اكتمال التنفيذ…':'أضف توجيهًا إلى هذه المهمة…';
   $('taskIntegrations').hidden=task.mode==='ask'; $('taskIntegrations').href='/integrations.html?taskId='+encodeURIComponent(task.id);
-  $('taskTerminal').hidden=task.mode!=='build'; $('taskTerminal').href='/terminal.html?taskId='+encodeURIComponent(task.id);
+  $('codegraphConsent').hidden=true;
+if(task&&(task.mode==='ask'||task.mode==='build')&&!state.codegraphAsked?.has(task.id)){
+post('/api/codegraph/project/open',{taskId:task.id}).then(d=>{if(state.task?.id!==task.id)return;$('codegraphConsent').hidden=d.decision!=='ask-consent';}).catch(()=>{});}
+$('taskTerminal').hidden=task.mode!=='build'; $('taskTerminal').href='/terminal.html?taskId='+encodeURIComponent(task.id);
   $('taskPreview').hidden=!(modeById(task.mode)?.panels || []).includes('preview');
 }
 function renderTaskLists() {
@@ -267,22 +270,33 @@ $('taskLiveView').onclick=run(()=>{const panel=$('liveView');if(!panel.hidden){l
 $('chatForm').onsubmit=run(async event=>{event.preventDefault();await submitTask($('promptChat').value);});$('attachChat').onclick=()=>pickFiles('chat');$('stopChat').onclick=run(stopTask);
 const services=[['integrations','Loam · التكاملات','تفعيل أدوات الخدمات الخارجية لكل مهمة','/integrations.html'],['site-apis','Loam · واجهات المواقع','عمليات المواقع التي تعلّمها Loam وتعمل بجلستك','/api-anything.html'],['skills','Loam · المهارات','قدرات قابلة لإعادة الاستخدام','/skills.html'],['memory','Loam · الذاكرة','المعرفة المحفوظة المشتركة بإدارة مستقلة','/memory.html'],['brain','Loam · المعرفة','مراجعة المعرفة والخبرات المتراكمة','/brain.html'],['learning','Loam · التقييم','الاختبارات وجودة النتائج','/learning.html'],['companions','Loam · المساعدون','إدارة المساعدين ومحادثاتهم','/companions.html'],['screen','Loam · الشاشة','مشاركة شاشة الجهاز صراحةً','/screen.html']];
 $('serviceLinks').innerHTML=services.map(([id,name,description])=>`<a class="service-card" href="#/services/${id}"><h3>${icon(id)} ${name}</h3><p>${description}</p><span>فتح القسم <loam-icon name="back"></loam-icon></span></a>`).join('');
-async function showServices(){
-  show('services','الخدمات والإعدادات');$('serviceCards').innerHTML='<div class="empty">جارٍ فحص الخدمات…</div>';
-  const checks=[['خادم Loam','/api/config'],['النماذج المحلية','/api/models'],['طابور التنفيذ','/api/queue'],['ذاكرة Loam','/api/memory/status'],['مهارات Loam','/api/skills'],['تقييم Loam','/api/eval/suites'],['اتصالات MCP','/api/mcp/status']];
-  const results=await Promise.allSettled(checks.map(async([,path])=>api(path)));
-  if(location.hash!=='#/services')return;
-  $('serviceCards').innerHTML=results.map((result,index)=>{let success=result.status==='fulfilled';const data=success?result.value:null;let detail=success?'استجاب مسار الخدمة للفحص.':result.reason.message;if(index===1&&success)detail=`${data.models?.length||0} نماذج متاحة. لم يُختبر توليد الإجابات بهذا الفحص.`;if(index===2&&success)detail=`${data.queued?.length||0} في الانتظار · ${data.active?'تنفيذ جارٍ':'لا تنفيذ جارٍ'}`;if(index===6&&success)detail=(data.servers||[]).map(s=>s.name+': '+(s.connected?'متصل · '+s.toolCount+' أدوات':'غير متصل')).join(' · ');if(index===6&&success&&(!data.servers?.length||data.servers.some(s=>!s.connected)))success=false;if(index===0&&success)detail=`${data.mcpServers?.length||0} اتصالات إضافية مهيأة؛ يلزم اختبار اتصال كل منها.`;return `<div class="service-card"><span class="pill ${success?'done':'error'}">${success?'استجاب للفحص':'غير متاح'}</span><h3>${checks[index][0]}</h3><p>${esc(detail)}</p></div>`;}).join('');
-  const models=results[1];if(models.status==='fulfilled'){const selected=$('model').value;$('model').innerHTML=(models.value.models||[]).map(m=>`<option>${esc(typeof m==='string'?m:m.name)}</option>`).join('');if(selected)$('model').value=selected;}
-}
-
+async function refreshCodegraphPanel(){const d=await api('/api/codegraph/status');const r=d.runtime||{};
+$('codegraphState').textContent=d.install?.running?`جارٍ التثبيت: ${d.install.step||''}`:r.state==='ready'?`المحرك جاهز (${r.version})${d.enabled?'':' · فعّل الميزة من config.json ثم أعد تشغيل Loam'}`:r.state==='broken'?`المحرك تالف: ${r.detail||''}`:'المحرك غير مثبّت (يحتاج اتصالاً بالإنترنت مرة واحدة، نحو 300 ميغابايت)';
+$('codegraphInstall').hidden=r.state==='ready'&&!d.install?.running;
+$('codegraphRemove').hidden=r.state==='not-installed';
+if(d.install?.running)setTimeout(()=>refreshCodegraphPanel().catch(()=>{}),2000);}
+$('codegraphInstall').onclick=run(async()=>{await post('/api/codegraph/runtime/install',{});notice('بدأ تثبيت محرك خريطة الكود.');await refreshCodegraphPanel();});
 async function refreshSandboxPanel(){const d=await api('/api/sandbox');const st=d.status||{};
 $('sandboxState').textContent=!st.pinVerified?'تعذّر التحقق من ملف العزل — أعد تشغيل مثبّت Loam (node scripts/install-srt.mjs)':st.windowsInstalled===true?'العزل جاهز':st.windowsInstalled==='n/a'?'غير مدعوم على هذا النظام':'يلزم التثبيت مرة واحدة (زر «تثبيت عزل النظام»)'+(st.windowsMessage?' — '+esc(st.windowsMessage):'');
 $('sandboxInstall').hidden=st.windowsInstalled===true;
 $('sandboxMode').value=d.mode||'off';$('sandboxDomains').value=(d.allowedDomains||[]).join(', ');if($('sandboxAck'))$('sandboxAck').checked=!!d.supplyChainAck;}
 $('sandboxInstall').onclick=run(async()=>{notice('ستظهر نافذة صلاحية المدير (UAC) للموافقة مرة واحدة…');const r=await post('/api/sandbox/install',{});notice(r.message||'تم');await refreshSandboxPanel();});
 $('sandboxSave').onclick=run(async()=>{const domains=($('sandboxDomains').value||'').split(',').map(x=>x.trim()).filter(Boolean);await post('/api/settings',{sandboxMode:$('sandboxMode').value,sandboxAllowedDomains:domains,sandboxSupplyChainAck:$('sandboxAck').checked});notice('تم حفظ إعدادات العزل.');await refreshSandboxPanel();});
-
+$('codegraphRemove').onclick=run(async()=>{if(!await confirmAction('إزالة المحرك','سيُحذف محرك خريطة الكود. هل تريد حذف الخرائط المحفوظة أيضاً؟'))return;await api('/api/codegraph/runtime?purgeGraphs=1',{method:'DELETE'});await refreshCodegraphPanel();});
+const cgAnswer=(fn)=>run(async()=>{const id=state.task?.id;if(!id)return;(state.codegraphAsked??=new Set()).add(id);$('codegraphConsent').hidden=true;await fn(id);});
+$('codegraphYes').onclick=cgAnswer(async id=>{await post('/api/codegraph/project/optin',{taskId:id});notice('بدأ بناء خريطة الكود في الخلفية.');});
+$('codegraphLater').onclick=cgAnswer(async()=>{});
+$('codegraphNever').onclick=cgAnswer(async id=>{await post('/api/codegraph/project/optout',{taskId:id,decline:true});});
+async function showServices(){
+  show('services','الخدمات والإعدادات');$('serviceCards').innerHTML='<div class="empty">جارٍ فحص الخدمات…</div>';
+  const checks=[['خادم Loam','/api/config'],['النماذج المحلية','/api/models'],['طابور التنفيذ','/api/queue'],['ذاكرة Loam','/api/memory/status'],['مهارات Loam','/api/skills'],['تقييم Loam','/api/eval/suites'],['اتصالات MCP','/api/mcp/status'],['خريطة الكود','/api/codegraph/status']];
+  const results=await Promise.allSettled(checks.map(async([,path])=>api(path)));
+  if(location.hash!=='#/services')return;
+  $('serviceCards').innerHTML=results.map((result,index)=>{let success=result.status==='fulfilled';const data=success?result.value:null;let detail=success?'استجاب مسار الخدمة للفحص.':result.reason.message;if(index===1&&success)detail=`${data.models?.length||0} نماذج متاحة. لم يُختبر توليد الإجابات بهذا الفحص.`;if(index===2&&success)detail=`${data.queued?.length||0} في الانتظار · ${data.active?'تنفيذ جارٍ':'لا تنفيذ جارٍ'}`;if(index===6&&success)detail=(data.servers||[]).map(s=>s.name+': '+(s.connected?'متصل · '+s.toolCount+' أدوات':'غير متصل')).join(' · ');if(index===6&&success&&(!data.servers?.length||data.servers.some(s=>!s.connected)))success=false;if(index===7&&success){const r=data.runtime||{};detail=!data.enabled?(r.state==='ready'?'المحرك مثبّت · الميزة معطّلة في الإعدادات':'معطّلة · المحرك غير مثبّت'):r.state==='ready'?`جاهز · الإصدار ${esc(r.version||'')}`:r.state==='broken'?'المحرك تالف — أعد التثبيت':'المحرك غير مثبّت';if(data.install?.running)detail=`جارٍ التثبيت… (${esc(data.install.step||'')})`;success=!!data.ok;}if(index===0&&success)detail=`${data.mcpServers?.length||0} اتصالات إضافية مهيأة؛ يلزم اختبار اتصال كل منها.`;return `<div class="service-card"><span class="pill ${success?'done':'error'}">${success?'استجاب للفحص':'غير متاح'}</span><h3>${checks[index][0]}</h3><p>${esc(detail)}</p></div>`;}).join('');
+  const models=results[1];if(models.status==='fulfilled'){const selected=$('model').value;$('model').innerHTML=(models.value.models||[]).map(m=>`<option>${esc(typeof m==='string'?m:m.name)}</option>`).join('');if(selected)$('model').value=selected;}
+  refreshCodegraphPanel().catch(()=>{});
+  refreshSandboxPanel().catch(()=>{});
+}
 $('refreshServices').onclick=run(showServices);$('saveModel').onclick=run(async()=>{if(!$('model').value)throw new Error('لا يوجد نموذج متاح.');await post('/api/settings',{model:$('model').value});$('sidebarModel').value=$('model').value;notice('تم حفظ نموذج التنفيذ.');});
 async function showCollection(kind){
   show('list',kind==='projects'?'المشاريع':'المواعيد');$('listTitle').textContent=kind==='projects'?'المشاريع':'المواعيد';$('taskSearch').hidden=true;
@@ -301,7 +315,7 @@ async function route(){
     if(path[1]==='creative'){renderMode('media');return;}
     const studio=studioById(path[1]);if(!studio)throw new Error('مساحة الاستديو غير موجودة.');
     const mobileUrl=new URL('/mobile.html',location.origin);if(studio.id==='mobile'){if(!$('sidebar').classList.contains('collapsed'))$('collapseBtn').click();const params=new URL(location.href).searchParams;for(const [from,to]of [['mobileTask','taskId'],['mobileScreen','screenId']]){const value=params.get(from);if(value)mobileUrl.searchParams.set(to,value);}}
-    show('embed',studio.title);$('embedFrame').title=studio.title;$('embedFrame').src=studio.id==='mobile'?mobileUrl.pathname+mobileUrl.search:studio.id==='security'?'/security.html':studio.id==='swarm'?'/swarm.html':'/studios/index.html#'+studio.id;return;
+    show('embed',studio.title);$('embedFrame').title=studio.title;$('embedFrame').src=studio.id==='mobile'?mobileUrl.pathname+mobileUrl.search:studio.id==='security'?'/security.html':studio.id==='swarm'?'/swarm.html':studio.id==='realswarm'?'/realswarm.html':'/studios/index.html#'+studio.id;return;
   }
   if(path[0]==='modes')return renderMode(decodeURIComponent(path[1]||''));
   if(path[0]==='tasks'&&path[1])return loadTask(decodeURIComponent(path[1]));
