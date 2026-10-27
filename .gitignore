@@ -75,3 +75,15 @@ tmp-*.mts
 .devin-done
 .jgatefail.txt
 .jtask.md
+.gitnexus
+
+# Local probes, generated evidence and agent-only scratch state
+/tmp/
+output/
+/.zcode/
+/_missing_export/
+/server.cjs
+/law-review.md
+/notes.md
+/task_plan.md
+.claude/settings.local.json

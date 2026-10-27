@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { REA_TOOL_ALLOWLIST, REA_RESULT_BUDGET_BYTES } from "../reaAllowlist.js";
+import { REA_TOOL_ALLOWLIST, REA_VISIBLE_TOOL_ALLOWLIST, REA_RESULT_BUDGET_BYTES } from "../reaAllowlist.js";
 
 const fixtureServer = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "fake-rea-server.mjs");
 
@@ -23,10 +23,10 @@ test("rea wiring: catalogue filtered to the allowlist, calls rejected outside it
   }, dataDir);
   cleanup = () => void toolset.close();
 
-  // 1. Exactly the 13 allowlisted tools register; none of the 7 hostile extras.
+  // 1. Only the engine-free allowlisted tools register; none of the hostile extras.
   assert.ok(toolset.servers.includes("rea"));
   const reaNames = registry.names().filter((n) => n.startsWith("mcp__rea__"));
-  assert.equal(reaNames.length, REA_TOOL_ALLOWLIST.length);
+  assert.equal(reaNames.length, REA_VISIBLE_TOOL_ALLOWLIST.length);
   for (const evil of ["mcp__rea__open_binary", "mcp__rea__evil_extra_one", "mcp__rea__instrument_with_frida"]) {
     assert.equal(registry.get(evil), undefined, `${evil} must not register`);
   }
@@ -59,8 +59,8 @@ test("rea wiring: catalogue filtered to the allowlist, calls rejected outside it
   assert.equal(names.filter((n) => n === "rea.mcp.call").length >= 3, true);
 
   // 6. Registry exec passes untrusted/contentDigest through (§8).
-  const viaExec = await registry.exec("mcp__rea__list_unknowns", { text: "direct" }, { workspace: dataDir } as never);
-  assert.equal(viaExec.ok, true);
+  const viaExec = await registry.exec("mcp__rea__analyze_javascript_application", { text: "direct" }, { workspace: dataDir } as never);
+  assert.equal(viaExec.ok, true, viaExec.content);
   assert.equal(viaExec.untrusted, true);
   assert.match(viaExec.contentDigest ?? "", /^sha256_/);
 });

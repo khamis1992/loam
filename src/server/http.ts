@@ -1,10 +1,18 @@
 import { handleCodeGraphRoute, type CodeGraphRouteDeps } from "./routes/codegraph.js";
+import { handleTaskResumeRoute } from "./routes/taskResume.js";
 import { handleRealSwarmRoutes } from "./routes/realswarm.js";
 import { handleApiAnythingRoute } from "./apiAnythingRoutes.js";
 import { handleWorkflowRoutes, handleWorkflowRunRoutes, type WorkflowRouteDeps } from "./routes/workflows.js";
 import { handleTracesRoutes } from "./routes/traces.js";
-import { handleCheckpointRoutes, type StartForkedRun } from "./routes/checkpoints.js";
-import { handleInterruptRoutes, type ResumeFromInterrupt } from "./routes/interrupts.js";
+import { handleCheckpointRoutes } from "./routes/checkpoints.js";
+import { handleInterruptRoutes } from "./routes/interrupts.js";
+import { createRunResume } from "./runResume.js";
+import { handleSecurityEnterpriseRoute } from "./securityEnterpriseRoutes.js";
+import { handleMobileScaleRoute } from "./mobileScaleRoutes.js";
+import { handleAdvancedSecurityRoute } from "./advancedSecurityRoutes.js";
+import { handleVulnerabilityCatalogRoute } from "./vulnerabilityCatalogRoutes.js";
+import { handleNextSecurityRoute } from "./nextSecurityRoutes.js";
+import { handleEngineRoute } from "./engineRoutes.js";
 import { rehydrateAskUsers } from "../tools/askUserStore.js";
 import { rehydratePlanApprovals } from "../tools/planApprovalStore.js";
 import { rehydrateApprovals } from "./approvals.js";
@@ -116,6 +124,15 @@ import { handleAutomationsRoutes } from "./routes/automations.js";
 import { handleAppBuilderRoutes } from "./routes/appBuilder.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
+import { handleWorkspaceDocRoutes } from "./routes/workspaceDoc.js";
+import { handleWorkspaceSheetRoutes } from "./routes/workspaceSheet.js";
+import { handleWorkspaceSlidesRoutes } from "./routes/workspaceSlides.js";
+import { handleOfficeIntelligenceRoutes } from "./routes/officeIntelligence.js";
+import { handleOfficeLegalRoutes } from "./routes/officeLegal.js";
+import { handleOfficeLinkRoutes } from "./routes/officeLinks.js";
+import { handleOfficeConnectorRoutes } from "./routes/officeConnectors.js";
+import { handleOfficeWorkflowRoutes } from "./routes/officeWorkflows.js";
+import { handleOfficePortalRoutes } from "./routes/officePortal.js";
 import { handleGraphRoutes } from "./routes/graph.js";
 import { handleGraphNodeRoutes } from "./routes/graphNodes.js";
 // Neo N17 external-agent canvas bridge: local HTTP/WS API for OpenCode/Claude Code/Orca.
@@ -496,8 +513,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
     const tracesRouteDeps = { sendJson, readBody, otlpEndpoint: () => cfg.orchestration?.tracing.otlpEndpoint ?? "" };
     // C2: durable gates survive a restart; boot rehydrates the in-memory cards and settles expiry.
     try { rehydrateAskUsers(); rehydratePlanApprovals(); rehydrateApprovals(); expireDue(); } catch { /* best effort */ }
-    const checkpointRoutesResume: StartForkedRun = async () => undefined;
-    const interruptRoutesResume: ResumeFromInterrupt = async () => false;
+    const { startForkedRun: checkpointRoutesResume, resumeFromInterrupt: interruptRoutesResume } = createRunResume({ cfg, runTask });
   const mcp = deps.mcp ?? null;
   // Cap H §6.13: restart-only settings are compared against the flags this process
   // actually started with (the panel may have saved new ones to disk since).
@@ -555,7 +571,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         const isStatic = req.method === "GET" && (p === "/" || MIME[path.extname(p).toLowerCase()] !== undefined);
         // The public share replay feed (GET /api/share/:token) is anonymous by
         // design; POST/DELETE stay behind the install token like every /api route.
-        const isPublicShare = req.method === "GET" && /^\/api\/share\/[A-Za-z0-9_-]+$/.test(p);
+        const isPublicShare = req.method === "GET" && (/^\/api\/share\/[A-Za-z0-9_-]+$/.test(p) || /^\/api\/office\/portal\/[A-Za-z0-9_-]+$/.test(p));
         // The share replay page and its static assets are public like the feed.
         const isNextStatic = req.method === "GET" && (p === "/share" || p.startsWith("/share/") || p.startsWith("/_next/"));
         if (!isStatic && !isPublicShare && !isNextStatic && !publicPaths.has(p)) {
@@ -847,6 +863,13 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           sendJson(res, 200, queryWorkspaceSymbols(requireTaskWorkspace(url.searchParams.get("taskId"), cfg.workspace), { query: q, kind, limit, refresh }));
           return;
         }
+
+        if (await handleSecurityEnterpriseRoute(req, res, url, { workspace: cfg.workspace, sendJson, readBody })) return;
+        if (await handleMobileScaleRoute(req, res, url, { workspace: cfg.workspace, sendJson, readBody })) return;
+        if (await handleAdvancedSecurityRoute(req, res, url, { workspace: cfg.workspace, sendJson, readBody })) return;
+        if (await handleVulnerabilityCatalogRoute(req, res, url, { workspace: cfg.workspace, sendJson, readBody })) return;
+        if (await handleNextSecurityRoute(req, res, url, { workspace: cfg.workspace, sendJson, readBody })) return;
+        if (await handleEngineRoute(req, res, url, { workspace: cfg.workspace, sendJson, readBody })) return;
 
         if (p === "/api/security/red/kill-switch") {
           res.setHeader("cache-control", "no-store");
@@ -2031,6 +2054,15 @@ loadAgents();
         // Design Studio (/api/design/*): brand kits, templates, generate, outputs.
         if (await handleDesignStudioRoutes(req, res, p)) return;
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        if (await handleWorkspaceDocRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        if (await handleWorkspaceSheetRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        if (await handleWorkspaceSlidesRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        if (await handleOfficeLegalRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        if (await handleOfficeLinkRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        if (await handleOfficeConnectorRoutes(req, res, p, { workspace: cfg.workspace })) return;
+        if (await handleOfficeWorkflowRoutes(req, res, p, { workspace: cfg.workspace, cfg, ollama })) return;
+        if (await handleOfficePortalRoutes(req, res, p)) return;
+        if (await handleOfficeIntelligenceRoutes(req, res, p, { workspace: cfg.workspace, cfg, ollama })) return;
         // Neo N2 canvas: the run graph built live by the agent (N1).
         if (await handleGraphRoutes(req, res, p, { enabled: cfg.runGraph?.enabled !== false })) return;
         // Neo N17 external-agent canvas bridge: same graph, driven from outside.
@@ -3071,24 +3103,7 @@ loadAgents();
           const admitted = admitPendingInputs(sessionId);
           return sendJson(res, 200, { admitted });
         }
-        if (req.method === "POST" && p.startsWith("/api/tasks/") && p.endsWith("/resume")) {
-          const id = decodeURIComponent(p.slice("/api/tasks/".length, -"/resume".length));
-          const task = getTask(id);
-          const saved = getSavedRun(id);
-          if (!task) return sendJson(res, 404, { error: "task not found" });
-          if (!saved || task.status === "done" || executionQueue.has(id)) return sendJson(res, 409, { error: "task cannot be resumed" });
-          const body = await readBody(req) as { retryInterruptedStep?: boolean };
-          if (requiresReplayConfirmation(saved) && body.retryInterruptedStep !== true) {
-            return sendJson(res, 409, { error: "قد تكون الخطوة المتوقفة نفذت إجراءات بالفعل. يلزم تأكيد إعادة المحاولة.", requiresConfirmation: true });
-          }
-          if (!fs.existsSync(saved.workspace)) return sendJson(res, 409, { error: "saved workspace is unavailable" });
-          if (path.resolve(saved.workspace).toLowerCase() !== path.resolve(requireTaskWorkspace(id, cfg.workspace)).toLowerCase()) {
-            return sendJson(res, 409, { error: "لا يمكن استئناف التنفيذ القديم في المساحة المشتركة. ابدأ تشغيلاً جديداً معزولاً." });
-          }
-          void runTask({ taskId: id, prompt: saved.prompt, resume: true, retryInterruptedStep: body.retryInterruptedStep === true, emit: () => {} })
-            .catch((error) => log.warn(`resume ${id}: ${String(error)}`));
-          return sendJson(res, 202, { taskId: id, status: getTask(id)?.status });
-        }
+        if (await handleTaskResumeRoute(req, res, p, { cfg, readBody, runTask, sendJson })) return;
         // Session timeline UX (D16): side-chat questions + pause/take-over.
         if (await handleSessionControlRoutes(req, res, p)) return;
         if (req.method === "POST" && p.startsWith("/api/tasks/") && p.endsWith("/cancel")) {

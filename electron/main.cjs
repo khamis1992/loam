@@ -7,8 +7,14 @@ const updater = require("./updater.cjs");
 const inAppBrowser = require("./inAppBrowser.cjs");
 const mcpBridge = require("./mcp-bridge.cjs");
 const vendorProtocol = require("./vendorProtocol.cjs");
+const { isTrustedExternalUrl } = require("./externalUrl.cjs");
 const { IPC_INVOKE, IPC_EVENT_PREFIX, IPC_META, IPC_SYNC, NAMESPACES } = require("./ipc-constants.cjs");
 const { sampleRendererRssMB, selectRendererMetrics } = require("./memorySampler.cjs");
+
+const acceptanceDebugPort = Number(process.env.LOAM_ACCEPTANCE_DEBUG_PORT);
+if (Number.isInteger(acceptanceDebugPort) && acceptanceDebugPort >= 1024 && acceptanceDebugPort <= 65535) {
+  app.commandLine.appendSwitch("remote-debugging-port", String(acceptanceDebugPort));
+}
 
 // ---------------------------------------------------------------------------
 // Local-only memory sampling (J6). The desktop main process is the only place
@@ -315,7 +321,10 @@ function createWindow() {
     }, 2000);
   });
   void win.loadURL(url);
-  win.webContents.setWindowOpenHandler((arg) => { void shell.openExternal(arg.url); return { action: "deny" }; });
+  win.webContents.setWindowOpenHandler((arg) => {
+    if (isTrustedExternalUrl(arg.url)) void shell.openExternal(arg.url);
+    return { action: "deny" };
+  });
   // The in-app browser's native WebContentsView ignores CSS stacking, so the
   // window itself must drive the window-side visibility factor: it can only be
   // painted while this window is focused and not minimized/hidden. The
@@ -403,18 +412,6 @@ function buildMenu() {
 // here; the rest are stubbed so the channel surface is complete and the sender
 // is always validated before any handler runs.
 // ---------------------------------------------------------------------------
-const TRUSTED_EXTERNAL_SCHEMES = new Set(["https:", "mailto:"]);
-const TRUSTED_EXTERNAL_HOSTS = new Set(["localhost:8787", "127.0.0.1:8787"]);
-function isTrustedExternalUrl(url) {
-  try {
-    const u = new URL(url);
-    if (u.protocol === "http:" && TRUSTED_EXTERNAL_HOSTS.has(u.host)) return true;
-    return TRUSTED_EXTERNAL_SCHEMES.has(u.protocol);
-  } catch {
-    return false;
-  }
-}
-
 function localStoragePath() {
   return path.join(app.getPath("userData"), "localStorage.json");
 }
@@ -728,6 +725,7 @@ async function exchangeAgentStudioSession(loginToken) {
     method: "POST",
     headers: { "Authorization": `Bearer ${loginToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({}),
+    signal: AbortSignal.timeout(10_000),
   });
   if (!gen.ok) throw new Error(`GenerateTempAuthCode failed: ${gen.status}`);
   const genData = await gen.json();
@@ -736,6 +734,7 @@ async function exchangeAgentStudioSession(loginToken) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token: genData.token }),
+    signal: AbortSignal.timeout(10_000),
   });
   if (!exch.ok) throw new Error(`ExchangeTokenByCode failed: ${exch.status}`);
   const exchData = await exch.json();
@@ -746,7 +745,7 @@ async function exchangeAgentStudioSession(loginToken) {
 // Loam is local and single-user: unless LOAM_REQUIRE_LOGIN=1, mint a session
 // from the local protocol adapter so the app opens straight into /app.
 function localLoginEnabled() {
-  return process.env.LOAM_REQUIRE_LOGIN !== "1";
+  return process.env.LOAM_REQUIRE_LOGIN !== "1" && process.env.LOAM_AUTH_DISABLED !== "true" && isAgentStudioUI();
 }
 
 async function ensureLocalSession() {
@@ -1068,7 +1067,9 @@ app.whenReady().then(async () => {
     }
   }
   if (loamServerReady) await ensureLocalSession();
+  console.log("[electron] creating main window");
   createWindow();
+  console.log("[electron] main window created");
   if (loamServerReady && win) {
     // Inject the install token into all renderer requests to the local API.
     const filter = { urls: [`${BASE}/api/*`] };

@@ -104,6 +104,7 @@ export interface McpServerConfig {
   sandbox?: boolean;
 }
 
+import type { CodeGraphConfig } from "./codegraph/config.js";
 import type { ApiAnythingConfig } from "./tools/apiAnything/types.js";
 
 export interface Config {
@@ -248,6 +249,8 @@ export interface Config {
    *  `session`); `loadConfig` fills it from DEFAULTS. Disabled until the H4
    *  Windows acceptance checklist passes. */
   apiAnything?: ApiAnythingConfig;
+  /** Code map (graphify engine). Absent = all defaults from src/codegraph/config.ts (disabled). */
+  codeGraph?: Partial<CodeGraphConfig>;
 
 
 
@@ -429,6 +432,8 @@ export const DEFAULTS: Config = {
     outputBudgetChars: 15_000,
     timeouts: { listMs: 15_000, callMs: 180_000, loginMs: 900_000, learnMs: 300_000 },
   },
+  // OD-7 (approved 2026-10-25 after W1-W12 passed — docs/codegraph/windows-validation.md):
+  codeGraph: { enabled: true },
 
 
 

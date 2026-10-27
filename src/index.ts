@@ -4,16 +4,16 @@ import { recordWikiSession } from "./wiki/hooks.js";
 import { ensureTaskWorkspace, isManagedTaskWorkspace } from "./server/taskWorkspace.js";
 import { BLUEPRINT_FILE, bootTaskFromSnapshot } from "./tools/envSnapshot.js";
 import path from "node:path";
-import { loadConfig, ROOT, DATA_DIR } from "./config.js";
-import { setLocalAuthUserDataDir } from "./security/localAuth.js";
+import { loadConfig, ROOT } from "./config.js";
 import { buildRuntime } from "./setup/runtime.js";
+import { initializeStartup } from "./setup/startup.js";
 import { type ToolTraceItem } from "./agent/reflect.js";
-import { loadPending, writeGate } from "./server/pending.js";
-import { getSettings, loadSettings } from "./server/settings.js";
+import { writeGate } from "./server/pending.js";
+import { getSettings } from "./server/settings.js";
 import { createRunSignal, clearRunSignal, isCancelledError, cancelRunSignal, listRunningSignals, activateRunSignal } from "./server/runControl.js";
-import { agentSystemSuffix, getAgent, loadAgents } from "./server/agents.js";
+import { agentSystemSuffix, getAgent } from "./server/agents.js";
 import { getWorkMode, normalizeWorkMode, resolveCompanionCapabilities, COMPANION_DYNAMIC_TOOL_NAMES } from "./server/companionGateway.js";
-import { deviceManager, getDeviceByAgent, loadCompanionDevices, type CompanionDeviceRecord } from "./server/companionDevices.js";
+import { deviceManager, getDeviceByAgent, type CompanionDeviceRecord } from "./server/companionDevices.js";
 import { createDeviceTools } from "./tools/deviceTools.js";
 import { createCompanionMemoryTools } from "./tools/companionMemoryTools.js";
 import { memoryContext, setMemoryEmbedder } from "./server/companionMemory.js";
@@ -25,36 +25,10 @@ import { approvalStableKey, getReplayDecision, matchApprovalRule, saveApprovalDe
 import { resolveSandboxPolicy } from "./policy/riskTier.js";
 import { DEFAULT_PERMISSION_MODE, isPlanMode } from "./policy/permissionModes.js";
 import type { Tool } from "./tools/registry.js";
-import { createScratchpadTools } from "./tools/scratchpadTools.js";
-import { createEnvironmentIssueTools } from "./tools/environmentIssueTools.js";
-import { createDeepResearchTools } from "./tools/deepResearch.js";
-import { createBoardTools } from "./tools/boardTools.js";
-import { createInstructionHistoryTools } from "./tools/instructionTools.js";
-import { createAgentSpawnTools } from "./tools/agentSpawnTools.js";
-import { createBrowserOperatorTools } from "./tools/browserOperator.js";
 import { suggestSkillsAfterSession } from "./tools/skillSuggest.js";
-import { createWideResearchTool } from "./tools/wideResearch.js";
-import { createFindAndEditTools } from "./tools/findAndEdit.js";
-import { createGroupTools } from "./tools/groupTools.js";
-import { createBackendScaffoldTools } from "./tools/backendScaffold.js";
-import { createWebScaffoldTools } from "./tools/webScaffold.js";
-import { createDesignStudioTools } from "./tools/designStudio.js";
-import { createPlaybookTools } from "./tools/playbookTools.js";
-import { createOfficeEditTools } from "./tools/officeEditAgent.js";
-import { createVideoEditTools } from "./tools/videoEditAgent.js";
-import { createVideoStudioTools } from "./tools/videoStudio.js";
-import { createDeployTools } from "./tools/deploy.js";
-import { createDesignExploreTools } from "./tools/designExplore.js";
-import { createDesignLintTools } from "./tools/designLint.js";
-import { createDesignAssetsTools } from "./tools/designAssets.js";
-import { createDesignBriefTools } from "./tools/designBrief.js";
-import { createDesignAutofixTools } from "./tools/designAutofix.js";
-import { createUiExamplesTools } from "./tools/uiExamples.js";
-import { createDesignCritiqueTools } from "./tools/designCritique.js";
-import { createConnectorTools } from "./tools/connectorTools.js";
-import { createWorkflowTools } from "./tools/workflow.js";
-import { applyPlanApprovalGate, applyPlanModeGate, createPlanTools } from "./tools/planTools.js";
-import { applyAskUserGate, createAskUserTools } from "./tools/askUserTools.js";
+import { registerRuntimeTools } from "./setup/registerTools.js";
+import { applyPlanApprovalGate, applyPlanModeGate } from "./tools/planTools.js";
+import { applyAskUserGate } from "./tools/askUserTools.js";
 import { connectedConnectorToolNames } from "./server/connectors/index.js";
 import { mergeAlwaysOnTools } from "./server/runTools.js";
 import { applyKnowledgeGate } from "./server/knowledgeTools.js";
@@ -69,6 +43,7 @@ import { runAgent } from "./agent/loop.js";
 import { isOutputType, modelAbChain, normalizeEffort, type EffortLevel } from "./llm/router.js";
 import { runOrchestratedAgent, type VerdictRecord } from "./agent/orchestrator.js";
 import { createOrchestrationCore } from "./orchestration/core.js";
+import { recordCheckpoint } from "./orchestration/public.js";
 import { writeCheckpoint } from "./agent/checkpointLog.js";
 import type { AgentEvent, Emit } from "./agent/events.js";
 import { applyRunEvent, beginRun, recallGraphHandle } from "./agent/runGraphAdapter.js";
@@ -77,7 +52,7 @@ import { OllamaClient } from "./ollama.js";
 import { flexCredentials } from "./server/modelTiers.js";
 import { startServer, type RunTaskOptions } from "./server/http.js";
 import { logMissingCraftDists } from "./server/craftStatus.js";
-import { appendMessage, appendStep, createTask, getProject, getTask, loadDb, setTaskStatus, listSchedules, setTaskDelegator, getSchedule } from "./server/db.js";
+import { appendMessage, appendStep, createTask, getProject, getTask, setTaskStatus, listSchedules, setTaskDelegator, getSchedule } from "./server/db.js";
 import { sendRoundEmailWithApproval } from "./server/roundNotifications.js";
 import { conversationHistory } from "./agent/history.js";
 import { startScheduler } from "./server/scheduler.js";
@@ -91,19 +66,15 @@ import { getLoamMode } from "./modes/catalog.js";
 import { closeBrowser, closeBrowserSession, setBrowserSessionResolver } from "./tools/browser.js";
 import { setTaskMode } from "./server/db.js";
 import { log } from "./log.js";
-import { recoverInterruptedTasks, getSavedRun, saveRun, queueTaskRun, completeTaskRun, closeDb } from "./server/db.js";
+import { getSavedRun, saveRun, queueTaskRun, completeTaskRun, closeDb } from "./server/db.js";
 import { startProtocolAdapter } from "./protocol/adapter.js";
 import { executionQueue } from "./server/executionQueue.js";
 import { requiresReplayConfirmation, type SavedRun } from "./server/recovery.js";
 // O6b: opt-in startup auto-resume (LOAM_AUTO_RESUME=1). Off by default, and
 // still refuses any checkpoint that is in flight.
 import { autoResumeInterruptedTasks } from "./server/autoResume.js";
-import { acquireRuntimeLease, releaseRuntimeLease, backupDatabase } from "./server/sqliteStore.js";
-import {
-  admitAllPending,
-  admitPending as admitPendingInputs,
-  hasPending,
-} from "./server/inputQueue.js";
+import { releaseRuntimeLease } from "./server/sqliteStore.js";
+import { admitPending as admitPendingInputs, hasPending } from "./server/inputQueue.js";
 import { claimRunLease, releaseRunLease, startLeaseHeartbeat, type LeaseHeartbeat, type RunLease } from "./server/runLease.js";
 import { recordTaskUsage } from "./server/credits.js";
 // H5: inject relevant learned lessons into the task's system prompt (BUILD_SPEC §6.5).
@@ -142,28 +113,9 @@ function missionBudgetFor(cfg: ReturnType<typeof loadConfig>, carried?: MissionC
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
-  setLocalAuthUserDataDir(process.env.LOAM_LOCAL_TOKEN_DIR || DATA_DIR);
-  loadDb();
-  acquireRuntimeLease();
-  backupDatabase();
-  const recovered = recoverInterruptedTasks();
-  if (recovered) log.info(`recovery: ${recovered} interrupted task(s) awaiting resume`);
-  // O6: messages that arrived while the process was down become durable `input`
-  // events now, even if their task is never resumed. Admitting twice is safe
-  // because the append is keyed by the input id.
-  const admittedInputs = admitAllPending();
-  if (admittedInputs.length > 0) log.info(`recovery: admitted ${admittedInputs.length} queued message(s)`);
-  const bootSettings = loadSettings();
-  const envRoot = process.env.LOAM_ROOT || process.env.MANUS_LOCAL_ROOT;
-  if (!envRoot && bootSettings.workspace && fs.existsSync(bootSettings.workspace) && fs.statSync(bootSettings.workspace).isDirectory()) {
-    cfg.workspace = path.resolve(bootSettings.workspace);
-  } else {
-    cfg.workspace = path.resolve(cfg.workspace);
-  }
-  fs.mkdirSync(cfg.workspace, { recursive: true });
-  loadPending();
-  loadAgents();
-  loadCompanionDevices();
+  const startup = initializeStartup(cfg);
+  if (startup.recovered) log.info(`recovery: ${startup.recovered} interrupted task(s) awaiting resume`);
+  if (startup.admittedInputs > 0) log.info(`recovery: admitted ${startup.admittedInputs} queued message(s)`);
   // Browser isolation (section 7): every companion browses in its OWN persistent
   // session (profile under DATA_DIR/browser-profiles/agent-<id>); anonymous runs
   // get ephemeral per-task sessions instead of one shared context.
@@ -187,35 +139,7 @@ async function main(): Promise<void> {
   }
 
   const rt = await buildRuntime(cfg);
-  rt.registry.registerAll(createScratchpadTools());
-  rt.registry.registerAll(createEnvironmentIssueTools());
-  rt.registry.registerAll(createBoardTools());
-  rt.registry.registerAll(createInstructionHistoryTools());
-  rt.registry.registerAll(createAgentSpawnTools());
-  rt.registry.registerAll(createBrowserOperatorTools());
-  rt.registry.registerAll(createDeepResearchTools());
-  rt.registry.register(createWideResearchTool({ ollama: rt.ollama, parentRegistry: rt.registry }));
-  rt.registry.registerAll(createFindAndEditTools({ ollama: rt.ollama }));
-  rt.registry.registerAll(createGroupTools());
-  rt.registry.registerAll(createBackendScaffoldTools());
-  rt.registry.registerAll(createWebScaffoldTools());
-  rt.registry.registerAll(createDesignStudioTools());
-  rt.registry.registerAll(createPlaybookTools({ ollama: rt.ollama }));
-  rt.registry.registerAll(createOfficeEditTools());
-  rt.registry.registerAll(createVideoEditTools());
-  rt.registry.registerAll(createVideoStudioTools({ relay: videoStudioRelay }));
-  rt.registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview: rt.preview }));
-  rt.registry.registerAll(createDesignExploreTools());
-  rt.registry.registerAll(createDesignLintTools());
-  rt.registry.registerAll(createDesignAssetsTools());
-  rt.registry.registerAll(createDesignBriefTools({ ollama: rt.ollama }));
-  rt.registry.registerAll(createDesignAutofixTools());
-  rt.registry.registerAll(createUiExamplesTools());
-  rt.registry.registerAll(createDesignCritiqueTools(rt.preview, { ollama: rt.ollama }));
-  rt.registry.registerAll(createConnectorTools());
-  rt.registry.registerAll(createWorkflowTools({ ollama: rt.ollama, registry: rt.registry }));
-  rt.registry.registerAll(createPlanTools());
-  rt.registry.registerAll(createAskUserTools());
+  registerRuntimeTools(rt);
   const { ollama, registry, memory, mcp } = rt;
 
   // D19 session runtime: one manager owns both the sleep lifecycle and the
@@ -720,6 +644,7 @@ async function main(): Promise<void> {
           // whether a tool call started without ever reaching a terminal row.
           checkpoint.logSeq = writeCheckpoint(task, checkpoint, task);
           checkpoint.logSessionId = task;
+          if (core) recordCheckpoint(core, task, task, checkpoint, checkpoint.logSeq);
           opts.savedRun.checkpoint = checkpoint;
           saveRun(task, opts.savedRun, opts.lease);
         },
@@ -1042,6 +967,7 @@ async function main(): Promise<void> {
     embedder: rt.embedder ?? undefined,
     screenLive: rt.screenLive,
     preview: rt.preview,
+    codeGraph: rt.codeGraph,
   mcp,
   });
 

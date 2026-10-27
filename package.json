@@ -3,7 +3,7 @@
   "version": "0.5.31",
   "private": true,
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=24.0.0"
   },
   "type": "module",
   "main": "electron/main.cjs",
@@ -57,14 +57,25 @@
     "check:recovery": "tsx src/scripts/check-recovery.ts",
     "check:remediate": "tsx src/scripts/check-remediate.ts",
     "check:recovery:http": "tsx src/scripts/check-recovery-http.ts",
+    "check:resume:http": "tsx src/scripts/check-resume-http.ts",
+    "check:qa-artifacts": "node scripts/check-qa-artifacts.mjs",
     "check:red": "tsx src/scripts/check-red-lab.ts",
     "check:red:capabilities": "tsx src/scripts/check-red-capabilities-lab.ts",
     "check:red:kill-switch": "tsx src/scripts/check-red-kill-switch.ts",
+    "check:mobile": "node --import tsx --test src/security/mobile/__tests__/*.test.ts && tsx src/scripts/check-mobile-bench.ts",
+    "check:enterprise": "node --import tsx --test src/security/enterprise/__tests__/*.test.ts src/server/__tests__/securityEnterpriseRoutes.test.ts",
+    "check:mobile:scale": "tsx src/scripts/check-mobile-scale.ts",
+    "check:enterprise:scale": "node --import tsx --test src/security/enterprise/__tests__/scale.test.ts src/server/__tests__/mobileScaleRoutes.test.ts",
+    "check:advanced": "npm run test:advanced",
+    "check:catalog": "npm run test:catalog",
+    "check:next": "npm run test:next",
+    "check:engines": "npm run test:engines && tsx src/scripts/check-engine-workers.ts",
     "red:engines": "tsx src/scripts/red-install-engines.ts",
     "red:engage": "tsx src/scripts/red-engage.ts",
     "check:scanners": "tsx src/scripts/check-scanners.ts",
     "check:codegraph": "tsx src/scripts/check-codegraph.ts && node --import tsx --test src/codegraph/__tests__/codegraph.unit.test.ts",
     "check:codegraph-live": "node --import tsx --test src/codegraph/__tests__/codegraph.live.test.ts",
+    "codegraph:update": "tsx src/scripts/codegraph-update.ts",
     "check:srt-policy": "tsx src/scripts/check-srt-policy.ts",
     "check:srt-session": "tsx src/scripts/check-srt-session.ts",
     "check:srt-bridge": "tsx src/scripts/check-srt-bridge.ts",
@@ -110,13 +121,21 @@
     "test:coding-eval": "node --import tsx --test src/scripts/__tests__/eval-coding.test.ts",
     "test:craft": "node --import tsx --test src/server/__tests__/craftStatus.test.ts",
     "test:design-pipeline": "node --import tsx --test src/design/__tests__/pipeline.test.ts src/models/__tests__/route.test.ts src/scripts/__tests__/check-design-pipeline.test.ts",
-    "test:electron": "node --test electron/__tests__/inAppBrowser.test.cjs",
+    "test:electron": "node --test electron/__tests__/*.test.cjs",
     "test:memory": "node --import tsx --test src/memory/__tests__/cache.test.ts src/memory/__tests__/caps.test.ts src/server/__tests__/debugMemory.test.ts src/protocol/__tests__/blobRoute.test.ts",
     "test:mirofish": "node --import tsx --test src/tools/mirofish/__tests__/nutrio-e2e.test.ts",
     "test:normalize": "node --import tsx --test src/security/normalize/__tests__/*.test.ts",
     "test:pentest-bench": "node --import tsx --test src/scripts/__tests__/check-pentest-bench.test.ts",
     "test:prune": "node --import tsx --test src/agent/prune/__tests__/*.test.ts src/tools/__tests__/contextRecallTool.test.ts",
-    "test:red": "node --import tsx --test src/security/red/__tests__/*.test.ts",
+    "test:red": "node --import tsx --test --test-concurrency=1 src/security/red/__tests__/*.test.ts",
+    "test:mobile": "node --import tsx --test src/security/mobile/__tests__/*.test.ts",
+    "test:enterprise": "node --import tsx --test src/security/enterprise/__tests__/*.test.ts src/server/__tests__/securityEnterpriseRoutes.test.ts",
+    "test:mobile:scale": "node --import tsx --test src/security/mobile/__tests__/scale.test.ts",
+    "test:enterprise:scale": "node --import tsx --test src/security/enterprise/__tests__/scale.test.ts src/server/__tests__/mobileScaleRoutes.test.ts",
+    "test:advanced": "node --import tsx --test src/security/__tests__/advanced.test.ts src/security/web/__tests__/*.test.ts src/security/mobile/__tests__/instrumentation.test.ts src/server/__tests__/advancedSecurityRoutes.test.ts",
+    "test:catalog": "node --import tsx --test src/security/catalog/__tests__/*.test.ts src/server/__tests__/vulnerabilityCatalogRoutes.test.ts",
+    "test:next": "node --import tsx --test src/security/__tests__/next.test.ts src/server/__tests__/nextSecurityRoutes.test.ts",
+    "test:engines": "node --import tsx --test src/security/engines/__tests__/*.test.ts src/server/__tests__/engineRoutes.test.ts",
     "test:remediate": "node --import tsx --test src/security/remediate/__tests__/*.test.ts",
     "test:remediate-packs": "node --import tsx --test src/security/remediate/__tests__/packs.test.ts",
     "test:remediate-inventory": "node --import tsx --test src/security/remediate/__tests__/inventory.test.ts",
@@ -152,8 +171,16 @@
     "test:api-anything": "node --import tsx --test src/tools/apiAnything/__tests__/*.test.ts src/policy/__tests__/apiAnythingTier.test.ts",
     "check:skill-ab": "node --import tsx --test src/eval/skillAb/__tests__/skillAb.test.ts",
     "test:skill-ab": "node --import tsx --test src/eval/skillAb/__tests__/skillAb.test.ts",
+    "test:unit": "node scripts/run-unit-tests.mjs",
+    "test:performance": "node --import tsx --test src/tools/__tests__/search.test.ts",
+    "check:performance": "npm run test:performance && npm run test:bench && node --import tsx --test src/orchestration/__tests__/tracing.test.ts",
+    "verify:web": "npm --prefix packages/web run typecheck && npm --prefix packages/web test && npm --prefix packages/web run build",
+    "audit:prod": "npm audit --omit=dev --audit-level=moderate",
+    "audit:dev": "npm audit --audit-level=high",
+    "check:installer": "node scripts/check-windows-installer.mjs",
+    "verify:security": "npm run typecheck && npm run test:red && npm run test:scanners && npm run test:mobile && npm run test:enterprise && npm run test:mobile:scale && npm run test:enterprise:scale && npm run test:advanced && npm run test:catalog && npm run test:next && npm run test:engines && npm run check:red && npm run check:mobile && npm run check:enterprise && npm run check:mobile:scale && npm run check:enterprise:scale && npm run check:advanced && npm run check:catalog && npm run check:next && npm run check:engines && npm run check:security-asar",
     "verify": "npm run typecheck && npm run check:encoding && npm run check:docs && npm run check:eval && npm run check:orchestrator && npm run check:recovery && npm run check:modes && npm run check:codegraph && npm run check:orchestration",
-    "verify:loam": "npm run verify && npm run check:isolation && npm run check:loam-agents && npm run check:loam-ui && npm run check:loam-ancillary && npm run check:loam-e2e"
+    "verify:loam": "npm run verify && npm run check:isolation && npm run check:resume:http && npm run check:loam-agents && npm run check:loam-ui && npm run check:loam-ancillary && npm run check:loam-e2e && npm run check:qa-artifacts"
   },
   "dependencies": {
     "@jitl/quickjs-singlefile-cjs-release-sync": "^0.32.0",
@@ -168,6 +195,9 @@
     "docx": "^9.12.0",
     "electron-updater": "^6.8.9",
     "exceljs": "^4.4.0",
+    "ffmpeg-static": "^5.3.0",
+    "file-type": "file:packages/file-type-legacy-compat",
+    "jimp": "0.22.10",
     "node-pty": "^1.1.0",
     "pdf-parse": "^2.4.5",
     "playwright": "^1.49.0",
@@ -175,7 +205,8 @@
     "quickjs-emscripten-core": "^0.32.0",
     "sharp": "^0.35.5",
     "smol-toml": "^1.9.1",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@anthropic-ai/sandbox-runtime": "0.0.81",
@@ -189,5 +220,22 @@
     "socket.io-client": "^4.8.4",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
+  },
+  "overrides": {
+    "zod": "4.6.7",
+    "@jimp/plugin-resize": "0.22.12",
+    "@jimp/plugin-blur": "0.22.12",
+    "exceljs": {
+      "uuid": "11.1.1"
+    },
+    "pptxgenjs": {
+      "image-size": "2.0.4"
+    },
+    "@nut-tree-fork/nut-js": {
+      "file-type": "file:packages/file-type-legacy-compat"
+    },
+    "@anthropic-ai/sandbox-runtime": {
+      "zod": "4.6.7"
+    }
   }
 }

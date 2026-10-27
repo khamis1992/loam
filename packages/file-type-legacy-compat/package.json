@@ -1,0 +1,9 @@
+{
+  "name": "@loam/file-type-legacy-compat",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.cjs",
+  "dependencies": {
+    "file-type": "21.3.3"
+  }
+}
