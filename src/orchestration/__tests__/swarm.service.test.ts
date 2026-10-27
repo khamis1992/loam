@@ -97,7 +97,9 @@ test("AC-S4.1 merge conflict: the worker is told mid-turn, resolves, and conflic
     const m = await c.call("merge_request", { work_label: "footer" });
     assert.match(m.content, /^conflict: shared\.txt/);
     assert.match(m.content, /DM from harness/, "conflict note delivered mid-turn");
-    await c.call("shell_run", { command: "git merge main >/dev/null 2>&1; printf 'w1\\nw2\\n' > shared.txt && git add -A && git commit -q -m resolve" });
+    await c.call("shell_run", { command: "git merge main" });
+    await c.call("file_write", { path: "shared.txt", content: "w1\nw2\n" });
+    await c.call("git_commit", { message: "resolve" });
     const again = await c.call("merge_request", { work_label: "footer" });
     assert.match(again.content, /^merged/);
     await c.call("board_write", { type: "PATCH_SUMMARY", content: "files=shared.txt | idea=footer | evidence=cat shared.txt passed", work_label: "footer" });

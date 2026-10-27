@@ -32,9 +32,23 @@ export function tmpDir(prefix = "c11-"): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
+const GIT_ENV = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
+
 export async function sh(cwd: string, cmd: string): Promise<string> {
-  const { stdout } = await exec("sh", ["-c", cmd], { cwd, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+  const [shell, args] = process.platform === "win32" ? ["cmd", ["/d", "/s", "/c", cmd]] : ["sh", ["-c", cmd]];
+  const { stdout } = await exec(shell, args, { cwd, windowsHide: true, env: GIT_ENV });
   return stdout.trim();
+}
+
+export async function git(cwd: string, args: string[]): Promise<string> {
+  const { stdout } = await exec("git", args, { cwd, windowsHide: true, env: GIT_ENV });
+  return stdout.trim();
+}
+
+async function gitCommit(cwd: string, message: string): Promise<string> {
+  await git(cwd, ["add", "-A"]);
+  await git(cwd, ["commit", "-q", "-m", message]);
+  return git(cwd, ["rev-parse", "HEAD"]);
 }
 
 /** Cloud-capable config: "remote-model" is an https provider in testConfig(). */
@@ -56,7 +70,7 @@ export function baseTools(): ToolRegistry {
       return { ok: true, content: `wrote ${a.path}` };
     }),
     t("file_read", async (a, ctx) => ({ ok: true, content: fs.readFileSync(path.join(ctx.workspace, String(a.path)), "utf8") })),
-    t("git_commit", async (a, ctx) => ({ ok: true, content: await sh(ctx.workspace, `git add -A && git commit -q -m ${JSON.stringify(String(a.message ?? "change"))} && git rev-parse HEAD`) })),
+    t("git_commit", async (a, ctx) => ({ ok: true, content: await gitCommit(ctx.workspace, String(a.message ?? "change")) })),
     t("shell_run", async (a, ctx) => {
       try {
         return { ok: true, content: await sh(ctx.workspace, String(a.command)) };

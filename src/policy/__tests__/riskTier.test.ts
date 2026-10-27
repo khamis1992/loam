@@ -33,6 +33,8 @@ const CLASSIFICATION_CASES: Array<{ tool: string; args?: Record<string, unknown>
   { tool: "computer_screenshot", args: {}, expected: "read", note: "screen capture" },
   { tool: "skill_view", args: { name: "x" }, expected: "read", note: "skill view" },
   { tool: "memory_search", args: { query: "x" }, expected: "read", note: "memory search" },
+  { tool: "codegraph_query", args: { question: "x" }, expected: "read", note: "codegraph query is read-only" },
+  { tool: "codegraph_index", args: {}, expected: "write-workspace", note: "codegraph indexing mutates the graph cache" },
   // write-workspace
   { tool: "file_write", args: { path: "src/a.ts", content: "x" }, ws: WS, expected: "write-workspace", note: "file_write relative" },
   { tool: "file_edit", args: { path: "./b.ts", find: "a", replace: "b" }, ws: WS, expected: "write-workspace", note: "file_edit dot-relative" },

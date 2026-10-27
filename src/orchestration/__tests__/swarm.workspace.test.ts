@@ -6,10 +6,9 @@ import {
   addWorkerWorktree, claimBranch, currentBranch, initRunRepo, isClean,
   mainCommitCount, mainMergeCount, mergeWorkerBranch, removeWorktrees, switchClaimBranch,
 } from "../swarm/workspace.js";
-import { sh, tmpDir } from "./swarmHelpers.js";
+import { git, tmpDir } from "./swarmHelpers.js";
 
-// swarmHelpers.sh runs a shell command string in a cwd; git stays on its arg-array form.
-const gitIn = (cwd: string) => (...args: string[]) => sh(cwd, ["git", ...args.map(a => /[^\w./=-]/.test(a) ? JSON.stringify(a) : a)].join(" "));
+const gitIn = (cwd: string) => (...args: string[]) => git(cwd, args);
 
 async function seedFile(root: string, rel: string, content: string): Promise<void> {
   const target = path.join(root, rel);
