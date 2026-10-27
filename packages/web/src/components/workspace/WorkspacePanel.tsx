@@ -353,15 +353,21 @@ export function WorkspacePanel({ taskId, live, events, requestedPath, requestedK
     if (!selected) return async () => undefined;
     return async (data: Blob | string) => {
       const headers = await getApiHeaders();
-      const body = data;
       const params = new URLSearchParams({ taskId: selected.taskId, path: selected.path });
+      // The doc route parses a JSON { html } body; other kinds keep their raw payload
+      // (the sheet editor already passes serialized JSON text its own route parses).
+      const asDocJson = selected.kind === 'doc' && typeof data === 'string';
       const res = await fetch(`${apiBase}/api/workspace/${selected.kind}/file?${params.toString()}`, {
         method: 'PUT',
         headers: {
           ...headers,
-          ...(typeof data === 'string' ? { 'content-type': 'text/plain' } : { 'content-type': 'application/octet-stream' }),
+          ...(asDocJson
+            ? { 'content-type': 'application/json' }
+            : typeof data === 'string'
+              ? { 'content-type': 'text/plain' }
+              : { 'content-type': 'application/octet-stream' }),
         },
-        body,
+        body: asDocJson ? JSON.stringify({ html: data }) : data,
       });
       if (!res.ok) throw new Error(`save failed: ${res.status}`);
     };
