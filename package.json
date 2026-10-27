@@ -158,6 +158,11 @@
     "vendor:filmcraft": "node scripts/vendor/fetch-filmcraft.mjs",
     "test:orchestration": "node --import tsx --test \"src/orchestration/**/__tests__/*.test.ts\" \"src/subagent/__tests__/acpClient.test.ts\"",
     "check:orchestration": "tsx src/scripts/check-orchestration.ts && npm run test:orchestration",
+    "check:swarm": "node --import tsx src/scripts/check-swarm.ts",
+    "check:swarm-bench": "node --import tsx src/scripts/check-swarm-bench.ts",
+    "check:swarm-lifecycle": "node --import tsx src/scripts/check-swarm-lifecycle.ts",
+    "check:swarm-repair-order": "node --import tsx src/scripts/check-swarm-repair-order.ts",
+    "check:swarm-compare": "node --import tsx src/scripts/check-swarm-compare.ts --dry-run",
     "check:selfharden": "node --import tsx src/scripts/check-self-audit.ts",
     "check:memory-hybrid": "node --import tsx src/scripts/check-memory-hybrid.ts",
     "test:memory-hybrid": "node --import tsx --test src/memory/__tests__/hybrid.test.ts",
@@ -179,7 +184,7 @@
     "audit:dev": "npm audit --audit-level=high",
     "check:installer": "node scripts/check-windows-installer.mjs",
     "verify:security": "npm run typecheck && npm run test:red && npm run test:scanners && npm run test:mobile && npm run test:enterprise && npm run test:mobile:scale && npm run test:enterprise:scale && npm run test:advanced && npm run test:catalog && npm run test:next && npm run test:engines && npm run check:red && npm run check:mobile && npm run check:enterprise && npm run check:mobile:scale && npm run check:enterprise:scale && npm run check:advanced && npm run check:catalog && npm run check:next && npm run check:engines && npm run check:security-asar",
-    "verify": "npm run typecheck && npm run check:encoding && npm run check:docs && npm run check:eval && npm run check:orchestrator && npm run check:recovery && npm run check:modes && npm run check:codegraph && npm run check:orchestration",
+    "verify": "npm run typecheck && npm run check:encoding && npm run check:docs && npm run check:eval && npm run check:orchestrator && npm run check:recovery && npm run check:modes && npm run check:codegraph && npm run check:orchestration && npm run check:swarm-lifecycle && npm run check:swarm-repair-order",
     "verify:loam": "npm run verify && npm run check:isolation && npm run check:resume:http && npm run check:loam-agents && npm run check:loam-ui && npm run check:loam-ancillary && npm run check:loam-e2e && npm run check:qa-artifacts"
   },
   "dependencies": {

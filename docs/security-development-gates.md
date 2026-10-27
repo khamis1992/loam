@@ -172,3 +172,15 @@ codegraph دخيلة)؛ THIRD_PARTY_NOTICES يحمل wakaru + api-anything؛ Ads
 (docs/h4-windows-acceptance.md — W1–W15 عند خالدس؛ apiAnything.enabled=false
 حتى الاجتياز) ومحرك runs متعدد الوكلاء الذي استثنته الخطة (المسارات جاهزة
 وترد 501 بصدق).
+
+## App Builder lifecycle (شركة البرمجيات) — 2026-10-27
+
+بوابات دورة حياة شركة البرمجيات (BUILD_SPEC §12) مدمجة في `npm run verify`
+عبر `check:swarm-lifecycle` و`check:swarm-repair-order`: توجيه الجهد، بوابتا
+الاستيضاح والموافقة المتينتان (pause دائم عبر إعادة التشغيل)، بوابة EARS
+والمواصفة الحية، رسم المهام بملفات مملوكة + TDD، المراجعة الثنائية، الفحص
+البصري (advisory)، سجلات النقاط/الاسترجاع بفروع git غير مدمّرة، ورفض
+الإطلاق بدون علم المستخدم. سطح الإطلاق السحابي: مسار `POST /launch` خلف
+`LOAM_SWARM_CLOUD_DEPLOY=1` + فحص origin + `confirm:true`، توكنات من الخزنة
+(مدى `swarm-launch`) أو البيئة، لا تُسجَّل أبدًا — وليس أداة وكيل بأي حال.
+القياس الحي (D10) لا يُشغَّل إلا بموافقة صريحة لأنه يصرف توكنات فعلية.

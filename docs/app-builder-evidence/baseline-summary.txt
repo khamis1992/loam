@@ -1,0 +1,8 @@
+check-swarm exit=0
+bench exit=0
+memory exit=0
+security exit=0
+isolation exit=0
+http exit=1
+unit exit=0
+DONE

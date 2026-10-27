@@ -558,7 +558,9 @@ assert.equal(deployGateDone.deploy?.packageType,"http");
 // §14 specialized team tracks: the engine detects the product nature from the brief (an
 // explicit track always wins), invalid tracks are rejected, and the web-track fixture
 // delivers an Arabic RTL index.html plus a servable HTTP package end to end.
-assert.throws(()=>service.create({brief:"bad track",track:"mobile" as unknown as "api"}),/Invalid track/);
+assert.throws(()=>service.create({brief:"bad track",track:"game" as unknown as "api"}),/Invalid track/);
+// BUILD_SPEC §6.10 track fix: the detected-only tracks are also accepted explicitly.
+for (const explicitTrack of ["mobile","desktop","ai"] as const) { const r=service.create({brief:"explicit track",track:explicitTrack}); assert.equal(r.track,explicitTrack); service.cancel(r.id); }
 webTrack=true;
 const webTrackRun=service.create({brief:"ابنِ واجهة ويب لمتجر"});
 webTrack=false; // web runs fan out to impl-api/impl-ui; the legacy implementation-stage block must not leak the flag
@@ -684,5 +686,5 @@ assert.throws(()=>recovered.resume(parallel[0]!.id));
 const resumedCalls=calls.length;
 assert.equal((await wait(recovered.resume(first.id).id,recovered)).status,"completed");
 assert(calls.length>resumedCalls,"resume must re-run the interrupted stage");
-assert.equal(recovered.list().length,38); recovered.close(); db.closeDb();
+assert.equal(recovered.list().length,41); recovered.close(); db.closeDb(); // 38 before BUILD_SPEC + 3 explicit-track runs (§6.10 track fix)
 console.log("Swarm checks passed: parallel lanes and capacity, DAG concurrency, tool isolation, code review gate, indexed project memory with dependency map, existing-repository analysis and seeded fix flow, independent engine-executed acceptance tests, automatic QA/review/integrity repair rounds, git checkpoints, real QA command, cancellation, resume after interruption, persistence and crash recovery, engine-side deploy stage (library packaging, HTTP probe, deploy gate repair), live previews, solo single-agent mode, per-run code branches with baseRun cloning, review requests, basic conflict resolution and verified merges into main, specialized team tracks (web/api/library detection with explicit override), and the opt-in §7 isolation wiring (default policy stays local at the deploy probe and post-merge verification).");

@@ -79,7 +79,7 @@ const executor = async (o: RunOptions): Promise<RunResult> => {
   if (["requirements", "architecture", "research", "repo", "review", "delivery"].includes(stage)) {
     assert(!names.includes("shell_run")); assert(!names.includes("file_write"));
   }
-  if (stage === "implementation") {
+  if (stage === "implementation" || stage === "solo") {
     const write = async (file: string, content: string): Promise<void> => {
       assert.equal((await o.tools.exec("file_write", { path: file, content }, ctx)).ok, true, `fixture implementation must write ${file}`);
     };
@@ -112,7 +112,7 @@ const executor = async (o: RunOptions): Promise<RunResult> => {
     }[scenario]!;
     assert.equal((await o.tools.exec("file_write", { path: "acceptance.test.cjs", content }, ctx)).ok, true, "independent author must write acceptance.test.cjs");
   }
-  if (stage === "qa") {
+  if (stage === "qa" || stage === "solo") {
     const result = await o.tools.exec("shell_run", { command: `node --test ${suiteFor[scenario]}`, timeoutSeconds: 60 }, ctx);
     assert.equal(result.ok, true, `fixture QA suite must pass: ${result.content.slice(0, 400)}`);
   }
@@ -183,9 +183,20 @@ assert(migratedTasks.includes("version"), "the migrated tasks.json must carry th
 assert(migratedTasks.includes(MIGRATE_DATA_MARKER), "the pre-existing v1 task data must survive the migration untouched");
 assert.equal(modelCalls.migrate, 10, "migrate scenario: seed has 2 code + 1 test file; store.cjs+tasks.json presence keeps repo model-analyzed or engine-skipped — pinned to the observed 10");
 
+// BUILD_SPEC §12.2 effort routing: the same create brief with effort "auto" takes the single-agent
+// path (solo → deploy → merge) and spends 1 model call instead of 10.
+const createCallsBeforeAuto = modelCalls.create;
+const routed = service.create({ brief: scenarios[0]!.brief, concurrency: 2, effort: "auto" });
+assert.deepEqual(routed.nodes.map(n => n.id), ["solo", "deploy", "merge"], "a small brief must route to the solo pipeline");
+const routedDone = await wait(routed.id);
+assert.equal(routedDone.status, "completed", `auto-routed create must complete: ${routedDone.error ?? ""}`);
+const autoCreateCalls = modelCalls.create - createCallsBeforeAuto;
+assert.equal(autoCreateCalls, 1, "auto effort must spend exactly 1 model call on the create brief (full pipeline: 10)");
+console.log(`auto    ${routedDone.status.padEnd(10)} effort=${routedDone.effort?.effort} model=${autoCreateCalls} (full pipeline: 10)`);
 const report = {
   ranAt: new Date().toISOString(),
   scenarios: rows,
+  autoRouting: { brief: scenarios[0]!.brief, effort: routedDone.effort?.effort, score: routedDone.effort?.score, modelCalls: autoCreateCalls, status: routedDone.status },
   overhead: { modelCalls: rows.reduce((sum, r) => sum + r.modelCalls, 0), stages: snapshots.reduce((sum, s) => sum + s.nodes, 0) },
 };
 fs.mkdirSync(path.dirname(output), { recursive: true });
