@@ -9,14 +9,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { DATA_DIR } from "../../config.js";
 let RUN_DATA_DIR = DATA_DIR;
-import { fileURLToPath } from "node:url";
-const REPO_ADVISORIES = path.resolve(fileURLToPath(import.meta.url), "../../../../security/advisories");
 import { RemediationError } from "./errors.js";
 import {
   REMEDIATE_LIMITS, canonicalSha256,
   type FixProposal, type RemediationRun, type RemediationStartInput, type RepoPlan, type VulnRecord,
 } from "./types.js";
-import { loadEnabledPacks } from "./packs/loader.js";
+import { advisoriesDir, loadEnabledPacks } from "./packs/loader.js";
+const REPO_ADVISORIES = advisoriesDir();
 import { runInventory } from "./inventory/index.js";
 import { resolveTarget } from "./resolve/targetResolver.js";
 import { approveScope, assertRepoApproved, createWorktree, removeWorktree } from "./gate/index.js";

@@ -4,6 +4,9 @@
  */
 import assert from "node:assert/strict";
 import http from "node:http";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { once } from "node:events";
 import { describe, it } from "node:test";
 
@@ -25,7 +28,7 @@ const ctxFor = (port: number): RedCapabilityContext => {
     authz,
     transport: redTransport(authz),
     bridge: async (): Promise<BridgeEnvelope> => ({ ok: false, exitCode: null, timedOut: false, error: { type: "x", message: "x" } }),
-    audit: new RedAuditLog(),
+    audit: new RedAuditLog(fs.mkdtempSync(path.join(os.tmpdir(), "red-test-audit-"))),
   };
 };
 
@@ -111,7 +114,7 @@ describe("deser capability", () => {
       bridge: async (): Promise<BridgeEnvelope> => ({
         ok: true, exitCode: 0, timedOut: false, text: "rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcA==",
       }),
-      audit: new RedAuditLog(),
+      audit: new RedAuditLog(fs.mkdtempSync(path.join(os.tmpdir(), "red-test-audit-"))),
     };
     try {
       const cap = deserCapability({ jar: "ysoserial.jar" });

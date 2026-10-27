@@ -64,8 +64,9 @@ export interface RedTransportDeps {
   gateDeps?: Omit<GateDeps, "approval" | "limiter" | "requestCount">;
   /** Human approval for destructive requests (default: deny). */
   approval?: GateDeps["approval"];
-  /** Campaign-level authentication headers (bearer/cookie) applied to every request. */
+  /** Authentication headers are sent only to this exact origin. */
   authHeaders?: Record<string, string>;
+  authOrigin?: string;
   evidence?: RedRequestEvidence[];
   maxBodyBytes?: number;
   timeoutMs?: number;
@@ -145,9 +146,11 @@ export function redTransport(authz: AuthorizationRecord | null, deps: RedTranspo
       const kill = killSwitchSignal();
       kill.signal.addEventListener("abort", onAbort, { once: true });
       try {
+        const credentialOrigin = deps.authOrigin ? new URL(deps.authOrigin).origin : null;
+        const sendCredentials = credentialOrigin !== null && new URL(input).origin === credentialOrigin;
         const res = await fetch(input, {
           method,
-          headers: { ...(deps.authHeaders ?? {}), ...(opts.headers ?? {}) },
+          headers: { ...(sendCredentials ? deps.authHeaders ?? {} : {}), ...(opts.headers ?? {}) },
           body: opts.body instanceof Uint8Array ? toArrayBuffer(opts.body) : opts.body,
           redirect: "manual",
           signal: controller.signal,

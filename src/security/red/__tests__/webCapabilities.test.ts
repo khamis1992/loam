@@ -3,6 +3,9 @@
  * Engines are stubbed through the BridgeCaller; parsers get real fixtures.
  */
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, it } from "node:test";
 
 import type { BridgeEnvelope } from "../../../bridges/types.js";
@@ -24,7 +27,7 @@ const ctxWith = (bridge: (id: string, cmd: string, args: Record<string, unknown>
     scope: { allowHosts: ["127.0.0.1"], allowPorts: [3000], allowUrlPrefixes: [], denyAlways: [] },
   });
   const transport: RedTransport = redTransport(authz);
-  return { authz, transport, bridge, audit: new RedAuditLog() };
+  return { authz, transport, bridge, audit: new RedAuditLog(fs.mkdtempSync(path.join(os.tmpdir(), "red-test-audit-"))) };
 };
 
 const envelope = (ok: boolean, text: string): BridgeEnvelope => ({

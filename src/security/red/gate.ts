@@ -47,7 +47,8 @@ export interface AuthorizationLimits {
 export interface AuthorizationRecord {
   /** AUTHZ-####; referenced by every audit entry of the campaign. */
   id: string;
-  owner: "khamis";
+  owner: string;
+  tenantId?: string;
   scope: AuthorizationScope;
   authorization: { statement: string; acknowledgedAt: string; expiresAt: string };
   limits: AuthorizationLimits;
@@ -57,6 +58,8 @@ export interface AuthorizationRecord {
 
 export interface CreateAuthorizationInput {
   statement: string;
+  owner?: string;
+  tenantId?: string;
   /** Seconds from now until the record expires; <= 0 creates an already-expired record. */
   expiresInSeconds: number;
   scope: AuthorizationScope;
@@ -111,9 +114,14 @@ export function createAuthorizationRecord(input: CreateAuthorizationInput): Auth
     destructiveAllowed: input.destructiveAllowed ?? input.limits?.destructiveAllowed ?? false,
   };
   if (limits.maxReqPerSec < 1 || limits.maxConcurrent < 1 || limits.maxTotalRequests < 1) throw new Error("limits must be >= 1");
+  const owner = input.owner?.trim() || "khamis";
+  const tenantId = input.tenantId?.trim();
+  if (!/^[A-Za-z0-9_.@-]{1,128}$/.test(owner)) throw new Error("owner must be a stable identity");
+  if (tenantId && !/^[A-Za-z0-9_.@-]{1,128}$/.test(tenantId)) throw new Error("tenantId must be a stable identifier");
   return {
     id: input.id ?? nextAuthorizationId(input.root ?? defaultDataRoot()),
-    owner: "khamis",
+    owner,
+    ...(tenantId ? { tenantId } : {}),
     scope: input.scope,
     authorization: {
       statement: input.statement.trim().slice(0, 500),
@@ -180,6 +188,8 @@ function signAuthorization(rec: AuthorizationRecord, root: string): string {
 
 /** Persist a record; refuses to overwrite an existing id (immutable once signed). */
 export function saveAuthorization(rec: AuthorizationRecord, root: string = defaultDataRoot()): void {
+  if (!/^AUTHZ-[A-Za-z0-9-]+$/.test(rec.id)) throw new Error("invalid authorization id");
+  validateScope(rec.scope);
   fs.mkdirSync(authzDir(root), { recursive: true });
   const file = authzFile(root, rec.id);
   if (fs.existsSync(file)) throw new Error(`authorization ${rec.id} already exists; records are immutable once signed`);
@@ -187,20 +197,21 @@ export function saveAuthorization(rec: AuthorizationRecord, root: string = defau
   fs.writeFileSync(file, JSON.stringify(signed, null, 2), { encoding: "utf8" });
 }
 
-/** Load a record, or null when missing/unreadable/tampered. */
+/** Load only a structurally valid, signed record. Unsigned legacy records are not authorization. */
 export function loadAuthorization(id: string, root: string = defaultDataRoot()): AuthorizationRecord | null {
   try {
+    if (!/^AUTHZ-[A-Za-z0-9-]+$/.test(id)) return null;
     const raw = fs.readFileSync(authzFile(root, id), "utf8");
     const rec = JSON.parse(raw) as AuthorizationRecord;
-    if (!rec || rec.id !== id || !rec.scope || !rec.authorization || !rec.limits) return null;
-    if (rec.signature) {
-      const expected = signAuthorization(rec, root);
-      const actualBuffer = Buffer.from(rec.signature, "hex");
-      const expectedBuffer = Buffer.from(expected, "hex");
-      if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) return null;
-    }
-    // Unsigned records written by older Loam versions remain readable as legacy;
-    // every new saveAuthorization call writes a signed record.
+    if (!rec || rec.id !== id || typeof rec.owner !== "string" || !rec.owner || !rec.scope || !rec.authorization || !rec.limits) return null;
+    if (typeof rec.authorization.statement !== "string" || !Number.isFinite(Date.parse(rec.authorization.acknowledgedAt)) || !Number.isFinite(Date.parse(rec.authorization.expiresAt))) return null;
+    if (![rec.limits.maxReqPerSec, rec.limits.maxConcurrent, rec.limits.maxTotalRequests].every((n) => Number.isFinite(n) && n >= 1)) return null;
+    validateScope(rec.scope);
+    if (typeof rec.signature !== "string" || !/^[a-f0-9]{64}$/i.test(rec.signature)) return null;
+    const expected = signAuthorization(rec, root);
+    const actualBuffer = Buffer.from(rec.signature, "hex");
+    const expectedBuffer = Buffer.from(expected, "hex");
+    if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) return null;
     return rec;
   } catch {
     return null;
@@ -339,6 +350,15 @@ export interface GateState {
 
 /** Process-wide kill-switch state; UI controls flip this. */
 const globalGateState: GateState = { killSwitch: false };
+let sharedKillState: (() => boolean) | undefined;
+
+export function configureSharedKillState(provider: (() => boolean) | undefined): void {
+  sharedKillState = provider;
+}
+
+export function sharedKillSwitchEngaged(): boolean {
+  try { return sharedKillState?.() === true; } catch { return true; }
+}
 
 /** Abort signals fired when the kill-switch engages (§5.5a: abort in-flight). */
 const killSwitchListeners = new Set<() => void>();
@@ -379,10 +399,15 @@ export interface KillSwitchSubscription {
  */
 export function killSwitchSignal(): KillSwitchSubscription {
   const controller = new AbortController();
-  if (globalGateState.killSwitch) controller.abort();
+  if (globalGateState.killSwitch || sharedKillSwitchEngaged()) controller.abort();
   const listener = (): void => controller.abort();
   killSwitchListeners.add(listener);
+  const sharedPoll = setInterval(() => {
+    if (sharedKillSwitchEngaged()) controller.abort();
+  }, 250);
+  sharedPoll.unref();
   const dispose = (): void => {
+    clearInterval(sharedPoll);
     killSwitchListeners.delete(listener);
   };
   controller.signal.addEventListener("abort", dispose, { once: true });
@@ -415,7 +440,7 @@ const ALLOW = (reason: string, authzId: string | null): GateDecision => ({ allow
  */
 export function gate(target: string, action: RedAction, authz: AuthorizationRecord | null, deps: GateDeps = {}): GateDecision {
   const state = deps.state ?? globalGateState;
-  if (state.killSwitch) return DENY("kill-switch engaged", authz?.id ?? null);
+  if (state.killSwitch || sharedKillSwitchEngaged()) return DENY("kill-switch engaged", authz?.id ?? null);
 
   if (!authz) {
     // Zero-config default posture (spec O-1): loopback read-only only, and
@@ -435,7 +460,7 @@ export function gate(target: string, action: RedAction, authz: AuthorizationReco
   if (authz.scope.denyAlways.some((entry) => hostMatches(entry, host))) return DENY("target on deny-list", authz.id);
   if (!targetInScope(authz.scope, target)) return DENY("target outside authorization scope", authz.id);
 
-  if (action.destructive && !authz.limits.destructiveAllowed) {
+  if (action.destructive) {
     const approved = deps.approval?.(action, authz) ?? false;
     if (!approved) return DENY("destructive action requires approval", authz.id);
     return ALLOW("destructive action approved", authz.id);

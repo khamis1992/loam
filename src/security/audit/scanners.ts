@@ -123,31 +123,35 @@ export const ADAPTERS: Record<string, Adapter> = {
     skipDetail: () => "no live target configured (set LOAM_AUDIT_LIVE_TARGET to an http(s) URL)",
   },
   mobsf: {
-    // mobsfscan (MobSF's static CLI) — GPL MobSF itself stays a user-installed
-    // external process, never embedded; only its SARIF output enters Loam.
+    // mobsfscan stays an external process; every supported package is scanned separately.
     tool: "mobsf", exe: "mobsfscan", okCodes: [0, 1],
-    plan: (t, s) => [{
-      argv: [t, "--format", "sarif", "--output", path.join(s, "mobsf.sarif")],
-      outFile: path.join(s, "mobsf.sarif"),
-      guard: () => hasMobileArtifact(t),
-    }],
-    skipDetail: () => "no mobile artifact found (drop an .apk/.ipa/.aab in the target)",
+    plan: (t, s) => discoverMobileArtifacts(t).filter((file) => /\.(apk|ipa)$/i.test(file)).map((file, index) => {
+      const outFile = path.join(s, `mobsf-${index + 1}.sarif`);
+      return {
+        argv: [file, "--format", "sarif", "--output", outFile],
+        outFile,
+      };
+    }),
+    skipDetail: () => "no supported .apk/.ipa artifact found; .aab requires a dedicated binary-analysis adapter",
   },
 };
 
-/** Any Android/iOS package worth a mobsfscan pass. */
-function hasMobileArtifact(target: string): boolean {
-  const walk = (dir: string, depth: number): boolean => {
-    if (depth > 5) return false;
+/** Android/iOS packages are passed to scanners as exact files, never as their parent directory. */
+export function discoverMobileArtifacts(target: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string, depth: number): void => {
+    if (depth > 5 || out.length >= 50) return;
     let es: fs.Dirent[] = [];
-    try { es = fs.readdirSync(dir, { withFileTypes: true }); } catch { return false; }
+    try { es = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const e of es) {
-      if (e.isFile() && /\.(apk|ipa|aab)$/i.test(e.name)) return true;
-      if (e.isDirectory() && !["node_modules", ".git", "dist", "build"].includes(e.name) && walk(path.join(dir, e.name), depth + 1)) return true;
+      const full = path.join(dir, e.name);
+      if (e.isSymbolicLink()) continue;
+      if (e.isFile() && /\.(apk|ipa|aab)$/i.test(e.name)) out.push(full);
+      if (e.isDirectory() && !["node_modules", ".git", "dist", "build"].includes(e.name)) walk(full, depth + 1);
     }
-    return false;
   };
-  return walk(target, 0);
+  walk(target, 0);
+  return out;
 }
 
 /** In-process scanners: no executable to install, so they are always available. */
@@ -298,8 +302,17 @@ export async function runScanners(ctx: ScanContext): Promise<ScanOutcome> {
       let text = r.stdout;
       if (step.outFile) {
         try { text = fs.readFileSync(step.outFile, "utf8"); } catch { text = ""; }
+        if (!text.trim()) {
+          status = "tool_error";
+          detail = `scanner produced no SARIF output: ${path.basename(step.outFile)}`;
+          break;
+        }
       }
-      if (!text.trim()) continue;
+      if (!text.trim()) {
+        status = "tool_error";
+        detail = "scanner produced empty output";
+        break;
+      }
       let doc: unknown;
       try { doc = JSON.parse(text); } catch {
         status = "tool_error"; detail = "malformed SARIF"; break;

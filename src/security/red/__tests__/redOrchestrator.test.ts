@@ -14,7 +14,7 @@ import path from "node:path";
 import { once } from "node:events";
 import { afterEach, describe, it } from "node:test";
 
-import { engageKillSwitch, resetKillSwitch } from "../gate.js";
+import { engageKillSwitch, resetKillSwitch, saveAuthorization } from "../gate.js";
 import type { AuthorizationRecord } from "../gate.js";
 import type { BridgeEnvelope } from "../../../bridges/types.js";
 import type { Evidence } from "../../orchestrator.js";
@@ -124,7 +124,6 @@ describe("runCampaign", () => {
     const lab = await startLab();
     labs.push(lab.server);
     const root = tempRoot();
-    // Hand-write an expired record bound to the lab.
     const expired: AuthorizationRecord = {
       id: "AUTHZ-9001",
       owner: "khamis",
@@ -132,8 +131,7 @@ describe("runCampaign", () => {
       authorization: { statement: "lab", acknowledgedAt: new Date(Date.now() - 7200_000).toISOString(), expiresAt: new Date(Date.now() - 3600_000).toISOString() },
       limits: { maxReqPerSec: 10, maxConcurrent: 4, maxTotalRequests: 100, destructiveAllowed: false },
     };
-    fs.mkdirSync(path.join(root, "authz"), { recursive: true });
-    fs.writeFileSync(path.join(root, "authz", "AUTHZ-9001.json"), JSON.stringify(expired));
+    saveAuthorization(expired, root);
     const result = await runCampaign({ goal: "g", authzId: "AUTHZ-9001", targets: [lab.url] }, { dataRoot: root, bridge: noBridge });
     assert.equal(result.findings.length, 0);
     assert.ok(result.audit.some((a) => a.outcome === "denied" && a.reason === "authorization expired"));
@@ -207,8 +205,7 @@ describe("runCampaign", () => {
       authorization: { statement: "lab", acknowledgedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 3600_000).toISOString() },
       limits: { maxReqPerSec: 10, maxConcurrent: 4, maxTotalRequests: 1, destructiveAllowed: false },
     };
-    fs.mkdirSync(path.join(root, "authz"), { recursive: true });
-    fs.writeFileSync(path.join(root, "authz", "AUTHZ-9002.json"), JSON.stringify(budget));
+    saveAuthorization(budget, root);
     const hungry: RedCapability = {
       id: "red.hungry",
       applicable: () => true,

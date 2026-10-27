@@ -146,14 +146,15 @@ describe("gate decisions (spec §0.4 order)", () => {
     assert.equal(gate("http://example.com:3000/x", read, a).reason, "target outside authorization scope");
   });
 
-  it("destructive actions require human approval unless the record allows them", () => {
+  it("destructive actions always require human approval", () => {
     const a = baseAuthz();
     assert.equal(gate("http://127.0.0.1:3000/x", destructive, a).reason, "destructive action requires approval");
     const approved = gate("http://127.0.0.1:3000/x", destructive, a, { approval: () => true });
     assert.equal(approved.allow, true);
     assert.equal(approved.reason, "destructive action approved");
     const recordAllows = createAuthorizationRecord({ statement: "s", expiresInSeconds: 60, destructiveAllowed: true, scope: { allowHosts: ["127.0.0.1"], allowPorts: [], allowUrlPrefixes: [], denyAlways: [] } });
-    assert.equal(gate("http://127.0.0.1:3000/x", destructive, recordAllows).allow, true);
+    assert.equal(gate("http://127.0.0.1:3000/x", destructive, recordAllows).allow, false);
+    assert.equal(gate("http://127.0.0.1:3000/x", destructive, recordAllows, { approval: () => true }).allow, true);
   });
 
   it("rate limiter exceeded is denied", () => {

@@ -17,6 +17,7 @@ import { runCampaign, type BridgeCaller } from "../security/red/orchestrator/red
 import { llmPlanner, type RedPlanner } from "../security/red/orchestrator/planner.js";
 import { setRedKillSwitch } from "../security/red/control.js";
 import { buildRedReport } from "../security/red/report.js";
+import { ApprovalService, approvalScopeHash, type ApprovalToken } from "../security/enterprise/approvals.js";
 
 const str = (args: Record<string, unknown>, key: string): string => (typeof args[key] === "string" ? (args[key] as string) : "");
 
@@ -48,7 +49,8 @@ export function redTools(): Tool[] {
           authzId: { type: "string", description: "AuthorizationRecord id (AUTHZ-####) for non-localhost targets; omit for the localhost default posture" },
           profile: { type: "string", description: "'quick' (default) or 'campaign'" },
           plan: { type: "string", description: "'auto' uses model-driven planning (proposals still pass the evidence gate); default 'off'" },
-          approveExternal: { type: "boolean", description: "Explicit operator approval for external/exec_script bridge effects (required when installed engines are used)" },
+          engagementId: { type: "string", description: "Engagement bound to independently issued approval tokens" },
+          approvalTokens: { type: "object", description: "Signed one-time tokens keyed by bridgeId:commandId; boolean self-approval is not accepted" },
         },
         required: ["target"],
       },
@@ -57,22 +59,30 @@ export function redTools(): Tool[] {
         const authzId = str(args, "authzId") || null;
         const profile = str(args, "profile") === "campaign" ? "campaign" : "quick";
         const plan = str(args, "plan") === "auto" ? "auto" : "off";
+        const engagementId = str(args, "engagementId") || "LOCAL-RED";
         if (!target) return { ok: false, content: "red_campaign requires a target URL" };
-        // Fail fast with a clear message when the gate would deny the whole campaign.
         const decision = gate(target, { capability: "red.campaign", verb: "read" }, null);
         if (!decision.allow && !authzId) {
           return { ok: false, content: `Target ${target} is outside the localhost default posture (${decision.reason}); provide an authzId after signing an authorization record.` };
         }
-        const capabilities = await defaultRedCapabilities(ctx.cfg, { ssrf: { probeTemplate: undefined } });
-        if (capabilities.some((cap) => cap.id !== "red.ssrf") && args["approveExternal"] !== true) {
-          return {
-            ok: false,
-            content: "External/exec_script engines are available for this campaign but were not approved. Rerun with approveExternal: true after reviewing the target, scope and engine effects.",
-          };
+        const rawTokens = args["approvalTokens"];
+        const tokens = new Map<string, ApprovalToken>();
+        if (rawTokens && typeof rawTokens === "object" && !Array.isArray(rawTokens)) {
+          for (const [command, token] of Object.entries(rawTokens)) if (token && typeof token === "object") tokens.set(command, token as ApprovalToken);
         }
+        const approvals = new ApprovalService(defaultDataRoot());
+        const scopeHash = approvalScopeHash({ target, authzId, engagementId });
+        const capabilities = await defaultRedCapabilities(ctx.cfg, { ssrf: { probeTemplate: undefined } });
         const result = await runCampaign(
           { goal: `Red campaign on ${target}`, authzId, targets: [target], profile },
-          { dataRoot: defaultDataRoot(), bridge: bridgeCallerFor(ctx), capabilities, planner: plannerFor(ctx, plan), workspace: ctx.workspace, bridgeApproval: () => true, bridgeDaemon: bridgeDaemonFor(ctx) },
+          {
+            dataRoot: defaultDataRoot(), bridge: bridgeCallerFor(ctx), capabilities, planner: plannerFor(ctx, plan), workspace: ctx.workspace, bridgeDaemon: bridgeDaemonFor(ctx),
+            bridgeApproval: (bridgeId, commandId) => {
+              const token = tokens.get(`${bridgeId}:${commandId}`);
+              if (!token) return false;
+              return approvals.verify(token, { tenantId: "local", engagementId, action: `bridge:${bridgeId}:${commandId}`, scopeHash, requesterId: "khamis", destructive: true }).ok;
+            },
+          },
         );
         const outDir = path.join(ctx.workspace, "red", result.campaignId);
         const report = buildRedReport(result, outDir);

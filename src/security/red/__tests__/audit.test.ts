@@ -66,6 +66,10 @@ describe("RedAuditLog", () => {
     assert.ok(fs.existsSync(archivePath));
     const archived = fs.readFileSync(archivePath, "utf8").trim().split("\n");
     assert.equal(archived.length, 2);
+    assert.equal(log.verifyArchive(archivePath), true);
+    fs.appendFileSync(archivePath, "{}\n");
+    assert.equal(log.verifyArchive(archivePath), false);
+    fs.writeFileSync(archivePath, archived.join("\n") + "\n");
 
     // Live file restarts; the archive is untouched by later appends.
     const e = log.append({ authzId: null, capability: "c", action: "a", target: "t3", params: {}, outcome: "allowed" });

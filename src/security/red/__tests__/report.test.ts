@@ -37,6 +37,7 @@ const campaign = (findingChecks: string[], coverage: string[] = []): RedCampaign
     audit: [],
     ptt: { id: "PTT0001", goal: "g", status: "doing", children: [], evidenceIds: [] },
     coverage,
+    coverageEntries: [],
     stats: { startedAt: "2026-10-24T00:00:00Z", finishedAt: "2026-10-24T00:01:00Z", requestsSent: 3, targetsProcessed: 1, killed: false, aborted: null },
   };
 };

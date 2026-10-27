@@ -97,6 +97,7 @@ describe("recursive and evidence redaction", () => {
       audit: [],
       ptt: { id: "PTT1", goal: "g", status: "doing", children: [], evidenceIds: [] },
       coverage: [],
+      coverageEntries: [],
       stats: { startedAt: "", finishedAt: "", requestsSent: 0, targetsProcessed: 0, killed: false, aborted: null },
     };
     const report = buildRedReport(result, out);

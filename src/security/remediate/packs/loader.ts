@@ -4,14 +4,17 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { ROOT } from "../../../config.js";
 import { RemediationError } from "../errors.js";
 import type { AdvisoryPack, AdvisoryPackIndex } from "./schema.js";
 
 export function advisoriesDir(): string {
-  const here = import.meta.dirname ?? ".";
-  const beside = path.resolve(here, "../../../../security/advisories"); // <repo>/src/security/remediate/packs -> <repo>/security/advisories
-  if (fs.existsSync(path.join(beside, "index.json"))) return beside;
-  return path.resolve(process.cwd(), "security", "advisories");
+  const candidates = [
+    path.resolve(ROOT, "security", "advisories"),
+    path.resolve(ROOT, "..", "app", "security", "advisories"),
+    path.resolve(process.cwd(), "security", "advisories"),
+  ];
+  return candidates.find((dir) => fs.existsSync(path.join(dir, "index.json"))) ?? candidates[0]!;
 }
 
 const sha256 = (file: string) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");

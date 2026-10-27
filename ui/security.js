@@ -240,3 +240,57 @@ $('redKill').onclick=safely(async()=>{
   await refreshRedKillSwitch();
 });
 refreshRedKillSwitch();
+
+// Mobile enterprise engagements use the same authenticated, tenant-scoped API as workers.
+const mobileEndpoint=(suffix='')=>'/api/security/enterprise'+suffix;
+let mobileStates=[];
+function drawMobile(){
+  $('mobileEngagements').innerHTML=mobileStates.length?mobileStates.map(state=>{
+    const actions=state.stage==='Draft'?'<button data-mobile-action="authorize">اعتماد التفويض</button>':state.stage==='Authorized'?'<button data-mobile-action="start">بدء التنفيذ</button>':state.stage==='Running'?'<button data-mobile-action="scan">تشغيل MobSF</button> <button data-mobile-action="submit-qa">إرسال إلى QA</button>':'';
+    const coverage=(state.coverage||[]).map(c=>`<tr><td dir="ltr">${esc(c.controlId)}</td><td>${esc(c.status)}</td><td>${esc(c.reason)}</td><td>${esc(c.reviewerId||'—')}</td></tr>`).join('');
+    return `<article class="finding" data-mobile-id="${esc(state.id)}"><h3 dir="ltr">${esc(state.id)}</h3><p>الحالة: <strong>${esc(state.stage)}</strong> · الحزم: ${state.artifacts.length} · النتائج: ${state.findings.length}</p><p class="hint">المحرك: ${state.scans.map(s=>esc(s.status)).join(', ')||'لم يعمل بعد'}</p>${actions} <button data-mobile-report="${esc(state.id)}">تقرير Markdown</button><details><summary>مصفوفة MASVS</summary><div class="table-scroll"><table><thead><tr><th>الضابط</th><th>الحالة</th><th>السبب</th><th>المراجع</th></tr></thead><tbody>${coverage}</tbody></table></div></details></article>`;
+  }).join(''):'<p class="hint">لا توجد مهام جوال في هذا العميل.</p>';
+}
+async function refreshMobile(){
+  const [list,health]=await Promise.all([api(mobileEndpoint('/engagements')),api(mobileEndpoint('/health'))]);
+  mobileStates=list.engagements;drawMobile();
+  $('mobileHealth').textContent=`العميل: ${health.tenantId} · الهوية: ${health.identity.id} (${health.identity.authMethod}) · MobSF: ${health.mobsfConfigured?'مهيأ':'غير مهيأ'} · Dead jobs: ${health.queue.dead||0} · الإيقاف: ${health.killSwitch.engaged?'مفعّل':'غير مفعّل'}`;
+}
+$('mobileCreate').onclick=safely(async()=>{await api(mobileEndpoint('/engagements'),{});await refreshMobile();});
+$('mobileRefresh').onclick=safely(refreshMobile);
+$('mobileEngagements').onclick=safely(async event=>{
+  const report=event.target.closest('[data-mobile-report]');
+  if(report){const data=await api(mobileEndpoint('/engagements/'+encodeURIComponent(report.dataset.mobileReport)+'/report'));download(data.content,'text/markdown',report.dataset.mobileReport+'.md');return;}
+  const button=event.target.closest('[data-mobile-action]');if(!button)return;
+  const card=button.closest('[data-mobile-id]'),id=card.dataset.mobileId,action=button.dataset.mobileAction;
+  const body=action==='authorize'?{authorizationId:$('mobileAuthz').value.trim(),statement:$('mobileStatement').value.trim(),expiresAt:new Date($('mobileExpiry').value).toISOString()}:{};
+  await api(mobileEndpoint('/engagements/'+encodeURIComponent(id)+'/'+action),body);await refreshMobile();
+});
+refreshMobile().catch(()=>{});
+
+const scaleEndpoint=(suffix='')=>'/api/security/mobile-scale'+suffix;
+async function refreshScale(){
+  const [devices,slo]=await Promise.all([api(scaleEndpoint('/devices')),api(scaleEndpoint('/slo'))]);
+  $('scaleDevices').innerHTML=devices.devices.length?`<div class="table-scroll"><table><thead><tr><th>الجهاز</th><th>المنصة</th><th>النظام</th><th>الصحة</th><th>العامل</th></tr></thead><tbody>${devices.devices.map(d=>`<tr><td dir="ltr">${esc(d.id)}</td><td>${esc(d.platform)}</td><td>${esc(d.osVersion)}</td><td>${esc(d.health)}</td><td dir="ltr">${esc(d.workerVersion)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="hint">لا توجد أجهزة مسجلة. التسجيل يتطلب صورة عامل موقعة وبصمة.</p>';
+  $('scaleSlo').textContent=`نجاح المهام: ${(slo.successRate*100).toFixed(1)}% · تغطية غير محسومة: ${slo.unknownCoverage} · انتهاكات العزل: ${slo.crossTenantViolations} · انتظار العامل: ${slo.queueWaitMeasured?slo.queueWaitP95Ms+'ms':'غير مقاس'}${slo.alerts.length?' · '+slo.alerts.join(' | '):''}`;
+  const select=$('scaleEngagement'),current=select.value;select.innerHTML=mobileStates.map(s=>`<option value="${esc(s.id)}">${esc(s.id)} · ${esc(s.stage)}</option>`).join('');if(mobileStates.some(s=>s.id===current))select.value=current;
+}
+async function investigateScale(){
+  const id=$('scaleEngagement').value;if(!id){$('scaleInvestigation').innerHTML='<p class="hint">اختر مهمة أولًا.</p>';return;}
+  const data=await api(scaleEndpoint('/investigation/'+encodeURIComponent(id)));
+  $('scaleInvestigation').innerHTML=data.findings.length?data.findings.map(item=>`<article class="finding"><h3>${esc(item.finding.title)}</h3><p>إعادة التشغيل: ${item.replayEligible?'متاحة ضمن التفويض':'لا يوجد طلب مرتبط'}</p>${item.timeline.map(e=>`<p class="mono">EV ${esc(e.id)} · ${esc(e.kind)} · ${esc(e.at)}<br>${esc(e.summary)} · SHA256 ${esc(e.sha256)}</p>`).join('')}</article>`).join(''):'<p class="hint">لا توجد نتائج مرتبطة. أدلة غير مرتبطة: '+data.unlinkedEvidence+'</p>';
+}
+$('scaleRefresh').onclick=safely(refreshScale);
+$('scaleInvestigate').onclick=safely(investigateScale);
+refreshScale().catch(()=>{});
+
+const advancedEndpoint=(suffix='')=>'/api/security/advanced'+suffix;
+$('coverageCheck').onclick=safely(async()=>{
+  const entries=mobileStates.flatMap(state=>(state.coverage||[]).map(c=>({surface:'mobile',target:c.controlId,control:c.controlId,status:c.status,reason:c.reason,evidenceIds:c.evidenceIds})));
+  const data=await api(advancedEndpoint('/coverage'),{entries}),s=data.summary;
+  $('coverageSummary').textContent=`التغطية: ${s.coveragePercent}% · مكتمل: ${s.covered} · جزئي: ${s.partial} · أخطاء: ${s.errors} · غير مختبر: ${s.unknown} · الحكم: ${s.clean?'تغطية مكتملة وليست شهادة أمان':'غير محسوم'}`;
+});
+$('spaAnalyze').onclick=safely(async()=>{
+  const data=await api(advancedEndpoint('/spa'),{source:$('spaSource').value}),r=data.result;
+  $('spaResults').innerHTML=`<p>Endpoints: ${r.endpoints.length} · Source maps: ${r.sourceMaps.length} · مؤشرات للمراجعة: ${r.indicators.length}</p>${r.indicators.map(i=>`<article class="finding"><strong>${esc(i.title)}</strong><p>${esc(i.evidence)} · ${esc(i.status)}</p></article>`).join('')}`;
+});

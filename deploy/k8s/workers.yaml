@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loam-android-worker
+  namespace: loam-security
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loam-android-worker
+  template:
+    metadata:
+      labels:
+        app: loam-android-worker
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: worker
+          # Replace with the signed worker digest; privileged/host-device access is not granted here.
+          image: ghcr.io/loam/android-worker@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          env:
+            - name: LOAM_DEVICE_PROVIDER_URL
+              value: https://loam-device-provider.loam-security.svc
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 3Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loam-device-provider
+  namespace: loam-security
+spec:
+  type: ExternalName
+  externalName: device-provider.example.internal
+  ports:
+    - port: 443
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loam-ios-worker
+  namespace: loam-security
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loam-ios-worker
+  template:
+    metadata:
+      labels:
+        app: loam-ios-worker
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: worker
+          # iOS execution stays behind the trusted macOS provider, not inside this Linux pod.
+          image: ghcr.io/loam/ios-worker@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          env:
+            - name: LOAM_IOS_PROVIDER_URL
+              value: https://ios-provider.example.internal
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 3Gi

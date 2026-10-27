@@ -3,10 +3,15 @@
  * security-page button. Engagement is always audited (§5.5).
  */
 import { RedAuditLog } from "./audit.js";
-import { engageKillSwitch, isKillSwitchEngaged, resetKillSwitch } from "./gate.js";
+import { configureSharedKillState, defaultDataRoot, engageKillSwitch, resetKillSwitch, sharedKillSwitchEngaged } from "./gate.js";
+import { SharedKillSwitch } from "../enterprise/killSwitch.js";
 
 export function setRedKillSwitch(engage: boolean, root?: string): { engaged: boolean } {
-  const audit = new RedAuditLog(root);
+  const dataRoot = root ?? defaultDataRoot();
+  const shared = new SharedKillSwitch(dataRoot);
+  configureSharedKillState(() => shared.read().engaged);
+  shared.set(engage, "local-operator");
+  const audit = new RedAuditLog(dataRoot);
   if (engage) {
     engageKillSwitch();
     audit.append({
@@ -30,5 +35,5 @@ export function setRedKillSwitch(engage: boolean, root?: string): { engaged: boo
       reason: "operator reset the kill-switch",
     });
   }
-  return { engaged: isKillSwitchEngaged() };
+  return { engaged: sharedKillSwitchEngaged() };
 }

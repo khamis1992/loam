@@ -57,6 +57,10 @@ test("a tampered pack is refused with pack_hash_mismatch", () => {
   }
 });
 
+test("default pack path resolves outside the ESM source layout", () => {
+  assert.ok(loadEnabledPacks().has("node-2026-10-21"));
+});
+
 test("canonicalSha256 is stable under key order (E1: reaEvidence canonicalJson)", async () => {
   const a = canonicalSha256({ b: 1, a: { z: 2, y: 3 } });
   const b = canonicalSha256({ a: { y: 3, z: 2 }, b: 1 });

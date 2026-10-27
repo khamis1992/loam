@@ -89,6 +89,13 @@ export function buildRedReport(result: RedCampaignResult, outDir: string, opts: 
     }
     lines.push("");
   }
+  if (result.coverageEntries.length) {
+    lines.push("## Execution coverage", "");
+    for (const entry of result.coverageEntries) {
+      lines.push(`- ${entry.capability} @ ${redactText(entry.target)} — **${entry.status}**${entry.notes.length ? `: ${redactText(entry.notes.join("; "))}` : ""}`);
+    }
+    lines.push("");
+  }
   if (attckCoverage) {
     lines.push("## ATT&CK coverage (adversary simulation)", "");
     for (const e of attckCoverage.executed) lines.push(`- ${e.attackId} — ${e.name} (${e.result})`);

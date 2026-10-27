@@ -98,6 +98,13 @@ export interface RedCampaignInput {
   auth?: { bearer?: string; cookie?: string };
 }
 
+export interface RedCoverageEntry {
+  target: string;
+  capability: string;
+  status: "covered" | "partial" | "error" | "skipped";
+  notes: string[];
+}
+
 export interface RedCampaignResult {
   campaignId: string;
   authzId: string | null;
@@ -108,6 +115,7 @@ export interface RedCampaignResult {
   audit: AuditEntry[];
   ptt: PttNode;
   coverage: string[];
+  coverageEntries: RedCoverageEntry[];
   /** ATT&CK coverage imported from adversary-simulation capabilities. */
   attckCoverage?: AttckCoverage;
   stats: {
@@ -177,7 +185,14 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
   const authHeaders: Record<string, string> = {};
   if (input.auth?.bearer) authHeaders["authorization"] = `Bearer ${input.auth.bearer}`;
   if (input.auth?.cookie) authHeaders["cookie"] = input.auth.cookie;
-  const transport = redTransport(authz, { signal: deps.signal, limiter, gateDeps: deps.gateDeps, approval: deps.approval, actionTag: "red.http", ...(Object.keys(authHeaders).length ? { authHeaders } : {}) });
+  const transport = redTransport(authz, {
+    signal: deps.signal,
+    limiter,
+    gateDeps: deps.gateDeps,
+    approval: deps.approval,
+    actionTag: "red.http",
+    ...(Object.keys(authHeaders).length ? { authHeaders, authOrigin: new URL(input.targets[0]!).origin } : {}),
+  });
   const rawBridge = deps.bridge ?? noBridge;
   const bridge: BridgeCaller = async (bridgeId, commandId, args) => {
     const command = getManifest(bridgeId)?.commands.find((c) => c.id === commandId);
@@ -205,6 +220,11 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
   const findings: SecurityFinding[] = [];
   const unverified: UnverifiedClaim[] = [];
   const coverage: string[] = [];
+  const coverageEntries: RedCoverageEntry[] = [];
+  const recordCoverage = (target: string, capability: string, status: RedCoverageEntry["status"], notes: string[] = []): void => {
+    coverageEntries.push({ target, capability, status, notes: [...notes] });
+    if (status === "covered") coverage.push(coverageKey(target, capability.replace(/\./g, "_")));
+  };
   const allEvidence: Evidence[] = [];
   let attckCoverage: AttckCoverage | undefined;
   const collectEvidence = (items: Evidence[]): void => {
@@ -341,6 +361,7 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
       const destructive = (deps.destructiveCapabilities ?? []).includes(cap.id);
       const capDecision = checkpoint(target, { capability: cap.id, verb: destructive ? "write" : "read", ...(destructive ? { destructive: true } : {}) });
       if (!capDecision.allow) {
+        recordCoverage(target, cap.id, "skipped", [capDecision.reason]);
         if (capDecision.reason === "request budget reached") {
           aborted = "budget";
           break outer;
@@ -353,20 +374,28 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
         if (node) ptt = updateNode(ptt, node.id, { status: "unverified", note: capDecision.reason });
         continue;
       }
-      coverage.push(coverageKey(target, cap.id.replace(/\./g, "_")));
       audit.append({ authzId: authz?.id ?? null, capability: cap.id, action: "hunt", target, params: {}, outcome: "started" });
+      let capStatus: RedCoverageEntry["status"] = "covered";
+      const capNotes: string[] = [];
+      const degrade = (status: "partial" | "error", note: string): void => {
+        if (status === "error") capStatus = "error";
+        else if (capStatus === "covered") capStatus = "partial";
+        capNotes.push(note);
+      };
 
       let hypotheses: RedHypothesis[];
       try {
         hypotheses = [...(await cap.hunt(target, recon, ctx)), ...(planned.get(cap.id) ?? [])];
       } catch (err) {
-        audit.append({ authzId: authz?.id ?? null, capability: cap.id, action: "hunt", target, params: {}, outcome: "failed", reason: (err as Error).message });
+        const reason = (err as Error).message;
+        audit.append({ authzId: authz?.id ?? null, capability: cap.id, action: "hunt", target, params: {}, outcome: "failed", reason });
+        recordCoverage(target, cap.id, "error", [reason]);
         continue;
       }
 
-      // Post-hunt checkpoint: budget or kill-switch abort the whole campaign.
       const post = checkpoint(target, { capability: cap.id, verb: destructive ? "write" : "read", ...(destructive ? { destructive: true } : {}) });
       if (!post.allow) {
+        recordCoverage(target, cap.id, "skipped", [post.reason]);
         if (post.reason === "request budget reached") {
           aborted = "budget";
           break outer;
@@ -383,11 +412,14 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
       for (const hyp of hypotheses) {
         const hypDecision = checkpoint(hyp.target ?? target, { capability: cap.id, verb: destructive ? "write" : "read", ...(destructive ? { destructive: true } : {}) });
         if (!hypDecision.allow) {
+          degrade("partial", hypDecision.reason);
           if (hypDecision.reason === "request budget reached") {
+            recordCoverage(target, cap.id, capStatus, capNotes);
             aborted = "budget";
             break outer;
           }
           if (hypDecision.reason === "kill-switch engaged") {
+            recordCoverage(target, cap.id, capStatus, capNotes);
             killed = true;
             audit.append({ authzId: authz?.id ?? null, capability: cap.id, action: "kill", target, params: {}, outcome: "killswitch_engaged" });
             break outer;
@@ -400,12 +432,15 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
         try {
           validation = await cap.validate(hyp, ctx);
         } catch (err) {
-          unverified.push({ id: hyp.id, check: cap.id.replace(/\./g, "_"), target, title: hyp.claim, detail: (err as Error).message, reason: "validation failed", evidence: [] });
-          audit.append({ authzId: authz?.id ?? null, capability: cap.id, action: "validate", target, params: {}, outcome: "failed", reason: (err as Error).message });
+          const reason = (err as Error).message;
+          degrade("error", reason);
+          unverified.push({ id: hyp.id, check: cap.id.replace(/\./g, "_"), target, title: hyp.claim, detail: reason, reason: "validation failed", evidence: [] });
+          audit.append({ authzId: authz?.id ?? null, capability: cap.id, action: "validate", target, params: {}, outcome: "failed", reason });
           continue;
         }
 
         const gateResult = evaluateEvidenceGate({ id: hyp.id, claim: validation.claim, status: validation.status, evidence: validation.evidence });
+        if (validation.status === "inconclusive" || (validation.status === "confirmed" && !gateResult.reported)) degrade("partial", gateResult.reason || "validation inconclusive");
         collectEvidence(gateResult.evidence);
         if (validation.attckCoverage) {
           if (!attckCoverage) attckCoverage = validation.attckCoverage;
@@ -439,6 +474,7 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
           evidenceIds: gateResult.evidence.map((e) => e.id),
         });
       }
+      recordCoverage(target, cap.id, capStatus, capNotes);
       audit.append({ authzId: authz?.id ?? null, capability: cap.id, action: "hunt", target, params: {}, outcome: "completed" });
     }
   }
@@ -453,6 +489,7 @@ export async function runCampaign(input: RedCampaignInput, deps: RunCampaignDeps
     audit: audit.read(),
     ptt,
     coverage: [...new Set(coverage)],
+    coverageEntries,
     ...(attckCoverage ? { attckCoverage } : {}),
     stats: {
       startedAt,
