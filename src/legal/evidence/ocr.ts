@@ -1,3 +1,4 @@
+import { pathToFileURL } from "node:url";
 import { rootAsset } from "../../config.js";
 import type { LegalOcrProvider } from "./extract.js";
 
@@ -5,7 +6,7 @@ let workerPromise: Promise<import("tesseract.js").Worker> | undefined;
 
 async function worker(): Promise<import("tesseract.js").Worker> {
   if (!workerPromise) {
-    const { createWorker } = await import("tesseract.js");
+    const { createWorker } = await import(pathToFileURL(rootAsset("node_modules", "tesseract.js", "src", "index.js")).href) as typeof import("tesseract.js");
     workerPromise = createWorker(["ara", "eng"], 1, {
       langPath: rootAsset("resources", "legal", "ocr"),
       gzip: false,

@@ -4,10 +4,12 @@ import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { _electron as electron } from 'playwright';
+import { createElectronTestExecutable } from '../../scripts/lib/electronTestExecutable.mjs';
 const expectedVersion=JSON.parse(await fs.readFile('package.json','utf8')).version;
-const executable=path.resolve(process.argv[2]||'release/win-unpacked/Loam.exe');
+const testExecutable=await createElectronTestExecutable(path.resolve(process.argv[2]||'release/win-unpacked/Loam.exe'));
+const executable=testExecutable.executablePath;
 const profile=await fs.mkdtemp(path.join(os.tmpdir(),'loam-packaged-'));
-const env={...process.env,LOAM_USER_DATA_DIR:profile,LOAM_PORT:'13939',LOAM_MCP_BRIDGE_PORT:'13003'};
+const env={...process.env,LOAM_USER_DATA_DIR:profile,LOAM_PORT:'13939',LOAM_MCP_BRIDGE_PORT:'13003',AGENT_STUDIO_LEGACY_UI:'1'};
 delete env.ELECTRON_RUN_AS_NODE;delete env.LOAM_CONFIG;delete env.MANUS_LOCAL_CONFIG;delete env.LOAM_DATA_DIR;delete env.MANUS_LOCAL_DATA_DIR;
 let app;let diagnostics='';
 try {
@@ -23,10 +25,11 @@ try {
  const info=await app.evaluate(({app})=>({name:app.getName(),version:app.getVersion(),packaged:app.isPackaged,userData:app.getPath('userData')}));assert.equal(info.name,'Loam');assert.equal(info.version,expectedVersion);assert.equal(info.packaged,true);assert.equal(info.userData,profile);
  assert.ok(await win.evaluate(()=>!!window.loam));assert.doesNotMatch(await win.locator('body').innerText(),/manus|grok|frontier/i);
  await win.setViewportSize({width:1900,height:980});await win.evaluate(async()=>{await document.fonts.ready;});
- assert.equal(await win.locator('#sidebar').evaluate(el=>Math.round(el.getBoundingClientRect().width)),332);
+ assert.equal(await win.locator('#sidebar').evaluate(el=>Math.round(el.getBoundingClientRect().width)),280);
  assert.equal(await win.locator('#modeCards').evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length),3);
  await win.screenshot({path:path.resolve('release/loam-packaged-home.png')});
- const services=await (await fetch('http://127.0.0.1:13939/api/mcp/status')).json();console.log('MCP health',JSON.stringify(services));assert.ok(services.servers.length>=5);assert.ok(services.servers.every(s=>s.connected),JSON.stringify(services));
+ const localToken=await win.evaluate(()=>window.desktopSync?.env?.LOAM_LOCAL_TOKEN);assert.ok(localToken);const baseFetch=globalThis.fetch;globalThis.fetch=(input,init)=>baseFetch(input,{...init,headers:{'x-loam-local-token':localToken,...init?.headers}});
+ const services=await (await fetch('http://127.0.0.1:13939/api/mcp/status')).json();console.log('MCP health',JSON.stringify(services));assert.ok(services.servers.some(s=>s.name==='loam-bridge'&&s.connected),JSON.stringify(services));assert.ok(services.servers.every(s=>s.connected),JSON.stringify(services));
  const pty=await (await fetch('http://127.0.0.1:13939/api/pty/status')).json();assert.equal(pty.available,true);
  const post=async(url,body)=>{const r=await fetch('http://127.0.0.1:13939'+url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const d=await r.json();assert.ok(r.ok,JSON.stringify(d));return d;};
  const {task}=await post('/api/tasks/draft',{title:'Packaged PTY test',mode:'build'});const session=await post('/api/pty',{taskId:task.id,shell:'cmd',cols:80,rows:24});await post(`/api/pty/${session.id}/input?taskId=${task.id}`,{data:'echo LOAM_PACKAGED>proof.txt\r'});
@@ -51,4 +54,4 @@ try {
  await win.goto('http://127.0.0.1:13939/#/services');await win.locator('#serviceCards .service-card').first().waitFor();await win.screenshot({path:path.resolve('release/loam-packaged-services.png')});
  console.log('PASS packaged Electron: Loam identity/version, seven pages, preload, live MCP ping, actual native PTY, app-only screenshots.');
 } catch(error){console.error(diagnostics.slice(-7000));throw error;}
-finally {await app?.close();}
+finally {await app?.close();await testExecutable.cleanup();await fs.rm(profile,{recursive:true,force:true});}

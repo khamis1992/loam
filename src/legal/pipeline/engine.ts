@@ -11,16 +11,18 @@ export class LegalPipeline {
     const stateJson = JSON.stringify(input.state);
     return this.store.create({
       kind: input.kind, matterId: input.matterId, status: "running", stage: this.sequence[0]!, state: input.state,
-      completedStages: [], inputSha256: crypto.createHash("sha256").update(stateJson, "utf8").digest("hex"),
+      completedStages: [], stageCount: this.sequence.length, inputSha256: crypto.createHash("sha256").update(stateJson, "utf8").digest("hex"),
       corpusSnapshotId: input.corpusSnapshotId, model: input.model, promptVersion: input.promptVersion,
     });
   }
 
-  async advance(id: string): Promise<LegalPipelineRun> {
+  async advance(id: string, options: { signal?: AbortSignal } = {}): Promise<LegalPipelineRun> {
     const run = this.requireRun(id);
     if (run.status !== "running") return run;
+    if (options.signal?.aborted) throw this.save({ ...run, status: "cancelled", error: "cancelled by user" });
     try {
-      const result = await this.stages[run.stage]!(run.state);
+      const result = await this.stages[run.stage]!(run.state, { signal: options.signal });
+      if (options.signal?.aborted) throw this.save({ ...run, status: "cancelled", error: "cancelled by user" });
       const completedStages = [...run.completedStages, run.stage];
       if (result.succeeded) {
         return this.save({ ...run, status: "succeeded", completedStages, state: result.state });
@@ -30,19 +32,28 @@ export class LegalPipeline {
       if (!nextStage) throw new Error(`pipeline ${run.kind} has no terminal stage`);
       return this.save({ ...run, stage: nextStage, completedStages, state: result.state, status: result.waiting ? "waiting" : "running" });
     } catch (error) {
-      throw this.save({ ...run, status: "failed", error: error instanceof Error ? error.message : String(error) });
+      throw this.save({ ...run, status: options.signal?.aborted ? "cancelled" : "failed", error: options.signal?.aborted ? "cancelled by user" : error instanceof Error ? error.message : String(error) });
     }
   }
 
-  async resume(id: string, answer?: unknown): Promise<LegalPipelineRun> {
+  async cancel(id: string): Promise<LegalPipelineRun> {
     const run = this.requireRun(id);
-    if (run.status === "failed") {
+    return run.status === "running" ? this.save({ ...run, status: "cancelled", error: "cancelled by user" }) : run;
+  }
+
+  async reactivate(id: string, answer?: unknown): Promise<LegalPipelineRun> {
+    const run = this.requireRun(id);
+    if (run.status === "failed" || run.status === "cancelled") {
       this.save({ ...run, status: "running", error: undefined });
     } else if (run.status === "waiting") {
       this.save({ ...run, status: "running", state: { ...(typeof run.state === "object" && run.state ? run.state : {}), answer } });
     }
-    let current = this.requireRun(id);
-    while (current.status === "running") current = await this.advance(id);
+    return this.requireRun(id);
+  }
+
+  async resume(id: string, answer?: unknown, options: { signal?: AbortSignal } = {}): Promise<LegalPipelineRun> {
+    let current = await this.reactivate(id, answer);
+    while (current.status === "running") current = await this.advance(id, options);
     return current;
   }
 

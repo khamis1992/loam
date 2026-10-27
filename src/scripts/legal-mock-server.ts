@@ -25,13 +25,15 @@ import { loadFixtureCorpus } from "../legal/__tests__/helpers.js";
 import { handleLegalRoutes, type LegalRouteContext } from "../server/routes/legal.js";
 
 export interface MockServer { url: string; token: string; ctx: LegalRouteContext; close(): Promise<void> }
+export interface MockServerOptions { dataDir?: string; keys?: StaticKeyProvider }
 
-export async function startMockServer(port = 0, token = crypto.randomBytes(16).toString("hex"), now?: () => Date): Promise<MockServer> {
-  const keys = new StaticKeyProvider(crypto.randomBytes(32));
-  const vaultDir = fs.mkdtempSync(path.join(os.tmpdir(), "legal-mock-vault-"));
+export async function startMockServer(port = 0, token = crypto.randomBytes(16).toString("hex"), now?: () => Date, options: MockServerOptions = {}): Promise<MockServer> {
+  const keys = options.keys ?? new StaticKeyProvider(crypto.randomBytes(32));
+  const vaultDir = options.dataDir ? path.join(options.dataDir, "vault") : fs.mkdtempSync(path.join(os.tmpdir(), "legal-mock-vault-"));
+  fs.mkdirSync(vaultDir, { recursive: true });
   const ctx: LegalRouteContext = {
-    corpus: loadFixtureCorpus(),
-    matters: new MattersStore(":memory:", keys, now),
+    corpus: loadFixtureCorpus(options.dataDir ? path.join(options.dataDir, "corpus.db") : ":memory:"),
+    matters: new MattersStore(options.dataDir ? path.join(options.dataDir, "matters.db") : ":memory:", keys, now),
     egress: { localModel: "qwen3.6:35b-a3b", approvedLocalModels: ["qwen3.6:35b-a3b"], ollamaUrl: "http://127.0.0.1:11434" },
     enabled: true,
     keys,
@@ -62,7 +64,7 @@ export async function startMockServer(port = 0, token = crypto.randomBytes(16).t
     token,
     ctx,
     close: () => new Promise<void>((resolve) => server.close(() => {
-      ctx.matters.close(); ctx.corpus.close(); fs.rmSync(vaultDir, { recursive: true, force: true }); void closeLegalOcr(); resolve();
+      ctx.matters.close(); ctx.corpus.close(); if (!options.dataDir) fs.rmSync(vaultDir, { recursive: true, force: true }); void closeLegalOcr(); resolve();
     })),
   };
 }

@@ -14,6 +14,7 @@ import { MATTERS_SCHEMA, MATTERS_SCHEMA_VERSION } from "./schema.js";
 import { migrateLegalDatabase } from "./db/migrations.js";
 import { EvidenceStore, EVIDENCE_SCHEMA } from "./db/evidenceStore.js";
 import { PipelineStore, PIPELINE_SCHEMA } from "./db/pipelineStore.js";
+import { ApprovalArtifactStore, APPROVAL_ARTIFACT_SCHEMA } from "./review/approvalArtifact.js";
 import type { Clause, ClauseCategory, Confidentiality, ContractDoc, EgressPolicy, Matter, MatterParty, ReviewRecord } from "./types.js";
 
 export interface NewMatter {
@@ -40,17 +41,19 @@ export class MattersStore {
   readonly audit: AuditLog;
   readonly evidence: EvidenceStore;
   readonly pipeline: PipelineStore;
+  readonly approvals: ApprovalArtifactStore;
   private readonly cipher: FieldCipher;
 
   constructor(dbPath: string, keys: KeyProvider, private readonly now: () => Date = () => new Date()) {
     if (dbPath !== ":memory:") fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     this.db = new DatabaseSync(dbPath);
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;");
-    migrateLegalDatabase(this.db, { schema: MATTERS_SCHEMA, version: MATTERS_SCHEMA_VERSION, migrations: [{ version: 2, sql: EVIDENCE_SCHEMA }, { version: 3, sql: PIPELINE_SCHEMA }] });
+    migrateLegalDatabase(this.db, { schema: MATTERS_SCHEMA, version: MATTERS_SCHEMA_VERSION, migrations: [{ version: 2, sql: EVIDENCE_SCHEMA }, { version: 3, sql: PIPELINE_SCHEMA }, { version: 4, sql: APPROVAL_ARTIFACT_SCHEMA }] });
     this.cipher = new FieldCipher(keys);
     this.audit = new AuditLog(this.db, now);
     this.evidence = new EvidenceStore(this.db, keys);
     this.pipeline = new PipelineStore(this.db, keys);
+    this.approvals = new ApprovalArtifactStore(this.db, keys);
   }
 
   close(): void { this.db.close(); }
@@ -205,7 +208,9 @@ export class MattersStore {
 
   getReview(id: string): ReviewRecord | undefined {
     const r = this.db.prepare("SELECT payload_enc FROM reviews WHERE id=?").get(id) as Row | undefined;
-    return r ? this.cipher.openJson<ReviewRecord>(String(r.payload_enc), `review:${id}`) : undefined;
+    if (!r) return undefined;
+    const review = this.cipher.openJson<ReviewRecord>(String(r.payload_enc), `review:${id}`);
+    return { ...review, comments: review.comments ?? [], acceptedWarnings: review.acceptedWarnings ?? [], decisions: review.decisions ?? [] };
   }
 
   reviewsOf(matterId: string): ReviewRecord[] {

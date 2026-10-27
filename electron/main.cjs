@@ -632,6 +632,7 @@ ipcMain.on(IPC_SYNC, (event) => {
     appVersion: app.getVersion(),
     windowId: currentWindow()?.id ?? 0,
     locale: app.getLocale(),
+    env: { LOAM_PORT: String(PORT), MANUS_LOCAL_PORT: String(PORT), LOAM_LOCAL_TOKEN: localAuthToken },
   };
 });
 

@@ -281,6 +281,30 @@ export interface VerificationReport {
 
 export type ReviewState = "draft" | "verified" | "in_review" | "approved" | "rejected";
 
+export interface ReviewComment {
+  id: string;
+  anchor: { start: number; end: number; quote: string };
+  body: string;
+  author: { name: string; licenseNo: string };
+  createdAt: string;
+}
+
+export interface ReviewDecision {
+  id: string;
+  action: "comment" | "accept_warning" | "approve" | "reject";
+  actor: { name: string; licenseNo: string };
+  subject: string;
+  reason?: string;
+  at: string;
+}
+
+export interface AcceptedWarning {
+  code: string;
+  reason: string;
+  reviewer: { name: string; licenseNo: string };
+  acceptedAt: string;
+}
+
 export interface ReviewRecord {
   id: string;
   matterId: string;
@@ -290,6 +314,14 @@ export interface ReviewRecord {
   approvedSha256?: string;
   verifiedCorpusSnapshotId?: string;
   approvedCorpusSnapshotId?: string;
+  approvedArtifactSha256?: string;
+  artifactId?: string;
+  documentVersion?: import("./review/documentVersion.js").DocumentVersion;
+  verification?: VerificationReport;
+  sourceText?: string;
+  comments: ReviewComment[];
+  acceptedWarnings: AcceptedWarning[];
+  decisions: ReviewDecision[];
   reviewer?: { name: string; licenseNo: string };
   decidedAt?: string;
   note?: string;
@@ -299,7 +331,7 @@ export interface ReviewRecord {
 export type AuditAction =
   | "corpus.import" | "corpus.amend" | "search" | "cite_check" | "contract.import" | "evidence.import"
   | "contract.review" | "matter.create" | "matter.update" | "matter.delete" | "egress.decision"
-  | "review.transition" | "export.final" | "export.draft" | "purge";
+  | "review.transition" | "review.comment" | "review.warning" | "run.start" | "run.cancel" | "run.resume" | "export.final" | "export.draft" | "purge";
 
 export interface AuditEvent {
   seq: number;

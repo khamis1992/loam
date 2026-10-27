@@ -13,6 +13,7 @@ import { appendEvent, applyDelta, setStatus, setError } from '@/store/chatSlice'
 import { addSession, selectSession } from '@/store/sessionsSlice';
 import { t, PRODUCT } from '@/i18n/t';
 import { Composer } from '@/components/chat/Composer';
+import { MatterComposer } from '@/components/legal/MatterComposer';
 import { EventList } from '@/components/chat/EventList';
 import { SessionStatusBadge } from '@/components/chat/SessionStatusBadge';
 import { useSessionRuntime } from '@/components/chat/useSessionRuntime';
@@ -698,6 +699,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               </span>
               {running ? t('Working') : wasStoppedByUser ? t('Stopped') : hasResult && hasClockClosed ? t('Task completed') : t('Thinking')}
             </div>
+            <MatterComposer />
             <Composer
               onSend={handleSend}
               onStop={handleStop}

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { checkStructure, coverSheetAr, internalLeaks } from "../memo.js";
-import { approve, canExportFinal, markVerified, newReview, onContentChanged, reject, ReviewError, submitForReview, DISCLAIMER_AR } from "../review.js";
+import { acceptReviewWarning, addReviewComment, approve, canExportFinal, markVerified, newReview, onContentChanged, reject, ReviewError, submitForReview, DISCLAIMER_AR } from "../review.js";
+import { reviewParagraphs } from "../review/paragraphs.js";
+import { buildReviewPackage } from "../review/reviewPackage.js";
 import type { Matter, VerificationReport } from "../types.js";
 
 const report = (over: Partial<VerificationReport> = {}): VerificationReport => ({
@@ -78,4 +80,22 @@ test("cover sheet carries status, verification and the disclaimer", () => {
   assert.match(sheet, /عُدّل النص لاحقاً/u);
   assert.ok(sheet.includes(DISCLAIMER_AR));
   assert.match(sheet, /privileged/);
+});
+
+test("lawyer comments, warning decisions and the internal review package stay version-bound", () => {
+  const verification = report({ verdict: "pass_with_warnings", warnings: [{ code: "AMENDED_AFTER_DATE", messageAr: "عُدّل النص لاحقاً", messageEn: "" }] });
+  let review = submitForReview(markVerified(newReview("mt-1", "memo.docx"), verification, "agent", at), "user", at);
+  const paragraph = reviewParagraphs("الفقرة الأولى\nالفقرة الثانية")[0]!;
+  review = addReviewComment(review, { ...paragraph, body: "راجع هذا الموضع" }, { name: "مراجع", licenseNo: "QA-1" }, at);
+  review = acceptReviewWarning(review, { code: "AMENDED_AFTER_DATE", reason: "راجعت التعديل اللاحق" }, { name: "مراجع", licenseNo: "QA-1" }, at);
+  assert.equal(review.comments[0]?.anchor.quote, "الفقرة الأولى");
+  assert.deepEqual(review.decisions.map((decision) => decision.action), ["comment", "accept_warning"]);
+  assert.throws(() => addReviewComment(review, { ...paragraph, body: " " }, { name: "مراجع", licenseNo: "QA-1" }, at), ReviewError);
+  assert.throws(() => acceptReviewWarning(review, { code: "UNKNOWN", reason: "غير موجود" }, { name: "مراجع", licenseNo: "QA-1" }, at), /not present/);
+  const matter: Matter = { id: "mt-1", title: "دعوى", kind: "defense_memo", confidentiality: "privileged", egress: "local_only", asOf: "2092-01-01", parties: [], createdAt: at, updatedAt: at, retainUntil: null };
+  const bundle = JSON.parse(buildReviewPackage(matter, review, undefined, at)) as { internal: boolean; watermark: string; review: typeof review; verification: unknown };
+  assert.equal(bundle.internal, true);
+  assert.match(bundle.watermark, /مسودة للمراجعة/);
+  assert.equal(bundle.review.comments.length, 1);
+  assert.deepEqual(bundle.verification, verification);
 });

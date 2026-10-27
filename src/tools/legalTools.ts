@@ -25,7 +25,7 @@ import { parseLabel } from "../legal/normalize.js";
 import { checkStructure, internalLeaks, type DocKind } from "../legal/memo.js";
 import { redactForCloud } from "../legal/redact.js";
 import { searchLaw, type Embedder, type Reranker } from "../legal/retrieval.js";
-import { canExportFinal, markVerified, newReview, onContentChanged } from "../legal/review.js";
+import { canExportArtifact, markVerified, newReview, onContentChanged } from "../legal/review.js";
 import type { Matter } from "../legal/types.js";
 import { reportToText, verifyDocument } from "../legal/verify.js";
 import { bool, num, str, type Tool, type ToolContext, type ToolResult } from "./registry.js";
@@ -342,11 +342,18 @@ export function createLegalTools(deps: LegalToolDeps): Tool[] {
       const fingerprint = sha256(JSON.stringify({ contract: contract.sha256, edits }));
       const docName = `redline:${contract.id}`;
       const review = deps.matters.reviewsOf(matter.id).find((r) => r.documentName === docName);
-      const final = review ? canExportFinal(review, fingerprint) : false;
       const at = (deps.now?.() ?? new Date()).toISOString();
-      const buf = contract.originalBase64
-        ? await buildOriginalRedlineDocx(Buffer.from(contract.originalBase64, "base64"), clauses, edits, { author: "Loam Legal", date: at, rtl: contract.language !== "en", draft: !final })
-        : await buildRedlineDocx(clauses, edits, { title: contract.fileName, author: "Loam", date: at, rtl: contract.language !== "en", draft: !final });
+      const draft = !review || review.state !== "approved";
+      let buf = contract.originalBase64
+        ? await buildOriginalRedlineDocx(Buffer.from(contract.originalBase64, "base64"), clauses, edits, { author: "Loam Legal", date: at, rtl: contract.language !== "en", draft })
+        : await buildRedlineDocx(clauses, edits, { title: contract.fileName, author: "Loam", date: at, rtl: contract.language !== "en", draft });
+      const artifactHash = sha256(buf.toString("base64"));
+      const final = review ? canExportArtifact(review, artifactHash) : false;
+      if (!final && !draft) {
+        buf = contract.originalBase64
+          ? await buildOriginalRedlineDocx(Buffer.from(contract.originalBase64, "base64"), clauses, edits, { author: "Loam Legal", date: at, rtl: contract.language !== "en", draft: true })
+          : await buildRedlineDocx(clauses, edits, { title: contract.fileName, author: "Loam", date: at, rtl: contract.language !== "en", draft: true });
+      }
       fs.mkdirSync(path.dirname(out), { recursive: true });
       fs.writeFileSync(out, buf);
       deps.matters.audit.append(actor, final ? "export.final" : "export.draft", matter.id, docName, { edits: edits.length, sha256: fingerprint, bytes: buf.length });

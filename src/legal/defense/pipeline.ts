@@ -20,6 +20,10 @@ interface DefenseState {
   answer?: { action: "approve" | "revise"; theory?: CaseTheory };
 }
 
+function withSignal(model: { port: LegalModelPort; config: EgressConfig }, signal?: AbortSignal): { port: LegalModelPort; config: EgressConfig } {
+  return { ...model, port: (req) => model.port({ ...req, signal }) };
+}
+
 export function createDefensePipeline(store: MattersStore, corpus: LegalCorpus, model: { port: LegalModelPort; config: EgressConfig }): LegalPipeline {
   const matter = (state: DefenseState) => {
     const value = store.getMatter(state.matterId);
@@ -33,30 +37,30 @@ export function createDefensePipeline(store: MattersStore, corpus: LegalCorpus, 
       matter(state);
       return { state: { ...state, evidence: store.evidence.listDocuments(state.matterId) } };
     },
-    issues: async (value) => {
+    issues: async (value, context) => {
       const state = value as DefenseState;
-      const theory = await buildCaseTheory(model, {
+      const theory = await buildCaseTheory(withSignal(model, context?.signal), {
         matter: matter(state), documents: store.evidence.listDocuments(state.matterId), facts: store.evidence.listFacts(state.matterId),
         timeline: store.evidence.listTimeline(state.matterId), contradictions: store.evidence.listContradictions(state.matterId),
       });
       return { state: { ...state, theory } };
     },
-    research: async (value) => {
+    research: async (value, context) => {
       const state = value as DefenseState;
-      const research = await researchDefense(corpus, model, state.theory!, matter(state).asOf);
+      const research = await researchDefense(corpus, withSignal(model, context?.signal), state.theory!, matter(state).asOf);
       return { state: { ...state, research } };
     },
     strategy: async (value) => ({ state: value, waiting: true }),
-    draft: async (value) => {
+    draft: async (value, context) => {
       const state = value as DefenseState;
       if (state.answer?.action === "revise" && state.answer.theory) state.theory = state.answer.theory;
       if (state.answer?.action !== "approve" && state.answer?.action !== "revise") throw new Error("defense strategy requires approval or revision");
-      const drafted = await draftDefenseMemo(corpus, model, { matter: matter(state), theory: state.theory!, research: state.research! });
+      const drafted = await draftDefenseMemo(corpus, withSignal(model, context?.signal), { matter: matter(state), theory: state.theory!, research: state.research! });
       return { state: { ...state, ...drafted } };
     },
-    adversarial_review: async (value) => {
+    adversarial_review: async (value, context) => {
       const state = value as DefenseState;
-      const adversarial = await opposeDefense(model, { draft: state.draft!, theory: state.theory!, research: state.research!, coverage: state.verification!.coverage });
+      const adversarial = await opposeDefense(withSignal(model, context?.signal), { draft: state.draft!, theory: state.theory!, research: state.research!, coverage: state.verification!.coverage });
       return { state: { ...state, adversarial } };
     },
     deterministic_verification: async (value) => {

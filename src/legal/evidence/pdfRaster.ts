@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { createCanvas, DOMMatrix, ImageData, Path2D } from "@napi-rs/canvas";
+import { pathToFileURL } from "node:url";
 import { rootAsset } from "../../config.js";
 
 export type PdfPageRasterizer = (absPath: string, pageNumber: number) => Promise<Buffer>;
@@ -9,8 +9,9 @@ const assetUrl = (...parts: string[]): string => `${path.join(...parts).replaceA
 
 export async function rasterizePdfPage(absPath: string, pageNumber: number, scale = 2): Promise<Buffer> {
   const data = new Uint8Array(fs.readFileSync(absPath));
+  const { createCanvas, DOMMatrix, ImageData, Path2D } = await import(pathToFileURL(rootAsset("node_modules", "@napi-rs", "canvas", "index.js")).href);
   Object.assign(globalThis, { DOMMatrix, ImageData, Path2D });
-  const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const { getDocument } = await import(pathToFileURL(rootAsset("node_modules", "pdfjs-dist", "legacy", "build", "pdf.mjs")).href);
   const document = await getDocument({
     data, disableAutoFetch: true, disableStream: true, isEvalSupported: false,
     standardFontDataUrl: assetUrl(rootAsset("node_modules", "pdfjs-dist", "standard_fonts")),

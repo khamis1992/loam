@@ -1,5 +1,5 @@
 export type LegalPipelineKind = "contract_review" | "defense_memo" | "legal_response" | "document_analysis";
-export type LegalPipelineStatus = "running" | "waiting" | "failed" | "succeeded";
+export type LegalPipelineStatus = "running" | "waiting" | "failed" | "cancelled" | "succeeded";
 
 export interface LegalPipelineRun {
   id: string;
@@ -9,6 +9,7 @@ export interface LegalPipelineRun {
   stage: string;
   state: unknown;
   completedStages: string[];
+  stageCount?: number;
   inputSha256: string;
   corpusSnapshotId: string;
   model: string;
@@ -24,4 +25,4 @@ export interface LegalPipelineStageResult {
   succeeded?: boolean;
 }
 
-export type LegalPipelineStageHandler = (state: unknown) => Promise<LegalPipelineStageResult>;
+export type LegalPipelineStageHandler = (state: unknown, context?: { signal?: AbortSignal }) => Promise<LegalPipelineStageResult>;

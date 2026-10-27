@@ -501,6 +501,14 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         const isPublicShare = req.method === "GET" && /^\/api\/share\/[A-Za-z0-9_-]+$/.test(p);
         // The share replay page and its static assets are public like the feed.
         const isNextStatic = req.method === "GET" && (p === "/share" || p.startsWith("/share/") || p.startsWith("/_next/"));
+        if (req.method === "OPTIONS" && p.startsWith("/api/legal") && req.headers.origin === "app://agent") {
+          res.writeHead(204, {
+            "access-control-allow-origin": "app://agent", "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+            "access-control-allow-headers": "content-type,authorization,x-loam-local-token", "access-control-max-age": "600", "vary": "Origin",
+          });
+          res.end();
+          return;
+        }
         if (!isStatic && !isPublicShare && !isNextStatic && !publicPaths.has(p)) {
           const token =
             typeof req.headers["x-loam-local-token"] === "string"

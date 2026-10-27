@@ -6,8 +6,8 @@ import { LegalCorpus, makeAvid, type LegalPack } from "../corpusStore.js";
 
 export const FIXTURE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
 
-export function loadFixtureCorpus(): LegalCorpus {
-  const corpus = new LegalCorpus(":memory:");
+export function loadFixtureCorpus(dbPath = ":memory:"): LegalCorpus {
+  const corpus = new LegalCorpus(dbPath);
   const dir = path.join(FIXTURE_DIR, "corpus");
   for (const file of fs.readdirSync(dir).filter((f) => f.endsWith(".json")).sort()) {
     corpus.importPack(JSON.parse(fs.readFileSync(path.join(dir, file), "utf8")) as LegalPack);

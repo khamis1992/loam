@@ -1,4 +1,4 @@
-import { getApiBase, getApiHeaders } from './rpc';
+import { getApiBase, getApiHeaders, getLoamBase } from './rpc';
 
 /**
  * Client for /api/legal (src/server/routes/legal.ts). The types mirror
@@ -49,11 +49,85 @@ export interface Matter {
   court?: { name: string; circuit?: string; caseNumber?: string; hearingDate?: string };
   parties: MatterParty[]; createdAt: string; updatedAt: string; retainUntil: string | null;
 }
+export interface ReviewParagraph { index: number; start: number; end: number; quote: string }
+export interface ReviewComment { id: string; anchor: Omit<ReviewParagraph, 'index'>; body: string; author: { name: string; licenseNo: string }; createdAt: string }
+export interface ReviewDecision { id: string; action: 'comment' | 'accept_warning' | 'approve' | 'reject'; actor: { name: string; licenseNo: string }; subject: string; reason?: string; at: string }
+export interface AcceptedWarning { code: string; reason: string; reviewer: { name: string; licenseNo: string }; acceptedAt: string }
 export interface ReviewRecord {
   id: string; matterId: string; documentName: string; state: ReviewState; verifiedSha256?: string; approvedSha256?: string;
+  documentVersion?: { id: string; contentSha256: string; corpusSnapshotId: string; model: string; createdAt: string };
+  verification?: VerificationReport;
+  comments: ReviewComment[]; acceptedWarnings: AcceptedWarning[]; decisions: ReviewDecision[];
   reviewer?: { name: string; licenseNo: string }; decidedAt?: string; note?: string;
   history: Array<{ at: string; from: ReviewState; to: ReviewState; actor: string }>;
 }
+export interface EvidenceAnchor { documentId: string; page?: number; paragraph?: number; start: number; end: number; quote: string; sha256: string }
+export interface EvidenceDocument { id: string; matterId: string; fileName: string; mime: string; sha256: string; language: string; text: string; importedAt: string; pages: Array<{ page: number; text: string; confidence?: number; warnings: string[] }>; warnings: string[] }
+export interface FactAssertion { id: string; matterId: string; text: string; kind: string; status: string; anchors: EvidenceAnchor[]; createdAt: string }
+export interface TimelineEvent { id: string; matterId: string; dateLabel: string; sortDate: string; description: string; anchors: EvidenceAnchor[] }
+export interface Contradiction { id: string; kind: string; severity: 'info' | 'warning' | 'high'; title: string; details: string; anchors: EvidenceAnchor[] }
+export interface EvidenceWorkspace { documents: EvidenceDocument[]; facts: FactAssertion[]; timeline: TimelineEvent[]; contradictions: Contradiction[] }
+export interface LegalPipelineRun {
+  id: string; kind: 'contract_review' | 'defense_memo' | 'legal_response' | 'document_analysis'; matterId: string;
+  status: 'running' | 'waiting' | 'failed' | 'cancelled' | 'succeeded'; stage: string;
+  state: unknown; completedStages: string[]; stageCount?: number; inputSha256: string; corpusSnapshotId: string; model: string; promptVersion: string;
+  createdAt: string; updatedAt: string; error?: string;
+}
+export interface DefensePackage {
+  theory: Record<string, unknown>;
+  research: unknown[];
+  draft: string;
+  verification: VerificationReport;
+  structure: StructureIssue[];
+  adversarial: Array<{ severity: string; code: string; message: string }>;
+  quality: { ok: boolean; issues: Array<{ code: string; message: string }> };
+}
+export interface LegalResponsePackage {
+  matrix: {
+    entries: Array<{
+      id: string;
+      allegation: string;
+      kind: string;
+      disposition: string;
+      response: string;
+      evidenceFactIds: string[];
+      needsClientDecision: boolean;
+    }>;
+  };
+  research: unknown[];
+  draft: string;
+  verification: VerificationReport;
+  structure: StructureIssue[];
+  adversarial: DefensePackage['adversarial'];
+  quality: DefensePackage['quality'];
+}
+export interface DocumentAnalysisReport {
+  summary: string;
+  documents: EvidenceDocument[];
+  timeline: TimelineEvent[];
+  contradictions: Contradiction[];
+  obligations: Array<{ id: string; title: string; details: string; severity: string; evidenceFactIds: string[] }>;
+  risks: DocumentAnalysisReport['obligations'];
+  missingInformation: DocumentAnalysisReport['obligations'];
+  questions: Array<{ question: string; material: boolean }>;
+  coverage: CoverageReport;
+  corpusSnapshotId: string;
+}
+export interface ApprovalArtifact {
+  id: string;
+  reviewId: string;
+  matterId: string;
+  documentName: string;
+  kind: string;
+  contentSha256: string;
+  artifactSha256: string;
+  corpusSnapshotId: string;
+  playbookVersion?: string;
+  model: string;
+  dataBase64?: string;
+  createdAt: string;
+}
+
 export interface ReviewFinding {
   id: string; ruleId: string; clauseId: string | null; severity: 'high' | 'medium' | 'low' | 'info'; titleAr: string; explanationAr: string;
   suggestionAr?: string; authorities: string[]; suggestedAuthorities: string[]; unresolvedAuthorityQueries: string[];
@@ -69,7 +143,9 @@ export interface ContractReviewReport {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = { ...(await getApiHeaders()), ...(init?.headers as Record<string, string> | undefined) };
-  const res = await fetch(`${getApiBase()}${path}`, { ...init, headers });
+  const desktop = typeof window !== 'undefined' && ((window as unknown as { __apis?: unknown }).__apis || (window as unknown as { desktopSync?: unknown }).desktopSync);
+  const base = desktop ? getLoamBase().replace(/\/$/, '') : getApiBase().replace(/\/api\/?$/, '');
+  const res = await fetch(`${base}${path}`, { ...init, headers });
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : `status ${res.status}`);
   return data;
@@ -98,11 +174,34 @@ export const legalApi = {
   createMatter: (input: { title: string; kind: Matter['kind']; confidentiality?: Confidentiality; asOf?: string; parties?: MatterParty[]; court?: Matter['court'] }) =>
     request<{ matter: Matter }>('/api/legal/matters', jsonInit('POST', input)),
   getMatter: (id: string) => request<{ matter: Matter; contracts: Array<{ id: string; fileName: string; sha256: string; language: string }>; reviews: ReviewRecord[] }>(`/api/legal/matters/${enc(id)}`),
+  getMatterDocuments: (id: string) => request<EvidenceWorkspace>(`/api/legal/matters/${enc(id)}/documents`),
+  uploadMatterDocument: (matterId: string, fileName: string, dataBase64: string) =>
+    request<{ document: EvidenceDocument; facts: FactAssertion[]; timeline: TimelineEvent[]; contradictions: Contradiction[]; vaultId: string }>(`/api/legal/matters/${enc(matterId)}/documents`, jsonInit('POST', { fileName, dataBase64 })),
+  analyzeDocuments: (matterId: string) => request<DocumentAnalysisReport>(`/api/legal/matters/${enc(matterId)}/analyze-documents`, jsonInit('POST', {})),
+  buildDefense: (matterId: string) => request<DefensePackage>(`/api/legal/matters/${enc(matterId)}/defense`, jsonInit('POST', {})),
+  buildResponse: (matterId: string, sourceText: string) => request<LegalResponsePackage>(`/api/legal/matters/${enc(matterId)}/response`, jsonInit('POST', { sourceText })),
+  startRun: (matterId: string, kind: LegalPipelineRun['kind'], input: { sourceText?: string; contractId?: string; contractType?: string; clientPosition?: ClientPosition; riskTolerance?: RiskTolerance } = {}) =>
+    request<{ run: LegalPipelineRun }>(`/api/legal/matters/${enc(matterId)}/runs`, jsonInit('POST', { kind, ...input })),
+  getRun: (id: string) => request<{ run: LegalPipelineRun }>(`/api/legal/runs/${enc(id)}`),
+  listRuns: (matterId: string) => request<{ runs: LegalPipelineRun[] }>(`/api/legal/runs?matterId=${enc(matterId)}`),
+  cancelRun: (id: string) => request<{ run: LegalPipelineRun }>(`/api/legal/runs/${enc(id)}/cancel`, jsonInit('POST', {})),
+  resumeRun: (id: string, answer?: unknown) => request<{ run: LegalPipelineRun }>(`/api/legal/runs/${enc(id)}/resume`, jsonInit('POST', { answer })),
+  verifyArtifact: (input: { matterId: string; documentName: string; dataBase64: string }) =>
+    request<{ report: VerificationReport; structure: StructureIssue[]; review: ReviewRecord; paragraphs: ReviewParagraph[] }>('/api/legal/artifacts/verify', jsonInit('POST', input)),
+  approveArtifact: (id: string, dataBase64: string, reviewerName: string, licenseNo: string) =>
+    request<{ review: ReviewRecord; artifact: ApprovalArtifact }>(`/api/legal/reviews/${enc(id)}/approve-artifact`, jsonInit('POST', { dataBase64, reviewerName, licenseNo })),
+  addReviewComment: (id: string, input: { anchor: Omit<ReviewParagraph, 'index'>; body: string; reviewerName: string; licenseNo: string }) =>
+    request<{ review: ReviewRecord }>(`/api/legal/reviews/${enc(id)}/comments`, jsonInit('POST', input)),
+  acceptReviewWarning: (id: string, input: { code: string; reason: string; reviewerName: string; licenseNo: string }) =>
+    request<{ review: ReviewRecord }>(`/api/legal/reviews/${enc(id)}/accept-warning`, jsonInit('POST', input)),
+  reviewPackage: (id: string) => request<{ fileName: string; dataBase64: string; internal: true }>(`/api/legal/reviews/${enc(id)}/review-package`),
+  exportArtifact: (id: string) => request<{ fileName: string; dataBase64: string; artifact: ApprovalArtifact }>(`/api/legal/reviews/${enc(id)}/export`),
   updateMatter: (id: string, patch: Partial<Matter>, confirmEgress = false) =>
     request<{ matter: Matter }>(`/api/legal/matters/${enc(id)}`, jsonInit('PATCH', { ...patch, ...(confirmEgress ? { confirmEgress: true } : {}) })),
   deleteMatter: (id: string) => request<{ deleted: boolean }>(`/api/legal/matters/${enc(id)}`, { method: 'DELETE' }),
   addContract: (matterId: string, fileName: string, text: string, originalBase64?: string) =>
     request<{ contract: { id: string; fileName: string; sha256: string; language: string }; clauses: number }>(`/api/legal/matters/${enc(matterId)}/contracts`, jsonInit('POST', { fileName, text, ...(originalBase64 ? { originalBase64 } : {}) })),
+  getContractClauses: (matterId: string, contractId: string) => request<{ clauses: Array<{ id: string; index: number; heading: string; text: string }> }>(`/api/legal/matters/${enc(matterId)}/contracts/${enc(contractId)}/clauses`),
   reviewContract: (matterId: string, contractId: string, contractType = 'any', opts: { clientPosition?: ClientPosition; riskTolerance?: RiskTolerance } = {}) =>
     request<ContractReviewReport>(`/api/legal/matters/${enc(matterId)}/contracts/${enc(contractId)}/review`, jsonInit('POST', { contractType, ...opts })),
   redlineContract: (matterId: string, contractId: string, edits: Array<{ clauseId: string; newText: string }>) =>

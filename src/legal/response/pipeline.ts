@@ -21,6 +21,10 @@ interface ResponseState {
   answer?: { action: "approve" | "revise"; matrix?: AllegationResponseMatrix };
 }
 
+function withSignal(model: { port: LegalModelPort; config: EgressConfig }, signal?: AbortSignal): { port: LegalModelPort; config: EgressConfig } {
+  return { ...model, port: (req) => model.port({ ...req, signal }) };
+}
+
 export function createResponsePipeline(store: MattersStore, corpus: LegalCorpus, model: { port: LegalModelPort; config: EgressConfig }): LegalPipeline {
   const matter = (state: ResponseState) => {
     const value = store.getMatter(state.matterId);
@@ -30,28 +34,28 @@ export function createResponsePipeline(store: MattersStore, corpus: LegalCorpus,
   return new LegalPipeline(store.pipeline, {
     intake: async (value) => ({ state: value }),
     evidence: async (value) => ({ state: value }),
-    issues: async (value) => {
+    issues: async (value, context) => {
       const state = value as ResponseState;
-      const matrix = await buildAllegationMatrix(model, {
+      const matrix = await buildAllegationMatrix(withSignal(model, context?.signal), {
         matter: matter(state), sourceText: state.sourceText, documents: store.evidence.listDocuments(state.matterId),
         facts: store.evidence.listFacts(state.matterId), timeline: store.evidence.listTimeline(state.matterId),
       });
       return { state: { ...state, matrix } };
     },
-    research: async (value) => {
+    research: async (value, context) => {
       const state = value as ResponseState;
-      return { state: { ...state, research: await researchResponse(corpus, model, state.matrix!, matter(state).asOf) } };
+      return { state: { ...state, research: await researchResponse(corpus, withSignal(model, context?.signal), state.matrix!, matter(state).asOf) } };
     },
     strategy: async (value) => ({ state: value, waiting: true }),
-    draft: async (value) => {
+    draft: async (value, context) => {
       const state = value as ResponseState;
       if (state.answer?.action === "revise" && state.answer.matrix) state.matrix = state.answer.matrix;
       if (state.answer?.action !== "approve" && state.answer?.action !== "revise") throw new Error("response strategy requires approval or revision");
-      return { state: { ...state, ...(await draftLegalResponse(corpus, model, { matter: matter(state), matrix: state.matrix!, research: state.research! })) } };
+      return { state: { ...state, ...(await draftLegalResponse(corpus, withSignal(model, context?.signal), { matter: matter(state), matrix: state.matrix!, research: state.research! })) } };
     },
-    adversarial_review: async (value) => {
+    adversarial_review: async (value, context) => {
       const state = value as ResponseState;
-      return { state: { ...state, adversarial: await adversarialReview(model, { draft: state.draft!, facts: state.matrix, authorities: state.research, coverage: state.verification!.coverage }) } };
+      return { state: { ...state, adversarial: await adversarialReview(withSignal(model, context?.signal), { draft: state.draft!, facts: state.matrix, authorities: state.research, coverage: state.verification!.coverage }) } };
     },
     deterministic_verification: async (value) => {
       const state = value as ResponseState;

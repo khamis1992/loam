@@ -62,6 +62,22 @@ extraResources:
     to: app.asar.unpacked/node_modules/tesseract.js
   - from: node_modules/tesseract.js-core
     to: app.asar.unpacked/node_modules/tesseract.js-core
+  - from: node_modules/bmp-js
+    to: app.asar.unpacked/node_modules/bmp-js
+  - from: node_modules/idb-keyval
+    to: app.asar.unpacked/node_modules/idb-keyval
+  - from: node_modules/is-url
+    to: app.asar.unpacked/node_modules/is-url
+  - from: node_modules/node-fetch
+    to: app.asar.unpacked/node_modules/node-fetch
+  - from: node_modules/opencollective-postinstall
+    to: app.asar.unpacked/node_modules/opencollective-postinstall
+  - from: node_modules/regenerator-runtime
+    to: app.asar.unpacked/node_modules/regenerator-runtime
+  - from: node_modules/wasm-feature-detect
+    to: app.asar.unpacked/node_modules/wasm-feature-detect
+  - from: node_modules/zlibjs
+    to: app.asar.unpacked/node_modules/zlibjs
   - from: node_modules/pdfjs-dist
     to: app.asar.unpacked/node_modules/pdfjs-dist
   - from: node_modules/@napi-rs/canvas
