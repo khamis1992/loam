@@ -186,7 +186,7 @@ import { createWatchRoutine, watchSchedules, stopWatcher } from "./fileWatchers.
 import { AGENT_TEMPLATES, getAgentTemplate, sanitizeBundle, writeBundleFile, type CompanionBundle } from "./agentTemplates.js";
 import { agentIntegrationGrants, saveAgentIntegrationGrants } from "../tools/integrations.js";
 import { readTelemetry, telemetrySummary } from "../telemetry/store.js";
-import { setSecret, listSecrets, deleteSecret } from "./secretsVault.js";
+import { setSecret, listSecrets, deleteSecret, resolveSecret } from "./secretsVault.js";
 import { createApproval, decideApproval, getApproval, listApprovals } from "./approvals.js";
 import { subscribeTask } from "./streams.js";
 import { workspaceRelay, workspaceRelay as videoStudioRelay, type WorkspaceRelayResult } from "./workspaceRelay.js";
@@ -713,7 +713,7 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
               }
               return sendJson(res, 405, { error: "Method not allowed" });
             }
-            const match = /^\/api\/swarm\/runs\/([a-zA-Z0-9_-]+)(?:\/(cancel|retry|resume|artifacts|preview|preview\/stop))?$/.exec(p);
+            const match = /^\/api\/swarm\/runs\/([a-zA-Z0-9_-]+)(?:\/(cancel|retry|resume|artifacts|preview|preview\/stop|clarify|approve|checkpoints|rollback|launch))?$/.exec(p);
             if (!match) return sendJson(res, 404, { error: "Run endpoint not found" });
             const id = match[1]!;
             if (req.method === "GET" && !match[2]) return sendJson(res, 200, { run: swarm.get(id) });
@@ -723,6 +723,20 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             if (req.method === "POST" && match[2] === "resume") return sendJson(res, 202, { run: swarm.resume(id) });
             if (req.method === "POST" && match[2] === "preview") return sendJson(res, 200, { preview: await swarm.preview(id) });
             if (req.method === "POST" && match[2] === "preview/stop") return sendJson(res, 200, { ...(await swarm.stopPreview(id)) });
+            // BUILD_SPEC §8: lifecycle gates, checkpoints/rollback and the opt-in cloud launch.
+            if (req.method === "GET" && match[2] === "checkpoints") return sendJson(res, 200, swarm.checkpointsOf(id));
+            if (req.method === "POST" && (match[2] === "clarify" || match[2] === "approve" || match[2] === "rollback" || match[2] === "launch")) {
+              let body: unknown;
+              try { body = await readBody(req, 40_000); }
+              catch { return sendJson(res, 400, { error: "Invalid JSON request" }); }
+              if (match[2] === "clarify") return sendJson(res, 202, { run: swarm.clarify(id, body) });
+              if (match[2] === "approve") return sendJson(res, 202, { run: swarm.approve(id, body) });
+              if (match[2] === "rollback") return sendJson(res, 200, { rollback: await swarm.rollback(id, body) });
+              if (process.env.LOAM_SWARM_CLOUD_DEPLOY !== "1") return sendJson(res, 403, { error: "Cloud launch is disabled; set LOAM_SWARM_CLOUD_DEPLOY=1 to enable it" });
+              const tokenName = (target: string) => target === "vercel" ? "VERCEL_TOKEN" : "NETLIFY_AUTH_TOKEN";
+              const outcome = await swarm.launchCloud(id, body, target => resolveSecret("swarm-launch", tokenName(target)) ?? process.env[tokenName(target)] ?? undefined);
+              return sendJson(res, outcome.ok ? 200 : 502, { launch: outcome });
+            }
             return sendJson(res, 405, { error: "Method not allowed" });
           } catch (error) {
             if (error instanceof SwarmError) return sendJson(res, error.status, { error: error.message });

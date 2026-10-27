@@ -31,11 +31,15 @@ export function createSwarmTools(): Tool[] {
         properties: {
           brief: { type: "string", description: "وصف المشروع المطلوب (المستخدمون والوظائف)" },
           concurrency: { type: "integer", minimum: 1, maximum: 4, description: "عدد المسارات المتوازية" },
+          effort: { type: "string", enum: ["auto", "solo", "lite", "full"], description: "حجم الفريق: auto يختار تلقائيًا (الطلب الصغير يذهب لوكيل واحد)" },
         },
         required: ["brief"],
       },
       async run(args): Promise<ToolResult> {
-        const res = await api("POST", "/api/swarm/runs", { brief: str(args, "brief"), concurrency: num(args, "concurrency", 2) });
+        // BUILD_SPEC §4: the agent tool sends the recommended lifecycle profile; approval stays
+        // "auto" here because a tool call has no approval card (the swarm UI asks for approval).
+        const effort = typeof args.effort === "string" && ["auto", "solo", "lite", "full"].includes(args.effort) ? args.effort : "auto";
+        const res = await api("POST", "/api/swarm/runs", { brief: str(args, "brief"), concurrency: num(args, "concurrency", 2), effort, intake: "off", approval: "auto", review: "two-stage", taskGraph: true, spec: "ears", projectGuide: true, webResearch: true, visualGate: "advisory" });
         if ("error" in res) return { ok: false, content: String(res.error) };
         const run = (res as { run?: { id: string } }).run;
         return { ok: true, content: `بدأ السرب (${run?.id ?? "?"}) — شركة برمجيات كاملة تعمل. تابعه بـ swarm_status ثم اجلب النتائج.` };
