@@ -1,23 +1,54 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FileSpreadsheet, RefreshCw, Save, Wand2, Table2 } from 'lucide-react';
+import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  Bold,
+  FileDown,
+  FileSpreadsheet,
+  Italic,
+  RefreshCw,
+  Save,
+  Search,
+  Wand2,
+  Table2,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { t } from '@/i18n/t';
+import { useLocale } from '@/hooks/useLocale';
 import type { WorkspaceEditorProps } from '../types';
 import {
+  BORDER_STYLE_KEYS,
   DEFAULT_COLUMN_WIDTH,
   DEFAULT_ROW_HEIGHT,
   addressAt,
+  applyStylePatch,
+  clearStyleKeys,
   columnLabel,
+  countFilledCells,
+  displayValue,
+  findInSheet,
   loadSheetDoc,
+  mergeGeometry,
+  normalizeRange,
+  parseRangeAddress,
+  rangeAddress,
+  rangeIndexes,
+  rangesOverlap,
   serializeSheetDoc,
   sheetDocDigest,
   sheetDimensions,
+  type CellIndex,
+  type CellRange,
   type EditorSheet,
   type SheetDoc,
+  type SheetStyleValue,
 } from './sheetApi';
+import { exportWorkspacePdf } from '../pdfExport';
 import IntelligencePanel from '../intelligence/IntelligencePanel';
+import ConnectionsPanel from '../intelligence/ConnectionsPanel';
 
 interface CellPointer {
   r: number;
@@ -27,18 +58,48 @@ interface CellPointer {
 const LIVE_POLL_MS = 8000;
 const ROW_WINDOW = 60;
 const COLUMN_WINDOW = 16;
+const BORDER_COLOR_DEFAULT = '#000000';
 
 function nextWindow(current: number, needed: number): number {
   return Math.max(current, needed);
 }
 
+/** Translate a stored style record into the inline CSS the grid shows. */
+function cellStyleFrom(record: Record<string, SheetStyleValue>): React.CSSProperties {
+  const style: React.CSSProperties = {};
+  if (record.bold === true) style.fontWeight = 'bold';
+  if (record.italic === true) style.fontStyle = 'italic';
+  if (typeof record.color === 'string') style.color = record.color;
+  if (typeof record.background === 'string') style.background = record.background;
+  if (record.alignment === 'left' || record.alignment === 'center' || record.alignment === 'right') {
+    style.textAlign = record.alignment;
+  }
+  const sides = [
+    ['borderTop', 'borderTopColor'],
+    ['borderRight', 'borderRightColor'],
+    ['borderBottom', 'borderBottomColor'],
+    ['borderLeft', 'borderLeftColor'],
+  ] as const;
+  for (const [widthKey, colorKey] of sides) {
+    const width = record[widthKey];
+    if (typeof width !== 'string') continue;
+    const color = typeof record[colorKey] === 'string' ? (record[colorKey] as string) : BORDER_COLOR_DEFAULT;
+    const borderStyle = width === 'double' ? 'double' : 'solid';
+    const borderWidth = width === 'medium' ? '2px' : '1px';
+    style[widthKey] = `${borderWidth} ${borderStyle} ${color}`;
+  }
+  return style;
+}
+
 export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }: WorkspaceEditorProps) {
+  const { dir } = useLocale();
   const [doc, setDoc] = useState<SheetDoc | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sheetIndex, setSheetIndex] = useState(0);
   const [selected, setSelected] = useState<CellPointer>({ r: 0, c: 0 });
   const [editing, setEditing] = useState<CellPointer | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [range, setRange] = useState<CellRange | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -46,6 +107,10 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
   const [renderRows, setRenderRows] = useState(ROW_WINDOW);
   const [renderColumns, setRenderColumns] = useState(COLUMN_WINDOW);
   const [chatInput, setChatInput] = useState('');
+  const [findQuery, setFindQuery] = useState('');
+  const [findPos, setFindPos] = useState(-1);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   const digestRef = useRef<string>('');
   const dirtyRef = useRef(false);
@@ -53,6 +118,8 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
 
   const activeSheet: EditorSheet | undefined = doc?.sheets[sheetIndex];
   const dims = useMemo(() => (activeSheet ? sheetDimensions(activeSheet) : { rows: 0, columns: 0 }), [activeSheet]);
+  const merges = useMemo(() => (activeSheet ? mergeGeometry(activeSheet) : { anchors: new Map(), covered: new Set() }), [activeSheet]);
+  const filledCount = useMemo(() => (activeSheet ? countFilledCells(activeSheet) : 0), [activeSheet]);
 
   const docDigest = useMemo(() => (doc ? sheetDocDigest(doc) : ''), [doc]);
   useEffect(() => {
@@ -76,6 +143,7 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
           setSheetIndex((index) => Math.min(index, Math.max(next.sheets.length - 1, 0)));
           setSelected({ r: 0, c: 0 });
           setEditing(null);
+          setRange(null);
           setRenderRows(ROW_WINDOW);
           setRenderColumns(COLUMN_WINDOW);
         }
@@ -160,6 +228,20 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
     [sheetIndex],
   );
 
+  const updateActiveSheet = useCallback(
+    (updater: (sheet: EditorSheet) => EditorSheet) => {
+      setDoc((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          sheets: prev.sheets.map((sheet, i) => (i === sheetIndex ? updater(sheet) : sheet)),
+        };
+      });
+      markDirty();
+    },
+    [sheetIndex],
+  );
+
   const commitEdit = useCallback(
     (move?: 'down' | 'right') => {
       if (!editing || !doc) return;
@@ -179,11 +261,112 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
   const selectCell = useCallback(
     (pointer: CellPointer) => {
       setSelected(pointer);
+      setRange(null);
       setRenderRows((w) => nextWindow(w, pointer.r + 1));
       setRenderColumns((w) => nextWindow(w, pointer.c + 1));
     },
     [],
   );
+
+  /* --- formatting toolbar targets -------------------------------------- */
+
+  const targetAddresses = useMemo(() => {
+    if (!activeSheet) return [] as string[];
+    if (range) return rangeIndexes(range).map(({ r, c }) => addressAt(r, c));
+    return [addressAt(selected.r, selected.c)];
+  }, [activeSheet, range, selected]);
+
+  const targetStyle = targetAddresses.length ? activeSheet?.styles[targetAddresses[0]!] : undefined;
+
+  const mutateStyles = useCallback(
+    (updater: (styles: EditorSheet['styles']) => EditorSheet['styles']) => {
+      if (!targetAddresses.length) return;
+      updateActiveSheet((sheet) => ({ ...sheet, styles: updater(sheet.styles) }));
+    },
+    [targetAddresses, updateActiveSheet],
+  );
+
+  const applyStyleToTargets = useCallback(
+    (patch: Record<string, SheetStyleValue>) => mutateStyles((styles) => applyStylePatch(styles, targetAddresses, patch)),
+    [mutateStyles, targetAddresses],
+  );
+
+  const clearStyleFromTargets = useCallback(
+    (keys: readonly string[]) => mutateStyles((styles) => clearStyleKeys(styles, targetAddresses, keys)),
+    [mutateStyles, targetAddresses],
+  );
+
+  const toggleStyleFlag = (key: 'bold' | 'italic') => {
+    if (targetStyle?.[key] === true) clearStyleFromTargets([key]);
+    else applyStyleToTargets({ [key]: true });
+  };
+
+  const toggleBorders = () => {
+    if (typeof targetStyle?.borderTop === 'string') clearStyleFromTargets(BORDER_STYLE_KEYS);
+    else
+      applyStyleToTargets({
+        borderTop: 'thin',
+        borderLeft: 'thin',
+        borderRight: 'thin',
+        borderBottom: 'thin',
+        borderTopColor: BORDER_COLOR_DEFAULT,
+        borderLeftColor: BORDER_COLOR_DEFAULT,
+        borderRightColor: BORDER_COLOR_DEFAULT,
+        borderBottomColor: BORDER_COLOR_DEFAULT,
+      });
+  };
+
+  /* --- merge / unmerge --------------------------------------------------- */
+
+  const selectionRange: CellRange | null = range ?? { r1: selected.r, c1: selected.c, r2: selected.r, c2: selected.c };
+  const canMerge = !!range && (range.r2 > range.r1 || range.c2 > range.c1);
+  const overlappingMerges = useMemo(() => {
+    if (!activeSheet || !selectionRange) return [] as string[];
+    return activeSheet.merges.filter((merge) => {
+      const parsed = parseRangeAddress(merge);
+      return !!parsed && rangesOverlap(parsed, selectionRange);
+    });
+  }, [activeSheet, selectionRange]);
+
+  const mergeSelection = useCallback(() => {
+    if (!range || !canMerge) return;
+    const address = rangeAddress(range);
+    updateActiveSheet((sheet) => {
+      // The server keeps a merge only when every non-anchor cell is empty,
+      // so clear their text exactly like the studio grid does.
+      const cells = sheet.cells.map((row) => [...row]);
+      while (cells.length <= range.r2) cells.push([]);
+      for (const { r, c } of rangeIndexes(range)) {
+        while (cells[r]!.length <= range.c2) cells[r]!.push('');
+        if (r === range.r1 && c === range.c1) continue;
+        cells[r]![c] = '';
+      }
+      return { ...sheet, cells, merges: sheet.merges.includes(address) ? sheet.merges : [...sheet.merges, address] };
+    });
+  }, [range, canMerge, updateActiveSheet]);
+
+  const unmergeSelection = useCallback(() => {
+    if (!activeSheet || !overlappingMerges.length) return;
+    const drop = new Set(overlappingMerges);
+    updateActiveSheet((sheet) => ({ ...sheet, merges: sheet.merges.filter((merge) => !drop.has(merge)) }));
+  }, [activeSheet, overlappingMerges, updateActiveSheet]);
+
+  /* --- find --------------------------------------------------------------- */
+
+  const findMatches = useMemo(() => (activeSheet ? findInSheet(activeSheet, findQuery) : []), [activeSheet, findQuery]);
+  const activeMatch: CellIndex | null = findPos >= 0 && findPos < findMatches.length ? findMatches[findPos]! : null;
+
+  const findNext = useCallback(() => {
+    if (!findMatches.length) {
+      setFindPos(-1);
+      return;
+    }
+    const next = (findPos + 1) % findMatches.length;
+    setFindPos(next);
+    selectCell(findMatches[next]!);
+  }, [findMatches, findPos, selectCell]);
+
+  /* --- rows / columns / save --------------------------------------------- */
 
   const addRow = useCallback(() => {
     setDoc((prev) => {
@@ -234,12 +417,26 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
       setDirty(false);
       dirtyRef.current = false;
       setStale(false);
+      // Pull the saved file back so freshly computed `values` arrive.
+      await reload(false);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
-  }, [doc, saving, cancelEdit, onSave]);
+  }, [doc, saving, cancelEdit, onSave, reload]);
+
+  const exportPdf = useCallback(async () => {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    setPdfError(null);
+    try {
+      const result = await exportWorkspacePdf('sheet', file.taskId, file.path);
+      if (!result.ok) setPdfError(result.error);
+    } finally {
+      setPdfBusy(false);
+    }
+  }, [pdfBusy, file.taskId, file.path]);
 
   // Ctrl/Cmd+S saves like a desktop spreadsheet.
   useEffect(() => {
@@ -264,6 +461,11 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
   const gridKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       if (editing) return;
+      if (event.key === 'Escape' && range) {
+        event.preventDefault();
+        setRange(null);
+        return;
+      }
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       const deltas: Record<string, CellPointer> = {
         ArrowUp: { r: -1, c: 0 },
@@ -274,6 +476,7 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
       if (deltas[event.key]) {
         event.preventDefault();
         const delta = deltas[event.key]!;
+        setRange(null);
         setSelected((prev) => ({
           r: Math.min(dims.rows - 1 || 0, Math.max(0, prev.r + delta.r)),
           c: Math.min(dims.columns - 1 || 0, Math.max(0, prev.c + delta.c)),
@@ -282,6 +485,7 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
       }
       if (event.key === 'Tab') {
         event.preventDefault();
+        setRange(null);
         setSelected((prev) => ({ ...prev, c: Math.min(dims.columns - 1 || 0, prev.c + 1) }));
         return;
       }
@@ -300,7 +504,7 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
         beginEdit({ r: selected.r, c: selected.c }, event.key);
       }
     },
-    [editing, dims, selected, beginEdit, setCell],
+    [editing, range, dims, selected, beginEdit, setCell],
   );
 
   const rowsToRender = Math.min(Math.max(renderRows, 1), dims.rows);
@@ -312,7 +516,7 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
 
   if (loadError) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center" dir="ltr">
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center" dir={dir}>
         <FileSpreadsheet className="size-8 text-text-tertiary" aria-hidden />
         <p className="text-sm text-text-secondary">{t('Could not load the spreadsheet.')}</p>
         <p className="max-w-md text-xs text-text-tertiary">{loadError}</p>
@@ -325,14 +529,16 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
 
   if (!doc || !activeSheet) {
     return (
-      <div className="flex h-full items-center justify-center p-6" dir="ltr">
+      <div className="flex h-full items-center justify-center p-6" dir={dir}>
         <RefreshCw className="size-5 animate-spin text-text-tertiary" aria-hidden />
       </div>
     );
   }
 
+  const currentNumberFormat = typeof targetStyle?.numberFormat === 'string' ? targetStyle.numberFormat : '';
+
   return (
-    <div className="flex h-full flex-col bg-bg-menu text-text-primary" dir="ltr">
+    <div className="flex h-full flex-col bg-bg-menu text-text-primary" dir={dir}>
       {/* toolbar */}
       <div className="flex flex-wrap items-center gap-2 border-b border-border-main px-3 py-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -342,6 +548,12 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
           {stale && <span className="truncate text-xs text-func-warning">{t('The file changed while you edit — reload to pick it up.')}</span>}
         </div>
         <div className="flex items-center gap-1.5">
+          <button type="button" onClick={() => void exportPdf()} disabled={pdfBusy} data-testid="sheet-export-pdf"
+            className="flex items-center gap-1.5 rounded-control px-2.5 py-1.5 text-sm hover:bg-fill-hover disabled:opacity-40"
+            title={t('Export the sheet as PDF')}>
+            <FileDown className="size-4" aria-hidden />
+            {pdfBusy ? t('Exporting…') : t('Export PDF')}
+          </button>
           <button type="button" onClick={() => void reload(false)} className="rounded-control p-1.5 hover:bg-fill-hover" title={t('Reload')}>
             <RefreshCw className="size-4" aria-hidden />
           </button>
@@ -359,7 +571,11 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
             {saving ? t('Saving…') : dirty ? t('Save') : t('Saved')}
           </button>
         </div>
-        {saveError && <p className="w-full truncate text-xs text-func-error">{t('Save failed') + ': ' + saveError}</p>}
+        {(saveError || pdfError) && (
+          <p className="w-full truncate text-xs text-func-error" data-testid="sheet-notice">
+            {saveError ? `${t('Save failed')}: ${saveError}` : pdfError}
+          </p>
+        )}
       </div>
 
       {/* formula bar + add row/column */}
@@ -372,7 +588,7 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
         </div>
         <input
           type="text"
-          dir="ltr"
+          dir="auto"
           spellCheck={false}
           value={editing ? editValue : cellValue(selected.r, selected.c)}
           onChange={(event) => {
@@ -399,6 +615,151 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
         <button type="button" onClick={addColumn} className="whitespace-nowrap rounded-control px-2 py-1 text-xs hover:bg-fill-hover" title={t('Append a column at the end')}>
           + {t('Column')}
         </button>
+      </div>
+
+      {/* formatting toolbar + find */}
+      <div className="flex flex-wrap items-center gap-1 border-b border-border-main px-3 py-1" role="toolbar" aria-label={t('Formatting')}>
+        <button
+          type="button"
+          data-testid="sheet-toolbar-bold"
+          aria-label={t('Bold')}
+          aria-pressed={targetStyle?.bold === true}
+          onClick={() => toggleStyleFlag('bold')}
+          className={clsx('rounded-control p-1.5 hover:bg-fill-hover', targetStyle?.bold === true && 'bg-fill-hover')}
+        >
+          <Bold className="size-3.5" aria-hidden />
+        </button>
+        <button
+          type="button"
+          data-testid="sheet-toolbar-italic"
+          aria-label={t('Italic')}
+          aria-pressed={targetStyle?.italic === true}
+          onClick={() => toggleStyleFlag('italic')}
+          className={clsx('rounded-control p-1.5 hover:bg-fill-hover', targetStyle?.italic === true && 'bg-fill-hover')}
+        >
+          <Italic className="size-3.5" aria-hidden />
+        </button>
+        <span className="mx-0.5 h-4 w-px bg-border-light" aria-hidden />
+        <input
+          type="color"
+          data-testid="sheet-toolbar-color"
+          aria-label={t('Text color')}
+          title={t('Text color')}
+          defaultValue="#111827"
+          onChange={(event) => applyStyleToTargets({ color: event.target.value })}
+          className="size-5 cursor-pointer rounded-control border border-border-light bg-transparent p-0"
+        />
+        <input
+          type="color"
+          data-testid="sheet-toolbar-fill"
+          aria-label={t('Fill color')}
+          title={t('Fill color')}
+          defaultValue="#ffffff"
+          onChange={(event) => applyStyleToTargets({ background: event.target.value })}
+          className="size-5 cursor-pointer rounded-control border border-border-light bg-transparent p-0"
+        />
+        <span className="mx-0.5 h-4 w-px bg-border-light" aria-hidden />
+        {([
+          ['left', AlignLeft, t('Align left')],
+          ['center', AlignCenter, t('Align center')],
+          ['right', AlignRight, t('Align right')],
+        ] as const).map(([value, Icon, label]) => (
+          <button
+            key={value}
+            type="button"
+            data-testid={`sheet-toolbar-align-${value}`}
+            aria-label={label}
+            aria-pressed={targetStyle?.alignment === value}
+            onClick={() => applyStyleToTargets({ alignment: value })}
+            className={clsx('rounded-control p-1.5 hover:bg-fill-hover', targetStyle?.alignment === value && 'bg-fill-hover')}
+          >
+            <Icon className="size-3.5" aria-hidden />
+          </button>
+        ))}
+        <span className="mx-0.5 h-4 w-px bg-border-light" aria-hidden />
+        <select
+          data-testid="sheet-toolbar-number-format"
+          aria-label={t('Number format')}
+          title={t('Number format')}
+          value={currentNumberFormat}
+          onChange={(event) => {
+            const value = event.target.value;
+            if (value) applyStyleToTargets({ numberFormat: value });
+            else clearStyleFromTargets(['numberFormat']);
+          }}
+          className="rounded-control border border-border-light bg-bg-main px-1 py-1 text-xs"
+        >
+          <option value="">{t('General')}</option>
+          <option value="0.00">0.00</option>
+          <option value="0%">0%</option>
+          <option value="yyyy-mm-dd">yyyy-mm-dd</option>
+          <option value="#,##0">#,##0</option>
+        </select>
+        <button
+          type="button"
+          data-testid="sheet-toolbar-border"
+          aria-pressed={typeof targetStyle?.borderTop === 'string'}
+          onClick={toggleBorders}
+          className={clsx(
+            'whitespace-nowrap rounded-control px-1.5 py-1 text-xs hover:bg-fill-hover',
+            typeof targetStyle?.borderTop === 'string' && 'bg-fill-hover',
+          )}
+          title={t('Toggle thin borders on all four sides')}
+        >
+          {t('Borders')}
+        </button>
+        <span className="mx-0.5 h-4 w-px bg-border-light" aria-hidden />
+        <button
+          type="button"
+          data-testid="sheet-toolbar-merge"
+          onClick={mergeSelection}
+          disabled={!canMerge}
+          className="whitespace-nowrap rounded-control px-1.5 py-1 text-xs hover:bg-fill-hover disabled:opacity-40"
+          title={t('Merge the selected range (keeps the top-left value)')}
+        >
+          {t('Merge')}
+        </button>
+        <button
+          type="button"
+          data-testid="sheet-toolbar-unmerge"
+          onClick={unmergeSelection}
+          disabled={!overlappingMerges.length}
+          className="whitespace-nowrap rounded-control px-1.5 py-1 text-xs hover:bg-fill-hover disabled:opacity-40"
+          title={t('Remove merged ranges under the selection')}
+        >
+          {t('Unmerge')}
+        </button>
+        {range && (
+          <span className="ml-1 rounded-row bg-fill-hover px-1.5 py-0.5 font-mono text-[11px] text-text-secondary">
+            {rangeAddress(range)}
+          </span>
+        )}
+        <div className="ml-auto flex items-center gap-1">
+          <Search className="size-3.5 text-text-tertiary" aria-hidden />
+          <input
+            type="text"
+            dir="auto"
+            data-testid="sheet-find"
+            value={findQuery}
+            onChange={(event) => {
+              setFindQuery(event.target.value);
+              setFindPos(-1);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                findNext();
+              }
+            }}
+            placeholder={t('Find in sheet')}
+            className="w-28 rounded-control bg-bg-main px-1.5 py-1 text-xs outline-none ring-border-main focus:ring-1"
+          />
+          {findQuery.trim() !== '' && (
+            <span data-testid="sheet-find-count" className="whitespace-nowrap text-xs text-text-tertiary">
+              {activeMatch ? `${findPos + 1}/${findMatches.length}` : `0/${findMatches.length}`}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* note area: charts and other CSVs of state from the loader */}
@@ -452,7 +813,7 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
           <table className="border-collapse text-sm" style={{ minWidth: 'max-content' }}>
             <thead>
               <tr>
-                <th className="sticky left-0 top-0 z-10 min-w-9 border border-border-light bg-bg-menu text-center text-xs font-normal text-text-tertiary" />
+                <th className="sticky start-0 top-0 z-10 min-w-9 border border-border-light bg-bg-menu text-center text-xs font-normal text-text-tertiary" />
                 {columnIndexes.map((c) => (
                   <th
                     key={c}
@@ -472,7 +833,7 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
                 <tr key={r}>
                   <th
                     className={clsx(
-                      'sticky left-0 z-[5] min-w-9 border border-border-light bg-bg-menu px-1 text-center text-xs font-normal text-text-tertiary',
+                      'sticky start-0 z-[5] min-w-9 border border-border-light bg-bg-menu px-1 text-center text-xs font-normal text-text-tertiary',
                       selected.r === r && 'bg-fill-hover font-medium text-text-secondary',
                     )}
                     onMouseDown={() => selectCell({ r, c: selected.c })}
@@ -480,20 +841,39 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
                     {r + 1}
                   </th>
                   {columnIndexes.map((c) => {
+                    const key = `${r},${c}`;
+                    if (merges.covered.has(key)) return null;
+                    const span = merges.anchors.get(key);
                     const isEditing = !!editing && editing.r === r && editing.c === c;
+                    const isFocused = selected.r === r && selected.c === c;
+                    const inRange = !!range && r >= range.r1 && r <= range.r2 && c >= range.c1 && c <= range.c2;
+                    const isMatch = !!activeMatch && activeMatch.r === r && activeMatch.c === c;
+                    const styleRecord = activeSheet.styles[addressAt(r, c)];
+                    const shown = isFocused ? cellValue(r, c) : displayValue(activeSheet, r, c);
                     return (
                       <td
                         key={c}
+                        data-cell={key}
+                        rowSpan={span?.rowSpan}
+                        colSpan={span?.colSpan}
                         className={clsx(
                           'm-0 border border-border-light px-1 py-0 align-top',
-                          selected.r === r && selected.c === c
-                            ? 'ring-1 ring-inset ring-[var(--text-primary)]'
-                            : 'hover:bg-fill-hover/50',
+                          isMatch
+                            ? 'ring-2 ring-inset ring-func-warning'
+                            : isFocused
+                              ? 'ring-1 ring-inset ring-[var(--text-primary)]'
+                              : inRange
+                                ? 'bg-fill-hover/50 ring-1 ring-inset ring-[var(--text-secondary)]'
+                                : 'hover:bg-fill-hover/50',
                         )}
-                        style={{ minWidth: DEFAULT_COLUMN_WIDTH * 6 }}
-                        onMouseDown={() => {
+                        style={{ minWidth: DEFAULT_COLUMN_WIDTH * 6, ...(styleRecord ? cellStyleFrom(styleRecord) : undefined) }}
+                        onMouseDown={(event) => {
                           gridRef.current?.focus();
-                          if (selected.r === r && selected.c === c) beginEdit({ r, c });
+                          if (event.shiftKey) {
+                            setRange(normalizeRange(selected, { r, c }));
+                            return;
+                          }
+                          if (isFocused) beginEdit({ r, c });
                           else selectCell({ r, c });
                         }}
                         onDoubleClick={() => beginEdit({ r, c })}
@@ -501,7 +881,7 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
                         {isEditing ? (
                           <input
                             autoFocus
-                            dir="ltr"
+                            dir="auto"
                             spellCheck={false}
                             value={editValue}
                             onChange={(event) => setEditValue(event.target.value)}
@@ -522,8 +902,8 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
                             className="w-full min-w-16 bg-bg-main px-0.5 py-0.5 text-sm outline-none"
                           />
                         ) : (
-                          <div className="min-w-16 overflow-hidden whitespace-pre-wrap break-words py-0.5" title={cellValue(r, c)}>
-                            {cellValue(r, c)}
+                          <div className="min-w-16 overflow-hidden whitespace-pre-wrap break-words py-0.5" title={shown}>
+                            {shown}
                           </div>
                         )}
                       </td>
@@ -537,8 +917,12 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
       </div>
 
       <IntelligencePanel file={file} applyDisabled={dirty} onApplied={() => { void reload(false); }} />
+      <ConnectionsPanel file={file} onSynced={() => { void reload(false); }} />
       {/* window extensions + chat edit */}
       <div className="flex flex-wrap items-center gap-2 border-t border-border-main px-3 py-2">
+        <span data-testid="sheet-word-count" className="whitespace-nowrap text-xs text-text-tertiary">
+          {t('Filled cells: {count}', { count: filledCount })}
+        </span>
         {dims.rows > visibleRows || dims.columns > visibleColumns ? (
           <div className="flex items-center gap-1.5">
             {dims.rows > visibleRows && (
