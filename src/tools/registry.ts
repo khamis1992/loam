@@ -1,6 +1,7 @@
 import type { Config } from "../config.js";
 import type { Emit } from "../agent/events.js";
 import type { OllamaClient, OllamaFunctionTool } from "../ollama.js";
+import { notifyToolExecuted } from "../codegraph/mutations.js";
 import { runLifecycleHooks } from "../policy/hooks.js";
 import { getLoamMode } from "../modes/catalog.js";
 import { getToolProfile } from "../agent/taskToolScope.js";
@@ -201,6 +202,7 @@ export class ToolRegistry {
         return { ok: false, content: truncate(pre.message) };
       }
       const result = await tool.run(args, ctx);
+        notifyToolExecuted(name, result.ok, ctx.workspace);
       const post = this.readOnly ? { message: "" } : await runLifecycleHooks("PostToolUse", name, args, ctx.workspace);
       const combined = [pre.message, result.content, post.message].filter((s) => s && s.trim().length > 0).join("\n\n");
       // REA results are sized by their own summary-first budget (§9); the generic

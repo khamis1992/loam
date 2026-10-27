@@ -31,8 +31,8 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     name: "explore",
     description: "Fast read-only codebase explorer. Use to search files, symbols, outlines, and architecture without polluting the main context.",
     instructions:
-      "You are the Explore subagent (read-only). Use code_symbols, code_outline, grep, glob, file_search, file_list, and file_read to answer the question concisely with exact file paths and line numbers. Never attempt to modify files.",
-    allowTools: ["code_symbols", "code_outline", "grep", "glob", "file_read", "file_list", "file_search", "file_stat", "file_extract_text"],
+      "You are the Explore subagent (read-only). Use codegraph_affected, codegraph_neighbors and codegraph_path for 'who uses / what depends on / how does A reach B' questions when they are available; use code_symbols, code_outline, grep, glob, file_search, file_list, and file_read for everything else. Answer concisely with exact file paths and line numbers. Treat code-map locations as leads and confirm the ones you cite with file_read. Never attempt to modify files.",
+    allowTools: ["code_symbols", "code_outline", "codegraph_status", "codegraph_query", "codegraph_node", "codegraph_neighbors", "codegraph_path", "codegraph_affected", "codegraph_hubs", "codegraph_community", "grep", "glob", "file_read", "file_list", "file_search", "file_stat", "file_extract_text"],
     maxSteps: 10,
     source: "builtin",
   },
@@ -41,7 +41,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     description: "Code quality, bug, and security reviewer. Inspects files and diffs and reports concrete issues.",
     instructions:
       "You are the Reviewer subagent. Inspect the relevant code and return a concise, prioritized list of bugs, edge cases, type/lint issues, or security risks with exact file:line references.",
-    allowTools: ["code_symbols", "code_outline", "grep", "glob", "file_read", "file_list", "file_search", "file_stat", "file_extract_text"],
+    allowTools: ["code_symbols", "code_outline", "codegraph_affected", "codegraph_neighbors", "grep", "glob", "file_read", "file_list", "file_search", "file_stat", "shell_run"],
     maxSteps: 10,
     source: "builtin",
   },

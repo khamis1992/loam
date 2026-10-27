@@ -1,3 +1,5 @@
+import { isAllowedReTool } from "../re/allowlist.js";
+
 /** REA MCP allowlist + static effects — REA_INTO_LOAM_INTEGRATION §4.7, §5.3–5.4, §7
  *  (spec copied to docs/senior-staff-engineer/specs/REA_INTO_LOAM_INTEGRATION.md, appendix A9).
  *  The server catalogue is never trusted: only these names may register, each with a
@@ -27,6 +29,8 @@ export const REA_TOOL_ALLOWLIST = [
   "import_evidence_bundle",
   "recover_javascript_sources",
 ] as const;
+
+export const REA_VISIBLE_TOOL_ALLOWLIST = REA_TOOL_ALLOWLIST.filter(isAllowedReTool);
 
 export type ReaAllowedTool = (typeof REA_TOOL_ALLOWLIST)[number];
 

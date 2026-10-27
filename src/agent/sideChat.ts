@@ -20,6 +20,7 @@ export const SIDE_CHAT_READ_ONLY_TOOLS: readonly string[] = [
   "file_view_image",
   "code_symbols",
   "code_outline",
+  "codegraph_status", "codegraph_query", "codegraph_node", "codegraph_neighbors", "codegraph_path", "codegraph_affected", "codegraph_hubs", "codegraph_community",
   "web_fetch",
   "web_search",
   "browser_snapshot",

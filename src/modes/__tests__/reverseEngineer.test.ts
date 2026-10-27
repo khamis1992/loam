@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { REA_TOOL_ALLOWLIST } from "../../tools/reaAllowlist.js";
+import { REA_TOOL_ALLOWLIST, REA_VISIBLE_TOOL_ALLOWLIST } from "../../tools/reaAllowlist.js";
 import { reverseEngineerMode } from "../reverseEngineer.js";
 
 test("mode shape follows the LoamMode contract (hue2, glyphs, Arabic-first)", () => {
@@ -15,10 +15,10 @@ test("mode shape follows the LoamMode contract (hue2, glyphs, Arabic-first)", ()
   assert.equal(reverseEngineerMode.icon.includes("✨"), false); // no Sparkles, ever
 });
 
-test("tools list carries exactly the 13 first-class mcp__rea__ names plus the read/skill surface (D8)", () => {
+test("tools list carries only the engine-free mcp__rea__ names plus the read/skill surface (D8)", () => {
   const mcpTools = reverseEngineerMode.tools.filter((t) => t.startsWith("mcp__rea__"));
-  assert.equal(mcpTools.length, REA_TOOL_ALLOWLIST.length);
-  for (const tool of REA_TOOL_ALLOWLIST) {
+  assert.equal(mcpTools.length, REA_VISIBLE_TOOL_ALLOWLIST.length);
+  for (const tool of REA_VISIBLE_TOOL_ALLOWLIST) {
     assert.ok(reverseEngineerMode.tools.includes(`mcp__rea__${tool}`), `missing mcp__rea__${tool}`);
   }
   // No engine or mutator tool ever leaks into the mode.
