@@ -5,6 +5,7 @@
  */
 import http from "node:http";
 import { docFileMeta, loadWorkspaceDoc, saveWorkspaceDoc, DocFileError } from "../workspace/docIO.js";
+import { loadDocTrack, saveDocTrack, TRACK_SIDECAR_MAX_BYTES } from "../workspace/docTrackIO.js";
 import { requireTaskWorkspace } from "../taskWorkspace.js";
 import { getSettings } from "../settings.js";
 import { renderWordPreview } from "../../studio/word-preview.js";
@@ -69,6 +70,43 @@ export async function handleWorkspaceDocRoutes(
       if (error instanceof DocFileError) { sendJson(res, error.status, { error: error.message }); return true; }
       const status = typeof (error as { status?: number })?.status === "number" ? (error as { status: number }).status : (/task not found/.test(String(error)) ? 404 : 500);
       sendJson(res, status, { error: error instanceof Error ? error.message : String(error) });
+      return true;
+    }
+  }
+
+  const trackMatch = /^\/api\/workspace\/doc\/track$/.exec(p);
+  if (trackMatch) {
+    // Track-changes sidecar: GET → { track: TrackedDocument | null }, PUT { track }.
+    // Loam-side JSON persistence only (see docTrackIO) — never Word-native w:ins/w:del.
+    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "127.0.0.1"}`);
+    const taskId = url.searchParams.get("taskId") ?? "";
+    const rel = (url.searchParams.get("path") ?? "").trim();
+    try {
+      if (!taskId) throw new DocFileError("taskId required");
+      if (!rel) throw new DocFileError("path required");
+      const workspace = requireTaskWorkspace(taskId, resolveWorkspace(ctx));
+      if (req.method === "GET") {
+        sendJson(res, 200, { track: loadDocTrack(workspace, rel) });
+        return true;
+      }
+      if (req.method === "PUT") {
+        let body: unknown;
+        try {
+          body = JSON.parse(await readBody(req, TRACK_SIDECAR_MAX_BYTES));
+        } catch {
+          throw new DocFileError("track payload required");
+        }
+        const track = (body as { track?: unknown } | null)?.track;
+        saveDocTrack(workspace, rel, track);
+        sendJson(res, 200, { ok: true });
+        return true;
+      }
+      sendJson(res, 405, { error: "method not allowed" });
+      return true;
+    } catch (error) {
+      if (error instanceof DocFileError) { sendJson(res, error.status, { error: error.message }); return true; }
+      const message = error instanceof Error ? error.message : String(error);
+      sendJson(res, /task not found/.test(message) ? 404 : 400, { error: message });
       return true;
     }
   }
