@@ -16,6 +16,8 @@ import { dastCapability } from "./web/dast.js";
 import { fuzzCapability } from "./web/fuzz.js";
 import { sqliCapability } from "./web/sqli.js";
 import { templatesCapability } from "./templates.js";
+import { apkCapability } from "./mobile/apk.js";
+import { mitmCapability } from "./mobile/mitm.js";
 import type { RedCapability } from "./orchestrator/redOrchestrator.js";
 
 export interface DefaultCapabilityOptions {
@@ -46,5 +48,7 @@ export async function defaultRedCapabilities(cfg: Pick<Config, "bridges">, opts:
   if (await bridgeReady(cfg, "red-nuclei")) caps.push(templatesCapability({ severity: opts.nucleiSeverity, ...(opts.nucleiTags ? { tags: opts.nucleiTags } : {}), ...(opts.nucleiTemplatesPath ? { templatesPath: opts.nucleiTemplatesPath } : {}) }));
   if (await bridgeReady(cfg, "red-ysoserial")) caps.push(deserCapability({ jar: opts.ysoserialJar }));
   if (await bridgeReady(cfg, "red-caldera")) caps.push(adversaryCapability());
+  if (await bridgeReady(cfg, "red-apktool")) caps.push(apkCapability());
+  if (await bridgeReady(cfg, "red-mitmproxy")) caps.push(mitmCapability());
   return caps;
 }

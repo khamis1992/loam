@@ -238,4 +238,84 @@ export const RED_MANIFESTS: unknown[] = [
       },
     ],
   },
+  {
+    id: "red-apktool",
+    name: "Apktool (Android APK decode)",
+    description: "Decode an Android APK for static security analysis (Supremacy M1.1). Apache-2.0; external jar.",
+    probe: { names: ["java.exe", "java"] },
+    commands: [
+      {
+        id: "decode",
+        description: "Decode an APK into smali + resources for manifest and source scanning.",
+        effect: "write_workspace",
+        argv: ["-jar", "{jar}", "d", "-f", "-o", "{out}", "{apk}"],
+        params: {
+          jar: { type: "path", access: "read", required: true, description: "Path to apktool.jar." },
+          apk: { type: "path", access: "read", required: true, description: "Path to the .apk file." },
+          out: { type: "path", access: "write", required: true, description: "Output directory inside the workspace." },
+        },
+        output: "text",
+        timeoutSeconds: 300,
+      },
+    ],
+  },
+  {
+    id: "red-mitmproxy",
+    name: "mitmproxy (mobile traffic recording)",
+    description: "Record mobile app API traffic through a loopback proxy (Supremacy M1.2). MIT+Apache.",
+    probe: { names: ["mitmdump.exe", "mitmdump"] },
+    commands: [
+      {
+        id: "record",
+        description: "Record HTTP flows to a JSON file in the workspace.",
+        effect: "write_workspace",
+        argv: ["--listen-port", "{port}", "-w", "{out}", "--set", "flow_detail=1"],
+        params: {
+          port: { type: "string", required: true, description: "Loopback port to listen on." },
+          out: { type: "path", access: "write", required: true, description: "Output flow dump file inside the workspace." },
+        },
+        output: "text",
+        timeoutSeconds: 300,
+      },
+    ],
+  },
+  {
+    id: "red-frida",
+    name: "Frida (mobile runtime instrumentation)",
+    description: "Attach to a mobile app process for runtime analysis (Supremacy M1.3). Destructive: modifies app state.",
+    probe: { names: ["frida.exe", "frida"] },
+    commands: [
+      {
+        id: "attach",
+        description: "DESTRUCTIVE: attach Frida to a running app by package name.",
+        effect: "external",
+        argv: ["-U", "-f", "{package}", "--no-pause"],
+        params: { package: { type: "string", required: true, description: "Android package name to instrument." } },
+        output: "text",
+        timeoutSeconds: 120,
+      },
+    ],
+  },
+  {
+    id: "red-msfconsole",
+    name: "Metasploit Framework (exploit)",
+    description: "Run a specific Metasploit exploit module against an authorized lab target (Supremacy M2.3). Destructive: requires explicit approval.",
+    probe: { names: ["msfconsole.bat", "msfconsole"] },
+    versionArgs: ["--version"],
+    commands: [
+      {
+        id: "exploit",
+        description: "Run one exploit module against one target. Destructive by definition (opens sessions, modifies state).",
+        effect: "external",
+        argv: ["-q", "-x", "use {module}; set RHOSTS {rhosts}; set RPORT {rport}; exploit -z"],
+        params: {
+          module: { type: "string", required: true, description: "Metasploit module path." },
+          rhosts: { type: "string", required: true, description: "Target host (must be in the authorization allow-list)." },
+          rport: { type: "number", required: true, description: "Target port." },
+        },
+        output: "text",
+        timeoutSeconds: 900,
+      },
+    ],
+  },
 ];

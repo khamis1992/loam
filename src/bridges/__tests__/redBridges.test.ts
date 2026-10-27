@@ -29,11 +29,11 @@ const byId = (id: string): BridgeManifest => {
 };
 
 describe("red bridge manifests", () => {
-  it("all seven engines are declared and schema-valid", () => {
+  it("all engines are declared and schema-valid", () => {
     const ids = parseAll().map((m) => m.id);
     assert.deepEqual(
       [...ids].sort(),
-      ["red-caldera", "red-ffuf", "red-freeway", "red-nuclei", "red-sqlmap", "red-ysoserial", "red-zap"],
+      ["red-apktool", "red-caldera", "red-ffuf", "red-freeway", "red-frida", "red-mitmproxy", "red-msfconsole", "red-nuclei", "red-sqlmap", "red-ysoserial", "red-zap"],
     );
   });
 
