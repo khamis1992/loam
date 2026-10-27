@@ -25,6 +25,7 @@ export type OfficeEditOp =
   | { op: "set-cell"; address: string; value: string; sheet?: string }
   | { op: "replace-text"; find: string; replace: string; slide?: number }
   | { op: "set-slide-title"; slide: number; value: string }
+  | { op: "set-slide-body"; slide: number; value: string }
   | { op: "set-slide-notes"; slide: number; value: string }
   | { op: "set-block-text"; block: number; value: string }
   | { op: "set-region-text"; label: string; value: string };
@@ -323,6 +324,13 @@ function applyOne(artifact: StudioArtifact, op: OfficeEditOp): string | null {
       const slide = artifact.content.slides[op.slide - 1];
       if (!slide) return `slide ${op.slide} does not exist`;
       slide.title = op.value;
+      return null;
+    }
+    case "set-slide-body": {
+      if (artifact.kind !== "presentation") return "slides exist only in presentations";
+      const slide = artifact.content.slides[op.slide - 1];
+      if (!slide) return `slide ${op.slide} does not exist`;
+      slide.body = op.value;
       return null;
     }
     case "set-slide-notes": {

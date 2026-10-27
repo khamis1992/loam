@@ -1,0 +1,173 @@
+import fs from "node:fs";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
+import { allEntities, getEntity, putEntity, removeEntity } from "../../server/sqliteStore.js";
+import { taskPath } from "../../server/taskWorkspace.js";
+import { writeSheetDoc } from "../../server/workspace/sheetIO.js";
+import { resolveSecret } from "../../server/secretsVault.js";
+import { loadOfficeArtifact } from "./artifactIO.js";
+import { isRecord, OfficeIntelligenceError, type ArtifactRef, type OfficeScope } from "./contracts.js";
+
+const CONNECTOR_KIND = "office-data-connectors";
+
+export interface OfficeConnector {
+  id: string;
+  scope: OfficeScope;
+  name: string;
+  type: "rest-json" | "sqlite";
+  config: {
+    url?: string;
+    dataPath?: string;
+    bearerSecretName?: string;
+    databasePath?: string;
+    query?: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConnectorRows {
+  columns: string[];
+  rows: Array<Array<string | number | boolean | null>>;
+  rowCount: number;
+  truncated: boolean;
+  syncedAt: string;
+}
+
+function text(value: unknown, name: string, max = 2000, optional = false): string {
+  if (optional && (value === undefined || value === "")) return "";
+  if (typeof value !== "string" || (!optional && !value.trim()) || value.length > max) throw new OfficeIntelligenceError(`${name} is invalid`, 422, "invalid_connector");
+  return value.trim();
+}
+
+export function registerOfficeConnector(input: unknown): OfficeConnector {
+  if (!isRecord(input) || !isRecord(input.scope) || !isRecord(input.config)) throw new OfficeIntelligenceError("connector body, scope and config are required", 422, "invalid_connector");
+  const type = input.type === "sqlite" ? "sqlite" : input.type === "rest-json" ? "rest-json" : undefined;
+  if (!type) throw new OfficeIntelligenceError("connector type must be rest-json or sqlite", 422, "invalid_connector");
+  const config: OfficeConnector["config"] = {
+    ...(input.config.url ? { url: text(input.config.url, "url", 2000) } : {}),
+    ...(input.config.dataPath ? { dataPath: text(input.config.dataPath, "dataPath", 200) } : {}),
+    ...(input.config.bearerSecretName ? { bearerSecretName: text(input.config.bearerSecretName, "bearerSecretName", 100) } : {}),
+    ...(input.config.databasePath ? { databasePath: text(input.config.databasePath, "databasePath", 500) } : {}),
+    ...(input.config.query ? { query: text(input.config.query, "query", 10_000) } : {}),
+  };
+  if (type === "rest-json") {
+    const url = new URL(config.url ?? "");
+    const loopback = ["127.0.0.1", "localhost", "::1"].includes(url.hostname);
+    if (url.protocol !== "https:" && !(loopback && url.protocol === "http:")) throw new OfficeIntelligenceError("REST connectors require HTTPS outside loopback tests", 422, "invalid_connector");
+  } else {
+    if (!config.databasePath || !config.query || !/^\s*(?:select|with)\b/i.test(config.query) || /;\s*$/u.test(config.query) || config.query.includes(";") || /\b(?:insert|update|delete|drop|alter|pragma|attach|detach|vacuum)\b/i.test(config.query)) {
+      throw new OfficeIntelligenceError("SQLite connectors require one read-only SELECT or WITH query", 422, "invalid_connector");
+    }
+  }
+  const now = new Date().toISOString();
+  const connector: OfficeConnector = {
+    id: `conn_${randomUUID()}`,
+    scope: {
+      tenantId: text(input.scope.tenantId, "tenantId", 200),
+      ...(input.scope.projectId ? { projectId: text(input.scope.projectId, "projectId", 200) } : {}),
+      ...(input.scope.matterId ? { matterId: text(input.scope.matterId, "matterId", 200) } : {}),
+    },
+    name: text(input.name, "name", 300),
+    type,
+    config,
+    createdAt: now,
+    updatedAt: now,
+  };
+  putEntity(CONNECTOR_KIND, connector);
+  return connector;
+}
+
+export function getOfficeConnector(id: string): OfficeConnector {
+  const connector = getEntity<OfficeConnector>(CONNECTOR_KIND, id);
+  if (!connector) throw new OfficeIntelligenceError("connector not found", 404, "connector_not_found");
+  return connector;
+}
+
+export function listOfficeConnectors(scope: OfficeScope): OfficeConnector[] {
+  return allEntities<OfficeConnector>(CONNECTOR_KIND).filter((connector) => connector.scope.tenantId === scope.tenantId && (!scope.projectId || connector.scope.projectId === scope.projectId) && (!scope.matterId || connector.scope.matterId === scope.matterId));
+}
+
+export function deleteOfficeConnector(id: string): void {
+  getOfficeConnector(id);
+  removeEntity(CONNECTOR_KIND, id);
+}
+
+function rowsFromObjects(input: unknown): ConnectorRows {
+  if (!Array.isArray(input)) throw new OfficeIntelligenceError("connector result must be an array of objects", 422, "connector_data_invalid");
+  const records = input.slice(0, 1001).map((row) => {
+    if (!isRecord(row)) throw new OfficeIntelligenceError("connector rows must be objects", 422, "connector_data_invalid");
+    return row;
+  });
+  const columns = [...new Set(records.flatMap((row) => Object.keys(row)))].slice(0, 100);
+  const rows = records.slice(0, 1000).map((row) => columns.map((column) => {
+    const value = row[column];
+    if (value === null || ["string", "number", "boolean"].includes(typeof value)) return value as string | number | boolean | null;
+    return JSON.stringify(value).slice(0, 32_000);
+  }));
+  return { columns, rows, rowCount: rows.length, truncated: input.length > 1000, syncedAt: new Date().toISOString() };
+}
+
+async function fetchRest(connector: OfficeConnector, fetchFn: typeof fetch): Promise<ConnectorRows> {
+  const headers: Record<string, string> = { accept: "application/json" };
+  if (connector.config.bearerSecretName) {
+    const secret = resolveSecret("office", connector.config.bearerSecretName);
+    if (!secret) throw new OfficeIntelligenceError("connector secret is unavailable", 503, "connector_secret_unavailable");
+    headers.authorization = `Bearer ${secret}`;
+  }
+  const response = await fetchFn(connector.config.url!, { headers, redirect: "error", signal: AbortSignal.timeout(15_000) });
+  if (!response.ok) throw new OfficeIntelligenceError(`connector returned HTTP ${response.status}`, 502, "connector_failed");
+  const textBody = await response.text();
+  if (textBody.length > 5_000_000) throw new OfficeIntelligenceError("connector response exceeds 5 MB", 413, "connector_response_too_large");
+  let data: unknown;
+  try { data = JSON.parse(textBody); } catch { throw new OfficeIntelligenceError("connector did not return valid JSON", 422, "connector_data_invalid"); }
+  for (const key of connector.config.dataPath?.split(".").filter(Boolean) ?? []) {
+    if (!isRecord(data)) throw new OfficeIntelligenceError("connector dataPath was not found", 422, "connector_data_invalid");
+    data = data[key];
+  }
+  return rowsFromObjects(data);
+}
+
+function readSqlite(connector: OfficeConnector, workspace: string): ConnectorRows {
+  const databasePath = taskPath(workspace, connector.config.databasePath!);
+  if (!fs.existsSync(databasePath) || !fs.statSync(databasePath).isFile()) throw new OfficeIntelligenceError("SQLite database not found", 404, "connector_not_found");
+  const db = new DatabaseSync(databasePath, { readOnly: true });
+  try {
+    const statement = db.prepare(connector.config.query!);
+    const columns = statement.columns().map((column) => column.name);
+    const rows: Array<Array<string | number | boolean | null>> = [];
+    let truncated = false;
+    for (const row of statement.iterate()) {
+      if (rows.length >= 1000) { truncated = true; break; }
+      rows.push(columns.map((column) => {
+        const value = (row as Record<string, unknown>)[column];
+        return typeof value === "bigint" ? value.toString() : value as string | number | boolean | null;
+      }));
+    }
+    return { columns, rows, rowCount: rows.length, truncated, syncedAt: new Date().toISOString() };
+  } finally {
+    db.close();
+  }
+}
+
+export async function syncOfficeConnector(id: string, options: { workspace: string; fetchFn?: typeof fetch }): Promise<ConnectorRows> {
+  const connector = getOfficeConnector(id);
+  return connector.type === "sqlite" ? readSqlite(connector, options.workspace) : fetchRest(connector, options.fetchFn ?? fetch);
+}
+
+export async function syncConnectorToSheet(id: string, options: { workspace: string; taskId: string; path: string; fetchFn?: typeof fetch }): Promise<ArtifactRef> {
+  const connector = getOfficeConnector(id);
+  const data = await syncOfficeConnector(id, options);
+  if (!data.columns.length) throw new OfficeIntelligenceError("connector returned no columns", 422, "connector_data_invalid");
+  const refPath = text(options.path, "path", 500);
+  if (path.extname(refPath).toLowerCase() !== ".xlsx") throw new OfficeIntelligenceError("connector output must be an .xlsx path", 422, "invalid_contract");
+  await writeSheetDoc(taskPath(options.workspace, refPath), {
+    taskId: options.taskId,
+    path: refPath,
+    name: path.basename(refPath),
+    sheets: [{ name: "Data", cells: [data.columns, ...data.rows.map((row) => row.map((value) => value === null ? "" : String(value)))], styles: {}, columnWidths: [], rowHeights: [], merges: [], hiddenRows: [], hiddenColumns: [] }],
+    notes: [`Source: ${connector.name}`, `Synced: ${data.syncedAt}`, ...(data.truncated ? ["Result truncated to 1000 rows"] : [])],
+  });
+  return (await loadOfficeArtifact(options.workspace, { taskId: options.taskId, path: refPath, kind: "spreadsheet", tenantId: connector.scope.tenantId })).ref;
+}

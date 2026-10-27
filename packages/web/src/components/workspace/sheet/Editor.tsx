@@ -17,6 +17,7 @@ import {
   type EditorSheet,
   type SheetDoc,
 } from './sheetApi';
+import IntelligencePanel from '../intelligence/IntelligencePanel';
 
 interface CellPointer {
   r: number;
@@ -535,6 +536,7 @@ export default function SheetWorkspaceEditor({ file, live, onSave, onChatEdit }:
         )}
       </div>
 
+      <IntelligencePanel file={file} applyDisabled={dirty} onApplied={() => { void reload(false); }} />
       {/* window extensions + chat edit */}
       <div className="flex flex-wrap items-center gap-2 border-t border-border-main px-3 py-2">
         {dims.rows > visibleRows || dims.columns > visibleColumns ? (

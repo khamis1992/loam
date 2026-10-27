@@ -6,6 +6,8 @@ import { t } from '@/i18n/t';
 import type { WorkspaceEditorProps } from '../types';
 import { loadDoc, loadDocMeta } from './loadDoc';
 import { serializeEditor, splitMarker } from './serialize';
+import IntelligencePanel from '../intelligence/IntelligencePanel';
+import LegalMatterPanel from '../intelligence/LegalMatterPanel';
 
 const POLL_MS = 2500;
 
@@ -30,6 +32,7 @@ export default function DocEditor({ file, live, onSave, onChatEdit }: WorkspaceE
   const [warnings, setWarnings] = useState<string[]>([]);
   const [instruction, setInstruction] = useState('');
   const [reloading, setReloading] = useState(false);
+  const dirtyRef = useRef(false);
   const applyContent = useCallback((html: string) => {
     const { marker, fragment } = splitMarker(html);
     markerRef.current = marker;
@@ -57,13 +60,18 @@ export default function DocEditor({ file, live, onSave, onChatEdit }: WorkspaceE
     void refresh();
   }, [refresh]);
 
-  // Live refresh: poll file mtime; an external change reloads the (unsaved) view.
+  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+
   useEffect(() => {
     let mounted = true;
     const timer = setInterval(async () => {
       try {
         const meta = await loadDocMeta(file);
         if (!mounted || meta.mtimeMs === mtimeRef.current || loading) return;
+        if (dirtyRef.current) {
+          setMessage(t('The document changed on disk. Save or reload before applying external changes.'));
+          return;
+        }
         setReloading(true);
         const doc = await loadDoc(file);
         if (!mounted) return;
@@ -192,6 +200,8 @@ export default function DocEditor({ file, live, onSave, onChatEdit }: WorkspaceE
           />
         )}
       </div>
+      <IntelligencePanel file={file} applyDisabled={dirty} onApplied={() => { void refresh(); }} />
+      <LegalMatterPanel file={file} />
       <div className="flex items-center gap-2 border-t border-border-main px-3 py-2">
         <input
           value={instruction}

@@ -6,6 +6,7 @@ import { getApiBase } from "@/services/rpc";
 import { Button } from "@/components/ui/Button";
 import type { WorkspaceEditorProps } from "../types";
 import { SlideThumb, renderSlide, type SlideLike } from "./SlideView";
+import IntelligencePanel from "../intelligence/IntelligencePanel";
 
 interface SlideTextBox { [key: string]: unknown }
 
@@ -280,6 +281,7 @@ export default function Editor({ file, live, onSave, onChatEdit }: WorkspaceEdit
           ) : null}
         </div>
       </div>
+      <IntelligencePanel file={file} applyDisabled={dirty} onApplied={() => { void reload(false); }} />
       <div className="flex items-center gap-2 border-t border-border-main px-3 py-2">
         <input
           className="min-w-0 flex-1 rounded border border-border-light bg-bg-menu px-2 py-1.5 text-sm text-text-primary"
