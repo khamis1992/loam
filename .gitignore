@@ -36,7 +36,6 @@ Thumbs.db
 /.jblocked
 /.neo-done
 /.neo-blocked
-/.github/workflows/release.yml
 
 nul
 /packages/web/e2e/report/
