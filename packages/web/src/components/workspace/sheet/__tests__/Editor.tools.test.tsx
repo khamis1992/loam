@@ -91,8 +91,8 @@ function installSheetServer(initial: TestDoc) {
     throw new Error(`unexpected fetch ${method} ${url}`);
   });
   vi.stubGlobal('fetch', fetchMock);
-  const onSave = vi.fn(async (payload: string) => {
-    const parsed = JSON.parse(payload) as { sheets: TestSheet[]; notes?: string[] };
+  const onSave = vi.fn(async (payload: string | Blob) => {
+    const parsed = JSON.parse(payload as string) as { sheets: TestSheet[]; notes?: string[] };
     latest = { ...latest, sheets: parsed.sheets, notes: parsed.notes ?? [] };
   });
   return { fetchMock, onSave, servedDoc: () => latest };

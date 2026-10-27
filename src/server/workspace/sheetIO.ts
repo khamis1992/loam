@@ -30,8 +30,8 @@ export interface EditorSheet {
   name: string;
   /** Row-major cell text. Formulas keep their leading '='. */
   cells: string[][];
-  /** Row-major display values computed by the formula engine: formula results formatted as text (errors as "#CODE!"), non-formula cells as their normalized text. */
-  values: string[][];
+  /** Row-major display values computed by the formula engine: formula results formatted as text (errors as "#CODE!"), non-formula cells as their normalized text. Provided on GET; other constructors may omit it. */
+  values?: string[][];
   styles: Record<string, Record<string, SheetStyleValue>>;
   columnWidths: number[];
   rowHeights: number[];

@@ -292,9 +292,9 @@ class Parser {
 
   private primary(): Node {
     const t = this.next();
-    if (!t) fail("#VALUE!");
-    if (t.t === "num") return { k: "num", v: t.v };
-    if (t.t === "str") return { k: "str", v: t.v };
+    if (!t) return fail("#VALUE!");
+    if (t.t === "num") return { k: "num", v: t.v as number };
+    if (t.t === "str") return { k: "str", v: t.v as string };
     if (t.t === "punc" && t.v === "(") {
       this.nest();
       try {
@@ -314,9 +314,9 @@ class Parser {
       if (upper === "FALSE") return { k: "bool", v: false };
       const ref = cellRefParts(t.v);
       if (ref) return this.maybeRange(undefined, ref.row, ref.col);
-      fail("#NAME?");
+      return fail("#NAME?");
     }
-    fail("#VALUE!");
+    return fail("#VALUE!");
   }
 
   private call(name: string): Node {
@@ -348,9 +348,9 @@ class Parser {
   private sheetRef(sheet: string): Node {
     this.takePunc("!");
     const t = this.next();
-    if (!t || t.t !== "word") fail("#REF!");
-    const ref = cellRefParts(t.v);
-    if (!ref) fail("#REF!");
+    if (!t || t.t !== "word") return fail("#REF!");
+    const ref = cellRefParts(t.v as string);
+    if (!ref) return fail("#REF!");
     return this.maybeRange(sheet, ref.row, ref.col);
   }
 
@@ -417,7 +417,7 @@ function toNumber(v: CellValue): number {
     const t = Date.parse(v + "T00:00:00Z");
     if (Number.isFinite(t)) return serialFromMs(t);
   }
-  fail("#VALUE!");
+  return fail("#VALUE!");
 }
 
 function toBool(v: CellValue): boolean {
@@ -427,7 +427,7 @@ function toBool(v: CellValue): boolean {
   const s = v.trim().toUpperCase();
   if (s === "TRUE") return true;
   if (s === "FALSE") return false;
-  fail("#VALUE!");
+  return fail("#VALUE!");
 }
 
 function toText(v: CellValue): string {
@@ -652,7 +652,7 @@ function evalNode(engine: Engine, node: Node, budget: { n: number }): ArgValue {
           return numericResult(a ** b);
         }
         default:
-          fail("#VALUE!");
+          return fail("#VALUE!");
       }
     }
     case "call":
@@ -698,7 +698,7 @@ function evalCall(engine: Engine, node: Extract<Node, { k: "call" }>, budget: { 
   if (name === "COLUMN" || name === "ROW") {
     if (node.args.length > 1) fail("#VALUE!");
     if (node.args.length === 0) {
-      if (!engine.cell) fail("#VALUE!");
+      if (!engine.cell) return fail("#VALUE!");
       return name === "COLUMN" ? engine.cell.column : engine.cell.row;
     }
     const arg = node.args[0]!;
@@ -708,7 +708,7 @@ function evalCall(engine: Engine, node: Extract<Node, { k: "call" }>, budget: { 
   }
 
   const fn = FUNCTIONS[name];
-  if (!fn) fail("#NAME?");
+  if (!fn) return fail("#NAME?");
   const args = node.args.map((a) => evalNode(engine, a, budget));
   const value = fn(args, engine);
   if (typeof value === "number" && !Number.isFinite(value)) fail("#VALUE!");
@@ -1019,7 +1019,7 @@ const FUNCTIONS: Record<string, Fn> = {
     const n = number1(a, 0);
     const fmt = toText(value(a, 1));
     const m = /^(0+)(?:\.(0+))?(%?)$/.exec(fmt);
-    if (!m) fail("#VALUE!");
+    if (!m) return fail("#VALUE!") as never;
     const decimals = m[2] ? m[2].length : 0;
     const scaled = roundHalfAway(n * (m[3] ? 100 : 1), decimals);
     return scaled.toFixed(decimals) + (m[3] ? "%" : "");

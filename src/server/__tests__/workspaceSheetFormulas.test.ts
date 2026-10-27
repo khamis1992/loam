@@ -97,8 +97,8 @@ describe("workspace sheet formulas", () => {
     assert.equal(main.cells[1]![2], "=Data!A1*10");
     assert.equal(main.cells[1]![3], "=1/0");
     // …while `values` carries the computed display grid.
-    assert.deepEqual(main.values[0], ["1", "2", "3", ""]);
-    assert.deepEqual(main.values[1], ["6", "yes", "300", "#DIV/0!"]);
+    assert.deepEqual(main.values![0], ["1", "2", "3", ""]);
+    assert.deepEqual(main.values![1], ["6", "yes", "300", "#DIV/0!"]);
     // Non-formula sheets recalc too.
     assert.deepEqual(doc.sheets[1]!.values, [["30"]]);
   });
