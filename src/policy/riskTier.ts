@@ -133,6 +133,8 @@ const READ_TOOL_NAMES = new Set<string>([
   "computer_ui_tree",
   "computer_ui_list",
   "computer_list_windows",
+  // Workflow hint only: returns the device_exec commands to run, touches nothing.
+  "device_preview",
   // Control/communication tools never touch the filesystem or run a command, so
   // they stay usable while plan mode is read-only.
   "think",
@@ -187,6 +189,11 @@ const WRITE_TOOL_NAMES = new Set<string>([
   "office_edit",
   "office_export",
   "office_import",
+  // Office intelligence/workflow runs only read the artifact and append run
+  // records inside the workspace; applying a proposed change set stays behind
+  // the UI approve flow, so the write-workspace tier is the honest ceiling.
+  "office_intelligence_run",
+  "office_workflow_run",
   "propose_instructions_update",
   "video_studio",
 ]);
@@ -230,6 +237,8 @@ const EXEC_TOOL_NAMES = new Set<string>([
   "video_edit",
   "creative_image",
   "export_build",
+  // OCR shells out to tesseract inside WSL, so it is an execution, not a read.
+  "image_ocr",
   "computer_click",
   "computer_type",
   "computer_key",

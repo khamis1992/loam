@@ -19,6 +19,8 @@ import { createDesignStudioTools } from "../tools/designStudio.js";
 import { createPlaybookTools } from "../tools/playbookTools.js";
 import { createOfficeEditTools } from "../tools/officeEditAgent.js";
 import { createOfficeWorkflowTools } from "../tools/officeWorkflow.js";
+import { createOfficeIntelligenceTools } from "../tools/officeIntelligenceTools.js";
+import { createServiceGapTools } from "../tools/serviceGapTools.js";
 import { createVideoEditTools } from "../tools/videoEditAgent.js";
 import { createVideoStudioTools } from "../tools/videoStudio.js";
 import { createDeployTools } from "../tools/deploy.js";
@@ -57,6 +59,8 @@ export function registerRuntimeTools(rt: {
   registry.registerAll(createPlaybookTools({ ollama }));
   registry.registerAll(createOfficeEditTools());
   registry.registerAll(createOfficeWorkflowTools(cfg, ollama));
+  registry.registerAll(createOfficeIntelligenceTools());
+  registry.registerAll(createServiceGapTools());
   registry.registerAll(createVideoEditTools());
   registry.registerAll(createVideoStudioTools({ relay: videoStudioRelay }));
   registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview }));
