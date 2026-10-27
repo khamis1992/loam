@@ -184,3 +184,16 @@ codegraph دخيلة)؛ THIRD_PARTY_NOTICES يحمل wakaru + api-anything؛ Ads
 `LOAM_SWARM_CLOUD_DEPLOY=1` + فحص origin + `confirm:true`، توكنات من الخزنة
 (مدى `swarm-launch`) أو البيئة، لا تُسجَّل أبدًا — وليس أداة وكيل بأي حال.
 القياس الحي (D10) لا يُشغَّل إلا بموافقة صريحة لأنه يصرف توكنات فعلية.
+
+## ترقية الأوفيس (الموجات أ+ب+ج) — 2026-10-28
+
+على فرع `office-capability` (9 التزامات): أداة `office_intelligence_run`
+للوكيل (17 قدرة، التطبيق عبر الموافقة البشرية فقط) + فك حجز
+`office_workflow_run` + تسجيل `image_ocr` (EXEC tier)؛ محرك معادلات كامل
+(70 دالة، تبعيات/دورات، نتائج مخزنة في xlsx)؛ تنسيق محارف المستند حتى
+OOXML (`w:color/w:highlight/w:sz/w:rFonts`)؛ تعقب تغييرات وتعليقات
+(sidecar في `.loam/track`، ليس w:ins/w:in أصليًا)؛ تصدير PDF أصلي من
+الثلاثة عبر Office COM خلف مسارات `/api/workspace/{doc,sheet,slides}/pdf`
+(Word/Excel/PowerPoint على ويندوز، 503 خلافه)؛ بوابة عملاء عامة
+`/portal/<token>` (رمز 32-بايت هو الاعتماد). بوابات: tsc خادم+ويب 0،
+vitest ويب 879/879، دفعات خادم الأوفيس 142/142، verify الكاملة خضراء.
