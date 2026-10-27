@@ -5,6 +5,7 @@ import { requireTaskWorkspace } from "../taskWorkspace.js";
 import { StudioError } from "../../studio/store.js";
 import { exportStudio } from "../../studio/export.js";
 import { renderSlidePreview } from "../../studio/slide-preview.js";
+import { renderDeckPdf } from "../../studio/office-pdf.js";
 import {
   readWorkspaceSlides,
   readWorkspaceSlidesRaw,
@@ -94,6 +95,16 @@ export async function handleWorkspaceSlidesRoutes(
         body.artifact !== undefined ? { artifact: body.artifact, expectedRevision: body.expectedRevision } : undefined,
       );
       sendJson(res, 200, { artifact: result.artifact });
+      return true;
+    }
+    if (p === "/api/workspace/slides/pdf" && req.method === "GET") {
+      requireTask(url);
+      const root = requireTaskWorkspace(url.searchParams.get("taskId"), loadConfig().workspace);
+      const rel = url.searchParams.get("path") ?? "";
+      const bytes = readWorkspaceSlidesRaw(root, rel);
+      const pdf = await renderDeckPdf(bytes);
+      res.writeHead(200, { "content-type": "application/pdf", "cache-control": "no-store" });
+      res.end(pdf);
       return true;
     }
     if (p === "/api/workspace/slides/preview" && req.method === "GET") {

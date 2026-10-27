@@ -7,6 +7,8 @@ import http from "node:http";
 import { docFileMeta, loadWorkspaceDoc, saveWorkspaceDoc, DocFileError } from "../workspace/docIO.js";
 import { requireTaskWorkspace } from "../taskWorkspace.js";
 import { getSettings } from "../settings.js";
+import { renderWordPreview } from "../../studio/word-preview.js";
+import { readOfficeFileBytes } from "../../studio/office-pdf.js";
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
@@ -49,6 +51,28 @@ export async function handleWorkspaceDocRoutes(
   p: string,
   ctx?: WorkspaceDocRouteContext,
 ): Promise<boolean> {
+  if (p === "/api/workspace/doc/pdf" && req.method === "GET") {
+    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "127.0.0.1"}`);
+    try {
+      const taskId = url.searchParams.get("taskId") ?? "";
+      const rel = (url.searchParams.get("path") ?? "").trim();
+      if (!taskId) throw new DocFileError("taskId required");
+      if (!rel) throw new DocFileError("path required");
+      const workspace = requireTaskWorkspace(taskId, resolveWorkspace(ctx));
+      // The Word preview engine already returns PDF bytes for a docx buffer.
+      const docx = await readOfficeFileBytes(workspace, rel, [".docx"]);
+      const pdf = await renderWordPreview(docx);
+      res.writeHead(200, { "content-type": "application/pdf", "cache-control": "no-store" });
+      res.end(pdf);
+      return true;
+    } catch (error) {
+      if (error instanceof DocFileError) { sendJson(res, error.status, { error: error.message }); return true; }
+      const status = typeof (error as { status?: number })?.status === "number" ? (error as { status: number }).status : (/task not found/.test(String(error)) ? 404 : 500);
+      sendJson(res, status, { error: error instanceof Error ? error.message : String(error) });
+      return true;
+    }
+  }
+
   const match = /^\/api\/workspace\/doc\/file$/.exec(p);
   if (!match) return false;
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "127.0.0.1"}`);
