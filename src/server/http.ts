@@ -572,8 +572,9 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         // The public share replay feed (GET /api/share/:token) is anonymous by
         // design; POST/DELETE stay behind the install token like every /api route.
         const isPublicShare = req.method === "GET" && (/^\/api\/share\/[A-Za-z0-9_-]+$/.test(p) || /^\/api\/office\/portal\/[A-Za-z0-9_-]+$/.test(p));
-        // The share replay page and its static assets are public like the feed.
-        const isNextStatic = req.method === "GET" && (p === "/share" || p.startsWith("/share/") || p.startsWith("/_next/"));
+        // The share replay page and its static assets are public like the feed;
+        // the public client portal page (/portal/<token>) is public the same way.
+        const isNextStatic = req.method === "GET" && (p === "/share" || p.startsWith("/share/") || p === "/portal" || p.startsWith("/portal/") || p.startsWith("/_next/"));
         if (!isStatic && !isPublicShare && !isNextStatic && !publicPaths.has(p)) {
           const token =
             typeof req.headers["x-loam-local-token"] === "string"
@@ -753,6 +754,13 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         // on the same replay page, which reads the token from path or query.
         if (req.method === "GET" && (p === "/share" || p.startsWith("/share/"))) {
           serveNextExport(res, "/share.html");
+          return;
+        }
+        // Public client portal: same trick as the share replay. The export has
+        // one /portal.html page, and /portal/<token> or /portal?t=<token> both
+        // land on it; the page reads the real token from path or query.
+        if (req.method === "GET" && (p === "/portal" || p.startsWith("/portal/"))) {
+          serveNextExport(res, "/portal.html");
           return;
         }
         if (req.method === "GET" && p.startsWith("/_next/")) {
