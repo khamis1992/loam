@@ -37,7 +37,8 @@ const model = http.createServer(async (req, res) => {
   } else {
     const second = prompt.includes("WRITE_SECOND");
     if (second && blockSecond) { secondWaiting = true; return; }
-    if (second) secondTools++; else firstTools++;
+    if (second) secondTools++;
+    if (prompt.includes("WRITE_FIRST")) firstTools++;
     tool_calls = [{ function: { name: "file_write", arguments: { path: second ? "second.txt" : "first.txt", content: "one effect\n", append: true } } }];
   }
   res.setHeader("content-type", "application/x-ndjson");

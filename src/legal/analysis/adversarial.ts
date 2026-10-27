@@ -14,7 +14,7 @@ export async function adversarialReview(
     schema: ADVERSARIAL_SCHEMA,
     repairAttempts: 2,
     messages: [
-      { role: "system", content: "Act as opposing counsel and a strict reviewing lawyer. Attack the draft, not the drafting instructions. Identify only concrete defects supported by the supplied facts and authorities: invented facts, unsupported claims, missed exceptions, unintended admissions, contradictions, unenforceable requests, stronger missing defenses, and coverage gaps. Do not invent evidence or law." },
+      { role: "system", content: "Act as opposing counsel and a strict reviewing lawyer. Attack the draft, not the drafting instructions. For every finding, identify an exact draft span and the supplied fact or authority element proving the defect. Identify only concrete defects: invented facts, unsupported claims, missed exceptions, unintended admissions, contradictions, unenforceable requests, stronger missing defenses, and coverage gaps. Do not invent evidence, hypothetical losses, legal requirements or procedural rules. Never report a condition, exception or burden as missing when the draft already quotes or addresses it; quoting the gross-excess condition and comparing the proven amounts addresses that condition. Reserve critical for a demonstrated defect that makes export legally unsafe, not for style, a merely arguable strategy, or evidence outside the record. Do not require a particular wording when the substance is addressed." },
       { role: "user", content: JSON.stringify(input) },
     ],
   });

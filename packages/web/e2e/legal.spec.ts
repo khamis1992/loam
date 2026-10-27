@@ -40,7 +40,7 @@ test.beforeAll(async () => {
       primaryRequests: ['تخفيض التعويض'], alternativeRequests: ['رفض المطالبة'], weaknesses: ['يلزم إثبات المبالغة'], unresolvedQuestions: [],
     };
     else if (contract === 'legal-response-allegations') value = {
-      entries: [{ id: 'a1', allegation: 'استحقاق التعويض كاملاً', kind: 'legal', disposition: 'explain', evidenceFactIds: [], researchQueries: ['المادة 3 من القانون المدني الاختباري'], response: 'التعويض قابل للتخفيض', attachments: [], needsClientDecision: false }],
+      entries: [{ id: 'a1', allegation: 'استحقاق التعويض كاملاً', sourceQuote: 'استحقاق التعويض كاملاً', kind: 'legal', disposition: 'explain', evidenceFactIds: [], researchQueries: ['المادة 3 من القانون المدني الاختباري'], response: 'التعويض قابل للتخفيض', attachments: [], needsClientDecision: false }],
       unresolvedQuestions: [],
     };
     else if (contract.startsWith('legal-research:')) value = {

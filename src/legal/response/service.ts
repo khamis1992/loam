@@ -21,7 +21,7 @@ export async function buildLegalResponse(
     matter, sourceText: input.sourceText, documents: store.evidence.listDocuments(matter.id),
     facts: store.evidence.listFacts(matter.id), timeline: store.evidence.listTimeline(matter.id),
   });
-  const research = await researchResponse(corpus, model, matrix, matter.asOf);
+  const research = await researchResponse(corpus, model, matrix, matter.asOf, [matter.title], store.evidence.listFacts(matter.id));
   const drafted = await draftLegalResponse(corpus, model, { matter, matrix, research });
   const adversarial = await adversarialReview(model, { draft: drafted.draft, facts: matrix, authorities: research, coverage: drafted.verification.coverage });
   const quality = qualityGate({ claims: research.flatMap((record) => record.claims), findings: adversarial, coverage: drafted.verification.coverage });

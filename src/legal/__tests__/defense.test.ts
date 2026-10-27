@@ -10,6 +10,7 @@ import { loadFixtureCorpus, fillAvids } from "./helpers.js";
 import { importMatterDocument } from "../evidence/service.js";
 import { buildDefensePackage } from "../defense/service.js";
 import { createDefensePipeline } from "../defense/pipeline.js";
+import { draftDefenseMemo } from "../defense/draft.js";
 import type { LegalModelPort, LegalModelRequest } from "../model/types.js";
 
 const config = { localModel: "qwen3.6:35b-a3b", approvedLocalModels: ["qwen3.6:35b-a3b"], ollamaUrl: "http://127.0.0.1:11434" };
@@ -83,7 +84,71 @@ test("defense pipeline pauses for strategy and lawyer approval", async () => {
   assert.equal((await pipeline.advance(run.id)).status, "waiting");
   assert.equal((await pipeline.resume(run.id, { action: "approve" })).status, "waiting");
   assert.equal((await pipeline.resume(run.id, { action: "approve" })).status, "succeeded");
+  let adversarialCalls = 0;
+  let draftCalls = 0;
+  const correctingModel: typeof model = async (req) => {
+    if ((req as typeof req & { contract?: string }).contract === "legal-adversarial-review") {
+      adversarialCalls++;
+      return { content: JSON.stringify({ findings: adversarialCalls % 2 === 1 ? [{ severity: "critical", code: "contradiction", message: "تناقض يجب إصلاحه" }] : [] }), model: req.model, toolCalls: [], usage: { promptTokens: 1, completionTokens: 1, durationMs: 1 } };
+    }
+    if ((req as typeof req & { contract?: string }).contract === "defense-memo-draft") draftCalls++;
+    return model(req);
+  };
+  const correctingPipeline = createDefensePipeline(store, corpus, { port: correctingModel, config });
+  const revised = await correctingPipeline.start({ kind: "defense_memo", matterId: matter.id, state: { matterId: matter.id }, corpusSnapshotId: corpus.snapshot({ persist: false }).id, model: config.localModel, promptVersion: "1" });
+  await correctingPipeline.advance(revised.id); await correctingPipeline.advance(revised.id); await correctingPipeline.advance(revised.id); await correctingPipeline.advance(revised.id); await correctingPipeline.advance(revised.id);
+  const afterRevision = await correctingPipeline.resume(revised.id, { action: "revise", theory: { summary: "استراتيجية معدلة", pleas: [{ id: "revised-plea", type: "substantive", title: "دفع معدل", factIds: ["fact-1"], researchQueries: ["المادة 3 من القانون المدني الاختباري"], priority: 1 }], primaryRequests: [], alternativeRequests: [], weaknesses: [], unresolvedQuestions: [] } });
+  assert.equal(afterRevision.status, "waiting");
+  assert.equal((afterRevision.state as { research: Array<{ issueId: string }> }).research[0]?.issueId, "revised-plea");
+  assert.equal((await correctingPipeline.resume(revised.id, { action: "approve" })).status, "succeeded");
+  assert.equal(adversarialCalls, 2);
+  assert.equal(draftCalls, 2);
+  const approved = await correctingPipeline.start({ kind: "defense_memo", matterId: matter.id, state: { matterId: matter.id }, corpusSnapshotId: corpus.snapshot({ persist: false }).id, model: config.localModel, promptVersion: "1" });
+  await correctingPipeline.advance(approved.id); await correctingPipeline.advance(approved.id); await correctingPipeline.advance(approved.id); await correctingPipeline.advance(approved.id); await correctingPipeline.advance(approved.id);
+  assert.equal((await correctingPipeline.resume(approved.id, { action: "approve" })).status, "waiting");
+  assert.equal((await correctingPipeline.resume(approved.id, { action: "approve" })).status, "succeeded");
+  assert.equal(adversarialCalls, 4);
+  assert.equal(draftCalls, 4);
+  const stale = await pipeline.start({ kind: "defense_memo", matterId: matter.id, state: { matterId: matter.id }, corpusSnapshotId: corpus.snapshot({ persist: false }).id, model: config.localModel, promptVersion: "1" });
+  await pipeline.advance(stale.id); await pipeline.advance(stale.id); await pipeline.advance(stale.id); await pipeline.advance(stale.id); await pipeline.advance(stale.id);
+  await pipeline.resume(stale.id, { action: "approve" });
+  const version = corpus.db.prepare("SELECT avid, text_sha256 FROM article_versions LIMIT 1").get() as { avid: string; text_sha256: string };
+  corpus.db.prepare("UPDATE article_versions SET text_sha256=? WHERE avid=?").run("0".repeat(64), version.avid);
+  await assert.rejects(pipeline.resume(stale.id, { action: "approve" }), (error: unknown) => {
+    const failed = error as { status: string; error?: string };
+    assert.equal(failed.status, "failed");
+    assert.match(failed.error ?? "", /corpus changed during lawyer review/);
+    return true;
+  });
   store.close();
   corpus.close();
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("defense draft retries a mismatched quote once and then verifies the exact source", async () => {
+  const store = new MattersStore(":memory:", new StaticKeyProvider(crypto.randomBytes(32)));
+  const corpus = loadFixtureCorpus();
+  try {
+    const matter = store.createMatter({ title: "دعوى", kind: "defense_memo", asOf: "2092-01-01" }, "user");
+    corpus.db.prepare("UPDATE legislations SET source_json=json_set(source_json,'$.verifiedAt','2092-01-01')").run();
+    corpus.setCoverageManifest([{ legKey: "law/2090/1", titleAr: "القانون المدني الاختباري", requiredFor: ["defense_memo"] }]);
+    let attempts = 0;
+    const retryModel: LegalModelPort = async (req) => {
+      if ((req as LegalModelRequest & { contract?: string }).contract === "defense-memo-draft" && ++attempts === 1) {
+        return { content: JSON.stringify({ markdown: "## بيانات الدعوى\nالدائرة\n## الوقائع\nواقعة.\n## الدفاع الموضوعي\n«نص غير مطابق للمصدر» ⟦cite:QL-3bacb8d64e⟧\n## الطلبات\nتخفيض التعويض." }), model: req.model, toolCalls: [], usage: { promptTokens: 1, completionTokens: 1, durationMs: 1 } };
+      }
+      return model(req);
+    };
+    const result = await draftDefenseMemo(corpus, { port: retryModel, config }, {
+      matter,
+      theory: { summary: "دفاع", pleas: [{ id: "penalty", type: "substantive", title: "المبالغة", factIds: [], researchQueries: [], priority: 1 }], primaryRequests: [], alternativeRequests: [], weaknesses: [], unresolvedQuestions: [] },
+      research: [{ issueId: "penalty", asOf: "2092-01-01", queries: [], consultedAvids: ["QL-3bacb8d64e"], claims: [] }],
+      facts: [],
+    });
+    assert.equal(attempts, 2);
+    assert.equal(result.verification.verdict, "pass");
+  } finally {
+    store.close();
+    corpus.close();
+  }
 });

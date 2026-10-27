@@ -81,6 +81,9 @@ test("document analysis and contract review persist results and require review b
     corpus.db.prepare("UPDATE legislations SET source_json=json_set(source_json,'$.verifiedAt','2092-01-01')").run();
     corpus.setCoverageManifest([{ legKey: "law/2090/1", titleAr: "القانون الاختباري", requiredFor: ["contract_review", "research"] }]);
     const manager = new LegalRunManager(store, corpus, { port: localModel, config });
+    const evidencePath = path.join(dir, "evidence.txt");
+    fs.writeFileSync(evidencePath, "مستند اصطناعي للتحليل.");
+    await importMatterDocument(store, matter.id, evidencePath);
     const analysis = await manager.start("document_analysis", matter.id, { matterId: matter.id });
     assert.equal((await manager.idle(analysis.id))?.status, "waiting");
     await manager.resume(analysis.id, { action: "approve" });

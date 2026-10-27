@@ -14,9 +14,9 @@ export const CLAIM_SUPPORT_SCHEMA: JsonSchema = {
   type: "object", required: ["claims"], additionalProperties: false,
   properties: {
     claims: {
-      type: "array", minItems: 0,
+      type: "array", minItems: 1, maxItems: 1,
       items: {
-        type: "object", required: ["id", "text", "support", "reason"], additionalProperties: false,
+        type: "object", required: ["id", "text", "support", "authorityAvids", "evidenceFactIds", "exceptions", "reason"], additionalProperties: false,
         properties: {
           id: { type: "string", minLength: 1 }, text: { type: "string", minLength: 1 },
           support: { enum: ["supported", "contradicted", "insufficient", "not_researched"] },
@@ -86,9 +86,9 @@ export const ALLEGATION_MATRIX_SCHEMA: JsonSchema = {
     entries: {
       type: "array", minItems: 0,
       items: {
-        type: "object", required: ["id", "allegation", "kind", "disposition", "evidenceFactIds", "researchQueries", "response", "attachments", "needsClientDecision"], additionalProperties: false,
+        type: "object", required: ["id", "allegation", "sourceQuote", "kind", "disposition", "evidenceFactIds", "researchQueries", "response", "attachments", "needsClientDecision"], additionalProperties: false,
         properties: {
-          id: { type: "string", minLength: 1 }, allegation: { type: "string", minLength: 1 }, kind: { enum: ["factual", "legal", "request"] },
+          id: { type: "string", minLength: 1 }, allegation: { type: "string", minLength: 1 }, sourceQuote: { type: "string", minLength: 1 }, kind: { enum: ["factual", "legal", "request"] },
           disposition: { enum: ["admit", "deny", "no_knowledge", "explain", "procedural"] },
           evidenceFactIds: { type: "array", items: { type: "string" } }, researchQueries: { type: "array", items: { type: "string" } },
           response: { type: "string", minLength: 1 }, attachments: { type: "array", items: { type: "string" } }, needsClientDecision: { type: "boolean" },

@@ -87,6 +87,8 @@ export interface LegalResponsePackage {
     entries: Array<{
       id: string;
       allegation: string;
+      sourceQuote: string;
+      sourceStart: number;
       kind: string;
       disposition: string;
       response: string;

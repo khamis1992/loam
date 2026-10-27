@@ -4,8 +4,9 @@ import { researchIssue } from "../analysis/legalResearch.js";
 import type { LegalModelPort } from "../model/types.js";
 import type { ResearchRecord } from "../analysis/types.js";
 import type { CaseTheory } from "./types.js";
+import type { FactAssertion } from "../evidence/types.js";
 
-export async function researchDefense(corpus: LegalCorpus, model: { port: LegalModelPort; config: EgressConfig }, theory: CaseTheory, asOf: string): Promise<ResearchRecord[]> {
+export async function researchDefense(corpus: LegalCorpus, model: { port: LegalModelPort; config: EgressConfig }, theory: CaseTheory, asOf: string, additionalQueries: string[] = [], factRecords: FactAssertion[] = []): Promise<ResearchRecord[]> {
   const records: ResearchRecord[] = [];
   for (const plea of theory.pleas) {
     records.push(await researchIssue(corpus, model, {
@@ -13,9 +14,9 @@ export async function researchDefense(corpus: LegalCorpus, model: { port: LegalM
       title: plea.title,
       kind: plea.type === "procedural" ? "procedural" : plea.type === "evidentiary" ? "evidentiary" : "substantive",
       facts: plea.factIds,
-      researchQueries: plea.researchQueries,
+      researchQueries: [...plea.researchQueries, ...additionalQueries],
       material: true,
-    }, asOf));
+    }, asOf, factRecords));
   }
   return records;
 }

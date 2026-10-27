@@ -9,6 +9,7 @@ import { MattersStore } from "../mattersStore.js";
 import { loadFixtureCorpus } from "./helpers.js";
 import { importMatterDocument } from "../evidence/service.js";
 import { analyzeDocuments } from "../analysis/documentAnalysis.js";
+import { chunkLegalDocument } from "../analysis/documentChunks.js";
 import { createDocumentPipeline } from "../analysis/documentPipeline.js";
 import type { LegalModelPort, LegalModelRequest } from "../model/types.js";
 
@@ -55,4 +56,42 @@ test("document analysis links findings to facts and completes approval", async (
   store.close();
   corpus.close();
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("document chunks cover every character without losing page boundaries", () => {
+  const pages = [1, 2, 3].map((page) => ({ page, text: `صفحة ${page}\n${"وقائع اصطناعية متكررة.\n".repeat(700)}`, warnings: [] }));
+  const text = pages.map((page) => page.text).join("\n\n");
+  const chunks = chunkLegalDocument({ id: "large", matterId: "m", fileName: "large.txt", mime: "text/plain", sha256: "a".repeat(64), language: "ar", importedAt: "2092-01-01", text, pages, warnings: [] }, 1000);
+  assert.ok(chunks.length > 3);
+  assert.equal(chunks.map((chunk) => chunk.text).join(""), text);
+  assert.ok(chunks.every((chunk) => chunk.text.length <= 1000 && chunk.pages.length > 0));
+  assert.equal(chunks.at(-1)?.text, text.slice(chunks.at(-1)?.start));
+});
+
+test("large document analysis uses bounded source chunks and preserves the original", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "legal-large-analysis-"));
+  const store = new MattersStore(path.join(dir, "matters.db"), new StaticKeyProvider(crypto.randomBytes(32)));
+  const corpus = loadFixtureCorpus();
+  try {
+    const matter = store.createMatter({ title: "ملف كبير", kind: "research", asOf: "2092-01-01" }, "user");
+    const large = Array.from({ length: 400 }, (_, index) => `الفقرة ${index}: وقائع اصطناعية لاختبار حدود السياق دون حذف المحتوى.`).join("\n") + "\nالمبلغ النهائي 9000 ريال في الفقرة الأخيرة.";
+    const source = path.join(dir, "large.txt");
+    fs.writeFileSync(source, large);
+    await importMatterDocument(store, matter.id, source);
+    const requests: string[] = [];
+    const boundedModel: LegalModelPort = async (req) => {
+      const prompt = req.messages.at(-2)?.content ?? "";
+      requests.push(prompt);
+      return model(req);
+    };
+    const report = await analyzeDocuments(store, corpus, { port: boundedModel, config }, matter.id);
+    assert.ok(requests.length >= 3);
+    assert.ok(requests.every((prompt) => prompt.length < 40_000), JSON.stringify(requests.map((prompt) => prompt.length)));
+    assert.ok(requests.some((prompt) => prompt.includes("المبلغ النهائي 9000")));
+    assert.equal(report.documents[0]?.text, large);
+  } finally {
+    store.close();
+    corpus.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -5,11 +5,12 @@ import type { LegalModelPort } from "../model/types.js";
 import type { EgressConfig } from "../egress.js";
 import { searchLaw } from "../retrieval.js";
 import type { ClaimSupport, LegalIssue, ResearchRecord } from "./types.js";
+import type { FactAssertion } from "../evidence/types.js";
 
-export async function researchIssue(corpus: LegalCorpus, model: { port: LegalModelPort; config: EgressConfig }, issue: LegalIssue, asOf: string): Promise<ResearchRecord> {
+export async function researchIssue(corpus: LegalCorpus, model: { port: LegalModelPort; config: EgressConfig }, issue: LegalIssue, asOf: string, factRecords: Array<Pick<FactAssertion, "id" | "text" | "kind" | "status">> = []): Promise<ResearchRecord> {
   const queries: string[] = [];
   const consulted = new Map<string, { avid: string; text: string; reference: string }>();
-  for (const query of issue.researchQueries) {
+  for (const query of [...new Set([...issue.researchQueries, issue.title])]) {
     queries.push(query);
     const result = await searchLaw(corpus, query, { asOf, k: 6, matterKind: issue.kind === "contractual" ? "contract_review" : "research" });
     for (const hit of result.hits.filter((candidate) => candidate.citable)) {
@@ -29,15 +30,20 @@ export async function researchIssue(corpus: LegalCorpus, model: { port: LegalMod
     schema: CLAIM_SUPPORT_SCHEMA,
     repairAttempts: 2,
     messages: [
-      { role: "system", content: "You are a Qatari legal analysis assistant. Use only the supplied sources. A source quote is not automatically support: check every element and exception. Return no authority id outside the supplied set." },
-      { role: "user", content: JSON.stringify({ issue, sources }) },
+      { role: "system", content: `You are a Qatari legal analysis assistant. Assess only the supplied issue, not side questions. Return exactly one claim with id claim-${issue.id}. Use only supplied sources, check every element and exception, and return no authority id outside the supplied set. Every supported legal claim must cite its supporting source ids explicitly in authorityAvids and every relied-on fact id in evidenceFactIds; never leave authorityAvids empty for a supported legal proposition. Assess the supplied evidence text and review status, not merely the existence of fact ids; never infer a fact or amount from an id or title. Mark support insufficient or not_researched when the sources or linked facts do not support this issue; never add claims about missing authority or other topics.` },
+      { role: "user", content: JSON.stringify({ issue, evidence: factRecords.filter((fact) => issue.facts.includes(fact.id)), sources }) },
     ],
   });
   if (!result.ok) throw new Error(`legal research contract failed for ${issue.id}: ${result.issues.join("; ")}`);
   const claims = result.value.claims.map((claim) => {
-    const invalid = claim.authorityAvids.filter((avid) => !consulted.has(avid));
-    if (invalid.length === 0) return claim;
-    return { ...claim, support: "insufficient" as const, authorityAvids: claim.authorityAvids.filter((avid) => consulted.has(avid)), reason: `${claim.reason} Unretrieved authority rejected: ${invalid.join(",")}` };
+    const authorityAvids = (claim.authorityAvids ?? []).filter((avid) => consulted.has(avid));
+    const evidenceFactIds = (claim.evidenceFactIds ?? []).filter((id) => issue.facts.includes(id));
+    const normalized = { ...claim, authorityAvids, evidenceFactIds, exceptions: claim.exceptions ?? [] };
+    const invalidAuthorities = (claim.authorityAvids ?? []).filter((avid) => !consulted.has(avid));
+    const invalidFacts = (claim.evidenceFactIds ?? []).filter((id) => !issue.facts.includes(id));
+    const unsupported = claim.support === "supported" && authorityAvids.length === 0 && evidenceFactIds.length === 0;
+    if (invalidAuthorities.length === 0 && invalidFacts.length === 0 && !unsupported) return normalized;
+    return { ...normalized, support: "insufficient" as const, reason: `${claim.reason} Unlinked or unretrieved support rejected. Invalid authorities: ${invalidAuthorities.join(",") || "none"}; invalid facts: ${invalidFacts.join(",") || "none"}.` };
   });
   return { issueId: issue.id, asOf, queries, consultedAvids: [...consulted.keys()], claims };
 }

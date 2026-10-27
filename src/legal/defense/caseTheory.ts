@@ -16,7 +16,7 @@ export async function buildCaseTheory(
     schema: CASE_THEORY_SCHEMA,
     repairAttempts: 2,
     messages: [
-      { role: "system", content: "Build a defense case theory as an expert Qatari defense lawyer. Use only supplied facts and documents. Separate procedural, substantive and evidentiary pleas. Do not cite article numbers or invent facts. Each plea must link fact ids and research queries. Include weaknesses and missing evidence honestly." },
+      { role: "system", content: "Build a defense case theory as an expert Qatari defense lawyer. The matter title is the client's objective, not the opponent's request. Use only supplied facts and documents. Separate procedural, substantive and evidentiary pleas. Do not cite article numbers, invent procedural events or assign unsupported burdens. Each plea must link fact ids and research queries. Requests must advance the client's objective and remain internally consistent; never seek both dismissal and reduction of the same obligation without clearly distinct conditional grounds. Include weaknesses and missing evidence honestly." },
       { role: "user", content: JSON.stringify(input) },
     ],
   });

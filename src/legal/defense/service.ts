@@ -25,8 +25,8 @@ export async function buildDefensePackage(
     timeline: store.evidence.listTimeline(matterId),
     contradictions: store.evidence.listContradictions(matterId),
   });
-  const research = await researchDefense(corpus, model, theory, matter.asOf);
-  const drafted = await draftDefenseMemo(corpus, model, { matter, theory, research });
+  const research = await researchDefense(corpus, model, theory, matter.asOf, [matter.title], store.evidence.listFacts(matterId));
+  const drafted = await draftDefenseMemo(corpus, model, { matter, theory, research, facts: store.evidence.listFacts(matterId) });
   const adversarial = await opposeDefense(model, { draft: drafted.draft, theory, research, coverage: drafted.verification.coverage });
   const claims = research.flatMap((record) => record.claims);
   const quality = qualityGate({ claims, findings: adversarial, coverage: drafted.verification.coverage });

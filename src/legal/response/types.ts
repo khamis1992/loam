@@ -7,6 +7,8 @@ export type AllegationDisposition = "admit" | "deny" | "no_knowledge" | "explain
 export interface AllegationResponse {
   id: string;
   allegation: string;
+  sourceQuote: string;
+  sourceStart: number;
   kind: "factual" | "legal" | "request";
   disposition: AllegationDisposition;
   evidenceFactIds: string[];
