@@ -14,6 +14,7 @@ import path from "node:path";
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { applySheetFormat } from "../../studio/sheet-format.js";
+import { recalcSheet, formatFormulaValue } from "../../studio/sheet-formulas.js";
 
 export const MAX_SHEETS = 20;
 export const MAX_ROWS = 2000;
@@ -29,6 +30,8 @@ export interface EditorSheet {
   name: string;
   /** Row-major cell text. Formulas keep their leading '='. */
   cells: string[][];
+  /** Row-major display values computed by the formula engine: formula results formatted as text (errors as "#CODE!"), non-formula cells as their normalized text. */
+  values: string[][];
   styles: Record<string, Record<string, SheetStyleValue>>;
   columnWidths: number[];
   rowHeights: number[];
@@ -197,6 +200,7 @@ export async function readSheetDoc(abs: string, identity: { taskId: string; path
     sheets.push({
       name: sheet.name,
       cells,
+      values: [],
       styles,
       columnWidths: Array.from({ length: columns }, (_, i) => width(i)),
       rowHeights: Array.from({ length: rows }, (_, i) => height(i)),
@@ -204,6 +208,14 @@ export async function readSheetDoc(abs: string, identity: { taskId: string; path
       hiddenRows: Array.from({ length: rows }, (_, i) => !!sheet.getRow(i + 1).hidden),
       hiddenColumns: Array.from({ length: columns }, (_, i) => !!sheet.getColumn(i + 1).hidden),
     });
+  }
+  // Compute display values for every sheet with the whole workbook addressable,
+  // so cross-sheet formulas resolve. `cells` keeps the editable formula text.
+  const sheetTexts: Record<string, string[][]> = {};
+  for (const sheet of sheets) sheetTexts[sheet.name] = sheet.cells;
+  for (const sheet of sheets) {
+    const { values } = recalcSheet(sheet.cells, { sheet: sheet.name, sheets: sheetTexts });
+    sheet.values = values.map((row) => row.map(formatFormulaValue));
   }
   if (!sheets.length) notes.push("The workbook has no sheets yet; the editor can start from an empty sheet.");
   return { ...identity, sheets, notes };
@@ -291,6 +303,8 @@ function normalizeSheet(input: Record<string, unknown>, usedNames: Set<string>, 
   return {
     name: uniqueSheetName(String(input.name ?? "sheet"), usedNames),
     cells,
+    // The PUT path writes `cells`; `values` is recomputed on read, so keep the normalized cell text here.
+    values: cells.map((row) => [...row]),
     styles,
     columnWidths: numbers(input.columnWidths, DEFAULT_COLUMN_WIDTH),
     rowHeights: numbers(input.rowHeights, DEFAULT_ROW_HEIGHT),
@@ -329,6 +343,9 @@ export async function writeSheetDoc(abs: string, doc: SheetDoc): Promise<{ bytes
   workbook.creator = "Loam";
   workbook.calcProperties = { fullCalcOnLoad: true };
   const warnings: string[] = [];
+  // The full workbook text is the formula context, so cross-sheet references resolve when caching results.
+  const sheetTexts: Record<string, string[][]> = {};
+  for (const source of doc.sheets) sheetTexts[source.name] = source.cells;
   for (const source of doc.sheets) {
     const rightToLeft = source.cells.some((row) => row.some(isRtlText));
     const sheet = workbook.addWorksheet(source.name, rightToLeft ? { views: [{ rightToLeft: true }] } : undefined);
@@ -358,7 +375,7 @@ export async function writeSheetDoc(abs: string, doc: SheetDoc): Promise<{ bytes
       }
     }
     try {
-      applySheetFormat(sheet, source);
+      applySheetFormat(sheet, source, { sheet: source.name, sheets: sheetTexts });
     } catch (err) {
       warnings.push(`Sheet “${source.name}”: formatting partially skipped (${err instanceof Error ? err.message : String(err)}).`);
       workbook.removeWorksheet(sheet.id);
@@ -372,7 +389,11 @@ export async function writeSheetDoc(abs: string, doc: SheetDoc): Promise<{ bytes
           else cell.value = value;
         }),
       );
-      applySheetFormat(retry, { columnWidths: source.columnWidths, rowHeights: source.rowHeights, hiddenRows: source.hiddenRows, hiddenColumns: source.hiddenColumns });
+      applySheetFormat(
+        retry,
+        { cells: source.cells, columnWidths: source.columnWidths, rowHeights: source.rowHeights, hiddenRows: source.hiddenRows, hiddenColumns: source.hiddenColumns },
+        { sheet: source.name, sheets: sheetTexts },
+      );
     }
   }
   const buffer: Buffer = Buffer.from(await workbook.xlsx.writeBuffer());

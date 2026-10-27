@@ -2,6 +2,7 @@ import {validatePrintSettings,type SheetPrint} from './sheet-print.js';
 import type ExcelJS from 'exceljs';
 import {applyBorders} from './sheet-borders.js';
 import {StudioError} from './store.js';
+import {recalcSheet,isFormulaErrorText,type FormulaResult} from './sheet-formulas.js';
 
 /** One typed studio cell value: text or formula (a string starting with '='), a real number, a real boolean, or a calendar date. */
 export type StudioCellValue = string | number | boolean | { date: string };
@@ -38,8 +39,9 @@ export function typedCellValue(value: unknown): StudioCellValue {
   return String(value ?? "");
 }
 
-/** Write one typed studio value into an ExcelJS cell; date cells gain an ISO display format only when no explicit number format exists. */
-export function applyCellType(cell: ExcelJS.Cell, value: StudioCellValue, style?: { numberFormat?: string | number | boolean }): void {
+/** Write one typed studio value into an ExcelJS cell; date cells gain an ISO display format only when no explicit number format exists.
+ * A formula cell passed a precomputed `formulaResult` (from the shared formula engine) also caches its computed value so the workbook opens with results even before Excel recalculates; errored formulas keep only their formula text. */
+export function applyCellType(cell: ExcelJS.Cell, value: StudioCellValue, style?: { numberFormat?: string | number | boolean }, formulaResult?: FormulaResult): void {
   if (typeof value === "number") cell.value = value;
   else if (typeof value === "boolean") cell.value = value;
   else if (typeof value === "object") {
@@ -47,8 +49,11 @@ export function applyCellType(cell: ExcelJS.Cell, value: StudioCellValue, style?
     if (!Number.isFinite(time)) throw new StudioError(`Invalid cell date: ${value.date}`);
     cell.value = new Date(time);
     if (style?.numberFormat === undefined) cell.numFmt = "yyyy-mm-dd";
-  } else if (value.startsWith("=") && value.length > 1) cell.value = { formula: value.slice(1) };
-  else cell.value = value;
+  } else if (value.startsWith("=") && value.length > 1) {
+    const formula = value.slice(1);
+    if (formulaResult && !formulaResult.error && formulaResult.value !== null) cell.value = { formula, result: formulaResult.value };
+    else cell.value = { formula };
+  } else cell.value = value;
 }
 
 /** Read one ExcelJS cell back into a typed studio value; formula cells keep their editable formula text. */
@@ -77,9 +82,15 @@ export const cellAddress = (column: number, row: number): string => {
   return label + row;
 };
 
-export function applySheetFormat(sheet:ExcelJS.Worksheet,source:{cells?:string[][];styles?:Record<string,Record<string,string|number|boolean>>;columnWidths?:number[];rowHeights?:number[];merges?:string[];hiddenRows?:boolean[];hiddenColumns?:boolean[];printSettings?:SheetPrint}){
- /** Typed values are written through the shared studio cell model; the grid keeps text and the workbook gets native types. */
-  for(const [rowIndex,row] of (source.cells||[]).entries())for(const [columnIndex,value] of row.entries())applyCellType(sheet.getCell(rowIndex+1,columnIndex+1),typedCellValue(value),source.styles?.[cellAddress(columnIndex+1,rowIndex+1)]);
+/** Workbook context for formula result caching: `sheets` maps every sheet name to its cell grid so cross-sheet formulas resolve. */
+export interface FormulaWorkbookContext { sheet?: string; sheets?: Record<string, string[][]> }
+
+export function applySheetFormat(sheet:ExcelJS.Worksheet,source:{cells?:string[][];styles?:Record<string,Record<string,string|number|boolean>>;columnWidths?:number[];rowHeights?:number[];merges?:string[];hiddenRows?:boolean[];hiddenColumns?:boolean[];printSettings?:SheetPrint},formulaContext?:FormulaWorkbookContext){
+ /** Typed values are written through the shared studio cell model; the grid keeps text and the workbook gets native types.
+  * When a formulaContext is supplied, formula cells are computed with the shared engine and cache their results. */
+  const name=formulaContext?.sheet??sheet.name;
+  const computed=formulaContext?recalcSheet(source.cells||[],{sheet:name,sheets:{...formulaContext.sheets,[name]:source.cells||[]}}).values.map(row=>row.map(v=>typeof v==="string"&&isFormulaErrorText(v)?{value:null,error:v}as const:{value:v,error:null}as const)):null;
+  for(const [rowIndex,row] of (source.cells||[]).entries())for(const [columnIndex,value] of row.entries())applyCellType(sheet.getCell(rowIndex+1,columnIndex+1),typedCellValue(value),source.styles?.[cellAddress(columnIndex+1,rowIndex+1)],computed?computed[rowIndex]?.[columnIndex]:undefined);
   for(const [address,style] of Object.entries(source.styles||{})){
   const cell=sheet.getCell(address);
   applyBorders(cell,style);
