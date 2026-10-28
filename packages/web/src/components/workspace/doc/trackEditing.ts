@@ -37,8 +37,8 @@ export function blockText(block: HTMLElement): string {
   return (block.textContent ?? '').replace(/\u00a0/g, ' ');
 }
 
-export function buildTrackedModel(texts: string[]): TrackedDocument {
-  return registerAuthor(createTrackedDocument(texts), TRACK_AUTHOR);
+export function buildTrackedModel(texts: string[], authorName?: string): TrackedDocument {
+  return registerAuthor(createTrackedDocument(texts), authorName?.trim() ? { id: authorName.trim(), name: authorName.trim() } : TRACK_AUTHOR);
 }
 
 /** Stamp every block with its model paragraph id (order defines the mapping). */

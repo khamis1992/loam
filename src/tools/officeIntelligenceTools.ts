@@ -14,6 +14,7 @@
 import path from "node:path";
 import type { Config } from "../config.js";
 import { OllamaClient } from "../ollama.js";
+import { getSettings } from "../server/settings.js";
 import type { Tool, ToolResult } from "./registry.js";
 import { str, num } from "./registry.js";
 import { createOfficeModelGateway, type OfficeModelGateway } from "../office/intelligence/modelGateway.js";
@@ -140,10 +141,13 @@ export function createOfficeIntelligenceTools(deps: OfficeIntelligenceDeps = {})
         const instruction = str(args, "instruction").trim() || DEFAULT_INSTRUCTIONS[capability];
         const waitMs = Math.max(0, num(args, "waitMs", DEFAULT_WAIT_MS));
         const gateway = doGateway(ctx.cfg, new OllamaClient(ctx.cfg.ollamaUrl));
+        // د2: attribute runs to the configured user when an identity name is set.
+        const identityName = getSettings().officeIdentity?.name?.trim();
+        const actorId = identityName ? `agent:${identityName}` : "agent";
         try {
           const loaded = await doLoad(ctx.workspace, { taskId, path: rel.split(path.sep).join("/"), kind, tenantId: "local" });
           const started = doStart(
-            { capability, artifact: loaded.ref, scope: { tenantId: "local" }, actorId: "agent", instruction },
+            { capability, artifact: loaded.ref, scope: { tenantId: "local" }, actorId, instruction },
             { workspace: ctx.workspace, model: gateway },
           );
           const deadline = Date.now() + waitMs;

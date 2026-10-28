@@ -8,6 +8,18 @@ function base(file: WorkspaceFile): string {
   return `${getApiBase()}/api/workspace/doc/track?taskId=${encodeURIComponent(file.taskId)}&path=${encodeURIComponent(file.path)}`;
 }
 
+/** د2: the configured document identity name (Settings › الهوية في المستندات), if any. */
+export async function identityName(): Promise<string | undefined> {
+  try {
+    const response = await fetch(`${getApiBase()}/api/settings`, { headers: await getApiHeaders() });
+    if (!response.ok) return undefined;
+    const body = (await response.json()) as { officeIdentity?: { name?: string } };
+    return body.officeIdentity?.name?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function loadDocTrack(file: WorkspaceFile): Promise<TrackedDocument | null> {
   const response = await fetch(base(file), { headers: await getApiHeaders() });
   if (!response.ok) {

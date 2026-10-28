@@ -45,6 +45,17 @@ export interface Settings {
   sandboxSkipProfileGrant?: boolean;
   /** User acknowledged the 0.0.81 transitive audit findings (OD-10 disclosure). */
   sandboxSupplyChainAck?: boolean;
+  /** الهوية في المستندات (د2): the acting identity for office intelligence,
+   *  track changes and audits. Unset keeps the legacy admin/"local" identity. */
+  officeIdentity?: { name?: string; role?: "partner" | "senior" | "associate" | "paralegal" | "reviewer" | "client" | "admin" };
+}
+
+const OFFICE_ROLES = new Set(["partner", "senior", "associate", "paralegal", "reviewer", "client", "admin"]);
+
+function isOfficeIdentitySetting(value: unknown): value is NonNullable<Settings["officeIdentity"]> {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return record.name === undefined || typeof record.name === "string";
 }
 
 const FILE = path.join(DATA_DIR, "settings.json");
@@ -79,6 +90,7 @@ export function loadSettings(): Settings {
         ...(typeof parsed.autoApprove === "boolean" ? { autoApprove: parsed.autoApprove } : {}),
         ...(typeof parsed.planApprovalSkipTrivial === "boolean" ? { planApprovalSkipTrivial: parsed.planApprovalSkipTrivial } : {}),
         ...(isLocationSetting(parsed.location) ? { location: parsed.location } : {}),
+        ...(isOfficeIdentitySetting(parsed.officeIdentity) ? { officeIdentity: parsed.officeIdentity } : {}),
         ...(parsed.sandboxMode === "untrusted_only" || parsed.sandboxMode === "all_shell" ? { sandboxMode: parsed.sandboxMode } : {}),
         ...(Array.isArray(parsed.sandboxAllowedDomains) ? { sandboxAllowedDomains: parsed.sandboxAllowedDomains.map(String) } : {}),
         ...(typeof parsed.sandboxSkipProfileGrant === "boolean" ? { sandboxSkipProfileGrant: parsed.sandboxSkipProfileGrant } : {}),
@@ -119,6 +131,15 @@ export function updateSettings(patch: Partial<Settings>): Settings {
   if (typeof patch.codemode === "boolean") settings.codemode = patch.codemode;
   if (typeof patch.trainingOptOut === "boolean") settings.trainingOptOut = patch.trainingOptOut;
   if (typeof patch.lessonsAutoApply === "boolean") settings.lessonsAutoApply = patch.lessonsAutoApply;
+  if (patch.officeIdentity !== undefined) {
+    const normalized = isOfficeIdentitySetting(patch.officeIdentity)
+      ? {
+          ...(typeof patch.officeIdentity.name === "string" && patch.officeIdentity.name.trim() ? { name: patch.officeIdentity.name.trim().slice(0, 80) } : {}),
+          ...(OFFICE_ROLES.has(patch.officeIdentity.role as never) ? { role: patch.officeIdentity.role as NonNullable<Settings["officeIdentity"]>["role"] } : {}),
+        }
+      : {};
+    settings.officeIdentity = Object.keys(normalized).length ? normalized : undefined;
+  }
   if (patch.location !== undefined) {
     settings.location = isLocationSetting(patch.location)
       ? {

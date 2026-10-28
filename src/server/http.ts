@@ -1568,8 +1568,8 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (req.method === "POST" && p === "/api/settings") {
-          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; codemode?: unknown; planApprovalSkipTrivial?: unknown; lessonsAutoApply?: unknown };
-          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; codemode?: boolean; planApprovalSkipTrivial?: boolean; lessonsAutoApply?: boolean } = {};
+          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; codemode?: unknown; planApprovalSkipTrivial?: unknown; lessonsAutoApply?: unknown; officeIdentity?: unknown };
+          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; codemode?: boolean; planApprovalSkipTrivial?: boolean; lessonsAutoApply?: boolean; officeIdentity?: { name?: string; role?: "partner" | "senior" | "associate" | "paralegal" | "reviewer" | "client" | "admin" } } = {};
           if (body.theme === "dark" || body.theme === "light" || body.theme === "system") patch.theme = body.theme;
           if (typeof body.model === "string") patch.model = body.model;
           if (body.projectId === null || typeof body.projectId === "string") patch.projectId = body.projectId;
@@ -1579,6 +1579,15 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           if (typeof body.codemode === "boolean") patch.codemode = body.codemode;
           if (typeof body.planApprovalSkipTrivial === "boolean") patch.planApprovalSkipTrivial = body.planApprovalSkipTrivial;
           if (typeof body.lessonsAutoApply === "boolean") patch.lessonsAutoApply = body.lessonsAutoApply;
+          // د2: identity block for office intelligence / track changes (name + role).
+          if (body.officeIdentity === null) patch.officeIdentity = undefined;
+          else if (typeof body.officeIdentity === "object" && body.officeIdentity !== null) {
+            const incoming = body.officeIdentity as { name?: unknown; role?: unknown };
+            patch.officeIdentity = {
+              ...(typeof incoming.name === "string" && incoming.name.trim() ? { name: incoming.name } : {}),
+              ...(typeof incoming.role === "string" && ["partner", "senior", "associate", "paralegal", "reviewer", "client", "admin"].includes(incoming.role) ? { role: incoming.role as "admin" } : {}),
+            };
+          }
           sendJson(res, 200, updateSettings(patch));
           return;
         }

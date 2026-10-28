@@ -19,7 +19,7 @@ import {
   buildTrackedModel, clearTrackMarkers, inputEventToIntent, placeCaret, renderTrackedDocument,
   selectionToModel, trackedBlockList,
 } from './trackEditing';
-import { loadDocTrack, saveDocTrack } from './trackSidecar';
+import { loadDocTrack, saveDocTrack, identityName } from './trackSidecar';
 import {
   acceptAll, acceptChange, addCommentThread, rejectAll, rejectChange, removeComment, replyToComment,
   setThreadResolved, type TrackedDocument,
@@ -176,7 +176,7 @@ export default function DocEditor({ file, live, onSave, onChatEdit }: WorkspaceE
       snapshotRef.current = surface.innerHTML;
       const blocks = trackedBlockList(surface);
       const texts = blocks.map(blockText);
-      let doc = buildTrackedModel(texts);
+      let doc = buildTrackedModel(texts, await identityName());
       let notice: string | null = null;
       try {
         const sidecar = await loadDocTrack(file);

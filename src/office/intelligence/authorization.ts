@@ -1,4 +1,5 @@
 import { OfficeIntelligenceError, type OfficeScope } from "./contracts.js";
+import { getSettings } from "../../server/settings.js";
 
 export const OFFICE_PERMISSIONS = [
   "office:read",
@@ -30,8 +31,12 @@ const rolePermissions: Record<OfficeRole, readonly OfficePermission[]> = {
   admin: OFFICE_PERMISSIONS,
 };
 
+/** The acting local identity (د2): name/role come from Settings › الهوية في
+ *  المستندات when set; unset keeps the legacy admin/"local" identity. */
 export function localOfficeIdentity(): OfficeIdentity {
-  return { id: "local", tenantIds: ["local"], roles: ["admin"] };
+  const configured = getSettings().officeIdentity;
+  const name = configured?.name?.trim();
+  return { id: name || "local", tenantIds: ["local"], roles: [configured?.role ?? "admin"] };
 }
 
 export function hasOfficePermission(identity: OfficeIdentity, permission: OfficePermission): boolean {

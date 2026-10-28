@@ -209,7 +209,8 @@ function webdavAuthHeaders(connector: OfficeConnector): Record<string, string> {
 
 function webdavUrl(connector: OfficeConnector): string {
   const base = connector.config.baseUrl!.replace(/\/+$/, "");
-  const remote = connector.config.remotePath!.startsWith("/") ? connector.config.remotePath : `/${connector.config.remotePath}`;
+  const remotePath = connector.config.remotePath ?? "/";
+  const remote = remotePath.startsWith("/") ? remotePath : `/${remotePath}`;
   return base + remote.split("?")[0]!.split("#")[0]!;
 }
 
