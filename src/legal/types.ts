@@ -331,7 +331,8 @@ export interface ReviewRecord {
 export type AuditAction =
   | "corpus.import" | "corpus.amend" | "search" | "cite_check" | "contract.import" | "evidence.import"
   | "contract.review" | "matter.create" | "matter.update" | "matter.delete" | "egress.decision"
-  | "review.transition" | "review.comment" | "review.warning" | "run.start" | "run.cancel" | "run.resume" | "export.final" | "export.draft" | "purge";
+  | "review.transition" | "review.comment" | "review.warning" | "run.start" | "run.cancel" | "run.resume" | "export.final" | "export.draft" | "purge"
+  | "work.create" | "work.update" | "work.delete";
 
 export interface AuditEvent {
   seq: number;
