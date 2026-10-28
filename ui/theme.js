@@ -72,6 +72,7 @@
     try{var ref=new URL(document.referrer);if(ref.origin===location.origin&&(ref.pathname==='/'||ref.pathname==='/index.html'))back.href=ref.href;}catch(e){}
     var home=document.createElement('a');home.textContent='الرئيسية';home.href='/#/home';
     [back,home].forEach(function(a){a.style.cssText='display:inline-flex;align-items:center;min-height:32px;padding:4px 12px;border-radius:6px;color:var(--text,#eef6f1);text-decoration:underline';nav.appendChild(a);});
+    document.body.style.paddingBottom='64px';
     document.body.appendChild(nav);
   });
 })();

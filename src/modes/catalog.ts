@@ -41,6 +41,10 @@ const GEN_RESEARCH = ["search_images", "search_x", "solve_logic"];
 /** Desktop-driver MCP tools (CUA_INTO_LOAM §7.6, OD-8a): the 14 contract tools,
  *  first-class inside `automate` when the pinned cua-driver server is configured. */
 const CUA_DRIVER = CUA_DRIVER_TOOL_ALLOWLIST.map((tool) => `mcp__cua-driver__${tool}`);
+/** Legal mode (Qatar): verified-corpus research, cite-check, contract review. */
+const LEGAL = ["legal_search", "legal_article", "legal_cite_check", "legal_memo_check", "contract_import", "contract_clauses", "contract_review", "contract_redline"];
+/** Control tools minus the project wiki writer: client facts must not land in the plaintext wiki. */
+const LEGAL_CONTROL = CONTROL.filter((name) => name !== "wiki_write" && name !== "context_recall");
 
 export const LOAM_MODES: LoamMode[] = [
   { id: "ask", label: "Loam Explore", labelAr: "استكشف", icon: "◌", hue: 155, hue2: 135,
@@ -83,8 +87,12 @@ export const LOAM_MODES: LoamMode[] = [
     tools: ["pentest_check", "pentest_routes", "pentest_report", "red_campaign", "red_report", "red_kill_switch", "shell_run", ...READ, ...CONTROL], panels: ["files"],
     fields: [{ id: "target", label: "الهدف المُصرَّح به", placeholder: "مثال: http://127.0.0.1:3000", multiline: false }, { id: "authzId", label: "معرّف التفويض (اختياري)", placeholder: "AUTHZ-0001 — يلزم للأهداف غير المحلية" }],
     starters: [{ label: "حملة على هدف مخبري", prompt: "شغّل red_campaign على http://127.0.0.1:3000 واعرض النتائج المثبتة مع الأدلة والتقرير." }, { label: "تقرير حملة سابقة", prompt: "افتح أحدث تقرير حملة حمراء محفوظ في مجلد red/ داخل مساحة العمل." }] },
-  reverseEngineerMode,
-  { id: "automate", label: "Loam Flow", labelAr: "أنجز", icon: "↗", hue: 220, hue2: 195,
+  { id: "legal", label: "Loam Legal", labelAr: "قانوني", icon: "§", hue: 35, hue2: 15,
+    tagline: "نصوص موثقة قبل الرأي", description: "ابحث في التشريعات القطرية الموثقة، وصغ المذكرات والآراء، وراجع العقود باستشهادات مُتحقق منها حرفياً. المخرجات مسودات حتى يعتمدها محامٍ مرخّص.", outputHint: "مسودة قانونية باستشهادات موثقة. Use legal_search/legal_article for every legal statement and legal_cite_check (or legal_memo_check) before presenting a draft; never cite from memory.", readOnly: false,
+    tools: [...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", ...LEGAL, ...LEGAL_CONTROL], panels: ["files", "legal"],
+    fields: [{ id: "matter", label: "المسألة", placeholder: "وقائع الدعوى أو العقد المطلوب مراجعته", multiline: true }, { id: "asOf", label: "تاريخ تطبيق النصوص", placeholder: "تاريخ الوقائع أو العقد (YYYY-MM-DD)" }],
+    starters: [{ label: "مذكرة دفاع", prompt: "صغ مذكرة دفاع في الدعوى المرفقة وفق مهارة qatar-defense-memo، بنصوص موثقة في تاريخ الوقائع." }, { label: "مراجعة عقد", prompt: "راجع العقد المرفق وفق القانون القطري ومهارة qatar-contract-review، وأعد تقرير المراجعة." }] },
+  reverseEngineerMode,  { id: "automate", label: "Loam Flow", labelAr: "أنجز", icon: "↗", hue: 220, hue2: 195,
     tagline: "خطوات متكررة، عمل أوضح", description: "نفّذ خطوات تفاعل المتصفح وسجّل الأدلة، وعند تفعيل سائق سطح المكتب قُد تطبيقاتك في الخلفية دون سرقة التركيز. راجع تفاصيل الإجراءات الخارجية قبل طلبها.", outputHint: "سجل إجراءات ولقطات توثيق. Browser flows use browser_* (Playwright); background desktop driving uses the mcp__cua-driver__* tools per the desktop-driver skill (fresh element tokens, verify_state checkpoints).", readOnly: false,
     tools: ["integration_list", "integration_call", ...READ, "file_write", "file_mkdir", "artifact_publish", ...BROWSER, ...CUA_DRIVER, "task_create", "task_list", "task_get", "task_cancel", "schedule_create", "schedule_list", "schedule_delete", ...CONTROL, ...MANAGED_SESSIONS], panels: ["files", "browser"],
     fields: [{ id: "workflow", label: "خطوات العمل", placeholder: "الرابط والخطوات المطلوبة والنتيجة المتوقعة", multiline: true }, { id: "limits", label: "حدود التنفيذ", placeholder: "الإجراءات المسموحة وما يتطلب الرجوع إليك" }],
@@ -99,7 +107,7 @@ const aliases: Record<string, string> = {
   "iot-embedded": "build", "web3-blockchain": "build", "ai-rag-studio": "research",
   "document-editor": "write", presentation: "write", "presentation-editor": "write",
   "excel-editor": "data", "data-science": "data", "media-studio": "media",
-  "desktop-automation": "automate", "voice-live-assistant": "ask", "legal-compliance": "research",
+  "desktop-automation": "automate", "voice-live-assistant": "ask", "legal-compliance": "legal",
   "network-protocol-inspector": "research", "digital-twin-sim": "data",
 };
 export function normalizeModeId(value?: string): string {

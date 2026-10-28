@@ -2,6 +2,7 @@ import type { ChatMessage } from "../ollama.js";
 import type { ExecutionCheckpoint } from "../agent/checkpoint.js";
 import { hasUnfinishedToolCall } from "../agent/checkpointLog.js";
 import type { EffortLevel, OutputType } from "../llm/router.js";
+import type { SealedLegalPayload } from "../legal/security/transcriptSeal.js";
 
 export interface SavedRun {
   prompt: string;
@@ -35,6 +36,9 @@ export interface SavedRun {
    */
   mission?: boolean;
   knowledge?: boolean;
+  /** Legal mode: the matter this run works on (decides egress). */
+  legalMatterId?: string;
+  sealed?: SealedLegalPayload;
 }
 export function requiresReplayConfirmation(run: SavedRun): boolean {
   if (!run.checkpoint) return run.started;

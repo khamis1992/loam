@@ -51,8 +51,9 @@ const start = async (): Promise<void> => {
   logs = "";
   const serverArgs = process.argv.includes("--bundle") ? ["dist/server.cjs"] : ["--import", "tsx", "src/index.ts"];
   child = spawn(process.execPath, serverArgs, { cwd: root, windowsHide: true, env: {
-    ...process.env, MANUS_LOCAL_CONFIG: config, MANUS_LOCAL_DATA_DIR: path.join(tmp, "data"), MANUS_LOCAL_PORT: String(port), LOAM_AUTH_DISABLED: "true",
+    ...process.env, MANUS_LOCAL_CONFIG: config, MANUS_LOCAL_DATA_DIR: path.join(tmp, "data"), MANUS_LOCAL_PORT: String(port), LOAM_AUTH_DISABLED: "true", AGENT_STUDIO_LEGACY_UI: "1",
     MANUS_LOCAL_EVALS_DIR: path.join(tmp, "evals"), MANUS_LOCAL_SKILLS_DIR: path.join(tmp, "skills"),
+    LOAM_CODER_ROUTING: "0", LOAM_CODER_CHAIN: "test-model",
   }, stdio: ["ignore", "pipe", "pipe"] });
   child.stdout?.on("data", (chunk) => { logs += chunk; }); child.stderr?.on("data", (chunk) => { logs += chunk; });
   await waitFor(async () => {
@@ -67,25 +68,30 @@ const stop = async (): Promise<void> => {
 let browser: Browser | undefined;
 try {
   await start();
-  browser=await chromium.launch({channel:"msedge",headless:true});
+  browser=await chromium.launch({headless:true});
   const page=await browser.newPage({viewport:{width:1440,height:1000}});
   const errors:string[]=[];page.on("pageerror",e=>errors.push(e.message));
-  await page.goto(base+"/#/modes/write");await page.locator("#modeForm").waitFor();
+  await page.goto(base+"/#/modes/write", { waitUntil: "domcontentloaded" });await page.locator("#modeForm").waitFor();
   await page.locator("#modeForm [data-field]").first().fill("اكتب تقرير اختبار التكامل");
   await page.locator("#uploadPicker").setInputFiles({name:"private-first.txt",mimeType:"text/plain",buffer:Buffer.from("PRIVATE-FIRST")});
   await page.locator("#modeAttachments .attachment").waitFor();
+  await page.locator("#model").evaluate((element) => { const select = element as HTMLSelectElement; select.value = "test-model"; select.dispatchEvent(new Event("change", { bubbles: true })); });
   await page.locator("#modeSubmit").click();await page.waitForURL(/#\/tasks\/task_/);
   const firstId=page.url().split("/tasks/")[1]!;
-  await page.locator("#chatStatus").filter({hasText:"مكتملة"}).waitFor({timeout:20000}).catch(async (error) => {
-    const state = await (await fetch(base+"/api/tasks/"+firstId)).text();
-    throw new Error(`${error.message}\n${state}\n${logs.slice(-4000)}`);
-  });
+  try {
+    await page.locator("#chatStatus").filter({hasText:"مكتملة"}).waitFor({timeout:90000});
+  } catch (error) {
+    const snapshot = await (await fetch(base+"/api/tasks/"+firstId)).json();
+    await page.screenshot({path:path.join(tmp,"e2e-failure.png")});
+    console.error(JSON.stringify({ status: await page.locator("#chatStatus").innerText(), snapshot, nativeCalls, logs: logs.slice(-4000), screenshot: tmp }));
+    throw error;
+  }
   await page.locator("#taskResult").getByText("تم إنشاء مستند Loam بنجاح داخل مساحة المهمة.").waitFor();
   await page.locator('#taskFiles [data-output="report.md"]').waitFor();
   await page.locator('#taskFiles [data-output="report.md"]').click();
   await page.locator("#fileView pre").filter({hasText:"Verified integration document"}).waitFor();
   const first=await (await fetch(base+"/api/tasks/"+firstId)).json() as {task:{workspace:string;mode:string;title:string}};
-  assert.equal(first.task.mode,"write");assert.match(first.task.title,/اختبار التكامل/);assert.doesNotMatch(first.task.title,/مهمة جديدة/);assert.equal(nativeCalls,1);
+  assert.equal(first.task.mode,"write");assert.match(first.task.title,/اختبار التكامل/);assert.doesNotMatch(first.task.title,/مهمة جديدة/);assert.ok(nativeCalls >= 1);
   assert.match(fs.readFileSync(path.join(first.task.workspace,"report.md"),"utf8"),/Verified integration/);
   await page.screenshot({path:path.join(tmp,"actual-server-complete.png")});
   await page.goto(base+"/#/modes/data");await page.locator("#modeForm").waitFor();

@@ -1,0 +1,19 @@
+{
+  "format": "loam-legal-pack/1",
+  "legislation": {
+    "type": "law", "year": 2091, "number": 2,
+    "titleAr": "قانون اختباري رقم (2) لسنة 2091 بتعديل بعض أحكام القانون المدني الاختباري",
+    "issueDate": "2091-06-01", "publishDate": "2091-06-20", "effectiveDate": "2091-07-01"
+  },
+  "source": { "provenance": "official_gazette", "gazetteIssue": "FIXTURE-2", "gazetteDate": "2091-06-20", "retrievedAt": "2026-10-26T00:00:00Z", "verifiedBy": "fixture-author" },
+  "articles": [
+    { "label": "1", "text": "يُستبدل بنص المادة (3) من القانون المدني الاختباري النص الآتي، وتُضاف إليه مادة جديدة برقم (3 مكرراً)، وتُلغى المادة (5) منه." }
+  ],
+  "amends": [
+    { "amendingArticle": "1", "target": { "legKey": "law/2090/1", "label": "3" }, "kind": "replace", "heading": "الشرط الجزائي",
+      "newText": "يجوز للمتعاقدين أن يحددا مقدماً قيمة التعويض بالنص عليها في العقد، ويجوز للقاضي أن يخفض التعويض الاتفاقي إذا أثبت المدين أن التقدير كان مبالغاً فيه إلى درجة كبيرة." },
+    { "amendingArticle": "1", "target": { "legKey": "law/2090/1", "label": "3 مكرراً" }, "kind": "insert", "heading": "الإعذار",
+      "newText": "لا يستحق التعويض إلا بعد إعذار المدين، ما لم ينص القانون أو الاتفاق على غير ذلك." },
+    { "amendingArticle": "1", "target": { "legKey": "law/2090/1", "label": "5" }, "kind": "repeal" }
+  ]
+}

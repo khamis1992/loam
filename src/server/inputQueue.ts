@@ -1,6 +1,8 @@
 import { allEntities, getEntity, putEntity, removeEntity } from "./sqliteStore.js";
 import { newId } from "./db.js";
 import { append } from "../protocol/eventLog.js";
+import { isLegalSession, legalProtection } from "../legal/security/protection.js";
+import type { SealedLegalPayload } from "../legal/security/transcriptSeal.js";
 
 /**
  * Durable inbound message queue (BUILD_SPEC §6.6).
@@ -28,8 +30,8 @@ export interface QueuedInput {
   delivery: InputDelivery;
   state: InputState;
   receivedAt: number;
-  /** Log sequence of the `input` event, set when the agent admits it. */
   admittedSeq?: number;
+  sealedText?: SealedLegalPayload;
 }
 
 /** Payload of the durable `input` event (BUILD_SPEC §7). */
@@ -39,10 +41,23 @@ export interface InputPayload {
   inputId: string;
 }
 
+function protectInput(input: QueuedInput): QueuedInput {
+  if (!isLegalSession(input.sessionId) || !input.text) return input;
+  const out = { ...input, text: "", sealedText: legalProtection().seal(input.text, `input|${input.id}`) };
+  return out;
+}
+
+function openInput(input: QueuedInput): QueuedInput {
+  if (!input.sealedText) return input;
+  const out = { ...input, text: legalProtection().open<string>(input.sealedText) };
+  delete out.sealedText;
+  return out;
+}
+
 /** Store an inbound message. It stays `received` until the agent admits it. */
 export function enqueue(i: Omit<QueuedInput, "state" | "receivedAt">): QueuedInput {
   const q: QueuedInput = { ...i, state: "received", receivedAt: Date.now() };
-  putEntity("inputs", q);
+  putEntity("inputs", protectInput(q));
   return q;
 }
 
@@ -51,7 +66,7 @@ export function pending(sessionId: string): QueuedInput[] {
   // `allEntities` returns newest-inserted first (rowid DESC), so the row's
   // distance from the end of that list is a stable insertion rank. Two messages
   // can share a millisecond, so `receivedAt` alone would not be a total order.
-  const rows = allEntities<QueuedInput>("inputs");
+  const rows = allEntities<QueuedInput>("inputs").map(openInput);
   return rows
     .filter((q) => q.sessionId === sessionId && q.state === "received")
     .map((q, index) => ({ q, rank: rows.length - index }))

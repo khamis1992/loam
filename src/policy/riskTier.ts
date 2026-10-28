@@ -68,6 +68,13 @@ export interface SandboxPolicy {
 // ----------------------------------------------------------------------------
 
 const READ_TOOL_NAMES = new Set<string>([
+  // Legal mode: corpus reads and checks (client text never leaves via these).
+  "legal_search",
+  "legal_article",
+  "legal_cite_check",
+  "legal_memo_check",
+  "contract_clauses",
+  "contract_review",
   "read",
   "view",
   "cat",
@@ -150,6 +157,9 @@ const READ_TOOL_NAMES = new Set<string>([
 ]);
 
 const WRITE_TOOL_NAMES = new Set<string>([
+  // Legal mode: write inside the task workspace / encrypted matters store.
+  "contract_import",
+  "contract_redline",
   "write",
   "edit",
   "create",

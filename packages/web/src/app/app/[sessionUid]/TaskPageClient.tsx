@@ -17,6 +17,7 @@ import { Composer } from '@/components/chat/Composer';
 // an App project; the Race chip rides the composer (§4.13.2).
 import { AppBuilderWorkspace } from '@/components/appbuilder/AppBuilderWorkspace';
 import { findProjectByTask, startRun, raceEstimate as fetchRaceEstimate, type AppProjectDto, type RaceEstimateDto } from '@/services/appBuilderApi';
+import { MatterComposer } from '@/components/legal/MatterComposer';
 import { EventList } from '@/components/chat/EventList';
 import { SessionStatusBadge } from '@/components/chat/SessionStatusBadge';
 import { useSessionRuntime } from '@/components/chat/useSessionRuntime';
@@ -50,6 +51,7 @@ import { ShareDialog } from '@/components/dialogs/ShareDialog';
 import { ChatSocket } from '@/services/chatSocket';
 import { RpcClient, getApiBase, getApiHeaders, getSessionToken, handleAuthFailure } from '@/services/rpc';
 import { uploadFile } from '@/services/upload';
+import { legalExtData } from '@/services/legalApi';
 import type {
   TaskMode,
   ChatEvent,
@@ -448,7 +450,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
       const uploaded = await Promise.all(files.map((f) => uploadFile(apiBase, f)));
       attachments = [...attachments, ...uploaded];
     }
-    socket.sendText(sessionUid, text, mode, attachments, makeExtData(cwd, { approveForMe, knowledge: knowledgeOn, ...extData }));
+    socket.sendText(sessionUid, text, mode, attachments, makeExtData(cwd, { approveForMe, knowledge: knowledgeOn, ...legalExtData(), ...extData }));
     // The badge should react immediately rather than waiting for the poll.
     void runtime.refresh();
   };
@@ -752,6 +754,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               </span>
               {running ? t('Working') : wasStoppedByUser ? t('Stopped') : hasResult && hasClockClosed ? t('Task completed') : t('Thinking')}
             </div>
+            <MatterComposer />
             <Composer
               onSend={handleSend}
               onStop={handleStop}

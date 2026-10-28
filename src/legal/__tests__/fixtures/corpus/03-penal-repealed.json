@@ -1,0 +1,14 @@
+{
+  "format": "loam-legal-pack/1",
+  "legislation": {
+    "type": "decree-law", "year": 2088, "number": 7,
+    "titleAr": "مرسوم بقانون اختباري رقم (7) لسنة 2088 بشأن الجرائم الاقتصادية الاختبارية",
+    "aliases": ["قانون الجرائم الاقتصادية الاختباري"],
+    "effectiveDate": "2088-01-01"
+  },
+  "source": { "provenance": "almeezan_manual", "retrievedAt": "2026-10-26T00:00:00Z", "verifiedBy": "fixture-author" },
+  "articles": [
+    { "label": "1", "text": "يُعاقب بالحبس مدة لا تجاوز سنتين كل من استولى بغير حق على مال عام." },
+    { "label": "2", "text": "تنقضي الدعوى الجنائية في الجرائم المنصوص عليها في هذا المرسوم بقانون بمضي عشر سنوات." }
+  ]
+}

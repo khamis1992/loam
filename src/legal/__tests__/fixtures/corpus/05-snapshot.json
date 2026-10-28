@@ -1,0 +1,11 @@
+{
+  "format": "loam-legal-pack/1",
+  "legislation": {
+    "type": "law", "year": 2095, "number": 5,
+    "titleAr": "قانون اختباري رقم (5) لسنة 2095 بشأن الإيجارات الاختبارية",
+    "aliases": ["قانون الإيجارات الاختباري"],
+    "effectiveDate": "2095-01-01"
+  },
+  "source": { "provenance": "research_snapshot", "retrievedAt": "2026-10-26T00:00:00Z", "url": "https://example.invalid/snapshot" },
+  "articles": [ { "label": "1", "text": "يلتزم المستأجر بدفع الأجرة في المواعيد المتفق عليها في عقد الإيجار." } ]
+}

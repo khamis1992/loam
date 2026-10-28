@@ -49,6 +49,8 @@ import type { AgentEvent, Emit } from "./agent/events.js";
 import { applyRunEvent, beginRun, recallGraphHandle } from "./agent/runGraphAdapter.js";
 import { createRecallTools } from "./tools/memory.js";
 import { OllamaClient } from "./ollama.js";
+import { assertLegalPromptAllowed, legalRunConfig } from "./legal/runConfig.js";
+import { markLegalSession } from "./legal/security/protection.js";
 import { flexCredentials } from "./server/modelTiers.js";
 import { startServer, type RunTaskOptions } from "./server/http.js";
 import { logMissingCraftDists } from "./server/craftStatus.js";
@@ -163,6 +165,7 @@ async function main(): Promise<void> {
   const executeTask = async (opts: RunTaskOptions & { taskId: string; savedRun: SavedRun; signal: AbortSignal; lease?: RunLease }): Promise<{ taskId: string; text: string }> => {
     const { prompt, emit } = opts;
     const settings = getSettings();
+    const legalRun = getLoamMode(opts.savedRun.mode).id === "legal";
     const previous = opts.taskId ? getTask(opts.taskId) : undefined;
     if (opts.taskId && !previous) throw new Error("task not found");
     if (previous?.status === "running") throw new Error("task already running");
@@ -172,7 +175,8 @@ async function main(): Promise<void> {
     const task =
       opts.taskId && opts.taskId.length > 0
         ? opts.taskId
-        : createTask(prompt, opts.title, opts.projectId ?? null, opts.agentId ?? null).id;
+        : createTask(legalRun ? "" : prompt, legalRun ? "Legal matter" : opts.title, opts.projectId ?? null, opts.agentId ?? null).id;
+    if (legalRun) markLegalSession(task);
 
     const effectivePrompt = opts.savedRun.effectivePrompt;
 
@@ -229,14 +233,15 @@ async function main(): Promise<void> {
     // Neo run graph (N1): record the agent's events as nodes of the task's graph.
     // Off by config, and recording must never break the task, so the adapter
     // swallows and logs any failure instead of throwing into the run.
-    const recordGraph = cfg.runGraph?.enabled !== false;
+    const recordGraph = !legalRun && cfg.runGraph?.enabled !== false;
     if (recordGraph) beginRun(task, effectivePrompt || "");
     const scheduleRecord = opts.scheduleId ? getSchedule(opts.scheduleId) : undefined;
     const wrappedEmit: Emit = (event) => {
       if (recordGraph) applyRunEvent(task, event);
       if (sessionLog) {
         try {
-          void sessionLog.append(event.type, event).catch((err) => {
+          const persisted = legalRun && rt.legal ? rt.legal.seal(event, `event-file|${task}|${event.type}`) : event;
+          void sessionLog.append(event.type, persisted).catch((err) => {
             console.warn(`[sessionLog] failed to append event: ${String(err)}`);
           });
         } catch (err) {
@@ -272,12 +277,24 @@ async function main(): Promise<void> {
     const agentId = opts.agentId ?? previous?.agentId;
     const agent = agentId ? getAgent(agentId) : undefined;
     const chosenModel = opts.model && opts.model.trim().length > 0 ? opts.model : agent?.model ?? settings.model;
-    const effectiveCfg = { ...cfg, policy: { ...cfg.policy, allowOutsideWorkspaceRead: false }, workspace: opts.savedRun.workspace, model: chosenModel || cfg.model };
+    const baseEffectiveCfg = { ...cfg, policy: { ...cfg.policy, allowOutsideWorkspaceRead: false }, workspace: opts.savedRun.workspace, model: chosenModel || cfg.model };
+    // Legal mode: pin the approved local model and close every silent model switch
+    // (fallback chain, failover providers, coding router, routing map, A/B arms).
+    if (legalRun && !rt.legal) throw new Error("Legal mode is disabled. Enable it in Settings › Legal.");
+    const legalMatter = legalRun && rt.legal && opts.savedRun.legalMatterId ? rt.legal.matters.getMatter(opts.savedRun.legalMatterId) ?? null : null;
+    if (legalRun && opts.savedRun.legalMatterId && !legalMatter) throw new Error("Legal matter not found");
+    const legalPlan = legalRun && rt.legal ? legalRunConfig(baseEffectiveCfg, chosenModel || cfg.model, legalMatter, rt.legal.egress) : null;
+    const effectiveCfg = legalPlan ? legalPlan.cfg : baseEffectiveCfg;
+    if (legalPlan) assertLegalPromptAllowed(effectivePrompt, legalMatter, legalPlan);
+    if (legalPlan && rt.legal) rt.legal.runModels.set(task, legalPlan.model);
     // Option 18 Flex: when the chosen model is the vault-backed flex model, run through the
     // user's own base URL/key with a run-scoped client. The key never leaves this boundary.
     const flexCreds = opts.model && opts.model.trim().length > 0 ? flexCredentials() : null;
     const flexModelId = flexCreds ? (flexCreds.model.endsWith(":cloud") ? flexCreds.model : `${flexCreds.model}:cloud`) : "";
-    const runOllama = flexCreds && effectiveCfg.model === flexModelId ? new OllamaClient(cfg.ollamaUrl, { baseUrl: flexCreds.baseUrl, apiKey: flexCreds.apiKey }) : ollama;
+    // A legal run never uses the runtime FailoverClient: a plain loopback client with no cloud config.
+    const runOllama = legalPlan
+      ? new OllamaClient(cfg.ollamaUrl)
+      : flexCreds && effectiveCfg.model === flexModelId ? new OllamaClient(cfg.ollamaUrl, { baseUrl: flexCreds.baseUrl, apiKey: flexCreds.apiKey }) : ollama;
 
     // Loam task controls: explicit mode and execution effort.
     const effortBudgets: Record<string, number> = { max: 80, high: 64, medium: 40, low: 16 };
@@ -293,7 +310,7 @@ async function main(): Promise<void> {
     const routingEffort: EffortLevel | "" = normalizeEffort(opts.effort ?? agent?.effort ?? "");
     // Neo N10 A/B: an explicit arm list wins; otherwise the routing map's own
     // models (per-tool specialists + effort model) become the sibling arms.
-    const abModels = opts.abModels && opts.abModels.length > 0
+    const abModels = legalPlan ? [] : opts.abModels && opts.abModels.length > 0
       ? [...new Set(opts.abModels.map((m) => m.trim()).filter(Boolean))].slice(0, 4)
       : modelAbChain({ cfg, outputType: runOutputType, effort: routingEffort }, 4).filter((m) => m !== chosenModel);
     const hasAbArms = abModels.length >= 2;
@@ -333,12 +350,12 @@ async function main(): Promise<void> {
 
     // Companion personal memory (stage 4a): tools bound to THIS agent only, plus
     // a bounded context of its saved preferences/instructions.
-    const memoryToolInstances = agentId ? createCompanionMemoryTools(agentId) : [];
+    const memoryToolInstances = !legalRun && agentId ? createCompanionMemoryTools(agentId) : [];
     const teamToolInstances = agentId ? createCompanionTeamTools(agentId) : [];
     // N16 cross-run recall: the shelf is process-wide, but *attaching* a recalled
     // node is run-scoped, so these instances are rebuilt per run with the run id
     // and a callback that files the hit into this run's graph.
-    const recallToolInstances = createRecallTools({
+    const recallToolInstances = legalRun ? [] : createRecallTools({
       index: rt.recall ?? undefined,
       runId: task,
       attach: (source, runId, query) =>
@@ -349,7 +366,7 @@ async function main(): Promise<void> {
           (s) => recallGraphHandle().getNode(s.nodeId, s.runId),
         ) ?? undefined,
     });
-    const memoryContextEntries = agentId ? memoryContext(agentId) : [];
+    const memoryContextEntries = !legalRun && agentId ? memoryContext(agentId) : [];
     const memoryContextSuffix =
       memoryContextEntries.length > 0
         ? [`ذاكرة «${agent?.name ?? agentId}» الشخصية (احترمها وراجعها مع المستخدم عند التعارض):`, ...memoryContextEntries.map((e) => `- (${e.source === "user" ? "قاله المستخدم" : "استنتاج"} | ثقة ${e.confidence.toFixed(2)}) ${e.text}`)].join("\n")
@@ -417,7 +434,7 @@ async function main(): Promise<void> {
       const quickEditRoute = planQuickEditRoute(effectiveCfg, effectivePrompt);
       // Provenance-aware index summary: a bounded digest of long-term memory so
       // the agent knows what it already knows without a tool call.
-      const memoryIndexSummary = memory && memory.count > 0 ? memory.indexSummary(8) : undefined;
+      const memoryIndexSummary = !legalRun && memory && memory.count > 0 ? memory.indexSummary(8) : undefined;
       // H5 lesson injection (BUILD_SPEC .h2-ref/BUILD_SPEC.md §6.5): relevant lessons from
       // past corrections join the system suffix. Wrapped in try/catch so a store or ranking
       // failure can never block the task; the block is capped (cfg.lessons.maxChars) and
@@ -425,7 +442,7 @@ async function main(): Promise<void> {
       // The fallbacks mirror loadConfig for test configs built without the lessons key.
       let lessonBlock = "";
       const lessonsCfg = effectiveCfg.lessons ?? { enabled: true, maxChars: 1200, minScore: 0.35 };
-      if (lessonsCfg.enabled) {
+      if (!legalRun && lessonsCfg.enabled) {
         try {
           lessonBlock = lessonsForTask({
             agentId: agentId ?? null,
@@ -562,7 +579,7 @@ async function main(): Promise<void> {
       // resume, the stored checkpoint is authoritative. A checkpoint taken
       // between steps resumes automatically; one taken mid-step needs the user's
       // explicit confirmation, the same gate a replayed orchestrator step uses.
-      const missionRun = opts.savedRun.mission === true;
+      const missionRun = !legalRun && opts.savedRun.mission === true;
       const storedMissionCheckpoint = missionRun ? (opts.savedRun.missionCheckpoint ?? missionCheckpoints.load(task)) : undefined;
       // Neo N6: a budget stop is a clean end and resumes automatically once the
       // user has raised the ceiling; a checkpoint written mid-step is not a safe
@@ -664,14 +681,14 @@ async function main(): Promise<void> {
       if (missionBudget) sessionRuntime.adoptBudgetAfterRun(task, missionBudget);
 
       completeTaskRun(task, result.text, result.model, opts.lease);
-      recordWikiSession(effectiveCfg, task);
+      if (!legalRun) recordWikiSession(effectiveCfg, task);
       recordTaskUsage(task, result.usage); // OPD #9: one mock usage entry per completed task
       if (doneEvent) {
         appendStep(task, { at: new Date().toISOString(), type: doneEvent.type, data: doneEvent });
         emit(doneEvent);
         publishTaskEvent(task, doneEvent);
       }
-      if (scheduleRecord && typeof scheduleRecord.round === "number") {
+      if (!legalRun && scheduleRecord && typeof scheduleRecord.round === "number") {
         wrappedEmit({
           type: "round_done",
           round: scheduleRecord.round,
@@ -693,7 +710,7 @@ async function main(): Promise<void> {
       recordTelemetry("done", { model: result.model, steps: result.steps, usage: { promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens } });
       // Repo-local skill auto-suggest: after a successful session, propose a new
       // SKILL.md from the observed setup/verify steps. Staged for approval only.
-      if (effectiveCfg.skills.autoSuggest) {
+      if (!legalRun && effectiveCfg.skills.autoSuggest) {
         void suggestSkillsAfterSession({
           cfg: effectiveCfg,
           ollama: runOllama,
@@ -706,7 +723,7 @@ async function main(): Promise<void> {
       }
       // Actor-critic reflection memory: non-pass verdicts feed the learning review and the audit log.
       const notable = verdicts.filter((v) => v.verdict !== "pass");
-      if (notable.length > 0) {
+      if (!legalRun && notable.length > 0) {
         for (const v of notable) {
           trace.push({
             name: `verifier(${v.scope})`,
@@ -767,7 +784,7 @@ async function main(): Promise<void> {
         log.warn(`lease-fenced status write rejected for ${task}: ${String(writeError)}`);
       }
       if (statusWritten) {
-        recordWikiSession(effectiveCfg, task);
+        if (!legalRun) recordWikiSession(effectiveCfg, task);
         publishTaskEvent(task, cancelled ? { type: "cancelled" } : { type: "error", message });
         wrappedEmit({ type: "error", message: cancelled ? "⏹ أُوقفت المهمة بناءً على طلبك" : message });
       }
@@ -828,11 +845,13 @@ async function main(): Promise<void> {
         // as a mission and a resumed run keeps its checkpoint.
         mission: opts.mission === true,
         knowledge: opts.knowledge === true,
+        ...(opts.legalMatterId ? { legalMatterId: opts.legalMatterId } : {}),
       };
     }
-    const task = previous ?? createTask(saved.prompt, opts.title, saved.projectId, saved.agentId);
+    const task = previous ?? createTask(saved.mode === "legal" ? "" : saved.prompt, saved.mode === "legal" ? "Legal matter" : opts.title, saved.projectId, saved.agentId);
     saved.mode = getLoamMode(saved.mode).id;
     setTaskMode(task.id, saved.mode);
+    if (saved.mode === "legal") markLegalSession(task.id);
     saved.workspace = ensureTaskWorkspace(task.id, cfg.workspace);
     // D3: when the project carries a `loam.env.yaml` and its environment snapshot
     // was already built, boot the task worktree from that cached snapshot so the
@@ -903,6 +922,7 @@ async function main(): Promise<void> {
       throw error;
     } finally {
       clearRunSignal(task.id); heartbeat?.stop(); if (lease) releaseRunLease(lease); videoStudioRelay.cancelTask(task.id);
+      rt.legal?.runModels.delete(task.id);
       // O6: a message that landed during the last step would otherwise sit
       // `received` forever, since no further step boundary runs. Admit it on every
       // exit path (done, error, cancel) so it is never silently lost.
@@ -965,6 +985,7 @@ async function main(): Promise<void> {
     runTask,
     memory: memory ?? undefined,
     embedder: rt.embedder ?? undefined,
+    ...(rt.legal ? { legal: rt.legal } : {}),
     screenLive: rt.screenLive,
     preview: rt.preview,
     codeGraph: rt.codeGraph,

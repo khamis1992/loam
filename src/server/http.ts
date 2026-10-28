@@ -171,6 +171,8 @@ import { handleVoiceRoutes } from "./routes/voice.js";
 import { handleConnectorsRoutes } from "./routes/connectors.js";
 import { handleEnvBuildRoutes } from "./routes/envBuilds.js";
 import { handleKnowledgeRoutes } from "./routes/knowledge.js";
+import { handleLegalRoutes } from "./routes/legal.js";
+import type { LegalRuntime } from "../legal/runtime.js";
 import { handleWikiRoutes } from "./routes/wiki.js";
 import { handleDocsRoutes } from "./routes/docs.js";
 // H8/H9: learned-lesson REST surface. Dispatched before the generic
@@ -231,6 +233,8 @@ export interface RunTaskOptions {
   /** Side-chat ("/btw") run: restricted to read-only inspection tools. */
   sideChat?: boolean;
   knowledge?: boolean;
+  /** Legal mode: the matter this run works on. */
+  legalMatterId?: string;
   /** O6: protocol session whose durable inbound queue this run should drain. */
   inputSessionId?: string;
   /**
@@ -252,6 +256,8 @@ export interface ServerDeps {
   runTask: (opts: RunTaskOptions) => Promise<{ taskId: string; text: string }>;
   /** N3 Knowledge Garden vector channel; absent => lexical-only search. */
   embedder?: { embed(texts: string[]): Promise<number[][]> };
+  /** Legal mode runtime; absent when legal mode is disabled. */
+  legal?: LegalRuntime;
 }
 
 const MIME: Record<string, string> = {
@@ -575,6 +581,14 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         // The share replay page and its static assets are public like the feed;
         // the public client portal page (/portal/<token>) is public the same way.
         const isNextStatic = req.method === "GET" && (p === "/share" || p.startsWith("/share/") || p === "/portal" || p.startsWith("/portal/") || p.startsWith("/_next/"));
+        if (req.method === "OPTIONS" && p.startsWith("/api/legal") && req.headers.origin === "app://agent") {
+          res.writeHead(204, {
+            "access-control-allow-origin": "app://agent", "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+            "access-control-allow-headers": "content-type,authorization,x-loam-local-token", "access-control-max-age": "600", "vary": "Origin",
+          });
+          res.end();
+          return;
+        }
         if (!isStatic && !isPublicShare && !isNextStatic && !publicPaths.has(p)) {
           const token =
             typeof req.headers["x-loam-local-token"] === "string"
@@ -2170,6 +2184,12 @@ loadAgents();
           model: cfg.memory.model || cfg.model,
         })) return;
 
+        // Legal mode (Qatar): corpus, matters, verification, review gate.
+        if (p.startsWith("/api/legal")) {
+          if (!deps.legal) return sendJson(res, p.split("?")[0] === "/api/legal/status" ? 200 : 404, { enabled: false });
+          if (await handleLegalRoutes(req, res, p, { corpus: deps.legal.corpus, matters: deps.legal.matters, egress: deps.legal.egress, keys: deps.legal.keys, vault: deps.legal.vault, model: deps.legal.model, buildDefense: deps.legal.buildDefense, buildResponse: deps.legal.buildResponse, analyzeDocuments: deps.legal.analyzeDocuments, importDocument: deps.legal.importDocument, enabled: true })) return;
+        }
+
         // ---- avatar (Grok Bot-style): set shape/color/image on an existing agent ----
         // Must run before the generic /api/agents/:id prefix block.
         if (req.method === "POST" && p.startsWith("/api/agents/") && p.endsWith("/avatar")) {
@@ -3025,6 +3045,7 @@ loadAgents();
             workMode?: unknown;
             mission?: unknown;
             knowledge?: unknown;
+            legalMatterId?: unknown;
           };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
           if (!prompt) return sendJson(res, 400, { error: "prompt required" });
@@ -3057,6 +3078,7 @@ loadAgents();
           // N3 Knowledge Garden: the run only reaches the kb_* tools when the
           // caller switched the garden on for THIS run (default off).
           const knowledge = body.knowledge === true;
+          const legalMatterId = typeof body.legalMatterId === "string" && body.legalMatterId.trim() ? body.legalMatterId.trim() : undefined;
 
           res.writeHead(200, {
             "content-type": "text/event-stream; charset=utf-8",
@@ -3078,7 +3100,7 @@ loadAgents();
           }
 
           try {
-            if (!taskId) taskId = createTask(prompt, title, projectId, agentId).id;
+            if (!taskId) taskId = createTask(mode === "legal" ? "" : prompt, mode === "legal" ? "Legal matter" : title, projectId, agentId).id;
             const root = requireTaskWorkspace(taskId, cfg.workspace);
             setTaskMode(taskId, mode);
             const attachmentsBlock = await buildAttachmentsBlock(body.attachments, root);
@@ -3097,6 +3119,7 @@ loadAgents();
               workMode,
               ...(mission ? { mission: true } : {}),
               knowledge,
+              ...(legalMatterId ? { legalMatterId } : {}),
             });
             if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify({ type: "task", taskId: result.taskId })}\n\n`);
           } catch (err) {
