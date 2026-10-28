@@ -18,6 +18,7 @@ import {
 const TYPE_LABEL: Record<ConnectorType, string> = {
   'rest-json': 'REST / JSON',
   sqlite: 'SQLite',
+  webdav: 'WebDAV',
 };
 
 interface TestState {
@@ -45,6 +46,11 @@ export default function ConnectionsPanel({ file, onSynced }: { file: WorkspaceFi
   const [bearerSecretName, setBearerSecretName] = useState('');
   const [databasePath, setDatabasePath] = useState('');
   const [query, setQuery] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [username, setUsername] = useState('');
+  const [passwordSecretName, setPasswordSecretName] = useState('');
+  const [remotePath, setRemotePath] = useState('');
+  const [davFormat, setDavFormat] = useState<'csv' | 'json'>('csv');
   const [targetPath, setTargetPath] = useState('data/connectors.xlsx');
 
   useEffect(() => {
@@ -65,15 +71,24 @@ export default function ConnectionsPanel({ file, onSynced }: { file: WorkspaceFi
         ...(dataPath.trim() ? { dataPath: dataPath.trim() } : {}),
         ...(bearerSecretName.trim() ? { bearerSecretName: bearerSecretName.trim() } : {}),
       }
-    : {
-        ...(databasePath.trim() ? { databasePath: databasePath.trim() } : {}),
-        ...(query.trim() ? { query: query.trim() } : {}),
-      };
+    : type === 'webdav'
+      ? {
+          ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}),
+          ...(username.trim() ? { username: username.trim() } : {}),
+          ...(passwordSecretName.trim() ? { passwordSecretName: passwordSecretName.trim() } : {}),
+          ...(remotePath.trim() ? { remotePath: remotePath.trim() } : {}),
+          format: davFormat,
+        }
+      : {
+          ...(databasePath.trim() ? { databasePath: databasePath.trim() } : {}),
+          ...(query.trim() ? { query: query.trim() } : {}),
+        };
 
   const create = () => run('create', async () => {
     const connector = await createOfficeConnector({ name: name.trim(), type, config });
     setConnectors((items) => [connector, ...items]);
     setName(''); setUrl(''); setDataPath(''); setBearerSecretName(''); setDatabasePath(''); setQuery('');
+    setBaseUrl(''); setUsername(''); setPasswordSecretName(''); setRemotePath('');
   });
 
   const test = (connector: OfficeConnector) => run(`test:${connector.id}`, async () => {
@@ -115,15 +130,27 @@ export default function ConnectionsPanel({ file, onSynced }: { file: WorkspaceFi
           <p className="text-sm font-medium">اتصال جديد</p>
           <div className="flex flex-wrap gap-2">
             <input aria-label="اسم الاتصال" value={name} onChange={(event) => setName(event.target.value)} placeholder="اسم الاتصال" className="min-w-36 flex-1 rounded-control border border-border-main bg-bg-menu px-2 py-1.5 text-sm" />
-            <select aria-label="نوع الاتصال" value={type} onChange={(event) => setType(event.target.value === 'sqlite' ? 'sqlite' : 'rest-json')} className="min-h-9 min-w-36 flex-1 rounded-control border border-border-main bg-bg-menu px-2 text-sm">
+            <select aria-label="نوع الاتصال" value={type} onChange={(event) => setType(event.target.value as ConnectorType)} className="min-h-9 min-w-36 flex-1 rounded-control border border-border-main bg-bg-menu px-2 text-sm">
               <option value="rest-json">{TYPE_LABEL['rest-json']}</option>
               <option value="sqlite">{TYPE_LABEL.sqlite}</option>
+              <option value="webdav">{TYPE_LABEL.webdav}</option>
             </select>
           </div>
           {type === 'rest-json' ? <div className="flex flex-col gap-2">
             <input aria-label="رابط الخدمة" dir="ltr" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.com/api/data" className="rounded-control border border-border-main bg-bg-menu px-2 py-1.5 text-sm" />
             <input aria-label="مسار البيانات" dir="ltr" value={dataPath} onChange={(event) => setDataPath(event.target.value)} placeholder="dataPath مثل results.items (اختياري)" className="rounded-control border border-border-main bg-bg-menu px-2 py-1.5 text-sm" />
             <input aria-label="اسم سر Bearer" dir="ltr" value={bearerSecretName} onChange={(event) => setBearerSecretName(event.target.value)} placeholder="bearerSecretName (اختياري)" className="rounded-control border border-border-main bg-bg-menu px-2 py-1.5 text-sm" />
+          </div> : type === 'webdav' ? <div className="flex flex-col gap-2">
+            <input aria-label="عنوان خادم WebDAV" dir="ltr" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://cloud.example.com/remote.php/dav/files/user" className="rounded-control border border-border-main bg-bg-menu px-2 py-1.5 text-sm" />
+            <input aria-label="مسار الملف البعيد" dir="ltr" value={remotePath} onChange={(event) => setRemotePath(event.target.value)} placeholder="/reports/sales.csv" className="rounded-control border border-border-main bg-bg-menu px-2 py-1.5 text-sm" />
+            <div className="flex flex-wrap gap-2">
+              <input aria-label="اسم المستخدم" dir="ltr" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="username (اختياري)" className="min-w-32 flex-1 rounded-control border border-border-main bg-bg-menu px-2 py-1.5 text-sm" />
+              <input aria-label="اسم سر كلمة المرور" dir="ltr" value={passwordSecretName} onChange={(event) => setPasswordSecretName(event.target.value)} placeholder="passwordSecretName (من الخزنة)" className="min-w-32 flex-1 rounded-control border border-border-main bg-bg-menu px-2 py-1.5 text-sm" />
+              <select aria-label="صيغة الملف" value={davFormat} onChange={(event) => setDavFormat(event.target.value === 'json' ? 'json' : 'csv')} className="min-h-9 min-w-24 rounded-control border border-border-main bg-bg-menu px-2 text-sm">
+                <option value="csv">CSV</option>
+                <option value="json">JSON</option>
+              </select>
+            </div>
           </div> : <div className="flex flex-col gap-2">
             <input aria-label="مسار قاعدة البيانات" dir="ltr" value={databasePath} onChange={(event) => setDatabasePath(event.target.value)} placeholder="databasePath مثل data/crm.sqlite" className="rounded-control border border-border-main bg-bg-menu px-2 py-1.5 text-sm" />
             <textarea aria-label="استعلام القراءة" dir="ltr" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="SELECT ... (استعلام قراءة واحد فقط)" className="min-h-16 rounded-control border border-border-main bg-bg-menu px-2 py-1.5 font-mono text-sm" />

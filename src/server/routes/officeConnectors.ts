@@ -2,7 +2,7 @@ import http from "node:http";
 import { requireTaskWorkspace } from "../taskWorkspace.js";
 import { localOfficeIdentity, requireOfficeAccess, type OfficeIdentity } from "../../office/intelligence/authorization.js";
 import { OfficeIntelligenceError, isRecord, type OfficeScope } from "../../office/intelligence/contracts.js";
-import { deleteOfficeConnector, getOfficeConnector, listOfficeConnectors, registerOfficeConnector, syncConnectorToSheet, syncOfficeConnector } from "../../office/intelligence/connectors.js";
+import { deleteOfficeConnector, getOfficeConnector, listOfficeConnectors, registerOfficeConnector, syncConnectorToSheet, syncOfficeConnector, testOfficeConnector } from "../../office/intelligence/connectors.js";
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
@@ -60,7 +60,8 @@ export async function handleOfficeConnectorRoutes(req: http.IncomingMessage, res
       const action = match[2];
       const workspaces = connector.type === "sqlite" ? requireTaskWorkspace(String(url.searchParams.get("taskId") ?? ""), ctx.workspace) : ctx.workspace;
       if (action === "test" && req.method === "POST") {
-        sendJson(res, 200, await syncOfficeConnector(connector.id, { workspace: workspaces }));
+        // webdav probes with PROPFIND instead of downloading the payload.
+        sendJson(res, 200, await testOfficeConnector(connector.id, { workspace: workspaces }));
         return true;
       }
       if (action === "sync" && req.method === "POST") {

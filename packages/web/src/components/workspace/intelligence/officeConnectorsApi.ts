@@ -1,7 +1,7 @@
 import { getApiBase, getLoamAuthHeaders } from '@/services/rpc';
 import type { ArtifactRef } from './officeIntelligenceApi';
 
-export type ConnectorType = 'rest-json' | 'sqlite';
+export type ConnectorType = 'rest-json' | 'sqlite' | 'webdav';
 
 /** Mirrors `OfficeScope` in src/office/intelligence/contracts.ts. */
 export interface OfficeConnectorScope {
@@ -22,6 +22,11 @@ export interface OfficeConnector {
     bearerSecretName?: string;
     databasePath?: string;
     query?: string;
+    baseUrl?: string;
+    username?: string;
+    passwordSecretName?: string;
+    remotePath?: string;
+    format?: string;
   };
   createdAt: string;
   updatedAt: string;
@@ -45,6 +50,11 @@ export interface ConnectorCreateInput {
     bearerSecretName?: string;
     databasePath?: string;
     query?: string;
+    baseUrl?: string;
+    username?: string;
+    passwordSecretName?: string;
+    remotePath?: string;
+    format?: string;
   };
 }
 

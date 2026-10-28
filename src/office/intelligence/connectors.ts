@@ -15,13 +15,18 @@ export interface OfficeConnector {
   id: string;
   scope: OfficeScope;
   name: string;
-  type: "rest-json" | "sqlite";
+  type: "rest-json" | "sqlite" | "webdav";
   config: {
     url?: string;
     dataPath?: string;
     bearerSecretName?: string;
     databasePath?: string;
     query?: string;
+    baseUrl?: string;
+    username?: string;
+    passwordSecretName?: string;
+    remotePath?: string;
+    format?: string;
   };
   createdAt: string;
   updatedAt: string;
@@ -43,23 +48,30 @@ function text(value: unknown, name: string, max = 2000, optional = false): strin
 
 export function registerOfficeConnector(input: unknown): OfficeConnector {
   if (!isRecord(input) || !isRecord(input.scope) || !isRecord(input.config)) throw new OfficeIntelligenceError("connector body, scope and config are required", 422, "invalid_connector");
-  const type = input.type === "sqlite" ? "sqlite" : input.type === "rest-json" ? "rest-json" : undefined;
-  if (!type) throw new OfficeIntelligenceError("connector type must be rest-json or sqlite", 422, "invalid_connector");
+  const type = input.type === "sqlite" ? "sqlite" : input.type === "rest-json" ? "rest-json" : input.type === "webdav" ? "webdav" : undefined;
+  if (!type) throw new OfficeIntelligenceError("connector type must be rest-json, sqlite or webdav", 422, "invalid_connector");
   const config: OfficeConnector["config"] = {
     ...(input.config.url ? { url: text(input.config.url, "url", 2000) } : {}),
     ...(input.config.dataPath ? { dataPath: text(input.config.dataPath, "dataPath", 200) } : {}),
     ...(input.config.bearerSecretName ? { bearerSecretName: text(input.config.bearerSecretName, "bearerSecretName", 100) } : {}),
     ...(input.config.databasePath ? { databasePath: text(input.config.databasePath, "databasePath", 500) } : {}),
     ...(input.config.query ? { query: text(input.config.query, "query", 10_000) } : {}),
+    ...(input.config.baseUrl ? { baseUrl: text(input.config.baseUrl, "baseUrl", 2000) } : {}),
+    ...(input.config.username ? { username: text(input.config.username, "username", 200) } : {}),
+    ...(input.config.passwordSecretName ? { passwordSecretName: text(input.config.passwordSecretName, "passwordSecretName", 100) } : {}),
+    ...(input.config.remotePath ? { remotePath: text(input.config.remotePath, "remotePath", 2000) } : {}),
+    ...(input.config.format ? { format: text(input.config.format, "format", 10) } : {}),
   };
-  if (type === "rest-json") {
-    const url = new URL(config.url ?? "");
-    const loopback = ["127.0.0.1", "localhost", "::1"].includes(url.hostname);
-    if (url.protocol !== "https:" && !(loopback && url.protocol === "http:")) throw new OfficeIntelligenceError("REST connectors require HTTPS outside loopback tests", 422, "invalid_connector");
-  } else {
-    if (!config.databasePath || !config.query || !/^\s*(?:select|with)\b/i.test(config.query) || /;\s*$/u.test(config.query) || config.query.includes(";") || /\b(?:insert|update|delete|drop|alter|pragma|attach|detach|vacuum)\b/i.test(config.query)) {
-      throw new OfficeIntelligenceError("SQLite connectors require one read-only SELECT or WITH query", 422, "invalid_connector");
-    }
+  if (type === "rest-json" || type === "webdav") {
+    const raw = new URL(type === "rest-json" ? config.url ?? "" : config.baseUrl ?? "");
+    const loopback = ["127.0.0.1", "localhost", "::1"].includes(raw.hostname);
+    if (raw.protocol !== "https:" && !(loopback && raw.protocol === "http:")) throw new OfficeIntelligenceError(type === "rest-json" ? "REST connectors require HTTPS outside loopback tests" : "WebDAV connectors require HTTPS outside loopback tests", 422, "invalid_connector");
+  }
+  if (type === "webdav" && (!config.baseUrl || !config.remotePath || (config.format ?? "csv") !== "csv" && config.format !== "json")) {
+    throw new OfficeIntelligenceError("WebDAV connectors require baseUrl, remotePath and format csv|json", 422, "invalid_connector");
+  }
+  if (type === "sqlite" && (!config.databasePath || !config.query || !/^\s*(?:select|with)\b/i.test(config.query) || /;\s*$/u.test(config.query) || config.query.includes(";") || /\b(?:insert|update|delete|drop|alter|pragma|attach|detach|vacuum)\b/i.test(config.query))) {
+    throw new OfficeIntelligenceError("SQLite connectors require one read-only SELECT or WITH query", 422, "invalid_connector");
   }
   const now = new Date().toISOString();
   const connector: OfficeConnector = {
@@ -151,9 +163,106 @@ function readSqlite(connector: OfficeConnector, workspace: string): ConnectorRow
   }
 }
 
+/** RFC4180-ish CSV parser: BOM strip, quoted fields with "" escapes, comma/semicolon
+ * delimiter auto-detected from the header line. Pure, no dependencies. */
+export function parseCsv(input: string): string[][] {
+  const text0 = input.replace(/^\uFEFF/, "");
+  const headerDelimiter = /;/.test((text0.split(/\r?\n/, 1)[0] ?? "")) ? ";" : ",";
+  const rows: string[][] = [];
+  let field = "";
+  let row: string[] = [];
+  let quoted = false;
+  let truncated = false;
+  for (let i = 0; i < text0.length; i++) {
+    const ch = text0[i]!;
+    if (quoted) {
+      if (ch === '"') {
+        if (text0[i + 1] === '"') { field += '"'; i++; } else quoted = false;
+      } else field += ch;
+      continue;
+    }
+    if (ch === '"') { quoted = true; continue; }
+    if (ch === headerDelimiter) { row.push(field); field = ""; continue; }
+    if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text0[i + 1] === "\n") i++;
+      row.push(field); field = "";
+      if (row.length > 1 || row[0] !== "") rows.push(row);
+      row = [];
+      if (rows.length >= 1001) { truncated = true; break; }
+      continue;
+    }
+    field += ch;
+  }
+  if (!truncated) { row.push(field); if (row.length > 1 || row[0] !== "") rows.push(row); }
+  return rows;
+}
+
+function webdavAuthHeaders(connector: OfficeConnector): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (connector.config.username) {
+    const secret = connector.config.passwordSecretName ? resolveSecret("office", connector.config.passwordSecretName) : undefined;
+    if (!secret) throw new OfficeIntelligenceError("connector secret is unavailable", 503, "connector_secret_unavailable");
+    headers.authorization = `Basic ${Buffer.from(`${connector.config.username}:${secret}`).toString("base64")}`;
+  }
+  return headers;
+}
+
+function webdavUrl(connector: OfficeConnector): string {
+  const base = connector.config.baseUrl!.replace(/\/+$/, "");
+  const remote = connector.config.remotePath!.startsWith("/") ? connector.config.remotePath : `/${connector.config.remotePath}`;
+  return base + remote.split("?")[0]!.split("#")[0]!;
+}
+
+/** WebDAV connectivity probe: PROPFIND (Depth 0) must answer 207 multistatus. */
+async function testWebdav(connector: OfficeConnector, fetchFn: typeof fetch): Promise<ConnectorRows> {
+  const response = await fetchFn(webdavUrl(connector), {
+    method: "PROPFIND",
+    headers: { ...webdavAuthHeaders(connector), depth: "0", accept: "application/xml" },
+    redirect: "error",
+    signal: AbortSignal.timeout(15_000),
+  }).catch(() => { throw new OfficeIntelligenceError("تعذّر الوصول إلى خادم WebDAV", 502, "connector_failed"); });
+  if (response.status === 404) throw new OfficeIntelligenceError("الملف غير موجود على خادم WebDAV", 404, "connector_not_found");
+  if (response.status === 401 || response.status === 403) throw new OfficeIntelligenceError("تعذّر المصادقة مع خادم WebDAV", 502, "connector_failed");
+  if (response.status !== 207) throw new OfficeIntelligenceError(`خادم WebDAV رد بـ HTTP ${response.status}`, 502, "connector_failed");
+  const body = (await response.text()).slice(0, 1_000_000);
+  const contentType = /<D:getcontenttype>([^<]+)<\/D:getcontenttype>/i.exec(body)?.[1] ?? /<getcontenttype>([^<]+)<\/getcontenttype>/i.exec(body)?.[1] ?? "";
+  const modified = /<D:getlastmodified>([^<]+)<\/D:getlastmodified>/i.exec(body)?.[1] ?? /<getlastmodified>([^<]+)<\/getlastmodified>/i.exec(body)?.[1] ?? "";
+  return { columns: ["status", "contentType", "modified"], rows: [["207", contentType, modified]], rowCount: 1, truncated: false, syncedAt: new Date().toISOString() };
+}
+
+/** WebDAV sync: GET the remote CSV/JSON file and map it through the shared row model. */
+async function readWebdav(connector: OfficeConnector, fetchFn: typeof fetch): Promise<ConnectorRows> {
+  const response = await fetchFn(webdavUrl(connector), {
+    headers: webdavAuthHeaders(connector),
+    redirect: "error",
+    signal: AbortSignal.timeout(30_000),
+  }).catch(() => { throw new OfficeIntelligenceError("تعذّر الوصول إلى خادم WebDAV", 502, "connector_failed"); });
+  if (response.status === 404) throw new OfficeIntelligenceError("الملف غير موجود على خادم WebDAV", 404, "connector_not_found");
+  if (response.status === 401 || response.status === 403) throw new OfficeIntelligenceError("تعذّر المصادقة مع خادم WebDAV", 502, "connector_failed");
+  if (!response.ok) throw new OfficeIntelligenceError(`خادم WebDAV رد بـ HTTP ${response.status}`, 502, "connector_failed");
+  const body = await response.text();
+  if (body.length > 5_000_000) throw new OfficeIntelligenceError("connector response exceeds 5 MB", 413, "connector_response_too_large");
+  if ((connector.config.format ?? "csv") === "json") return rowsFromObjects(JSON.parse(body));
+  const table = parseCsv(body);
+  if (!table.length) throw new OfficeIntelligenceError("connector did not return CSV rows", 422, "connector_data_invalid");
+  const [header, ...data] = table;
+  const rows = data.slice(0, 1000).map((cells) => header!.map((_, index) => {
+    const raw = cells[index] ?? "";
+    if (raw !== "" && /^-?\d+(?:\.\d+)?$/.test(raw)) return Number(raw) as string | number;
+    return raw;
+  }));
+  return { columns: header!, rows, rowCount: rows.length, truncated: data.length > 1000, syncedAt: new Date().toISOString() };
+}
+
+/** Route "test" action: cheap probe without downloading the payload (PROPFIND for webdav; the normal read otherwise). */
+export async function testOfficeConnector(id: string, options: { workspace: string; fetchFn?: typeof fetch }): Promise<ConnectorRows> {
+  const connector = getOfficeConnector(id);
+  return connector.type === "webdav" ? testWebdav(connector, options.fetchFn ?? fetch) : syncOfficeConnector(id, options);
+}
+
 export async function syncOfficeConnector(id: string, options: { workspace: string; fetchFn?: typeof fetch }): Promise<ConnectorRows> {
   const connector = getOfficeConnector(id);
-  return connector.type === "sqlite" ? readSqlite(connector, options.workspace) : fetchRest(connector, options.fetchFn ?? fetch);
+  return connector.type === "sqlite" ? readSqlite(connector, options.workspace) : connector.type === "webdav" ? readWebdav(connector, options.fetchFn ?? fetch) : fetchRest(connector, options.fetchFn ?? fetch);
 }
 
 export async function syncConnectorToSheet(id: string, options: { workspace: string; taskId: string; path: string; fetchFn?: typeof fetch }): Promise<ArtifactRef> {

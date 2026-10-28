@@ -5,7 +5,8 @@ import path from "node:path";
 import http from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import { after, before, describe, it } from "node:test";
-import { registerOfficeConnector, syncConnectorToSheet, syncOfficeConnector } from "../connectors.js";
+import { registerOfficeConnector, syncConnectorToSheet, syncOfficeConnector, testOfficeConnector } from "../connectors.js";
+import { setSecret, deleteSecret } from "../../../server/secretsVault.js";
 import { registerOfficeWorkflow, runOfficeWorkflow } from "../workflows.js";
 import { createClientPortalShare, readClientPortal, revokeClientPortalShare } from "../legal/portal.js";
 import { createMatter } from "../legal/matters.js";
@@ -71,6 +72,59 @@ describe("Office connectors and workflows", () => {
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
+  });
+
+  it("webdav: PROPFIND probe, 404 mapping, and CSV/JSON sync into the row model", async () => {
+    const csv = "\uFEFFالصنف;المبلغ\n\"إيرادات, رئيسية\";1200\nمصروف;40.5\n";
+    const basic = "Basic " + Buffer.from("user:pass").toString("base64");
+    const server = http.createServer((req, res) => {
+      if (req.url === "/missing.csv") { res.writeHead(404); res.end("gone"); return; }
+      if (req.method === "PROPFIND") {
+        res.writeHead(207, { "content-type": "application/xml" });
+        res.end("<D:multistatus><D:response><D:propstat><D:prop><D:getcontenttype>text/csv</D:getcontenttype><D:getlastmodified>Mon, 26 Oct 2026 00:00:00 GMT</D:getlastmodified></D:prop></D:propstat></D:response></D:multistatus>");
+        return;
+      }
+      if (req.url === "/data.json") { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify([{ metric: "Revenue", amount: 7 }])); return; }
+      if (req.headers.authorization !== basic) { res.writeHead(401); res.end("auth"); return; }
+      res.writeHead(200, { "content-type": "text/csv" });
+      res.end(csv);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("address unavailable");
+    const base = `http://127.0.0.1:${address.port}`;
+    assert.equal(setSecret("office", "TESTPASS", "pass"), true);
+    try {
+      const probeConnector = registerOfficeConnector({ scope: { tenantId: "local" }, name: "DAV probe", type: "webdav", config: { baseUrl: base, remotePath: "/report.csv", format: "csv" } });
+      const probe = await testOfficeConnector(probeConnector.id, { workspace });
+      assert.equal(probe.columns[0], "status");
+      assert.equal(probe.rows[0]?.[0], "207");
+      assert.equal(probe.rows[0]?.[1], "text/csv");
+      assert.match(String(probe.rows[0]?.[2]), /GMT/);
+      const missing = registerOfficeConnector({ scope: { tenantId: "local" }, name: "DAV missing", type: "webdav", config: { baseUrl: base, remotePath: "/missing.csv", format: "csv" } });
+      await assert.rejects(testOfficeConnector(missing.id, { workspace }), /غير موجود/);
+      const csvConnector = registerOfficeConnector({ scope: { tenantId: "local" }, name: "DAV csv", type: "webdav", config: { baseUrl: base, remotePath: "/report.csv", format: "csv", username: "user", passwordSecretName: "TESTPASS" } });
+      const csvRows = await syncOfficeConnector(csvConnector.id, { workspace });
+      assert.deepEqual(csvRows.columns, ["الصنف", "المبلغ"]);
+      assert.equal(csvRows.rows[0]?.[0], "إيرادات, رئيسية");
+      assert.equal(csvRows.rows[0]?.[1], 1200);
+      assert.equal(csvRows.rows[1]?.[1], 40.5);
+      const jsonConnector = registerOfficeConnector({ scope: { tenantId: "local" }, name: "DAV json", type: "webdav", config: { baseUrl: base, remotePath: "/data.json", format: "json" } });
+      const jsonRows = await syncOfficeConnector(jsonConnector.id, { workspace });
+      assert.deepEqual(jsonRows.rows[0], ["Revenue", 7]);
+      const artifact = await syncConnectorToSheet(csvConnector.id, { workspace, taskId, path: "dav.xlsx" });
+      assert.equal(artifact.kind, "spreadsheet");
+      const sheet = await readSheetDoc(path.join(workspace, "dav.xlsx"), { taskId, path: "dav.xlsx", name: "dav.xlsx" });
+      assert.equal(sheet.sheets[0]?.cells[0]?.[0], "الصنف");
+    } finally {
+      deleteSecret("office", "TESTPASS");
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("webdav: requires HTTPS outside loopback and a full config", () => {
+    assert.throws(() => registerOfficeConnector({ scope: { tenantId: "local" }, name: "DAV bad", type: "webdav", config: { baseUrl: "https://example.com/dav" } }), /baseUrl, remotePath/);
+    assert.throws(() => registerOfficeConnector({ scope: { tenantId: "local" }, name: "DAV http", type: "webdav", config: { baseUrl: "http://dav.example.com", remotePath: "/x.csv", format: "csv" } }), /HTTPS/);
   });
 });
 
