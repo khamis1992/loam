@@ -23,6 +23,7 @@ export interface ClaimSupport {
 
 export interface ResearchRecord {
   issueId: string;
+  inputSha256?: string;
   asOf: string;
   queries: string[];
   consultedAvids: string[];

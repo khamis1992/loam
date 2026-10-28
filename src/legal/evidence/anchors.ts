@@ -21,6 +21,21 @@ export function paragraphAnchors(document: Pick<ExtractedDocument, "text">, docu
   return anchors;
 }
 
+export function documentParagraphAnchors(document: Pick<ExtractedDocument, "text" | "pages">, documentId: string): EvidenceAnchor[] {
+  const pages = document.pages.length > 0 ? document.pages : [{ page: 1, text: document.text, warnings: [] }];
+  const anchors: EvidenceAnchor[] = [];
+  let cursor = 0;
+  for (const page of pages) {
+    const offset = document.text.indexOf(page.text, cursor);
+    if (offset < 0) throw new Error(`document ${documentId} page positions are inconsistent`);
+    for (const anchor of paragraphAnchors({ text: page.text }, documentId, page.page)) {
+      anchors.push({ ...anchor, start: anchor.start + offset, end: anchor.end + offset });
+    }
+    cursor = offset + page.text.length;
+  }
+  return anchors;
+}
+
 export function findAnchors(documentId: string, text: string, needle: string, page?: number): EvidenceAnchor[] {
   if (!needle.trim()) return [];
   const anchors: EvidenceAnchor[] = [];

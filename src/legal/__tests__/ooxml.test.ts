@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import JSZip from "jszip";
-import { Document, Header, Packer, Paragraph, Table, TableCell, TableRow, TextRun } from "docx";
+import { Document, Footer, Header, ImageRun, Packer, Paragraph, Table, TableCell, TableRow, TextRun } from "docx";
+import sharp from "sharp";
 import { segmentContract } from "../contract/clauses.js";
 import { buildOriginalRedlineDocx } from "../contract/ooxmlRedline.js";
 import { buildRedlineDocx } from "../contract/redline.js";
@@ -72,4 +73,31 @@ test("approved finalization removes only the draft header and preserves tracked 
     for (const header of headers) assert.doesNotMatch(await after.file(header)!.async("string"), new RegExp(DRAFT_WATERMARK_AR));
     await assert.rejects(finalizeApprovedRedlineDocx(final), /exactly one draft watermark/);
   }
+});
+
+test("OOXML redline preserves tables, images, headers, footers and relationships", async () => {
+  const image = await sharp(Buffer.from('<svg width="40" height="40"><rect width="40" height="40" fill="#2255aa"/></svg>')).png().toBuffer();
+  const original = await Packer.toBuffer(new Document({
+    sections: [{
+      headers: { default: new Header({ children: [new Paragraph("Confidential header")] }) },
+      footers: { default: new Footer({ children: [new Paragraph("Original footer")] }) },
+      children: [
+        new Paragraph("البند 1\nيلتزم الطرفان بحسن النية"),
+        new Table({ rows: [new TableRow({ children: [new TableCell({ children: [new Paragraph("محتوى الجدول")] })] })] }),
+        new Paragraph({ children: [new ImageRun({ data: image, type: "png", transformation: { width: 40, height: 40 } })] }),
+      ],
+    }],
+  }));
+  const clauses = segmentContract("ct-rich", "البند 1\nيلتزم الطرفان بحسن النية");
+  const output = await buildOriginalRedlineDocx(original, clauses, [{ clauseId: clauses[0]!.id, newText: "يتعين على الطرفان بحسن النية" }], { author: "Loam Legal", date: "2026-10-27T00:00:00Z", rtl: true, draft: false });
+  const before = await JSZip.loadAsync(original);
+  const after = await JSZip.loadAsync(output);
+  assert.match(await after.file("word/document.xml")!.async("string"), /محتوى الجدول/);
+  assert.match(await after.file("word/header1.xml")!.async("string"), /Confidential header/);
+  assert.match(await after.file("word/footer1.xml")!.async("string"), /Original footer/);
+  for (const name of Object.keys(before.files).filter((name) => name.startsWith("word/media/") && !before.files[name]!.dir)) {
+    assert.ok(after.file(name), `${name} missing; ${Object.keys(after.files).join(",")}`);
+    assert.deepEqual(await after.file(name)!.async("nodebuffer"), await before.file(name)!.async("nodebuffer"));
+  }
+  assert.equal(await after.file("word/_rels/document.xml.rels")!.async("string"), await before.file("word/_rels/document.xml.rels")!.async("string"));
 });

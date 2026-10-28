@@ -52,6 +52,7 @@ export function LegalRunControls<T>({ matterId, kind, label, sourceText, contrac
       {run && <div className="text-xs opacity-75" role="status" aria-live="polite">
         <p>{t(run.status)} · {t(run.stage)} · {run.completedStages.length}/{run.stageCount ?? 10}</p>
         <p>{t('Elapsed')}: {((Date.parse(run.updatedAt) - Date.parse(run.createdAt)) / 1000).toFixed(1)}s</p>
+        <p>{t('Stage elapsed')}: {((Date.now() - Date.parse(run.updatedAt)) / 1000).toFixed(1)}s</p>
         <p dir="ltr">{run.model} · {run.corpusSnapshotId}</p>
         <progress max={run.stageCount ?? 10} value={run.completedStages.length} className="h-2 w-full" aria-label={t('Run progress')} />
         {run.error && <p className="text-amber-700 dark:text-amber-300">{run.error}</p>}

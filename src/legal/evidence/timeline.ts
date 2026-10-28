@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { foldDigits } from "../normalize.js";
-import { paragraphAnchors } from "./anchors.js";
+import { documentParagraphAnchors } from "./anchors.js";
 import type { EvidenceDocument, TimelineEvent } from "./types.js";
 
 const DATE_PATTERNS = [
@@ -16,7 +16,7 @@ function validIso(year: number, month: number, day: number): string | null {
 
 export function documentTimeline(document: EvidenceDocument): TimelineEvent[] {
   const events: TimelineEvent[] = [];
-  for (const anchor of paragraphAnchors(document, document.id)) {
+  for (const anchor of documentParagraphAnchors(document, document.id)) {
     const text = foldDigits(anchor.quote);
     for (const pattern of DATE_PATTERNS) {
       const match = pattern.exec(text);

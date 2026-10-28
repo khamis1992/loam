@@ -12,6 +12,8 @@ export interface LegalEvalResult {
   predictedIssues?: string[];
   claimSupported?: boolean;
   falsePositive?: boolean;
+  adversarialFalsePositive?: boolean;
+  adversarialCriticalFalsePositive?: boolean;
   criticalOmission?: boolean;
   draftingAccepted?: boolean;
   lawyerTimeSeconds?: number;
@@ -27,6 +29,8 @@ export interface LegalScorecardRow {
   issueRecall?: number;
   claimSupport?: number;
   falsePositives: number;
+  adversarialFalsePositives: number;
+  adversarialCriticalFalsePositives: number;
   criticalOmissions: number;
   draftingAcceptance?: number;
   lawyerTimeSeconds?: number;
@@ -53,6 +57,7 @@ export function summarizeLegalScorecard(results: LegalEvalResult[]): LegalScorec
     });
     const issueRecall = recallCases.length ? recallCases.reduce((total, value) => total + value, 0) / recallCases.length : undefined;
     const criticalOmissions = cases.filter((item) => item.criticalOmission === true).length;
+    const adversarialCriticalFalsePositives = cases.filter((item) => item.adversarialCriticalFalsePositive === true).length;
     const criticalFailures = cases.some((item) => item.severity === "critical" && (item.citationCorrect === false || item.temporalCorrect === false || item.factAnchorCorrect === false || item.claimSupported === false));
     return {
       product, severity, cases: cases.length,
@@ -62,10 +67,12 @@ export function summarizeLegalScorecard(results: LegalEvalResult[]): LegalScorec
       issueRecall,
       claimSupport: ratio(cases.flatMap((item) => item.claimSupported === undefined ? [] : [item.claimSupported])),
       falsePositives: cases.filter((item) => item.falsePositive === true).length,
+      adversarialFalsePositives: cases.filter((item) => item.adversarialFalsePositive === true).length,
+      adversarialCriticalFalsePositives,
       criticalOmissions,
       draftingAcceptance: ratio(cases.flatMap((item) => item.draftingAccepted === undefined ? [] : [item.draftingAccepted])),
       lawyerTimeSeconds: cases.reduce((total, item) => total + (item.lawyerTimeSeconds ?? 0), 0),
-      pass: criticalOmissions === 0 && !criticalFailures && cases.every((item) => item.criticalOmission !== true),
+      pass: criticalOmissions === 0 && adversarialCriticalFalsePositives === 0 && !criticalFailures && cases.every((item) => item.criticalOmission !== true),
     };
   });
 }

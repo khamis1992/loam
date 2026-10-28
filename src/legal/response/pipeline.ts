@@ -44,14 +44,14 @@ export function createResponsePipeline(store: MattersStore, corpus: LegalCorpus,
     },
     research: async (value, context) => {
       const state = value as ResponseState;
-      return { state: { ...state, research: await researchResponse(corpus, withSignal(model, context?.signal), state.matrix!, matter(state).asOf, [matter(state).title], store.evidence.listFacts(state.matterId)) } };
+      return { state: { ...state, research: await researchResponse(corpus, withSignal(model, context?.signal), state.matrix!, matter(state).asOf, [matter(state).title], store.evidence.listFacts(state.matterId), state.research ?? []) } };
     },
     strategy: async (value) => ({ state: value, waiting: true }),
     draft: async (value, context) => {
       const state = value as ResponseState;
       if (state.answer?.action === "revise" && state.answer.matrix) {
         state.matrix = state.answer.matrix;
-        state.research = await researchResponse(corpus, withSignal(model, context?.signal), state.matrix, matter(state).asOf, [matter(state).title], store.evidence.listFacts(state.matterId));
+        state.research = await researchResponse(corpus, withSignal(model, context?.signal), state.matrix, matter(state).asOf, [matter(state).title], store.evidence.listFacts(state.matterId), state.research ?? []);
       }
       if (state.answer?.action !== "approve" && state.answer?.action !== "revise") throw new Error("response strategy requires approval or revision");
       return { state: { ...state, ...(await draftLegalResponse(corpus, withSignal(model, context?.signal), { matter: matter(state), matrix: state.matrix!, research: state.research! })) } };

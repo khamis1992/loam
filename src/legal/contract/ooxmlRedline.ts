@@ -87,7 +87,9 @@ export async function buildOriginalRedlineDocx(original: Buffer, clauses: Clause
   const documentXml = zip.file("word/document.xml");
   if (!documentXml) throw new Error("word/document.xml is missing");
   const doc = new DOMParser().parseFromString(await documentXml.async("string"), "text/xml");
-  const paragraphs = Array.from(doc.getElementsByTagNameNS(W, "p"));
+  const body = doc.getElementsByTagNameNS(W, "body")[0];
+  if (!body) throw new Error("DOCX body is missing");
+  const paragraphs = Array.from(body.childNodes).filter((node): node is XmlElement => node.nodeType === 1 && (node as XmlElement).localName === "p");
   const headings = paragraphs.map((paragraph, index) => ({ index, text: textOf(paragraph) })).filter((item) => isClauseHeading(item.text));
   const hasPreamble = headings.length > 0 && paragraphs.slice(0, headings[0]!.index).some((paragraph) => textOf(paragraph).trim().length > 0);
   const offset = hasPreamble ? 1 : 0;
@@ -103,6 +105,9 @@ export async function buildOriginalRedlineDocx(original: Buffer, clauses: Clause
     const pPr = first.getElementsByTagNameNS(W, "pPr")[0];
     const oldText = clause.text;
     const replacement = paragraph(doc, oldText, edit.newText, options, revision, pPr);
+    for (const child of Array.from(first.childNodes)) {
+      if (child.nodeType === 1 && ["drawing", "pict", "object", "bookmarkStart", "bookmarkEnd", "commentRangeStart", "commentRangeEnd", "proofErr"].includes((child as XmlElement).localName ?? "")) replacement.appendChild(child.cloneNode(true));
+    }
     first.parentNode!.insertBefore(replacement, first);
     for (let index = start; index < end; index++) paragraphs[index]!.parentNode!.removeChild(paragraphs[index]!);
   }

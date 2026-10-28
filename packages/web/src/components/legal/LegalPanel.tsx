@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { t } from '@/i18n/t';
-import { activeLegalMatterId, legalApi, setActiveLegalMatterId, type LegalSearchResult, type LegalStatus, type Matter, type StructureIssue, type VerificationReport } from '@/services/legalApi';
+import { activeLegalMatterId, legalApi, setActiveLegalMatterId, type LegalArticleResponse, type LegalSearchResult, type LegalStatus, type Matter, type StructureIssue, type VerificationReport } from '@/services/legalApi';
 import { CitationBadge } from './CitationBadge';
 import { MatterPrivacy } from './MatterPrivacy';
 import { VerificationReportView } from './VerificationReportView';
 import { CorpusCoverage } from './CorpusCoverage';
+import { LegalVersionCompare } from './LegalVersionCompare';
 
 type Tab = 'search' | 'verify' | 'matters';
 
@@ -50,11 +51,17 @@ function SearchTab({ today }: { today: string }) {
   const [q, setQ] = useState('');
   const [asOf, setAsOf] = useState(today);
   const [result, setResult] = useState<LegalSearchResult | null>(null);
+  const [article, setArticle] = useState<LegalArticleResponse | null>(null);
+  const [articleError, setArticleError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const search = async () => {
     if (!q.trim()) return;
     setBusy(true);
     try { setResult(await legalApi.search(q, asOf ? { asOf } : {})); } finally { setBusy(false); }
+  };
+  const inspect = async (avid: string) => {
+    setArticleError(null);
+    try { setArticle(await legalApi.article(avid)); } catch (error) { setArticleError(error instanceof Error ? error.message : String(error)); }
   };
   return (
     <div className="space-y-3">
@@ -75,9 +82,12 @@ function SearchTab({ today }: { today: string }) {
             </div>
             <p className="text-xs opacity-70" dir="ltr">{h.effectiveFrom} → {h.effectiveTo ?? t('in force')} · {h.avid}</p>
             <blockquote className="whitespace-pre-wrap border-s-4 ps-3 leading-7">{h.text}</blockquote>
+            <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => void inspect(h.avid)}>{t('Compare versions')}</button>
           </li>
         ))}
       </ul>
+      {articleError && <p role="alert" className="text-red-700 dark:text-red-300">{articleError}</p>}
+      {article && <LegalVersionCompare data={article} />}
     </div>
   );
 }

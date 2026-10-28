@@ -28,3 +28,10 @@ test("issue recall is averaged per case rather than pooled across cases", () => 
   ]);
   assert.equal(rows[0]?.issueRecall, 0.5);
 });
+
+test("adversarial false alarms are reported and critical false alarms fail the scorecard", () => {
+  const rows = summarizeLegalScorecard([{ ...base, adversarialFalsePositive: true, adversarialCriticalFalsePositive: true }]);
+  assert.equal(rows[0]?.adversarialFalsePositives, 1);
+  assert.equal(rows[0]?.adversarialCriticalFalsePositives, 1);
+  assert.equal(rows[0]?.pass, false);
+});

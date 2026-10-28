@@ -29,6 +29,13 @@ export interface LegalSearchResult {
   query: string; asOf: string; hits: LegalHit[]; mode: 'lexical' | 'hybrid'; direct: boolean; noAuthority: boolean;
   authorityReason?: 'COVERAGE_UNCONFIGURED' | 'COVERAGE_INCOMPLETE' | 'NO_MATCH'; coverage: CoverageReport; corpusSnapshotId: string;
 }
+export interface LegalArticleVersion {
+  avid: string; articleKey: string; text: string; effectiveFrom: string; effectiveTo: string | null; origin: 'original' | 'amendment'; introducedBy?: string;
+}
+export interface LegalArticleResponse {
+  resolved: { legislation: { titleAr: string }; article: { label: string }; version: { avid: string } };
+  versions: LegalArticleVersion[];
+}
 
 export interface CitationCheck {
   index: number; token: string; avid: string | null; kind: 'cite' | 'ref' | 'free_article' | 'free_law'; status: string;
@@ -170,6 +177,7 @@ export const legalApi = {
     if (opts.matterKind) params.set('matterKind', opts.matterKind);
     return request<LegalSearchResult>(`/api/legal/search?${params.toString()}`);
   },
+  article: (avid: string) => request<LegalArticleResponse>(`/api/legal/articles/${enc(avid)}`),
   verify: (input: { text: string; asOf?: string; matterId?: string; kind?: 'defense_memo' | 'opinion' | 'contract_report'; documentName?: string }) =>
     request<{ report: VerificationReport; structure: StructureIssue[]; coverSheet?: string; review?: ReviewRecord }>('/api/legal/verify', jsonInit('POST', input)),
   listMatters: () => request<{ matters: Matter[] }>('/api/legal/matters'),

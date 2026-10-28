@@ -6,8 +6,10 @@ import type { EgressConfig } from "../egress.js";
 import { searchLaw } from "../retrieval.js";
 import type { ClaimSupport, LegalIssue, ResearchRecord } from "./types.js";
 import type { FactAssertion } from "../evidence/types.js";
+import { researchInputHash } from "./researchCache.js";
 
 export async function researchIssue(corpus: LegalCorpus, model: { port: LegalModelPort; config: EgressConfig }, issue: LegalIssue, asOf: string, factRecords: Array<Pick<FactAssertion, "id" | "text" | "kind" | "status">> = []): Promise<ResearchRecord> {
+  const inputSha256 = researchInputHash(corpus, issue, asOf, factRecords, model.config.localModel);
   const queries: string[] = [];
   const consulted = new Map<string, { avid: string; text: string; reference: string }>();
   for (const query of [...new Set([...issue.researchQueries, issue.title])]) {
@@ -20,7 +22,7 @@ export async function researchIssue(corpus: LegalCorpus, model: { port: LegalMod
   const sources = [...consulted.values()];
   if (sources.length === 0) {
     return {
-      issueId: issue.id, asOf, queries, consultedAvids: [],
+      issueId: issue.id, inputSha256, asOf, queries, consultedAvids: [],
       claims: [{ id: `claim-${issue.id}`, text: issue.title, support: "not_researched", authorityAvids: [], evidenceFactIds: issue.facts, exceptions: [], reason: "No citable authority was retrieved for this issue" }],
     };
   }
@@ -45,5 +47,5 @@ export async function researchIssue(corpus: LegalCorpus, model: { port: LegalMod
     if (invalidAuthorities.length === 0 && invalidFacts.length === 0 && !unsupported) return normalized;
     return { ...normalized, support: "insufficient" as const, reason: `${claim.reason} Unlinked or unretrieved support rejected. Invalid authorities: ${invalidAuthorities.join(",") || "none"}; invalid facts: ${invalidFacts.join(",") || "none"}.` };
   });
-  return { issueId: issue.id, asOf, queries, consultedAvids: [...consulted.keys()], claims };
+  return { issueId: issue.id, inputSha256, asOf, queries, consultedAvids: [...consulted.keys()], claims };
 }
