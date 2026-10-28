@@ -197,3 +197,16 @@ OOXML (`w:color/w:highlight/w:sz/w:rFonts`)؛ تعقب تغييرات وتعلي
 (Word/Excel/PowerPoint على ويندوز، 503 خلافه)؛ بوابة عملاء عامة
 `/portal/<token>` (رمز 32-بايت هو الاعتماد). بوابات: tsc خادم+ويب 0،
 vitest ويب 879/879، دفعات خادم الأوفيس 142/142، verify الكاملة خضراء.
+
+## الموجة د — القانوني والهوية وWebDAV — 2026-10-28
+
+دمج كامل لخط legal-qatar (13 التزامًا شاملة تقوية التقييم) في
+office-capability: وضع «قانوني» + 8 أدوات وكيل + مسارات /api/legal خلف
+بوابة config + OCR عربي وredlines DOCX حقيقية — تتعايش مع قدرات
+office/intelligence/legal الصغرى (حدود موثقة، لا ازدواج مسارات). الهوية
+(د2): كتلة officeIdentity في الإعدادات (اسم/دور) تتدفق إلى
+localOfficeIdentity وactorId الوكيل ومؤلف تعقب التغييرات — دون نظام
+مصادقة (خارج النطاق عمدًا). موصل webdav (د4): PROPFIND اختبار + مزامنة
+CSV/JSON إلى xlsx، Basic من الخزنة، HTTPS خارج loopback. التعاون الحي (د3)
+مؤجل بقرار الخطة. البوابات: tsc×2=0، ويب 879/879، قانونية+مكتبية 222/222،
+workspace+studio 112/112، verify خضراء.
