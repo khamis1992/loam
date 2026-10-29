@@ -4,6 +4,8 @@
 
 ---
 
+مرتبط: [README.ar.md](README.ar.md) · [knowledge-garden.ar.md](knowledge-garden.ar.md) · [missions.ar.md](missions.ar.md)
+
 ## تحدث مع ملفاتك (RAG في المحادثة)
 
 أدوات حديقة المعرفة (kb_*) أصبحت متاحة في وضعي **اسأل** و**بناء** افتراضيًا — لا حاجة لتشغيل وضع خاص.
@@ -50,8 +52,8 @@
 
 ## قناة التحديث
 
-التطبيق المثبت يفحص GitHub Releases تلقائيًا. للنشر: `npm run dist && npm run publish:release` (يتطلب gh مسجل الدخول). التوثيق الكامل: [docs/update-channel.md](../update-channel.md).
+التطبيق المثبت يفحص GitHub Releases تلقائيًا. للنشر: `npm run dist && npm run publish:release` (يتطلب gh مسجل الدخول). التوثيق الكامل في ملف docs/update-channel.md داخل المستودع.
 
 ---
 
-النسخة الإنجليزية لهذا الدليل لم تُنشأ بعد؛ هذا الدليل العربي هو المرجع.
+النسخة الإنجليزية: [phase2.md](phase2.md)
