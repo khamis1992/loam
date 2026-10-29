@@ -18,6 +18,7 @@ import { sqliCapability } from "./web/sqli.js";
 import { templatesCapability } from "./templates.js";
 import { apkCapability } from "./mobile/apk.js";
 import { mitmCapability } from "./mobile/mitm.js";
+import { binaryCapability } from "./binary.js";
 import type { RedCapability } from "./orchestrator/redOrchestrator.js";
 
 export interface DefaultCapabilityOptions {
@@ -50,5 +51,7 @@ export async function defaultRedCapabilities(cfg: Pick<Config, "bridges">, opts:
   if (await bridgeReady(cfg, "red-caldera")) caps.push(adversaryCapability());
   if (await bridgeReady(cfg, "red-apktool")) caps.push(apkCapability());
   if (await bridgeReady(cfg, "red-mitmproxy")) caps.push(mitmCapability());
+  // Binary analysis is always available: it is first-party, offline, no bridge.
+  caps.push(binaryCapability());
   return caps;
 }
