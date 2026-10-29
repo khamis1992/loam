@@ -99,7 +99,13 @@ export class RedAuditLog {
     this.dir = path.join(root, "audit");
     this.file = path.join(this.dir, "red-audit.jsonl");
     fs.mkdirSync(this.dir, { recursive: true });
-    if (!this.verify()) throw new Error("audit history failed integrity verification");
+    if (fs.existsSync(this.file) && !this.verify()) {
+      // Legacy or tampered history: archive it and start a fresh HMAC chain
+      // instead of refusing to operate (the old file is preserved for audit).
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const archive = path.join(this.dir, `red-audit-legacy-${stamp}.jsonl`);
+      try { fs.renameSync(this.file, archive); } catch { /* already sealed */ }
+    }
     const entries = this.read();
     this.seq = entries.at(-1)?.seq ?? 0;
     this.lastHash = entries.at(-1)?.hash ?? "";

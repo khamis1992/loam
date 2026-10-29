@@ -62,6 +62,7 @@
     "check:red": "tsx src/scripts/check-red-lab.ts",
     "check:red:capabilities": "tsx src/scripts/check-red-capabilities-lab.ts",
     "check:red:kill-switch": "tsx src/scripts/check-red-kill-switch.ts",
+    "check:red:supremacy": "tsx src/scripts/check-red-supremacy.ts",
     "check:mobile": "node --import tsx --test src/security/mobile/__tests__/*.test.ts && tsx src/scripts/check-mobile-bench.ts",
     "check:enterprise": "node --import tsx --test src/security/enterprise/__tests__/*.test.ts src/server/__tests__/securityEnterpriseRoutes.test.ts",
     "check:mobile:scale": "tsx src/scripts/check-mobile-scale.ts",

@@ -16,7 +16,7 @@ test("every built-in manifest validates", () => {
     loadManifests().map((m) => m.id).sort(),
     [
       "blender", "ffmpeg", "imhex", "inkscape", "libreoffice", "obsidian",
-      "red-caldera", "red-ffuf", "red-freeway", "red-nuclei", "red-sqlmap", "red-ysoserial", "red-zap", "wakaru", "x64dbg",
+      "red-apktool", "red-caldera", "red-ffuf", "red-freeway", "red-frida", "red-mitmproxy", "red-msfconsole", "red-nuclei", "red-sqlmap", "red-ysoserial", "red-zap", "wakaru", "x64dbg",
     ],
   );
 });
