@@ -8,6 +8,7 @@
  */
 import type { AgentEvent } from "../agent/events.js";
 import type { OrchestrationEvent } from "../orchestration/events.js";
+import type { AppBuilderRunEvent } from "../agent/events.js";
 import {
   RUN_NODE_ENTITY,
   RUN_NODE_STATUSES,
@@ -959,7 +960,7 @@ export class RunGraph {
         if (String((event as { type?: string }).type).length > 0 && !("round" in event || "scheduleId" in event)) {
           // fall through to the exhaustive check below
         }
-        const _exhaustive: never = event as Exclude<typeof event, OrchestrationEvent>;
+        const _exhaustive: never = event as Exclude<typeof event, OrchestrationEvent | AppBuilderRunEvent>;
         return _exhaustive;
       }
     }

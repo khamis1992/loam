@@ -4,8 +4,9 @@
 import { randomBytes } from "node:crypto";
 import { database } from "../server/sqliteStore.js";
 import type {
-  AppProject, AppProjectSettings, AppRunFlavor, AppTaskAssignment, AssignmentStatus,
-  PlanDocument, PlanDraft, PlanDraftStatus, QuestionAnswer, QuestionsCard, TemplateFeatureId,
+  AppProject, AppProjectSettings, AppRunFlavor, AppTaskAssignment, AppVersion, AssignmentStatus,
+  PlanDocument, PlanDraft, PlanDraftStatus, QuestionAnswer, QuestionsCard, RaceBranch, RaceRun,
+  TemplateFeatureId,
 } from "./types.js";
 
 const SCHEMA_SQL = `
@@ -199,16 +200,23 @@ const APP_TABLES = [
 let schemaReady = false;
 
 /** Idempotent: CREATE … IF NOT EXISTS for the 13 app_ tables; stamps appbuilder.schema=1.
- *  Guarded ALTERs migrate tables created by earlier revisions (§4.13 race wiring). */
+ *  Guarded ALTERs migrate tables created by earlier revisions (§4.13 race wiring,
+ *  §4.7 db snapshots / cover, §4.7.2 budget credits for races). */
 export function ensureAppBuilderSchema(): void {
   const d = database();
   if (schemaReady) return;
   d.exec(SCHEMA_SQL);
-  try {
-    d.exec("ALTER TABLE app_runs ADD COLUMN race_id TEXT REFERENCES app_races(id) ON DELETE SET NULL");
-  } catch (err) {
-    if (!(err instanceof Error && err.message.includes("duplicate column name"))) throw err;
-  }
+  const alter = (sql: string): void => {
+    try {
+      d.exec(sql);
+    } catch (err) {
+      if (!(err instanceof Error && err.message.includes("duplicate column name"))) throw err;
+    }
+  };
+  alter("ALTER TABLE app_runs ADD COLUMN race_id TEXT REFERENCES app_races(id) ON DELETE SET NULL");
+  alter("ALTER TABLE app_versions ADD COLUMN db_snapshot TEXT");
+  alter("ALTER TABLE app_versions ADD COLUMN cover TEXT");
+  alter("ALTER TABLE app_races ADD COLUMN budget_credits INTEGER");
   d.prepare(`INSERT INTO metadata (key, value) VALUES ('appbuilder.schema', '1')
              ON CONFLICT(key) DO UPDATE SET value = '1'`).run();
   schemaReady = true;
@@ -285,16 +293,18 @@ export function listAppProjects(): AppProject[] {
   return rows.map(toProject);
 }
 
-export function updateAppProjectRow(id: string, patch: Partial<Pick<AppProject, "title" | "description" | "features" | "defaultFlavor" | "status" | "settings" | "ai" | "activeVersion" | "depsMode">>): AppProject | undefined {
+export function updateAppProjectRow(id: string, patch: Partial<Pick<AppProject, "title" | "description" | "features" | "defaultFlavor" | "status" | "settings" | "ai" | "activeVersion" | "depsMode" | "remixOfProjectId" | "remixOfVersion">>): AppProject | undefined {
   ensureAppBuilderSchema();
   const cur = getAppProject(id);
   if (!cur) return undefined;
   const next: AppProject = { ...cur, ...patch, updatedAt: new Date().toISOString() };
   database()
     .prepare(`UPDATE app_projects SET title=?, description=?, features=?, default_flavor=?, status=?, active_version=?,
-               settings=?, deps_mode=?, ai_base_url=?, ai_model=?, ai_daily_token_cap=?, updated_at=? WHERE id=?`)
+               settings=?, deps_mode=?, ai_base_url=?, ai_model=?, ai_daily_token_cap=?,
+               remix_of_project_id=?, remix_of_version=?, updated_at=? WHERE id=?`)
     .run(next.title, next.description, JSON.stringify(next.features), next.defaultFlavor, next.status, next.activeVersion,
-         JSON.stringify(next.settings), next.depsMode, next.ai.baseUrl, next.ai.model, next.ai.dailyTokenCap, next.updatedAt, id);
+         JSON.stringify(next.settings), next.depsMode, next.ai.baseUrl, next.ai.model, next.ai.dailyTokenCap,
+         next.remixOfProjectId, next.remixOfVersion, next.updatedAt, id);
   return next;
 }
 
@@ -620,4 +630,182 @@ export function latestVerifyReportForRun(runId: string): import("./types.js").Ve
     visualVerdict: r.visual_verdict as import("./types.js").VerifyReport["visualVerdict"], visualNotes: r.visual_notes,
     logPath: r.log_path, error: (r.error as "verify_limit" | "aborted" | null) ?? null, startedAt: r.started_at, finishedAt: r.finished_at,
   };
+}
+
+/** Newest-first verify reports of a project (§4.15.2 GET /verify-reports?limit). */
+export function listVerifyReports(projectId: string, limit = 20): import("./types.js").VerifyReport[] {
+  ensureAppBuilderSchema();
+  const rows = database().prepare("SELECT * FROM app_verify_reports WHERE project_id = ? ORDER BY started_at DESC LIMIT ?").all(projectId, limit) as unknown as VerifyReportRow[];
+  return rows.map((r) => ({
+    id: r.id, projectId: r.project_id, runId: r.run_id, attempt: r.attempt, tier: r.tier as import("./types.js").VerifyTier,
+    pass: r.pass === 1, steps: JSON.parse(r.steps), consoleErrors: r.console_errors, screenshots: JSON.parse(r.screenshots),
+    visualVerdict: r.visual_verdict as import("./types.js").VerifyReport["visualVerdict"], visualNotes: r.visual_notes,
+    logPath: r.log_path, error: (r.error as "verify_limit" | "aborted" | null) ?? null, startedAt: r.started_at, finishedAt: r.finished_at,
+  }));
+}
+
+// ---------- app_versions rows (MISSING §4.7; VersionStoreRow implementation) ----------
+
+interface VersionRow {
+  project_id: string; number: number; title: string; summary: string; commit: string;
+  parent_number: number | null; source: string; files_changed: string; verify_report_id: string | null;
+  usage: string; added_packages: string; created_at: string;
+  db_snapshot: string | null; cover: string | null;
+}
+
+function toVersion(r: VersionRow): AppVersion & { dbSnapshot: string | null; cover: string | null } {
+  return {
+    projectId: r.project_id, number: r.number, title: r.title, summary: r.summary, commit: r.commit,
+    parentNumber: r.parent_number, source: r.source as AppVersion["source"], filesChanged: JSON.parse(r.files_changed),
+    verifyReportId: r.verify_report_id, usage: JSON.parse(r.usage), addedPackages: JSON.parse(r.added_packages),
+    createdAt: r.created_at, dbSnapshot: r.db_snapshot, cover: r.cover,
+  };
+}
+
+const VERSION_COLS = "project_id, number, title, summary, \"commit\", parent_number, source, files_changed, verify_report_id, usage, added_packages, created_at, db_snapshot, cover";
+
+export function insertVersion(v: AppVersion & { dbSnapshot: string | null }): void {
+  ensureAppBuilderSchema();
+  database()
+    .prepare(`INSERT INTO app_versions (${VERSION_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(v.projectId, v.number, v.title, v.summary, v.commit, v.parentNumber, v.source, JSON.stringify(v.filesChanged),
+         v.verifyReportId, JSON.stringify(v.usage), JSON.stringify(v.addedPackages), v.createdAt, v.dbSnapshot, null);
+}
+
+export function latestVersion(projectId: string): (AppVersion & { dbSnapshot: string | null; cover: string | null }) | null {
+  ensureAppBuilderSchema();
+  const r = database().prepare(`SELECT ${VERSION_COLS} FROM app_versions WHERE project_id = ? ORDER BY number DESC LIMIT 1`).get(projectId) as unknown as VersionRow | undefined;
+  return r ? toVersion(r) : null;
+}
+
+export function getVersion(projectId: string, n: number): (AppVersion & { dbSnapshot: string | null; cover: string | null }) | null {
+  ensureAppBuilderSchema();
+  const r = database().prepare(`SELECT ${VERSION_COLS} FROM app_versions WHERE project_id = ? AND number = ?`).get(projectId, n) as unknown as VersionRow | undefined;
+  return r ? toVersion(r) : null;
+}
+
+export function listVersions(projectId: string): Array<AppVersion & { dbSnapshot: string | null; cover: string | null }> {
+  ensureAppBuilderSchema();
+  const rows = database().prepare(`SELECT ${VERSION_COLS} FROM app_versions WHERE project_id = ? ORDER BY number DESC`).all(projectId) as unknown as VersionRow[];
+  return rows.map(toVersion);
+}
+
+export function clearDbSnapshot(projectId: string, n: number): void {
+  ensureAppBuilderSchema();
+  database().prepare("UPDATE app_versions SET db_snapshot = NULL WHERE project_id = ? AND number = ?").run(projectId, n);
+}
+
+/** PATCH /versions/:n (Atoms `PATCH …/versions/{vid}`): title/summary editable. */
+export function updateVersionRow(projectId: string, n: number, patch: { title?: string; summary?: string; cover?: string | null }): AppVersion | undefined {
+  ensureAppBuilderSchema();
+  const cur = getVersion(projectId, n);
+  if (!cur) return undefined;
+  database()
+    .prepare("UPDATE app_versions SET title = ?, summary = ?, cover = ? WHERE project_id = ? AND number = ?")
+    .run(patch.title?.slice(0, 60) ?? cur.title, patch.summary?.slice(0, 600) ?? cur.summary, patch.cover === undefined ? cur.cover : patch.cover, projectId, n);
+  return getVersion(projectId, n) ?? undefined;
+}
+
+/** Projects whose remixOfProjectId/remixOfVersion point at (projectId, n) — the forks list (§4.7.5). */
+export function listForksOf(projectId: string, n: number): AppProject[] {
+  ensureAppBuilderSchema();
+  const rows = database().prepare("SELECT * FROM app_projects WHERE remix_of_project_id = ? AND remix_of_version = ? ORDER BY created_at DESC").all(projectId, n) as unknown as ProjectRow[];
+  return rows.map(toProject);
+}
+
+// ---------- app_races / app_race_branches rows (MISSING §4.13) ----------
+
+interface RaceRow {
+  id: string; project_id: string; prompt: string; status: string; reason: string | null;
+  chosen_branch_id: string | null; created_at: string; finished_at: string | null; budget_credits: number | null;
+}
+
+interface RaceBranchRow {
+  id: string; race_id: string; idx: number; model: string; tier_label: string; worktree_dir: string;
+  status: string; score: string; preview_url: string | null; usage: string;
+}
+
+function toRaceBranch(r: RaceBranchRow): RaceBranch {
+  let score: RaceBranch["score"] = null;
+  try { score = r.score ? (JSON.parse(r.score) as RaceBranch["score"]) : null; } catch { score = null; }
+  let usage: RaceBranch["usage"] = { promptTokens: 0, completionTokens: 0, cachedTokens: 0, credits: 0, wallMs: 0, toolCalls: 0 };
+  try { usage = r.usage ? (JSON.parse(r.usage) as RaceBranch["usage"]) : usage; } catch { /* keep zero */ }
+  return {
+    id: r.id, raceId: r.race_id, index: r.idx, model: r.model, tierLabel: r.tier_label, worktreeDir: r.worktree_dir,
+    status: r.status as RaceBranch["status"], score, previewUrl: r.preview_url, usage,
+  };
+}
+
+function toRace(r: RaceRow, branches: RaceBranch[]): RaceRun {
+  return {
+    id: r.id, projectId: r.project_id, prompt: r.prompt, status: r.status as RaceRun["status"],
+    reason: (r.reason as RaceRun["reason"] | null) ?? null, branches, chosenBranchId: r.chosen_branch_id,
+    createdAt: r.created_at, finishedAt: r.finished_at,
+  };
+}
+
+export function insertRace(input: { id: string; projectId: string; prompt: string; budgetCredits: number }): RaceRun {
+  ensureAppBuilderSchema();
+  const at = new Date().toISOString();
+  database()
+    .prepare("INSERT INTO app_races (id, project_id, prompt, status, budget_credits, created_at) VALUES (?, ?, ?, 'running', ?, ?)")
+    .run(input.id, input.projectId, input.prompt, input.budgetCredits, at);
+  return getRace(input.id)!;
+}
+
+export function insertRaceBranch(b: RaceBranch): void {
+  ensureAppBuilderSchema();
+  database()
+    .prepare(`INSERT INTO app_race_branches (id, race_id, idx, model, tier_label, worktree_dir, status, score, preview_url, usage)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(b.id, b.raceId, b.index, b.model, b.tierLabel, b.worktreeDir, b.status,
+         b.score ? JSON.stringify(b.score) : null, b.previewUrl, JSON.stringify(b.usage));
+}
+
+export function updateRaceBranch(id: string, patch: { status?: RaceBranch["status"]; score?: RaceBranch["score"]; previewUrl?: string | null; usage?: RaceBranch["usage"] }): RaceBranch | undefined {
+  ensureAppBuilderSchema();
+  const cur = database().prepare("SELECT * FROM app_race_branches WHERE id = ?").get(id) as unknown as RaceBranchRow | undefined;
+  if (!cur) return undefined;
+  const before = toRaceBranch(cur);
+  database()
+    .prepare("UPDATE app_race_branches SET status = ?, score = ?, preview_url = ?, usage = ? WHERE id = ?")
+    .run(patch.status ?? before.status, patch.score ?? before.score ? JSON.stringify(patch.score ?? before.score) : null,
+         patch.previewUrl !== undefined ? patch.previewUrl : before.previewUrl, JSON.stringify(patch.usage ?? before.usage), id);
+  const next = database().prepare("SELECT * FROM app_race_branches WHERE id = ?").get(id) as unknown as RaceBranchRow;
+  return toRaceBranch(next);
+}
+
+export function updateRace(id: string, patch: { status?: RaceRun["status"]; reason?: RaceRun["reason"] | null; chosenBranchId?: string | null }): RaceRun | undefined {
+  ensureAppBuilderSchema();
+  const cur = database().prepare("SELECT * FROM app_races WHERE id = ?").get(id) as unknown as RaceRow | undefined;
+  if (!cur) return undefined;
+  const finished = patch.status && patch.status !== "running" && patch.status !== "scoring" && patch.status !== "choosing";
+  database()
+    .prepare("UPDATE app_races SET status = ?, reason = ?, chosen_branch_id = ?, finished_at = COALESCE(finished_at, ?) WHERE id = ?")
+    .run(patch.status ?? cur.status, patch.reason !== undefined ? patch.reason : cur.reason,
+         patch.chosenBranchId !== undefined ? patch.chosenBranchId : cur.chosen_branch_id,
+         finished ? new Date().toISOString() : null, id);
+  return getRace(id);
+}
+
+export function getRace(id: string): RaceRun | undefined {
+  ensureAppBuilderSchema();
+  const r = database().prepare("SELECT * FROM app_races WHERE id = ?").get(id) as unknown as RaceRow | undefined;
+  if (!r) return undefined;
+  const branches = (database().prepare("SELECT * FROM app_race_branches WHERE race_id = ? ORDER BY idx").all(id) as unknown as RaceBranchRow[]).map(toRaceBranch);
+  return toRace(r, branches);
+}
+
+export function listRaces(projectId: string): RaceRun[] {
+  ensureAppBuilderSchema();
+  const rows = database().prepare("SELECT * FROM app_races WHERE project_id = ? ORDER BY created_at DESC").all(projectId) as unknown as RaceRow[];
+  return rows.map((r) => toRace(r, (database().prepare("SELECT * FROM app_race_branches WHERE race_id = ? ORDER BY idx").all(r.id) as unknown as RaceBranchRow[]).map(toRaceBranch)));
+}
+
+/** The live race of a project (running/scoring/choosing), if any — the partial unique index guards it. */
+export function activeRaceFor(projectId: string): RaceRun | undefined {
+  ensureAppBuilderSchema();
+  const r = database().prepare("SELECT * FROM app_races WHERE project_id = ? AND status IN ('running','scoring','choosing') LIMIT 1").get(projectId) as unknown as RaceRow | undefined;
+  if (!r) return undefined;
+  return getRace(r.id);
 }

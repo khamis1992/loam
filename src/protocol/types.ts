@@ -565,6 +565,22 @@ export interface AppVerifyReportEvent extends ChatEventBase {
   error: "verify_limit" | "aborted" | null;
 }
 
+/** App Builder (MISSING §4.15.1) run-bound events, mapped by mapAgentEvent(). */
+export interface AppQuestionsRequestedEvent extends ChatEventBase { type: "appQuestionsRequested"; projectId: string; card: import("../appbuilder/types.js").QuestionsCard }
+export interface AppQuestionsResolvedEvent extends ChatEventBase { type: "appQuestionsResolved"; projectId: string; cardId: string; status: "answered" | "skipped" | "expired" }
+export interface AppPlanDraftEvent extends ChatEventBase { type: "appPlanDraft"; projectId: string; draft: import("../appbuilder/types.js").PlanDraft }
+export interface AppPlanDecidedEvent extends ChatEventBase { type: "appPlanDecided"; projectId: string; draftId: string; revision: number; decision: "approved" | "declined" | "superseded"; reason?: string }
+export interface AppAssignmentEvent extends ChatEventBase { type: "appAssignment"; projectId: string; assignment: import("../appbuilder/types.js").AppTaskAssignment }
+
+/** App Builder project-bound events, appended directly by src/appbuilder/events.ts. */
+export interface AppVersionEvent extends ChatEventBase { type: "appVersion"; projectId: string; phase: "created" | "updated"; version: import("../appbuilder/types.js").AppVersion }
+export interface AppVersionPublishedEvent extends ChatEventBase { type: "appVersionPublished"; projectId: string; number: number; target: string; url: string | null; error?: string }
+export interface AppDevServerEvent extends ChatEventBase { type: "appDevServer"; status: import("../appbuilder/types.js").DevServerStatus }
+export interface AppRuntimeErrorEvent extends ChatEventBase { type: "appRuntimeError"; error: import("../appbuilder/types.js").RuntimeErrorRecord }
+export interface AppQueueEvent extends ChatEventBase { type: "appQueue"; state: import("../appbuilder/types.js").PromptQueueState }
+export interface AppRaceEvent extends ChatEventBase { type: "appRace"; race: import("../appbuilder/types.js").RaceRun }
+export interface AppProjectStatusEvent extends ChatEventBase { type: "appProjectStatus"; projectId: string; status: import("../appbuilder/types.js").AppProjectStatus }
+
 export interface DeviceAttachmentUploadNotify extends ChatEventBase {
   type: "deviceAttachmentUploadNotify";
   targetEventId: string;
@@ -608,6 +624,18 @@ export type ChatEvent =
   | AskUserRequestedEvent
   | AskUserResolvedEvent
   | AppVerifyReportEvent
+  | AppQuestionsRequestedEvent
+  | AppQuestionsResolvedEvent
+  | AppPlanDraftEvent
+  | AppPlanDecidedEvent
+  | AppAssignmentEvent
+  | AppVersionEvent
+  | AppVersionPublishedEvent
+  | AppDevServerEvent
+  | AppRuntimeErrorEvent
+  | AppQueueEvent
+  | AppRaceEvent
+  | AppProjectStatusEvent
   | DeviceAttachmentUploadNotify
   | RecipeUpdateEvent
   | RecipeRestartEvent;

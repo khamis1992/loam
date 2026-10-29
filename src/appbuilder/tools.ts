@@ -204,9 +204,12 @@ function parseLicense(viewOutput: string | null): string {
   try {
     const parsed = JSON.parse(viewOutput) as unknown;
     if (typeof parsed === "string") return parsed;
-    if (Array.isArray(parsed)) return typeof parsed[0] === "string" ? parsed[0] : "unknown";
+    if (Array.isArray(parsed)) {
+      const first = parsed[0];
+      return typeof first === "string" ? first : "unknown";
+    }
     if (typeof parsed === "object" && parsed !== null && typeof (parsed as Record<string, unknown>).license === "string") {
-      return (parsed as Record<string, string>).license;
+      return (parsed as Record<string, unknown>).license as string;
     }
   } catch { /* plain text fallback below */ }
   const first = viewOutput.split(/\r?\n/).find((l) => l.trim());
@@ -283,7 +286,7 @@ export type AddDependencyOutcome =
  */
 export async function addDependency(
   ctx: AppBuildContext,
-  input: { name: string; range: string },
+  input: { name: string; range?: string },
   deps: AppBuilderToolDeps = {},
 ): Promise<AddDependencyOutcome> {
   const { project, runId } = ctx;

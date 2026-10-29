@@ -266,7 +266,7 @@ test("assignments: create refuses before approval and for unassignable roles; fi
 
 // ---------- injected-executor lead turns ----------
 
-function executorWith(replies: string[]): lead.LeadExecutor {
+function executorWith(replies: string[]) {
   let i = 0;
   return {
     async call() {

@@ -144,6 +144,9 @@ export type ResolveQuestionsResult =
   | { ok: true; card: QuestionsCard; leadMessage: string }
   | { ok: false; error: string };
 
+/** What the UI submits (§4.15.2): `usedDefault` is computed server-side, never sent. */
+export type QuestionAnswerInput = Omit<QuestionAnswer, "usedDefault"> & { usedDefault?: boolean };
+
 /**
  * Answer or skip one pending card (§4.15.2 `POST /questions/:cardId` with
  * `{answers}` or `{skip: true}`). `usedDefault` is computed server-side by
@@ -152,13 +155,13 @@ export type ResolveQuestionsResult =
 export function resolveQuestionsCard(
   project: AppProject,
   cardId: string,
-  outcome: { answers: QuestionAnswer[] } | { skip: true },
+  outcome: { answers: QuestionAnswerInput[] } | { skip: true },
 ): ResolveQuestionsResult {
   void project; // the card row carries the project binding; store.ts enforces it
   const card = getQuestionCard(cardId);
   if (!card) return { ok: false, error: "not_found" };
   if (card.status !== "pending") return { ok: false, error: "already_resolved" };
-  if (outcome.skip) {
+  if ("skip" in outcome) {
     const stored = answerQuestion(cardId, { skip: true });
     if (!stored || "error" in stored) return { ok: false, error: stored && "error" in stored ? stored.error : "not_found" };
     return {
@@ -171,9 +174,9 @@ export function resolveQuestionsCard(
     const q = card.questions.find((x) => x.id === a.questionId);
     if (!q) return { ok: false, error: `unknown question ${a.questionId}` };
     const known = new Set(q.options.map((o) => o.id));
-    if (a.optionIds.some((id) => !known.has(id))) return { ok: false, error: `answer for ${a.questionId} names an option that does not exist` };
+    if (a.optionIds.some((id: string) => !known.has(id))) return { ok: false, error: `answer for ${a.questionId} names an option that does not exist` };
   }
-  const answers = outcome.answers.map((a) => {
+  const answers: QuestionAnswer[] = outcome.answers.map((a) => {
     const q = card.questions.find((x) => x.id === a.questionId)!;
     const usedDefault =
       a.usedDefault ?? (JSON.stringify([...a.optionIds].sort()) === JSON.stringify([...q.defaultOptionIds].sort()) && !a.otherText);
@@ -311,7 +314,7 @@ export function createPlanDraft(project: AppProject, runId: string, doc: PlanDoc
 export type PlanDecisionResult =
   | { ok: true; draft: PlanDraft; resumeInstruction?: string }
   | { ok: false; error: "stale_revision"; latest: number }
-  | { ok: false; error: string };
+  | { ok: false; error: string; latest?: never };
 
 /**
  * Approve a revision (§4.2.2 rule 3): a `revision` that is not the latest draft

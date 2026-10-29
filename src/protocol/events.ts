@@ -584,6 +584,95 @@ export function mapAgentEvent(event: AgentEvent, state: EventMapperState, sessio
       break;
     }
 
+    // App Builder run-bound events (MISSING §4.15.1): snake_case AgentEvents
+    // mapped to the app* ChatEvents like every event above.
+    case "app_questions_required": {
+      out.push({
+        id: baseId(),
+        type: "appQuestionsRequested",
+        timestamp: ts,
+        projectId: event.projectId,
+        card: event.card,
+      });
+      break;
+    }
+
+    case "app_questions_resolved": {
+      out.push({
+        id: baseId(),
+        type: "appQuestionsResolved",
+        timestamp: ts,
+        projectId: event.projectId,
+        cardId: event.cardId,
+        status: event.status,
+      });
+      break;
+    }
+
+    case "app_plan_draft": {
+      out.push({
+        id: baseId(),
+        type: "appPlanDraft",
+        timestamp: ts,
+        projectId: event.projectId,
+        draft: event.draft,
+      });
+      break;
+    }
+
+    case "app_plan_decided": {
+      out.push({
+        id: baseId(),
+        type: "appPlanDecided",
+        timestamp: ts,
+        projectId: event.projectId,
+        draftId: event.draftId,
+        revision: event.revision,
+        decision: event.decision,
+        ...(event.reason ? { reason: event.reason } : {}),
+      });
+      break;
+    }
+
+    case "app_assignment": {
+      out.push({
+        id: baseId(),
+        type: "appAssignment",
+        timestamp: ts,
+        projectId: event.projectId,
+        assignment: event.assignment,
+      });
+      break;
+    }
+
+    case "app_verify_report": {
+      out.push({
+        id: baseId(),
+        type: "appVerifyReport",
+        timestamp: ts,
+        requestId: event.requestId,
+        projectId: event.projectId,
+        runId: event.runId,
+        attempt: event.attempt,
+        tier: event.tier,
+        pass: event.pass,
+        error: event.error,
+      });
+      break;
+    }
+
+    case "app_version": {
+      out.push({
+        id: baseId(),
+        type: "appVersion",
+        timestamp: ts,
+        projectId: event.projectId,
+        phase: event.phase,
+        version: event.version,
+      });
+      break;
+    }
+
     // State-only Loam events that do not have a chat-row rendering equivalent.
     case "task":
     case "step":

@@ -328,6 +328,19 @@ export type AgentEvent =
     }
   /** Orchestration Core (BUILD_SPEC §4.0.4): ledger, checkpoints, interrupts,
    * selection, guard, workflows, direct return. Additive union member. */
-  | OrchestrationEvent;
+  | OrchestrationEvent
+  /** App Builder run-bound events (MISSING §4.15.1), mapped by mapAgentEvent()
+   * into the app* ChatEvents. Type-only import: no runtime coupling. */
+  | AppBuilderRunEvent;
+
+/** The App Builder run-bound AgentEvents (MISSING §4.15.1); no run-graph node. */
+export type AppBuilderRunEvent =
+  | { type: "app_questions_required"; projectId: string; card: import("../appbuilder/types.js").QuestionsCard }
+  | { type: "app_questions_resolved"; projectId: string; cardId: string; status: "answered" | "skipped" | "expired" }
+  | { type: "app_plan_draft"; projectId: string; draft: import("../appbuilder/types.js").PlanDraft }
+  | { type: "app_plan_decided"; projectId: string; draftId: string; revision: number; decision: "approved" | "declined" | "superseded"; reason?: string }
+  | { type: "app_assignment"; projectId: string; assignment: import("../appbuilder/types.js").AppTaskAssignment }
+  | { type: "app_verify_report"; requestId: string; projectId: string; runId: string; attempt: number; tier: "fast" | "standard" | "strict"; pass: boolean; error: "verify_limit" | "aborted" | null }
+  | { type: "app_version"; projectId: string; phase: "created" | "updated"; version: import("../appbuilder/types.js").AppVersion };
 
 export type Emit = (event: AgentEvent) => void;
