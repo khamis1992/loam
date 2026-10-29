@@ -1,0 +1,21 @@
+{
+  "name": "Loam Remote",
+  "short_name": "Loam Remote",
+  "description": "متابعة مهام Loam والتحكم بها من الهاتف عبر الشبكة المحلية",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/remote",
+  "scope": "/remote",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d1210",
+  "theme_color": "#0d1210",
+  "icons": [
+    {
+      "src": "/remote/icon.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

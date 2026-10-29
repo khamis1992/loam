@@ -276,6 +276,7 @@ const MIME: Record<string, string> = {
   ".ttf": "font/ttf",
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
 };
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
@@ -580,7 +581,10 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         const isPublicShare = req.method === "GET" && (/^\/api\/share\/[A-Za-z0-9_-]+$/.test(p) || /^\/api\/office\/portal\/[A-Za-z0-9_-]+$/.test(p));
         // The share replay page and its static assets are public like the feed;
         // the public client portal page (/portal/<token>) is public the same way.
-        const isNextStatic = req.method === "GET" && (p === "/share" || p.startsWith("/share/") || p === "/portal" || p.startsWith("/portal/") || p.startsWith("/_next/"));
+        // The Loam Remote phone page (/remote) is a public PWA page too — the
+        // APIs it calls stay token-gated (the page sends the install token the
+        // user pasted once); its manifest/icon live under public /remote/.
+        const isNextStatic = req.method === "GET" && (p === "/share" || p.startsWith("/share/") || p === "/portal" || p.startsWith("/portal/") || p === "/remote" || p.startsWith("/remote/") || p.startsWith("/_next/"));
         if (req.method === "OPTIONS" && p.startsWith("/api/legal") && req.headers.origin === "app://agent") {
           res.writeHead(204, {
             "access-control-allow-origin": "app://agent", "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
@@ -758,6 +762,18 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
             throw error;
           }
         }
+        // Loam Remote (mobile PWA): same static-export trick as /share and
+        // /portal below, but placed ahead of the generic static branch because
+        // its public assets (/remote/manifest.webmanifest, /remote/icon.png)
+        // carry MIME-known extensions. The page is public; its /api calls carry
+        // the install token the user pastes once. Deployments that configured
+        // the legacy keyed phone page (LOAM_REMOTE_KEY) keep that page instead.
+        if (req.method === "GET" && (p === "/remote" || p.startsWith("/remote/")) && !process.env.LOAM_REMOTE_KEY) {
+          const rel = p === "/remote" ? "remote.html" : p.replace(/^\/+/, "");
+          serveNextExport(res, /^remote\/(manifest\.webmanifest|icon\.png)$/.test(rel) ? `/${rel}` : "/remote.html");
+          return;
+        }
+
         if (req.method === "GET" && !p.startsWith("/vendor/") && (p === "/" || MIME[path.extname(p).toLowerCase()] !== undefined)) {
           serveStatic(res, p);
           return;
