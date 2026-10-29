@@ -46,6 +46,8 @@ export interface RoutingCallOptions {
   /** Explicit model override (a tool's declared model, or a run's pinned model). */
   model?: string;
   notify?: (message: string) => void;
+  /** Enable thinking mode for local models (default: false for Ollama). */
+  think?: boolean;
 }
 
 /**
@@ -89,6 +91,7 @@ export async function chatWithRouting(options: RoutingCallOptions): Promise<Chat
       ...(options.signal ? { signal: options.signal } : {}),
       ...(options.onToken ? { onToken: options.onToken } : {}),
       notify: options.notify,
+      think: options.think,
     });
   }
 
@@ -102,6 +105,7 @@ export async function chatWithRouting(options: RoutingCallOptions): Promise<Chat
       timeoutMs: options.timeoutMs ?? options.cfg.agent.requestTimeoutMs,
       ...(options.signal ? { signal: options.signal } : {}),
       ...(options.onToken ? { onToken: options.onToken } : {}),
+      think: options.think ?? false,
     },
     store: options.store,
     env,
