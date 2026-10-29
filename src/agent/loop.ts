@@ -479,6 +479,8 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
   // How this run actually ended, so SessionEnd can report a truthful reason
   // instead of a blanket "failed".
   let endedReason: "completed" | "cancelled" | "failed" = "failed";
+  let lastStepFailed = false;
+  let consecutiveEmptyResults = 0;
   const usage: Usage = { promptTokens: 0, completionTokens: 0, durationMs: 0 };
   // Prompt-cache (KV) accounting: classify a miss whenever a meaningful part of
   // the previously reusable prefix was not read back.
@@ -742,11 +744,25 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
     };
     cacheMonitor.beginRequest(route, requestSignature(routingSystem, requestTools, messages));
 
+    // Determine if thinking mode should be enabled for local Ollama models.
+    // Default: think=false. Escalate to think=true for hard tasks:
+    // - Multi-file / architectural planning
+    // - Debugging after a failed test
+    // - Math/algorithmic tasks
+    // - After a think=false attempt failed validation
+    const isLocalOllama = !opts.cfg.model.endsWith(":cloud");
+    const recentMessages = messages.slice(-5).map(m => m.content ?? "").join(" ").toLowerCase();
+    const isArchitectural = /\b(architect|design|refactor|restructure|reorganize|multi-file|multiple file|several file)/i.test(opts.prompt + " " + recentMessages);
+    const isMathAlgorithmic = /\b(algorithm|calculate|compute|math|equation|formula|optimization|complexity|recursive|dynamic programming|graph|tree|sort|search)/i.test(opts.prompt + " " + recentMessages);
+    const hasTestFailure = messages.slice(-3).some(m => m.role === "tool" && /\b(test.*fail|fail.*test|error|exception|assertion.*fail)/i.test(m.content ?? ""));
+    const shouldThink = isLocalOllama && (lastStepFailed || isArchitectural || isMathAlgorithmic || hasTestFailure || consecutiveEmptyResults > 0);
+    
     const chatRequest = {
       model: opts.cfg.model,
       messages,
       tools: requestTools,
       temperature: opts.cfg.agent.temperature,
+      think: shouldThink,
       // An explicit per-run model (the quick-edit route) wins over the config
       // default; the router still replaces it with the strongest coder on a
       // coding turn.
@@ -837,6 +853,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
     if (result.toolCalls.length === 0) {
       finalText = result.content.trim();
       if (!finalText) {
+        consecutiveEmptyResults++;
         // Retry only an empty completed response, never a tool execution or a
         // transport failure with uncertain effects. Retain the full transcript
         // and charge this attempt against the existing step/token budget.
@@ -846,6 +863,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
         messages.push({ role: "user", content: "Your last response contained neither text nor tool calls. Continue from the tool results already present above; do not repeat completed actions. Provide an evidence-grounded answer or the next necessary tool call. Completion still requires verification." });
         continue;
       }
+      consecutiveEmptyResults = 0;
       if (opts.suppressFinal !== true) {
         // Stop: a hook may force the agent to continue for another step.
         const stop = await runLifecycleHooks("Stop", "", { stopReason: "completed" }, workspace);
@@ -867,12 +885,14 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
         opts.emit({ type: "verify", verdict: checked.verdict, reason: checked.reason });
         verificationAttempts++;
         if (checked.verdict !== "pass") {
+          lastStepFailed = true;
           if (checked.unavailable) throw new Error(`Independent verification unavailable; preserve output and retry verification when the environment is ready: ${checked.reason}`);
           if (verificationAttempts >= 2) throw new Error(`task incomplete: final verification ${checked.verdict}: ${checked.reason}`);
           messages.push({ role: "assistant", content: finalText });
           messages.push({ role: "user", content: `Verification did not pass: ${checked.reason}\n${checked.fixes.join("\n")}\nObtain evidence or repair the result. Do not claim completion without verification.` });
           continue;
         }
+        lastStepFailed = false;
         finalText = checked.finalAnswer ?? finalText;
         opts.emit({ type: "assistant_message", text: finalText });
         opts.emit({ type: "done", text: finalText, steps: step, model: usedModel });

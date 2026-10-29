@@ -17,6 +17,8 @@ export interface ModelCallOptions {
   model?: string;
   /** Called before each fallback attempt (never for the last candidate). */
   notify?: (message: string) => void;
+  /** Enable thinking mode for local models (default: false for Ollama). */
+  think?: boolean;
 }
 
 export function candidateModels(cfg: Config, preferred?: string): string[] {
@@ -48,7 +50,26 @@ export async function chatWithFallback(opts: ModelCallOptions): Promise<ChatResu
         timeoutMs: opts.timeoutMs ?? opts.cfg.agent.requestTimeoutMs,
         ...(opts.signal ? { signal: opts.signal } : {}),
         ...(opts.onToken ? { onToken: opts.onToken } : {}),
+        think: opts.think ?? false,
       });
+      
+      // If thinking mode returned empty content due to length limit, retry without thinking
+      if (opts.think === true && result.content.trim().length === 0 && result.doneReason === "length") {
+        log.info("model_request", { ...attempt, phase: "retry_no_think", reason: "empty_content_with_length" });
+        const retryResult = await opts.ollama.chat({
+          model,
+          messages: opts.messages,
+          ...(opts.tools && opts.tools.length > 0 ? { tools: opts.tools } : {}),
+          temperature: opts.temperature ?? opts.cfg.agent.temperature,
+          timeoutMs: opts.timeoutMs ?? opts.cfg.agent.requestTimeoutMs,
+          ...(opts.signal ? { signal: opts.signal } : {}),
+          ...(opts.onToken ? { onToken: opts.onToken } : {}),
+          think: false,
+        });
+        log.info("model_request", { ...attempt, phase: "complete", elapsedMs: Math.round(performance.now() - started), providerDurationMs: retryResult.usage.durationMs, promptTokens: retryResult.usage.promptTokens, completionTokens: retryResult.usage.completionTokens, toolCallCount: retryResult.toolCalls.length });
+        return retryResult;
+      }
+      
       log.info("model_request", { ...attempt, phase: "complete", elapsedMs: Math.round(performance.now() - started), providerDurationMs: result.usage.durationMs, promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens, toolCallCount: result.toolCalls.length });
       return result;
     } catch (err) {
