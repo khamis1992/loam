@@ -482,7 +482,12 @@ async function main(): Promise<void> {
         : baseRunAllow;
       // N3 Knowledge Garden: kb_* tools stay registered (the companion gateway
       // advertises them) but only reach the model when the run's garden is on.
-      const knowledgeRunAllow = applyKnowledgeGate(runAllow, opts.savedRun.knowledge === true);
+      // «تحدث مع ملفاتك» (Phase-2 W2): in the core ask/build modes the garden
+      // is on by default via the settings flag `knowledgeRag` (default ON);
+      // every other mode keeps the explicit per-run opt-in toggle.
+      const knowledgeDefaultOn =
+        (effectiveMode === "ask" || effectiveMode === "build") && getSettings().knowledgeRag !== false;
+      const knowledgeRunAllow = applyKnowledgeGate(runAllow, opts.savedRun.knowledge === true || knowledgeDefaultOn);
       const runAllowSet = new Set(knowledgeRunAllow);
       // N16: recall/recall_status are always-on names (runTools.ts) but the
       // run-scoped instances above are the ones that can attach a hit to THIS

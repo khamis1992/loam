@@ -48,6 +48,11 @@ export interface Settings {
   /** الهوية في المستندات (د2): the acting identity for office intelligence,
    *  track changes and audits. Unset keeps the legacy admin/"local" identity. */
   officeIdentity?: { name?: string; role?: "partner" | "senior" | "associate" | "paralegal" | "reviewer" | "client" | "admin" };
+  /** «تحدث مع ملفاتك» (Phase-2 W2): the Knowledge Garden (kb_*) tools ship in
+   *  the core ask/build modes. Missing/undefined is ON (the spec default), so
+   *  an older settings file keeps the garden promoted; `false` removes the
+   *  kb_* names from those modes' tool lists everywhere at once. */
+  knowledgeRag?: boolean;
 }
 
 const OFFICE_ROLES = new Set(["partner", "senior", "associate", "paralegal", "reviewer", "client", "admin"]);
@@ -91,6 +96,7 @@ export function loadSettings(): Settings {
         ...(typeof parsed.planApprovalSkipTrivial === "boolean" ? { planApprovalSkipTrivial: parsed.planApprovalSkipTrivial } : {}),
         ...(isLocationSetting(parsed.location) ? { location: parsed.location } : {}),
         ...(isOfficeIdentitySetting(parsed.officeIdentity) ? { officeIdentity: parsed.officeIdentity } : {}),
+        ...(typeof parsed.knowledgeRag === "boolean" ? { knowledgeRag: parsed.knowledgeRag } : {}),
         ...(parsed.sandboxMode === "untrusted_only" || parsed.sandboxMode === "all_shell" ? { sandboxMode: parsed.sandboxMode } : {}),
         ...(Array.isArray(parsed.sandboxAllowedDomains) ? { sandboxAllowedDomains: parsed.sandboxAllowedDomains.map(String) } : {}),
         ...(typeof parsed.sandboxSkipProfileGrant === "boolean" ? { sandboxSkipProfileGrant: parsed.sandboxSkipProfileGrant } : {}),
@@ -164,6 +170,7 @@ export function updateSettings(patch: Partial<Settings>): Settings {
   }
   if (typeof patch.sandboxSkipProfileGrant === "boolean") settings.sandboxSkipProfileGrant = patch.sandboxSkipProfileGrant;
   if (typeof patch.sandboxSupplyChainAck === "boolean") settings.sandboxSupplyChainAck = patch.sandboxSupplyChainAck;
+  if (typeof patch.knowledgeRag === "boolean") settings.knowledgeRag = patch.knowledgeRag;
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     const tmp = `${FILE}.tmp`;

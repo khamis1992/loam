@@ -13,11 +13,14 @@
  * without the toggle never sees the names, so the model cannot spend a call on a
  * feature the user switched off.
  */
+import fs from "node:fs";
+import path from "node:path";
 import type { Tool, ToolResult } from "./registry.js";
 import { num, str, strs } from "./registry.js";
 import { preview } from "../knowledge/text.js";
 import { DEFAULT_BASE_NAME, ingestContent, type IngestDeps } from "../knowledge/ingest.js";
 import { searchKnowledge, type SearchOptions } from "../knowledge/search.js";
+import { compileGlobs } from "./search.js";
 import {
   deleteBase,
   deleteSeed,
@@ -76,6 +79,37 @@ function searchBases(baseId?: string): { baseId?: string } {
   return byName ? { baseId: byName.id } : {};
 }
 
+/**
+ * The shared body behind `kb_search` and the legacy `rag_query` redirector
+ * (Phase-2 W2): one implementation, so the two tools can never drift on
+ * ranking, citations or the seed metadata the run graph hangs nodes on.
+ * `defaults` carries the embedder/model wired at runtime.
+ */
+export async function runKnowledgeSearch(args: Record<string, unknown>, defaults: SearchOptions): Promise<ToolResult> {
+  const query = str(args, "query").trim();
+  if (!query) return { ok: false, content: "query is required" };
+  const k = Math.min(Math.max(num(args, "k", 5), 1), MAX_K);
+  const { baseId } = searchBases(str(args, "baseId").trim());
+  try {
+    const result = await searchKnowledge(query, { ...defaults, baseId, k });
+    if (result.empty) {
+      return { ok: true, content: `No knowledge seeds match "${query}" (${scopeOf({ baseId })}).` };
+    }
+    const lines = result.hits.flatMap((hit) => [
+      `[seed:${hit.seedId}] score=${hit.score} tags=${hit.tags.join(",") || "none"} title=${hit.title}`,
+      `  ${preview(hit.body, 320)}`,
+    ]);
+    return {
+      ok: true,
+      content: `Knowledge seeds for "${query}" (${result.mode}, ${scopeOf({ baseId })}):\n${lines.join("\n\n")}`,
+      kbSeedIds: result.hits.map((h) => h.seedId),
+      kbSeeds: result.hits.map((h) => ({ id: h.seedId, title: h.title, tags: h.tags, preview: preview(h.body, 160) })),
+    };
+  } catch (err) {
+    return { ok: false, content: `kb_search failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
 /** Build the garden tool set. */
 export function createKnowledgeTools(opts: KnowledgeToolOptions = {}): Tool[] {
   const searchOptionsDefaults: SearchOptions = {
@@ -98,28 +132,7 @@ export function createKnowledgeTools(opts: KnowledgeToolOptions = {}): Tool[] {
         required: ["query"],
       },
       async run(args: Record<string, unknown>): Promise<ToolResult> {
-        const query = str(args, "query").trim();
-        if (!query) return { ok: false, content: "kb_search requires a query" };
-        const k = Math.min(Math.max(num(args, "k", 5), 1), MAX_K);
-        const { baseId } = searchBases(str(args, "baseId").trim());
-        try {
-          const result = await searchKnowledge(query, { ...searchOptionsDefaults, baseId, k });
-          if (result.empty) {
-            return { ok: true, content: `No knowledge seeds match "${query}" (${scopeOf({ baseId })}).` };
-          }
-          const lines = result.hits.flatMap((hit) => [
-            `[seed:${hit.seedId}] score=${hit.score} tags=${hit.tags.join(",") || "none"} title=${hit.title}`,
-            `  ${preview(hit.body, 320)}`,
-          ]);
-          return {
-            ok: true,
-            content: `Knowledge seeds for "${query}" (${result.mode}, ${scopeOf({ baseId })}):\n${lines.join("\n\n")}`,
-            kbSeedIds: result.hits.map((h) => h.seedId),
-            kbSeeds: result.hits.map((h) => ({ id: h.seedId, title: h.title, tags: h.tags, preview: preview(h.body, 160) })),
-          };
-        } catch (err) {
-          return { ok: false, content: `kb_search failed: ${err instanceof Error ? err.message : String(err)}` };
-        }
+        return runKnowledgeSearch(args, searchOptionsDefaults);
       },
     },
     {
@@ -279,4 +292,180 @@ export function createKnowledgeTools(opts: KnowledgeToolOptions = {}): Tool[] {
 /** Human-readable scope of a search, for the tool's own output. */
 function scopeOf(opts: { baseId?: string }): string {
   return opts.baseId ? `base=${opts.baseId}` : "all bases";
+}
+
+// ---------------------------------------------------------------------------
+// task_files_ingest («تحدث مع ملفاتك», Phase-2 W2)
+// ---------------------------------------------------------------------------
+
+/** Plain-text extensions worth importing without a heavy extraction pass.
+ *  Office/PDF files stay out of the bulk path on purpose: they are binary
+ *  formats, and kb_ingest already handles them one at a time. */
+const TASK_TEXT_EXT = new Set([
+  ".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".jsonl", ".log", ".yml", ".yaml",
+  ".xml", ".html", ".htm", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py", ".css",
+  ".scss", ".less", ".sql", ".rs", ".go", ".java", ".c", ".h", ".cpp", ".hpp", ".sh",
+  ".bat", ".ps1", ".rb", ".php", ".vue", ".svelte", ".env",
+]);
+/** Directories never imported: the garden's own state, dependency stores,
+ *  version control and build output dwarf the sources and carry no signal. */
+const TASK_SKIP_DIRS = new Set([
+  ".loam", "node_modules", ".git", ".hg", ".svn", ".venv", "__pycache__",
+  "dist", "build", ".next", ".turbo", "coverage", ".cache",
+]);
+const TASK_DEFAULT_MAX_BYTES = 256 * 1024;
+const TASK_DEFAULT_MAX_FILES = 200;
+const TASK_DEFAULT_TOTAL_BYTES = 8 * 1024 * 1024;
+
+interface TaskWalkedFile {
+  full: string;
+  rel: string;
+  size: number;
+}
+
+/** Collect candidate text files under `root`, pruned by directory name and
+ *  capped by count; containment is structural (the walk starts at the resolved
+ *  workspace and never follows symlinks), so no file outside it can appear. */
+function walkTaskTextFiles(root: string, maxFiles: number): TaskWalkedFile[] {
+  const out: TaskWalkedFile[] = [];
+  const stack: string[] = [root];
+  while (stack.length > 0 && out.length < maxFiles) {
+    const dir = stack.pop()!;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (out.length >= maxFiles) break;
+      if (entry.isSymbolicLink()) continue;
+      if (entry.isDirectory()) {
+        if (TASK_SKIP_DIRS.has(entry.name) || entry.name.startsWith(".")) continue;
+        stack.push(path.join(dir, entry.name));
+      } else if (entry.isFile()) {
+        if (entry.name.startsWith(".")) continue;
+        if (!TASK_TEXT_EXT.has(path.extname(entry.name).toLowerCase())) continue;
+        const full = path.join(dir, entry.name);
+        try {
+          out.push({ full, rel: path.relative(root, full).split(path.sep).join("/"), size: fs.statSync(full).size });
+        } catch {
+          /* unreadable stat: skip the file */
+        }
+      }
+    }
+  }
+  return out.sort((a, b) => a.rel.localeCompare(b.rel));
+}
+
+/**
+ * `task_files_ingest` («تحدث مع ملفاتك»): bulk-import the CURRENT task
+ * workspace's text files into the Knowledge Garden (the default base kb_search
+ * reads), so the very next question can be answered from the user's own files
+ * with [seed:ID] citations. Contained to the task workspace, text extensions
+ * only, per-file/total size caps and a file-count cap; deterministic fixed
+ * chunking (no LLM split) keeps a bulk import fast and offline.
+ */
+export function createTaskFilesIngestTool(opts: KnowledgeToolOptions = {}): Tool {
+  return {
+    name: "task_files_ingest",
+    description:
+      "«تحدث مع ملفاتك»: import the current task workspace's text files (md/txt/csv/json/code...) into the Knowledge Garden so the next answers come from the user's own files, cited as [seed:ID]. Skips .loam/, dependency/build directories, binaries and oversized files. Call it once when the user asks to chat with/read/filter the task's files, then answer with kb_search instead of re-reading files. Office/PDF/image files: use kb_ingest one at a time.",
+    parameters: {
+      type: "object",
+      properties: {
+        maxBytes: { type: "number", description: `Per-file size cap in bytes (default ${TASK_DEFAULT_MAX_BYTES}; larger files are skipped).` },
+        patterns: {
+          type: "array",
+          items: { type: "string" },
+          description: 'Optional glob filters, e.g. ["docs/**/*.md", "src/**", "!**/*.test.ts"]. Default: every text file in the workspace.',
+        },
+      },
+    },
+    async run(args: Record<string, unknown>, ctx): Promise<ToolResult> {
+      const maxBytes = Math.max(num(args, "maxBytes", TASK_DEFAULT_MAX_BYTES), 1024);
+      const maxFiles = TASK_DEFAULT_MAX_FILES;
+      const totalBudget = Math.max(TASK_DEFAULT_TOTAL_BYTES, maxBytes);
+      const patterns = strs(args, "patterns");
+      const matcher = patterns.length > 0 ? compileGlobs(patterns.join(",")) : null;
+
+      const root = path.resolve(ctx.workspace);
+      const candidates = walkTaskTextFiles(root, maxFiles).filter(
+        (file) => !matcher || matcher.test(file.rel, path.basename(file.rel)),
+      );
+      const skipped: string[] = [];
+      const ingested: Array<{ rel: string; seeds: number }> = [];
+      const seedIds: string[] = [];
+      const seedSummaries: Array<{ id: string; title: string; tags: string[]; preview: string }> = [];
+      let seedsTotal = 0;
+      let bytesTotal = 0;
+      let truncated = false;
+
+      for (const file of candidates) {
+        // Containment: rel is derived from the resolved workspace root, so a
+        // pattern can never pull a file outside the task workspace in.
+        if (bytesTotal + file.size > totalBudget) {
+          skipped.push(`${file.rel} (تجاوز ميزانية الحجم الإجمالية)`);
+          truncated = true;
+          continue;
+        }
+        if (file.size > maxBytes) {
+          skipped.push(`${file.rel} (أكبر من ${maxBytes} بايت)`);
+          continue;
+        }
+        let text: string;
+        try {
+          text = fs.readFileSync(file.full, "utf8");
+        } catch {
+          skipped.push(`${file.rel} (تعذّرت القراءة)`);
+          continue;
+        }
+        if (!text.trim()) {
+          skipped.push(`${file.rel} (فارغ)`);
+          continue;
+        }
+        try {
+          const result = await ingestContent(
+            text,
+            {
+              baseName: DEFAULT_BASE_NAME,
+              tags: ["task-files"],
+              split: "fixed",
+              provenance: provenanceFor("file", file.rel, ctx.taskId),
+              ...(ctx.signal ? { signal: ctx.signal } : {}),
+            },
+            { ...depsOf(opts), maxChars: opts.maxChars ?? 1600 },
+          );
+          bytesTotal += file.size;
+          if (result.seeds.length === 0) {
+            skipped.push(`${file.rel} (لا نص قابل للاستيراد)`);
+            continue;
+          }
+          ingested.push({ rel: file.rel, seeds: result.seeds.length });
+          seedsTotal += result.seeds.length;
+          seedIds.push(...result.seeds.map((s) => s.id));
+          seedSummaries.push(...result.seeds.slice(0, 3).map((s) => ({ id: s.id, title: s.title, tags: s.tags, preview: preview(s.body, 160) })));
+        } catch (err) {
+          skipped.push(`${file.rel} (${err instanceof Error ? err.message : String(err)})`);
+        }
+      }
+
+      const head =
+        `تمت فلترة ملفات هذه المهمة في حديقة المعرفة: ${ingested.length} ملفًا ← ${seedsTotal} بذرة` +
+        (matcher ? " (بأنماط محددة)" : "") +
+        (truncated ? " — توقّف الاستيراد عند بلوغ الميزانية" : "");
+      const detail = ingested.slice(0, 15).map((f) => `  ${f.rel} ← ${f.seeds} بذرة`).join("\n");
+      const skipLine = skipped.length > 0 ? `\nتخطّي ${skipped.length}: ${skipped.slice(0, 10).join("، ")}${skipped.length > 10 ? " وغيرها" : ""}` : "";
+      const next =
+        ingested.length > 0
+          ? "\nالآن أجب من ملفات المستخدم عبر kb_search مع الاستشهاد [seed:ID]."
+          : "\nلا ملفات نصية للاستيراد في مساحة المهمة؛ يمكن للمستخدم رفع ملفات أو استخدام kb_ingest لمستند واحد.";
+      return {
+        ok: ingested.length > 0,
+        content: [head, detail, skipLine, next].filter((part) => part && part.trim().length > 0).join("\n"),
+        kbSeedIds: seedIds,
+        kbSeeds: seedSummaries,
+      };
+    },
+  };
 }

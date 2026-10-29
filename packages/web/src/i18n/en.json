@@ -1337,5 +1337,7 @@
   "The name signed on tracked changes and office intelligence runs.": "The name signed on tracked changes and office intelligence runs.",
   "Document identity name": "Document identity name",
   "Document identity role": "Document identity role",
-  "Saved": "Saved"
+  "Saved": "Saved",
+  "Chat with your files": "Chat with your files",
+  "Filter this task's files into the Knowledge Garden, then answer from my files only": "Filter this task's files into the Knowledge Garden, then answer from my files only"
 }

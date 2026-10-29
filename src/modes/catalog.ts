@@ -1,6 +1,8 @@
 /** Loam's first-party modes. Tool access is enforced by ToolRegistry.forMode. */
 import { reverseEngineerMode } from "./reverseEngineer.js";
 import { CUA_DRIVER_TOOL_ALLOWLIST } from "../tools/cuaDriverAllowlist.js";
+import { getSettings } from "../server/settings.js";
+import { KNOWLEDGE_TOOL_NAMES } from "../server/knowledgeTools.js";
 
 export interface LoamMode {
   id: string; label: string; labelAr: string; icon: string; hue: number; hue2: number;
@@ -74,9 +76,9 @@ export const LOAM_MODES: LoamMode[] = [
     starters: [{ label: "افحص جودة البيانات", prompt: "افحص ملف CSV المرفق ولخص عدد الصفوف والقيم المفقودة والأعمدة الرقمية دون اختلاق بيانات." }, { label: "استخرج مؤشرات", prompt: "استخرج المؤشرات الرئيسية من البيانات المرفقة واحفظ تقريرًا يشرح الحسابات وحدودها." }] },
   { id: "media", label: "Loam Studio", labelAr: "صمّم", icon: "◇", hue: 25, hue2: 45,
     tagline: "من الفكرة إلى مشهد حي", description: "حرّر المجسّمات والخامات والإضاءة والحركة، واستورد ملفات GLB وصدّر المشهد والصور من مساحة المهمة.", outputHint: "مشهد ثلاثي الأبعاد وصور وملفات GLB. Use loam_creative/loam_canvas for video/image/design work.", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_canvas", "loam_creative", ...PREVIEW, ...GEN_MEDIA, ...CONTROL], panels: ["creative", "files", "preview"],
+    tools: ["integration_list", "integration_call", ...READ, "file_write", "file_edit", "find_and_edit", "file_mkdir", ...EDIT_EXTRA, "artifact_publish", "loam_canvas", "loam_creative", "creative_subtitles", ...PREVIEW, ...GEN_MEDIA, ...CONTROL], panels: ["creative", "files", "preview"],
     fields: [{ id: "brief", label: "الفكرة البصرية", placeholder: "صف المشهد والمجسّمات التي تريد إنشاءها", multiline: true }, { id: "style", label: "الخامات والإخراج", placeholder: "الألوان والإضاءة وزاوية الكاميرا والحركة" }],
-    starters: [{ label: "مشهد منتج", prompt: "أنشئ مشهد منتج من المجسّمات الأساسية مع قاعدة وخامات معدنية وإضاءة مناسبة باستخدام loam_creative." }, { label: "تكوين متحرك", prompt: "أنشئ تكوينًا من حلقات وكرات متناسقة الألوان مع حركة دوران باستخدام loam_creative." }] },
+    starters: [{ label: "مشهد منتج", prompt: "أنشئ مشهد منتج من المجسّمات الأساسية مع قاعدة وخامات معدنية وإضاءة مناسبة باستخدام loam_creative." }, { label: "تكوين متحرك", prompt: "أنشئ تكوينًا من حلقات وكرات متناسقة الألوان مع حركة دوران باستخدام loam_creative." }, { label: "ترجمات تلقائية", prompt: "فرّغ صوت الفيديو المرفق وأنشئ ترجمات SRT وVTT بأسطر قصيرة بطوابع زمنية بجوار الملف نفسه باستخدام creative_subtitles." }] },
   { id: "security", label: "Loam Security", labelAr: "افحص", icon: "🛡", hue: 0, hue2: 30,
     tagline: "تقييم أمني موجّه", description: "شغّل فحوصات أمنية محدودة وقراءة فقط ضد أهداف مصرّح بها، واجمع النتائج في تقرير Security/SARIF داخل المهمة.", outputHint: "تقرير ثغرات وتوصيات تصحيح. Use pentest_*/security_* tools; do not use generic shell scripts for security scans unless a dedicated tool is missing.", readOnly: false,
     tools: ["pentest_check", "pentest_routes", "pentest_report", "security_assess", "security_status", "security_audit_start", "security_audit_status", "security_audit_report", "remediation_start", "remediation_status", "remediation_report", "remediation_cancel", "skill_list", "skill_view", "secrets_scan", "sca_scan", "sbom_generate", "sast_scan", "sast_diff", "config_scan", "supplychain_scan", "recon_scan", "llm_scan", "mcp_scan", "shell_run", ...READ, ...CONTROL], panels: ["files"],
@@ -114,15 +116,33 @@ export function normalizeModeId(value?: string): string {
   const id = (value ?? "").trim() || "build";
   return aliases[id] ?? id;
 }
+
+/**
+ * «تحدث مع ملفاتك» (Phase-2 W2): the Knowledge Garden (kb_* + task_files_ingest)
+ * is a core capability of the ask and build modes, so every resolver that reads
+ * a mode — registry.forMode, the companion gateway, the modes UI — sees the
+ * names without each caller appending them. The single gate is the settings
+ * flag `knowledgeRag` (default ON): `false` removes the names from both modes
+ * everywhere at once, and no other mode is ever touched (they keep the explicit
+ * per-run garden toggle).
+ */
+const KNOWLEDGE_CORE_MODES = new Set(["ask", "build"]);
+
+function withKnowledgeTools(mode: LoamMode): LoamMode {
+  if (!KNOWLEDGE_CORE_MODES.has(mode.id) || getSettings().knowledgeRag === false) return mode;
+  const extra = KNOWLEDGE_TOOL_NAMES.filter((name) => !mode.tools.includes(name));
+  return extra.length > 0 ? { ...mode, tools: [...mode.tools, ...extra] } : mode;
+}
+
 export function getLoamMode(value?: string): LoamMode {
   const id = normalizeModeId(value);
   const mode = LOAM_MODES.find((m) => m.id === id);
   if (!mode) throw new Error(`Unknown Loam mode: ${id}`);
-  return mode;
+  return withKnowledgeTools(mode);
 }
 export function getLoamModesUi(registeredNames: string[] = []): { available: boolean; activeMode: string; modes: Array<LoamMode & { availableTools: string[]; unavailableTools: string[]; activeToolCount: number }> } {
   const registered = new Set(registeredNames);
-  return { available: true, activeMode: "build", modes: LOAM_MODES.map((mode) => {
+  return { available: true, activeMode: "build", modes: LOAM_MODES.map((mode) => withKnowledgeTools(mode)).map((mode) => {
     const availableTools = mode.tools.filter((name) => registered.has(name));
     return { ...mode, availableTools, unavailableTools: mode.tools.filter((name) => !registered.has(name)), activeToolCount: availableTools.length };
   }) };

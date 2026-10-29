@@ -29,7 +29,7 @@ export const COMPANION_SERVICES: CompanionService[] = [
   { id: "browser", labelAr: "المتصفح", description: "أتمتة متصفح بجلسة المهمة مع أدلة", tools: ["browser_open", "browser_goto", "browser_snapshot", "browser_click", "browser_type", "browser_press", "browser_eval", "browser_screenshot", "browser_table", "browser_act", "browser_pages", "browser_close", "browser_trace_start", "browser_trace_stop", "browser_trace_status", "browser_som"] },
   { id: "office", labelAr: "الأوفيس", description: "مستندات وجداول وعروض وصور وتصاميم حية في لوحة العمل (Loam Docs/Sheets/Slides/Photo/Design) + استيراد وتصدير DOCX/XLSX/PPTX", tools: ["loam_document", "loam_studio", "office_craft", "office_import", "office_export", "office_status"] },
   { id: "data", labelAr: "تحليل البيانات", description: "جداول ومؤشرات داخل المهمة", tools: ["loam_dataset"] },
-  { id: "creative", labelAr: "استديو صمّم", description: "تحرير الصور والفيديو والمجسمات + التصدير الخلفي", tools: ["loam_creative", "loam_canvas", "creative_export", "creative_export_status", "creative_export_result", "creative_timeline", "creative_image"] },
+  { id: "creative", labelAr: "استديو صمّم", description: "تحرير الصور والفيديو والمجسمات + التصدير الخلفي", tools: ["loam_creative", "loam_canvas", "creative_export", "creative_export_status", "creative_export_result", "creative_timeline", "creative_image", "creative_subtitles"] },
   { id: "mobile", labelAr: "تطوير التطبيقات", description: "مشاريع تطبيقات ويب وجوال وبناء APK محلي", tools: ["loam_mobile", "rork_build", "rork_from_web"] },
   { id: "swarm", labelAr: "ذكاء الأسراب", description: "تفويض فرق مساعدين وبوابات جودة", tools: ["super_swarm", "super_quality_gate", "super_time_travel", "metagpt_company", "subagent_list", "delegate_subagent"] },
   { id: "security", labelAr: "الأمن السيبراني", description: "فحوص مصرّح بها (رؤوس/كوكيز/ملفات مكشوفة/TLS...) وتقارير عبر pentest_check", tools: ["pentest_check", "pentest_routes", "pentest_report"] },
@@ -39,7 +39,9 @@ export const COMPANION_SERVICES: CompanionService[] = [
   // N3 Knowledge Garden: the user's own imported documents, split into
   // retrievable seeds. Reachable only when the run's KB toggle is on, so the
   // service grants the names and src/index.ts applies the per-run gate.
-  { id: "knowledge", labelAr: "حديقة المعرفة", description: "مستنداتك المستوردة مقسّمة إلى بذور قابلة للبحث مع الوسوم والاسترجاع الهجين (يقرأها الوكيل فقط عند تفعيل مفتاح الحديقة في التشغيل)", tools: ["kb_search", "kb_ingest", "kb_manage"] },
+  // Phase-2 W2 «تحدث مع ملفاتك»: task_files_ingest bulk-imports the task
+  // workspace's text files through the same garden, so it rides the same gate.
+  { id: "knowledge", labelAr: "حديقة المعرفة", description: "مستنداتك المستوردة مقسّمة إلى بذور قابلة للبحث مع الوسوم والاسترجاع الهجين (يقرأها الوكيل فقط عند تفعيل مفتاح الحديقة في التشغيل)", tools: ["kb_search", "kb_ingest", "kb_manage", "task_files_ingest"] },
   { id: "skills", labelAr: "المهارات", description: "اكتشاف المهارات وتشغيلها", tools: ["skill_list", "skill_view", "skill_create", "skill_patch", "skill_delete", "skill_search", "skill_install"] },
   { id: "preview", labelAr: "المعاينة", description: "تشغيل معاينات المشروع محليًا", tools: ["preview_serve", "preview_status", "preview_stop", "preview_screenshot"] },
   { id: "screen", labelAr: "متابعة الشاشة", description: "قراءة شاشة المستخدم الحية (يتطلب وضع العمل على جهازي)", tools: ["screen_look", "screen_stream_start", "screen_stream_status", "screen_stream_stop", "screen_watch"] },

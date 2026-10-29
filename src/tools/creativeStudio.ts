@@ -6,11 +6,22 @@
  * remain editable in the studio.
  */
 import type { Tool, ToolResult } from "./registry.js";
-import { str, num, bool } from "./registry.js";
+import { str, num } from "./registry.js";
 import { taskPath } from "../server/taskWorkspace.js";
 import { getTask } from "../server/db.js";
+import { transcribe as defaultTranscribe, type Transcript } from "../creative/transcript.js";
+import { buildCaptions, toSrt, toVtt, type CaptionCue } from "../creative/auto.js";
 import fs from "node:fs";
 import path from "node:path";
+
+/**
+ * Injectable seam over the real caption pipeline. The default transcription
+ * path extracts 16 kHz mono audio (bundled ffmpeg) and POSTs it to the local
+ * STT server (LOAM_STT_URL); tests stub `transcribe` so no ffmpeg/STT runs.
+ */
+export interface CreativeStudioDeps {
+  transcribe?: (mediaPath: string) => Promise<Transcript>;
+}
 
 interface TimelineJob {
   id: string;
@@ -41,7 +52,8 @@ async function timelineApi(method: string, path: string, body?: unknown, taskId?
   }
 }
 
-export function createCreativeStudioTools(): Tool[] {
+export function createCreativeStudioTools(deps: CreativeStudioDeps = {}): Tool[] {
+  const transcribeMedia = deps.transcribe ?? defaultTranscribe;
   return [
     {
       name: "creative_export",
@@ -156,7 +168,65 @@ export function createCreativeStudioTools(): Tool[] {
         return { ok: false, content: `action ${action} غير مدعوم بعد` };
       },
     },
+    {
+      name: "creative_subtitles",
+      description: "أنشئ ترجمات تلقائية لملف وسائط في مساحة المهمة: يفرّغ الصوت عبر خادم التفريغ المحلي (faster-whisper) ويبني أسطر ترجمة ملفوفة بطوابع زمنية عبر مسار الترجمة نفسه في الاستوديو، ثم يكتب ملفي SRT وVTT بجوار الوسائط.",
+      parameters: {
+        type: "object",
+        properties: {
+          mediaPath: { type: "string", description: "مسار ملف الوسائط النسبي في مساحة المهمة (mp4/mkv/mov/webm/wav...)" },
+          format: { type: "string", enum: ["srt", "vtt", "both"], description: "صيغة الإخراج (افتراضي both)" },
+          maxChars: { type: "number", description: "أقصى عدد أحرف لكل سطر ترجمة (افتراضي 42)" },
+        },
+        required: ["mediaPath"],
+      },
+      async run(args, ctx): Promise<ToolResult> {
+        if (!ctx.taskId) return { ok: false, content: "مهمة نشطة مطلوبة" };
+        const rel = str(args, "mediaPath").trim();
+        if (!rel) return { ok: false, content: "mediaPath مطلوب (مسار الوسائط النسبي في مساحة المهمة)" };
+        const format = str(args, "format", "both");
+        if (!["srt", "vtt", "both"].includes(format)) return { ok: false, content: "format يجب أن يكون srt أو vtt أو both" };
+        const maxChars = num(args, "maxChars", 42);
+        if (!Number.isInteger(maxChars) || maxChars < 1) return { ok: false, content: "maxChars يجب أن يكون عددًا صحيحًا موجبًا" };
+        let file: string;
+        try {
+          file = taskPath(ctx.workspace, rel);
+        } catch {
+          return { ok: false, content: `مسار خارج مساحة المهمة غير مسموح: ${rel}` };
+        }
+        if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return { ok: false, content: `ملف الوسائط غير موجود: ${rel}` };
+        let transcript: Transcript;
+        try {
+          transcript = await transcribeMedia(file);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          return { ok: false, content: `تعذّر تفريغ صوت ${rel} — خادم التفريغ المحلي غير متاح أو لا يوجد كلام مفهوم في المقطع. التفاصيل: ${reason}` };
+        }
+        let cues: CaptionCue[];
+        try {
+          cues = buildCaptions(transcript.segments, { maxChars });
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          return { ok: false, content: `تعذّر بناء أسطر الترجمة من التفريغ: ${reason}` };
+        }
+        if (!cues.length) return { ok: false, content: `لم يُنتج التفريغ أي نص قابل للترجمة في ${rel}` };
+        const written: string[] = [];
+        if (format !== "vtt") {
+          fs.writeFileSync(path.resolve(`${file}.srt`), toSrt(cues), "utf8");
+          written.push(`${rel}.srt (SRT)`);
+        }
+        if (format !== "srt") {
+          fs.writeFileSync(path.resolve(`${file}.vtt`), toVtt(cues), "utf8");
+          written.push(`${rel}.vtt (VTT)`);
+        }
+        const duration = Number.isFinite(transcript.duration) ? Math.round(transcript.duration * 10) / 10 : 0;
+        return {
+          ok: true,
+          content: `تم إنشاء الترجمات: ${transcript.segments.length} مقطعًا صوتيًا ← ${cues.length} سطر ترجمة • المدة ${duration} ثانية\n${written.map((p) => `• ${p}`).join("\n")}`,
+        };
+      },
+    },
   ];
 }
 
-export const CREATIVE_STUDIO_TOOL_NAMES = ["creative_export", "creative_export_status", "creative_export_result", "creative_timeline", "creative_image"];
+export const CREATIVE_STUDIO_TOOL_NAMES = ["creative_export", "creative_export_status", "creative_export_result", "creative_timeline", "creative_image", "creative_subtitles"];

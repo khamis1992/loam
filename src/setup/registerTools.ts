@@ -27,6 +27,7 @@ import { createDeployTools } from "../tools/deploy.js";
 import { createDesignExploreTools } from "../tools/designExplore.js";
 import { createDesignLintTools } from "../tools/designLint.js";
 import { createDesignAssetsTools } from "../tools/designAssets.js";
+import { imageProviderFromConfig } from "../creative/imageProvider.js";
 import { createDesignBriefTools } from "../tools/designBrief.js";
 import { createDesignAutofixTools } from "../tools/designAutofix.js";
 import { createUiExamplesTools } from "../tools/uiExamples.js";
@@ -66,7 +67,11 @@ export function registerRuntimeTools(rt: {
   registry.registerAll(createDeployTools({ workspace: cfg.workspace, preview }));
   registry.registerAll(createDesignExploreTools());
   registry.registerAll(createDesignLintTools());
-  registry.registerAll(createDesignAssetsTools());
+  // W5: a configured BYOK image provider (cloudModel.images / LOAM_IMAGE_*) backs
+  // design_image_generate; without one the tool keeps its local deterministic
+  // generator. The provider is only wired when the network policy allows it.
+  const imageGenerator = cfg.policy?.networkEnabled === false ? undefined : imageProviderFromConfig(cfg.cloudModel);
+  registry.registerAll(createDesignAssetsTools({ generator: imageGenerator }));
   registry.registerAll(createDesignBriefTools({ ollama }));
   registry.registerAll(createDesignAutofixTools());
   registry.registerAll(createUiExamplesTools());

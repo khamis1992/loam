@@ -11,7 +11,7 @@ import {
 } from 'react';
 import {
   ArrowUp, Plus, ShieldCheck, Laptop, FolderGit, Folder, GitBranch, Square, X, ChevronDown,
-  Mic, Github, Mail, Calendar, Loader2, Wrench, Plug, Bot, Check, Leaf,
+  Mic, Github, Mail, Calendar, Loader2, Wrench, Plug, Bot, Check, Leaf, FileText,
 } from 'lucide-react';
 import { VoiceIcon } from '@/components/home/VoiceIcon';
 import { useVoiceTranscribe } from '@/components/chat/useVoiceTranscribe';
@@ -40,6 +40,15 @@ export interface ComposerHandle {
   setFiles: (files: File[]) => void;
   addFiles: (files: File[]) => void;
 }
+
+/**
+ * «تحدث مع ملفاتك» (Phase-2 W2): the preset message the button sends through
+ * the composer's EXISTING onSend path. The ask/build run carries the Knowledge
+ * Garden tools, so the agent filters this task's files into the garden
+ * (task_files_ingest) and answers from them only, with [seed:ID] citations.
+ */
+const CHAT_WITH_FILES_PROMPT =
+  'تحدث مع ملفاتي: فلتر ملفات هذه المهمة في حديقة المعرفة ثم أجب من ملفاتي فقط';
 
 interface ComposerProps {
   onSend: (text: string, mode: TaskMode, files: File[], extData?: Record<string, unknown>) => void | Promise<void>;
@@ -122,6 +131,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const [homeKnowledge, setHomeKnowledge] = useState(false);
   const approveChipOn = onToggleApproveForMe ? approveForMe === true : homeApprove;
   const knowledgeChipOn = onToggleKnowledge ? knowledgeOn === true : homeKnowledge;
+  // «تحدث مع ملفاتك»: the preset needs the kb_* tools, which ship in the ask and
+  // build modes; without a resolved mode the button stays available anyway.
+  const activeLoamModeId = resolvedLoamMode?.mode ?? selectedLoamMode;
+  const chatWithFilesVisible = !activeLoamModeId || activeLoamModeId === 'ask' || activeLoamModeId === 'build';
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -236,8 +249,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     return () => { mounted = false; };
   }, [menuOpen]);
 
-  const submit = async () => {
-    if (!canSend) return;
+  const submit = async (overrideText?: string) => {
+    const outgoing = (overrideText ?? text).trim();
+    if (!outgoing && files.length === 0) return;
     const extData: Record<string, unknown> = {};
     if (selectedLoamMode) extData.loamMode = selectedLoamMode;
     if (attachedSkills.length > 0) extData.skills = attachedSkills;
@@ -256,7 +270,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       compareModels,
       abModels,
     }));
-    await onSend(text.trim(), mode, files, Object.keys(extData).length > 0 ? extData : undefined);
+    await onSend(outgoing, mode, files, Object.keys(extData).length > 0 ? extData : undefined);
     setText('');
     setFiles([]);
     setMenuOpen(false);
@@ -265,6 +279,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     setSelectedLoamMode(defaultLoamMode);
     setSelectedOutputType(normalizeOutputType(outputType) ?? 'auto');
     setSelectedEffort(normalizeEffort(effort));
+  };
+
+  /**
+   * «تحدث مع ملفاتك»: send the preset garden prompt through the same submit
+   * path a typed message takes — no separate transport, so extData (mode,
+   * knowledge chip, routing) ride along exactly as with any other message.
+   */
+  const sendChatWithFiles = () => {
+    void submit(CHAT_WITH_FILES_PROMPT);
   };
 
   const onKey = async (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -677,6 +700,23 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           <Leaf className="size-3.5" /> {t('Knowledge Garden')}
         </button>
 
+        {/* «تحدث مع ملفاتك» (Phase-2 W2): one tap sends the garden preset through
+            the same onSend path as a typed message. Shown for the core ask/build
+            modes (which carry the kb_* tools by default); when no Loam mode is
+            known yet it stays visible so a fresh composer still offers it. */}
+        {chatWithFilesVisible && (
+          <button
+            type="button"
+            onClick={sendChatWithFiles}
+            disabled={running}
+            data-testid="chat-with-files"
+            title={t("Filter this task's files into the Knowledge Garden, then answer from my files only")}
+            className="flex items-center gap-1 rounded-full border border-border-main px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-fill-hover disabled:opacity-50"
+          >
+            <FileText className="size-3.5" /> {t('Chat with your files')}
+          </button>
+        )}
+
         {race && (
           <span className="relative hidden items-center gap-1 sm:flex">
             <button
@@ -836,7 +876,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             <IconButton
               label={race?.active ? t('Send as race') : t('Send')}
               disabled={!canSend}
-              onClick={submit}
+              onClick={() => { void submit(); }}
               data-testid={race?.active ? 'appbuilder-send-as-race' : undefined}
               className={clsx(
                 'rounded-full',

@@ -1568,8 +1568,8 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (req.method === "POST" && p === "/api/settings") {
-          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; codemode?: unknown; planApprovalSkipTrivial?: unknown; lessonsAutoApply?: unknown; officeIdentity?: unknown };
-          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; codemode?: boolean; planApprovalSkipTrivial?: boolean; lessonsAutoApply?: boolean; officeIdentity?: { name?: string; role?: "partner" | "senior" | "associate" | "paralegal" | "reviewer" | "client" | "admin" } } = {};
+          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; codemode?: unknown; planApprovalSkipTrivial?: unknown; lessonsAutoApply?: unknown; officeIdentity?: unknown; knowledgeRag?: unknown };
+          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; codemode?: boolean; planApprovalSkipTrivial?: boolean; lessonsAutoApply?: boolean; officeIdentity?: { name?: string; role?: "partner" | "senior" | "associate" | "paralegal" | "reviewer" | "client" | "admin" }; knowledgeRag?: boolean } = {};
           if (body.theme === "dark" || body.theme === "light" || body.theme === "system") patch.theme = body.theme;
           if (typeof body.model === "string") patch.model = body.model;
           if (body.projectId === null || typeof body.projectId === "string") patch.projectId = body.projectId;
@@ -1579,6 +1579,8 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           if (typeof body.codemode === "boolean") patch.codemode = body.codemode;
           if (typeof body.planApprovalSkipTrivial === "boolean") patch.planApprovalSkipTrivial = body.planApprovalSkipTrivial;
           if (typeof body.lessonsAutoApply === "boolean") patch.lessonsAutoApply = body.lessonsAutoApply;
+          // «تحدث مع ملفاتك» (Phase-2 W2): kb_* in ask/build on/off switch.
+          if (typeof body.knowledgeRag === "boolean") patch.knowledgeRag = body.knowledgeRag;
           // د2: identity block for office intelligence / track changes (name + role).
           if (body.officeIdentity === null) patch.officeIdentity = undefined;
           else if (typeof body.officeIdentity === "object" && body.officeIdentity !== null) {

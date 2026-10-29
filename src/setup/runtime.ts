@@ -57,7 +57,7 @@ import { createVaultTools } from "../tools/vaultTools.js";
 import { createCodeSessionTools } from "../tools/codeSession.js";
 import { createDocsLookupTools } from "../tools/docsLookup.js";
 import { createSemanticSearchTools } from "../tools/semanticSearch.js";
-import { createKnowledgeTools } from "../tools/knowledge.js";
+import { createKnowledgeTools, createTaskFilesIngestTool, type KnowledgeToolOptions } from "../tools/knowledge.js";
 import { createLegalTools } from "../tools/legalTools.js";
 import { normalizeLegalConfig } from "../legal/config.js";
 import { requestMattersKey, parentPortOf } from "../legal/keyHandoff.js";
@@ -198,7 +198,14 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   const preview = new PreviewService();
   registry.registerAll(createPreviewTools(preview, cfg));
   registry.registerAll(createRorkTools(preview).map(tool => ({ ...tool, integration: true })));
-  registry.registerAll(createFrontierBridgeTools(preview).map(tool => ({ ...tool, integration: true })));
+  // Phase-2 W2 «تحدث مع ملفاتك»: the garden's wiring (embedder/model) is
+  // resolved once and shared by the kb_* tools, the bulk task_files_ingest and
+  // the legacy rag_* redirectors, so every path ranks the same way.
+  const knowledgeOptions: KnowledgeToolOptions = {
+    embedder: cfg.memory.enabled && cfg.memory.model ? embedder : undefined,
+    model: cfg.memory.model || cfg.model,
+  };
+  registry.registerAll(createFrontierBridgeTools(preview, knowledgeOptions).map(tool => ({ ...tool, integration: true })));
   registry.registerAll(createSubagentTools(ollama, registry));
   registry.register(createFanoutTool({ ollama, parentRegistry: registry }));
   registry.registerAll(createManagedSessionTools({ ollama, parentRegistry: registry }));
@@ -224,10 +231,10 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   // N3 Knowledge Garden: user-built RAG store. The vector channel shares the
   // memory embedder; without it the garden still answers lexically, so the tools
   // are always registered and reachability is decided by the per-run toggle.
-  registry.registerAll(createKnowledgeTools({
-    embedder: cfg.memory.enabled && cfg.memory.model ? embedder : undefined,
-    model: cfg.memory.model || cfg.model,
-  }));
+  // Phase-2 W2: task_files_ingest bulk-imports the task workspace through the
+  // same garden (it rides the same gates as kb_*, see server/knowledgeTools.ts).
+  registry.registerAll(createKnowledgeTools(knowledgeOptions));
+  registry.register(createTaskFilesIngestTool(knowledgeOptions));
   // Legal mode (Qatar): opt-in. The corpus is public law; matters are encrypted with a
   // DPAPI-wrapped key handed over by Electron main (fail closed without it).
   const legalConfig = normalizeLegalConfig(cfg.legal);

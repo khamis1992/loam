@@ -113,8 +113,15 @@ export interface Config {
   ollamaUrl: string;
   /** Optional OpenAI-compatible cloud provider (OpenRouter, vLLM, LM Studio, ...).
    *  Models whose name ends with ":cloud" are routed here; the suffix is stripped
-   *  before the call. The user's own key stays in config.json — never in the repo. */
-  cloudModel?: { baseUrl: string; apiKey?: string };
+   *  before the call. The user's own key stays in config.json — never in the repo.
+   *  `images` opts `design_image_generate` into the same provider for image
+   *  generation (BYOK): naming a model is the opt-in; baseUrl/apiKey fall back
+   *  to the parent section. Env overrides: LOAM_IMAGE_MODEL / _BASE_URL / _API_KEY. */
+  cloudModel?: {
+    baseUrl: string;
+    apiKey?: string;
+    images?: { model?: string; baseUrl?: string; apiKey?: string };
+  };
   server: { host: string; port: number };
   agent: { maxSteps: number; temperature: number; requestTimeoutMs: number };
   /** D19 session runtime: idle-to-sleep threshold and the per-session compute

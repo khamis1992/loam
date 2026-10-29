@@ -6,7 +6,10 @@ import { pathToFileURL } from "node:url";
 import { ROOT } from "../config.js";
 import type { PreviewService } from "../preview/serve.js";
 import { createCraftOfficeTool } from "./craftOffice.js";
-import { bool, str, type Tool, type ToolContext, type ToolResult } from "./registry.js";
+import { bool, num, str, type Tool, type ToolContext, type ToolResult } from "./registry.js";
+import { DEFAULT_BASE_NAME, ingestContent } from "../knowledge/ingest.js";
+import { fromFile, fromText, resolveImportPath } from "../knowledge/importers.js";
+import { runKnowledgeSearch, type KnowledgeToolOptions } from "./knowledge.js";
 
 /**
  * Resolves the sibling `manus.im/manus-local/core` directory containing the 145+ Frontier ESM modules.
@@ -143,7 +146,13 @@ export async function switchFrontierMode(_workspace: string, modeId: string, _re
   }
 }
 
-export function createFrontierBridgeTools(preview?: PreviewService): Tool[] {
+export function createFrontierBridgeTools(preview?: PreviewService, knowledge: KnowledgeToolOptions = {}): Tool[] {
+  // Phase-2 W2 «تحدث مع ملفاتك»: the rag_* redirectors rank through the same
+  // garden wiring (embedder/model) as the kb_* tools, so one store, one ranking.
+  const knowledgeSearchDefaults = {
+    ...(knowledge.embedder ? { embedder: knowledge.embedder } : {}),
+    ...(knowledge.model ? { model: knowledge.model } : {}),
+  };
   return [
     {
       name: "super_swarm",
@@ -527,23 +536,91 @@ export function createFrontierBridgeTools(preview?: PreviewService): Tool[] {
       },
       required: ["contractName"],
     }),
-    modeTool("rag_index", "Index documents into a persistent hybrid BM25 + vector store with exact line-number chunks.", {
-      type: "object",
-      properties: {
-        documents: { type: "array", items: { type: "object" }, description: "[{ id, path, content }]" },
-        chunkLines: { type: "number" },
+    // Phase-2 W2 «تحدث مع ملفاتك»: rag_index/rag_query were bridges to the
+    // external Frontier core's hybrid BM25+vector store, a core that does not
+    // exist on this machine. They are now thin redirectors over the LOCAL
+    // Knowledge Garden (src/knowledge, the same store behind kb_*), and no
+    // execution path may call the absent external core anymore.
+    {
+      name: "rag_index",
+      description:
+        "Indexed into the local Knowledge Garden: each document becomes retrievable, citable [seed:ID] seeds (deterministic chunking). Accepts inline content or workspace file paths. To index every text file of the current task workspace use task_files_ingest; for a single pdf/docx/xlsx/pptx/url use kb_ingest.",
+      parameters: {
+        type: "object",
+        properties: {
+          documents: { type: "array", items: { type: "object" }, description: "[{ id, path, content }] — content (string) or path (workspace-relative file)." },
+          chunkLines: { type: "number", description: "Ignored (kept for compatibility): the garden chunks by characters, not lines." },
+        },
+        required: ["documents"],
       },
-      required: ["documents"],
-    }),
-    modeTool("rag_query", "Hybrid RRF (BM25 + vector) retrieval with answers backed by exact [source: file#Lstart-Lend] citations.", {
-      type: "object",
-      properties: {
-        query: { type: "string" },
-        topK: { type: "number" },
-        generateUi: { type: "boolean" },
+      async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+        const docs = Array.isArray(args.documents) ? args.documents : [];
+        if (docs.length === 0) {
+          return {
+            ok: false,
+            content: "rag_index requires documents. لتكشيف كل ملفات هذه المهمة استخدم task_files_ingest، ولمستند واحد استخدم kb_ingest.",
+          };
+        }
+        const CAP = 20;
+        const seedIds: string[] = [];
+        const seedSummaries: Array<{ id: string; title: string; tags: string[]; preview: string }> = [];
+        const skipped: string[] = [];
+        for (const raw of docs.slice(0, CAP)) {
+          const doc = (raw ?? {}) as { id?: unknown; path?: unknown; content?: unknown };
+          const content = typeof doc.content === "string" ? doc.content : "";
+          const relPath = typeof doc.path === "string" ? doc.path.trim() : "";
+          const ref = relPath || (typeof doc.id === "string" && doc.id ? doc.id : "inline");
+          if (!content && !relPath) {
+            skipped.push(ref);
+            continue;
+          }
+          try {
+            const extracted = content ? fromText(content) : await fromFile(resolveImportPath(ctx.workspace, relPath));
+            if (!extracted.text.trim()) {
+              skipped.push(ref);
+              continue;
+            }
+            const result = await ingestContent(extracted.text, {
+              baseName: DEFAULT_BASE_NAME,
+              tags: ["rag-index"],
+              split: "fixed",
+              provenance: { source: relPath ? "file" : "user_text", ref, ...(ctx.taskId ? { runId: ctx.taskId } : {}) },
+            });
+            seedIds.push(...result.seeds.map((s) => s.id));
+            seedSummaries.push(...result.seeds.slice(0, 2).map((s) => ({ id: s.id, title: s.title, tags: s.tags, preview: s.body.slice(0, 160) })));
+          } catch {
+            skipped.push(ref);
+          }
+        }
+        const head =
+          `rag_index redirects to the local Knowledge Garden: ${seedIds.length} seed(s) indexed (base "${DEFAULT_BASE_NAME}")` +
+          (docs.length > CAP ? `; only the first ${CAP} documents were processed` : "") +
+          (skipped.length > 0 ? `; skipped: ${skipped.join(", ")}` : "");
+        return {
+          ok: seedIds.length > 0,
+          content: `${head}\nCite the seeds as [seed:ID]; retrieve them with rag_query or kb_search. لتكشيف كل ملفات المهمة دفعة واحدة: task_files_ingest.`,
+          kbSeedIds: seedIds,
+          kbSeeds: seedSummaries,
+        };
       },
-      required: ["query"],
-    }),
+    },
+    {
+      name: "rag_query",
+      description:
+        "Retrieval over the local Knowledge Garden (the same engine as kb_search): ranked seeds for a query, each citable as [seed:ID]. Redirected from the removed external hybrid store; answers are grounded in what task_files_ingest / kb_ingest / rag_index indexed.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+          topK: { type: "number" },
+          generateUi: { type: "boolean", description: "Ignored (kept for compatibility)." },
+        },
+        required: ["query"],
+      },
+      async run(args: Record<string, unknown>): Promise<ToolResult> {
+        return runKnowledgeSearch({ query: str(args, "query"), k: num(args, "topK", 5) }, knowledgeSearchDefaults);
+      },
+    },
     modeTool("vision_to_fullstack", "Vision-to-Fullstack engine: extract a component tree + RLS SQL schema + API routes from a described UI and synthesize a full-stack app with 100% visual parity.", {
       type: "object",
       properties: {

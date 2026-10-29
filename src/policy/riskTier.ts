@@ -246,6 +246,7 @@ const EXEC_TOOL_NAMES = new Set<string>([
   "video_analyze",
   "video_edit",
   "creative_image",
+  "creative_subtitles",
   "export_build",
   // OCR shells out to tesseract inside WSL, so it is an execution, not a read.
   "image_ocr",

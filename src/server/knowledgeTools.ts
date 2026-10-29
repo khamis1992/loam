@@ -12,8 +12,11 @@
  * the gateway service entry and the run-allowlist gate can never drift apart.
  */
 
-/** The Knowledge Garden tool names, in a stable order. */
-export const KNOWLEDGE_TOOL_NAMES: readonly string[] = ["kb_search", "kb_ingest", "kb_manage"];
+/** The Knowledge Garden tool names, in a stable order. Includes
+ *  `task_files_ingest` (Phase-2 W2 «تحدث مع ملفاتك»): it writes into the same
+ *  garden through the same ingestion pipeline, so every gate that governs
+ *  kb_* governs it too. */
+export const KNOWLEDGE_TOOL_NAMES: readonly string[] = ["kb_search", "kb_ingest", "kb_manage", "task_files_ingest"];
 
 const KNOWLEDGE_SET = new Set(KNOWLEDGE_TOOL_NAMES);
 
