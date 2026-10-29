@@ -40,7 +40,7 @@ if (feedVersion !== pkg.version) {
   process.exit(1);
 }
 const artifacts = fs.readdirSync(releaseDir)
-  .filter((name) => /^(latest\.yml|(?:Loam|manus-local)-Setup-[\d.]+\.exe(?:\.blockmap)?)$/.test(name))
+  .filter((name) => name === 'latest.yml' || new RegExp(`^(?:Loam|manus-local)-Setup-${pkg.version.replace(/\./g, '\\.')}\\.exe(?:\\.blockmap)?$`).test(name))
   .map((name) => path.join(releaseDir, name));
 if (artifacts.length < 3) {
   console.error(`المخرجات ناقصة في release/ (وجدت ${artifacts.length}: ${artifacts.map((p) => path.basename(p)).join(', ')}) — المتوقع latest.yml + exe + blockmap.`);
