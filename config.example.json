@@ -4,7 +4,12 @@
   "ollamaUrl": "http://127.0.0.1:11434",
   "cloudModel": {
     "baseUrl": "https://openrouter.ai/api/v1",
-    "apiKey": "ضع-مفتاحك-هنا"
+    "apiKey": "ضع-مفتاحك-هنا",
+    "images": {
+      "model": "",
+      "baseUrl": "",
+      "apiKey": ""
+    }
   },
   "server": {
     "host": "127.0.0.1",

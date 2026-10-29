@@ -85,10 +85,14 @@ function timeoutMessageMs(timeoutMs: number): string {
   return `انتهت مهلة توليد الصورة (${seconds} ثانية). حاول مجددًا أو اطلب حجمًا أصغر.`;
 }
 
-/** HTTP header values must be printable ASCII (mirrors OllamaClient.cloudHeaders);
- *  a key that becomes empty after stripping is treated as unconfigured. */
+/** HTTP header values must be printable ASCII (mirrors OllamaClient.cloudHeaders).
+ *  A key containing non-ASCII characters is a config mistake (e.g. the Arabic
+ *  placeholder from config.example.json) and is treated as unconfigured. */
 function asciiKey(apiKey: string | undefined): string {
-  return (apiKey ?? "").replace(/[^\x20-\x7E]/g, "").trim();
+  const raw = (apiKey ?? "").trim();
+  if (!raw) return "";
+  if (/[^\x20-\x7E]/.test(raw)) return "";
+  return raw;
 }
 
 function isAbort(error: unknown): boolean {
@@ -141,7 +145,7 @@ function formatFromContentType(contentType: string | undefined | null): "png" | 
 function finalizeAsset(
   bytes: Buffer,
   mapped: MappedProviderSize,
-  contentType: string | undefined,
+  contentType: string | undefined | null,
 ): UiAssetBytes {
   if (bytes.byteLength === 0) throw new Error(NO_IMAGE_MESSAGE_AR);
   const format = sniffImageFormat(bytes) ?? formatFromContentType(contentType) ?? "png";
@@ -151,7 +155,7 @@ function finalizeAsset(
 function decodeDataUrl(url: string): { bytes: Buffer; contentType: string } {
   const match = /^data:([^;,]*);base64,(.*)$/s.exec(url.trim());
   if (!match) throw new Error(NO_IMAGE_MESSAGE_AR);
-  return { bytes: Buffer.from(match[2]!, "base64"), contentType: match[1] };
+  return { bytes: Buffer.from(match[2]!, "base64"), contentType: match[1] ?? "" };
 }
 
 export interface OpenAiCompatibleImageProviderSettings {
