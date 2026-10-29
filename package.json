@@ -190,6 +190,8 @@
     "check:installer": "node scripts/check-windows-installer.mjs",
     "check:app-updater": "node scripts/check-app-updater.mjs",
     "publish:release": "node scripts/publish-release.mjs",
+    "stt": "python scripts/stt_server.py",
+    "check:companions-voice": "node --import tsx src/scripts/check-voice-accuracy.ts",
     "verify:security": "npm run typecheck && npm run test:red && npm run test:scanners && npm run test:mobile && npm run test:enterprise && npm run test:mobile:scale && npm run test:enterprise:scale && npm run test:advanced && npm run test:catalog && npm run test:next && npm run test:engines && npm run check:red && npm run check:mobile && npm run check:enterprise && npm run check:mobile:scale && npm run check:enterprise:scale && npm run check:advanced && npm run check:catalog && npm run check:next && npm run check:engines && npm run check:security-asar",
     "verify": "npm run typecheck && npm run check:encoding && npm run check:docs && npm run check:eval && npm run check:orchestrator && npm run check:recovery && npm run check:modes && npm run check:codegraph && npm run check:orchestration && npm run check:swarm-lifecycle && npm run check:swarm-repair-order",
     "verify:loam": "npm run verify && npm run check:isolation && npm run check:resume:http && npm run check:loam-agents && npm run check:loam-ui && npm run check:loam-ancillary && npm run check:loam-e2e && npm run check:qa-artifacts"

@@ -19,7 +19,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from faster_whisper import WhisperModel
 
 MODEL_SIZE = sys.argv[2] if len(sys.argv) > 2 else "base"
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 3941
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 3947
 
 print(f"loading whisper ({MODEL_SIZE})...", flush=True)
 model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
