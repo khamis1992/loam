@@ -24,7 +24,7 @@ import { runPreflight } from "../../appbuilder/preflight.js";
 import { queueState, enqueuePrompt, updateQueueItem, removeQueueItem, setQueuePaused } from "../../appbuilder/promptQueue.js";
 import { raceEstimate } from "../../appbuilder/race.js";
 import { appUsage } from "../../appbuilder/metering.js";
-import { aiUsage, defaultProvider, setDefaultProvider, setProjectAi, projectAiConfig, testAiKey } from "../../appbuilder/localCloud.js";
+import { aiUsage, defaultProvider, setDefaultProvider, setProjectAi, projectAiConfig, testAiKey, stripeStatus, setAppStripe } from "../../appbuilder/localCloud.js";
 import { listRuntimeErrors, clearRuntimeErrors, fixPromptFor } from "../../appbuilder/runtimeErrors.js";
 import { THEMES, applyTheme } from "../../appbuilder/themes.js";
 import { applyTextEdit, textEditPrompt } from "../../appbuilder/textEdit.js";
@@ -153,6 +153,17 @@ export async function handleAppBuilderRoutes(req: http.IncomingMessage, res: htt
     if (method === "GET") return sendJson(res, 200, { provider: defaultProvider() }), true;
     if (method === "PUT") {
       const r = setDefaultProvider((await readBody(req)) as Record<string, unknown>);
+      return sendJson(res, "error" in r ? 400 : 200, r), true;
+    }
+    return sendJson(res, 405, { error: "bad_request" }), true;
+  }
+  // ---- app secrets (W4b Stripe BYOK): GET is status only; PUT stores/clears through the vault and never returns values ----
+  if (segments[0] === "app-secrets") {
+    if (method === "GET") return sendJson(res, 200, { stripe: stripeStatus() }), true;
+    if (method === "PUT") {
+      const body = (await readBody(req)) as { stripe?: unknown };
+      if (!body.stripe || typeof body.stripe !== "object") return sendJson(res, 400, { error: "bad_request", message: "stripe مطلوب" }), true;
+      const r = setAppStripe(body.stripe as Record<string, unknown>);
       return sendJson(res, "error" in r ? 400 : 200, r), true;
     }
     return sendJson(res, 405, { error: "bad_request" }), true;

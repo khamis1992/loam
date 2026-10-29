@@ -4,6 +4,7 @@ import net from "node:net";
 import path from "node:path";
 import type { AppProject, DevServerStatus } from "./types.js";
 import { appProcessEnv } from "./processEnv.js";
+import { writeSyncOverlay } from "./appSync.js";
 import { BRIDGE_PREFIX, recordRuntimeError } from "./runtimeErrors.js";
 
 export const DEV_PORT_RANGE: [number, number] = [15173, 15299]; // away from 5173, the default of a user's own Vite projects
@@ -107,6 +108,9 @@ export class DevServerManager {
       const apiPort = await findFreePort(API_PORT_RANGE, taken);
       r.apiPort = apiPort;
       env.LOAM_API_PORT = String(apiPort);
+      // W4b: refresh the Loam-owned sync overlay (server/loam-sync.mjs) so the app
+      // server can mount /__loam/sync/pull|push for its SQLite file.
+      try { writeSyncOverlay(appDir); } catch { /* an unwritable app dir must not block the spawn */ }
       r.api = spawn("node", ["server/index.mjs"], {
         cwd: appDir, windowsHide: true,
         env: { ...env, LOAM_API_PORT: String(apiPort), LOAM_DB_PATH: path.join(appDir, "data", "app.sqlite"), ...this.hooks.aiEnv(project) },

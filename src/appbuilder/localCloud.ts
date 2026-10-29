@@ -20,7 +20,8 @@ export const CAP_MAX = 100_000_000;
 const MODEL_RE = /^[A-Za-z0-9._:/@-]{1,120}$/;
 
 export const projectKeyName = (projectId: string): string => `project-${projectId}`;
-const hasSecret = (name: string): boolean => listSecrets(AI_VAULT_SCOPE).some((s) => s.name === name);
+const hasSecretIn = (scope: string, name: string): boolean => listSecrets(scope).some((s) => s.name === name);
+const hasSecret = (name: string): boolean => hasSecretIn(AI_VAULT_SCOPE, name);
 
 export function checkBaseUrl(raw: string): string | { error: string } {
   const value = raw.trim().replace(/\/+$/, "");
@@ -110,6 +111,68 @@ export function aiEnvFor(project: AppProject): Record<string, string> {
   if (!key) return {};
   const env: Record<string, string> = { AI_BASE_URL: cfg.effective.baseUrl, AI_API_KEY: key, AI_MODEL: cfg.effective.model };
   if (cfg.dailyTokenCap !== null) env.AI_DAILY_TOKEN_CAP = String(cfg.dailyTokenCap);
+  return env;
+}
+
+// ---------- Stripe BYOK (W4b): the user's own Stripe key for generated apps ----------
+// Same rule as the AI key above: Loam holds no key of its own. The user's Stripe
+// secret key is stored in the vault (scope appbuilder-app, sealed + redactor
+// registered) or read from the user's own Loam process environment, and goes
+// ONLY into the spawned app server's env (stripeEnvFor → DevServerHooks.aiEnv,
+// devServer.ts). It is never logged, never returned by any route, and never
+// written into app code. scrubEnv (subagent/env.ts) drops STRIPE_* from the
+// inherited env, so the aiEnv spread is the single sanctioned passthrough.
+
+export const APP_VAULT_SCOPE = "appbuilder-app";
+export const STRIPE_KEY_NAME = "stripe-key";
+export const STRIPE_WEBHOOK_NAME = "stripe-webhook-secret";
+
+const cleanSecret = (raw: string | undefined): string | null => {
+  const v = raw?.trim();
+  return v && v.length >= 20 && v.length <= 512 && !/\s/.test(v) ? v : null;
+};
+
+/** Where the app server's Stripe key would come from, for the UI. Values never leave. */
+export function stripeStatus(): { hasKey: boolean; hasWebhookSecret: boolean; source: "vault" | "environment" | "none" } {
+  const vaultKey = hasSecretIn(APP_VAULT_SCOPE, STRIPE_KEY_NAME);
+  const envKey = cleanSecret(process.env.STRIPE_KEY);
+  return {
+    hasKey: vaultKey || Boolean(envKey),
+    hasWebhookSecret: hasSecretIn(APP_VAULT_SCOPE, STRIPE_WEBHOOK_NAME) || Boolean(cleanSecret(process.env.STRIPE_WEBHOOK_SECRET)),
+    source: vaultKey ? "vault" : envKey ? "environment" : "none",
+  };
+}
+
+/** `""` clears. Stored sealed; the value is never returned by this or any route. */
+export function setAppStripe(body: { key?: unknown; webhookSecret?: unknown }): { status: ReturnType<typeof stripeStatus> } | { error: string } {
+  if (typeof body.key === "string") {
+    if (body.key === "") deleteSecret(APP_VAULT_SCOPE, STRIPE_KEY_NAME);
+    else {
+      const v = cleanSecret(body.key);
+      if (!v) return { error: "stripe_key_invalid" };
+      const stored = setSecret(APP_VAULT_SCOPE, STRIPE_KEY_NAME, v);
+      if (stored !== true) return stored;
+    }
+  }
+  if (typeof body.webhookSecret === "string") {
+    if (body.webhookSecret === "") deleteSecret(APP_VAULT_SCOPE, STRIPE_WEBHOOK_NAME);
+    else {
+      const v = cleanSecret(body.webhookSecret);
+      if (!v) return { error: "stripe_webhook_invalid" };
+      const stored = setSecret(APP_VAULT_SCOPE, STRIPE_WEBHOOK_NAME, v);
+      if (stored !== true) return stored;
+    }
+  }
+  return { status: stripeStatus() };
+}
+
+/** Server side only. Vault value first, then the user's own process env. Straight into the API server's spawn env, nowhere else. */
+export function stripeEnvFor(): Record<string, string> {
+  const env: Record<string, string> = {};
+  const key = resolveSecret(APP_VAULT_SCOPE, STRIPE_KEY_NAME) ?? cleanSecret(process.env.STRIPE_KEY);
+  const webhook = resolveSecret(APP_VAULT_SCOPE, STRIPE_WEBHOOK_NAME) ?? cleanSecret(process.env.STRIPE_WEBHOOK_SECRET);
+  if (key) env.STRIPE_KEY = key;
+  if (webhook) env.STRIPE_WEBHOOK_SECRET = webhook;
   return env;
 }
 

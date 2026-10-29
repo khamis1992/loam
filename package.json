@@ -95,6 +95,7 @@
     "dev": "tsx watch src/index.ts",
     "dist": "npm run build:icon && npm run build:server && npm --prefix packages/web run build && npm run vendor && npm run vendor:craft && electron-builder --win --publish never",
     "dist:publish": "npm run build:server && electron-builder --win --publish always",
+    "eas:build": "node scripts/eas-build.mjs",
     "eval": "tsx src/scripts/eval-run.ts",
     "eval:audit-prompts": "tsx src/scripts/eval-audit-prompts.ts",
     "eval:coding": "tsx src/scripts/eval-coding.ts",

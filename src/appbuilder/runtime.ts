@@ -15,6 +15,7 @@ import { DevServerManager } from "./devServer.js";
 import { versionService } from "./versions.js";
 import { createAppBuilderTools } from "./tools.js";
 import { isCloudModel, modelForStep } from "./stepRouting.js";
+import { aiEnvFor, stripeEnvFor } from "./localCloud.js";
 import { modelAbChain } from "../llm/router.js";
 import { resolveTierModel } from "../server/modelTiers.js";
 import { visualReview } from "../agent/visualReview.js";
@@ -47,7 +48,10 @@ export function buildAppRuntime(opts: { cfg: Config; ollama: OllamaClient; baseT
 
   const manager = new DevServerManager({
     onStatus: (status) => emitProjectEvent(status.projectId, "appDevServer", { status }),
-    aiEnv: () => ({}),
+    // §4.10.4 + W4b BYOK: the user's own AI provider env and Stripe keys, resolved
+    // server side straight into the app server's spawn env. Never logged, never
+    // written into app code, never passed to the Vite process.
+    aiEnv: (project) => ({ ...aiEnvFor(project), ...stripeEnvFor() }),
   });
   const devServer: DevServerHandle = {
     ensure: (project) => manager.ensure(project),
