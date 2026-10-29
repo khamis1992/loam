@@ -1339,5 +1339,8 @@
   "Document identity role": "دور الهوية في المستندات",
   "Saved": "تم الحفظ",
   "Chat with your files": "تحدث مع ملفاتك",
-  "Filter this task's files into the Knowledge Garden, then answer from my files only": "فلترة ملفات هذه المهمة في حديقة المعرفة ثم الإجابة من ملفاتي فقط"
+  "Filter this task's files into the Knowledge Garden, then answer from my files only": "فلترة ملفات هذه المهمة في حديقة المعرفة ثم الإجابة من ملفاتي فقط",
+  "Talk": "تحدث",
+  "Auto-speak replies": "تشغيل/إيقاف الصوت الآلي",
+  "Speaking": "يتحدث الآن"
 }

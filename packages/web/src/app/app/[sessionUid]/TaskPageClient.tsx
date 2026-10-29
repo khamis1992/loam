@@ -12,7 +12,11 @@ import { useAppDispatch, useAppSelector, type AppDispatch } from '@/store';
 import { appendEvent, applyDelta, setStatus, setError } from '@/store/chatSlice';
 import { addSession, selectSession } from '@/store/sessionsSlice';
 import { t, PRODUCT } from '@/i18n/t';
-import { Composer } from '@/components/chat/Composer';
+import { Composer, type ComposerHandle } from '@/components/chat/Composer';
+// Phase-2 W5: the Companions voice pattern in the main chat — mic (ar-SA
+// WebSpeech recognition), streaming TTS of assistant replies, barge-in.
+import { useVoiceChat } from '@/hooks/useVoiceChat';
+import { VoiceChatControls } from '@/components/chat/VoiceChatControls';
 // Cap G §4.16: the Agent Studio App Builder workspace opens for tasks that own
 // an App project; the Race chip rides the composer (§4.13.2).
 import { AppBuilderWorkspace } from '@/components/appbuilder/AppBuilderWorkspace';
@@ -331,6 +335,16 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     return latest?.content ?? '';
   }, [events]);
 
+  // Phase-2 W5 voice: the LAST assistant message, streamed or final, feeds TTS.
+  const assistantLive = useMemo(() => {
+    const latest = [...events].reverse().find((e): e is ChatMessageEvent => e.type === 'chat' && e.sender === 'assistant');
+    return {
+      id: latest?.id ?? '',
+      text: latest?.content ?? '',
+      finished: latest ? latest.deliveryKind === 'result' : false,
+    };
+  }, [events]);
+
   const wasStoppedByUser = useMemo(() => events.some((e) => e.type === 'userStop'), [events]);
 
   const hasResult = useMemo(() => events.some((e) => e.type === 'chat' && e.sender === 'assistant' && e.deliveryKind === 'result'), [events]);
@@ -460,6 +474,40 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     if (!socket) return;
     socket.stop(sessionUid);
   };
+
+  // Phase-2 W5 voice: a finalized mic segment replaces the draft and rides the
+  // composer's own submit path, so mode chips and extData travel with it
+  // exactly as with a typed message. Barge-in lives inside the hook.
+  const composerRef = useRef<ComposerHandle>(null);
+  const voiceChat = useVoiceChat({
+    onFinalTranscript: (text) => {
+      const composer = composerRef.current;
+      if (!composer) return;
+      composer.setText(text);
+      composer.focus();
+      composer.submit();
+    },
+  });
+
+  // Feed the growing last assistant reply to TTS while auto-speak is on. The
+  // reply already on screen when the page (or session) first mounts is
+  // remembered, never voiced; only replies that arrive afterwards speak.
+  const voicedReplyRef = useRef<string | null>(null);
+  useEffect(() => {
+    voicedReplyRef.current = null;
+  }, [sessionUid]);
+  const { autoSpeak: voiceAutoSpeak, feedReply, resetReply } = voiceChat;
+  useEffect(() => {
+    if (voicedReplyRef.current === null) {
+      voicedReplyRef.current = assistantLive.id;
+      return;
+    }
+    const isNewReply = voicedReplyRef.current !== assistantLive.id;
+    voicedReplyRef.current = assistantLive.id;
+    if (!voiceAutoSpeak) return;
+    if (isNewReply) resetReply();
+    feedReply(assistantLive.text, assistantLive.finished);
+  }, [assistantLive, voiceAutoSpeak, feedReply, resetReply]);
 
   // Time-travel: clicking a timeline step selects it and greys later steps.
   const handleSelectStep = (step: TimelineStep) => {
@@ -755,7 +803,9 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               {running ? t('Working') : wasStoppedByUser ? t('Stopped') : hasResult && hasClockClosed ? t('Task completed') : t('Thinking')}
             </div>
             <MatterComposer />
+            <VoiceChatControls voice={voiceChat} />
             <Composer
+              ref={composerRef}
               onSend={handleSend}
               onStop={handleStop}
               running={running}

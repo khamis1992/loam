@@ -39,6 +39,9 @@ export interface ComposerHandle {
   setText: (text: string) => void;
   setFiles: (files: File[]) => void;
   addFiles: (files: File[]) => void;
+  /** Phase-2 W5 voice chat: route a finalized transcript through the composer's
+   *  own submit path, so chips/extData ride exactly as with a typed message. */
+  submit: (text?: string) => void;
 }
 
 /**
@@ -179,6 +182,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     setText: (v) => setText(v),
     setFiles: (v) => setFiles(v),
     addFiles: (incoming) => setFiles((prev) => [...prev, ...incoming]),
+    submit: (v) => { void submit(v); },
   }));
 
   useEffect(() => {

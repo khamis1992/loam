@@ -1339,5 +1339,8 @@
   "Document identity role": "Document identity role",
   "Saved": "Saved",
   "Chat with your files": "Chat with your files",
-  "Filter this task's files into the Knowledge Garden, then answer from my files only": "Filter this task's files into the Knowledge Garden, then answer from my files only"
+  "Filter this task's files into the Knowledge Garden, then answer from my files only": "Filter this task's files into the Knowledge Garden, then answer from my files only",
+  "Talk": "Talk",
+  "Auto-speak replies": "Auto-speak replies",
+  "Speaking": "Speaking"
 }
