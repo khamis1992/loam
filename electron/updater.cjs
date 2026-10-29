@@ -54,8 +54,13 @@ function feedUrl() {
   if (fromSettings) return fromSettings;
   const ghRepo = (process.env.LOAM_GITHUB_REPO || process.env.MANUS_GITHUB_REPO || "").trim();
   if (ghRepo) return `https://github.com/${ghRepo.replace(/^\/+|\/+$/g, "")}/releases/latest/download/`;
-  return localFeed || DEFAULT_FEED_URL;
+  // P0.3: the product channel. localFeed stays the local-channel test path;
+  // packaged installs without any override update from the project's GitHub
+  // Releases feed instead of the dev fallback.
+  if (localFeed) return localFeed;
+  return `https://github.com/${DEFAULT_GITHUB_REPO}/releases/latest/download/`;
 }
+const DEFAULT_GITHUB_REPO = "khamis1992/loam";
 
 function setState(patch) {
   latest = Object.assign({}, latest, patch, { at: new Date().toISOString() });

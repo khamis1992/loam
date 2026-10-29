@@ -7,7 +7,7 @@ async function startLocalUpdates(directory) {
   fs.mkdirSync(directory, { recursive: true });
   const server = http.createServer((req, res) => {
     const name = (req.url || '').split('?')[0].slice(1);
-    if (!['GET', 'HEAD'].includes(req.method) || !/^(latest\.yml|Loam-Setup-[\d.]+\.exe(?:\.blockmap)?)$/.test(name)) {
+    if (!['GET', 'HEAD'].includes(req.method) || !/^(latest\.yml|(?:Loam|manus-local)-Setup-[\d.]+\.exe(?:\.blockmap)?)$/.test(name)) {
       res.writeHead(404).end(); return;
     }
     const file = path.join(directory, name);
