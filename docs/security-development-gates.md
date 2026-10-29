@@ -210,3 +210,21 @@ localOfficeIdentity وactorId الوكيل ومؤلف تعقب التغييرا�
 CSV/JSON إلى xlsx، Basic من الخزنة، HTTPS خارج loopback. التعاون الحي (د3)
 مؤجل بقرار الخطة. البوابات: tsc×2=0، ويب 879/879، قانونية+مكتبية 222/222،
 workspace+studio 112/112، verify خضراء.
+
+## المرحلة الثانية — «إتمام الجسور + وصول إلى العالم» — 2026-10-28
+
+على فرع `phase2-capability` (12 التزامًا f231497..fc01c6d): قناة الإصدار
+(dual-regex + publish:release + GitHub Releases افتراضيًا للتغليف) ·
+RAG النواة (kb_* في ask/build خلف إعداد + task_files_ingest + إغلاق جسر
+rag المكسور) + creative_subtitles + STT 3947 · **محرك تشغيل Atoms كامل**
+منقول من MISSING: stepRouting سحابي-حصرًا، Lead/أسئلة/خطط ببوابات موقفة،
+المحرك Build/Goal بطابور وأقفال app:<id>، Race حقيقي، كل مسارات 501
+حية، 13 حدث app_* · staticDeploy مشترك وأهداف Vercel/Netlify حقيقية خلف
+توكنات البيئة مع رفض same-origin · Stripe BYOK عبر خزنة+aiEnv (مفاتيح
+محجوبة sk_/whsec_) + مزامنة SQLite (سقف 25MB، كتابة ذرّية) + غلاف EAS ·
+مزود صور BYOK خلف cloudModel.images (المفتاح محجوب دائمًا) + صوت عربي
+في محادثة المهام · Loam Remote PWA (صفحة عامة/APIات موثقة) + وضع devflow
++ سوق موحد. البوابات: tsc×2=0، ويب 901/901، appbuilder 77/77،
+دفعات الموجات 173/173، verify خضراء. البوابات الحية المتبقية BYOK:
+نشر Vercel فعلي، بناء EAS فعلي، مزود صور حي، وتشغيل محرك بنموذج سحابي
+قصير (M2 الحية).
