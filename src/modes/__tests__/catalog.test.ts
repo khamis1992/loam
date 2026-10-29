@@ -129,3 +129,60 @@ describe("office tool prompt directive", () => {
     assert.ok(!available!.includes("loam_studio"), "research mode advertises loam_studio");
   });
 });
+
+describe("devflow mode (دورة تطوير GitHub)", () => {
+  const DEVFLOW_CORE = [
+    // issue intake + PR workflow (D1/D2/D15/D5 toolset)
+    "github_list_repos", "github_list_issues", "github_create_issue",
+    "git_branch", "git_commit", "git_status_diff",
+    "pr_create", "pr_view", "pr_comments", "pr_comment_checklist",
+    "ci_watch", "pr_review", "verify_and_record",
+    // نتريو swarm execution + security quadrant
+    "swarm_run", "swarm_status",
+    "remediation_start", "remediation_status", "remediation_report", "remediation_cancel",
+    // file basics and control, as sibling modes use them
+    "file_read", "file_write", "file_edit", "finish",
+  ];
+
+  it("exists in the catalog with the GitHub + swarm + remediation toolchain", () => {
+    assert.ok(LOAM_MODES.some((m) => m.id === "devflow"), "devflow mode is missing from LOAM_MODES");
+    const mode = getLoamMode("devflow");
+    assert.equal(mode.labelAr, "دورة تطوير");
+    for (const name of DEVFLOW_CORE) {
+      assert.ok(mode.tools.includes(name), `devflow mode is missing ${name}`);
+    }
+  });
+
+  it("keeps the office tools out of devflow", () => {
+    const mode = getLoamMode("devflow");
+    for (const name of OFFICE_TOOLS) {
+      assert.ok(!mode.tools.includes(name), `devflow mode must not expose ${name}`);
+    }
+  });
+
+  it("resolves the devflow tools in the run allowlist", () => {
+    const registry = registryWithAllModeTools();
+    const names = registry.forMode("devflow").names();
+    for (const name of DEVFLOW_CORE) {
+      assert.ok(names.includes(name), `devflow run registry is missing ${name}`);
+    }
+  });
+
+  it("reports the devflow tools as available in the mode UI", () => {
+    const registry = registryWithAllModeTools();
+    const ui = getLoamModesUi(registry.names());
+    const devflow = ui.modes.find((mode) => mode.id === "devflow");
+    assert.ok(devflow, "devflow mode is missing from the modes UI");
+    for (const name of DEVFLOW_CORE) {
+      assert.ok(devflow.availableTools.includes(name), `devflow UI hides ${name}`);
+      assert.ok(!devflow.unavailableTools.includes(name), `devflow UI lists ${name} as unavailable`);
+    }
+  });
+
+  it("names the flow in the mode output hint injected into the system prompt", () => {
+    const hint = getLoamMode("devflow").outputHint;
+    for (const tool of ["swarm_run", "pr_create", "pr_review", "ci_watch", "remediation_start"]) {
+      assert.match(hint, new RegExp(tool));
+    }
+  });
+});

@@ -117,12 +117,14 @@
       <div class="sk-stats">
         <span class="stat">المثبّتة <b id="stInstalled">—</b></span>
         <span class="stat">الكتالوج <b id="stCatalog">—</b></span>
+        <span class="stat">السوق <b id="stMarket">—</b></span>
       </div>
     </div>
 
     <div class="sk-tabs">
       <button class="sk-tab active" data-tab="installed">المثبّتة</button>
       <button class="sk-tab" data-tab="catalog">استكشف الكتالوج</button>
+      <button class="sk-tab" data-tab="market">السوق</button>
     </div>
 
     <div class="sk-wrap">
@@ -146,6 +148,18 @@
         </div>
         <div id="cats" class="cats"></div>
         <div id="catalogGrid" class="grid"></div>
+      </section>
+
+      <!-- unified marketplace: bridges + connectors + skills -->
+      <section class="panel" data-panel="market">
+        <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px">
+          سوق موحّد: المهارات (الكتالوج) مع الجسور المحلية والموصلات (GitHub وغيرها) — التثبيت والتفعيل والربط عبر نفس نقاط النهاية التي تستخدمها صفحتا المهارات والتكاملات.
+        </p>
+        <div class="toolbar">
+          <button id="marketRefresh" class="ghost"><loam-icon name="refresh"></loam-icon> تحديث السوق</button>
+        </div>
+        <div id="marketCats" class="cats"></div>
+        <div id="marketGrid" class="grid"></div>
       </section>
     </div>
 
