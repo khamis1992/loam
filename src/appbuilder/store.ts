@@ -3,7 +3,10 @@
 // the mappers to every table as their features land.
 import { randomBytes } from "node:crypto";
 import { database } from "../server/sqliteStore.js";
-import type { AppProject, AppProjectSettings, AppRunFlavor, TemplateFeatureId } from "./types.js";
+import type {
+  AppProject, AppProjectSettings, AppRunFlavor, AppTaskAssignment, AssignmentStatus,
+  PlanDocument, PlanDraft, PlanDraftStatus, QuestionAnswer, QuestionsCard, TemplateFeatureId,
+} from "./types.js";
 
 const SCHEMA_SQL = `
 PRAGMA foreign_keys = ON;
@@ -298,4 +301,282 @@ export function updateAppProjectRow(id: string, patch: Partial<Pick<AppProject, 
 export function deleteAppProjectRow(id: string): boolean {
   ensureAppBuilderSchema();
   return Number(database().prepare("DELETE FROM app_projects WHERE id = ?").run(id).changes) > 0;
+}
+
+// ---------- app_runs rows (MISSING §4.15.2 run contracts) ----------
+
+export type AppRunStatus = "running" | "verifying" | "versioning" | "done" | "failed" | "stopped";
+
+export interface AppRun {
+  id: string;
+  projectId: string;
+  flavor: AppRunFlavor;
+  prompt: string;
+  status: AppRunStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  raceId: string | null;
+}
+
+interface RunRow {
+  id: string; project_id: string; flavor: string; prompt: string;
+  status: string; started_at: string; finished_at: string | null; race_id: string | null;
+}
+
+function toRun(r: RunRow): AppRun {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    flavor: r.flavor as AppRunFlavor,
+    prompt: r.prompt,
+    status: r.status as AppRunStatus,
+    startedAt: r.started_at,
+    finishedAt: r.finished_at,
+    raceId: r.race_id,
+  };
+}
+
+/** Same id rule as the other app_ rows: prefix + 12 lowercase base32 chars. */
+export function newAppRowId(prefix: string): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz234567";
+  const bytes = randomBytes(12);
+  let out = "";
+  for (let i = 0; i < 12; i++) out += alphabet[bytes[i]! % 32];
+  return `${prefix}${out}`;
+}
+
+export function insertRun(input: { id?: string; projectId: string; flavor: AppRunFlavor; prompt: string; raceId?: string | null }): AppRun {
+  ensureAppBuilderSchema();
+  const id = input.id ?? newAppRowId("run_");
+  const at = new Date().toISOString();
+  database()
+    .prepare("INSERT INTO app_runs (id, project_id, flavor, prompt, status, started_at, race_id) VALUES (?, ?, ?, ?, 'running', ?, ?)")
+    .run(id, input.projectId, input.flavor, input.prompt, at, input.raceId ?? null);
+  return getRun(id)!;
+}
+
+export function getRun(id: string): AppRun | undefined {
+  ensureAppBuilderSchema();
+  const r = database().prepare("SELECT * FROM app_runs WHERE id = ?").get(id) as unknown as RunRow | undefined;
+  return r ? toRun(r) : undefined;
+}
+
+export function listRuns(projectId: string): AppRun[] {
+  ensureAppBuilderSchema();
+  const rows = database().prepare("SELECT * FROM app_runs WHERE project_id = ? ORDER BY started_at DESC").all(projectId) as unknown as RunRow[];
+  return rows.map(toRun);
+}
+
+export function updateRun(id: string, patch: { status?: AppRunStatus; raceId?: string | null }): AppRun | undefined {
+  ensureAppBuilderSchema();
+  const cur = getRun(id);
+  if (!cur) return undefined;
+  const next: AppRun = { ...cur, ...patch };
+  database().prepare("UPDATE app_runs SET status = ?, race_id = ? WHERE id = ?").run(next.status, next.raceId, id);
+  return next;
+}
+
+/** Terminal statuses only; stamps finished_at once (§5.2 app_runs semantics). */
+export function finishRun(id: string, status: "done" | "failed" | "stopped"): AppRun | undefined {
+  ensureAppBuilderSchema();
+  const cur = getRun(id);
+  if (!cur) return undefined;
+  const finishedAt = cur.finishedAt ?? new Date().toISOString();
+  database().prepare("UPDATE app_runs SET status = ?, finished_at = ? WHERE id = ?").run(status, finishedAt, id);
+  return { ...cur, status, finishedAt };
+}
+
+// ---------- app_questions rows (MISSING §4.2.1 card lifecycle) ----------
+
+interface QuestionRow {
+  id: string; project_id: string; run_id: string; title: string; questions: string;
+  status: string; answers: string | null; created_at: string; answered_at: string | null;
+}
+
+function toQuestionCard(r: QuestionRow): QuestionsCard {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    runId: r.run_id,
+    title: r.title,
+    questions: JSON.parse(r.questions),
+    status: r.status as QuestionsCard["status"],
+    answers: r.answers ? (JSON.parse(r.answers) as QuestionAnswer[]) : null,
+    createdAt: r.created_at,
+    answeredAt: r.answered_at,
+  };
+}
+
+export function insertQuestion(card: QuestionsCard): void {
+  ensureAppBuilderSchema();
+  database()
+    .prepare("INSERT INTO app_questions (id, project_id, run_id, title, questions, status, answers, created_at, answered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .run(card.id, card.projectId, card.runId, card.title, JSON.stringify(card.questions), card.status,
+         card.answers ? JSON.stringify(card.answers) : null, card.createdAt, card.answeredAt);
+}
+
+export function getQuestionCard(cardId: string): QuestionsCard | undefined {
+  ensureAppBuilderSchema();
+  const r = database().prepare("SELECT * FROM app_questions WHERE id = ?").get(cardId) as unknown as QuestionRow | undefined;
+  return r ? toQuestionCard(r) : undefined;
+}
+
+export function listQuestionCards(projectId: string): QuestionsCard[] {
+  ensureAppBuilderSchema();
+  const rows = database().prepare("SELECT * FROM app_questions WHERE project_id = ? ORDER BY created_at DESC").all(projectId) as unknown as QuestionRow[];
+  return rows.map(toQuestionCard);
+}
+
+/** Answer or skip one card (§4.15.2 POST /questions/:cardId). Only a pending card can be resolved. */
+export function answerQuestion(cardId: string, outcome: { answers: QuestionAnswer[] } | { skip: true }): QuestionsCard | { error: string } | undefined {
+  ensureAppBuilderSchema();
+  const cur = getQuestionCard(cardId);
+  if (!cur) return undefined;
+  if (cur.status !== "pending") return { error: "already_resolved" };
+  const status = "skip" in outcome ? "skipped" : "answered";
+  const answers = "skip" in outcome ? null : outcome.answers;
+  database()
+    .prepare("UPDATE app_questions SET status = ?, answers = ?, answered_at = ? WHERE id = ?")
+    .run(status, answers ? JSON.stringify(answers) : null, new Date().toISOString(), cardId);
+  return getQuestionCard(cardId);
+}
+
+// ---------- app_plan_drafts rows (MISSING §4.2.2 revision + decision rules) ----------
+
+interface PlanDraftRow {
+  id: string; project_id: string; run_id: string; revision: number; status: string;
+  doc: string; decline_reason: string | null; created_at: string; decided_at: string | null;
+}
+
+function toPlanDraft(r: PlanDraftRow): PlanDraft {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    runId: r.run_id,
+    revision: r.revision,
+    status: r.status as PlanDraftStatus,
+    doc: JSON.parse(r.doc) as PlanDocument,
+    declineReason: r.decline_reason,
+    createdAt: r.created_at,
+    decidedAt: r.decided_at,
+  };
+}
+
+export function getPlanDraft(draftId: string): PlanDraft | undefined {
+  ensureAppBuilderSchema();
+  const r = database().prepare("SELECT * FROM app_plan_drafts WHERE id = ?").get(draftId) as unknown as PlanDraftRow | undefined;
+  return r ? toPlanDraft(r) : undefined;
+}
+
+export function listPlanDrafts(projectId: string): PlanDraft[] {
+  ensureAppBuilderSchema();
+  const rows = database().prepare("SELECT * FROM app_plan_drafts WHERE project_id = ? ORDER BY revision DESC").all(projectId) as unknown as PlanDraftRow[];
+  return rows.map(toPlanDraft);
+}
+
+export function latestPlanDraft(projectId: string): PlanDraft | undefined {
+  ensureAppBuilderSchema();
+  const r = database().prepare("SELECT * FROM app_plan_drafts WHERE project_id = ? ORDER BY revision DESC LIMIT 1").get(projectId) as unknown as PlanDraftRow | undefined;
+  return r ? toPlanDraft(r) : undefined;
+}
+
+/**
+ * Stores one revision. Revisions start at 1 per project and increase by 1
+ * (§4.2.2 rule 2); a new draft marks the previous `draft` row `superseded`.
+ */
+export function insertPlanDraft(input: { projectId: string; runId: string; doc: PlanDocument; id?: string; status?: PlanDraftStatus }): PlanDraft {
+  ensureAppBuilderSchema();
+  const db = database();
+  const max = db.prepare("SELECT COALESCE(MAX(revision), 0) AS m FROM app_plan_drafts WHERE project_id = ?").get(input.projectId) as unknown as { m: number };
+  const at = new Date().toISOString();
+  const id = input.id ?? newAppRowId("pd_");
+  db.prepare("UPDATE app_plan_drafts SET status = 'superseded', decided_at = ? WHERE project_id = ? AND status = 'draft'").run(at, input.projectId);
+  db.prepare("INSERT INTO app_plan_drafts (id, project_id, run_id, revision, status, doc, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .run(id, input.projectId, input.runId, max.m + 1, input.status ?? "draft", JSON.stringify(input.doc), at);
+  return getPlanDraft(id)!;
+}
+
+export type PlanDecision = { kind: "approve" } | { kind: "decline"; reason: string };
+
+/**
+ * Approve or decline a draft (§4.15.2 POST /plans/:draftId/decision).
+ * Stale revisions are refused with the route's 409 contract:
+ * `{ error: "stale_revision", latest }` (§4.2.2 rule 3).
+ */
+export function decidePlanDraft(draftId: string, decision: PlanDecision): PlanDraft | { error: "stale_revision"; latest: number } | { error: string } | undefined {
+  ensureAppBuilderSchema();
+  const cur = getPlanDraft(draftId);
+  if (!cur) return undefined;
+  const latest = latestPlanDraft(cur.projectId);
+  if (!latest || latest.id !== cur.id) {
+    return { error: "stale_revision", latest: latest?.revision ?? cur.revision };
+  }
+  if (cur.status !== "draft") return { error: "already_decided" };
+  const at = new Date().toISOString();
+  if (decision.kind === "approve") {
+    database().prepare("UPDATE app_plan_drafts SET status = 'approved', decided_at = ? WHERE id = ?").run(at, draftId);
+  } else {
+    database().prepare("UPDATE app_plan_drafts SET status = 'declined', decline_reason = ?, decided_at = ? WHERE id = ?")
+      .run(decision.reason.slice(0, 1_000), at, draftId);
+  }
+  return getPlanDraft(draftId);
+}
+
+// ---------- app_assignments rows (MISSING §4.2.4 assignment lifecycle) ----------
+
+interface AssignmentRow {
+  id: string; project_id: string; plan_draft_id: string | null; plan_task_ids: string;
+  role: string; brief: string; status: string; report: string | null;
+  started_at: string | null; finished_at: string | null;
+}
+
+function toAssignment(r: AssignmentRow): AppTaskAssignment {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    planDraftId: r.plan_draft_id,
+    planTaskIds: JSON.parse(r.plan_task_ids) as string[],
+    role: r.role as AppTaskAssignment["role"],
+    brief: r.brief,
+    status: r.status as AssignmentStatus,
+    report: r.report,
+    startedAt: r.started_at,
+    finishedAt: r.finished_at,
+  };
+}
+
+export function insertAssignment(a: AppTaskAssignment): void {
+  ensureAppBuilderSchema();
+  database()
+    .prepare(`INSERT INTO app_assignments (id, project_id, plan_draft_id, plan_task_ids, role, brief, status, report, started_at, finished_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(a.id, a.projectId, a.planDraftId, JSON.stringify(a.planTaskIds), a.role, a.brief, a.status,
+         a.report, a.startedAt, a.finishedAt);
+}
+
+export function getAssignment(id: string): AppTaskAssignment | undefined {
+  ensureAppBuilderSchema();
+  const r = database().prepare("SELECT * FROM app_assignments WHERE id = ?").get(id) as unknown as AssignmentRow | undefined;
+  return r ? toAssignment(r) : undefined;
+}
+
+export function listAssignments(projectId: string): AppTaskAssignment[] {
+  ensureAppBuilderSchema();
+  const rows = database().prepare("SELECT * FROM app_assignments WHERE project_id = ? ORDER BY rowid DESC").all(projectId) as unknown as AssignmentRow[];
+  return rows.map(toAssignment);
+}
+
+/** Status/report patch; stamps started_at on `running` and finished_at on terminal states. */
+export function updateAssignment(id: string, patch: { status?: AssignmentStatus; report?: string }): AppTaskAssignment | undefined {
+  ensureAppBuilderSchema();
+  const cur = getAssignment(id);
+  if (!cur) return undefined;
+  const next: AppTaskAssignment = { ...cur, ...patch };
+  const at = new Date().toISOString();
+  if (patch.status === "running" && !next.startedAt) next.startedAt = at;
+  if (patch.status === "done" || patch.status === "failed" || patch.status === "cancelled") next.finishedAt = next.finishedAt ?? at;
+  database()
+    .prepare("UPDATE app_assignments SET status = ?, report = ?, started_at = ?, finished_at = ? WHERE id = ?")
+    .run(next.status, next.report, next.startedAt, next.finishedAt, id);
+  return next;
 }
