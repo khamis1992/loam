@@ -31,6 +31,10 @@ const CONTROL = ["think", "finish", "plan", "phase_set", "message", "plan_exit",
 const EDIT_EXTRA = ["file_multi_edit"];
 /** Build-only tools: secrets vault and the OpenCode coding sessions. */
 const BUILD_EXTRA = ["vault_ref", "code_session", "code_session_status", "code_session_collect"];
+/** App Builder agent tools (MISSING §4.1.4): Build mode is Build mode with an
+ *  App project attached — no new top-level mode, the seven app_* tools join the
+ *  build tool list. Unregistered names surface as unavailable in the modes UI. */
+const APP_BUILDER = ["app_task_create", "app_task_finish", "app_context_write", "app_verify", "app_version_note", "app_db_query", "app_add_dependency"];
 /** Documentation lookup for read/research/build modes. */
 const DOCS_LOOKUP = ["docs_lookup"];
 
@@ -61,7 +65,7 @@ export const LOAM_MODES: LoamMode[] = [
     starters: [{ label: "قارن مصادر", prompt: "قارن المصادر التي سأرفقها، وافصل الحقائق عن الاستنتاجات مع روابط الأدلة." }, { label: "راجع موضوعًا", prompt: "أعد تقرير بحث حول الموضوع التالي، مع توضيح الثغرات وحدود المصادر المتاحة." }] },
   { id: "build", label: "Loam Build", labelAr: "ابنِ", icon: "⌘", hue: 100, hue2: 140,
     tagline: "من الفكرة إلى تجربة تعمل", description: "طوّر ملفات التطبيق وشغّل الاختبارات ومعاينة المشروع في مساحة المهمة.", outputHint: "ملفات مشروع ومعاينة ونتائج اختبارات", readOnly: false,
-    tools: ["integration_list", "integration_call", ...READ, ...WRITE, ...EDIT_EXTRA, "memory_add", "artifact_publish", ...DOCS_LOOKUP, ...BUILD_EXTRA, ...GIT, "loam_mobile", "code_symbols", "code_outline", "semantic_search", ...CODEGRAPH, "wiki_generate", "ask_codebase", "shell_run", "app_run", "web_fetch", ...RE, ...BROWSER, ...PREVIEW, ...CONTROL, ...MANAGED_SESSIONS], panels: ["files", "browser", "preview"],
+    tools: ["integration_list", "integration_call", ...READ, ...WRITE, ...EDIT_EXTRA, "memory_add", "artifact_publish", ...DOCS_LOOKUP, ...BUILD_EXTRA, ...APP_BUILDER, ...GIT, "loam_mobile", "code_symbols", "code_outline", "semantic_search", ...CODEGRAPH, "wiki_generate", "ask_codebase", "shell_run", "app_run", "web_fetch", ...RE, ...BROWSER, ...PREVIEW, ...CONTROL, ...MANAGED_SESSIONS], panels: ["files", "browser", "preview"],
     fields: [{ id: "brief", label: "ماذا سنبني؟", placeholder: "المستخدمون والوظائف المطلوبة", multiline: true }, { id: "acceptance", label: "معايير الإنجاز", placeholder: "ما السلوك الذي يجب اختباره قبل التسليم؟", multiline: true }],
     starters: [{ label: "صفحة تعريفية", prompt: "ابنِ صفحة تعريفية عربية متجاوبة مع معاينة محلية واختبر عرض الهاتف." }, { label: "أصلح مشروعًا", prompt: "افحص ملفات المشروع المرفقة، حدد العطل وأصلحه ثم شغّل الاختبارات المناسبة." }] },
   { id: "write", label: "Loam Write", labelAr: "اكتب", icon: "✎", hue: 55, hue2: 75,

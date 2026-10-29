@@ -36,6 +36,7 @@ import { createConnectorTools } from "../tools/connectorTools.js";
 import { createWorkflowTools } from "../tools/workflow.js";
 import { createPlanTools } from "../tools/planTools.js";
 import { createAskUserTools } from "../tools/askUserTools.js";
+import { createAppBuilderTools } from "../appbuilder/tools.js";
 
 export function registerRuntimeTools(rt: {
   cfg: Config;
@@ -80,4 +81,8 @@ export function registerRuntimeTools(rt: {
   registry.registerAll(createWorkflowTools({ ollama, registry }));
   registry.registerAll(createPlanTools());
   registry.registerAll(createAskUserTools());
+  // App Builder (MISSING §4.0/§4.1.4): the seven app_* tools sit in the Build
+  // mode list; handlers refuse politely until a run engine attaches an App
+  // project to the task (setActiveAppBuild in src/appbuilder/tools.ts).
+  registry.registerAll(createAppBuilderTools());
 }

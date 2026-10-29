@@ -504,7 +504,17 @@ export interface AskUserRequestedEvent extends ChatEventBase {
   taskId: string;
   title: string;
   reason: string;
-  questions: Array<{ id: string; prompt: string; options?: string[]; allowFile?: boolean }>;
+  questions: Array<{
+    id: string;
+    prompt: string;
+    options?: string[];
+    allowFile?: boolean;
+    // App Builder V2 (MISSING §4.2.1), all optional so old cards render as before:
+    kind?: "single" | "multi" | "text";
+    optionDetails?: Array<{ id: string; label: string; detail?: string }>;
+    defaultOptionIds?: string[];
+    allowOther?: boolean;
+  }>;
   /** "auto" is the orchestrator's vague/missing-context trigger; "model" a tool call. */
   source?: "auto" | "model";
   /** Set when `source` is "auto"; the client localizes the reason from it. */
@@ -541,6 +551,18 @@ export interface AskUserResolvedEvent extends ChatEventBase {
     answers: Record<string, string>;
     files: Array<{ path: string; name: string; bytes: number; contentType: string }>;
   };
+}
+
+/** App Builder (MISSING §4.6.6): one app_verify report finished; the full report is on disk at logPath. */
+export interface AppVerifyReportEvent extends ChatEventBase {
+  type: "appVerifyReport";
+  requestId: string;
+  projectId: string;
+  runId: string;
+  attempt: number;
+  tier: "fast" | "standard" | "strict";
+  pass: boolean;
+  error: "verify_limit" | "aborted" | null;
 }
 
 export interface DeviceAttachmentUploadNotify extends ChatEventBase {
@@ -585,6 +607,7 @@ export type ChatEvent =
   | SimulationProgressEvent
   | AskUserRequestedEvent
   | AskUserResolvedEvent
+  | AppVerifyReportEvent
   | DeviceAttachmentUploadNotify
   | RecipeUpdateEvent
   | RecipeRestartEvent;

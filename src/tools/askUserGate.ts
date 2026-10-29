@@ -30,8 +30,25 @@ export interface AskUserArgs {
   title: string;
   /** Why the agent is asking. */
   reason?: string;
-  /** The questions to ask (1-5). */
-  questions: AskUserQuestion[];
+  /** The questions to ask (1-5). V2 fields are optional, so legacy cards keep working. */
+  questions: AskUserQuestionV2[];
+}
+
+/**
+ * App Builder V2 question (MISSING §4.2.1). The new fields are all optional;
+ * callers that pass `Array<{id, prompt, options?, allowFile?}>` keep working and
+ * old cards render exactly as before.
+ */
+export interface AskUserQuestionV2 {
+  id: string;
+  prompt: string;
+  options?: string[];             // legacy: plain labels
+  allowFile?: boolean;
+  // New, all optional:
+  kind?: "single" | "multi" | "text";
+  optionDetails?: Array<{ id: string; label: string; detail?: string }>;
+  defaultOptionIds?: string[];
+  allowOther?: boolean;
 }
 
 export type AskUserStatus = "pending" | "answered" | "dismissed" | "expired";
@@ -46,7 +63,7 @@ export function parseAskUserArgs(args: Record<string, unknown>): AskUserArgs | {
   if (!Array.isArray(args.questions)) return { error: "ask_user requires a questions array" };
   if (args.questions.length === 0) return { error: "ask_user requires at least one question" };
   if (args.questions.length > 5) return { error: "ask_user accepts at most 5 questions" };
-  const questions: AskUserQuestion[] = [];
+  const questions: AskUserQuestionV2[] = [];
   for (let i = 0; i < args.questions.length; i++) {
     const raw = args.questions[i];
     if (typeof raw !== "object" || raw === null) return { error: `ask_user question ${i + 1} must be an object` };
@@ -57,11 +74,30 @@ export function parseAskUserArgs(args: Record<string, unknown>): AskUserArgs | {
     const options = Array.isArray(q.options)
       ? q.options.filter((o): o is string => typeof o === "string").map((o) => o.trim()).filter((o) => o.length > 0).slice(0, 6)
       : [];
+    // V2 pass-through (MISSING §4.2.1): kind, optionDetails, defaults, allowOther.
+    const kind = q.kind === "multi" || q.kind === "text" ? q.kind : undefined;
+    const optionDetails = Array.isArray(q.optionDetails)
+      ? q.optionDetails
+          .filter((o): o is Record<string, unknown> => typeof o === "object" && o !== null && typeof (o as Record<string, unknown>).label === "string")
+          .map((o, j) => ({
+            id: typeof o.id === "string" && o.id ? o.id : `o${j + 1}`,
+            label: String(o.label).trim(),
+            ...(typeof o.detail === "string" && o.detail.trim() ? { detail: o.detail.trim().slice(0, 240) } : {}),
+          }))
+          .slice(0, 6)
+      : undefined;
+    const defaultOptionIds = Array.isArray(q.defaultOptionIds)
+      ? q.defaultOptionIds.filter((d): d is string => typeof d === "string" && d.length > 0).slice(0, 6)
+      : undefined;
     questions.push({
       id: `q${i + 1}`,
       prompt,
       ...(options.length > 0 ? { options } : {}),
       ...(q.allowFile === true ? { allowFile: true } : {}),
+      ...(kind ? { kind } : {}),
+      ...(optionDetails && optionDetails.length > 0 ? { optionDetails } : {}),
+      ...(defaultOptionIds && defaultOptionIds.length > 0 ? { defaultOptionIds } : {}),
+      ...(q.allowOther === true ? { allowOther: true } : {}),
     });
   }
   return { title, ...(reason ? { reason } : {}), questions };

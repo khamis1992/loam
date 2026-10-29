@@ -38,6 +38,17 @@ const PHASES: BuildPhase[] = [
     tools: ["design_brief", "loam_design", "design_lint"],
   },
   {
+    // MISSING §4.4.2: the App Builder entry phase. One design, not 2-3
+    // directions; normal Build runs without an App project keep design-explore.
+    id: "design-doc",
+    order: 0,
+    title: "Design document",
+    titleAr: "وثيقة التصميم",
+    instruction:
+      "Design step: if DESIGN.md is missing at the workspace root, write it now with exactly four headings (Direction & Layout, Tokens, Patterns & States, Media), concrete oklch or hex colours, named fonts, px sizes, spacing and radii, and one defining idea for the first screen. Then implement it without reopening the visual direction.",
+    tools: ["file_write", "file_read"],
+  },
+  {
     id: "implement",
     order: 1,
     title: "Implement",
@@ -57,6 +68,11 @@ export function getBuildPhase(phaseId: string): BuildPhase {
   const phase = PHASES.find((p) => p.id === phaseId);
   if (!phase) throw new Error(`Unknown build phase: ${phaseId}`);
   return phase;
+}
+
+/** MISSING §4.4.2: App Builder runs enter at design-doc; every other Build run keeps the design-exploration entry. */
+export function entryPhaseFor(opts: { appProject: boolean }): string {
+  return opts.appProject ? "design-doc" : BUILD_SUBPHASES.entryPhaseId;
 }
 
 /** Prompt directive injected when the design-exploration phase can run. */

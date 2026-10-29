@@ -496,6 +496,15 @@ export function insertPlanDraft(input: { projectId: string; runId: string; doc: 
   return getPlanDraft(id)!;
 }
 
+/** Replace the stored doc of a draft in place. Used by app_task_finish, which sets plan tasks done/failed inside the approved doc (§4.2.4). */
+export function updatePlanDraftDoc(draftId: string, doc: PlanDocument): PlanDraft | undefined {
+  ensureAppBuilderSchema();
+  const cur = getPlanDraft(draftId);
+  if (!cur) return undefined;
+  database().prepare("UPDATE app_plan_drafts SET doc = ? WHERE id = ?").run(JSON.stringify(doc), draftId);
+  return getPlanDraft(draftId);
+}
+
 export type PlanDecision = { kind: "approve" } | { kind: "decline"; reason: string };
 
 /**
@@ -579,4 +588,36 @@ export function updateAssignment(id: string, patch: { status?: AssignmentStatus;
     .prepare("UPDATE app_assignments SET status = ?, report = ?, started_at = ?, finished_at = ? WHERE id = ?")
     .run(next.status, next.report, next.startedAt, next.finishedAt, id);
   return next;
+}
+
+// ---------- app_verify_reports rows (MISSING §4.6.6 handler contract) ----------
+
+interface VerifyReportRow {
+  id: string; project_id: string; run_id: string; attempt: number; tier: string; pass: number;
+  steps: string; console_errors: number; screenshots: string; visual_verdict: string;
+  visual_notes: string; log_path: string; error: string | null; started_at: string; finished_at: string;
+}
+
+/** Insert one VerifyLoop report row (§4.6.6: the app_verify handler persists the report). */
+export function insertVerifyReport(r: import("./types.js").VerifyReport): void {
+  ensureAppBuilderSchema();
+  database()
+    .prepare(`INSERT INTO app_verify_reports (id, project_id, run_id, attempt, tier, pass, steps, console_errors,
+               screenshots, visual_verdict, visual_notes, log_path, error, started_at, finished_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(r.id, r.projectId, r.runId, r.attempt, r.tier, r.pass ? 1 : 0, JSON.stringify(r.steps), r.consoleErrors,
+         JSON.stringify(r.screenshots), r.visualVerdict, r.visualNotes, r.logPath, r.error, r.startedAt, r.finishedAt);
+}
+
+/** Newest report of a run, if any. */
+export function latestVerifyReportForRun(runId: string): import("./types.js").VerifyReport | undefined {
+  ensureAppBuilderSchema();
+  const r = database().prepare("SELECT * FROM app_verify_reports WHERE run_id = ? ORDER BY attempt DESC LIMIT 1").get(runId) as unknown as VerifyReportRow | undefined;
+  if (!r) return undefined;
+  return {
+    id: r.id, projectId: r.project_id, runId: r.run_id, attempt: r.attempt, tier: r.tier as import("./types.js").VerifyTier,
+    pass: r.pass === 1, steps: JSON.parse(r.steps), consoleErrors: r.console_errors, screenshots: JSON.parse(r.screenshots),
+    visualVerdict: r.visual_verdict as import("./types.js").VerifyReport["visualVerdict"], visualNotes: r.visual_notes,
+    logPath: r.log_path, error: (r.error as "verify_limit" | "aborted" | null) ?? null, startedAt: r.started_at, finishedAt: r.finished_at,
+  };
 }

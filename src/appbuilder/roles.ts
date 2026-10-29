@@ -100,6 +100,11 @@ export interface RoleGateRegistry {
 /** Tools whose file targets are checked against the active role's writeScope. */
 const GATED_WRITE_TOOLS = new Set(["file_write", "file_edit", "file_multi_edit", "find_and_edit", "file_move", "file_delete"]);
 
+/** §4.3.9: package installs/adds must go through app_add_dependency while an App project is attached. */
+const NPM_INSTALL_BLOCK_RE = /\b(npm|pnpm|yarn)\s+(i|install|add)\b/;
+/** §4.6.2: the four verify scripts must go through app_verify while an App project is attached. */
+const NPM_SCRIPT_BLOCK_RE = /\bnpm\s+run\s+(build|lint|check|typecheck)\b/;
+
 function toPosix(p: string): string {
   return p.split(/[\\/]/).join("/");
 }
@@ -123,12 +128,33 @@ export function pathInWriteScope(role: AppRoleSpec, relPath: string): boolean {
  * (MISSING §4.2.3). Written the same way as `applyPlanApprovalGate`
  * (`src/tools/planTools.ts`); the refusal is the spec's exact text:
  * `Role <label> may not write <path>. Hand this to the Engineer.`
+ *
+ * `shell_run` is wrapped too, with the two App-project blocks (MISSING §4.3.9,
+ * §4.6.2): package installs/adds must go through `app_add_dependency`, and the
+ * four verify scripts must go through `app_verify`. The gate is applied only to
+ * App Builder runs, i.e. exactly "while an App project is attached".
  */
 export function applyRoleScopeGate(registry: RoleGateRegistry, getActiveRole: () => AppRoleId): void {
   for (const name of registry.names()) {
-    if (!GATED_WRITE_TOOLS.has(name)) continue;
+    if (!GATED_WRITE_TOOLS.has(name) && name !== "shell_run") continue;
     const original = registry.get(name);
     if (!original) continue;
+    if (name === "shell_run") {
+      registry.replaceTool({
+        ...original,
+        async run(args, ctx) {
+          const command = typeof args.command === "string" ? args.command : "";
+          if (NPM_INSTALL_BLOCK_RE.test(command)) {
+            return { ok: false, content: "Use app_add_dependency to add a package." };
+          }
+          if (NPM_SCRIPT_BLOCK_RE.test(command)) {
+            return { ok: false, content: "Use app_verify. It runs check, lint, typecheck and build in one call." };
+          }
+          return original.run(args, ctx);
+        },
+      });
+      continue;
+    }
     registry.replaceTool({
       ...original,
       async run(args, ctx) {
