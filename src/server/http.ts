@@ -568,6 +568,21 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         const localAuthDir = process.env.LOAM_LOCAL_TOKEN_DIR || DATA_DIR;
         setLocalAuthUserDataDir(localAuthDir);
         const publicPaths = new Set(["/api/health", "/api/identity"]);
+        // CORS: the Agent Studio renderer loads from the privileged app://agent
+        // protocol; every API call from it to this http server is cross-origin.
+        // Answer the preflight and allow the origin so fetch() reaches the API.
+        const ALLOWED_ORIGINS = new Set(["app://agent", `http://${req.headers.host ?? "127.0.0.1"}`]);
+        if (ALLOWED_ORIGINS.has(String(req.headers.origin ?? ""))) {
+          res.setHeader("access-control-allow-origin", String(req.headers.origin));
+          res.setHeader("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+          res.setHeader("access-control-allow-headers", "content-type,authorization,x-loam-local-token");
+          res.setHeader("access-control-max-age", "600");
+          if (req.method === "OPTIONS") {
+            res.writeHead(204);
+            res.end();
+            return;
+          }
+        }
         const isStatic = req.method === "GET" && (p === "/" || MIME[path.extname(p).toLowerCase()] !== undefined);
         // The public share replay feed (GET /api/share/:token) is anonymous by
         // design; POST/DELETE stay behind the install token like every /api route.
