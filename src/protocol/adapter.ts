@@ -80,7 +80,7 @@ export async function startProtocolAdapter(deps: ProtocolAdapterDeps): Promise<P
         // CORS
         res.setHeader("Access-Control-Allow-Origin", "*");
         res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
-        res.setHeader("Access-Control-Allow-Headers", "authorization, content-type, connect-protocol-version, x-client-id, x-client-type, x-client-version, x-client-locale, x-client-timezone, x-client-timezone-offset");
+        res.setHeader("Access-Control-Allow-Headers", "authorization, content-type, connect-protocol-version, x-client-id, x-client-type, x-client-version, x-client-locale, x-client-timezone, x-client-timezone-offset, x-loam-local-token");
         if (req.method === "OPTIONS") {
           res.writeHead(204).end();
           return;
