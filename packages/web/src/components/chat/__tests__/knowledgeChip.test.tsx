@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { Provider } from 'react-redux';
+import { store } from '@/store';
 
 // The Composer reads connectors/skills from the backend on mount; keep it quiet.
 vi.mock('@/services/rpc', () => ({
@@ -36,11 +38,13 @@ describe('Composer Knowledge Garden chip (N3)', () => {
   function renderComposer(props: Partial<React.ComponentProps<typeof Composer>> = {}) {
     const onToggleKnowledge = props.onToggleKnowledge ?? vi.fn();
     render(
-      <Composer
-        onSend={vi.fn()}
-        onToggleKnowledge={onToggleKnowledge}
-        {...props}
-      />,
+      <Provider store={store}>
+        <Composer
+          onSend={vi.fn()}
+          onToggleKnowledge={onToggleKnowledge}
+          {...props}
+        />
+      </Provider>,
     );
     return { onToggleKnowledge };
   }

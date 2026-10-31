@@ -1423,5 +1423,8 @@
   "Revenue growth": "نمو الإيراد",
   "Sample DCF PDF (Typst)": "تقرير DCF تجريبي (Typst)",
   "PDF report downloaded.": "نُزّل تقرير PDF.",
-  "Finance": "المالي"
+  "Finance": "المالي",
+  "Last modified {time}": "آخر تعديل {time}",
+  "Open in editor": "فتح في المحرر",
+  "Close panel": "إغلاق اللوحة"
 }
