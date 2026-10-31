@@ -67,6 +67,7 @@ import { configureLegalProtection } from "../legal/security/protection.js";
 import { fromFile } from "../knowledge/importers.js";
 import { DATA_DIR } from "../config.js";
 import { createGenExtraTools } from "../tools/genExtra.js";
+import { applyMcpPresets } from "../tools/mcpPresets.js";
 import { defaultGenProviders } from "../creative/genProviders.js";
 import { createArtifactTools } from "../tools/artifactTools.js";
 import { planTool, messageTool } from "../tools/specAliases.js";
@@ -278,7 +279,8 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   // Cap H: prepareApiAnything overlays panel settings, protects Loam's api-anything
   // state, installs the tier resolver, and (when enabled + vendored) adds the
   // Loam-managed server with its policy hooks. Disabled by default until H4 passes.
-  const apiAnything = prepareApiAnything(cfg, cfg.mcpServers);
+  // Blueprint gap 5: curated BYOK presets (supabase/vercel/google-*) overlay first.
+  const apiAnything = prepareApiAnything(cfg, applyMcpPresets(cfg.mcpServers));
   const mcp = opts.mcp === false ? null : await registerMcpTools(registry, apiAnything.servers, cfg.workspace, apiAnything.hooks);
   // Cap H §6.5: the nine api_* learn tools exist only while the Loam-managed
   // server is running; they register integration:true (per-task grant), the

@@ -86,6 +86,9 @@ export interface PolicyConfig {
 export interface McpServerConfig {
   command?: string;
   transport?: "stdio" | "http";
+  /** Curated remote preset (supabase / vercel / google-drive / google-mail):
+   *  fills url/headers/lazy from src/tools/mcpPresets.ts; user fields win. */
+  preset?: string;
   url?: string;
   headers?: Record<string, string>;
   args?: string[];

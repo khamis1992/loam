@@ -6,6 +6,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { DATA_DIR, ROOT, type McpServerConfig } from "../config.js";
 import { log } from "../log.js";
 import { num, str } from "./registry.js";
+import { expandEnvHeaders } from "./mcpPresets.js";
 import type { ToolContext, ToolRegistry, ToolResult } from "./registry.js";
 import { REA_MCP_SERVER, isReaAllowedTool, reaToolTimeoutMs } from "./reaAllowlist.js";
 import { isAllowedReTool } from "../re/allowlist.js";
@@ -193,7 +194,7 @@ export async function registerMcpTools(
         if (!cfg.url) throw new Error("HTTP MCP requires url");
         const url = new URL(expand(cfg.url, workspace));
         if (!["http:", "https:"].includes(url.protocol)) throw new Error("MCP URL must use HTTP(S)");
-        transport = new StreamableHTTPClientTransport(url, { requestInit: { headers: cfg.headers } });
+        transport = new StreamableHTTPClientTransport(url, { requestInit: { headers: expandEnvHeaders(cfg.headers) } });
       } else {
         if (!cfg.command) throw new Error("stdio MCP requires command");
         // Opt-in OS sandbox (SANDBOX_RUNTIME §7.2, appendix C4): servers configured
