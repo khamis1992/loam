@@ -37,7 +37,7 @@ const SEEDS: ReadonlyArray<readonly [string, readonly string[]]> = [
     "research", "search", "sources", "compare", "investigate", "browse", "look up", "literature",
   ]],
   ["write", [
-    "اكتب", "كتابة", "مستند", "مقال", "عرض تقديمي", "شرائح", "رسالة", "مسودة", "سيرة ذاتية",
+    "اكتب", "كتابة", "مستند", "مقال", "عرض تقديمي", "عرضا تقديميا", "شرائح", "رسالة", "مسودة", "سيرة ذاتية",
     "write", "document", "presentation", "slides", "pptx", "docx", "essay", "letter", "draft", "memo",
   ]],
   ["data", [
@@ -61,7 +61,7 @@ const SEEDS: ReadonlyArray<readonly [string, readonly string[]]> = [
     "reverse engineer", "reverse engineering", "decompile", "disassemble", "binary analysis", "asar", "apk", "firmware",
   ]],
   ["devflow", [
-    "دورة تطوير", "مشكلة github", "pull request", "pull-request", "فرع جديد", "سرب", "نتريو",
+    "دورة تطوير", "مشكلة github", "pull request", "pull-request", "فرع جديد", "فرعا جديدا", "سرب", "نتريو",
     "github issue", "create a pr", "open a pr", "git branch", "git commit", "ci pipeline", "dev flow",
   ]],
   ["automate", [
