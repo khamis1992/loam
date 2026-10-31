@@ -38,6 +38,7 @@ import {
 } from '@/components/chat/hibernationTestHook';
 import { requestHibernation, wakeHibernatedSessionWithAuth } from '@/services/sessionHibernationApi';
 import { StepTimeline, deriveTimelineSteps, type TimelineStep } from '@/components/chat/StepTimeline';
+import { TaskMetricsBand } from '@/components/chat/TaskMetricsBand';
 import { SideChatPanel } from '@/components/chat/SideChatPanel';
 import { AttachmentCard, kindFromName, type AttachmentKind } from '@/components/chat/AttachmentCard';
 import { ComputerPanel } from '@/components/computer/ComputerPanel';
@@ -737,6 +738,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
                   {error}
                 </div>
               )}
+              <TaskMetricsBand taskId={taskId} />
               <StepTimeline events={events} selectedActionId={selectedActionId} onSelect={handleSelectStep} />
               <EventList
                 events={events}

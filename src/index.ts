@@ -712,6 +712,14 @@ async function main(): Promise<void> {
       completeTaskRun(task, result.text, result.model, opts.lease);
       if (!legalRun) recordWikiSession(effectiveCfg, task);
       recordTaskUsage(task, result.usage); // OPD #9: one mock usage entry per completed task
+      // lazy-senior P4 metrics band: persist the token usage as a run step so
+      // GET /api/tasks/:id/metrics can show tokens in/out next to the file and
+      // check metrics derived from the same step log.
+      appendStep(task, {
+        at: new Date().toISOString(),
+        type: "usage",
+        data: { promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens, model: result.model },
+      });
       if (doneEvent) {
         appendStep(task, { at: new Date().toISOString(), type: doneEvent.type, data: doneEvent });
         emit(doneEvent);

@@ -5,6 +5,7 @@ import { handleApiAnythingRoute } from "./apiAnythingRoutes.js";
 import { handleWorkflowRoutes, handleWorkflowRunRoutes, type WorkflowRouteDeps } from "./routes/workflows.js";
 import { handleTracesRoutes } from "./routes/traces.js";
 import { getBalance } from "./credits.js";
+import { computeTaskMetrics } from "./taskMetrics.js";
 import { handleCheckpointRoutes } from "./routes/checkpoints.js";
 import { handleInterruptRoutes } from "./routes/interrupts.js";
 import { createRunResume } from "./runResume.js";
@@ -1676,6 +1677,14 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         // ---- task workspace files (UI files tab) ----
+        if (req.method === "GET" && p.startsWith("/api/tasks/") && p.endsWith("/metrics")) {
+          // lazy-senior P4: the task panel's metrics band — local data only.
+          const id = decodeURIComponent(p.slice("/api/tasks/".length, -"/metrics".length));
+          const task = getTask(id);
+          if (!task) return sendJson(res, 404, { error: "المهمة غير موجودة" });
+          return sendJson(res, 200, computeTaskMetrics(task.steps));
+        }
+
         if (req.method === "GET" && p.startsWith("/api/tasks/") && p.endsWith("/files")) {
           const id = decodeURIComponent(p.slice("/api/tasks/".length, -"/files".length));
           const task = getTask(id);
