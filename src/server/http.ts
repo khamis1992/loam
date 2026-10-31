@@ -207,6 +207,8 @@ import { isOutputType } from "../llm/router.js";
 import { requiresReplayConfirmation } from "./recovery.js";
 import { executionQueue } from "./executionQueue.js";
 import { SwarmService, SwarmError } from "../swarm/service.js";
+import { classifyEffort } from "../swarm/effort.js";
+import { routeIntent } from "./intentRouter.js";
 import { RealSwarmService } from "../orchestration/swarm/service.js";
 import type { McpToolset } from "../tools/mcp.js";
 import { integrationCatalog, integrationGrants, saveIntegrationGrants } from '../tools/integrations.js';
@@ -605,6 +607,31 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (await timeline.handle(req, res, url)) return;
+        // UI overhaul W-U2: the composer's intent router. Token-gated above
+        // like every other /api route. Contract: POST {text: string} with
+        // 1..4000 chars -> 200 {mode, effort, reason, source}; invalid input
+        // is a 400 (deliberate choice — the caller asked us to document it),
+        // and routing NEVER 500s: routeIntent itself never throws, and the
+        // catch below degrades to the "ask" default on any unexpected error.
+        if (p === "/api/intent/route") {
+          res.setHeader("cache-control", "no-store");
+          if (req.method !== "POST") return sendJson(res, 405, { error: "Method not allowed" });
+          if ((req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) || req.headers["sec-fetch-site"] === "cross-site") return sendJson(res, 403, { error: "Same-origin requests required" });
+          let intentBody: { text?: unknown } | null = null;
+          // 16 KB body cap: the 4000-char text limit is measured in characters,
+          // but Arabic costs up to 2 UTF-8 bytes per char plus JSON framing.
+          try { intentBody = await readBody(req, 16_000) as { text?: unknown }; } catch { intentBody = null; }
+          const intentText = intentBody && typeof intentBody.text === "string" ? intentBody.text : "";
+          if (!intentText.trim() || intentText.length > 4000) {
+            return sendJson(res, 400, { error: "text required (non-empty string, 4000 chars max)" });
+          }
+          try {
+            const decision = await routeIntent(intentText, { cfg, ollama });
+            return sendJson(res, 200, { mode: decision.mode, effort: decision.effort.effort, reason: decision.reason, source: decision.source });
+          } catch {
+            return sendJson(res, 200, { mode: "ask", effort: classifyEffort(intentText).effort, reason: "اخترنا وضع «استكشف» افتراضيًا.", source: "keywords" });
+          }
+        }
         if (p === '/api/integrations') {
           res.setHeader('cache-control', 'no-store');
           if (!registry) return sendJson(res, 503, { error: 'Integrations unavailable' });
