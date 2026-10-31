@@ -155,7 +155,7 @@ async function runOnce(opts: { workspace: string; prompt: string; registry: Tool
       tools: opts.registry,
       emit,
       prompt: opts.prompt,
-      maxSteps: 20,
+      maxSteps: 24,
       // Coding-eval mode: the bench measures the discipline's guarantees, not
       // the finish-time verifier's retry budget.
       suppressFinal: true,
