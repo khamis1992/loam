@@ -9,6 +9,7 @@ import { admitAllPending } from "../server/inputQueue.js";
 import { loadPending } from "../server/pending.js";
 import { loadSettings } from "../server/settings.js";
 import { acquireRuntimeLease, backupDatabase } from "../server/sqliteStore.js";
+import { pruneContainers } from "../sandbox/container.js";
 
 export function initializeStartup(cfg: Config): { recovered: number; admittedInputs: number } {
   setLocalAuthUserDataDir(process.env.LOAM_LOCAL_TOKEN_DIR || DATA_DIR);
@@ -28,5 +29,8 @@ export function initializeStartup(cfg: Config): { recovered: number; admittedInp
   loadPending();
   loadAgents();
   loadCompanionDevices();
+  // Task containers are per-process; a crash leaves them behind. Sweep at boot
+  // (fire-and-forget: startup must not wait on Docker).
+  void pruneContainers();
   return { recovered, admittedInputs: admittedInputs.length };
 }

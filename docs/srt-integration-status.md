@@ -40,3 +40,28 @@ concurrent session's in-flight `masterPromptText.ts` + `runtime.ts` edits.
 
 **State:** `sandboxMode` stays `off` (the OD-1 gate held by design). Everything is wired: once the OS-level spawn issue is resolved on this machine, flip the mode in Settings (after the OD-10 ack) and re-run the W probes — no code changes needed. Minimal retry probe:
 `node data/bin/srt/0.0.81/node_modules/@anthropic-ai/sandbox-runtime/dist/cli.js --settings <min-settings> -- cmd /c echo X`.
+
+## Per-task Docker containers — layer above srt (2026-10-31, blueprint gap 1)
+
+The OS sandbox isolates one command on the host; `src/sandbox/container.ts` goes
+one step further and gives each task its own Docker container, so two concurrent
+tasks share neither filesystem nor process table (the local-first stand-in for
+the blueprint's gVisor/Firecracker isolation layer — Docker Desktop on Windows
+already runs containers inside a utility VM).
+
+- **Opt-in, off by default**: `sandbox.container.enabled` in config.json or
+  `LOAM_SANDBOX_CONTAINER=1`. Limits overridable: `LOAM_SANDBOX_IMAGE`
+  (default `node:22-alpine`), `LOAM_SANDBOX_NETWORK` (`none`|`bridge`),
+  `LOAM_SANDBOX_CPUS` (2), `LOAM_SANDBOX_MEMORY_MB` (2048).
+- **Hardening**: workspace is the only bind mount (`/workspace`), non-root user
+  1000:1000, `--cap-drop ALL`, `no-new-privileges`, pids/memory/cpu caps,
+  noexec/nosuid tmpfs, network `none` by default.
+- **Lifecycle**: created lazily on the task's first `shell_run`, removed when the
+  task ends; `pruneContainers()` sweeps crash leftovers at boot (fire-and-forget).
+  A resume makes a fresh container from the same workspace.
+- **Composition with srt**: the container branch sits after the srt L3 gate in
+  `shell_run` — srt stays the host-level guard, the container is the per-task
+  boundary. `shell_start` interactive sessions remain outside both (v2 concern).
+- **Gates**: `node --import tsx --test src/sandbox/__tests__/container.test.ts`
+  (12 tests, daemon-free via the `__setDockerForTests` seam), `typecheck`,
+  `check:encoding`, `src/tools/__tests__/shellRisk.test.ts` (11).

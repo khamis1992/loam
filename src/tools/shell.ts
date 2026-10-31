@@ -4,6 +4,7 @@ import { checkCommand, headOutput, tailOutput } from "../policy/commands.js";
 import { checkCommandRisk } from "../policy/commandRisk/index.js";
 import { resolveSrtPolicy, shouldSandboxCommand } from "../sandbox/srt/policy.js";
 import { execInSandbox } from "../sandbox/srt/exec.js";
+import { containerLimits, containerModeEnabled, dockerAvailable, spawnInContainer } from "../sandbox/container.js";
 import { srtAudit } from "../sandbox/srt/audit.js";
 import { taskPermissionMode } from "../server/approvalRules.js";
 import { DEFAULT_PERMISSION_MODE } from "../policy/permissionModes.js";
@@ -59,9 +60,18 @@ function killTree(child: ChildProcessWithoutNullStreams): void {
   }
 }
 
-function runOnce(command: string, cwd: string, timeoutMs: number, signal?: AbortSignal, taskId?: string, env?: NodeJS.ProcessEnv): Promise<ExecOutcome> {
+function runOnce(command: string, cwd: string, timeoutMs: number, signal?: AbortSignal, taskId?: string, env?: NodeJS.ProcessEnv, spawner?: () => Promise<ChildProcessWithoutNullStreams>): Promise<ExecOutcome> {
   return new Promise((resolve) => {
-    const child = spawn(command, { cwd, shell: true, windowsHide: true, env: env ?? { ...process.env } });
+    void (async () => {
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawner
+        ? await spawner()
+        : spawn(command, { cwd, shell: true, windowsHide: true, env: env ?? { ...process.env } });
+    } catch (err) {
+      resolve({ code: null, stdout: "", stderr: String(err), timedOut: false });
+      return;
+    }
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -122,6 +132,7 @@ function runOnce(command: string, cwd: string, timeoutMs: number, signal?: Abort
     child.on("close", (code) => {
       finish(code);
     });
+    })();
   });
 }
 
@@ -247,6 +258,26 @@ export const shellTools: Tool[] = [
           `exit=${res.code ?? "null"}${res.timedOut ? " (timeout, killed)" : ""}`,
           `cwd=${cwd}`,
           "sandboxed=true (عزل الأوامر مفعّل — لا شبكة خارج النطاقات المسموحة ولا قراءة لمسارات المفاتيح)",
+        ];
+        if (stdout.trim()) parts.push(`stdout:\n${tailOutput(stdout, 6000)}`);
+        if (stderr.trim()) parts.push(`stderr:\n${tailOutput(stderr, 4000)}`);
+        if (!stdout.trim() && !stderr.trim()) parts.push("(no output)");
+        return { ok: res.code === 0, content: parts.join("\n") };
+      }
+
+      // Opt-in per-task container: the same command runs in a container that
+      // mounts only this task workspace (no shared filesystem with other tasks).
+      if (ctx.taskId && containerModeEnabled(ctx.cfg) && (await dockerAvailable())) {
+        const limits = containerLimits(ctx.cfg);
+        const taskId = ctx.taskId;
+        const res = await runOnce(execCommand, cwd, timeoutMs, ctx.signal, taskId, { ...injected, ...childEnv }, () =>
+          spawnInContainer({ taskId, workspace: ctx.workspace, command: execCommand, cwd, env: { ...injected, ...childEnv }, limits }));
+        const stdout = redactVaultValues(res.stdout, secrets);
+        const stderr = redactVaultValues(res.stderr, secrets);
+        const parts = [
+          `exit=${res.code ?? "null"}${res.timedOut ? " (timeout, killed)" : ""}`,
+          `cwd=${cwd}`,
+          "sandboxed=container (task container, workspace-only mount)",
         ];
         if (stdout.trim()) parts.push(`stdout:\n${tailOutput(stdout, 6000)}`);
         if (stderr.trim()) parts.push(`stderr:\n${tailOutput(stderr, 4000)}`);

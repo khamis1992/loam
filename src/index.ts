@@ -23,6 +23,7 @@ import { managedSessions } from "./server/managedSessions.js";
 import { createApproval, waitForDecision } from "./server/approvals.js";
 import { approvalStableKey, getReplayDecision, matchApprovalRule, saveApprovalDecision, taskApprovalAuto, taskSandboxMode, taskPermissionMode } from "./server/approvalRules.js";
 import { resolveSandboxPolicy } from "./policy/riskTier.js";
+import { containerModeEnabled, removeContainer } from "./sandbox/container.js";
 import { DEFAULT_PERMISSION_MODE, isPlanMode } from "./policy/permissionModes.js";
 import type { Tool } from "./tools/registry.js";
 import { suggestSkillsAfterSession } from "./tools/skillSuggest.js";
@@ -743,7 +744,12 @@ async function main(): Promise<void> {
         });
       }
       return { taskId: task, text: result.text };
-      } finally { core?.runSpan.end("ok"); }
+      } finally {
+        core?.runSpan.end("ok");
+        // Per-task isolation: the container dies with the run (a resume makes a
+        // fresh one from the same workspace).
+        if (containerModeEnabled(effectiveCfg)) void removeContainer(task);
+      }
     } catch (err) {
       if (getTask(task)?.status === "done") {
         log.warn(`post-completion bookkeeping failed for ${task}: ${String(err)}`);
