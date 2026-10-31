@@ -1381,5 +1381,8 @@
   "Next step": "الخطوة التالية",
   "Timeline scrubber": "شريط الخط الزمني",
   "Expand sidebar": "توسيع الشريط الجانبي",
-  "Collapse sidebar": "طي الشريط الجانبي"
+  "Collapse sidebar": "طي الشريط الجانبي",
+  "Live collaboration": "تعاون حي",
+  "Synced with remote edits.": "تمت مزامنة المستند مع التعديلات البعيدة.",
+  "Editor": "محرّر"
 }
