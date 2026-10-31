@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { loadConfig, type Config } from "../../src/config.js";
 import { OllamaClient } from "../../src/ollama.js";
@@ -127,11 +127,6 @@ function pct(offValue: number | null, fullValue: number | null): string {
 }
 
 async function main(): Promise<void> {
-  // Pin the coder chain to the local model for every run: the env chain wins
-  // over config, and an unmatched id falls back to the Ollama client with this
-  // exact model id. Read from the environment only — no credentials here.
-  process.env.LOAM_CODER_CHAIN = MODEL;
-  process.env.MANUS_LOCAL_CODER_CHAIN = MODEL;
   const cfg: Config = { ...loadConfig(), model: MODEL, ollamaUrl: OLLAMA_URL };
   const ollama = new OllamaClient(OLLAMA_URL, cfg.cloudModel);
   const registry = buildRegistry();
@@ -160,6 +155,12 @@ async function main(): Promise<void> {
             taskId: sessionId,
             sessionId,
             signal: AbortSignal.timeout(TIMEOUT_MS),
+            // Pin every routed coding call to the local model: the harness
+            // rewrites whichever provider the chain picked onto the local
+            // Ollama endpoint with the pinned model id.
+            createProviderClient: () => ({
+              chat: (opts) => ollama.chat({ ...opts, model: MODEL }),
+            }),
           });
           steps.push({
             at: new Date().toISOString(),
