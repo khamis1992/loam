@@ -747,7 +747,8 @@ async function main(): Promise<void> {
       } finally {
         core?.runSpan.end("ok");
         // Per-task isolation: the container dies with the run (a resume makes a
-        // fresh one from the same workspace).
+        // fresh one from the same workspace). Fire-and-forget — teardown must
+        // never mask the task's own result.
         if (containerModeEnabled(effectiveCfg)) void removeContainer(task);
       }
     } catch (err) {

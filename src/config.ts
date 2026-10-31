@@ -248,11 +248,13 @@ export interface Config {
   /** Codemode sandbox (opt-in, off by default): master switch plus per-run limits.
    *  Optional so a hand-written config.json need not repeat it. */
   codemode?: { enabled: boolean; timeoutMs: number; memoryBytes: number; maxToolCalls: number };
-  /** Per-task execution container (opt-in, off by default). When enabled, shell
-   *  commands run inside a dedicated Docker container with only the task
-   *  workspace mounted, so concurrent tasks share no filesystem or process
-   *  table. Env overrides: LOAM_SANDBOX_CONTAINER, LOAM_SANDBOX_IMAGE,
-   *  LOAM_SANDBOX_NETWORK, LOAM_SANDBOX_CPUS, LOAM_SANDBOX_MEMORY_MB. */
+  /** Per-task execution container (opt-in, off by default; GAP_REVIEW P2#13).
+   *  When enabled, shell commands and interactive sessions run inside a dedicated
+   *  Docker container that mounts only the task workspace, so concurrent tasks
+   *  share no filesystem or process table. Requires a reachable docker daemon
+   *  (Docker Desktop on Windows); the mode fails closed without it.
+   *  Env overrides: LOAM_SANDBOX_CONTAINER, LOAM_SANDBOX_IMAGE, LOAM_SANDBOX_NETWORK,
+   *  LOAM_SANDBOX_CPUS, LOAM_SANDBOX_MEMORY_MB. Optional like codemode above. */
   sandbox?: {
     container: { enabled: boolean; image: string; network: "none" | "bridge"; cpus: number; memoryMb: number };
   };

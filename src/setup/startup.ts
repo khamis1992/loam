@@ -30,7 +30,8 @@ export function initializeStartup(cfg: Config): { recovered: number; admittedInp
   loadAgents();
   loadCompanionDevices();
   // Task containers are per-process; a crash leaves them behind. Sweep at boot
-  // (fire-and-forget: startup must not wait on Docker).
+  // (fire-and-forget: startup must not wait on Docker, and prune itself probes
+  // availability and no-ops without a daemon).
   void pruneContainers();
   return { recovered, admittedInputs: admittedInputs.length };
 }

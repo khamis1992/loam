@@ -89,3 +89,8 @@ output/
 /notes.md
 /task_plan.md
 .claude/settings.local.json
+# Anchored: the typst binary dir at repo root only — must NOT match src/tools/.
+/tools/
+
+# Mimosa scanner working data (local only)
+.mimosa/
