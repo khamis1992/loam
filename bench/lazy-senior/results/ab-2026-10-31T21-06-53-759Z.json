@@ -1,0 +1,164 @@
+{
+  "generatedAt": "2026-10-31T21:06:53.757Z",
+  "model": "qwen36-uncensored-hauhau:latest",
+  "ollamaUrl": "http://127.0.0.1:11434",
+  "runsPerArm": 3,
+  "tasks": [
+    "reuse-form"
+  ],
+  "note": "Loam's own A/B numbers for the lazy-senior discipline. Fixture tasks; small N; local model. Not comparable to any external benchmark.",
+  "byArm": {
+    "off": {
+      "runs": 3,
+      "completed": 0,
+      "errors": 3,
+      "reusePass": 0,
+      "medianTokensOut": null,
+      "medianTokensIn": null,
+      "medianMs": null,
+      "medianTurns": null,
+      "medianFilesTouched": null,
+      "medianLinesAdded": null
+    },
+    "full": {
+      "runs": 3,
+      "completed": 0,
+      "errors": 3,
+      "reusePass": 0,
+      "medianTokensOut": null,
+      "medianTokensIn": null,
+      "medianMs": null,
+      "medianTurns": null,
+      "medianFilesTouched": null,
+      "medianLinesAdded": null
+    }
+  },
+  "records": [
+    {
+      "arm": "off",
+      "run": 0,
+      "reusePass": false,
+      "addedNewComponent": false,
+      "error": "task incomplete: final verification revise: Independent inspection missing or unsuccessful",
+      "metrics": {
+        "turns": null,
+        "model": null,
+        "tokensIn": null,
+        "tokensOut": null,
+        "elapsedMs": null,
+        "toolCalls": 16,
+        "filesTouched": 2,
+        "newFiles": 1,
+        "linesAdded": 15,
+        "linesRemoved": 0,
+        "lastCheck": null,
+        "reuseRatio": 0.5
+      }
+    },
+    {
+      "arm": "off",
+      "run": 1,
+      "reusePass": true,
+      "addedNewComponent": false,
+      "error": "cancelled by user",
+      "metrics": {
+        "turns": null,
+        "model": null,
+        "tokensIn": null,
+        "tokensOut": null,
+        "elapsedMs": null,
+        "toolCalls": 14,
+        "filesTouched": 2,
+        "newFiles": 1,
+        "linesAdded": 27,
+        "linesRemoved": 0,
+        "lastCheck": null,
+        "reuseRatio": 0.5
+      }
+    },
+    {
+      "arm": "off",
+      "run": 2,
+      "reusePass": false,
+      "addedNewComponent": false,
+      "error": "cancelled by user",
+      "metrics": {
+        "turns": null,
+        "model": null,
+        "tokensIn": null,
+        "tokensOut": null,
+        "elapsedMs": null,
+        "toolCalls": 13,
+        "filesTouched": 1,
+        "newFiles": 0,
+        "linesAdded": 0,
+        "linesRemoved": 0,
+        "lastCheck": null,
+        "reuseRatio": 1
+      }
+    },
+    {
+      "arm": "full",
+      "run": 0,
+      "reusePass": true,
+      "addedNewComponent": false,
+      "error": "task incomplete: final verification revise: Independent inspection missing or unsuccessful",
+      "metrics": {
+        "turns": null,
+        "model": null,
+        "tokensIn": null,
+        "tokensOut": null,
+        "elapsedMs": null,
+        "toolCalls": 11,
+        "filesTouched": 1,
+        "newFiles": 0,
+        "linesAdded": 0,
+        "linesRemoved": 0,
+        "lastCheck": null,
+        "reuseRatio": 1
+      }
+    },
+    {
+      "arm": "full",
+      "run": 1,
+      "reusePass": false,
+      "addedNewComponent": false,
+      "error": "task incomplete: final verification revise: Independent inspection missing or unsuccessful",
+      "metrics": {
+        "turns": null,
+        "model": null,
+        "tokensIn": null,
+        "tokensOut": null,
+        "elapsedMs": null,
+        "toolCalls": 8,
+        "filesTouched": 1,
+        "newFiles": 0,
+        "linesAdded": 0,
+        "linesRemoved": 0,
+        "lastCheck": null,
+        "reuseRatio": 1
+      }
+    },
+    {
+      "arm": "full",
+      "run": 2,
+      "reusePass": true,
+      "addedNewComponent": false,
+      "error": "cancelled by user",
+      "metrics": {
+        "turns": null,
+        "model": null,
+        "tokensIn": null,
+        "tokensOut": null,
+        "elapsedMs": null,
+        "toolCalls": 15,
+        "filesTouched": 1,
+        "newFiles": 0,
+        "linesAdded": 0,
+        "linesRemoved": 0,
+        "lastCheck": null,
+        "reuseRatio": 1
+      }
+    }
+  ]
+}

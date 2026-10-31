@@ -1,0 +1,164 @@
+{
+  "generatedAt": "2026-10-31T23:46:27.237Z",
+  "model": "qwen36-uncensored-hauhau:latest",
+  "ollamaUrl": "http://127.0.0.1:11434",
+  "runsPerArm": 3,
+  "tasks": [
+    "reuse-form"
+  ],
+  "note": "Loam's own A/B numbers for the lazy-senior discipline. Fixture tasks; small N; local model. Not comparable to any external benchmark.",
+  "byArm": {
+    "off": {
+      "runs": 3,
+      "completed": 3,
+      "errors": 0,
+      "reusePass": 2,
+      "medianTokensOut": 1611,
+      "medianTokensIn": 159405,
+      "medianMs": 62566,
+      "medianTurns": 7,
+      "medianFilesTouched": 1,
+      "medianLinesAdded": 0
+    },
+    "full": {
+      "runs": 3,
+      "completed": 3,
+      "errors": 0,
+      "reusePass": 2,
+      "medianTokensOut": 1547,
+      "medianTokensIn": 187516,
+      "medianMs": 67453,
+      "medianTurns": 8,
+      "medianFilesTouched": 1,
+      "medianLinesAdded": 0
+    }
+  },
+  "records": [
+    {
+      "arm": "off",
+      "run": 0,
+      "reusePass": true,
+      "addedNewComponent": false,
+      "finalText": "تمت إضافة حقل البريد الإلكتروني إلى نموذج التسجيل. التغييرات في `src/SignupForm.tsx`:\n\n- **إضافة حالة** `email` مع `setEmail` لإدارة قيمة الحقل.\n- **إضافة حقل إدخال** `<Input label=\"Email\" ... type=\"email\" />` بين حقل الاسم وحقل كلمة المرور.\n- **إضافة تحقق** من صحة البريد باستخدام `validateEmail(email)` الموجودة مسبقاً في المشروع.\n- **إضافة عرض الأخطاء** للبريد الإلكتروني عبر `errors.email`.\n\nالأخطاء التسعة التي أظهرها الـ TypeScript كانت موجودة قبل التعديل (نفس المشكلة: عدم وجود `react` types و`--jsx` flag) ولم يتسبب بها التغيير الجديد.",
+      "metrics": {
+        "turns": 8,
+        "model": "qwen36-uncensored-hauhau:latest",
+        "tokensIn": 180118,
+        "tokensOut": 1611,
+        "elapsedMs": 96487,
+        "toolCalls": 7,
+        "filesTouched": 1,
+        "newFiles": 0,
+        "linesAdded": 0,
+        "linesRemoved": 0,
+        "lastCheck": null,
+        "reuseRatio": 1
+      }
+    },
+    {
+      "arm": "off",
+      "run": 1,
+      "reusePass": false,
+      "addedNewComponent": false,
+      "finalText": "تم إضافة حقل البريد الإلكتروني إلى نموذج التسجيل. التغييرات في `src/SignupForm.tsx`:\n\n1. **حالة جديدة** — متغير `email` مع دالة التحديث `setEmail`.\n2. **تحقق من الصحة** — نمط regex للتأكد من صحة تنسيق البريد الإلكتروني عند الإرسال.\n3. **مكون الإدخال** — حقل جديد بـ `type=\"email\"` و `label=\"Email\"` يظهر بين الاسم وكلمة المرور.\n\nالأخطاء الـ 9 في TypeScript موجودة مسبقاً (لا توجد أنواع `react` مُثبّتة ولا إعداد `--jsx`) ولم تُحدثها التعديلات.",
+      "metrics": {
+        "turns": 7,
+        "model": "qwen36-uncensored-hauhau:latest",
+        "tokensIn": 153505,
+        "tokensOut": 1343,
+        "elapsedMs": 52973,
+        "toolCalls": 6,
+        "filesTouched": 1,
+        "newFiles": 0,
+        "linesAdded": 0,
+        "linesRemoved": 0,
+        "lastCheck": null,
+        "reuseRatio": 1
+      }
+    },
+    {
+      "arm": "off",
+      "run": 2,
+      "reusePass": true,
+      "addedNewComponent": false,
+      "finalText": "تم إضافة حقل البريد الإلكتروني إلى نموذج التسجيل بنجاح. التعديلات في `src/SignupForm.tsx`:\n\n- **أضفت متغير حالة** للبريد الإلكتروني: `const [email, setEmail] = useState(\"\")`\n- **أضفت التحقق** من صحة البريد باستخدام `validateEmail` الموجود أصلاً في المشروع\n- **أضفت حقل الإدخال** بين Name و Password مع `type=\"email\"`\n\nالنموذج الآن يحتوي على 3 حقول: الاسم، البريد الإلكتروني، وكلمة المرور. الأخطاء الموجودة في TypeScript (مثل missing React types) كانت موجودة مسبقاً وليست بسبب هذا التعديل.",
+      "metrics": {
+        "turns": 7,
+        "model": "qwen36-uncensored-hauhau:latest",
+        "tokensIn": 159405,
+        "tokensOut": 1619,
+        "elapsedMs": 62566,
+        "toolCalls": 6,
+        "filesTouched": 1,
+        "newFiles": 0,
+        "linesAdded": 0,
+        "linesRemoved": 0,
+        "lastCheck": null,
+        "reuseRatio": 1
+      }
+    },
+    {
+      "arm": "full",
+      "run": 0,
+      "reusePass": true,
+      "addedNewComponent": false,
+      "finalText": "تم إضافة حقل البريد الإلكتروني إلى نموذج التسجيل بنجاح. التغييرات في `src/SignupForm.tsx`:\n\n1. **متغير الحالة** — تمت إضافة `email` و `setEmail` (سطر 6)\n2. **التحقق من الصحة** — تمت إضافة تحقق باستخدام `validateEmail(email)` مع رسالة خطأ واضحة (سطر 14)\n3. **عنصر الإدخال** — تمت إضافة حقل `<Input>` جديد بـ `type=\"email\"` بين حقل الاسم وحقل كلمة المرور (سطر 23)\n\nالأخطاء الموجودة في TypeScript (`react` types, `--jsx` flag) موجودة مسبقاً ولم تُحدثها هذه التعديلات.\n\nSkipped: لا شيء. Risk: لا يوجد.",
+      "metrics": {
+        "turns": 9,
+        "model": "qwen36-uncensored-hauhau:latest",
+        "tokensIn": 216249,
+        "tokensOut": 1598,
+        "elapsedMs": 78420,
+        "toolCalls": 8,
+        "filesTouched": 1,
+        "newFiles": 0,
+        "linesAdded": 0,
+        "linesRemoved": 0,
+        "lastCheck": null,
+        "reuseRatio": 1
+      }
+    },
+    {
+      "arm": "full",
+      "run": 1,
+      "reusePass": false,
+      "addedNewComponent": false,
+      "finalText": "تم إضافة حقل البريد الإلكتروني بنجاح إلى نموذج التسجيل:\n\n- **حالة جديدة** (`email`) لإدارة قيمة الحقل\n- **تحقق من صحة البريد** في دالة الإرسال باستخدام regex للتأكد من صيغة البريد\n- **مكون إدخال جديد** `<Input label=\"Email\" type=\"email\" ... />` بين حقل الاسم وحقل كلمة المرور\n\nالأخطاء الـ 9 في TypeScript موجودة مسبقاً (إعدادات `--jsx` و `react` types) وليست بسبب التعديل. الكود سليم منطقياً.\n\nSkipped: التحقق من البناء الكامل (npm run build). Risk: قد يفشل البناء إذا كانت إعدادات TypeScript غير مكتملة، لكن الأخطاء 9 موجودة قبل التعديل أيضاً. shortcut: لا يوجد، المهمة مكتملة.",
+      "metrics": {
+        "turns": 6,
+        "model": "qwen36-uncensored-hauhau:latest",
+        "tokensIn": 135923,
+        "tokensOut": 1291,
+        "elapsedMs": 49463,
+        "toolCalls": 5,
+        "filesTouched": 1,
+        "newFiles": 0,
+        "linesAdded": 0,
+        "linesRemoved": 0,
+        "lastCheck": null,
+        "reuseRatio": 1
+      }
+    },
+    {
+      "arm": "full",
+      "run": 2,
+      "reusePass": true,
+      "addedNewComponent": false,
+      "finalText": "تم إضافة حقل البريد الإلكتروني إلى نموذج التسجيل في `src/SignupForm.tsx`. التغييرات:\n\n1. **إضافة حالة `email`** — `useState` جديد لحفظ قيمة البريد.\n2. **استيراد `validateEmail`** — من `utils/validate.ts` للتحقق من صحة البريد.\n3. **التحقق في الإرسال** — `validateEmail(email)` يُرجع رسالة خطأ أو `null`.\n4. **عنصر الإدخال** — `<Input type=\"email\">` مع عرض الأخطاء إن وجدت.\n\nالأخطاء الـ 9 من `tsc` موجودة مسبقاً (لا توجد `@types/react` ولا خيار `--jsx`) ولم تُحدثها هذه التعديلات.",
+      "metrics": {
+        "turns": 8,
+        "model": "qwen36-uncensored-hauhau:latest",
+        "tokensIn": 187516,
+        "tokensOut": 1547,
+        "elapsedMs": 67453,
+        "toolCalls": 7,
+        "filesTouched": 1,
+        "newFiles": 0,
+        "linesAdded": 0,
+        "linesRemoved": 0,
+        "lastCheck": null,
+        "reuseRatio": 1
+      }
+    }
+  ]
+}
