@@ -3,9 +3,9 @@ export const studios = [
   {id:'mobile',mode:'build',icon:'mobile',color:'emerald',tag:'LOAM MOBILE',title:'استديو تطبيقات الجوال',description:'ابنِ شاشات مترابطة مع مساعد فعلي، واحفظ مشروعك وجرّبه وصدّر مصدر الويب وExpo.',foot:'Build · Preview · React Native · Export'},
   {id:'office',mode:'write',icon:'office',color:'amber',tag:'LOAM OFFICE',title:'استديو الأوفيس وغرفة القيادة',description:'مساحة المستندات والجداول والعروض، مع غرفة القيادة ومصادر المشروع.',foot:'Word · Excel · PowerPoint · C-Suite'},
   {id:'swarm',mode:'build',icon:'swarm',color:'violet',tag:'LOAM TEAMS',title:'ذكاء الأسراب وشركة البرمجيات',description:'فريق وكلاء يحوّل موجزك إلى متطلبات وبنية وبرمجيات، مع مراجعة كود وتحقق فعلي وإصلاح ذاتي محدود وتسليم ملفات حقيقية.',foot:'Plan · Build · Review · Repair · Deliver'},
-  {id:'realswarm',mode:'build',icon:'realswarm',color:'cyan',tag:'LOAM NTRIO',title:'نتريو — سرب ذاتي التنظيم',description:'عمال متساوون بلا مخطط مركزي: كل عامل يختار مهمته على لوحة مشتركة، يتحقق بأدلة حقيقية، ويدمج عمله عبر git — وكل رقم في اللوحة مقيس من الواقع.',foot:'Claim · Act · Verify · Merge'},
+  {id:'realswarm',mode:'build',icon:'realswarm',color:'cyan',tag:'LOAM SELF-ORGANIZING TEAM',title:'فريق عمل ذاتي (نتريو)',description:'عمال متساوون بلا مخطط مركزي: كل عامل يختار مهمته على لوحة مشتركة، يتحقق بأدلة حقيقية، ويدمج عمله عبر git — وكل رقم في اللوحة مقيس من الواقع.',foot:'Claim · Act · Verify · Merge'},
   {id:'creative',mode:'media',icon:'creative',color:'rose',tag:'LOAM CREATIVE',title:'استديو المجسّمات 3D والإنتاج الإبداعي',description:'المشهد والخامات والأصول وتسلسل الإعلان وإعدادات الإخراج.',foot:'Scene · Materials · Timeline · Assets'},
-  {id:'security',mode:'build',icon:'security',color:'red',tag:'LOAM SECURITY',title:'الأمن السيبراني واختبار الاختراق الذاتي',description:'نطاق الفحص والنتائج والأدلة وخطة المعالجة وسجل المراجعة.',foot:'Scope · Findings · Remediation'}
+  {id:'security',mode:'build',icon:'security',color:'red',tag:'LOAM SECURITY',title:'الأمن السيبراني واختبار الاختراق الذاتي',description:'نطاق الفحص والنتائج والأدلة وخطة المعالجة وسجل المراجعة.',foot:'Scope · Findings · الإصلاح المؤمَّن'}
 ];
 export function studioById(id){return studios.find(s=>s.id===id);}
 export function installStudioBridge({frame,prepare,navigate}){

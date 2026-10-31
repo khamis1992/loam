@@ -353,10 +353,19 @@ function showWindow() {
 function openPage(p) {
   showWindow();
   if (!win) return;
-  // In the new Agent Studio UI there is only the single-page app root; legacy
-  // mode keeps the old Loam page navigation.
+  // Agent Studio mode maps the legacy page paths to their real single-page-app
+  // routes so the tray/menu items open what they promise. Legacy mode keeps
+  // the old Loam page navigation.
   if (isAgentStudioUI()) {
-    void win.loadURL(startUrl());
+    const studioRoutes = {
+      "/": "/app",
+      "/screen.html": "/app/computers",
+      "/memory.html": "/app/wiki",
+      "/skills.html": "/app/marketplace",
+      "/terminal.html": "/app",
+    };
+    const base = startUrl().replace(/\/+$/, "");
+    void win.loadURL(base + (studioRoutes[p] ?? "/app"));
   } else {
     void win.loadURL(BASE + p);
   }
