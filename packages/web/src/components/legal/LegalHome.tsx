@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { Search } from 'lucide-react';
 import { t } from '@/i18n/t';
 import { legalApi, type LegalStatus, type Matter } from '@/services/legalApi';
+import { searchOfficialSources, type LegalSource } from '@/components/workspace/intelligence/officeLegalApi';
 import { PrivacyBadge } from './PrivacyBadge';
 
 export function LegalHome() {
@@ -13,6 +15,11 @@ export function LegalHome() {
   const [kind, setKind] = useState<Matter['kind']>('defense_memo');
   const [asOf, setAsOf] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // L1 unification: the official-sources search (office-legal capability)
+  // lives here too, so /legal is the single front door for legal work.
+  const [query, setQuery] = useState('');
+  const [sources, setSources] = useState<LegalSource[]>([]);
+  const [searching, setSearching] = useState(false);
   const refresh = () => Promise.all([legalApi.listMatters(), legalApi.status()]).then(([list, current]) => { setMatters(list.matters); setStatus(current); }).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   useEffect(() => { void refresh(); }, []);
   const create = async () => {
@@ -23,6 +30,14 @@ export function LegalHome() {
       setTitle('');
       await refresh();
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+  const search = async () => {
+    if (!query.trim()) return;
+    setSearching(true);
+    setError(null);
+    try { setSources(await searchOfficialSources(query.trim())); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setSearching(false); }
   };
   return (
     <main className="mx-auto max-w-5xl space-y-4 p-4 [&_input]:bg-bg-main [&_input]:text-text-primary [&_select]:bg-bg-main [&_select]:text-text-primary">
@@ -51,6 +66,27 @@ export function LegalHome() {
           ))}
           {matters.length === 0 && <li className="p-3 text-sm opacity-70">{t('No matters yet')}</li>}
         </ul>
+      </section>
+      <section>
+        <h2 className="mb-2 font-semibold">{t('Official sources')}</h2>
+        <div className="flex gap-2">
+          <input dir="auto" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('Search Qatari statutes and regulations')} aria-label={t('Search Qatari statutes and regulations')} className="min-w-0 flex-1 rounded border px-2 py-1" />
+          <button type="button" onClick={() => void search()} disabled={!query.trim() || searching} className="flex items-center gap-1 rounded border px-3 py-1 disabled:opacity-50">
+            <Search className="size-3.5" aria-hidden /> {t('Search')}
+          </button>
+        </div>
+        {sources.length > 0 && (
+          <ul className="mt-2 flex flex-col gap-2">
+            {sources.map((source) => (
+              <li key={source.id} className="rounded-md border p-2 text-sm">
+                <p className="font-medium">{source.title} — {source.citation}</p>
+                <p className="text-xs opacity-70">{source.issuer} · {t('In force from')} {source.effectiveFrom}</p>
+                <p className="mt-1 whitespace-pre-wrap text-xs opacity-80">{source.text.slice(0, 600)}</p>
+                <a href={source.sourceUrl} target="_blank" rel="noreferrer" className="text-xs underline">{t('Official source')}</a>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </main>
   );
