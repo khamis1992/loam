@@ -1376,5 +1376,8 @@
   "Step {n}": "الخطوة {n}",
   "Open computer panel": "افتح لوحة الحاسوب",
   "Exit full screen": "خروج من ملء الشاشة",
-  "Full screen": "ملء الشاشة"
+  "Full screen": "ملء الشاشة",
+  "Previous step": "الخطوة السابقة",
+  "Next step": "الخطوة التالية",
+  "Timeline scrubber": "شريط الخط الزمني"
 }

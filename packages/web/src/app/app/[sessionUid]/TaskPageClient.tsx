@@ -37,7 +37,7 @@ import {
   resolveHibernationReady,
 } from '@/components/chat/hibernationTestHook';
 import { requestHibernation, wakeHibernatedSessionWithAuth } from '@/services/sessionHibernationApi';
-import { StepTimeline, type TimelineStep } from '@/components/chat/StepTimeline';
+import { StepTimeline, deriveTimelineSteps, type TimelineStep } from '@/components/chat/StepTimeline';
 import { SideChatPanel } from '@/components/chat/SideChatPanel';
 import { AttachmentCard, kindFromName, type AttachmentKind } from '@/components/chat/AttachmentCard';
 import { ComputerPanel } from '@/components/computer/ComputerPanel';
@@ -518,6 +518,23 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
     if (step.actionId !== workspaceOpenActionRef.current) setWorkspaceTarget(null);
   };
 
+  // H2 follow-live: while running and the user is on the newest step, new
+  // steps advance the panel automatically; scrubbing back stops following
+  // until the «مباشر» button returns to the newest step.
+  const timelineSteps = useMemo(() => deriveTimelineSteps(events), [events]);
+  const lastStep = timelineSteps.at(-1) ?? null;
+  useEffect(() => {
+    if (!running || !lastStep || !selectedTool) return;
+    const onNewest = selectedActionId === null || selectedActionId === lastStep.actionId;
+    if (onNewest && selectedTool.actionId !== lastStep.actionId) {
+      const ev = events.find((e): e is ToolUsedEvent => e.type === 'toolUsed' && e.actionId === lastStep.actionId);
+      if (ev) {
+        setSelectedTool(ev);
+        setSelectedActionId(lastStep.actionId);
+      }
+    }
+  }, [running, lastStep, selectedTool, selectedActionId, events]);
+
   // D16: Pause the running agent, then take over with a "user changed X" note.
   const handlePause = async () => {
     if (!taskId) return;
@@ -850,6 +867,9 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
             sessionId={sessionUid}
             taskId={taskId ?? undefined}
             event={selectedTool}
+            steps={timelineSteps}
+            onSelectStep={handleSelectStep}
+            live={running}
             onClose={() => {
               setSelectedTool(null);
               setWorkspaceTarget(null);

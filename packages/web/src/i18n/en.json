@@ -1376,5 +1376,8 @@
   "Step {n}": "Step {n}",
   "Open computer panel": "Open computer panel",
   "Exit full screen": "Exit full screen",
-  "Full screen": "Full screen"
+  "Full screen": "Full screen",
+  "Previous step": "Previous step",
+  "Next step": "Next step",
+  "Timeline scrubber": "Timeline scrubber"
 }

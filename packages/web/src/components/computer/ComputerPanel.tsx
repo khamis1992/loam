@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
+  ChevronLeft,
+  ChevronRight,
   ExternalLink,
   Folder,
   FolderOpen,
@@ -24,6 +26,7 @@ import { t } from '@/i18n/t';
 import { desktopEvents } from '@/services/desktopApis';
 import { getApiBase } from '@/services/rpc';
 import { LiveView } from '@/components/computer/LiveView';
+import type { TimelineStep } from '@/components/chat/StepTimeline';
 
 // int-f3: studio iframes load real backend UI pages served from the same origin used for /api/* calls.
 const OFFICE_PREVIEW_PATH = '/office-preview.html';
@@ -42,6 +45,12 @@ interface ComputerPanelProps {
   focusWorkspace?: boolean;
   /** Real Loam task id when known; lets the Live tab resolve browser frames. */
   taskId?: string;
+  /** Timeline steps for the in-panel scrubber (H2); the footer is hidden when absent. */
+  steps?: TimelineStep[];
+  /** Selecting a scrubber step moves the whole task view to that step. */
+  onSelectStep?: (step: TimelineStep) => void;
+  /** True while the task is still running (drives the «مباشر» follow state). */
+  live?: boolean;
 }
 
 interface TerminalDetail {
@@ -92,7 +101,7 @@ const clampWidth = (w: number) => Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.r
 
 const eventsBySession =new Map<string, Partial<Record<TabId, ToolUsedEvent>>>();
 
-export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusWorkspace, taskId }: ComputerPanelProps) {
+export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusWorkspace, taskId, steps, onSelectStep, live }: ComputerPanelProps) {
   const derivedTab = useMemo(() => getToolFamily(event.tool), [event.tool]);
   const [userTab, setUserTab] = useState<TabId | null>(null);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
@@ -173,6 +182,8 @@ export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusW
   }, [userTab, workspaceSlot, focusWorkspace, derivedTab, visibleTabs]);
   const tabEvent = seen[activeTab] ?? (activeTab === derivedTab ? event : undefined);
   const isDriving = !isFinalStatus(event.status) && activeTab === 'browser';
+  // H2 scrubber: position of the event being viewed within the timeline.
+  const stepIndex = steps ? Math.max(0, steps.findIndex((s) => s.actionId === event.actionId)) : 0;
 
   return (
     <div
@@ -261,6 +272,59 @@ export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusW
           fallbackEvent={event}
         />
       </div>
+
+      {steps && steps.length >= 2 && onSelectStep && (
+        <div
+          data-testid="computer-scrubber"
+          className="flex h-[44px] shrink-0 items-center gap-2 border-t border-border-main px-3"
+        >
+          <button
+            type="button"
+            aria-label={t('Previous step')}
+            disabled={stepIndex <= 0}
+            onClick={() => onSelectStep(steps[Math.max(0, stepIndex - 1)]!)}
+            className="rounded-control p-1 text-text-secondary hover:bg-fill-hover disabled:opacity-40"
+          >
+            <ChevronRight className="size-4 rtl:-scale-x-100" />
+          </button>
+          {/* Time flows in one direction regardless of locale — keep the
+              scrubber physically LTR so RTL users get the same mental model. */}
+          <input
+            type="range"
+            dir="ltr"
+            min={0}
+            max={steps.length - 1}
+            value={stepIndex}
+            aria-label={t('Timeline scrubber')}
+            data-testid="computer-scrubber-range"
+            onChange={(e) => onSelectStep(steps[Number(e.target.value)]!)}
+            className="h-1 flex-1 cursor-pointer accent-[var(--status-active)]"
+          />
+          <button
+            type="button"
+            aria-label={t('Next step')}
+            disabled={stepIndex >= steps.length - 1}
+            onClick={() => onSelectStep(steps[Math.min(steps.length - 1, stepIndex + 1)]!)}
+            className="rounded-control p-1 text-text-secondary hover:bg-fill-hover disabled:opacity-40"
+          >
+            <ChevronLeft className="size-4 rtl:-scale-x-100" />
+          </button>
+          {stepIndex < steps.length - 1 && (
+            <button
+              type="button"
+              data-testid="computer-jump-live"
+              onClick={() => onSelectStep(steps[steps.length - 1]!)}
+              className="flex items-center gap-1 rounded-control border border-[var(--status-active)] px-2 py-0.5 text-xs text-status-active transition-colors duration-fast"
+            >
+              <span className="status-active-dot" aria-hidden />
+              {t('Live')}
+            </button>
+          )}
+          <span className="text-xs text-text-tertiary" data-testid="computer-scrubber-position">
+            {stepIndex + 1}/{steps.length}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
