@@ -192,8 +192,174 @@ export async function initModelsSettings() {
   // Wire up add provider button
   const addBtn = document.getElementById('add-provider-btn');
   if (addBtn) {
-    addBtn.addEventListener('click', () => {
-      alert('Add provider dialog (Phase 6b)');
-    });
+    addBtn.addEventListener('click', () => showAddProviderDialog());
   }
+}
+
+/**
+ * Show Add Provider dialog.
+ */
+function showAddProviderDialog() {
+  const dialog = document.createElement('div');
+  dialog.className = 'modal-overlay';
+  dialog.innerHTML = `
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2>${T.addProvider}</h2>
+        <button class="btn-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+      </div>
+      <form id="add-provider-form" class="modal-body">
+        <div class="form-group">
+          <label>نوع المزود / Provider Type</label>
+          <select id="provider-type" required>
+            <option value="">اختر / Select...</option>
+            <option value="ollama">Ollama (محلي / Local)</option>
+            <option value="openai">OpenAI</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="gemini">Google Gemini</option>
+            <option value="lmstudio">LM Studio</option>
+            <option value="llamacpp">llama.cpp server</option>
+            <option value="custom">مخصص / Custom</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label>الاسم / Label</label>
+          <input type="text" id="provider-label" required placeholder="My Provider">
+        </div>
+        
+        <div class="form-group">
+          <label>عنوان URL الأساسي / Base URL</label>
+          <input type="url" id="provider-url" required placeholder="https://api.example.com/v1">
+        </div>
+        
+        <div class="form-group">
+          <label>مفتاح API / API Key <span class="optional">(اختياري / optional)</span></label>
+          <input type="password" id="provider-key" placeholder="sk-...">
+        </div>
+        
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="provider-enabled" checked>
+            مفعّل / Enabled
+          </label>
+        </div>
+        
+        <div class="form-actions">
+          <button type="button" class="btn" onclick="this.closest('.modal-overlay').remove()">إلغاء / Cancel</button>
+          <button type="button" class="btn" onclick="testProviderConnection()">اختبار / Test Connection</button>
+          <button type="submit" class="btn btn-primary">حفظ / Save</button>
+        </div>
+      </form>
+    </div>
+  `;
+  
+  document.body.appendChild(dialog);
+  
+  // Handle type change to update URL
+  const typeSelect = dialog.querySelector('#provider-type');
+  const urlInput = dialog.querySelector('#provider-url');
+  typeSelect.addEventListener('change', (e) => {
+    const presets = {
+      ollama: 'http://127.0.0.1:11434',
+      openai: 'https://api.openai.com/v1',
+      openrouter: 'https://openrouter.ai/api/v1',
+      anthropic: 'https://api.anthropic.com/v1',
+      gemini: 'https://generativelanguage.googleapis.com/v1beta',
+      lmstudio: 'http://127.0.0.1:1234/v1',
+      llamacpp: 'http://127.0.0.1:8080/v1',
+    };
+    if (presets[e.target.value]) {
+      urlInput.value = presets[e.target.value];
+    }
+  });
+  
+  // Handle form submit
+  const form = dialog.querySelector('#add-provider-form');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const type = dialog.querySelector('#provider-type').value;
+    const label = dialog.querySelector('#provider-label').value;
+    const url = dialog.querySelector('#provider-url').value;
+    const key = dialog.querySelector('#provider-key').value;
+    const enabled = dialog.querySelector('#provider-enabled').checked;
+    
+    // TODO: Send to /api/model-registry/providers (POST)
+    // For now, just show success
+    alert(`Provider added: ${label}\n(API integration pending)`);
+    dialog.remove();
+    
+    // Refresh the list
+    const registry = await loadRegistry();
+    if (registry) {
+      renderProviders(registry.providers);
+      renderModels(registry.models);
+    }
+  });
+}
+
+/**
+ * Test provider connection.
+ */
+async function testProviderConnection() {
+  const url = document.getElementById('provider-url').value;
+  const key = document.getElementById('provider-key').value;
+  
+  if (!url) {
+    alert('الرجاء إدخال عنوان URL / Please enter a URL');
+    return;
+  }
+  
+  // TODO: Call /api/model-registry/test (POST)
+  alert(`Testing connection to ${url}...\n(API integration pending)`);
+}
+
+/**
+ * Show Discover Models dialog.
+ */
+function showDiscoverDialog(providerId) {
+  const dialog = document.createElement('div');
+  dialog.className = 'modal-overlay';
+  dialog.innerHTML = `
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2>اكتشاف النماذج / Discover Models</h2>
+        <button class="btn-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+      </div>
+      <div class="modal-body">
+        <p>جاري الاتصال بالمزود... / Connecting to provider...</p>
+        <div class="loading-spinner"></div>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(dialog);
+  
+  // TODO: Call GET /api/model-registry/providers/:id/discover
+  setTimeout(() => {
+    const body = dialog.querySelector('.modal-body');
+    body.innerHTML = `
+      <p>تم العثور على 5 نماذج / Found 5 models</p>
+      <div class="discovered-models">
+        <div class="model-item">
+          <label>
+            <input type="checkbox" checked>
+            gpt-4-turbo
+          </label>
+        </div>
+        <div class="model-item">
+          <label>
+            <input type="checkbox" checked>
+            gpt-3.5-turbo
+          </label>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn" onclick="this.closest('.modal-overlay').remove()">إلغاء / Cancel</button>
+        <button class="btn btn-primary" onclick="alert('Models added'); this.closest('.modal-overlay').remove()">إضافة / Add Selected</button>
+      </div>
+    `;
+  }, 1500);
 }
