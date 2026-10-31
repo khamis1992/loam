@@ -33,7 +33,7 @@ const repoRoot = path.resolve(benchDir, "..", "..");
 const MODEL = process.env.LOAM_AB_MODEL ?? "qwen36-uncensored-hauhau:latest";
 const OLLAMA_URL = process.env.LOAM_AB_OLLAMA ?? "http://127.0.0.1:11434";
 const RUNS = Math.max(1, Number(process.env.LOAM_AB_RUNS ?? "3"));
-const TIMEOUT_MS = 10 * 60 * 1000;
+const TIMEOUT_MS = 20 * 60 * 1000;
 
 const TASKS = [
   {
@@ -52,6 +52,7 @@ interface RunRecord {
   reusePass: boolean;
   addedNewComponent: boolean;
   error?: string;
+  finalText?: string;
   metrics: TaskMetrics;
 }
 
@@ -95,6 +96,17 @@ function evaluateReuse(workspace: string, manifest: string[]): { reusePass: bool
   const addedNewComponent = after.some((file) => !manifest.includes(file) && /components\//.test(file));
   const reusePass = /validateEmail/.test(form) && /components[/\\]Input/.test(form) && !addedNewComponent;
   return { reusePass, addedNewComponent };
+}
+
+/** The run's last assistant text — T7/T8 evidence (closing line, shortcut). */
+function lastAssistantText(steps: readonly import("../../src/server/db.js").StepRecord[]): string | undefined {
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const step = steps[i]!;
+    if (step.type === "assistant_message" && typeof (step.data as { text?: string } | undefined)?.text === "string") {
+      return (step.data as { text: string }).text;
+    }
+  }
+  return undefined;
 }
 
 function median(values: number[]): number | null {
@@ -144,6 +156,7 @@ async function main(): Promise<void> {
         setSessionLevel(sessionId, arm);
         process.stdout.write(`[${task.id}] arm=${arm} run=${run + 1}/${RUNS} …\n`);
         let error: string | undefined;
+        let finalReply: string | undefined;
         try {
           const result = await runAgent({
             cfg: { ...cfg, workspace } as Config,
@@ -151,7 +164,10 @@ async function main(): Promise<void> {
             tools: registry,
             emit,
             prompt: task.prompt,
-            maxSteps: 14,
+            maxSteps: 20,
+            // Coding-eval mode: skip the finish-time acceptance verifier so a
+            // bench run measures the discipline, not the guard's retry budget.
+            suppressFinal: true,
             taskId: sessionId,
             sessionId,
             signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -168,13 +184,14 @@ async function main(): Promise<void> {
             data: { promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens, model: result.model },
           });
           steps.push({ at: new Date().toISOString(), type: "done", data: { text: result.text, steps: result.steps, model: result.model } });
+          finalReply = result.text;
         } catch (err) {
           error = err instanceof Error ? err.message : String(err);
         }
         clearSessionLevel(sessionId);
         const metrics = computeTaskMetrics(steps);
         const { reusePass, addedNewComponent } = evaluateReuse(workspace, manifest);
-        records.push({ arm, run, reusePass, addedNewComponent, error, metrics });
+        records.push({ arm, run, reusePass, addedNewComponent, error, finalText: finalReply ?? lastAssistantText(steps), metrics });
         if (error) process.stdout.write(`  error: ${error}\n`);
         else process.stdout.write(`  ${metricsRows(metrics).map((r) => `${r.label}=${r.value}`).join("  ")}  reuse=${reusePass ? "pass" : "FAIL"}\n`);
         if (process.env.LOAM_AB_KEEP === "1" && run === RUNS - 1 && arm === ARMS[ARMS.length - 1]) {

@@ -27,7 +27,7 @@ const repoRoot = path.resolve(benchDir, "..", "..");
 const MODEL = process.env.LOAM_AB_MODEL ?? "qwen36-uncensored-hauhau:latest";
 const OLLAMA_URL = process.env.LOAM_AB_OLLAMA ?? "http://127.0.0.1:11434";
 const RUNS = Math.max(1, Number(process.env.LOAM_ACCEPT_RUNS ?? "3"));
-const TIMEOUT_MS = 12 * 60 * 1000;
+const TIMEOUT_MS = 20 * 60 * 1000;
 
 type Files = Record<string, string>;
 const PKG = (name: string) => JSON.stringify({ name, private: true, version: "1.0.0" }, null, 2) + "\n";
@@ -156,6 +156,9 @@ async function runOnce(opts: { workspace: string; prompt: string; registry: Tool
       emit,
       prompt: opts.prompt,
       maxSteps: 20,
+      // Coding-eval mode: the bench measures the discipline's guarantees, not
+      // the finish-time verifier's retry budget.
+      suppressFinal: true,
       taskId: opts.sessionId,
       sessionId: opts.sessionId,
       signal: AbortSignal.timeout(TIMEOUT_MS),
