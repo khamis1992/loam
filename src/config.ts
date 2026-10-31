@@ -100,8 +100,12 @@ export interface McpServerConfig {
   toolTimeouts?: Record<string, number>;
   defaultTimeoutMs?: number;
   /** Opt-in OS sandbox for stdio servers (SANDBOX_RUNTIME appendix C4): spawn as
-   *  `srt --settings … -- <command>` while the command sandbox mode is on. */
+   *  `srt --settings �?� -- <command>` while the command sandbox mode is on. */
   sandbox?: boolean;
+  /** Hold this server's tool schemas out of the prompt and reach them through
+   *  the mcp_* bridge tools (list / search / schema / call). Use it for large
+   *  catalogues so connector count no longer costs context. */
+  lazy?: boolean;
 }
 
 import type { CodeGraphConfig } from "./codegraph/config.js";
@@ -123,6 +127,9 @@ export interface Config {
     images?: { model?: string; baseUrl?: string; apiKey?: string };
   };
   server: { host: string; port: number };
+  /** Credit ledger gate. `enforce` refuses a new run with HTTP 402 when the
+   *  balance is exhausted; off by default so a local install never blocks. */
+  credits?: { enforce: boolean };
   agent: { maxSteps: number; temperature: number; requestTimeoutMs: number };
   /** D19 session runtime: idle-to-sleep threshold and the per-session compute
    *  budget. Optional so test configs and older config.json files keep working;

@@ -1,4 +1,5 @@
 import http from "node:http";
+import { budgetPauseSnapshot, pauseBudget, resumeBudget } from "../../agent/budgetPause.js";
 import {
   DEFAULT_IDLE_MINUTES,
   DEFAULT_STEP_LIMIT,
@@ -45,6 +46,8 @@ async function readJson(req: http.IncomingMessage, maxBytes = 8_000): Promise<un
  *   POST /api/sessions/:id/sleep     -> force sleep (resource release)
  *   POST /api/sessions/:id/wake      -> force wake (restore)
  *   POST /api/sessions/:id/budget    -> raise the compute budget
+ *   POST /api/sessions/:id/budget-pause  -> park the run before its next step
+ *   POST /api/sessions/:id/budget-resume -> release a parked run (optionally raise)
  *
  * Mount via http.ts:
  *   if (await handleSessionRuntimeRoutes(req, res, p)) return;
@@ -55,7 +58,7 @@ export async function handleSessionRuntimeRoutes(
   p: string,
   _ctx?: Record<string, unknown>,
 ): Promise<boolean> {
-  const match = /^\/api\/sessions\/([^/]+)\/(runtime|sleep|wake|budget)$/.exec(p);
+  const match = /^\/api\/sessions\/([^/]+)\/(runtime|sleep|wake|budget|budget-pause|budget-resume)$/.exec(p);
   if (!match) return false;
   const sessionId = decodeURIComponent(match[1]!);
   const action = match[2]!;
@@ -63,8 +66,28 @@ export async function handleSessionRuntimeRoutes(
   if (req.method === "GET" && action === "runtime") {
     sendJson(res, 200, {
       session: sessionRuntime.snapshot(sessionId),
+      pause: budgetPauseSnapshot(sessionId),
       defaults: { idleMinutes: DEFAULT_IDLE_MINUTES, stepLimit: DEFAULT_STEP_LIMIT, tokenLimit: DEFAULT_TOKEN_LIMIT },
     });
+    return true;
+  }
+
+  if (req.method === "POST" && action === "budget-pause") {
+    let reason = "paused by the operator";
+    try {
+      const body = (await readJson(req)) as { reason?: unknown };
+      if (typeof body.reason === "string" && body.reason.trim()) reason = body.reason.trim().slice(0, 200);
+    } catch {
+      /* an empty body keeps the default reason */
+    }
+    const state = pauseBudget(sessionId, reason);
+    sendJson(res, 200, { pause: budgetPauseSnapshot(sessionId), paused_at: state.pausedAt });
+    return true;
+  }
+
+  if (req.method === "POST" && action === "budget-resume") {
+    const epoch = resumeBudget(sessionId);
+    sendJson(res, 200, { pause: budgetPauseSnapshot(sessionId), resumed: epoch !== undefined, epoch: epoch ?? null });
     return true;
   }
 

@@ -5,6 +5,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { DATA_DIR, ROOT, type McpServerConfig } from "../config.js";
 import { log } from "../log.js";
+import { num, str } from "./registry.js";
 import type { ToolContext, ToolRegistry, ToolResult } from "./registry.js";
 import { REA_MCP_SERVER, isReaAllowedTool, reaToolTimeoutMs } from "./reaAllowlist.js";
 import { isAllowedReTool } from "../re/allowlist.js";
@@ -147,6 +148,9 @@ export async function registerMcpTools(
   hooks: Record<string, McpServerHooks> = {},
 ): Promise<McpToolset> {
   const handles: McpHandle[] = [];
+  /** Catalogues of lazy servers, loaded once on first use (name -> tools). */
+  const catalog = new Map<string, Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>>();
+  const lazyServers = new Set<string>();
   const names = Object.keys(servers);
   const counts = new Map<string, number>();
   const audit = names.some(isReaServer) ? new ReaAuditLog(reaAuditPath(DATA_DIR)) : undefined;
@@ -232,6 +236,20 @@ export async function registerMcpTools(
       if (new Set(toolNames).size !== toolNames.length || toolNames.some((toolName) => registry.get(toolName))) {
         throw new Error("MCP returned duplicate tool names");
       }
+      // Lazy server: keep the catalogue aside instead of putting ~N tool schemas
+      // in every prompt. The four mcp_* bridge tools reach these by name.
+      if (cfg.lazy) {
+        catalog.set(name, visible.map((tool) => ({
+          name: tool.name,
+          description: tool.description ?? tool.name,
+          inputSchema: (tool.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>,
+        })));
+        handles.push({ name, client, transport });
+        counts.set(name, visible.length);
+        lazyServers.add(name);
+        log.info(`MCP server "${name}": ${visible.length} tools held lazily (no schemas registered)`);
+        continue;
+      }
       const serverHooks = hooks[name];
       for (const tool of visible) {
         const toolName = `mcp__${name}__${tool.name}`;
@@ -264,6 +282,131 @@ export async function registerMcpTools(
   }
 
   const byName = new Map(handles.map((h) => [h.name, h]));
+
+  /** Load a lazy server's catalogue on first use; `rea`/`cua` keep their allowlists. */
+  const ensureCatalog = async (server: string): Promise<void> => {
+    if (catalog.has(server)) return;
+    const handle = byName.get(server);
+    if (!handle) return;
+    const listed: Array<{ name: string; description?: string; inputSchema?: unknown }> = [];
+    let cursor: string | undefined;
+    do {
+      const page = await handle.client.listTools(cursor ? { cursor } : {}, { timeout: 15_000 });
+      listed.push(...page.tools);
+      cursor = page.nextCursor;
+    } while (cursor);
+    const cfg = servers[server];
+    let visible = listed;
+    if (cfg?.allowlist) visible = visible.filter((t) => new Set(cfg.allowlist).has(t.name));
+    if (isReaServer(server)) visible = visible.filter((t) => isReaAllowedTool(t.name) && isAllowedReTool(t.name));
+    if (isCuaDriverServer(server)) visible = visible.filter((t) => isCuaDriverAllowedTool(t.name));
+    catalog.set(server, visible.map((t) => ({
+      name: t.name,
+      description: t.description ?? t.name,
+      inputSchema: (t.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>,
+    })));
+  };
+
+  // Bridge tools are only useful when at least one server is lazy; registering
+  // them otherwise would add schemas for no gain.
+  if (lazyServers.size > 0) {
+    registry.registerAll([
+      {
+        integration: true,
+        name: "mcp_list_servers",
+        description: "List the connected MCP servers, whether each is lazy (schemas held out of the prompt) and how many tools it exposes. Start here before mcp_search_tools.",
+        parameters: { type: "object", properties: {} },
+        async run(): Promise<ToolResult> {
+          const rows = [...byName.keys()].map((name) => ({
+            server: name,
+            lazy: lazyServers.has(name),
+            tools: lazyServers.has(name) ? catalog.get(name)?.length ?? "unloaded" : counts.get(name) ?? 0,
+          }));
+          return { ok: true, content: rows.length ? JSON.stringify(rows, null, 2) : "(no MCP servers connected)" };
+        },
+      },
+      {
+        integration: true,
+        name: "mcp_search_tools",
+        description: "Search the tools of connected MCP servers by name/description substring and return the matches (server + tool + summary). Catalogues load on first use, so the prompt only ever carries the tools you actually reach for.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "Substring to match; empty lists everything." },
+            server: { type: "string", description: "Limit to one server." },
+            limit: { type: "number", description: "Max matches (default 25)." },
+          },
+        },
+        async run(args: Record<string, unknown>): Promise<ToolResult> {
+          const query = str(args, "query").toLowerCase();
+          const only = str(args, "server");
+          const limit = Math.min(50, Math.max(1, Math.floor(num(args, "limit", 25))));
+          const targets = only ? [only] : [...byName.keys()];
+          const hits: Array<{ server: string; tool: string; description: string }> = [];
+          for (const server of targets) {
+            await ensureCatalog(server);
+            for (const tool of catalog.get(server) ?? []) {
+              if (query && !`${tool.name} ${tool.description}`.toLowerCase().includes(query)) continue;
+              hits.push({ server, tool: tool.name, description: tool.description.slice(0, 160) });
+              if (hits.length >= limit) break;
+            }
+            if (hits.length >= limit) break;
+          }
+          return {
+            ok: true,
+            content: hits.length
+              ? `${hits.length} matches (use mcp_tool_schema, then mcp_call_tool):\n${hits.map((h) => `${h.server}/${h.tool} — ${h.description}`).join("\n")}`
+              : "(no matching MCP tools)",
+          };
+        },
+      },
+      {
+        integration: true,
+        name: "mcp_tool_schema",
+        description: "Return the JSON input schema of one MCP tool before calling it.",
+        parameters: {
+          type: "object",
+          properties: { server: { type: "string" }, tool: { type: "string" } },
+          required: ["server", "tool"],
+        },
+        async run(args: Record<string, unknown>): Promise<ToolResult> {
+          const server = str(args, "server");
+          await ensureCatalog(server);
+          const tool = (catalog.get(server) ?? []).find((t) => t.name === str(args, "tool"));
+          if (!tool) return { ok: false, content: `no tool ${str(args, "tool")} on ${server}` };
+          return { ok: true, content: JSON.stringify({ server, tool: tool.name, description: tool.description, inputSchema: tool.inputSchema }, null, 2) };
+        },
+      },
+      {
+        integration: true,
+        name: "mcp_call_tool",
+        description: "Call a tool on a connected MCP server by name (the lazy path: it works even when the tool's schema was never registered). Policy hooks and the rea/cua allowlists still apply.",
+        parameters: {
+          type: "object",
+          properties: {
+            server: { type: "string" },
+            tool: { type: "string" },
+            args: { type: "object", description: "Tool arguments matching mcp_tool_schema." },
+          },
+          required: ["server", "tool"],
+        },
+        async run(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+          const server = str(args, "server");
+          const tool = str(args, "tool");
+          const handle = byName.get(server);
+          if (!handle) return { ok: false, content: `mcp server not running: ${server}` };
+          const callArgs = args["args"] && typeof args["args"] === "object" ? args["args"] as Record<string, unknown> : {};
+          const hooksForServer = hooks[server];
+          const decision = hooksForServer?.before ? await hooksForServer.before(tool, callArgs, ctx) : undefined;
+          if (decision && "block" in decision) return decision.block;
+          const sendArgs = decision && "args" in decision ? decision.args : callArgs;
+          const started = Date.now();
+          const result = await callToolOn(handle.client, server, tool, sendArgs, 30_000);
+          return hooksForServer?.after ? hooksForServer.after(tool, sendArgs, result, ctx, Date.now() - started) : result;
+        },
+      },
+    ]);
+  }
 
   return {
     servers: handles.map((h) => h.name),
