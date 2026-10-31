@@ -4,6 +4,7 @@ import { handleRealSwarmRoutes } from "./routes/realswarm.js";
 import { handleApiAnythingRoute } from "./apiAnythingRoutes.js";
 import { handleWorkflowRoutes, handleWorkflowRunRoutes, type WorkflowRouteDeps } from "./routes/workflows.js";
 import { handleTracesRoutes } from "./routes/traces.js";
+import { getBalance } from "./credits.js";
 import { handleCheckpointRoutes } from "./routes/checkpoints.js";
 import { handleInterruptRoutes } from "./routes/interrupts.js";
 import { createRunResume } from "./runResume.js";
@@ -2261,7 +2262,7 @@ loadAgents();
         // Legal mode (Qatar): corpus, matters, verification, review gate.
         if (p.startsWith("/api/legal")) {
           if (!deps.legal) return sendJson(res, p.split("?")[0] === "/api/legal/status" ? 200 : 404, { enabled: false });
-          if (await handleLegalRoutes(req, res, p, { corpus: deps.legal.corpus, matters: deps.legal.matters, egress: deps.legal.egress, keys: deps.legal.keys, vault: deps.legal.vault, model: deps.legal.model, buildDefense: deps.legal.buildDefense, buildResponse: deps.legal.buildResponse, analyzeDocuments: deps.legal.analyzeDocuments, importDocument: deps.legal.importDocument, enabled: true })) return;
+          if (await handleLegalRoutes(req, res, p, { corpus: deps.legal.corpus, matters: deps.legal.matters, egress: deps.legal.egress, keys: deps.legal.keys, vault: deps.legal.vault, model: deps.legal.model, buildDefense: deps.legal.buildDefense, buildResponse: deps.legal.buildResponse, analyzeDocuments: deps.legal.analyzeDocuments, importDocument: deps.legal.importDocument, library: deps.legal.library, enabled: true })) return;
         }
 
         // ---- avatar (Grok Bot-style): set shape/color/image on an existing agent ----
@@ -3123,6 +3124,12 @@ loadAgents();
           };
           const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
           if (!prompt) return sendJson(res, 400, { error: "prompt required" });
+          // Credit gate (Strix-style 402): opt-in, so a local install that never
+          // buys credits keeps running while an enforced deployment gets a clean
+          // refusal the client can act on instead of a mid-run failure.
+          if (cfg.credits?.enforce && getBalance() <= 0) {
+            return sendJson(res, 402, { error: "insufficient credits", balance: getBalance() });
+          }
           const expansion = expandPlaybookMacros(prompt);
           const runPrompt = expansion.text;
           let taskId = typeof body.taskId === "string" && body.taskId ? body.taskId : undefined;

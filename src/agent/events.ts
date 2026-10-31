@@ -217,6 +217,10 @@ export type AgentEvent =
       /** The checkpoint at the stop, carried so the summary is truthful. */
       checkpoint: import("./mission.js").MissionCheckpoint;
     }
+  /** Budget pause policy: the run parked before its next model call (it keeps its transcript). */
+  | { type: "budget_paused"; taskId: string; reason: string }
+  /** Budget pause policy: a parked run was resumed (`epoch` identifies the pause it left). */
+  | { type: "budget_resumed"; taskId: string; epoch: number; raised: boolean }
   /**
    * Neo N11: the run picked up edits the user made on the canvas (corrected node
    * output, a cut/re-connected edge, a duplicated branch, a merged group, or a

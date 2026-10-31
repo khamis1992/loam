@@ -1219,7 +1219,7 @@
   "{n} verified": "{n} موثّق",
   "Use in Legal chats": "استخدمها في محادثات الوضع القانوني",
   "Active in Legal chats": "نشطة في محادثات الوضع القانوني",
-  "Legal": "القانوني",
+  "Legal": "قانوني",
   "Corpus coverage": "تغطية المصادر",
   "Coverage complete": "التغطية مكتملة",
   "Coverage incomplete": "التغطية غير مكتملة",
@@ -1388,5 +1388,9 @@
   "Official sources": "المصادر الرسمية",
   "Search Qatari statutes and regulations": "ابحث في القوانين واللوائح القطرية",
   "In force from": "ساري من",
-  "Official source": "المصدر الرسمي"
+  "Official source": "المصدر الرسمي",
+  "Qatar law library": "مكتبة القوانين القطرية",
+  "Library not installed. Run the weekly library sync.": "المكتبة غير مثبّتة. شغّل مزامنة المكتبة الأسبوعية.",
+  "Search laws, regulations, decisions, rulings": "ابحث في القوانين واللوائح والقرارات والأحكام",
+  "Library section": "قسم المكتبة"
 }

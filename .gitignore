@@ -89,3 +89,4 @@ output/
 /notes.md
 /task_plan.md
 .claude/settings.local.json
+tools/

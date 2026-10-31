@@ -59,6 +59,7 @@ import { createDocsLookupTools } from "../tools/docsLookup.js";
 import { createSemanticSearchTools } from "../tools/semanticSearch.js";
 import { createKnowledgeTools, createTaskFilesIngestTool, type KnowledgeToolOptions } from "../tools/knowledge.js";
 import { createLegalTools } from "../tools/legalTools.js";
+import { createQatarLibraryTools } from "../tools/qatarLibraryTools.js";
 import { normalizeLegalConfig } from "../legal/config.js";
 import { requestMattersKey, parentPortOf } from "../legal/keyHandoff.js";
 import { createLegalRuntime, type LegalRuntime } from "../legal/runtime.js";
@@ -86,6 +87,10 @@ import { setWorkspaceMutationObserver } from "../codegraph/mutations.js";
 import { createUnboundCodemodeTool } from "../codemode/tool.js";
 import { redTools } from "../tools/red.js";
 import { createMobileSecurityTools } from "../tools/mobileSecurity.js";
+import { createBudgetTools } from "../tools/budgetTools.js";
+import { createThreatModelTools } from "../tools/threatModelTools.js";
+import { createCoverageTools } from "../tools/coverageTools.js";
+import { createProxyTools } from "../tools/proxy.js";
 
 export interface Runtime {
   cfg: Config;
@@ -135,6 +140,10 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createSecurityAuditTools({ cfg, ollama, tools: registry }));
   registry.registerAll(createSecurityScanTools({ ollama }));
   registry.registerAll(createMobileSecurityTools());
+  registry.registerAll(createBudgetTools());
+  registry.registerAll(createThreatModelTools());
+  registry.registerAll(createCoverageTools());
+  registry.registerAll(createProxyTools());
   registry.registerAll(createReTools());
   registry.registerAll(createFuzzTools());
   registry.registerAll(createRemediateTools());
@@ -255,6 +264,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   if (legal) {
     configureLegalProtection({ seal: legal.seal, open: legal.open });
     registry.registerAll(createLegalTools(legal.toolDeps));
+    registry.registerAll(createQatarLibraryTools(legal.library));
     if (!requestMattersKey(parentPortOf(process))) log.warn("legal: no Electron parent port; matters stay locked");
   }
   // N12 generator tools: media/search providers from the environment plus the
