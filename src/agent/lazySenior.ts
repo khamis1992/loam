@@ -54,7 +54,7 @@ export function chatCommandPrompt(command: Extract<ChatCommand, { kind: "review"
       "Perform a change review (the lazy-review skill) of:",
       command.target ?? "- the uncommitted changes (git_status_diff); if the tree is clean, review the last commit.",
       ...(command.target ? [] : []),
-      "Use the lazy-review skill (skill_view) and follow its report structure exactly: read every caller of each changed symbol beyond the diff, order findings correct, safe, holds under load, tested, fast, lean; each finding states what it is, the problem, the fix, and the cost of skipping it with a Must/Should/Nice severity; close with the load the review assumed and what was not read.",
+      "Use the lazy-review skill (skill_view) and follow its report structure exactly: read every caller of each changed symbol beyond the diff, order findings correct, safe, holds under load, tested, fast, lean; each finding states what it is, the problem, the fix, and the cost of skipping it with a Must/Should/Nice severity; close with the load the review assumed and what was not read. For each changed or renamed symbol, open every caller file outside the diff, name each file you opened in the report, and flag any untouched file that still references the old name as Must.",
     ].join("\n");
   }
   return [
@@ -115,6 +115,12 @@ export function lazySeniorBlock(level: LazySeniorLevel, toolNames: readonly stri
     "When writing code, apply the active lazy-senior level before §8.1. The level narrows how a change is chosen; it never weakens §8.1–§8.5.",
     LEVEL_LINE[level],
     "- Be lazy about the solution, never about the change: every caller of a changed symbol is updated, non-trivial logic ships with one test, and the reply ends with one line: `Skipped: <what was left out>. Risk: <what that costs, and when to upgrade>.` A known limit is stated as `shortcut: <limit>, <when to upgrade>`.",
-    "- Never cut, at any level: input validation, error handling around data loss, security checks, accessibility.",
+    "- Before finishing a coding change: (1) update every caller of each changed symbol, (2) add or keep one test for the changed behaviour, (3) end the reply with the closing line below.",
+    "- Never cut, at any level: input validation, error handling around data loss, security checks (bind SQL inputs as parameters; contain joined paths with resolve plus startsWith before reading), accessibility, and existing tests.",
   ].join("\n");
+}
+
+/** One-line end-of-prompt reminder (recency cue) for runs that got the block. */
+export function lazySeniorTail(level: LazySeniorLevel): string {
+  return "lazy-senior (" + level + ") pre-finish: callers updated; one test added or kept; close the reply with one line — Skipped: <what was left out>. Risk: <what that costs, and when to upgrade>.";
 }

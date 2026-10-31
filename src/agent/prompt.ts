@@ -9,7 +9,7 @@ import { renderPolicyContext } from "../policy/riskTier.js";
 import { buildMasterPrompt, codingModeSection, deriveMasterSlots, isCodingTask } from "./masterPrompt.js";
 import { loadProjectMemory, type ProjectMemoryResult } from "./projectMemory.js";
 import { DESIGN_RULES_PROMPT, isUiIntent } from "./designPrompt.js";
-import { lazySeniorBlock, resolveLazySeniorLevel } from "./lazySenior.js";
+import { lazySeniorBlock, lazySeniorTail, resolveLazySeniorLevel } from "./lazySenior.js";
 import { CRAFT_EDITORS_PROMPT } from "./craftPrompt.js";
 import { VIDEO_EDITING_PROMPT, hasVideoStudioTool } from "./videoPrompt.js";
 
@@ -144,7 +144,8 @@ export function buildSystemPrompt(
   // lazy-senior (Ponytail BUILD_SPEC P2): levelled coding discipline, injected
   // only for build-mode toolsets. `off` (or a non-build toolset) injects
   // nothing, so that prompt stays byte-identical to the baseline.
-  const lazyBlock = lazySeniorBlock(resolveLazySeniorLevel(lazySessionId), toolNames);
+  const lazyLevel = resolveLazySeniorLevel(lazySessionId);
+  const lazyBlock = lazySeniorBlock(lazyLevel, toolNames);
   if (lazyBlock) lines.push(lazyBlock);
   lines.push(
     "You are Loam, a local assistant working in the current task's isolated workspace.",
@@ -199,5 +200,8 @@ export function buildSystemPrompt(
     lines.push("Available skills:");
     for (const skill of skills) lines.push(`- ${skill.name}: ${skill.description}`);
   }
+  // lazy-senior: end-of-prompt recency cue — the same run that got the block
+  // gets a one-line pre-finish checklist as the last thing it reads.
+  if (lazyBlock) lines.push(lazySeniorTail(lazyLevel));
   return lines.join("\n");
 }

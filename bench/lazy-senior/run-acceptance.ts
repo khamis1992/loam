@@ -284,8 +284,10 @@ const SCENARIOS: Scenario[] = [
 ];
 
 async function main(): Promise<void> {
+  const only = (process.env.LOAM_ACCEPT_ONLY ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const scenarios = SCENARIOS.filter((s) => only.length === 0 || only.includes(s.id));
   const results: Array<{ id: string; run: number; pass: boolean; detail: string; error?: string }> = [];
-  for (const scenario of SCENARIOS) {
+  for (const scenario of scenarios) {
     for (let run = 1; run <= RUNS; run++) {
       const root = scenario.prepare();
       process.stdout.write("[" + scenario.id + "] run " + run + "/" + RUNS + " ...\n");
@@ -296,7 +298,7 @@ async function main(): Promise<void> {
       fs.rmSync(root, { recursive: true, force: true });
     }
   }
-  const summary = SCENARIOS.map((scenario) => {
+  const summary = scenarios.map((scenario) => {
     const rows = results.filter((r) => r.id === scenario.id);
     const passed = rows.filter((r) => r.pass).length;
     return { id: scenario.id, label: scenario.label, passed, runs: rows.length, ok: passed >= Math.ceil((rows.length + 1) / 2) };

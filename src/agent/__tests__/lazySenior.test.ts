@@ -118,9 +118,11 @@ describe("buildSystemPrompt lazy-senior wiring", () => {
     setSessionLevel("sess-off", "full");
     const full = buildSystemPrompt(cfg, [], BUILD_TOOLS, [], undefined, undefined, undefined, "add a field", "sess-off");
     clearSessionLevel("sess-off");
-    // off == the full-level prompt minus exactly the injected block, so the
-    // level adds nothing else and removes nothing else.
-    const stripped = full.replace(/\n### 8\.0 Decision order \(lazy-senior[\s\S]*?security checks, accessibility\.\n/, "\n");
+    // off == the full-level prompt minus exactly the injected block and the
+    // end-of-prompt tail line, so the level adds nothing else.
+    const stripped = full
+      .replace(/\n### 8\.0 Decision order \(lazy-senior[\s\S]*?existing tests\.\n/, "\n")
+      .replace(/\nlazy-senior \(full\) pre-finish:[^\n]*/, "");
     assert.equal(off, stripped);
     const askBaseline = buildSystemPrompt(cfg, [], ASK_TOOLS, [], undefined, undefined, undefined, "explain", "sess-off-2");
     const askSession = buildSystemPrompt(cfg, [], ASK_TOOLS, [], undefined, undefined, undefined, "explain", "sess-off-3");
