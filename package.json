@@ -194,6 +194,7 @@
     "check:ui-numbers": "node scripts/check-ui-numbers.mjs",
     "check:ui-jargon": "node scripts/check-ui-jargon.mjs",
     "check:release-safety": "node scripts/check-release-safety.mjs",
+    "check:api-coverage": "node scripts/check-api-coverage.mjs",
     "publish:release": "node scripts/publish-release.mjs",
     "stt": "python scripts/stt_server.py",
     "check:companions-voice": "node --import tsx src/scripts/check-voice-accuracy.ts",
