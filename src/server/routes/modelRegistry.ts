@@ -136,6 +136,7 @@ export function handleModelRegistryRoutes(req: http.IncomingMessage, res: http.S
         const id = `provider_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
         // Create provider record
+        const now = new Date().toISOString();
         const provider: ProviderRecord = {
           id,
           kind: body.kind,
@@ -147,6 +148,9 @@ export function handleModelRegistryRoutes(req: http.IncomingMessage, res: http.S
             ? { type: "header", credentialId: `cred_${Date.now()}`, header: "Authorization" }
             : { type: "none" },
           extraHeaders: body.extraHeaders ?? {},
+          timeoutMs: 30000,
+          createdAt: now,
+          updatedAt: now,
         };
 
         // Add to registry
