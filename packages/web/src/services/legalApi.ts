@@ -162,8 +162,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const jsonInit = (method: string, body: unknown): RequestInit => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 const enc = encodeURIComponent;
 
+export type LibraryStatus = 'in_force' | 'amended' | 'added' | 'superseded' | 'repealed' | 'unknown';
+export type LibraryFolder = 'laws' | 'regulations' | 'decisions' | 'rulings';
+/** Mirrors src/legal/library.ts LibraryHit. Always unverified (inferred status). */
+export interface LibraryHit {
+  kind: string; folder: string; title: string; ref: string; article: string; status: LibraryStatus; statusAr: string; rawState: string;
+  snippet: string; url: string; file: string; verified: false; warning: string;
+}
+export interface LibrarySearchResult { hits: LibraryHit[]; verified: false; warningAr: string; warningEn: string }
+
 export const legalApi = {
   status: () => request<LegalStatus>('/api/legal/status'),
+  libraryStatus: () => request<{ installed: boolean; path: string | null; warningAr: string; warningEn: string }>('/api/legal/library/status'),
+  librarySearch: (q: string, folder?: LibraryFolder, limit = 20) => request<LibrarySearchResult>(`/api/legal/library/search?q=${enc(q)}${folder ? `&folder=${folder}` : ''}&limit=${limit}`),
   coverage: (matterKind = 'research', asOf?: string) => request<{ coverage: CoverageReport; snapshot: { id: string; contentSha256: string; versions: number } }>(`/api/legal/coverage?matterKind=${enc(matterKind)}${asOf ? `&asOf=${enc(asOf)}` : ''}`),
   getCoverageManifest: () => request<{ entries: Array<{ legKey: string; titleAr: string; requiredFor: string[]; maxReviewAgeDays?: number }> }>('/api/legal/coverage/manifest'),
   setCoverageManifest: (entries: Array<{ legKey: string; titleAr: string; requiredFor: string[]; maxReviewAgeDays?: number }>) =>

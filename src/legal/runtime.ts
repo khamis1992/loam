@@ -3,6 +3,7 @@
  * per-task run-model map, and the dependencies the tools and routes share.
  * Created once in src/setup/runtime.ts (buildRuntime) when cfg.legal.enabled.
  */
+import { QatarLawLibrary, defaultLibraryPath } from "./library.js";
 import path from "node:path";
 import type { LegalToolDeps } from "../tools/legalTools.js";
 import type { LegalConfig } from "./config.js";
@@ -40,6 +41,8 @@ export interface LegalRuntime {
   importDocument(matterId: string, absPath: string): Promise<EvidenceAnalysis>;
   runModels: Map<string, string>;
   toolDeps: LegalToolDeps;
+  /** Read-only Qatar law research library (search.db + Markdown); may be absent on disk. */
+  library: QatarLawLibrary;
   seal(value: unknown, aad: string): SealedLegalPayload;
   open<T>(payload: unknown): T;
   backup(outputPath: string, passphrase: string): void;
@@ -63,6 +66,7 @@ export function createLegalRuntime(opts: LegalRuntimeOptions): LegalRuntime {
   const corpusPath = opts.config.corpusPath ?? path.join(dir, "qatar-law.db");
   const mattersPath = opts.config.mattersPath ?? path.join(dir, "matters.db");
   const corpus = new LegalCorpus(corpusPath);
+  const library = new QatarLawLibrary(opts.config.libraryPath ?? defaultLibraryPath(opts.dataDir));
   const keys = opts.keys ?? processKeyProvider;
   const matters = new MattersStore(mattersPath, keys, opts.now);
   const cipher = new FieldCipher(keys);
@@ -81,7 +85,7 @@ export function createLegalRuntime(opts: LegalRuntimeOptions): LegalRuntime {
     ...(opts.now ? { now: opts.now } : {}),
   };
   return {
-    config: opts.config, corpus, matters, egress, keys, vault, model, runModels, toolDeps,
+    config: opts.config, corpus, library, matters, egress, keys, vault, model, runModels, toolDeps,
     importDocument: (matterId, absPath) => importMatterDocument(matters, matterId, absPath, { ocr: localLegalOcr, rasterize: rasterizePdfPage, ...(opts.now ? { now: opts.now } : {}) }),
     buildDefense: (matterId) => buildDefensePackage(matters, corpus, { port: model.port, config: egress }, matterId),
     buildResponse: (input) => buildLegalResponse(matters, corpus, { port: model.port, config: egress }, input),
@@ -94,6 +98,6 @@ export function createLegalRuntime(opts: LegalRuntimeOptions): LegalRuntime {
       createLegalBackup({ outputPath, mattersPath, corpusPath, filesDir: path.join(dir, "files"), keys, passphrase, ...(opts.now ? { now: opts.now } : {}) });
     },
     exportAuditAnchor: (outputPath) => exportAuditAnchor(matters.audit, outputPath, keys, opts.now),
-    close: () => { corpus.close(); matters.close(); void closeLegalOcr(); },
+    close: () => { corpus.close(); library.close(); matters.close(); void closeLegalOcr(); },
   };
 }

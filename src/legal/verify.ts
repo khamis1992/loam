@@ -45,6 +45,8 @@ export interface VerifyOptions {
 }
 
 export const UNVERIFIED_MARKER = "[غير موثّق — يحتاج بحث محامٍ]";
+/** Marks a lead taken from the Qatar law research library (inferred status, never citable). Blocks approval like UNVERIFIED_MARKER. */
+export const LIBRARY_MARKER = "[مرجع بحثي غير مُتحقَّق]";
 const TOKEN_RE = /⟦(cite|ref):(QL-[0-9a-f]{10})(\|historical)?⟧|\[\[(cite|ref):(QL-[0-9a-f]{10})(\|historical)?\]\]/g;
 const OPENERS: Record<string, string> = { "»": "«", "”": "“", "\"": "\"" };
 
@@ -243,7 +245,7 @@ export function verifyDocument(corpus: LegalCorpus, text: string, opts: VerifyOp
   }
 
   const failing = checks.filter((c) => c.status !== "OK" && c.status !== "VERIFIED" && c.status !== "VERIFIED_NORMALIZED");
-  const markers = text.split(UNVERIFIED_MARKER).length - 1;
+  const markers = text.split(UNVERIFIED_MARKER).length - 1 + text.split(LIBRARY_MARKER).length - 1;
   const verdict: VerificationReport["verdict"] = failing.length > 0 ? "fail" : warnings.length > 0 || markers > 0 ? "pass_with_warnings" : "pass";
   let renderedDocument: string | undefined;
   if (verdict !== "fail") {
