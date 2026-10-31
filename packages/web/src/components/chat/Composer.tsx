@@ -25,6 +25,7 @@ import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { fetchProjectBranch, type ProjectOption } from '@/services/projectContextApi';
 import { useRouter } from 'next/navigation';
 import { ModeChip, type ModeChipResolved } from './ModeChip';
+import { LazyLevelChip } from './LazyLevelChip';
 import { getAdvancedOpen, setAdvancedOpen, getComposerPrefs, setComposerPrefs, routeIntentApi } from './composerPrefs';
 import type { TaskMode } from '@shared/socket';
 import {
@@ -895,6 +896,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           value={selectedLoamMode}
           onChange={setSelectedLoamMode}
         />
+
+        <LazyLevelChip modeId={activeLoamModeId} />
 
         {!home && (
           <span className="ms-2 flex items-center gap-1 text-xs text-text-secondary">

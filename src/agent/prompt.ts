@@ -9,6 +9,7 @@ import { renderPolicyContext } from "../policy/riskTier.js";
 import { buildMasterPrompt, codingModeSection, deriveMasterSlots, isCodingTask } from "./masterPrompt.js";
 import { loadProjectMemory, type ProjectMemoryResult } from "./projectMemory.js";
 import { DESIGN_RULES_PROMPT, isUiIntent } from "./designPrompt.js";
+import { lazySeniorBlock, resolveLazySeniorLevel } from "./lazySenior.js";
 import { CRAFT_EDITORS_PROMPT } from "./craftPrompt.js";
 import { VIDEO_EDITING_PROMPT, hasVideoStudioTool } from "./videoPrompt.js";
 
@@ -122,6 +123,8 @@ export function buildSystemPrompt(
   projectMemory?: ProjectMemoryResult | null,
   /** The user's request text; used only to gate the UI design-rules section. */
   userPrompt?: string,
+  /** Session id for the /lazy coding-discipline override (lazy-senior P2). */
+  lazySessionId?: string,
 ): string {
   const lines: string[] = [];
   if (masterPromptEnabled()) {
@@ -138,6 +141,11 @@ export function buildSystemPrompt(
       lines.push(coding);
     }
   }
+  // lazy-senior (Ponytail BUILD_SPEC P2): levelled coding discipline, injected
+  // only for build-mode toolsets. `off` (or a non-build toolset) injects
+  // nothing, so that prompt stays byte-identical to the baseline.
+  const lazyBlock = lazySeniorBlock(resolveLazySeniorLevel(lazySessionId), toolNames);
+  if (lazyBlock) lines.push(lazyBlock);
   lines.push(
     "You are Loam, a local assistant working in the current task's isolated workspace.",
     "Reply in the user's language. Use the provided tools and observed results; never invent success.",

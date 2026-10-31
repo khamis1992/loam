@@ -458,6 +458,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       opts.sandboxMode,
       undefined,
       opts.prompt,
+      opts.sessionId ?? opts.taskId,
     );
   const system =
     opts.systemSuffix && opts.systemSuffix.trim().length > 0
