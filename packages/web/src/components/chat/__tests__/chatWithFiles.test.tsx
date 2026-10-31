@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { Provider } from 'react-redux';
+import { store } from '@/store';
 
 // The Composer reads connectors/skills from the backend on mount; keep it quiet.
 vi.mock('@/services/rpc', () => ({
@@ -39,7 +41,7 @@ describe('Composer «تحدث مع ملفاتك» button (Phase-2 W2)', () => {
 
   function renderComposer(props: Partial<React.ComponentProps<typeof Composer>> = {}) {
     const onSend = props.onSend ?? vi.fn();
-    render(<Composer onSend={onSend} {...props} />);
+    render(<Provider store={store}><Composer onSend={onSend} {...props}  /></Provider>);
     return { onSend: onSend as ReturnType<typeof vi.fn> };
   }
 
@@ -65,7 +67,7 @@ describe('Composer «تحدث مع ملفاتك» button (Phase-2 W2)', () => {
   it('is shown for the ask and build modes', () => {
     for (const mode of ['ask', 'build']) {
       const onSend = vi.fn();
-      const view = render(<Composer onSend={onSend} resolvedLoamMode={{ mode, label: 'Loam', labelAr: 'لوم' }} />);
+      const view = render(<Provider store={store}><Composer onSend={onSend} resolvedLoamMode={{ mode, label: 'Loam', labelAr: 'لوم' }}  /></Provider>);
       expect(screen.getByTestId('chat-with-files')).toBeTruthy();
       view.unmount();
     }
