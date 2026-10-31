@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   PanelRight, Hammer, Pencil, AppWindow, Video, LayoutGrid, Database, Shield, BookOpenText, Play,
+  ChevronRight,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAppDispatch } from '@/store';
@@ -356,6 +357,20 @@ export default function HomePage() {
           {/* Starter cards */}
           <div className="mb-3 grid grid-cols-1 gap-[10px] md:grid-cols-[390px_minmax(0,1fr)]">
             <div className="flex w-full max-w-[390px] flex-col gap-[10px]">
+              {/* W-U3: the unified builder entry — one "ابنِ" surface for all three build engines. */}
+              <button
+                type="button"
+                onClick={() => router.push('/app/build')}
+                data-testid="build-app-card"
+                className="flex w-full items-center gap-3 rounded-card border border-[#0081f2]/40 bg-[#0081f2]/5 px-4 py-3 text-start transition-colors hover:bg-[#0081f2]/10"
+              >
+                <Hammer className="size-5 shrink-0 text-[#0081f2]" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13.5px] font-semibold text-text-primary">{t('Build an App')}</span>
+                  <span className="block text-[11px] text-text-tertiary">{t('One brief, three build styles.')}</span>
+                </span>
+                <ChevronRight className="size-4 shrink-0 text-text-tertiary rtl:rotate-180" aria-hidden />
+              </button>
               <StarterMenu items={buildItems} onSelect={onStarterSelect}>
                 <HomeCard
                   className="w-full"

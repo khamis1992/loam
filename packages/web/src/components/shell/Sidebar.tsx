@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect, useRef, type ComponentType } from 'react'
 import { useRouter, usePathname } from 'next/navigation';
 import {
   SquarePen, Monitor, Search, BookOpen, Layers, Workflow, LayoutGrid, MoreHorizontal,
-  ChevronRight, Share2, MonitorSmartphone, Clapperboard, Palette, Store, KanbanSquare,
+  ChevronRight, Share2, MonitorSmartphone, Clapperboard, Palette, Store, KanbanSquare, Brain,
 } from 'lucide-react';
 import { useAppSelector, useAppDispatch, toggleSidebar } from '@/store';
 import { selectSession, startNewTask, loadSessions, type AgentSession } from '@/store/sessionsSlice';
@@ -50,6 +50,7 @@ export function Sidebar() {
     { id: 'creations', label: t('Creations'), icon: Layers, href: '/app/creations' },
     { id: 'board', label: t('Board'), icon: KanbanSquare, href: '/app/board' },
     { id: 'wiki', label: t('Wiki'), icon: BookOpen, href: '/app/wiki' },
+    { id: 'memory-hub', label: t('Memory'), icon: Brain, href: '/app/memory' },
     { id: 'studio', label: t('Studio'), icon: Palette, href: '/app/studio' },
     { id: 'automations', label: t('Automations'), icon: Workflow, href: '/app/automations' },
     { id: 'plugins', label: t('Plugins'), icon: LayoutGrid, href: '/app/plugins' },
