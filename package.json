@@ -121,6 +121,7 @@
     "test:bridges": "node --import tsx --test src/bridges/__tests__/*.test.ts",
     "test:browser-operator": "node --import tsx --test src/tools/__tests__/browserOperator.test.ts",
     "test:coding-eval": "node --import tsx --test src/scripts/__tests__/eval-coding.test.ts",
+    "test:container": "node --import tsx --test src/sandbox/__tests__/container.test.ts",
     "test:craft": "node --import tsx --test src/server/__tests__/craftStatus.test.ts",
     "test:design-pipeline": "node --import tsx --test src/design/__tests__/pipeline.test.ts src/models/__tests__/route.test.ts src/scripts/__tests__/check-design-pipeline.test.ts",
     "test:electron": "node --test electron/__tests__/*.test.cjs",

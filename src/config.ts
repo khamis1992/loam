@@ -245,6 +245,16 @@ export interface Config {
   /** Codemode sandbox (opt-in, off by default): master switch plus per-run limits.
    *  Optional so a hand-written config.json need not repeat it. */
   codemode?: { enabled: boolean; timeoutMs: number; memoryBytes: number; maxToolCalls: number };
+  /** Per-task execution container (opt-in, off by default; GAP_REVIEW P2#13).
+   *  When enabled, shell commands and interactive sessions run inside a dedicated
+   *  Docker container that mounts only the task workspace, so concurrent tasks
+   *  share no filesystem or process table. Requires a reachable docker daemon
+   *  (Docker Desktop on Windows); the mode fails closed without it.
+   *  Env overrides: LOAM_SANDBOX_CONTAINER, LOAM_SANDBOX_IMAGE, LOAM_SANDBOX_NETWORK,
+   *  LOAM_SANDBOX_CPUS, LOAM_SANDBOX_MEMORY_MB. Optional like codemode above. */
+  sandbox?: {
+    container: { enabled: boolean; image: string; network: "none" | "bridge"; cpus: number; memoryMb: number };
+  };
   /** H5 correction-learning injection (BUILD_SPEC .h2-ref/BUILD_SPEC.md §6.5/§10).
    *  Env overrides: LOAM_LESSONS_ENABLED, LOAM_LESSONS_MAX_CHARS, LOAM_LESSON_MIN_SCORE.
    *  Optional so test configs and older config.json files keep working;
@@ -455,6 +465,7 @@ export const DEFAULTS: Config = {
 
   orchestration: structuredClone(ORCHESTRATION_DEFAULTS),
   codemode: { enabled: false, timeoutMs: 300_000, memoryBytes: 64 * 1024 * 1024, maxToolCalls: 2_000 },
+  sandbox: { container: { enabled: false, image: "node:22-alpine", network: "none", cpus: 2, memoryMb: 2048 } },
   failover: {
     providers: [
       { id: "ollama", kind: "ollama", baseUrl: "http://127.0.0.1:11434", model: "glm-5.3:cloud", apiKeyEnv: "", enabled: true },
