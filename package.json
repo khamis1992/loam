@@ -1,6 +1,6 @@
 {
   "name": "loam",
-  "version": "0.5.35",
+  "version": "0.5.37",
   "private": true,
   "engines": {
     "node": ">=24.0.0"
@@ -94,7 +94,7 @@
     "check:wiki": "tsx src/scripts/check-wiki.ts",
     "desktop": "npm run build:server && electron electron/main.cjs",
     "dev": "tsx watch src/index.ts",
-    "dist": "npm run build:icon && npm run build:server && npm --prefix packages/web run build && npm run vendor && npm run vendor:craft && electron-builder --win --publish never",
+    "dist": "npm run build:icon && npm run build:server && npm run build:memory-skills && npm --prefix packages/web run build && npm run vendor && npm run vendor:craft && electron-builder --win --publish never",
     "dist:publish": "npm run build:server && electron-builder --win --publish always",
     "eas:build": "node scripts/eas-build.mjs",
     "eval": "tsx src/scripts/eval-run.ts",
@@ -121,6 +121,7 @@
     "test:bridges": "node --import tsx --test src/bridges/__tests__/*.test.ts",
     "test:browser-operator": "node --import tsx --test src/tools/__tests__/browserOperator.test.ts",
     "test:coding-eval": "node --import tsx --test src/scripts/__tests__/eval-coding.test.ts",
+    "test:container": "node --import tsx --test src/sandbox/__tests__/container.test.ts",
     "test:craft": "node --import tsx --test src/server/__tests__/craftStatus.test.ts",
     "test:design-pipeline": "node --import tsx --test src/design/__tests__/pipeline.test.ts src/models/__tests__/route.test.ts src/scripts/__tests__/check-design-pipeline.test.ts",
     "test:electron": "node --test electron/__tests__/*.test.cjs",
@@ -167,6 +168,10 @@
     "check:swarm-compare": "node --import tsx src/scripts/check-swarm-compare.ts --dry-run",
     "test:legal": "node --import tsx --test src/legal/__tests__/*.test.ts src/tools/__tests__/legalTools.test.ts src/server/routes/__tests__/legal.test.ts",
     "check:legal": "npm run typecheck && npm run test:legal && npm --prefix packages/web run typecheck",
+    "test:typst": "node --import tsx --test src/typst/__tests__/*.test.ts src/tools/__tests__/typstTools.test.ts",
+    "check:typst": "npm run typecheck && npm run test:typst",
+    "test:financial": "node --import tsx --test src/financial/__tests__/*.test.ts src/tools/__tests__/financialTools.test.ts",
+    "check:financial": "npm run typecheck && npm run test:financial",
     "eval:legal": "tsx src/scripts/legal-eval.ts",
     "eval:legal:live": "tsx src/scripts/legal-live-smoke.ts",
     "check:packaged:legal": "node scripts/check-packaged-legal.mjs",
@@ -208,6 +213,7 @@
     "@modelcontextprotocol/server-filesystem": "^1.0.0",
     "@modelcontextprotocol/server-memory": "^1.0.0",
     "@modelcontextprotocol/server-sequential-thinking": "^1.0.0",
+    "@myriaddreamin/typst-ts-node-compiler": "^0.7.0",
     "@nut-tree-fork/nut-js": "^4.2.6",
     "@xmldom/xmldom": "^0.9.12",
     "@xterm/addon-fit": "^0.11.0",

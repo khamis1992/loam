@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import { createRef } from 'react';
+import { Provider } from 'react-redux';
+import { store } from '@/store';
 
 // The Composer reads connectors/skills from the backend on mount; keep it quiet.
 vi.mock('@/services/rpc', () => ({
@@ -315,7 +317,7 @@ describe('ComposerHandle.submit (W5 voice routing)', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => json({})));
     const onSend = vi.fn();
     const ref = createRef<ComposerHandle>();
-    render(<Composer ref={ref} onSend={onSend} />);
+    render(<Provider store={store}><Composer ref={ref} onSend={onSend}  /></Provider>);
     await act(async () => { ref.current!.submit('مرحبا، كيف أساعدك؟'); });
     expect(onSend).toHaveBeenCalledTimes(1);
     expect(onSend).toHaveBeenCalledWith('مرحبا، كيف أساعدك؟', 'standard', [], undefined);

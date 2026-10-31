@@ -4,6 +4,7 @@ import { checkCommand, headOutput, tailOutput } from "../policy/commands.js";
 import { checkCommandRisk } from "../policy/commandRisk/index.js";
 import { resolveSrtPolicy, shouldSandboxCommand } from "../sandbox/srt/policy.js";
 import { execInSandbox } from "../sandbox/srt/exec.js";
+import { containerLimits, containerModeEnabled, containerNameFor, dockerAvailable, spawnInContainer, spawnInteractiveInContainer, toContainerPath } from "../sandbox/container.js";
 import { srtAudit } from "../sandbox/srt/audit.js";
 import { taskPermissionMode } from "../server/approvalRules.js";
 import { DEFAULT_PERMISSION_MODE } from "../policy/permissionModes.js";
@@ -59,9 +60,11 @@ function killTree(child: ChildProcessWithoutNullStreams): void {
   }
 }
 
-function runOnce(command: string, cwd: string, timeoutMs: number, signal?: AbortSignal, taskId?: string, env?: NodeJS.ProcessEnv): Promise<ExecOutcome> {
+function runOnce(command: string, cwd: string, timeoutMs: number, signal?: AbortSignal, taskId?: string, env?: NodeJS.ProcessEnv, spawnChild?: (command: string, env: NodeJS.ProcessEnv | undefined) => ChildProcessWithoutNullStreams): Promise<ExecOutcome> {
   return new Promise((resolve) => {
-    const child = spawn(command, { cwd, shell: true, windowsHide: true, env: env ?? { ...process.env } });
+    // spawnChild replaces the host shell (container mode): the capture, timeout
+    // and cancellation machinery is shared; only the process behind the pipes differs.
+    const child = spawnChild ? spawnChild(command, env) : spawn(command, { cwd, shell: true, windowsHide: true, env: env ?? { ...process.env } });
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -254,6 +257,37 @@ export const shellTools: Tool[] = [
         return { ok: res.code === 0, content: parts.join("\n") };
       }
 
+      // Per-task container (GAP_REVIEW P2#13): opt-in Docker isolation for a
+      // task's whole execution surface. Fails closed — enabled without a
+      // reachable daemon is an error, never a silent downgrade to the host.
+      if (ctx.taskId && containerModeEnabled(ctx.cfg)) {
+        if (!(await dockerAvailable())) {
+          return {
+            ok: false,
+            content: "وضع «حاوية المهمة» مفعّل لكن Docker غير متاح على هذا الجهاز (docker ليس على PATH أو الخدمة متوقفة). شغّل Docker Desktop أو أوقف sandbox.container.enabled من config.json — لن يُنفَّذ الأمر على المضيف بصمت.",
+          };
+        }
+        const limits = containerLimits(ctx.cfg);
+        const taskId = ctx.taskId;
+        // The container environment is minimal on purpose: task variables only,
+        // never the host environment — no host paths or host secrets leak in.
+        // The child is pre-spawned (ensureContainer is async) and handed to
+        // runOnce as a ready-made process: capture/timeout/cancel are shared.
+        const child = await spawnInContainer({ taskId, workspace: ctx.workspace, command: execCommand, cwd, env: { ...injected, ...childEnv }, limits });
+        const res = await runOnce(execCommand, cwd, timeoutMs, ctx.signal, taskId, { ...injected, ...childEnv }, () => child);
+        const stdout = redactVaultValues(res.stdout, secrets);
+        const stderr = redactVaultValues(res.stderr, secrets);
+        const parts = [
+          `exit=${res.code ?? "null"}${res.timedOut ? " (timeout, killed)" : ""}`,
+          `cwd=${cwd}`,
+          "sandboxed=container (حاوية المهمة — لا يُحمَّل إلا ملف المهمة، وبلا مشاركة نظام الملفات أو العمليات مع المهام الأخرى)",
+        ];
+        if (stdout.trim()) parts.push(`stdout:\n${tailOutput(stdout, 6000)}`);
+        if (stderr.trim()) parts.push(`stderr:\n${tailOutput(stderr, 4000)}`);
+        if (!stdout.trim() && !stderr.trim()) parts.push("(no output)");
+        return { ok: res.code === 0, content: parts.join("\n") };
+      }
+
       const res = await runOnce(execCommand, cwd, timeoutMs, ctx.signal, ctx.taskId, { ...process.env, ...injected, ...childEnv });
       const stdout = redactVaultValues(res.stdout, secrets);
       const stderr = redactVaultValues(res.stderr, secrets);
@@ -288,6 +322,38 @@ export const shellTools: Tool[] = [
         return {
           ok: false,
           content: "shell_start غير متاح أثناء تفعيل «عزل الأوامر» (الجلسات التفاعلية تبقى خارج العزل في هذه الإصدارة). استخدم shell_run — يُنفَّذ معزولًا تلقائيًا، أو أوقف العزل من الإعدادات.",
+        };
+      }
+      // Container mode: the interactive session lives inside the task container
+      // (pipe-driven docker exec — the same stdin/stdout model as powershell/cmd,
+      // so shell_write / shell_read / shell_kill drive it unchanged).
+      if (ctx.taskId && containerModeEnabled(ctx.cfg)) {
+        if (!(await dockerAvailable())) {
+          return {
+            ok: false,
+            content: "وضع «حاوية المهمة» مفعّل لكن Docker غير متاح (docker ليس على PATH أو الخدمة متوقفة). شغّل Docker Desktop أو أوقف sandbox.container من config.json — لن تُفتح جلسة على المضيف بديلًا.",
+          };
+        }
+        const limits = containerLimits(ctx.cfg);
+        const cwd = resolveWrite(ctx.workspace, str(args, "cwd") || undefined);
+        const child = await spawnInteractiveInContainer({ taskId: ctx.taskId, workspace: ctx.workspace, cwd, limits });
+        const id = `shell_${crypto.randomBytes(3).toString("hex")}`;
+        const session: Session = { id, shell: "container-sh", cwd, child, buffer: "", lastRead: 0, exited: false, exitCode: null };
+        child.stdout.on("data", (d: Buffer) => {
+          session.buffer += d.toString();
+        });
+        child.stderr.on("data", (d: Buffer) => {
+          session.buffer += d.toString();
+        });
+        child.on("close", (code) => {
+          session.exited = true;
+          session.exitCode = code;
+          sessions.delete(id);
+        });
+        sessions.set(id, session);
+        return {
+          ok: true,
+          content: `started container shell session ${id} (container=${containerNameFor(ctx.taskId)}, cwd=${toContainerPath(cwd, ctx.workspace)}). Use shell_write and shell_read.`,
         };
       }
       const shell = str(args, "shell", "powershell").toLowerCase();

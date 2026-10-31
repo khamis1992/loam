@@ -50,6 +50,16 @@ afterPack: ./electron/afterPack.cjs
 # electron-builder's dependency collector excludes directories named examples.
 # Three.js ships its runtime controls/loaders/exporters in examples/jsm.
 extraResources:
+  # The memory-skills MCP server.cjs is an esbuild output under a .gitignore'd
+  # `dist/`, so no positive files pattern can beat the default ignore. Shadow it
+  # into app.asar.unpacked (the overlay the Electron fs serves for asar paths):
+  # the packaged app then finds ${ROOT}/addons/memory-skills-mcp/dist/server.cjs
+  # and the memory-skills MCP connects; without it the packaged app lost that
+  # server while the stdio node_modules servers kept working.
+  - from: addons/memory-skills-mcp/dist
+    to: app.asar.unpacked/addons/memory-skills-mcp/dist
+    filter:
+      - "server.cjs*"
   - from: node_modules/ffmpeg-static
     to: app.asar.unpacked/node_modules/ffmpeg-static
     filter:

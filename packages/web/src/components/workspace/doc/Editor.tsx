@@ -20,6 +20,7 @@ import {
   selectionToModel, trackedBlockList,
 } from './trackEditing';
 import { loadDocTrack, saveDocTrack, identityName } from './trackSidecar';
+import { useCollab } from './useCollab';
 import {
   acceptAll, acceptChange, addCommentThread, rejectAll, rejectChange, removeComment, replyToComment,
   setThreadResolved, type TrackedDocument,
@@ -101,6 +102,56 @@ export default function DocEditor({ file, live, onSave, onChatEdit }: WorkspaceE
   const pendingContentRef = useRef<string | null>(null);
   useEffect(() => { trackModeRef.current = trackMode; }, [trackMode]);
 
+  // د3: the collab display name is the configured document identity.
+  const [collabName, setCollabName] = useState('');
+
+  /** Re-sync the local model from the canonical sidecar (after a 409). */
+  const resyncTrack = useCallback(async (): Promise<void> => {
+    const surface = surfaceRef.current;
+    if (!surface || !trackedRef.current) return;
+    try {
+      const sidecar = await loadDocTrack(file);
+      const blocks = trackedBlockList(surface);
+      const texts = blocks.map(blockText);
+      const adopted = adoptTrackedSidecar(sidecar, texts);
+      if (adopted) {
+        attachParagraphIds(blocks, adopted);
+        trackedRef.current = adopted;
+        setTrackedDoc(adopted);
+        renderTrackedDocument(surface, adopted);
+        setTrackNotice(t('Synced with remote edits.'));
+      }
+    } catch { /* keep the local view when the sidecar is unavailable */ }
+  }, [file]);
+
+  // Remote patches apply through the same model as local edits — the remote
+  // author simply becomes another entry in the authors map.
+  const collab = useCollab({
+    file,
+    enabled: trackMode && Boolean(file.taskId),
+    displayName: collabName || t('Editor'),
+    onPatch: (patch) => {
+      const doc = trackedRef.current;
+      const surface = surfaceRef.current;
+      if (!doc || !surface) return;
+      try {
+        if (!doc.authors) doc.authors = {};
+        if (!doc.authors[patch.clientId]) doc.authors[patch.clientId] = { id: patch.clientId, name: patch.authorName };
+        const result = applyEdit(
+          doc, patch.op.paragraphId, patch.op.offset,
+          patch.op.kind === 'insert' ? { kind: 'insert', text: patch.op.text } : { kind: 'delete', direction: patch.op.direction },
+          { authorId: patch.clientId },
+        );
+        if (!result) return;
+        trackedRef.current = result.doc;
+        setTrackedDoc(result.doc);
+        renderTrackedDocument(surface, result.doc);
+        scheduleTrackSave(result.doc);
+      } catch { /* a malformed remote op never breaks local editing */ }
+    },
+    onConflict: () => { void resyncTrack(); },
+  });
+
   const updateCounts = useCallback(() => {
     const surface = surfaceRef.current;
     const text = surface ? buildTextIndex(surface).text : '';
@@ -176,7 +227,9 @@ export default function DocEditor({ file, live, onSave, onChatEdit }: WorkspaceE
       snapshotRef.current = surface.innerHTML;
       const blocks = trackedBlockList(surface);
       const texts = blocks.map(blockText);
-      let doc = buildTrackedModel(texts, await identityName());
+      const identity = await identityName();
+      setCollabName(identity ?? '');
+      let doc = buildTrackedModel(texts, identity);
       let notice: string | null = null;
       try {
         const sidecar = await loadDocTrack(file);
@@ -270,6 +323,12 @@ export default function DocEditor({ file, live, onSave, onChatEdit }: WorkspaceE
       placeCaret(selection.block, result.caret);
       scheduleTrackSave(result.doc);
       setTrackNotice(null);
+      // د3: broadcast the intent so remote editors see it as a tracked change.
+      if (collab.connected) {
+        collab.sendOp(intent.kind === 'insert'
+          ? { kind: 'insert', paragraphId: selection.paragraphId, offset: selection.start, text: intent.text }
+          : { kind: 'delete', paragraphId: selection.paragraphId, offset: selection.start, direction: intent.direction });
+      }
     } catch (error) {
       setTrackNotice(error instanceof Error ? error.message : String(error));
     }
@@ -656,6 +715,28 @@ export default function DocEditor({ file, live, onSave, onChatEdit }: WorkspaceE
           />
         )}
       </div>
+      {trackMode && file.taskId && (collab.members.length > 0 || collab.error) && (
+        <div
+          data-testid="collab-bar"
+          className="mx-3 mt-2 flex items-center gap-2 rounded-control border border-border-main bg-bg-menu px-2 py-1 text-xs"
+        >
+          <span className={collab.connected ? 'status-active-dot' : 'inline-block size-2 rounded-full bg-text-tertiary'} aria-hidden />
+          <span className="text-text-secondary">{t('Live collaboration')}</span>
+          <span className="flex items-center gap-1">
+            {collab.members.map((member) => (
+              <span
+                key={member.clientId}
+                title={member.name}
+                className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                style={{ backgroundColor: member.color }}
+              >
+                {member.name.trim().charAt(0) || '؟'}
+              </span>
+            ))}
+          </span>
+          {collab.error && <span className="text-func-error">{collab.error}</span>}
+        </div>
+      )}
       {trackMode && trackedDoc && (
         <TrackChangesPanel
           doc={trackedDoc}

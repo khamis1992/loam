@@ -18,7 +18,9 @@ import { VoiceIcon } from '@/components/home/VoiceIcon';
 import { useVoiceTranscribe } from '@/components/chat/useVoiceTranscribe';
 import { speak, stopSpeaking } from '@/services/speech';
 import clsx from 'clsx';
-import { t } from '@/i18n/t';
+import { t, getLocale, PRODUCT } from '@/i18n/t';
+import { ModelMenu, type AgentMode } from '@/components/model-menu';
+import { useAppDispatch, openSettings } from '@/store';
 import { IconButton } from '@/components/ui/Button';
 import { desktopApis } from '@/services/desktopApis';
 import { getApiBase, getApiHeaders } from '@/services/rpc';
@@ -111,8 +113,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   ref: Ref<ComposerHandle>,
 ) {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const [text, setText] = useState('');
-  const [mode, setMode] = useState<TaskMode>('standard');
+  // S15: the picked model tier persists across composers (loam.composer.prefs).
+  const [mode, setMode] = useState<TaskMode>(() => (getComposerPrefs().tier as TaskMode | undefined) ?? 'standard');
   const [files, setFiles] = useState<File[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -135,6 +139,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     normalizeEffort(effort) || (prefs.effort as 'fast' | 'max' | undefined) || '',
   );
   const [compareModels, setCompareModels] = useState<boolean>(initialCompareModels === true || prefs.compareModels === true);
+  // Model picker: map the task mode onto the menu's agent modes (flex is a
+  // settings destination, not a runnable tier until BYOK keys are configured).
+  const modelMode: AgentMode = mode === 'max' || mode === 'lite' ? mode : 'standard';
+  const handleModelSelect = (next: AgentMode) => {
+    if (next === 'flex') {
+      dispatch(openSettings('Connectors'));
+      return;
+    }
+    setMode(next);
+    setComposerPrefs({ tier: next });
+  };
   // UX-W2 «صندوق واحد»: the advanced controls fold behind ⚙️ and the default
   // send routes through the intent router when no explicit mode is picked.
   const [advancedOpen, setAdvancedOpenState] = useState<boolean>(getAdvancedOpen());
@@ -792,17 +807,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           </span>
         )}
 
-        {advancedOpen && (
-        <select
-          value={mode}
-          onChange={(e) => { const next = e.target.value as TaskMode; setMode(next); if (next === 'standard' || next === 'lite' || next === 'max') setComposerPrefs({ tier: next }); }}
-          className="h-row-sm rounded-control bg-transparent px-2 text-sm text-text-secondary outline-none"
-        >
-          <option value="standard">{t('Standard')}</option>
-          <option value="lite">{t('Lite')}</option>
-          <option value="max">{t('Max')}</option>
-        </select>
-        )}
+        {/* Model picker (BUILD_SPEC §5.9 S15): always visible in the composer
+            bar — the tier travels with the send as the task mode. */}
+        <ModelMenu
+          currentMode={modelMode}
+          product={PRODUCT}
+          locale={getLocale()}
+          onSelect={handleModelSelect}
+        />
 
         {/* Neo N10: output type narrows the tool set and the routing map; effort
             picks the model tier behind the run. Both default to "decide for me". */}

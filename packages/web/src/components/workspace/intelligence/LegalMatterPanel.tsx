@@ -44,6 +44,9 @@ export default function LegalMatterPanel({ file }: { file: WorkspaceFile }) {
     <button type="button" onClick={() => setOpen((value) => !value)} className="flex min-h-9 w-full items-center gap-2 px-3 py-2 text-sm hover:bg-fill-hover" aria-expanded={open}>
       <BriefcaseBusiness className="size-4 text-brand" /><span className="font-medium">ملف القضية والمعرفة القانونية</span><span className="flex-1" />{open ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
     </button>
+    {open ? <p className="border-t border-border-light px-3 pt-2 text-xs text-text-tertiary">
+      مساحة العمل القانونية المتقدمة (أدلة، عقود، مذكرة دفاع، مصادر رسمية): <a href="/legal" className="text-brand underline" target="_blank" rel="noreferrer">فتح /legal</a>
+    </p> : null}
     {open ? <div className="flex max-h-[55vh] flex-col gap-3 overflow-y-auto border-t border-border-light p-3">
       {error ? <p role="alert" className="text-sm text-func-error">{error}</p> : null}
       <div className="flex flex-wrap gap-2">
