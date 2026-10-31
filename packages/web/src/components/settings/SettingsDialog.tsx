@@ -27,35 +27,56 @@ import { AssetsPane } from './AssetsPane';
 import { ApiKeysPane } from './ApiKeysPane';
 import { EmptyState } from './EmptyState';
 
+/**
+ * W-U4: the nav is regrouped into 8 visual sections. Grouping only — every
+ * pane keeps its id, route and behavior; only the `group` value changed.
+ *
+ * The `models`, `voice` and `updates` groups have no pane members in this
+ * dialog yet (model/voice/updater settings live inside other panes, e.g. the
+ * updater card inside General), so they are defined here for the fixed order
+ * and simply do not render until a pane joins them.
+ */
 const TABS = [
-  { id: 'General', group: 'Settings', icon: 'SlidersHorizontal' },
-  { id: 'Account', group: 'Account', icon: 'User' },
-  { id: 'Usage', group: 'Account', icon: 'Zap' },
-  { id: 'Appearance', group: 'Settings', icon: 'Palette' },
-  { id: 'Shortcuts', group: 'Settings', icon: 'Keyboard' },
-  { id: 'Data controls', group: 'Data', icon: 'Blocks' },
-  { id: 'Personalization', group: 'Capabilities', icon: 'Blocks' },
-  { id: 'Connectors', group: 'Capabilities', icon: 'Unplug' },
-  { id: 'Skills', group: 'Capabilities', icon: 'Blocks' },
-  { id: 'Playbooks', group: 'Capabilities', icon: 'BookMarked' },
-  { id: 'Memory', group: 'Capabilities', icon: 'Database' },
-  { id: 'Knowledge Garden', group: 'Capabilities', icon: 'Leaf' },
-  { id: 'Legal', group: 'Capabilities', icon: 'BookMarked' },
-  { id: 'Learned lessons', group: 'Capabilities', icon: 'GraduationCap' },
-  { id: 'App bridges', group: 'Capabilities', icon: 'Blocks' },
-  { id: 'Integrations', group: 'Data', icon: 'Unplug' },
-  { id: 'Developers', group: 'Data', icon: 'Blocks' },
-  { id: 'My Computer', group: 'Computers', icon: 'Monitor' },
-  { id: 'In-App Browser', group: 'Computers', icon: 'Globe' },
-  { id: 'Email', group: 'Assets', icon: 'Mail' },
-  { id: 'Phone', group: 'Assets', icon: 'Phone' },
-  { id: 'Wallet', group: 'Assets', icon: 'Wallet' },
-  { id: 'About', group: 'About', icon: 'Info' },
+  { id: 'General', group: 'general', icon: 'SlidersHorizontal' },
+  { id: 'Account', group: 'general', icon: 'User' },
+  { id: 'Usage', group: 'general', icon: 'Zap' },
+  { id: 'Appearance', group: 'general', icon: 'Palette' },
+  { id: 'Shortcuts', group: 'general', icon: 'Keyboard' },
+  { id: 'Data controls', group: 'security', icon: 'Blocks' },
+  { id: 'Personalization', group: 'general', icon: 'Blocks' },
+  { id: 'Connectors', group: 'integrations', icon: 'Unplug' },
+  { id: 'Skills', group: 'integrations', icon: 'Blocks' },
+  { id: 'Playbooks', group: 'integrations', icon: 'BookMarked' },
+  { id: 'Memory', group: 'memory', icon: 'Database' },
+  { id: 'Knowledge Garden', group: 'memory', icon: 'Leaf' },
+  { id: 'Legal', group: 'security', icon: 'BookMarked' },
+  { id: 'Learned lessons', group: 'memory', icon: 'GraduationCap' },
+  { id: 'App bridges', group: 'integrations', icon: 'Blocks' },
+  { id: 'Integrations', group: 'integrations', icon: 'Unplug' },
+  { id: 'Developers', group: 'integrations', icon: 'Blocks' },
+  { id: 'My Computer', group: 'advanced', icon: 'Monitor' },
+  { id: 'In-App Browser', group: 'advanced', icon: 'Globe' },
+  { id: 'Email', group: 'integrations', icon: 'Mail' },
+  { id: 'Phone', group: 'integrations', icon: 'Phone' },
+  { id: 'Wallet', group: 'integrations', icon: 'Wallet' },
+  { id: 'About', group: 'advanced', icon: 'Info' },
 ];
 
 const MVP_TAB_IDS = new Set(['General', 'Account', 'Appearance', 'Shortcuts', 'Data controls', 'Personalization', 'My Computer', 'Usage', 'About', 'Connectors', 'Skills', 'Playbooks', 'Memory', 'Knowledge Garden', 'Legal', 'Learned lessons', 'App bridges', 'In-App Browser', 'Email', 'Phone', 'Wallet', 'Integrations', 'Developers']);
 
-const GROUP_ORDER = ['Account', 'Settings', 'Capabilities', 'Computers', 'Data', 'Assets', 'About'];
+/** Group id → i18n key for the Arabic nav header («عام», «الذاكرة والمعرفة», …). */
+const GROUP_LABELS: Record<string, string> = {
+  general: 'General',
+  models: 'Models',
+  memory: 'Memory & knowledge',
+  voice: 'Voice & input',
+  security: 'Security & isolation',
+  integrations: 'Connections',
+  updates: 'Updates & sync',
+  advanced: 'Advanced',
+};
+
+const GROUP_ORDER = ['general', 'models', 'memory', 'voice', 'security', 'integrations', 'updates', 'advanced'];
 
 export function SettingsDialog() {
   const open = useAppSelector((s) => s.ui.settingsOpen);
@@ -88,7 +109,7 @@ export function SettingsDialog() {
           </div>
           {grouped.map(({ group, tabs }) => (
             <section key={group}>
-              <h3 className="px-2 py-1 text-xs font-medium text-text-tertiary">{t(group)}</h3>
+              <h3 className="px-2 py-1 text-xs font-medium text-text-tertiary">{t(GROUP_LABELS[group] ?? group)}</h3>
               <ul className="flex flex-col gap-0.5">
                 {tabs.map((tab) => (
                   <li key={tab.id}>

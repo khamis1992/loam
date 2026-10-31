@@ -1355,5 +1355,22 @@
   "Download file": "Download file",
   "Open with": "Open with",
   "Automatic": "Automatic",
-  "Loam Craft": "Loam Craft"
+  "Loam Craft": "Loam Craft",
+  "Models": "Models",
+  "Memory & knowledge": "Memory & knowledge",
+  "Voice & input": "Voice & input",
+  "Security & isolation": "Security & isolation",
+  "Connections": "Connections",
+  "Updates & sync": "Updates & sync",
+  "Advanced": "Advanced",
+  "Recommended setup": "Recommended setup",
+  "Code graph": "Code graph",
+  "Execution sandbox": "Execution sandbox",
+  "Speech recognition": "Speech recognition",
+  "Open sandbox settings": "Open sandbox settings",
+  "Copy setup command": "Copy setup command",
+  "Off": "Off",
+  "Not running": "Not running",
+  "Checking…": "Checking…",
+  "Installing…": "Installing…"
 }

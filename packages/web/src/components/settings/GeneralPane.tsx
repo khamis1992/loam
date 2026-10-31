@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { useAppDispatch, useAppSelector, setLocale } from '@/store';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import clsx from 'clsx';
+import { useAppDispatch, useAppSelector, setLocale, setSettingsTab } from '@/store';
 import { t, setLocale as setDocumentLocale } from '@/i18n/t';
 import { Row, Section } from './SettingsDialog';
 import { UpdaterSettings } from '@/components/update/UpdaterSettings';
@@ -10,6 +11,212 @@ import { getApiBase, getApiHeaders } from '@/services/rpc';
 const NOTIFICATIONS_KEY = 'agent-studio:browser-notifications';
 const SOUND_KEY = 'agent-studio:sound-alert';
 const UPDATES_KEY = 'agent-studio:product-updates';
+
+// ---------------------------------------------------------------------------
+// W-U4 first-run setup: three honest status checks backed by real endpoints.
+//  - codegraph: GET /api/codegraph/status, the endpoint the legacy Services
+//    page uses for its green/red dot (ui/app.js refreshCodegraphPanel); `ok`
+//    is that documented dot semantics. The install action POSTs to
+//    /api/codegraph/runtime/install — the same real endpoint the legacy
+//    services page install button uses — and polls the status while the
+//    server-side installer runs.
+//  - sandbox: the codemode flag from GET /api/settings, the same state the
+//    sandbox row in Data controls shows; the action opens that pane.
+//  - STT: probes the local STT server (scripts/stt_server.py) on its
+//    documented health path. The Loam server does not proxy /health
+//    (voice.ts only proxies POST /api/voice/transcribe), so the browser
+//    checks it directly with a no-cors request: resolve = reachable,
+//    reject = not running. The setup action shows the real `npm run stt`
+//    command to copy — the STT server is a user-run Python process, so there
+//    is no in-app start button to fake.
+// ---------------------------------------------------------------------------
+
+const CODEGRAPH_STATUS_URL = '/api/codegraph/status';
+const CODEGRAPH_INSTALL_URL = '/api/codegraph/runtime/install';
+const SETTINGS_URL = '/api/settings';
+const STT_HEALTH_URL = 'http://127.0.0.1:3947/health';
+const STT_SETUP_COMMAND = 'npm run stt';
+const STT_PROBE_TIMEOUT_MS = 2500;
+const INSTALL_POLL_INTERVAL_MS = 2000;
+const INSTALL_POLL_MAX_ATTEMPTS = 150;
+
+type SetupStatus = 'checking' | 'ok' | 'down';
+
+interface CodeGraphStatus {
+  ok?: boolean;
+  runtime?: { state?: string };
+  install?: { running?: boolean; step?: string | null };
+}
+
+function SetupDot({ status, label }: { status: SetupStatus; label: string }) {
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={clsx(
+        'inline-block size-2 shrink-0 rounded-full',
+        status === 'ok' ? 'bg-function-success' : status === 'down' ? 'bg-function-error' : 'bg-fill-hover',
+      )}
+    />
+  );
+}
+
+/** Compact row status word: checking → spinner word, then the real state. */
+function setupStatusText(status: SetupStatus, okLabel: string, downLabel: string): string {
+  return status === 'checking' ? t('Checking…') : status === 'ok' ? okLabel : downLabel;
+}
+
+function FirstRunSetup() {
+  const dispatch = useAppDispatch();
+  const [codegraph, setCodegraph] = useState<SetupStatus>('checking');
+  const [installing, setInstalling] = useState(false);
+  const [sandbox, setSandbox] = useState<SetupStatus>('checking');
+  const [stt, setStt] = useState<SetupStatus>('checking');
+  const [copied, setCopied] = useState(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  const applyCodegraph = useCallback((data: CodeGraphStatus | null) => {
+    if (!mountedRef.current) return;
+    setCodegraph(data && (data.ok === true || data.runtime?.state === 'ready') ? 'ok' : 'down');
+  }, []);
+
+  const checkCodegraph = useCallback(async (): Promise<CodeGraphStatus | null> => {
+    try {
+      const res = await fetch(`${getApiBase()}${CODEGRAPH_STATUS_URL}`, { headers: await getApiHeaders() });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as CodeGraphStatus;
+      applyCodegraph(data);
+      return data;
+    } catch {
+      applyCodegraph(null);
+      return null;
+    }
+  }, [applyCodegraph]);
+
+  const checkSandbox = useCallback(async () => {
+    try {
+      const res = await fetch(`${getApiBase()}${SETTINGS_URL}`, { headers: await getApiHeaders() });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as { codemode?: boolean };
+      if (mountedRef.current) setSandbox(data.codemode === true ? 'ok' : 'down');
+    } catch {
+      if (mountedRef.current) setSandbox('down');
+    }
+  }, []);
+
+  const checkStt = useCallback(async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), STT_PROBE_TIMEOUT_MS);
+    try {
+      await fetch(STT_HEALTH_URL, { mode: 'no-cors', signal: controller.signal });
+      if (mountedRef.current) setStt('ok');
+    } catch {
+      if (mountedRef.current) setStt('down');
+    } finally {
+      clearTimeout(timer);
+    }
+  }, []);
+
+  useEffect(() => {
+    void checkCodegraph();
+    void checkSandbox();
+    void checkStt();
+  }, [checkCodegraph, checkSandbox, checkStt]);
+
+  const installCodegraph = useCallback(async () => {
+    if (installing) return;
+    setInstalling(true);
+    try {
+      await fetch(`${getApiBase()}${CODEGRAPH_INSTALL_URL}`, {
+        method: 'POST',
+        headers: { ...(await getApiHeaders()), 'content-type': 'application/json' },
+        body: '{}',
+      });
+      // Follow the server-side installer until it reports finished, then the
+      // last poll reflects the true state (ready / still not installed).
+      for (let attempt = 0; attempt < INSTALL_POLL_MAX_ATTEMPTS; attempt++) {
+        const data = await checkCodegraph();
+        if (!data?.install?.running) break;
+        await new Promise((resolve) => setTimeout(resolve, INSTALL_POLL_INTERVAL_MS));
+      }
+    } catch {
+      applyCodegraph(null);
+    } finally {
+      if (mountedRef.current) setInstalling(false);
+    }
+  }, [applyCodegraph, checkCodegraph, installing]);
+
+  const openSandbox = useCallback(() => {
+    dispatch(setSettingsTab('Data controls'));
+  }, [dispatch]);
+
+  const copyStt = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(STT_SETUP_COMMAND);
+      if (mountedRef.current) {
+        setCopied(true);
+        setTimeout(() => { if (mountedRef.current) setCopied(false); }, 1500);
+      }
+    } catch {
+      /* clipboard unavailable — the command stays visible inline */
+    }
+  }, []);
+
+  return (
+    <Section title={t('Recommended setup')}>
+      <Row label={t('Code graph')}>
+        <div className="flex items-center gap-2">
+          <SetupDot status={codegraph} label={codegraph === 'ok' ? t('Ready') : t('Not installed')} />
+          <span className="text-xs text-text-tertiary">
+            {installing ? t('Installing…') : setupStatusText(codegraph, t('Ready'), t('Not installed'))}
+          </span>
+          {codegraph !== 'ok' && !installing ? (
+            <button
+              type="button"
+              onClick={() => void installCodegraph()}
+              className="h-row-sm rounded-control border border-border-main bg-fill-tsp px-3 text-sm text-text-primary hover:bg-fill-hover"
+            >
+              {t('Install')}
+            </button>
+          ) : null}
+        </div>
+      </Row>
+      <Row label={t('Execution sandbox')}>
+        <div className="flex items-center gap-2">
+          <SetupDot status={sandbox} label={sandbox === 'ok' ? t('Ready') : t('Off')} />
+          <span className="text-xs text-text-tertiary">{setupStatusText(sandbox, t('Ready'), t('Off'))}</span>
+          <button
+            type="button"
+            onClick={openSandbox}
+            className="h-row-sm rounded-control border border-border-main bg-fill-tsp px-3 text-sm text-text-primary hover:bg-fill-hover"
+          >
+            {t('Open sandbox settings')}
+          </button>
+        </div>
+      </Row>
+      <Row label={t('Speech recognition')}>
+        <div className="flex items-center gap-2">
+          <SetupDot status={stt} label={stt === 'ok' ? t('Ready') : t('Not running')} />
+          <span className="text-xs text-text-tertiary">{setupStatusText(stt, t('Ready'), t('Not running'))}</span>
+          <code className="rounded-control bg-fill-tsp px-2 py-0.5 text-xs text-text-secondary">{STT_SETUP_COMMAND}</code>
+          <button
+            type="button"
+            onClick={() => void copyStt()}
+            className="h-row-sm rounded-control border border-border-main bg-fill-tsp px-3 text-sm text-text-primary hover:bg-fill-hover"
+          >
+            {copied ? t('Copied') : t('Copy setup command')}
+          </button>
+        </div>
+      </Row>
+    </Section>
+  );
+}
 
 function readStoredBool(key: string): boolean {
   if (typeof window === 'undefined') return false;
@@ -34,6 +241,8 @@ export function GeneralPane() {
 
   return (
     <div className="space-y-2">
+      <FirstRunSetup />
+
       <Section title={t('Language')}>
         <Row label={t('Language')} description={t('Choose the language used in the interface.')}>
           <select

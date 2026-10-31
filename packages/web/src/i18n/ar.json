@@ -1355,5 +1355,22 @@
   "Download file": "تنزيل الملف",
   "Open with": "فتح بواسطة",
   "Automatic": "تلقائي",
-  "Loam Craft": "لوم كرافت"
+  "Loam Craft": "لوم كرافت",
+  "Models": "النماذج",
+  "Memory & knowledge": "الذاكرة والمعرفة",
+  "Voice & input": "الصوت والإدخال",
+  "Security & isolation": "الأمان والعزل",
+  "Connections": "التكاملات",
+  "Updates & sync": "التحديث والمزامنة",
+  "Advanced": "متقدم",
+  "Recommended setup": "الإعداد الموصى به",
+  "Code graph": "خريطة الكود",
+  "Execution sandbox": "بيئة التنفيذ المعزولة",
+  "Speech recognition": "التعرف على الصوت",
+  "Open sandbox settings": "افتح إعدادات بيئة التنفيذ",
+  "Copy setup command": "انسخ أمر التشغيل",
+  "Off": "مغلق",
+  "Not running": "غير مشغّل",
+  "Checking…": "جارٍ التحقق…",
+  "Installing…": "جارٍ التثبيت…"
 }
