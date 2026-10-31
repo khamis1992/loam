@@ -20,5 +20,13 @@ if ([version]$nodeVer -lt [version]"22.13.0") { throw "Node >= 22.13 required (f
 $a = @($Script, "--source", $Source, "--target", $Target, "--corpus", $Corpus)
 if ($Force) { $a += "--force" }; if ($DryRun) { $a += "--dry-run" }
 $logDir = Join-Path $Target "sync-reports"; New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-& node @a 2>&1 | Tee-Object -FilePath (Join-Path $logDir "last-run.log")
-exit $LASTEXITCODE
+# Node >= 22 prints the node:sqlite ExperimentalWarning to stderr; under
+# ErrorActionPreference=Stop + 2>&1, PowerShell turns ANY native stderr line into
+# a terminating NativeCommandError. --no-warnings silences the known warning and
+# Continue stops any other stray stderr (progress bars, deprecations) from
+# killing the sync. The exit code still carries real failures.
+$ErrorActionPreference = "Continue"
+& node --no-warnings @a 2>&1 | Tee-Object -FilePath (Join-Path $logDir "last-run.log")
+$code = $LASTEXITCODE
+$ErrorActionPreference = "Stop"
+exit $code
