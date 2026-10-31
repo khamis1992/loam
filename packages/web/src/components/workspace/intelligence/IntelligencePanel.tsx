@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, Loader2, Sparkles, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2, Lightbulb, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import type { WorkspaceFile } from '../types';
 import { applyOfficeRun, cancelOfficeRun, getOfficeRun, startOfficeRun, type OfficeRun } from './officeIntelligenceApi';
@@ -94,7 +94,7 @@ export default function IntelligencePanel({ file, applyDisabled = false, onAppli
   return (
     <section className="border-t border-border-main bg-bg-menu text-text-primary" aria-label="المساعد الذكي">
       <button type="button" onClick={() => setOpen((value) => !value)} className="flex min-h-9 w-full items-center gap-2 px-3 py-2 text-sm hover:bg-fill-hover" aria-expanded={open}>
-        <Sparkles className="size-4 text-brand" aria-hidden />
+        <Lightbulb className="size-4 text-brand" aria-hidden />
         <span className="font-medium">المساعد الذكي والقانوني</span>
         <span className="flex-1" />
         {open ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}

@@ -1379,5 +1379,7 @@
   "Full screen": "ملء الشاشة",
   "Previous step": "الخطوة السابقة",
   "Next step": "الخطوة التالية",
-  "Timeline scrubber": "شريط الخط الزمني"
+  "Timeline scrubber": "شريط الخط الزمني",
+  "Expand sidebar": "توسيع الشريط الجانبي",
+  "Collapse sidebar": "طي الشريط الجانبي"
 }

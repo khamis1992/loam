@@ -42,6 +42,7 @@ import { SideChatPanel } from '@/components/chat/SideChatPanel';
 import { AttachmentCard, kindFromName, type AttachmentKind } from '@/components/chat/AttachmentCard';
 import { ComputerPanel } from '@/components/computer/ComputerPanel';
 import { ComputerDock } from '@/components/computer/ComputerDock';
+import { CompletionCard } from '@/components/chat/CompletionCard';
 import {
   WorkspacePanel,
   latestWorkspaceDecision,
@@ -480,6 +481,11 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
   // composer's own submit path, so mode chips and extData travel with it
   // exactly as with a typed message. Barge-in lives inside the hook.
   const composerRef = useRef<ComposerHandle>(null);
+  // H5: completion card is dismissed per run and returns on the next run.
+  const [completionDismissed, setCompletionDismissed] = useState(false);
+  useEffect(() => {
+    if (running) setCompletionDismissed(false);
+  }, [running]);
   const voiceChat = useVoiceChat({
     onFinalTranscript: (text) => {
       const composer = composerRef.current;
@@ -747,9 +753,12 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
 
               {hasResult && hasClockClosed && !running && !wasStoppedByUser && (
                 <div className="mx-auto w-full max-w-[768px] px-[var(--ui-content-padding-x,24px)]">
-                  <div className="mb-2 flex items-center gap-2 text-sm text-func-success">
-                    <CircleCheck className="size-4" /> {t('Task completed')}
-                  </div>
+                  {!completionDismissed && (
+                    <CompletionCard
+                      onFill={(text) => composerRef.current?.setText(text)}
+                      onDismiss={() => setCompletionDismissed(true)}
+                    />
+                  )}
                   {attachmentEvents.length > 0 && (
                     <div className="mb-3 grid gap-2 sm:grid-cols-2">
                       {attachmentEvents.map((a) => (

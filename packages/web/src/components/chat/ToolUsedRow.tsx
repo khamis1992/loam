@@ -2,6 +2,7 @@ import type { ToolUsedEvent } from '@shared/socket';
 import { t } from '@/i18n/t';
 import { Spinner } from '@/components/ui/Button';
 import { humanizeToolName, isCorruptedPlaceholder } from './toolLabels';
+import { toolFamilyIcon } from './toolIcons';
 
 function StatusIcon({ s }: { s: ToolUsedEvent['status'] }) {
   if (s === 'running' || s === 'pending' || s === 'streaming' || s === 'argumentsFinished') return <Spinner className="size-3.5" />;
@@ -45,9 +46,11 @@ export function ToolUsedRow({ e }: { e: ToolUsedEvent }) {
     );
   }
   const showBrief = e.brief && !briefDuplicatesLabel(e.tool, e.brief);
+  const FamilyIcon = toolFamilyIcon(e.tool);
   return (
     <div className="flex h-row-sm w-full items-center gap-2 rounded-control bg-fill-tsp px-2 text-start text-sm text-text-secondary hover:bg-fill-hover"
     >
+      <FamilyIcon className="size-3.5 shrink-0 text-text-tertiary" aria-hidden />
       <span className="truncate">{t(humanizeToolName(e.tool))} {showBrief && <code className="text-xs">{e.brief}</code>}</span>
       <span className="ms-auto"><StatusIcon s={e.status} /></span>
     </div>

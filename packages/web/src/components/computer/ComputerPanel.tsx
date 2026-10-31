@@ -27,13 +27,13 @@ import { desktopEvents } from '@/services/desktopApis';
 import { getApiBase } from '@/services/rpc';
 import { LiveView } from '@/components/computer/LiveView';
 import type { TimelineStep } from '@/components/chat/StepTimeline';
+import { getToolFamily, getStudioMode, type ToolFamily, type StudioMode } from '@/components/chat/toolIcons';
 
 // int-f3: studio iframes load real backend UI pages served from the same origin used for /api/* calls.
 const OFFICE_PREVIEW_PATH = '/office-preview.html';
 const CREATIVE_RENDER_PATH = '/creative-render.html';
 
-type TabId = 'terminal' | 'editor' | 'browser' | 'preview' | 'files' | 'studio' | 'workspace' | 'live';
-type StudioMode = 'media' | 'office';
+type TabId = ToolFamily;
 
 interface ComputerPanelProps {
   event: ToolUsedEvent;
@@ -686,34 +686,8 @@ function FilesContent({ event, sessionId }: { event: ToolUsedEvent; sessionId: s
   );
 }
 
-function getStudioMode(tool: string): StudioMode | null {
-  const name = tool.toLowerCase();
-  if (
-    name.startsWith('creative_') ||
-    name === 'loam_creative' ||
-    name === 'loam_canvas'
-  )
-    return 'media';
-  if (
-    name.startsWith('office_') ||
-    name === 'loam_studio' ||
-    name === 'loam_document' ||
-    name === 'loam_dataset' ||
-    name === 'data_chart'
-  )
-    return 'office';
-  return null;
-}
-
-function getToolFamily(tool: string): TabId {
-  const name = tool.toLowerCase();
-  if (getStudioMode(tool)) return 'studio';
-  if (name === 'terminal' || name.startsWith('shell_') || name.startsWith('pty_')) return 'terminal';
-  if (name === 'text_editor' || name.startsWith('file_')) return 'editor';
-  if (name.startsWith('browser_') || name === 'browser' || name === 'web_fetch' || name === 'webpage_extract') return 'browser';
-  if (name.startsWith('preview_') || name === 'webdev') return 'preview';
-  return 'files';
-}
+// getToolFamily / getStudioMode live in components/chat/toolIcons.tsx (M3) so
+// the chat tool rows and this panel share one vocabulary.
 
 function isFinalStatus(status: ToolUsedEvent['status']): boolean {
   return ['success', 'error', 'failed', 'cancelled', 'stopped', 'rollback'].includes(status);
