@@ -7,20 +7,20 @@ import { legalApi, type LibraryFolder, type LibraryHit, type LibraryStatus } fro
 /** Fixed warning: library status tags are inferred and must be verified before citing. */
 export const LIBRARY_BANNER_AR = 'الوسوم مستنتجة من بيانات الميزان — تحقّق قبل الاستشهاد الحاسم. نتائج المكتبة مراجع بحثية غير مُتحقَّقة ولا تُصدَّر نهائياً قبل اجتياز فحص الاستشهادات.';
 
-const CHIP: Record<LibraryStatus, { label: string; cls: string }> = {
-  in_force: { label: 'نافذ', cls: 'border-emerald-600/50 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200' },
-  added: { label: 'نافذ — مضافة', cls: 'border-emerald-600/50 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200' },
-  amended: { label: 'نافذ — معدّل', cls: 'border-amber-600/50 bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200' },
-  superseded: { label: 'نص سابق (مستبدل)', cls: 'border-red-600/50 bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200' },
-  repealed: { label: 'ملغاة', cls: 'border-red-600/50 bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200' },
-  unknown: { label: 'حالة غير معروفة', cls: 'border-zinc-400/60 bg-zinc-50 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300' },
+const CHIP: Record<LibraryStatus, { text: string; cls: string }> = {
+  in_force: { text: 'نافذ', cls: 'border-emerald-600/50 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200' },
+  added: { text: 'نافذ — مضافة', cls: 'border-emerald-600/50 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200' },
+  amended: { text: 'نافذ — معدّل', cls: 'border-amber-600/50 bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200' },
+  superseded: { text: 'نص سابق (مستبدل)', cls: 'border-red-600/50 bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200' },
+  repealed: { text: 'ملغاة', cls: 'border-red-600/50 bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200' },
+  unknown: { text: 'حالة غير معروفة', cls: 'border-zinc-400/60 bg-zinc-50 text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300' },
 };
 
 export function LibraryStatusChip({ status }: { status: LibraryStatus }) {
   const c = CHIP[status] ?? CHIP.unknown;
   return (
     <span data-status={status} className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${c.cls}`}>
-      {c.label}<span aria-hidden="true">·</span><span>{'مستنتج'}</span>
+      {c.text}<span aria-hidden="true">·</span><span>{'مستنتج'}</span>
     </span>
   );
 }
