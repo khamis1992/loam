@@ -122,6 +122,7 @@ import { handleDesignStudioRoutes } from "./routes/designStudio.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAutomationsRoutes } from "./routes/automations.js";
 import { handleAppBuilderRoutes } from "./routes/appBuilder.js";
+import { handleBoardRoutes } from "./routes/board.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
 import { handleWorkspaceDocRoutes } from "./routes/workspaceDoc.js";
@@ -2199,6 +2200,8 @@ loadAgents();
         if (await handleAutomationsRoutes(req, res, p)) return;
         // Cap G §4.15.2: /api/app-projects/* (Agent Studio App Builder).
         if (await handleAppBuilderRoutes(req, res, p, url)) return;
+        // UX-W3: shared board kanban (/api/board/*) — the Board page's backend.
+        if (await handleBoardRoutes(req, res, p)) return;
         if (await handleAutoVideoRoutes(req, res, p)) return;
         if (await handleLiveViewRoutes(req, res, p, { screenLive: live })) return;
         if (await handleTranscriptRoutes(req, res, p, { workspace: cfg.workspace })) return;
