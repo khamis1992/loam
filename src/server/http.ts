@@ -170,6 +170,7 @@ import { handleSessionControlRoutes } from "./routes/sessionControl.js";
 import { handleInsightsRoutes } from "./routes/insights.js";
 import { handleShareRoutes } from "./routes/shares.js";
 import { handleProjectContextRoutes } from "./routes/projectContext.js";
+import { PROVIDER_PRESETS, activeModel, listModelDirectory } from "./modelDirectory.js";
 import { handlePlaybookRoutes } from "./routes/playbooks.js";
 import { handleFlowTemplateRoutes } from "./routes/flowTemplates.js";
 import { handleVoiceRoutes } from "./routes/voice.js";
@@ -846,12 +847,20 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (req.method === "GET" && p === "/api/models") {
+          // Real model directory: Ollama (local) + Flex BYOK + cloudModel +
+          // every failover provider probed live (freellmapi included). Old
+          // consumers read `.name`; entries keep both `id` and `name`.
           try {
-            const models = await ollama.listModels();
-            sendJson(res, 200, { models });
+            const directory = await listModelDirectory(cfg, () => ollama.listLocalModels());
+            sendJson(res, 200, {
+              models: directory.models,
+              sources: directory.sources,
+              presets: PROVIDER_PRESETS,
+              active: activeModel(cfg),
+            });
           } catch (err) {
             log.warn(`models list failed: ${err instanceof Error ? err.message : String(err)}`);
-            sendJson(res, 200, { models: [], providerError: "model provider unavailable" });
+            sendJson(res, 200, { models: [], sources: [], presets: PROVIDER_PRESETS, active: activeModel(cfg), providerError: "model provider unavailable" });
           }
           return;
         }

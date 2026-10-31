@@ -1426,5 +1426,10 @@
   "Finance": "Finance",
   "Last modified {time}": "Last modified {time}",
   "Open in editor": "Open in editor",
-  "Close panel": "Close panel"
+  "Close panel": "Close panel",
+  "Loading models…": "Loading models…",
+  "Search models (Ollama / cloud / freellmapi)…": "Search models (Ollama / cloud / freellmapi)…",
+  "unreachable": "unreachable",
+  "No models found. Start Ollama or configure a provider.": "No models found. Start Ollama or configure a provider.",
+  "Model selected, but it needs an API key — add it under Flex below.": "Model selected, but it needs an API key — add it under Flex below."
 }
