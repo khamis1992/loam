@@ -9,9 +9,9 @@ export function PlanUpdateRow({ e }: { e: PlanUpdateEvent }) {
     <div className="flex flex-col gap-1">
       {e.tasks.map((task, i) => (
         <div key={i} className="flex items-center gap-2 text-sm text-text-secondary">
-          <span className={task.status === 'done' ? 'text-func-success' : 'text-icon-blue'}>
-            {task.status === 'done' ? '✓' : '●'}
-          </span>
+          {task.status === 'done'
+            ? <span className="text-func-success">✓</span>
+            : <span className="status-active-dot shrink-0" aria-hidden />}
           {task.title}
         </div>
       ))}
@@ -34,9 +34,9 @@ export function TodoListRow({ e }: { e: TodoUpdateEvent }) {
         const active = todo.status === 'in_progress';
         return (
           <div key={todo.id} className="flex items-center gap-2 text-sm text-text-secondary" data-todo-status={todo.status}>
-            <span className={done ? 'text-func-success' : active ? 'text-icon-blue' : 'text-text-tertiary'}>
-              {TODO_STATUS_LABEL[todo.status] ?? '○'}
-            </span>
+            {active
+              ? <span className="status-active-dot shrink-0" aria-hidden />
+              : <span className={done ? 'text-func-success' : 'text-text-tertiary'}>{TODO_STATUS_LABEL[todo.status] ?? '○'}</span>}
             <span className={done ? 'line-through opacity-70' : undefined}>{todo.content}</span>
           </div>
         );

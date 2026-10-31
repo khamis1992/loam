@@ -392,8 +392,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
       className={clsx(
-        'rounded-composer bg-bg-menu p-3 border border-[#e5e7eb] dark:border-white/[0.08] shadow-card transition-colors',
-        dragOver && 'border-[#0081f2] dark:border-[#1a93fe] bg-[var(--fill-blue)]',
+        'rounded-composer bg-bg-menu p-3 border border-border-composer shadow-card transition-colors duration-fast',
+        dragOver && 'border-icon-blue bg-[var(--fill-blue)]',
       )}
     >
       {intentNote && (
