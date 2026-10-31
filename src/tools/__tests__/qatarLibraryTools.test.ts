@@ -98,3 +98,11 @@ test("legal.libraryPath is normalized", () => {
   assert.equal(normalizeLegalConfig({ libraryPath: " D:/lib " }).libraryPath, "D:/lib");
   assert.equal(normalizeLegalConfig({}).libraryPath, undefined);
 });
+
+test("library marker counts as an unverified marker (blocks approval/final export)", async () => {
+  const { verifyDocument, LIBRARY_MARKER } = await import("../../legal/verify.js");
+  const { loadFixtureCorpus } = await import("../../legal/__tests__/helpers.js");
+  const r = verifyDocument(loadFixtureCorpus(), `تنص المادة 54 من قانون العمل ${LIBRARY_MARKER}`, { asOf: "2092-01-01" } as never);
+  assert.equal(r.counts.unverifiedMarkers, 1);
+  assert.notEqual(r.verdict, "pass");
+});

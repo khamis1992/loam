@@ -7,6 +7,7 @@
  * point [غير موثّق — يحتاج بحث محامٍ].
  */
 import { LIBRARY_FOLDERS, UNVERIFIED_WARNING_AR, UNVERIFIED_WARNING_EN, type LibraryFolder, type QatarLawLibrary } from "../legal/library.js";
+import { LIBRARY_MARKER } from "../legal/verify.js";
 import { num, str, type Tool, type ToolResult } from "./registry.js";
 
 export const QATAR_LIBRARY_TOOL_NAMES = ["qatar_library_search", "qatar_library_doc"] as const;
@@ -14,7 +15,7 @@ export const QATAR_LIBRARY_TOOL_NAMES = ["qatar_library_search", "qatar_library_
 const MAX_OUT = 15_000;
 const ok = (content: string): ToolResult => ({ ok: true, content: content.length > MAX_OUT ? `${content.slice(0, MAX_OUT)}\n…[truncated]` : content });
 const fail = (content: string): ToolResult => ({ ok: false, content });
-const BANNER = `${UNVERIFIED_WARNING_AR}\n${UNVERIFIED_WARNING_EN}\nLibrary results are research leads only: they are NOT citable. Confirm with legal_search/legal_article before citing.`;
+const BANNER = `${UNVERIFIED_WARNING_AR}\n${UNVERIFIED_WARNING_EN}\nLibrary results are research leads only: they are NOT citable. Confirm with legal_search/legal_article before citing. If you mention a library-only lead in a draft, write ${LIBRARY_MARKER} right after it (it blocks final export until verified).`;
 
 export function createQatarLibraryTools(library: QatarLawLibrary): Tool[] {
   const search: Tool = {
