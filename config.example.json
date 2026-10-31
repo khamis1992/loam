@@ -24,6 +24,15 @@
   "recovery": {
     "autoResume": false
   },
+  "sandbox": {
+    "container": {
+      "enabled": false,
+      "image": "node:22-alpine",
+      "network": "none",
+      "cpus": 2,
+      "memoryMb": 2048
+    }
+  },
   "policy": {
     "networkEnabled": true,
     "allowOutsideWorkspaceRead": true,
