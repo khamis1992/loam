@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { t } from '@/i18n/t';
 import { legalApi, type LegalStatus, type Matter } from '@/services/legalApi';
 import { PrivacyBadge } from './PrivacyBadge';
+import { LibrarySearch } from './LibrarySearch';
 
 export function LegalHome() {
   const [matters, setMatters] = useState<Matter[]>([]);
@@ -52,6 +53,7 @@ export function LegalHome() {
           {matters.length === 0 && <li className="p-3 text-sm opacity-70">{t('No matters yet')}</li>}
         </ul>
       </section>
+      <LibrarySearch />
     </main>
   );
 }

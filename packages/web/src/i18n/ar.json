@@ -1381,5 +1381,9 @@
   "Next step": "الخطوة التالية",
   "Timeline scrubber": "شريط الخط الزمني",
   "Expand sidebar": "توسيع الشريط الجانبي",
-  "Collapse sidebar": "طي الشريط الجانبي"
+  "Collapse sidebar": "طي الشريط الجانبي",
+  "Qatar law library": "مكتبة القوانين القطرية",
+  "Library not installed. Run the weekly library sync.": "المكتبة غير مثبّتة. شغّل مزامنة المكتبة الأسبوعية.",
+  "Search laws, regulations, decisions, rulings": "ابحث في القوانين واللوائح والقرارات والأحكام",
+  "Library section": "قسم المكتبة"
 }
