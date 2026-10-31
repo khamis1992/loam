@@ -1362,7 +1362,6 @@
   "Security & isolation": "Security & isolation",
   "Connections": "Connections",
   "Updates & sync": "Updates & sync",
-  "Advanced": "Advanced",
   "Recommended setup": "Recommended setup",
   "Code graph": "Code graph",
   "Execution sandbox": "Execution sandbox",
@@ -1372,5 +1371,10 @@
   "Off": "Off",
   "Not running": "Not running",
   "Checking…": "Checking…",
-  "Installing…": "Installing…"
+  "Installing…": "Installing…",
+  "Step {n} of {total}": "Step {n} of {total}",
+  "Step {n}": "Step {n}",
+  "Open computer panel": "Open computer panel",
+  "Exit full screen": "Exit full screen",
+  "Full screen": "Full screen"
 }

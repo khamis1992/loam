@@ -7,8 +7,10 @@ import {
   ExternalLink,
   Folder,
   FolderOpen,
+  Fullscreen,
   Globe,
   Maximize2,
+  Minimize2,
   Monitor,
   Palette,
   RotateCcw,
@@ -95,6 +97,16 @@ export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusW
   const [userTab, setUserTab] = useState<TabId | null>(null);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const expanded = width > DEFAULT_WIDTH;
+  // M2: true full-screen view — fixed overlay over the whole window; Esc exits.
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
   useEffect(() => {
     try {
       const saved = Number(localStorage.getItem(WIDTH_KEY));
@@ -164,25 +176,39 @@ export function ComputerPanel({ event, sessionId, onClose, workspaceSlot, focusW
 
   return (
     <div
-      style={{ width }}
+      data-testid={fullscreen ? 'computer-panel-fullscreen' : 'computer-panel'}
+      style={fullscreen ? undefined : { width }}
       className={[
-        'relative flex h-full max-w-[85vw] shrink-0 flex-col border-s bg-bg-menu',
-        isDriving ? 'border-s-4 border-s-[var(--icon-blue)]' : 'border-border-main',
+        'relative flex h-full shrink-0 flex-col bg-bg-menu',
+        fullscreen ? 'fixed inset-0 z-40 max-w-none' : 'max-w-[85vw] border-s',
+        isDriving ? 'border-s-4 border-s-[var(--icon-blue)]' : fullscreen ? '' : 'border-border-main',
       ].join(' ')}
     >
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={t('Resize')}
-        onPointerDown={onDragStart}
-        onDoubleClick={() => commitWidth(DEFAULT_WIDTH)}
-        className="absolute inset-y-0 -start-1 z-10 w-2 cursor-col-resize touch-none hover:bg-[var(--icon-blue)]/30"
-      />
+      {!fullscreen && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t('Resize')}
+          onPointerDown={onDragStart}
+          onDoubleClick={() => commitWidth(DEFAULT_WIDTH)}
+          className="absolute inset-y-0 -start-1 z-10 w-2 cursor-col-resize touch-none hover:bg-[var(--icon-blue)]/30"
+        />
+      )}
       <div className="flex h-[40px] shrink-0 items-center justify-between border-b border-border-main px-2">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-text-primary">{t("Loam's computer")}</span>
         </div>
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            aria-label={t(fullscreen ? 'Exit full screen' : 'Full screen')}
+            aria-pressed={fullscreen}
+            data-testid="computer-fullscreen-toggle"
+            onClick={() => setFullscreen((v) => !v)}
+            className="rounded-control p-1.5 text-text-secondary hover:bg-fill-hover"
+          >
+            {fullscreen ? <Minimize2 className="size-4" /> : <Fullscreen className="size-4" />}
+          </button>
           <button
             type="button"
             aria-label={t('Expand')}

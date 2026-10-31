@@ -34,6 +34,8 @@ export default {
         titlebar: '48px', row: '36px', 'row-sm': '32px', control: '40px',
         // semantic scale (xs 4 / sm 8 / md 16 / lg 24 / xl 32) alongside the sizes above
         xs: '4px', sm: '8px', md: '16px', lg: '24px', xl: '32px',
+        // computer dock (H1)
+        dock: '64px', 'dock-thumb': '42px',
       },
       transitionDuration: {
         fast: 'var(--motion-fast)', medium: 'var(--motion-medium)', slow: 'var(--motion-slow)',

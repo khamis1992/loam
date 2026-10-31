@@ -1362,7 +1362,6 @@
   "Security & isolation": "الأمان والعزل",
   "Connections": "التكاملات",
   "Updates & sync": "التحديث والمزامنة",
-  "Advanced": "متقدم",
   "Recommended setup": "الإعداد الموصى به",
   "Code graph": "خريطة الكود",
   "Execution sandbox": "بيئة التنفيذ المعزولة",
@@ -1372,5 +1371,10 @@
   "Off": "مغلق",
   "Not running": "غير مشغّل",
   "Checking…": "جارٍ التحقق…",
-  "Installing…": "جارٍ التثبيت…"
+  "Installing…": "جارٍ التثبيت…",
+  "Step {n} of {total}": "الخطوة {n} من {total}",
+  "Step {n}": "الخطوة {n}",
+  "Open computer panel": "افتح لوحة الحاسوب",
+  "Exit full screen": "خروج من ملء الشاشة",
+  "Full screen": "ملء الشاشة"
 }

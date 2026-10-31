@@ -41,6 +41,7 @@ import { StepTimeline, type TimelineStep } from '@/components/chat/StepTimeline'
 import { SideChatPanel } from '@/components/chat/SideChatPanel';
 import { AttachmentCard, kindFromName, type AttachmentKind } from '@/components/chat/AttachmentCard';
 import { ComputerPanel } from '@/components/computer/ComputerPanel';
+import { ComputerDock } from '@/components/computer/ComputerDock';
 import {
   WorkspacePanel,
   latestWorkspaceDecision,
@@ -802,6 +803,17 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
               </span>
               {running ? t('Working') : wasStoppedByUser ? t('Stopped') : hasResult && hasClockClosed ? t('Task completed') : t('Thinking')}
             </div>
+            {running && !selectedTool && (
+              <ComputerDock
+                sessionId={sessionUid}
+                taskId={taskId ?? null}
+                events={events}
+                onOpen={(ev) => {
+                  setSelectedTool(ev);
+                  setWorkspaceTarget(null);
+                }}
+              />
+            )}
             <MatterComposer />
             <VoiceChatControls voice={voiceChat} />
             <Composer

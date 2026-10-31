@@ -54,8 +54,11 @@ describe('WikiPage', () => {
     });
     render(<WikiPage />);
     expect(await screen.findByText('fixture-wiki')).toBeTruthy();
-    expect(screen.getByText('Overview')).toBeTruthy();
-    expect(screen.getByText('Architecture')).toBeTruthy();
+    // The page auto-selects the first project, so the page title can legitimately
+    // appear in BOTH the sidebar list and the main column (racy single-match
+    // getByText flaked here) — assert at least one of each instead.
+    expect((await screen.findAllByText('Overview')).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Architecture').length).toBeGreaterThanOrEqual(1);
   });
 
   it('opens a page through GET /api/wiki/:project/:slug', async () => {

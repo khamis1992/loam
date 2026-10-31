@@ -81,7 +81,8 @@
   .agent-avatar-dot,
   .agent-avatar-typing,
   .typing-dot,
-  .status-active-dot {
+  .status-active-dot,
+  .dock-thumb-in {
     animation: none;
   }
 }
@@ -98,4 +99,13 @@
   border-radius: 9999px;
   background: var(--status-active);
   animation: status-pulse 1.6s var(--motion-ease-in-out, ease-in-out) infinite;
+}
+
+/* H1: dock thumbnail crossfade — new frame fades in over the previous one */
+@keyframes dock-thumb-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.dock-thumb-in {
+  animation: dock-thumb-in var(--motion-slow) var(--motion-ease-out, ease-out) both;
 }
