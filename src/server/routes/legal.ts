@@ -24,6 +24,7 @@
  *
  * Only this surface (a person at the UI) can change a matter's egress policy.
  */
+import { LIBRARY_FOLDERS, UNVERIFIED_WARNING_AR, UNVERIFIED_WARNING_EN, type LibraryFolder, type QatarLawLibrary } from "../../legal/library.js";
 import type http from "node:http";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -74,6 +75,8 @@ export interface LegalRouteContext {
   buildResponse(input: { matterId: string; sourceText: string }): ReturnType<typeof buildLegalResponse>;
   analyzeDocuments(matterId: string): ReturnType<typeof analyzeDocuments>;
   importDocument(matterId: string, absPath: string): Promise<EvidenceAnalysis>;
+  /** Qatar law research library (unverified, inferred status tags). */
+  library?: QatarLawLibrary;
   now?: () => Date;
 }
 
@@ -152,6 +155,27 @@ export async function handleLegalRoutes(req: http.IncomingMessage, res: http.Ser
       return true;
     }
     if (!ctx.enabled) throw new HttpError(403, "legal mode is disabled in settings");
+
+    // ---- research library (unverified; inferred status tags) --------------
+    if (seg[0] === "library" && method === "GET") {
+      const lib = ctx.library;
+      if (seg.length === 2 && seg[1] === "status") {
+        sendJson(res, 200, { installed: Boolean(lib?.available()), path: lib?.dbPath ?? null, warningAr: UNVERIFIED_WARNING_AR, warningEn: UNVERIFIED_WARNING_EN });
+        return true;
+      }
+      if (seg.length === 2 && seg[1] === "search") {
+        if (!lib?.available()) throw new HttpError(404, "Qatar law library is not installed");
+        const q = (url.searchParams.get("q") ?? "").trim();
+        if (!q) throw new HttpError(400, "q is required");
+        const folder = url.searchParams.get("folder") ?? "";
+        if (folder && !(LIBRARY_FOLDERS as readonly string[]).includes(folder)) throw new HttpError(400, "invalid folder");
+        let hits;
+        try { hits = lib.search(q, { ...(folder ? { folder: folder as LibraryFolder } : {}), limit: Number(url.searchParams.get("limit") ?? 20) }); }
+        catch (e) { throw new HttpError(400, `invalid query: ${(e as Error).message}`); }
+        sendJson(res, 200, { hits, verified: false, warningAr: UNVERIFIED_WARNING_AR, warningEn: UNVERIFIED_WARNING_EN });
+        return true;
+      }
+    }
 
     // ---- corpus -----------------------------------------------------------
     if (seg[0] === "coverage") {
