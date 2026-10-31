@@ -169,6 +169,8 @@
     "check:legal": "npm run typecheck && npm run test:legal && npm --prefix packages/web run typecheck",
     "test:typst": "node --import tsx --test src/typst/__tests__/*.test.ts src/tools/__tests__/typstTools.test.ts",
     "check:typst": "npm run typecheck && npm run test:typst",
+    "test:financial": "node --import tsx --test src/financial/__tests__/*.test.ts src/tools/__tests__/financialTools.test.ts",
+    "check:financial": "npm run typecheck && npm run test:financial",
     "eval:legal": "tsx src/scripts/legal-eval.ts",
     "eval:legal:live": "tsx src/scripts/legal-live-smoke.ts",
     "check:packaged:legal": "node scripts/check-packaged-legal.mjs",
