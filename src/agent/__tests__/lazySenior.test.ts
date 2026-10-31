@@ -6,11 +6,13 @@ import assert from "node:assert";
 import { describe, it } from "node:test";
 
 import {
+  chatCommandPrompt,
   clearSessionLevel,
   isBuildToolset,
   lazySeniorBlock,
   lazyLevelAnnouncement,
   normalizeLazySeniorLevel,
+  parseChatCommand,
   parseLazyCommand,
   resolveLazySeniorLevel,
   setSessionLevel,
@@ -133,5 +135,46 @@ describe("lazyLevelAnnouncement", () => {
     assert.match(text, /الجلسة/);
     const off = lazyLevelAnnouncement("off");
     assert.match(off, /off/);
+  });
+});
+
+describe("parseChatCommand (P3)", () => {
+  it("keeps routing /lazy to the level command", () => {
+    assert.deepEqual(parseChatCommand("/lazy ultra"), { kind: "lazy", level: "ultra" });
+  });
+  it("parses /review with and without a target", () => {
+    assert.deepEqual(parseChatCommand("/review"), { kind: "review", target: undefined });
+    assert.deepEqual(parseChatCommand("/review src/agent/prompt.ts"), { kind: "review", target: "src/agent/prompt.ts" });
+    assert.deepEqual(parseChatCommand("/REVIEW feat/x..main"), { kind: "review", target: "feat/x..main" });
+  });
+  it("parses /audit with and without a target", () => {
+    assert.deepEqual(parseChatCommand("/audit"), { kind: "audit", target: undefined });
+    assert.deepEqual(parseChatCommand("/audit bench/"), { kind: "audit", target: "bench/" });
+  });
+  it("returns null for anything else, including slash-adjacent text", () => {
+    assert.equal(parseChatCommand("/reviewme"), null);
+    assert.equal(parseChatCommand("/auditx y"), null);
+    assert.equal(parseChatCommand("please /review this"), null);
+    assert.equal(parseChatCommand("build me a form"), null);
+  });
+});
+
+describe("chatCommandPrompt (P3)", () => {
+  it("review prompt defaults to the uncommitted changes and carries the report structure", () => {
+    const prompt = chatCommandPrompt({ kind: "review", target: undefined });
+    assert.match(prompt, /uncommitted changes/);
+    assert.match(prompt, /correct, safe, holds under load, tested, fast, lean/);
+    assert.match(prompt, /Must\/Should\/Nice/);
+    assert.match(prompt, /what was not read/);
+  });
+  it("review prompt names an explicit target", () => {
+    assert.match(chatCommandPrompt({ kind: "review", target: "pkg/a.ts" }), /pkg\/a\.ts/);
+  });
+  it("audit prompt enforces read-only and the fix-first + unread structure", () => {
+    const prompt = chatCommandPrompt({ kind: "audit", target: undefined });
+    assert.match(prompt, /strictly read-only/);
+    assert.match(prompt, /fix first:/);
+    assert.match(prompt, /unread list/);
+    assert.match(chatCommandPrompt({ kind: "audit", target: "src/tools" }), /src\/tools/);
   });
 });

@@ -37,7 +37,7 @@ import { SIDE_CHAT_READ_ONLY_TOOLS } from "./agent/sideChat.js";
 import { CODEMODE_TOOL, createCodemodeTool } from "./codemode/index.js";
 import { OllamaEmbedder } from "./memory/embeddings.js";
 import { publishTaskEvent } from "./server/streams.js";
-import { lazyLevelAnnouncement, parseLazyCommand, setSessionLevel } from "./agent/lazySenior.js";
+import { chatCommandPrompt, lazyLevelAnnouncement, parseChatCommand, setSessionLevel } from "./agent/lazySenior.js";
 import { videoStudioRelay } from "./server/videoStudioRelay.js";
 import { formatIssues, scanEncoding } from "./scripts/check-encoding.js";
 import { runAgent } from "./agent/loop.js";
@@ -605,12 +605,35 @@ async function main(): Promise<void> {
       // for the duration of the run, so the badge, the raise endpoint and the
       // run all consult one object and a raise takes effect on the next resume.
       if (missionBudget) sessionRuntime.adoptBudget(task, missionBudget);
+      // lazy-senior (Ponytail BUILD_SPEC P2/P3): run-funnel slash commands.
+      // /lazy <level> is answered inline — it sets this session's
+      // coding-discipline level and closes the run with no model call.
+      // /review and /audit rewrite into their skill-driven procedures; the
+      // audit runs on a read-only ask-mode toolset (mode-catalog enforced).
+      const lazyCommand = parseChatCommand(effectivePrompt);
+      if (lazyCommand?.kind === "lazy") {
+        setSessionLevel(task, lazyCommand.level);
+        const text = lazyLevelAnnouncement(lazyCommand.level);
+        wrappedEmit({ type: "assistant_message", text });
+        const doneEvt = { type: "done" as const, text, steps: 0, model: "loam" };
+        completeTaskRun(task, text, "loam", opts.lease);
+        appendStep(task, { at: new Date().toISOString(), type: doneEvt.type, data: doneEvt });
+        emit(doneEvt);
+        publishTaskEvent(task, doneEvt);
+        recordTelemetry("done", { model: "loam", steps: 0, usage: { promptTokens: 0, completionTokens: 0 } });
+        return { taskId: task, text };
+      }
+      // After the early return above, lazyCommand (when set) is review|audit.
+      const commandPrompt = lazyCommand ? chatCommandPrompt(lazyCommand) : effectivePrompt;
       const agentOpts = {
         cfg: effectiveCfg,
         ollama: runOllama,
         tools: agentTools,
+        // lazy-audit (P3): /audit runs strictly read-only through the mode
+        // catalog's ask toolset instead of the run's full grant.
+        ...(lazyCommand?.kind === "audit" ? { tools: agentTools.forMode("ask") } : {}),
         emit: wrappedEmit,
-        prompt: effectivePrompt,
+        prompt: commandPrompt,
         history,
         memories,
         ...(suffix ? { systemSuffix: suffix } : {}),
@@ -652,22 +675,6 @@ async function main(): Promise<void> {
           },
         } : {}),
       };
-      // lazy-senior (Ponytail BUILD_SPEC P2): `/lazy <level>` is answered at the
-      // run funnel itself — it sets this session's coding-discipline level and
-      // closes the run inline, with no model call and no other run behaviour.
-      const lazyLevel = parseLazyCommand(effectivePrompt);
-      if (lazyLevel) {
-        setSessionLevel(task, lazyLevel);
-        const text = lazyLevelAnnouncement(lazyLevel);
-        wrappedEmit({ type: "assistant_message", text });
-        const doneEvt = { type: "done" as const, text, steps: 0, model: "loam" };
-        completeTaskRun(task, text, "loam", opts.lease);
-        appendStep(task, { at: new Date().toISOString(), type: doneEvt.type, data: doneEvt });
-        emit(doneEvt);
-        publishTaskEvent(task, doneEvt);
-        recordTelemetry("done", { model: "loam", steps: 0, usage: { promptTokens: 0, completionTokens: 0 } });
-        return { taskId: task, text };
-      }
       // Orchestration Core §4.0.3: one Core per run (root span loam.run) for
       // orchestrated runs; plain runAgent runs keep today's behaviour untouched.
       const core = opts.savedRun.orchestrated ? createOrchestrationCore(effectiveCfg, ollama, task, task) : undefined;
