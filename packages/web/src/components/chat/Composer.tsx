@@ -12,6 +12,7 @@ import {
 import {
   ArrowUp, Plus, ShieldCheck, Laptop, FolderGit, Folder, GitBranch, Square, X, ChevronDown,
   Mic, Github, Mail, Calendar, Loader2, Wrench, Plug, Bot, Check, Leaf, FileText,
+  Settings2, Zap,
 } from 'lucide-react';
 import { VoiceIcon } from '@/components/home/VoiceIcon';
 import { useVoiceTranscribe } from '@/components/chat/useVoiceTranscribe';
@@ -24,6 +25,7 @@ import { getApiBase, getApiHeaders } from '@/services/rpc';
 import { fetchProjectBranch, type ProjectOption } from '@/services/projectContextApi';
 import { useRouter } from 'next/navigation';
 import { ModeChip, type ModeChipResolved } from './ModeChip';
+import { getAdvancedOpen, setAdvancedOpen, getComposerPrefs, setComposerPrefs, routeIntentApi } from './composerPrefs';
 import type { TaskMode } from '@shared/socket';
 import {
   EFFORT_OPTIONS,
@@ -122,12 +124,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const [attachError, setAttachError] = useState<string | null>(null);
   const [connectedOAuth, setConnectedOAuth] = useState<string[]>([]);
   // Neo N10: output type and effort are composer controls, both defaulting to
-  // "let the agent decide" so a plain run is unchanged.
+  // "let the agent decide" so a plain run is unchanged. UX-W2: the choices
+  // persist in localStorage so the user sets them once.
+  const prefs = getComposerPrefs();
   const [selectedOutputType, setSelectedOutputType] = useState<OutputType>(
-    normalizeOutputType(outputType) ?? 'auto',
+    normalizeOutputType(outputType) ?? (prefs.outputType as OutputType | undefined) ?? 'auto',
   );
-  const [selectedEffort, setSelectedEffort] = useState<'fast' | 'max' | ''>(normalizeEffort(effort));
-  const [compareModels, setCompareModels] = useState<boolean>(initialCompareModels === true);
+  const [selectedEffort, setSelectedEffort] = useState<'fast' | 'max' | ''>(
+    normalizeEffort(effort) || (prefs.effort as 'fast' | 'max' | undefined) || '',
+  );
+  const [compareModels, setCompareModels] = useState<boolean>(initialCompareModels === true || prefs.compareModels === true);
+  // UX-W2 «صندوق واحد»: the advanced controls fold behind ⚙️ and the default
+  // send routes through the intent router when no explicit mode is picked.
+  const [advancedOpen, setAdvancedOpenState] = useState<boolean>(getAdvancedOpen());
+  const [autoMode, setAutoModeState] = useState<boolean>(prefs.autoMode !== false);
+  const [intentNote, setIntentNote] = useState<string | null>(null);
   // On the home screen there is no session yet, so the chips keep their own state
   // and ride the first message's extData instead of the per-task handlers.
   const [homeApprove, setHomeApprove] = useState(false);
@@ -253,11 +264,24 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     return () => { mounted = false; };
   }, [menuOpen]);
 
-  const submit = async (overrideText?: string) => {
+  const submit = async (overrideText?: string, opts?: { skipIntentRouting?: boolean }) => {
     const outgoing = (overrideText ?? text).trim();
     if (!outgoing && files.length === 0) return;
     const extData: Record<string, unknown> = {};
-    if (selectedLoamMode) extData.loamMode = selectedLoamMode;
+    // UX-W2 «صندوق واحد»: no explicit Loam mode + auto mode on + a typed brief
+    // (preset buttons carry their own explicit intent) → the intent router
+    // picks the mode and we surface its one-line Arabic explanation.
+    let routedMode: string | undefined;
+    if (!overrideText && !opts?.skipIntentRouting && !selectedLoamMode && autoMode && outgoing) {
+      const routed = await routeIntentApi(outgoing);
+      if (routed) {
+        routedMode = routed.mode;
+        setIntentNote(routed.reason);
+        window.setTimeout(() => setIntentNote((current) => (current === routed.reason ? null : current)), 8000);
+      }
+    }
+    const effectiveLoamMode = selectedLoamMode ?? routedMode;
+    if (effectiveLoamMode) extData.loamMode = effectiveLoamMode;
     if (attachedSkills.length > 0) extData.skills = attachedSkills;
     if (attachedConnectors.length > 0) extData.connectors = attachedConnectors;
     if (modelTier) extData.modelTier = modelTier;
@@ -372,6 +396,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         dragOver && 'border-[#0081f2] dark:border-[#1a93fe] bg-[var(--fill-blue)]',
       )}
     >
+      {intentNote && (
+        <div role="status" data-testid="composer-intent-note" className="mb-1 flex items-center gap-2 rounded-control border border-border-light bg-fill-tsp px-3 py-1.5 text-xs text-text-secondary">
+          <Zap className="size-3.5 shrink-0 text-icon-blue" aria-hidden />
+          <span className="min-w-0 flex-1 truncate" dir="rtl">{intentNote}</span>
+          <button type="button" onClick={() => setIntentNote(null)} aria-label={t('Dismiss')} className="text-text-tertiary hover:text-text-primary">
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
       <textarea
         ref={textareaRef}
         value={text}
@@ -758,23 +791,26 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           </span>
         )}
 
+        {advancedOpen && (
         <select
           value={mode}
-          onChange={(e) => setMode(e.target.value as TaskMode)}
+          onChange={(e) => { const next = e.target.value as TaskMode; setMode(next); if (next === 'standard' || next === 'lite' || next === 'max') setComposerPrefs({ tier: next }); }}
           className="h-row-sm rounded-control bg-transparent px-2 text-sm text-text-secondary outline-none"
         >
           <option value="standard">{t('Standard')}</option>
           <option value="lite">{t('Lite')}</option>
           <option value="max">{t('Max')}</option>
         </select>
+        )}
 
         {/* Neo N10: output type narrows the tool set and the routing map; effort
             picks the model tier behind the run. Both default to "decide for me". */}
+        {advancedOpen && (
         <label className="hidden items-center gap-1 text-xs text-text-tertiary sm:flex">
           <span className="sr-only">{t('Output type')}</span>
           <select
             value={selectedOutputType}
-            onChange={(e) => setSelectedOutputType(e.target.value as OutputType)}
+            onChange={(e) => { const next = e.target.value as OutputType; setSelectedOutputType(next); setComposerPrefs({ outputType: next }); }}
             aria-label={t('Output type')}
             title={t('Output type')}
             className="h-row-sm rounded-control bg-transparent px-2 text-sm text-text-secondary outline-none"
@@ -784,12 +820,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             ))}
           </select>
         </label>
+        )}
 
+        {advancedOpen && (
         <label className="hidden items-center gap-1 text-xs text-text-tertiary sm:flex">
           <span className="sr-only">{t('Effort')}</span>
           <select
             value={selectedEffort}
-            onChange={(e) => setSelectedEffort(e.target.value as 'fast' | 'max' | '')}
+            onChange={(e) => { const next = e.target.value as 'fast' | 'max' | ''; setSelectedEffort(next); setComposerPrefs({ effort: next }); }}
             aria-label={t('Effort')}
             title={t('Effort')}
             className="h-row-sm rounded-control bg-transparent px-2 text-sm text-text-secondary outline-none"
@@ -799,11 +837,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             ))}
           </select>
         </label>
+        )}
 
-        {abModels && abModels.length > 1 && (
+        {advancedOpen && abModels && abModels.length > 1 && (
           <button
             type="button"
-            onClick={() => setCompareModels((v) => !v)}
+            onClick={() => { const next = !compareModels; setCompareModels(next); setComposerPrefs({ compareModels: next }); }}
             aria-pressed={compareModels}
             title={t('Compare models (A/B)')}
             className={clsx(
@@ -819,6 +858,37 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             {t('Compare models')}
           </button>
         )}
+
+        {/* UX-W2 «صندوق واحد»: Auto chip (intent routing) + ⚙️ folds the
+            advanced controls. The mode chip stays visible as the indicator. */}
+        <button
+          type="button"
+          onClick={() => { const next = !autoMode; setAutoModeState(next); setComposerPrefs({ autoMode: next }); }}
+          aria-pressed={autoMode}
+          data-testid="composer-auto-mode"
+          title={t('Auto: Loam picks the working mode from your request')}
+          className={clsx(
+            'hidden items-center gap-1 rounded-full border px-2 py-1 text-xs sm:flex',
+            autoMode ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
+          )}
+        >
+          <Zap className="size-3.5" aria-hidden /> {t('Auto')}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { const next = !advancedOpen; setAdvancedOpenState(next); setAdvancedOpen(next); }}
+          aria-expanded={advancedOpen}
+          aria-label={t('Advanced options')}
+          title={t('Advanced options')}
+          data-testid="composer-advanced-toggle"
+          className={clsx(
+            'hidden h-8 w-8 items-center justify-center rounded-full border transition-colors sm:flex',
+            advancedOpen ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
+          )}
+        >
+          <Settings2 className="size-4" />
+        </button>
 
         <ModeChip
           resolved={resolvedLoamMode}

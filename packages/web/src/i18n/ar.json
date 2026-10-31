@@ -589,7 +589,7 @@
   "Couldn't add {name}": "تعذر إضافة {name}",
   "Unknown author": "مؤلف غير معروف",
   "Contributor": "مساهم",
-  "Dismiss": "إغلاق",
+  "Dismiss": "إخفاء",
   "{count} adds": "{count} إضافة",
   "by {author}": "بواسطة {author}",
   "By {author}": "بواسطة {author}",
@@ -1345,5 +1345,7 @@
   "Speaking": "يتحدث الآن",
   "Transferred to {name}": "تم التسليم إلى {name}",
   "Compare branches": "مقارنة الفروع",
-  "Compare branches estimate": "تقدير مقارنة الفروع"
+  "Compare branches estimate": "تقدير مقارنة الفروع",
+  "Advanced options": "خيارات متقدمة",
+  "Auto: Loam picks the working mode from your request": "تلقائي: يختار لُوام نمط العمل من طلبك"
 }

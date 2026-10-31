@@ -1345,5 +1345,7 @@
   "Speaking": "Speaking",
   "Transferred to {name}": "Transferred to {name}",
   "Compare branches": "Compare branches",
-  "Compare branches estimate": "Compare branches estimate"
+  "Compare branches estimate": "Compare branches estimate",
+  "Advanced options": "Advanced options",
+  "Auto: Loam picks the working mode from your request": "Auto: Loam picks the working mode from your request"
 }
