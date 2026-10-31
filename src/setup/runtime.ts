@@ -89,6 +89,7 @@ import { redTools } from "../tools/red.js";
 import { createMobileSecurityTools } from "../tools/mobileSecurity.js";
 import { createBudgetTools } from "../tools/budgetTools.js";
 import { createThreatModelTools } from "../tools/threatModelTools.js";
+import { createTypstTools } from "../tools/typstTools.js";
 import { createCoverageTools } from "../tools/coverageTools.js";
 import { createProxyTools } from "../tools/proxy.js";
 
@@ -142,6 +143,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createMobileSecurityTools());
   registry.registerAll(createBudgetTools());
   registry.registerAll(createThreatModelTools());
+  registry.registerAll(createTypstTools());
   registry.registerAll(createCoverageTools());
   registry.registerAll(createProxyTools());
   registry.registerAll(createReTools());
