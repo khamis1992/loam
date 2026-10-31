@@ -122,5 +122,5 @@ export function lazySeniorBlock(level: LazySeniorLevel, toolNames: readonly stri
 
 /** One-line end-of-prompt reminder (recency cue) for runs that got the block. */
 export function lazySeniorTail(level: LazySeniorLevel): string {
-  return "lazy-senior (" + level + ") pre-finish: callers updated; the change's test written; then the reply MUST end with this exact one-line format — Skipped: <what was left out>. Risk: <what that costs, and when to upgrade>.";
+  return "lazy-senior (" + level + ") pre-finish: callers updated; the change's test written; then the reply MUST end with this exact one-line format — Skipped: <what was left out>. Risk: <what that costs, and when to upgrade>. If the skip is a known limit, write that line as shortcut: <limit>, <when to upgrade>.";
 }
