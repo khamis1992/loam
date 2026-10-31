@@ -19,6 +19,8 @@ export interface ModelCallOptions {
   notify?: (message: string) => void;
   /** Enable thinking mode for local models (default: false for Ollama). */
   think?: boolean;
+  /** Mark the system prefix as a provider cache breakpoint (see ChatOptions). */
+  cacheControl?: boolean;
 }
 
 export function candidateModels(cfg: Config, preferred?: string): string[] {
@@ -51,6 +53,7 @@ export async function chatWithFallback(opts: ModelCallOptions): Promise<ChatResu
         ...(opts.signal ? { signal: opts.signal } : {}),
         ...(opts.onToken ? { onToken: opts.onToken } : {}),
         think: opts.think ?? false,
+        ...(opts.cacheControl ? { cacheControl: true } : {}),
       });
       
       // If thinking mode returned empty content due to length limit, retry without thinking
@@ -65,6 +68,7 @@ export async function chatWithFallback(opts: ModelCallOptions): Promise<ChatResu
           ...(opts.signal ? { signal: opts.signal } : {}),
           ...(opts.onToken ? { onToken: opts.onToken } : {}),
           think: false,
+          ...(opts.cacheControl ? { cacheControl: true } : {}),
         });
         log.info("model_request", { ...attempt, phase: "complete", elapsedMs: Math.round(performance.now() - started), providerDurationMs: retryResult.usage.durationMs, promptTokens: retryResult.usage.promptTokens, completionTokens: retryResult.usage.completionTokens, toolCallCount: retryResult.toolCalls.length });
         return retryResult;

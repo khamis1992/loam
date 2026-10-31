@@ -86,6 +86,10 @@ import { setWorkspaceMutationObserver } from "../codegraph/mutations.js";
 import { createUnboundCodemodeTool } from "../codemode/tool.js";
 import { redTools } from "../tools/red.js";
 import { createMobileSecurityTools } from "../tools/mobileSecurity.js";
+import { createBudgetTools } from "../tools/budgetTools.js";
+import { createThreatModelTools } from "../tools/threatModelTools.js";
+import { createCoverageTools } from "../tools/coverageTools.js";
+import { createProxyTools } from "../tools/proxy.js";
 
 export interface Runtime {
   cfg: Config;
@@ -135,6 +139,10 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   registry.registerAll(createSecurityAuditTools({ cfg, ollama, tools: registry }));
   registry.registerAll(createSecurityScanTools({ ollama }));
   registry.registerAll(createMobileSecurityTools());
+  registry.registerAll(createBudgetTools());
+  registry.registerAll(createThreatModelTools());
+  registry.registerAll(createCoverageTools());
+  registry.registerAll(createProxyTools());
   registry.registerAll(createReTools());
   registry.registerAll(createFuzzTools());
   registry.registerAll(createRemediateTools());

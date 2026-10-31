@@ -10,6 +10,7 @@ import assert from "node:assert";
 import { describe, it } from "node:test";
 
 import { createComputeBudget, totalTokens, type ComputeBudget } from "../computeBudget.js";
+import { clearBudgetPause, isBudgetPaused, pauseBudget, resumeBudget } from "../budgetPause.js";
 import { runAgent } from "../loop.js";
 import { loadConfig } from "../../config.js";
 import { ToolRegistry } from "../../tools/registry.js";
@@ -187,5 +188,30 @@ describe("runAgent compute budget (linear path)", () => {
     });
     assert.match(error ?? "", /Compute budget exhausted/);
     assert.equal(events.filter((e) => e.type === "done").length, 0, "the task is not completed");
+  });
+
+  it("parks on a pause and continues after the resume", async () => {
+    const script = scriptedWorker();
+    const budget = createComputeBudget({ stepLimit: 10, tokenLimit: 10_000 });
+    const events: AgentEvent[] = [];
+    const taskId = "task-loop-pause";
+    pauseBudget(taskId, "operator hold");
+    setTimeout(() => resumeBudget(taskId), 20);
+    await runAgent({
+      cfg: fixtureCfg(),
+      ollama: script.ollama,
+      tools: fixtureTools(),
+      prompt: "Scripted task",
+      taskId,
+      emit: (e: AgentEvent) => events.push(e),
+      budget,
+      maxSteps: 10,
+      suppressFinal: true,
+    });
+    assert.equal(script.calls, 2, "the paused run still completes both steps");
+    assert.equal(events.some((e) => e.type === "budget_paused"), true);
+    assert.equal(events.some((e) => e.type === "budget_resumed"), true);
+    assert.equal(isBudgetPaused(taskId), false);
+    clearBudgetPause(taskId);
   });
 });

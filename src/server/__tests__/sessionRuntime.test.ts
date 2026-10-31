@@ -252,6 +252,19 @@ describe("session runtime (budget + sleep together)", () => {
       assert.equal(good.json.raised, true);
     });
 
+    it("pauses and resumes the budget policy over HTTP", async () => {
+      const paused = await request(server, "POST", "/api/sessions/s-pause/budget-pause", { reason: "operator hold" });
+      assert.equal(paused.status, 200);
+      assert.equal((paused.json.pause as { paused: boolean }).paused, true);
+      const state = await request(server, "GET", "/api/sessions/s-pause/runtime");
+      assert.equal((state.json.pause as { reason: string }).reason, "operator hold");
+
+      const resumed = await request(server, "POST", "/api/sessions/s-pause/budget-resume");
+      assert.equal(resumed.status, 200);
+      assert.equal(resumed.json.resumed, true);
+      assert.equal((resumed.json.pause as { paused: boolean }).paused, false);
+    });
+
     it("does not handle unrelated paths", async () => {
       const res = await rawRequest(server, "GET", "/api/tasks");
       assert.equal(res.status, 404);
