@@ -18,6 +18,8 @@ export interface LegalConfig {
   /** Override DB locations (tests, portable installs). Default <DATA_DIR>/legal/. */
   corpusPath?: string;
   mattersPath?: string;
+  /** Qatar law research library (search.db + Markdown). Default <DATA_DIR>/legal/library. */
+  libraryPath?: string;
 }
 
 export const DEFAULT_LEGAL_CONFIG: LegalConfig = {
@@ -42,5 +44,6 @@ export function normalizeLegalConfig(raw: unknown): LegalConfig {
     retentionDays: typeof r.retentionDays === "number" && r.retentionDays > 0 ? Math.floor(r.retentionDays) : null,
     ...(typeof r.corpusPath === "string" && r.corpusPath ? { corpusPath: r.corpusPath } : {}),
     ...(typeof r.mattersPath === "string" && r.mattersPath ? { mattersPath: r.mattersPath } : {}),
+    ...(typeof r.libraryPath === "string" && r.libraryPath.trim() ? { libraryPath: r.libraryPath.trim() } : {}),
   };
 }
