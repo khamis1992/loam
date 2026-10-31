@@ -59,6 +59,8 @@ import { createDocsLookupTools } from "../tools/docsLookup.js";
 import { createSemanticSearchTools } from "../tools/semanticSearch.js";
 import { createKnowledgeTools, createTaskFilesIngestTool, type KnowledgeToolOptions } from "../tools/knowledge.js";
 import { createLegalTools } from "../tools/legalTools.js";
+import { createQatarLibraryTools } from "../tools/qatarLibraryTools.js";
+import { QatarLawLibrary, defaultLibraryPath } from "../legal/library.js";
 import { normalizeLegalConfig } from "../legal/config.js";
 import { requestMattersKey, parentPortOf } from "../legal/keyHandoff.js";
 import { createLegalRuntime, type LegalRuntime } from "../legal/runtime.js";
@@ -255,6 +257,7 @@ export async function buildRuntime(cfg: Config, opts: { mcp?: boolean } = {}): P
   if (legal) {
     configureLegalProtection({ seal: legal.seal, open: legal.open });
     registry.registerAll(createLegalTools(legal.toolDeps));
+    registry.registerAll(createQatarLibraryTools(new QatarLawLibrary(legalConfig.libraryPath ?? defaultLibraryPath(DATA_DIR))));
     if (!requestMattersKey(parentPortOf(process))) log.warn("legal: no Electron parent port; matters stay locked");
   }
   // N12 generator tools: media/search providers from the environment plus the

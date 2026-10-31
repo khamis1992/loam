@@ -48,7 +48,7 @@ const GEN_RESEARCH = ["search_images", "search_x", "solve_logic"];
  *  first-class inside `automate` when the pinned cua-driver server is configured. */
 const CUA_DRIVER = CUA_DRIVER_TOOL_ALLOWLIST.map((tool) => `mcp__cua-driver__${tool}`);
 /** Legal mode (Qatar): verified-corpus research, cite-check, contract review. */
-const LEGAL = ["legal_search", "legal_article", "legal_cite_check", "legal_memo_check", "contract_import", "contract_clauses", "contract_review", "contract_redline"];
+const LEGAL = ["legal_search", "legal_article", "legal_cite_check", "legal_memo_check", "contract_import", "contract_clauses", "contract_review", "contract_redline", "qatar_library_search", "qatar_library_doc"];
 /** Control tools minus the project wiki writer: client facts must not land in the plaintext wiki. */
 const LEGAL_CONTROL = CONTROL.filter((name) => name !== "wiki_write" && name !== "context_recall");
 
