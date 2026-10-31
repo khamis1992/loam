@@ -64,6 +64,12 @@ async function main() {
       "pdfjs-dist",
       "tesseract.js",
       "tesseract.js-core",
+      // typst NAPI engine (blueprint gap 2): the platform package ships a
+      // native .node binary that esbuild cannot bundle — keep both the wrapper
+      // and the platform binding external like the other native modules above;
+      // electron-builder packs them from dependencies and auto-unpacks .node.
+      "@myriaddreamin/typst-ts-node-compiler",
+      "@myriaddreamin/typst-ts-node-compiler-win32-x64-msvc",
     ],
     plugins: [inlineFlows],
     metafile: false,
