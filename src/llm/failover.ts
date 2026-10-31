@@ -14,7 +14,7 @@ import { CancelledError, isCancelledError } from "../server/runControl.js";
  *  var holding the key — never the key itself. */
 export interface FailoverProvider {
   id: string;
-  kind: "ollama" | "openai-compatible";
+  kind: "ollama" | "openai-compatible" | "anthropic" | "google-gemini";
   baseUrl: string;
   model: string;
   apiKeyEnv: string;
