@@ -1423,5 +1423,8 @@
   "Revenue growth": "Revenue growth",
   "Sample DCF PDF (Typst)": "Sample DCF PDF (Typst)",
   "PDF report downloaded.": "PDF report downloaded.",
-  "Finance": "Finance"
+  "Finance": "Finance",
+  "Last modified {time}": "Last modified {time}",
+  "Open in editor": "Open in editor",
+  "Close panel": "Close panel"
 }
