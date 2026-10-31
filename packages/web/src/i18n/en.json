@@ -1347,5 +1347,13 @@
   "Compare branches": "Compare branches",
   "Compare branches estimate": "Compare branches estimate",
   "Advanced options": "Advanced options",
-  "Auto: Loam picks the working mode from your request": "Auto: Loam picks the working mode from your request"
+  "Auto: Loam picks the working mode from your request": "Auto: Loam picks the working mode from your request",
+  "No editor for this file type yet.": "No editor for this file type yet.",
+  "Loam can open many file types; this one can only be downloaded for now.": "Loam can open many file types; this one can only be downloaded for now.",
+  "Type: {type}": "Type: {type}",
+  "Unknown": "Unknown",
+  "Download file": "Download file",
+  "Open with": "Open with",
+  "Automatic": "Automatic",
+  "Loam Craft": "Loam Craft"
 }

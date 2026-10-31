@@ -1347,5 +1347,13 @@
   "Compare branches": "مقارنة الفروع",
   "Compare branches estimate": "تقدير مقارنة الفروع",
   "Advanced options": "خيارات متقدمة",
-  "Auto: Loam picks the working mode from your request": "تلقائي: يختار لُوام نمط العمل من طلبك"
+  "Auto: Loam picks the working mode from your request": "تلقائي: يختار لُوام نمط العمل من طلبك",
+  "No editor for this file type yet.": "لا يوجد محرر لهذا النوع بعد",
+  "Loam can open many file types; this one can only be downloaded for now.": "يمكن لـ {product} فتح أنواع كثيرة من الملفات؛ هذا النوع متاح للتنزيل فقط حاليًا.",
+  "Type: {type}": "النوع: {type}",
+  "Unknown": "غير معروف",
+  "Download file": "تنزيل الملف",
+  "Open with": "فتح بواسطة",
+  "Automatic": "تلقائي",
+  "Loam Craft": "لوم كرافت"
 }

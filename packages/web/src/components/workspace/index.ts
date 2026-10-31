@@ -19,10 +19,16 @@ export {
   getEditorForKind,
   getEditorForPath,
   listEditors,
+  listEditorsForPath,
+  getEditorOverride,
+  setEditorOverride,
+  EDITOR_OVERRIDE_PREFIX,
   extensionOf,
   subscribeWorkspaceEditors,
   workspaceEditorsVersion,
 } from './registry';
+export { EditorFallbackCard, EditorOverrideMenu, editorLabel } from './gateway';
+export type { GatewayFile } from './gateway';
 export {
   decideWorkspaceOpen,
   decideUserMessageOpen,
