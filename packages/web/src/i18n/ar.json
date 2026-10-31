@@ -565,7 +565,7 @@
   "Sheets and research": "جداول البيانات والبحث",
   "Security scans and automations": "فحوصات الأمان والأتمتة",
   "Slides, docs, images, and videos": "شرائح، ومستندات، وصور، وفيديوهات",
-  "Marketplace": "المتجر",
+  "Marketplace": "السوق",
   "Works with Loam": "يعمل مع Loam",
   "The Loam bot directory": "دليل بوتات Loam",
   "Bots that get stuff done. Add one with a single click.": "بوتات تنجز المهام. أضف واحدًا بنقرة واحدة.",
@@ -611,7 +611,7 @@
   "Bot listings from botdirectory.ai are MIT licensed (Copyright (c) 2026 Inbox Zero Inc.); each prompt stays credited to its contributor.": "قوائم البوتات من botdirectory.ai مرخصة بموجب MIT (حقوق النشر (c) 2026 Inbox Zero Inc.)؛ تبقى كل تعليمات منسوبة إلى مساهمها.",
   "Internal build only: x.ai marketplace content ships with this personal build and is not licensed for redistribution.": "النسخة الداخلية فقط: محتوى سوق x.ai يُشحن مع هذا الإصدار الشخصي وغير مرخص لإعادة توزيعه.",
   "x.ai marketplace entries link back to their original listing and are all rights reserved; Loam never rehosts their prompts.": "إدخالات سوق x.ai ترتبط بقائمتها الأصلية وجميع الحقوق محفوظة؛ Loam لا يعيد نشر تعليماتها أبدًا.",
-  "Board": "لوحة التذاكر",
+  "Board": "لوحة المهام",
   "New ticket": "تذكرة جديدة",
   "To do": "للتنفيذ",
   "Doing": "جارٍ التنفيذ",
@@ -1342,5 +1342,8 @@
   "Filter this task's files into the Knowledge Garden, then answer from my files only": "فلترة ملفات هذه المهمة في حديقة المعرفة ثم الإجابة من ملفاتي فقط",
   "Talk": "تحدث",
   "Auto-speak replies": "تشغيل/إيقاف الصوت الآلي",
-  "Speaking": "يتحدث الآن"
+  "Speaking": "يتحدث الآن",
+  "Transferred to {name}": "تم التسليم إلى {name}",
+  "Compare branches": "مقارنة الفروع",
+  "Compare branches estimate": "تقدير مقارنة الفروع"
 }

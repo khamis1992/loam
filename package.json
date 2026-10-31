@@ -191,6 +191,7 @@
     "audit:dev": "npm audit --audit-level=high",
     "check:installer": "node scripts/check-windows-installer.mjs",
     "check:app-updater": "node scripts/check-app-updater.mjs",
+    "check:ui-numbers": "node scripts/check-ui-numbers.mjs",
     "publish:release": "node scripts/publish-release.mjs",
     "stt": "python scripts/stt_server.py",
     "check:companions-voice": "node --import tsx src/scripts/check-voice-accuracy.ts",

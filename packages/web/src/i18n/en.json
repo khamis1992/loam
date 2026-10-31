@@ -1342,5 +1342,8 @@
   "Filter this task's files into the Knowledge Garden, then answer from my files only": "Filter this task's files into the Knowledge Garden, then answer from my files only",
   "Talk": "Talk",
   "Auto-speak replies": "Auto-speak replies",
-  "Speaking": "Speaking"
+  "Speaking": "Speaking",
+  "Transferred to {name}": "Transferred to {name}",
+  "Compare branches": "Compare branches",
+  "Compare branches estimate": "Compare branches estimate"
 }

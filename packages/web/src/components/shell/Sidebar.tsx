@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect, useRef, type ComponentType } from 'react'
 import { useRouter, usePathname } from 'next/navigation';
 import {
   SquarePen, Monitor, Search, BookOpen, Layers, Workflow, LayoutGrid, MoreHorizontal,
-  ChevronRight, Share2, MonitorSmartphone, Clapperboard, Palette,
+  ChevronRight, Share2, MonitorSmartphone, Clapperboard, Palette, Store, KanbanSquare,
 } from 'lucide-react';
 import { useAppSelector, useAppDispatch, toggleSidebar } from '@/store';
 import { selectSession, startNewTask, loadSessions, type AgentSession } from '@/store/sessionsSlice';
@@ -48,10 +48,12 @@ export function Sidebar() {
     { id: 'search', label: t('Search'), icon: Search, shortcut: t('Ctrl+K'), onClick: 'search' },
     { id: 'library', label: t('Library'), icon: BookOpen, href: '/app/library' },
     { id: 'creations', label: t('Creations'), icon: Layers, href: '/app/creations' },
+    { id: 'board', label: t('Board'), icon: KanbanSquare, href: '/app/board' },
     { id: 'wiki', label: t('Wiki'), icon: BookOpen, href: '/app/wiki' },
     { id: 'studio', label: t('Studio'), icon: Palette, href: '/app/studio' },
     { id: 'automations', label: t('Automations'), icon: Workflow, href: '/app/automations' },
     { id: 'plugins', label: t('Plugins'), icon: LayoutGrid, href: '/app/plugins' },
+    { id: 'marketplace', label: t('Marketplace'), icon: Store, href: '/app/marketplace' },
     { id: 'video', label: t('Video'), icon: Clapperboard, href: '/app/video' },
     { id: 'more', label: t('More'), icon: MoreHorizontal, href: '/app/more' },
   ];

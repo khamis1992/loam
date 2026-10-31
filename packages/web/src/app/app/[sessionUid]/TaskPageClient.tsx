@@ -453,7 +453,7 @@ export default function TaskPageClient(_props: { params: Promise<{ sessionUid: s
       try {
         await startRun(appProject.id, text, 'quick', { branches: raceBranchCount as 2 | 3 | 4 });
       } catch (err) {
-        dispatch(setError({ sessionId: sessionUid, error: err instanceof Error ? err.message : 'فشل إرسال السباق' }));
+        dispatch(setError({ sessionId: sessionUid, error: err instanceof Error ? err.message : 'فشل إرسال مقارنة الفروع' }));
       }
       void runtime.refresh();
       return;

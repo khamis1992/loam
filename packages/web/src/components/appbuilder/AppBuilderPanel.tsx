@@ -122,7 +122,7 @@ export function AppBuilderPanel() {
           <div className="flex flex-col gap-1 border-t border-black/10 pt-2 dark:border-white/10">
             <div className="flex items-center gap-2">
               <GitBranch className="size-3.5" aria-hidden />
-              <span>تقدير السباق</span>
+              <span>تقدير مقارنة الفروع</span>
               <select
                 value={estimateBranches}
                 onChange={(e) => dispatch(setEstimateBranches(Number(e.target.value) as 2 | 3 | 4))}
@@ -136,7 +136,7 @@ export function AppBuilderPanel() {
             </div>
             {estimate ? (
               <p className="opacity-80">
-                السباق: نحو +{estimate.extraCredits} رصيد (بحد أقصى {estimate.maxTotalCredits} إجمالًا)
+                مقارنة الفروع: نحو +{estimate.extraCredits} رصيد (بحد أقصى {estimate.maxTotalCredits} إجمالًا)
                 <span className="opacity-60"> · {estimate.basis === 'history' ? `من ${estimate.sampleRuns} تشغيلات سابقة` : 'بدون سجل سابق'}</span>
               </p>
             ) : (

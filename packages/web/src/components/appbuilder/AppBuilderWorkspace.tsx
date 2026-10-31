@@ -29,7 +29,7 @@ const TABS: Array<{ id: Tab; icon: typeof AppWindow; ar: string }> = [
   { id: 'code', icon: FileCode2, ar: 'الكود' },
   { id: 'versions', icon: History, ar: 'الإصدارات' },
   { id: 'queue', icon: ListOrdered, ar: 'الطابور' },
-  { id: 'race', icon: GitBranch, ar: 'السباق' },
+  { id: 'race', icon: GitBranch, ar: 'مقارنة الفروع' },
   { id: 'usage', icon: Gauge, ar: 'الاستخدام' },
   { id: 'ai', icon: Bot, ar: 'الذكاء' },
 ];
@@ -98,7 +98,7 @@ export function AppBuilderWorkspace({ projectId, onClose }: { projectId: string;
         {tab === 'queue' && queue && <QueueTab queue={queue} onChanged={reloadCore} />}
         {tab === 'race' && (
           <div className={box}>
-            <p className="flex items-center gap-1 font-semibold"><GitBranch className="size-3.5" aria-hidden /> {t('Race estimate')}</p>
+            <p className="flex items-center gap-1 font-semibold"><GitBranch className="size-3.5" aria-hidden /> {t('Compare branches estimate')}</p>
             <label className="flex items-center gap-2">
               عدد الفروع
               <select value={branches} onChange={(e) => setBranches(Number(e.target.value) as 2 | 3 | 4)} className="rounded border border-border-main bg-transparent px-1 py-0.5">
@@ -109,11 +109,11 @@ export function AppBuilderWorkspace({ projectId, onClose }: { projectId: string;
             </label>
             {estimate ? (
               <p className="text-text-secondary">
-                السباق: نحو +{estimate.extraCredits} رصيد (بحد أقصى {estimate.maxTotalCredits} إجمالًا)
+                مقارنة الفروع: نحو +{estimate.extraCredits} رصيد (بحد أقصى {estimate.maxTotalCredits} إجمالًا)
                 {' · '}{estimate.basis === 'history' ? `من ${estimate.sampleRuns} تشغيلات سابقة` : 'بدون سجل سابق'}
               </p>
             ) : <p className="text-text-tertiary">جارٍ الحساب…</p>}
-            <p className="text-text-tertiary">تشغيل السباق الفعلي ينتظر محرك التشغيل متعدد الوكلاء.</p>
+            <p className="text-text-tertiary">تشغيل مقارنة الفروع الفعلي ينتظر محرك التشغيل متعدد الوكلاء.</p>
           </div>
         )}
         {tab === 'usage' && project && <UsageTab projectId={project.id} />}

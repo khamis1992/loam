@@ -734,7 +734,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 race.active ? 'border-icon-blue bg-fill-tsp text-icon-blue' : 'border-border-main text-text-secondary hover:bg-fill-hover',
               )}
             >
-              <GitBranch className="size-3.5" aria-hidden /> {t('Race')}
+              <GitBranch className="size-3.5" aria-hidden /> {t('Compare branches')}
             </button>
             {race.active && (
               <span className="absolute top-full z-20 mt-1 flex items-center gap-2 rounded-card border border-border-main bg-bg-menu p-2 text-[11px] shadow-lg" data-testid="appbuilder-race-popover">
@@ -750,7 +750,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 </select>
                 <span className="text-text-secondary" dir="rtl">
                   {race.extraCredits !== undefined
-                    ? `السباق: نحو +${race.extraCredits} رصيد${race.maxTotalCredits !== undefined ? ` (بحد أقصى ${race.maxTotalCredits} إجمالًا)` : ''}`
+                    ? `مقارنة الفروع: نحو +${race.extraCredits} رصيد${race.maxTotalCredits !== undefined ? ` (بحد أقصى ${race.maxTotalCredits} إجمالًا)` : ''}`
                     : 'جارٍ حساب التقدير…'}
                 </span>
               </span>
