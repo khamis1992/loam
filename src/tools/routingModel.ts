@@ -48,6 +48,8 @@ export interface RoutingCallOptions {
   notify?: (message: string) => void;
   /** Enable thinking mode for local models (default: false for Ollama). */
   think?: boolean;
+  /** Mark the system prefix as a provider cache breakpoint. */
+  cacheControl?: boolean;
 }
 
 /**
@@ -92,6 +94,7 @@ export async function chatWithRouting(options: RoutingCallOptions): Promise<Chat
       ...(options.onToken ? { onToken: options.onToken } : {}),
       notify: options.notify,
       think: options.think,
+      ...(options.cacheControl ? { cacheControl: true } : {}),
     });
   }
 
@@ -106,6 +109,7 @@ export async function chatWithRouting(options: RoutingCallOptions): Promise<Chat
       ...(options.signal ? { signal: options.signal } : {}),
       ...(options.onToken ? { onToken: options.onToken } : {}),
       think: options.think ?? false,
+      ...(options.cacheControl ? { cacheControl: true } : {}),
     },
     store: options.store,
     env,

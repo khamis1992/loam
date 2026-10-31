@@ -47,6 +47,7 @@ import {
   createUnlimitedBudget,
   type ComputeBudget,
 } from "./computeBudget.js";
+import { budgetPauseReason, clearBudgetPause, isBudgetPaused, waitForBudgetResume } from "./budgetPause.js";
 import { estimateCostUsd } from "./insights.js";
 import { budgetStoppedCheckpoint, budgetSummary, resumeStep, type MissionCheckpoint } from "./mission.js";
 import { fileTouchRegistry, forgetFileTouchSession } from "../tools/fileTouch.js";
@@ -205,6 +206,9 @@ export interface RunOptions {
   /** Provider label used for prompt-cache classification (`openai-api` for
    *  cloud routes, `ollama` for the local endpoint). Defaults to `ollama`. */
   provider?: string;
+  /** Force provider cache breakpoints on the stable system prefix. Defaults to
+   *  on for anthropic routes, off elsewhere. */
+  cacheControl?: boolean;
   /** Expected prompt-cache retention in seconds, when known. */
   cacheTtlSecs?: number;
   /** Whether `cacheTtlSecs` is only an estimate (never treated as hard expiry). */
@@ -420,6 +424,9 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     return await runAgentInner(opts, sessionId);
   } finally {
     forgetFileTouchSession(sessionId);
+    // A parked run that ends (finished or cancelled) has no waiter left, so its
+    // pause state must not outlive it and trap the next run of the same task.
+    if (opts.taskId) clearBudgetPause(opts.taskId);
   }
 }
 
@@ -652,6 +659,16 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       opts.emit({ type: "error", message: msg });
       throw new Error(msg);
     }
+    // Budget pause policy: a stop always wins (handled above); a pause parks the
+    // run at this boundary and keeps the transcript. The epoch-safe wait means a
+    // resume that lands before we start waiting is not lost.
+    if (opts.taskId && isBudgetPaused(opts.taskId)) {
+      const reason = budgetPauseReason(opts.taskId) ?? "paused";
+      opts.emit({ type: "budget_paused", taskId: opts.taskId, reason });
+      await waitForBudgetResume(opts.taskId, opts.signal);
+      throwIfCancelled(opts.signal, opts.taskId);
+      opts.emit({ type: "budget_resumed", taskId: opts.taskId, epoch: 0, raised: Boolean(opts.budget?.raised) });
+    }
     if (opts.budget) consumeSteps(opts.budget, 1);
     // O6: a step boundary is the safe place to pick up messages that arrived
     // while the previous step (or the whole run) was busy.
@@ -743,6 +760,10 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       ...(opts.cacheTtlIsEstimate !== undefined ? { ttlIsEstimate: opts.cacheTtlIsEstimate } : {}),
     };
     cacheMonitor.beginRequest(route, requestSignature(routingSystem, requestTools, messages));
+    // Prompt caching: mark the stable system prefix as a cache breakpoint on the
+    // routes that support block-level cache control. The prefix is byte-stable
+    // across turns and siblings, which is exactly what the provider cache needs.
+    const cacheControl = Boolean(opts.cacheControl) || /claude|anthropic/i.test(usedModel) || /anthropic/i.test(opts.provider ?? "");
 
     // Determine if thinking mode should be enabled for local Ollama models.
     // Default: think=false. Escalate to think=true for hard tasks:
@@ -763,6 +784,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
       tools: requestTools,
       temperature: opts.cfg.agent.temperature,
       think: shouldThink,
+      ...(cacheControl ? { cacheControl: true } : {}),
       // An explicit per-run model (the quick-edit route) wins over the config
       // default; the router still replaces it with the strongest coder on a
       // coding turn.
@@ -792,6 +814,7 @@ async function runAgentInner(opts: RunOptions, sessionId: string): Promise<RunRe
           timeoutMs: opts.cfg.agent.requestTimeoutMs,
           ...(opts.signal ? { signal: opts.signal } : {}),
           ...(opts.model && opts.model.trim() ? { model: opts.model.trim() } : {}),
+          ...(cacheControl ? { cacheControl } : {}),
           ...(outputType !== "auto" ? { outputType } : {}),
           ...(effortLevel ? { effort: effortLevel } : {}),
           ...(routingTool ? { tool: routingTool } : {}),

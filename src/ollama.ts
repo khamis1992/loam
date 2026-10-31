@@ -51,6 +51,10 @@ export interface ChatOptions {
   format?: Record<string, unknown>;
   /** Enable thinking mode for local models (Qwen etc.). */
   think?: boolean;
+  /** Mark the stable system prefix as a provider cache breakpoint (Anthropic
+   *  style `cache_control`). Only the cloud path emits it; providers that do
+   *  not understand the field ignore it. */
+  cacheControl?: boolean;
   /** Context window size for local models. */
   numCtx?: number;
   /** Max prediction tokens for local models. */
@@ -250,6 +254,15 @@ export class OllamaClient {
             { type: "text", text: m.content },
             ...m.images.map((image) => ({ type: "image_url", image_url: { url: `data:image/png;base64,${image}` } })),
           ],
+        };
+      }
+      // Prompt caching: the system message is the stable prefix of every run, so
+      // it is the one breakpoint worth marking. Providers without block content
+      // (plain OpenAI) accept `cache_control` on a text block or ignore it.
+      if (opts.cacheControl && m.role === "system") {
+        return {
+          role: m.role,
+          content: [{ type: "text", text: m.content, cache_control: { type: "ephemeral" } }],
         };
       }
       return { role: m.role, content: m.content };

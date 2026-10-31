@@ -954,6 +954,11 @@ export class RunGraph {
           parent: state.lastId,
         }).id];
       }
+      case "budget_paused":
+      case "budget_resumed":
+        // The pause is a task state, not a canvas node: the run keeps its
+        // transcript and the next step simply does not start while parked.
+        return [];
       default: {
         // Orchestration Core events (§4.0.4) are additive union members with no
         // run-graph node; fall through to the exhaustive check for the rest.
