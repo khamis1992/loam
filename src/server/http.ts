@@ -5,6 +5,7 @@ import { handleApiAnythingRoute } from "./apiAnythingRoutes.js";
 import { handleWorkflowRoutes, handleWorkflowRunRoutes, type WorkflowRouteDeps } from "./routes/workflows.js";
 import { handleTracesRoutes } from "./routes/traces.js";
 import { getBalance } from "./credits.js";
+import { computeTaskMetrics } from "./taskMetrics.js";
 import { handleCheckpointRoutes } from "./routes/checkpoints.js";
 import { handleInterruptRoutes } from "./routes/interrupts.js";
 import { createRunResume } from "./runResume.js";
@@ -123,6 +124,7 @@ import { handleDesignStudioRoutes } from "./routes/designStudio.js";
 import { handleSchedulesRoutes } from "./routes/schedules.js";
 import { handleAutomationsRoutes } from "./routes/automations.js";
 import { handleAppBuilderRoutes } from "./routes/appBuilder.js";
+import { handleModelRegistryRoutes } from "./routes/modelRegistry.js";
 import { handleBoardRoutes } from "./routes/board.js";
 import { handleAgentThreadRoutes } from "./routes/agentThreads.js";
 import { handleWorkspaceVideoRoutes } from "./routes/workspaceVideo.js";
@@ -515,6 +517,18 @@ async function applyPendingItem(item: PendingItem, memory?: MemoryStore, cfg?: C
 
 export function startServer(deps: ServerDeps): Promise<http.Server> {
   const { cfg, ollama, runTask } = deps;
+  
+  // Initialize model registry (async, non-blocking)
+  (async () => {
+    try {
+      const { initializeRegistry } = await import("../models/registry/init.js");
+      await initializeRegistry(cfg);
+      log.info("[registry] Model registry initialized");
+    } catch (error) {
+      log.error(`[registry] Failed to initialize: ${error}`);
+    }
+  })();
+  
   const timeline = new TimelineService(cfg.workspace);
   const memory = deps.memory;
   const live = deps.screenLive;
@@ -1640,8 +1654,8 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         if (req.method === "POST" && p === "/api/settings") {
-          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; codemode?: unknown; planApprovalSkipTrivial?: unknown; lessonsAutoApply?: unknown; officeIdentity?: unknown; knowledgeRag?: unknown };
-          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; codemode?: boolean; planApprovalSkipTrivial?: boolean; lessonsAutoApply?: boolean; officeIdentity?: { name?: string; role?: "partner" | "senior" | "associate" | "paralegal" | "reviewer" | "client" | "admin" }; knowledgeRag?: boolean } = {};
+          const body = (await readBody(req)) as { theme?: unknown; model?: unknown; projectId?: unknown; autoApprove?: unknown; trainingOptOut?: unknown; codemode?: unknown; planApprovalSkipTrivial?: unknown; lessonsAutoApply?: unknown; officeIdentity?: unknown; knowledgeRag?: unknown; codingDiscipline?: unknown };
+          const patch: { theme?: "dark" | "light" | "system"; model?: string; projectId?: string | null; autoApprove?: boolean; trainingOptOut?: boolean; codemode?: boolean; planApprovalSkipTrivial?: boolean; lessonsAutoApply?: boolean; officeIdentity?: { name?: string; role?: "partner" | "senior" | "associate" | "paralegal" | "reviewer" | "client" | "admin" }; knowledgeRag?: boolean; codingDiscipline?: "off" | "lite" | "full" | "ultra" } = {};
           if (body.theme === "dark" || body.theme === "light" || body.theme === "system") patch.theme = body.theme;
           if (typeof body.model === "string") patch.model = body.model;
           if (body.projectId === null || typeof body.projectId === "string") patch.projectId = body.projectId;
@@ -1653,6 +1667,11 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
           if (typeof body.lessonsAutoApply === "boolean") patch.lessonsAutoApply = body.lessonsAutoApply;
           // «تحدث مع ملفاتك» (Phase-2 W2): kb_* in ask/build on/off switch.
           if (typeof body.knowledgeRag === "boolean") patch.knowledgeRag = body.knowledgeRag;
+          // lazy-senior (Ponytail BUILD_SPEC P2): coding-discipline level; only
+          // a known level is stored, unknown values leave the setting untouched.
+          if (body.codingDiscipline === "off" || body.codingDiscipline === "lite" || body.codingDiscipline === "full" || body.codingDiscipline === "ultra") {
+            patch.codingDiscipline = body.codingDiscipline;
+          }
           // د2: identity block for office intelligence / track changes (name + role).
           if (body.officeIdentity === null) patch.officeIdentity = undefined;
           else if (typeof body.officeIdentity === "object" && body.officeIdentity !== null) {
@@ -1683,6 +1702,14 @@ export function startServer(deps: ServerDeps): Promise<http.Server> {
         }
 
         // ---- task workspace files (UI files tab) ----
+        if (req.method === "GET" && p.startsWith("/api/tasks/") && p.endsWith("/metrics")) {
+          // lazy-senior P4: the task panel's metrics band — local data only.
+          const id = decodeURIComponent(p.slice("/api/tasks/".length, -"/metrics".length));
+          const task = getTask(id);
+          if (!task) return sendJson(res, 404, { error: "المهمة غير موجودة" });
+          return sendJson(res, 200, computeTaskMetrics(task.steps));
+        }
+
         if (req.method === "GET" && p.startsWith("/api/tasks/") && p.endsWith("/files")) {
           const id = decodeURIComponent(p.slice("/api/tasks/".length, -"/files".length));
           const task = getTask(id);
@@ -2170,6 +2197,8 @@ loadAgents();
         if (await handleHibernationRoutes(req, res, p)) return;
         // Durable event log (O8): GET /api/sessions/:id/events and /events/stream.
         if (await handleEventsRoutes(req, res, p)) return;
+        // Model registry (Unified Model Registry): /api/model-registry/*
+        if (handleModelRegistryRoutes(req, res)) return;
         // Design Studio (/api/design/*): brand kits, templates, generate, outputs.
         if (await handleDesignStudioRoutes(req, res, p)) return;
         if (await handleWorkspaceVideoRoutes(req, res, p, { workspace: cfg.workspace })) return;

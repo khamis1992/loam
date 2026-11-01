@@ -362,3 +362,18 @@ copied or bundled.
   addons/api-anything/pkg (gitignored, fetched by
   scripts/vendor/fetch-api-anything.mjs with hash verification). Loam-side
   code is clean-room; only the pinned payload is MIT.
+
+## Ponytail (MIT, courtesy credit — 2026-10-31)
+
+The lazy-senior coding-discipline work — the `skills/lazy-senior` skill, the
+`skills/lazy-review` and `skills/lazy-audit` command skills, and the levelled
+coding-discipline prompt blocks — is a clean-room paraphrase of the ideas in
+Ponytail by DietrichGebert:
+
+  https://github.com/DietrichGebert/ponytail
+
+MIT License, Copyright (c) 2026 DietrichGebert. No Ponytail text was copied
+verbatim into this repository, the "Ponytail" name and logo are not used in
+Loam's UI, and Ponytail's published benchmark figures are not presented
+anywhere in Loam as if Loam measured them; Loam reports only its own A/B
+numbers from bench/lazy-senior.

@@ -9,6 +9,7 @@ import { renderPolicyContext } from "../policy/riskTier.js";
 import { buildMasterPrompt, codingModeSection, deriveMasterSlots, isCodingTask } from "./masterPrompt.js";
 import { loadProjectMemory, type ProjectMemoryResult } from "./projectMemory.js";
 import { DESIGN_RULES_PROMPT, isUiIntent } from "./designPrompt.js";
+import { lazySeniorBlock, lazySeniorTail, resolveLazySeniorLevel } from "./lazySenior.js";
 import { CRAFT_EDITORS_PROMPT } from "./craftPrompt.js";
 import { VIDEO_EDITING_PROMPT, hasVideoStudioTool } from "./videoPrompt.js";
 
@@ -32,6 +33,57 @@ export interface Skill {
   body: string;
 }
 
+/**
+ * Read `name` and `description` out of a SKILL.md frontmatter block. Plain
+ * one-line values work as before; YAML block scalars (folded and literal,
+ * with their strip-chomp dash form) are also supported so a multi-line
+ * description survives the loader instead of collapsing to a bare marker
+ * character (P0). Only these two keys are extracted; every other frontmatter
+ * key is ignored, and CRLF line endings are tolerated.
+ */
+export function parseSkillFrontmatter(fm: string): { name?: string; description?: string } {
+  const out: { name?: string; description?: string } = {};
+  const lines = fm.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const head = /^(name|description)\s*:\s*(.*)$/.exec(lines[i] ?? "");
+    if (!head) continue;
+    const key = head[1] as "name" | "description";
+    let value = head[2]!.trim();
+    const FOLDED = "\u003e";
+    const LITERAL = "\u007c";
+    const block: "folded" | "literal" | null =
+      value === FOLDED ? "folded" : value === FOLDED + "-" ? "folded" : value === LITERAL ? "literal" : value === LITERAL + "-" ? "literal" : null;
+    if (block) {
+      const body: string[] = [];
+      let indent = -1;
+      let j = i + 1;
+      for (; j < lines.length; j++) {
+        const line = lines[j] ?? "";
+        if (!line.trim()) {
+          body.push("");
+          continue;
+        }
+        const leading = line.length - line.trimStart().length;
+        if (leading === 0) break; // dedent back to frontmatter level: block ended
+        if (indent === -1) indent = leading;
+        body.push(line.slice(Math.min(leading, indent)));
+      }
+      while (body.length > 0 && !body[body.length - 1]!.trim()) body.pop();
+      if (block === "literal") {
+        value = body.join("\n").trim();
+      } else {
+        value = body.join(" ").replace(/[ \t]{2,}/g, " ").trim();
+      }
+      out[key] = value;
+      i = j - 1;
+      continue;
+    }
+    if (value.length >= 2 && /^["']/.test(value) && value.endsWith(value[0]!)) value = value.slice(1, -1);
+    out[key] = value;
+  }
+  return out;
+}
+
 export function loadSkills(dir: string): Skill[] {
   const out: Skill[] = [];
   if (!fs.existsSync(dir)) return out;
@@ -45,15 +97,10 @@ export function loadSkills(dir: string): Skill[] {
     let description = "";
     let body = raw;
     if (m) {
-      const fm = m[1] ?? "";
+      const fm = parseSkillFrontmatter(m[1] ?? "");
       body = m[2] ?? "";
-      for (const line of fm.split(/\r?\n/)) {
-        const mm = /^(name|description)\s*:\s*(.+)$/.exec(line);
-        if (mm) {
-          if (mm[1] === "name") name = mm[2]!.trim();
-          else description = mm[2]!.trim();
-        }
-      }
+      if (fm.name) name = fm.name;
+      if (fm.description) description = fm.description;
     }
     out.push({ name, description, body: body.trim() });
   }
@@ -76,6 +123,8 @@ export function buildSystemPrompt(
   projectMemory?: ProjectMemoryResult | null,
   /** The user's request text; used only to gate the UI design-rules section. */
   userPrompt?: string,
+  /** Session id for the /lazy coding-discipline override (lazy-senior P2). */
+  lazySessionId?: string,
 ): string {
   const lines: string[] = [];
   if (masterPromptEnabled()) {
@@ -92,6 +141,12 @@ export function buildSystemPrompt(
       lines.push(coding);
     }
   }
+  // lazy-senior (Ponytail BUILD_SPEC P2): levelled coding discipline, injected
+  // only for build-mode toolsets. `off` (or a non-build toolset) injects
+  // nothing, so that prompt stays byte-identical to the baseline.
+  const lazyLevel = resolveLazySeniorLevel(lazySessionId);
+  const lazyBlock = lazySeniorBlock(lazyLevel, toolNames);
+  if (lazyBlock) lines.push(lazyBlock);
   lines.push(
     "You are Loam, a local assistant working in the current task's isolated workspace.",
     "Reply in the user's language. Use the provided tools and observed results; never invent success.",
@@ -145,5 +200,8 @@ export function buildSystemPrompt(
     lines.push("Available skills:");
     for (const skill of skills) lines.push(`- ${skill.name}: ${skill.description}`);
   }
+  // lazy-senior: end-of-prompt recency cue — the same run that got the block
+  // gets a one-line pre-finish checklist as the last thing it reads.
+  if (lazyBlock) lines.push(lazySeniorTail(lazyLevel));
   return lines.join("\n");
 }

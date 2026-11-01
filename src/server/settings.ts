@@ -53,6 +53,10 @@ export interface Settings {
    *  an older settings file keeps the garden promoted; `false` removes the
    *  kb_* names from those modes' tool lists everywhere at once. */
   knowledgeRag?: boolean;
+  /** lazy-senior (Ponytail BUILD_SPEC P2): coding-discipline level injected
+   *  into build-mode prompts. Missing/undefined is `full` (the spec default);
+   *  the /lazy chat command overrides it for the current session only. */
+  codingDiscipline?: "off" | "lite" | "full" | "ultra";
 }
 
 const OFFICE_ROLES = new Set(["partner", "senior", "associate", "paralegal", "reviewer", "client", "admin"]);
@@ -97,6 +101,9 @@ export function loadSettings(): Settings {
         ...(isLocationSetting(parsed.location) ? { location: parsed.location } : {}),
         ...(isOfficeIdentitySetting(parsed.officeIdentity) ? { officeIdentity: parsed.officeIdentity } : {}),
         ...(typeof parsed.knowledgeRag === "boolean" ? { knowledgeRag: parsed.knowledgeRag } : {}),
+        ...(parsed.codingDiscipline === "off" || parsed.codingDiscipline === "lite" || parsed.codingDiscipline === "full" || parsed.codingDiscipline === "ultra"
+          ? { codingDiscipline: parsed.codingDiscipline }
+          : {}),
         ...(parsed.sandboxMode === "untrusted_only" || parsed.sandboxMode === "all_shell" ? { sandboxMode: parsed.sandboxMode } : {}),
         ...(Array.isArray(parsed.sandboxAllowedDomains) ? { sandboxAllowedDomains: parsed.sandboxAllowedDomains.map(String) } : {}),
         ...(typeof parsed.sandboxSkipProfileGrant === "boolean" ? { sandboxSkipProfileGrant: parsed.sandboxSkipProfileGrant } : {}),
@@ -171,6 +178,14 @@ export function updateSettings(patch: Partial<Settings>): Settings {
   if (typeof patch.sandboxSkipProfileGrant === "boolean") settings.sandboxSkipProfileGrant = patch.sandboxSkipProfileGrant;
   if (typeof patch.sandboxSupplyChainAck === "boolean") settings.sandboxSupplyChainAck = patch.sandboxSupplyChainAck;
   if (typeof patch.knowledgeRag === "boolean") settings.knowledgeRag = patch.knowledgeRag;
+  if (
+    patch.codingDiscipline === "off" ||
+    patch.codingDiscipline === "lite" ||
+    patch.codingDiscipline === "full" ||
+    patch.codingDiscipline === "ultra"
+  ) {
+    settings.codingDiscipline = patch.codingDiscipline;
+  }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     const tmp = `${FILE}.tmp`;

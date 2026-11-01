@@ -230,6 +230,93 @@ function writeStoredBool(key: string, value: boolean) {
   } catch {}
 }
 
+/** lazy-senior (Ponytail BUILD_SPEC P2): coding-discipline level, saved through
+ *  POST /api/settings. The /lazy chat command overrides it per session. Text
+ *  labels only — no icons. */
+const DISCIPLINE_LEVELS = ['off', 'lite', 'full', 'ultra'] as const;
+type DisciplineLevel = (typeof DISCIPLINE_LEVELS)[number];
+
+function CodingDisciplineSection() {
+  const [level, setLevel] = useState<DisciplineLevel>('full');
+  const [loaded, setLoaded] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const response = await fetch(`${getApiBase()}/api/settings`, { headers: await getApiHeaders() });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const body = (await response.json()) as { codingDiscipline?: string };
+      if ((DISCIPLINE_LEVELS as readonly string[]).includes(body.codingDiscipline ?? '')) {
+        setLevel(body.codingDiscipline as DisciplineLevel);
+      }
+      setLoaded(true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const pick = useCallback(async (next: DisciplineLevel) => {
+    const previous = level;
+    setLevel(next);
+    setError(null);
+    try {
+      const response = await fetch(`${getApiBase()}/api/settings`, {
+        method: 'POST',
+        headers: { ...(await getApiHeaders()), 'content-type': 'application/json' },
+        body: JSON.stringify({ codingDiscipline: next }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch (reason) {
+      setLevel(previous);
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }, [level]);
+
+  const levelLabel: Record<DisciplineLevel, string> = {
+    off: t('Off'),
+    lite: t('Lite'),
+    full: t('Full'),
+    ultra: t('Ultra'),
+  };
+
+  return (
+    <Section title={t('Coding discipline')}>
+      <Row
+        label={t('Coding discipline')}
+        description={t('How minimal build-mode edits are: off, lite, full (ladder), or ultra (pushes back first). Applies to new build tasks; /lazy changes it for the current session.')}
+      >
+        <div role="group" aria-label={t('Coding discipline')} className="flex items-center gap-1">
+          {DISCIPLINE_LEVELS.map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={loaded && level === value}
+              title={value}
+              onClick={() => void pick(value)}
+              className={clsx(
+                'h-row-sm rounded-control border px-3 text-sm transition-colors',
+                loaded && level === value
+                  ? 'border-icon-blue bg-fill-tsp text-icon-blue'
+                  : 'border-border-main bg-fill-tsp text-text-primary hover:bg-fill-hover',
+              )}
+            >
+              {levelLabel[value]}
+            </button>
+          ))}
+          <span className="text-xs text-text-tertiary">
+            {saved ? t('Saved') : error ? error : `/lazy ${level}`}
+          </span>
+        </div>
+      </Row>
+    </Section>
+  );
+}
+
 export function GeneralPane() {
   const locale = useAppSelector((s) => s.ui.locale);
   const dispatch = useAppDispatch();
@@ -257,6 +344,8 @@ export function GeneralPane() {
       </Section>
 
       <IdentitySection />
+
+      <CodingDisciplineSection />
 
       <Section title={t('Chat preferences')}>
         <Row label={t('Default action while a task is running')} description={t('How new messages are delivered.')}>

@@ -310,6 +310,9 @@ Speed comes from parallelism, not from skipping steps.
 
 ## 8. Code-Editing Discipline
 
+### 8.0 Decision order
+When writing code, apply the active lazy-senior discipline level before §8.1. The injected lazy-senior block names the active level (off, lite, full or ultra); "off" means the discipline is disabled for the run. The level narrows how a change is chosen — it never weakens §8.1–§8.5.
+
 ### 8.1 Before editing
 - Read the file and enough of its neighbours to learn the conventions: naming, error handling, typing, imports, test style.
 - Confirm that a library is actually a dependency (check `package.json`, lockfiles or imports) before using it. Never assume a library is available.
