@@ -26,7 +26,13 @@ try {
  const identity=await (await fetch('http://127.0.0.1:13939/api/identity')).json();assert.equal(identity.application,'Loam');assert.equal(identity.version,expectedVersion);
  const dataPath=path.resolve(profile,'data');assert.equal(identity.profileId,createHash('sha256').update(process.platform==='win32'?dataPath.toLowerCase():dataPath).digest('hex'));
  const info=JSON.parse(extractFile(path.join(path.dirname(executable),'resources','app.asar'),'package.json').toString());assert.equal(info.name,'loam');assert.equal(info.version,expectedVersion);
- assert.ok(await win.evaluate(()=>!!window.loam));assert.doesNotMatch(await win.locator('body').innerText(),/manus|grok|frontier/i);
+ assert.ok(await win.evaluate(()=>!!window.loam));
+ // Brand gate: Loam's own chrome must never carry manus/grok/frontier — but
+ // declared dynamic-data surfaces ([data-dynamic], e.g. the model catalog
+ // select filled from /api/models) legitimately carry third-party provider
+ // content (an x-ai/grok-* catalog id is data, not branding). Clone the body,
+ // drop those subtrees, assert on the rest.
+ assert.doesNotMatch(await win.evaluate(()=>{const c=document.body.cloneNode(true);c.querySelectorAll('[data-dynamic]').forEach(e=>e.remove());return c.innerText;}),/manus|grok|frontier/i);
  await win.setViewportSize({width:1900,height:980});await win.evaluate(async()=>{await document.fonts.ready;});
  assert.equal(await win.locator('#sidebar').evaluate(el=>Math.round(el.getBoundingClientRect().width)),280);
  assert.equal(await win.locator('#modeCards').evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length),3);
