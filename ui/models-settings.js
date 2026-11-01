@@ -88,6 +88,11 @@ function renderProviders(providers) {
         <span class="provider-kind">${p.kind}</span>
         <span class="provider-url">${p.baseUrl}</span>
       </div>
+      <div class="provider-actions">
+        <button class="btn btn-sm" onclick="showDiscoverDialog('${p.id}')">اكتشاف / Discover</button>
+        <button class="btn btn-sm" onclick="showEditProviderDialog('${p.id}')">تعديل / Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="confirmDeleteProvider('${p.id}')">حذف / Delete</button>
+      </div>
     </div>
   `).join('');
 
@@ -327,16 +332,36 @@ function showAddProviderDialog() {
  * Test provider connection.
  */
 async function testProviderConnection() {
+  const type = document.getElementById('provider-type').value;
   const url = document.getElementById('provider-url').value;
   const key = document.getElementById('provider-key').value;
   
-  if (!url) {
-    alert('الرجاء إدخال عنوان URL / Please enter a URL');
+  if (!type || !url) {
+    alert('الرجاء إدخال النوع وعنوان URL / Please enter type and URL');
     return;
   }
   
-  // TODO: Call /api/model-registry/test (POST)
-  alert(`Testing connection to ${url}...\n(API integration pending)`);
+  try {
+    const res = await fetch('/api/model-registry/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: type,
+        baseUrl: url,
+        apiKey: key || undefined,
+      }),
+    });
+    
+    const result = await res.json();
+    
+    if (result.success) {
+      alert(`✓ نجح الاتصال / Connection successful\n\n${result.message || ''}`);
+    } else {
+      alert(`✗ فشل الاتصال / Connection failed\n\n${result.error || 'Unknown error'}`);
+    }
+  } catch (error) {
+    alert(`✗ فشل الاتصال / Connection failed\n\n${error.message}`);
+  }
 }
 
 /**
